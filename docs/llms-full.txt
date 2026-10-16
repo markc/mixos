@@ -29031,10 +29031,16 @@ this is unknown because Email is not running. **Connect now** asks Email
 to connect the account (`email.account.connect`). **Forget password…**
 asks first (Cancel is the default), then has Email delete the password it
 keeps; it is the only time Prefs sends an empty password, and it starts
-Email if needed, as Set password does. Removing an account also asks Email
-to forget its password once settingsd shows the account gone, but only if
-Email is already running: Prefs does not start Email for this, and if Email
-is away or refuses, the status line says the password may still be held.
+Email if needed, as Set password does. **Remove…** goes through Email
+when it may be running (`email.account.remove`): Email removes the account
+from settingsd and forgets its password itself, and refuses while the
+account is still being migrated from its old configuration
+(`MIGRATION_PENDING`, shown as Email gives it). When Email is not running,
+Prefs removes the account from settingsd directly and, once settingsd shows
+it gone, asks a running Email to forget the password; Prefs does not start
+Email for this, and if Email is away or refuses, the status line says the
+password may still be held. An account still being migrated comes back
+when Email next starts, by design.
 An Email too old to know these verbs is reported as such, not retried.
 
 ```mix

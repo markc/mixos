@@ -1059,6 +1059,16 @@ impl Engine {
                 Err((code, message)) => self.error(id, code, &message),
             },
             "prefs.email" => self.ok(id, self.email_view()),
+            // A removal goes through Email's guard and is answered by it.
+            "prefs.email.set" if args["op"] == "remove" => {
+                match crate::email::email_change(&args) {
+                    Ok(crate::email::Change::Remove(account)) => {
+                        let _ = self.remove_account(account, Some(id));
+                    }
+                    Ok(_) => self.error(id, "ARGUMENT", "op remove needs an id"),
+                    Err(message) => self.error(id, "ARGUMENT", &message),
+                }
+            }
             "prefs.email.set" => match self.set_email(&args) {
                 Ok(body) => self.ok(id, body),
                 Err((code, message)) => self.error(id, code, &message),

@@ -624,18 +624,25 @@ pub enum Action {
     /// with an empty password, the only path that sends one.
     Forget(String),
     Connect(String),
+    /// Remove the account through Email (`email.account.remove`), which
+    /// refuses while it migrates and forgets the password itself.
+    Remove(String),
 }
 
 impl Action {
     fn id(&self) -> &str {
         match self {
-            Action::Password(id, _) | Action::Forget(id) | Action::Connect(id) => id,
+            Action::Password(id, _)
+            | Action::Forget(id)
+            | Action::Connect(id)
+            | Action::Remove(id) => id,
         }
     }
 
     fn verb(&self) -> &'static str {
         match self {
             Action::Password(..) | Action::Forget(_) => "email.account.password.set",
+            Action::Remove(_) => "email.account.remove",
             Action::Connect(_) => "email.account.connect",
         }
     }
@@ -644,6 +651,7 @@ impl Action {
         match self {
             Action::Password(..) => "password",
             Action::Forget(_) => "forget",
+            Action::Remove(_) => "remove",
             Action::Connect(_) => "connect",
         }
     }
@@ -987,7 +995,70 @@ impl Engine {
     }
 
     pub fn can_remove_email_account(&self) -> bool {
-        self.selected_editable().is_some()
+        self.selected_editable().is_some() && self.email.task.is_none()
+    }
+
+    /// Remove account `id`: through Email when it may be running, so its
+    /// guard holds (it refuses while the account migrates, and forgets the
+    /// password itself); straight to settingsd, with a best-effort forget,
+    /// when Email is known to be away. `reply` is the `prefs.email.set`
+    /// that asked: answered now on the direct path, else once Email has.
+    pub(crate) fn remove_account(&mut self, id: String, reply: Option<u64>) -> Result<(), Refusal> {
+        let refuse = |e: &mut Engine, code: &str, key: &'static str| -> Result<(), Refusal> {
+            if let Some(reply) = reply {
+                let message = e.label(key, &[]);
+                e.effects.push(Effect::Reply {
+                    id: reply,
+                    rc: 10,
+                    body: json!({"error_code":code,"message":message}),
+                });
+            }
+            Err(Refusal::Key(key))
+        };
+        if self.look.email.is_none() {
+            return refuse(self, "NOT_READY", "email-not-ready");
+        }
+        if !self.can_edit_email() || self.email.task.is_some() {
+            return refuse(self, "BUSY", "busy");
+        }
+        if self.email().is_none_or(|e| e.account(&id).is_none()) {
+            self.email_refused(&Change::Remove(id), &Refusal::Key("email-unknown-account"));
+            return refuse(self, "ARGUMENT", "email-unknown-account");
+        }
+        if self.email.service == Service::Absent {
+            return self.remove_directly(id, reply);
+        }
+        let name = self.account_name(&id);
+        self.begin_action(Action::Remove(id), reply, false, name);
+        Ok(())
+    }
+
+    /// The settingsd removal (Email away, or too old to remove): one fenced
+    /// apply, then a best-effort forget once the read shows it gone.
+    fn remove_directly(&mut self, id: String, reply: Option<u64>) -> Result<(), Refusal> {
+        let result = self.change_email(Change::Remove(id)).map(|_| ());
+        if let Some(reply) = reply {
+            match &result {
+                Ok(()) => {
+                    let mut body = self.email_view();
+                    body["applying"] = json!(true);
+                    self.effects.push(Effect::Reply { id: reply, rc: 0, body });
+                }
+                Err(refusal) => {
+                    let message = match refusal {
+                        Refusal::Key(key) => self.label(key, &[]),
+                        Refusal::Settings(message) => message.clone(),
+                        _ => self.status.clone(),
+                    };
+                    self.effects.push(Effect::Reply {
+                        id: reply,
+                        rc: 10,
+                        body: json!({"error_code":"ARGUMENT","message":message}),
+                    });
+                }
+            }
+        }
+        result
     }
 
     /// Ask before removing the selected account.
@@ -1073,7 +1144,7 @@ impl Engine {
         match self.ui.dialog.clone() {
             Some(Dialog::RemoveAccount(id)) => {
                 self.ui.dialog = None;
-                let _ = self.change_email(Change::Remove(id));
+                let _ = self.remove_account(id, None);
             }
             Some(Dialog::ForgetPassword(id)) => {
                 self.ui.dialog = None;
@@ -1187,6 +1258,7 @@ impl Engine {
         let key = match action {
             Action::Password(..) => "email-password-sending",
             Action::Forget(_) => "email-password-forgetting",
+            Action::Remove(_) => "email-removing",
             Action::Connect(_) => "email-connecting",
         };
         self.status = self.label(key, &[("account", &name)]);
@@ -1218,7 +1290,7 @@ impl Engine {
         task.stage = Stage::Sending;
         let secret = match &task.action {
             Action::Password(_, password) => Some(password.clone()),
-            Action::Forget(_) | Action::Connect(_) => None,
+            Action::Forget(_) | Action::Connect(_) | Action::Remove(_) => None,
         };
         let verb = task.action.verb();
         // The one empty password sent: a forget, never a typed Set password.
@@ -1316,14 +1388,21 @@ impl Engine {
     fn action_answered(&mut self, task: Task, answer: Answer) {
         let name = task.name.clone();
         // A forget after a removal: best effort, on an Email already up.
-        if !task.may_launch && !matches!(answer, Answer::Ok(_)) {
+        if matches!(task.action, Action::Forget(_))
+            && !task.may_launch
+            && !matches!(answer, Answer::Ok(_))
+        {
             return self.follow_up_failed(task, answer);
+        }
+        if let Action::Remove(id) = &task.action {
+            return self.remove_answered(id.clone(), task, answer);
         }
         match answer {
             Answer::Ok(value) => {
                 let key = match task.action {
                     Action::Password(..) => "email-password-set",
                     Action::Forget(_) => "email-password-forgotten",
+                    Action::Remove(_) => "email-removed",
                     Action::Connect(_) => "email-connect-asked",
                 };
                 let detail = value["message"]
@@ -1369,6 +1448,70 @@ impl Engine {
                     &[("account", &name), ("message", &message)],
                 );
                 self.end_action(task, Err(("OUTCOME_UNKNOWN", text)), Value::Null);
+            }
+        }
+    }
+
+    /// Email answered a Remove. Done, settingsd is read again (Email has
+    /// changed it); refused (`MIGRATION_PENDING` among them), Email's
+    /// answer is shown and returned as it gave it. Email gone, or too old
+    /// to remove accounts: the settingsd removal instead.
+    fn remove_answered(&mut self, id: String, task: Task, answer: Answer) {
+        let name = task.name.clone();
+        let reply = task.reply;
+        match answer {
+            Answer::Ok(_) => {
+                let text = self.label("email-removed", &[("account", &name)]);
+                let body = json!({"removed":id,"via":"email"});
+                self.end_action(task, Ok(text), body);
+                self.read_look();
+            }
+            Answer::Missing => {
+                self.email.task = None;
+                self.email.service = Service::Absent;
+                let _ = self.remove_directly(id, reply);
+            }
+            Answer::Refused(value) if unknown_verb(&value) => {
+                self.email.task = None;
+                let _ = self.remove_directly(id, reply);
+            }
+            Answer::Refused(value) => {
+                let message = match (&value["error_code"], &value["message"]) {
+                    (Value::String(code), Value::String(message)) => {
+                        redact_text(&format!("{code}: {message}"))
+                    }
+                    _ => refusal(&value),
+                };
+                let text = self.label(
+                    "email-action-failed",
+                    &[("account", &name), ("message", &message)],
+                );
+                // The Bus caller gets Email's refusal as Email gave it.
+                let task = Task { reply: None, ..task };
+                self.end_action(task, Err(("REFUSED", text)), Value::Null);
+                if let Some(reply) = reply {
+                    let mut body = json!({"error_code":value["error_code"],"message":message});
+                    if body["error_code"].is_null() {
+                        body["error_code"] = json!("REFUSED");
+                    }
+                    self.effects.push(Effect::Reply { id: reply, rc: 10, body });
+                }
+            }
+            // Unknown: the next read shows whether it went.
+            Answer::Lost(message) => {
+                let text = self.label(
+                    "email-action-lost",
+                    &[("account", &name), ("message", &message)],
+                );
+                self.end_action(task, Err(("OUTCOME_UNKNOWN", text)), Value::Null);
+                self.read_look();
+            }
+            Answer::NotSent(message) => {
+                let text = self.label(
+                    "email-action-failed",
+                    &[("account", &name), ("message", &message)],
+                );
+                self.end_action(task, Err(("NOT_SENT", text)), Value::Null);
             }
         }
     }
@@ -2103,6 +2246,8 @@ mod tests {
     #[test]
     fn removing_the_default_is_one_fenced_apply_after_a_confirm() {
         let mut e = read();
+        // Email away: the removal goes straight to settingsd.
+        e.email.service = Service::Absent;
         e.select_email_account("a");
         e.remove_email_account();
         assert_eq!(e.ui.dialog, Some(Dialog::RemoveAccount("a".into())));
@@ -2456,15 +2601,24 @@ mod tests {
         );
     }
 
-    /// Remove an account and settingsd shows it gone: a running Email is
-    /// asked to forget its password, never launched for it; a failure is a
-    /// note, and Email not knowing the account is nothing to report.
+    /// An Email too old to remove accounts: the removal goes straight to
+    /// settingsd, and once settingsd shows it gone, a running Email is asked
+    /// to forget the password, never launched for it; a failure is a note,
+    /// and Email not knowing the account is nothing to report.
     #[test]
     fn a_removed_account_s_password_is_forgotten_by_a_running_email() {
         let removed = |e: &mut Engine| {
             e.select_email_account("b");
             e.remove_email_account();
             e.confirm_email();
+            if e.email.service != Service::Absent {
+                let calls = mail_calls(&e.take_effects());
+                assert_eq!(calls[0].2, "email.account.remove");
+                e.mailed(
+                    calls[0].0,
+                    reply(10, json!({"error_code":"UNKNOWN_VERB","message":"unknown verb"})),
+                );
+            }
             let calls = settings_calls(e);
             e.settled(calls[0].0, reply(0, json!({"status":"changed"})));
             let mut after = two();
@@ -2511,6 +2665,7 @@ mod tests {
     #[test]
     fn a_refused_removal_forgets_nothing() {
         let mut e = read();
+        e.email.service = Service::Absent;
         e.select_email_account("b");
         e.remove_email_account();
         e.confirm_email();
@@ -2521,6 +2676,99 @@ mod tests {
         );
         settle_read(&mut e, "7", json!(two()));
         assert!(mail_calls(&e.take_effects()).is_empty());
+        assert!(e.email.outcome.is_none(), "no forget, no note");
+    }
+
+    /// Email may be running: Remove is Email's guarded email.account.remove
+    /// (it updates settingsd and forgets the password itself), never a
+    /// settingsd apply of Prefs' own, and no follow-up forget.
+    #[test]
+    fn remove_goes_through_email_when_it_runs() {
+        let mut e = read();
+        e.select_email_account("b");
+        e.remove_email_account();
+        e.confirm_email();
+        let effects = e.take_effects();
+        assert!(
+            !effects.iter().any(|x| matches!(x, Effect::Settings { .. })),
+            "{effects:?}"
+        );
+        let calls = mail_calls(&effects);
+        assert_eq!(calls.len(), 1);
+        assert_eq!((calls[0].1, calls[0].2), (EMAIL, "email.account.remove"));
+        assert_eq!(calls[0].3, json!({"id":"b"}));
+        assert!(!e.can_remove_email_account(), "one at a time");
+        e.mailed(calls[0].0, reply(0, json!({"id":"b"})));
+        assert!(!e.failed);
+        assert!(e.status.starts_with("email-removed account=Home"), "{}", e.status);
+        let mut after = two();
+        after.accounts.remove(1);
+        settle_read(&mut e, "8", json!(after));
+        assert!(e.email.form.is_none());
+        let calls = mail_calls(&e.take_effects());
+        assert!(
+            !calls.iter().any(|c| c.2 == "email.account.password.set"),
+            "Email forgot it itself: {calls:?}"
+        );
+    }
+
+    /// sol #15: Email refuses to remove an account mid-migration. Its answer
+    /// is shown, and given to a Bus caller, as Email gave it; nothing is
+    /// removed behind its back.
+    #[test]
+    fn a_migration_pending_refusal_is_shown_verbatim_and_nothing_removed() {
+        let pending = json!({"error_code":"MIGRATION_PENDING","message":"The account is still being migrated"});
+        let mut e = read();
+        e.select_email_account("b");
+        e.remove_email_account();
+        e.confirm_email();
+        let calls = mail_calls(&e.take_effects());
+        e.mailed(calls[0].0, reply(10, pending.clone()));
+        assert!(e.failed);
+        assert!(
+            e.status.contains("MIGRATION_PENDING: The account is still being migrated"),
+            "{}",
+            e.status
+        );
+        assert!(settings_calls(&mut e).is_empty(), "no settingsd removal");
+        assert_eq!(e.email().unwrap().accounts.len(), 2);
+        // The same over the Bus.
+        e.command(1, "prefs.email.set", r#"{"op":"remove","id":"b"}"#);
+        let calls = mail_calls(&e.take_effects());
+        assert_eq!(calls[0].2, "email.account.remove");
+        e.mailed(calls[0].0, reply(10, pending));
+        let effects = e.take_effects();
+        assert!(effects.iter().any(|x| matches!(x,
+            Effect::Reply { id: 1, rc: 10, body } if body["error_code"] == "MIGRATION_PENDING")));
+        assert!(!effects.iter().any(|x| matches!(x, Effect::Settings { .. })));
+    }
+
+    /// Email away, or gone mid-remove: the settingsd removal instead, the
+    /// Bus caller answered once it is sent.
+    #[test]
+    fn without_email_the_removal_goes_to_settingsd() {
+        let mut e = read();
+        e.email.service = Service::Absent;
+        e.command(1, "prefs.email.set", r#"{"op":"remove","id":"b"}"#);
+        let effects = e.take_effects();
+        assert!(mail_calls(&effects).is_empty(), "Email is not asked or launched");
+        assert!(effects.iter().any(|x| matches!(x, Effect::Settings { verb: "settings.apply", .. })));
+        assert!(effects.iter().any(|x| matches!(x, Effect::Reply { id: 1, rc: 0, .. })));
+        // Email registered, then gone by the time it is asked.
+        let mut e = read();
+        e.command(2, "prefs.email.set", r#"{"op":"remove","id":"b"}"#);
+        let calls = mail_calls(&e.take_effects());
+        assert_eq!(calls[0].2, "email.account.remove");
+        e.mailed(calls[0].0, missing());
+        let effects = e.take_effects();
+        assert!(effects.iter().any(|x| matches!(x, Effect::Settings { verb: "settings.apply", .. })));
+        assert!(effects.iter().any(|x| matches!(x, Effect::Reply { id: 2, rc: 0, .. })));
+        assert!(!effects.iter().any(|x| matches!(x, Effect::Mail { service: APPS, .. })), "never launched for it");
+        // An unknown account is refused at once.
+        let mut e = read();
+        e.command(3, "prefs.email.set", r#"{"op":"remove","id":"zz"}"#);
+        assert!(e.take_effects().iter().any(|x| matches!(x,
+            Effect::Reply { id: 3, rc: 10, body } if body["error_code"] == "ARGUMENT")));
     }
 
     #[test]
