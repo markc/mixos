@@ -455,9 +455,9 @@ fn a_rebind_while_held_applies_from_the_next_press() {
 fn a_hand_off_while_held_releases_only_what_was_emitted() {
     let mut run = Run::new(Resolver::new(default_keymap()));
     run.resolver.bind_physical(passthrough(KEY_UP, SideModifiers::RIGHT_SHIFT)).unwrap();
-    // Held at switch-away: an ordinary letter, Right Shift + ↑ passed
-    // through by the person's choice, and an unbound F5 (swallowed).
-    run.feed(KEY_A, 1).feed(KEY_RIGHTSHIFT, 1).feed(KEY_UP, 1).feed(KEY_F5, 1);
+    // Held at switch-away: an ordinary letter, a bare F5 (unbound, so
+    // swallowed), and Right Shift + ↑ passed through by the person's choice.
+    run.feed(KEY_A, 1).feed(KEY_F5, 1).feed(KEY_RIGHTSHIFT, 1).feed(KEY_UP, 1);
     assert!(run.keys.is_swallowed(KEY_F5));
     let to_release = run.keys.end();
     assert_eq!(to_release, [KEY_A, KEY_RIGHTSHIFT, KEY_UP]);

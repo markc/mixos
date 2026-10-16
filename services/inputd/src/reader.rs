@@ -105,7 +105,7 @@ pub fn run_grab(
         });
     }
     tracing::info!(
-        device = options.device,
+        device = %options.device,
         vts = ?options.vts,
         timeout_s = options.timeout.map(|t| t.as_secs()),
         "grab path: unbound keys re-emitted on inputd virtual keyboard; kill this process to release"

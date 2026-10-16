@@ -130,7 +130,7 @@ fn main() -> anyhow::Result<()> {
             let path = devices::device_by_name(&devices, name).ok_or_else(|| {
                 anyhow::anyhow!("no input device named {name:?} in /proc/bus/input/devices")
             })?;
-            tracing::info!(name, path, "grab device found by name");
+            tracing::info!(%name, %path, "grab device found by name");
             Some(path)
         }
         (None, None) => None,
@@ -212,7 +212,7 @@ async fn serve(
                 }
                 let (rc, body) = service::dispatch(&resolver, &store, &mut injector, &command);
                 if let Err(error) = client.respond(&command, rc, &body).await {
-                    tracing::warn!(%error, verb = command.command, "reply failed");
+                    tracing::warn!(%error, verb = %command.command, "reply failed");
                 }
             }
             fired = fire_rx.recv() => {
@@ -245,7 +245,7 @@ async fn fire_verb(client: &SupervisedClient, fired: &reader::FiredVerb) {
     let body = match fired.args.clone() {
         Some(args) if args.is_object() => args,
         Some(_) => {
-            tracing::warn!(verb = fired.verb, "non-object args dropped");
+            tracing::warn!(verb = %fired.verb, "non-object args dropped");
             serde_json::json!({})
         }
         None => serde_json::json!({}),

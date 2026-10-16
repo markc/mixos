@@ -432,9 +432,9 @@ mod tests {
             .unwrap();
         rig.grabber.console(Some(1), rig.now).unwrap();
         rig.take_log();
-        // Held: a letter, Right Shift + ↑ (the person's passthrough) and an
-        // unbound F5, which is swallowed.
-        rig.key(KEY_A, 1).key(KEY_RIGHTSHIFT, 1).key(KEY_UP, 1).key(KEY_F5, 1);
+        // Held: a letter, a bare F5 (unbound, so swallowed) and Right Shift +
+        // ↑ (the person's passthrough).
+        rig.key(KEY_A, 1).key(KEY_F5, 1).key(KEY_RIGHTSHIFT, 1).key(KEY_UP, 1);
         assert_eq!(rig.take_log(), ["emit 1 30 1", "emit 1 54 1", "emit 1 103 1"]);
         rig.grabber.console(Some(4), rig.now).unwrap();
         assert_eq!(
