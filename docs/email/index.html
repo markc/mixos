@@ -281,8 +281,18 @@ and <strong>confirm before delete</strong>. Every change applies at once:</p>
 <li>a change to the URL, address or CA path reconnects;</li>
 <li>a rename relabels;</li>
 <li>turning an account off disconnects it;</li>
-<li>a removed account's client, view and password go.</li>
+<li>a removed account's client and view go.</li>
 </ul>
+<p>A settings read never deletes a password. Only <strong>Email</strong> forgets one: an
+account removed with <code>email.account.remove</code>, or an empty
+<code>email.account.password.set</code>. An account removed elsewhere (in Prefs, or
+by a settings reset) leaves its entry in <code>secrets.conf.mix</code>, unused.</p>
+<p>settingsd omits the <code>email</code> group at its defaults, so a read with no
+accounts cannot be told apart from a settingsd that does not carry the
+group. When such a read arrives while accounts are shown, Email keeps
+them (views, connections, passwords) and says so in the status line. It
+stops keeping them at the next read that lists accounts, or when an
+account is removed through Email.</p>
 <p>If settingsd is not running, the window opens the accounts it last saw
 (cached in its config) read-only, and the status line says so.</p>
 <p>With no account the window shows <strong>Open Email Settings</strong>. An account that
@@ -291,9 +301,13 @@ the same button.</p>
 <p><strong>Upgrading from the single-account version.</strong> The old <code>config.conf.mix</code>
 (schema 1, with the password inline) migrates once, losing nothing:</p>
 <ol>
-<li>The password moves to <code>secrets.conf.mix</code>, and an inline CA bundle to
-<code>ca-&lt;id&gt;.pem</code> beside it.</li>
-<li>The account is added to settingsd and made the default.</li>
+<li>The password is written to <code>secrets.conf.mix</code>, and an inline CA bundle
+to <code>ca-&lt;id&gt;.pem</code> beside it. Nothing else happens until that save has
+landed. A user name and password inside the old server URL are
+removed (the status line says so, without the URL).</li>
+<li>The account is added to settingsd and made the default. When
+settingsd already holds it under another id, the password is written
+under that id, and that save must land too.</li>
 <li>Only then is the file rewritten as schema 2: the window shape and the
 accounts cache, with no secret.</li>
 </ol>
@@ -395,7 +409,7 @@ never waits on them.</p>
 <tr><td><code>email.mode {name}</code>, <code>email.refresh {account?}</code></td><td>intent</td><td>switch surface; fetch again (a failed account reconnects)</td></tr>
 <tr><td><code>email.account.set {id?, name, url, email, password?, ca_path?, enabled?, signature?}</code></td><td>intent</td><td>create or update in settingsd; answers <code>{id}</code> once settingsd accepts</td></tr>
 <tr><td><code>email.account.remove {id}</code>, <code>email.account.default {id}</code></td><td>intent</td><td>through settingsd, fenced</td></tr>
-<tr><td><code>email.account.password.set {id, password}</code></td><td>intent</td><td>write-only: the secrets file, then reconnect</td></tr>
+<tr><td><code>email.account.password.set {id, password}</code></td><td>intent</td><td>write-only: the secrets file, then reconnect; an empty password forgets it for any account id, even one settingsd no longer holds (<code>{forgotten}</code>)</td></tr>
 <tr><td><code>email.account.connect {id}</code>, <code>email.account.select {id}</code></td><td>intent</td><td>reconnect; show</td></tr>
 <tr><td><code>email.mailbox.select/create/rename/delete</code></td><td>intent</td><td><code>create</code> answers <code>{id}</code></td></tr>
 <tr><td><code>email.open {id}</code></td><td>intent</td><td>show an email in the reader; answers once loaded</td></tr>

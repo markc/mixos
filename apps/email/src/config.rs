@@ -177,7 +177,11 @@ impl ConfigFile {
             schema_version: Option<u32>,
         }
         let schema = match config::from_conf_mix_str::<Probe>(&raw) {
-            Ok(probe) => probe.schema_version.unwrap_or(CURRENT_SCHEMA),
+            // The schema-1 type defaulted its version, so a file without
+            // one (perhaps holding an account and its password) is schema 1
+            // and is migrated, never silently rewritten. This app always
+            // writes the version.
+            Ok(probe) => probe.schema_version.unwrap_or(LEGACY_SCHEMA),
             Err(error) => {
                 eprintln!(
                     "email: refusing to overwrite invalid config {}: {}",
@@ -441,6 +445,29 @@ mod tests {
         assert!(schema(&raw) == 2.0 && !raw.contains("pw-1"), "{raw}");
         let (after, file) = ConfigFile::load(dir.path());
         assert!(after.legacy.is_none() && !file.legacy());
+    }
+
+    /// Review finding 7: an old file with an account and no schema_version
+    /// is schema 1: its account is migrated and kept, never overwritten.
+    #[test]
+    fn a_versionless_file_with_an_account_is_schema_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.conf.mix");
+        std::fs::write(
+            &path,
+            "account: {url: \"https://mail.example.invalid\", email: \"a@example.invalid\", password: \"pw-2\"}\n",
+        )
+        .unwrap();
+        let (loaded, file) = ConfigFile::load(dir.path());
+        assert_eq!(
+            loaded.legacy.as_ref().map(|a| a.password.as_str()),
+            Some("pw-2")
+        );
+        assert!(file.legacy());
+        // A save before the migration completes keeps it.
+        assert!(file.save(&loaded.config).unwrap());
+        let (again, _) = ConfigFile::load(dir.path());
+        assert!(again.legacy.is_some());
     }
 
     #[test]

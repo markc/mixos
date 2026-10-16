@@ -42,7 +42,12 @@ pub enum Done {
     /// A Bus query's answer, for request `reply`.
     Answered(u64, Then, Result<Value, jmap::Error>),
     /// A server write finished (`reply`: the Bus request, if any).
-    Wrote(Option<u64>, Write, Result<Value, jmap::Error>),
+    Wrote(
+        Option<u64>,
+        Option<u64>,
+        Box<Write>,
+        Result<Value, jmap::Error>,
+    ),
     Marked(Result<(), jmap::Error>),
     Sent(u64, Result<(), jmap::Error>),
     Calendars(Result<Vec<jmap::Calendar>, jmap::Error>),
@@ -173,8 +178,8 @@ fn settled(result: Result<citizen::Reply, citizen::CallError>) -> Settled {
 fn legacy_entry(
     account: &jmap::Account,
     dir: &Path,
-) -> Result<settings::email::AccountEntry, String> {
-    let url = account.url.trim().trim_end_matches('/').to_owned();
+) -> Result<(settings::email::AccountEntry, bool), String> {
+    let (url, stripped) = without_userinfo(account.url.trim().trim_end_matches('/'));
     let email = account.email.trim().to_owned();
     let id = crate::writer::legacy_id(&url, &email);
     let ca_path = match &account.ca_pem {
@@ -190,15 +195,33 @@ fn legacy_entry(
     } else {
         label("title")
     };
-    Ok(settings::email::AccountEntry {
-        id,
-        name,
-        url,
-        email,
-        ca_path,
-        enabled: true,
-        signature: String::new(),
-    })
+    Ok((
+        settings::email::AccountEntry {
+            id,
+            name,
+            url,
+            email,
+            ca_path,
+            enabled: true,
+            signature: String::new(),
+        },
+        stripped,
+    ))
+}
+
+/// `url` without credentials in its authority (`https://user:pw@host`):
+/// they would be published in settingsd's retained snapshots. Whether any
+/// were removed comes back too; the URL itself is never printed.
+pub fn without_userinfo(url: &str) -> (String, bool) {
+    let Some((scheme, rest)) = url.split_once("://") else {
+        return (url.to_owned(), false);
+    };
+    let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+    let (authority, tail) = rest.split_at(end);
+    match authority.rsplit_once('@') {
+        Some((_, host)) => (format!("{scheme}://{host}{tail}"), true),
+        None => (url.to_owned(), false),
+    }
 }
 
 /// The state a launch starts in, from the app's config directory: the
@@ -239,7 +262,13 @@ pub fn start(
     );
     if let Some(legacy) = &loaded.legacy {
         match legacy_entry(legacy, dir) {
-            Ok(entry) => state.begin_migration(entry, &legacy.password),
+            Ok((entry, stripped)) => {
+                state.begin_migration(entry, &legacy.password);
+                if stripped {
+                    eprintln!("email: removed credentials from the old account's server URL");
+                    state.status = label("migration-url-credentials");
+                }
+            }
             Err(error) => eprintln!("email: the old account cannot migrate yet: {error}"),
         }
     }
@@ -500,6 +529,7 @@ impl Shell {
             Work::Write {
                 account,
                 reply,
+                form,
                 write,
             } => {
                 let sent = self.state.sent_mailbox_id(&account);
@@ -508,10 +538,23 @@ impl Shell {
                         self.spawn(async move {
                             let answer =
                                 crate::verbs::run_write(&client, write.clone(), sent).await;
-                            Event::Account(tag, Done::Wrote(reply, write, answer))
+                            Event::Account(tag, Done::Wrote(reply, form, Box::new(write), answer))
                         });
                     }
-                    None => self.not_connected(reply),
+                    // Settled at once, so neither a caller nor a form waits
+                    // forever on a write that never went.
+                    None => {
+                        let generation = self
+                            .state
+                            .account(&account)
+                            .map_or(0, crate::state::AccountView::generation);
+                        let tag = Tag {
+                            account,
+                            generation,
+                        };
+                        let error = jmap::Error::Protocol(label("not-connected"));
+                        self.state.wrote(&tag, reply, form, write, Err(error));
+                    }
                 }
             }
             Work::MarkRead { account, id, read } => {
@@ -998,12 +1041,52 @@ impl Shell {
     }
 }
 
-/// Connect with `login`, reading its CA bundle first.
+/// The largest CA bundle read: a root and its intermediates fit many times.
+pub const CA_MAX_BYTES: u64 = 64 * 1024;
+
+/// Read the PEM bundle at `path`: a regular file of at most
+/// [`CA_MAX_BYTES`], opened without following it into a device or FIFO
+/// (checked on the open descriptor) and read no further than the cap. It
+/// blocks, so it runs off the async workers.
+pub fn read_ca(path: &str) -> Result<String, String> {
+    use std::io::Read;
+    use std::os::unix::fs::OpenOptionsExt;
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        // A FIFO opened for reading would block until a writer appears.
+        .custom_flags(libc::O_NONBLOCK)
+        .open(path)
+        .map_err(|e| e.to_string())?;
+    let meta = file.metadata().map_err(|e| e.to_string())?;
+    if !meta.is_file() {
+        return Err(label("ca-not-file"));
+    }
+    if meta.len() > CA_MAX_BYTES {
+        return Err(label("ca-too-large"));
+    }
+    let mut pem = String::new();
+    file.take(CA_MAX_BYTES + 1)
+        .read_to_string(&mut pem)
+        .map_err(|e| e.to_string())?;
+    if pem.len() as u64 > CA_MAX_BYTES {
+        return Err(label("ca-too-large"));
+    }
+    Ok(pem)
+}
+
+/// Connect with `login`, reading its CA bundle first (on the blocking
+/// pool, never an async worker).
 async fn connect(login: &Login) -> Result<Client, jmap::Error> {
-    let ca_pem = match &login.ca_path {
-        Some(path) => Some(std::fs::read_to_string(path).map_err(|e| {
-            jmap::Error::Protocol(format!("{}: {path}: {e}", label("ca-unreadable")))
-        })?),
+    let ca_pem = match login.ca_path.clone() {
+        Some(path) => {
+            let shown = path.clone();
+            let read = tokio::task::spawn_blocking(move || read_ca(&path))
+                .await
+                .unwrap_or_else(|e| Err(e.to_string()));
+            Some(read.map_err(|e| {
+                jmap::Error::Protocol(format!("{}: {shown}: {e}", label("ca-unreadable")))
+            })?)
+        }
         None => None,
     };
     Client::connect(&jmap::Account {
@@ -1110,5 +1193,51 @@ mod tests {
         let (again, _, _) = start(Some(&dir));
         assert!(again.account(&id).is_some());
         assert_eq!(again.accounts.len(), 1);
+    }
+
+    /// Review finding 13: a CA path must name a small regular file; a
+    /// device, a FIFO (which must not block) or a large file is refused.
+    #[test]
+    fn review_13_a_ca_path_is_a_small_regular_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let pem = dir.path().join("ca.pem");
+        std::fs::write(&pem, "-----BEGIN CERTIFICATE-----\nAA\n").unwrap();
+        assert!(read_ca(pem.to_str().unwrap()).unwrap().contains("BEGIN"));
+        assert_eq!(read_ca("/dev/zero"), Err(label("ca-not-file")));
+        let big = dir.path().join("big.pem");
+        std::fs::write(&big, vec![b'A'; (CA_MAX_BYTES + 1) as usize]).unwrap();
+        assert_eq!(read_ca(big.to_str().unwrap()), Err(label("ca-too-large")));
+        let fifo = dir.path().join("fifo");
+        let name = std::ffi::CString::new(fifo.to_str().unwrap()).unwrap();
+        // SAFETY: a valid NUL-terminated path in a private tempdir.
+        assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o600) }, 0);
+        assert_eq!(read_ca(fifo.to_str().unwrap()), Err(label("ca-not-file")));
+    }
+
+    /// Review finding 5 (the migration's part): credentials in the old
+    /// account's URL never reach settingsd, and the note never echoes them.
+    #[test]
+    fn review_5_userinfo_is_stripped_from_the_migrated_url() {
+        assert_eq!(
+            without_userinfo("https://user:hunter2@mail.example.invalid/jmap"),
+            ("https://mail.example.invalid/jmap".to_owned(), true)
+        );
+        assert_eq!(
+            without_userinfo("https://mail.example.invalid/a@b"),
+            ("https://mail.example.invalid/a@b".to_owned(), false)
+        );
+        let root = tempfile::tempdir().unwrap();
+        let dir = root.path().join("config");
+        std::fs::create_dir(&dir).unwrap();
+        std::fs::write(
+            dir.join("config.conf.mix"),
+            "schema_version: 1\naccount: {url: \"https://admin:hunter2@mail.example.invalid\", email: \"admin@example.invalid\", password: \"pw\"}\n",
+        )
+        .unwrap();
+        let (state, _, _) = start(Some(&dir));
+        let view = &state.accounts[0];
+        assert_eq!(view.entry.url, "https://mail.example.invalid");
+        assert_eq!(state.status, label("migration-url-credentials"));
+        assert!(!state.status.contains("hunter2"));
     }
 }

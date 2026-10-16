@@ -318,7 +318,8 @@ bundle goes to a 0600 file beside it, which the account then names by
 there is none. An account settingsd already holds with the same URL
 and address is adopted instead.</li>
 <li>The schema-1 file is kept, and is written back unchanged, until
-settingsd accepts the account. Only then is it rewritten as schema 2.</li>
+settingsd has the account and its password is durable under that
+account's id. Only then is it rewritten as schema 2.</li>
 </ul>
 </li>
 </ul>
@@ -337,8 +338,24 @@ never handles a secret, unless it is the one supplying the password.</li>
 </ul>
 <h2 id="consequences">Consequences</h2>
 <ul>
-<li>Removing an account in Prefs drops the app's client and view for it,
-and the app forgets its password.</li>
+<li><strong>A settings read never deletes a password.</strong> Only an explicit action
+through Email does: <code>email.account.remove</code>, or
+<code>email.account.password.set</code> with an empty password. An account removed
+elsewhere (in Prefs, by a reset) drops the app's client and view, and
+leaves its entry in the 0600 secrets file, unused. That is accepted:
+losing a password to a misread would be worse.</li>
+<li><strong>An empty account list is not a removal of them all.</strong> settingsd omits
+the group at its defaults, so an older settingsd, a reset and a profile
+without the group cannot be told apart. While accounts are shown, such
+a read keeps them (views, connections, passwords) with a status note,
+until a read lists accounts again or one is removed through Email.</li>
+<li><strong>Migration steps land in order, each durably.</strong> First the password is
+saved to the secrets file. Then the account is applied to settingsd.
+Then, if settingsd held it under another id, the password is saved
+under that id. Only then is the schema-1 file rewritten. A failure at
+any step, including a poison-pill refusal to write the secrets file,
+leaves the schema-1 file untouched, and the next launch runs the
+migration again.</li>
 <li>A conflicting change (two writers at once) is refused by the fence.
 The email app reads again, retries a few times, and then reports
 <code>CONFLICT</code>.</li>

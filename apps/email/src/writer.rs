@@ -22,6 +22,10 @@ use settings::email::{AccountEntry, Email};
 pub enum Change {
     /// Create (an id not yet held) or replace an account.
     Upsert(AccountEntry),
+    /// Change only the fields given on an account. A retry after a
+    /// conflict applies them to the fresh read, so a field another writer
+    /// changed meanwhile and this change does not name keeps their value.
+    Update(String, AccountPatch),
     /// Remove an account; the default resets with it.
     Remove(String),
     /// Make an account the compose default (`None`: the first enabled one).
@@ -32,12 +36,48 @@ pub enum Change {
     Migrate(AccountEntry),
 }
 
+/// The fields of an account an update names; `None` leaves a field as the
+/// fresh read has it. `ca_path: Some(None)` clears the path.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct AccountPatch {
+    pub name: Option<String>,
+    pub url: Option<String>,
+    pub email: Option<String>,
+    pub ca_path: Option<Option<String>>,
+    pub enabled: Option<bool>,
+    pub signature: Option<String>,
+}
+
+impl AccountPatch {
+    /// `entry` with the named fields set.
+    pub fn apply(&self, entry: &mut AccountEntry) {
+        if let Some(name) = &self.name {
+            entry.name = name.clone();
+        }
+        if let Some(url) = &self.url {
+            entry.url = url.clone();
+        }
+        if let Some(email) = &self.email {
+            entry.email = email.clone();
+        }
+        if let Some(ca_path) = &self.ca_path {
+            entry.ca_path = ca_path.clone();
+        }
+        if let Some(enabled) = self.enabled {
+            entry.enabled = enabled;
+        }
+        if let Some(signature) = &self.signature {
+            entry.signature = signature.clone();
+        }
+    }
+}
+
 impl Change {
     /// The account this change is about.
     pub fn account(&self) -> Option<&str> {
         match self {
             Change::Upsert(entry) | Change::Migrate(entry) => Some(&entry.id),
-            Change::Remove(id) => Some(id),
+            Change::Remove(id) | Change::Update(id, _) => Some(id),
             Change::Default(id) => id.as_deref(),
         }
     }
@@ -70,6 +110,10 @@ pub fn apply(email: &Email, change: &Change) -> Result<(Email, Option<String>), 
         Change::Upsert(entry) => match next.accounts.iter_mut().find(|a| a.id == entry.id) {
             Some(existing) => *existing = entry.clone(),
             None => next.accounts.push(entry.clone()),
+        },
+        Change::Update(id, patch) => match next.accounts.iter_mut().find(|a| a.id == *id) {
+            Some(existing) => patch.apply(existing),
+            None => return Err(Refusal::UnknownAccount(id.clone())),
         },
         Change::Remove(id) => {
             let before = next.accounts.len();
@@ -198,6 +242,28 @@ mod tests {
         let changed = changes(&two(), &next);
         assert_eq!(changed.as_object().unwrap().len(), 1, "{changed}");
         assert_eq!(changed["email.accounts"][0]["name"], "Work");
+    }
+
+    /// Review finding 11: an update retried on a fresh read keeps a field
+    /// another writer changed and this one did not name.
+    #[test]
+    fn an_update_reapplies_only_its_fields_to_the_fresh_read() {
+        let rename = Change::Update(
+            "a".into(),
+            AccountPatch {
+                name: Some("Work".into()),
+                ..AccountPatch::default()
+            },
+        );
+        let mut fresh = two();
+        fresh.accounts[0].signature = "set elsewhere".into();
+        let (next, _) = apply(&fresh, &rename).unwrap();
+        assert_eq!(next.accounts[0].name, "Work");
+        assert_eq!(next.accounts[0].signature, "set elsewhere");
+        assert_eq!(
+            apply(&Email::default(), &rename),
+            Err(Refusal::UnknownAccount("a".into()))
+        );
     }
 
     #[test]

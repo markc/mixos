@@ -83,6 +83,8 @@ pub enum Work {
     Write {
         account: String,
         reply: Option<u64>,
+        /// The form operation it settles, if a form sent it.
+        form: Option<u64>,
         write: Write,
     },
     /// Set or clear `$seen`.

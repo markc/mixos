@@ -66,7 +66,8 @@ and the [settings contract](../spec/settings/README.md) (`email.*`, contract
     there is none. An account settingsd already holds with the same URL
     and address is adopted instead.
   - The schema-1 file is kept, and is written back unchanged, until
-    settingsd accepts the account. Only then is it rewritten as schema 2.
+    settingsd has the account and its password is durable under that
+    account's id. Only then is it rewritten as schema 2.
 
 ## Why
 
@@ -83,8 +84,24 @@ and the [settings contract](../spec/settings/README.md) (`email.*`, contract
 
 ## Consequences
 
-- Removing an account in Prefs drops the app's client and view for it,
-  and the app forgets its password.
+- **A settings read never deletes a password.** Only an explicit action
+  through Email does: `email.account.remove`, or
+  `email.account.password.set` with an empty password. An account removed
+  elsewhere (in Prefs, by a reset) drops the app's client and view, and
+  leaves its entry in the 0600 secrets file, unused. That is accepted:
+  losing a password to a misread would be worse.
+- **An empty account list is not a removal of them all.** settingsd omits
+  the group at its defaults, so an older settingsd, a reset and a profile
+  without the group cannot be told apart. While accounts are shown, such
+  a read keeps them (views, connections, passwords) with a status note,
+  until a read lists accounts again or one is removed through Email.
+- **Migration steps land in order, each durably.** First the password is
+  saved to the secrets file. Then the account is applied to settingsd.
+  Then, if settingsd held it under another id, the password is saved
+  under that id. Only then is the schema-1 file rewritten. A failure at
+  any step, including a poison-pill refusal to write the secrets file,
+  leaves the schema-1 file untouched, and the next launch runs the
+  migration again.
 - A conflicting change (two writers at once) is refused by the fence.
   The email app reads again, retries a few times, and then reports
   `CONFLICT`.
