@@ -268,7 +268,11 @@ file loads defaults and is never overwritten.</p>
 mailbox; read in the reader pane (plain text first, HTML source when
 there is no plain text); opening an email marks it read; compose (To, Cc,
 Bcc, Subject, body) and reply, sent through the proven recipe: build the
-message, upload it, create the Email in Sent, submit.</li>
+message, upload it, create the Email in Sent, submit. <strong>Sending requires
+maild:</strong> the create step uses maild's extension of a top-level <code>blobId</code> on
+<code>Email/set</code>. A strict RFC 8621 server builds an Email from uploaded MIME
+with <code>Email/import</code> instead, and refuses the send; <code>Email/import</code> is
+future work. Reading, calendars and contacts use standard methods only.</li>
 <li><strong>Calendar</strong> — calendars, their events by start, the open event's
 detail.</li>
 <li><strong>Contacts</strong> — address books, contacts with a server-side text filter

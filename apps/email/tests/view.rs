@@ -49,7 +49,8 @@ fn fixture() -> State {
             ..jmap::Mailbox::default()
         },
     ])));
-    state.apply(Event::Page(Ok(EmailPage {
+    // The answer to the inbox's first page request (ticket 1).
+    state.apply(Event::Page(1, Ok(EmailPage {
         emails: vec![
             serde_json::from_value(serde_json::json!({
                 "id": "E1",
@@ -142,7 +143,7 @@ fn an_unread_email_row_opens_and_marks_read() {
     );
     assert!(
         work.iter()
-            .any(|w| matches!(w, email::work::Work::OpenEmail { id } if id == "E1"))
+            .any(|w| matches!(w, email::work::Work::OpenEmail { id, .. } if id == "E1"))
     );
 }
 
@@ -175,9 +176,12 @@ fn the_setup_form_connect_runs_with_the_forms_account() {
     h.get_by_label(&label("setup-connect")).click();
     h.run();
     let window = h.state_mut();
-    assert!(window.state.account().is_some());
-    assert!(matches!(
-        window.state.take_work().as_slice(),
-        [email::work::Work::Connect(_)]
-    ));
+    // The form's account is a candidate until the connect succeeds.
+    assert!(window.state.account().is_none());
+    match window.state.take_work().as_slice() {
+        [email::work::Work::Connect(account)] => {
+            assert_eq!(account.url, "https://example.invalid")
+        }
+        other => panic!("{other:?}"),
+    }
 }

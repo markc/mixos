@@ -139,6 +139,10 @@ impl Client {
         let identity_id = self.identity_id(&composed.from).await?;
         let mime = build_mime(composed);
         let blob_id = self.upload_blob(mime, "message/rfc822").await?;
+        // A top-level `blobId` on `Email/set` create is maild's extension:
+        // RFC 8621 builds an Email from uploaded MIME with `Email/import`
+        // instead, so a strict server refuses this. Sending requires maild;
+        // `Email/import` is future work.
         let create = json!({
             "accountId": self.account_id(),
             "create": {

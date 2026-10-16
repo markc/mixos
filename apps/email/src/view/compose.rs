@@ -50,27 +50,9 @@ fn form(ui: &mut Ui, compose: &ComposeState, state: &State, events: &mut Vec<UiE
                 events.push(UiEvent::ComposeField(field, buffer));
             }
         };
-    line(
-        ui,
-        "to",
-        ComposeField::To,
-        &addresses(&compose.draft.to),
-        events,
-    );
-    line(
-        ui,
-        "cc",
-        ComposeField::Cc,
-        &addresses(&compose.draft.cc),
-        events,
-    );
-    line(
-        ui,
-        "bcc",
-        ComposeField::Bcc,
-        &addresses(&compose.draft.bcc),
-        events,
-    );
+    line(ui, "to", ComposeField::To, &compose.to_text, events);
+    line(ui, "cc", ComposeField::Cc, &compose.cc_text, events);
+    line(ui, "bcc", ComposeField::Bcc, &compose.bcc_text, events);
     line(
         ui,
         "subject",
@@ -97,9 +79,4 @@ fn form(ui: &mut Ui, compose: &ComposeState, state: &State, events: &mut Vec<UiE
         ui.weak(crate::label("sending"));
     }
     let _ = state;
-}
-
-/// Address lists as one editable line again.
-fn addresses(list: &[String]) -> String {
-    list.join(", ")
 }

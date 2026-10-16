@@ -13,11 +13,16 @@ pub enum Work {
     /// Connect: session discovery and the token exchange.
     Connect(Account),
     FetchMailboxes,
+    /// A mailbox's first page. `ticket` comes back with the page, so an
+    /// answer to an older request cannot replace a newer one (also for
+    /// `OpenEmail`, `Send` and `FetchContacts`).
     FetchEmails {
+        ticket: u64,
         mailbox: String,
     },
     /// Fetch one email with its bodies.
     OpenEmail {
+        ticket: u64,
         id: String,
     },
     /// Set or clear `$seen`.
@@ -26,13 +31,17 @@ pub enum Work {
         read: bool,
     },
     /// The send recipe (build, upload, create in Sent, submit).
-    Send(Composed),
+    Send {
+        ticket: u64,
+        draft: Composed,
+    },
     FetchCalendars,
     FetchEvents {
         calendar: String,
     },
     FetchBooks,
     FetchContacts {
+        ticket: u64,
         book: String,
         filter: String,
     },

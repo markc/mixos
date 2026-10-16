@@ -33,15 +33,16 @@ pub enum Event {
     /// the summary.
     Connected(Result<SessionInfo, jmap::Error>),
     Mailboxes(Result<Vec<jmap::Mailbox>, jmap::Error>),
-    Page(Result<EmailPage, jmap::Error>),
+    /// The ticket is the request's (see [`crate::work::Work`]).
+    Page(u64, Result<EmailPage, jmap::Error>),
     /// One email with its bodies; boxed — a full [`jmap::Email`] is large.
-    Opened(Box<Result<jmap::Email, jmap::Error>>),
+    Opened(u64, Box<Result<jmap::Email, jmap::Error>>),
     Marked(Result<(), jmap::Error>),
-    Sent(Result<(), jmap::Error>),
+    Sent(u64, Result<(), jmap::Error>),
     Calendars(Result<Vec<jmap::Calendar>, jmap::Error>),
     Events(Result<Vec<jmap::CalendarEvent>, jmap::Error>),
     Books(Result<Vec<jmap::AddressBook>, jmap::Error>),
-    Contacts(Result<Vec<jmap::Contact>, jmap::Error>),
+    Contacts(u64, Result<Vec<jmap::Contact>, jmap::Error>),
     /// A read of the session look (settingsd), for the shell.
     Look(u64, Result<citizen::Reply, citizen::CallError>),
     /// A retry of the session look after a transient fault (its generation).
@@ -245,16 +246,18 @@ impl Shell {
                     self.spawn(async move { Event::Mailboxes(client.mailboxes().await) });
                 }
             }
-            Work::FetchEmails { mailbox } => {
+            Work::FetchEmails { ticket, mailbox } => {
                 if let Some(client) = self.client() {
-                    self.spawn(
-                        async move { Event::Page(client.email_page(&mailbox, 0, 100).await) },
-                    );
+                    self.spawn(async move {
+                        Event::Page(ticket, client.email_page(&mailbox, 0, 100).await)
+                    });
                 }
             }
-            Work::OpenEmail { id } => {
+            Work::OpenEmail { ticket, id } => {
                 if let Some(client) = self.client() {
-                    self.spawn(async move { Event::Opened(Box::new(client.email(&id).await)) });
+                    self.spawn(
+                        async move { Event::Opened(ticket, Box::new(client.email(&id).await)) },
+                    );
                 }
             }
             Work::MarkRead { id, read } => {
@@ -262,17 +265,20 @@ impl Shell {
                     self.spawn(async move { Event::Marked(client.mark_read(&id, read).await) });
                 }
             }
-            Work::Send(draft) => {
+            Work::Send { ticket, draft } => {
                 // The send recipe needs the Sent mailbox; without the mail
                 // listing yet, there is nothing to file under.
                 let Some(sent) = self.state.sent_mailbox_id() else {
-                    self.state.apply(Event::Sent(Err(jmap::Error::Protocol(
-                        "no Sent mailbox yet".into(),
-                    ))));
+                    self.state.apply(Event::Sent(
+                        ticket,
+                        Err(jmap::Error::Protocol("no Sent mailbox yet".into())),
+                    ));
                     return;
                 };
                 if let Some(client) = self.client() {
-                    self.spawn(async move { Event::Sent(client.send(&draft, &sent).await) });
+                    self.spawn(
+                        async move { Event::Sent(ticket, client.send(&draft, &sent).await) },
+                    );
                 }
             }
             Work::FetchCalendars => {
@@ -292,11 +298,15 @@ impl Shell {
                     self.spawn(async move { Event::Books(client.address_books().await) });
                 }
             }
-            Work::FetchContacts { book, filter } => {
+            Work::FetchContacts {
+                ticket,
+                book,
+                filter,
+            } => {
                 if let Some(client) = self.client() {
-                    self.spawn(
-                        async move { Event::Contacts(client.contacts(&book, &filter).await) },
-                    );
+                    self.spawn(async move {
+                        Event::Contacts(ticket, client.contacts(&book, &filter).await)
+                    });
                 }
             }
         }
