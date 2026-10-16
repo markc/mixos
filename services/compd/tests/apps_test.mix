@@ -242,7 +242,42 @@ try
   -- (No stdout in the message: a misparse makes env print the whole environment.)
   check($r.ok and trim($r.stdout) == "ran-A=b\nremoved", "native launch must execute an '='-named program and remove inherited DISPLAY")
 
-  print("PASS apps scan filters, locale precedence, subdir ids, dir precedence, queries, Exec quoting and field codes, icon exact/closest/scaled/inherit/hicolor/pixmap/absolute resolution, theme cache, XWayland launch DISPLAY")
+  -- ── Watch placement and relevance ──────────────────────────────────
+  check($a.watch_target($tmp .. "/data/applications") == $tmp .. "/data/applications", "an existing directory is watched itself")
+  check($a.watch_target($tmp .. "/later/deeper/applications") == $tmp, "a missing directory watches its nearest existing ancestor")
+  $apps_dir = $tmp .. "/later/applications"
+  check($a.watch_relevant($apps_dir, $apps_dir, {changes: [], overflow: false}), "any batch on the directory itself rescans")
+  check($a.watch_relevant($apps_dir, $tmp, {changes: [{kind: "created", path: $tmp .. "/later"}], overflow: false}), "creating a parent on the way down is relevant")
+  check(not $a.watch_relevant($apps_dir, $tmp, {changes: [{kind: "created", path: $tmp .. "/laterx"}], overflow: false}), "a sibling with the same prefix is not relevant")
+  check(not $a.watch_relevant($apps_dir, $tmp, {changes: [{kind: "modified", path: $tmp .. "/other"}], overflow: false}), "unrelated ancestor activity is ignored")
+  check($a.watch_relevant($apps_dir, $tmp, {changes: [], overflow: true}), "an overflow always rescans")
+
+  -- ── The shipped gold entries: apps/NAME/assets/dev.mixos.NAME.desktop ──
+  -- Each names its own binary in Exec and TryExec (so an entry whose binary
+  -- is gone hides itself) and uses an icon the Lucide manifest provides.
+  $root = realpath(dirname(realpath($0)) .. "/../../..")
+  $aliases = []
+  for each $i in load_data($root .. "/share/icons/manifest.conf.mix").icons
+    push($aliases, $i.name)
+  end
+  $shipped = 0
+  for each $app in ls($root .. "/apps")
+    $path = $root .. "/apps/" .. $app .. "/assets/dev.mixos." .. $app .. ".desktop"
+    if not is_file($path) then continue end
+    $shipped = $shipped + 1
+    $keys = {}
+    for each $line in split(before(read_file($path) .. "\n[Desktop Action", "\n[Desktop Action"), "\n")
+      if contains($line, "=") and not starts_with($line, "#") then $keys[before($line, "=")] = after($line, "=") end
+    end
+    $bin = "/opt/mixos/bin/" .. $app
+    check(starts_with($keys.Exec ?? "", $bin) and (($keys.Exec ?? "") == $bin or starts_with($keys.Exec, $bin .. " ")), $app .. ": Exec must run " .. $bin)
+    check($keys.TryExec == $bin, $app .. ": TryExec must be " .. $bin)
+    check(contains($aliases, $keys.Icon ?? ""), $app .. ": Icon is not a manifest alias: " .. to_string($keys.Icon))
+    check($keys.StartupWMClass == "dev.mixos." .. $app, $app .. ": StartupWMClass must be the app ID")
+  end
+  check($shipped >= 7, "expected at least 7 shipped entries, found " .. to_string($shipped))
+
+  print("PASS apps scan filters, locale precedence, subdir ids, dir precedence, queries, Exec quoting and field codes, icon exact/closest/scaled/inherit/hicolor/pixmap/absolute resolution, theme cache, XWayland launch DISPLAY, watch placement, shipped entries")
 finally
   if starts_with($tmp, "/tmp/mixos-apps-lib-test.") then
     $_remove = run_argv_must(["rm", "-rf", "--", $tmp])

@@ -8,11 +8,11 @@
 -- The parse/lookup logic lives in lib/apps.mix (pure, unit-tested); this
 -- file is only the Bus surface.
 --
--- Event-driven by design: the tree is scanned once here and again only when
--- apps.reload arrives. There is deliberately no timer and no sleep loop --
--- backends are woken by events, never poll. A future inotify watch on the
--- applications directories (CREATE/MOVED_TO/DELETE wakes apps.reload) would
--- make rescans automatic; that is out of scope for now.
+-- Event-driven by design: the tree is scanned once here, then again on
+-- apps.reload or when an inotify watch on the applications directories
+-- reports a change (an entry installed, replaced or removed). There is
+-- deliberately no timer and no sleep loop: backends are woken by events,
+-- never poll.
 $a = require("lib/apps.mix")
 
 $apps = $a.scan_apps($a.application_dirs(), $a.locale_id(), "MIXOS")
@@ -24,6 +24,36 @@ fn event_args()
   -- Structured args when the caller sent a JSON map body, else an empty map.
   return type($event.args) == "map" ? $event.args : {}
 end
+
+-- One watch per applications directory, keyed by it: {handle, on}. An
+-- existing directory is watched recursively (vendor subdirectories); a
+-- missing one watches its nearest existing ancestor until it appears, and
+-- is re-armed on the directory itself then. A deleted directory falls back
+-- the same way.
+$WATCH_EVENTS = ["created", "modified", "deleted", "moved"]
+fn arm($watches)
+  for each $dir in $a.application_dirs()
+    $on = $a.watch_target($dir)
+    $cur = $watches[$dir]
+    if $cur != nil and $cur.on == $on then continue end
+    if $cur != nil then
+      try
+        fs_unwatch($cur.handle)
+      catch $gone
+      end
+      $watches = delete($watches, $dir)
+    end
+    if $on != nil then
+      try
+        $watches[$dir] = {handle: fs_watch($on, {recursive: $on == $dir, events: $WATCH_EVENTS}), on: $on}
+      catch $why
+        eprint("apps: no watch for " .. $dir .. " on " .. $on .. ": " .. $why)
+      end
+    end
+  end
+  return $watches
+end
+$watches = arm({})
 
 on "apps.list" desc "list visible applications sorted by name (category, query optional)"
   $args = event_args()
@@ -142,6 +172,21 @@ on "apps.reload" desc "rescan the desktop-entry directories now"
   $icon_ctx = $a.icon_ctx()
   publish(serve_name() .. ".changed", json_encode({reason: "reload", count: len($apps)}), {command: "apps.changed"})
   reply(0, json_encode({count: len($apps)}))
+end
+
+-- A local inotify batch, never a Bus message (those carry headers).
+on fs.changed
+  if len(keys($event.headers ?? {})) != 0 then return end
+  $rescan = false
+  for each $dir, $w in $watches
+    if $w.handle == $event.args.watch and $a.watch_relevant($dir, $w.on, $event.args) then $rescan = true end
+  end
+  if $rescan then
+    $watches = arm($watches)
+    $apps = $a.scan_apps($a.application_dirs(), $a.locale_id(), "MIXOS")
+    $icon_ctx = $a.icon_ctx()
+    publish(serve_name() .. ".changed", json_encode({reason: "watch", count: len($apps)}), {command: "apps.changed"})
+  end
 end
 
 -- ── Properties ──────────────────────────────────────────────────────────

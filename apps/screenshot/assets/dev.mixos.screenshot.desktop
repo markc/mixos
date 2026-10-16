@@ -4,6 +4,7 @@ Type=Application
 Name=Screenshot
 Comment=Screenshots and annotations
 Exec=/opt/mixos/bin/screenshot %f
+TryExec=/opt/mixos/bin/screenshot
 Icon=dev.mixos.screenshot-symbolic
 Terminal=false
 Categories=Utility;Graphics;

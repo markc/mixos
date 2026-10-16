@@ -4,6 +4,7 @@ Type=Application
 Name=Terminal
 Comment=MixOS terminal: tabs and split panes
 Exec=/opt/mixos/bin/term
+TryExec=/opt/mixos/bin/term
 Icon=dev.mixos.term-symbolic
 Terminal=false
 Categories=System;TerminalEmulator;

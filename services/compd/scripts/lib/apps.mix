@@ -110,6 +110,30 @@ fn application_dirs()
   return $out
 end
 
+-- What to watch for one applications directory: the directory itself when it
+-- exists, else its nearest existing ancestor (until it appears), else nil.
+fn watch_target($dir)
+  $d = $dir
+  while $d != "" and $d != "/"
+    if is_dir($d) then return $d end
+    $d = dirname($d)
+  end
+  return is_dir("/") ? "/" : nil
+end
+
+-- Whether one fs.changed batch on the watch kept for $dir (placed on $on)
+-- calls for a rescan. On the directory itself, any change does. On an
+-- ancestor, only an overflow or a change on the path down to $dir does, so
+-- unrelated activity there costs nothing.
+fn watch_relevant($dir, $on, $batch)
+  if $on == $dir or $batch.overflow == true then return true end
+  for each $c in $batch.changes ?? []
+    $p = $c.path ?? ""
+    if $p != "" and ($p == $dir or starts_with($dir, $p .. "/")) then return true end
+  end
+  return false
+end
+
 fn icon_dirs()
   -- Icon-theme base directories in priority order (Icon Theme spec):
   -- ~/.local/share/icons (or $XDG_DATA_HOME/icons), then each

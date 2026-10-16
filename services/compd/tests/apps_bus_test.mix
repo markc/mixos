@@ -95,6 +95,14 @@ fn read_file_or_nil($path)
     return nil
   end
 end
+-- Watches deliver asynchronously: wait (bounded) for apps.get to answer $rc.
+fn wait_app($id, $rc)
+  for each $i in range(1, 50)
+    if call("apps", "apps.get", json_encode({id: $id})).rc == $rc then return true end
+    sleep(0.1)
+  end
+  return false
+end
 fn wait_file($path)
   for each $i in range(1, 50)
     if read_file_or_nil($path) != nil then return read_file($path) end
@@ -154,7 +162,8 @@ try
     MIX_STATS: "off", PATH: "/usr/bin:/bin",
     HOME: $tmp,
     XDG_DATA_HOME: $tmp .. "/data",
-    XDG_DATA_DIRS: $tmp .. "/sys",
+    -- $tmp/later does not exist yet: the watch test creates it.
+    XDG_DATA_DIRS: $tmp .. "/sys:" .. $tmp .. "/later",
     -- comp's XWayland descriptor lives under the fixture runtime dir.
     XDG_RUNTIME_DIR: $tmp .. "/run",
     WAYLAND_DISPLAY: "wayland-apps-test",
@@ -230,7 +239,7 @@ try
   -- must drop all of them, not just the entries.
   $manifest = load_data($root .. "/share/icons/manifest.conf.mix")
   check($manifest.schema == 1 and $manifest.stroke_width == 1.5, "manifest is not the stroke 1.5 Lucide catalogue")
-  check(len($manifest.icons) == 34, "manifest must list 34 aliases, found " .. to_string(len($manifest.icons)))
+  check(len($manifest.icons) == 37, "manifest must list 37 aliases, found " .. to_string(len($manifest.icons)))
   for each $icon in $manifest.icons
     check(icon_call($icon.name, 24, "mixos").rc == 14, "a manifest alias resolved before installation: " .. $icon.name)
   end
@@ -255,6 +264,19 @@ try
   $resolved_late = call("apps", "apps.icon", json_encode($late_icon))
   check($resolved_late.rc == 0 and ends_with($resolved_late.result.path, "/late-theme/symbolic/late-symbolic.svg"),
     "apps.reload did not invalidate an installed theme's cached miss")
+
+  -- The inotify watch: an entry added, then removed, with no apps.reload;
+  -- then a data directory that did not exist at start-up.
+  fixture("data/applications/watched.desktop", "[Desktop Entry]\n" ..
+    "Type=Application\nName=Watched App\nExec=" .. $tmp .. "/bin/recorder watched-arg\n")
+  check(wait_app("watched", 0), "the watch did not pick up a new entry")
+  $_rm = run_argv_must(["rm", "-f", "--", $tmp .. "/data/applications/watched.desktop"])
+  check(wait_app("watched", 14), "the watch did not drop a removed entry")
+  fixture("later/applications/fresh.desktop", "[Desktop Entry]\n" ..
+    "Type=Application\nName=Fresh App\nExec=" .. $tmp .. "/bin/recorder fresh-arg\n")
+  check(wait_app("fresh", 0), "the watch did not follow a data directory created after start-up")
+  $_rm = run_argv_must(["rm", "-f", "--", $tmp .. "/later/applications/fresh.desktop"])
+  check(wait_app("fresh", 14), "the re-armed watch did not drop a removed entry")
 
   -- The mixos theme is selected natively, so no host default (breeze, say) applies.
   check(call("apps", "apps.props.set", json_encode({path: "apps.icon_theme", value: "mixos"})).rc == 0, "select mixos through native property")
