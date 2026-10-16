@@ -1448,7 +1448,10 @@ mod tests {
         });
         assert_eq!(closing(&command), Closing::Cancel(9));
         assert_eq!(closing(&Event::Shown(3, Ok(json!({})))), Closing::Shown);
-        assert_eq!(closing(&Event::SecretsSaved(1, 1, Ok(true))), Closing::Apply);
+        assert_eq!(
+            closing(&Event::SecretsSaved(1, 1, Ok(true))),
+            Closing::Apply
+        );
         assert_eq!(
             closing(&Event::Settled(1, Settled::Accepted)),
             Closing::Apply
@@ -1464,7 +1467,10 @@ mod tests {
         let raw = "schema_version: 1\naccount: {url: \"https://mail.example.invalid/jmap?password=hunter2#frag\", email: \"admin@example.invalid\", password: \"pw\"}\n";
         std::fs::write(dir.join("config.conf.mix"), raw).unwrap();
         let (state, _, _) = start(Some(&dir));
-        assert_eq!(state.accounts[0].entry.url, "https://mail.example.invalid/jmap");
+        assert_eq!(
+            state.accounts[0].entry.url,
+            "https://mail.example.invalid/jmap"
+        );
         assert!(!state.accounts_view().to_string().contains("hunter2"));
         assert!(!state.info().to_string().contains("hunter2"));
         // The schema-1 source is left as it was.

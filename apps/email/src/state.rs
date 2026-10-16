@@ -1482,11 +1482,7 @@ impl State {
         if !applied || self.held.is_some() {
             return;
         }
-        let present = self
-            .settings
-            .accounts
-            .iter()
-            .any(|a| self.holds_legacy(a));
+        let present = self.settings.accounts.iter().any(|a| self.holds_legacy(a));
         if !present {
             self.replan();
         }
@@ -5978,7 +5974,10 @@ pub(crate) mod tests {
         assert!(state.migration_locks("a"));
         // Prefs removes "a" straight through settingsd.
         state.set_settings(settings(&["b"]));
-        assert!(state.migration_locks("a"), "still locked without settings listing it");
+        assert!(
+            state.migration_locks("a"),
+            "still locked without settings listing it"
+        );
         let (_, changes) = settings_ticket(&mut state);
         let ids: Vec<&str> = changes["email.accounts"]
             .as_array()
@@ -5986,7 +5985,10 @@ pub(crate) mod tests {
             .iter()
             .filter_map(|a| a["id"].as_str())
             .collect();
-        assert!(ids.contains(&"acct-legacy"), "the legacy account is applied again: {ids:?}");
+        assert!(
+            ids.contains(&"acct-legacy"),
+            "the legacy account is applied again: {ids:?}"
+        );
         assert!(state.has_password("acct-legacy"));
     }
 
@@ -6029,7 +6031,10 @@ pub(crate) mod tests {
         });
         state.take_work();
         state.settled(ticket, Settled::Accepted);
-        assert!(!state.has_password("a"), "never sent to the replacement server");
+        assert!(
+            !state.has_password("a"),
+            "never sent to the replacement server"
+        );
         let (_, changes) = settings_ticket(&mut state);
         let ids: Vec<&str> = changes["email.accounts"]
             .as_array()
