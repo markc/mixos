@@ -189,7 +189,10 @@ fn write_private(path: &Path, bytes: &[u8]) -> Result<(), String> {
     config::atomic::create_directory(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     config::atomic::replace(path, bytes).map_err(|e| {
         if e.may_have_replaced {
-            format!("writing {}: {e} (the new config may be in place)", path.display())
+            format!(
+                "writing {}: {e} (the new config may be in place)",
+                path.display()
+            )
         } else {
             format!("writing {}: {e}", path.display())
         }
@@ -293,11 +296,15 @@ mod tests {
 
     #[test]
     fn an_invalid_config_diagnostic_never_quotes_the_password() {
-        let raw = "schema_version: 1\naccount: {url: \"https://x\", email: \"a\", password \"secret\"}\n";
+        let raw =
+            "schema_version: 1\naccount: {url: \"https://x\", email: \"a\", password \"secret\"}\n";
         let error = config::from_conf_mix_str::<EmailConfig>(raw)
             .unwrap_err()
             .to_string();
-        assert!(error.contains("secret"), "the raw parser error quotes it: {error}");
+        assert!(
+            error.contains("secret"),
+            "the raw parser error quotes it: {error}"
+        );
         let shown = diagnostic(&error);
         assert!(!shown.contains("secret"), "{shown}");
         assert!(shown.contains("line 2:"), "{shown}");

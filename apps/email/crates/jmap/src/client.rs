@@ -56,8 +56,7 @@ fn secure(url: &Url) -> bool {
 
 /// The account's base URL, refused unless credentials may be sent to it.
 pub(crate) fn account_base(url: &str) -> Result<Url> {
-    let base = Url::parse(url)
-        .map_err(|e| Error::Protocol(format!("account URL {url:?}: {e}")))?;
+    let base = Url::parse(url).map_err(|e| Error::Protocol(format!("account URL {url:?}: {e}")))?;
     if !secure(&base) {
         return Err(Error::Protocol(format!(
             "account URL {}: credentials are sent only over HTTPS",
@@ -441,7 +440,10 @@ mod tests {
             "https://sub.mail.example.invalid/jmap",
         ] {
             let refused = same_origin(&base, other).unwrap_err().to_string();
-            assert!(refused.contains("not the account's origin"), "{other}: {refused}");
+            assert!(
+                refused.contains("not the account's origin"),
+                "{other}: {refused}"
+            );
         }
     }
 
@@ -451,7 +453,10 @@ mod tests {
         push_capped(&mut body, &[0; 6], 10).unwrap();
         push_capped(&mut body, &[0; 4], 10).unwrap();
         assert_eq!(body.len(), 10);
-        assert!(matches!(push_capped(&mut body, &[0], 10), Err(Error::Protocol(_))));
+        assert!(matches!(
+            push_capped(&mut body, &[0], 10),
+            Err(Error::Protocol(_))
+        ));
         assert_eq!(body.len(), 10, "nothing past the cap is kept");
     }
 }
