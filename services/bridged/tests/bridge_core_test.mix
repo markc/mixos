@@ -131,7 +131,7 @@ try
   check("config: instance is echoed by status", $core.status($core.new_state($icfg, nil)).instance == "run-42_a")
 
   -- The config contract matches its spec fixture.
-  $spec = load_data($checkout .. "/docs/spec/bridge/bridge.spec.mix")
+  $spec = load_data($checkout .. "/docs/docs/spec/bridge/bridge.spec.mix")
   $sch = $core.schema()
   $spec_keys = map($spec.config.keys, fn($k) = $k.key)
   check("spec: same config keys as the core", deep_eq(sort($spec_keys), sort($sch.keys)))
@@ -175,7 +175,7 @@ try
   export BRIDGED_VERBS=$saved.v
 
   -- Serve-name guard against this checkout's registry.
-  $reg = $checkout .. "/docs/spec/bus/verbs.conf.mix"
+  $reg = $checkout .. "/docs/docs/spec/bus/verbs.conf.mix"
   check("guard: fakeapp accepted by the real registry", code_of(fn() = $core.check_name("fakeapp", $reg)) == "OK")
   check("guard: a concrete verb's first segment refused (settings)", code_of(fn() = $core.check_name("settings", $reg)) == "NAME_RESERVED")
   check("guard: a concrete verb's first segment refused (releases)", code_of(fn() = $core.check_name("releases", $reg)) == "NAME_RESERVED")

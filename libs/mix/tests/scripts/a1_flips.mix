@@ -137,7 +137,7 @@ end
 -- idiom, and the value is a list or map whenever the key IS populated.
 -- Raising there would break data-dependently — the same line working
 -- until the map fills up. It is also not hypothetical: the wider rule
--- broke this repo's own docs/build/gen-builtins-md.mix on first run.
+-- broke this repo's own docs/_build/gen-builtins-md.mix on first run.
 $reg = {}
 print("absent: " .. ($reg["k"] == nil))
 $reg.k = [1, 2]

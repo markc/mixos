@@ -3,7 +3,7 @@
 Native screenshots and editable annotations for MixOS (`dev.mixos.screenshot`).
 Print Screen starts it through compd; Ctrl+S saves into Pictures/Screenshots;
 agents use the `screenshot.*` Bus verbs. The manual is
-[`docs/screenshot.md`](../../docs/screenshot.md).
+[`docs/screenshot/README.md`](../../docs/screenshot/README.md).
 
 - `crates/annotation`: the headless engine (document, painter, viewport,
   screenshots folder, ledger).

@@ -516,7 +516,7 @@ fn start($s, $name)
   return $s
 end
 
--- A shipped system dialog (docs/decisions/2026-10-12-system-dialogs.md):
+-- A shipped system dialog (docs/docs/decisions/2026-10-12-system-dialogs.md):
 -- installed under its own template's name, from a SHIPPED template whose own
 -- metadata says hidden and whose own scene is a dialog. The permission comes
 -- from the shipped files, never from the user-editable installed copy.

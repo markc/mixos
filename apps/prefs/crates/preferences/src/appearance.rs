@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! The Appearance panel over settingsd (docs/spec/settings/): the session's
+//! The Appearance panel over settingsd (docs/docs/spec/settings/): the session's
 //! colour scheme, style, mode, contrast and window framing.
 //!
 //! The panel reads the desktop profile (`settings.get`) and applies each

@@ -1,6 +1,6 @@
 -- version: 0.4.0
 -- The pager's rename dialog, a shipped system dialog
--- (docs/decisions/2026-10-12-system-dialogs.md). The panel enables this
+-- (docs/docs/decisions/2026-10-12-system-dialogs.md). The panel enables this
 -- scene on demand and opens it for a workspace (`rename.open {index}`, after
 -- a right click on a pager button). Enter or Save names the workspace
 -- through compd (comp.workspace.rename, saved as the name compd starts

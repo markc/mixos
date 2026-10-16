@@ -45,7 +45,7 @@ second `ced` hands its paths to the first and exits.
 `state`, `type`, `select`, `action`, `actions`, `wait`, `layout`, `stats`,
 `diagnostics`, `problems`, plus `app.describe` and `app.quit`; and the
 toolkit drive verbs (`ced.ui.*`, `ced.window`, `ced.window.state`, see
-`docs/drive.md`). A Bus caller's edits carry its own origin
+`docs/docs/drive.md`). A Bus caller's edits carry its own origin
 (`agent:ced.<caller>`), so they show as an agent's, and its undo is its
 own.
 

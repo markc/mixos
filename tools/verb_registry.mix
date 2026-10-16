@@ -1,15 +1,15 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Copyright 2026 Mark Constable <mc@mixos.dev>
 -- version: 0.4.0
--- The Bus verb registry gate (AGENTS.md §5) for docs/spec/bus/verbs.conf.mix:
+-- The Bus verb registry gate (AGENTS.md §5) for docs/docs/spec/bus/verbs.conf.mix:
 --
 -- - schema 2 or 3 (schema 1 is refused);
 -- - verbs: every entry is a map of exactly name, owner, version, status and
 --   class, all strings; names are unique and well formed, owners are
 --   component names, versions are release versions (MAJOR.MINOR.PATCH, no
 --   leading zeros), statuses and classes come from their fixed sets
---   (classes: docs/decisions/2026-10-11-verb-classes.md);
--- - families (schema 3 only, additive; docs/decisions/2026-10-13-instance-verb-families.md):
+--   (classes: docs/docs/decisions/2026-10-11-verb-classes.md);
+-- - families (schema 3 only, additive; docs/docs/decisions/2026-10-13-instance-verb-families.md):
 --   each is a map of exactly pattern, owner, members, version, status and
 --   class. pattern is <app>.<suffix> and unique; members is "instances" (the
 --   runtime members are instances, not listed) or a nonempty list of unique
@@ -43,7 +43,7 @@
 $root = dirname(dirname(realpath($0)))
 $src = require("lib/verb_registry_source.mix")
 
-$USAGE = "usage: mix tools/verb_registry.mix [FILE] [--source ROOT] [--instances DIR]\n  FILE: the registry (default docs/spec/bus/verbs.conf.mix)\n  --source ROOT: check the component sources under ROOT (default with no FILE: the repository)\n  --instances DIR: check the instance config names in DIR against the registry\n  --help: this text"
+$USAGE = "usage: mix tools/verb_registry.mix [FILE] [--source ROOT] [--instances DIR]\n  FILE: the registry (default docs/docs/spec/bus/verbs.conf.mix)\n  --source ROOT: check the component sources under ROOT (default with no FILE: the repository)\n  --instances DIR: check the instance config names in DIR against the registry\n  --help: this text"
 -- A listed family member is a Bus service name, as the instance names are.
 $_MEMBER = "^[a-z][a-z0-9-]{1,30}$"
 
@@ -82,7 +82,7 @@ end
 
 $path = $file
 if $file == nil then
-  $path = $root .. "/docs/spec/bus/verbs.conf.mix"
+  $path = $root .. "/docs/docs/spec/bus/verbs.conf.mix"
   if $source == nil then $source = $root end
 end
 

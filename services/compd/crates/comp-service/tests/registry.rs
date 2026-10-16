@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! The Bus verb registry (`docs/spec/bus/verbs.conf.mix`, AGENTS.md §5)
+//! The Bus verb registry (`docs/docs/spec/bus/verbs.conf.mix`, AGENTS.md §5)
 //! lists exactly the `comp.*` verbs the compositor serves: the catalogue in
 //! `comp_model::catalogue`, which is also what the port dispatches on.
 use comp_model::catalogue::{INPUT_VERBS, READ_VERBS, all_verbs, verb_family};
 use std::collections::BTreeSet;
 
-const REGISTRY: &str = include_str!("../../../../../docs/spec/bus/verbs.conf.mix");
+const REGISTRY: &str = include_str!("../../../../../docs/docs/spec/bus/verbs.conf.mix");
 
 /// The registry's `comp.*` names owned by compd, from its one-entry-per-line
 /// form.
@@ -54,7 +54,7 @@ fn citizen_verbs_are_served() {
 }
 
 /// Snapshot reads are queries; the input family is synthetic input
-/// (docs/decisions/2026-10-11-verb-classes.md).
+/// (docs/docs/decisions/2026-10-11-verb-classes.md).
 #[test]
 fn classes_follow_the_families() {
     for verb in READ_VERBS {
