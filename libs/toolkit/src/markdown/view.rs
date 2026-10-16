@@ -392,11 +392,10 @@ impl View {
                 match depth % 3 {
                     0 => painter.circle_filled(centre, r, ink),
                     1 => painter.circle_stroke(centre, r, Stroke::new(1.0, ink)),
-                    _ => painter.rect_filled(
-                        Rect::from_center_size(centre, Vec2::splat(r * 1.8)),
-                        0.0,
-                        ink,
-                    ),
+                    _ => {
+                        let square = Rect::from_center_size(centre, Vec2::splat(r * 1.8));
+                        painter.rect_filled(square, 0.0, ink);
+                    }
                 }
             }
         }
