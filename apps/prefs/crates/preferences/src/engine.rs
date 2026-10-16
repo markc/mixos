@@ -204,6 +204,9 @@ pub struct UiState {
     /// The selected account in App Settings → Email, by id.
     #[serde(default)]
     pub email_account: Option<String>,
+    /// The Email section's tab.
+    #[serde(default)]
+    pub email_tab: crate::email::EmailTab,
     pub dialog: Option<Dialog>,
     /// The window's own theme choice (View › Theme, the title bar's
     /// light/dark button, `prefs.theme`): `None` on an axis follows the
@@ -236,6 +239,7 @@ impl Default for UiState {
             app_settings_expanded: true,
             selected: None,
             email_account: None,
+            email_tab: crate::email::EmailTab::Accounts,
             dialog: None,
             theme_scheme: None,
             theme_mode: None,
@@ -1148,11 +1152,48 @@ impl Engine {
                     .get("name")
                     .and_then(Value::as_str)
                     .and_then(Section::from_name);
+                // Email takes a tab, and on Accounts an account to select.
+                let tab = match args.get("tab") {
+                    None | Some(Value::Null) => None,
+                    Some(Value::String(name)) => match crate::email::EmailTab::from_name(name) {
+                        Some(tab) => Some(tab),
+                        None => {
+                            return self.error(
+                                id,
+                                "ARGUMENT",
+                                "tab must be accounts, mail, reader or compose",
+                            );
+                        }
+                    },
+                    Some(_) => return self.error(id, "ARGUMENT", "tab must be a tab name"),
+                };
+                let account = match args.get("account") {
+                    None | Some(Value::Null) => None,
+                    Some(Value::String(account)) => Some(account.clone()),
+                    Some(_) => return self.error(id, "ARGUMENT", "account must be an account id"),
+                };
+                let email_args = tab.is_some() || account.is_some();
                 match section {
                     None => self.error(id, "ARGUMENT", "name must be a section name"),
+                    Some(section) if email_args && section != Section::Email => {
+                        self.error(id, "ARGUMENT", "tab and account are for the email section")
+                    }
+                    Some(_) if account.is_some()
+                        && tab.is_some_and(|t| t != crate::email::EmailTab::Accounts) =>
+                    {
+                        self.error(id, "ARGUMENT", "account goes with tab accounts")
+                    }
                     Some(_) if self.ui.dialog.is_some() || self.picker.open || self.quitting => {
                         let message = self.label("busy", &[]);
                         self.error(id, "BUSY", &message);
+                    }
+                    Some(Section::Email) if account.is_some() => {
+                        self.open_email_account(account.as_deref());
+                        self.ok(id, json!({"section":self.section(),"ui":self.ui}));
+                    }
+                    Some(Section::Email) if tab.is_some() => {
+                        self.set_email_tab(tab.expect("a tab"));
+                        self.ok(id, json!({"section":self.section(),"ui":self.ui}));
                     }
                     Some(section) => {
                         self.set_section(section);

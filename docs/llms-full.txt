@@ -29454,6 +29454,11 @@ the settings service like the session's look. It is separate from
 Applications, which installs apps. Its first section is **Email**, the
 [email app](../email/README.md)'s accounts and mail options (`email.*` in
 settingsd; see the [email settings](../docs/spec/settings/README.md)).
+It has four tabs, **Accounts**, **Mail**, **Reader** and **Compose**; an
+agent opens one with `prefs.section {name:"email", tab:"reader"}`, and
+`prefs.section {name:"email", tab:"accounts", account:"<id>"}` also
+selects that account (Email's **Account Settings…** does this; an
+unknown id selects none).
 
 - **Accounts** lists the accounts in the order Email's folder tree shows
   them, marking the default and any that are disabled. **Add account**
@@ -29566,6 +29571,7 @@ its default (no `path`: the whole group).
 | Remove… | `email.account.remove`, then `dialog.confirm` (or `prefs.email.set {op:"remove", id}`) |
 | Move up, Move down, Make default, Enabled | `email.account.up`, `email.account.down`, `email.account.default`, `email.account.enable` |
 | Set password, Forget password…, Connect now | `email.password.set`, `email.password.forget` then `dialog.confirm`, `email.account.connect` (or `prefs.email.password {id, password}` / `{id, forget:true}`) |
+| The Accounts, Mail, Reader and Compose tabs | `view.email.accounts`, `view.email.mail`, `view.email.reader`, `view.email.compose` (or `prefs.section {name:"email", tab}`) |
 | A confirmation's Confirm / Cancel | `dialog.confirm`, `dialog.cancel` (`prefs.dialog {open:null}` also cancels) |
 
 The form's fields are typed through the window (`prefs.ui.type`), or set

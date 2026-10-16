@@ -11,8 +11,9 @@ use preferences::Engine;
 use preferences::appearance::Availability as Settings;
 use preferences::email::{
     AccountEntry, Change, Email, Field, Form, PAGE_SIZE_MAX, PAGE_SIZE_MIN, READER_FONT_MAX,
-    READER_FONT_MIN, READER_FONT_STEP, ReaderTheme, ReplyPosition, Secret, Service,
+    EmailTab, READER_FONT_MIN, READER_FONT_STEP, ReaderTheme, ReplyPosition, Secret, Service,
 };
+use toolkit::command::Origin;
 use serde_json::json;
 use toolkit::toggle::Toggle;
 use toolkit::{Registry, Strings, bars, field, panel};
@@ -34,33 +35,92 @@ pub fn section(
     strings: &Strings,
     events: &mut Vec<UiEvent>,
 ) {
-    // One group: a dock group fills the height left, so a second one
-    // would start below the fold.
-    let title = label("section-email");
-    panel::group(ui, "email", &[title.as_str()], |ui, _| {
-        ui.horizontal(|ui| {
-            for (id, primary) in [
-                ("email.account.add", false),
-                ("email.account.up", false),
-                ("email.account.down", false),
-                ("email.account.default", false),
-                ("email.account.remove", false),
+    // One group whose tabs are the sub-sections. The engine holds the tab
+    // (prefs.section name=email tab=…): the strip is told which it shows,
+    // and a click is the tab's command.
+    let titles: Vec<String> = EmailTab::ALL.iter().map(|t| label(t.label())).collect();
+    let tabs: Vec<&str> = titles.iter().map(String::as_str).collect();
+    let tab = engine.ui.email_tab;
+    let selected = EmailTab::ALL.iter().position(|t| *t == tab).unwrap_or(0);
+    let id = ui.make_persistent_id("email");
+    ui.data_mut(|d| {
+        d.insert_temp(
+            id,
+            panel::GroupState {
+                selected,
+                collapsed: false,
+            },
+        )
+    });
+    let shown = panel::group(ui, "email", &tabs, |ui, _| {
+        tab_body(ui, engine, commands, strings, tab, events)
+    });
+    if shown.state.selected != selected
+        && let Some(picked) = EmailTab::ALL.get(shown.state.selected)
+    {
+        events.push(UiEvent::Command(picked.command(), Origin::Ui));
+    }
+}
+
+/// One tab: Accounts (the list beside the form), Mail (the list options
+/// and Reset email settings), Reader, Compose.
+fn tab_body(
+    ui: &mut Ui,
+    engine: &Engine,
+    commands: &Registry<Engine>,
+    strings: &Strings,
+    tab: EmailTab,
+    events: &mut Vec<UiEvent>,
+) {
+    ui.horizontal(|ui| {
+        if tab == EmailTab::Accounts {
+            for id in [
+                "email.account.add",
+                "email.account.up",
+                "email.account.down",
+                "email.account.default",
+                "email.account.remove",
             ] {
-                command_button(ui, engine, commands, strings, id, primary, events);
+                command_button(ui, engine, commands, strings, id, false, events);
             }
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                command_button(ui, engine, commands, strings, "view.refresh", false, events);
-            });
-        });
-        bars::hairline(ui);
-        if engine.look.settings == Settings::Missing {
-            ui.add(egui::Label::new(RichText::new(label("look-missing")).weak()).wrap());
-            return;
         }
-        let Some(email) = engine.email() else {
-            ui.label(RichText::new(label("email-reading")).weak());
-            return;
-        };
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            command_button(ui, engine, commands, strings, "view.refresh", false, events);
+        });
+    });
+    bars::hairline(ui);
+    if engine.look.settings == Settings::Missing {
+        ui.add(egui::Label::new(RichText::new(label("look-missing")).weak()).wrap());
+        return;
+    }
+    let Some(email) = engine.email() else {
+        ui.label(RichText::new(label("email-reading")).weak());
+        return;
+    };
+    match tab {
+        EmailTab::Accounts => accounts_tab(ui, engine, commands, strings, email, events),
+        EmailTab::Mail => {
+            mail_options(ui, engine, email, events);
+            bars::hairline(ui);
+            ui.horizontal(|ui| {
+                command_button(ui, engine, commands, strings, "email.reset", false, events);
+                ui.add(egui::Label::new(RichText::new(label("email-note")).weak()).wrap());
+            });
+        }
+        EmailTab::Reader => reader(ui, engine, commands, strings, email, events),
+        EmailTab::Compose => compose(ui, engine, email, events),
+    }
+}
+
+/// The account list beside the selected account's form.
+fn accounts_tab(
+    ui: &mut Ui,
+    engine: &Engine,
+    commands: &Registry<Engine>,
+    strings: &Strings,
+    email: &Email,
+    events: &mut Vec<UiEvent>,
+) {
         // The divider is painted once the row's height is known: a
         // separator would claim all the height left.
         let row = ui.horizontal_top(|ui| {
@@ -92,21 +152,6 @@ pub fn section(
             rect.y_range(),
             ui.visuals().widgets.noninteractive.bg_stroke,
         );
-        bars::hairline(ui);
-        ui.strong(label("email-mail"));
-        mail_options(ui, engine, email, events);
-        bars::hairline(ui);
-        ui.strong(label("email-reader"));
-        reader(ui, engine, commands, strings, email, events);
-        bars::hairline(ui);
-        ui.strong(label("email-compose"));
-        compose(ui, engine, email, events);
-        bars::hairline(ui);
-        ui.horizontal(|ui| {
-            command_button(ui, engine, commands, strings, "email.reset", false, events);
-            ui.add(egui::Label::new(RichText::new(label("email-note")).weak()).wrap());
-        });
-    });
 }
 
 /// The accounts in tree order, each with its address and what marks it:

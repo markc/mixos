@@ -31,6 +31,58 @@ pub use settings::email::{
     ReaderTheme, ReplyPosition, mint_account_id, valid_reader_font_size,
 };
 
+/// The Email section's tabs, in strip order.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EmailTab {
+    #[default]
+    Accounts,
+    Mail,
+    Reader,
+    Compose,
+}
+
+impl EmailTab {
+    pub const ALL: [EmailTab; 4] = [
+        EmailTab::Accounts,
+        EmailTab::Mail,
+        EmailTab::Reader,
+        EmailTab::Compose,
+    ];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            EmailTab::Accounts => "accounts",
+            EmailTab::Mail => "mail",
+            EmailTab::Reader => "reader",
+            EmailTab::Compose => "compose",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|t| t.name() == name)
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            EmailTab::Accounts => "email-tab-accounts",
+            EmailTab::Mail => "email-tab-mail",
+            EmailTab::Reader => "email-tab-reader",
+            EmailTab::Compose => "email-tab-compose",
+        }
+    }
+
+    /// The command that shows this tab.
+    pub fn command(self) -> &'static str {
+        match self {
+            EmailTab::Accounts => "view.email.accounts",
+            EmailTab::Mail => "view.email.mail",
+            EmailTab::Reader => "view.email.reader",
+            EmailTab::Compose => "view.email.compose",
+        }
+    }
+}
+
 /// The email app's Bus service.
 pub const EMAIL: &str = "email";
 /// The service that launches applications.
@@ -783,6 +835,9 @@ pub struct EmailEditor {
     removed: Option<(String, String)>,
     /// Forgets waiting for the action in progress to end.
     forgets: Vec<(String, String)>,
+    /// An account asked for (`prefs.section … account=`) before settingsd
+    /// was read: selected, if it exists, once it is.
+    pending_account: Option<String>,
 }
 
 /// The `has_password` per account in an `email.accounts` answer: a list of
@@ -934,6 +989,9 @@ impl Engine {
     /// account's form, and an account gone from the list leaves the form.
     pub(crate) fn email_read(&mut self, email: Email) {
         let before = self.look.email.replace(email);
+        if let Some(id) = self.email.pending_account.take() {
+            self.open_email_account(Some(&id));
+        }
         // A removal settingsd shows: Email forgets the account's password.
         if let Some((id, name)) = self.email.removed.take()
             && self
@@ -972,6 +1030,39 @@ impl Engine {
                 if !form.edited(saved) || !form.edited(Some(account)) {
                     self.email.form = Some(Form::of(account));
                 }
+            }
+        }
+    }
+
+    // ---- the tabs -----------------------------------------------------------
+
+    /// Show the Email section on `tab`.
+    pub fn set_email_tab(&mut self, tab: EmailTab) {
+        if self.ui.dialog.is_some() || self.picker.open || self.quitting {
+            return;
+        }
+        self.set_section(Section::Email);
+        self.ui.email_tab = tab;
+    }
+
+    /// The Accounts tab with account `id` selected (Email's "Account
+    /// Settings…"); an unknown id, or none, leaves nothing selected. Asked
+    /// before settingsd is read, the selection waits for the read.
+    pub fn open_email_account(&mut self, id: Option<&str>) {
+        self.set_email_tab(EmailTab::Accounts);
+        if self.ui.section != Section::Email {
+            return;
+        }
+        let known = id.and_then(|id| self.email().and_then(|e| e.account(id)).cloned());
+        match (known, id) {
+            (Some(account), _) => self.select_email_account(&account.id),
+            (None, Some(id)) if self.look.email.is_none() => {
+                self.email.pending_account = Some(id.to_owned());
+            }
+            _ => {
+                self.ui.email_account = None;
+                self.email.form = None;
+                self.email.password = Secret::default();
             }
         }
     }
@@ -1782,6 +1873,7 @@ impl Engine {
             "reader":email.map(|e| json!({"font_size":e.reader.font_size,"default":READER_FONT_DEFAULT,"min":READER_FONT_MIN,"max":READER_FONT_MAX,"step":READER_FONT_STEP,"theme":e.reader.theme})),
             "compose":email.map(|e| json!({"quote_on_reply":e.compose.quote_on_reply,"reply_position":e.compose.reply_position,"autosave":e.compose.autosave})),
             "email_service":self.email.service,
+            "tab":self.ui.email_tab,
             "paths":email_paths(),
             "selected":self.ui.email_account,
             "form":self.email.form,
@@ -2362,6 +2454,85 @@ mod tests {
             );
         }
         assert!(!effects.iter().any(|x| matches!(x, Effect::Settings { .. })));
+    }
+
+    /// The tab is engine state: prefs.section name=email tab=… shows it, it
+    /// is in prefs.info's ui, and other sections refuse a tab.
+    #[test]
+    fn the_email_tab_is_addressable_over_the_bus() {
+        let mut e = read();
+        assert_eq!(e.ui.email_tab, EmailTab::Accounts);
+        e.command(1, "prefs.section", r#"{"name":"email","tab":"reader"}"#);
+        assert_eq!(e.ui.email_tab, EmailTab::Reader);
+        assert_eq!(e.info()["ui"]["email_tab"], "reader");
+        assert_eq!(e.email_view()["tab"], "reader");
+        e.set_section(Section::Themes);
+        e.command(2, "prefs.section", r#"{"name":"email","tab":"compose"}"#);
+        assert_eq!((e.section(), e.ui.email_tab), (Section::Email, EmailTab::Compose));
+        e.command(3, "prefs.section", r#"{"name":"email","tab":"nope"}"#);
+        e.command(4, "prefs.section", r#"{"name":"themes","tab":"mail"}"#);
+        e.command(5, "prefs.section", r#"{"name":"email","tab":"mail","account":"b"}"#);
+        let effects = e.take_effects();
+        for id in [3, 4, 5] {
+            assert!(
+                effects.iter().any(|x| matches!(x,
+                    Effect::Reply { id: i, rc: 10, body } if *i == id && body["error_code"] == "ARGUMENT")),
+                "{id}: {effects:?}"
+            );
+        }
+        assert_eq!(e.ui.email_tab, EmailTab::Compose, "a refused call changes nothing");
+        for tab in EmailTab::ALL {
+            assert_eq!(EmailTab::from_name(tab.name()), Some(tab));
+        }
+    }
+
+    /// Email's "Account Settings…": prefs.section name=email tab=accounts
+    /// account=<id> selects it; an unknown id leaves none selected; asked
+    /// before settingsd is read, the selection waits for the read.
+    #[test]
+    fn account_settings_opens_the_accounts_tab_on_an_account() {
+        let mut e = read();
+        e.set_email_tab(EmailTab::Reader);
+        e.command(
+            1,
+            "prefs.section",
+            r#"{"name":"email","tab":"accounts","account":"b"}"#,
+        );
+        assert_eq!(e.ui.email_tab, EmailTab::Accounts);
+        assert_eq!(e.ui.email_account.as_deref(), Some("b"));
+        assert_eq!(e.email.form.as_ref().and_then(|f| f.id.as_deref()), Some("b"));
+        e.command(2, "prefs.section", r#"{"name":"email","account":"acct-unknown"}"#);
+        assert_eq!(e.ui.email_tab, EmailTab::Accounts);
+        assert_eq!(e.ui.email_account, None, "unknown: none selected");
+        assert!(e.email.form.is_none());
+        assert!(
+            e.take_effects()
+                .iter()
+                .any(|x| matches!(x, Effect::Reply { id: 2, rc: 0, .. }))
+        );
+        // Before the first read: selected once settingsd answers.
+        let mut e = Engine::new(label);
+        let listing = e
+            .take_effects()
+            .into_iter()
+            .find_map(|x| match x {
+                Effect::Releases { ticket, .. } => Some(ticket),
+                _ => None,
+            })
+            .unwrap();
+        e.released(listing, reply(0, json!([])));
+        e.take_effects();
+        e.command(
+            3,
+            "prefs.section",
+            r#"{"name":"email","tab":"accounts","account":"a"}"#,
+        );
+        assert_eq!(e.ui.email_account, None);
+        e.start_appearance("example");
+        let calls = settings_calls(&mut e);
+        e.settled(calls[0].0, reply(0, snapshot("7", json!(two()))));
+        assert_eq!(e.ui.email_account.as_deref(), Some("a"));
+        assert_eq!(e.email.form.as_ref().map(|f| f.name.as_str()), Some("Work"));
     }
 
     #[test]

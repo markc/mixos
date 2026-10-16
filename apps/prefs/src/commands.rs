@@ -346,6 +346,41 @@ pub fn registry() -> Registry<Engine> {
         enabled: Engine::can_reset_terminal,
         run: Engine::reset_terminal,
     });
+    // App Settings → Email's tabs.
+    for (tab, run) in [
+        (
+            preferences::email::EmailTab::Accounts,
+            (|e: &mut Engine| e.set_email_tab(preferences::email::EmailTab::Accounts))
+                as fn(&mut Engine),
+        ),
+        (
+            preferences::email::EmailTab::Mail,
+            (|e: &mut Engine| e.set_email_tab(preferences::email::EmailTab::Mail))
+                as fn(&mut Engine),
+        ),
+        (
+            preferences::email::EmailTab::Reader,
+            (|e: &mut Engine| e.set_email_tab(preferences::email::EmailTab::Reader))
+                as fn(&mut Engine),
+        ),
+        (
+            preferences::email::EmailTab::Compose,
+            (|e: &mut Engine| e.set_email_tab(preferences::email::EmailTab::Compose))
+                as fn(&mut Engine),
+        ),
+    ] {
+        r.add(Command {
+            id: tab.command(),
+            label: tab.label(),
+            menu: None,
+            submenu: None,
+            group: 0,
+            shortcut: None,
+            icon: None,
+            enabled: undialogued,
+            run,
+        });
+    }
     // App Settings → Email: each acts on the selected account, as its button.
     for (id, label, group, enabled, run) in [
         (
@@ -575,6 +610,7 @@ mod tests {
             .map(|c| c.id)
             .filter(|id| {
                 id.starts_with("email.")
+                    || id.starts_with("view.email.")
                     || id.starts_with("dialog.")
                     || *id == "view.panel.app-settings"
             })
