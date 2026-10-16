@@ -1215,7 +1215,10 @@ fn account_set(state: &mut State, id: u64, args: &Value) -> Checked<()> {
         && let Some(account) = text(args, "id")?
         && state.migration_locks(&account)
     {
-        return Err(Bad(code::MIGRATION_PENDING, crate::label("migration-pending")));
+        return Err(Bad(
+            code::MIGRATION_PENDING,
+            crate::label("migration-pending"),
+        ));
     }
     let change = match text(args, "id")? {
         // An update names only what it changes: a retry after a conflict

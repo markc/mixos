@@ -1270,7 +1270,11 @@ mod tests {
         }
         assert_eq!(std::thread::current().id(), ui);
         let (saved, _) = SecretsFile::load(dir.path());
-        assert_eq!(saved.password("a"), Some("pw-2"), "the later save is the one kept");
+        assert_eq!(
+            saved.password("a"),
+            Some("pw-2"),
+            "the later save is the one kept"
+        );
     }
 
     /// Review finding 13: a CA path must name a small regular file; a

@@ -1344,7 +1344,10 @@ impl State {
         // (it is no longer in settingsd) removes it here, and its secret.
         if let Change::Remove(id) = &change
             && self.settings.account(id).is_none()
-            && self.held.as_ref().is_some_and(|h| h.iter().any(|a| a.id == *id))
+            && self
+                .held
+                .as_ref()
+                .is_some_and(|h| h.iter().any(|a| a.id == *id))
         {
             let id = id.clone();
             return self.remove_held(&id, reply);
@@ -1435,9 +1438,7 @@ impl State {
                 self.write_done(pending, about, current.then_some(next));
             }
             // A newer read is already in force: compute against it now.
-            Settled::Conflict
-                if pending.attempts < WRITE_ATTEMPTS && self.epoch > pending.base =>
-            {
+            Settled::Conflict if pending.attempts < WRITE_ATTEMPTS && self.epoch > pending.base => {
                 self.send_write(pending);
             }
             // Otherwise the next read releases it, an unchanged one too.
@@ -1538,8 +1539,7 @@ impl State {
             return;
         };
         let adopted = id.unwrap_or(&legacy).to_owned();
-        if adopted == legacy
-            || (self.secrets.has(&adopted) && !self.unsaved.contains_key(&adopted))
+        if adopted == legacy || (self.secrets.has(&adopted) && !self.unsaved.contains_key(&adopted))
         {
             return self.finish_migration();
         }
@@ -5151,19 +5151,35 @@ pub(crate) mod tests {
         state.take_work();
         state.settled(ticket, Settled::Conflict);
         let (ticket, changes) = settings_ticket(&mut state);
-        assert_eq!(changes["email.accounts"][0]["name"], "Renamed", "sent again at once");
+        assert_eq!(
+            changes["email.accounts"][0]["name"], "Renamed",
+            "sent again at once"
+        );
         // No newer read: it waits, and an unchanged read releases it.
         state.settled(ticket, Settled::Conflict);
-        assert!(!state.take_work().iter().any(|w| matches!(w, Work::Settings { .. })));
+        assert!(
+            !state
+                .take_work()
+                .iter()
+                .any(|w| matches!(w, Work::Settings { .. }))
+        );
         state.settings_unchanged();
-        assert!(state.take_work().iter().any(|w| matches!(w, Work::Settings { .. })));
+        assert!(
+            state
+                .take_work()
+                .iter()
+                .any(|w| matches!(w, Work::Settings { .. }))
+        );
         // A write that never settles is answered at its deadline.
         let mut state = connected_many(&["a"]);
         state.change_accounts(rename(), Some(7), None);
         let op = deadline_op(&state.take_work());
         state.write_deadline(op);
         let reply = &state.take_replies()[0];
-        assert_eq!((reply.id, reply.body["error_code"].clone()), (7, json!(code::TIMEOUT)));
+        assert_eq!(
+            (reply.id, reply.body["error_code"].clone()),
+            (7, json!(code::TIMEOUT))
+        );
     }
 
     /// Review #17: removing an account shown only because settingsd showed
@@ -5201,9 +5217,17 @@ pub(crate) mod tests {
         state.take_work();
         let compose = state.compose.clone().unwrap();
         assert_eq!(compose.stale.as_deref(), Some("new@a.example.invalid"));
-        assert_eq!(compose.draft.from, "ann@a.example.invalid", "unchanged until taken");
+        assert_eq!(
+            compose.draft.from, "ann@a.example.invalid",
+            "unchanged until taken"
+        );
         state.apply_ui(UiEvent::SendCompose);
-        assert!(!state.take_work().iter().any(|w| matches!(w, Work::Send { .. })));
+        assert!(
+            !state
+                .take_work()
+                .iter()
+                .any(|w| matches!(w, Work::Send { .. }))
+        );
         assert_eq!(
             state.compose.as_ref().unwrap().error.as_deref(),
             Some(crate::label("compose-from-changed").as_str())
@@ -5213,7 +5237,12 @@ pub(crate) mod tests {
         assert_eq!(compose.draft.from, "new@a.example.invalid");
         assert!(compose.stale.is_none());
         state.apply_ui(UiEvent::SendCompose);
-        assert!(state.take_work().iter().any(|w| matches!(w, Work::Send { .. })));
+        assert!(
+            state
+                .take_work()
+                .iter()
+                .any(|w| matches!(w, Work::Send { .. }))
+        );
     }
 
     /// Review #19: a save's ack clears only what had changed by the

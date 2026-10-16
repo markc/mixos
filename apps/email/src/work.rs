@@ -130,7 +130,9 @@ pub enum Work {
     ReadSettings,
     /// Settings write `op`'s deadline: [`crate::state::State::write_deadline`]
     /// is called with it once [`WRITE_DEADLINE`] has passed.
-    WriteDeadline { op: u64 },
+    WriteDeadline {
+        op: u64,
+    },
     /// Write the secrets file; its outcome comes back under `ticket`.
     SaveSecrets {
         ticket: u64,

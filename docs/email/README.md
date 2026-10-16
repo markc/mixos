@@ -111,7 +111,9 @@ A malformed file loads defaults and is never overwritten.
 - **The reader**: the open email (plain text first, the HTML source when
   there is no plain text), event or contact.
 - **Compose** (To, Cc, Bcc, Subject, body, and From when there are
-  several accounts), reply, reply all and forward. Mail is sent through
+  several accounts), reply, reply all and forward. If the account's login
+  (server or address) changes while a draft is open, Send waits: the
+  dialog shows the new address and **Use New Address**. Mail is sent through
   the proven recipe: build the message, upload it, create the Email in
   Sent, then submit. **Sending requires maild**, because the create step
   uses maild's extension of a top-level `blobId` on `Email/set`. A strict
@@ -153,8 +155,11 @@ Service `email`, schema `email.v1`. `HELP` lists the verbs, and
   contact with that id.
 
 The other codes are `INVALID_ARGUMENT`, `NOT_CONNECTED`, `UNAVAILABLE`
-(settingsd absent), `CONFLICT`, `SERVER`, `BUSY`, `UNKNOWN_VERB`,
-`UNKNOWN_COMMAND` and `DISABLED`.
+(settingsd absent), `CONFLICT`, `TIMEOUT` (settingsd did not answer a
+write within 60 s), `STALE` (the account reconnected while a reply or
+forward was pending), `MIGRATION_PENDING` (the account is still moving
+from the old config, so its password cannot change yet), `SERVER`,
+`BUSY`, `UNKNOWN_VERB`, `UNKNOWN_COMMAND` and `DISABLED`.
 
 Queries that need the server answer when the server does. The window
 never waits on them.
