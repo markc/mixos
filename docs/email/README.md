@@ -158,7 +158,10 @@ The other codes are `INVALID_ARGUMENT`, `NOT_CONNECTED`, `UNAVAILABLE`
 (settingsd absent), `CONFLICT`, `TIMEOUT` (settingsd did not answer a
 write within 60 s), `STALE` (the account reconnected while a reply or
 forward was pending), `MIGRATION_PENDING` (the account is still moving
-from the old config, so its password cannot change yet), `SERVER`,
+from the old config, so its password cannot change, and it cannot be
+removed, until that finishes), `CANCELLED` (Email closed before the
+request ran; a write that may have run answers `OUTCOME_UNKNOWN`),
+`SERVER`,
 `BUSY`, `UNKNOWN_VERB`, `UNKNOWN_COMMAND` and `DISABLED`.
 
 Queries that need the server answer when the server does. The window

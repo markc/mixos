@@ -99,7 +99,7 @@ fn form(ui: &mut Ui, compose: &ComposeState, state: &State, events: &mut Vec<UiE
             ui.label(
                 egui::RichText::new(crate::label_with(
                     "compose-from-new",
-                    &[("old", &compose.draft.from), ("new", from)],
+                    &[("old", &compose.draft.from), ("new", &from.address)],
                 ))
                 .color(ui.visuals().warn_fg_color),
             );
