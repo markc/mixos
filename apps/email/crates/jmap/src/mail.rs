@@ -4,9 +4,11 @@
 //! structs and the pure helpers are ported from the Dioxus client; the
 //! pagination, body fetch, mark-read and download behaviour is new.
 //!
-//! maild notes the types lean on: `from`/`to`/`cc` addresses arrive as
-//! `EmailAddress {name, email}` through webmail's own writer, but the
-//! submission envelope treats them as bare addr-specs; `threadId` and
+//! maild notes the types lean on: its Email/get projects `from` as a bare
+//! string and `to`/`cc` as lists of bare addr-specs (the RFC 8621
+//! `EmailAddress` object form is pending there), so the address lists read
+//! either shape; the submission envelope treats them as bare addr-specs;
+//! `threadId` and
 //! `preview` are always null, so neither is read here; Email/query takes a
 //! flat filter (no FilterOperator) and one sort comparator.
 
@@ -41,6 +43,42 @@ pub struct EmailAddress {
     pub email: String,
 }
 
+/// An address list as the server sends it: RFC 8621's `[EmailAddress]`, or
+/// maild's projection while its object form is pending, which is a bare
+/// string for `from` and a list of bare strings elsewhere. A string entry is
+/// read as `addr` or `Name <addr>`; one that does not parse is kept whole as
+/// the address, so a listing never fails on a header it cannot split.
+fn addresses<'de, D>(deserializer: D) -> std::result::Result<Option<Vec<EmailAddress>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    fn entry(value: Value, out: &mut Vec<EmailAddress>) {
+        match value {
+            Value::String(text) => match crate::parse_addresses(&text) {
+                Ok(parsed) if !parsed.is_empty() => out.extend(parsed),
+                _ if text.trim().is_empty() => {}
+                _ => out.push(EmailAddress {
+                    name: None,
+                    email: text,
+                }),
+            },
+            Value::Object(_) => {
+                if let Ok(address) = serde_json::from_value(value) {
+                    out.push(address);
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut out = Vec::new();
+    match Option::<Value>::deserialize(deserializer)? {
+        None | Some(Value::Null) => return Ok(None),
+        Some(Value::Array(items)) => items.into_iter().for_each(|v| entry(v, &mut out)),
+        Some(other) => entry(other, &mut out),
+    }
+    Ok(Some(out))
+}
+
 /// One body part pointer; the bytes live in `bodyValues`.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct BodyPart {
@@ -56,11 +94,11 @@ pub struct Email {
     pub id: String,
     #[serde(default)]
     pub subject: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "addresses")]
     pub from: Option<Vec<EmailAddress>>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "addresses")]
     pub to: Option<Vec<EmailAddress>>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "addresses")]
     pub cc: Option<Vec<EmailAddress>>,
     #[serde(rename = "messageId", default)]
     pub message_id: Option<Vec<String>>,
@@ -499,6 +537,34 @@ fn empty(method: &str) -> Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reads_maild_bare_string_addresses() {
+        let email: Email = serde_json::from_value(json!({
+            "id": "E2",
+            "from": "annie@example.invalid",
+            "to": ["bob@example.invalid", "Cy Lee <cy@example.invalid>", ""],
+            "cc": [],
+            "keywords": {}
+        }))
+        .unwrap();
+        assert_eq!(
+            email.from,
+            Some(vec![EmailAddress {
+                name: None,
+                email: "annie@example.invalid".into()
+            }])
+        );
+        let to = email.to.unwrap();
+        assert_eq!(to.len(), 2);
+        assert_eq!(to[1].name.as_deref(), Some("Cy Lee"));
+        assert_eq!(to[1].email, "cy@example.invalid");
+        assert_eq!(email.cc, Some(Vec::new()));
+        // Absent and null stay None.
+        let bare: Email = serde_json::from_value(json!({ "id": "E3", "from": null })).unwrap();
+        assert_eq!(bare.from, None);
+        assert_eq!(bare.to, None);
+    }
 
     #[test]
     fn reads_the_dioxus_email_shape() {
