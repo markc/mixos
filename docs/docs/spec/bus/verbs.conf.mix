@@ -209,6 +209,7 @@
     {name:"comp.panel.hold", owner:"compd", version:"0.1.11", status:"accepted", class:"intent"},
     {name:"comp.panel.mode", owner:"compd", version:"0.1.11", status:"accepted", class:"intent"},
     {name:"comp.info", owner:"compd", version:"0.1.11", status:"accepted", class:"query"},
+    {name:"comp.session.get", owner:"compd", version:"0.1.0", status:"draft", class:"query"},
     {name:"comp.props.get", owner:"compd", version:"0.1.11", status:"accepted", class:"query"},
     {name:"comp.props.list", owner:"compd", version:"0.1.11", status:"accepted", class:"query"},
     {name:"comp.props.describe", owner:"compd", version:"0.1.11", status:"accepted", class:"query"},

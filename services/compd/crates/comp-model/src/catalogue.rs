@@ -1,9 +1,9 @@
-//! The `comp.*` catalogue: 37 verbs in four families and 12 topics.
+//! The `comp.*` catalogue: 39 verbs in three families and 13 topics.
 
 pub use crate::observation::{
     CORNER_CLICKED_TOPIC_SUFFIX, CORNER_CLICKED_V2_TOPIC_SUFFIX, CORNER_ENTERED_TOPIC_SUFFIX,
     CORNER_LEFT_TOPIC_SUFFIX, FOCUS_TOPIC_SUFFIX, OUTPUT_TOPIC_SUFFIX, PANEL_COMMAND_TOPIC_SUFFIX,
-    POINTER_TOPIC_SUFFIX, PROPS_TOPIC_SUFFIX, SURFACE_MAPPED_TOPIC_SUFFIX,
+    POINTER_TOPIC_SUFFIX, PROPS_TOPIC_SUFFIX, SESSION_TOPIC_SUFFIX, SURFACE_MAPPED_TOPIC_SUFFIX,
     SURFACE_UNMAPPED_TOPIC_SUFFIX, TOPIC_SUFFIXES, topic_name,
 };
 
@@ -21,6 +21,7 @@ pub const REGISTRY_TOPIC: &str = "noded.props.changed";
 /// The read verbs answered from a snapshot.
 pub const READ_VERBS: &[&str] = &[
     "comp.info",
+    "comp.session.get",
     "comp.props.get",
     "comp.props.list",
     "comp.props.describe",
@@ -28,7 +29,7 @@ pub const READ_VERBS: &[&str] = &[
     "comp.workspaces.list",
 ];
 
-/// The 15 verbs the dispatcher answers directly (not a window or input
+/// The 17 verbs the dispatcher answers directly (not a window or input
 /// family member).
 pub const DIRECT_VERBS: &[&str] = &[
     "comp.capture.frame",
@@ -42,6 +43,7 @@ pub const DIRECT_VERBS: &[&str] = &[
     "comp.panel.hold",
     "comp.panel.mode",
     "comp.info",
+    "comp.session.get",
     "comp.props.get",
     "comp.props.list",
     "comp.props.describe",
@@ -116,25 +118,26 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_surface_is_38_verbs_and_12_topics() {
-        assert_eq!(DIRECT_VERBS.len(), 16);
+    fn the_surface_is_39_verbs_and_13_topics() {
+        assert_eq!(DIRECT_VERBS.len(), 17);
         assert_eq!(WINDOW_VERBS.len(), 17);
         assert_eq!(INPUT_VERBS.len(), 5);
         let verbs = all_verbs().collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(verbs.len(), 38, "no verb is in two families");
+        assert_eq!(verbs.len(), 39, "no verb is in two families");
         assert!(verbs.iter().all(|verb| verb.starts_with("comp.")));
         assert!(READ_VERBS.iter().all(|verb| DIRECT_VERBS.contains(verb)));
-        assert_eq!(TOPIC_SUFFIXES.len(), 12);
+        assert_eq!(TOPIC_SUFFIXES.len(), 13);
         assert_eq!(
             TOPIC_SUFFIXES
                 .iter()
                 .collect::<std::collections::BTreeSet<_>>()
                 .len(),
-            12
+            13
         );
         assert_eq!(verb_family("comp.window.focus"), Some(VerbFamily::Window));
         assert_eq!(verb_family("comp.input.key"), Some(VerbFamily::Input));
         assert_eq!(verb_family("comp.ping"), Some(VerbFamily::Direct));
+        assert_eq!(verb_family("comp.session.get"), Some(VerbFamily::Direct));
         assert_eq!(verb_family("comp-nested.panel.hold"), None);
         assert_eq!(
             topic_name(NESTED_SERVICE, FOCUS_TOPIC_SUFFIX),
