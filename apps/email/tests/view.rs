@@ -697,7 +697,7 @@ fn compose_gives_way_to_its_icon_before_the_search_field_shrinks() {
         .get_by_role(egui::accesskit::Role::TextInput)
         .rect()
         .width();
-    assert!(field >= 80.0, "{field}");
+    assert!(field >= 150.0, "{field}");
     drop(wide);
     let mut narrow = narrow;
     narrow.run();
@@ -743,8 +743,8 @@ fn each_tree_node_has_its_registry_menu() {
         assert!(h.query_by_label(item).is_some(), "{item}");
     }
     let mut h = tree_menu("Main", "tree_menu_calendar_pro_light");
-    assert!(h.query_by_label(&label("new-event")).is_some());
-    h.get_by_label(&label("new-event")).click();
+    assert!(h.query_by_label_contains(&label("new-event")).is_some());
+    h.get_by_label_contains(&label("new-event")).click();
     h.run();
     assert!(
         h.state()
@@ -777,7 +777,10 @@ fn a_row_right_click_selects_it_and_opens_the_message_menu() {
             .any(|e| matches!(e, UiEvent::MailTable(_, toolkit::datatable::TableEvent::ContextMenu { key, .. }) if key == "L5"))
     );
     assert_eq!(h.state().state.accounts[0].mail.table.selection, ["L5"]);
-    assert!(h.query_by_label(&label("reply")).is_some(), "the message commands");
+    assert!(
+        h.query_by_label_contains(&label("reply")).is_some(),
+        "the message commands"
+    );
     h.snapshot("list_menu_pro_light");
 }
 

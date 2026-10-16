@@ -131,12 +131,24 @@ fn header(
             )
             .size()
             .x;
+        // What gives way, in order, so the field keeps SEARCH_MIN: Compose's
+        // label, then the count.
+        let full = commands
+            .get("mail.compose")
+            .map(|c| {
+                let label = toolkit::command::label_text(strings, c.label);
+                let button = PushButton::primary(label).icon(Icon::SquarePen);
+                (button.width(ui), button.icon_only(true).width(ui))
+            })
+            .unwrap_or_default();
+        let room = ui.available_width() - SCOPE_WIDTH - 4.0 * gap;
+        let squeezed = room - full.0 - count_width < SEARCH_MIN;
+        let counted = room - full.1 - count_width >= SEARCH_MIN;
         if let Some(command) = commands.get("mail.compose") {
             let label = toolkit::command::label_text(strings, command.label);
-            let button = PushButton::primary(label).icon(Icon::SquarePen);
-            let left = ui.available_width() - count_width - SCOPE_WIDTH - 4.0 * gap;
-            let squeezed = left - button.width(ui) < SEARCH_MIN;
-            let button = button.icon_only(squeezed);
+            let button = PushButton::primary(label)
+                .icon(Icon::SquarePen)
+                .icon_only(squeezed);
             let tooltip = toolkit::tooltip::for_command(ui.ctx(), command, strings);
             let response = ui
                 .add_enabled((command.enabled)(state), button)
@@ -145,7 +157,9 @@ fn header(
                 events.push(UiEvent::Command(command.id, Origin::Ui));
             }
         }
-        ui.label(RichText::new(count).weak());
+        if !squeezed || counted {
+            ui.label(RichText::new(count).weak());
+        }
         let width = (ui.available_width() - SCOPE_WIDTH - gap).max(SEARCH_MIN / 2.0);
         let mut text = search.text.clone();
         let (field, cleared) = ui
