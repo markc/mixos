@@ -171,7 +171,11 @@ impl Default for UiState {
 /// Everything the window shows.
 pub struct State {
     pub phase: Phase,
+    /// The account that last connected (or was loaded): the one saved.
     account: Option<Account>,
+    /// A setup form's account while it connects. It replaces `account` only
+    /// when the connect succeeds, so a failed edit is never persisted.
+    candidate: Option<Account>,
     pub session: Option<SessionInfo>,
     pub mode: Mode,
     pub setup: SetupForm,
@@ -208,6 +212,7 @@ impl State {
         Self {
             phase,
             account,
+            candidate: None,
             session: None,
             mode,
             setup,
@@ -255,6 +260,9 @@ impl State {
         match event {
             Event::Delivery(..) | Event::Look(..) | Event::LookRetry(_) => {}
             Event::Connected(Ok(info)) => {
+                if let Some(account) = self.candidate.take() {
+                    self.account = Some(account);
+                }
                 self.phase = Phase::Ready;
                 self.session = Some(info);
                 self.setup.busy = false;
@@ -267,6 +275,8 @@ impl State {
             }
             Event::Connected(Err(error)) => {
                 let error = error.to_string();
+                // A failed candidate is dropped: the saved account stays.
+                self.candidate = None;
                 if self.setup.busy || self.account.is_none() {
                     // First connect or an edited account: back to the form.
                     self.setup.busy = false;
@@ -626,7 +636,7 @@ impl State {
             password: self.setup.password.clone(),
             ca_pem,
         };
-        self.account = Some(account.clone());
+        self.candidate = Some(account.clone());
         self.setup.busy = true;
         self.setup.error = None;
         self.phase = Phase::Connecting;
@@ -804,11 +814,34 @@ mod tests {
         state.apply_ui(UiEvent::SetupField(SetupField::Password, "secret".into()));
         state.apply_ui(UiEvent::SetupConnect);
         assert!(matches!(state.phase, Phase::Connecting));
-        assert!(state.account().is_some());
+        assert!(state.account().is_none(), "adopted only once it connects");
         match state.take_work().as_slice() {
             [Work::Connect(account)] => assert_eq!(account.url, "https://example.invalid"),
             other => panic!("{other:?}"),
         }
+        state.apply(Event::Connected(Ok(SessionInfo {
+            account_name: "Account 7".into(),
+            account_id: "7".into(),
+        })));
+        assert_eq!(state.account().unwrap().password, "secret");
+    }
+
+    #[test]
+    fn a_failed_edit_never_replaces_the_saved_account() {
+        let mut state = connected();
+        let saved = state.account().unwrap().password.clone();
+        state.apply_ui(UiEvent::SetupEdit);
+        state.apply_ui(UiEvent::SetupField(SetupField::Password, "wrong".into()));
+        state.apply_ui(UiEvent::SetupConnect);
+        state.take_work();
+        // A mode change while connecting marks the config dirty.
+        state.set_mode(Mode::Calendar);
+        assert_eq!(state.account().unwrap().password, saved);
+        state.apply(Event::Connected(Err(jmap::Error::Unauthorized(
+            "no".into(),
+        ))));
+        state.set_mode(Mode::Mail);
+        assert_eq!(state.account().unwrap().password, saved);
     }
 
     #[test]
