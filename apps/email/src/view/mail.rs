@@ -157,24 +157,26 @@ pub fn reader(ui: &mut Ui, view: &AccountView, events: &mut Vec<UiEvent>) {
     if !to.is_empty() {
         ui.label(RichText::new(crate::label_with("to-line", &[("to", &to)])).weak());
     }
-    egui::Sides::new().show(
-        ui,
-        |ui| {
-            ui.label(RichText::new(email.date_short()).weak());
-        },
-        |ui| {
-            if !switchable {
-                return;
-            }
-            let (icon, key) = match format {
-                Format::Markdown => (Icon::FileCode, "show-source"),
-                Format::Plain => (Icon::FileText, "render-markdown"),
-            };
-            if ui.add(Link::new(icon, crate::label(key))).clicked() {
-                events.push(UiEvent::Command("view.reader.markdown", Origin::Ui));
-            }
-        },
-    );
+    let date = RichText::new(email.date_short()).weak();
+    if switchable {
+        egui::Sides::new().show(
+            ui,
+            |ui| {
+                ui.label(date);
+            },
+            |ui| {
+                let (icon, key) = match format {
+                    Format::Markdown => (Icon::FileCode, "show-source"),
+                    Format::Plain => (Icon::FileText, "render-markdown"),
+                };
+                if ui.add(Link::new(icon, crate::label(key))).clicked() {
+                    events.push(UiEvent::Command("view.reader.markdown", Origin::Ui));
+                }
+            },
+        );
+    } else {
+        ui.label(date);
+    }
     toolkit::bars::hairline(ui);
     ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
         match email.text_body_value() {
