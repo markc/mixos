@@ -133,7 +133,11 @@ pub fn pin_clock(ctx: &egui::Context, unix: i64, offset: i32) {
 /// pinned one, else now in the local zone.
 fn clock(ctx: &egui::Context) -> DateTime<FixedOffset> {
     ctx.data(|d| d.get_temp::<(i64, i32)>(clock_id()))
-        .and_then(|(unix, offset)| FixedOffset::east_opt(offset)?.timestamp_opt(unix, 0).single())
+        .and_then(|(unix, offset)| {
+            FixedOffset::east_opt(offset)?
+                .timestamp_opt(unix, 0)
+                .single()
+        })
         .unwrap_or_else(|| Local::now().fixed_offset())
 }
 

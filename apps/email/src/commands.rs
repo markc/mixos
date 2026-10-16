@@ -68,7 +68,13 @@ fn several(state: &State) -> bool {
 }
 
 /// One View › Sort By command: id, label, column, the Alt chord's key, run.
-type SortCommand = (&'static str, &'static str, &'static str, Key, fn(&mut State));
+type SortCommand = (
+    &'static str,
+    &'static str,
+    &'static str,
+    Key,
+    fn(&mut State),
+);
 
 const fn key(modifiers: Modifiers, key: Key) -> Option<KeyboardShortcut> {
     Some(KeyboardShortcut::new(modifiers, key))

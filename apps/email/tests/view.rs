@@ -436,7 +436,11 @@ fn dates_show_in_the_clock_zone() {
     let mut h = harness(fixture());
     email::view::mail::pin_clock(&h.ctx, NOW, 10 * 3600);
     h.run();
-    assert!(list_rows(&h)[0].ends_with("Tue 11:02"), "{:?}", list_rows(&h));
+    assert!(
+        list_rows(&h)[0].ends_with("Tue 11:02"),
+        "{:?}",
+        list_rows(&h)
+    );
 }
 
 #[test]
