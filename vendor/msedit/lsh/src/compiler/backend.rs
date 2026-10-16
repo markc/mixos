@@ -1,6 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
-// Vendored into cosmix-lsh from microsoft/edit@826b4c0 crates/lsh/src/compiler/backend.rs; see cosmix-lsh/vendor/README.md.
+// Vendored into MixOS (for libs/syntax) from microsoft/edit@826b4c0 crates/lsh/src/compiler/backend.rs; see vendor/msedit/README.md.
 
 //! Backend: IR graph -> bytecode
 //!
@@ -753,7 +753,7 @@ impl<'a> LivenessAnalysis<'a> {
             .map(|(vreg_id, (start, end))| LiveInterval { vreg_id, start, end })
             .collect();
 
-        // cosmix patch (cosmix-lsh/vendor/README.md patch 4): tie-break on the
+        // MixOS patch (vendor/msedit/README.md, patch 4): tie-break on the
         // vreg id. Upstream sorted by `start` alone, so equal starts kept the
         // HashMap's per-process iteration order and the register allocation
         // (hence the bytecode) differed between runs; `defs.rs` is committed

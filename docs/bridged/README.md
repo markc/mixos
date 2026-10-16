@@ -163,5 +163,47 @@ owner and suffix. Installing the registry is a separate prerequisite: the
 scripts and the registry must come from the same revision, and the registry
 must be at `/opt/mixos/share/bus/verbs.conf.mix` or named by `BRIDGED_VERBS`
 in `/etc/mixos/bridge/<app>.env`. Otherwise every start is refused. This
-source tree is not a live deployment. The component is `services/bridged/`
-in the source tree.
+source tree is not a live deployment, and nothing in it installs the
+registry for you.
+
+The family is declared with `members: "instances"`, so the running
+instances are not listed. `tools/verb_registry.mix --instances DIR` checks
+only the private file-stem naming and collisions; it reads no config token.
+Mesh access is unchanged: the Bus still gives every member every verb. The
+runtime guard reads the verbs and families lists. It does not enforce the
+full canonical format (field order, spacing); the static gate does that.
+
+**Verb classes.** `<app>.call` and `<app>.execute` are `intent`;
+`<app>.commands`, `<app>.inspect` and `<app>.status` are `query`.
+`<app>.screenshot` is `intent`: its `focus` option can bring the window
+forward, a change another caller sees, so it is not a query even though it
+only captures. See the
+[instance verb families decision](../docs/decisions/2026-10-13-instance-verb-families.md).
+
+## Source and tests
+
+`bridged` is a Mix component
+([decision](../docs/decisions/2026-10-10-mix-components.md)): no Cargo
+package, identity in `component.mx`. The source is
+[`services/bridged`](https://github.com/markc/mixos/tree/main/services/bridged):
+
+| Path | What |
+|---|---|
+| `scripts/lib/bridge_core.mix` | the stateless core: config, token, serve-name guard, line-JSON client |
+| `scripts/bridged.mix` | the Bus service (`mix --serve … --name <app>`); `--start <app>` (the unit: checks, then the service as a child); `--check <app>` (the checks alone) |
+| `units/bridged@.service` | one unit per application; config `/etc/mixos/bridge/<app>.conf.mix` |
+| `tests/lib/fake_app.mix` | a stand-in application on `tcp_listen` (token, key or no auth, slow and dropping methods) |
+| `tests/bridge_core_test.mix` | offline: config, token, guard, spec fixture, the client against stand-in apps |
+| `tests/bridged_test.mix` | every verb over a private broker, the start refusals, `--start` (no child on a refusal, the child's exit code passed through), the app dying and coming back |
+
+Run the tests from the checkout root with Mix 0.112.1 or later. The mix
+binary the tests run under is `BRIDGED_MIX`, else `MIXOS_TEST_MIX`, else
+`/opt/mixos/bin/mix`. The Bus test needs a `noded`: `--noded <path>`, else
+`MIXOS_TEST_NODED`, else `/opt/mixos/bin/noded`. An empty variable counts as
+unset. `tools/mix_tests.mix` sets `MIXOS_TEST_MIX`, `MIXOS_TEST_NODED` and
+`BRIDGED_MIX` to the fresh build:
+
+```sh
+mix services/bridged/tests/bridge_core_test.mix
+mix services/bridged/tests/bridged_test.mix
+```

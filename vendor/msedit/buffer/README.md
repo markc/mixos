@@ -5,8 +5,8 @@
 | upstream | `https://github.com/microsoft/edit` |
 | commit | `826b4c097b6f14ba0a846dc56f2f0223a3aaf73a` (2026-08-27) |
 | licence | MIT, Copyright (c) Microsoft Corporation — `LICENSE` in this directory, verbatim |
-| pristine import | commit `b46ac3b6` (byte-for-byte, not wired into the crate) |
-| patch | the commit that follows it ("cosmix-edit-core: patch and wire vendored msedit") |
+| pristine import | cosmix commit `b46ac3b6` (byte-for-byte, not wired into the crate), before MixOS |
+| patch | the cosmix commit that follows it ("cosmix-edit-core: patch and wire vendored msedit"); the crate is now `libs/edit` |
 
 ## Files
 
@@ -78,7 +78,8 @@ path. `crate::…` paths are rewritten to `crate::vendor::msedit::…` / `super:
 `simd/memchr2.rs` is **not** vendored after all: nothing in measurement or
 navigation calls it (upstream only uses it from the TUI buffer and the VT
 parser). `crates/lsh` and the `stdext` crate it needs are vendored as their
-own path crates under `cosmix-lsh/vendor/` (see that crate's README).
+own path crates beside this directory, `../lsh/` and `../stdext/` (see
+[`../README.md`](../README.md)).
 
 `GapBuffer` does not honour `ReadableDocument`'s "never split a grapheme
 cluster across chunks" promise (`document.rs:23`). The measurement code is

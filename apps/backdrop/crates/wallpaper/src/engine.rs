@@ -15,6 +15,121 @@ use crate::schema::{Config, Document};
 use serde::Serialize;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
+
+/// A slideshow's pure schedule. Times are durations on the controller's
+/// monotonic clock. Clone before advancing: a refused decode leaves the active
+/// selection unchanged. A single image has no automatic wake.
+#[derive(Debug, Clone)]
+pub struct Schedule {
+    pub files: Vec<PathBuf>,
+    pub current_index: usize,
+    pub interval_s: u64,
+    pub shuffle: bool,
+    order: Vec<usize>,
+    position: usize,
+    random: u64,
+    next_due: Option<Duration>,
+}
+
+impl Schedule {
+    pub fn new(
+        files: Vec<PathBuf>,
+        interval_s: u64,
+        shuffle: bool,
+        seed: u64,
+        now: Duration,
+    ) -> Result<Self, String> {
+        if files.is_empty() || files.len() > crate::schema::MAX_SLIDES || interval_s < 5 {
+            return Err(
+                "slideshow needs a bounded non-empty source and interval of at least 5 seconds"
+                    .into(),
+            );
+        }
+        let mut unique = BTreeSet::new();
+        let files: Vec<_> = files
+            .into_iter()
+            .filter(|p| unique.insert(p.clone()))
+            .collect();
+        let mut schedule = Self {
+            order: (0..files.len()).collect(),
+            files,
+            current_index: 0,
+            interval_s,
+            shuffle,
+            position: 0,
+            random: if seed == 0 { 0x9e3779b97f4a7c15 } else { seed },
+            next_due: None,
+        };
+        if shuffle {
+            schedule.permute(None);
+        }
+        schedule.current_index = schedule.order[0];
+        schedule.defer(now);
+        Ok(schedule)
+    }
+
+    fn random(&mut self) -> u64 {
+        self.random ^= self.random << 13;
+        self.random ^= self.random >> 7;
+        self.random ^= self.random << 17;
+        self.random
+    }
+
+    fn permute(&mut self, last: Option<usize>) {
+        for i in (1..self.order.len()).rev() {
+            let j = (self.random() % (i as u64 + 1)) as usize;
+            self.order.swap(i, j);
+        }
+        if self.order.len() > 1 && last == Some(self.order[0]) {
+            self.order.swap(0, 1);
+        }
+    }
+
+    pub fn current(&self) -> &Path {
+        &self.files[self.current_index]
+    }
+    pub fn deadline(&self) -> Option<Duration> {
+        self.next_due
+    }
+    pub fn due(&self, now: Duration) -> bool {
+        self.next_due.is_some_and(|t| t <= now)
+    }
+
+    pub fn advance(&mut self, now: Duration) {
+        self.position += 1;
+        if self.position == self.order.len() {
+            self.position = 0;
+            if self.shuffle {
+                self.permute(Some(self.current_index));
+            }
+        }
+        self.current_index = self.order[self.position];
+        self.defer(now);
+    }
+
+    /// Schedule from completion or failure, rather than catching up old ticks.
+    pub fn defer(&mut self, now: Duration) {
+        self.next_due = if self.files.len() > 1 {
+            now.checked_add(Duration::from_secs(self.interval_s))
+        } else {
+            None
+        };
+    }
+
+    /// Consume a failed proposal's traversal position, while retaining the
+    /// current on-screen image. The next attempt can try the following entry.
+    pub fn skip_failed(&mut self, attempted: &Self, now: Duration) {
+        assert_eq!(
+            self.files, attempted.files,
+            "proposal must use the same source"
+        );
+        self.order.clone_from(&attempted.order);
+        self.position = attempted.position;
+        self.random = attempted.random;
+        self.defer(now);
+    }
+}
 
 #[derive(Debug)]
 struct Pending {
@@ -92,14 +207,26 @@ impl Engine {
     /// must be decoded first; a request with none applies at once (see
     /// [`Engine::ready`]).
     pub fn stage(&mut self, config: Config, resident: impl Fn(&Path) -> bool) -> Staged {
+        let paths = config.images().into_iter().map(Path::to_path_buf).collect();
+        self.stage_images(config, paths, resident)
+    }
+
+    /// Stage the worker-selected paths, or relative discovery markers for
+    /// slideshow sources. The public configuration keeps its source declarations.
+    pub fn stage_images(
+        &mut self,
+        config: Config,
+        paths: Vec<PathBuf>,
+        resident: impl Fn(&Path) -> bool,
+    ) -> Staged {
         self.requested += 1;
         let revision = self.requested;
         let superseded = self.pending.take().map(|p| p.revision);
-        let jobs: Vec<PathBuf> = config
-            .images()
+        let jobs: Vec<PathBuf> = paths
+            .into_iter()
+            .collect::<BTreeSet<_>>()
             .into_iter()
             .filter(|path| !resident(path))
-            .map(Path::to_path_buf)
             .collect();
         let waiting = jobs.iter().cloned().collect();
         self.pending = Some(Pending {
@@ -204,6 +331,7 @@ mod tests {
             default: Wallpaper::Image {
                 path: PathBuf::from(path),
                 fallback: None,
+                fit: crate::fit::Fit::Fill,
             },
             outputs: BTreeMap::new(),
         }
@@ -303,5 +431,98 @@ mod tests {
         assert!(engine.refuse(1, "disk full".into()));
         assert_eq!(engine.apply(), None);
         assert!(engine.status().error.as_deref() == Some("disk full"));
+    }
+
+    fn schedule(shuffle: bool) -> Schedule {
+        Schedule::new(
+            ["/a.png", "/b.png", "/c.png"].map(PathBuf::from).to_vec(),
+            5,
+            shuffle,
+            42,
+            Duration::ZERO,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn sequential_schedule_wraps_and_uses_completion_time() {
+        let mut s = schedule(false);
+        assert_eq!(s.current(), Path::new("/a.png"));
+        assert!(!s.due(Duration::from_secs(4)));
+        assert!(s.due(Duration::from_secs(5)));
+        s.advance(Duration::from_secs(7));
+        assert_eq!(s.current(), Path::new("/b.png"));
+        assert_eq!(s.deadline(), Some(Duration::from_secs(12)));
+        s.advance(Duration::from_secs(12));
+        assert_eq!(s.current(), Path::new("/c.png"));
+        s.advance(Duration::from_secs(17));
+        assert_eq!(s.current(), Path::new("/a.png"));
+    }
+
+    #[test]
+    fn shuffle_visits_each_image_once_per_cycle_without_boundary_repeats() {
+        let mut s = schedule(true);
+        let mut previous = None;
+        for cycle in 0..20 {
+            let mut seen = BTreeSet::new();
+            for step in 0..3 {
+                let path = s.current().to_path_buf();
+                assert_ne!(previous.as_ref(), Some(&path));
+                assert!(seen.insert(path.clone()));
+                previous = Some(path);
+                s.advance(Duration::from_secs((cycle * 3 + step + 1) * 5));
+            }
+            assert_eq!(seen.len(), 3);
+        }
+    }
+
+    #[test]
+    fn a_failed_proposal_preserves_selection_and_defers_retry() {
+        let mut active = schedule(false);
+        let mut proposal = active.clone();
+        proposal.advance(Duration::from_secs(5));
+        assert_ne!(proposal.current(), active.current());
+        active.defer(Duration::from_secs(8));
+        assert_eq!(active.current(), Path::new("/a.png"));
+        assert_eq!(active.deadline(), Some(Duration::from_secs(13)));
+    }
+
+    #[test]
+    fn one_image_has_no_timer_but_can_be_refreshed_manually() {
+        let mut s = Schedule::new(
+            vec!["/a.png".into(), "/a.png".into()],
+            5,
+            true,
+            0,
+            Duration::ZERO,
+        )
+        .unwrap();
+        assert_eq!(s.deadline(), None);
+        assert!(!s.due(Duration::MAX));
+        s.advance(Duration::from_secs(100));
+        assert_eq!(s.current(), Path::new("/a.png"));
+        assert_eq!(s.deadline(), None);
+    }
+
+    #[test]
+    fn schedule_refuses_invalid_inputs_and_bounds_large_deadlines() {
+        assert!(Schedule::new(vec![], 5, false, 1, Duration::ZERO).is_err());
+        assert!(Schedule::new(vec!["/a.png".into()], 4, false, 1, Duration::ZERO).is_err());
+        let mut s = schedule(false);
+        s.defer(Duration::MAX);
+        assert_eq!(s.deadline(), None);
+    }
+
+    #[test]
+    fn a_bad_entry_is_skipped_without_changing_the_displayed_image() {
+        let mut active = schedule(false);
+        let mut attempted = active.clone();
+        attempted.advance(Duration::from_secs(5));
+        active.skip_failed(&attempted, Duration::from_secs(5));
+        assert_eq!(active.current(), Path::new("/a.png"));
+        active.advance(Duration::from_secs(10));
+        assert_eq!(active.current(), Path::new("/c.png"));
+        active.advance(Duration::from_secs(15));
+        assert_eq!(active.current(), Path::new("/a.png"));
     }
 }

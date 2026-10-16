@@ -1,6 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
-// Vendored into cosmix-edit-core from microsoft/edit@826b4c0 crates/stdext/src/helpers.rs; see vendor/msedit/README.md.
+// Vendored into MixOS (for libs/edit) from microsoft/edit@826b4c0 crates/stdext/src/helpers.rs; see vendor/msedit/buffer/README.md.
 // Subset: `slice_copy_safe`, `ReplaceRange` + its `Vec` impl and the private
 // `vec_replace_impl` it calls, and (ced E1, for unicode measurement)
 // `cold_path`. Bodies unchanged.

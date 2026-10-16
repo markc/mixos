@@ -7,10 +7,10 @@
 //!   through [`Config::from_document`], so a value means the same whichever
 //!   way it arrived.
 //! - [`colour`][]: `#RRGGBB`.
-//! - [`fit`][]: the centre-crop rule an image fills a surface by.
+//! - [`fit`][]: crop, contain, native centre, repeat and stretch placement.
 //! - [`decode`][]: PNG and JPEG under explicit limits, applied before decode.
-//! - [`engine`][]: revisions. A document applies only once every image it names
-//!   is decoded; until then the last accepted one stays on screen.
+//! - [`engine`][]: revisions and pure slideshow schedules. A request applies
+//!   after its selected images decode; until then the last accepted one stays.
 
 pub mod colour;
 pub mod decode;

@@ -122,9 +122,12 @@
                 <div class="panel-content">
                     <nav>
                         <a href="/"><i data-lucide="home"></i> Home</a>
+                        <a href="/docs/"><i data-lucide="book-open"></i> Docs</a>
+                        <a href="/mix/" class="active" aria-current="page"><i data-lucide="file-text"></i> The Mix language</a>
                         <div class="sidebar-divider"></div>
                         <a href="/docs/try/"><i data-lucide="monitor"></i> Try it beside your desktop</a>
                         <a href="/docs/drive/"><i data-lucide="network"></i> Driving apps over the Bus</a>
+                        <a href="/docs/components/"><i data-lucide="box"></i> Components</a>
                         <a href="/docs/decisions/2026-10-09-egui-applications/"><i data-lucide="layers"></i> Decision: egui applications</a>
                         <div class="sidebar-divider"></div>
                         <a href="/docs/decisions/2026-10-04-source-layout/"><i data-lucide="file-text"></i> Decision: source layout</a>
@@ -223,6 +226,8 @@
                         <a href="#programs-and-documents">Programs and documents</a>
                         <a href="#exit-status">Exit status</a>
                         <a href="#design-docs--specs">Design docs &amp; specs</a>
+                        <a href="#the-library">The library</a>
+                        <a href="#changes">Changes</a>
                         <a href="#see-also">See also</a>
                     </nav>
                 </div>
@@ -367,6 +372,21 @@ its graceful shutdown behaviour.</p>
 <p>Design docs, background rationale, and the formal specs (04 language
 reference, 18 citizen runtime) all live in the operator control repo since
 2026-07-23; this manual is the complete public reference.</p>
+<h2 id="the-library">The library</h2>
+<p>The <code>mix</code> component is the language library
+(<a href="https://github.com/markc/mixos/tree/main/libs/mix"><code>libs/mix</code></a>): lexer,
+parser, evaluator, builtin contracts and embedded handler interfaces.
+Features select the optional data, networking and cryptographic
+facilities; the interpreter's core stays independent of the Bus and
+desktop. It was transplanted from <code>cosmix-lib-mix</code> at cosmix
+<code>e0297242305f3a3c3de09f1ca01e8faa771768da</code>, retaining its regression corpus
+and public language version. The shell is <a href="https://mixos.dev/mix-shell/">mix-shell</a>,
+and the <code>mix</code> binary is built by <a href="https://mixos.dev/system/">system</a>.</p>
+<h2 id="changes">Changes</h2>
+<ul>
+<li><strong><a href="/mix/changelog/">changelog</a></strong>: the Mix library's change history, generated from
+<code>libs/mix/CHANGELOG.md</code>.</li>
+</ul>
 <h2 id="see-also">See also</h2>
 <pre><code>mix help              the full categorized builtin reference
 mix builtins [CAT]    list builtins, optionally by category
@@ -377,7 +397,7 @@ mix man TOPIC         read any of the pages above in the terminal
 the repo root is a short orientation sheet whose canonical reference is this
 manual.</p>
         </article>
-        <p class="doc-source"><a href="/mix/README.md"><i data-lucide="file-text"></i> This page as Markdown</a></p>
+        <p class="doc-source"><a href="/mix/README.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
     </div>
 </main>
 <script src="/_web/base.js?v=2652b9bc10"></script>

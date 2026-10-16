@@ -122,9 +122,12 @@
                 <div class="panel-content">
                     <nav>
                         <a href="/"><i data-lucide="home"></i> Home</a>
+                        <a href="/docs/"><i data-lucide="book-open"></i> Docs</a>
+                        <a href="/mix/"><i data-lucide="file-text"></i> The Mix language</a>
                         <div class="sidebar-divider"></div>
                         <a href="/docs/try/"><i data-lucide="monitor"></i> Try it beside your desktop</a>
                         <a href="/docs/drive/"><i data-lucide="network"></i> Driving apps over the Bus</a>
+                        <a href="/docs/components/"><i data-lucide="box"></i> Components</a>
                         <a href="/docs/decisions/2026-10-09-egui-applications/"><i data-lucide="layers"></i> Decision: egui applications</a>
                         <div class="sidebar-divider"></div>
                         <a href="/docs/decisions/2026-10-04-source-layout/"><i data-lucide="file-text"></i> Decision: source layout</a>
@@ -218,6 +221,7 @@
                         <a href="#appearance">Appearance</a>
                         <a href="#for-agents">For agents</a>
                         <a href="#wallpaper">Wallpaper</a>
+                        <a href="#running-and-testing">Running and testing</a>
                     </nav>
                 </div>
             </div>
@@ -348,8 +352,22 @@ state read, never automatically resent.</p>
 <code>prefs.appearance</code>. Commands <code>wallpaper.apply</code>, <code>wallpaper.revert</code>,
 <code>wallpaper.refresh</code> and <code>wallpaper.browse</code> are available through
 <code>prefs.execute</code>; the normal <code>prefs.ui.*</code> verbs drive the controls and browser.</p>
+<h2 id="running-and-testing">Running and testing</h2>
+<p>Run with <code>prefs [--noded-url URL]</code>; a second launch raises the first window
+(<code>prefs.show</code>). The Bus connection is <a href="/citizen/">citizen</a>.</p>
+<p>The source is <a href="https://github.com/markc/mixos/tree/main/apps/prefs"><code>apps/prefs</code></a>:</p>
+<table><thead><tr><th>Path</th><th>What</th></tr></thead><tbody>
+<tr><td><code>crates/preferences</code></td><td>the headless engine: panels, rows, notes, one operation at a time, the <code>prefs.*</code> verbs</td></tr>
+<tr><td><code>crates/preferences/src/appearance.rs</code></td><td>the Appearance panel: the look, its draft, fenced applies, receipts for lost replies</td></tr>
+<tr><td><code>src/commands.rs</code></td><td>every action as a registered command (menus, buttons, shortcuts, <code>prefs.execute</code>)</td></tr>
+<tr><td><code>src/view.rs</code></td><td>the egui rendering; returns what the person did</td></tr>
+<tr><td><code>src/shell.rs</code></td><td>events in, effects out, in order; drained shutdown</td></tr>
+<tr><td><code>i18n/en/prefs.ftl</code></td><td>the strings</td></tr>
+</tbody></table>
+<p>Test with <code>cargo test -p preferences -p prefs</code>. Regenerate the snapshots
+with <code>UPDATE_SNAPSHOTS=1</code> and look at the images before committing them.</p>
         </article>
-        <p class="doc-source"><a href="/prefs/README.md"><i data-lucide="file-text"></i> This page as Markdown</a></p>
+        <p class="doc-source"><a href="/prefs/README.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
     </div>
 </main>
 <script src="/_web/base.js?v=2652b9bc10"></script>

@@ -5,13 +5,13 @@
 | upstream | `https://github.com/microsoft/edit` |
 | commit | `826b4c097b6f14ba0a846dc56f2f0223a3aaf73a` (2026-08-27) |
 | licence | MIT, Copyright (c) Microsoft Corporation — `LICENSE` in this directory, verbatim |
-| pristine import | commit `403eba59` (byte-for-byte, not wired) |
-| patch | the commit that follows it ("ced E1 Stage S: patch and wire vendored msedit") |
+| pristine import | cosmix commit `403eba59` (byte-for-byte, not wired), before MixOS |
+| patch | the cosmix commit that follows it ("ced E1 Stage S: patch and wire vendored msedit") |
 
 The two upstream crates are kept **as their own path crates** so their
 sources compile unmodified: library names stay `lsh` and `stdext`, package
-names are `cosmix-msedit-lsh` / `cosmix-msedit-stdext` (`publish = false`).
-Only `cosmix-lsh` (the parent crate) depends on them.
+names are `msedit-lsh` / `msedit-stdext` (`publish = false`).
+Only [`libs/syntax`](../../libs/syntax) depends on them.
 
 ## Files
 
@@ -19,10 +19,15 @@ Only `cosmix-lsh` (the parent crate) depends on them.
 |---|---|---|
 | `lsh/` | `crates/lsh/` (whole crate: `src/**`, `definitions/**`, `README.md`) | manifest rewritten (no msedit workspace inheritance); per-file provenance header |
 | `stdext/` | `crates/stdext/` (whole crate) | manifest rewritten (feature `single-threaded` gone); patches 1–2; per-file provenance header |
-| `edit-lsh/*.rs` | `crates/edit/src/lsh/{mod,highlighter,cache,definitions}.rs` | none — **reference only**, not compiled; `cosmix-lsh/src/{highlighter,cache}.rs` are the adapted versions |
+| `buffer/`, `buffer.rs` | parts of `crates/edit/` and `crates/stdext/` | the text buffer behind `libs/edit`; its own patch log is [`buffer/README.md`](buffer/README.md) |
 | `LICENSE` | `LICENSE` | verbatim |
 
-## Patch log (ced E1 plan `_plan/2026-09-26-ced-e1-implementation.md` §1.2, cmctl hub)
+The upstream highlighter and cache that `libs/syntax` adapts are not kept
+here. Read them at the pinned commit:
+[`crates/edit/src/lsh/`](https://github.com/microsoft/edit/tree/826b4c097b6f14ba0a846dc56f2f0223a3aaf73a/crates/edit/src/lsh)
+(`mod.rs`, `highlighter.rs`, `cache.rs`, `definitions.rs`).
+
+## Patch log
 
 1. **No mutable statics — scratch arenas** (`stdext/src/arena/scratch.rs`):
    `mod single_threaded` (its arenas lived in a mutable static behind the
@@ -42,9 +47,10 @@ Only `cosmix-lsh` (the parent crate) depends on them.
    bytecode changed from run to run. Harmless inside msedit's build script;
    fatal for a committed `defs.rs` with a freshness test.
 
-## Adapted, not vendored (`cosmix-lsh/src/`)
+## Adapted, not vendored (`libs/syntax/src/`)
 
-`highlighter.rs` and `cache.rs` are rewritten from `edit-lsh/` rather than
+`highlighter.rs` and `cache.rs` are rewritten from upstream's
+`crates/edit/src/lsh/{highlighter,cache}.rs` (linked above) rather than
 patched, so the differences are listed in their module docs: the
 `LineSource` swap, plain byte scanning for newlines, owned `Vec<Span>`
 output with the runtime's sentinel dropped, a fix for multi-chunk lines of

@@ -367,6 +367,80 @@ try
       json_encode($st2.result.outputs ?? []))
   end
 
+  -- Phase B: each fit is drawn by the real layer program.
+  $r = bcall("backdrop.next", {})
+  check("next: a static wallpaper is refused", $r.rc == 10, json_encode($r))
+  for each $mode in ["fit", "centre", "tile", "stretch"]
+    $r = bcall("backdrop.set", {schema: 1, default: {image: $FIXTURE, fit: $mode, fallback: "#123456"}})
+    check($mode .. ": accepted", $r.rc == 0, json_encode($r))
+    if $r.rc == 0 then
+      check($mode .. ": revision presented", wait_revision($r.result.active), "no presentation")
+      $fshot = screenshot("fit-" .. $mode)
+      check($mode .. ": screenshot captured", $fshot != nil, "capture failed")
+      if $fshot != nil then
+        if $mode == "fit" and $fshot.w > $fshot.h then
+          check("fit: letterbox bar uses fallback", near($c.pixel($fshot, 1, $fshot.h / 2), [18, 52, 86], 3), "wrong bar colour")
+        elif $mode == "centre" then
+          check("centre: native image leaves fallback at corner", near($c.pixel($fshot, 1, 1), [18, 52, 86], 3), "native image stretched")
+        elif $mode == "tile" then
+          check("tile: repeats every 32 physical pixels", deep_eq($c.pixel($fshot, 7, 7), $c.pixel($fshot, 39, 7)), "tile period wrong")
+          check("tile: corner is image rather than fallback", not near($c.pixel($fshot, 1, 1), [18, 52, 86], 3), "fallback at tile corner")
+        elif $mode == "stretch" then
+          check("stretch: image covers the output", distinct(grid($fshot)) >= 2, "flat output")
+        end
+      end
+    end
+  end
+
+  $second = realpath("share/brand/favicons/white-on-black/favicon-32x32.png")
+  $slides = {schema: 1, default: {slideshow: {images: [$FIXTURE, $second], interval_s: 5}, fit: "fill", fallback: "#123456"}}
+  $bad_slides = {schema: 1, default: {slideshow: {images: [$FIXTURE], interval_s: 4}}}
+  $r = bcall("backdrop.set", $bad_slides)
+  check("slideshow: interval below five refused", refused_with($r, "ARGUMENT"), json_encode($r))
+  $r = bcall("backdrop.set", $slides)
+  check("slideshow: explicit list accepted", $r.rc == 0, json_encode($r))
+  if $r.rc == 0 then
+    check("slideshow: first revision presented", wait_revision($r.result.active), "no presentation")
+    $first = screenshot("slide-first")
+    check("slideshow: first screenshot captured", $first != nil, "capture failed")
+    $source_text = read_file($DOC)
+    $r = bcall("backdrop.next", {})
+    check("next: replies with full state", $r.rc == 0 and type($r.result.config) == "map" and type($r.result.outputs) == "list", json_encode($r))
+    if $r.rc == 0 then
+      check("next: revision presented", wait_revision($r.result.active), "no presentation")
+      sleep(0.75)
+      $next_shot = screenshot("slide-next")
+      check("next: screenshot captured", $next_shot != nil, "capture failed")
+      if $first != nil and $next_shot != nil then
+        check("next: different image after crossfade", not deep_eq(grid($first), grid($next_shot)), "unchanged pixels")
+      end
+      check("next: stored source document unchanged", read_file($DOC) == $source_text, "source overwritten")
+      -- Observe the actual timer after its five-second interval, then fade.
+      sleep(5.5)
+      $timed = screenshot("slide-timed")
+      check("timer: screenshot captured", $timed != nil, "capture failed")
+      if $first != nil and $timed != nil then
+        check("timer: wrapped back to first image", deep_eq(grid($first), grid($timed)), "timer did not advance")
+      end
+    end
+  end
+
+  $folder = $run .. "/slides"
+  mkdir($folder, {parents: true})
+  copy($FIXTURE, $folder .. "/a.png")
+  copy($second, $folder .. "/b.png")
+  write_file($folder .. "/ignored.txt", "not an image")
+  $r = bcall("backdrop.set", {schema: 1, default: {slideshow: {folder: $folder, interval_s: 600}}})
+  check("slideshow: folder discovered on worker", $r.rc == 0, json_encode($r))
+  if $r.rc == 0 then
+    $source_text = read_file($DOC)
+    $r = bcall("backdrop.next", {})
+    check("slideshow: folder advances", $r.rc == 0, json_encode($r))
+    check("slideshow: folder declaration kept on disk", read_file($DOC) == $source_text and contains($source_text, $folder), "folder overwritten")
+  end
+  $r = bcall("backdrop.set", doc_colour("#607080"))
+  check("static idle: restored a solid wallpaper", $r.rc == 0, json_encode($r))
+
   -- ── bounded static idle ─────────────────────────────────────────────
   sleep(1)
   $t0 = cpu_ticks($PIDS["backdrop"])

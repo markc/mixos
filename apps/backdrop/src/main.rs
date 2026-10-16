@@ -2,7 +2,7 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! backdrop: the MixOS desktop background. One surface per output on compd's
 //! Background layer (`toolkit::layer`), drawn with egui: a solid colour or a
-//! PNG/JPEG image, centre-cropped, from the document `backdrop.mx` (or the
+//! PNG/JPEG image or slideshow, from the document `backdrop.mx` (or the
 //! session theme's colour when there is none). The command line sets the
 //! default; the Bus (`backdrop.set`) replaces the document. `--probe` runs the
 //! regression probe instead (`probe.rs`).
@@ -26,10 +26,11 @@ Usage: backdrop [OPTIONS]\n\
   --colour #RRGGBB   the default: a solid colour, over the document's\n\
   --image FILE       the default: a PNG or JPEG, centre-cropped, over the\n\
                      document's (an absolute path, or relative to here)\n\
+  --fit MODE         image sizing: fill (default), fit, centre, tile, stretch\n\
   --service NAME     register on the Bus as NAME (default backdrop)\n\
   --probe            the regression probe: surfaces, scale and input\n\
   --help             this text\n\
-Bus: backdrop.ping, backdrop.state, backdrop.set (docs/backdrop/README.md).";
+Bus: backdrop.ping, backdrop.state, backdrop.set, backdrop.next (docs/backdrop/README.md).";
 
 /// The largest document read (strict data: a few kilobytes in practice).
 const MAX_DOCUMENT: u64 = 64 * 1024;
@@ -40,6 +41,7 @@ struct Args {
     config: Option<PathBuf>,
     colour: Option<String>,
     image: Option<String>,
+    fit: Option<wallpaper::fit::Fit>,
     service: Option<String>,
 }
 
@@ -58,6 +60,13 @@ fn parse(args: impl Iterator<Item = String>) -> Result<Args, String> {
             "--config" => out.config = Some(PathBuf::from(value(&mut args, &arg)?)),
             "--colour" => out.colour = Some(value(&mut args, &arg)?),
             "--image" => out.image = Some(value(&mut args, &arg)?),
+            "--fit" => {
+                let mode = value(&mut args, &arg)?;
+                out.fit = Some(
+                    serde_json::from_value(serde_json::Value::String(mode))
+                        .map_err(|_| "--fit needs fill, fit, centre, tile or stretch")?,
+                );
+            }
             "--service" => out.service = Some(value(&mut args, &arg)?),
             "--help" | "-h" => {
                 println!("{HELP}");
@@ -70,6 +79,7 @@ fn parse(args: impl Iterator<Item = String>) -> Result<Args, String> {
         && (out.config.is_some()
             || out.colour.is_some()
             || out.image.is_some()
+            || out.fit.is_some()
             || out.service.is_some())
     {
         return Err("--probe runs alone: no wallpaper or service option goes with it".into());
@@ -127,6 +137,9 @@ fn load(path: &Path, required: bool) -> Result<Option<Config>, String> {
 
 /// The default the command line names, validated as the document's own are.
 fn cli_default(args: &Args) -> Result<Option<Wallpaper>, String> {
+    if args.fit.is_some() && args.image.is_none() {
+        return Err("--fit goes with --image".into());
+    }
     let fill = match (&args.colour, &args.image) {
         (Some(_), Some(_)) => {
             return Err("--colour and --image each set the default: use one".into());
@@ -139,6 +152,7 @@ fn cli_default(args: &Args) -> Result<Option<Wallpaper>, String> {
             let path = std::path::absolute(image).map_err(|e| format!("--image {image}: {e}"))?;
             Fill {
                 image: Some(path.display().to_string()),
+                fit: args.fit,
                 ..Fill::default()
             }
         }
@@ -256,6 +270,22 @@ mod tests {
         for bad in ["", "a", "Backdrop", "1backdrop", "back.drop", "back drop"] {
             assert!(!valid_service(bad), "{bad:?}");
         }
+    }
+
+    #[test]
+    fn command_line_fit_is_validated_and_requires_an_image() {
+        assert!(args(&["--fit", "bogus"]).is_err());
+        assert!(args(&["--probe", "--fit", "tile"]).is_err());
+        let only_fit = args(&["--fit", "centre"]).unwrap();
+        assert!(cli_default(&only_fit).is_err());
+        let with_image = args(&["--image", "/a.png", "--fit", "fit"]).unwrap();
+        assert!(matches!(
+            cli_default(&with_image).unwrap(),
+            Some(Wallpaper::Image {
+                fit: wallpaper::fit::Fit::Fit,
+                ..
+            })
+        ));
     }
 
     #[test]

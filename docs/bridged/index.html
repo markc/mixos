@@ -122,9 +122,12 @@
                 <div class="panel-content">
                     <nav>
                         <a href="/"><i data-lucide="home"></i> Home</a>
+                        <a href="/docs/"><i data-lucide="book-open"></i> Docs</a>
+                        <a href="/mix/"><i data-lucide="file-text"></i> The Mix language</a>
                         <div class="sidebar-divider"></div>
                         <a href="/docs/try/"><i data-lucide="monitor"></i> Try it beside your desktop</a>
                         <a href="/docs/drive/"><i data-lucide="network"></i> Driving apps over the Bus</a>
+                        <a href="/docs/components/"><i data-lucide="box"></i> Components</a>
                         <a href="/docs/decisions/2026-10-09-egui-applications/"><i data-lucide="layers"></i> Decision: egui applications</a>
                         <div class="sidebar-divider"></div>
                         <a href="/docs/decisions/2026-10-04-source-layout/"><i data-lucide="file-text"></i> Decision: source layout</a>
@@ -219,6 +222,7 @@
                         <a href="#using-it">Using it</a>
                         <a href="#security">Security</a>
                         <a href="#status">Status</a>
+                        <a href="#source-and-tests">Source and tests</a>
                     </nav>
                 </div>
             </div>
@@ -382,10 +386,44 @@ owner and suffix. Installing the registry is a separate prerequisite: the
 scripts and the registry must come from the same revision, and the registry
 must be at <code>/opt/mixos/share/bus/verbs.conf.mix</code> or named by <code>BRIDGED_VERBS</code>
 in <code>/etc/mixos/bridge/&lt;app&gt;.env</code>. Otherwise every start is refused. This
-source tree is not a live deployment. The component is <code>services/bridged/</code>
-in the source tree.</p>
+source tree is not a live deployment, and nothing in it installs the
+registry for you.</p>
+<p>The family is declared with <code>members: "instances"</code>, so the running
+instances are not listed. <code>tools/verb_registry.mix --instances DIR</code> checks
+only the private file-stem naming and collisions; it reads no config token.
+Mesh access is unchanged: the Bus still gives every member every verb. The
+runtime guard reads the verbs and families lists. It does not enforce the
+full canonical format (field order, spacing); the static gate does that.</p>
+<p><strong>Verb classes.</strong> <code>&lt;app&gt;.call</code> and <code>&lt;app&gt;.execute</code> are <code>intent</code>;
+<code>&lt;app&gt;.commands</code>, <code>&lt;app&gt;.inspect</code> and <code>&lt;app&gt;.status</code> are <code>query</code>.
+<code>&lt;app&gt;.screenshot</code> is <code>intent</code>: its <code>focus</code> option can bring the window
+forward, a change another caller sees, so it is not a query even though it
+only captures. See the
+<a href="/docs/decisions/2026-10-13-instance-verb-families/">instance verb families decision</a>.</p>
+<h2 id="source-and-tests">Source and tests</h2>
+<p><code>bridged</code> is a Mix component
+(<a href="/docs/decisions/2026-10-10-mix-components/">decision</a>): no Cargo
+package, identity in <code>component.mx</code>. The source is
+<a href="https://github.com/markc/mixos/tree/main/services/bridged"><code>services/bridged</code></a>:</p>
+<table><thead><tr><th>Path</th><th>What</th></tr></thead><tbody>
+<tr><td><code>scripts/lib/bridge_core.mix</code></td><td>the stateless core: config, token, serve-name guard, line-JSON client</td></tr>
+<tr><td><code>scripts/bridged.mix</code></td><td>the Bus service (<code>mix --serve … --name &lt;app&gt;</code>); <code>--start &lt;app&gt;</code> (the unit: checks, then the service as a child); <code>--check &lt;app&gt;</code> (the checks alone)</td></tr>
+<tr><td><code>units/bridged@.service</code></td><td>one unit per application; config <code>/etc/mixos/bridge/&lt;app&gt;.conf.mix</code></td></tr>
+<tr><td><code>tests/lib/fake_app.mix</code></td><td>a stand-in application on <code>tcp_listen</code> (token, key or no auth, slow and dropping methods)</td></tr>
+<tr><td><code>tests/bridge_core_test.mix</code></td><td>offline: config, token, guard, spec fixture, the client against stand-in apps</td></tr>
+<tr><td><code>tests/bridged_test.mix</code></td><td>every verb over a private broker, the start refusals, <code>--start</code> (no child on a refusal, the child's exit code passed through), the app dying and coming back</td></tr>
+</tbody></table>
+<p>Run the tests from the checkout root with Mix 0.112.1 or later. The mix
+binary the tests run under is <code>BRIDGED_MIX</code>, else <code>MIXOS_TEST_MIX</code>, else
+<code>/opt/mixos/bin/mix</code>. The Bus test needs a <code>noded</code>: <code>--noded &lt;path&gt;</code>, else
+<code>MIXOS_TEST_NODED</code>, else <code>/opt/mixos/bin/noded</code>. An empty variable counts as
+unset. <code>tools/mix_tests.mix</code> sets <code>MIXOS_TEST_MIX</code>, <code>MIXOS_TEST_NODED</code> and
+<code>BRIDGED_MIX</code> to the fresh build:</p>
+<pre><code class="language-sh">mix services/bridged/tests/bridge_core_test.mix
+mix services/bridged/tests/bridged_test.mix
+</code></pre>
         </article>
-        <p class="doc-source"><a href="/bridged/README.md"><i data-lucide="file-text"></i> This page as Markdown</a></p>
+        <p class="doc-source"><a href="/bridged/README.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
     </div>
 </main>
 <script src="/_web/base.js?v=2652b9bc10"></script>

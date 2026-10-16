@@ -122,9 +122,12 @@
                 <div class="panel-content">
                     <nav>
                         <a href="/"><i data-lucide="home"></i> Home</a>
+                        <a href="/docs/"><i data-lucide="book-open"></i> Docs</a>
+                        <a href="/mix/"><i data-lucide="file-text"></i> The Mix language</a>
                         <div class="sidebar-divider"></div>
                         <a href="/docs/try/"><i data-lucide="monitor"></i> Try it beside your desktop</a>
                         <a href="/docs/drive/"><i data-lucide="network"></i> Driving apps over the Bus</a>
+                        <a href="/docs/components/"><i data-lucide="box"></i> Components</a>
                         <a href="/docs/decisions/2026-10-09-egui-applications/"><i data-lucide="layers"></i> Decision: egui applications</a>
                         <div class="sidebar-divider"></div>
                         <a href="/docs/decisions/2026-10-04-source-layout/"><i data-lucide="file-text"></i> Decision: source layout</a>
@@ -223,6 +226,9 @@
                         <a href="#wi-fi">Wi-Fi</a>
                         <a href="#stopping-it">Stopping it</a>
                         <a href="#refusals">Refusals</a>
+                        <a href="#source-layout">Source layout</a>
+                        <a href="#adding-a-write-verb">Adding a write verb</a>
+                        <a href="#tests">Tests</a>
                     </nav>
                 </div>
             </div>
@@ -272,6 +278,11 @@ hostd call net.link.apply '{"link":"eth1","config":{"mode":"dhcp"}}'
 </code></pre>
 <p>Read verbs are also on the Bus, owned by <code>hostd</code>. Changes are never taken
 from the Bus.</p>
+<p>There is one hostd per host, run as root and socket-activated:</p>
+<pre><code class="language-text">hostd serve                      # local socket, plus the Bus when noded is up
+hostd serve --no-bus             # local socket only
+</code></pre>
+<p><code>hostd serve</code> refuses to take over a socket another hostd is serving.</p>
 <h2 id="verbs">Verbs</h2>
 <table><thead><tr><th>Verb</th><th>Tier</th><th>What</th></tr></thead><tbody>
 <tr><td><code>host.info</code></td><td>read</td><td>hostname, kernel, OS, MixOS mode, container, uptime, CPU, memory</td></tr>
@@ -505,8 +516,51 @@ host itself thaws it, never root inside a container.</p>
 <tr><td><code>recovery_pending</code></td><td>an unfinished change is being retried and hasn't finished yet; writes wait</td></tr>
 <tr><td><code>timeout</code>, <code>busy</code></td><td>too slow, or too many requests at once</td></tr>
 </tbody></table>
+<h2 id="source-layout">Source layout</h2>
+<p>The source is
+<a href="https://github.com/markc/mixos/tree/main/services/hostd"><code>services/hostd</code></a>:</p>
+<table><thead><tr><th>File</th><th>What</th></tr></thead><tbody>
+<tr><td><code>src/local.rs</code></td><td>the local socket: NUL-framed JSON, per-uid and per-connection limits</td></tr>
+<tr><td><code>src/caller.rs</code></td><td>caller identity from <code>SO_PEERCRED</code>, a held pidfd, cgroup and namespaces, read per request</td></tr>
+<tr><td><code>src/service.rs</code></td><td>the verb table, tiers, dispatch and the <code>authorise</code> gate</td></tr>
+<tr><td><code>src/policy.rs</code></td><td>grants: loading (one <code>O_NOFOLLOW</code> open, root-only), matching, rate limits</td></tr>
+<tr><td><code>src/freeze.rs</code></td><td>the kill switch, failing closed</td></tr>
+<tr><td><code>src/receipt.rs</code></td><td>receipts, durable atomic writes, restore, the circuit breaker</td></tr>
+<tr><td><code>src/txn.rs</code></td><td>the transaction every write runs through: receipt first, conclude (keep or put back, breaker, durable outcome), recovery, undo</td></tr>
+<tr><td><code>src/link.rs</code></td><td><code>net.link.apply</code>: validation, rendering, the change, its proof</td></tr>
+<tr><td><code>src/wg.rs</code></td><td><code>net.wg.apply</code>: WireGuard netdev, network and key files, the handshake proof</td></tr>
+<tr><td><code>src/wgnl.rs</code></td><td>WireGuard generic netlink (peer handshakes) and deleting a link</td></tr>
+<tr><td><code>src/wifi.rs</code></td><td><code>net.wifi.scan</code> and <code>net.wifi.connect</code> through iwd: the one-connect passphrase agent, runtime put-back</td></tr>
+<tr><td><code>src/networkd.rs</code></td><td>networkd over D-Bus and Varlink, the event-driven health wait</td></tr>
+<tr><td><code>src/net.rs</code>, <code>src/info.rs</code></td><td>the read verbs</td></tr>
+<tr><td><code>units/</code></td><td><code>hostd.socket</code>, <code>hostd.service</code> (sandboxed), <code>sysusers.conf</code></td></tr>
+</tbody></table>
+<h2 id="adding-a-write-verb">Adding a write verb</h2>
+<ol>
+<li>A typed request with <code>deny_unknown_fields</code>, validated into a plan before
+anything else happens. Anything the plan reads from the host (a key, a
+file) is read inside the writer lock.</li>
+<li><code>service::write(host, origin, peer, verb, limits, ...)</code> with the
+allow-list keys the verb checks: it gates the call, takes the writer
+lock, gates it again and runs the change in its own task.</li>
+<li>The change through <code>txn</code>: <code>FileChange::backup</code> for every file (with the
+mode and group a new file needs), <code>txn::begin</code>, the change and its proof,
+then <code>txn::conclude</code>. Never order the breaker or the receipt by hand.</li>
+<li>A <code>reapply</code> for the verb in <code>txn::put_back</code>, so rollback, recovery and
+undo can make the host use the restored files. Without it the verb
+doesn't ship.</li>
+<li>The paths it writes added to <code>ReadWritePaths=</code>, and any capability it
+needs to <code>CapabilityBoundingSet=</code>, in <code>units/hostd.service</code>, with the
+reason beside it.</li>
+<li>Registered in <code>docs/docs/spec/bus/verbs.conf.mix</code> (class <code>intent</code>), in
+this page, and reviewed on its own.</li>
+</ol>
+<h2 id="tests">Tests</h2>
+<p><code>cargo test -p hostd</code>: no test needs root. The live gate for network writes
+runs as root on a disposable networkd host, on dummy links only, and
+removes everything it made.</p>
         </article>
-        <p class="doc-source"><a href="/hostd/README.md"><i data-lucide="file-text"></i> This page as Markdown</a></p>
+        <p class="doc-source"><a href="/hostd/README.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
     </div>
 </main>
 <script src="/_web/base.js?v=2652b9bc10"></script>

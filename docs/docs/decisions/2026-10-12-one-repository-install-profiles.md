@@ -76,7 +76,7 @@ repository yet. Should they get a repository of their own?
     layer in a `base` or `server` component; what it calls on the Bus is
     checked at review, as AGENTS.md §2.5 already says.
 
-  The component index (`docs/docs/dev/components.md`) shows each component's
+  The component index ([`/docs/components/`](../components.md)) shows each component's
   profiles.
 - **Resolving, installing and activating are separate.**
   - **Resolve:** one tool answers "what is in `server`?" from the metadata,

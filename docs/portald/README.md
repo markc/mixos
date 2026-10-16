@@ -93,14 +93,40 @@ it keeps `DBUS_SESSION_BUS_ADDRESS`.
 portald serve --instance <name> [--profile default] [--state-dir DIR]
 ```
 
+It needs `DBUS_SESSION_BUS_ADDRESS`. `--state-dir` defaults to
+`$STATE_DIRECTORY`, which systemd sets from `StateDirectory=portald`.
+
 ## Status for agents
 
-The bus verb `portald.status` is read-only. It reports the origin of the held
+`HELP` returns the verb manifest. The bus verb `portald.status` is read-only. It reports the origin of the held
 values (defaults, cache or settingsd), whether the name is owned, the identity
 of the held projection, the last fault and the counters. Its
 `settings_generation` reports the Consumer's connection generation, or null
 while disconnected. It is registered in
 `docs/docs/spec/bus/verbs.conf.mix`.
+
+## Tests
+
+The source is
+[`services/portald`](https://github.com/markc/mixos/tree/main/services/portald).
+
+```text
+cargo test --locked -p portald
+```
+
+Unit tests cover value mapping, iterative matching and acceptance.
+`tests/portal.rs` runs a private `dbus-daemon` and checks version 2, Read
+and ReadOne nesting, empty and adversarial ReadAll filters, NotFound,
+changed-only signals, cache isolation and single ownership. It launches the
+production binary against a silent authority and requires a complete Read
+reply within 250 ms, including cached startup and profile switching.
+
+Native tests embed the real noded via [test-broker](../test-broker/README.md)
+and run the production settingsd loop. They cover initial fetch, live
+update without reconnect, settingsd restart at unchanged revision, and
+broker recovery after the initial attempt budget is exhausted. These tests
+run by default; the build cluster needs `dbus-daemon` and the pinned Rust
+dependencies.
 
 ## Not yet
 
