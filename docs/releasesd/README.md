@@ -103,3 +103,29 @@ file types into that session's data directory (`MIXOS_RELEASES_SHARE`), with
 its own record of what it made. Nothing is downloaded twice, and an update on
 the host reaches the container at once. When the container sees the files at
 another path, `MIXOS_RELEASES_VIEW` says where.
+
+## Source and tests
+
+`releasesd` is a Mix component
+([decision](../docs/decisions/2026-10-10-mix-components.md)): no Cargo
+package, identity in `component.mx`. The source is
+[`services/releasesd`](https://github.com/markc/mixos/tree/main/services/releasesd):
+
+| Path | What |
+|---|---|
+| `scripts/lib/releases.mix` | all of the logic, as a module |
+| `scripts/releasesd.mix` | the Bus service (`mix --serve … --name releases`) |
+| `scripts/releases.mix` | the command line, same logic in-process |
+| `units/releasesd@.service` | the session unit |
+| `tests/releases_test.mix` | offline: validation, verification, install, rollback, links |
+| `tests/releasesd_test.mix` | every verb over a private broker and a stand-in API |
+
+Run the tests from the checkout root. They need `bsdtar`; the Bus test
+needs a `noded`, by default `/opt/mixos/bin/noded`, or `--noded <path>`:
+
+```sh
+mix services/releasesd/tests/releases_test.mix
+mix services/releasesd/tests/releasesd_test.mix
+```
+
+The verbs are registered in `docs/docs/spec/bus/verbs.conf.mix`.

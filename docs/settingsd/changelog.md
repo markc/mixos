@@ -6,7 +6,7 @@ generated: by docs/_build/gen-site.mix from services/settingsd/CHANGELOG.md; do 
 
 # settingsd contract changes
 
-> Mirrored from [`services/settingsd/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/services/settingsd/CHANGELOG.md), where releases update it. This page describes the current `main` branch of MixOS.
+> Mirrored from [`services/settingsd/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/services/settingsd/CHANGELOG.md), where releases update it. The component's page is [settingsd](README.md). This page describes the current `main` branch of MixOS.
 
 ## 0.1.0
 

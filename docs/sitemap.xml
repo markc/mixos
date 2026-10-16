@@ -1,13 +1,24 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url><loc>https://mixos.dev/</loc></url>
+  <url><loc>https://mixos.dev/docs/</loc></url>
+  <url><loc>https://mixos.dev/mix/</loc></url>
   <url><loc>https://mixos.dev/docs/try/</loc></url>
   <url><loc>https://mixos.dev/docs/drive/</loc></url>
   <url><loc>https://mixos.dev/docs/components/</loc></url>
   <url><loc>https://mixos.dev/docs/decisions/2026-10-09-egui-applications/</loc></url>
   <url><loc>https://mixos.dev/docs/decisions/2026-10-04-source-layout/</loc></url>
+  <url><loc>https://mixos.dev/assets/</loc></url>
   <url><loc>https://mixos.dev/backdrop/</loc></url>
   <url><loc>https://mixos.dev/bridged/</loc></url>
+  <url><loc>https://mixos.dev/buildinfo/</loc></url>
+  <url><loc>https://mixos.dev/bus/</loc></url>
+  <url><loc>https://mixos.dev/ced/</loc></url>
+  <url><loc>https://mixos.dev/citizen/</loc></url>
+  <url><loc>https://mixos.dev/compd/</loc></url>
+  <url><loc>https://mixos.dev/config/</loc></url>
+  <url><loc>https://mixos.dev/davproto/</loc></url>
+  <url><loc>https://mixos.dev/design/</loc></url>
   <url><loc>https://mixos.dev/docs/decisions/2026-10-07-settings-authority/</loc></url>
   <url><loc>https://mixos.dev/docs/decisions/2026-10-08-mix-programs-and-documents/</loc></url>
   <url><loc>https://mixos.dev/docs/decisions/2026-10-09-chrome-family-and-schemes/</loc></url>
@@ -42,9 +53,13 @@
   <url><loc>https://mixos.dev/docs/spec/releases/</loc></url>
   <url><loc>https://mixos.dev/docs/spec/settings/</loc></url>
   <url><loc>https://mixos.dev/dopus/</loc></url>
+  <url><loc>https://mixos.dev/edit/</loc></url>
   <url><loc>https://mixos.dev/editd/</loc></url>
+  <url><loc>https://mixos.dev/editor/</loc></url>
+  <url><loc>https://mixos.dev/expr/</loc></url>
   <url><loc>https://mixos.dev/hostd/</loc></url>
-  <url><loc>https://mixos.dev/mix/</loc></url>
+  <url><loc>https://mixos.dev/logging/</loc></url>
+  <url><loc>https://mixos.dev/mix-shell/</loc></url>
   <url><loc>https://mixos.dev/mix/buffer/</loc></url>
   <url><loc>https://mixos.dev/mix/builtins/</loc></url>
   <url><loc>https://mixos.dev/mix/bus/</loc></url>
@@ -89,8 +104,17 @@
   <url><loc>https://mixos.dev/noded/</loc></url>
   <url><loc>https://mixos.dev/portald/</loc></url>
   <url><loc>https://mixos.dev/prefs/</loc></url>
+  <url><loc>https://mixos.dev/props/</loc></url>
   <url><loc>https://mixos.dev/releasesd/</loc></url>
+  <url><loc>https://mixos.dev/scene/</loc></url>
   <url><loc>https://mixos.dev/screenshot/</loc></url>
+  <url><loc>https://mixos.dev/settings/</loc></url>
+  <url><loc>https://mixos.dev/settingsd/</loc></url>
+  <url><loc>https://mixos.dev/strict/</loc></url>
+  <url><loc>https://mixos.dev/system/</loc></url>
+  <url><loc>https://mixos.dev/term/</loc></url>
+  <url><loc>https://mixos.dev/test-broker/</loc></url>
+  <url><loc>https://mixos.dev/thumbs/</loc></url>
   <url><loc>https://mixos.dev/bridged/changelog/</loc></url>
   <url><loc>https://mixos.dev/compd/changelog/</loc></url>
   <url><loc>https://mixos.dev/editd/changelog/</loc></url>

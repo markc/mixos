@@ -119,6 +119,8 @@ site: {
       title: "MixOS",
       items: [
         {title: "Home", href: "/", icon: "home"},
+        {title: "Docs", href: "/docs/", icon: "book-open"},
+        {title: "The Mix language", href: "/mix/", icon: "file-text"},
         {divider: true},
         {title: "Try it beside your desktop", href: "/docs/try/", icon: "monitor"},
         {title: "Driving apps over the Bus", href: "/docs/drive/", icon: "network"},
@@ -148,10 +150,6 @@ site: {
   -- new component here; write its page instead
   -- (docs/docs/decisions/2026-10-16-site-url-layout.md).
   missing_pages: [
-    "assets", "buildinfo", "bus", "busviewer", "ced", "citizen", "compd",
-    "config", "davproto", "design", "edit", "editor", "editor-model", "expr",
-    "logging", "mimedb", "mix-shell", "props", "scene", "settings",
-    "settingsd", "strict", "syntax", "system", "term", "test-broker",
-    "thumbs", "toolkit"
+    "busviewer", "editor-model", "mimedb", "syntax", "toolkit"
   ]
 }

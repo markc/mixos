@@ -6,7 +6,7 @@ generated: by docs/_build/gen-site.mix from apps/term/CHANGELOG.md; do not edit
 
 # Terminal Bus contract
 
-> Mirrored from [`apps/term/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/apps/term/CHANGELOG.md), where releases update it. This page describes the current `main` branch of MixOS.
+> Mirrored from [`apps/term/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/apps/term/CHANGELOG.md), where releases update it. The component's page is [term](README.md). This page describes the current `main` branch of MixOS.
 
 ## 0.4.0
 

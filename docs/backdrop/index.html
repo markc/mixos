@@ -122,6 +122,8 @@
                 <div class="panel-content">
                     <nav>
                         <a href="/"><i data-lucide="home"></i> Home</a>
+                        <a href="/docs/"><i data-lucide="book-open"></i> Docs</a>
+                        <a href="/mix/"><i data-lucide="file-text"></i> The Mix language</a>
                         <div class="sidebar-divider"></div>
                         <a href="/docs/try/"><i data-lucide="monitor"></i> Try it beside your desktop</a>
                         <a href="/docs/drive/"><i data-lucide="network"></i> Driving apps over the Bus</a>
@@ -222,6 +224,8 @@
                         <a href="#cost">Cost</a>
                         <a href="#start-up-and-failure">Start-up and failure</a>
                         <a href="#known-gaps">Known gaps</a>
+                        <a href="#running-it">Running it</a>
+                        <a href="#source-layout">Source layout</a>
                         <a href="#tests">Tests</a>
                     </nav>
                 </div>
@@ -381,16 +385,37 @@ named design token. Naming the desktop token is a follow-up.</li>
 <li>Overlapping sets (one still decoding when the next arrives) are exercised by
 the controller's unit tests; the Mix gate sends its sets one after another.</li>
 </ul>
+<h2 id="running-it">Running it</h2>
+<p>Run it inside a MixOS session: <code>backdrop</code>, or <code>backdrop --colour #1e1e2e</code>,
+or <code>backdrop --image /abs/path.jpg --service backdrop-test</code>.</p>
+<h2 id="source-layout">Source layout</h2>
+<p>The source is
+<a href="https://github.com/markc/mixos/tree/main/apps/backdrop"><code>apps/backdrop</code></a>:</p>
+<ul>
+<li><code>src/main.rs</code>: command line, the start-up document, the layer loop;</li>
+<li><code>src/control.rs</code>: the Bus controller and its one command, <code>backdrop.set</code>;</li>
+<li><code>src/program.rs</code>: the layer program, which only draws a published view;</li>
+<li><code>src/probe.rs</code>: <code>--probe</code>, the regression probe (JSON lines on stdout);</li>
+<li><code>crates/wallpaper</code>: the engine: the document, colour, fit, decode limits
+and revisions. Pure data, no Bus and no window.</li>
+</ul>
 <h2 id="tests">Tests</h2>
+<p>Building and the cargo tests are not in this tree's checks yet; the cargo
+gate runs on a build worker. <code>cargo build -p backdrop</code> enables toolkit's
+<code>layer</code> feature.</p>
 <ul>
 <li><code>tests/desktop/wallpaper_gate.mix</code> runs the wallpaper on a private broker and
 a private nested compd, takes screenshots of a solid colour and a PNG
 (<code>share/brand</code>'s favicon), and checks <code>backdrop.set</code> and <code>backdrop.state</code>: a
 refused image keeps the last good pixels and revision, rapid sets apply in
 order, a non-document is refused, the accepted document is stored, and the
-process is idle. <code>--shot-out DIR</code> keeps the PPMs.</li>
+process is idle. Run it from the checkout; <code>--image-fixture PATH</code> names a
+different PNG and <code>--shot-out DIR</code> keeps the PPMs.</li>
 <li><code>tests/desktop/backdrop_gate.mix</code> is the <code>--probe</code> regression gate: input,
-paint and occlusion.</li>
+paint and occlusion. It runs the probe on a private nested compd and
+checks the band, the paint, the screen, click delivery and occlusion:
+<code>mix tests/desktop/backdrop_gate.mix --bin &lt;compd&gt; --config-file tests/desktop/smoke-settings.json</code>.
+On a build worker add <code>--software --private-bus --noded &lt;noded&gt;</code>.</li>
 <li>Unit tests (<code>cargo test -p wallpaper</code>, <code>cargo test -p backdrop</code>) cover the
 document, colour, fit, decoder limits (including an oversized header and a
 FIFO), revisions, candidate and active images, the texture budget and the

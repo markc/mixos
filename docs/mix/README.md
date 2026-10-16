@@ -134,6 +134,18 @@ Design docs, background rationale, and the formal specs (04 language
 reference, 18 citizen runtime) all live in the operator control repo since
 2026-07-23; this manual is the complete public reference.
 
+## The library
+
+The `mix` component is the language library
+([`libs/mix`](https://github.com/markc/mixos/tree/main/libs/mix)): lexer,
+parser, evaluator, builtin contracts and embedded handler interfaces.
+Features select the optional data, networking and cryptographic
+facilities; the interpreter's core stays independent of the Bus and
+desktop. It was transplanted from `cosmix-lib-mix` at cosmix
+`e0297242305f3a3c3de09f1ca01e8faa771768da`, retaining its regression corpus
+and public language version. The shell is [mix-shell](https://mixos.dev/mix-shell/),
+and the `mix` binary is built by [system](https://mixos.dev/system/).
+
 ## See also
 
 ```

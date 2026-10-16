@@ -156,16 +156,41 @@ it through egui's repaint request.
 - Overlapping sets (one still decoding when the next arrives) are exercised by
   the controller's unit tests; the Mix gate sends its sets one after another.
 
+## Running it
+
+Run it inside a MixOS session: `backdrop`, or `backdrop --colour #1e1e2e`,
+or `backdrop --image /abs/path.jpg --service backdrop-test`.
+
+## Source layout
+
+The source is
+[`apps/backdrop`](https://github.com/markc/mixos/tree/main/apps/backdrop):
+
+- `src/main.rs`: command line, the start-up document, the layer loop;
+- `src/control.rs`: the Bus controller and its one command, `backdrop.set`;
+- `src/program.rs`: the layer program, which only draws a published view;
+- `src/probe.rs`: `--probe`, the regression probe (JSON lines on stdout);
+- `crates/wallpaper`: the engine: the document, colour, fit, decode limits
+  and revisions. Pure data, no Bus and no window.
+
 ## Tests
+
+Building and the cargo tests are not in this tree's checks yet; the cargo
+gate runs on a build worker. `cargo build -p backdrop` enables toolkit's
+`layer` feature.
 
 - `tests/desktop/wallpaper_gate.mix` runs the wallpaper on a private broker and
   a private nested compd, takes screenshots of a solid colour and a PNG
   (`share/brand`'s favicon), and checks `backdrop.set` and `backdrop.state`: a
   refused image keeps the last good pixels and revision, rapid sets apply in
   order, a non-document is refused, the accepted document is stored, and the
-  process is idle. `--shot-out DIR` keeps the PPMs.
+  process is idle. Run it from the checkout; `--image-fixture PATH` names a
+  different PNG and `--shot-out DIR` keeps the PPMs.
 - `tests/desktop/backdrop_gate.mix` is the `--probe` regression gate: input,
-  paint and occlusion.
+  paint and occlusion. It runs the probe on a private nested compd and
+  checks the band, the paint, the screen, click delivery and occlusion:
+  `mix tests/desktop/backdrop_gate.mix --bin <compd> --config-file tests/desktop/smoke-settings.json`.
+  On a build worker add `--software --private-bus --noded <noded>`.
 - Unit tests (`cargo test -p wallpaper`, `cargo test -p backdrop`) cover the
   document, colour, fit, decoder limits (including an oversized header and a
   FIFO), revisions, candidate and active images, the texture budget and the

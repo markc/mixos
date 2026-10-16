@@ -122,6 +122,8 @@
                 <div class="panel-content">
                     <nav>
                         <a href="/"><i data-lucide="home"></i> Home</a>
+                        <a href="/docs/"><i data-lucide="book-open"></i> Docs</a>
+                        <a href="/mix/"><i data-lucide="file-text"></i> The Mix language</a>
                         <div class="sidebar-divider"></div>
                         <a href="/docs/try/"><i data-lucide="monitor"></i> Try it beside your desktop</a>
                         <a href="/docs/drive/"><i data-lucide="network"></i> Driving apps over the Bus</a>
@@ -220,6 +222,7 @@
                         <a href="#startup-and-failure">Startup and failure</a>
                         <a href="#running-it">Running it</a>
                         <a href="#status-for-agents">Status for agents</a>
+                        <a href="#tests">Tests</a>
                         <a href="#not-yet">Not yet</a>
                     </nav>
                 </div>
@@ -316,13 +319,32 @@ never sent back to settingsd.</li>
 it keeps <code>DBUS_SESSION_BUS_ADDRESS</code>.</p>
 <pre><code class="language-text">portald serve --instance &lt;name&gt; [--profile default] [--state-dir DIR]
 </code></pre>
+<p>It needs <code>DBUS_SESSION_BUS_ADDRESS</code>. <code>--state-dir</code> defaults to
+<code>$STATE_DIRECTORY</code>, which systemd sets from <code>StateDirectory=portald</code>.</p>
 <h2 id="status-for-agents">Status for agents</h2>
-<p>The bus verb <code>portald.status</code> is read-only. It reports the origin of the held
+<p><code>HELP</code> returns the verb manifest. The bus verb <code>portald.status</code> is read-only. It reports the origin of the held
 values (defaults, cache or settingsd), whether the name is owned, the identity
 of the held projection, the last fault and the counters. Its
 <code>settings_generation</code> reports the Consumer's connection generation, or null
 while disconnected. It is registered in
 <code>docs/docs/spec/bus/verbs.conf.mix</code>.</p>
+<h2 id="tests">Tests</h2>
+<p>The source is
+<a href="https://github.com/markc/mixos/tree/main/services/portald"><code>services/portald</code></a>.</p>
+<pre><code class="language-text">cargo test --locked -p portald
+</code></pre>
+<p>Unit tests cover value mapping, iterative matching and acceptance.
+<code>tests/portal.rs</code> runs a private <code>dbus-daemon</code> and checks version 2, Read
+and ReadOne nesting, empty and adversarial ReadAll filters, NotFound,
+changed-only signals, cache isolation and single ownership. It launches the
+production binary against a silent authority and requires a complete Read
+reply within 250 ms, including cached startup and profile switching.</p>
+<p>Native tests embed the real noded via <a href="/test-broker/">test-broker</a>
+and run the production settingsd loop. They cover initial fetch, live
+update without reconnect, settingsd restart at unchanged revision, and
+broker recovery after the initial attempt budget is exhausted. These tests
+run by default; the build cluster needs <code>dbus-daemon</code> and the pinned Rust
+dependencies.</p>
 <h2 id="not-yet">Not yet</h2>
 <ul>
 <li>The FileChooser portal and its chooser application.</li>

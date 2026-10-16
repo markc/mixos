@@ -6,7 +6,7 @@ generated: by docs/_build/gen-site.mix from services/compd/CHANGELOG.md; do not 
 
 # Changelog
 
-> Mirrored from [`services/compd/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/services/compd/CHANGELOG.md), where releases update it. This page describes the current `main` branch of MixOS.
+> Mirrored from [`services/compd/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/services/compd/CHANGELOG.md), where releases update it. The component's page is [compd](README.md). This page describes the current `main` branch of MixOS.
 
 ## 0.2.0
 

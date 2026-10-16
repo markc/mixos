@@ -13,16 +13,28 @@ Everything here describes the current `main` branch of https://github.com/markc/
 One line per component with a page: kind, then install profiles. The
 [component index](https://mixos.dev/docs/components.md) lists every component, with or without a page.
 
+- [assets](https://mixos.dev/assets/README.md): lib; profiles: none (library). The resolver for a pinned, immutable set of fonts, icons and emoji on the local disk, which finds, verifies and reads a published set without any downloader or daemon.
 - [backdrop](https://mixos.dev/backdrop/README.md): app; profiles: unclassified. The MixOS desktop background — drawn by its own program on the compositor's background layer, on every output, at native and fractional scale.
 - [bridged](https://mixos.dev/bridged/README.md): service; profiles: unclassified. How bridged puts an external application with a line-delimited JSON control channel on the Bus, one instance per application, and what that exposes.
   - [bridged — changelog](https://mixos.dev/bridged/changelog.md): Release notes of the bridged component, mirrored from services/bridged/CHANGELOG.md.
-- compd (no page yet): service; profiles: unclassified
+- [buildinfo](https://mixos.dev/buildinfo/README.md): lib; profiles: none (library). Compile-time build provenance for MixOS binaries, and the --version contract every binary answers.
+- [bus](https://mixos.dev/bus/README.md): lib; profiles: none (library). The Bus wire format and the broker client library, with a supervised connection to noded that survives broker restarts.
+- [ced](https://mixos.dev/ced/README.md): app; profiles: unclassified. The MixOS Editor, a desktop text editor over the edit Bus service, where people and agents edit the same document at once and see each other's carets, selections and changes live.
+- [citizen](https://mixos.dev/citizen/README.md): lib; profiles: none (library). An app's supervised native Bus connection, shared by the MixOS apps for registration, calls, replies, single-instance launch and window restore.
+- [compd](https://mixos.dev/compd/README.md): service; profiles: unclassified. The MixOS Wayland compositor, which owns scanout, rendering, input and capture, and serves the comp Bus service with its workspaces, verbs, topics and props tree.
   - [compd — changelog](https://mixos.dev/compd/changelog.md): Release notes of the compd component, mirrored from services/compd/CHANGELOG.md.
+- [config](https://mixos.dev/config/README.md): lib; profiles: none (library). Where MixOS keeps its files and how a conf.mix file is read, with one directory rule for every component and descriptor-safe atomic file helpers.
+- [davproto](https://mixos.dev/davproto/README.md): lib; profiles: none (library). CalDAV and CardDAV codecs that convert between JSCalendar or JSContact and iCalendar or vCard, with strong ETags, and no transport or storage.
+- [design](https://mixos.dev/design/README.md): lib; profiles: none (library). The MixOS design-token system, which compiles a strict-data theme source into resolved colours, metrics, typography and button tables for one scheme, mode and contrast.
 - [dopus](https://mixos.dev/dopus/README.md): app; profiles: unclassified. MixOS's twin-pane file manager — two folder trees side by side, Places and Properties sidebars, drag and drop between panes, menus and keys for every action, and a Bus surface for agents that reads and navigates but never changes files.
-- [editd](https://mixos.dev/editd/README.md): service; profiles: unclassified. editd registers the edit service and serves the edit.v1 contract. Ced and agents share its buffers through native ABP. The service is headless and requires no…
+- [edit](https://mixos.dev/edit/README.md): lib; profiles: none (library). Shared headless text buffers used by editd and Ced, with revision checks, transactions, operational transforms, per-origin undo, anchors and search.
+- [editd](https://mixos.dev/editd/README.md): service; profiles: unclassified. The edit service, which holds shared text buffers that people and agents edit together, with revision checks, per-origin undo, anchors, atomic save, external-change detection and recovery.
   - [editd — changelog](https://mixos.dev/editd/changelog.md): Release notes of the editd component, mirrored from services/editd/CHANGELOG.md.
+- [editor](https://mixos.dev/editor/README.md): lib; profiles: none (library). The shared plain-text editor widget for MixOS egui applications, a virtualised monospace view over the headless editing model that works on a local file or a shared buffer.
+- [expr](https://mixos.dev/expr/README.md): lib; profiles: none (library). The pure expression language of Mix Scenes bindings, which compiles an expression, reports the globals it reads and evaluates it over JSON values under size and time limits.
 - [hostd](https://mixos.dev/hostd/README.md): service; profiles: unclassified. How hostd answers questions about the host and carries out privileged host changes through closed, typed verbs behind standing grants, receipts and rollback, so agents never need sudo.
   - [hostd — changelog](https://mixos.dev/hostd/changelog.md): Release notes of the hostd component, mirrored from services/hostd/CHANGELOG.md.
+- [logging](https://mixos.dev/logging/README.md): lib; profiles: none (library). Shared tracing, sink selection, reload handles and process statistics for MixOS services and the Mix shell.
 - [mix](https://mixos.dev/mix/README.md): lib; profiles: none (library). The reference manual for the Mix language, one page per topic. The canonical home of these pages is docs/mix/ in the public markc/mixos monorepo; add a page by…
   - [buffer — the reference-semantic mutable byte buffer](https://mixos.dev/mix/buffer.md): Buffer is the one type in Mix with reference semantics. Everything else — strings, numbers, lists, maps, bytes — is value-semantic: $b = $a gives $b an…
   - [Builtin index](https://mixos.dev/mix/builtins.md): Every Mix builtin grouped by category, generated from mix builtins (mix 0.116.0). See the linked topical page for prose and examples; mix what NAME prints a…
@@ -66,25 +78,32 @@ One line per component with a page: kind, then install profiles. The
   - [system — processes, environment & system primitives](https://mixos.dev/mix/system.md): The system builtin category — run external commands, inspect and mutate the process/OS environment, and produce the small security/identity primitives…
   - [variables — sigils, assignment & scope](https://mixos.dev/mix/variables.md): Every Mix variable carries a $ sigil. There is no separate declaration — assignment is the declaration. Reading an unbound variable raises a runtime error; the…
   - [mix — changelog](https://mixos.dev/mix/changelog.md): Release notes of the mix component, mirrored from libs/mix/CHANGELOG.md.
-- mix-shell (no page yet): cli; profiles: unclassified
+- [mix-shell](https://mixos.dev/mix-shell/README.md): cli; profiles: unclassified. The Mix shell library, holding the interactive line editor, the command classifier, the native-session bootstrap and the Bus citizen runtime that the mix binary runs.
   - [mix-shell — changelog](https://mixos.dev/mix-shell/changelog.md): Release notes of the mix-shell component, mirrored from cli/mix-shell/CHANGELOG.md.
-- [noded](https://mixos.dev/noded/README.md): service; profiles: unclassified. noded is MixOS's ABP broker. Services register with it, discover other services and exchange commands or topic events. Communication between nodes uses ABP…
+- [noded](https://mixos.dev/noded/README.md): service; profiles: unclassified. The MixOS Bus broker, which handles service registration, discovery, routing, subscriptions, authenticated local session grants and mesh peering between nodes.
   - [noded — changelog](https://mixos.dev/noded/changelog.md): Release notes of the noded component, mirrored from services/noded/CHANGELOG.md.
 - [portald](https://mixos.dev/portald/README.md): service; profiles: unclassified. How portald serves the XDG Settings portal on the session bus, where the appearance values come from, and how applications and agents read them.
 - [prefs](https://mixos.dev/prefs/README.md): app; profiles: unclassified. MixOS's preferences window — a sidebar of editors: Applications follows, installs, updates, rolls back and removes upstream releases; Appearance sets the session's colour scheme, style, mode, contrast and window frame.
+- [props](https://mixos.dev/props/README.md): lib; profiles: none (library). Shared property read types, revision handling and optional Bus publication builders for noded, Mix and editd.
 - [releasesd](https://mixos.dev/releasesd/README.md): service; profiles: unclassified. How releasesd follows upstream application releases on GitHub and installs their Linux builds per user, verified, with rollback, from the command line or the Bus.
+- [scene](https://mixos.dev/scene/README.md): lib; profiles: none (library). The Mix Scenes document core, which parses, lints, resolves and diffs scene documents and their bindings without a renderer or interpreter.
 - [screenshot](https://mixos.dev/screenshot/README.md): app; profiles: unclassified. MixOS's screenshot app — Print Screen for a region, Shift+Print for the screen, Alt+Print for a window; arrows, boxes, pens, highlighter, text, numbered markers, crop and redaction that stay editable; Ctrl+S saves to Pictures/Screenshots, and agents find the newest shots on the Bus.
-- settings (no page yet): lib; profiles: none (library)
+- [settings](https://mixos.dev/settings/README.md): lib; profiles: none (library). Headless desktop settings types, validation, resolution and the shared consumer that apps and the compositor use to follow the settings authority.
   - [settings — changelog](https://mixos.dev/settings/changelog.md): Release notes of the settings component, mirrored from libs/settings/CHANGELOG.md.
-- settingsd (no page yet): service; profiles: unclassified
+- [settingsd](https://mixos.dev/settingsd/README.md): service; profiles: unclassified. The headless desktop settings authority, the one writer for a session profile's settings, with durable receipts and retained change publication on the Bus.
   - [settingsd — changelog](https://mixos.dev/settingsd/changelog.md): Release notes of the settingsd component, mirrored from services/settingsd/CHANGELOG.md.
-- term (no page yet): app; profiles: unclassified
+- [strict](https://mixos.dev/strict/README.md): lib; profiles: none (library). The MixOS strict-data format, the grammar of conf.mix and data.mix files, loaded as data and never executed.
+- [system](https://mixos.dev/system/README.md): cli; profiles: unclassified. The system binary, mix, which is the Mix shell and every headless MixOS daemon in one file, choosing its personality from the name it is started under.
+- [term](https://mixos.dev/term/README.md): app; profiles: unclassified. The MixOS terminal, with tabs, split panes and a GPU-drawn grid, driven by the session settings and fully scriptable over the Bus.
   - [term — changelog](https://mixos.dev/term/changelog.md): Release notes of the term component, mirrored from apps/term/CHANGELOG.md.
+- [test-broker](https://mixos.dev/test-broker/README.md): lib; profiles: none (library). A development fixture that runs the real noded modules in an isolated broker runtime for the Term-to-Mix native session acceptance tests.
+- [thumbs](https://mixos.dev/thumbs/README.md): lib; profiles: none (library). File thumbnails made the freedesktop way, read from and written to the shared thumbnail cache and generated by the system's installed thumbnailers in their own processes.
 
 ## Docs
 
 ### Guides
 
+- [Docs](https://mixos.dev/docs/README.md): Guides, indexes, decision records and specifications for MixOS; every component's own documentation is at mixos.dev/<component>/.
 - [Try it beside your desktop](https://mixos.dev/docs/try.md): How MixOS runs as a small signed systemd-nspawn image on its own virtual terminal, next to the Linux desktop you already use, with native GPU, input and audio.
 - [Driving apps over the Bus](https://mixos.dev/docs/drive.md): How an agent drives a native MixOS app through Bus verbs, from the widget tree and injected input to window commands and captures, with BusViewer as the worked example.
 
