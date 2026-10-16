@@ -1,0 +1,46 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+# monitor: the egui shell around the vitals engine — the task manager
+# window over monitord, for this node or any node on the mesh
+# (docs/docs/decisions/2026-10-16-monitord-and-monitor.md, AGENTS.md §4.1).
+[package]
+name = "monitor"
+description = "The MixOS task manager: processes and performance from monitord, on any mesh node"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[package.metadata.mixos]
+component = "monitor"
+kind = "app"
+layer = "desktop"
+contract = "public"
+profiles = ["desktop"]
+
+[lints.clippy]
+mod_module_files = "deny"
+
+[dependencies]
+bus = { workspace = true, features = ["native"] }
+buildinfo.workspace = true
+citizen.workspace = true
+design.workspace = true
+eframe.workspace = true
+egui.workspace = true
+egui_extras.workspace = true
+futures.workspace = true
+libc.workspace = true
+serde_json.workspace = true
+settings.workspace = true
+tokio = { workspace = true, features = ["rt", "rt-multi-thread", "sync", "time"] }
+toolkit.workspace = true
+vitals = { path = "crates/vitals" }
+
+[dev-dependencies]
+citizen = { workspace = true, features = ["testing"] }
+egui_kittest.workspace = true
+
+[build-dependencies]
+buildinfo.workspace = true

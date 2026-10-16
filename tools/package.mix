@@ -26,7 +26,7 @@ end
 
 $PACKAGES = {
   "mixos-server": ["mix", "noded", "editd", "settingsd", "portald"],
-  "mixos-desktop": ["compd", "ced", "dopus", "prefs", "busviewer", "screenshot"]
+  "mixos-desktop": ["compd", "ced", "dopus", "prefs", "busviewer", "monitor", "screenshot"]
 }
 -- Desktop entries ship with their app: a packaged binary NAME with an
 -- apps/NAME/assets/dev.mixos.NAME.desktop carries it, so binary and entry

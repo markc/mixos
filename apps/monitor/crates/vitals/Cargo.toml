@@ -1,0 +1,27 @@
+# vitals: Monitor's headless engine. It holds what monitord reported, the
+# graph history, the window's state and the rules, and knows nothing about
+# the UI or the Bus transport; `monitor` renders it with egui (AGENTS.md
+# §4.1, engine first).
+[package]
+name = "vitals"
+description = "Monitor's headless engine: monitord readings, graph history and the window's state"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[package.metadata.mixos]
+component = "monitor"
+kind = "app"
+layer = "core"
+contract = "none"
+
+[lints.clippy]
+mod_module_files = "deny"
+
+[dependencies]
+design.workspace = true
+serde.workspace = true
+serde_json.workspace = true

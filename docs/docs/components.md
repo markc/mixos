@@ -38,6 +38,7 @@ profile: [desktop](desktop.md) and [server](server.md). This page describes the 
 | [mimedb](../mimedb/README.md) | lib | none (library) | [`libs/mimedb`](https://github.com/markc/mixos/tree/main/libs/mimedb) | A library that reads the freedesktop shared-mime-info database and decides a file's type from its name and content the way GLib does, so MixOS names a file's type as the desktop does. |
 | [mix](../mix/README.md) · [changelog](../mix/changelog.md) | lib | none (library) | [`libs/mix`](https://github.com/markc/mixos/tree/main/libs/mix) |  |
 | [mix-shell](../mix-shell/README.md) · [changelog](../mix-shell/changelog.md) | cli | unclassified | [`cli/mix-shell`](https://github.com/markc/mixos/tree/main/cli/mix-shell) | The Mix shell library, holding the interactive line editor, the command classifier, the native-session bootstrap and the Bus citizen runtime that the mix binary runs. |
+| [monitor](../monitor/README.md) | app | desktop | [`apps/monitor`](https://github.com/markc/mixos/tree/main/apps/monitor) | Monitor is the MixOS task manager, showing the processes and performance that monitord reports for this node or any node on the mesh, with End task and Kill for this node's processes. |
 | [monitord](../monitord/README.md) · [changelog](../monitord/changelog.md) | service | base | [`services/monitord`](https://github.com/markc/mixos/tree/main/services/monitord) | How monitord samples a host's CPU, memory, disks, network and processes, keeps history in memory and SQLite, and answers read verbs on the Bus, so any node's load can be read from anywhere on the… |
 | [noded](../noded/README.md) · [changelog](../noded/changelog.md) | service | unclassified | [`services/noded`](https://github.com/markc/mixos/tree/main/services/noded) | The MixOS Bus broker, which handles service registration, discovery, routing, subscriptions, authenticated local session grants and mesh peering between nodes. |
 | [notifyd](../notifyd/README.md) | service | unclassified | [`services/notifyd`](https://github.com/markc/mixos/tree/main/services/notifyd) | How notifyd keeps the desk's notifications, shows them as toasts and in the Notifications page, and tells an agent or app which button the human pressed. |
@@ -76,6 +77,8 @@ checked separately by the layering gate.
 | [files](https://github.com/markc/mixos/blob/main/apps/dopus/crates/files/Cargo.toml) | dopus | app | core | none | 0.1.1 |
 | [email](https://github.com/markc/mixos/blob/main/apps/email/Cargo.toml) | email | app | desktop | public | 0.1.1 |
 | [jmap](https://github.com/markc/mixos/blob/main/apps/email/crates/jmap/Cargo.toml) | email | app | core | none | 0.1.1 |
+| [monitor](https://github.com/markc/mixos/blob/main/apps/monitor/Cargo.toml) | monitor | app | desktop | public | 0.1.1 |
+| [vitals](https://github.com/markc/mixos/blob/main/apps/monitor/crates/vitals/Cargo.toml) | monitor | app | core | none | 0.1.1 |
 | [prefs](https://github.com/markc/mixos/blob/main/apps/prefs/Cargo.toml) | prefs | app | desktop | public | 0.1.1 |
 | [preferences](https://github.com/markc/mixos/blob/main/apps/prefs/crates/preferences/Cargo.toml) | prefs | app | core | none | 0.1.1 |
 | [screenshot](https://github.com/markc/mixos/blob/main/apps/screenshot/Cargo.toml) | screenshot | app | desktop | public | 0.1.1 |

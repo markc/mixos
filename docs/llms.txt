@@ -85,6 +85,7 @@ One line per component with a page: kind, then install profiles. The
   - [mix — changelog](https://mixos.dev/mix/changelog.md): Release notes of the mix component, mirrored from libs/mix/CHANGELOG.md.
 - [mix-shell](https://mixos.dev/mix-shell/README.md): cli; profiles: unclassified. The Mix shell library, holding the interactive line editor, the command classifier, the native-session bootstrap and the Bus citizen runtime that the mix binary runs.
   - [mix-shell — changelog](https://mixos.dev/mix-shell/changelog.md): Release notes of the mix-shell component, mirrored from cli/mix-shell/CHANGELOG.md.
+- [monitor](https://mixos.dev/monitor/README.md): app; profiles: desktop. Monitor is the MixOS task manager, showing the processes and performance that monitord reports for this node or any node on the mesh, with End task and Kill for this node's processes.
 - [monitord](https://mixos.dev/monitord/README.md): service; profiles: base. How monitord samples a host's CPU, memory, disks, network and processes, keeps history in memory and SQLite, and answers read verbs on the Bus, so any node's load can be read from anywhere on the mesh.
   - [monitord — changelog](https://mixos.dev/monitord/changelog.md): Release notes of the monitord component, mirrored from services/monitord/CHANGELOG.md.
 - [noded](https://mixos.dev/noded/README.md): service; profiles: unclassified. The MixOS Bus broker, which handles service registration, discovery, routing, subscriptions, authenticated local session grants and mesh peering between nodes.

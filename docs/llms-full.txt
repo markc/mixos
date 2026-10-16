@@ -716,6 +716,7 @@ profile: [desktop](desktop.md) and [server](server.md). This page describes the 
 | [mimedb](../mimedb/README.md) | lib | none (library) | [`libs/mimedb`](https://github.com/markc/mixos/tree/main/libs/mimedb) | A library that reads the freedesktop shared-mime-info database and decides a file's type from its name and content the way GLib does, so MixOS names a file's type as the desktop does. |
 | [mix](../mix/README.md) · [changelog](../mix/changelog.md) | lib | none (library) | [`libs/mix`](https://github.com/markc/mixos/tree/main/libs/mix) |  |
 | [mix-shell](../mix-shell/README.md) · [changelog](../mix-shell/changelog.md) | cli | unclassified | [`cli/mix-shell`](https://github.com/markc/mixos/tree/main/cli/mix-shell) | The Mix shell library, holding the interactive line editor, the command classifier, the native-session bootstrap and the Bus citizen runtime that the mix binary runs. |
+| [monitor](../monitor/README.md) | app | desktop | [`apps/monitor`](https://github.com/markc/mixos/tree/main/apps/monitor) | Monitor is the MixOS task manager, showing the processes and performance that monitord reports for this node or any node on the mesh, with End task and Kill for this node's processes. |
 | [monitord](../monitord/README.md) · [changelog](../monitord/changelog.md) | service | base | [`services/monitord`](https://github.com/markc/mixos/tree/main/services/monitord) | How monitord samples a host's CPU, memory, disks, network and processes, keeps history in memory and SQLite, and answers read verbs on the Bus, so any node's load can be read from anywhere on the… |
 | [noded](../noded/README.md) · [changelog](../noded/changelog.md) | service | unclassified | [`services/noded`](https://github.com/markc/mixos/tree/main/services/noded) | The MixOS Bus broker, which handles service registration, discovery, routing, subscriptions, authenticated local session grants and mesh peering between nodes. |
 | [notifyd](../notifyd/README.md) | service | unclassified | [`services/notifyd`](https://github.com/markc/mixos/tree/main/services/notifyd) | How notifyd keeps the desk's notifications, shows them as toasts and in the Notifications page, and tells an agent or app which button the human pressed. |
@@ -754,6 +755,8 @@ checked separately by the layering gate.
 | [files](https://github.com/markc/mixos/blob/main/apps/dopus/crates/files/Cargo.toml) | dopus | app | core | none | 0.1.1 |
 | [email](https://github.com/markc/mixos/blob/main/apps/email/Cargo.toml) | email | app | desktop | public | 0.1.1 |
 | [jmap](https://github.com/markc/mixos/blob/main/apps/email/crates/jmap/Cargo.toml) | email | app | core | none | 0.1.1 |
+| [monitor](https://github.com/markc/mixos/blob/main/apps/monitor/Cargo.toml) | monitor | app | desktop | public | 0.1.1 |
+| [vitals](https://github.com/markc/mixos/blob/main/apps/monitor/crates/vitals/Cargo.toml) | monitor | app | core | none | 0.1.1 |
 | [prefs](https://github.com/markc/mixos/blob/main/apps/prefs/Cargo.toml) | prefs | app | desktop | public | 0.1.1 |
 | [preferences](https://github.com/markc/mixos/blob/main/apps/prefs/crates/preferences/Cargo.toml) | prefs | app | core | none | 0.1.1 |
 | [screenshot](https://github.com/markc/mixos/blob/main/apps/screenshot/Cargo.toml) | screenshot | app | desktop | public | 0.1.1 |
@@ -4500,6 +4503,21 @@ Status: accepted 2026-10-16.
 - Monitor's graphs and tables record their performance workloads (a
   2,000-process table, a 64-core grid) before they are optimised
   (AGENTS.md §4.1).
+
+## Amendments
+
+### 2026-10-16: Monitor's End task and Kill, and its widgets
+
+- **Monitor acts on this node's processes the way the command line does.**
+  End task (SIGTERM) and Kill (SIGKILL) are local system calls made as the
+  person running Monitor, and the kernel decides. They are off while
+  another node is shown, and no Bus verb of monitord's is involved. Acting
+  on another node, or as another user, stays hostd's.
+- **Phase 2 adds no graph or table crate.** The graphs are painted
+  directly: a 64-core grid is 64 graphs a frame, which a plotting widget
+  per graph would make heavy. The process table is `egui_extras`'
+  `TableBuilder`, already in the tree. `egui_plot` and `egui_table` stay
+  candidates for when a view needs what they add (zoom, axes, ragged rows).
 
 ---
 
@@ -28482,6 +28500,95 @@ mix keywords          list the reserved words
 
 ---
 
+<!-- page: https://mixos.dev/monitor/ (source: https://mixos.dev/monitor/README.md) -->
+
+# Monitor
+
+Monitor is the task manager. It shows what [monitord](../monitord/README.md)
+reports, for this node or for any node on the mesh: the processes, and graphs
+of CPU, memory, each disk and each network interface over the last minute.
+It reads nothing from the system itself, so a node with no desktop can be
+watched from one that has one. The reasons are in the
+[monitord and Monitor decision](../docs/decisions/2026-10-16-monitord-and-monitor.md).
+
+## The window
+
+- **Processes:** every process, sorted by any column (click a header; click
+  it again to reverse), filtered by name or command line, or shown as a tree
+  with parents above their children. CPU is a share of the whole machine:
+  one busy core of eight is 12.5.
+- **Performance:** CPU, memory, each disk and each network interface down
+  the side, each with a small graph. The chosen one fills the rest: a
+  minute's graph and its figures. CPU adds a graph for every logical
+  processor; a disk adds its read and write rates and its filesystems; an
+  interface its receive and send rates.
+- **Node:** the chooser in the tool bar lists this node and the mesh peers.
+  Choosing one reads that node's monitord as `monitord.<node>.bus`. The
+  graphs start full: Monitor asks monitord for the last minute first.
+
+Monitor reads once a second. Pause (Ctrl+P) holds the readings still;
+Refresh (F5) reads once.
+
+## End task and Kill
+
+End task (Delete) asks the selected process to finish (SIGTERM). Kill
+(Shift+Delete) stops it at once (SIGKILL). Both act only on this node's
+processes, as the person running Monitor, and the kernel decides whether
+they may: the same as `kill` in a terminal. They are off while another node
+is shown. Acting on another node, or as another user, is
+[hostd](../hostd/README.md)'s job.
+
+## Agents
+
+Everything in the window is a command or a verb, under `monitor`:
+
+| Verb | Body | Does |
+|---|---|---|
+| `monitor.info` | — | The window's state: node, page, section, sort, filter, selection, and the latest readings |
+| `monitor.rows` | — | The process rows in the order shown |
+| `monitor.node` | `node` (a name, or null for this node) | Watch another node |
+| `monitor.tab` | `tab` (`processes` or `performance`) | Show a page |
+| `monitor.section` | `section` (`cpu`, `memory`, `disk:<name>`, `net:<name>`) | Show one performance section |
+| `monitor.sort` | `column`, optional `reverse` | Sort the table |
+| `monitor.filter` | `text` | Filter the table |
+| `monitor.tree` | `on` | Tree or flat |
+| `monitor.select` | `pid` (or null) | Select a row |
+| `monitor.refresh` | — | Read the node now |
+| `monitor.commands`, `monitor.execute` | `id` | List and run commands (`process.end`, `view.pause`, ...) |
+| `monitor.dialog`, `monitor.theme`, `monitor.show`, `monitor.quit`, `monitor.ping` | | As every MixOS app |
+
+The window's drive verbs (`monitor.ui.*`, `monitor.window*`) are the
+toolkit's, described in [driving an app](../docs/drive.md).
+
+```mix
+send monitor monitor.node node=beta
+send monitor monitor.sort column=memory
+send monitor monitor.rows
+```
+
+## Running it
+
+```text
+monitor [--node NAME] [--noded-url URL] [--service NAME]
+```
+
+A second launch raises the first window. `--node` starts on a mesh node
+instead of this one.
+
+## Testing
+
+```text
+cargo test -p monitor -p vitals
+```
+
+The engine (`vitals`) is tested without a window or a Bus. The window is
+checked by offscreen snapshots (`apps/monitor/tests/snapshots/`); run with
+`UPDATE_SNAPSHOTS=1` to redraw them, and look at the images before
+committing. The snapshot suite also times the representative workload, a
+2,000-process table and a 64-core grid, and prints it.
+
+---
+
 <!-- page: https://mixos.dev/monitord/ (source: https://mixos.dev/monitord/README.md) -->
 
 # The system monitor service
@@ -31183,7 +31290,7 @@ On every MixOS system.
 
 ## Desktop components
 
-None yet.
+- [monitor](../monitor/README.md) (app): Monitor is the MixOS task manager, showing the processes and performance that monitord reports for this node or any node on the mesh, with End task and Kill for this node's processes.
 
 ## Unclassified
 
