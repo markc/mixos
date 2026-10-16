@@ -67,7 +67,12 @@ fn class_of(name: &str) -> Option<&'static str> {
 fn read_only_verbs_are_queries() {
     for verb in describe()["verbs"].as_array().unwrap() {
         let name = verb["name"].as_str().unwrap();
-        if matches!(name, "HELP" | "app.describe") || class_of(name) == Some("input") {
+        // The drive verbs are the toolkit's own family (a capture is a
+        // query that writes its artefact).
+        let drive = toolkit::drive::VERBS
+            .iter()
+            .any(|v| name == format!("{APP}.{v}"));
+        if matches!(name, "HELP" | "app.describe") || drive {
             continue;
         }
         let class = class_of(name);

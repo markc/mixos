@@ -4318,6 +4318,267 @@ pub(crate) mod tests {
         );
     }
 
+    /// The page fetches in `work` as (text, all folders, position).
+    fn searches(work: &[Work]) -> Vec<(Option<String>, bool, u64)> {
+        work.iter()
+            .filter_map(|w| match w {
+                Work::FetchEmails {
+                    text, all, position, ..
+                } => Some((text.clone(), *all, *position)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// The debounce tickets queued in `work`.
+    fn dues(work: &[Work]) -> Vec<u64> {
+        work.iter()
+            .filter_map(|w| match w {
+                Work::SearchDue { ticket, .. } => Some(*ticket),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn typing_waits_for_a_pause_and_only_the_last_keystroke_searches() {
+        let mut state = listed(250);
+        state.mail_table("a", TableEvent::PageChanged(2));
+        state.take_work();
+        state.search_typed("a", "inv".into());
+        state.search_typed("a", "invoice".into());
+        let due = dues(&state.take_work());
+        assert_eq!(due.len(), 2);
+        // The first pause is overtaken: nothing runs.
+        done(&mut state, "a", Done::SearchDue(due[0]));
+        assert!(searches(&state.take_work()).is_empty());
+        done(&mut state, "a", Done::SearchDue(due[1]));
+        // The result's first page, in the folder.
+        assert_eq!(
+            searches(&state.take_work()),
+            [(Some("invoice".into()), false, 0)]
+        );
+        let view = state.account("a").unwrap();
+        assert!(view.mail.search.active() && view.mail.table.page == 0);
+        // All folders drops the folder; paging keeps the search.
+        state.search_scope(Scope::All);
+        assert_eq!(
+            searches(&state.take_work()),
+            [(Some("invoice".into()), true, 0)]
+        );
+        answer(&mut state, 4, 100, 250);
+        state.page_mail(PageMove::Next);
+        assert_eq!(
+            searches(&state.take_work()),
+            [(Some("invoice".into()), true, 100)]
+        );
+        // A folder chosen in the tree ends the search, and a keystroke
+        // still waiting cannot bring it back.
+        state.search_typed("a", "late".into());
+        let late = dues(&state.take_work());
+        assert!(state.select_mailbox("a", "folder".into()));
+        assert_eq!(searches(&state.take_work()), [(None, false, 0)]);
+        done(&mut state, "a", Done::SearchDue(late[0]));
+        assert!(state.take_work().is_empty());
+        assert_eq!(state.account("a").unwrap().mail.search, Search::default());
+        // The Bus searches at once; a clear shows the folder again.
+        state.set_search("a", Some("tax".into()), Some(Scope::Folder));
+        assert_eq!(
+            searches(&state.take_work()),
+            [(Some("tax".into()), false, 0)]
+        );
+        state.clear_search();
+        assert_eq!(searches(&state.take_work()), [(None, false, 0)]);
+    }
+
+    /// Account a with an inbox, a folder and its child, a Trash with
+    /// email in it and an empty Junk.
+    fn foldered() -> State {
+        let mut state = connected();
+        let with = |id: &str, role: Option<&str>, parent: Option<&str>, total: u64, unread: u64| {
+            Mailbox {
+                id: id.into(),
+                name: id.to_uppercase(),
+                role: role.map(str::to_owned),
+                parent_id: parent.map(str::to_owned),
+                total_emails: total,
+                unread_emails: unread,
+                ..Mailbox::default()
+            }
+        };
+        done(
+            &mut state,
+            "a",
+            Done::Mailboxes(Ok(vec![
+                with("in", Some("inbox"), None, 10, 2),
+                with("work", None, None, 7, 3),
+                with("plans", None, Some("work"), 1, 0),
+                with("bin", Some("trash"), None, 1201, 0),
+                with("junk", Some("junk"), None, 0, 0),
+            ])),
+        );
+        state.take_work();
+        state
+    }
+
+    #[test]
+    fn role_folders_keep_their_names_and_only_bins_empty() {
+        let mut state = foldered();
+        let node = |id: &str| Node::Mailbox("a".into(), id.into());
+        state.context_node(&node("in"));
+        assert!(state.folder_targeted() && !state.folder_editable());
+        assert!(state.folder_why("folder.rename").is_some());
+        assert!(state.folder_unread() && !state.folder_emptiable());
+        assert!(!state.node_menu(&node("in")).contains(&"folder.empty"));
+        state.context_node(&node("work"));
+        assert!(state.folder_editable() && state.folder_why("folder.rename").is_none());
+        state.context_node(&node("bin"));
+        assert!(state.node_menu(&node("bin")).contains(&"folder.empty"));
+        assert!(state.folder_emptiable());
+        // An empty Junk lists Empty, off with its reason.
+        state.context_node(&node("junk"));
+        assert!(state.node_menu(&node("junk")).contains(&"folder.empty"));
+        assert!(!state.folder_emptiable() && state.folder_why("folder.empty").is_some());
+        // Each node kind has its own menu.
+        let account = state.node_menu(&Node::Account("a".into()));
+        assert_eq!(account[0], "account.compose");
+        let calendar = state.node_menu(&Node::Calendar("a".into(), "c".into()));
+        assert_eq!(calendar, ["calendar.new_event", "folder.refresh"]);
+        let book = state.node_menu(&Node::Books("a".into()));
+        assert_eq!(book, ["contacts.new_contact", "folder.refresh"]);
+    }
+
+    #[test]
+    fn folder_names_are_checked_against_their_siblings() {
+        assert_eq!(name_refusal("  ", &[]), Some("folder-name-needed"));
+        assert_eq!(name_refusal("a/b", &[]), Some("folder-name-slash"));
+        assert_eq!(name_refusal("Plans", &["plans"]), Some("folder-name-taken"));
+        assert_eq!(name_refusal("Ideas", &["plans"]), None);
+        let mut state = foldered();
+        state.context_node(&Node::Mailbox("a".into(), "work".into()));
+        state.folder_new();
+        assert!(matches!(
+            &state.form,
+            Some(Form::Folder(f)) if f.action == FolderAction::New { parent: Some("work".into()) }
+        ));
+        // PLANS is already under WORK.
+        state.apply_ui(UiEvent::FormField(FormField::FolderName, "plans".into()));
+        state.apply_ui(UiEvent::FormSubmit(None));
+        assert!(matches!(&state.form, Some(Form::Folder(f)) if f.error.is_some()));
+        assert!(writes(&mut state).is_empty());
+        state.apply_ui(UiEvent::FormField(FormField::FolderName, " Ideas ".into()));
+        state.apply_ui(UiEvent::FormSubmit(None));
+        assert!(state.form.is_none());
+        assert!(matches!(
+            writes(&mut state).as_slice(),
+            [(None, Write::CreateMailbox { name, parent: Some(parent) })]
+                if name == "Ideas" && parent == "work"
+        ));
+        // A rename may keep its own name, in other letters.
+        state.context_node(&Node::Mailbox("a".into(), "plans".into()));
+        state.folder_rename();
+        state.apply_ui(UiEvent::FormField(FormField::FolderName, "Plans".into()));
+        state.apply_ui(UiEvent::FormSubmit(None));
+        assert!(matches!(
+            writes(&mut state).as_slice(),
+            [(None, Write::RenameMailbox { id, .. })] if id == "plans"
+        ));
+    }
+
+    #[test]
+    fn deletes_and_empties_confirm_with_their_counts_then_write() {
+        let mut state = foldered();
+        state.context_node(&Node::Mailbox("a".into(), "bin".into()));
+        state.folder_empty();
+        assert!(matches!(&state.form, Some(Form::Folder(f)) if f.count == 1201));
+        assert_eq!(state.info()["form"]["kind"], "folder_empty");
+        state.apply_ui(UiEvent::FormSubmit(None));
+        assert!(matches!(
+            writes(&mut state).as_slice(),
+            [(None, Write::EmptyMailbox { id })] if id == "bin"
+        ));
+        state.context_node(&Node::Mailbox("a".into(), "work".into()));
+        state.folder_delete();
+        assert!(matches!(&state.form, Some(Form::Folder(f)) if f.count == 7));
+        state.apply_ui(UiEvent::FormCancel);
+        assert!(state.form.is_none() && writes(&mut state).is_empty());
+        state.context_node(&Node::Mailbox("a".into(), "work".into()));
+        state.folder_delete();
+        state.apply_ui(UiEvent::FormSubmit(None));
+        assert!(matches!(
+            writes(&mut state).as_slice(),
+            [(None, Write::TrashMailbox { id })] if id == "work"
+        ));
+        // Marking read needs no confirm.
+        state.context_node(&Node::Mailbox("a".into(), "work".into()));
+        state.folder_mark_read();
+        assert!(matches!(
+            writes(&mut state).as_slice(),
+            [(None, Write::MarkMailboxRead { id })] if id == "work"
+        ));
+        assert!(state.ui.menu_node.is_none(), "a command is done with its node");
+    }
+
+    #[test]
+    fn a_drop_moves_every_dragged_email_and_bad_targets_refuse() {
+        let mut state = listed(3);
+        let folder = Node::Mailbox("a".into(), "folder".into());
+        for (target, why) in [
+            (Node::Mailbox("a".into(), "in".into()), "drop-same-folder"),
+            (Node::Account("a".into()), "drop-not-folder"),
+            (Node::Calendar("a".into(), "c".into()), "drop-not-folder"),
+            (Node::Book("a".into(), "b".into()), "drop-not-folder"),
+            (Node::Mailbox("b".into(), "in".into()), "drop-other-account"),
+        ] {
+            assert_eq!(state.drop_refusal(&target), Some(why), "{target:?}");
+            assert!(!state.drop_on(&target, vec!["E0".into()]));
+        }
+        assert!(writes(&mut state).is_empty());
+        assert_eq!(state.drop_refusal(&folder), None);
+        let keys = vec!["E0".to_owned(), "E2".to_owned()];
+        state.apply_ui(UiEvent::DropOnFolder(folder, keys.clone()));
+        // One move with every id: the write email.move makes.
+        assert!(matches!(
+            writes(&mut state).as_slice(),
+            [(None, Write::Move { ids, mailbox })] if *ids == keys && mailbox == "folder"
+        ));
+    }
+
+    #[test]
+    fn a_removed_open_email_opens_its_neighbour() {
+        let mut state = listed(3);
+        assert!(state.open_email("a", "E1".into()));
+        state.take_work();
+        let delete = |id: &str| Write::Delete {
+            ids: vec![id.into()],
+            destroy: false,
+        };
+        done(
+            &mut state,
+            "a",
+            Done::Wrote(None, None, Box::new(delete("E1")), Ok(json!({}))),
+        );
+        let work = state.take_work();
+        assert!(
+            work.iter()
+                .any(|w| matches!(w, Work::OpenEmail { id, .. } if id == "E2")),
+            "{work:?}"
+        );
+        assert_eq!(state.account("a").unwrap().mail.table.selection, ["E2"]);
+        // The last row's neighbour is the one before it.
+        done(
+            &mut state,
+            "a",
+            Done::Wrote(None, None, Box::new(delete("E2")), Ok(json!({}))),
+        );
+        assert!(
+            state
+                .take_work()
+                .iter()
+                .any(|w| matches!(w, Work::OpenEmail { id, .. } if id == "E0"))
+        );
+    }
+
     #[test]
     fn a_cached_account_with_a_password_connects_at_launch() {
         let mut state = State::new(

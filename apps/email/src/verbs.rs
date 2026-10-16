@@ -1378,7 +1378,38 @@ mod tests {
             .iter()
             .map(|v| v["name"].as_str().unwrap())
             .collect();
-        assert_eq!(names.len(), VERBS.len() + drive::VERBS.len());
+        assert_eq!(
+            names.len(),
+            VERBS.len()
+                + list::VERBS.len()
+                + toolkit::datatable::verbs::VERBS.len()
+                + drive::VERBS.len()
+        );
+        let unique: std::collections::BTreeSet<&&str> = names.iter().collect();
+        assert_eq!(unique.len(), names.len(), "a name twice");
+    }
+
+    #[test]
+    fn the_list_and_folder_verbs_are_handled() {
+        let names = list::VERBS
+            .iter()
+            .map(|v| v.name.to_owned())
+            .chain(
+                toolkit::datatable::verbs::VERBS
+                    .iter()
+                    .map(|v| format!("email.{v}")),
+            );
+        for name in names {
+            let mut state = connected_many(&["a"]);
+            run(&mut state, &name, json!({}));
+            let replies = state.take_replies();
+            assert!(
+                !replies
+                    .iter()
+                    .any(|r| r.body["error_code"] == code::UNKNOWN_VERB),
+                "{name}: {replies:?}"
+            );
+        }
     }
 
     #[test]
