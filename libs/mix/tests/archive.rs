@@ -1480,8 +1480,7 @@ async fn privileged_xattrs_need_their_opt_in() {
         return; // documented skip: trusted.* needs CAP_SYS_ADMIN
     }
     let d = tmpdir("privileged-xattrs");
-    if !xattr_supported(&d, c"trusted.mixtest", b"t")
-        || !xattr_supported(&d, c"user.mixtest", b"u")
+    if !xattr_supported(&d, c"trusted.mixtest", b"t") || !xattr_supported(&d, c"user.mixtest", b"u")
     {
         return;
     }
@@ -1501,7 +1500,10 @@ async fn privileged_xattrs_need_their_opt_in() {
     ))
     .await;
     assert_eq!(receipt(&out)["xattrs_restored"].to_mix_string(), "1");
-    assert_eq!(get_xattr(&plain.join("prog"), c"user.mixtest").unwrap(), b"u");
+    assert_eq!(
+        get_xattr(&plain.join("prog"), c"user.mixtest").unwrap(),
+        b"u"
+    );
     get_xattr(&plain.join("prog"), c"trusted.mixtest")
         .expect_err("trusted.* must not be restored by default");
     // keep_special_bits admits security.capability only, not trusted.*.
@@ -1521,7 +1523,10 @@ async fn privileged_xattrs_need_their_opt_in() {
         opted.display()
     ))
     .await;
-    assert_eq!(get_xattr(&opted.join("prog"), c"trusted.mixtest").unwrap(), b"t");
+    assert_eq!(
+        get_xattr(&opted.join("prog"), c"trusted.mixtest").unwrap(),
+        b"t"
+    );
 }
 
 #[tokio::test]

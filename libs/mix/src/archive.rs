@@ -689,9 +689,8 @@ pub fn builtin_tar_unpack(args: Vec<Value>) -> MixResult<Option<Value>> {
             opts.max_stream_bytes =
                 count_opt(caller, "max_stream_bytes", m.get("max_stream_bytes"))?
                     .unwrap_or(opts.max_stream_bytes);
-            opts.max_xattr_bytes =
-                count_opt(caller, "max_xattr_bytes", m.get("max_xattr_bytes"))?
-                    .unwrap_or(opts.max_xattr_bytes);
+            opts.max_xattr_bytes = count_opt(caller, "max_xattr_bytes", m.get("max_xattr_bytes"))?
+                .unwrap_or(opts.max_xattr_bytes);
             if opts.max_xattr_bytes > MAX_XATTR_BYTES_CEILING {
                 return Err(opt_invalid(
                     caller,
@@ -744,7 +743,8 @@ pub fn builtin_tar_unpack(args: Vec<Value>) -> MixResult<Option<Value>> {
     let leaf = std::ffi::CString::new(leaf.as_bytes())
         .map_err(|_| runtime(format!("{caller}: dest contains NUL")))?;
 
-    let staging = Staging::create(parent).map_err(|e| runtime(format!("{caller}: staging: {e}")))?;
+    let staging =
+        Staging::create(parent).map_err(|e| runtime(format!("{caller}: staging: {e}")))?;
     match unpack_staged(&path, &staging.dir, &opts, caller) {
         Ok(receipt) => {
             if let Err(e) = staging.commit(&leaf) {
@@ -1151,7 +1151,8 @@ fn unpack_staged(
                         )));
                     }
                     if opts.xattrs {
-                        meta.xattrs = collect_pax_xattrs(&mut entry, opts, &mut xattr_bytes, caller)?;
+                        meta.xattrs =
+                            collect_pax_xattrs(&mut entry, opts, &mut xattr_bytes, caller)?;
                     }
                     entry.set_preserve_mtime(true);
                     let fd = unsafe {
