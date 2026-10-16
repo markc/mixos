@@ -403,15 +403,14 @@ impl AccountView {
     /// only the newest one's answer is applied.
     fn fetch_emails(&mut self, mailbox: String, limit: u32, work: &mut Vec<Work>) {
         self.tickets.page += 1;
-        let table = &mut self.mail.table;
-        table.page_size = limit.max(1);
+        self.mail.table.page_size = limit.max(1);
         work.push(Work::FetchEmails {
             account: self.work(),
             ticket: self.tickets.page,
             mailbox,
             limit,
-            position: table.offset(),
-            sort: email_sort(table.sort.as_ref()),
+            position: self.mail.table.offset(),
+            sort: email_sort(self.mail.table.sort.as_ref()),
         });
     }
 
