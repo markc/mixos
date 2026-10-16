@@ -71,5 +71,5 @@ Copy one favicon folder into the site's public root and add, inside `<head>`:
 Adjust the paths for a subfolder. Apple's PNG Web Clip sizes are documented in
 [Configuring Web Applications](https://developer.apple.com/library/archive/documentation/AppleApplications/Reference/SafariWebContent/ConfiguringWebApplications/ConfiguringWebApplications.html).
 
-mixos.dev does not use this set yet: `docs/web/favicon.svg` is the older
-gradient mark. Wiring `docs/build/gen-site.mix` to copy from here is pending.
+mixos.dev does not use this set yet: `docs/_web/favicon.svg` is the older
+gradient mark. Wiring `docs/_build/gen-site.mix` to copy from here is pending.

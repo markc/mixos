@@ -7,7 +7,7 @@
 --   mix tools/package.mix --release 0.1.1 [--arch x86_64] [--bin-dir target/release] [--out dist/release]
 --
 -- Two prefix tarballs per architecture, the layout releasesd installs
--- (docs/releases.md): one top directory holding bin/ and share/.
+-- (docs/releasesd/README.md): one top directory holding bin/ and share/.
 --
 --   mixos-server-<v>-linux-<arch>.tar.gz    mix and the headless services
 --   mixos-desktop-<v>-linux-<arch>.tar.gz   the compositor and the apps

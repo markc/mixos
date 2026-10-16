@@ -69,7 +69,7 @@ systemd-resolved and the default routes when their tools answer
 kernel's view. Where hostd runs and grants this panel's scene loader,
 a link can be configured (DHCP or static) through hostd's `net.link.apply`,
 which keeps a change only if the link comes up, and the last change undone
-(`lib/hostd.mix`, `docs/hostd.md`). Those handlers act only on clicks the
+(`lib/hostd.mix`, `docs/hostd/README.md`). Those handlers act only on clicks the
 scene host relays, never on a Bus caller.
 
 `volume` is the bottom panel's audio popup. It shows the default output and

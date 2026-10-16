@@ -1,0 +1,135 @@
+---
+title: DOpus
+description: MixOS's twin-pane file manager — two folder trees side by side, Places and Properties sidebars, drag and drop between panes, menus and keys for every action, and a Bus surface for agents that reads and navigates but never changes files.
+---
+
+# DOpus
+
+DOpus is MixOS's file manager: two panes side by side, each a folder
+tree, with a Places sidebar on the left and a Properties sidebar on the
+right. The name is a nod to Directory Opus on the Amiga, whose twin panes
+it keeps.
+
+## The window
+
+- **Two panes.** Each shows one folder as a tree with Name, Size and
+  Modified columns; columns that do not fit are hidden, Modified first. One
+  pane is active; Switch Pane (F6 or Tab) moves between them, and copy and
+  move always go to the other pane. Drag the divider to change the split.
+- **The path field** at the top of each pane always shows where it is. Click
+  it, type a path and press Enter to go there; `~` is your home, and a file
+  path opens the folder that holds it.
+- **The tree.** A chevron or a double-click opens a folder in place;
+  another collapses it. Double-click a file to open it in its default
+  application.
+- **Selecting.** Click a row to select it, Ctrl-click to add or remove one,
+  Shift-click for a range. The arrow keys, Home and End move the selection.
+- **Sorting.** Click a column header to sort by it, ascending first; click
+  it again to reverse.
+- **Places** lists Home, the filesystem root and your Desktop, Documents,
+  Downloads, Music, Pictures and Videos folders, where they exist. Its
+  toggle sits left of the left pane's path field.
+- **Properties** shows the selected item: kind, size, dates, permissions,
+  owner and path, under a preview of a file when one can be made. Its
+  toggle sits right of the right pane's path field.
+- **Previews** (View › Previews, per pane, on by default) are thumbnails
+  from the desktop's shared thumbnail cache, made by the thumbnailers
+  installed on the system (the same ones GNOME and COSMIC use). A type
+  with no thumbnailer keeps its icon. Files on network, FUSE and automounted filesystems (NFS, SMB,
+  sshfs, ntfs-3g and the like) keep their icons too, unless
+  `remote_previews: true` is set in the configuration (below). A file
+  whose filesystem stops answering keeps its icon rather than holding up
+  the previews of the others.
+- **Icons** show what a folder or file holds: your well-known folders have
+  their own, and files are grouped by their MIME type (document, code,
+  image, audio, video, archive, spreadsheet, presentation, font, disk
+  image, program, shell script).
+- **Drag and drop.** Drag rows from one pane onto the other, or onto a
+  folder in it, and choose Move Here, Copy Here or Cancel.
+- **Right-click** a row or a pane's background for the actions that apply
+  there.
+
+Deleting asks first, and naming a new folder or a rename is checked before
+anything happens. Copies, moves and deletes run in the background, and the
+status line says how they ended.
+
+## Menus and keys
+
+The menus hold every action except moving the selection (the arrow keys,
+Home and End) and the quick theme keys (Ctrl+Alt+D for light or dark,
+Ctrl+Alt+1 to 6 for a scheme; View › Theme has the full choice). Help ›
+Keyboard Shortcuts lists every key in force.
+
+| Menu | Action | Keys |
+|---|---|---|
+| File | Open | Enter |
+| | New Folder | Ctrl+Shift+N |
+| | Rename | F2, Ctrl+E |
+| | Copy to Other Pane | Ctrl+C |
+| | Move to Other Pane | Ctrl+X |
+| | Delete | Delete |
+| | Quit | Ctrl+Q |
+| View | Places, Properties | Ctrl+B, Ctrl+I |
+| | Hidden Files | Ctrl+H |
+| | Refresh | F5, Ctrl+R |
+| | Sort by Name, Size, Modified | Ctrl+1, Ctrl+2, Ctrl+3 |
+| | Theme | (this window's look; the session's by default) |
+| Go | Back, Forward | Alt+ArrowLeft, Alt+ArrowRight |
+| | Parent Folder | Backspace |
+| | Home | Alt+Home |
+| | Location… | Ctrl+L |
+| | Switch Pane | F6, Tab |
+| Help | Keyboard Shortcuts | F1 |
+
+To change a key, set it in the desktop profile: the binding applies at once,
+and DOpus's defaults stay for every action you leave alone. For example,
+`settings.apply` with `keymaps.dopus.nav.parent: ["Ctrl+U"]` makes Ctrl+U
+the parent-folder key, an empty list leaves an action without a key, and a
+reset of `keymaps.dopus` restores the defaults. See [key bindings are desktop
+settings](../docs/decisions/2026-10-11-keymaps-in-settings.md).
+
+## What it remembers
+
+The two panes' folders, sorting and hidden-files setting, which pane was
+active, the split, and the sidebars' state and widths are kept in
+`config.conf.mix` in DOpus's own directory (by default
+`~/.local/state/mixos/apps/dopus/config/`). `dopus --print-config` shows the
+configuration it would use. One setting lives only there:
+`remote_previews` (default `false`) makes previews of files on network,
+FUSE and automounted filesystems too.
+
+## For agents
+
+DOpus answers on the Bus as `dopus` (schema `dopus.v1`).
+
+| Verb | Arguments | Answer |
+|---|---|---|
+| `dopus.ping`, `dopus.describe`, `dopus.info` | | liveness, the control surface, version and build |
+| `dopus.state` | | both panes (path, sort, hidden files, previews, selection, rows, status) and the sidebars |
+| `dopus.open` | `paths` (one per pane), or one path and `pane` | goes there |
+| `dopus.action` | `id`, `pane` (`left`, `right` or `active`) | runs one action |
+| `dopus.actions.list` | | every action, its keys in force and whether it can run now |
+| `dopus.theme.set` | `scheme`, `mode` | this window's look |
+| `dopus.quit` | | closes the window |
+
+**File operations are keyboard-only.** `dopus.action` refuses every `file.*`
+action (`FORBIDDEN`). Input played through the drive verbs (`dopus.ui.*`)
+is held to the same rule: while it runs, file actions and opening files are
+refused, and a delete, name or drop dialog can be dismissed but not
+accepted. The rule holds for the whole time drive input runs, so a key you
+press yourself in that moment is refused too; press it again after. An agent reads, navigates, sorts and selects through DOpus, but
+never creates, renames, moves, copies, deletes or opens files through it.
+
+The window is drivable like every MixOS app, including its menus: see
+[driving an app](../docs/drive.md) (`dopus.ui.*`, `dopus.window`). The verbs are
+registered in `docs/docs/spec/bus/verbs.conf.mix`.
+
+Each command run from a menu, a key, a sidebar button or an accepted
+`dopus.action` is published on `dopus.command.executed`, with how it was
+reached (`menu`, `shortcut`, `ui` or `bus`;
+[executed commands](../docs/decisions/2026-10-11-executed-commands.md)). A refused
+action is not published.
+
+`dopus --headless` runs the core and the Bus port without a window, for
+tests: the same verbs, minus those that need a window. It publishes its
+accepted `dopus.action` runs on `<service>.command.executed` too.

@@ -1,5 +1,5 @@
 -- hostd client for scene behaviours: one request per connection over the
--- local socket (NUL-terminated JSON frames, docs/hostd.md). Writes go only
+-- local socket (NUL-terminated JSON frames, docs/hostd/README.md). Writes go only
 -- this way, never over the Bus. Every answer is a map:
 --   {ok: true, body}                  rc 0
 --   {ok: false, status, body}         hostd refused (rc 10; status from body)

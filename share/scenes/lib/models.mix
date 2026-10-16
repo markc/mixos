@@ -145,7 +145,7 @@ $TIP_WINDOWS = 6
 
 -- Every string the tips show, in one place: the English source. Mix has
 -- no Fluent loader yet; until it has, scene strings live in tables like this
--- (docs/decisions/2026-10-12-scene-strings.md), and then this table becomes
+-- (docs/docs/decisions/2026-10-12-scene-strings.md), and then this table becomes
 -- the en catalogue and text() its lookup.
 -- "{name}" placeholders are filled from the vars map.
 $TEXT = {

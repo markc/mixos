@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! The Bus verb registry (`docs/spec/bus/verbs.conf.mix`, AGENTS.md §5)
+//! The Bus verb registry (`docs/docs/spec/bus/verbs.conf.mix`, AGENTS.md §5)
 //! lists exactly the verbs hostd serves, with reads registered as queries.
 
-const REGISTRY: &str = include_str!("../../../docs/spec/bus/verbs.conf.mix");
+const REGISTRY: &str = include_str!("../../../docs/docs/spec/bus/verbs.conf.mix");
 
 fn field<'a>(line: &'a str, key: &str) -> Option<&'a str> {
     line.split(&format!("{key}:\"")).nth(1)?.split('"').next()

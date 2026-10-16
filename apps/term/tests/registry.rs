@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-//! The Bus verb registry (`docs/spec/bus/verbs.conf.mix`, AGENTS.md §5)
+//! The Bus verb registry (`docs/docs/spec/bus/verbs.conf.mix`, AGENTS.md §5)
 //! lists exactly the verbs Terminal describes, apart from the protocol
 //! verbs every service answers.
 use term::bus::describe;
 
-const REGISTRY: &str = include_str!("../../../docs/spec/bus/verbs.conf.mix");
+const REGISTRY: &str = include_str!("../../../docs/docs/spec/bus/verbs.conf.mix");
 
 /// The registry's names owned by `owner`, from its one-entry-per-line form.
 fn registered(owner: &str) -> Vec<String> {
@@ -49,7 +49,7 @@ fn class_of(name: &str) -> Option<&'static str> {
 }
 
 /// A verb the app describes as read-only is a query
-/// (docs/decisions/2026-10-11-verb-classes.md).
+/// (docs/docs/decisions/2026-10-11-verb-classes.md).
 #[test]
 fn read_only_verbs_are_queries() {
     let verbs = describe();

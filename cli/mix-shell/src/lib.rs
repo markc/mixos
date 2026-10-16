@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The mix shell. The `mix` binary is built by `cli/system`, which runs
-//! [`main`] when started as `mix` (docs/decisions/2026-10-12-one-system-binary.md).
+//! [`main`] when started as `mix` (docs/docs/decisions/2026-10-12-one-system-binary.md).
 
 // Crate-wide CLI output policy. Declared before the modules so every
 // print!/println!/eprintln! in main, meta, the REPL, and shell surface

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The renderer-independent model: Prefs' panels, the rows and notes the
-//! `releases` service answers (docs/spec/releases/), and Prefs' own verbs.
+//! `releases` service answers (docs/docs/spec/releases/), and Prefs' own verbs.
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 

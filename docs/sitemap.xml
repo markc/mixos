@@ -1,43 +1,63 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url><loc>https://mixos.dev/</loc></url>
-  <url><loc>https://mixos.dev/try/</loc></url>
-  <url><loc>https://mixos.dev/drive/</loc></url>
-  <url><loc>https://mixos.dev/decisions/2026-10-09-egui-applications/</loc></url>
-  <url><loc>https://mixos.dev/decisions/2026-10-04-source-layout/</loc></url>
+  <url><loc>https://mixos.dev/docs/try/</loc></url>
+  <url><loc>https://mixos.dev/docs/drive/</loc></url>
+  <url><loc>https://mixos.dev/docs/decisions/2026-10-09-egui-applications/</loc></url>
+  <url><loc>https://mixos.dev/docs/decisions/2026-10-04-source-layout/</loc></url>
+  <url><loc>https://mixos.dev/assets/</loc></url>
   <url><loc>https://mixos.dev/backdrop/</loc></url>
-  <url><loc>https://mixos.dev/bridge/</loc></url>
-  <url><loc>https://mixos.dev/decisions/2026-10-07-settings-authority/</loc></url>
-  <url><loc>https://mixos.dev/decisions/2026-10-08-mix-programs-and-documents/</loc></url>
-  <url><loc>https://mixos.dev/decisions/2026-10-09-chrome-family-and-schemes/</loc></url>
-  <url><loc>https://mixos.dev/decisions/2026-10-09-icons-and-type/</loc></url>
-  <url><loc>https://mixos.dev/decisions/2026-10-10-mix-components/</loc></url>
-  <url><loc>https://mixos.dev/decisions/2026-10-10-scheme-and-style-axes/</loc></url>
-  <url><loc>https://mixos.dev/decisions/2026-10-10-style-tokens-as-data/</loc></url>
-  <url><loc>https://mixos.dev/decisions/2026-10-11-compd-module-layout/</loc></url>
-  <url><loc>https://mixos.dev/decisions/2026-10-11-executed-commands/</loc></url>
-  <url><loc>https://mixos.dev/decisions/2026-10-11-keymaps-in-settings/</loc></url>
-  <url><loc>https://mixos.dev/decisions/2026-10-11-rec-and-play/</loc></url>
-  <url><loc>https://mixos.dev/decisions/2026-10-11-settings-authority-stays-a-service/</loc></url>
-  <url><loc>https://mixos.dev/decisions/2026-10-11-settings-snapshot-schema-2/</loc></url>
-  <url><loc>https://mixos.dev/decisions/2026-10-11-settings-summary-reads/</loc></url>
-  <url><loc>https://mixos.dev/decisions/2026-10-11-verb-classes/</loc></url>
-  <url><loc>https://mixos.dev/decisions/2026-10-12-hostd/</loc></url>
-  <url><loc>https://mixos.dev/decisions/2026-10-12-non-root-install-and-service-ports/</loc></url>
-  <url><loc>https://mixos.dev/decisions/2026-10-12-one-repository-install-profiles/</loc></url>
-  <url><loc>https://mixos.dev/decisions/2026-10-12-one-system-binary/</loc></url>
-  <url><loc>https://mixos.dev/decisions/2026-10-12-scene-strings/</loc></url>
-  <url><loc>https://mixos.dev/decisions/2026-10-12-screenshot/</loc></url>
-  <url><loc>https://mixos.dev/decisions/2026-10-12-system-dialogs/</loc></url>
-  <url><loc>https://mixos.dev/decisions/2026-10-13-bundled-font-licences/</loc></url>
-  <url><loc>https://mixos.dev/decisions/2026-10-13-desk-and-deskd/</loc></url>
-  <url><loc>https://mixos.dev/decisions/2026-10-13-instance-verb-families/</loc></url>
-  <url><loc>https://mixos.dev/decisions/2026-10-14-session-icon-stroke-and-type/</loc></url>
-  <url><loc>https://mixos.dev/decisions/2026-10-16-site-url-layout/</loc></url>
-  <url><loc>https://mixos.dev/dev/components/</loc></url>
+  <url><loc>https://mixos.dev/bridged/</loc></url>
+  <url><loc>https://mixos.dev/buildinfo/</loc></url>
+  <url><loc>https://mixos.dev/bus/</loc></url>
+  <url><loc>https://mixos.dev/ced/</loc></url>
+  <url><loc>https://mixos.dev/citizen/</loc></url>
+  <url><loc>https://mixos.dev/compd/</loc></url>
+  <url><loc>https://mixos.dev/config/</loc></url>
+  <url><loc>https://mixos.dev/davproto/</loc></url>
+  <url><loc>https://mixos.dev/design/</loc></url>
+  <url><loc>https://mixos.dev/docs/decisions/2026-10-07-settings-authority/</loc></url>
+  <url><loc>https://mixos.dev/docs/decisions/2026-10-08-mix-programs-and-documents/</loc></url>
+  <url><loc>https://mixos.dev/docs/decisions/2026-10-09-chrome-family-and-schemes/</loc></url>
+  <url><loc>https://mixos.dev/docs/decisions/2026-10-09-icons-and-type/</loc></url>
+  <url><loc>https://mixos.dev/docs/decisions/2026-10-10-mix-components/</loc></url>
+  <url><loc>https://mixos.dev/docs/decisions/2026-10-10-scheme-and-style-axes/</loc></url>
+  <url><loc>https://mixos.dev/docs/decisions/2026-10-10-style-tokens-as-data/</loc></url>
+  <url><loc>https://mixos.dev/docs/decisions/2026-10-11-compd-module-layout/</loc></url>
+  <url><loc>https://mixos.dev/docs/decisions/2026-10-11-executed-commands/</loc></url>
+  <url><loc>https://mixos.dev/docs/decisions/2026-10-11-keymaps-in-settings/</loc></url>
+  <url><loc>https://mixos.dev/docs/decisions/2026-10-11-rec-and-play/</loc></url>
+  <url><loc>https://mixos.dev/docs/decisions/2026-10-11-settings-authority-stays-a-service/</loc></url>
+  <url><loc>https://mixos.dev/docs/decisions/2026-10-11-settings-snapshot-schema-2/</loc></url>
+  <url><loc>https://mixos.dev/docs/decisions/2026-10-11-settings-summary-reads/</loc></url>
+  <url><loc>https://mixos.dev/docs/decisions/2026-10-11-verb-classes/</loc></url>
+  <url><loc>https://mixos.dev/docs/decisions/2026-10-12-hostd/</loc></url>
+  <url><loc>https://mixos.dev/docs/decisions/2026-10-12-non-root-install-and-service-ports/</loc></url>
+  <url><loc>https://mixos.dev/docs/decisions/2026-10-12-one-repository-install-profiles/</loc></url>
+  <url><loc>https://mixos.dev/docs/decisions/2026-10-12-one-system-binary/</loc></url>
+  <url><loc>https://mixos.dev/docs/decisions/2026-10-12-scene-strings/</loc></url>
+  <url><loc>https://mixos.dev/docs/decisions/2026-10-12-screenshot/</loc></url>
+  <url><loc>https://mixos.dev/docs/decisions/2026-10-12-system-dialogs/</loc></url>
+  <url><loc>https://mixos.dev/docs/decisions/2026-10-13-bundled-font-licences/</loc></url>
+  <url><loc>https://mixos.dev/docs/decisions/2026-10-13-desk-and-deskd/</loc></url>
+  <url><loc>https://mixos.dev/docs/decisions/2026-10-13-instance-verb-families/</loc></url>
+  <url><loc>https://mixos.dev/docs/decisions/2026-10-14-session-icon-stroke-and-type/</loc></url>
+  <url><loc>https://mixos.dev/docs/decisions/2026-10-16-site-url-layout/</loc></url>
+  <url><loc>https://mixos.dev/docs/dev/components/</loc></url>
+  <url><loc>https://mixos.dev/docs/spec/bridge/</loc></url>
+  <url><loc>https://mixos.dev/docs/spec/handler-closure-capture/</loc></url>
+  <url><loc>https://mixos.dev/docs/spec/mix/2026-10-08-programs-and-documents/</loc></url>
+  <url><loc>https://mixos.dev/docs/spec/portal/</loc></url>
+  <url><loc>https://mixos.dev/docs/spec/releases/</loc></url>
+  <url><loc>https://mixos.dev/docs/spec/settings/</loc></url>
   <url><loc>https://mixos.dev/dopus/</loc></url>
   <url><loc>https://mixos.dev/edit/</loc></url>
+  <url><loc>https://mixos.dev/editd/</loc></url>
+  <url><loc>https://mixos.dev/editor/</loc></url>
+  <url><loc>https://mixos.dev/expr/</loc></url>
   <url><loc>https://mixos.dev/hostd/</loc></url>
+  <url><loc>https://mixos.dev/logging/</loc></url>
+  <url><loc>https://mixos.dev/mix-shell/</loc></url>
   <url><loc>https://mixos.dev/mix/</loc></url>
   <url><loc>https://mixos.dev/mix/buffer/</loc></url>
   <url><loc>https://mixos.dev/mix/builtins/</loc></url>
@@ -81,14 +101,17 @@
   <url><loc>https://mixos.dev/mix/system/</loc></url>
   <url><loc>https://mixos.dev/mix/variables/</loc></url>
   <url><loc>https://mixos.dev/noded/</loc></url>
-  <url><loc>https://mixos.dev/portal/</loc></url>
+  <url><loc>https://mixos.dev/portald/</loc></url>
   <url><loc>https://mixos.dev/prefs/</loc></url>
-  <url><loc>https://mixos.dev/releases/</loc></url>
+  <url><loc>https://mixos.dev/props/</loc></url>
+  <url><loc>https://mixos.dev/releasesd/</loc></url>
+  <url><loc>https://mixos.dev/scene/</loc></url>
   <url><loc>https://mixos.dev/screenshot/</loc></url>
-  <url><loc>https://mixos.dev/spec/bridge/</loc></url>
-  <url><loc>https://mixos.dev/spec/handler-closure-capture/</loc></url>
-  <url><loc>https://mixos.dev/spec/mix/2026-10-08-programs-and-documents/</loc></url>
-  <url><loc>https://mixos.dev/spec/portal/</loc></url>
-  <url><loc>https://mixos.dev/spec/releases/</loc></url>
-  <url><loc>https://mixos.dev/spec/settings/</loc></url>
+  <url><loc>https://mixos.dev/settings/</loc></url>
+  <url><loc>https://mixos.dev/settingsd/</loc></url>
+  <url><loc>https://mixos.dev/strict/</loc></url>
+  <url><loc>https://mixos.dev/system/</loc></url>
+  <url><loc>https://mixos.dev/term/</loc></url>
+  <url><loc>https://mixos.dev/test-broker/</loc></url>
+  <url><loc>https://mixos.dev/thumbs/</loc></url>
 </urlset>

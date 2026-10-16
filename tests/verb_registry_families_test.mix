@@ -15,7 +15,7 @@
 -- Run from the checkout root: mix tests/verb_registry_families_test.mix
 
 $tool = realpath(dirname(realpath($0)) .. "/../tools/verb_registry.mix")
-$real = realpath(dirname(realpath($0)) .. "/../docs/spec/bus/verbs.conf.mix")
+$real = realpath(dirname(realpath($0)) .. "/../docs/docs/spec/bus/verbs.conf.mix")
 $mix = env("MIXOS_TEST_MIX") ?? ""
 if $mix == "" then $mix = "/opt/mixos/bin/mix" end
 $tmp = "/var/tmp/verb-registry-families-test." .. uuid()
