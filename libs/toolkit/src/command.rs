@@ -664,7 +664,7 @@ impl<S> Registry<S> {
     /// group changes, and `why(id)` as a disabled row's tooltip. Returns
     /// the command clicked (the menu closes); the caller runs it with
     /// [`Origin::Menu`].
-    pub fn context_menu(
+    pub fn context_rows(
         &self,
         ui: &mut egui::Ui,
         state: &S,

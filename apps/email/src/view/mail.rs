@@ -64,7 +64,7 @@ pub fn list(
         }
         let mut chosen = None;
         let mut menu = |ui: &mut Ui, _row: usize| {
-            if let Some(id) = commands.context_menu(ui, state, strings, &message, &|_| None) {
+            if let Some(id) = commands.context_rows(ui, state, strings, &message, &|_| None) {
                 chosen = Some(id);
             }
         };

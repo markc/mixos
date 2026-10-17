@@ -128,7 +128,7 @@ footer counts them. `table.select {all: true}` selects the page, and
 right-click on a row outside the selection selects it first (`Selected`),
 then reports `ContextMenu { index, key }` and opens a popup that the closure
 fills. Apps fill it from their command registry with
-`Registry::context_menu(ui, state, strings, &ids, &why)`, which draws the
+`Registry::context_rows(ui, state, strings, &ids, &why)`, which draws the
 commands `ids` with their labels, shortcuts, ticks and enablement, and
 returns the one chosen for the app to run with `Origin::Menu`.
 `Registry::ids_in(menu)` lists a menu's commands.

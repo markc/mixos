@@ -171,7 +171,7 @@ fn draw(
                     if let Some(id) =
                         menus
                             .commands
-                            .context_menu(ui, menus.state, menus.strings, &ids, &why)
+                            .context_rows(ui, menus.state, menus.strings, &ids, &why)
                     {
                         events.push(UiEvent::Command(id, Origin::Menu));
                     }
