@@ -309,11 +309,23 @@ print($f("A B"))                     -- a-b
 exports named <code>sum</code>/<code>lines</code> reachable via dot-call — from 0.27.0 to 0.71 a
 free/prelude name won instead and the prelude ran on the stringified map).
 When no such member exists, the call is the usual UFCS sugar (<code>$list.map($f)</code>,
-<code>$s.upper()</code>), then an address-block send. Two collisions survive the flip:</p>
+<code>$s.upper()</code>), then an address-block send. The member wins in <strong>every</strong>
+mode, <code>--serve</code> included (0.117.0): before that a serve citizen's
+<code>$r.context({})</code> ran the mix shell's <code>context()</code> extension instead of the
+module's export. One collision survives:</p>
 <ul>
 <li>An export named after a <strong>builtin</strong> must still be called via the index form (<code>$m["keys"](...)</code>) — a builtin-named dot-call desugars at parse time, before the member can be seen.</li>
-<li>Serve-mode <strong>extension</strong> verbs outrank members by design — a citizen's map can never fake an injected <code>props.*</code> verb.</li>
 </ul>
+<p>A bare <code>context()</code> in the module itself still runs the extension, which
+beats a user function at a bareword call; <code>mix lint</code> reports a function
+named after a shell extension (<code>ai</code>, <code>ai_diagnose</code>, <code>context</code>) as
+<code>MIX-W2313</code>.</p>
+<p><code>mix lint</code> reads a module bound once to a literal path
+(<code>$m = require("./lib.mix")</code>) and checks member calls against its exports:
+<code>MIX-E1403</code> for the wrong number of arguments, <code>MIX-E1404</code> for a name the
+module does not export. It stands down for a dynamic path, a rebound <code>$m</code>,
+and a module whose top-level <code>return</code> or <code>source</code>/<code>include</code> decides its
+exports.</p>
 <p>The index form <code>$m["foo"](...)</code> calls the member unconditionally and remains
 the collision-proof spelling.</p>
 <p><code>$m.foo</code> (no call) extracts the function value; <code>$f = $m.foo</code> then <code>$f(x)</code>

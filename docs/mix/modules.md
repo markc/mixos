@@ -68,10 +68,24 @@ print($f("A B"))                     -- a-b
 exports named `sum`/`lines` reachable via dot-call — from 0.27.0 to 0.71 a
 free/prelude name won instead and the prelude ran on the stringified map).
 When no such member exists, the call is the usual UFCS sugar (`$list.map($f)`,
-`$s.upper()`), then an address-block send. Two collisions survive the flip:
+`$s.upper()`), then an address-block send. The member wins in **every**
+mode, `--serve` included (0.117.0): before that a serve citizen's
+`$r.context({})` ran the mix shell's `context()` extension instead of the
+module's export. One collision survives:
 
 - An export named after a **builtin** must still be called via the index form (`$m["keys"](...)`) — a builtin-named dot-call desugars at parse time, before the member can be seen.
-- Serve-mode **extension** verbs outrank members by design — a citizen's map can never fake an injected `props.*` verb.
+
+A bare `context()` in the module itself still runs the extension, which
+beats a user function at a bareword call; `mix lint` reports a function
+named after a shell extension (`ai`, `ai_diagnose`, `context`) as
+`MIX-W2313`.
+
+`mix lint` reads a module bound once to a literal path
+(`$m = require("./lib.mix")`) and checks member calls against its exports:
+`MIX-E1403` for the wrong number of arguments, `MIX-E1404` for a name the
+module does not export. It stands down for a dynamic path, a rebound `$m`,
+and a module whose top-level `return` or `source`/`include` decides its
+exports.
 
 The index form `$m["foo"](...)` calls the member unconditionally and remains
 the collision-proof spelling.

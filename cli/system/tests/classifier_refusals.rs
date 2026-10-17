@@ -84,3 +84,36 @@ fn a_single_typo_stays_a_plain_enoent() {
         "a single typo must not trigger the heuristic: {err}"
     );
 }
+
+#[test]
+fn a_let_line_is_named_instead_of_the_mix_shaped_while() {
+    // 2026-10-17: the refusal named the `while` (already Mix) while the
+    // lines that sent the program to the shell were `let i = 0` and the
+    // bareword `i = $i + 1`. It took three tries to find.
+    let program = "let i = 0\nwhile $i < 2\n  print($i)\n  i = $i + 1\nend";
+    let (code, out, err) = run(&["-c", program]);
+    assert_eq!(code, 2, "stderr={err}");
+    assert!(out.is_empty(), "nothing may run: {out}");
+    assert!(
+        err.contains("line 1: `let i = 0` is not Mix — write `$i = 0`"),
+        "{err}"
+    );
+    assert!(!err.contains("`while` is bash"), "{err}");
+}
+
+#[test]
+fn a_bareword_assignment_suggests_the_sigil() {
+    let (code, _, err) = run(&["-c", "count = 1"]);
+    assert_ne!(code, 0, "stderr={err}");
+    assert!(err.contains("write `$count = "), "{err}");
+    // One line: no line number to give.
+    assert!(!err.contains("line 1:"), "{err}");
+}
+
+#[test]
+fn a_keyword_refusal_names_its_line() {
+    let (code, out, err) = run(&["-c", "echo a\nfor x in 1; do echo hi; done"]);
+    assert_eq!(code, 2, "stderr={err}");
+    assert!(!out.contains('a'), "the list must not start: {out}");
+    assert!(err.contains("line 2: `for` is bash"), "{err}");
+}

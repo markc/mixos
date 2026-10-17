@@ -723,12 +723,60 @@ impl Parser {
             Token::Sh => self.parse_sh(),
             Token::Variable(_) => self.parse_variable_stmt(),
             _ => {
+                if let Some(error) = self.foreign_assignment_error() {
+                    return Err(error);
+                }
                 let expr = self.parse_expression()?;
                 self.expect_end_of_statement()?;
                 Ok(StmtKind::Expression(expr))
             }
         }?;
         Ok(Stmt::new(kind, line))
+    }
+
+    /// `let i = 0`, `var i = 0`, `const i = 0`, `let $i = 0` and the bareword
+    /// `i = 0` at the start of a statement: assignment habits from JS, Rust
+    /// and bash that Mix spells `$i = 0`. Each was already a parse error, but
+    /// one that named the token after the habit (`expected end of statement,
+    /// got String("i")`), so an agent fixed the wrong line. This names the
+    /// fix. Only a BAREWORD head counts: a quoted `"let"` is a string.
+    fn foreign_assignment_error(&self) -> Option<MixError> {
+        let Token::String(head) = self.peek() else {
+            return None;
+        };
+        if !self.bareword_at(self.pos) {
+            return None;
+        }
+        let declaration = matches!(head.as_str(), "let" | "var" | "const");
+        let msg = match (self.peek_ahead(1), self.peek_ahead(2)) {
+            (Token::String(name), Token::Assign) if declaration && self.bareword_at(self.pos + 1) => {
+                format!(
+                    "Mix has no `{head}`: write `${name} = …` (a variable carries the `$` sigil, \
+                     and there is no declaration keyword — see `mix man syntax`)"
+                )
+            }
+            (Token::Variable(name), Token::Assign) if declaration => {
+                format!("Mix has no `{head}`: drop it and write `${name} = …`")
+            }
+            (Token::Assign, _) => format!(
+                "bareword assignment `{head} = …`: a Mix variable carries the `$` sigil — \
+                 write `${head} = …` (see `mix man syntax`)"
+            ),
+            _ => return None,
+        };
+        Some(MixError::ParseError {
+            msg,
+            span: self.peek_span(),
+        })
+    }
+
+    /// Whether the token at `index` was written as a bare identifier, not a
+    /// quoted string (both lex to `Token::String`).
+    fn bareword_at(&self, index: usize) -> bool {
+        self.tokens
+            .get(index)
+            .and_then(|t| self.source.get(t.offset))
+            .is_some_and(|c| c.is_alphabetic() || *c == '_')
     }
 
     /// Collect raw source text for the external command after `|`.

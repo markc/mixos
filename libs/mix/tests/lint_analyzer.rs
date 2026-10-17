@@ -344,7 +344,7 @@ fn unknown_builtin_result_key_warns_with_real_key() {
         diagnostic
             .hint
             .as_deref()
-            .is_some_and(|hint| hint.contains("use 'exit_code'"))
+            .is_some_and(|hint| hint.contains("did you mean 'exit_code'"))
     );
 }
 
@@ -1859,4 +1859,113 @@ fn send_status_bare_function_call_statement_applies_its_summary() {
                send svc first\noverwrite_status && print(1)\nprint($rc)\n";
     let got = w2307_lines(src);
     assert!(got.contains(&Some(4)), "got: {got:?}");
+}
+
+// ── MIX-W2312 bareword null ─────────────────────────────────────────
+
+fn source_diags(src: &str) -> Vec<mix::analyzer::Diagnostic> {
+    let tokens = Lexer::new(src).tokenize().expect("lexes");
+    let stmts = Parser::new(tokens, src).parse_program().expect("parses");
+    let cfg = AnalyzerConfig {
+        source: Some(src.to_string()),
+        ..AnalyzerConfig::default()
+    };
+    analyze(&stmts, Some("test.mix"), &cfg).diagnostics
+}
+
+#[test]
+fn bareword_null_used_as_a_value_warns_with_a_fix_to_nil() {
+    // The 2026-10-10 probe: `{open: null}` sends the STRING "null".
+    let d = source_diags("print(json_encode({open: null, a: 1}))\n");
+    assert_eq!(d.len(), 1, "{d:?}");
+    assert_eq!(d[0].code, "MIX-W2312");
+    assert_eq!((d[0].line, d[0].column), (Some(1), Some(26)));
+    assert!(d[0].message.contains("nil"), "{}", d[0].message);
+    let fix = d[0].fix.as_ref().expect("a quick fix");
+    assert_eq!(
+        (fix.line, fix.column, fix.replace.as_str(), fix.with.as_str()),
+        (1, 26, "null", "nil")
+    );
+}
+
+#[test]
+fn every_foreign_null_spelling_warns() {
+    for spelling in ["null", "None", "undefined", "NULL", "nullptr"] {
+        for src in [
+            format!("$x = {spelling}\nprint($x)\n"),
+            format!("$x = 1\nif $x == {spelling} then print(1) end\n"),
+            format!("print([1, {spelling}])\n"),
+            format!("$x = true ? {spelling} : 1\nprint($x)\n"),
+            format!("send svc verb open={spelling}\nprint($rc)\n"),
+        ] {
+            assert!(
+                codes_with_source(&src).contains(&"MIX-W2312".to_string()),
+                "{src:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn null_that_is_not_a_bareword_value_stays_silent() {
+    for src in [
+        // Quoted: the author asked for the text.
+        "print(\"null\")\n",
+        "$m = {\"null\": 1}\nprint($m)\n",
+        // A map key, a field, a bus command word.
+        "$m = {null: 1, None: 2}\nprint($m)\n",
+        "$m = {a: 1}\nprint($m.null)\n",
+        "send svc null\nprint($rc)\n",
+        // The real null.
+        "$x = nil\nprint($x)\n",
+        // A statement head is a bareword dispatch, not a value.
+        "null\n",
+    ] {
+        assert!(
+            !codes_with_source(src).contains(&"MIX-W2312".to_string()),
+            "{src:?}: {:?}",
+            codes_with_source(src)
+        );
+    }
+    // Without the source text the rule cannot tell `null` from "null".
+    assert!(!codes("$x = null\nprint($x)\n").contains(&"MIX-W2312".to_string()));
+}
+
+// ── MIX-W2304 typed-result fields ───────────────────────────────────
+
+#[test]
+fn a_missing_result_field_names_the_shape_and_the_field_meant() {
+    // The 2026-10-17 probe: `$r.code` after run_argv is silently nil.
+    for (src, shape, meant) in [
+        ("$r = run_argv([\"true\"])\nprint($r.code)\n", "process_result", "exit_code"),
+        ("$r = run_argv([\"true\"])\nprint($r.rc)\n", "process_result", "exit_code"),
+        ("$r = run_argv([\"true\"])\nprint($r.status)\n", "process_result", "exit_code"),
+        ("$r = run_argv([\"true\"])\nprint($r.returncode)\n", "process_result", "exit_code"),
+        ("$r = ssh_run(\"h\", \"ls\")\nprint($r.rc)\n", "ssh_result", "exit_code"),
+        ("$r = http_get(\"http://192.0.2.1/\")\nprint($r.code)\n", "http_response", "status"),
+        ("$r = run_argv([\"true\"])\nprint($r.success)\n", "process_result", "ok"),
+    ] {
+        let d = source_diags(src);
+        assert_eq!(d.len(), 1, "{src:?}: {d:?}");
+        assert_eq!(d[0].code, "MIX-W2304");
+        assert!(
+            d[0].message.contains(&format!("{shape} (from ")),
+            "{src:?}: {}",
+            d[0].message
+        );
+        assert!(
+            d[0].hint
+                .as_deref()
+                .unwrap()
+                .contains(&format!("did you mean '{meant}'?")),
+            "{src:?}: {:?}",
+            d[0].hint
+        );
+    }
+}
+
+#[test]
+fn real_result_fields_stay_clean() {
+    let src = "$r = run_argv([\"true\"])\nprint($r.exit_code)\nprint($r.ok)\nprint($r.stdout)\n";
+    assert_eq!(codes(src), Vec::<String>::new());
 }
