@@ -19069,10 +19069,7 @@ mod standing_interrupt_tests {
             .parse()
             .expect("case index is a number");
         let marker = std::path::PathBuf::from(std::env::var_os(MARKER_ENV).expect("marker path"));
-        let (body, expected) = cases(&marker)
-            .into_iter()
-            .nth(case)
-            .expect("case in range");
+        let (body, expected) = cases(&marker).into_iter().nth(case).expect("case in range");
         block_on(async {
             // One evaluator, whose flag is the process interrupt flag, as in
             // mix-shell.
