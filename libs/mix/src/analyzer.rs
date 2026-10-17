@@ -5918,7 +5918,7 @@ fn check_extension_collisions(
     if cfg.extensions.is_empty() {
         return;
     }
-    walk_stmts(stmts, &mut |stmt| {
+    walk_every_stmt(stmts, &mut |stmt| {
         if let StmtKind::FunctionDef { name, .. } = &stmt.kind
             && cfg.extensions.iter().any(|ext| ext == name)
         {
@@ -6030,7 +6030,7 @@ fn binding_site_counts(stmts: &[Stmt], module_level_only: bool) -> HashMap<Strin
     if module_level_only {
         walk_module_level(stmts, &mut count);
     } else {
-        walk_stmts(stmts, &mut count);
+        walk_every_stmt(stmts, &mut count);
     }
     counts
 }
@@ -6052,7 +6052,7 @@ fn literal_require_bindings(stmts: &[Stmt], module_level_only: bool) -> HashMap<
     if module_level_only {
         walk_module_level(stmts, &mut find);
     } else {
-        walk_stmts(stmts, &mut find);
+        walk_every_stmt(stmts, &mut find);
     }
     out
 }
@@ -6099,7 +6099,7 @@ fn read_module_exports(path: &std::path::Path, label: &str) -> Option<ModuleExpo
     // Every definition anywhere, and the ones the top level makes
     // unconditionally (a top-level `fn` is hoisted).
     let mut all_defs: HashMap<String, usize> = HashMap::new();
-    walk_stmts(&stmts, &mut |stmt| {
+    walk_every_stmt(&stmts, &mut |stmt| {
         if let StmtKind::FunctionDef { name, .. } = &stmt.kind {
             *all_defs.entry(name.clone()).or_default() += 1;
         }
@@ -6200,8 +6200,7 @@ fn check_require_calls(stmts: &[Stmt], ctx: &FileContext, a: &mut Analysis) {
         return;
     }
     let mut roots = literal_require_bindings(stmts, false);
-    let mut params = HashSet::new();
-    collect_param_names(stmts, &mut params);
+    let params = every_param_name(stmts);
     // `$rc`, `$result`, `$reply`… are rewritten by every send and command,
     // so a module bound to one is not proven to still be there.
     roots.retain(|name, _| !params.contains(name) && !INJECTED_VARS.contains(&name.as_str()));
@@ -6216,9 +6215,9 @@ fn check_require_calls(stmts: &[Stmt], ctx: &FileContext, a: &mut Analysis) {
         .as_deref()
         .and_then(|f| canonical_dir(std::path::Path::new(f)));
     let mut in_address: HashSet<*const Stmt> = HashSet::new();
-    walk_stmts(stmts, &mut |stmt| {
+    walk_every_stmt(stmts, &mut |stmt| {
         if let StmtKind::Address { body, .. } = &stmt.kind {
-            walk_stmts(body, &mut |inner| {
+            walk_every_stmt(body, &mut |inner| {
                 in_address.insert(inner as *const Stmt);
             });
         }
@@ -6281,14 +6280,23 @@ fn walk_all_exprs(stmts: &[Stmt], visit: &mut dyn FnMut(&Stmt, &Expr)) {
             deep(stmt, body, visit);
         }
     }
-    walk_stmts(stmts, &mut |stmt| {
+    walk_every_stmt(stmts, &mut |stmt| {
         walk_stmt_exprs(stmt, &mut |expr| deep(stmt, expr, visit));
         if let StmtKind::FunctionDef { params, body, .. } = &stmt.kind {
             function_exprs(stmt, params, body, visit);
-            // `walk_stmts` finds the statement lists embedded in a
-            // statement's expressions (if-expression branches, lambda block
-            // bodies), but a `fn`'s defaults and expression body are not
-            // statement expressions, so their lists are walked here.
+        }
+    });
+}
+
+/// [`walk_stmts`], plus the statements it cannot see: those in statement
+/// lists embedded in a `fn` definition's parameter defaults and expression
+/// body (`fn f() = if c then $m = 1 end`). `walk_stmts` finds the lists
+/// embedded in a statement's own expressions, but a definition's defaults
+/// and expression body are not statement expressions.
+fn walk_every_stmt(stmts: &[Stmt], visit: &mut dyn FnMut(&Stmt)) {
+    walk_stmts(stmts, &mut |stmt| {
+        visit(stmt);
+        if let StmtKind::FunctionDef { params, body, .. } = &stmt.kind {
             let exprs = params
                 .iter()
                 .filter_map(|param| param.default.as_ref())
@@ -6297,10 +6305,26 @@ fn walk_all_exprs(stmts: &[Stmt], visit: &mut dyn FnMut(&Stmt, &Expr)) {
                     FunctionBody::Block(_) => None,
                 });
             for expr in exprs {
-                for_each_embedded_stmt_list(expr, true, &mut |list| walk_all_exprs(list, visit));
+                for_each_embedded_stmt_list(expr, true, &mut |list| walk_every_stmt(list, visit));
             }
         }
     });
+}
+
+/// Every parameter name of every `fn` and lambda, wherever it is written.
+fn every_param_name(stmts: &[Stmt]) -> HashSet<String> {
+    let mut out = HashSet::new();
+    walk_every_stmt(stmts, &mut |stmt| {
+        if let StmtKind::FunctionDef { params, .. } = &stmt.kind {
+            out.extend(params.iter().map(|param| param.name.clone()));
+        }
+    });
+    walk_all_exprs(stmts, &mut |_, e| {
+        if let Expr::FunctionLiteral { params, .. } = e {
+            out.extend(params.iter().map(|param| param.name.clone()));
+        }
+    });
+    out
 }
 
 /// One call into a module, as `check_module_call` judges it.
@@ -6422,6 +6446,16 @@ fn in_bus_words(before: &[crate::token::SpannedToken]) -> bool {
     false
 }
 
+/// Whether the token after `before` is part of a `parse … with` template,
+/// whose words are delimiters and variable names, never values.
+fn in_parse_template(before: &[crate::token::SpannedToken]) -> bool {
+    before
+        .iter()
+        .rev()
+        .take_while(|tok| !matches!(tok.token, Token::Newline | Token::Semicolon))
+        .any(|tok| matches!(tok.token, Token::With))
+}
+
 /// Whether the token after `before` is text for an external command: the
 /// statement has a `|` before it (`print(x) | echo null`). The pipe tail is
 /// raw shell text, never a Mix value.
@@ -6497,6 +6531,10 @@ fn check_null_barewords(stmts: &[Stmt], ctx: &FileContext, cfg: &AnalyzerConfig,
                 prev,
                 Some(
                     Token::Dot
+                        | Token::Loop
+                        | Token::Break
+                        | Token::Continue
+                        | Token::Label
                         | Token::Function
                         | Token::On
                         | Token::Send
@@ -6508,7 +6546,8 @@ fn check_null_barewords(stmts: &[Stmt], ctx: &FileContext, cfg: &AnalyzerConfig,
                 )
             )
             || in_bus_words(&tokens[..i])
-            || after_a_pipe(&tokens[..i]);
+            || after_a_pipe(&tokens[..i])
+            || in_parse_template(&tokens[..i]);
         if not_a_value {
             continue;
         }
@@ -6594,7 +6633,7 @@ fn parse_lint_pragmas(source: &str, stmts: &[Stmt]) -> LintPragmas {
         .collect();
     let line_of = |byte: usize| line_starts.partition_point(|&start| start <= byte);
     let mut stmt_lines = Vec::new();
-    walk_stmts(stmts, &mut |stmt| stmt_lines.push(stmt.line));
+    walk_every_stmt(stmts, &mut |stmt| stmt_lines.push(stmt.line));
     // A line opening with `elif`, `else`, `end`, `catch`, … carries no
     // statement of its own (an `elif` condition belongs to its `if`), but it
     // still ends the statement before it, so it bounds a suppression too.
@@ -6769,6 +6808,18 @@ fn shared_statement_lines(stmts: &[Stmt], out: &mut HashSet<usize>) {
         walk_stmt_exprs(stmt, &mut |expr| {
             for_each_embedded_stmt_list(expr, true, &mut |body| shared_statement_lines(body, out));
         });
+        if let StmtKind::FunctionDef { params, body, .. } = &stmt.kind {
+            let exprs = params
+                .iter()
+                .filter_map(|param| param.default.as_ref())
+                .chain(match body {
+                    FunctionBody::Expression(body) => Some(body),
+                    FunctionBody::Block(_) => None,
+                });
+            for expr in exprs {
+                for_each_embedded_stmt_list(expr, true, &mut |body| shared_statement_lines(body, out));
+            }
+        }
     }
 }
 

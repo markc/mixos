@@ -1928,6 +1928,10 @@ fn null_that_is_not_a_bareword_value_stays_silent() {
         "send svc null\nprint($rc)\n",
         "send svc-name null\nprint($rc)\n",
         "$t = \"svc\"\nsend ($t) null\nprint($rc)\n",
+        // Loop labels and parse-template words are not values, and a fix
+        // there would not even parse.
+        "loop label null\n  break null\nend\nprint(\"null\")\n",
+        "parse \"a null b\" with $x null $y\nprint($x .. $y)\n",
         // The text of an external command after `|`.
         "print(\"null\") | echo null\n",
         "send svc verb null=1\nprint($rc)\n",

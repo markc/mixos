@@ -179,6 +179,12 @@ fn an_ignore_before_a_line_of_several_statements_is_refused() {
 }
 
 #[test]
+fn an_ignore_inside_a_fn_expression_body_targets_its_own_statement() {
+    let src = "fn f() = if true then\n  -- lint: ignore MIX-W2312\n  print(null)\nend\nprint(null)\nprint(f())\n";
+    assert_eq!(codes(src), vec![("MIX-W2312".to_string(), Some(5))]);
+}
+
+#[test]
 fn an_ignore_stops_at_a_following_elif_line() {
     // The `elif` condition has no statement of its own, but its line ends
     // the `print` the pragma targets.

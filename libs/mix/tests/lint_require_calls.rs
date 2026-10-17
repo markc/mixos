@@ -254,6 +254,13 @@ fn a_statement_member_call_has_no_ufcs_fallback() {
 }
 
 #[test]
+fn a_rebinding_inside_an_expression_body_stands_down() {
+    let dir = tree("exprrebind", &[("lib1.mix", LIB1)]);
+    let src = "$m = require(\"./lib1.mix\")\nfn f() = if true then $m = {helper: fn() = 7}; $m.helper() end\nprint(f())\n";
+    assert_eq!(codes_at(&dir, src), vec![]);
+}
+
+#[test]
 fn a_module_in_a_status_variable_is_not_proven() {
     // `send` and every command rewrite `$result`, so a call through it may
     // reach a caller function by UFCS instead of the module.
