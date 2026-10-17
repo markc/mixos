@@ -1088,7 +1088,12 @@ async fn gzip_refuses_what_follows_the_last_member() {
     for (tag, tail, code, fragment) in [
         ("garbage", vec![1, 2, 3], "ARCHIVE_STREAM_CORRUPT", ""),
         ("zeros", vec![0; 32], "ARCHIVE_STREAM_CORRUPT", ""),
-        ("archive-member", first.clone(), "", "non-zero data after"),
+        (
+            "archive-member",
+            first.clone(),
+            "RUNTIME_ERROR",
+            "non-zero data after",
+        ),
     ] {
         let mut bytes = first.clone();
         bytes.extend(tail);
