@@ -497,10 +497,58 @@ fn star_toggles_and_relabels() {
 fn bare_key_and_delete_shortcuts_are_browsing_only() {
     use toolkit::command::Scope;
     let registry = commands::registry();
-    for id in ["mail.flag", "mail.mark_unread", "mail.delete"] {
+    for id in ["mail.flag", "mail.mark_unread", "mail.junk", "mail.not_junk", "mail.delete"] {
         assert_eq!(registry.scope_of(id), Scope::Browsing, "{id}");
     }
     assert_eq!(registry.scope_of("mail.reply"), Scope::Anywhere);
+}
+
+/// The Write the state queued last.
+fn last_write(state: &mut State) -> Option<email::verbs::Write> {
+    state.take_work().into_iter().rev().find_map(|w| match w {
+        Work::Write { write, .. } => Some(write),
+        _ => None,
+    })
+}
+
+#[test]
+fn junk_moves_to_the_junk_mailbox_and_not_junk_back_to_the_inbox() {
+    let registry = commands::registry();
+    let strings = strings();
+    let mut state = opened("text/plain", PLAIN);
+    // No Junk mailbox yet: disabled, and the label says why.
+    let junk = |state: &State| {
+        registry
+            .describe(state, &strings)
+            .into_iter()
+            .find(|c| c.id == "mail.junk")
+            .unwrap()
+    };
+    assert!(!junk(&state).enabled);
+    assert_eq!(junk(&state).label, label("junk-none"));
+    state.accounts[0].mail.mailboxes.push(jmap::Mailbox {
+        id: "m-junk".into(),
+        name: "Junk".into(),
+        role: Some("junk".into()),
+        ..jmap::Mailbox::default()
+    });
+    assert!(junk(&state).enabled);
+    assert_eq!(junk(&state).label, label("junk"));
+    assert!(registry.execute("mail.not_junk", &mut state, Origin::Bus).is_err(), "not in Junk");
+    state.take_work();
+    registry.execute("mail.junk", &mut state, Origin::Bus).unwrap();
+    assert!(matches!(
+        last_write(&mut state),
+        Some(email::verbs::Write::Move { ids, mailbox }) if ids == ["E1"] && mailbox == "m-junk"
+    ));
+    // Reading the Junk mailbox: J is off, Shift+J moves back to the inbox.
+    state.accounts[0].mail.selected = Some("m-junk".into());
+    assert!(registry.execute("mail.junk", &mut state, Origin::Bus).is_err());
+    registry.execute("mail.not_junk", &mut state, Origin::Bus).unwrap();
+    assert!(matches!(
+        last_write(&mut state),
+        Some(email::verbs::Write::Move { mailbox, .. }) if mailbox == "m-in"
+    ));
 }
 
 fn snapshot(name: &str, state: State, theme: &Theme) {

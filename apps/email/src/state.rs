@@ -2485,6 +2485,8 @@ impl State {
             }
         };
         let limit = self.settings.mail.page_size;
+        // The row to open once the open email has gone (delete, move, junk).
+        let mut advance = None;
         if let Some(view) = self
             .accounts
             .iter_mut()
@@ -2493,6 +2495,9 @@ impl State {
             match write.touches() {
                 Mode::Mail => {
                     let gone = write.removes();
+                    if let Some(open) = view.mail.open.as_ref().filter(|e| gone.contains(&e.id)) {
+                        advance = neighbour(&view.mail.emails, &open.id, gone);
+                    }
                     view.mail.emails.retain(|e| !gone.contains(&e.id));
                     if view
                         .mail
@@ -2521,6 +2526,11 @@ impl State {
                     }
                 }
             }
+        }
+        // The open email left: the reader moves on to its neighbour, as a
+        // row click would open it.
+        if let Some(id) = advance {
+            self.open_email(&tag.account, id);
         }
         if mine {
             self.form = None;
@@ -2613,6 +2623,34 @@ impl State {
                 },
             );
         }
+    }
+
+    /// `mail.junk` (J): move the open email to the account's Junk mailbox.
+    /// maild trains its spam filter on the move; there is no `$junk`
+    /// keyword.
+    pub fn junk_open(&mut self) {
+        self.junk_move(true);
+    }
+
+    /// `mail.not_junk` (Shift+J): move the open email out of Junk to the
+    /// inbox; maild trains it as ham.
+    pub fn not_junk_open(&mut self) {
+        self.junk_move(false);
+    }
+
+    fn junk_move(&mut self, junk: bool) {
+        let Some((account, email)) = self.reading() else {
+            return;
+        };
+        let Some(mailbox) = self.account(&account).and_then(|v| junk_target(v, junk)) else {
+            self.status = crate::label(if junk { "no-junk-mailbox" } else { "no-inbox" });
+            return;
+        };
+        let write = crate::verbs::Write::Move {
+            ids: vec![email.id],
+            mailbox,
+        };
+        self.write_server(account, None, write);
     }
 
     /// Choose where the open email moves to.
@@ -3825,6 +3863,33 @@ fn attribution(email: &Email) -> String {
         })
         .unwrap_or_default();
     crate::label_with("reply-attribution", &[("date", &when), ("name", &who)])
+}
+
+/// The row to open after `open` and the other `gone` rows leave `emails`
+/// (in shown order): the next one that stays, else the previous one.
+pub fn neighbour(emails: &[Email], open: &str, gone: &[String]) -> Option<String> {
+    let at = emails.iter().position(|e| e.id == open)?;
+    let stays = |e: &&Email| !gone.contains(&e.id);
+    emails[at + 1..]
+        .iter()
+        .find(stays)
+        .or_else(|| emails[..at].iter().rev().find(stays))
+        .map(|e| e.id.clone())
+}
+
+/// Where a junk move of `view`'s emails goes: the role=junk mailbox, or
+/// (`junk == false`) the inbox.
+pub fn junk_target(view: &AccountView, junk: bool) -> Option<String> {
+    view.mail
+        .by_role(if junk { "junk" } else { "inbox" })
+        .map(|m| m.id.clone())
+}
+
+/// Whether `view` is showing its Junk mailbox (the open email is in it).
+pub fn in_junk(view: &AccountView) -> bool {
+    view.mail
+        .selected_mailbox()
+        .is_some_and(|m| m.role.as_deref() == Some("junk"))
 }
 
 /// The account a form is for.
@@ -5084,6 +5149,21 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn the_neighbour_is_the_next_row_else_the_previous() {
+        let rows: Vec<Email> = ["A", "B", "C", "D"]
+            .iter()
+            .map(|id| serde_json::from_value(json!({ "id": id })).unwrap())
+            .collect();
+        let gone = |ids: &[&str]| ids.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
+        assert_eq!(neighbour(&rows, "B", &gone(&["B"])).as_deref(), Some("C"));
+        assert_eq!(neighbour(&rows, "B", &gone(&["B", "C"])).as_deref(), Some("D"));
+        assert_eq!(neighbour(&rows, "D", &gone(&["D"])).as_deref(), Some("C"), "the last moves back");
+        assert_eq!(neighbour(&rows, "D", &gone(&["C", "D"])).as_deref(), Some("B"));
+        assert_eq!(neighbour(&rows[..1], "A", &gone(&["A"])), None);
+        assert_eq!(neighbour(&rows, "Z", &gone(&["Z"])), None);
+    }
+
+    #[test]
     fn a_write_refreshes_its_view_and_answers_with_what_the_server_made() {
         let mut state = reading();
         let delete = Write::Delete {
@@ -5101,6 +5181,11 @@ pub(crate) mod tests {
         assert_eq!(view.mail.emails.len(), 1, "E1 left the list at once");
         assert!(view.mail.open.is_none());
         let work = state.take_work();
+        assert!(
+            work.iter()
+                .any(|w| matches!(w, Work::OpenEmail { id, .. } if id == "E2")),
+            "the reader moves on to the next row"
+        );
         assert!(
             work.iter()
                 .any(|w| matches!(w, Work::FetchMailboxes { .. }))

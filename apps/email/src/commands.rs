@@ -63,6 +63,23 @@ fn readable(state: &State) -> bool {
             .is_some_and(crate::reader::has_text)
 }
 
+/// The open email can go to Junk: it is not there, and the account has a
+/// Junk mailbox.
+fn junkable(state: &State) -> bool {
+    reading(state)
+        && state
+            .current()
+            .is_some_and(|v| !crate::state::in_junk(v) && crate::state::junk_target(v, true).is_some())
+}
+
+/// The open email is in Junk and can go back to the inbox.
+fn unjunkable(state: &State) -> bool {
+    reading(state)
+        && state
+            .current()
+            .is_some_and(|v| crate::state::in_junk(v) && crate::state::junk_target(v, false).is_some())
+}
+
 /// More than one account to step through.
 fn several(state: &State) -> bool {
     undialogued(state) && state.accounts.len() > 1
@@ -222,9 +239,31 @@ pub fn registry() -> Registry<State> {
         run: State::toggle_open_read,
     })
     .add(Command {
-        id: "mail.move",
+        id: "mail.junk",
         submenu: None,
         group: 3,
+        label: "junk",
+        menu: Some("message"),
+        shortcut: key(Modifiers::NONE, Key::J),
+        icon: Some(Icon::ShieldAlert),
+        enabled: junkable,
+        run: State::junk_open,
+    })
+    .add(Command {
+        id: "mail.not_junk",
+        submenu: None,
+        group: 3,
+        label: "not-junk",
+        menu: Some("message"),
+        shortcut: key(Modifiers::SHIFT, Key::J),
+        icon: None,
+        enabled: unjunkable,
+        run: State::not_junk_open,
+    })
+    .add(Command {
+        id: "mail.move",
+        submenu: None,
+        group: 4,
         label: "move",
         menu: Some("message"),
         shortcut: key(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::M),
@@ -235,7 +274,7 @@ pub fn registry() -> Registry<State> {
     .add(Command {
         id: "mail.delete",
         submenu: None,
-        group: 3,
+        group: 4,
         label: "delete",
         menu: Some("message"),
         shortcut: key(Modifiers::NONE, Key::Delete),
@@ -372,7 +411,13 @@ pub fn registry() -> Registry<State> {
         run: State::toggle_mode,
     });
     // Bare keys and Delete belong to a text field while one is typed in.
-    for id in ["mail.flag", "mail.mark_unread", "mail.delete"] {
+    for id in [
+        "mail.flag",
+        "mail.mark_unread",
+        "mail.junk",
+        "mail.not_junk",
+        "mail.delete",
+    ] {
         r.scope(id, Scope::Browsing);
     }
     // Labels that say what the command will do to the open email.
@@ -381,6 +426,17 @@ pub fn registry() -> Registry<State> {
             "unflag"
         } else {
             "flag"
+        }
+    })
+    .relabel("mail.junk", |state| {
+        // Disabled for want of a Junk mailbox: the label says so.
+        if state
+            .current()
+            .is_some_and(|v| crate::state::junk_target(v, true).is_none())
+        {
+            "junk-none"
+        } else {
+            "junk"
         }
     })
     .relabel("mail.mark_unread", |state| {

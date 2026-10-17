@@ -6550,7 +6550,13 @@ A malformed file loads defaults and is never overwritten.
   so it refuses the send; `Email/import` is future work.
 - **The Message menu** holds everything that acts on the open email:
   reply (with or without the quote), reply all, forward, star, mark read
-  or unread, move, and delete to Trash (confirmed when the settings ask).
+  or unread, junk or not junk, move, and delete to Trash (confirmed when
+  the settings ask). **Junk** moves the email into the account's Junk
+  mailbox and **Not Junk** moves it from Junk back to the inbox; maild
+  trains its spam filter on those moves (there is no junk keyword). An
+  account without a Junk mailbox shows Junk disabled, saying so. After a
+  delete, move or junk the reader opens the next email in the list (the
+  previous one when it was the last).
   Labels follow the email (**Star** or **Remove Star**, **Mark as Read** or
   **Mark as Unread**). Marking an open email unread leaves it open and
   unread: only opening an email marks it read.
@@ -6575,6 +6581,7 @@ A malformed file loads defaults and is never overwritten.
 | Ctrl+L | Forward |
 | S | Star or remove the star |
 | M | Mark read or unread |
+| J / Shift+J | Junk / Not junk |
 | Ctrl+Shift+M | Move the open email |
 | Delete | Delete the open email |
 | Ctrl+Shift+E | New event |
@@ -6582,7 +6589,7 @@ A malformed file loads defaults and is never overwritten.
 | Ctrl+1 / 2 / 3 | Mail / Calendar / Contacts |
 | Ctrl+PageDown / PageUp | Next / previous account |
 
-The shortcuts follow Thunderbird's. S, M and Delete act only while no
+The shortcuts follow Thunderbird's. S, M, J, Shift+J and Delete act only while no
 text field has the keyboard (they type into the search box or a draft
 otherwise). Help › Keyboard Shortcuts shows the chords in force.
 
@@ -6631,6 +6638,7 @@ never waits on them.
 | `email.mailbox.select/create/rename/delete` | intent | `create` answers `{id}` |
 | `email.open {id}` | intent | show an email in the reader; answers once loaded |
 | `email.mark {ids, read?, flagged?}`, `email.move {ids, mailbox}`, `email.delete {ids, destroy?}` | intent | the list and counts refresh after |
+| `email.junk {ids, junk}` | intent | move to the Junk mailbox (`junk: true`) or back to the inbox; maild trains spam or ham on the move; answers `{ids, mailbox}` |
 | `email.send {to, cc?, bcc?, subject, body, in_reply_to?}` | intent | send without the dialog |
 | `email.compose {…}`, `email.reply {id, all?}`, `email.forward {id, to?}` | intent | open the compose dialog, filled in |
 | `email.calendar.select`, `email.event.create/update/delete` | intent | `create` answers `{id}`; `end` or an ISO 8601 `duration` |

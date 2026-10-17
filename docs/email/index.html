@@ -377,7 +377,13 @@ so it refuses the send; <code>Email/import</code> is future work.</p>
 <li>
 <p><strong>The Message menu</strong> holds everything that acts on the open email:
 reply (with or without the quote), reply all, forward, star, mark read
-or unread, move, and delete to Trash (confirmed when the settings ask).
+or unread, junk or not junk, move, and delete to Trash (confirmed when
+the settings ask). <strong>Junk</strong> moves the email into the account's Junk
+mailbox and <strong>Not Junk</strong> moves it from Junk back to the inbox; maild
+trains its spam filter on those moves (there is no junk keyword). An
+account without a Junk mailbox shows Junk disabled, saying so. After a
+delete, move or junk the reader opens the next email in the list (the
+previous one when it was the last).
 Labels follow the email (<strong>Star</strong> or <strong>Remove Star</strong>, <strong>Mark as Read</strong> or
 <strong>Mark as Unread</strong>). Marking an open email unread leaves it open and
 unread: only opening an email marks it read.</p>
@@ -405,6 +411,7 @@ instants.</p>
 <tr><td>Ctrl+L</td><td>Forward</td></tr>
 <tr><td>S</td><td>Star or remove the star</td></tr>
 <tr><td>M</td><td>Mark read or unread</td></tr>
+<tr><td>J / Shift+J</td><td>Junk / Not junk</td></tr>
 <tr><td>Ctrl+Shift+M</td><td>Move the open email</td></tr>
 <tr><td>Delete</td><td>Delete the open email</td></tr>
 <tr><td>Ctrl+Shift+E</td><td>New event</td></tr>
@@ -412,7 +419,7 @@ instants.</p>
 <tr><td>Ctrl+1 / 2 / 3</td><td>Mail / Calendar / Contacts</td></tr>
 <tr><td>Ctrl+PageDown / PageUp</td><td>Next / previous account</td></tr>
 </tbody></table>
-<p>The shortcuts follow Thunderbird's. S, M and Delete act only while no
+<p>The shortcuts follow Thunderbird's. S, M, J, Shift+J and Delete act only while no
 text field has the keyboard (they type into the search box or a draft
 otherwise). Help › Keyboard Shortcuts shows the chords in force.</p>
 <h2 id="driving-it-over-the-bus">Driving it over the Bus</h2>
@@ -456,6 +463,7 @@ never waits on them.</p>
 <tr><td><code>email.mailbox.select/create/rename/delete</code></td><td>intent</td><td><code>create</code> answers <code>{id}</code></td></tr>
 <tr><td><code>email.open {id}</code></td><td>intent</td><td>show an email in the reader; answers once loaded</td></tr>
 <tr><td><code>email.mark {ids, read?, flagged?}</code>, <code>email.move {ids, mailbox}</code>, <code>email.delete {ids, destroy?}</code></td><td>intent</td><td>the list and counts refresh after</td></tr>
+<tr><td><code>email.junk {ids, junk}</code></td><td>intent</td><td>move to the Junk mailbox (<code>junk: true</code>) or back to the inbox; maild trains spam or ham on the move; answers <code>{ids, mailbox}</code></td></tr>
 <tr><td><code>email.send {to, cc?, bcc?, subject, body, in_reply_to?}</code></td><td>intent</td><td>send without the dialog</td></tr>
 <tr><td><code>email.compose {…}</code>, <code>email.reply {id, all?}</code>, <code>email.forward {id, to?}</code></td><td>intent</td><td>open the compose dialog, filled in</td></tr>
 <tr><td><code>email.calendar.select</code>, <code>email.event.create/update/delete</code></td><td>intent</td><td><code>create</code> answers <code>{id}</code>; <code>end</code> or an ISO 8601 <code>duration</code></td></tr>

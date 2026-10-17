@@ -251,6 +251,12 @@ pub const VERBS: &[Verb] = &[
         "Move emails to a mailbox",
     ),
     verb(
+        "email.junk",
+        false,
+        r#"{"account":"optional account id","ids":"email id or list of ids","junk":"bool: true moves to the Junk mailbox, false back to the inbox"}"#,
+        "Mark emails as junk or not junk by moving them into or out of the Junk mailbox; maild trains its spam filter (spam or ham) on the move",
+    ),
+    verb(
         "email.delete",
         false,
         r#"{"account":"optional account id","ids":"email id or list of ids","destroy":"optional bool (default false: to Trash)"}"#,
@@ -1031,6 +1037,22 @@ fn dispatch(
             let write = Write::Move {
                 ids: ids(args)?,
                 mailbox: required(args, "mailbox")?,
+            };
+            state.write_server(account, Some(id), write);
+        }
+        "email.junk" => {
+            let account = connected(state, args)?;
+            let junk = flag(args, "junk")?.ok_or_else(|| invalid("junk must be true or false"))?;
+            let mailbox = state
+                .account(&account)
+                .and_then(|v| crate::state::junk_target(v, junk))
+                .ok_or_else(|| {
+                    let key = if junk { "no-junk-mailbox" } else { "no-inbox" };
+                    Bad(code::NOT_FOUND, crate::label(key))
+                })?;
+            let write = Write::Move {
+                ids: ids(args)?,
+                mailbox,
             };
             state.write_server(account, Some(id), write);
         }

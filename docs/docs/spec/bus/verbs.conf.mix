@@ -229,6 +229,7 @@
     {name:"email.open", owner:"email", version:"0.1.0", status:"accepted", class:"intent"},
     {name:"email.mark", owner:"email", version:"0.1.0", status:"accepted", class:"intent"},
     {name:"email.move", owner:"email", version:"0.1.0", status:"accepted", class:"intent"},
+    {name:"email.junk", owner:"email", version:"0.1.0", status:"accepted", class:"intent"},
     {name:"email.delete", owner:"email", version:"0.1.0", status:"accepted", class:"intent"},
     {name:"email.send", owner:"email", version:"0.1.0", status:"accepted", class:"intent"},
     {name:"email.compose", owner:"email", version:"0.1.0", status:"accepted", class:"intent"},
