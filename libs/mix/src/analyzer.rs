@@ -535,10 +535,7 @@ pub fn analyze(stmts: &[Stmt], file: Option<&str>, cfg: &AnalyzerConfig) -> Anal
     // `-- lint:` pragmas live in comments, so they need the source text. A
     // `globals` pragma is an in-file `--allow-global`; the suppressions are
     // applied to the finished analysis.
-    let pragmas = cfg
-        .source
-        .as_deref()
-        .map(parse_lint_pragmas);
+    let pragmas = cfg.source.as_deref().map(parse_lint_pragmas);
     let mut analysis = match &pragmas {
         Some(pragmas) if !pragmas.globals.is_empty() => {
             let mut cfg = cfg.clone();

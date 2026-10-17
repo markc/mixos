@@ -232,8 +232,14 @@ fn an_ignore_does_not_reach_a_following_elif_line() {
     assert_eq!(codes(src), vec![("MIX-W2312".to_string(), Some(5))]);
     let src = "print(if true then\n  -- lint: ignore MIX-W2312\n  print(1)\nelif null then\n  print(2)\nend)\n";
     let found = codes(src);
-    assert!(found.contains(&("MIX-W2312".to_string(), Some(4))), "{found:?}");
-    assert!(found.contains(&("MIX-D3019".to_string(), Some(2))), "{found:?}");
+    assert!(
+        found.contains(&("MIX-W2312".to_string(), Some(4))),
+        "{found:?}"
+    );
+    assert!(
+        found.contains(&("MIX-D3019".to_string(), Some(2))),
+        "{found:?}"
+    );
 }
 
 #[test]
