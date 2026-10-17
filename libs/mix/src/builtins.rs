@@ -40625,9 +40625,7 @@ mod strict_write_and_bool_option_tests {
             ("strict", Value::Bool(true)),
             ("follow_symlinks", Value::Bool(true)),
         ]);
-        let readable = builtin_walk(vec![s(&d), follow_strict.clone()])
-            .unwrap()
-            .unwrap();
+        let readable = builtin_walk(vec![s(&d), follow_strict.clone()]).unwrap().unwrap();
         assert_eq!(
             readable.to_mix_string(),
             Value::list(vec![s(&d.join("a.txt"))]).to_mix_string(),
