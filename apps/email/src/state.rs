@@ -805,6 +805,10 @@ enum AfterSave {
     Transfer,
 }
 
+/// The print page's body size, in points: the reader's default until the
+/// reader font setting lands.
+pub const PRINT_FONT_PT: f32 = 15.0;
+
 /// How many times a write is sent before a conflict is reported.
 const WRITE_ATTEMPTS: u32 = 3;
 
@@ -2140,6 +2144,7 @@ impl State {
             | Event::LookRetry(_)
             | Event::Shown(..)
             | Event::PrefsOpened(_) => {}
+            Event::Printed(reply, result) => self.printed(reply, result),
         }
     }
 
@@ -2418,10 +2423,16 @@ impl State {
         if self.account(account).map(AccountView::generation) != Some(tag.generation) {
             return self.refuse(reply, code::STALE, &crate::label("stale-connection"));
         }
+        // A print needs no compose: it goes ahead whatever is open.
+        if then == Then::Print {
+            let markdown = crate::reader::detect(&email) == crate::reader::Format::Markdown;
+            return self.print_email(&email, markdown, Some(reply));
+        }
         if self.compose.is_some() {
             return self.refuse(reply, code::BUSY, &crate::label("compose-open"));
         }
         let opened = match then {
+            Then::Print => false,
             Then::Reply(all, quote) => self.reply_to(account, &email, all, quote),
             Then::Forward(to) => self.forward(account, &email, &to),
             Then::Answer => false,
@@ -2622,6 +2633,57 @@ impl State {
                     destroy: false,
                 },
             );
+        }
+    }
+
+    /// `mail.print` (Ctrl+P): the open email as a print page, rendered as
+    /// the reader shows it, opened in the browser.
+    pub fn print_open(&mut self) {
+        if let Some((account, email)) = self.reading() {
+            self.print_shown(&account, &email, None);
+        }
+    }
+
+    /// Print `account`'s `email` as its reader shows it (`reply`: the Bus
+    /// request to answer).
+    pub fn print_shown(&mut self, account: &str, email: &Email, reply: Option<u64>) {
+        let markdown = self.account(account).is_some_and(|v| {
+            crate::reader::shown(&v.mail.reader, email) == crate::reader::Format::Markdown
+        });
+        self.print_email(email, markdown, reply);
+    }
+
+    fn print_email(&mut self, email: &Email, markdown: bool, reply: Option<u64>) {
+        let html = crate::print::page(
+            email,
+            markdown,
+            PRINT_FONT_PT,
+            &crate::print::Palette::light(),
+        );
+        self.status = crate::label("printing");
+        self.queue(Work::Print {
+            reply,
+            name: crate::print::file_name(email),
+            html,
+        });
+    }
+
+    /// A print page was written (`opened`: and handed to the browser).
+    pub fn printed(&mut self, reply: Option<u64>, result: Result<(String, bool), String>) {
+        match result {
+            Ok((path, opened)) => {
+                let key = if opened { "printed" } else { "print-no-browser" };
+                self.status = crate::label_with(key, &[("path", &path)]);
+                if let Some(reply) = reply {
+                    self.reply(reply, 0, json!({ "path": path, "opened": opened }));
+                }
+            }
+            Err(error) => {
+                self.status = error.clone();
+                if let Some(reply) = reply {
+                    self.refuse(reply, code::UNAVAILABLE, &error);
+                }
+            }
         }
     }
 

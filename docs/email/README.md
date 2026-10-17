@@ -150,6 +150,18 @@ A malformed file loads defaults and is never overwritten.
   Labels follow the email (**Star** or **Remove Star**, **Mark as Read** or
   **Mark as Unread**). Marking an open email unread leaves it open and
   unread: only opening an email marks it read.
+- **Printing** (Message › Print…, Ctrl+P) goes through the browser's
+  print dialog, which also offers **Save to PDF**: MixOS has no print
+  service. The email becomes one self-contained page in a private
+  directory (`$XDG_RUNTIME_DIR/email-print/`, readable only by you), shown
+  as the reader shows it: Markdown rendered, else the plain text. Headers
+  (From, To, Cc, Date, Subject) come first, in the light theme on white.
+  Nothing from the email runs or loads: its HTML is printed as text,
+  images are their alt text (a remote image would tell the sender), and a
+  strict Content-Security-Policy allows only the page's own style and the
+  script that opens the dialog. The page opens in Firefox through the
+  session launcher; without one, the status line names the file to open.
+  Pages older than a day are removed on the next print.
 - **Quoted replies.** A reply quotes the original's text body (a Markdown
   email's source; an HTML-only email's text) under an "On …, Ann wrote:"
   line, every line marked `> ` (an already quoted line gains another
@@ -174,6 +186,7 @@ A malformed file loads defaults and is never overwritten.
 | J / Shift+J | Junk / Not junk |
 | Ctrl+Shift+M | Move the open email |
 | Delete | Delete the open email |
+| Ctrl+P | Print (the browser's print dialog, or save as PDF) |
 | Ctrl+Shift+E | New event |
 | Ctrl+Shift+K | New contact |
 | Ctrl+1 / 2 / 3 | Mail / Calendar / Contacts |
@@ -228,6 +241,7 @@ never waits on them.
 | `email.mailbox.select/create/rename/delete` | intent | `create` answers `{id}` |
 | `email.open {id}` | intent | show an email in the reader; answers once loaded |
 | `email.mark {ids, read?, flagged?}`, `email.move {ids, mailbox}`, `email.delete {ids, destroy?}` | intent | the list and counts refresh after |
+| `email.print {id?}` | intent | write the print page (the open email by default) and open it in the browser; answers `{path, opened}` |
 | `email.junk {ids, junk}` | intent | move to the Junk mailbox (`junk: true`) or back to the inbox; maild trains spam or ham on the move; answers `{ids, mailbox}` |
 | `email.send {to, cc?, bcc?, subject, body, in_reply_to?}` | intent | send without the dialog |
 | `email.compose {…}`, `email.reply {id, all?}`, `email.forward {id, to?}` | intent | open the compose dialog, filled in |

@@ -80,6 +80,9 @@ pub enum Event {
     Shown(u64, Result<Value, String>),
     /// Open Email Settings finished; an error is for the status line.
     PrefsOpened(Result<(), String>),
+    /// A print page was written: its path and whether the browser took it,
+    /// for Bus request `reply`; or why it could not be written.
+    Printed(Option<u64>, Result<(String, bool), String>),
 }
 
 pub struct Shell {
@@ -138,6 +141,71 @@ fn hostname() -> String {
 
 /// Prefs' app id, as `apps.launch` takes it.
 const PREFS_APP_ID: &str = "dev.mixos.prefs";
+
+/// The desktop entry a print page opens in: its print dialog prints or
+/// saves a PDF.
+const BROWSER_APP_ID: &str = "firefox";
+
+/// Print pages older than this are removed on the next print.
+pub const PRINT_KEEP: std::time::Duration = std::time::Duration::from_secs(24 * 60 * 60);
+
+/// The private print directory, `$XDG_RUNTIME_DIR/email-print`.
+fn print_dir() -> Result<PathBuf, String> {
+    std::env::var_os("XDG_RUNTIME_DIR")
+        .filter(|dir| !dir.is_empty())
+        .map(|dir| PathBuf::from(dir).join("email-print"))
+        .ok_or_else(|| label("no-runtime-dir"))
+}
+
+/// Write print page `html` as `dir/name`: the directory made private
+/// (0700), the page written whole to a temporary file (0600) and renamed
+/// into place, and pages older than [`PRINT_KEEP`] at `now` removed first.
+pub fn write_print(
+    dir: &Path,
+    name: &str,
+    html: &str,
+    now: std::time::SystemTime,
+) -> Result<PathBuf, String> {
+    use std::io::Write as _;
+    use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
+    if name.contains('/') || name.starts_with('.') {
+        return Err(format!("bad print page name {name:?}"));
+    }
+    std::fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(dir)
+        .map_err(|e| e.to_string())?;
+    // A directory that was already there keeps its mode: make it private.
+    std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))
+        .map_err(|e| e.to_string())?;
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let stale = entry
+                .metadata()
+                .and_then(|m| m.modified())
+                .is_ok_and(|modified| now.duration_since(modified).is_ok_and(|age| age > PRINT_KEEP));
+            if stale && path.extension().is_some_and(|e| e == "html") {
+                let _ = std::fs::remove_file(path);
+            }
+        }
+    }
+    let path = dir.join(name);
+    let partial = dir.join(format!(".{name}.partial"));
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(&partial)
+        .map_err(|e| e.to_string())?;
+    file.write_all(html.as_bytes())
+        .and_then(|()| file.sync_all())
+        .map_err(|e| e.to_string())?;
+    std::fs::rename(&partial, &path).map_err(|e| e.to_string())?;
+    Ok(path)
+}
 
 /// How long one settings read or write may take.
 const LOOK_BUDGET: std::time::Duration = std::time::Duration::from_secs(30);
@@ -299,6 +367,7 @@ fn closing(event: &Event) -> Closing {
         | Event::Account(..)
         | Event::Settled(..)
         | Event::SecretsSaved(..)
+        | Event::Printed(..)
         | Event::WriteDeadline(_) => Closing::Apply,
         Event::Delivery(citizen::Delivery::Command { id, .. }) => Closing::Cancel(*id),
         Event::Shown(..) => Closing::Shown,
@@ -789,6 +858,7 @@ impl Shell {
                 }
             }
             Work::OpenPrefs => self.open_prefs(),
+            Work::Print { reply, name, html } => self.print(reply, name, html),
         }
     }
 
@@ -819,6 +889,30 @@ impl Shell {
                 }
             }
             Event::PrefsOpened(Err(label("prefs-silent")))
+        });
+    }
+
+    /// Write a print page off the UI thread and hand it to the browser
+    /// through the session's launcher (`apps.launch`).
+    fn print(&mut self, reply: Option<u64>, name: String, html: String) {
+        let bus = self.bus.clone();
+        self.spawn(async move {
+            let written = tokio::task::spawn_blocking(move || {
+                let dir = print_dir()?;
+                write_print(&dir, &name, &html, std::time::SystemTime::now())
+            })
+            .await;
+            let path = match written {
+                Ok(Ok(path)) => path,
+                Ok(Err(error)) => return Event::Printed(reply, Err(error)),
+                Err(error) => return Event::Printed(reply, Err(error.to_string())),
+            };
+            let uri = format!("file://{}", path.display());
+            let launched = bus
+                .call("apps", "apps.launch", json!({"id": BROWSER_APP_ID, "uris": [uri]}))
+                .await;
+            let opened = launched.is_ok_and(|r| r.rc == 0);
+            Event::Printed(reply, Ok((path.display().to_string(), opened)))
         });
     }
 
@@ -1479,6 +1573,29 @@ mod tests {
 
     /// Review finding 5 (the migration's part): credentials in the old
     /// account's URL never reach settingsd, and the note never echoes them.
+    #[test]
+    fn a_print_page_is_private_whole_and_old_ones_go() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("email-print");
+        let now = std::time::SystemTime::now();
+        let first = write_print(&dir, "a.html", "<p>a</p>", now).unwrap();
+        assert_eq!(std::fs::read_to_string(&first).unwrap(), "<p>a</p>");
+        let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode(&dir), 0o700);
+        assert_eq!(mode(&first), 0o600);
+        // Printing again replaces the page; nothing partial is left.
+        write_print(&dir, "a.html", "<p>b</p>", now).unwrap();
+        assert_eq!(std::fs::read_to_string(&first).unwrap(), "<p>b</p>");
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
+        // Two days on, the old page goes as a new one is written.
+        let later = now + 2 * PRINT_KEEP;
+        let second = write_print(&dir, "b.html", "<p>c</p>", later).unwrap();
+        assert!(!first.exists() && second.exists());
+        assert!(write_print(&dir, "../x.html", "", now).is_err());
+        assert!(write_print(&dir, ".hidden", "", now).is_err());
+    }
+
     #[test]
     fn round5_23_the_close_drain_drops_nothing_that_waits() {
         let command = Event::Delivery(citizen::Delivery::Command {

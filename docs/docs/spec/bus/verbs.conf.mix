@@ -235,6 +235,7 @@
     {name:"email.compose", owner:"email", version:"0.1.0", status:"accepted", class:"intent"},
     {name:"email.reply", owner:"email", version:"0.1.0", status:"accepted", class:"intent"},
     {name:"email.forward", owner:"email", version:"0.1.0", status:"accepted", class:"intent"},
+    {name:"email.print", owner:"email", version:"0.1.0", status:"accepted", class:"intent"},
     {name:"email.calendar.select", owner:"email", version:"0.1.0", status:"accepted", class:"intent"},
     {name:"email.event.create", owner:"email", version:"0.1.0", status:"accepted", class:"intent"},
     {name:"email.event.update", owner:"email", version:"0.1.0", status:"accepted", class:"intent"},

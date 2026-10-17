@@ -162,6 +162,16 @@ impl Reader {
     }
 }
 
+/// The format `email` is shown in: `reader`'s, once it is that email's,
+/// else the detected one.
+pub fn shown(reader: &Reader, email: &Email) -> Format {
+    if reader.is_for(email) {
+        reader.format()
+    } else {
+        detect(email)
+    }
+}
+
 /// Whether `email` has a text body the reader can show either way.
 pub fn has_text(email: &Email) -> bool {
     text_body(email).is_some_and(|(_, kind)| kind != "text/html")

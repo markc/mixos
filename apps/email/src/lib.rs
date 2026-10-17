@@ -23,6 +23,7 @@
 
 pub mod commands;
 pub mod config;
+pub mod print;
 pub mod quote;
 pub mod reader;
 pub mod secrets;

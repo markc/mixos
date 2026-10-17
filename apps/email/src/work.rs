@@ -142,6 +142,13 @@ pub enum Work {
     },
     /// Launch Prefs on its Email section.
     OpenPrefs,
+    /// Write print page `html` as `name` in the private print directory and
+    /// open it in the browser (`reply`: the Bus request to answer).
+    Print {
+        reply: Option<u64>,
+        name: String,
+        html: String,
+    },
 }
 
 impl Work {
@@ -165,6 +172,7 @@ impl Work {
             | Work::WriteDeadline { .. }
             | Work::ReadSettings
             | Work::SaveSecrets { .. }
+            | Work::Print { .. }
             | Work::OpenPrefs => None,
         }
     }

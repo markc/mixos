@@ -389,6 +389,20 @@ Labels follow the email (<strong>Star</strong> or <strong>Remove Star</strong>, 
 unread: only opening an email marks it read.</p>
 </li>
 <li>
+<p><strong>Printing</strong> (Message › Print…, Ctrl+P) goes through the browser's
+print dialog, which also offers <strong>Save to PDF</strong>: MixOS has no print
+service. The email becomes one self-contained page in a private
+directory (<code>$XDG_RUNTIME_DIR/email-print/</code>, readable only by you), shown
+as the reader shows it: Markdown rendered, else the plain text. Headers
+(From, To, Cc, Date, Subject) come first, in the light theme on white.
+Nothing from the email runs or loads: its HTML is printed as text,
+images are their alt text (a remote image would tell the sender), and a
+strict Content-Security-Policy allows only the page's own style and the
+script that opens the dialog. The page opens in Firefox through the
+session launcher; without one, the status line names the file to open.
+Pages older than a day are removed on the next print.</p>
+</li>
+<li>
 <p><strong>Quoted replies.</strong> A reply quotes the original's text body (a Markdown
 email's source; an HTML-only email's text) under an "On …, Ann wrote:"
 line, every line marked <code>&gt; </code> (an already quoted line gains another
@@ -414,6 +428,7 @@ instants.</p>
 <tr><td>J / Shift+J</td><td>Junk / Not junk</td></tr>
 <tr><td>Ctrl+Shift+M</td><td>Move the open email</td></tr>
 <tr><td>Delete</td><td>Delete the open email</td></tr>
+<tr><td>Ctrl+P</td><td>Print (the browser's print dialog, or save as PDF)</td></tr>
 <tr><td>Ctrl+Shift+E</td><td>New event</td></tr>
 <tr><td>Ctrl+Shift+K</td><td>New contact</td></tr>
 <tr><td>Ctrl+1 / 2 / 3</td><td>Mail / Calendar / Contacts</td></tr>
@@ -463,6 +478,7 @@ never waits on them.</p>
 <tr><td><code>email.mailbox.select/create/rename/delete</code></td><td>intent</td><td><code>create</code> answers <code>{id}</code></td></tr>
 <tr><td><code>email.open {id}</code></td><td>intent</td><td>show an email in the reader; answers once loaded</td></tr>
 <tr><td><code>email.mark {ids, read?, flagged?}</code>, <code>email.move {ids, mailbox}</code>, <code>email.delete {ids, destroy?}</code></td><td>intent</td><td>the list and counts refresh after</td></tr>
+<tr><td><code>email.print {id?}</code></td><td>intent</td><td>write the print page (the open email by default) and open it in the browser; answers <code>{path, opened}</code></td></tr>
 <tr><td><code>email.junk {ids, junk}</code></td><td>intent</td><td>move to the Junk mailbox (<code>junk: true</code>) or back to the inbox; maild trains spam or ham on the move; answers <code>{ids, mailbox}</code></td></tr>
 <tr><td><code>email.send {to, cc?, bcc?, subject, body, in_reply_to?}</code></td><td>intent</td><td>send without the dialog</td></tr>
 <tr><td><code>email.compose {…}</code>, <code>email.reply {id, all?}</code>, <code>email.forward {id, to?}</code></td><td>intent</td><td>open the compose dialog, filled in</td></tr>

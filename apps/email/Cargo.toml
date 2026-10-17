@@ -34,6 +34,8 @@ egui.workspace = true
 futures.workspace = true
 # O_NONBLOCK, so a CA path naming a FIFO never blocks its open.
 libc.workspace = true
+# The print page: Markdown to HTML (raw HTML in the source made text).
+pulldown-cmark = { workspace = true, features = ["html"] }
 serde.workspace = true
 serde_json.workspace = true
 settings.workspace = true
