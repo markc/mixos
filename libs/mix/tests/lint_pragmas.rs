@@ -207,12 +207,15 @@ fn an_ignore_before_a_one_line_block_is_refused() {
 
 #[test]
 fn an_ssh_mix_body_honours_its_own_pragmas() {
-    let src = "$r = ssh_mix(\"h\", <<EOF\n-- lint: ignore MIX-W2312\nprint(null)\nEOF\n)\nprint($r.ok)\n";
+    let src =
+        "$r = ssh_mix(\"h\", <<EOF\n-- lint: ignore MIX-W2312\nprint(null)\nEOF\n)\nprint($r.ok)\n";
     assert_eq!(codes(src), vec![]);
-    let src = "$r = ssh_mix(\"h\", <<EOF\n-- lint: globals sha\nprint($sha)\nEOF\n)\nprint($r.ok)\n";
+    let src =
+        "$r = ssh_mix(\"h\", <<EOF\n-- lint: globals sha\nprint($sha)\nEOF\n)\nprint($r.ok)\n";
     assert_eq!(codes(src), vec![]);
     // A stale one is reported, mapped into this file.
-    let src = "$r = ssh_mix(\"h\", <<EOF\n-- lint: ignore MIX-W2312\nprint(1)\nEOF\n)\nprint($r.ok)\n";
+    let src =
+        "$r = ssh_mix(\"h\", <<EOF\n-- lint: ignore MIX-W2312\nprint(1)\nEOF\n)\nprint($r.ok)\n";
     let found = codes(src);
     assert_eq!(found.len(), 1, "{found:?}");
     assert_eq!(found[0].0, "MIX-D3019");
