@@ -2252,7 +2252,10 @@ mod foreign_assignment_tests {
     #[test]
     fn js_and_bareword_assignments_get_their_mix_form() {
         assert_eq!(foreign_assignment("let i = 0").as_deref(), Some("$i = 0"));
-        assert_eq!(foreign_assignment("const $n = 1").as_deref(), Some("$n = 1"));
+        assert_eq!(
+            foreign_assignment("const $n = 1").as_deref(),
+            Some("$n = 1")
+        );
         assert_eq!(
             foreign_assignment("zqx_total = $zqx_total + 1").as_deref(),
             Some("$zqx_total = $zqx_total + 1")

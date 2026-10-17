@@ -205,7 +205,8 @@ fn exports_follow_the_runtime_rules() {
             "fn helper($a, $b)\n  return $a\nend\n$helper = fn($x) = $x\nfn result($x)\n  return $x\nend\nfn setup()\n  fn later($a, $b)\n    return $a\n  end\nend\n",
         )],
     );
-    let src = "$m = require(\"./m.mix\")\nprint($m.helper(7))\nprint($m.result(7))\nprint($m.later())\n";
+    let src =
+        "$m = require(\"./m.mix\")\nprint($m.helper(7))\nprint($m.result(7))\nprint($m.later())\n";
     assert_eq!(codes_at(&dir, src), vec![]);
     let found = codes_at(&dir, "$m = require(\"./m.mix\")\nprint($m.result())\n");
     assert_eq!(found, vec![("MIX-E1403".to_string(), Some(2))]);

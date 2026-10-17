@@ -6608,7 +6608,9 @@ fn parse_lint_pragmas(source: &str, stmts: &[Stmt]) -> LintPragmas {
                     && shared.contains(&first)
                 {
                     malformed(
-                        format!("`-- lint: ignore` would cover every statement on line {first}, not just the next one"),
+                        format!(
+                            "`-- lint: ignore` would cover every statement on line {first}, not just the next one"
+                        ),
                         "split the line, or write the pragma after the code to cover the whole line on purpose",
                     );
                     accepted = false;
