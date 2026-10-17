@@ -5156,9 +5156,19 @@ pub(crate) mod tests {
             .collect();
         let gone = |ids: &[&str]| ids.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
         assert_eq!(neighbour(&rows, "B", &gone(&["B"])).as_deref(), Some("C"));
-        assert_eq!(neighbour(&rows, "B", &gone(&["B", "C"])).as_deref(), Some("D"));
-        assert_eq!(neighbour(&rows, "D", &gone(&["D"])).as_deref(), Some("C"), "the last moves back");
-        assert_eq!(neighbour(&rows, "D", &gone(&["C", "D"])).as_deref(), Some("B"));
+        assert_eq!(
+            neighbour(&rows, "B", &gone(&["B", "C"])).as_deref(),
+            Some("D")
+        );
+        assert_eq!(
+            neighbour(&rows, "D", &gone(&["D"])).as_deref(),
+            Some("C"),
+            "the last moves back"
+        );
+        assert_eq!(
+            neighbour(&rows, "D", &gone(&["C", "D"])).as_deref(),
+            Some("B")
+        );
         assert_eq!(neighbour(&rows[..1], "A", &gone(&["A"])), None);
         assert_eq!(neighbour(&rows, "Z", &gone(&["Z"])), None);
     }

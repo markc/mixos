@@ -67,17 +67,17 @@ fn readable(state: &State) -> bool {
 /// Junk mailbox.
 fn junkable(state: &State) -> bool {
     reading(state)
-        && state
-            .current()
-            .is_some_and(|v| !crate::state::in_junk(v) && crate::state::junk_target(v, true).is_some())
+        && state.current().is_some_and(|v| {
+            !crate::state::in_junk(v) && crate::state::junk_target(v, true).is_some()
+        })
 }
 
 /// The open email is in Junk and can go back to the inbox.
 fn unjunkable(state: &State) -> bool {
     reading(state)
-        && state
-            .current()
-            .is_some_and(|v| crate::state::in_junk(v) && crate::state::junk_target(v, false).is_some())
+        && state.current().is_some_and(|v| {
+            crate::state::in_junk(v) && crate::state::junk_target(v, false).is_some()
+        })
 }
 
 /// More than one account to step through.
