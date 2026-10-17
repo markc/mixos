@@ -100,7 +100,9 @@ fn finish(words: &mut Words, word: &mut String, cases: &mut Vec<Case>) {
             }
             // `esac` closes the case where a clause or statement can start,
             // or straight after `in` for an empty case.
-            "esac" if matches!(top, Some(Case::Pattern | Case::Body)) && (at_command || after_in) => {
+            "esac"
+                if matches!(top, Some(Case::Pattern | Case::Body)) && (at_command || after_in) =>
+            {
                 cases.pop();
             }
             _ => {}
@@ -302,8 +304,7 @@ impl<'a, F: Fn(&str) -> Option<String>> Scan<'a, F> {
                     finish(&mut words, &mut word, &mut cases);
                     words.push(None);
                     // `;;` ends a clause: the next pattern list follows.
-                    if c == ';' && self.peek(1) == Some(';') && cases.last() == Some(&Case::Body)
-                    {
+                    if c == ';' && self.peek(1) == Some(';') && cases.last() == Some(&Case::Body) {
                         self.copy(2);
                         *cases.last_mut().expect("a body is open") = Case::Pattern;
                     } else {
