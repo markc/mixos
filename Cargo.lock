@@ -4449,6 +4449,7 @@ dependencies = [
  "datastar",
  "flate2",
  "futures-util",
+ "hickory-proto",
  "indexmap",
  "jaq-core",
  "jaq-json",
