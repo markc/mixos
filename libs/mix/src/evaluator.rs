@@ -10385,7 +10385,12 @@ impl Evaluator {
                                     // the `continue` and run on.
                                     other => {
                                         if crate::interrupt::is_standing()
-                                            && matches!(pending, Err(MixError::RuntimeError { .. } | MixError::DieError { .. } | MixError::Structured(_)))
+                                            && matches!(
+                                                pending,
+                                                Err(MixError::RuntimeError { .. }
+                                                    | MixError::DieError { .. }
+                                                    | MixError::Structured(_))
+                                            )
                                         {
                                             return pending;
                                         }

@@ -226,16 +226,16 @@ mod tests {
     fn a_waiting_read_yields_to_the_runtime() {
         let _guard = interrupt_guard();
         block_on(async {
-        let dir = Scratch::new();
-        let path = fifo(dir.path());
-        let writer_path = path.clone();
-        // The writer runs on THIS thread, so the read must yield for it to
-        // run at all.
-        let (got, ()) = tokio::join!(read(&path, None), async move {
-            tokio::time::sleep(Duration::from_millis(50)).await;
-            write(&writer_path, b"hello").await.unwrap();
-        });
-        assert_eq!(got.unwrap(), b"hello");
+            let dir = Scratch::new();
+            let path = fifo(dir.path());
+            let writer_path = path.clone();
+            // The writer runs on THIS thread, so the read must yield for it to
+            // run at all.
+            let (got, ()) = tokio::join!(read(&path, None), async move {
+                tokio::time::sleep(Duration::from_millis(50)).await;
+                write(&writer_path, b"hello").await.unwrap();
+            });
+            assert_eq!(got.unwrap(), b"hello");
         });
     }
 
@@ -243,13 +243,14 @@ mod tests {
     fn a_waiting_write_is_abandoned_cleanly() {
         let _guard = interrupt_guard();
         block_on(async {
-        let dir = Scratch::new();
-        let path = fifo(dir.path());
-        let outcome = tokio::time::timeout(Duration::from_millis(100), write(&path, b"x")).await;
-        assert!(
-            outcome.is_err(),
-            "no reader: the write must still be waiting"
-        );
+            let dir = Scratch::new();
+            let path = fifo(dir.path());
+            let outcome =
+                tokio::time::timeout(Duration::from_millis(100), write(&path, b"x")).await;
+            assert!(
+                outcome.is_err(),
+                "no reader: the write must still be waiting"
+            );
         });
     }
 
@@ -257,36 +258,36 @@ mod tests {
     fn a_producer_that_never_stops_cannot_hold_the_thread() {
         let _guard = interrupt_guard();
         block_on(async {
-        let dir = Scratch::new();
-        let path = fifo(dir.path());
-        let writer_path = path.clone();
-        // A separate OS thread that writes as fast as it can, for ever.
-        let writer = std::thread::spawn(move || {
-            let mut f = std::fs::OpenOptions::new()
-                .write(true)
-                .open(writer_path)
-                .unwrap();
-            let chunk = vec![0u8; 64 * 1024];
-            while f.write_all(&chunk).is_ok() {}
-        });
-        let ticks = std::rc::Rc::new(std::cell::Cell::new(0u32));
-        let counter = ticks.clone();
-        let local = tokio::task::LocalSet::new();
-        let got = local
-            .run_until(async move {
-                tokio::task::spawn_local(async move {
-                    loop {
-                        counter.set(counter.get() + 1);
-                        tokio::task::yield_now().await;
-                    }
-                });
-                read(&path, Some(8 * 1024 * 1024)).await.unwrap()
-            })
-            .await;
-        drop(local);
-        writer.join().unwrap();
-        assert!(got.len() > 8 * 1024 * 1024);
-        assert!(ticks.get() > 0, "the read never yielded to a peer task");
+            let dir = Scratch::new();
+            let path = fifo(dir.path());
+            let writer_path = path.clone();
+            // A separate OS thread that writes as fast as it can, for ever.
+            let writer = std::thread::spawn(move || {
+                let mut f = std::fs::OpenOptions::new()
+                    .write(true)
+                    .open(writer_path)
+                    .unwrap();
+                let chunk = vec![0u8; 64 * 1024];
+                while f.write_all(&chunk).is_ok() {}
+            });
+            let ticks = std::rc::Rc::new(std::cell::Cell::new(0u32));
+            let counter = ticks.clone();
+            let local = tokio::task::LocalSet::new();
+            let got = local
+                .run_until(async move {
+                    tokio::task::spawn_local(async move {
+                        loop {
+                            counter.set(counter.get() + 1);
+                            tokio::task::yield_now().await;
+                        }
+                    });
+                    read(&path, Some(8 * 1024 * 1024)).await.unwrap()
+                })
+                .await;
+            drop(local);
+            writer.join().unwrap();
+            assert!(got.len() > 8 * 1024 * 1024);
+            assert!(ticks.get() > 0, "the read never yielded to a peer task");
         });
     }
 }

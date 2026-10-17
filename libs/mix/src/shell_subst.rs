@@ -1014,14 +1014,20 @@ mod tests {
     fn a_subshell_binds_in_its_own_level() {
         let p = prepare("(d=inner; echo $d); echo $d", scope).unwrap();
         assert_eq!(p.cmd, "(d=inner; echo $d); echo ${__mix_subst_0}");
-        assert_eq!(p.env, vec![("__mix_subst_0".to_string(), "x y".to_string())]);
+        assert_eq!(
+            p.env,
+            vec![("__mix_subst_0".to_string(), "x y".to_string())]
+        );
     }
 
     #[test]
     fn an_escaped_newline_is_not_part_of_a_heredoc_delimiter() {
         let cmd = "cat <<\"E\\\nOF\"\n$nosuch\nEOF\necho $d";
         let p = prepare(cmd, scope).unwrap();
-        assert_eq!(p.cmd, "cat <<\"E\\\nOF\"\n$nosuch\nEOF\necho ${__mix_subst_0}");
+        assert_eq!(
+            p.cmd,
+            "cat <<\"E\\\nOF\"\n$nosuch\nEOF\necho ${__mix_subst_0}"
+        );
     }
 
     #[test]
@@ -1030,7 +1036,10 @@ mod tests {
         // command, and its single-quoted text is the shell's.
         let cmd = "cat <<EOF\n$d\nEO\\\nF\necho '$nosuch'";
         let p = prepare(cmd, scope).unwrap();
-        assert_eq!(p.cmd, "cat <<EOF\n${__mix_subst_0}\nEO\\\nF\necho '$nosuch'");
+        assert_eq!(
+            p.cmd,
+            "cat <<EOF\n${__mix_subst_0}\nEO\\\nF\necho '$nosuch'"
+        );
     }
 
     #[test]
