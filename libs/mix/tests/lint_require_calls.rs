@@ -294,7 +294,10 @@ fn a_piped_assignment_is_an_export_too() {
     // the two-parameter `fn helper`; 0.116 prints 7.
     let dir = tree(
         "piped",
-        &[("m.mix", "fn helper($a, $b) = $a\n$helper = fn($x) = $x | cat\n")],
+        &[(
+            "m.mix",
+            "fn helper($a, $b) = $a\n$helper = fn($x) = $x | cat\n",
+        )],
     );
     let src = "$m = require(\"./m.mix\")\nprint($m.helper(7))\n";
     assert_eq!(codes_at(&dir, src), vec![]);
