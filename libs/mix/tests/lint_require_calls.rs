@@ -289,6 +289,21 @@ fn a_fallback_function_inside_an_expression_body_answers_the_call() {
 }
 
 #[test]
+fn a_piped_assignment_is_an_export_too() {
+    // sol round 7: `$helper = … | cat` exports the lambda, which overrides
+    // the two-parameter `fn helper`; 0.116 prints 7.
+    let dir = tree(
+        "piped",
+        &[("m.mix", "fn helper($a, $b) = $a\n$helper = fn($x) = $x | cat\n")],
+    );
+    let src = "$m = require(\"./m.mix\")\nprint($m.helper(7))\n";
+    assert_eq!(codes_at(&dir, src), vec![]);
+    // The same unwrap keeps the undefined-variable check honest.
+    let found = codes_at(&dir, "$v = 1 | cat\nprint($v)\n");
+    assert!(!found.iter().any(|(c, _)| c == "MIX-E1101"), "{found:?}");
+}
+
+#[test]
 fn a_module_in_a_status_variable_is_not_proven() {
     // `send` and every command rewrite `$result`, so a call through it may
     // reach a caller function by UFCS instead of the module.

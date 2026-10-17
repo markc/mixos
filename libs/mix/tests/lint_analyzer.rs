@@ -1928,6 +1928,19 @@ fn the_null_fix_is_offered_only_where_the_word_is_surely_a_value() {
 }
 
 #[test]
+fn null_at_the_start_of_a_continuation_line_warns() {
+    // sol round 7: inside brackets a new line continues the statement, so
+    // its first word is a value, not a statement head.
+    let d = source_diags("print([\n  null,\n  None\n])\n");
+    let found: Vec<(Option<usize>, bool)> = d
+        .iter()
+        .filter(|d| d.code == "MIX-W2312")
+        .map(|d| (d.line, d.fix.is_some()))
+        .collect();
+    assert_eq!(found, vec![(Some(2), true), (Some(3), true)], "{d:?}");
+}
+
+#[test]
 fn every_foreign_null_spelling_warns() {
     for spelling in ["null", "None", "undefined", "NULL", "nullptr"] {
         for src in [

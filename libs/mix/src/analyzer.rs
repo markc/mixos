@@ -440,6 +440,31 @@ fn collect_bindings(
     out: &mut HashSet<String>,
 ) {
     for stmt in stmts {
+        // `$x = v | cat` and `a && $x = v` wrap their statements: the
+        // operands bind like any statement of their own.
+        match &stmt.kind {
+            StmtKind::PipeToExternal { stmt: inner, .. } => {
+                collect_bindings(
+                    std::slice::from_ref(inner.as_ref()),
+                    into_functions,
+                    callable_only,
+                    out,
+                );
+                continue;
+            }
+            StmtKind::Chain { left, right, .. } => {
+                for operand in [left, right] {
+                    collect_bindings(
+                        std::slice::from_ref(operand.as_ref()),
+                        into_functions,
+                        callable_only,
+                        out,
+                    );
+                }
+                continue;
+            }
+            _ => {}
+        }
         match &stmt.kind {
             StmtKind::Assignment { name, value } | StmtKind::Export { name, value }
                 if callable_only =>
@@ -6707,17 +6732,19 @@ fn parse_lint_pragmas(source: &str) -> LintPragmas {
         let at = code_lines.partition_point(|&l| l <= line);
         code_lines.get(at).copied()
     };
-    // Every `|` the lexer sees, as (line, column).
-    let pipes: Vec<(usize, usize)> = crate::lexer::Lexer::new(source)
+    // Every `|` and `;` the lexer sees, as (line, column).
+    let tokens = crate::lexer::Lexer::new(source)
         .tokenize()
-        .map(|tokens| {
-            tokens
-                .iter()
-                .filter(|tok| matches!(tok.token, Token::Pipe))
-                .map(|tok| (tok.line, tok.column))
-                .collect()
-        })
         .unwrap_or_default();
+    let positions = |wanted: fn(&Token) -> bool| -> Vec<(usize, usize)> {
+        tokens
+            .iter()
+            .filter(|tok| wanted(&tok.token))
+            .map(|tok| (tok.line, tok.column))
+            .collect()
+    };
+    let pipes = positions(|tok| matches!(tok, Token::Pipe));
+    let semicolons = positions(|tok| matches!(tok, Token::Semicolon));
     for (range, class) in spans {
         if class != crate::lexer::TokenClass::Comment {
             continue;
@@ -6734,7 +6761,16 @@ fn parse_lint_pragmas(source: &str) -> LintPragmas {
         // highlighter colours as a comment from any `--` in it on:
         // `print(1) | echo -- lint: ignore` prints the words, it is no pragma.
         let column = source[line_starts[line - 1]..range.start].chars().count() + 1;
-        if pipes.iter().any(|&(l, c)| l == line && c < column) {
+        // A `;` after the pipe ends its tail: what follows is Mix again.
+        let tail_ended = |pipe: usize| {
+            semicolons
+                .iter()
+                .any(|&(l, c)| l == line && pipe < c && c < column)
+        };
+        if pipes
+            .iter()
+            .any(|&(l, c)| l == line && c < column && !tail_ended(c))
+        {
             continue;
         }
         let after_code = !source[line_starts[line - 1]..range.start].trim().is_empty();

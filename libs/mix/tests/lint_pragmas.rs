@@ -249,6 +249,9 @@ fn words_after_a_pipe_are_shell_text_not_pragmas() {
     // Nor can such text suppress anything.
     let src = "print(1) | echo -- lint: ignore-file MIX-E1101\nprint($nope)\n";
     assert_eq!(codes(src), vec![("MIX-E1101".to_string(), Some(2))]);
+    // sol round 7: a `;` ends the pipe tail, so a pragma after it is real.
+    let src = "print(1) | cat; print($nope) -- lint: ignore MIX-E1101\n";
+    assert_eq!(codes(src), vec![]);
 }
 
 #[test]
