@@ -241,7 +241,12 @@ fn via_tcp(addr: SocketAddr, wire: &[u8], id: u16, deadline: Instant) -> Result<
     stream.write_all(&framed).map_err(classify)?;
     loop {
         let mut len = [0u8; 2];
-        read_by(&mut stream, &mut len, deadline, "the server closed the connection without a reply")?;
+        read_by(
+            &mut stream,
+            &mut len,
+            deadline,
+            "the server closed the connection without a reply",
+        )?;
         let mut body = vec![0u8; usize::from(u16::from_be_bytes(len))];
         read_by(&mut stream, &mut body, deadline, "the reply was cut short")?;
         let reply = Message::from_vec(&body)
@@ -286,13 +291,21 @@ fn resolve_server(server: &str, port: u16, deadline: Instant) -> Result<SocketAd
     std::thread::Builder::new()
         .name("dns_query-resolve".into())
         .spawn(move || {
-            let _ = tx.send((host.as_str(), port).to_socket_addrs().map(|mut a| a.next()));
+            let _ = tx.send(
+                (host.as_str(), port)
+                    .to_socket_addrs()
+                    .map(|mut a| a.next()),
+            );
         })
         .map_err(Failure::Io)?;
     match rx.recv_timeout(remaining(deadline)?) {
         Ok(Ok(Some(addr))) => Ok(addr),
-        Ok(Ok(None)) => Err(Failure::Protocol(format!("server '{server}' has no address"))),
-        Ok(Err(e)) => Err(Failure::Protocol(format!("cannot resolve server '{server}': {e}"))),
+        Ok(Ok(None)) => Err(Failure::Protocol(format!(
+            "server '{server}' has no address"
+        ))),
+        Ok(Err(e)) => Err(Failure::Protocol(format!(
+            "cannot resolve server '{server}': {e}"
+        ))),
         Err(_) => Err(Failure::Timeout),
     }
 }
@@ -352,7 +365,9 @@ pub fn builtin_dns_query(args: Vec<Value>) -> MixResult<Option<Value>> {
                 let (code, msg) = match f {
                     Failure::Timeout => (
                         "DNS_TIMEOUT",
-                        format!("{CALLER}: resolving server '{server}' took longer than the timeout"),
+                        format!(
+                            "{CALLER}: resolving server '{server}' took longer than the timeout"
+                        ),
                     ),
                     Failure::Protocol(m) => ("DNS_SERVER", format!("{CALLER}: {m}")),
                     Failure::Io(e) | Failure::Unreachable(e) => (

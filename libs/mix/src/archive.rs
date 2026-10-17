@@ -1442,7 +1442,10 @@ fn unpack_staged(
                     let (clean, resolved) =
                         clean_link_target(caller, &rel, target.as_os_str(), opts.max_name)?;
                     links.add(&rel, &resolved).map_err(|why| {
-                        runtime(format!("{caller}: refusing symlink '{}': {why}", rel.display()))
+                        runtime(format!(
+                            "{caller}: refusing symlink '{}': {why}",
+                            rel.display()
+                        ))
                     })?;
                     let clean = std::ffi::CString::new(clean.as_os_str().as_bytes())
                         .map_err(|_| runtime(format!("{caller}: link target contains NUL")))?;
@@ -1618,7 +1621,7 @@ fn unpack_staged(
             warnings.into_iter().map(Value::String).collect(),
         )),
     );
-    Ok(map)
+    Ok((map, root_meta))
 }
 
 /// Apply one file's or directory's deferred metadata through its descriptor
@@ -2084,7 +2087,10 @@ fn walk_and_append(
                 // archives always round-trip through the safe unpacker.
                 let (_, resolved) = clean_link_target(caller, &rel, target.as_os_str(), 4096)?;
                 links.add(&rel, &resolved).map_err(|why| {
-                    runtime(format!("{caller}: refusing symlink '{}': {why}", rel.display()))
+                    runtime(format!(
+                        "{caller}: refusing symlink '{}': {why}",
+                        rel.display()
+                    ))
                 })?;
                 let mut header = Header::new_gnu();
                 header.set_size(0);

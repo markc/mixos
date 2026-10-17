@@ -282,7 +282,11 @@ async fn a_trickled_tcp_reply_cannot_outlast_the_timeout() {
         "dns_query(\"a.example.test\", \"A\", {{server: \"127.0.0.1\", port: {port}, timeout: 0.5, tcp: true}})"
     ))
     .await;
-    assert_eq!(field(&r, "error_code").to_mix_string(), "DNS_TIMEOUT", "{r:?}");
+    assert_eq!(
+        field(&r, "error_code").to_mix_string(),
+        "DNS_TIMEOUT",
+        "{r:?}"
+    );
     assert!(
         started.elapsed() < std::time::Duration::from_secs(3),
         "took {:?}",

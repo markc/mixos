@@ -14815,7 +14815,8 @@ fn fsync_tree(
     use std::os::unix::ffi::OsStrExt;
     for name in directory_names(dir).map_err(|e| (path.to_path_buf(), e))? {
         let child = path.join(&name);
-        let cname = std::ffi::CString::new(name.as_bytes()).map_err(|e| (child.clone(), e.into()))?;
+        let cname =
+            std::ffi::CString::new(name.as_bytes()).map_err(|e| (child.clone(), e.into()))?;
         let mut st = std::mem::MaybeUninit::<libc::stat>::uninit();
         // SAFETY: a valid dirfd, a NUL-terminated name and a stat buffer.
         if unsafe {
@@ -34945,12 +34946,18 @@ mod flock_tests {
         let c = std::ffi::CString::new(fifo.to_string_lossy().as_bytes()).unwrap();
         assert_eq!(unsafe { libc::mkfifo(c.as_ptr(), 0o644) }, 0);
         for (name, lock) in [
-            ("flock", builtin_flock as fn(Vec<Value>) -> MixResult<Option<Value>>),
+            (
+                "flock",
+                builtin_flock as fn(Vec<Value>) -> MixResult<Option<Value>>,
+            ),
             ("fcntl_lock", builtin_fcntl_lock),
         ] {
             // A blocking open would never return here: no writer exists.
             let err = lock(vec![s(&fifo), shared_opts()]).expect_err("a fifo is no lock file");
-            assert!(format!("{err}").contains("not a regular file"), "{name}: {err}");
+            assert!(
+                format!("{err}").contains("not a regular file"),
+                "{name}: {err}"
+            );
         }
         let _ = std::fs::remove_dir_all(d);
     }
@@ -40779,7 +40786,9 @@ mod strict_write_and_bool_option_tests {
             ("strict", Value::Bool(true)),
             ("follow_symlinks", Value::Bool(true)),
         ]);
-        let readable = builtin_walk(vec![s(&d), follow_strict.clone()]).unwrap().unwrap();
+        let readable = builtin_walk(vec![s(&d), follow_strict.clone()])
+            .unwrap()
+            .unwrap();
         assert_eq!(
             readable.to_mix_string(),
             Value::list(vec![s(&d.join("a.txt"))]).to_mix_string(),
