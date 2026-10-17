@@ -190,7 +190,7 @@ impl<'a, F: Fn(&str) -> Option<String>> Scan<'a, F> {
                     self.dollar()?;
                     word.push(OPAQUE);
                 }
-                c if matches!(c, ';' | '&' | '|' | '`') => {
+                ';' | '&' | '|' | '`' => {
                     flush(&mut words, &mut word);
                     words.push(None);
                     self.copy(1);
