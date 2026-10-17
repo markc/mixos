@@ -1894,6 +1894,38 @@ fn bareword_null_used_as_a_value_warns_with_a_fix_to_nil() {
 }
 
 #[test]
+fn the_null_fix_is_offered_only_where_the_word_is_surely_a_value() {
+    let fixes = |src: &str| -> Vec<bool> {
+        source_diags(src)
+            .into_iter()
+            .filter(|d| d.code == "MIX-W2312")
+            .map(|d| d.fix.is_some())
+            .collect()
+    };
+    for src in [
+        "print(null)\n",
+        "print([1, null])\n",
+        "print({a: null})\n",
+        "$x = null\nprint($x)\n",
+        "$x = 1\nprint($x == null)\n",
+        "$x = 1\nprint(null != $x)\n",
+        "$x = nil\nprint($x ?? null)\n",
+        "fn f()\n  return null\nend\nprint(f())\n",
+    ] {
+        assert_eq!(fixes(src), vec![true], "{src:?}");
+    }
+    // sol round 5: `null` here may be a bareword call of `fn null()`, so
+    // rewriting it would change the program. Warn, but offer no fix.
+    for src in [
+        "fn null()\n  print(\"called\")\nend\nprint(\"first\") && null\n",
+        "fn f($x = null)\n  return $x\nend\nprint(f())\n",
+        "send svc verb open=null\nprint($rc)\n",
+    ] {
+        assert_eq!(fixes(src), vec![false], "{src:?}");
+    }
+}
+
+#[test]
 fn every_foreign_null_spelling_warns() {
     for spelling in ["null", "None", "undefined", "NULL", "nullptr"] {
         for src in [

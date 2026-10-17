@@ -538,7 +538,7 @@ pub fn analyze(stmts: &[Stmt], file: Option<&str>, cfg: &AnalyzerConfig) -> Anal
     let pragmas = cfg
         .source
         .as_deref()
-        .map(|source| parse_lint_pragmas(source, stmts));
+        .map(parse_lint_pragmas);
     let mut analysis = match &pragmas {
         Some(pragmas) if !pragmas.globals.is_empty() => {
             let mut cfg = cfg.clone();
@@ -4888,7 +4888,7 @@ fn analyse_remote_body(
     // The body is a program of its own and carries its own `-- lint:`
     // pragmas: its globals join the injected names, and its suppressions
     // apply to its findings before they are mapped into this file.
-    let pragmas = parse_lint_pragmas(src, &inner);
+    let pragmas = parse_lint_pragmas(src);
     let mut allow_globals = cfg.allow_globals.clone();
     allow_globals.extend(injected.into_iter().flatten().cloned());
     allow_globals.extend(pragmas.globals.iter().cloned());
@@ -6452,6 +6452,46 @@ fn in_bus_words(before: &[crate::token::SpannedToken]) -> bool {
     false
 }
 
+/// Whether a bareword between `before` and `next` is, without doubt, a
+/// value, so that rewriting it to `nil` cannot change what the program
+/// does. An allow-list, not the warning's own exclusions: the fix is
+/// offered only for a call argument or a list element (after `(`, `[` or
+/// `,`), a map value (after `:`), the right side of `$x =`, an operand of a
+/// comparison or `??`, and a `return` operand. Anywhere else, such as
+/// `print("a") && null`, where `null` may dispatch a function, the warning
+/// stands without a fix.
+fn unambiguous_value(before: &[crate::token::SpannedToken], next: Option<&Token>) -> bool {
+    let comparison = |tok: &Token| {
+        matches!(
+            tok,
+            Token::Eq
+                | Token::NotEq
+                | Token::Lt
+                | Token::Gt
+                | Token::LtEq
+                | Token::GtEq
+                | Token::StrEq
+                | Token::StrNe
+                | Token::NilCoalesce
+        )
+    };
+    let Some(prev) = before.last().map(|tok| &tok.token) else {
+        return false;
+    };
+    let statement_start = before
+        .iter()
+        .rev()
+        .take_while(|tok| !matches!(tok.token, Token::Newline | Token::Semicolon))
+        .last()
+        .map(|tok| &tok.token);
+    match prev {
+        Token::LParen | Token::LBracket | Token::Comma | Token::Colon | Token::Return => true,
+        Token::Assign => matches!(statement_start, Some(Token::Variable(_))),
+        _ if comparison(prev) => true,
+        _ => next.is_some_and(comparison),
+    }
+}
+
 /// Whether the token after `before` is a word of a `parse … with` template
 /// (delimiters and variable names) or of an `include`/`source` path
 /// (`include ./lib/null.mix`): raw words, never values.
@@ -6558,6 +6598,7 @@ fn check_null_barewords(stmts: &[Stmt], ctx: &FileContext, cfg: &AnalyzerConfig,
         if not_a_value {
             continue;
         }
+        let fixable = unambiguous_value(&tokens[..i], next);
         let mut d = diag(
             ctx,
             "MIX-W2312",
@@ -6566,17 +6607,23 @@ fn check_null_barewords(stmts: &[Stmt], ctx: &FileContext, cfg: &AnalyzerConfig,
             format!(
                 "bareword `{text}` is the string \"{text}\", not a null value — Mix's null is `nil`"
             ),
-            Some(format!(
-                "write `nil` (mix lint --fix rewrites it); quote it as \"{text}\" if you mean the text"
-            )),
+            Some(if fixable {
+                format!(
+                    "write `nil` (mix lint --fix rewrites it); quote it as \"{text}\" if you mean the text"
+                )
+            } else {
+                format!("write `nil`, or quote it as \"{text}\" if you mean the text")
+            }),
         );
         d.column = Some(tok.column);
-        d.fix = Some(Fix {
-            line: tok.line,
-            column: tok.column,
-            replace: text.clone(),
-            with: "nil".to_string(),
-        });
+        if fixable {
+            d.fix = Some(Fix {
+                line: tok.line,
+                column: tok.column,
+                replace: text.clone(),
+                with: "nil".to_string(),
+            });
+        }
         a.diagnostics.push(d);
     }
 }
@@ -6588,10 +6635,10 @@ fn check_null_barewords(stmts: &[Stmt], ctx: &FileContext, cfg: &AnalyzerConfig,
 enum PragmaScope {
     /// `-- lint: ignore-file CODE`: the whole file.
     File,
-    /// `-- lint: ignore CODE`: the lines of the next statement (or, written
-    /// after code, of its own line).
-    Lines(usize, usize),
-    /// `-- lint: ignore CODE` with no statement after it.
+    /// `-- lint: ignore CODE`: the next line holding code (or, written after
+    /// code, its own line).
+    Line(usize),
+    /// `-- lint: ignore CODE` with no code after it.
     Nothing,
 }
 
@@ -6609,7 +6656,7 @@ impl Suppression {
     fn covers(&self, line: Option<usize>) -> bool {
         match self.scope {
             PragmaScope::File => true,
-            PragmaScope::Lines(first, last) => line.is_some_and(|l| first <= l && l <= last),
+            PragmaScope::Line(target) => line == Some(target),
             PragmaScope::Nothing => false,
         }
     }
@@ -6630,7 +6677,7 @@ struct LintPragmas {
 /// from the editor highlighter, which drives the real lexer, so a `-- lint:`
 /// line inside a string or heredoc (generated Mix source) is never read as
 /// a pragma.
-fn parse_lint_pragmas(source: &str, stmts: &[Stmt]) -> LintPragmas {
+fn parse_lint_pragmas(source: &str) -> LintPragmas {
     let mut out = LintPragmas::default();
     if !source.contains("lint:") {
         return out;
@@ -6639,65 +6686,25 @@ fn parse_lint_pragmas(source: &str, stmts: &[Stmt]) -> LintPragmas {
         .chain(source.match_indices('\n').map(|(i, _)| i + 1))
         .collect();
     let line_of = |byte: usize| line_starts.partition_point(|&start| start <= byte);
-    let mut stmt_lines = Vec::new();
-    walk_every_stmt(stmts, &mut |stmt| stmt_lines.push(stmt.line));
-    // A line opening with `elif`, `else`, `end`, `catch`, … carries no
-    // statement of its own (an `elif` condition belongs to its `if`), but it
-    // still ends the statement before it, so it bounds a suppression too.
-    let mut boundaries = Vec::new();
-    if let Ok(tokens) = crate::lexer::Lexer::new(source).tokenize() {
-        let mut last_line = 0;
-        // A keyword inside brackets closes a lambda inside an expression
-        // (`{f: fn() return 1\nend, v: null}`), not a statement.
-        let mut depth = 0usize;
-        for tok in &tokens {
-            match tok.token {
-                Token::LParen | Token::LBrace | Token::LBracket => depth += 1,
-                Token::RParen | Token::RBrace | Token::RBracket => depth = depth.saturating_sub(1),
-                _ => {}
-            }
-            if tok.line != last_line
-                && depth == 0
-                && matches!(
-                    tok.token,
-                    Token::Elif
-                        | Token::Else
-                        | Token::End
-                        | Token::Next
-                        | Token::Done
-                        | Token::Catch
-                        | Token::Finally
-                        | Token::When
-                        | Token::Otherwise
-                )
-            {
-                boundaries.push(tok.line);
-            }
-            if !matches!(tok.token, Token::Newline) {
-                last_line = tok.line;
-            }
+    let spans = crate::lexer::highlight(source, crate::lexer::MixFlavor::Script);
+    // Lines holding anything but comments and whitespace: the lines an
+    // `ignore` can point at. A heredoc or multi-line string marks every line
+    // it spans.
+    let mut code_lines: Vec<usize> = Vec::new();
+    for (range, class) in &spans {
+        if *class == crate::lexer::TokenClass::Comment || range.is_empty() {
+            continue;
         }
+        code_lines.extend(line_of(range.start)..=line_of(range.end - 1));
     }
-    // The first line of each statement, then the boundaries: only a
-    // statement can be a pragma's target, but either ends its range.
-    let mut ends: Vec<usize> = stmt_lines.iter().copied().chain(boundaries).collect();
-    ends.sort_unstable();
-    ends.dedup();
-    stmt_lines.sort_unstable();
-    stmt_lines.dedup();
-    let mut shared = HashSet::new();
-    shared_statement_lines(stmts, &mut shared);
-    // The statement starting first after `line`, through the line before the
-    // statement after it: a block header covers only its own line, a
-    // multi-line statement covers all of its lines.
-    let next_statement = |line: usize| {
-        let at = stmt_lines.partition_point(|&l| l <= line);
-        let first = *stmt_lines.get(at)?;
-        let after = ends.partition_point(|&l| l <= first);
-        let last = ends.get(after).map_or(usize::MAX, |next| next - 1);
-        Some((first, last))
+    code_lines.sort_unstable();
+    code_lines.dedup();
+    // eslint's disable-next-line: the next line holding code, nothing more.
+    let next_code_line = |line: usize| {
+        let at = code_lines.partition_point(|&l| l <= line);
+        code_lines.get(at).copied()
     };
-    for (range, class) in crate::lexer::highlight(source, crate::lexer::MixFlavor::Script) {
+    for (range, class) in spans {
         if class != crate::lexer::TokenClass::Comment {
             continue;
         }
@@ -6754,35 +6761,18 @@ fn parse_lint_pragmas(source: &str, stmts: &[Stmt]) -> LintPragmas {
                         "name the code it suppresses: `-- lint: ignore MIX-W2402`",
                     );
                 }
-                let mut accepted = true;
                 let scope = if directive == "ignore-file" {
                     PragmaScope::File
                 } else if after_code {
-                    PragmaScope::Lines(line, line)
+                    PragmaScope::Line(line)
                 } else {
-                    next_statement(line).map_or(PragmaScope::Nothing, |(first, last)| {
-                        PragmaScope::Lines(first, last)
-                    })
+                    next_code_line(line).map_or(PragmaScope::Nothing, PragmaScope::Line)
                 };
-                if let PragmaScope::Lines(first, _) = scope
-                    && !after_code
-                    && shared.contains(&first)
-                {
-                    malformed(
-                        format!(
-                            "`-- lint: ignore` would cover every statement on line {first}, not just the next one"
-                        ),
-                        "split the line, or write the pragma after the code to cover the whole line on purpose",
-                    );
-                    accepted = false;
-                }
                 for word in words {
                     let known = crate::lint_docs::looks_like_code(word)
                         .then(|| crate::lint_docs::explain(word))
                         .flatten();
                     match known {
-                        // A refused pragma suppresses nothing.
-                        Some(_) if !accepted => {}
                         Some(doc) => out.suppressions.push(Suppression {
                             line,
                             code: doc.code,
@@ -6807,42 +6797,6 @@ fn parse_lint_pragmas(source: &str, stmts: &[Stmt]) -> LintPragmas {
         out.malformed.extend(bad);
     }
     out
-}
-
-/// Lines where two statements of one statement list start
-/// (`print($a); print($b)`), or where a block statement's body starts on its
-/// header line (`if c then print($x) end`). Diagnostics carry a line, not a
-/// statement, so an `ignore` aimed at one of them would cover both.
-fn shared_statement_lines(stmts: &[Stmt], out: &mut HashSet<usize>) {
-    let mut seen = HashSet::new();
-    for stmt in stmts {
-        if !seen.insert(stmt.line) {
-            out.insert(stmt.line);
-        }
-        for body in stmt_bodies(&stmt.kind) {
-            if body.iter().any(|inner| inner.line == stmt.line) {
-                out.insert(stmt.line);
-            }
-            shared_statement_lines(body, out);
-        }
-        walk_stmt_exprs(stmt, &mut |expr| {
-            for_each_embedded_stmt_list(expr, true, &mut |body| shared_statement_lines(body, out));
-        });
-        if let StmtKind::FunctionDef { params, body, .. } = &stmt.kind {
-            let exprs = params
-                .iter()
-                .filter_map(|param| param.default.as_ref())
-                .chain(match body {
-                    FunctionBody::Expression(body) => Some(body),
-                    FunctionBody::Block(_) => None,
-                });
-            for expr in exprs {
-                for_each_embedded_stmt_list(expr, true, &mut |body| {
-                    shared_statement_lines(body, out)
-                });
-            }
-        }
-    }
 }
 
 /// Drop the diagnostics a pragma suppresses, then report what the pragmas
@@ -6879,8 +6833,8 @@ fn apply_lint_pragmas(mut pragmas: LintPragmas, file: Option<&str>, a: &mut Anal
     for s in pragmas.suppressions.iter().filter(|s| !s.used) {
         let reason = match s.scope {
             PragmaScope::File => format!("nothing in this file reports {}", s.code),
-            PragmaScope::Lines(..) => format!("the statement it covers reports no {}", s.code),
-            PragmaScope::Nothing => "no statement follows it".to_string(),
+            PragmaScope::Line(target) => format!("line {target} reports no {}", s.code),
+            PragmaScope::Nothing => "no code follows it".to_string(),
         };
         a.diagnostics.push(report(
             "MIX-D3019",

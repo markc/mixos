@@ -461,8 +461,12 @@ too.</p>
 bareword is a string literal, so <code>{open: null}</code> sends <code>{"open":"null"}</code>
 and <code>if $x == None</code> compares against text. A map key (<code>{null: 1}</code>), a
 field (<code>$x.null</code>), a call name, a statement head, a Bus command word and a
-quoted <code>"null"</code> stay silent. The finding carries a quick fix to <code>nil</code>
-(<code>mix lint --fix</code>). There is no runtime alias, by decision: the language
+quoted <code>"null"</code> stay silent. Where the word is surely a value (a call
+argument, a list element, a map value, the right side of <code>$x =</code>, an
+operand of a comparison or <code>??</code>, a <code>return</code> operand) the finding carries a
+quick fix to <code>nil</code> (<code>mix lint --fix</code>); anywhere else, such as
+<code>print("a") &amp;&amp; null</code> where <code>null</code> may call a <code>fn null()</code>, it warns without
+one. There is no runtime alias, by decision: the language
 keeps one null. Like D3015 it needs the source text.</p>
 </li>
 <li>
@@ -490,7 +494,7 @@ also a parameter), a module whose top-level <code>return</code> replaces the
 auto-export or that uses <code>source</code>/<code>include</code>, and a file that does.</p>
 </li>
 <li>
-<p><strong>MIX-E1601</strong> (0.117.0) refuses a malformed <a href="#in-file-pragmas-01170"><code>-- lint:</code> pragma</a>: a bare <code>ignore</code>, an unknown code or directive, a <code>globals</code> with no valid names.</p>
+<p><strong>MIX-E1601</strong> (0.117.0) refuses a malformed <a href="#in-file-pragmas-01170"><code>-- lint:</code> pragma</a>: a bare <code>ignore</code> or <code>ignore-file</code>, an unknown code or directive, a <code>globals</code> with no valid names.</p>
 </li>
 <li>
 <p><strong>MIX-W2401</strong>: one <code>source</code>/<code>include</code> anywhere disables the undefined-name checks for the whole file (the loaded file can define anything) — reported once so you know analysis is degraded. Prefer <code>require()</code>: it is isolated, statically resolvable, and E1401/E1402 verify literal-path modules parse.</p>
@@ -517,16 +521,18 @@ flag. There are three, and they have no runtime effect:</p>
 -- lint: ignore-file MIX-D3015
 </code></pre>
 <p>The first declares names injected by <code>ssh_mix</code> bindings, an embedder or a
-<code>source</code>; the second suppresses MIX-W2402 on the next statement only; the
-third suppresses MIX-D3015 everywhere in the file.</p>
+<code>source</code>; the second suppresses MIX-W2402 on the next line of code only;
+the third suppresses MIX-D3015 everywhere in the file.</p>
 <ul>
 <li><code>globals</code> is the in-file <code>--allow-global</code>: each name counts as bound, so a
 remote body whose caller binds <code>$sha</code> lints clean on its own.</li>
-<li><code>ignore</code> covers the statement that starts on the next code line, through
-the line before the statement after it: a multi-line statement is covered
-on every line, but a block header (<code>if</code>, <code>for</code>, <code>fn</code>) covers only its own
-line — put the pragma inside the block for a statement there. Written
-after code on the same line, it covers that line.</li>
+<li><code>ignore</code> covers the <strong>next line holding code</strong> and nothing more (eslint's
+<code>disable-next-line</code>): blank and comment lines between are skipped, every
+statement on that line is covered, and a finding on a later line of the
+same statement is not, so put the pragma right above the line that reports
+the code. Most findings carry their statement's first line; a few (such as
+<code>MIX-W2312</code>) carry the line of the offending word. Written after code on
+the same line, <code>ignore</code> covers that line.</li>
 <li>Every suppression names its code (several may be listed, comma- or
 space-separated; the <code>MIX-</code> prefix and case are optional). A bare
 <code>-- lint: ignore</code> is <strong>refused</strong> (<code>MIX-E1601</code>), as is an unknown code or

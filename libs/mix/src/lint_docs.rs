@@ -187,7 +187,7 @@ pub const LINT_DOCS: &[LintDoc] = &[
     LintDoc {
         code: "MIX-E1601",
         summary: "malformed `-- lint:` pragma",
-        detail: "A comment starting `-- lint:` (or `# lint:`) that is not one of the three pragmas: `-- lint: globals NAME, …` (names injected by `ssh_mix` bindings, an embedder or a `source` — an in-file `--allow-global`), `-- lint: ignore CODE` (suppress CODE on the next statement, or on its own line when written after code) and `-- lint: ignore-file CODE` (the whole file). A bare `ignore` with no code is refused by design: every suppression names what it suppresses, so it can be reported once it goes stale (MIX-D3019). An unknown code, a non-name in `globals`, and an unknown directive are refused too. Pragmas are read from comments only, never from strings or heredocs.",
+        detail: "A comment starting `-- lint:` (or `# lint:`) that is not one of the three pragmas: `-- lint: globals NAME, …` (names injected by `ssh_mix` bindings, an embedder or a `source` — an in-file `--allow-global`), `-- lint: ignore CODE` (suppress CODE on the next line holding code only, or on its own line when written after code) and `-- lint: ignore-file CODE` (the whole file). A bare `ignore` with no code is refused by design: every suppression names what it suppresses, so it can be reported once it goes stale (MIX-D3019). An unknown code, a non-name in `globals`, and an unknown directive are refused too. Pragmas are read from comments only, never from strings or heredocs.",
     },
     // ---- Warnings (MIX-W2xxx) ----
     LintDoc {
@@ -258,7 +258,7 @@ pub const LINT_DOCS: &[LintDoc] = &[
     LintDoc {
         code: "MIX-W2312",
         summary: "bareword null/None/undefined is the string \"null\"",
-        detail: "A bareword `null`, `None`, `undefined`, `NULL` or `nullptr` used as a value. Mix has one null, `nil`; every other bareword is a string literal, so `{open: null}` sends `{\"open\":\"null\"}` and `if $x == None` compares against text. It bit a live Bus probe (2026-10-10): the verb rightly refused `open:\"null\"` and the refusal was taken for an app bug. A map key (`{null: 1}`), a field (`$x.null`), a call (`null()`), a statement head and a Bus command word are not values and stay silent, as does a quoted `\"null\"`. The finding carries a quick fix to `nil`: `mix lint --fix FILE` applies it, and `--json` reports it as `fix`. There is deliberately no runtime alias: the language keeps one null.",
+        detail: "A bareword `null`, `None`, `undefined`, `NULL` or `nullptr` used as a value. Mix has one null, `nil`; every other bareword is a string literal, so `{open: null}` sends `{\"open\":\"null\"}` and `if $x == None` compares against text. It bit a live Bus probe (2026-10-10): the verb rightly refused `open:\"null\"` and the refusal was taken for an app bug. A map key (`{null: 1}`), a field (`$x.null`), a call (`null()`), a statement head and a Bus command word are not values and stay silent, as does a quoted `\"null\"`. Where the word is surely a value (a call argument, list element, map value, the right side of `$x =`, a comparison or `??` operand, a `return` operand) the finding carries a quick fix to `nil`: `mix lint --fix FILE` applies it, and `--json` reports it as `fix`. There is deliberately no runtime alias: the language keeps one null.",
     },
     LintDoc {
         code: "MIX-W2313",
@@ -359,7 +359,7 @@ pub const LINT_DOCS: &[LintDoc] = &[
     LintDoc {
         code: "MIX-D3019",
         summary: "`-- lint:` suppression matches nothing",
-        detail: "A `-- lint: ignore CODE` whose next statement no longer reports CODE, or a `-- lint: ignore-file CODE` in a file that reports none — so the pragma is stale and can be deleted. Reported at the pragma's own line. A note, so it never gates.",
+        detail: "A `-- lint: ignore CODE` whose next code line no longer reports CODE, or a `-- lint: ignore-file CODE` in a file that reports none — so the pragma is stale and can be deleted. Reported at the pragma's own line. A note, so it never gates.",
     },
     LintDoc {
         code: "MIX-D3014",

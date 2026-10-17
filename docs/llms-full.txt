@@ -18560,8 +18560,12 @@ move, since a code's letter fixes its severity permanently. It is now
   bareword is a string literal, so `{open: null}` sends `{"open":"null"}`
   and `if $x == None` compares against text. A map key (`{null: 1}`), a
   field (`$x.null`), a call name, a statement head, a Bus command word and a
-  quoted `"null"` stay silent. The finding carries a quick fix to `nil`
-  (`mix lint --fix`). There is no runtime alias, by decision: the language
+  quoted `"null"` stay silent. Where the word is surely a value (a call
+  argument, a list element, a map value, the right side of `$x =`, an
+  operand of a comparison or `??`, a `return` operand) the finding carries a
+  quick fix to `nil` (`mix lint --fix`); anywhere else, such as
+  `print("a") && null` where `null` may call a `fn null()`, it warns without
+  one. There is no runtime alias, by decision: the language
   keeps one null. Like D3015 it needs the source text.
 - **MIX-W2313** (0.117.0) warns at the definition of a function named after
   one of the `mix` binary's shell extensions (`ai`, `ai_diagnose`,
@@ -18583,7 +18587,7 @@ move, since a code's letter fixes its severity permanently. It is now
   stand down silently for a dynamic path, a rebound `$m` (or one that is
   also a parameter), a module whose top-level `return` replaces the
   auto-export or that uses `source`/`include`, and a file that does.
-- **MIX-E1601** (0.117.0) refuses a malformed [`-- lint:` pragma](#in-file-pragmas-01170): a bare `ignore`, an unknown code or directive, a `globals` with no valid names.
+- **MIX-E1601** (0.117.0) refuses a malformed [`-- lint:` pragma](#in-file-pragmas-01170): a bare `ignore` or `ignore-file`, an unknown code or directive, a `globals` with no valid names.
 - **MIX-W2401**: one `source`/`include` anywhere disables the undefined-name checks for the whole file (the loaded file can define anything) — reported once so you know analysis is degraded. Prefer `require()`: it is isolated, statically resolvable, and E1401/E1402 verify literal-path modules parse.
 - **MIX-W2402** warns when a heredoc literal contains bare `$NAME` and `NAME` is bound somewhere in the same visible universe. Heredocs interpolate `${NAME}`, not `$NAME`, so the bare form often means a generated config was silently corrupted. It does not fire for `${NAME}`, `$(` command substitution, explicitly escaped `\$NAME`, all-digit names such as `$1`, unknown names, or ordinary double-quoted strings. The warning is lint-only: bare `$NAME` still evaluates to literal `$NAME`, and intentional literal output requires no change. In a heredoc that ships as an `ssh_mix` body it stays silent for the names the **remote** program owns: the call's `bindings`/`env` keys and whatever the body binds itself. There, bare is exactly right, and `${NAME}` would splice the local value into the remote source. Any other bound name still warns.
 - **MIX-E1303** (0.90.0; was `MIX-W2403` from 0.74.0) errors at the *definition* of a function whose name is a builtin: the builtin wins at every call site (a builtin-named dot-call even desugars at parse time), so the definition is unreachable by name — only an extracted function value or an exports-map index still reaches it. The worst shape this produces is a script that keeps running while its own function quietly stops being called, and every release that adds a builtin name arms it again for older scripts. It was a warning on the theory that a compat shim for an older mix is legitimate authoring; the fleet refuted that — two sites across 785 scripts, neither a shim: one a hand-rolled `ends_with` duplicating the builtin, the other an `fn mix_version()` in a pre-commit hook written to report a *named* interpreter's version and silently answering with the running one's, a live wrong answer that sat behind a warning for sixteen releases. Lint is also the only gate an `ssh_mix` body passes through, and a warning stops nothing by default. The **runtime is unchanged** — the builtin still wins; the fix is to rename. Since 0.91.0 the check also covers the evaluator's inline forms that sit outside the builtin table's dispatch gate — `serve_name`, `printf` and its stdio siblings, and the Bus forms `quit`, `reply`, `subscribe` and the rest — which beat a same-named function just the same: `fn quit() return 1 end; print(quit())` printed `nil` with no diagnostic before. Since 0.92.0 the runtime agrees in operand position too: the binary-operator fast path used to call a user `fn printf` for `printf("B") .. "|"` while a bare `printf("B")` called the builtin; now the builtin wins in both.
@@ -18603,16 +18607,18 @@ flag. There are three, and they have no runtime effect:
 ```
 
 The first declares names injected by `ssh_mix` bindings, an embedder or a
-`source`; the second suppresses MIX-W2402 on the next statement only; the
-third suppresses MIX-D3015 everywhere in the file.
+`source`; the second suppresses MIX-W2402 on the next line of code only;
+the third suppresses MIX-D3015 everywhere in the file.
 
 - `globals` is the in-file `--allow-global`: each name counts as bound, so a
   remote body whose caller binds `$sha` lints clean on its own.
-- `ignore` covers the statement that starts on the next code line, through
-  the line before the statement after it: a multi-line statement is covered
-  on every line, but a block header (`if`, `for`, `fn`) covers only its own
-  line — put the pragma inside the block for a statement there. Written
-  after code on the same line, it covers that line.
+- `ignore` covers the **next line holding code** and nothing more (eslint's
+  `disable-next-line`): blank and comment lines between are skipped, every
+  statement on that line is covered, and a finding on a later line of the
+  same statement is not, so put the pragma right above the line that reports
+  the code. Most findings carry their statement's first line; a few (such as
+  `MIX-W2312`) carry the line of the offending word. Written after code on
+  the same line, `ignore` covers that line.
 - Every suppression names its code (several may be listed, comma- or
   space-separated; the `MIX-` prefix and case are optional). A bare
   `-- lint: ignore` is **refused** (`MIX-E1601`), as is an unknown code or

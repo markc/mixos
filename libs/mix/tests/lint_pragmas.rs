@@ -159,49 +159,54 @@ fn a_pragma_inside_a_string_or_heredoc_is_not_read() {
 }
 
 #[test]
-fn an_ignore_before_a_line_of_several_statements_is_refused() {
-    // Diagnostics carry a line, not a statement, so the ignore would cover
-    // `print($second)` too. It is refused, and suppresses nothing.
-    let src = "-- lint: ignore MIX-E1101\nprint($first); print($second)\n";
-    let found = codes(src);
-    assert_eq!(
-        found,
-        vec![
-            ("MIX-E1101".to_string(), Some(2)),
-            ("MIX-E1101".to_string(), Some(2)),
-            ("MIX-E1601".to_string(), Some(1)),
-        ],
-        "{found:?}"
-    );
-    // Written after the code, it covers the whole line on purpose.
+fn an_ignore_covers_every_statement_on_the_next_line() {
+    // The target is a line (eslint's disable-next-line), so several
+    // statements on it are all covered, and no refusal is needed.
+    let src = "-- lint: ignore MIX-E1101\nprint($first); print($second)\nprint($third)\n";
+    assert_eq!(codes(src), vec![("MIX-E1101".to_string(), Some(3))]);
+    let src = "-- lint: ignore MIX-E1101\nif true then print($missing) end\n";
+    assert_eq!(codes(src), vec![]);
+    let src = "-- lint: ignore MIX-E1101\n$v = if true then print($missing) end\nprint($v)\n";
+    assert_eq!(codes(src), vec![]);
+    // Written after the code, it covers its own line.
     let src = "print($first); print($second) -- lint: ignore MIX-E1101\n";
     assert_eq!(codes(src), vec![]);
 }
 
 #[test]
-fn an_ignore_inside_a_fn_expression_body_targets_its_own_statement() {
+fn an_ignore_skips_blank_and_comment_lines_to_the_next_code_line() {
+    let src = "$pid = 1\n-- lint: ignore MIX-W2402\n\n-- the generated restart script\n$s = <<EOF\nkill $pid\nEOF\nprint($s)\n";
+    assert_eq!(codes(src), vec![]);
+}
+
+#[test]
+fn an_ignore_inside_a_fn_expression_body_targets_its_own_line() {
     let src = "fn f() = if true then\n  -- lint: ignore MIX-W2312\n  print(null)\nend\nprint(null)\nprint(f())\n";
     assert_eq!(codes(src), vec![("MIX-W2312".to_string(), Some(5))]);
 }
 
 #[test]
-fn a_lambda_end_inside_brackets_does_not_cut_the_statement_short() {
-    let src = "-- lint: ignore MIX-W2312\n$m = {f: fn() return 1\nend, value: null}\nprint($m)\n";
-    assert_eq!(codes(src), vec![]);
-}
-
-#[test]
-fn an_ignore_before_a_one_line_block_is_refused() {
-    // The header covers only its own line, and the body shares it.
-    let src = "-- lint: ignore MIX-E1101\nif true then print($missing) end\n";
-    let found = codes(src);
+fn an_ignore_covers_one_line_of_a_multi_line_statement() {
+    // A diagnostic on the third line of a statement is not on the line after
+    // the pragma; the pragma goes on the line before the finding instead.
+    let src = "-- lint: ignore MIX-W2312\n$m = {\n  a: 1,\n  b: null\n}\nprint($m)\n";
     assert_eq!(
-        found,
+        codes(src),
         vec![
-            ("MIX-E1101".to_string(), Some(2)),
-            ("MIX-E1601".to_string(), Some(1)),
-        ],
-        "{found:?}"
+            ("MIX-W2312".to_string(), Some(4)),
+            ("MIX-D3019".to_string(), Some(1)),
+        ]
+    );
+    let src = "$m = {\n  a: 1,\n  -- lint: ignore MIX-W2312\n  b: null\n}\nprint($m)\n";
+    assert_eq!(codes(src), vec![]);
+    // Nested terminators and branch lines do not matter: only the next line.
+    let src = "-- lint: ignore MIX-W2312\n$f = fn() return 1\nend == null\nprint($f)\n";
+    assert_eq!(
+        codes(src),
+        vec![
+            ("MIX-W2312".to_string(), Some(3)),
+            ("MIX-D3019".to_string(), Some(1)),
+        ]
     );
 }
 
@@ -222,28 +227,20 @@ fn an_ssh_mix_body_honours_its_own_pragmas() {
 }
 
 #[test]
-fn an_ignore_stops_at_a_following_elif_line() {
-    // The `elif` condition has no statement of its own, but its line ends
-    // the `print` the pragma targets.
+fn an_ignore_does_not_reach_a_following_elif_line() {
     let src = "$x = 1\nif $x == 1 then\n  -- lint: ignore MIX-W2312\n  print(null)\nelif null then\n  print(2)\nend\n";
     assert_eq!(codes(src), vec![("MIX-W2312".to_string(), Some(5))]);
+    let src = "print(if true then\n  -- lint: ignore MIX-W2312\n  print(1)\nelif null then\n  print(2)\nend)\n";
+    let found = codes(src);
+    assert!(found.contains(&("MIX-W2312".to_string(), Some(4))), "{found:?}");
+    assert!(found.contains(&("MIX-D3019".to_string(), Some(2))), "{found:?}");
 }
 
 #[test]
 fn a_block_header_pragma_covers_only_the_header() {
-    // The statement after the pragma is the `if`; its body statement is a
-    // statement of its own, so the ignore does not reach it.
     let src = "-- lint: ignore MIX-E1101\nif $nope then\n  print($also)\nend\n";
     let found = codes(src);
     assert_eq!(found, vec![("MIX-E1101".to_string(), Some(3))], "{found:?}");
-}
-
-#[test]
-fn a_multi_line_statement_is_covered_on_every_line() {
-    // A diagnostic carrying its token's own line (W2312) on the third line
-    // of one statement is still covered.
-    let src = "-- lint: ignore MIX-W2312\n$m = {\n  a: 1,\n  b: null\n}\nprint($m)\n";
-    assert_eq!(codes(src), vec![]);
 }
 
 #[test]
