@@ -118,7 +118,7 @@ pub fn grouped(n: u64) -> String {
     let digits = n.to_string();
     let mut out = String::new();
     for (i, digit) in digits.chars().enumerate() {
-        if i > 0 && (digits.len() - i) % 3 == 0 {
+        if i > 0 && (digits.len() - i).is_multiple_of(3) {
             out.push(',');
         }
         out.push(digit);
@@ -428,7 +428,7 @@ impl State {
             && view.mail.search.active();
         if searched {
             let (text, all) = (view.mail.search.query(), view.mail.search.all());
-            self.query_ids(&account, Some(id).filter(|_| !all), text, true, IdsFor::MarkRead);
+            self.query_ids(&account, (!all).then_some(id), text, true, IdsFor::MarkRead);
         } else if unread > MARK_CONFIRM_ABOVE {
             self.folder_form(
                 FolderAction::MarkRead {
