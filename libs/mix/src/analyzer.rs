@@ -6057,6 +6057,13 @@ fn literal_require_bindings(stmts: &[Stmt], module_level_only: bool) -> HashMap<
     out
 }
 
+/// The directory a file's own relative requires resolve against: the
+/// parent of its canonical path, as the runtime takes it.
+fn canonical_dir(path: &std::path::Path) -> Option<std::path::PathBuf> {
+    let canonical = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    canonical.parent().map(std::path::Path::to_path_buf)
+}
+
 /// A `require()` path as the analyzer resolves it: absolute, or next to the
 /// requiring file (the runtime's script-relative rule).
 fn resolve_require_path(path: &str, base_dir: Option<&std::path::Path>) -> std::path::PathBuf {
@@ -6122,7 +6129,7 @@ fn read_module_exports(path: &std::path::Path, label: &str) -> Option<ModuleExpo
         .collect();
     Some(ModuleExports {
         label: label.to_string(),
-        dir: path.parent().map(std::path::Path::to_path_buf),
+        dir: canonical_dir(path),
         functions,
         maybe,
         requires,
@@ -6195,14 +6202,16 @@ fn check_require_calls(stmts: &[Stmt], ctx: &FileContext, a: &mut Analysis) {
     let mut roots = literal_require_bindings(stmts, false);
     let mut params = HashSet::new();
     collect_param_names(stmts, &mut params);
-    roots.retain(|name, _| !params.contains(name));
+    // `$rc`, `$result`, `$reply`… are rewritten by every send and command,
+    // so a module bound to one is not proven to still be there.
+    roots.retain(|name, _| !params.contains(name) && !INJECTED_VARS.contains(&name.as_str()));
     if roots.is_empty() {
         return;
     }
-    let base_dir = ctx
-        .file
-        .as_deref()
-        .and_then(|f| std::path::Path::new(f).parent().map(|p| p.to_path_buf()));
+    // The runtime resolves a script-relative require next to the script's
+    // CANONICAL path (symlinked launchers), and nested requires next to the
+    // canonical module path; `canonical_dir` matches both.
+    let base_dir = ctx.file.as_deref().and_then(|f| canonical_dir(std::path::Path::new(f)));
     let mut in_address: HashSet<*const Stmt> = HashSet::new();
     walk_stmts(stmts, &mut |stmt| {
         if let StmtKind::Address { body, .. } = &stmt.kind {
@@ -6259,6 +6268,20 @@ fn walk_all_exprs(stmts: &[Stmt], visit: &mut dyn FnMut(&Stmt, &Expr)) {
         walk_stmt_exprs(stmt, &mut |expr| deep(stmt, expr, visit));
         if let StmtKind::FunctionDef { params, body, .. } = &stmt.kind {
             function_exprs(stmt, params, body, visit);
+            // `walk_stmts` finds the statement lists embedded in a
+            // statement's expressions (if-expression branches, lambda block
+            // bodies), but a `fn`'s defaults and expression body are not
+            // statement expressions, so their lists are walked here.
+            let exprs = params
+                .iter()
+                .filter_map(|param| param.default.as_ref())
+                .chain(match body {
+                    FunctionBody::Expression(body) => Some(body),
+                    FunctionBody::Block(_) => None,
+                });
+            for expr in exprs {
+                for_each_embedded_stmt_list(expr, true, &mut |list| walk_all_exprs(list, visit));
+            }
         }
     });
 }
@@ -6347,12 +6370,16 @@ fn check_module_call(
 /// scans back through the statement: a Bus keyword reached before anything
 /// that opens a value (`=`, `(`, `{`, `[`, `,`) means a head word.
 fn in_bus_words(before: &[crate::token::SpannedToken]) -> bool {
+    // Brackets closed before the word are skipped whole: `send ($target) null`.
+    let mut depth = 0usize;
     for tok in before.iter().rev() {
         match tok.token {
+            Token::RParen | Token::RBrace | Token::RBracket => depth += 1,
+            Token::LParen | Token::LBrace | Token::LBracket if depth > 0 => depth -= 1,
+            Token::Newline | Token::Semicolon => return false,
+            _ if depth > 0 => {}
             Token::Send | Token::Emit | Token::On | Token::Address => return true,
-            Token::Newline
-            | Token::Semicolon
-            | Token::Assign
+            Token::Assign
             | Token::LParen
             | Token::LBrace
             | Token::LBracket
@@ -6361,6 +6388,17 @@ fn in_bus_words(before: &[crate::token::SpannedToken]) -> bool {
         }
     }
     false
+}
+
+/// Whether the token after `before` is text for an external command: the
+/// statement has a `|` before it (`print(x) | echo null`). The pipe tail is
+/// raw shell text, never a Mix value.
+fn after_a_pipe(before: &[crate::token::SpannedToken]) -> bool {
+    before
+        .iter()
+        .rev()
+        .take_while(|tok| !matches!(tok.token, Token::Newline | Token::Semicolon))
+        .any(|tok| matches!(tok.token, Token::Pipe))
 }
 
 /// The null spellings other languages taught. In Mix each is a bareword,
@@ -6375,8 +6413,9 @@ const NULL_SPELLINGS: &[&str] = &["null", "None", "undefined", "NULL", "nullptr"
 /// Needs the source text: a bareword and a quoted `"null"` parse to the same
 /// `StringLiteral`, so the analyzer re-lexes and reads the character at each
 /// token's offset. A map key (`{null: 1}`), a field (`$x.null`), a call
-/// (`null()`), a `send` argument name (`null=1`), a statement head and a Bus
-/// command word are not values and stay silent. The fix is mechanical, so the finding carries it (`mix lint --fix`).
+/// (`null()`), a `send` argument name (`null=1`), a statement head, a Bus
+/// command word and the text of a `| external` command are not values and
+/// stay silent. The fix is mechanical, so the finding carries it (`mix lint --fix`).
 fn check_null_barewords(stmts: &[Stmt], ctx: &FileContext, cfg: &AnalyzerConfig, a: &mut Analysis) {
     let Some(source) = cfg.source.as_deref() else {
         return;
@@ -6436,7 +6475,8 @@ fn check_null_barewords(stmts: &[Stmt], ctx: &FileContext, cfg: &AnalyzerConfig,
                         | Token::With
                 )
             )
-            || in_bus_words(&tokens[..i]);
+            || in_bus_words(&tokens[..i])
+            || after_a_pipe(&tokens[..i]);
         if not_a_value {
             continue;
         }
@@ -6523,6 +6563,39 @@ fn parse_lint_pragmas(source: &str, stmts: &[Stmt]) -> LintPragmas {
     let line_of = |byte: usize| line_starts.partition_point(|&start| start <= byte);
     let mut stmt_lines = Vec::new();
     walk_stmts(stmts, &mut |stmt| stmt_lines.push(stmt.line));
+    // A line opening with `elif`, `else`, `end`, `catch`, … carries no
+    // statement of its own (an `elif` condition belongs to its `if`), but it
+    // still ends the statement before it, so it bounds a suppression too.
+    let mut boundaries = Vec::new();
+    if let Ok(tokens) = crate::lexer::Lexer::new(source).tokenize() {
+        let mut last_line = 0;
+        for tok in &tokens {
+            if tok.line != last_line
+                && matches!(
+                    tok.token,
+                    Token::Elif
+                        | Token::Else
+                        | Token::End
+                        | Token::Next
+                        | Token::Done
+                        | Token::Catch
+                        | Token::Finally
+                        | Token::When
+                        | Token::Otherwise
+                )
+            {
+                boundaries.push(tok.line);
+            }
+            if !matches!(tok.token, Token::Newline) {
+                last_line = tok.line;
+            }
+        }
+    }
+    // The first line of each statement, then the boundaries: only a
+    // statement can be a pragma's target, but either ends its range.
+    let mut ends: Vec<usize> = stmt_lines.iter().copied().chain(boundaries).collect();
+    ends.sort_unstable();
+    ends.dedup();
     stmt_lines.sort_unstable();
     stmt_lines.dedup();
     let mut shared = HashSet::new();
@@ -6533,7 +6606,8 @@ fn parse_lint_pragmas(source: &str, stmts: &[Stmt]) -> LintPragmas {
     let next_statement = |line: usize| {
         let at = stmt_lines.partition_point(|&l| l <= line);
         let first = *stmt_lines.get(at)?;
-        let last = stmt_lines.get(at + 1).map_or(usize::MAX, |next| next - 1);
+        let after = ends.partition_point(|&l| l <= first);
+        let last = ends.get(after).map_or(usize::MAX, |next| next - 1);
         Some((first, last))
     };
     for (range, class) in crate::lexer::highlight(source, crate::lexer::MixFlavor::Script) {

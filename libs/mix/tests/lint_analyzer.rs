@@ -1906,6 +1906,7 @@ fn every_foreign_null_spelling_warns() {
             format!("fn f($x = {spelling}) = $x\nprint(f())\n"),
             format!("fn g() = {spelling}\nprint(g())\n"),
             format!("$h = fn() = {spelling}\nprint($h())\n"),
+            format!("fn k() = if true then {spelling} end\nprint(k())\n"),
         ] {
             assert!(
                 codes_with_source(&src).contains(&"MIX-W2312".to_string()),
@@ -1926,6 +1927,9 @@ fn null_that_is_not_a_bareword_value_stays_silent() {
         "$m = {a: 1}\nprint($m.null)\n",
         "send svc null\nprint($rc)\n",
         "send svc-name null\nprint($rc)\n",
+        "$t = \"svc\"\nsend ($t) null\nprint($rc)\n",
+        // The text of an external command after `|`.
+        "print(\"null\") | echo null\n",
         "send svc verb null=1\nprint($rc)\n",
         // The real null.
         "$x = nil\nprint($x)\n",

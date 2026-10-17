@@ -179,6 +179,14 @@ fn an_ignore_before_a_line_of_several_statements_is_refused() {
 }
 
 #[test]
+fn an_ignore_stops_at_a_following_elif_line() {
+    // The `elif` condition has no statement of its own, but its line ends
+    // the `print` the pragma targets.
+    let src = "$x = 1\nif $x == 1 then\n  -- lint: ignore MIX-W2312\n  print(null)\nelif null then\n  print(2)\nend\n";
+    assert_eq!(codes(src), vec![("MIX-W2312".to_string(), Some(5))]);
+}
+
+#[test]
 fn a_block_header_pragma_covers_only_the_header() {
     // The statement after the pragma is the `if`; its body statement is a
     // statement of its own, so the ignore does not reach it.

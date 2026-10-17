@@ -229,6 +229,46 @@ fn calls_in_expression_bodies_and_defaults_are_checked() {
 }
 
 #[test]
+fn a_call_in_an_if_expression_of_an_expression_body_is_checked() {
+    let dir = tree("ifbody", &[("lib1.mix", LIB1)]);
+    let src = "$m = require(\"./lib1.mix\")\nfn f() = if true then $m.nosuch() end\nprint(f())\n";
+    assert_eq!(codes_at(&dir, src), vec![("MIX-E1404".to_string(), Some(2))]);
+}
+
+#[test]
+fn a_module_in_a_status_variable_is_not_proven() {
+    // `send` and every command rewrite `$result`, so a call through it may
+    // reach a caller function by UFCS instead of the module.
+    let dir = tree("status", &[("lib1.mix", LIB1)]);
+    let src = "$result = require(\"./lib1.mix\")\nsend svc ping\nfn helper($o)\n  return 7\nend\nprint($result.helper())\n";
+    let found = codes_at(&dir, src);
+    assert!(
+        !found.iter().any(|(c, _)| c == "MIX-E1403" || c == "MIX-E1404"),
+        "{found:?}"
+    );
+}
+
+#[test]
+fn a_nested_require_resolves_next_to_the_canonical_module() {
+    // `entry/a.mix` is a symlink to `real/a.mix`; the runtime canonicalises
+    // it, so `./b.mix` is `real/b.mix`, not `entry/b.mix`.
+    let dir = tree(
+        "symlink",
+        &[
+            ("real/a.mix", "$b = require(\"./b.mix\")\n"),
+            ("real/b.mix", "fn fb($x)\n  return $x\nend\n"),
+            ("entry/b.mix", "fn other()\n  return 1\nend\n"),
+        ],
+    );
+    std::os::unix::fs::symlink(dir.join("real/a.mix"), dir.join("entry/a.mix")).unwrap();
+    let found = codes_at(
+        &dir,
+        "$a = require(\"./entry/a.mix\")\nprint($a.b.fb(1))\nprint($a.b.fb())\n",
+    );
+    assert_eq!(found, vec![("MIX-E1403".to_string(), Some(3))]);
+}
+
+#[test]
 fn a_function_named_after_a_shell_extension_warns() {
     let dir = tree("ext", &[]);
     let cfg = AnalyzerConfig {
