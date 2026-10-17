@@ -157,7 +157,7 @@ A malformed file loads defaults and is never overwritten.
 
 | Shortcut | Action |
 |---|---|
-| F5 | Refresh the account |
+| Ctrl+T | Refresh the account (Thunderbird's Get Messages) |
 | Ctrl+Q | Quit |
 | Ctrl+N | Compose |
 | Ctrl+R | Reply |

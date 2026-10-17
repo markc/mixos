@@ -81,8 +81,9 @@ pub fn registry() -> Registry<State> {
         group: 0,
         label: "refresh",
         menu: Some("file"),
-        // F5, as Thunderbird: Ctrl+R is Reply.
-        shortcut: key(Modifiers::NONE, Key::F5),
+        // Ctrl+T, Thunderbird's Get Messages: Ctrl+R is Reply, and
+        // function keys are the person's to bind, never a default.
+        shortcut: key(Modifiers::COMMAND, Key::T),
         icon: Some(Icon::RefreshCw),
         enabled: undialogued,
         run: State::refresh,
