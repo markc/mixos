@@ -61,8 +61,8 @@ fn parse_opts(v: Option<&Value>) -> MixResult<QueryOpts> {
         match (k.as_str(), v) {
             ("server", Value::String(s)) if !s.is_empty() => opts.server = Some(s.clone()),
             ("port", Value::Number(n)) => {
-                opts.port = crate::numeric::as_exact_integer("dns_query(): port", *n, 1, 65535)?
-                    as u16;
+                opts.port =
+                    crate::numeric::as_exact_integer("dns_query(): port", *n, 1, 65535)? as u16;
             }
             ("timeout", Value::Number(n)) => {
                 opts.timeout = crate::numeric::as_duration("dns_query(): timeout", *n)?;
@@ -86,7 +86,9 @@ fn parse_opts(v: Option<&Value>) -> MixResult<QueryOpts> {
             _ => {
                 return Err(opt_invalid(
                     CALLER,
-                    format!("unknown option '{k}' (supported: server, port, timeout, tcp, recurse)"),
+                    format!(
+                        "unknown option '{k}' (supported: server, port, timeout, tcp, recurse)"
+                    ),
                 ));
             }
         }
@@ -389,7 +391,10 @@ pub fn builtin_dns_query(args: Vec<Value>) -> MixResult<Option<Value>> {
     map.insert("additional".to_string(), records(reply.additionals()));
     map.insert("server".to_string(), Value::String(server_shown));
     map.insert("port".to_string(), Value::Number(f64::from(addr.port())));
-    map.insert("transport".to_string(), Value::String(transport.to_string()));
+    map.insert(
+        "transport".to_string(),
+        Value::String(transport.to_string()),
+    );
     map.insert(
         "duration_ms".to_string(),
         Value::Number(started.elapsed().as_millis() as f64),

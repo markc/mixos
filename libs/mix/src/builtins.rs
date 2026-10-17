@@ -13977,10 +13977,7 @@ fn flock_runtime_error(msg: impl Into<String>) -> MixError {
 }
 
 /// `(shared, wait, create)`.
-fn parse_flock_options(
-    name: &str,
-    args: &[Value],
-) -> MixResult<(bool, std::time::Duration, bool)> {
+fn parse_flock_options(name: &str, args: &[Value]) -> MixResult<(bool, std::time::Duration, bool)> {
     if args.is_empty() || args.len() > 2 {
         return Err(flock_runtime_error(format!(
             "{name}() expects 1 or 2 args, got {}",
@@ -14099,12 +14096,7 @@ fn try_flock_fd(
 /// root-owned lock file, or one on a read-only filesystem. An exclusive
 /// lock opens read-write. A missing file is created (0644) unless
 /// `create: false`, which refuses it with `LOCK_FILE_MISSING`.
-fn open_lock_file(
-    name: &str,
-    path: &str,
-    shared: bool,
-    create: bool,
-) -> MixResult<std::fs::File> {
+fn open_lock_file(name: &str, path: &str, shared: bool, create: bool) -> MixResult<std::fs::File> {
     use std::os::unix::fs::OpenOptionsExt;
     let missing = || {
         MixError::structured(
@@ -29895,7 +29887,11 @@ mod sqlopen_mode_tests {
             let rows = exec(&db, "SELECT x FROM t").unwrap().unwrap();
             assert_eq!(rows.to_mix_string().matches('1').count(), 1, "{mode:?}");
             let write = exec(&db, "INSERT INTO t VALUES (2)");
-            assert_eq!(write.is_err(), matches!(mode, None | Some("ro")), "{mode:?}");
+            assert_eq!(
+                write.is_err(),
+                matches!(mode, None | Some("ro")),
+                "{mode:?}"
+            );
             builtin_sqlclose(vec![db]).unwrap();
         }
         let _ = std::fs::remove_dir_all(&d);
@@ -34840,7 +34836,10 @@ mod flock_tests {
             assert!(bool_result(unlock(vec![s(&path)])), "{name}");
             let err = lock(vec![s(&path), lock_opts(&[("create", Value::Number(0.0))])])
                 .expect_err("create must be a boolean");
-            assert!(format!("{err}").contains("'create' must be a boolean"), "{err}");
+            assert!(
+                format!("{err}").contains("'create' must be a boolean"),
+                "{err}"
+            );
         }
         let _ = std::fs::remove_dir_all(d);
     }
@@ -35573,7 +35572,10 @@ mod fs_meta_tests {
         // care where it points.
         let err = builtin_chown(ids(&dangling)).unwrap_err();
         assert!(format!("{err}").contains("dangling"), "{err}");
-        assert_eq!(builtin_chown(nofollow(&dangling)).unwrap(), Some(Value::Nil));
+        assert_eq!(
+            builtin_chown(nofollow(&dangling)).unwrap(),
+            Some(Value::Nil)
+        );
         assert_eq!(builtin_chown(nofollow(&link)).unwrap(), Some(Value::Nil));
         // Observable with a second group: only the link changes.
         let egid = unsafe { libc::getegid() };
@@ -35596,7 +35598,10 @@ mod fs_meta_tests {
         let mut args = ids(&link);
         args.push(Value::map(bad));
         let err = builtin_chown(args).unwrap_err();
-        assert!(format!("{err}").contains("unknown option 'follow'"), "{err}");
+        assert!(
+            format!("{err}").contains("unknown option 'follow'"),
+            "{err}"
+        );
         let mut args = nofollow(&link);
         if let Value::Map(m) = &mut args[3] {
             std::rc::Rc::make_mut(m).insert("follow_symlinks".into(), Value::Number(0.0));
@@ -40620,10 +40625,12 @@ mod strict_write_and_bool_option_tests {
             ("strict", Value::Bool(true)),
             ("follow_symlinks", Value::Bool(true)),
         ]);
-        let readable = builtin_walk(vec![s(&d), follow_strict.clone()]).unwrap();
+        let readable = builtin_walk(vec![s(&d), follow_strict.clone()])
+            .unwrap()
+            .unwrap();
         assert_eq!(
-            readable,
-            Some(Value::list(vec![s(&d.join("a.txt"))])),
+            readable.to_mix_string(),
+            Value::list(vec![s(&d.join("a.txt"))]).to_mix_string(),
             "a readable tree walks the same under strict"
         );
         // A plain file is not a directory to walk: strict says so.
@@ -40639,7 +40646,10 @@ mod strict_write_and_bool_option_tests {
             // Default: the unreadable subtree silently vanishes.
             let lenient = builtin_walk(vec![s(&d)]).unwrap().unwrap();
             assert!(!lenient.to_mix_string().contains("hidden.txt"));
-            assert_eq!(builtin_walk(vec![s(&locked)]).unwrap(), Some(Value::list(vec![])));
+            assert_eq!(
+                builtin_walk(vec![s(&locked)]).unwrap(),
+                Some(Value::list(vec![]))
+            );
             // Strict: raised, naming it, in a subtree and at the top.
             assert_eq!(
                 unreadable(builtin_walk(vec![s(&d), strict()]).unwrap_err()),

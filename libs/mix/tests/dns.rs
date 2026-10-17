@@ -61,16 +61,17 @@ fn answer(req: &Message, tcp: bool) -> Message {
     }
     resp.set_authoritative(true);
     let rdata = match (text.as_str(), q.query_type()) {
-        ("mail.example.test.", RecordType::AAAA) => {
-            Some(RData::AAAA(AAAA(Ipv6Addr::from_str("2001:db8::25").unwrap())))
-        }
+        ("mail.example.test.", RecordType::AAAA) => Some(RData::AAAA(AAAA(
+            Ipv6Addr::from_str("2001:db8::25").unwrap(),
+        ))),
         ("example.test.", RecordType::MX) => Some(RData::MX(MX::new(
             10,
             Name::from_ascii("mail.example.test.").unwrap(),
         ))),
-        ("25.2.0.192.in-addr.arpa.", RecordType::PTR) => Some(RData::PTR(PTR(
-            Name::from_ascii("mail.example.test.").unwrap(),
-        ))),
+        ("25.2.0.192.in-addr.arpa.", RecordType::PTR) => Some(RData::PTR(PTR(Name::from_ascii(
+            "mail.example.test.",
+        )
+        .unwrap()))),
         ("big.example.test.", RecordType::A) if !tcp => {
             resp.set_truncated(true);
             None
@@ -151,7 +152,10 @@ async fn an_authoritative_answer_carries_aa_and_its_records() {
     assert_eq!(field(&r, "server").to_mix_string(), "127.0.0.1");
     let answers = list(&field(&r, "answers"));
     assert_eq!(answers.len(), 1, "{answers:?}");
-    assert_eq!(field(&answers[0], "name").to_mix_string(), "mail.example.test.");
+    assert_eq!(
+        field(&answers[0], "name").to_mix_string(),
+        "mail.example.test."
+    );
     assert_eq!(field(&answers[0], "type").to_mix_string(), "AAAA");
     assert_eq!(field(&answers[0], "ttl").to_mix_string(), "300");
     assert_eq!(field(&answers[0], "data").to_mix_string(), "2001:db8::25");
@@ -182,7 +186,13 @@ async fn recurse_sets_the_rd_flag() {
     let port = fixture();
     let on = run_ok(&query("mail.example.test", "AAAA", port, "")).await;
     assert_eq!(field(&on, "ra"), Value::Bool(true));
-    let off = run_ok(&query("mail.example.test", "AAAA", port, ", recurse: false")).await;
+    let off = run_ok(&query(
+        "mail.example.test",
+        "AAAA",
+        port,
+        ", recurse: false",
+    ))
+    .await;
     assert_eq!(field(&off, "ra"), Value::Bool(false));
 }
 
@@ -195,7 +205,10 @@ async fn ptr_of_an_address_asks_its_reverse_name() {
         field(&answers[0], "name").to_mix_string(),
         "25.2.0.192.in-addr.arpa."
     );
-    assert_eq!(field(&answers[0], "data").to_mix_string(), "mail.example.test.");
+    assert_eq!(
+        field(&answers[0], "data").to_mix_string(),
+        "mail.example.test."
+    );
 }
 
 #[tokio::test]
@@ -245,15 +258,15 @@ async fn operational_failures_are_returned_not_raised() {
 #[tokio::test]
 async fn bad_arguments_raise() {
     for (source, fragment) in [
-        ("dns_query(\"a.example.test\", \"NOPE\")", "unknown record type"),
+        (
+            "dns_query(\"a.example.test\", \"NOPE\")",
+            "unknown record type",
+        ),
         (
             "dns_query(\"a.example.test\", \"A\", {servr: \"127.0.0.1\"})",
             "unknown option 'servr'",
         ),
-        (
-            "dns_query(\"a.example.test\", \"A\", {port: 0})",
-            "port",
-        ),
+        ("dns_query(\"a.example.test\", \"A\", {port: 0})", "port"),
         (
             "dns_query(\"a.example.test\", \"A\", {tcp: \"yes\"})",
             "option 'tcp' must be a bool",

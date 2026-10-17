@@ -1156,7 +1156,11 @@ async fn gzip_accepts_a_tar_split_across_members() {
             dest.display()
         ))
         .await;
-        assert_eq!(fs::read(dest.join("a")).unwrap(), b"hello members\n", "{tag}");
+        assert_eq!(
+            fs::read(dest.join("a")).unwrap(),
+            b"hello members\n",
+            "{tag}"
+        );
     }
     // A corrupt CRC in the second member is still caught.
     let mut bytes = encode_tar(&plain[..600], "gzip");
@@ -2116,7 +2120,11 @@ async fn a_symlink_target_never_passes_through_another_symlink() {
     let pivot: (&str, u8, &str, u32, &[u8]) = ("pivot", b'2', "real", 0o777, b"");
     let user: (&str, u8, &str, u32, &[u8]) = ("user", b'2', "pivot/file", 0o777, b"");
     for (tag, order, fragment) in [
-        ("pivot-first", [pivot, user], "passes through symlink 'pivot'"),
+        (
+            "pivot-first",
+            [pivot, user],
+            "passes through symlink 'pivot'",
+        ),
         (
             "pivot-later",
             [user, pivot],
