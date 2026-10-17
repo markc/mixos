@@ -575,8 +575,8 @@ fn line_prefix(source: Option<&str>, piece: &str) -> String {
 
 /// A Mix assignment written the JS or bash way — `let i = 0`, `var i = 0`,
 /// `const i = 0`, or the bareword `i = $i + 1` — as its Mix form `$i = …`.
-/// `None` for anything else, and for a head that is a real program on PATH
-/// (that stays a command, as the shell path promises).
+/// `None` for anything else, and for a head that is a shell builtin or a real
+/// program on PATH (`cd =` stays a command, as the shell path promises).
 fn foreign_assignment(piece: &str) -> Option<String> {
     let words: Vec<&str> = piece.split_whitespace().collect();
     let ident = |w: &str| {
@@ -592,7 +592,10 @@ fn foreign_assignment(piece: &str) -> Option<String> {
         [name, "=", value @ ..] => (*name, value),
         _ => return None,
     };
-    if !ident(name) || crate::shell::is_external_command(words[0]) {
+    if !ident(name)
+        || crate::shell::SHELL_BUILTINS.contains(&words[0])
+        || crate::shell::is_external_command(words[0])
+    {
         return None;
     }
     Some(format!("${name} = {}", value.join(" ")))
@@ -2240,6 +2243,43 @@ fn apply_output_redirects(cmd: &mut Command, redirects: &[Redirect]) -> io::Resu
         });
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod foreign_assignment_tests {
+    use super::*;
+
+    #[test]
+    fn js_and_bareword_assignments_get_their_mix_form() {
+        assert_eq!(foreign_assignment("let i = 0").as_deref(), Some("$i = 0"));
+        assert_eq!(foreign_assignment("const $n = 1").as_deref(), Some("$n = 1"));
+        assert_eq!(
+            foreign_assignment("zqx_total = $zqx_total + 1").as_deref(),
+            Some("$zqx_total = $zqx_total + 1")
+        );
+    }
+
+    #[test]
+    fn real_commands_are_left_alone() {
+        // A shell builtin (`cd =` changes into a directory named `=`), a
+        // program on PATH, and shapes that are not an assignment.
+        assert_eq!(foreign_assignment("cd ="), None);
+        assert_eq!(foreign_assignment("echo = x"), None);
+        assert_eq!(foreign_assignment("i=1"), None);
+        assert_eq!(foreign_assignment("let"), None);
+        assert_eq!(foreign_assignment("1x = 2"), None);
+    }
+
+    #[test]
+    fn a_refusal_names_the_line_only_for_a_multi_line_source() {
+        let source = "echo a\nlet i = 0";
+        let items = split_command_list(source).unwrap();
+        let err = refuse_bash_keywords_in(Some(source), &items).unwrap_err();
+        assert!(err.starts_with("line 2: `let i = 0` is not Mix"), "{err}");
+        let items = split_command_list("let i = 0").unwrap();
+        let err = refuse_bash_keywords_in(Some("let i = 0"), &items).unwrap_err();
+        assert!(err.starts_with("`let i = 0` is not Mix"), "{err}");
+    }
 }
 
 #[cfg(test)]

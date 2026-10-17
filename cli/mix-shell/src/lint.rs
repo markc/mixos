@@ -549,7 +549,7 @@ fn apply_fixes(source: &str, fixes: &[&Fix]) -> Option<(String, usize)> {
     let mut lines: Vec<String> = source.split('\n').map(str::to_string).collect();
     let mut ordered = fixes.to_vec();
     // Right to left within a line, so an edit never moves a later one's column.
-    ordered.sort_by(|a, b| (b.line, b.column).cmp(&(a.line, a.column)));
+    ordered.sort_by_key(|fix| std::cmp::Reverse((fix.line, fix.column)));
     ordered.dedup_by(|a, b| a.line == b.line && a.column == b.column);
     let mut applied = 0;
     for fix in ordered {

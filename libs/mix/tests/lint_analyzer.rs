@@ -1902,6 +1902,10 @@ fn every_foreign_null_spelling_warns() {
             format!("print([1, {spelling}])\n"),
             format!("$x = true ? {spelling} : 1\nprint($x)\n"),
             format!("send svc verb open={spelling}\nprint($rc)\n"),
+            // Expression bodies and parameter defaults of fn and lambdas.
+            format!("fn f($x = {spelling}) = $x\nprint(f())\n"),
+            format!("fn g() = {spelling}\nprint(g())\n"),
+            format!("$h = fn() = {spelling}\nprint($h())\n"),
         ] {
             assert!(
                 codes_with_source(&src).contains(&"MIX-W2312".to_string()),
@@ -1921,6 +1925,7 @@ fn null_that_is_not_a_bareword_value_stays_silent() {
         "$m = {null: 1, None: 2}\nprint($m)\n",
         "$m = {a: 1}\nprint($m.null)\n",
         "send svc null\nprint($rc)\n",
+        "send svc-name null\nprint($rc)\n",
         "send svc verb null=1\nprint($rc)\n",
         // The real null.
         "$x = nil\nprint($x)\n",

@@ -5947,12 +5947,14 @@ struct ModuleExports {
     label: String,
     /// The module's directory: its own requires resolve next to it.
     dir: Option<std::path::PathBuf>,
-    /// Exported function → (min, max) arity when exactly one definition
-    /// exists, `None` when the name is defined more than once.
-    functions: HashMap<String, Option<(usize, usize)>>,
-    /// Exported `$vars`. A member call through one may reach a function
-    /// value, so it is never an error.
-    vars: HashSet<String>,
+    /// Exported functions whose definition is certain: one top-level `fn`,
+    /// defined nowhere else and not also a `$var` → its (min, max) arity.
+    functions: HashMap<String, (usize, usize)>,
+    /// Names the module may export without proof of their arity, or of being
+    /// a function at all: its `$vars` (one may hold a function value) and
+    /// functions defined more than once, in a block, or inside another
+    /// function. A call through one is never an error.
+    maybe: HashSet<String>,
     /// Exported `$vars` bound exactly once to a literal `require()`: the
     /// name → the path literal (a nested module, `$a.b.fn()`).
     requires: HashMap<String, String>,
@@ -6081,35 +6083,48 @@ fn read_module_exports(path: &std::path::Path, label: &str) -> Option<ModuleExpo
     if top_level_return || has_dynamic_include(&stmts).0 {
         return None;
     }
-    let exported = |name: &str| !name.starts_with('_') && !MODULE_FRAME_NAMES.contains(&name);
-    let mut defs: HashMap<String, Vec<(usize, usize)>> = HashMap::new();
-    walk_stmts(&stmts, &mut |stmt| {
-        if let StmtKind::FunctionDef { name, params, .. } = &stmt.kind {
-            defs.entry(name.clone())
-                .or_default()
-                .push(param_arity(params));
-        }
-    });
-    let functions = defs
-        .into_iter()
-        .filter(|(name, _)| exported(name))
-        .map(|(name, arities)| {
-            let arity = (arities.len() == 1).then_some(arities[0]);
-            (name, arity)
-        })
-        .collect();
+    // `_` names are private; the frame names are never exported as `$vars`
+    // (a function of that name is).
+    let private = |name: &str| name.starts_with('_');
     let mut vars = HashSet::new();
     collect_bound_names(&stmts, false, &mut vars);
-    vars.retain(|name| exported(name));
+    vars.retain(|name| !private(name) && !MODULE_FRAME_NAMES.contains(&name.as_str()));
+    // Every definition anywhere, and the ones the top level makes
+    // unconditionally (a top-level `fn` is hoisted).
+    let mut all_defs: HashMap<String, usize> = HashMap::new();
+    walk_stmts(&stmts, &mut |stmt| {
+        if let StmtKind::FunctionDef { name, .. } = &stmt.kind {
+            *all_defs.entry(name.clone()).or_default() += 1;
+        }
+    });
+    let mut functions = HashMap::new();
+    let mut maybe: HashSet<String> = vars.clone();
+    for stmt in &stmts {
+        if let StmtKind::FunctionDef { name, params, .. } = &stmt.kind
+            && !private(name)
+            && all_defs.get(name) == Some(&1)
+            && !vars.contains(name)
+        {
+            functions.insert(name.clone(), param_arity(params));
+        }
+    }
+    // A name defined more than once, inside a block or another function, or
+    // also assigned as a `$var` (the variable wins the export) may or may
+    // not hold a function when the call runs.
+    maybe.extend(
+        all_defs
+            .into_keys()
+            .filter(|name| !private(name) && !functions.contains_key(name)),
+    );
     let requires = literal_require_bindings(&stmts, true)
         .into_iter()
-        .filter(|(name, _)| exported(name))
+        .filter(|(name, _)| vars.contains(name))
         .collect();
     Some(ModuleExports {
         label: label.to_string(),
         dir: path.parent().map(std::path::Path::to_path_buf),
         functions,
-        vars,
+        maybe,
         requires,
     })
 }
@@ -6197,24 +6212,54 @@ fn check_require_calls(stmts: &[Stmt], ctx: &FileContext, a: &mut Analysis) {
         }
     });
     let mut cache = ModuleCache::default();
-    walk_stmts(stmts, &mut |stmt| {
+    walk_all_exprs(stmts, &mut |stmt, e| {
+        let Expr::MethodCall {
+            object,
+            field,
+            args,
+        } = e
+        else {
+            return;
+        };
+        let Some(module) = cache.resolve(object, &roots, base_dir.as_deref()) else {
+            return;
+        };
         let addressed = in_address.contains(&(stmt as *const Stmt));
-        walk_stmt_exprs(stmt, &mut |expr| {
-            for_each_expr(expr, &mut |e| {
-                let Expr::MethodCall {
-                    object,
-                    field,
-                    args,
-                } = e
-                else {
-                    return;
-                };
-                let Some(module) = cache.resolve(object, &roots, base_dir.as_deref()) else {
-                    return;
-                };
-                check_module_call(&module, field, args.len(), addressed, stmt.line, ctx, a);
-            });
+        check_module_call(&module, field, args.len(), addressed, stmt.line, ctx, a);
+    });
+}
+
+/// Every expression of `stmts` at any depth, with the statement that holds
+/// it. [`walk_stmts`] reaches every statement (lambda block bodies
+/// included); this adds what its expression walk skips: the parameter
+/// defaults and expression bodies of `fn` definitions and lambdas.
+fn walk_all_exprs(stmts: &[Stmt], visit: &mut dyn FnMut(&Stmt, &Expr)) {
+    fn deep(stmt: &Stmt, expr: &Expr, visit: &mut dyn FnMut(&Stmt, &Expr)) {
+        for_each_expr(expr, &mut |e| {
+            visit(stmt, e);
+            if let Expr::FunctionLiteral { params, body } = e {
+                function_exprs(stmt, params, body, visit);
+            }
         });
+    }
+    fn function_exprs(
+        stmt: &Stmt,
+        params: &[Param],
+        body: &FunctionBody,
+        visit: &mut dyn FnMut(&Stmt, &Expr),
+    ) {
+        for default in params.iter().filter_map(|param| param.default.as_ref()) {
+            deep(stmt, default, visit);
+        }
+        if let FunctionBody::Expression(body) = body {
+            deep(stmt, body, visit);
+        }
+    }
+    walk_stmts(stmts, &mut |stmt| {
+        walk_stmt_exprs(stmt, &mut |expr| deep(stmt, expr, visit));
+        if let StmtKind::FunctionDef { params, body, .. } = &stmt.kind {
+            function_exprs(stmt, params, body, visit);
+        }
     });
 }
 
@@ -6227,10 +6272,8 @@ fn check_module_call(
     ctx: &FileContext,
     a: &mut Analysis,
 ) {
-    if let Some(arity) = module.functions.get(field) {
-        if let Some((min, max)) = *arity
-            && (argc < min || argc > max)
-        {
+    if let Some(&(min, max)) = module.functions.get(field) {
+        if argc < min || argc > max {
             a.diagnostics.push(diag(
                 ctx,
                 "MIX-E1403",
@@ -6250,7 +6293,7 @@ fn check_module_call(
         }
         return;
     }
-    if module.vars.contains(field)
+    if module.maybe.contains(field)
         || addressed
         || ctx.known_callables.contains(field)
         || builtins::is_builtin(field)
@@ -6262,7 +6305,7 @@ fn check_module_call(
     let mut exports: Vec<&str> = module
         .functions
         .keys()
-        .chain(module.vars.iter())
+        .chain(module.maybe.iter())
         .map(String::as_str)
         .collect();
     exports.sort_unstable();
@@ -6298,6 +6341,28 @@ fn check_module_call(
 
 // ── W2312 bareword null ──────────────────────────────────────────────
 
+/// Whether the token after `before` is a word of a Bus statement head: the
+/// target or command of a `send`/`emit`, an `on` command, an `address`
+/// target. A target can span several tokens (`send svc-name null`), so this
+/// scans back through the statement: a Bus keyword reached before anything
+/// that opens a value (`=`, `(`, `{`, `[`, `,`) means a head word.
+fn in_bus_words(before: &[crate::token::SpannedToken]) -> bool {
+    for tok in before.iter().rev() {
+        match tok.token {
+            Token::Send | Token::Emit | Token::On | Token::Address => return true,
+            Token::Newline
+            | Token::Semicolon
+            | Token::Assign
+            | Token::LParen
+            | Token::LBrace
+            | Token::LBracket
+            | Token::Comma => return false,
+            _ => {}
+        }
+    }
+    false
+}
+
 /// The null spellings other languages taught. In Mix each is a bareword,
 /// and a bareword is a string literal: `{open: null}` sends `"null"`.
 const NULL_SPELLINGS: &[&str] = &["null", "None", "undefined", "NULL", "nullptr"];
@@ -6324,17 +6389,12 @@ fn check_null_barewords(stmts: &[Stmt], ctx: &FileContext, cfg: &AnalyzerConfig,
     }
     // Only a spelling that reaches the AST as a string literal can be a value.
     let mut literals: HashSet<&str> = HashSet::new();
-    walk_stmts(stmts, &mut |stmt| {
-        walk_stmt_exprs(stmt, &mut |expr| {
-            for_each_expr(expr, &mut |e| {
-                if let Expr::StringLiteral(text) = e
-                    && let Some(spelling) =
-                        NULL_SPELLINGS.iter().copied().find(|s| *s == text.as_str())
-                {
-                    literals.insert(spelling);
-                }
-            });
-        });
+    walk_all_exprs(stmts, &mut |_, e| {
+        if let Expr::StringLiteral(text) = e
+            && let Some(spelling) = NULL_SPELLINGS.iter().copied().find(|s| *s == text.as_str())
+        {
+            literals.insert(spelling);
+        }
     });
     if literals.is_empty() {
         return;
@@ -6376,7 +6436,7 @@ fn check_null_barewords(stmts: &[Stmt], ctx: &FileContext, cfg: &AnalyzerConfig,
                         | Token::With
                 )
             )
-            || matches!(at(2), Some(Token::Send | Token::Emit));
+            || in_bus_words(&tokens[..i]);
         if not_a_value {
             continue;
         }
@@ -6465,6 +6525,8 @@ fn parse_lint_pragmas(source: &str, stmts: &[Stmt]) -> LintPragmas {
     walk_stmts(stmts, &mut |stmt| stmt_lines.push(stmt.line));
     stmt_lines.sort_unstable();
     stmt_lines.dedup();
+    let mut shared = HashSet::new();
+    shared_statement_lines(stmts, &mut shared);
     // The statement starting first after `line`, through the line before the
     // statement after it: a block header covers only its own line, a
     // multi-line statement covers all of its lines.
@@ -6531,6 +6593,7 @@ fn parse_lint_pragmas(source: &str, stmts: &[Stmt]) -> LintPragmas {
                         "name the code it suppresses: `-- lint: ignore MIX-W2402`",
                     );
                 }
+                let mut accepted = true;
                 let scope = if directive == "ignore-file" {
                     PragmaScope::File
                 } else if after_code {
@@ -6540,11 +6603,23 @@ fn parse_lint_pragmas(source: &str, stmts: &[Stmt]) -> LintPragmas {
                         PragmaScope::Lines(first, last)
                     })
                 };
+                if let PragmaScope::Lines(first, _) = scope
+                    && !after_code
+                    && shared.contains(&first)
+                {
+                    malformed(
+                        format!("`-- lint: ignore` would cover every statement on line {first}, not just the next one"),
+                        "split the line, or write the pragma after the code to cover the whole line on purpose",
+                    );
+                    accepted = false;
+                }
                 for word in words {
                     let known = crate::lint_docs::looks_like_code(word)
                         .then(|| crate::lint_docs::explain(word))
                         .flatten();
                     match known {
+                        // A refused pragma suppresses nothing.
+                        Some(_) if !accepted => {}
                         Some(doc) => out.suppressions.push(Suppression {
                             line,
                             code: doc.code,
@@ -6569,6 +6644,24 @@ fn parse_lint_pragmas(source: &str, stmts: &[Stmt]) -> LintPragmas {
         out.malformed.extend(bad);
     }
     out
+}
+
+/// Lines where two statements of one statement list start
+/// (`print($a); print($b)`). Diagnostics carry a line, not a statement, so
+/// an `ignore` aimed at one of them would cover both.
+fn shared_statement_lines(stmts: &[Stmt], out: &mut HashSet<usize>) {
+    let mut seen = HashSet::new();
+    for stmt in stmts {
+        if !seen.insert(stmt.line) {
+            out.insert(stmt.line);
+        }
+        for body in stmt_bodies(&stmt.kind) {
+            shared_statement_lines(body, out);
+        }
+        walk_stmt_exprs(stmt, &mut |expr| {
+            for_each_embedded_stmt_list(expr, true, &mut |body| shared_statement_lines(body, out));
+        });
+    }
 }
 
 /// Drop the diagnostics a pragma suppresses, then report what the pragmas

@@ -159,6 +159,26 @@ fn a_pragma_inside_a_string_or_heredoc_is_not_read() {
 }
 
 #[test]
+fn an_ignore_before_a_line_of_several_statements_is_refused() {
+    // Diagnostics carry a line, not a statement, so the ignore would cover
+    // `print($second)` too. It is refused, and suppresses nothing.
+    let src = "-- lint: ignore MIX-E1101\nprint($first); print($second)\n";
+    let found = codes(src);
+    assert_eq!(
+        found,
+        vec![
+            ("MIX-E1101".to_string(), Some(2)),
+            ("MIX-E1101".to_string(), Some(2)),
+            ("MIX-E1601".to_string(), Some(1)),
+        ],
+        "{found:?}"
+    );
+    // Written after the code, it covers the whole line on purpose.
+    let src = "print($first); print($second) -- lint: ignore MIX-E1101\n";
+    assert_eq!(codes(src), vec![]);
+}
+
+#[test]
 fn a_block_header_pragma_covers_only_the_header() {
     // The statement after the pragma is the `if`; its body statement is a
     // statement of its own, so the ignore does not reach it.

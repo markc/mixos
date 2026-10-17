@@ -194,6 +194,40 @@ fn a_require_cycle_terminates_and_still_checks() {
 }
 
 #[test]
+fn exports_follow_the_runtime_rules() {
+    let dir = tree(
+        "rules",
+        &[(
+            "m.mix",
+            // A `$var` of a function's name wins the export; a function named
+            // like a frame variable is still exported; a definition inside
+            // another function exists only once that function runs.
+            "fn helper($a, $b)\n  return $a\nend\n$helper = fn($x) = $x\nfn result($x)\n  return $x\nend\nfn setup()\n  fn later($a, $b)\n    return $a\n  end\nend\n",
+        )],
+    );
+    let src = "$m = require(\"./m.mix\")\nprint($m.helper(7))\nprint($m.result(7))\nprint($m.later())\n";
+    assert_eq!(codes_at(&dir, src), vec![]);
+    let found = codes_at(&dir, "$m = require(\"./m.mix\")\nprint($m.result())\n");
+    assert_eq!(found, vec![("MIX-E1403".to_string(), Some(2))]);
+}
+
+#[test]
+fn calls_in_expression_bodies_and_defaults_are_checked() {
+    let dir = tree("exprbody", &[("lib1.mix", LIB1)]);
+    let src = "$m = require(\"./lib1.mix\")\nfn f() = $m.nosuch()\nfn g($x = $m.helper(1)) = $x\n$h = fn() = $m.helper()\nprint(f() .. g() .. $h())\n";
+    let found = codes_at(&dir, src);
+    assert_eq!(
+        found,
+        vec![
+            ("MIX-E1404".to_string(), Some(2)),
+            ("MIX-E1403".to_string(), Some(3)),
+            ("MIX-E1403".to_string(), Some(4)),
+        ],
+        "{found:?}"
+    );
+}
+
+#[test]
 fn a_function_named_after_a_shell_extension_warns() {
     let dir = tree("ext", &[]);
     let cfg = AnalyzerConfig {
