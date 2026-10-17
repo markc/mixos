@@ -597,14 +597,22 @@ fn install_tarball($ctx, $app, $version, $tar_path, $proof)
   mkdir($appdir, {parents: true})
   $stage = $appdir .. "/.stage-" .. uuid()
   mkdir($stage, {parents: true})
+  -- tar_unpack trusts its dest's parent only when no one else can write it.
+  chmod($stage, 0o700)
   try
     -- tar_unpack refuses absolute, .. and device members and escaping
-    -- symlinks, and keeps no owners, special bits or xattrs. Its dest must
-    -- not exist yet.
+    -- symlinks, keeps no special bits or xattrs, and (numeric_owner false)
+    -- no archive owner or group. Its dest must not exist yet.
     try
-      $_ = tar_unpack($tar_path, $stage .. "/prefix", {codec: "gzip", xattrs: false})
+      $_ = tar_unpack($tar_path, $stage .. "/prefix", {codec: "gzip", xattrs: false, numeric_owner: false})
     catch $m
       raise("LAYOUT", basename($tar_path) .. ": " .. $m)
+    end
+    -- Archive modes are kept as packed: drop group and other write, as the
+    -- old extraction's umask did, so nobody else can change an install.
+    for $p in walk($stage .. "/prefix", {include_dirs: true})
+      $st = stat($p, {follow_symlinks: false})
+      if not $st.is_symlink and band($st.perm, 0o022) != 0 then chmod($p, band($st.perm, 0o755)) end
     end
     $top = $stage .. "/prefix"
     if not is_dir($top .. "/bin") then

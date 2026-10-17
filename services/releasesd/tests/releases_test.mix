@@ -50,6 +50,10 @@ fn make_tarball($name, $version, $opts)
   write_file($p .. "/share/icons/hicolor/48x48/apps/dev.example." .. $name .. ".png", "png " .. $version)
   mkdir($p .. "/share/mime/packages", {parents: true})
   write_file($p .. "/share/mime/packages/dev.example." .. $name .. ".xml", "<mime-info/>\n")
+  if $opts.loose ?? false then
+    chmod($p .. "/bin/" .. $name, 0o777)
+    chmod($p .. "/bin", 0o777)
+  end
   $out = $tmp .. "/" .. $top .. ".tar.gz"
   $_ = tar_pack($src, $out, {codec: "gzip"})
   return $out
@@ -452,6 +456,13 @@ try
   check("wrapper: rollback abandons an interrupted install it cannot wrap", contains($rb5.action, "abandoned") and $r.current_version($ctx4, $wapp4) == "11.0" and $m5.pending == nil and $m5.version == "11.0")
   check("wrapper: after abandoning, the entry is wrapped", contains(read_file($ctx4.share_dir .. "/applications/dev.example.demo.desktop"), "Exec=/opt/w/launch demo -- "))
   check("wrapper: no rollback to the abandoned version", $m5.previous == nil)
+
+  -- Archive modes: group and other write never survive an install.
+  $tl = make_tarball("loose", "1.0", {loose: true})
+  $r.install_tarball($ctx4, {name: "loose", repo: "example/loose"}, "1.0", $tl, proof($tl))
+  $lbin = $ctx4.opt_dir .. "/loose/1.0/bin"
+  check("modes: a 0777 binary installs 0755", stat($lbin .. "/loose", {follow_symlinks: false}).perm == 0o755)
+  check("modes: a 0777 directory installs 0755", stat($lbin, {follow_symlinks: false}).perm == 0o755)
 finally
   remove_dir($tmp)
 end
