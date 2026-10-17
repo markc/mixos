@@ -123,8 +123,11 @@ pub fn registry() -> Registry<App> {
         menu: Some("help"),
         submenu: None,
         group: 0,
-        shortcut: Some(KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::Slash))
-            .filter(|s| !used.contains(s)),
+        shortcut: Some(KeyboardShortcut::new(
+            egui::Modifiers::COMMAND,
+            egui::Key::Slash,
+        ))
+        .filter(|s| !used.contains(s)),
         icon: None,
         enabled: |a: &App| a.dialog.is_none(),
         run: |a: &mut App| a.open(Dialog::Shortcuts),
@@ -179,7 +182,10 @@ mod tests {
             r.shortcuts_of("nav.parent"),
             [chord("Backspace"), chord("Alt+ArrowUp")]
         );
-        assert_eq!(r.get("nav.parent").unwrap().shortcut, Some(chord("Backspace")));
+        assert_eq!(
+            r.get("nav.parent").unwrap().shortcut,
+            Some(chord("Backspace"))
+        );
         assert_eq!(r.shortcuts_of("file.rename"), [chord("Ctrl+E")]);
         assert_eq!(r.shortcuts_of("view.refresh"), [chord("Ctrl+R")]);
         assert_eq!(r.shortcuts_of("nav.switch-pane"), [chord("Tab")]);

@@ -172,7 +172,10 @@ mod tests {
         let mut seen = std::collections::HashSet::new();
         for (text, action) in DEFAULT {
             let c = parse_chord(text).unwrap_or_else(|| panic!("{text} does not parse"));
-            assert!(!NAMED[..12].contains(&c.key.as_str()), "{text}: F1-F12 are the person's");
+            assert!(
+                !NAMED[..12].contains(&c.key.as_str()),
+                "{text}: F1-F12 are the person's"
+            );
             assert!(seen.insert(c), "{text} bound twice (again to {action:?})");
         }
     }

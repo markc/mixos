@@ -72,7 +72,10 @@ mod tests {
             let s = toolkit::keymap::parse_chord(text)
                 .unwrap_or_else(|| panic!("{text} does not parse"));
             assert!(seen.insert(s), "{text} bound twice (again to {action})");
-            assert!(!toolkit::keymap::user_only(s.logical_key), "{text}: F1-F12 are the person's");
+            assert!(
+                !toolkit::keymap::user_only(s.logical_key),
+                "{text}: F1-F12 are the person's"
+            );
             assert_eq!(&toolkit::keymap::chord_text(&s), text, "round trip");
         }
         assert_eq!(default_keys("nav.parent"), ["Backspace", "Alt+ArrowUp"]);
