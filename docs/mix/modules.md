@@ -82,7 +82,7 @@ named after a shell extension (`ai`, `ai_diagnose`, `context`) as
 
 `mix lint` reads a module bound once to a literal path
 (`$m = require("./lib.mix")`) and checks member calls against its exports:
-`MIX-E1403` for the wrong number of arguments, `MIX-E1404` for a name the
+`MIX-W2314` for the wrong number of arguments, `MIX-W2315` for a name the
 module does not export. It stands down for a dynamic path, a rebound `$m`,
 and a module whose top-level `return` or `source`/`include` decides its
 exports.

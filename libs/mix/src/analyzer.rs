@@ -5966,7 +5966,7 @@ fn check_extension_collisions(
     });
 }
 
-// ── E1403 / E1404 calls into require() modules ──────────────────────
+// ── W2314 / W2315 calls into require() modules ──────────────────────
 
 /// What a `require()`d module exports, read statically from its source
 /// (see `mix man modules`, "What gets exported").
@@ -6211,7 +6211,7 @@ impl ModuleCache {
     }
 }
 
-/// MIX-E1403 / MIX-E1404: a member call into a `require()`d module, checked
+/// MIX-W2314 / MIX-W2315: a member call into a `require()`d module, checked
 /// against the module's export table. `check_requires` proves the module
 /// exists and parses; this proves the call can land.
 ///
@@ -6252,6 +6252,14 @@ fn check_require_calls(stmts: &[Stmt], ctx: &FileContext, a: &mut Analysis) {
     });
     let mut cache = ModuleCache::default();
     walk_all_exprs(stmts, &mut |stmt, e| {
+        // A chain or pipe wrapper holds no expressions of its own: its operands,
+        // walk visits as statements of their own, on their own lines.
+        if matches!(
+            stmt.kind,
+            StmtKind::Chain { .. } | StmtKind::PipeToExternal { .. }
+        ) {
+            return;
+        }
         // `print($m.f(1))` is a member call, which falls back to UFCS; the
         // statement `$m.f(1)` parses as a call of the FIELD value, which
         // does not (calling a missing member is calling nil).
@@ -6384,8 +6392,8 @@ fn check_module_call(
         if argc < min || argc > max {
             a.diagnostics.push(diag(
                 ctx,
-                "MIX-E1403",
-                Severity::Error,
+                "MIX-W2314",
+                Severity::Warning,
                 line,
                 format!(
                     "{field}() from module '{}' called with {argc} argument(s); definition takes {}",
@@ -6437,8 +6445,8 @@ fn check_module_call(
     };
     a.diagnostics.push(diag(
         ctx,
-        "MIX-E1404",
-        Severity::Error,
+        "MIX-W2315",
+        Severity::Warning,
         line,
         format!(
             "module '{}' has no export '{field}' — the call fails at run time (FUNCTION_UNDEFINED)",
@@ -6513,7 +6521,18 @@ fn unambiguous_value(before: &[crate::token::SpannedToken], next: Option<&Token>
             before.len().checked_sub(2).map(|i| &before[i].token),
             Some(Token::String(_) | Token::Variable(_) | Token::Print | Token::Eprint)
         ),
-        Token::LBracket | Token::Comma | Token::Colon | Token::Return => true,
+        // `[` after a value is an index (`$m[null]` looks up the key null).
+        Token::LBracket => !matches!(
+            before.len().checked_sub(2).map(|i| &before[i].token),
+            Some(
+                Token::Variable(_)
+                    | Token::String(_)
+                    | Token::RParen
+                    | Token::RBracket
+                    | Token::RBrace
+            )
+        ),
+        Token::Comma | Token::Colon | Token::Return => true,
         Token::Assign => matches!(statement_start, Some(Token::Variable(_))),
         _ if comparison(prev) => true,
         _ => next.is_some_and(comparison),

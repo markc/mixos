@@ -322,7 +322,7 @@ named after a shell extension (<code>ai</code>, <code>ai_diagnose</code>, <code>
 <code>MIX-W2313</code>.</p>
 <p><code>mix lint</code> reads a module bound once to a literal path
 (<code>$m = require("./lib.mix")</code>) and checks member calls against its exports:
-<code>MIX-E1403</code> for the wrong number of arguments, <code>MIX-E1404</code> for a name the
+<code>MIX-W2314</code> for the wrong number of arguments, <code>MIX-W2315</code> for a name the
 module does not export. It stands down for a dynamic path, a rebound <code>$m</code>,
 and a module whose top-level <code>return</code> or <code>source</code>/<code>include</code> decides its
 exports.</p>

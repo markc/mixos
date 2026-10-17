@@ -18433,8 +18433,6 @@ MIX-E1002  script parse error               MIX-E1302  duplicate function defini
 MIX-E1003  strict-data parse error          MIX-E1303  function name shadows a builtin
 MIX-E1101  undefined variable               MIX-E1401  require() target missing/unreadable
 MIX-E1102  undefined function               MIX-E1402  require() target invalid Mix
-                                            MIX-E1403  require() export: wrong argument count
-                                            MIX-E1404  require() module has no such export
 MIX-E1201  builtin arity mismatch           MIX-E1501  dead mutation (write is lost)
 MIX-E1203  literal contradicts contract type
 MIX-E1202  user-function arity mismatch     MIX-E1502  discarded pure transform
@@ -18459,6 +18457,8 @@ MIX-E1202  user-function arity mismatch     MIX-E1502  discarded pure transform
                                             MIX-W2311  fmt/sprintf surplus operands
                                             MIX-W2312  bareword null/None/undefined is a string
                                             MIX-W2313  function name collides with a shell extension
+                                            MIX-W2314  require() export: wrong argument count
+                                            MIX-W2315  require() module has no such export
                                             MIX-W2401  source/include defeats analysis
                                             MIX-W2402  bare bound variable in heredoc
                                             MIX-W2405  unknown escape kept literally
@@ -18572,12 +18572,15 @@ move, since a code's letter fixes its severity permanently. It is now
   `context`). An extension beats a user function at a bareword call, so
   `context()` runs the shell's extension. A member call on a `require()`
   exports map (`$m.context()`) does reach the function, in every mode.
-- **MIX-E1403 / MIX-E1404** (0.117.0) check member calls into a module
+- **MIX-W2314 / MIX-W2315** (0.117.0) are warnings while the check is new,
+  so a false positive can never fail a `mix lint` gate; the call they flag
+  fails at run time, and they may become errors with the type work. They
+  check member calls into a module
   bound once to a literal path, `$m = require("./lib.mix")`, against what
   the module exports: its top-level functions (with their arity) and
   `$vars`, minus `_`-private names. `$m.helper(1)` for a two-parameter
-  `helper` is E1403; `$m.nosuch(2)` is E1404, with the nearest export as a
-  did-you-mean. E1404 stays silent when anything else can answer the call
+  `helper` is W2314; `$m.nosuch(2)` is W2315, with the nearest export as a
+  did-you-mean. W2315 stays silent when anything else can answer the call
   (an exported `$var` that may hold a function, a function this file
   defines, the prelude, an extension, an enclosing `address` block) — except
   for a statement `$m.nosuch()`, which calls the field value and has no UFCS
@@ -19884,7 +19887,7 @@ named after a shell extension (`ai`, `ai_diagnose`, `context`) as
 
 `mix lint` reads a module bound once to a literal path
 (`$m = require("./lib.mix")`) and checks member calls against its exports:
-`MIX-E1403` for the wrong number of arguments, `MIX-E1404` for a name the
+`MIX-W2314` for the wrong number of arguments, `MIX-W2315` for a name the
 module does not export. It stands down for a dynamic path, a rebound `$m`,
 and a module whose top-level `return` or `source`/`include` decides its
 exports.
@@ -31145,6 +31148,26 @@ and recovery directories through the isolated MixOS environment.
 
 ### Added
 
+- `mix lint` reads in-file pragmas: `-- lint: globals a, b` declares
+  injected names, `-- lint: ignore CODE` suppresses CODE on the next line
+  holding code (or on its own line when written after code) and
+  `-- lint: ignore-file CODE` suppresses it file-wide. A bare or unknown
+  pragma is MIX-E1601; a suppression that matches nothing is the note
+  MIX-D3019. An `ssh_mix` body reads its own pragmas.
+- MIX-W2312: a bareword `null`, `None`, `undefined`, `NULL` or `nullptr`
+  used as a value is the string "null"; the warning carries a quick fix to
+  `nil` where the word is surely a value. `mix lint --fix` applies quick
+  fixes; `--json` reports each as `fix`. `Diagnostic` gains a `fix` field.
+- MIX-W2313: a function named after one of the `mix` binary's shell
+  extensions (`ai`, `ai_diagnose`, `context`). Lint now knows those
+  extensions (`MIX_SHELL_EXTENSIONS`, `AnalyzerConfig::extensions`), so
+  calling one is no longer MIX-E1102.
+- MIX-W2314 / MIX-W2315: member calls into a module bound once to a literal
+  `require()` path are checked against its exports, for arity and for a
+  missing name. Warnings in this release, while the check is new.
+- The parser names the fix for `let i = 0`, `var`/`const`, and a bareword
+  `i = …` ("Mix has no `let`: write `$i = …`").
+
 - Add the `archive` feature with the `tar_list`, `tar_unpack` and `tar_pack`
   builtins. Archives use zstd (default), gzip or no codec. `tar_unpack`
   validates every member, extracts into a staging directory and renames it
@@ -31190,6 +31213,11 @@ and recovery directories through the isolated MixOS environment.
 
 ### Changed
 
+- A member call `$m.name(...)` on a map holding a function member calls
+  that member in every mode, `--serve` included; an extension (the shell's
+  `context()`) no longer wins there.
+- MIX-W2304 names the result shape and suggests the field a bash, Python or
+  Node spelling means (`code`, `rc`, `status` → `exit_code`).
 - The default remote mix binary is now `/opt/mixos/bin/mix` (was the legacy
   `/opt/cosmix/bin/mix`). It applies to `ssh_mix`, `ssh_mix_many`, `ssh_exec`,
   `ssh_run`'s `env_transport: "mix"` and `send_mail`'s `host` hop whenever
@@ -31198,6 +31226,8 @@ and recovery directories through the isolated MixOS environment.
 
 ### Fixed
 
+- `mix lint` no longer reports MIX-E1101 for a variable assigned in a piped
+  statement (`$v = 1 | cat`).
 - `mix lint` MIX-W2307 (send result never checked) now counts a status read
   inside an `if` condition, a map value, a nested call argument or a string
   interpolation. A correctly checked send no longer warns.

@@ -1922,6 +1922,9 @@ fn the_null_fix_is_offered_only_where_the_word_is_surely_a_value() {
         "fn null()\n  print(\"called\")\nend\nprint(\"first\") && (null)\n",
         "fn f($x = null)\n  return $x\nend\nprint(f())\n",
         "send svc verb open=null\nprint($rc)\n",
+        // sol round 8: an index key, not a list element; `$m[nil]` would
+        // lose the entry stored under "null".
+        "$m = {null: 7}\nprint($m[null])\n",
     ] {
         assert_eq!(fixes(src), vec![false], "{src:?}");
     }

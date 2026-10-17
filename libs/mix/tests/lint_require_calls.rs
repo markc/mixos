@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! Member calls into `require()`d modules (MIX-E1403 / MIX-E1404) and
+//! Member calls into `require()`d modules (MIX-W2314 / MIX-W2315) and
 //! functions that collide with a mix shell extension (MIX-W2313).
 //! TODO-mix 2026-10-09 and 2026-10-10.
 
@@ -46,8 +46,8 @@ fn the_probe_reports_arity_and_a_missing_export() {
     assert_eq!(
         found,
         vec![
-            ("MIX-E1403".to_string(), Some(2)),
-            ("MIX-E1404".to_string(), Some(3)),
+            ("MIX-W2314".to_string(), Some(2)),
+            ("MIX-W2315".to_string(), Some(3)),
         ]
     );
     let d = lint_at(
@@ -55,7 +55,7 @@ fn the_probe_reports_arity_and_a_missing_export() {
         "$m = require(\"./lib1.mix\")\nprint($m.helpr(1, 2))\n",
         &AnalyzerConfig::default(),
     );
-    assert_eq!(d[0].code, "MIX-E1404");
+    assert_eq!(d[0].code, "MIX-W2315");
     assert!(d[0].message.contains("./lib1.mix"), "{}", d[0].message);
     let hint = d[0].hint.as_deref().unwrap();
     assert!(hint.contains("did you mean 'helper'"), "{hint}");
@@ -71,7 +71,7 @@ fn correct_calls_defaults_and_exported_vars_stay_clean() {
         &dir,
         "$m = require(\"./lib1.mix\")\nprint($m.opt(1, 2, 3))\n",
     );
-    assert_eq!(found, vec![("MIX-E1403".to_string(), Some(2))]);
+    assert_eq!(found, vec![("MIX-W2314".to_string(), Some(2))]);
 }
 
 #[test]
@@ -82,7 +82,7 @@ fn a_private_name_is_not_an_export() {
         "$m = require(\"./lib1.mix\")\nprint($m._private())\n",
         &AnalyzerConfig::default(),
     );
-    assert_eq!(d[0].code, "MIX-E1404");
+    assert_eq!(d[0].code, "MIX-W2315");
     assert!(d[0].hint.as_deref().unwrap().contains("private"));
 }
 
@@ -105,7 +105,7 @@ fn unproven_bindings_stand_down() {
         assert!(
             !found
                 .iter()
-                .any(|(c, _)| c == "MIX-E1404" || c == "MIX-E1403"),
+                .any(|(c, _)| c == "MIX-W2315" || c == "MIX-W2314"),
             "{src:?}: {found:?}"
         );
     }
@@ -165,8 +165,8 @@ fn a_nested_require_resolves_next_to_its_module() {
     assert_eq!(
         found,
         vec![
-            ("MIX-E1403".to_string(), Some(2)),
-            ("MIX-E1404".to_string(), Some(3)),
+            ("MIX-W2314".to_string(), Some(2)),
+            ("MIX-W2315".to_string(), Some(3)),
         ]
     );
 }
@@ -190,7 +190,7 @@ fn a_require_cycle_terminates_and_still_checks() {
         &dir,
         "$a = require(\"./a.mix\")\nprint($a.b.a.b.fb(1))\nprint($a.b.a.fa(1))\n",
     );
-    assert_eq!(found, vec![("MIX-E1403".to_string(), Some(2))]);
+    assert_eq!(found, vec![("MIX-W2314".to_string(), Some(2))]);
 }
 
 #[test]
@@ -209,7 +209,7 @@ fn exports_follow_the_runtime_rules() {
         "$m = require(\"./m.mix\")\nprint($m.helper(7))\nprint($m.result(7))\nprint($m.later())\n";
     assert_eq!(codes_at(&dir, src), vec![]);
     let found = codes_at(&dir, "$m = require(\"./m.mix\")\nprint($m.result())\n");
-    assert_eq!(found, vec![("MIX-E1403".to_string(), Some(2))]);
+    assert_eq!(found, vec![("MIX-W2314".to_string(), Some(2))]);
 }
 
 #[test]
@@ -220,9 +220,9 @@ fn calls_in_expression_bodies_and_defaults_are_checked() {
     assert_eq!(
         found,
         vec![
-            ("MIX-E1404".to_string(), Some(2)),
-            ("MIX-E1403".to_string(), Some(3)),
-            ("MIX-E1403".to_string(), Some(4)),
+            ("MIX-W2315".to_string(), Some(2)),
+            ("MIX-W2314".to_string(), Some(3)),
+            ("MIX-W2314".to_string(), Some(4)),
         ],
         "{found:?}"
     );
@@ -234,7 +234,7 @@ fn a_call_in_an_if_expression_of_an_expression_body_is_checked() {
     let src = "$m = require(\"./lib1.mix\")\nfn f() = if true then $m.nosuch() end\nprint(f())\n";
     assert_eq!(
         codes_at(&dir, src),
-        vec![("MIX-E1404".to_string(), Some(2))]
+        vec![("MIX-W2315".to_string(), Some(2))]
     );
 }
 
@@ -247,8 +247,8 @@ fn a_statement_member_call_has_no_ufcs_fallback() {
     assert_eq!(
         codes_at(&dir, src),
         vec![
-            ("MIX-E1404".to_string(), Some(5)),
-            ("MIX-E1403".to_string(), Some(6)),
+            ("MIX-W2315".to_string(), Some(5)),
+            ("MIX-W2314".to_string(), Some(6)),
         ]
     );
 }
@@ -274,7 +274,7 @@ fn an_include_in_an_expression_body_stands_down() {
     assert!(
         !found
             .iter()
-            .any(|(c, _)| c == "MIX-E1404" || c == "MIX-E1403"),
+            .any(|(c, _)| c == "MIX-W2315" || c == "MIX-W2314"),
         "{found:?}"
     );
 }
@@ -285,7 +285,7 @@ fn a_fallback_function_inside_an_expression_body_answers_the_call() {
     let dir = tree("exprfallback", &[("lib1.mix", LIB1)]);
     let src = "$m = require(\"./lib1.mix\")\nfn f() = if true then\n  fn extra($obj) = 7\n  print($m.extra())\nend\nf()\n";
     let found = codes_at(&dir, src);
-    assert!(!found.iter().any(|(c, _)| c == "MIX-E1404"), "{found:?}");
+    assert!(!found.iter().any(|(c, _)| c == "MIX-W2315"), "{found:?}");
 }
 
 #[test]
@@ -307,6 +307,37 @@ fn a_piped_assignment_is_an_export_too() {
 }
 
 #[test]
+fn a_call_inside_a_chain_or_pipe_is_reported_once_on_its_own_line() {
+    // sol round 8: the wrapper and its operand were both checked.
+    let dir = tree("wrappers", &[("lib1.mix", LIB1)]);
+    let src = "$m = require(\"./lib1.mix\")\nprint($m.helper(1)) | cat\nprint(1) &&\n  print($m.nosuch())\n";
+    assert_eq!(
+        codes_at(&dir, src),
+        vec![
+            ("MIX-W2314".to_string(), Some(2)),
+            ("MIX-W2315".to_string(), Some(4)),
+        ]
+    );
+}
+
+#[test]
+fn the_require_checks_are_warnings_this_release() {
+    let dir = tree("severity", &[("lib1.mix", LIB1)]);
+    let found = lint_at(
+        &dir.join("main.mix"),
+        "$m = require(\"./lib1.mix\")\nprint($m.helper(1))\nprint($m.nosuch())\n",
+        &AnalyzerConfig::default(),
+    );
+    assert_eq!(found.len(), 2, "{found:?}");
+    assert!(
+        found
+            .iter()
+            .all(|d| d.severity == mix::analyzer::Severity::Warning),
+        "{found:?}"
+    );
+}
+
+#[test]
 fn a_module_in_a_status_variable_is_not_proven() {
     // `send` and every command rewrite `$result`, so a call through it may
     // reach a caller function by UFCS instead of the module.
@@ -316,7 +347,7 @@ fn a_module_in_a_status_variable_is_not_proven() {
     assert!(
         !found
             .iter()
-            .any(|(c, _)| c == "MIX-E1403" || c == "MIX-E1404"),
+            .any(|(c, _)| c == "MIX-W2314" || c == "MIX-W2315"),
         "{found:?}"
     );
 }
@@ -338,7 +369,7 @@ fn a_nested_require_resolves_next_to_the_canonical_module() {
         &dir,
         "$a = require(\"./entry/a.mix\")\nprint($a.b.fb(1))\nprint($a.b.fb())\n",
     );
-    assert_eq!(found, vec![("MIX-E1403".to_string(), Some(3))]);
+    assert_eq!(found, vec![("MIX-W2314".to_string(), Some(3))]);
 }
 
 #[test]
@@ -390,5 +421,5 @@ fn a_module_exporting_context_is_called_through_the_member() {
         &cfg,
     );
     let codes: Vec<&str> = found.iter().map(|d| d.code).collect();
-    assert_eq!(codes, vec!["MIX-E1403"], "{found:?}");
+    assert_eq!(codes, vec!["MIX-W2314"], "{found:?}");
 }

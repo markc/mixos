@@ -307,8 +307,6 @@ MIX-E1002  script parse error               MIX-E1302  duplicate function defini
 MIX-E1003  strict-data parse error          MIX-E1303  function name shadows a builtin
 MIX-E1101  undefined variable               MIX-E1401  require() target missing/unreadable
 MIX-E1102  undefined function               MIX-E1402  require() target invalid Mix
-                                            MIX-E1403  require() export: wrong argument count
-                                            MIX-E1404  require() module has no such export
 MIX-E1201  builtin arity mismatch           MIX-E1501  dead mutation (write is lost)
 MIX-E1203  literal contradicts contract type
 MIX-E1202  user-function arity mismatch     MIX-E1502  discarded pure transform
@@ -333,6 +331,8 @@ MIX-E1202  user-function arity mismatch     MIX-E1502  discarded pure transform
                                             MIX-W2311  fmt/sprintf surplus operands
                                             MIX-W2312  bareword null/None/undefined is a string
                                             MIX-W2313  function name collides with a shell extension
+                                            MIX-W2314  require() export: wrong argument count
+                                            MIX-W2315  require() module has no such export
                                             MIX-W2401  source/include defeats analysis
                                             MIX-W2402  bare bound variable in heredoc
                                             MIX-W2405  unknown escape kept literally
@@ -477,12 +477,15 @@ one of the <code>mix</code> binary's shell extensions (<code>ai</code>, <code>ai
 exports map (<code>$m.context()</code>) does reach the function, in every mode.</p>
 </li>
 <li>
-<p><strong>MIX-E1403 / MIX-E1404</strong> (0.117.0) check member calls into a module
+<p><strong>MIX-W2314 / MIX-W2315</strong> (0.117.0) are warnings while the check is new,
+so a false positive can never fail a <code>mix lint</code> gate; the call they flag
+fails at run time, and they may become errors with the type work. They
+check member calls into a module
 bound once to a literal path, <code>$m = require("./lib.mix")</code>, against what
 the module exports: its top-level functions (with their arity) and
 <code>$vars</code>, minus <code>_</code>-private names. <code>$m.helper(1)</code> for a two-parameter
-<code>helper</code> is E1403; <code>$m.nosuch(2)</code> is E1404, with the nearest export as a
-did-you-mean. E1404 stays silent when anything else can answer the call
+<code>helper</code> is W2314; <code>$m.nosuch(2)</code> is W2315, with the nearest export as a
+did-you-mean. W2315 stays silent when anything else can answer the call
 (an exported <code>$var</code> that may hold a function, a function this file
 defines, the prelude, an extension, an enclosing <code>address</code> block) — except
 for a statement <code>$m.nosuch()</code>, which calls the field value and has no UFCS
