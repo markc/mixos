@@ -232,7 +232,25 @@ fn calls_in_expression_bodies_and_defaults_are_checked() {
 fn a_call_in_an_if_expression_of_an_expression_body_is_checked() {
     let dir = tree("ifbody", &[("lib1.mix", LIB1)]);
     let src = "$m = require(\"./lib1.mix\")\nfn f() = if true then $m.nosuch() end\nprint(f())\n";
-    assert_eq!(codes_at(&dir, src), vec![("MIX-E1404".to_string(), Some(2))]);
+    assert_eq!(
+        codes_at(&dir, src),
+        vec![("MIX-E1404".to_string(), Some(2))]
+    );
+}
+
+#[test]
+fn a_statement_member_call_has_no_ufcs_fallback() {
+    // `$m.extra()` as a statement calls the field value: a caller `fn extra`
+    // does not answer it, so the missing export still fails at run time.
+    let dir = tree("stmtcall", &[("lib1.mix", LIB1)]);
+    let src = "$m = require(\"./lib1.mix\")\nfn extra($o)\n  return 1\nend\n$m.extra()\n$m.helper(1)\n$m.helper(1, 2)\n";
+    assert_eq!(
+        codes_at(&dir, src),
+        vec![
+            ("MIX-E1404".to_string(), Some(5)),
+            ("MIX-E1403".to_string(), Some(6)),
+        ]
+    );
 }
 
 #[test]
@@ -243,7 +261,9 @@ fn a_module_in_a_status_variable_is_not_proven() {
     let src = "$result = require(\"./lib1.mix\")\nsend svc ping\nfn helper($o)\n  return 7\nend\nprint($result.helper())\n";
     let found = codes_at(&dir, src);
     assert!(
-        !found.iter().any(|(c, _)| c == "MIX-E1403" || c == "MIX-E1404"),
+        !found
+            .iter()
+            .any(|(c, _)| c == "MIX-E1403" || c == "MIX-E1404"),
         "{found:?}"
     );
 }

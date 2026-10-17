@@ -480,7 +480,9 @@ the module exports: its top-level functions (with their arity) and
 <code>helper</code> is E1403; <code>$m.nosuch(2)</code> is E1404, with the nearest export as a
 did-you-mean. E1404 stays silent when anything else can answer the call
 (an exported <code>$var</code> that may hold a function, a function this file
-defines, the prelude, an extension, an enclosing <code>address</code> block). An
+defines, the prelude, an extension, an enclosing <code>address</code> block) — except
+for a statement <code>$m.nosuch()</code>, which calls the field value and has no UFCS
+fallback. An
 export bound once to a literal <code>require()</code> resolves too, next to its own
 module (<code>$a.b.fn()</code>), and a require cycle cannot loop the check. Both
 stand down silently for a dynamic path, a rebound <code>$m</code> (or one that is

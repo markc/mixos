@@ -6211,7 +6211,10 @@ fn check_require_calls(stmts: &[Stmt], ctx: &FileContext, a: &mut Analysis) {
     // The runtime resolves a script-relative require next to the script's
     // CANONICAL path (symlinked launchers), and nested requires next to the
     // canonical module path; `canonical_dir` matches both.
-    let base_dir = ctx.file.as_deref().and_then(|f| canonical_dir(std::path::Path::new(f)));
+    let base_dir = ctx
+        .file
+        .as_deref()
+        .and_then(|f| canonical_dir(std::path::Path::new(f)));
     let mut in_address: HashSet<*const Stmt> = HashSet::new();
     walk_stmts(stmts, &mut |stmt| {
         if let StmtKind::Address { body, .. } = &stmt.kind {
@@ -6222,19 +6225,33 @@ fn check_require_calls(stmts: &[Stmt], ctx: &FileContext, a: &mut Analysis) {
     });
     let mut cache = ModuleCache::default();
     walk_all_exprs(stmts, &mut |stmt, e| {
-        let Expr::MethodCall {
-            object,
-            field,
-            args,
-        } = e
-        else {
-            return;
+        // `print($m.f(1))` is a member call, which falls back to UFCS; the
+        // statement `$m.f(1)` parses as a call of the FIELD value, which
+        // does not (calling a missing member is calling nil).
+        let (object, field, argc, ufcs) = match e {
+            Expr::MethodCall {
+                object,
+                field,
+                args,
+            } => (object, field, args.len(), true),
+            Expr::ValueCall { callee, args } => match &**callee {
+                Expr::FieldAccess { object, field } => (object, field, args.len(), false),
+                _ => return,
+            },
+            _ => return,
         };
         let Some(module) = cache.resolve(object, &roots, base_dir.as_deref()) else {
             return;
         };
         let addressed = in_address.contains(&(stmt as *const Stmt));
-        check_module_call(&module, field, args.len(), addressed, stmt.line, ctx, a);
+        let call = ModuleCall {
+            field,
+            argc,
+            ufcs,
+            addressed,
+            line: stmt.line,
+        };
+        check_module_call(&module, &call, ctx, a);
     });
 }
 
@@ -6286,15 +6303,26 @@ fn walk_all_exprs(stmts: &[Stmt], visit: &mut dyn FnMut(&Stmt, &Expr)) {
     });
 }
 
-fn check_module_call(
-    module: &ModuleExports,
-    field: &str,
+/// One call into a module, as `check_module_call` judges it.
+struct ModuleCall<'a> {
+    field: &'a str,
     argc: usize,
+    /// A member call (`$m.f()` in an expression), which falls back to UFCS
+    /// when the member is missing; a call of the field value does not.
+    ufcs: bool,
+    /// Inside an `address` block, where a missing member call is a send.
     addressed: bool,
     line: usize,
-    ctx: &FileContext,
-    a: &mut Analysis,
-) {
+}
+
+fn check_module_call(module: &ModuleExports, call: &ModuleCall, ctx: &FileContext, a: &mut Analysis) {
+    let &ModuleCall {
+        field,
+        argc,
+        ufcs,
+        addressed,
+        line,
+    } = call;
     if let Some(&(min, max)) = module.functions.get(field) {
         if argc < min || argc > max {
             a.diagnostics.push(diag(
@@ -6318,10 +6346,11 @@ fn check_module_call(
     }
     if module.maybe.contains(field)
         || addressed
-        || ctx.known_callables.contains(field)
-        || builtins::is_builtin(field)
-        || crate::builtins_hof::HOF_NAMES.contains(&field)
-        || INLINE_SPECIAL_FORMS.contains(&field)
+        || (ufcs
+            && (ctx.known_callables.contains(field)
+                || builtins::is_builtin(field)
+                || crate::builtins_hof::HOF_NAMES.contains(&field)
+                || INLINE_SPECIAL_FORMS.contains(&field)))
     {
         return;
     }
@@ -6379,11 +6408,9 @@ fn in_bus_words(before: &[crate::token::SpannedToken]) -> bool {
             Token::Newline | Token::Semicolon => return false,
             _ if depth > 0 => {}
             Token::Send | Token::Emit | Token::On | Token::Address => return true,
-            Token::Assign
-            | Token::LParen
-            | Token::LBrace
-            | Token::LBracket
-            | Token::Comma => return false,
+            Token::Assign | Token::LParen | Token::LBrace | Token::LBracket | Token::Comma => {
+                return false;
+            }
             _ => {}
         }
     }

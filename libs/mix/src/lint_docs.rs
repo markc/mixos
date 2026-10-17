@@ -142,7 +142,7 @@ pub const LINT_DOCS: &[LintDoc] = &[
     LintDoc {
         code: "MIX-E1404",
         summary: "require() module has no such export",
-        detail: "`$m.nosuch(2)` where the required module neither defines nor assigns `nosuch` at its top level (or only as a `_`-private name). The call falls through to UFCS and fails at run time with FUNCTION_UNDEFINED. Not reported when anything else could answer the call: a builtin, HOF or special form, an extension, a function this file defines, the prelude, an `--allow-function` name, an exported `$var` (it may hold a function value), or an enclosing `address` block (where an unknown member call is a send). The hint names the nearest export and lists them. Same stand-down rules as MIX-E1403.",
+        detail: "`$m.nosuch(2)` where the required module neither defines nor assigns `nosuch` at its top level (or only as a `_`-private name). The call falls through to UFCS and fails at run time with FUNCTION_UNDEFINED. Not reported when anything else could answer the call: a builtin, HOF or special form, an extension, a function this file defines, the prelude, an `--allow-function` name, an exported `$var` (it may hold a function value), or an enclosing `address` block (where an unknown member call is a send). A STATEMENT `$m.nosuch()` is different: it parses as a call of the field value, which has no UFCS fallback, so only an exported `$var` or an `address` block excuses it. The hint names the nearest export and lists them. Same stand-down rules as MIX-E1403.",
     },
     LintDoc {
         code: "MIX-E1501",

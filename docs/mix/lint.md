@@ -209,7 +209,9 @@ move, since a code's letter fixes its severity permanently. It is now
   `helper` is E1403; `$m.nosuch(2)` is E1404, with the nearest export as a
   did-you-mean. E1404 stays silent when anything else can answer the call
   (an exported `$var` that may hold a function, a function this file
-  defines, the prelude, an extension, an enclosing `address` block). An
+  defines, the prelude, an extension, an enclosing `address` block) — except
+  for a statement `$m.nosuch()`, which calls the field value and has no UFCS
+  fallback. An
   export bound once to a literal `require()` resolves too, next to its own
   module (`$a.b.fn()`), and a require cycle cannot loop the check. Both
   stand down silently for a dynamic path, a rebound `$m` (or one that is
