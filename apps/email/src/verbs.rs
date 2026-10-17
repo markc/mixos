@@ -1391,14 +1391,11 @@ mod tests {
 
     #[test]
     fn the_list_and_folder_verbs_are_handled() {
-        let names = list::VERBS
-            .iter()
-            .map(|v| v.name.to_owned())
-            .chain(
-                toolkit::datatable::verbs::VERBS
-                    .iter()
-                    .map(|v| format!("email.{v}")),
-            );
+        let names = list::VERBS.iter().map(|v| v.name.to_owned()).chain(
+            toolkit::datatable::verbs::VERBS
+                .iter()
+                .map(|v| format!("email.{v}")),
+        );
         for name in names {
             let mut state = connected_many(&["a"]);
             run(&mut state, &name, json!({}));

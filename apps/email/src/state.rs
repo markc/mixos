@@ -173,10 +173,12 @@ pub fn list_columns(date_width: f32, folders: bool) -> Vec<Column> {
             .sortable(Order::Ascending),
     ];
     if folders {
-        columns.push(Column::new(COLUMN_FOLDER, "column-folder").width(Width::Resizable {
-            initial: 110.0,
-            min: 60.0,
-        }));
+        columns.push(
+            Column::new(COLUMN_FOLDER, "column-folder").width(Width::Resizable {
+                initial: 110.0,
+                min: 60.0,
+            }),
+        );
     }
     columns.push(
         Column::new(COLUMN_DATE, "column-date")
@@ -2538,7 +2540,10 @@ impl State {
             .as_ref()
             .map_or(COLUMN_DATE.to_owned(), |s| s.column.clone());
         if view.mail.table.sort.as_ref().map(|s| s.order) != Some(order) {
-            self.mail_table(&account, TableEvent::SortChanged(Some(Sort::new(column, order))));
+            self.mail_table(
+                &account,
+                TableEvent::SortChanged(Some(Sort::new(column, order))),
+            );
         }
     }
 
@@ -4324,7 +4329,10 @@ pub(crate) mod tests {
         work.iter()
             .filter_map(|w| match w {
                 Work::FetchEmails {
-                    text, all, position, ..
+                    text,
+                    all,
+                    position,
+                    ..
                 } => Some((text.clone(), *all, *position)),
                 _ => None,
             })
@@ -4396,8 +4404,8 @@ pub(crate) mod tests {
     /// email in it and an empty Junk.
     fn foldered() -> State {
         let mut state = connected();
-        let with = |id: &str, role: Option<&str>, parent: Option<&str>, total: u64, unread: u64| {
-            Mailbox {
+        let with =
+            |id: &str, role: Option<&str>, parent: Option<&str>, total: u64, unread: u64| Mailbox {
                 id: id.into(),
                 name: id.to_uppercase(),
                 role: role.map(str::to_owned),
@@ -4405,8 +4413,7 @@ pub(crate) mod tests {
                 total_emails: total,
                 unread_emails: unread,
                 ..Mailbox::default()
-            }
-        };
+            };
         done(
             &mut state,
             "a",
@@ -4517,7 +4524,10 @@ pub(crate) mod tests {
             writes(&mut state).as_slice(),
             [(None, Write::MarkMailboxRead { id })] if id == "work"
         ));
-        assert!(state.ui.menu_node.is_none(), "a command is done with its node");
+        assert!(
+            state.ui.menu_node.is_none(),
+            "a command is done with its node"
+        );
     }
 
     #[test]

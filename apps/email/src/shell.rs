@@ -813,9 +813,9 @@ impl Shell {
                 }
             }
             Work::OpenPrefs => self.open_prefs(json!({"name": "email"})),
-            Work::OpenPrefsAt { account } => self.open_prefs(
-                json!({"name": "email", "tab": "accounts", "account": account}),
-            ),
+            Work::OpenPrefsAt { account } => {
+                self.open_prefs(json!({"name": "email", "tab": "accounts", "account": account}))
+            }
         }
     }
 

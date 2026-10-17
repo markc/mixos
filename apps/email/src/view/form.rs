@@ -41,7 +41,11 @@ pub fn dialog(ui: &mut Ui, state: &State, events: &mut Vec<UiEvent>) {
                 FolderAction::Delete { .. } => ("folder-delete-title", "folder-delete-confirm"),
                 FolderAction::Empty { .. } => ("folder-empty-title", "folder-empty-confirm"),
             };
-            ("form-folder", crate::label(title), Some(crate::label(confirm)))
+            (
+                "form-folder",
+                crate::label(title),
+                Some(crate::label(confirm)),
+            )
         }
     };
     // A delete or an empty is undone by nothing: Cancel is the default.
@@ -169,7 +173,14 @@ fn body(ui: &mut Ui, state: &State, form: &Form, events: &mut Vec<UiEvent>) {
             match f.action {
                 FolderAction::New { .. } | FolderAction::Rename { .. } => {
                     grid(ui, "folder-form", &mut |ui| {
-                        line(ui, "folder-name", "", FormField::FolderName, &f.name, events);
+                        line(
+                            ui,
+                            "folder-name",
+                            "",
+                            FormField::FolderName,
+                            &f.name,
+                            events,
+                        );
                     });
                 }
                 FolderAction::Delete { .. } | FolderAction::Empty { .. } => {

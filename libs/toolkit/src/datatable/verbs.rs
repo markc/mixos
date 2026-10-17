@@ -12,9 +12,7 @@
 
 use serde_json::{Value, json};
 
-use super::model::{
-    Column, Density, Order, PageMove, Pick, Sort, TableEvent, TableState, Total,
-};
+use super::model::{Column, Density, Order, PageMove, Pick, Sort, TableEvent, TableState, Total};
 
 /// The verbs, after the app's prefix.
 pub const VERBS: [&str; 9] = [
@@ -179,9 +177,15 @@ pub fn request(verb: &str, args: &Value, table: &Table) -> Result<Request, Refus
                     "previous" => PageMove::Previous,
                     "next" => PageMove::Next,
                     "last" => PageMove::Last,
-                    _ => return Err(invalid("index must be a number or first|previous|next|last")),
+                    _ => {
+                        return Err(invalid(
+                            "index must be a number or first|previous|next|last",
+                        ));
+                    }
                 },
-                Some(value) => PageMove::To(whole(value).ok_or_else(|| invalid("index must be a whole number"))?),
+                Some(value) => PageMove::To(
+                    whole(value).ok_or_else(|| invalid("index must be a whole number"))?,
+                ),
                 None => return Err(invalid("index is required")),
             };
             if let PageMove::To(page) = to
@@ -291,7 +295,9 @@ fn whole(value: &Value) -> Option<u64> {
 fn locate(row: &Value, keys: &[String]) -> Result<(usize, String), Refusal> {
     let index = match row {
         Value::String(key) => keys.iter().position(|k| k == key),
-        other => whole(other).and_then(|i| usize::try_from(i).ok()).filter(|i| *i < keys.len()),
+        other => whole(other)
+            .and_then(|i| usize::try_from(i).ok())
+            .filter(|i| *i < keys.len()),
     };
     index
         .map(|i| (i, keys[i].clone()))
@@ -300,13 +306,16 @@ fn locate(row: &Value, keys: &[String]) -> Result<(usize, String), Refusal> {
 
 #[cfg(test)]
 mod tests {
-    use super::super::model::{Width};
+    use super::super::model::Width;
     use super::*;
 
     fn columns() -> Vec<Column> {
         vec![
             Column::new("from", "from")
-                .width(Width::Share { share: 0.3, min: 80.0 })
+                .width(Width::Share {
+                    share: 0.3,
+                    min: 80.0,
+                })
                 .sortable(Order::Ascending),
             Column::new("date", "date")
                 .width(Width::Fixed(80.0))
@@ -347,36 +356,77 @@ mod tests {
         assert_eq!(ask("table.state", json!({})), Ok(Request::State));
         assert_eq!(
             events("table.sort", json!({"column": "date"})),
-            [TableEvent::SortChanged(Some(Sort::new("date", Order::Descending)))]
+            [TableEvent::SortChanged(Some(Sort::new(
+                "date",
+                Order::Descending
+            )))]
         );
         assert_eq!(
             events("table.sort", json!({"column": "from", "order": "desc"})),
-            [TableEvent::SortChanged(Some(Sort::new("from", Order::Descending)))]
+            [TableEvent::SortChanged(Some(Sort::new(
+                "from",
+                Order::Descending
+            )))]
         );
-        assert_eq!(events("table.page", json!({"index": 2})), [TableEvent::PageChanged(2)]);
-        assert_eq!(events("table.page", json!({"index": "last"})), [TableEvent::PageChanged(2)]);
-        assert!(events("table.page", json!({"index": 0})).is_empty(), "already there");
-        assert_eq!(events("table.page_size", json!({"n": 25.0})), [TableEvent::PageSizeChanged(25)]);
+        assert_eq!(
+            events("table.page", json!({"index": 2})),
+            [TableEvent::PageChanged(2)]
+        );
+        assert_eq!(
+            events("table.page", json!({"index": "last"})),
+            [TableEvent::PageChanged(2)]
+        );
+        assert!(
+            events("table.page", json!({"index": 0})).is_empty(),
+            "already there"
+        );
+        assert_eq!(
+            events("table.page_size", json!({"n": 25.0})),
+            [TableEvent::PageSizeChanged(25)]
+        );
         assert_eq!(
             events("table.select", json!({"rows": ["b", 2]})),
             [
-                TableEvent::Selected { index: 1, key: "b".into(), pick: Pick::Only },
-                TableEvent::Selected { index: 2, key: "c".into(), pick: Pick::Toggle },
+                TableEvent::Selected {
+                    index: 1,
+                    key: "b".into(),
+                    pick: Pick::Only
+                },
+                TableEvent::Selected {
+                    index: 2,
+                    key: "c".into(),
+                    pick: Pick::Toggle
+                },
             ]
         );
         assert_eq!(
             events("table.activate", json!({"row": "a"})),
-            [TableEvent::Activated { index: 0, key: "a".into() }]
+            [TableEvent::Activated {
+                index: 0,
+                key: "a".into()
+            }]
         );
         assert_eq!(
             events("table.context", json!({"row": 1})),
-            [TableEvent::ContextMenu { index: 1, key: "b".into() }]
+            [TableEvent::ContextMenu {
+                index: 1,
+                key: "b".into()
+            }]
         );
         assert_eq!(
-            events("table.column", json!({"id": "from", "width": 200, "visible": false})),
+            events(
+                "table.column",
+                json!({"id": "from", "width": 200, "visible": false})
+            ),
             [
-                TableEvent::ColumnResized { column: "from".into(), width: 200.0 },
-                TableEvent::ColumnShown { column: "from".into(), visible: false },
+                TableEvent::ColumnResized {
+                    column: "from".into(),
+                    width: 200.0
+                },
+                TableEvent::ColumnShown {
+                    column: "from".into(),
+                    visible: false
+                },
             ]
         );
         assert_eq!(
@@ -388,16 +438,29 @@ mod tests {
     #[test]
     fn bad_arguments_are_refused_by_kind() {
         let invalid = |verb: &str, args: Value| matches!(ask(verb, args), Err(Refusal::Invalid(_)));
-        let missing = |verb: &str, args: Value| matches!(ask(verb, args), Err(Refusal::NotFound(_)));
-        assert!(invalid("table.sort", json!({"column": "folder"})), "unsortable");
-        assert!(invalid("table.sort", json!({"column": null})), "always sorted");
-        assert!(invalid("table.sort", json!({"column": "date", "order": "up"})));
+        let missing =
+            |verb: &str, args: Value| matches!(ask(verb, args), Err(Refusal::NotFound(_)));
+        assert!(
+            invalid("table.sort", json!({"column": "folder"})),
+            "unsortable"
+        );
+        assert!(
+            invalid("table.sort", json!({"column": null})),
+            "always sorted"
+        );
+        assert!(invalid(
+            "table.sort",
+            json!({"column": "date", "order": "up"})
+        ));
         assert!(missing("table.sort", json!({"column": "size"})));
         assert!(invalid("table.page", json!({"index": 3})), "past the last");
         assert!(invalid("table.page_size", json!({"n": 0})));
         assert!(missing("table.select", json!({"rows": ["z"]})));
         assert!(missing("table.activate", json!({"row": 3})));
-        assert!(invalid("table.column", json!({"id": "date", "width": 90})), "fixed width");
+        assert!(
+            invalid("table.column", json!({"id": "date", "width": 90})),
+            "fixed width"
+        );
         assert!(invalid("table.column", json!({"id": "from"})));
         assert!(invalid("table.density", json!({"density": "roomy"})));
         assert!(missing("table.nope", json!({})));
@@ -414,16 +477,35 @@ mod tests {
             TableEvent::SortChanged(None),
             TableEvent::PageChanged(0),
             TableEvent::PageSizeChanged(1),
-            TableEvent::Selected { index: 0, key: String::new(), pick: Pick::Only },
-            TableEvent::Activated { index: 0, key: String::new() },
-            TableEvent::ColumnResized { column: String::new(), width: 1.0 },
-            TableEvent::ColumnShown { column: String::new(), visible: true },
+            TableEvent::Selected {
+                index: 0,
+                key: String::new(),
+                pick: Pick::Only,
+            },
+            TableEvent::Activated {
+                index: 0,
+                key: String::new(),
+            },
+            TableEvent::ColumnResized {
+                column: String::new(),
+                width: 1.0,
+            },
+            TableEvent::ColumnShown {
+                column: String::new(),
+                visible: true,
+            },
             TableEvent::DensityChanged(Density::Compact),
-            TableEvent::ContextMenu { index: 0, key: String::new() },
+            TableEvent::ContextMenu {
+                index: 0,
+                key: String::new(),
+            },
         ];
         for event in &all {
             assert!(VERBS.contains(&verb_for(event).unwrap()), "{event:?}");
         }
-        assert_eq!(verb_for(&TableEvent::DragStarted { keys: Vec::new() }), None);
+        assert_eq!(
+            verb_for(&TableEvent::DragStarted { keys: Vec::new() }),
+            None
+        );
     }
 }

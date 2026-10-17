@@ -348,9 +348,18 @@ impl Widget for PushButton {
             Some(icon) => {
                 let run = side + ICON_GAP + galley.size().x;
                 let left = rect.center().x - run / 2.0;
-                paint_icon(ui, icon, pos2(left + side / 2.0, rect.center().y), side, ink);
-                let at = pos2(left + side + ICON_GAP, rect.center().y - galley.size().y / 2.0)
-                    .round_to_pixels(ui.pixels_per_point());
+                paint_icon(
+                    ui,
+                    icon,
+                    pos2(left + side / 2.0, rect.center().y),
+                    side,
+                    ink,
+                );
+                let at = pos2(
+                    left + side + ICON_GAP,
+                    rect.center().y - galley.size().y / 2.0,
+                )
+                .round_to_pixels(ui.pixels_per_point());
                 ui.painter().galley(at, galley, ink);
             }
             None => {

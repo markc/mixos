@@ -902,7 +902,10 @@ mod tests {
         state.apply(&context(2), SelectionMode::Multi);
         assert_eq!(state.selection.len(), 2);
         state.apply(&context(0), SelectionMode::Multi);
-        assert_eq!((state.selection.as_slice(), state.focus), (&["k0".to_owned()][..], Some(0)));
+        assert_eq!(
+            (state.selection.as_slice(), state.focus),
+            (&["k0".to_owned()][..], Some(0))
+        );
     }
 
     #[test]
@@ -914,10 +917,16 @@ mod tests {
         };
         state.apply(&hide(false), SelectionMode::Single);
         assert_eq!(state.visible(&columns()).len(), 3);
-        assert_eq!(state.describe(&columns(), Total::Known(0), 0)["columns"][3]["visible"], false);
+        assert_eq!(
+            state.describe(&columns(), Total::Known(0), 0)["columns"][3]["visible"],
+            false
+        );
         state.apply(&hide(true), SelectionMode::Single);
         assert_eq!(state.visible(&columns()).len(), 4);
-        state.apply(&TableEvent::DensityChanged(Density::Comfortable), SelectionMode::Single);
+        state.apply(
+            &TableEvent::DensityChanged(Density::Comfortable),
+            SelectionMode::Single,
+        );
         assert_eq!(state.density, Density::Comfortable);
     }
 

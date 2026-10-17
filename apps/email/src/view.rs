@@ -219,7 +219,9 @@ fn window(
         .resizable(true)
         .default_size(total * state.ui.places)
         .frame(bars::dock_frame(ui.ctx()))
-        .show(ui, |ui| tree::show(ui, state, commands, strings, stroke, events));
+        .show(ui, |ui| {
+            tree::show(ui, state, commands, strings, stroke, events)
+        });
     let split = left.response.rect.width() / total.max(1.0);
     if (split - state.ui.places).abs() > 0.005 {
         events.push(UiEvent::SplitPlaces(split));

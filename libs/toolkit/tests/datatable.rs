@@ -19,8 +19,7 @@ use egui_kittest::kittest::{NodeT, Queryable};
 use toolkit::Icon;
 use toolkit::datatable::{
     Align, Cell, Column, DataTable, Order, RowStyle, RowsDrag, SelectionMode, Sort, TableEvent,
-    TableState,
-    TextRow, TextRows, Total, Width, compare_text, page_of, sort_rows,
+    TableState, TextRow, TextRows, Total, Width, compare_text, page_of, sort_rows,
 };
 
 /// One sample message.
@@ -357,10 +356,13 @@ fn a_right_click_selects_its_row_and_opens_the_menu_for_it() {
     h.get_by_label_contains("Minutes").click_secondary();
     h.run_steps(6);
     let seen = &h.state().seen;
-    assert!(matches!(seen.as_slice(), [
+    assert!(
+        matches!(seen.as_slice(), [
         TableEvent::Selected { key, .. },
         TableEvent::ContextMenu { key: menu, index: 2 },
-    ] if key == "m3" && menu == "m3"), "{seen:?}");
+    ] if key == "m3" && menu == "m3"),
+        "{seen:?}"
+    );
     h.get_by_label("Archive").click();
     h.run_steps(6);
     assert_eq!(h.state().archived, Some(2));

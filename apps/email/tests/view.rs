@@ -663,8 +663,7 @@ fn the_header_counts_results_and_the_field_searches_after_a_pause() {
     h2.run();
     let work = h2.state_mut().state.take_work();
     assert!(
-        work.iter()
-            .any(|w| matches!(w, Work::SearchDue { .. })),
+        work.iter().any(|w| matches!(w, Work::SearchDue { .. })),
         "{work:?}"
     );
     assert_eq!(h2.state().state.accounts[0].mail.search.text, "tax");
@@ -724,7 +723,13 @@ fn tree_menu(label: &str, name: &str) -> Harness<'static, Window> {
 #[test]
 fn each_tree_node_has_its_registry_menu() {
     let h = tree_menu("Lists", "tree_menu_folder_pro_light");
-    for item in ["New Subfolder…", "Rename…", "Delete Folder…", "Mark Folder as Read", "Refresh"] {
+    for item in [
+        "New Subfolder…",
+        "Rename…",
+        "Delete Folder…",
+        "Mark Folder as Read",
+        "Refresh",
+    ] {
         assert!(h.query_by_label(item).is_some(), "{item}");
     }
     assert!(h.query_by_label("Empty…").is_none(), "not a bin");
@@ -743,7 +748,11 @@ fn each_tree_node_has_its_registry_menu() {
 #[test]
 fn the_account_root_has_its_own_menu() {
     let h = tree_menu("Home", "tree_menu_account_pro_light");
-    for item in ["Compose from This Account", "Reconnect", "Account Settings…"] {
+    for item in [
+        "Compose from This Account",
+        "Reconnect",
+        "Account Settings…",
+    ] {
         assert!(h.query_by_label(item).is_some(), "{item}");
     }
 }
@@ -786,7 +795,9 @@ fn a_row_right_click_selects_it_and_opens_the_message_menu() {
     );
     assert_eq!(h.state().state.accounts[0].mail.table.selection, ["L5"]);
     assert!(
-        h.query_all_by_label_contains(&label("reply")).next().is_some(),
+        h.query_all_by_label_contains(&label("reply"))
+            .next()
+            .is_some(),
         "the message commands"
     );
     h.snapshot("list_menu_pro_light");

@@ -201,7 +201,13 @@ fn draw(
 /// that takes them lights in the accent and takes the drop; any other row
 /// shows the not-allowed cursor and, for another account's folder, says
 /// why. A collapsed row the drag rests on opens.
-fn drop_target(ui: &mut Ui, row: &TreeRow, rect: egui::Rect, state: &State, events: &mut Vec<UiEvent>) {
+fn drop_target(
+    ui: &mut Ui,
+    row: &TreeRow,
+    rect: egui::Rect,
+    state: &State,
+    events: &mut Vec<UiEvent>,
+) {
     let ctx = ui.ctx().clone();
     let Some(drag) = egui::DragAndDrop::payload::<RowsDrag>(&ctx) else {
         return;

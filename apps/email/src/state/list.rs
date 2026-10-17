@@ -70,12 +70,20 @@ impl Search {
 #[derive(Clone, Debug, PartialEq)]
 pub enum FolderAction {
     /// A new mailbox under `parent` (top level when `None`).
-    New { parent: Option<String> },
-    Rename { id: String },
+    New {
+        parent: Option<String>,
+    },
+    Rename {
+        id: String,
+    },
     /// Its emails move to the Trash, then it goes.
-    Delete { id: String },
+    Delete {
+        id: String,
+    },
     /// Destroy every email in it.
-    Empty { id: String },
+    Empty {
+        id: String,
+    },
 }
 
 /// A folder dialog: a name to give, or a confirmation.
@@ -92,7 +100,9 @@ pub struct FolderForm {
 }
 
 /// The mailbox roles that are the server's, never renamed or deleted.
-pub const FIXED_ROLES: [&str; 7] = ["inbox", "sent", "drafts", "trash", "junk", "spam", "archive"];
+pub const FIXED_ROLES: [&str; 7] = [
+    "inbox", "sent", "drafts", "trash", "junk", "spam", "archive",
+];
 
 /// Why `name` cannot be a mailbox named among `siblings` (other mailboxes
 /// under the same parent), if it cannot.
@@ -225,15 +235,18 @@ impl State {
 
     /// The target mailbox has unread email.
     pub fn folder_unread(&self) -> bool {
-        self.folder_targeted() && self.target_mailbox().is_some_and(|(_, m)| m.unread_emails > 0)
+        self.folder_targeted()
+            && self
+                .target_mailbox()
+                .is_some_and(|(_, m)| m.unread_emails > 0)
     }
 
     /// The target mailbox is a Trash or Junk with email in it.
     pub fn folder_emptiable(&self) -> bool {
         self.folder_targeted()
-            && self.target_mailbox().is_some_and(|(_, m)| {
-                emptiable(m) && m.total_emails > 0
-            })
+            && self
+                .target_mailbox()
+                .is_some_and(|(_, m)| emptiable(m) && m.total_emails > 0)
     }
 
     /// Why the folder command `id` is off for the target, for its tooltip.
@@ -246,7 +259,9 @@ impl State {
             "folder.mark_read" if mailbox.unread_emails == 0 => {
                 Some(crate::label("folder-all-read"))
             }
-            "folder.empty" if mailbox.total_emails == 0 => Some(crate::label("folder-empty-already")),
+            "folder.empty" if mailbox.total_emails == 0 => {
+                Some(crate::label("folder-empty-already"))
+            }
             _ => None,
         }
     }
@@ -256,7 +271,12 @@ impl State {
     pub fn node_menu(&self, node: &Node) -> Vec<&'static str> {
         match node {
             Node::Mailbox(account, id) => {
-                let mut ids = vec!["folder.new", "folder.rename", "folder.delete", "folder.mark_read"];
+                let mut ids = vec![
+                    "folder.new",
+                    "folder.rename",
+                    "folder.delete",
+                    "folder.mark_read",
+                ];
                 let empty = self
                     .account(account)
                     .and_then(|v| v.mail.mailboxes.iter().find(|m| m.id == *id))
@@ -329,7 +349,11 @@ impl State {
         let Some((_, mailbox)) = self.target_mailbox() else {
             return;
         };
-        let (id, name, count) = (mailbox.id.clone(), mailbox.name.clone(), mailbox.total_emails);
+        let (id, name, count) = (
+            mailbox.id.clone(),
+            mailbox.name.clone(),
+            mailbox.total_emails,
+        );
         self.folder_form(FolderAction::Delete { id }, name, count);
     }
 
@@ -338,7 +362,11 @@ impl State {
         let Some((_, mailbox)) = self.target_mailbox() else {
             return;
         };
-        let (id, name, count) = (mailbox.id.clone(), mailbox.name.clone(), mailbox.total_emails);
+        let (id, name, count) = (
+            mailbox.id.clone(),
+            mailbox.name.clone(),
+            mailbox.total_emails,
+        );
         self.folder_form(FolderAction::Empty { id }, name, count);
     }
 
@@ -407,7 +435,13 @@ impl State {
 
     /// Move `ids` of `account` into `mailbox`: the one path `email.move`,
     /// the Move form and a drop onto a folder all take.
-    pub fn move_emails(&mut self, account: &str, ids: Vec<String>, mailbox: String, reply: Option<u64>) {
+    pub fn move_emails(
+        &mut self,
+        account: &str,
+        ids: Vec<String>,
+        mailbox: String,
+        reply: Option<u64>,
+    ) {
         self.write_server(account.to_owned(), reply, Write::Move { ids, mailbox });
     }
 
@@ -485,7 +519,12 @@ impl State {
 
     /// The message list's table verbs (`email.table.*`) on `account`:
     /// the same events a person's clicks raise, then the table's state.
-    pub fn table_verb(&mut self, account: &str, verb: &str, args: &Value) -> Result<Value, Refusal> {
+    pub fn table_verb(
+        &mut self,
+        account: &str,
+        verb: &str,
+        args: &Value,
+    ) -> Result<Value, Refusal> {
         let request = {
             let view = self
                 .account(account)
@@ -537,9 +576,11 @@ impl State {
         };
         let all = view.mail.search.all();
         let columns = super::list_columns(0.0, all);
-        let mut out = self
-            .list_table(view)
-            .describe(&columns, view.mail.total_rows(), view.mail.emails.len());
+        let mut out = self.list_table(view).describe(
+            &columns,
+            view.mail.total_rows(),
+            view.mail.emails.len(),
+        );
         out["rows"] = view
             .mail
             .emails

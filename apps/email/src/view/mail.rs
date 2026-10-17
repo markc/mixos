@@ -174,12 +174,25 @@ fn header(
         } else if field.changed() {
             events.push(UiEvent::SearchText(account.clone(), text));
         }
-        let options = [crate::label("search-this-folder"), crate::label("search-all-folders")];
+        let options = [
+            crate::label("search-this-folder"),
+            crate::label("search-all-folders"),
+        ];
         let mut scope = usize::from(search.scope == Scope::All);
-        if toolkit::combo::show(ui, "email.search-scope", &mut scope, &options, Some(SCOPE_WIDTH))
-            .changed()
+        if toolkit::combo::show(
+            ui,
+            "email.search-scope",
+            &mut scope,
+            &options,
+            Some(SCOPE_WIDTH),
+        )
+        .changed()
         {
-            let scope = if scope == 1 { Scope::All } else { Scope::Folder };
+            let scope = if scope == 1 {
+                Scope::All
+            } else {
+                Scope::Folder
+            };
             events.push(UiEvent::SearchScope(account, scope));
         }
     });
@@ -196,12 +209,13 @@ fn search_keys(
     events: &mut Vec<UiEvent>,
 ) {
     let ctx = ui.ctx().clone();
-    let elsewhere = ctx.memory(|m| m.focused().is_none())
-        || toolkit::datatable::is_focused(&ctx, LIST);
+    let elsewhere =
+        ctx.memory(|m| m.focused().is_none()) || toolkit::datatable::is_focused(&ctx, LIST);
     if state.ui.focus_search {
         field.request_focus();
         events.push(UiEvent::SearchFocused);
-    } else if elsewhere && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Slash)) {
+    } else if elsewhere && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Slash))
+    {
         field.request_focus();
     }
     // egui lets go of a field on Escape: with text in it, clear and keep it.
@@ -209,7 +223,9 @@ fn search_keys(
         events.push(UiEvent::SearchClear(account.to_owned()));
         field.request_focus();
     }
-    if field.has_focus() && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowDown)) {
+    if field.has_focus()
+        && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowDown))
+    {
         toolkit::datatable::focus(&ctx, LIST);
         let first = state
             .account(account)

@@ -631,10 +631,7 @@ impl<'a> DataTable<'a> {
         let painter = ui.ctx().layer_painter(layer);
         let galley = painter.layout_no_wrap(label(drag.keys.len()), font, p.primary_text);
         let pad = ui.spacing().button_padding;
-        let rect = Rect::from_min_size(
-            pointer + vec2(12.0, 12.0),
-            galley.size() + 2.0 * pad,
-        );
+        let rect = Rect::from_min_size(pointer + vec2(12.0, 12.0), galley.size() + 2.0 * pad);
         painter.rect_filled(rect, f32::from(chrome.metrics.radius), p.primary_bg);
         painter.galley(rect.min + pad, galley, p.primary_text);
     }

@@ -329,12 +329,18 @@ pub fn registry() -> Registry<State> {
     }
     // …then the direction, under a rule.
     let orders: [OrderCommand; 2] = [
-        ("view.sort_ascending", "sort-ascending", Order::Ascending, |s| {
-            s.sort_order(Order::Ascending)
-        }),
-        ("view.sort_descending", "sort-descending", Order::Descending, |s| {
-            s.sort_order(Order::Descending)
-        }),
+        (
+            "view.sort_ascending",
+            "sort-ascending",
+            Order::Ascending,
+            |s| s.sort_order(Order::Ascending),
+        ),
+        (
+            "view.sort_descending",
+            "sort-descending",
+            Order::Descending,
+            |s| s.sort_order(Order::Descending),
+        ),
     ];
     for (id, label, order, run) in orders {
         r.add_toggle(
@@ -382,12 +388,9 @@ pub fn registry() -> Registry<State> {
             Scope::Folder,
             (|s| s.search_scope(Scope::Folder)) as fn(&mut State),
         ),
-        (
-            "view.search_all",
-            "search-all-folders",
-            Scope::All,
-            |s| s.search_scope(Scope::All),
-        ),
+        ("view.search_all", "search-all-folders", Scope::All, |s| {
+            s.search_scope(Scope::All)
+        }),
     ] {
         r.add_toggle(
             Command {

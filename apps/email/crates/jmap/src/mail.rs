@@ -891,7 +891,10 @@ mod tests {
     fn mailbox_ids_are_read() {
         let email: Email =
             serde_json::from_value(json!({ "id": "E1", "mailboxIds": { "M1": true } })).unwrap();
-        assert_eq!(email.mailbox_ids.unwrap().keys().collect::<Vec<_>>(), ["M1"]);
+        assert_eq!(
+            email.mailbox_ids.unwrap().keys().collect::<Vec<_>>(),
+            ["M1"]
+        );
     }
 
     #[test]
