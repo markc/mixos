@@ -88,7 +88,10 @@ for $i in [1, 2]
     print(json_encode(re_split("a,b", 'cache-pin-split|,')))
 end
 "#;
-    assert_eq!(out(src).await, "caught\n[\"a\",\"b\"]\ncaught\n[\"a\",\"b\"]\n");
+    assert_eq!(
+        out(src).await,
+        "caught\n[\"a\",\"b\"]\ncaught\n[\"a\",\"b\"]\n"
+    );
 }
 
 #[tokio::test]
