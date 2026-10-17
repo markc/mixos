@@ -62,6 +62,11 @@
   and a `$( … )` keep their bindings to themselves, a `case` pattern's `)` is
   text, and an escaped newline or a continuation-joined terminator matches a
   heredoc delimiter the way the shell does. See `mix man shell-mode`.
+- `$$` is one parameter in both shell-command scanners: `$$nosuch`, `$$?` and
+  `$$#` are the PID followed by the literal text, not a refused or raising
+  reference.
+- Generated `__mix_subst_` names are lengthened until they do not occur in the
+  command, so a command that assigns one cannot overwrite a transported value.
 - A `finally` that does `return`, `break` or `continue` no longer replaces a
   pending error while a SIGINT is standing, so an enclosing loop cannot run on.
 - `mix lint` MIX-W2307 (send result never checked) now counts a status read

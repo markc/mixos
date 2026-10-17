@@ -18966,32 +18966,29 @@ mod standing_interrupt_tests {
             .block_on(fut)
     }
 
-    /// One case: the Mix body (which writes `marker` as its first statement
+    /// One case: the Mix body (which writes `$marker` as its first statement
     /// inside the protected `try`, before its loop), the expected `$log` (if
     /// the case checks it), and whether the raiser keeps raising.
     ///
     /// The three guard cases raise ONCE, so the one interrupt lands at the
     /// first checkpoint inside the protected body and the outcome is fixed.
     /// The liveness case raises repeatedly and checks only that the run ends.
-    fn cases(marker: &std::path::Path) -> Vec<(String, Option<&'static str>, bool)> {
-        let m = marker.display();
+    fn cases() -> Vec<(&'static str, Option<&'static str>, bool)> {
+        // `$marker` is a Mix global the child binds to the marker path, so the
+        // path is data, never part of the source text.
         vec![
             (
-                format!(
-                    "try\n  $log = $log .. \"T\"\n  write_file(\"{m}\", \"x\")\n  while true\n    $n = 1\n  end\n\
-                     catch $m\n  $log = $log .. \"C\"\n\
-                     finally\n  $log = $log .. \"F\"\nend\n"
-                ),
+                "try\n  $log = $log .. \"T\"\n  write_file($marker, \"x\")\n  while true\n    $n = 1\n  end\n\
+                 catch $m\n  $log = $log .. \"C\"\n\
+                 finally\n  $log = $log .. \"F\"\nend\n",
                 Some("TF"),
                 false,
             ),
             (
-                format!(
-                    "try\n  try\n    write_file(\"{m}\", \"x\")\n    while true\n      $n = 1\n    end\n\
-                     catch $m\n    $log = $log .. \"C\"\n  end\n\
-                     catch $m2\n  $log = $log .. \"O\"\n\
-                     finally\n  $log = $log .. \"F\"\nend\n"
-                ),
+                "try\n  try\n    write_file($marker, \"x\")\n    while true\n      $n = 1\n    end\n\
+                 catch $m\n    $log = $log .. \"C\"\n  end\n\
+                 catch $m2\n  $log = $log .. \"O\"\n\
+                 finally\n  $log = $log .. \"F\"\nend\n",
                 Some("F"),
                 false,
             ),
@@ -19000,20 +18997,16 @@ mod standing_interrupt_tests {
             // runs on with no further interrupt, and the parent's time limit
             // fails the case.
             (
-                format!(
-                    "while true\n  try\n    write_file(\"{m}\", \"x\")\n    while true\n      $n = 1\n    end\n\
-                     finally\n    continue\n  end\nend\n$log = $log .. \"X\"\n"
-                ),
+                "while true\n  try\n    write_file($marker, \"x\")\n    while true\n      $n = 1\n    end\n\
+                 finally\n    continue\n  end\nend\n$log = $log .. \"X\"\n",
                 Some(""),
                 false,
             ),
             // Liveness: repeated raises must still end the run, however the
             // catch and finally clauses are entered.
             (
-                format!(
-                    "try\n  write_file(\"{m}\", \"x\")\n  while true\n    $n = 1\n  end\n\
-                     catch $m\n  $log = $log .. \"C\"\nend\n"
-                ),
+                "try\n  write_file($marker, \"x\")\n  while true\n    $n = 1\n  end\n\
+                 catch $m\n  $log = $log .. \"C\"\nend\n",
                 None,
                 true,
             ),
@@ -19028,7 +19021,7 @@ mod standing_interrupt_tests {
         let exe = std::env::current_exe().expect("test binary path");
         let dir = std::env::temp_dir().join(format!("mix-standing-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        for case in 0..cases(&dir).len() {
+        for case in 0..cases().len() {
             let marker = dir.join(format!("case-{case}"));
             // A marker left by an earlier run would release the raiser early.
             let _ = std::fs::remove_file(&marker);
@@ -19088,13 +19081,17 @@ mod standing_interrupt_tests {
             .parse()
             .expect("case index is a number");
         let marker = std::path::PathBuf::from(std::env::var_os(MARKER_ENV).expect("marker path"));
-        let (body, expected, repeated) =
-            cases(&marker).into_iter().nth(case).expect("case in range");
+        let (body, expected, repeated) = cases().into_iter().nth(case).expect("case in range");
         block_on(async {
             // One evaluator, whose flag is the process interrupt flag, as in
             // mix-shell.
             let mut eval = Evaluator::new();
             crate::interrupt::init(eval.interrupt_flag());
+            // The marker path is bound as data; the source names it as `$marker`.
+            eval.set_global(
+                "marker",
+                Value::String(marker.display().to_string()),
+            );
             eval.execute_script_source("$log = \"\"\n$n = 0\n")
                 .await
                 .expect("init globals");
@@ -19106,7 +19103,12 @@ mod standing_interrupt_tests {
             let stop = done.clone();
             let raiser_marker = marker.clone();
             let raiser = std::thread::spawn(move || {
+                // Give up if the body never wrote the marker (the case failed
+                // before its try): `done` is set once the run has ended.
                 while !raiser_marker.exists() {
+                    if stop.load(std::sync::atomic::Ordering::SeqCst) {
+                        return;
+                    }
                     std::thread::sleep(std::time::Duration::from_millis(2));
                 }
                 crate::interrupt::set_standing();

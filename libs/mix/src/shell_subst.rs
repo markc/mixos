@@ -41,9 +41,16 @@ pub fn prepare(cmd: &str, lookup: impl Fn(&str) -> Option<String>) -> Result<Pre
     // Pass 1 only discovers the names the inner command binds, with the
     // same quoting, comment and heredoc rules as the rewrite; pass 2
     // rewrites against them.
-    let mut discover = Scan::new(cmd, &lookup, HashMap::new(), true);
+    // The generated names must not occur anywhere in the command: an
+    // assignment to one (`__mix_subst_0=inner`) would overwrite the value
+    // carried in its environment entry. Lengthen the prefix until it is new.
+    let mut prefix = PARAM_PREFIX.to_string();
+    while cmd.contains(&prefix) {
+        prefix.push('_');
+    }
+    let mut discover = Scan::new(cmd, &lookup, HashMap::new(), true, prefix.clone());
     discover.shell(Close::Top)?;
-    let mut scan = Scan::new(cmd, &lookup, discover.found, false);
+    let mut scan = Scan::new(cmd, &lookup, discover.found, false, prefix);
     scan.shell(Close::Top)?;
     Ok(Prepared {
         cmd: scan.out,
@@ -156,6 +163,9 @@ struct Scan<'a, F: Fn(&str) -> Option<String>> {
     /// names each level binds into `found`.
     discover: bool,
     found: HashMap<usize, HashSet<String>>,
+    /// The prefix of the generated parameter names; never occurs in the
+    /// command text (see `prepare`).
+    prefix: String,
 }
 
 impl<'a, F: Fn(&str) -> Option<String>> Scan<'a, F> {
@@ -164,6 +174,7 @@ impl<'a, F: Fn(&str) -> Option<String>> Scan<'a, F> {
         lookup: &'a F,
         bound: HashMap<usize, HashSet<String>>,
         discover: bool,
+        prefix: String,
     ) -> Self {
         Scan {
             c: cmd.chars().collect(),
@@ -179,6 +190,7 @@ impl<'a, F: Fn(&str) -> Option<String>> Scan<'a, F> {
             pending: Vec::new(),
             discover,
             found: HashMap::new(),
+            prefix,
         }
     }
 
@@ -747,7 +759,7 @@ impl<'a, F: Fn(&str) -> Option<String>> Scan<'a, F> {
         }
         match (self.lookup)(name) {
             Some(value) => {
-                let param = format!("{PARAM_PREFIX}{}", self.params.len());
+                let param = format!("{}{}", self.prefix, self.params.len());
                 self.params.insert(name.to_string(), param.clone());
                 self.env.push((param.clone(), value));
                 Ok(Some(param))
@@ -1221,6 +1233,19 @@ mod tests {
         // `$$` is the PID: the text after it is not a reference.
         let p = prepare("echo $$nosuch $(echo $$x)", scope).unwrap();
         assert_eq!(p.cmd, "echo $$nosuch $(echo $$x)");
+    }
+
+    #[test]
+    fn a_generated_name_never_collides_with_the_command_text() {
+        // The command assigns the default generated name; the transported
+        // `$d` must keep its own parameter, not be overwritten by it.
+        let cmd = "__mix_subst_0=inner; echo $d";
+        let p = prepare(cmd, scope).unwrap();
+        assert_eq!(p.cmd, "__mix_subst_0=inner; echo ${__mix_subst__0}");
+        assert_eq!(
+            p.env,
+            vec![("__mix_subst__0".to_string(), "x y".to_string())]
+        );
     }
 
     #[test]
