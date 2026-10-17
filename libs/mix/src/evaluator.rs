@@ -19116,7 +19116,7 @@ mod standing_interrupt_tests {
                     }
                 }
             });
-            let result = eval.execute_script_source(&body).await;
+            let result = eval.execute_script_source(body).await;
             done.store(true, std::sync::atomic::Ordering::SeqCst);
             raiser.join().expect("raiser thread");
             crate::interrupt::_test_clear();
