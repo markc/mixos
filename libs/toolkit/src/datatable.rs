@@ -782,6 +782,8 @@ impl<'a> DataTable<'a> {
             (None, _) => crate::strings::own("datatable-none"),
         };
         let size = vec2(ui.available_width(), height);
+        // The left side's events, kept apart from the right side's.
+        let mut noted = Vec::new();
         ui.allocate_ui_with_layout(size, Layout::left_to_right(egui::Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = ui.spacing().item_spacing.x / 2.0;
             egui::Sides::new().height(height).show(
@@ -789,7 +791,7 @@ impl<'a> DataTable<'a> {
                 |ui| {
                     ui.add_space(ui.spacing().item_spacing.x);
                     ui.label(egui::RichText::new(range).weak());
-                    self.selection_note(ui, shown, events);
+                    self.selection_note(ui, shown, &mut noted);
                 },
                 |ui| {
                     // Right to left: Last is added first.
@@ -837,6 +839,7 @@ impl<'a> DataTable<'a> {
                 },
             );
         });
+        events.extend(noted);
     }
 }
 
