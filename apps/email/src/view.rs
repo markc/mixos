@@ -66,6 +66,12 @@ pub enum UiEvent {
     CloseDialog,
     /// The title bar's light/dark toggle: the mode to switch to.
     SetMode(design::Mode),
+    /// Show or hide the open email's attachments popup.
+    AttachmentsOpen(bool),
+    /// Save the open email's attachment (its part id) to the downloads.
+    SaveAttachment(String),
+    /// Open the open email's attachment with the desktop's application.
+    OpenAttachment(String),
 }
 
 const ICON: f32 = 14.0;
@@ -216,7 +222,7 @@ fn window(
             .resizable(true)
             .default_size(remaining * state.ui.reader)
             .frame(bars::dock_frame(ui.ctx()))
-            .show(ui, |ui| reader(ui, state, view, commands, strings, events));
+            .show(ui, |ui| reader(ui, state, view, commands, strings, stroke, events));
         let split = right.response.rect.width() / remaining.max(1.0);
         if (split - state.ui.reader).abs() > 0.005 {
             events.push(UiEvent::SplitReader(split));
@@ -257,11 +263,12 @@ fn reader(
     view: &AccountView,
     commands: &Registry<State>,
     strings: &Strings,
+    stroke: f32,
     events: &mut Vec<UiEvent>,
 ) {
     let title = crate::label("reader");
     panel::group(ui, "reader", &[title.as_str()], |ui, _| match state.mode {
-        Mode::Mail => mail::reader(ui, state, view, commands, strings, events),
+        Mode::Mail => mail::reader(ui, state, view, commands, strings, stroke, events),
         Mode::Calendar => calendar::reader(ui, view),
         Mode::Contacts => contacts::reader(ui, view),
     });

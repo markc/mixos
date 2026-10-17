@@ -116,6 +116,38 @@ pub struct Email {
     pub text_body: Option<Vec<BodyPart>>,
     #[serde(rename = "htmlBody", default)]
     pub html_body: Option<Vec<BodyPart>>,
+    /// The parts that are not the body (RFC 8621 `attachments`).
+    #[serde(default)]
+    pub attachments: Option<Vec<Attachment>>,
+}
+
+/// One attachment: a part that is not the body. maild marks a part it
+/// could not decode `undecodable` and gives it no blob.
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+pub struct Attachment {
+    #[serde(rename = "partId", default)]
+    pub part_id: Option<String>,
+    #[serde(rename = "blobId", default)]
+    pub blob_id: Option<String>,
+    #[serde(default)]
+    pub size: u64,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(rename = "type", default)]
+    pub content_type: Option<String>,
+    #[serde(default)]
+    pub disposition: Option<String>,
+    #[serde(default)]
+    pub cid: Option<String>,
+    #[serde(default)]
+    pub undecodable: bool,
+}
+
+impl Attachment {
+    /// Whether its bytes can be fetched.
+    pub fn downloadable(&self) -> bool {
+        !self.undecodable && self.blob_id.as_deref().is_some_and(|b| !b.is_empty())
+    }
 }
 
 impl Email {
@@ -587,6 +619,29 @@ mod tests {
         assert_eq!(email.text_body_value(), Some("Sandwiches?"));
         assert_eq!(email.html_body_value(), None);
         assert!(!email.date_short().is_empty());
+    }
+
+    #[test]
+    fn reads_maild_attachments() {
+        let email: Email = serde_json::from_value(json!({
+            "id": "E1",
+            "attachments": [
+                { "partId": "2", "blobId": "B2", "size": 1234, "name": "plan.pdf",
+                  "type": "application/pdf", "disposition": "attachment", "cid": null },
+                { "partId": "3", "size": 10, "name": "odd.bin",
+                  "type": "application/octet-stream", "undecodable": true }
+            ]
+        }))
+        .unwrap();
+        let attachments = email.attachments.unwrap();
+        assert_eq!(attachments[0].blob_id.as_deref(), Some("B2"));
+        assert_eq!(attachments[0].size, 1234);
+        assert_eq!(attachments[0].content_type.as_deref(), Some("application/pdf"));
+        assert!(attachments[0].downloadable());
+        assert!(attachments[1].undecodable && !attachments[1].downloadable());
+        // An email without the property reads as none.
+        let bare: Email = serde_json::from_value(json!({ "id": "E2" })).unwrap();
+        assert!(bare.attachments.is_none());
     }
 
     #[test]

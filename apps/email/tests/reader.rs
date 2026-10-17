@@ -199,6 +199,7 @@ fn harness(state: State, theme: &Theme) -> Harness<'static, (State, Vec<UiEvent>
                                 state.current().unwrap(),
                                 &registry,
                                 &strings,
+                                2.0,
                                 &mut events,
                             );
                         });
@@ -568,6 +569,75 @@ fn junk_moves_to_the_junk_mailbox_and_not_junk_back_to_the_inbox() {
         last_write(&mut state),
         Some(email::verbs::Write::Move { mailbox, .. }) if mailbox == "m-in"
     ));
+}
+
+/// `state`s open email with three attachments: a PDF, a script, and a
+/// part maild could not decode.
+fn with_attachments(mut state: State) -> State {
+    let list: Vec<jmap::Attachment> = serde_json::from_value(serde_json::json!([
+        { "partId": "2", "blobId": "B2", "size": 248_000, "name": "Quarterly build cluster capacity plan (final, revised).pdf", "type": "application/pdf" },
+        { "partId": "3", "blobId": "B3", "size": 912, "name": "../../install.sh", "type": "application/x-shellscript" },
+        { "partId": "4", "size": 40, "name": "winmail.dat", "type": "application/ms-tnef", "undecodable": true }
+    ]))
+    .unwrap();
+    let view = &mut state.accounts[0].mail;
+    if let Some(open) = view.open.as_mut() {
+        open.attachments = Some(list);
+    }
+    state
+}
+
+#[test]
+fn attachments_save_open_and_refuse_as_they_should() {
+    let mut state = with_attachments(opened("text/plain", PLAIN));
+    let registry = commands::registry();
+    // The command toggles the popup.
+    registry.execute("mail.attachments", &mut state, Origin::Bus).unwrap();
+    assert!(state.accounts[0].mail.attachments_open);
+    state.take_work();
+    state.save_attachment("3", false);
+    let work = state.take_work();
+    assert!(
+        work.iter().any(|w| matches!(w, Work::Attachment { part, name, open: false, blob, .. }
+            if part == "3" && name == "install.sh" && blob == "B3")),
+        "{work:?}"
+    );
+    // A script is never opened; an undecodable part never fetched.
+    state.save_attachment("3", true);
+    state.save_attachment("4", false);
+    assert!(state.take_work().is_empty());
+    // Save All fetches what can be fetched.
+    registry
+        .execute("mail.save_attachments", &mut state, Origin::Bus)
+        .unwrap();
+    let parts: Vec<String> = state
+        .take_work()
+        .into_iter()
+        .filter_map(|w| match w {
+            Work::Attachment { part, .. } => Some(part),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(parts, ["2", "3"]);
+    // email.info lists them, with what became of each.
+    let info = state.info()["accounts"][0]["mail"]["attachments"].clone();
+    assert_eq!(info[1]["name"], "install.sh");
+    assert_eq!(info[1]["save_only"], true);
+    assert_eq!(info[2]["undecodable"], true);
+    assert_eq!(info[0]["transfer"]["state"], "saving");
+}
+
+#[test]
+fn reader_attachments_studio_dark() {
+    let mut state = with_attachments(opened("text/plain", PLAIN));
+    state.accounts[0].mail.attachments_open = true;
+    state.accounts[0].mail.transfers.insert(
+        "2".into(),
+        email::state::Transfer::Saved("/home/ann/Downloads/plan.pdf".into()),
+    );
+    let mut h = harness(state, &theme(Scheme::Studio, Mode::Dark));
+    h.run();
+    h.snapshot("reader_attachments_studio_dark");
 }
 
 fn snapshot(name: &str, state: State, theme: &Theme) {

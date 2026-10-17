@@ -287,6 +287,18 @@ pub const VERBS: &[Verb] = &[
         "Open the compose dialog forwarding an email",
     ),
     verb(
+        "email.attachments",
+        true,
+        r#"{"account":"optional account id","id":"email id"}"#,
+        "An email's attachments (part, name, type, size, undecodable, save_only), without their content",
+    ),
+    verb(
+        "email.attachment.save",
+        false,
+        r#"{"account":"optional account id","id":"email id","part":"attachment part id","dir":"optional absolute existing directory (default: the downloads directory)"}"#,
+        "Save one attachment, never replacing a file (a taken name is numbered); answers {path}",
+    ),
+    verb(
         "email.print",
         false,
         r#"{"account":"optional account id","id":"optional email id (default: the open email)"}"#,
@@ -413,6 +425,11 @@ pub enum Then {
     Forward(String),
     /// Print the email fetched (`email.print`).
     Print,
+    /// Answer with the email fetched's attachments (`email.attachments`).
+    Attachments,
+    /// Save the email fetched's attachment `part`, in `dir` or the
+    /// downloads directory (`email.attachment.save`).
+    SaveAttachment { part: String, dir: Option<String> },
 }
 
 /// A change on the account's server.
@@ -1117,6 +1134,40 @@ fn dispatch(
                 Then::Forward(list(args, "to")?.unwrap_or_default().join(", "))
             };
             state.query(account, id, Query::Get { id: email }, then);
+        }
+        "email.attachments" | "email.attachment.save" => {
+            let account = connected(state, args)?;
+            let wanted = required(args, "id")?;
+            let open = state
+                .account(&account)
+                .and_then(|v| v.mail.open.clone())
+                .filter(|open| open.id == wanted);
+            if verb == "email.attachments" {
+                match open {
+                    Some(open) => {
+                        let transfers = state.account(&account).map(|v| v.mail.transfers.clone());
+                        let list = crate::state::attachments_view(&open, transfers.as_ref());
+                        state.reply(id, 0, json!({ "id": open.id, "attachments": list }));
+                    }
+                    None => state.query(account, id, Query::Get { id: wanted }, Then::Attachments),
+                }
+            } else {
+                let part = required(args, "part")?;
+                let dir = text(args, "dir")?;
+                match open {
+                    Some(open) => {
+                        let work = crate::state::attachment_work(&account, &open, &part, false, dir, Some(id))
+                            .map_err(|(code, message)| Bad(code, message))?;
+                        state.queue_work(work);
+                    }
+                    None => state.query(
+                        account,
+                        id,
+                        Query::Get { id: wanted },
+                        Then::SaveAttachment { part, dir },
+                    ),
+                }
+            }
         }
         "email.print" => {
             let account = connected(state, args)?;

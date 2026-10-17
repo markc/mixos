@@ -21,6 +21,7 @@
 //! through the Bus. A pure JMAP client must — the server is whatever
 //! account the person points it at, not a service this node hosts.
 
+pub mod attachments;
 pub mod commands;
 pub mod config;
 pub mod print;

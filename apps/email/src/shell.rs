@@ -54,6 +54,18 @@ pub enum Done {
     Events(u64, Result<Vec<jmap::CalendarEvent>, jmap::Error>),
     Books(Result<Vec<jmap::AddressBook>, jmap::Error>),
     Contacts(u64, Result<Vec<jmap::Contact>, jmap::Error>),
+    /// An attachment save or open finished (boxed: it carries a path).
+    Attachment(Box<AttachmentDone>),
+}
+
+/// An attachment save or open: which, for whom, and where it landed.
+pub struct AttachmentDone {
+    pub email: String,
+    pub part: String,
+    pub open: bool,
+    pub reply: Option<u64>,
+    /// The saved file's path, or why there is none.
+    pub result: Result<String, String>,
 }
 
 /// What finished off the UI thread. Completions carry their result; the
@@ -148,6 +160,47 @@ const BROWSER_APP_ID: &str = "firefox";
 
 /// Print pages older than this are removed on the next print.
 pub const PRINT_KEEP: std::time::Duration = std::time::Duration::from_secs(24 * 60 * 60);
+
+/// Download blob `blob` and save it as `name`: in `dir`, else the
+/// downloads directory (made if missing), or (`open`) in the private open
+/// directory and then handed to the desktop's default application
+/// (`xdg-open`, as Dopus opens files). The disk work is off the async
+/// workers; a window closing mid-download drops it before anything is
+/// written, since the file is only linked into place whole.
+async fn attachment(
+    client: &Client,
+    blob: &str,
+    name: String,
+    open: bool,
+    dir: Option<String>,
+) -> Result<String, String> {
+    let bytes = client.download_blob(blob).await.map_err(|e| e.to_string())?;
+    let path = tokio::task::spawn_blocking(move || -> Result<PathBuf, String> {
+        let dir = match (open, dir) {
+            (true, _) => crate::attachments::open_dir()?,
+            (false, Some(dir)) => PathBuf::from(dir),
+            (false, None) => {
+                let dir = crate::attachments::downloads()?;
+                std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+                dir
+            }
+        };
+        crate::attachments::save(&dir, &name, &bytes)
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    if open {
+        let mut child = std::process::Command::new("xdg-open")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+        // Reaped off the UI thread, so it never lingers as a zombie.
+        let _ = std::thread::Builder::new()
+            .name("email-xdg-open-reap".into())
+            .spawn(move || drop(child.wait()));
+    }
+    Ok(path.display().to_string())
+}
 
 /// The private print directory, `$XDG_RUNTIME_DIR/email-print`.
 fn print_dir() -> Result<PathBuf, String> {
@@ -862,6 +915,29 @@ impl Shell {
             }
             Work::OpenPrefs => self.open_prefs(),
             Work::Print { reply, name, html } => self.print(reply, name, html),
+            Work::Attachment {
+                account,
+                email,
+                part,
+                blob,
+                name,
+                open,
+                dir,
+                reply,
+            } => match self.client(&account) {
+                Some((tag, client)) => self.spawn(async move {
+                    let result = attachment(&client, &blob, name, open, dir).await;
+                    let done = AttachmentDone {
+                        email,
+                        part,
+                        open,
+                        reply,
+                        result,
+                    };
+                    Event::Account(tag, Done::Attachment(Box::new(done)))
+                }),
+                None => self.not_connected(reply),
+            },
         }
     }
 

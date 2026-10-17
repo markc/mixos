@@ -80,6 +80,16 @@ fn unjunkable(state: &State) -> bool {
         })
 }
 
+/// The open email has attachments.
+fn attached(state: &State) -> bool {
+    reading(state)
+        && state
+            .current()
+            .and_then(|v| v.mail.open.as_ref())
+            .and_then(|e| e.attachments.as_ref())
+            .is_some_and(|list| !list.is_empty())
+}
+
 /// More than one account to step through.
 fn several(state: &State) -> bool {
     undialogued(state) && state.accounts.len() > 1
@@ -292,6 +302,28 @@ pub fn registry() -> Registry<State> {
         icon: Some(Icon::Printer),
         enabled: reading,
         run: State::print_open,
+    })
+    .add(Command {
+        id: "mail.attachments",
+        submenu: None,
+        group: 5,
+        label: "attachments",
+        menu: Some("message"),
+        shortcut: None,
+        icon: Some(Icon::Paperclip),
+        enabled: attached,
+        run: State::toggle_attachments,
+    })
+    .add(Command {
+        id: "mail.save_attachments",
+        submenu: None,
+        group: 5,
+        label: "save-attachments",
+        menu: Some("message"),
+        shortcut: None,
+        icon: Some(Icon::Download),
+        enabled: attached,
+        run: State::save_all_attachments,
     })
     .add(Command {
         id: "calendar.new_event",

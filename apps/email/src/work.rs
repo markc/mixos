@@ -142,6 +142,20 @@ pub enum Work {
     },
     /// Launch Prefs on its Email section.
     OpenPrefs,
+    /// Download attachment `part` (blob `blob`) of `account`'s `email` and
+    /// save it as `name`: in `dir`, else the downloads directory, or
+    /// (`open`) in a private directory, then open it with the desktop's
+    /// default application. `reply`: the Bus request to answer.
+    Attachment {
+        account: String,
+        email: String,
+        part: String,
+        blob: String,
+        name: String,
+        open: bool,
+        dir: Option<String>,
+        reply: Option<u64>,
+    },
     /// Write print page `html` as `name` in the private print directory and
     /// open it in the browser (`reply`: the Bus request to answer).
     Print {
@@ -167,7 +181,8 @@ impl Work {
             | Work::FetchCalendars { account }
             | Work::FetchEvents { account, .. }
             | Work::FetchBooks { account }
-            | Work::FetchContacts { account, .. } => Some(account),
+            | Work::FetchContacts { account, .. }
+            | Work::Attachment { account, .. } => Some(account),
             Work::Settings { .. }
             | Work::WriteDeadline { .. }
             | Work::ReadSettings

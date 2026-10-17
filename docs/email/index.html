@@ -389,6 +389,23 @@ Labels follow the email (<strong>Star</strong> or <strong>Remove Star</strong>, 
 unread: only opening an email marks it read.</p>
 </li>
 <li>
+<p><strong>Attachments.</strong> An email with attachments shows a paperclip and its
+count at the end of the reader's toolbar (and Message › Attachments…).
+Its popup lists each one with its type, name and size, and <strong>Save</strong>
+and <strong>Open</strong>; <strong>Save all</strong> saves every one that can be fetched. Saving
+writes into your downloads directory (<code>$XDG_DOWNLOAD_DIR</code>, the
+<code>user-dirs.dirs</code> entry, else <code>~/Downloads</code>) and never replaces a file:
+a taken name becomes <code>name (1).ext</code>. Names from mail are cleaned (no
+paths, <code>..</code>, control characters or leading dots, 200 bytes at most),
+files are written whole and readable only by you, and the status line
+names where each went. <strong>Open</strong> saves into a private directory first
+and hands the file to the desktop's default application; programs and
+scripts (executables, shell scripts, <code>.desktop</code> files and the like)
+are Save only. A part the server could not decode is shown greyed. The
+download runs in the background; nothing is written until the whole
+file has arrived.</p>
+</li>
+<li>
 <p><strong>Printing</strong> (Message › Print…, Ctrl+P) goes through the browser's
 print dialog, which also offers <strong>Save to PDF</strong>: MixOS has no print
 service. The email becomes one self-contained page in a private
@@ -478,6 +495,8 @@ never waits on them.</p>
 <tr><td><code>email.mailbox.select/create/rename/delete</code></td><td>intent</td><td><code>create</code> answers <code>{id}</code></td></tr>
 <tr><td><code>email.open {id}</code></td><td>intent</td><td>show an email in the reader; answers once loaded</td></tr>
 <tr><td><code>email.mark {ids, read?, flagged?}</code>, <code>email.move {ids, mailbox}</code>, <code>email.delete {ids, destroy?}</code></td><td>intent</td><td>the list and counts refresh after</td></tr>
+<tr><td><code>email.attachments {id}</code></td><td>query</td><td>the email's attachments (part, name, type, size, undecodable, save_only), never their content</td></tr>
+<tr><td><code>email.attachment.save {id, part, dir?}</code></td><td>intent</td><td>save one attachment (into <code>dir</code>, absolute and existing, else the downloads directory) without replacing a file; answers <code>{path}</code></td></tr>
 <tr><td><code>email.print {id?}</code></td><td>intent</td><td>write the print page (the open email by default) and open it in the browser; answers <code>{path, opened}</code></td></tr>
 <tr><td><code>email.junk {ids, junk}</code></td><td>intent</td><td>move to the Junk mailbox (<code>junk: true</code>) or back to the inbox; maild trains spam or ham on the move; answers <code>{ids, mailbox}</code></td></tr>
 <tr><td><code>email.send {to, cc?, bcc?, subject, body, in_reply_to?}</code></td><td>intent</td><td>send without the dialog</td></tr>

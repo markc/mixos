@@ -150,6 +150,21 @@ A malformed file loads defaults and is never overwritten.
   Labels follow the email (**Star** or **Remove Star**, **Mark as Read** or
   **Mark as Unread**). Marking an open email unread leaves it open and
   unread: only opening an email marks it read.
+- **Attachments.** An email with attachments shows a paperclip and its
+  count at the end of the reader's toolbar (and Message › Attachments…).
+  Its popup lists each one with its type, name and size, and **Save**
+  and **Open**; **Save all** saves every one that can be fetched. Saving
+  writes into your downloads directory (`$XDG_DOWNLOAD_DIR`, the
+  `user-dirs.dirs` entry, else `~/Downloads`) and never replaces a file:
+  a taken name becomes `name (1).ext`. Names from mail are cleaned (no
+  paths, `..`, control characters or leading dots, 200 bytes at most),
+  files are written whole and readable only by you, and the status line
+  names where each went. **Open** saves into a private directory first
+  and hands the file to the desktop's default application; programs and
+  scripts (executables, shell scripts, `.desktop` files and the like)
+  are Save only. A part the server could not decode is shown greyed. The
+  download runs in the background; nothing is written until the whole
+  file has arrived.
 - **Printing** (Message › Print…, Ctrl+P) goes through the browser's
   print dialog, which also offers **Save to PDF**: MixOS has no print
   service. The email becomes one self-contained page in a private
@@ -241,6 +256,8 @@ never waits on them.
 | `email.mailbox.select/create/rename/delete` | intent | `create` answers `{id}` |
 | `email.open {id}` | intent | show an email in the reader; answers once loaded |
 | `email.mark {ids, read?, flagged?}`, `email.move {ids, mailbox}`, `email.delete {ids, destroy?}` | intent | the list and counts refresh after |
+| `email.attachments {id}` | query | the email's attachments (part, name, type, size, undecodable, save_only), never their content |
+| `email.attachment.save {id, part, dir?}` | intent | save one attachment (into `dir`, absolute and existing, else the downloads directory) without replacing a file; answers `{path}` |
 | `email.print {id?}` | intent | write the print page (the open email by default) and open it in the browser; answers `{path, opened}` |
 | `email.junk {ids, junk}` | intent | move to the Junk mailbox (`junk: true`) or back to the inbox; maild trains spam or ham on the move; answers `{ids, mailbox}` |
 | `email.send {to, cc?, bcc?, subject, body, in_reply_to?}` | intent | send without the dialog |

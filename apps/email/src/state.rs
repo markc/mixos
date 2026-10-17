@@ -120,6 +120,23 @@ pub struct MailState {
     /// How the open email's text body is shown, and its cached parse.
     pub reader: crate::reader::Reader,
     pub busy: bool,
+    /// The open email's attachments popup is showing.
+    pub attachments_open: bool,
+    /// The open email's attachment saves and opens, by part id.
+    pub transfers: BTreeMap<String, Transfer>,
+}
+
+/// Where one attachment's save or open has got to.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(tag = "state", content = "detail", rename_all = "lowercase")]
+pub enum Transfer {
+    Saving,
+    Opening,
+    /// Saved at this path.
+    Saved(String),
+    /// Saved at this path and handed to the desktop.
+    Opened(String),
+    Failed(String),
 }
 
 impl MailState {
@@ -1050,6 +1067,11 @@ impl State {
 
     fn queue(&mut self, work: Work) {
         self.work.push(work);
+    }
+
+    /// Queue `work` from a Bus verb (`verbs.rs` builds it).
+    pub fn queue_work(&mut self, work: Work) {
+        self.queue(work);
     }
 
     fn ticket(&mut self) -> u64 {
@@ -1998,6 +2020,9 @@ impl State {
             // A send is settled by its own ticket even when the account has
             // reconnected since: the person must hear whether it went.
             Event::Account(tag, Done::Sent(ticket, result)) => self.sent(&tag, ticket, result),
+            // A save is answered whatever became of the connection: the
+            // file is on disk (or not) either way.
+            Event::Account(tag, Done::Attachment(done)) => self.attachment_done(&tag, *done),
             Event::Account(tag, Done::Opened(ticket, Some(reply), result)) => {
                 // The caller hears "loaded" only if the reader will show it:
                 // the same connection, and still the latest open.
@@ -2073,6 +2098,11 @@ impl State {
                     Done::Opened(_, _, result) => match *result {
                         Ok(email) => {
                             view.mail.reader.open(&email);
+                            // Another email: its own attachments, popup shut.
+                            if view.mail.open.as_ref().is_none_or(|o| o.id != email.id) {
+                                view.mail.transfers.clear();
+                                view.mail.attachments_open = false;
+                            }
                             view.mail.open = Some(email);
                         }
                         Err(ref error) => self.status = error.to_string(),
@@ -2131,7 +2161,7 @@ impl State {
                     | Done::Calendars(Err(error))
                     | Done::Books(Err(error)) => self.status = error.to_string(),
                     // Answered above, before the generation check.
-                    Done::Answered(..) | Done::Wrote(..) => {}
+                    Done::Answered(..) | Done::Wrote(..) | Done::Attachment(..) => {}
                 }
             }
             Event::Settled(ticket, answer) => self.settled(ticket, answer),
@@ -2423,6 +2453,21 @@ impl State {
         if self.account(account).map(AccountView::generation) != Some(tag.generation) {
             return self.refuse(reply, code::STALE, &crate::label("stale-connection"));
         }
+        // Attachment queries and saves need no compose either.
+        match &then {
+            Then::Attachments => {
+                let list = attachments_view(&email, None);
+                return self.reply(reply, 0, json!({ "id": email.id, "attachments": list }));
+            }
+            Then::SaveAttachment { part, dir } => {
+                let (part, dir) = (part.clone(), dir.clone());
+                return match attachment_work(account, &email, &part, false, dir, Some(reply)) {
+                    Ok(work) => self.queue(work),
+                    Err((code, message)) => self.refuse(reply, code, &message),
+                };
+            }
+            _ => {}
+        }
         // A print needs no compose: it goes ahead whatever is open.
         if then == Then::Print {
             let markdown = crate::reader::detect(&email) == crate::reader::Format::Markdown;
@@ -2432,7 +2477,7 @@ impl State {
             return self.refuse(reply, code::BUSY, &crate::label("compose-open"));
         }
         let opened = match then {
-            Then::Print => false,
+            Then::Print | Then::Attachments | Then::SaveAttachment { .. } => false,
             Then::Reply(all, quote) => self.reply_to(account, &email, all, quote),
             Then::Forward(to) => self.forward(account, &email, &to),
             Then::Answer => false,
@@ -2633,6 +2678,101 @@ impl State {
                     destroy: false,
                 },
             );
+        }
+    }
+
+    /// `mail.attachments`: show or hide the open email's attachments.
+    pub fn toggle_attachments(&mut self) {
+        let Some(id) = self.selected.clone() else {
+            return;
+        };
+        if let Some(view) = self.account_mut(&id) {
+            view.mail.attachments_open = !view.mail.attachments_open;
+        }
+    }
+
+    /// Show (`true`) or hide the attachments popup.
+    pub fn set_attachments_open(&mut self, open: bool) {
+        let Some(id) = self.selected.clone() else {
+            return;
+        };
+        if let Some(view) = self.account_mut(&id) {
+            view.mail.attachments_open = open;
+        }
+    }
+
+    /// Save the open email's attachment `part` to the downloads directory,
+    /// or (`open`) to a private directory and open it with the desktop's
+    /// default application.
+    pub fn save_attachment(&mut self, part: &str, open: bool) {
+        let Some((account, email)) = self.reading() else {
+            return;
+        };
+        match attachment_work(&account, &email, part, open, None, None) {
+            Ok(work) => {
+                let transfer = if open {
+                    Transfer::Opening
+                } else {
+                    Transfer::Saving
+                };
+                if let Some(view) = self.account_mut(&account) {
+                    view.mail.transfers.insert(part.to_owned(), transfer);
+                }
+                self.status = crate::label(if open { "attachment-opening" } else { "attachment-saving" });
+                self.queue(work);
+            }
+            Err((_, message)) => self.status = message,
+        }
+    }
+
+    /// `mail.save_attachments`: save every attachment of the open email
+    /// that can be fetched.
+    pub fn save_all_attachments(&mut self) {
+        let Some((_, email)) = self.reading() else {
+            return;
+        };
+        for attachment in email.attachments.iter().flatten() {
+            if attachment.downloadable()
+                && let Some(part) = &attachment.part_id
+            {
+                self.save_attachment(part, false);
+            }
+        }
+    }
+
+    /// An attachment save or open finished.
+    pub fn attachment_done(&mut self, tag: &Tag, done: crate::shell::AttachmentDone) {
+        let crate::shell::AttachmentDone {
+            email,
+            part,
+            open,
+            reply,
+            result,
+        } = done;
+        let transfer = match &result {
+            Ok(path) if open => Transfer::Opened(path.clone()),
+            Ok(path) => Transfer::Saved(path.clone()),
+            Err(error) => Transfer::Failed(error.clone()),
+        };
+        if let Some(view) = self.accounts.iter_mut().find(|v| v.entry.id == tag.account)
+            && view.mail.open.as_ref().is_some_and(|o| o.id == email)
+        {
+            view.mail.transfers.insert(part, transfer);
+        }
+        match result {
+            Ok(path) => {
+                let key = if open { "attachment-opened" } else { "attachment-saved" };
+                self.status = crate::label_with(key, &[("path", &path)]);
+                if let Some(reply) = reply {
+                    self.reply(reply, 0, json!({ "path": path }));
+                }
+            }
+            Err(error) => {
+                self.status = error.clone();
+                if let Some(reply) = reply {
+                    self.refuse(reply, code::UNAVAILABLE, &error);
+                }
+            }
         }
     }
 
@@ -3065,6 +3205,8 @@ impl State {
                     "total": view.mail.total,
                     "open": view.mail.open.as_ref().map(|e| &e.id),
                     "reader": view.mail.open.as_ref().map(|e| view.mail.reader.info(e)),
+                    "attachments": view.mail.open.as_ref().map(|e| attachments_view(e, Some(&view.mail.transfers))),
+                    "attachments_open": view.mail.attachments_open,
                     "busy": view.mail.busy,
                 });
                 out["calendar"] = json!({
@@ -3683,6 +3825,9 @@ impl State {
                 self.reconnect(&account);
             }
             UiEvent::OpenPrefs => self.open_prefs(),
+            UiEvent::AttachmentsOpen(open) => self.set_attachments_open(open),
+            UiEvent::SaveAttachment(part) => self.save_attachment(&part, false),
+            UiEvent::OpenAttachment(part) => self.save_attachment(&part, true),
             UiEvent::SplitPlaces(split) => {
                 if (split - self.ui.places).abs() > 0.005 {
                     self.ui.places = split;
@@ -3929,6 +4074,79 @@ fn attribution(email: &Email) -> String {
         })
         .unwrap_or_default();
     crate::label_with("reply-attribution", &[("date", &when), ("name", &who)])
+}
+
+/// `email`'s attachments as `email.info` and `email.attachments` list
+/// them (no content), with each one's save or open state.
+pub fn attachments_view(email: &Email, transfers: Option<&BTreeMap<String, Transfer>>) -> Value {
+    email
+        .attachments
+        .iter()
+        .flatten()
+        .enumerate()
+        .map(|(index, a)| {
+            json!({
+                "part": a.part_id,
+                "name": crate::attachments::file_name(a.name.as_deref(), index + 1, a.content_type.as_deref()),
+                "type": a.content_type,
+                "size": a.size,
+                "undecodable": !a.downloadable(),
+                "save_only": crate::attachments::refuses_open(
+                    &crate::attachments::file_name(a.name.as_deref(), index + 1, a.content_type.as_deref()),
+                    a.content_type.as_deref(),
+                ),
+                "transfer": a.part_id.as_ref().and_then(|p| transfers.and_then(|t| t.get(p))),
+            })
+        })
+        .collect()
+}
+
+/// The work that saves (or opens) `email`'s attachment `part` from
+/// `account`, or why it cannot: no such part, nothing to fetch, or an
+/// executable asked to open.
+pub fn attachment_work(
+    account: &str,
+    email: &Email,
+    part: &str,
+    open: bool,
+    dir: Option<String>,
+    reply: Option<u64>,
+) -> Result<Work, (&'static str, String)> {
+    let (index, attachment) = email
+        .attachments
+        .iter()
+        .flatten()
+        .enumerate()
+        .find(|(_, a)| a.part_id.as_deref() == Some(part))
+        .ok_or_else(|| (code::NOT_FOUND, crate::label("no-such-attachment")))?;
+    let blob = attachment
+        .blob_id
+        .clone()
+        .filter(|_| attachment.downloadable())
+        .ok_or_else(|| (code::REFUSED, crate::label("attachment-undecodable")))?;
+    let name = crate::attachments::file_name(
+        attachment.name.as_deref(),
+        index + 1,
+        attachment.content_type.as_deref(),
+    );
+    if open && crate::attachments::refuses_open(&name, attachment.content_type.as_deref()) {
+        return Err((code::REFUSED, crate::label("attachment-save-only")));
+    }
+    if let Some(dir) = &dir
+        && !std::path::Path::new(dir).is_absolute()
+    {
+        return Err((code::INVALID_ARGUMENT, crate::label("dir-not-absolute")));
+    }
+    Ok(Work::Attachment {
+        account: account.to_owned(),
+        email: email.id.clone(),
+        part: part.to_owned(),
+        blob,
+        name,
+        open,
+        dir,
+        reply,
+    })
 }
 
 /// The row to open after `open` and the other `gone` rows leave `emails`

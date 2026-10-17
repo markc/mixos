@@ -12,7 +12,7 @@ use toolkit::{Icon, Registry, Strings, icons, panel};
 
 use super::UiEvent;
 use crate::reader::{self, Format};
-use crate::state::{AccountView, State};
+use crate::state::{AccountView, State, Transfer};
 
 /// The centre pane's email list.
 pub fn list(
@@ -129,10 +129,11 @@ pub fn reader(
     view: &AccountView,
     commands: &Registry<State>,
     strings: &Strings,
+    stroke: f32,
     events: &mut Vec<UiEvent>,
 ) {
     let area = ui.max_rect();
-    toolbar(ui, state, commands, strings, events);
+    toolbar(ui, state, view, commands, strings, stroke, events);
     toolkit::bars::hairline(ui);
     if let Some(email) = &view.mail.open {
         message(ui, view, email);
@@ -150,8 +151,10 @@ pub fn reader(
 fn toolbar(
     ui: &mut Ui,
     state: &State,
+    view: &AccountView,
     commands: &Registry<State>,
     strings: &Strings,
+    stroke: f32,
     events: &mut Vec<UiEvent>,
 ) {
     ui.horizontal(|ui| {
@@ -194,7 +197,132 @@ fn toolbar(
         link(ui, events, "mail.forward", Icon::Forward);
         toolkit::bars::divider(ui, DIVIDER);
         link(ui, events, "mail.delete", Icon::Trash);
+        // The paperclip and its count, only when there are attachments.
+        let attached = view
+            .mail
+            .open
+            .as_ref()
+            .and_then(|e| e.attachments.as_ref())
+            .filter(|list| !list.is_empty());
+        if let (Some(list), Some(email)) = (attached, view.mail.open.as_ref()) {
+            toolkit::bars::divider(ui, DIVIDER);
+            let count = list.len().to_string();
+            let clip = ui
+                .add(Link::new(Icon::Paperclip, count.as_str()))
+                .on_hover_text(crate::label_with("attachment-count", &[("count", &count)]));
+            if clip.clicked() {
+                events.push(UiEvent::Command("mail.attachments", Origin::Ui));
+            }
+            attachments_popup(ui, &clip, view, email, stroke, events);
+        }
     });
+}
+
+/// The type icon for an attachment of type `mime`.
+fn type_icon(mime: Option<&str>) -> Icon {
+    let mime = mime.unwrap_or("").to_ascii_lowercase();
+    match mime.split('/').next().unwrap_or("") {
+        "image" => Icon::FileImage,
+        "audio" => Icon::FileMusic,
+        "video" => Icon::FileVideoCamera,
+        "text" if mime.starts_with("text/csv") => Icon::FileSpreadsheet,
+        "text" => Icon::FileText,
+        _ if mime.contains("zip") || mime.contains("tar") || mime.contains("compressed") => {
+            Icon::FileArchive
+        }
+        _ if mime.contains("spreadsheet") || mime.contains("excel") => Icon::FileSpreadsheet,
+        _ if mime.contains("pdf") || mime.contains("document") || mime.contains("word") => {
+            Icon::FileText
+        }
+        _ => Icon::File,
+    }
+}
+
+/// The attachments popup under the paperclip: each attachment's type,
+/// name (elided, whole on hover) and size, with Save and Open; Save All
+/// at the foot. A part that could not be decoded is greyed with a note;
+/// a program or script offers Save only.
+fn attachments_popup(
+    ui: &Ui,
+    clip: &egui::Response,
+    view: &AccountView,
+    email: &Email,
+    stroke: f32,
+    events: &mut Vec<UiEvent>,
+) {
+    let open = view.mail.attachments_open;
+    let shown = egui::Popup::from_response(clip)
+        .id(clip.id.with("attachments"))
+        .open(open)
+        .close_behavior(egui::PopupCloseBehavior::IgnoreClicks)
+        .show(|ui| {
+            let body = ui.text_style_height(&egui::TextStyle::Body);
+            let name_width = body * 16.0;
+            ui.set_min_width(body * 26.0);
+            ui.label(RichText::new(crate::label("attachments-title")).strong());
+            let weak = ui.visuals().weak_text_color();
+            for (index, a) in email.attachments.iter().flatten().enumerate() {
+                let name = crate::attachments::file_name(
+                    a.name.as_deref(),
+                    index + 1,
+                    a.content_type.as_deref(),
+                );
+                let part = a.part_id.clone().unwrap_or_default();
+                let usable = a.downloadable();
+                ui.horizontal(|ui| {
+                    let ink = if usable { ui.visuals().text_color() } else { weak };
+                    ui.add(icons::image(type_icon(a.content_type.as_deref()), stroke, 14.0, ink));
+                    ui.allocate_ui(egui::vec2(name_width, ui.spacing().interact_size.y), |ui| {
+                        let label = RichText::new(&name).color(ink);
+                        ui.add(egui::Label::new(label).truncate())
+                            .on_hover_text(a.name.as_deref().unwrap_or(&name));
+                    });
+                    ui.label(RichText::new(crate::attachments::human_size(a.size)).weak());
+                    if !usable {
+                        ui.label(RichText::new(crate::label("attachment-undecodable")).weak().small());
+                        return;
+                    }
+                    if ui.add(Link::new(Icon::Download, crate::label("save"))).clicked() {
+                        events.push(UiEvent::SaveAttachment(part.clone()));
+                    }
+                    let save_only = crate::attachments::refuses_open(&name, a.content_type.as_deref());
+                    let opened = ui.add_enabled(!save_only, Link::new(Icon::ExternalLink, crate::label("open")));
+                    let opened = if save_only {
+                        opened.on_disabled_hover_text(crate::label("attachment-save-only"))
+                    } else {
+                        opened
+                    };
+                    if opened.clicked() {
+                        events.push(UiEvent::OpenAttachment(part.clone()));
+                    }
+                });
+                if let Some(transfer) = view.mail.transfers.get(&part) {
+                    let note = match transfer {
+                        Transfer::Saving => crate::label("attachment-saving"),
+                        Transfer::Opening => crate::label("attachment-opening"),
+                        Transfer::Saved(path) => crate::label_with("attachment-saved", &[("path", path)]),
+                        Transfer::Opened(path) => crate::label_with("attachment-opened", &[("path", path)]),
+                        Transfer::Failed(error) => crate::label_with("attachment-failed", &[("error", error)]),
+                    };
+                    ui.label(RichText::new(note).weak().small());
+                }
+            }
+            ui.separator();
+            let any = email.attachments.iter().flatten().any(|a| a.downloadable());
+            if ui.add_enabled(any, Link::new(Icon::Download, crate::label("save-all"))).clicked() {
+                events.push(UiEvent::Command("mail.save_attachments", Origin::Ui));
+            }
+        });
+    // A click outside the popup and the paperclip closes it.
+    if open
+        && let Some(shown) = shown
+        && ui.input(|i| i.pointer.any_click())
+        && let Some(at) = ui.input(|i| i.pointer.interact_pos())
+        && !shown.response.rect.contains(at)
+        && !clip.rect.contains(at)
+    {
+        events.push(UiEvent::AttachmentsOpen(false));
+    }
 }
 
 /// The open email: subject first and largest, then From, To and the date,
