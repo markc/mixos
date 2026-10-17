@@ -1223,8 +1223,8 @@ mod tests {
     #[test]
     fn the_table_carries_chords_and_availability() {
         let table = action_table(crate::keymap::default_keys);
-        let rename = table.iter().find(|r| r.id == "file.rename").unwrap();
-        assert_eq!(rename.keys, ["F2", "Ctrl+E"]);
+        let parent = table.iter().find(|r| r.id == "nav.parent").unwrap();
+        assert_eq!(parent.keys, ["Backspace", "Alt+ArrowUp"]);
         assert!(ACTIONS.iter().all(|(id, _)| is_action(id)));
         let (_dir, mut core) = core();
         let served = serve(&mut core, true, "dopus.actions.list", "{}");

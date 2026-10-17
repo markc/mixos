@@ -170,7 +170,8 @@ fn executed_commands_are_published_with_their_origin() {
         json!({"id": "edit.clear"}),
     );
     wait(&mut rig, &[1, 2]);
-    rig.h.key_press(egui::Key::F1);
+    rig.h
+        .key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Slash);
     rig.h.run_steps(3);
     rig.h.key_press(egui::Key::Escape);
     rig.h.run_steps(3);

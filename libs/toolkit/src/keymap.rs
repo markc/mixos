@@ -16,6 +16,29 @@ use std::collections::BTreeMap;
 /// empty list unbinds.
 pub type Overrides = BTreeMap<String, Vec<String>>;
 
+/// The function keys F1–F12. They belong to the person: no app binds one by
+/// default, with or without modifiers; only the person's own bindings may
+/// (docs/docs/decisions/2026-10-17-function-keys-belong-to-the-user.md).
+pub const USER_KEYS: [Key; 12] = [
+    Key::F1,
+    Key::F2,
+    Key::F3,
+    Key::F4,
+    Key::F5,
+    Key::F6,
+    Key::F7,
+    Key::F8,
+    Key::F9,
+    Key::F10,
+    Key::F11,
+    Key::F12,
+];
+
+/// Whether `key` is one of the person's function keys ([`USER_KEYS`]).
+pub fn user_only(key: Key) -> bool {
+    USER_KEYS.contains(&key)
+}
+
 /// The shortcut `text` names, or `None` when it is not a chord egui has.
 pub fn parse_chord(text: &str) -> Option<KeyboardShortcut> {
     let parts: Vec<&str> = text.split('+').collect();

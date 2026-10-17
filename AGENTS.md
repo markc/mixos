@@ -271,6 +271,10 @@ applies to every GUI app and to the desktop furniture.
 - **Every executed command is published** on `<app>.command.executed`, with
   how it was reached
   ([decision](docs/docs/decisions/2026-10-11-executed-commands.md)).
+- **F1–F12 belong to the user.** No program binds a function key by default,
+  bare or with any modifier; only the person's keymap may. The command
+  registry refuses one
+  ([decision](docs/docs/decisions/2026-10-17-function-keys-belong-to-the-user.md)).
 - **UI state is one serialisable struct,** readable and drivable over the Bus.
 - **Tests and offscreen snapshots** gate UI changes. Look at the image.
 - **Measure before optimising.** Record the workload, environment and

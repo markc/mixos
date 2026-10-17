@@ -85,5 +85,6 @@ give the agent the file without the person saying where it is.
   `play` (sox), and `screenshot` (nwg-shell).
 - The `screenshot.*` verbs and its drive verbs are registered in
   `docs/docs/spec/bus/verbs.conf.mix`.
-- compd's binding table gains Print, Shift+Print and Alt+Print. No bare
-  F1–F12 key is bound: those belong to the person.
+- compd's binding table gains Print, Shift+Print and Alt+Print. No F1–F12
+  key is bound, bare or with modifiers: those belong to the person
+  ([decision](2026-10-17-function-keys-belong-to-the-user.md)).

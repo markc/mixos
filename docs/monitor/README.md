@@ -28,7 +28,7 @@ watched from one that has one. The reasons are in the
   graphs start full: Monitor asks monitord for the last minute first.
 
 Monitor reads once a second. Pause (Ctrl+P) holds the readings still;
-Refresh (F5) reads once.
+Refresh (Ctrl+R) reads once.
 
 ## End task and Kill
 

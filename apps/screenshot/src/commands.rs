@@ -4,7 +4,8 @@
 //! search and the Bus (`screenshot.commands` / `screenshot.execute`) all come
 //! from this registry, so anything a person can do an agent can do by id.
 //!
-//! No bare F1–F12 key is bound: those belong to the person.
+//! No F1–F12 key is bound, bare or with modifiers: those belong to the
+//! person, and the toolkit's registry refuses one as a default.
 use crate::app::{App, DELAYS, Dialog, SIZES, Tool, WIDTHS};
 use crate::capture::Mode;
 use annotation::Kind;
@@ -536,35 +537,6 @@ mod tests {
                 command.id
             );
             assert!(command.submenu.is_none_or(known), "{} submenu", command.id);
-        }
-    }
-
-    #[test]
-    fn no_bare_function_key_is_bound() {
-        let r = registry();
-        let function_keys = [
-            Key::F1,
-            Key::F2,
-            Key::F3,
-            Key::F4,
-            Key::F5,
-            Key::F6,
-            Key::F7,
-            Key::F8,
-            Key::F9,
-            Key::F10,
-            Key::F11,
-            Key::F12,
-        ];
-        for command in r.iter() {
-            for shortcut in r.shortcuts_of(command.id) {
-                assert!(
-                    !(shortcut.modifiers.is_none()
-                        && function_keys.contains(&shortcut.logical_key)),
-                    "{} binds a bare function key",
-                    command.id
-                );
-            }
         }
     }
 

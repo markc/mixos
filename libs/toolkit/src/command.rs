@@ -145,6 +145,20 @@ pub struct Place {
     pub group: u8,
 }
 
+/// Refuse `shortcut` as a default chord of command `id` when it is on one of
+/// the person's function keys, F1–F12, whatever its modifiers
+/// (docs/docs/decisions/2026-10-17-function-keys-belong-to-the-user.md).
+/// Only [`Registry::rebind`], applying the person's own bindings, may put a
+/// command on one.
+fn default_chord(id: &str, shortcut: KeyboardShortcut) {
+    assert!(
+        !crate::keymap::user_only(shortcut.logical_key),
+        "command {id:?} has a default chord on {}: F1-F12 belong to the user and only \
+         their keymap may bind them (docs/docs/decisions/2026-10-17-function-keys-belong-to-the-user.md)",
+        crate::keymap::chord_text(&shortcut)
+    );
+}
+
 /// A choice command's own run does nothing: the registry runs its closure.
 fn choose<S>(_: &mut S) {}
 
@@ -157,7 +171,8 @@ impl<S> Registry<S> {
     ///
     /// # Panics
     /// On a duplicate id or shortcut: both are programming errors that would
-    /// otherwise make dispatch ambiguous.
+    /// otherwise make dispatch ambiguous. On a shortcut on F1–F12, with any
+    /// modifiers: those keys are the person's ([`default_chord`]).
     pub fn add(&mut self, command: Command<S>) -> &mut Self {
         assert!(
             self.get(command.id).is_none(),
@@ -165,6 +180,7 @@ impl<S> Registry<S> {
             command.id
         );
         if let Some(shortcut) = command.shortcut {
+            default_chord(command.id, shortcut);
             assert!(
                 !self.taken(shortcut),
                 "duplicate shortcut on {:?}",
@@ -260,7 +276,8 @@ impl<S> Registry<S> {
     /// to claim a chord keeps it.
     ///
     /// # Panics
-    /// When there is no command `id`.
+    /// When there is no command `id`, or on a chord on F1–F12, as
+    /// [`Registry::add`].
     pub fn add_shortcuts(
         &mut self,
         id: &str,
@@ -271,6 +288,7 @@ impl<S> Registry<S> {
             .unwrap_or_else(|| panic!("no command {id:?}"))
             .id;
         for shortcut in shortcuts {
+            default_chord(id, shortcut);
             if !self.taken(shortcut) {
                 self.extras.entry(id).or_default().push(shortcut);
             }
@@ -1058,6 +1076,75 @@ mod tests {
         );
         output.textures_delta.clear();
         out
+    }
+
+    /// A command on `shortcut` by default.
+    fn on(id: &'static str, shortcut: KeyboardShortcut) -> Command<Counter> {
+        Command {
+            id,
+            label: "x",
+            menu: None,
+            submenu: None,
+            group: 0,
+            shortcut: Some(shortcut),
+            icon: None,
+            enabled: always,
+            run: |_| {},
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "F1-F12 belong to the user")]
+    fn a_default_bare_function_key_is_refused() {
+        let f1 = KeyboardShortcut::new(Modifiers::NONE, Key::F1);
+        Registry::new().add(on("help.shortcuts", f1));
+    }
+
+    #[test]
+    #[should_panic(expected = "F1-F12 belong to the user")]
+    fn a_default_ctrl_function_key_is_refused() {
+        let ctrl_f5 = KeyboardShortcut::new(Modifiers::COMMAND, Key::F5);
+        Registry::new().add(on("view.refresh", ctrl_f5));
+    }
+
+    #[test]
+    #[should_panic(expected = "F1-F12 belong to the user")]
+    fn a_default_shift_function_key_is_refused() {
+        let shift_f3 = KeyboardShortcut::new(Modifiers::SHIFT, Key::F3);
+        Registry::new().add(on("find.prev", shift_f3));
+    }
+
+    #[test]
+    #[should_panic(expected = "F1-F12 belong to the user")]
+    fn a_further_default_function_key_is_refused() {
+        let alt_f12 = KeyboardShortcut::new(Modifiers::ALT, Key::F12);
+        registry().add_shortcuts("count.bump", [alt_f12]);
+    }
+
+    #[test]
+    fn the_person_may_bind_a_function_key() {
+        let mut r = registry();
+        let notes = r.rebind(&BTreeMap::from([(
+            "count.bump".to_owned(),
+            vec!["F5".to_owned(), "Ctrl+Shift+F11".to_owned()],
+        )]));
+        assert!(notes.is_empty(), "{notes:?}");
+        let f5 = KeyboardShortcut::new(Modifiers::NONE, Key::F5);
+        assert_eq!(
+            r.shortcuts_of("count.bump"),
+            [
+                f5,
+                KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::SHIFT, Key::F11)
+            ]
+        );
+        assert_eq!(fired_key(&r, &Counter::default(), f5), ["count.bump"]);
+        // Restoring the defaults leaves no function key bound.
+        assert!(r.rebind(&BTreeMap::new()).is_empty());
+        assert!(
+            r.iter()
+                .flat_map(|c| r.shortcuts_of(c.id))
+                .all(|s| !crate::keymap::user_only(s.logical_key))
+        );
     }
 
     #[test]
