@@ -98,6 +98,40 @@ scroll it into view, and Enter activates it. The selection is held as row
 keys, so `TableState::rows_changed(&keys)` keeps it across a refresh and
 drops what is gone.
 
+### Context menus and focus
+
+`.context_menu(&mut |ui, row| …)` gives rows a right-click menu. A
+right-click on a row outside the selection selects it first (`Selected`),
+then reports `ContextMenu { index, key }` and opens a popup that the closure
+fills. Apps fill it from their command registry with
+`Registry::context_menu(ui, state, strings, &ids, &why)`, which draws the
+commands `ids` with their labels, shortcuts, ticks and enablement, and
+returns the one chosen for the app to run with `Origin::Menu`.
+`Registry::ids_in(menu)` lists a menu's commands.
+
+`datatable::is_focused(ctx, id)` says whether the table has the keyboard,
+and `datatable::focus(ctx, id)` gives it the keyboard. Focus-scoped
+shortcuts, such as single keys that must never fire in a text field, use
+these.
+
+### Dragging rows
+
+`.draggable(&|count| label)` makes rows a drag source. A drag that starts
+on a selected row carries the whole selection, in page order. One that
+starts on an unselected row selects that row and carries it alone. The
+table reports `DragStarted { keys }`, puts a `RowsDrag { table, keys }`
+payload on egui's `DragAndDrop`, and shows `label(count)`, for example "3
+messages", in a badge by the pointer. A drop target reads the payload with
+`DragAndDrop::payload::<RowsDrag>(ctx)`, checks `table`, and takes it on
+release. Email's folder tree works this way. Agents never drag: the app's
+own verb, `email.move` in Email, takes the same state path.
+
+### Columns shown and density
+
+`TableState::hidden` holds the columns the person hid. `ColumnShown`
+toggles one, and `DensityChanged` switches between compact and
+comfortable. Both are preferences, so an app keeps them with the widths.
+
 ### Widths and persistence
 
 `TableState` is one serialisable struct. Persist the parts that are a
@@ -121,10 +155,43 @@ send email email.ui.click label="Subject"
 send email email.ui.click label="Next page"
 ```
 
-For the data itself an app reports `TableState::describe(&columns, total,
-shown)` (columns, sort, order, page, pages, total, range, selection,
-focus) and `datatable::rows_json(&columns, &rows)` in its own state verb.
-Email puts the first under `mail.table` in `email.info`.
+### The table verbs
+
+Every table can be read and driven through the Bus with no extra app
+code. `toolkit::datatable::verbs` is a standard verb set that an app mounts
+under its own prefix:
+
+| Verb | Arguments | Does |
+|---|---|---|
+| `<app>.table.state` | — | columns (id, label key, sortable, width, visible), sort, order, page, page size, pages, total, range, selection, focus, density and the shown rows |
+| `<app>.table.sort` | `column`, optional `order` (`asc`/`desc`) | sorts, as a header click does |
+| `<app>.table.page` | `index` (0-based, or `first`/`previous`/`next`/`last`) | shows a page |
+| `<app>.table.page_size` | `n` | sets the page size |
+| `<app>.table.select` | `rows` (keys or indices) | selects rows, the first replacing the selection |
+| `<app>.table.activate` | `row` | activates a row, as Enter or a double-click does |
+| `<app>.table.context` | `row` | selects a row for its context menu (the menu's commands run through `<app>.execute`) |
+| `<app>.table.column` | `id`, optional `width` and `visible` | resizes, shows or hides a column |
+| `<app>.table.density` | `compact` or `comfortable` | sets the row height |
+
+To mount the set:
+
+1. List `verbs::describe(app)` in the app's `app.describe`.
+2. Register the names in `verbs.conf.mix`, with `table.state` as a query
+   and the rest as intents.
+3. When one arrives, call
+   `verbs::request(verb, args, &verbs::Table { columns, state, total, keys, allow_unsorted })`.
+   It checks the arguments against the table. It returns either
+   `Request::State` or `Request::Events(events)`, which are the same
+   `TableEvent`s a person's clicks raise. A bad argument is refused as
+   `Refusal::Invalid` or `Refusal::NotFound`.
+4. Apply the events through the path the UI's events take, then answer
+   with `TableState::describe` plus `rows_json`.
+
+`verbs::verb_for(&event)` names the verb for each event, so an app's
+registry test can check that every event its table raises has a verb.
+Email mounts the set as `email.table.*` for its message list. There
+`table.page_size` is refused, because the page size is the
+`email.mail.page_size` setting.
 
 ## Tests
 

@@ -176,4 +176,6 @@ fn the_list_payload_change_is_versioned() {
     }
     assert_eq!(version_of("email.list"), Some("0.2.0"));
     assert_eq!(version_of("email.info"), Some("0.2.0"));
+    // `show` lets email.search drive the window: an intent now.
+    assert_eq!(version_of("email.search"), Some("0.2.0"));
 }

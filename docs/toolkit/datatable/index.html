@@ -221,8 +221,12 @@
                         <a href="#using-it">Using it</a>
                         <a href="#sorting-and-paging" class="toc-h3">Sorting and paging</a>
                         <a href="#rows-selection-and-the-keyboard" class="toc-h3">Rows, selection and the keyboard</a>
+                        <a href="#context-menus-and-focus" class="toc-h3">Context menus and focus</a>
+                        <a href="#dragging-rows" class="toc-h3">Dragging rows</a>
+                        <a href="#columns-shown-and-density" class="toc-h3">Columns shown and density</a>
                         <a href="#widths-and-persistence" class="toc-h3">Widths and persistence</a>
                         <a href="#agents">Agents</a>
+                        <a href="#the-table-verbs" class="toc-h3">The table verbs</a>
                         <a href="#tests">Tests</a>
                     </nav>
                 </div>
@@ -327,6 +331,33 @@ Then Up, Down, Page Up, Page Down, Home and End move the selection and
 scroll it into view, and Enter activates it. The selection is held as row
 keys, so <code>TableState::rows_changed(&amp;keys)</code> keeps it across a refresh and
 drops what is gone.</p>
+<h3 id="context-menus-and-focus">Context menus and focus</h3>
+<p><code>.context_menu(&amp;mut |ui, row| …)</code> gives rows a right-click menu. A
+right-click on a row outside the selection selects it first (<code>Selected</code>),
+then reports <code>ContextMenu { index, key }</code> and opens a popup that the closure
+fills. Apps fill it from their command registry with
+<code>Registry::context_menu(ui, state, strings, &amp;ids, &amp;why)</code>, which draws the
+commands <code>ids</code> with their labels, shortcuts, ticks and enablement, and
+returns the one chosen for the app to run with <code>Origin::Menu</code>.
+<code>Registry::ids_in(menu)</code> lists a menu's commands.</p>
+<p><code>datatable::is_focused(ctx, id)</code> says whether the table has the keyboard,
+and <code>datatable::focus(ctx, id)</code> gives it the keyboard. Focus-scoped
+shortcuts, such as single keys that must never fire in a text field, use
+these.</p>
+<h3 id="dragging-rows">Dragging rows</h3>
+<p><code>.draggable(&amp;|count| label)</code> makes rows a drag source. A drag that starts
+on a selected row carries the whole selection, in page order. One that
+starts on an unselected row selects that row and carries it alone. The
+table reports <code>DragStarted { keys }</code>, puts a <code>RowsDrag { table, keys }</code>
+payload on egui's <code>DragAndDrop</code>, and shows <code>label(count)</code>, for example "3
+messages", in a badge by the pointer. A drop target reads the payload with
+<code>DragAndDrop::payload::&lt;RowsDrag&gt;(ctx)</code>, checks <code>table</code>, and takes it on
+release. Email's folder tree works this way. Agents never drag: the app's
+own verb, <code>email.move</code> in Email, takes the same state path.</p>
+<h3 id="columns-shown-and-density">Columns shown and density</h3>
+<p><code>TableState::hidden</code> holds the columns the person hid. <code>ColumnShown</code>
+toggles one, and <code>DensityChanged</code> switches between compact and
+comfortable. Both are preferences, so an app keeps them with the widths.</p>
 <h3 id="widths-and-persistence">Widths and persistence</h3>
 <p><code>TableState</code> is one serialisable struct. Persist the parts that are a
 preference (<code>sort</code>, <code>widths</code>, <code>density</code>) in the app's config, and keep the
@@ -344,9 +375,40 @@ hand does:</p>
 send email email.ui.click label="Subject"
 send email email.ui.click label="Next page"
 </code></pre>
-<p>For the data itself an app reports <code>TableState::describe(&amp;columns, total, shown)</code> (columns, sort, order, page, pages, total, range, selection,
-focus) and <code>datatable::rows_json(&amp;columns, &amp;rows)</code> in its own state verb.
-Email puts the first under <code>mail.table</code> in <code>email.info</code>.</p>
+<h3 id="the-table-verbs">The table verbs</h3>
+<p>Every table can be read and driven through the Bus with no extra app
+code. <code>toolkit::datatable::verbs</code> is a standard verb set that an app mounts
+under its own prefix:</p>
+<table><thead><tr><th>Verb</th><th>Arguments</th><th>Does</th></tr></thead><tbody>
+<tr><td><code>&lt;app&gt;.table.state</code></td><td>—</td><td>columns (id, label key, sortable, width, visible), sort, order, page, page size, pages, total, range, selection, focus, density and the shown rows</td></tr>
+<tr><td><code>&lt;app&gt;.table.sort</code></td><td><code>column</code>, optional <code>order</code> (<code>asc</code>/<code>desc</code>)</td><td>sorts, as a header click does</td></tr>
+<tr><td><code>&lt;app&gt;.table.page</code></td><td><code>index</code> (0-based, or <code>first</code>/<code>previous</code>/<code>next</code>/<code>last</code>)</td><td>shows a page</td></tr>
+<tr><td><code>&lt;app&gt;.table.page_size</code></td><td><code>n</code></td><td>sets the page size</td></tr>
+<tr><td><code>&lt;app&gt;.table.select</code></td><td><code>rows</code> (keys or indices)</td><td>selects rows, the first replacing the selection</td></tr>
+<tr><td><code>&lt;app&gt;.table.activate</code></td><td><code>row</code></td><td>activates a row, as Enter or a double-click does</td></tr>
+<tr><td><code>&lt;app&gt;.table.context</code></td><td><code>row</code></td><td>selects a row for its context menu (the menu's commands run through <code>&lt;app&gt;.execute</code>)</td></tr>
+<tr><td><code>&lt;app&gt;.table.column</code></td><td><code>id</code>, optional <code>width</code> and <code>visible</code></td><td>resizes, shows or hides a column</td></tr>
+<tr><td><code>&lt;app&gt;.table.density</code></td><td><code>compact</code> or <code>comfortable</code></td><td>sets the row height</td></tr>
+</tbody></table>
+<p>To mount the set:</p>
+<ol>
+<li>List <code>verbs::describe(app)</code> in the app's <code>app.describe</code>.</li>
+<li>Register the names in <code>verbs.conf.mix</code>, with <code>table.state</code> as a query
+and the rest as intents.</li>
+<li>When one arrives, call
+<code>verbs::request(verb, args, &amp;verbs::Table { columns, state, total, keys, allow_unsorted })</code>.
+It checks the arguments against the table. It returns either
+<code>Request::State</code> or <code>Request::Events(events)</code>, which are the same
+<code>TableEvent</code>s a person's clicks raise. A bad argument is refused as
+<code>Refusal::Invalid</code> or <code>Refusal::NotFound</code>.</li>
+<li>Apply the events through the path the UI's events take, then answer
+with <code>TableState::describe</code> plus <code>rows_json</code>.</li>
+</ol>
+<p><code>verbs::verb_for(&amp;event)</code> names the verb for each event, so an app's
+registry test can check that every event its table raises has a verb.
+Email mounts the set as <code>email.table.*</code> for its message list. There
+<code>table.page_size</code> is refused, because the page size is the
+<code>email.mail.page_size</code> setting.</p>
 <h2 id="tests">Tests</h2>
 <p>The engine's rules (sort cycling, page arithmetic, keyboard moves,
 selection clamping, the client-side helpers) are unit tests in

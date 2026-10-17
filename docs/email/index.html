@@ -349,7 +349,43 @@ by date, subject and sender), and the pager steps through pages of the
 page size. A new mailbox opens on its first page in the last sort chosen,
 which is remembered with the column widths. Once a row is clicked,
 <strong>↑/↓</strong>, <strong>Page Up/Down</strong>, <strong>Home/End</strong> move through the page and
-<strong>Enter</strong> opens the email.</p>
+<strong>Enter</strong> opens the email. After a delete or a move, the next email
+opens, or the one before it when the last went.</p>
+<p>Above the list is one header row:</p>
+<ul>
+<li><strong>Compose</strong>: shrinks to its icon when the pane is narrow.</li>
+<li><strong>The count</strong>: "N messages", or "N results" while searching.</li>
+<li><strong>The search field</strong>, with <strong>This folder</strong> / <strong>All folders</strong> beside
+it. The search runs on the server about 300 ms after typing stops.
+Sorting and paging work on the result, which starts at its first page.
+All folders adds a Folder column, which cannot be sorted.</li>
+<li><strong>Search keys</strong>: <strong>Ctrl+F</strong>, or <strong>/</strong> from the list, focuses the
+field. <strong>Esc</strong> clears it, or lets go when it is empty. <strong>↓</strong> moves to
+the list.</li>
+</ul>
+<p>Choosing a folder in the tree ends the search.</p>
+<p>Right-clicking a row selects it and opens the message menu. Dragging
+rows onto a folder moves them, the same move <code>email.move</code> makes. A
+folder that can take them lights up, and a collapsed one opens after
+0.7 s. Calendars, address books, account roots, the folder the emails
+are already in, and another account's folders refuse the drop. Moves
+between accounts are not supported yet.</p>
+</li>
+<li>
+<p><strong>Tree context menus</strong>: right-clicking a tree node selects it and opens
+its own menu. The same commands are in the <strong>Folder</strong> menu.</p>
+<ul>
+<li><strong>Mail folder</strong>: New Subfolder…, Rename…, Delete Folder… (its emails
+move to the Trash first), Mark Folder as Read, Empty… (Trash and Junk
+only), and Refresh. Inbox, Sent, Drafts, Trash, Junk and Archive
+cannot be renamed or deleted.</li>
+<li><strong>Account</strong>: Compose from This Account, Reconnect, Account Settings…
+and Refresh.</li>
+<li><strong>Calendar and address book</strong>: New Event…, New Contact… and Refresh.</li>
+</ul>
+<p>Names are checked: not empty, no <code>/</code>, and not a name a sibling already
+has. Deleting or emptying a folder asks first and says how many emails
+it affects, with Cancel as the default.</p>
 </li>
 <li>
 <p><strong>The reader</strong>: the open email (plain text first, the HTML source when
@@ -393,6 +429,7 @@ instants.</p>
 <tr><td>Ctrl+PageDown / PageUp</td><td>Next / previous account</td></tr>
 <tr><td>Alt+PageDown / PageUp</td><td>Next / previous page of the list</td></tr>
 <tr><td>Alt+1 / 2 / 3</td><td>Sort by From / Subject / Date (again: reverse)</td></tr>
+<tr><td>Ctrl+F, or / in the list</td><td>Search messages</td></tr>
 </tbody></table>
 <h2 id="driving-it-over-the-bus">Driving it over the Bus</h2>
 <p>Service <code>email</code>, schema <code>email.v1</code>. <code>HELP</code> lists the verbs, and
@@ -421,7 +458,11 @@ never waits on them.</p>
 <tr><td><code>email.accounts</code></td><td>query</td><td>the accounts with <code>has_password</code> and <code>state</code>, never a password</td></tr>
 <tr><td><code>email.mailboxes {account?}</code></td><td>query</td><td>mailboxes with roles, parents and counts</td></tr>
 <tr><td><code>email.list {account?, mailbox?, sort?, order?, page?, offset?, limit?, query?}</code></td><td>query</td><td>one page sorted by <code>sort</code> (<code>received</code>, <code>subject</code>, <code>from</code>; default <code>received</code>) in <code>order</code> (<code>asc</code>, <code>desc</code>; default newest first, else A to Z), from <code>page</code> × <code>limit</code> or <code>offset</code>, with <code>total</code>, <code>page</code>, <code>sort</code> and <code>order</code></td></tr>
-<tr><td><code>email.search {account?, text, mailbox?, limit?}</code></td><td>query</td><td>emails matching text</td></tr>
+<tr><td><code>email.search {account?, text, mailbox?, limit?, show?}</code></td><td>intent</td><td>emails matching text; with <code>show: true</code> the window's list searches too (in <code>mailbox</code>, else every folder)</td></tr>
+<tr><td><code>email.search.set {account?, text, scope?}</code> / <code>email.search.clear {account?}</code></td><td>intent</td><td>the list's search field and its scope (<code>folder</code> or <code>all</code>)</td></tr>
+<tr><td><code>email.table.*</code> (<code>state</code>, <code>sort</code>, <code>page</code>, <code>page_size</code>, <code>select</code>, <code>activate</code>, <code>context</code>, <code>column</code>, <code>density</code>)</td><td>query / intent</td><td>the message list's <a href="/toolkit/datatable/#the-table-verbs">table verbs</a></td></tr>
+<tr><td><code>email.mailbox.mark_read {account?, id}</code> / <code>email.mailbox.empty {account?, id}</code></td><td>intent</td><td>mark a folder read, or empty a Trash or Junk, 500 emails a write</td></tr>
+<tr><td><code>email.form.field {name, value}</code> / <code>email.form.submit {choice?}</code> / <code>email.form.cancel</code></td><td>intent</td><td>answer the open form or dialog, such as a folder's name or a delete's confirmation</td></tr>
 <tr><td><code>email.get {account?, id}</code></td><td>query</td><td>one email's headers and <code>text</code> body</td></tr>
 <tr><td><code>email.calendars</code>, <code>email.events {calendar?, from?, to?}</code>, <code>email.event.get {id}</code></td><td>query</td><td>calendars and events</td></tr>
 <tr><td><code>email.books</code>, <code>email.contacts {book?, filter?}</code>, <code>email.contact.get {id}</code></td><td>query</td><td>address books and contacts</td></tr>

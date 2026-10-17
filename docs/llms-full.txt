@@ -6527,7 +6527,41 @@ A malformed file loads defaults and is never overwritten.
   page size. A new mailbox opens on its first page in the last sort chosen,
   which is remembered with the column widths. Once a row is clicked,
   **↑/↓**, **Page Up/Down**, **Home/End** move through the page and
-  **Enter** opens the email.
+  **Enter** opens the email. After a delete or a move, the next email
+  opens, or the one before it when the last went.
+
+  Above the list is one header row:
+  - **Compose**: shrinks to its icon when the pane is narrow.
+  - **The count**: "N messages", or "N results" while searching.
+  - **The search field**, with **This folder** / **All folders** beside
+    it. The search runs on the server about 300 ms after typing stops.
+    Sorting and paging work on the result, which starts at its first page.
+    All folders adds a Folder column, which cannot be sorted.
+  - **Search keys**: **Ctrl+F**, or **/** from the list, focuses the
+    field. **Esc** clears it, or lets go when it is empty. **↓** moves to
+    the list.
+
+  Choosing a folder in the tree ends the search.
+
+  Right-clicking a row selects it and opens the message menu. Dragging
+  rows onto a folder moves them, the same move `email.move` makes. A
+  folder that can take them lights up, and a collapsed one opens after
+  0.7 s. Calendars, address books, account roots, the folder the emails
+  are already in, and another account's folders refuse the drop. Moves
+  between accounts are not supported yet.
+- **Tree context menus**: right-clicking a tree node selects it and opens
+  its own menu. The same commands are in the **Folder** menu.
+  - **Mail folder**: New Subfolder…, Rename…, Delete Folder… (its emails
+    move to the Trash first), Mark Folder as Read, Empty… (Trash and Junk
+    only), and Refresh. Inbox, Sent, Drafts, Trash, Junk and Archive
+    cannot be renamed or deleted.
+  - **Account**: Compose from This Account, Reconnect, Account Settings…
+    and Refresh.
+  - **Calendar and address book**: New Event…, New Contact… and Refresh.
+
+  Names are checked: not empty, no `/`, and not a name a sibling already
+  has. Deleting or emptying a folder asks first and says how many emails
+  it affects, with Cancel as the default.
 - **The reader**: the open email (plain text first, the HTML source when
   there is no plain text), event or contact.
 - **Compose** (To, Cc, Bcc, Subject, body, and From when there are
@@ -6564,6 +6598,7 @@ A malformed file loads defaults and is never overwritten.
 | Ctrl+PageDown / PageUp | Next / previous account |
 | Alt+PageDown / PageUp | Next / previous page of the list |
 | Alt+1 / 2 / 3 | Sort by From / Subject / Date (again: reverse) |
+| Ctrl+F, or / in the list | Search messages |
 
 ## Driving it over the Bus
 
@@ -6596,7 +6631,11 @@ never waits on them.
 | `email.accounts` | query | the accounts with `has_password` and `state`, never a password |
 | `email.mailboxes {account?}` | query | mailboxes with roles, parents and counts |
 | `email.list {account?, mailbox?, sort?, order?, page?, offset?, limit?, query?}` | query | one page sorted by `sort` (`received`, `subject`, `from`; default `received`) in `order` (`asc`, `desc`; default newest first, else A to Z), from `page` × `limit` or `offset`, with `total`, `page`, `sort` and `order` |
-| `email.search {account?, text, mailbox?, limit?}` | query | emails matching text |
+| `email.search {account?, text, mailbox?, limit?, show?}` | intent | emails matching text; with `show: true` the window's list searches too (in `mailbox`, else every folder) |
+| `email.search.set {account?, text, scope?}` / `email.search.clear {account?}` | intent | the list's search field and its scope (`folder` or `all`) |
+| `email.table.*` (`state`, `sort`, `page`, `page_size`, `select`, `activate`, `context`, `column`, `density`) | query / intent | the message list's [table verbs](../toolkit/datatable.md#the-table-verbs) |
+| `email.mailbox.mark_read {account?, id}` / `email.mailbox.empty {account?, id}` | intent | mark a folder read, or empty a Trash or Junk, 500 emails a write |
+| `email.form.field {name, value}` / `email.form.submit {choice?}` / `email.form.cancel` | intent | answer the open form or dialog, such as a folder's name or a delete's confirmation |
 | `email.get {account?, id}` | query | one email's headers and `text` body |
 | `email.calendars`, `email.events {calendar?, from?, to?}`, `email.event.get {id}` | query | calendars and events |
 | `email.books`, `email.contacts {book?, filter?}`, `email.contact.get {id}` | query | address books and contacts |
@@ -30958,6 +30997,40 @@ scroll it into view, and Enter activates it. The selection is held as row
 keys, so `TableState::rows_changed(&keys)` keeps it across a refresh and
 drops what is gone.
 
+### Context menus and focus
+
+`.context_menu(&mut |ui, row| …)` gives rows a right-click menu. A
+right-click on a row outside the selection selects it first (`Selected`),
+then reports `ContextMenu { index, key }` and opens a popup that the closure
+fills. Apps fill it from their command registry with
+`Registry::context_menu(ui, state, strings, &ids, &why)`, which draws the
+commands `ids` with their labels, shortcuts, ticks and enablement, and
+returns the one chosen for the app to run with `Origin::Menu`.
+`Registry::ids_in(menu)` lists a menu's commands.
+
+`datatable::is_focused(ctx, id)` says whether the table has the keyboard,
+and `datatable::focus(ctx, id)` gives it the keyboard. Focus-scoped
+shortcuts, such as single keys that must never fire in a text field, use
+these.
+
+### Dragging rows
+
+`.draggable(&|count| label)` makes rows a drag source. A drag that starts
+on a selected row carries the whole selection, in page order. One that
+starts on an unselected row selects that row and carries it alone. The
+table reports `DragStarted { keys }`, puts a `RowsDrag { table, keys }`
+payload on egui's `DragAndDrop`, and shows `label(count)`, for example "3
+messages", in a badge by the pointer. A drop target reads the payload with
+`DragAndDrop::payload::<RowsDrag>(ctx)`, checks `table`, and takes it on
+release. Email's folder tree works this way. Agents never drag: the app's
+own verb, `email.move` in Email, takes the same state path.
+
+### Columns shown and density
+
+`TableState::hidden` holds the columns the person hid. `ColumnShown`
+toggles one, and `DensityChanged` switches between compact and
+comfortable. Both are preferences, so an app keeps them with the widths.
+
 ### Widths and persistence
 
 `TableState` is one serialisable struct. Persist the parts that are a
@@ -30981,10 +31054,43 @@ send email email.ui.click label="Subject"
 send email email.ui.click label="Next page"
 ```
 
-For the data itself an app reports `TableState::describe(&columns, total,
-shown)` (columns, sort, order, page, pages, total, range, selection,
-focus) and `datatable::rows_json(&columns, &rows)` in its own state verb.
-Email puts the first under `mail.table` in `email.info`.
+### The table verbs
+
+Every table can be read and driven through the Bus with no extra app
+code. `toolkit::datatable::verbs` is a standard verb set that an app mounts
+under its own prefix:
+
+| Verb | Arguments | Does |
+|---|---|---|
+| `<app>.table.state` | — | columns (id, label key, sortable, width, visible), sort, order, page, page size, pages, total, range, selection, focus, density and the shown rows |
+| `<app>.table.sort` | `column`, optional `order` (`asc`/`desc`) | sorts, as a header click does |
+| `<app>.table.page` | `index` (0-based, or `first`/`previous`/`next`/`last`) | shows a page |
+| `<app>.table.page_size` | `n` | sets the page size |
+| `<app>.table.select` | `rows` (keys or indices) | selects rows, the first replacing the selection |
+| `<app>.table.activate` | `row` | activates a row, as Enter or a double-click does |
+| `<app>.table.context` | `row` | selects a row for its context menu (the menu's commands run through `<app>.execute`) |
+| `<app>.table.column` | `id`, optional `width` and `visible` | resizes, shows or hides a column |
+| `<app>.table.density` | `compact` or `comfortable` | sets the row height |
+
+To mount the set:
+
+1. List `verbs::describe(app)` in the app's `app.describe`.
+2. Register the names in `verbs.conf.mix`, with `table.state` as a query
+   and the rest as intents.
+3. When one arrives, call
+   `verbs::request(verb, args, &verbs::Table { columns, state, total, keys, allow_unsorted })`.
+   It checks the arguments against the table. It returns either
+   `Request::State` or `Request::Events(events)`, which are the same
+   `TableEvent`s a person's clicks raise. A bad argument is refused as
+   `Refusal::Invalid` or `Refusal::NotFound`.
+4. Apply the events through the path the UI's events take, then answer
+   with `TableState::describe` plus `rows_json`.
+
+`verbs::verb_for(&event)` names the verb for each event, so an app's
+registry test can check that every event its table raises has a verb.
+Email mounts the set as `email.table.*` for its message list. There
+`table.page_size` is refused, because the page size is the
+`email.mail.page_size` setting.
 
 ## Tests
 

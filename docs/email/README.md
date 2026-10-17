@@ -117,7 +117,41 @@ A malformed file loads defaults and is never overwritten.
   page size. A new mailbox opens on its first page in the last sort chosen,
   which is remembered with the column widths. Once a row is clicked,
   **↑/↓**, **Page Up/Down**, **Home/End** move through the page and
-  **Enter** opens the email.
+  **Enter** opens the email. After a delete or a move, the next email
+  opens, or the one before it when the last went.
+
+  Above the list is one header row:
+  - **Compose**: shrinks to its icon when the pane is narrow.
+  - **The count**: "N messages", or "N results" while searching.
+  - **The search field**, with **This folder** / **All folders** beside
+    it. The search runs on the server about 300 ms after typing stops.
+    Sorting and paging work on the result, which starts at its first page.
+    All folders adds a Folder column, which cannot be sorted.
+  - **Search keys**: **Ctrl+F**, or **/** from the list, focuses the
+    field. **Esc** clears it, or lets go when it is empty. **↓** moves to
+    the list.
+
+  Choosing a folder in the tree ends the search.
+
+  Right-clicking a row selects it and opens the message menu. Dragging
+  rows onto a folder moves them, the same move `email.move` makes. A
+  folder that can take them lights up, and a collapsed one opens after
+  0.7 s. Calendars, address books, account roots, the folder the emails
+  are already in, and another account's folders refuse the drop. Moves
+  between accounts are not supported yet.
+- **Tree context menus**: right-clicking a tree node selects it and opens
+  its own menu. The same commands are in the **Folder** menu.
+  - **Mail folder**: New Subfolder…, Rename…, Delete Folder… (its emails
+    move to the Trash first), Mark Folder as Read, Empty… (Trash and Junk
+    only), and Refresh. Inbox, Sent, Drafts, Trash, Junk and Archive
+    cannot be renamed or deleted.
+  - **Account**: Compose from This Account, Reconnect, Account Settings…
+    and Refresh.
+  - **Calendar and address book**: New Event…, New Contact… and Refresh.
+
+  Names are checked: not empty, no `/`, and not a name a sibling already
+  has. Deleting or emptying a folder asks first and says how many emails
+  it affects, with Cancel as the default.
 - **The reader**: the open email (plain text first, the HTML source when
   there is no plain text), event or contact.
 - **Compose** (To, Cc, Bcc, Subject, body, and From when there are
@@ -154,6 +188,7 @@ A malformed file loads defaults and is never overwritten.
 | Ctrl+PageDown / PageUp | Next / previous account |
 | Alt+PageDown / PageUp | Next / previous page of the list |
 | Alt+1 / 2 / 3 | Sort by From / Subject / Date (again: reverse) |
+| Ctrl+F, or / in the list | Search messages |
 
 ## Driving it over the Bus
 
@@ -186,7 +221,11 @@ never waits on them.
 | `email.accounts` | query | the accounts with `has_password` and `state`, never a password |
 | `email.mailboxes {account?}` | query | mailboxes with roles, parents and counts |
 | `email.list {account?, mailbox?, sort?, order?, page?, offset?, limit?, query?}` | query | one page sorted by `sort` (`received`, `subject`, `from`; default `received`) in `order` (`asc`, `desc`; default newest first, else A to Z), from `page` × `limit` or `offset`, with `total`, `page`, `sort` and `order` |
-| `email.search {account?, text, mailbox?, limit?}` | query | emails matching text |
+| `email.search {account?, text, mailbox?, limit?, show?}` | intent | emails matching text; with `show: true` the window's list searches too (in `mailbox`, else every folder) |
+| `email.search.set {account?, text, scope?}` / `email.search.clear {account?}` | intent | the list's search field and its scope (`folder` or `all`) |
+| `email.table.*` (`state`, `sort`, `page`, `page_size`, `select`, `activate`, `context`, `column`, `density`) | query / intent | the message list's [table verbs](../toolkit/datatable.md#the-table-verbs) |
+| `email.mailbox.mark_read {account?, id}` / `email.mailbox.empty {account?, id}` | intent | mark a folder read, or empty a Trash or Junk, 500 emails a write |
+| `email.form.field {name, value}` / `email.form.submit {choice?}` / `email.form.cancel` | intent | answer the open form or dialog, such as a folder's name or a delete's confirmation |
 | `email.get {account?, id}` | query | one email's headers and `text` body |
 | `email.calendars`, `email.events {calendar?, from?, to?}`, `email.event.get {id}` | query | calendars and events |
 | `email.books`, `email.contacts {book?, filter?}`, `email.contact.get {id}` | query | address books and contacts |

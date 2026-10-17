@@ -18,7 +18,8 @@ use egui_kittest::Harness;
 use egui_kittest::kittest::{NodeT, Queryable};
 use toolkit::Icon;
 use toolkit::datatable::{
-    Align, Cell, Column, DataTable, Order, RowStyle, SelectionMode, Sort, TableEvent, TableState,
+    Align, Cell, Column, DataTable, Order, RowStyle, RowsDrag, SelectionMode, Sort, TableEvent,
+    TableState,
     TextRow, TextRows, Total, Width, compare_text, page_of, sort_rows,
 };
 
@@ -125,6 +126,8 @@ struct Sample {
     state: TableState,
     seen: Vec<TableEvent>,
     pages: bool,
+    /// The row the context menu's one item was chosen for.
+    archived: Option<usize>,
 }
 
 impl Sample {
@@ -137,6 +140,7 @@ impl Sample {
             },
             seen: Vec::new(),
             pages: true,
+            archived: None,
         }
     }
 
@@ -190,13 +194,25 @@ fn harness(sample: Sample, scheme: Scheme, mode: Mode) -> Harness<'static, Sampl
         .build_ui_state(
             |ui, s: &mut Sample| {
                 let rows = s.rows();
+                let label = |n: usize| format!("{n} messages");
+                let mut picked = None;
+                let mut menu = |ui: &mut egui::Ui, row: usize| {
+                    if ui.button("Archive").clicked() {
+                        picked = Some(row);
+                    }
+                };
                 let events = DataTable::new("messages", &s.columns, &s.state)
                     .total(Total::Known(MESSAGES.len() as u64))
                     .selection(SelectionMode::Single)
                     .page_sizes(&[5, 10, 25])
                     .pager(s.pages)
                     .empty_text("Nothing here")
+                    .context_menu(&mut menu)
+                    .draggable(&label)
                     .show(ui, &rows);
+                if let Some(row) = picked {
+                    s.archived = Some(row);
+                }
                 for event in events {
                     s.state.apply(&event, SelectionMode::Single);
                     s.seen.push(event);
@@ -333,6 +349,67 @@ fn the_pager_moves_between_pages() {
     h.get_by_label("First page").click();
     h.run();
     assert_eq!(h.state().state.page, 0);
+}
+
+#[test]
+fn a_right_click_selects_its_row_and_opens_the_menu_for_it() {
+    let mut h = light(Sample::new(10));
+    h.get_by_label_contains("Minutes").click_secondary();
+    h.run_steps(6);
+    let seen = &h.state().seen;
+    assert!(matches!(seen.as_slice(), [
+        TableEvent::Selected { key, .. },
+        TableEvent::ContextMenu { key: menu, index: 2 },
+    ] if key == "m3" && menu == "m3"), "{seen:?}");
+    h.get_by_label("Archive").click();
+    h.run_steps(6);
+    assert_eq!(h.state().archived, Some(2));
+}
+
+#[test]
+fn a_drag_carries_the_selection_and_shows_its_count() {
+    let mut h = light(Sample::new(10));
+    h.get_by_label_contains("Minutes").click();
+    h.run();
+    let from = h.get_by_label_contains("Minutes").rect().center();
+    h.event(egui::Event::PointerButton {
+        pos: from,
+        button: egui::PointerButton::Primary,
+        pressed: true,
+        modifiers: egui::Modifiers::NONE,
+    });
+    h.step();
+    for dy in [10.0, 30.0, 60.0] {
+        h.hover_at(from + vec2(0.0, dy));
+        h.step();
+    }
+    let drag = egui::DragAndDrop::payload::<RowsDrag>(&h.ctx).expect("a payload");
+    assert_eq!(drag.table, "messages");
+    assert_eq!(drag.keys, ["m3"]);
+    assert!(
+        h.state()
+            .seen
+            .iter()
+            .any(|e| matches!(e, TableEvent::DragStarted { keys } if keys == &["m3".to_owned()]))
+    );
+    // An unselected row's drag selects it and carries it alone.
+    let mut h = light(Sample::new(10));
+    let from = h.get_by_label_contains("Photos").rect().center();
+    h.hover_at(from);
+    h.event(egui::Event::PointerButton {
+        pos: from,
+        button: egui::PointerButton::Primary,
+        pressed: true,
+        modifiers: egui::Modifiers::NONE,
+    });
+    h.step();
+    for dy in [10.0, 30.0] {
+        h.hover_at(from + vec2(0.0, dy));
+        h.step();
+    }
+    assert_eq!(h.state().state.selection, ["m5"]);
+    let drag = egui::DragAndDrop::payload::<RowsDrag>(&h.ctx).expect("a payload");
+    assert_eq!(drag.keys, ["m5"]);
 }
 
 fn snapshot_sample() -> Sample {
