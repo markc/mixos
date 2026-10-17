@@ -988,10 +988,13 @@ impl Stage {
         // Only a pathological-wedge backstop; allow cold/network-paged exec.
         let deadline = Instant::now() + Duration::from_secs(30);
         loop {
-            if stopped() {
-                return Err(io::Error::other("job stopped before exec acknowledgement"));
-            }
-            if Instant::now() >= deadline {
+            // A stop is "before exec" only when no acknowledgement is waiting.
+            // exec closes the pipe before the target runs, so a target stopped
+            // just after exec has already left its EOF here: drain the pipe
+            // (without blocking) before believing the stop. Checking the stop
+            // alone failed a ^Z that landed between exec and the next poll.
+            let stopped = stopped();
+            if !stopped && Instant::now() >= deadline {
                 return Err(io::Error::new(
                     io::ErrorKind::TimedOut,
                     "stage exec acknowledgement timed out",
@@ -1002,7 +1005,7 @@ impl Stage {
                 events: libc::POLLIN,
                 revents: 0,
             };
-            let rc = unsafe { libc::poll(&mut fd, 1, 20) };
+            let rc = unsafe { libc::poll(&mut fd, 1, if stopped { 0 } else { 20 }) };
             if rc < 0 {
                 let error = io::Error::last_os_error();
                 if error.kind() == io::ErrorKind::Interrupted {
@@ -1011,6 +1014,9 @@ impl Stage {
                 return Err(error);
             }
             if rc == 0 {
+                if stopped {
+                    return Err(io::Error::other("job stopped before exec acknowledgement"));
+                }
                 continue;
             }
             let mut bytes = [0; 4];
@@ -1106,6 +1112,48 @@ mod tests {
         assert!(!managed.load(super::Ordering::Acquire));
     }
     use super::*;
+    /// A stage whose trampoline is simulated by the test. The returned gate
+    /// reader stands in for the trampoline's end of the release gate.
+    /// `exec_done` drops every other copy of the error pipe's write end, as a
+    /// successful exec would; otherwise the returned writer keeps it open.
+    fn stage(exec_done: bool) -> (Stage, File, Option<File>) {
+        let (gate_read, gate) = pipe().unwrap();
+        let (error, error_write) = pipe().unwrap();
+        let gate_reader = gate_read.try_clone().unwrap();
+        let trampoline = (!exec_done).then(|| error_write.try_clone().unwrap());
+        let stage = Stage {
+            command: Command::new("/bin/true"),
+            gate,
+            error,
+            inherited: (gate_read, error_write),
+        };
+        (stage, gate_reader, trampoline)
+    }
+    #[test]
+    fn stop_after_exec_is_acknowledged_not_reported_as_pre_exec() {
+        // The ^Z landed after exec closed the pipe: the EOF is already
+        // waiting, so the launch succeeded and the job is merely stopped.
+        let (stage, _gate, _) = stage(true);
+        assert!(stage.release_with_stop(|| true).is_ok());
+    }
+    #[test]
+    fn stop_with_no_acknowledgement_is_pre_exec() {
+        let (stage, _gate, trampoline) = stage(false);
+        let error = stage.release_with_stop(|| true).unwrap_err();
+        assert_eq!(error.to_string(), "job stopped before exec acknowledgement");
+        drop(trampoline);
+    }
+    #[test]
+    fn exec_errno_still_wins_over_a_stop() {
+        let (stage, _gate, trampoline) = stage(false);
+        let mut trampoline = trampoline.unwrap();
+        trampoline
+            .write_all(&libc::ENOENT.to_ne_bytes())
+            .unwrap();
+        drop(trampoline);
+        let error = stage.release_with_stop(|| true).unwrap_err();
+        assert_eq!(error.raw_os_error(), Some(libc::ENOENT));
+    }
     fn job(states: &[MemberState]) -> Job {
         Job {
             id: 1,

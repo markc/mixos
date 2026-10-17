@@ -123,7 +123,9 @@ async fn watcher(root: &Path, recursive: bool) -> Evaluator {
     exec(&mut e, r#"
         $watch = fs_watch($root, {recursive: $recursive})
         $seen = nil
+        $batches = []
         on fs.changed
+            $batches = concat($batches, [$event.args])
             for $change in $event.args.changes
                 if $change.path == $wanted_path and ($wanted_kind == "any" or $change.kind == $wanted_kind) then
                     $seen = $event.args
@@ -145,9 +147,11 @@ async fn delivered(e: &mut Evaluator, path: &Path, kind: &str) -> Value {
     // The timeout is a fail-fast guard, not the thing under test — a
     // generous total keeps the gate load-independent while a genuine
     // regression still fails in bounded time.
-    tokio::time::timeout(Duration::from_secs(120), e.run_event_pump())
-        .await
-        .expect("native event deadline")
+    let pumped = tokio::time::timeout(Duration::from_secs(120), e.run_event_pump()).await;
+    // Every batch the handler saw, so a deadline names what arrived instead.
+    let batches = e.get_global("batches").map(|b| b.to_mix_string());
+    pumped
+        .unwrap_or_else(|_| panic!("native event deadline waiting for {kind} {path:?}; batches: {batches:?}"))
         .unwrap();
     e.get_global("seen")
         .expect("handler stores the ordinary $event.args envelope")
