@@ -566,7 +566,9 @@ if-expression form). A lone <code>&amp;</code> is a lex error <em>with a hint</e
 <h3 id="heredocs--tag">Heredocs — <code>&lt;&lt;TAG</code></h3>
 <p><code>&lt;&lt;TAG</code> opens a heredoc; the body runs to a line containing only <code>TAG</code>. Unlike a
 double-quoted string, a heredoc body <strong>does</strong> interpolate <code>${var}</code> <em>and</em> run
-<code>$(command)</code> substitution. See <a href="/mix/strings/">strings</a> for the full treatment.</p>
+<code>$(command)</code> substitution. <code>&lt;&lt;'TAG'</code> (quoted tag) is the verbatim form: the
+body is taken byte for byte, with no interpolation, substitution or escapes.
+See <a href="/mix/strings/">strings</a> for the full treatment.</p>
 <h3 id="keywords--reserved-as-identifiers-usable-as-names">Keywords — reserved as identifiers, usable as names</h3>
 <p>Identifiers matching a keyword become that keyword token. The complete set is
 printed by <code>mix keywords</code> and each resolves via <code>mix what NAME</code> — the binary

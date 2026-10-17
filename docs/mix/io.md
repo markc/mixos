@@ -219,6 +219,16 @@ write_atomic(path, data[, opts])     replace all-or-nothing: old OR new, never p
 `content` is a string, `bytes` or `buffer` — nothing else is coerced (a wrong
 type raises `TYPE_MISMATCH` before the file is touched).
 
+**FIFOs.** When the path is a named pipe, `read_file`, `write_file` and
+`append_file` wait for the other end **without holding the runtime thread**
+(since 0.117.0): Ctrl-C raises `interrupted`, SIGTERM takes the graceful
+shutdown path, and a `--serve` citizen whose `async` handler waits on a FIFO
+still answers `QUIT` and its other verbs. `read_file` returns once every
+writer has closed; a write returns once the data is in the pipe. Other
+builtins (`read_file_bytes`, `read_lines`, …), stuck NFS/FUSE paths and
+character devices still block the thread, and only the SIGTERM backstop
+bounds them. A regular file pays one extra `stat` to be told apart.
+
 ```mix
 write_file("/tmp/io/log.txt", "first\n")
 append_file("/tmp/io/log.txt", "second\n")

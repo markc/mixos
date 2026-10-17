@@ -13809,36 +13809,14 @@ impl Evaluator {
                     // (crate::fifo_io): shutdown, QUIT and Class C peers
                     // keep running. Any other path stays on the sync
                     // builtin; the only added cost is one stat.
+                    // Boxed out of line: this arm's future is on every
+                    // call's stack, and inline awaits here would grow it.
                     #[cfg(unix)]
                     if matches!(name.as_str(), "read_file" | "write_file" | "append_file")
                         && let Some(Value::String(path)) = eval_args.first()
                         && crate::fifo_io::is_fifo(path)
                     {
-                        self.check_capability(name)?;
-                        self.check_builtin_arity(name, eval_args.len())?;
-                        let path = path.clone();
-                        let fail = |e: std::io::Error| MixError::RuntimeError {
-                            span: None,
-                            msg: format!("{name} '{path}': {e}"),
-                        };
-                        if name == "read_file" {
-                            let bytes = self
-                                .await_with_class_c_yield(crate::fifo_io::read(&path))
-                                .await?
-                                .map_err(fail)?;
-                            let text = String::from_utf8(bytes).map_err(|_| {
-                                fail(std::io::Error::new(
-                                    std::io::ErrorKind::InvalidData,
-                                    "stream did not contain valid UTF-8",
-                                ))
-                            })?;
-                            return Ok(Value::String(text));
-                        }
-                        let data = builtins::with_write_payload(name, &eval_args[1], <[u8]>::to_vec)?;
-                        self.await_with_class_c_yield(crate::fifo_io::write(&path, &data))
-                            .await?
-                            .map_err(fail)?;
-                        return Ok(Value::Nil);
+                        return self.call_fifo_builtin(name, &eval_args).await;
                     }
 
                     // Async builtins (must be handled before sync builtins)
@@ -18287,6 +18265,44 @@ impl Evaluator {
     }
 
     /// Execute `sh "command"` as an expression — captures stdout.
+    /// `read_file` / `write_file` / `append_file` on a FIFO path: the same
+    /// results and error text as the sync builtins, but every wait yields
+    /// the runtime thread (see [`crate::fifo_io`]).
+    #[cfg(unix)]
+    fn call_fifo_builtin<'a>(
+        &'a mut self,
+        name: &'a str,
+        args: &'a [Value],
+    ) -> Pin<Box<dyn Future<Output = MixResult<Value>> + 'a>> {
+        Box::pin(async move {
+            self.check_capability(name)?;
+            self.check_builtin_arity(name, args.len())?;
+            let path = args[0].to_mix_string();
+            let fail = |e: std::io::Error| MixError::RuntimeError {
+                span: None,
+                msg: format!("{name} '{path}': {e}"),
+            };
+            if name == "read_file" {
+                let bytes = self
+                    .await_with_class_c_yield(crate::fifo_io::read(&path))
+                    .await?
+                    .map_err(fail)?;
+                let text = String::from_utf8(bytes).map_err(|_| {
+                    fail(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        "stream did not contain valid UTF-8",
+                    ))
+                })?;
+                return Ok(Value::String(text));
+            }
+            let data = builtins::with_write_payload(name, &args[1], <[u8]>::to_vec)?;
+            self.await_with_class_c_yield(crate::fifo_io::write(&path, &data))
+                .await?
+                .map_err(fail)?;
+            Ok(Value::Nil)
+        })
+    }
+
     fn exec_sh_expr(&mut self, cmd: &str) -> MixResult<Value> {
         self.check_capability_class(crate::builtins::CapabilityClass::Process, "$()")?;
         // `$name` inside resolves like a shell word and an unset one raises;

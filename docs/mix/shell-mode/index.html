@@ -226,6 +226,8 @@
                         <a href="#background--trailing-">Background — trailing &amp;</a>
                         <a href="#brace-expansion">Brace expansion</a>
                         <a href="#-command-substitution">$(...) command substitution</a>
+                        <a href="#mix-variables-inside-" class="toc-h3">Mix variables inside $(...)</a>
+                        <a href="#special-parameters--and-the-refused-ones">Special parameters: $$, and the refused ones</a>
                         <a href="#redirects">Redirects</a>
                         <a href="#mix-meta-commands-under-plumbing-interactive-repl">mix meta-commands under plumbing (interactive REPL)</a>
                         <a href="#variables-and-the-injection-invariant">Variables and the injection invariant</a>
@@ -517,6 +519,37 @@ $(echo X)
 <code>echo $(ls | wc -l)</code> runs <code>ls | wc -l</code> inside the <code>$(...)</code> and splices the
 count. A lazy detail: a <code>$(...)</code> is run <strong>only</strong> when its chain piece is
 selected for execution (see the short-circuit example above).</p>
+<h3 id="mix-variables-inside-">Mix variables inside <code>$(...)</code></h3>
+<p>A <code>$name</code> or <code>${name}</code> inside the substitution resolves exactly like a bare
+shell word: the Mix variable first, then the environment. The value reaches
+<code>/bin/sh</code> as <strong>data</strong> (in its environment, never pasted into the command
+text), so a value holding <code>; rm -rf /</code> cannot become syntax. A name that is
+set <strong>nowhere raises</strong> instead of expanding to <code>""</code>. The same holds for a
+<code>$(...)</code> in Mix code and in a heredoc body.</p>
+<pre><code class="language-text">$ mix -c '$d = "src"; print($(echo $d))'
+src
+$ mix -c 'print($(echo $nosuch))'
+Runtime error …: `$nosuch` inside `$(...)` is not set: it is neither a Mix variable nor an environment variable (write `${nosuch:-}` for an intentionally empty value)
+</code></pre>
+<p>The inner shell keeps what is its own: single-quoted text, an escaped <code>\$</code>,
+positional and special parameters (<code>$1</code>, <code>$@</code>, <code>$?</code>, <code>$$</code>), names the inner
+command binds itself (<code>for f in …</code>, <code>x=1</code>, <code>read line</code>, <code>export K=…</code>), and a
+reference with its own default (<code>${name:-x}</code>, <code>${name-x}</code>, <code>${name:=x}</code>,
+<code>${name:+x}</code>, <code>${name?msg}</code>).</p>
+<h2 id="special-parameters--and-the-refused-ones">Special parameters: <code>$$</code>, and the refused ones</h2>
+<p>On a shell-command line <code>$$</code> expands to the shell's PID, as in bash and zsh, so
+<code>ps -p $$</code> and <code>kill -0 $$</code> work as typed (in Mix code, call <code>pid()</code>). The other
+bash special parameters have Mix spellings, and a command line that uses one
+is <strong>refused whole</strong> (exit 2) with a message naming it — single-quoted text is
+left alone:</p>
+<table><thead><tr><th>bash</th><th>Mix</th></tr></thead><tbody>
+<tr><td><code>$?</code></td><td><code>$rc</code>, or a run result's <code>.exit_code</code></td></tr>
+<tr><td><code>$!</code></td><td>the PID <code>spawn(...)</code> returns</td></tr>
+<tr><td><code>$#</code></td><td><code>len(args())</code></td></tr>
+<tr><td><code>$@</code>, <code>$*</code></td><td><code>args()</code></td></tr>
+</tbody></table>
+<p><code>$0</code>…<code>$9</code> are not refused: in a script they are Mix's own positional globals
+(<code>$0</code> is the script path).</p>
 <h2 id="redirects">Redirects</h2>
 <p>In parse order, like bash:</p>
 <pre><code>&gt;  file     1&gt; file    redirect stdout (truncate)

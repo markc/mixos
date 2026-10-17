@@ -280,6 +280,29 @@ The rules, precisely:
 - A bare `$name` in the body stays **literal**, exactly as in double quotes — only `${...}` interpolates.
 - `$(cmd)` runs via `/bin/sh` and splices its stdout — the one string context where Mix itself substitutes a command.
 - Escapes `\n \t \r \e \\ \$` work (`\$` suppresses interpolation: `\${not_a_var}`); **`\u{…}` is NOT processed** in a heredoc body — it stays literal. Any other `\x` stays literal too.
+- A `$name` inside the body's `$(cmd)` is resolved by Mix like a shell word (Mix variable, then environment) and an unset one raises — see [`$(...)` and Mix variables](shell-mode.md).
+
+### Verbatim heredocs — `<<'TAG'`
+
+Quote the tag (as in bash and zsh) and the body is taken **byte for byte**: no
+`${...}`, no `$(...)`, no escapes, no `~`. It ends only at a line holding the
+tag (surrounding whitespace allowed); a line that merely contains the tag is
+body text. Use it for text that describes Mix or a shell, for generated
+scripts, and for `ssh_mix` bodies:
+
+```mix
+$src = <<'EOF'
+print("${not_interpolated} $(not_run) \n stays two chars, it's fine")
+EOF
+print($src)
+```
+```text
+print("${not_interpolated} $(not_run) \n stays two chars, it's fine")
+```
+
+A verbatim heredoc is a plain string literal to the rest of Mix: `mix lint`
+reports no MIX-W2402 inside it, and an `ssh_mix(host, <<'EOF' … EOF)` body is
+analysed as remote Mix source like any literal body.
 
 ## Codepoint, byte, grapheme — pick the right unit
 

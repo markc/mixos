@@ -226,6 +226,7 @@
                         <a href="#unrecognised-escapes-are-still-literal--and-now-linted" class="toc-h3">Unrecognised escapes are still literal — and now linted</a>
                         <a href="#leading--expansion">Leading ~ expansion</a>
                         <a href="#heredocs">Heredocs</a>
+                        <a href="#verbatim-heredocs--tag" class="toc-h3">Verbatim heredocs — &lt;&lt;&#x27;TAG&#x27;</a>
                         <a href="#codepoint-byte-grapheme--pick-the-right-unit">Codepoint, byte, grapheme — pick the right unit</a>
                         <a href="#ord--chr--codepoint--character-0900" class="toc-h3">ord / chr — codepoint ↔ character (0.90.0)</a>
                         <a href="#normalize--canonical-equivalence-0920" class="toc-h3">normalize — canonical equivalence (0.92.0)</a>
@@ -476,7 +477,24 @@ welcome.
 <li>A bare <code>$name</code> in the body stays <strong>literal</strong>, exactly as in double quotes — only <code>${...}</code> interpolates.</li>
 <li><code>$(cmd)</code> runs via <code>/bin/sh</code> and splices its stdout — the one string context where Mix itself substitutes a command.</li>
 <li>Escapes <code>\n \t \r \e \\ \$</code> work (<code>\$</code> suppresses interpolation: <code>\${not_a_var}</code>); <strong><code>\u{…}</code> is NOT processed</strong> in a heredoc body — it stays literal. Any other <code>\x</code> stays literal too.</li>
+<li>A <code>$name</code> inside the body's <code>$(cmd)</code> is resolved by Mix like a shell word (Mix variable, then environment) and an unset one raises — see <a href="/mix/shell-mode/"><code>$(...)</code> and Mix variables</a>.</li>
 </ul>
+<h3 id="verbatim-heredocs--tag">Verbatim heredocs — <code>&lt;&lt;'TAG'</code></h3>
+<p>Quote the tag (as in bash and zsh) and the body is taken <strong>byte for byte</strong>: no
+<code>${...}</code>, no <code>$(...)</code>, no escapes, no <code>~</code>. It ends only at a line holding the
+tag (surrounding whitespace allowed); a line that merely contains the tag is
+body text. Use it for text that describes Mix or a shell, for generated
+scripts, and for <code>ssh_mix</code> bodies:</p>
+<pre><code class="language-mix">$src = &lt;&lt;'EOF'
+print("${not_interpolated} $(not_run) \n stays two chars, it's fine")
+EOF
+print($src)
+</code></pre>
+<pre><code class="language-text">print("${not_interpolated} $(not_run) \n stays two chars, it's fine")
+</code></pre>
+<p>A verbatim heredoc is a plain string literal to the rest of Mix: <code>mix lint</code>
+reports no MIX-W2402 inside it, and an <code>ssh_mix(host, &lt;&lt;'EOF' … EOF)</code> body is
+analysed as remote Mix source like any literal body.</p>
 <h2 id="codepoint-byte-grapheme--pick-the-right-unit">Codepoint, byte, grapheme — pick the right unit</h2>
 <p>This is the design decision to internalise. The core string ops — <code>length</code>/<code>len</code>,
 <code>pos</code>, <code>lastpos</code>, the string overload of <code>index_of</code> — count <strong>Unicode codepoints</strong>,

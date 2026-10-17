@@ -634,6 +634,12 @@ exits with status <code>130</code> (<code>128 + SIGINT</code>) for non-interacti
 <code>--result-fd</code>, even if a <code>catch</code> returns successfully. Plain execution on an
 interactive terminal retains status <code>0</code>. Don't build recovery logic on catching
 <code>run: interrupted</code> or branching on <code>.interrupted</code> (later statements may not run).</p>
+<p>A <code>catch</code> or <code>finally</code> that catches the interrupt gets about <strong>one second</strong> of
+cleanup. If it is still computing after that (a loop that never waits), the
+interrupt is raised again, every 20 ms, until the evaluation unwinds — so a
+SIGINT always ends a non-interactive <code>mix</code> (script, <code>-c</code>, a function command,
+<code>--serve</code>), whatever its handlers do. Cleanup that waits on something (<code>sleep</code>,
+a Bus <code>send</code>) is cut short sooner, at its first wait.</p>
 <p>The opts map is validated loudly (and catchably): an unknown key raises
 <code>run_rc: unknown opt "bogus" (supported: timeout)</code>, and a surplus argument raises
 <code>run() expects at most 2 argument(s), got 3</code> — a misplaced opts map errors instead

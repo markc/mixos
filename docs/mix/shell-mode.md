@@ -338,6 +338,46 @@ An inner `|` / `;` / `&&` belongs to the **substitution**, not the outer line:
 count. A lazy detail: a `$(...)` is run **only** when its chain piece is
 selected for execution (see the short-circuit example above).
 
+### Mix variables inside `$(...)`
+
+A `$name` or `${name}` inside the substitution resolves exactly like a bare
+shell word: the Mix variable first, then the environment. The value reaches
+`/bin/sh` as **data** (in its environment, never pasted into the command
+text), so a value holding `; rm -rf /` cannot become syntax. A name that is
+set **nowhere raises** instead of expanding to `""`. The same holds for a
+`$(...)` in Mix code and in a heredoc body.
+
+```text
+$ mix -c '$d = "src"; print($(echo $d))'
+src
+$ mix -c 'print($(echo $nosuch))'
+Runtime error …: `$nosuch` inside `$(...)` is not set: it is neither a Mix variable nor an environment variable (write `${nosuch:-}` for an intentionally empty value)
+```
+
+The inner shell keeps what is its own: single-quoted text, an escaped `\$`,
+positional and special parameters (`$1`, `$@`, `$?`, `$$`), names the inner
+command binds itself (`for f in …`, `x=1`, `read line`, `export K=…`), and a
+reference with its own default (`${name:-x}`, `${name-x}`, `${name:=x}`,
+`${name:+x}`, `${name?msg}`).
+
+## Special parameters: `$$`, and the refused ones
+
+On a shell-command line `$$` expands to the shell's PID, as in bash and zsh, so
+`ps -p $$` and `kill -0 $$` work as typed (in Mix code, call `pid()`). The other
+bash special parameters have Mix spellings, and a command line that uses one
+is **refused whole** (exit 2) with a message naming it — single-quoted text is
+left alone:
+
+| bash | Mix |
+|---|---|
+| `$?` | `$rc`, or a run result's `.exit_code` |
+| `$!` | the PID `spawn(...)` returns |
+| `$#` | `len(args())` |
+| `$@`, `$*` | `args()` |
+
+`$0`…`$9` are not refused: in a script they are Mix's own positional globals
+(`$0` is the script path).
+
 ## Redirects
 
 In parse order, like bash:

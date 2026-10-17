@@ -402,7 +402,9 @@ Lexer error at line 1:9: unexpected '&', did you mean '&&'?
 
 `<<TAG` opens a heredoc; the body runs to a line containing only `TAG`. Unlike a
 double-quoted string, a heredoc body **does** interpolate `${var}` *and* run
-`$(command)` substitution. See [strings](strings.md) for the full treatment.
+`$(command)` substitution. `<<'TAG'` (quoted tag) is the verbatim form: the
+body is taken byte for byte, with no interpolation, substitution or escapes.
+See [strings](strings.md) for the full treatment.
 
 ### Keywords — reserved as identifiers, usable as names
 
