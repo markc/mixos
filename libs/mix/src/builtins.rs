@@ -15804,6 +15804,18 @@ fn builtin_json_encode(args: Vec<Value>) -> MixResult<Option<Value>> {
 
 #[cfg(feature = "regex")]
 fn compile_regex(pattern: &str) -> MixResult<regex::Regex> {
+    // Bounded LRU of successful compiles (0.117.0); errors are rebuilt
+    // below on every call, so their text never changes.
+    if let Some(re) = crate::regex_cache::get(pattern) {
+        return Ok(re);
+    }
+    let re = compile_regex_uncached(pattern)?;
+    crate::regex_cache::put(pattern, &re);
+    Ok(re)
+}
+
+#[cfg(feature = "regex")]
+fn compile_regex_uncached(pattern: &str) -> MixResult<regex::Regex> {
     regex::Regex::new(pattern).map_err(|e| {
         // A swapped call (the SUBJECT passed as the pattern) hands a whole
         // document to the compiler, and both the echo and the regex

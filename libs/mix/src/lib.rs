@@ -35,6 +35,9 @@ mod jwt;
 #[cfg(feature = "json")]
 pub mod json;
 
+#[cfg(feature = "regex")]
+mod regex_cache;
+
 #[cfg(feature = "json")]
 pub mod jq;
 

@@ -21255,10 +21255,14 @@ h_ll_ w_rld
 | `re_split(s, pattern)` | **list of strings** | splits on each match; keeps empty leading/trailing parts |
 | `grep_lines(text, pattern)` | **list of strings** | the lines of `text` matching `pattern`; `[]` when none |
 
-All five **compile the pattern fresh on every call** and **raise a catchable
-runtime error** on an invalid pattern (see [Errors](#errors-and-validation)).
-There is no precompile/cache step — for a hot loop, hoist the work, not the
-pattern (the crate has no Mix-visible compiled handle yet).
+All of them **raise a catchable runtime error** on an invalid pattern (see
+[Errors](#errors-and-validation)). Since 0.117.0 they share a small cache of
+compiled patterns, keyed by the exact pattern string (inline flags such as
+`(?i)` included): a loop that calls `re_match` with the same pattern on every
+line compiles it once. The cache holds at most 64 patterns and 64 KiB of
+pattern text, evicting the least recently used; a pattern over 4 KiB is never
+cached. Invalid patterns are not cached, so they raise the same error on every
+call. There is still no Mix-visible compiled-pattern value.
 
 Arity is checked as a **minimum**: a missing argument raises, but surplus
 arguments are **silently ignored** (`re_match("abc", "b", "extra")` →
@@ -21633,9 +21637,11 @@ If you reach for a backreference, usually a non-regex approach works:
 `contains`/`split`/`replace`/`starts_with` for fixed substrings (byte-exact, no
 pattern compile), or extract groups with `re_find` then compare in Mix code.
 
-There is also no compiled-pattern value type — every call recompiles. For most
-scripting that's fine; for a tight inner loop, prefer one `re_find` over the
-whole input to a per-element `re_match`.
+There is also no compiled-pattern value type; the shared compile cache (see
+[The family](#the-family)) means a repeated pattern compiles once. A
+script that builds a new pattern on every iteration still compiles every time,
+and for a tight inner loop one `re_find` over the whole input still beats a
+per-element `re_match`, because each call costs an interpreter round trip.
 
 ## Recipes
 
