@@ -12,6 +12,7 @@
 //! configured in Prefs, not here: the centre pane offers to open it.
 
 pub mod account;
+pub mod attachments;
 pub mod calendar;
 pub mod compose;
 pub mod contacts;
@@ -74,6 +75,9 @@ pub enum UiEvent {
     SplitPlaces(f32),
     SplitReader(f32),
     CloseDialog,
+    /// The attachments popup: save (`false`) or open (`true`) this part.
+    Attachment(String, bool),
+    SaveAllAttachments,
     /// The title bar's light/dark toggle: the mode to switch to.
     SetMode(design::Mode),
 }
@@ -145,10 +149,12 @@ pub fn view(
     }
     compose::dialog(ui, state, &mut events);
     form::dialog(ui, state, &mut events);
-    if let Some(dialog) = state.ui.dialog {
+    if state.ui.dialog == Some(Dialog::Attachments) {
+        attachments::dialog(ui, state, stroke, &mut events);
+    } else if let Some(dialog) = state.ui.dialog {
         let title = match dialog {
             Dialog::About => "about",
-            Dialog::Shortcuts => "shortcuts",
+            Dialog::Shortcuts | Dialog::Attachments => "shortcuts",
         };
         let id = egui::Id::new("dialog").with(title);
         let shown = dialog::Dialog::new(id, crate::label(title))
@@ -160,7 +166,7 @@ pub fn view(
                 Dialog::About => {
                     ui.add(egui::Label::new(crate::label("about-body")).wrap());
                 }
-                Dialog::Shortcuts => commands.shortcut_grid(ui, strings),
+                Dialog::Shortcuts | Dialog::Attachments => commands.shortcut_grid(ui, strings),
             });
         if shown.chosen.is_some() || shown.dismissed {
             dialog::Dialog::reset(ui.ctx(), id);

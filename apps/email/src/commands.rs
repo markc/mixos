@@ -63,6 +63,15 @@ fn readable(state: &State) -> bool {
             .is_some_and(crate::reader::has_text)
 }
 
+/// The open email has attachments.
+fn attached(state: &State) -> bool {
+    reading(state)
+        && state
+            .current()
+            .and_then(|v| v.mail.open.as_ref())
+            .is_some_and(|e| !crate::attachments::of(e).is_empty())
+}
+
 /// The current account shows a mailbox's list (it can sort and page).
 fn listing(state: &State) -> bool {
     undialogued(state)
@@ -225,6 +234,28 @@ pub fn registry() -> Registry<State> {
         icon: Some(Icon::Trash),
         enabled: reading,
         run: State::delete_open,
+    })
+    .add(Command {
+        id: "mail.print",
+        submenu: None,
+        group: 4,
+        label: "print",
+        menu: Some("mail"),
+        shortcut: key(Modifiers::COMMAND, Key::P),
+        icon: None,
+        enabled: reading,
+        run: State::print_open,
+    })
+    .add(Command {
+        id: "mail.attachments",
+        submenu: None,
+        group: 4,
+        label: "attachments",
+        menu: Some("mail"),
+        shortcut: None,
+        icon: Some(Icon::Paperclip),
+        enabled: attached,
+        run: State::open_attachments,
     })
     .add(Command {
         id: "calendar.new_event",

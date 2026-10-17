@@ -144,6 +144,25 @@ pub enum Work {
     },
     /// Launch Prefs on its Email section.
     OpenPrefs,
+    /// Write a print page and open it in the browser; `reply` (a Bus
+    /// request) hears the page's path.
+    Print {
+        html: String,
+        reply: Option<u64>,
+    },
+    /// Download attachment blob `blob` (the email's `index`th, from 1, of
+    /// type `mime`) and save or open it as `target` says; the outcome comes
+    /// back under `ticket`, and to `reply` (a Bus request) if one asked.
+    Attachment {
+        account: String,
+        ticket: u64,
+        blob: String,
+        name: Option<String>,
+        index: usize,
+        mime: String,
+        target: crate::attachments::Target,
+        reply: Option<u64>,
+    },
     /// Compose `compose`'s edit number `edits` arms the draft timer:
     /// [`crate::state::State::draft_due`] is called with both once
     /// [`crate::state::drafts::DRAFT_DELAY`] has passed.
@@ -199,6 +218,7 @@ impl Work {
             | Work::FetchEvents { account, .. }
             | Work::FetchBooks { account }
             | Work::FetchContacts { account, .. }
+            | Work::Attachment { account, .. }
             | Work::SaveDraft { account, .. }
             | Work::ResumeDraft { account, .. }
             | Work::Suggest { account, .. } => Some(account),
@@ -207,6 +227,7 @@ impl Work {
             | Work::ReadSettings
             | Work::SaveSecrets { .. }
             | Work::OpenPrefs
+            | Work::Print { .. }
             | Work::DraftTimer { .. }
             | Work::SuggestTimer { .. } => None,
         }

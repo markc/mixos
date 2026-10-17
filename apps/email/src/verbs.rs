@@ -293,6 +293,24 @@ pub const VERBS: &[Verb] = &[
         "Open the compose dialog forwarding an email",
     ),
     verb(
+        "email.print",
+        false,
+        r#"{"account":"optional account id","id":"optional email id (default the open email)"}"#,
+        "Print an email through the browser's print dialog; answers {path} of the page",
+    ),
+    verb(
+        "email.attachments",
+        true,
+        r#"{"account":"optional account id","id":"email id"}"#,
+        "An email's attachments: part, name, type, size, and whether each can be downloaded and opened",
+    ),
+    verb(
+        "email.attachment.save",
+        false,
+        r#"{"account":"optional account id","id":"email id","part":"attachment part id","dir":"optional absolute existing directory (default the download directory)"}"#,
+        "Save an attachment, never over an existing file; answers {path}",
+    ),
+    verb(
         "email.calendar.select",
         false,
         r#"{"account":"optional account id","id":"calendar id"}"#,
@@ -383,6 +401,10 @@ pub enum Query {
     Get {
         id: String,
     },
+    /// One email's attachments.
+    Attachments {
+        id: String,
+    },
     Calendars,
     Events {
         calendar: String,
@@ -416,6 +438,14 @@ pub enum Then {
     Reply(bool),
     /// Open a compose forwarding the email fetched, to these addresses.
     Forward(String),
+    /// Print the email fetched, answering with the page's path.
+    Print,
+    /// Save the email fetched's attachment `part` in `dir` (the download
+    /// directory when `None`), answering with its path.
+    Save {
+        part: String,
+        dir: Option<std::path::PathBuf>,
+    },
     /// Merge the contacts found with the account's recent correspondents
     /// for `text`, at most `limit`, and answer those.
     Suggest { text: String, limit: usize },
@@ -534,6 +564,7 @@ pub async fn run_query(client: &Client, query: Query) -> Result<Value, jmap::Err
             }
             value
         }
+        Query::Attachments { id } => crate::attachments::describe(&client.email(&id).await?),
         Query::Calendars => json!({ "calendars": to_value(client.calendars().await?) }),
         Query::Events { calendar, from, to } => {
             let events = client
@@ -1159,6 +1190,46 @@ fn dispatch(
             } else {
                 Then::Forward(list(args, "to")?.unwrap_or_default().join(", "))
             };
+            state.query(account, id, Query::Get { id: email }, then);
+        }
+        "email.print" => {
+            let account = account(state, args)?;
+            // The account's open email prints as its reader shows it; any
+            // other is fetched first.
+            let open = state.account(&account).and_then(|v| v.mail.open.clone());
+            match (text(args, "id")?, open) {
+                (None, Some(email)) => state.print_email(&account, &email, Some(id)),
+                (None, None) => return Err(Bad(code::NOT_FOUND, crate::label("no-open-email"))),
+                (Some(wanted), Some(email)) if wanted == email.id => {
+                    state.print_email(&account, &email, Some(id));
+                }
+                (Some(wanted), _) => {
+                    let account = connected(state, args)?;
+                    state.query(account, id, Query::Get { id: wanted }, Then::Print);
+                }
+            }
+        }
+        "email.attachments" => {
+            let account = connected(state, args)?;
+            query(state, account, Query::Attachments {
+                id: required(args, "id")?,
+            });
+        }
+        "email.attachment.save" => {
+            let account = connected(state, args)?;
+            let email = required(args, "id")?;
+            let part = required(args, "part")?;
+            let dir = match text(args, "dir")? {
+                None => None,
+                Some(dir) => {
+                    let dir = std::path::PathBuf::from(dir);
+                    if !dir.is_absolute() || !dir.is_dir() {
+                        return Err(invalid(crate::label("dir-not-directory")));
+                    }
+                    Some(dir)
+                }
+            };
+            let then = Then::Save { part, dir };
             state.query(account, id, Query::Get { id: email }, then);
         }
         "email.calendar.select" => {

@@ -411,6 +411,43 @@ when it needs it), and Esc closes the list.</p>
 move to a mailbox, flag, and mark unread.</p>
 </li>
 <li>
+<p><strong>Print</strong> (Ctrl+P). MixOS has no print service, so Email writes the open
+email as one self-contained page, in <code>$XDG_RUNTIME_DIR/email-print/</code>
+(private to you, pages older than a day pruned), and opens it in the
+browser, whose print dialog appears at once. That dialog also offers
+<strong>Save to PDF</strong>. The page carries From, To, Cc, Date and Subject, then
+the body as the reader shows it (rendered Markdown, or the plain text
+wrapped) at the reader's text size, on light paper styles. Nothing from
+the message is passed through as markup: raw HTML is printed as text,
+remote images are left out (their alt text stays), and the page's
+security policy forbids it from fetching anything. If no browser opens
+it, the status line names the page so you can open it yourself.</p>
+</li>
+<li>
+<p><strong>Attachments</strong> (Mail › Attachments…). A popup lists the open email's
+attachments: each with its type's icon, its name (elided, whole on
+hover), its size, and <strong>Save</strong> and <strong>Open</strong>; <strong>Save All</strong> is at the
+bottom. A part the server could not decode is greyed with a note.
+Downloads run in the background, never in the window's thread, and stop
+when Email closes.</p>
+<ul>
+<li><strong>Save</strong> writes to your download directory (<code>XDG_DOWNLOAD_DIR</code> in
+<code>~/.config/user-dirs.dirs</code>, else <code>~/Downloads</code>), as a new file only
+you can read. It is written in full, then put in place, so a
+half-written file never appears, and it never replaces a file:
+<code>report.pdf</code> becomes <code>report (1).pdf</code>. The sender's name is cleaned
+first (no <code>/</code>, <code>\</code>, <code>..</code>, control characters or leading dots, at most
+200 bytes); a part with no name is <code>attachment-&lt;n&gt;</code> with its type's
+usual extension. The status line shows where it went.</li>
+<li><strong>Open</strong> puts the file in <code>$XDG_RUNTIME_DIR/email-attach/</code> (private,
+pruned after a day) and opens it in the app the desktop associates
+with its type (<code>mimeapps.list</code>, then <code>mimeinfo.cache</code>). Programs and
+scripts (ELF executables and libraries, shell and other scripts,
+<code>.desktop</code> launchers, AppImages, Windows executables) are never opened,
+by their type, their name or their first bytes: they can only be saved.</li>
+</ul>
+</li>
+<li>
 <p><strong>New Event</strong> and <strong>New Contact</strong> forms. Start and end are RFC 3339
 instants.</p>
 </li>
@@ -428,6 +465,7 @@ instants.</p>
 <tr><td>Ctrl+Shift+M</td><td>Move the open email</td></tr>
 <tr><td>Ctrl+Shift+S</td><td>Flag or unflag</td></tr>
 <tr><td>Ctrl+Shift+U</td><td>Mark unread</td></tr>
+<tr><td>Ctrl+P</td><td>Print the open email</td></tr>
 <tr><td>Ctrl+Shift+E</td><td>New event</td></tr>
 <tr><td>Ctrl+Shift+K</td><td>New contact</td></tr>
 <tr><td>Ctrl+1 / 2 / 3</td><td>Mail / Calendar / Contacts</td></tr>
@@ -453,7 +491,7 @@ was pending, so its answer would come from the old connection),
 from the old config, so its password cannot change, and it cannot be
 removed, until that finishes), <code>CANCELLED</code> (Email closed before the
 request ran; a write that may have run answers <code>OUTCOME_UNKNOWN</code>),
-<code>SERVER</code>,
+<code>SERVER</code>, <code>FILE</code> (a file could not be written, or nothing opened it),
 <code>BUSY</code>, <code>UNKNOWN_VERB</code>, <code>UNKNOWN_COMMAND</code> and <code>DISABLED</code>.</p>
 <p>Queries that need the server answer when the server does. The window
 never waits on them.</p>
@@ -479,6 +517,9 @@ never waits on them.</p>
 <tr><td><code>email.mark {ids, read?, flagged?}</code>, <code>email.move {ids, mailbox}</code>, <code>email.delete {ids, destroy?}</code></td><td>intent</td><td>the list and counts refresh after</td></tr>
 <tr><td><code>email.send {to, cc?, bcc?, subject, body, in_reply_to?}</code></td><td>intent</td><td>send without the dialog</td></tr>
 <tr><td><code>email.compose {…}</code>, <code>email.reply {id, all?}</code>, <code>email.forward {id, to?}</code></td><td>intent</td><td>open the compose dialog, filled in; answers with its <code>compose</code> id</td></tr>
+<tr><td><code>email.print {id?}</code></td><td>intent</td><td>print an email (default the open one) through the browser; answers <code>{path}</code> of the page, or <code>FILE</code> naming it when no browser opened it</td></tr>
+<tr><td><code>email.attachments {id}</code></td><td>query</td><td>the email's attachments: <code>part</code>, <code>name</code>, <code>type</code>, <code>size</code>, <code>disposition</code>, <code>cid</code>, <code>downloadable</code>, <code>openable</code></td></tr>
+<tr><td><code>email.attachment.save {id, part, dir?}</code></td><td>intent</td><td>save one attachment, never over a file; <code>dir</code> must be an absolute, existing directory (default the download directory); answers <code>{path}</code>. A part that cannot be decoded is <code>INVALID_ARGUMENT</code>, an unknown part <code>NOT_FOUND</code></td></tr>
 <tr><td><code>email.draft.save {compose?}</code></td><td>intent</td><td>save the open compose to Drafts now; answers <code>{id, compose}</code> once the server confirms (<code>OUTCOME_UNKNOWN</code> if Email closes first)</td></tr>
 <tr><td><code>email.calendar.select</code>, <code>email.event.create/update/delete</code></td><td>intent</td><td><code>create</code> answers <code>{id}</code>; <code>end</code> or an ISO 8601 <code>duration</code></td></tr>
 <tr><td><code>email.book.select</code>, <code>email.contact.create/update/delete</code></td><td>intent</td><td><code>create</code> answers <code>{id}</code></td></tr>

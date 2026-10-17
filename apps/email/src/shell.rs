@@ -23,13 +23,14 @@ use serde_json::{Value, json};
 use toolkit::command::Origin;
 use toolkit::{Registry, Strings, Theme, drive};
 
+use crate::attachments::{self, Target};
 use crate::commands;
 use crate::secrets::{Secrets, SecretsFile};
 use crate::state::{Mode, SessionInfo, Settled, State, Tag, UiState, code};
 use crate::verbs::{Forward, Then, Write};
 use crate::view::{UiEvent, view};
 use crate::work::{Login, Work};
-use crate::{APP, APP_ID, label};
+use crate::{APP, APP_ID, label, label_with};
 
 /// One account's answer, addressed by [`Tag`] in [`Event::Account`]. The
 /// tickets are the requests' (see [`crate::work::Work`]).
@@ -86,6 +87,12 @@ pub enum Event {
     Shown(u64, Result<Value, String>),
     /// Open Email Settings finished; an error is for the status line.
     PrefsOpened(Result<(), String>),
+    /// A print page was written and handed to the browser (its path), for
+    /// Bus request `reply` if one asked.
+    Printed(Option<u64>, Result<String, String>),
+    /// Attachment download `ticket` finished (`true`: it was to open),
+    /// with the file's path, for Bus request `reply` if one asked.
+    Attached(u64, Option<u64>, bool, Result<String, String>),
     /// Compose `0`'s draft timer for edit `1` ran out.
     DraftDue(u64, u64),
     /// Compose `0`'s suggestion timer `1` ran out.
@@ -136,6 +143,9 @@ pub struct Shell {
     comp: String,
     /// `email.show` requests forwarded to the compositor, not yet answered.
     shows: std::collections::BTreeSet<u64>,
+    /// Attachment downloads running, by ticket: aborted when the window
+    /// closes.
+    downloads: HashMap<u64, tokio::task::AbortHandle>,
 }
 
 /// This host's name: the settingsd instance to try first (settingsd runs
@@ -309,7 +319,9 @@ fn closing(event: &Event) -> Closing {
         | Event::Account(..)
         | Event::Settled(..)
         | Event::SecretsSaved(..)
-        | Event::WriteDeadline(_) => Closing::Apply,
+        | Event::WriteDeadline(_)
+        | Event::Printed(..)
+        | Event::Attached(..) => Closing::Apply,
         Event::Delivery(citizen::Delivery::Command { id, .. }) => Closing::Cancel(*id),
         Event::Shown(..) => Closing::Shown,
         // The quit-time save went out already; timers have nothing to do.
@@ -452,6 +464,7 @@ impl Shell {
             held: std::collections::VecDeque::new(),
             comp: std::env::var("MIXOS_COMP_SERVICE").unwrap_or_else(|_| "comp".into()),
             shows: std::collections::BTreeSet::new(),
+            downloads: HashMap::new(),
         };
         shell.read_look();
         shell.settle();
@@ -466,16 +479,19 @@ impl Shell {
         &mut self.state
     }
 
-    /// Spawn `work` and send its result back as an event.
-    fn spawn<F>(&self, work: F)
+    /// Spawn `work` and send its result back as an event; the handle aborts
+    /// it.
+    fn spawn<F>(&self, work: F) -> tokio::task::AbortHandle
     where
         F: Future<Output = Event> + Send + 'static,
     {
         let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
-        self.runtime.spawn(async move {
-            let _ = tx.send(work.await);
-            ctx.request_repaint();
-        });
+        self.runtime
+            .spawn(async move {
+                let _ = tx.send(work.await);
+                ctx.request_repaint();
+            })
+            .abort_handle()
     }
 
     /// Perform the state's queued work until none is left (a save answers
@@ -815,6 +831,50 @@ impl Shell {
                 }
             }
             Work::OpenPrefs => self.open_prefs(),
+            Work::Print { html, reply } => {
+                let bus = self.bus.clone();
+                self.spawn(async move {
+                    let written =
+                        tokio::task::spawn_blocking(move || crate::print::write_page(&html))
+                            .await
+                            .unwrap_or_else(|e| Err(e.to_string()));
+                    let result = match written {
+                        Ok(path) => launch(&bus, crate::print::BROWSER, &path)
+                            .await
+                            .map(|()| path.display().to_string())
+                            .map_err(|_| {
+                                let path = path.display().to_string();
+                                label_with("print-no-browser", &[("path", &path)])
+                            }),
+                        Err(error) => Err(error),
+                    };
+                    Event::Printed(reply, result)
+                });
+            }
+            Work::Attachment {
+                account,
+                ticket,
+                blob,
+                name,
+                index,
+                mime,
+                target,
+                reply,
+            } => {
+                let open = target == Target::Open;
+                let Some((_, client)) = self.client(&account) else {
+                    let error = label("not-connected");
+                    self.state
+                        .apply(Event::Attached(ticket, reply, open, Err(error)));
+                    return;
+                };
+                let bus = self.bus.clone();
+                let handle = self.spawn(async move {
+                    let result = attachment(&client, &bus, &blob, name, index, mime, target).await;
+                    Event::Attached(ticket, reply, open, result)
+                });
+                self.downloads.insert(ticket, handle);
+            }
             Work::DraftTimer { compose, edits } => {
                 self.spawn(async move {
                     tokio::time::sleep(crate::state::drafts::DRAFT_DELAY).await;
@@ -960,6 +1020,9 @@ impl Shell {
             if let Event::Shown(id, result) = event {
                 self.shown(id, result);
                 continue;
+            }
+            if let Event::Attached(ticket, ..) = &event {
+                self.downloads.remove(ticket);
             }
             self.state.apply(event);
             self.settle();
@@ -1307,6 +1370,10 @@ impl Shell {
             for (id, _, _) in std::mem::take(&mut self.held) {
                 self.refuse_closing(id);
             }
+            // Downloads stop here; their callers hear from close_out.
+            for (_, download) in self.downloads.drain() {
+                download.abort();
+            }
             // The open compose's unsaved edits go to Drafts first, so the
             // drain below waits for them too.
             if self.state.save_at_quit() {
@@ -1396,6 +1463,60 @@ fn open_links(ctx: &egui::Context) {
             }
             Err(error) => eprintln!("email: opening a link: {error}"),
         }
+    }
+}
+
+/// Download one attachment, put it where `target` says (on the blocking
+/// pool), and when the target is Open, open it in the first of its type's
+/// applications the launcher starts; the file's path.
+async fn attachment(
+    client: &Client,
+    bus: &citizen::Handle,
+    blob: &str,
+    name: Option<String>,
+    index: usize,
+    mime: String,
+    target: Target,
+) -> Result<String, String> {
+    let data = client
+        .download_blob(blob)
+        .await
+        .map_err(|e| e.to_string())?;
+    let open = target == Target::Open;
+    let (path, apps) = tokio::task::spawn_blocking(move || {
+        let path = attachments::place(&target, name.as_deref(), index, &mime, &data)?;
+        let apps = if open {
+            attachments::open_with(&path, &mime)?
+        } else {
+            Vec::new()
+        };
+        Ok::<_, String>((path, apps))
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    let shown = path.display().to_string();
+    if !open {
+        return Ok(shown);
+    }
+    for app in &apps {
+        if launch(bus, app, &path).await.is_ok() {
+            return Ok(shown);
+        }
+    }
+    Err(label_with("attachment-no-app", &[("path", &shown)]))
+}
+
+/// Open `path` in desktop app `id` through the session's launcher
+/// (`apps.launch` on `apps`); the launcher's refusal when it would not.
+async fn launch(bus: &citizen::Handle, id: &str, path: &Path) -> Result<(), String> {
+    let uris = [crate::print::file_uri(path)];
+    match bus
+        .call("apps", "apps.launch", json!({"id": id, "uris": uris}))
+        .await
+    {
+        Ok(reply) if reply.rc == 0 => Ok(()),
+        Ok(reply) => Err(reply.error.unwrap_or(reply.body)),
+        Err(error) => Err(error),
     }
 }
 

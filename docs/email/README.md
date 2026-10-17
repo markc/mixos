@@ -167,6 +167,37 @@ A malformed file loads defaults and is never overwritten.
   when it needs it), and Esc closes the list.
 - **Mail actions**: delete to Trash (confirmed when the settings ask),
   move to a mailbox, flag, and mark unread.
+- **Print** (Ctrl+P). MixOS has no print service, so Email writes the open
+  email as one self-contained page, in `$XDG_RUNTIME_DIR/email-print/`
+  (private to you, pages older than a day pruned), and opens it in the
+  browser, whose print dialog appears at once. That dialog also offers
+  **Save to PDF**. The page carries From, To, Cc, Date and Subject, then
+  the body as the reader shows it (rendered Markdown, or the plain text
+  wrapped) at the reader's text size, on light paper styles. Nothing from
+  the message is passed through as markup: raw HTML is printed as text,
+  remote images are left out (their alt text stays), and the page's
+  security policy forbids it from fetching anything. If no browser opens
+  it, the status line names the page so you can open it yourself.
+- **Attachments** (Mail › Attachments…). A popup lists the open email's
+  attachments: each with its type's icon, its name (elided, whole on
+  hover), its size, and **Save** and **Open**; **Save All** is at the
+  bottom. A part the server could not decode is greyed with a note.
+  Downloads run in the background, never in the window's thread, and stop
+  when Email closes.
+  - **Save** writes to your download directory (`XDG_DOWNLOAD_DIR` in
+    `~/.config/user-dirs.dirs`, else `~/Downloads`), as a new file only
+    you can read. It is written in full, then put in place, so a
+    half-written file never appears, and it never replaces a file:
+    `report.pdf` becomes `report (1).pdf`. The sender's name is cleaned
+    first (no `/`, `\`, `..`, control characters or leading dots, at most
+    200 bytes); a part with no name is `attachment-<n>` with its type's
+    usual extension. The status line shows where it went.
+  - **Open** puts the file in `$XDG_RUNTIME_DIR/email-attach/` (private,
+    pruned after a day) and opens it in the app the desktop associates
+    with its type (`mimeapps.list`, then `mimeinfo.cache`). Programs and
+    scripts (ELF executables and libraries, shell and other scripts,
+    `.desktop` launchers, AppImages, Windows executables) are never opened,
+    by their type, their name or their first bytes: they can only be saved.
 - **New Event** and **New Contact** forms. Start and end are RFC 3339
   instants.
 
@@ -185,6 +216,7 @@ A malformed file loads defaults and is never overwritten.
 | Ctrl+Shift+M | Move the open email |
 | Ctrl+Shift+S | Flag or unflag |
 | Ctrl+Shift+U | Mark unread |
+| Ctrl+P | Print the open email |
 | Ctrl+Shift+E | New event |
 | Ctrl+Shift+K | New contact |
 | Ctrl+1 / 2 / 3 | Mail / Calendar / Contacts |
@@ -211,7 +243,7 @@ was pending, so its answer would come from the old connection),
 from the old config, so its password cannot change, and it cannot be
 removed, until that finishes), `CANCELLED` (Email closed before the
 request ran; a write that may have run answers `OUTCOME_UNKNOWN`),
-`SERVER`,
+`SERVER`, `FILE` (a file could not be written, or nothing opened it),
 `BUSY`, `UNKNOWN_VERB`, `UNKNOWN_COMMAND` and `DISABLED`.
 
 Queries that need the server answer when the server does. The window
@@ -240,6 +272,9 @@ never waits on them.
 | `email.mark {ids, read?, flagged?}`, `email.move {ids, mailbox}`, `email.delete {ids, destroy?}` | intent | the list and counts refresh after |
 | `email.send {to, cc?, bcc?, subject, body, in_reply_to?}` | intent | send without the dialog |
 | `email.compose {…}`, `email.reply {id, all?}`, `email.forward {id, to?}` | intent | open the compose dialog, filled in; answers with its `compose` id |
+| `email.print {id?}` | intent | print an email (default the open one) through the browser; answers `{path}` of the page, or `FILE` naming it when no browser opened it |
+| `email.attachments {id}` | query | the email's attachments: `part`, `name`, `type`, `size`, `disposition`, `cid`, `downloadable`, `openable` |
+| `email.attachment.save {id, part, dir?}` | intent | save one attachment, never over a file; `dir` must be an absolute, existing directory (default the download directory); answers `{path}`. A part that cannot be decoded is `INVALID_ARGUMENT`, an unknown part `NOT_FOUND` |
 | `email.draft.save {compose?}` | intent | save the open compose to Drafts now; answers `{id, compose}` once the server confirms (`OUTCOME_UNKNOWN` if Email closes first) |
 | `email.calendar.select`, `email.event.create/update/delete` | intent | `create` answers `{id}`; `end` or an ISO 8601 `duration` |
 | `email.book.select`, `email.contact.create/update/delete` | intent | `create` answers `{id}` |

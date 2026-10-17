@@ -88,6 +88,47 @@ pub struct BodyPart {
     pub content_type: Option<String>,
 }
 
+/// One attachment, as `Email/get`'s `attachments` lists it: a part that is
+/// not a body and not embedded in one. maild leaves `blobId` out of a part
+/// it cannot decode and marks it `undecodable`.
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+pub struct Attachment {
+    #[serde(rename = "partId", default)]
+    pub part_id: Option<String>,
+    #[serde(rename = "blobId", default, skip_serializing_if = "Option::is_none")]
+    pub blob_id: Option<String>,
+    #[serde(default)]
+    pub size: u64,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(rename = "type", default)]
+    pub content_type: Option<String>,
+    #[serde(default)]
+    pub disposition: Option<String>,
+    #[serde(default)]
+    pub cid: Option<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub undecodable: bool,
+}
+
+impl Attachment {
+    /// Whether its bytes can be downloaded: it has a blob and decoded.
+    pub fn downloadable(&self) -> bool {
+        self.blob_id.is_some() && !self.undecodable
+    }
+
+    /// The part type, lowercased and without parameters; empty when the
+    /// server sent none.
+    pub fn mime(&self) -> String {
+        self.content_type
+            .as_deref()
+            .and_then(|t| t.split(';').next())
+            .unwrap_or("")
+            .trim()
+            .to_ascii_lowercase()
+    }
+}
+
 /// One email, as `Email/get` returns it.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct Email {
@@ -116,6 +157,9 @@ pub struct Email {
     pub text_body: Option<Vec<BodyPart>>,
     #[serde(rename = "htmlBody", default)]
     pub html_body: Option<Vec<BodyPart>>,
+    /// The non-body parts, when the get asked for them (an open does).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attachments: Option<Vec<Attachment>>,
     /// A draft's Bcc (a sent message carries none in its bytes).
     #[serde(default, deserialize_with = "addresses")]
     pub bcc: Option<Vec<EmailAddress>>,
@@ -361,17 +405,12 @@ impl Client {
         Ok(EmailPage { emails, total })
     }
 
-    /// One email with its bodies fetched.
+    /// One email with its bodies fetched and its attachments listed.
     pub async fn email(&self, id: &str) -> Result<Email> {
         let replies = self
             .call(&[Call(
                 "Email/get".into(),
-                json!({
-                    "accountId": self.account_id(),
-                    "ids": [id],
-                    "fetchTextBodyValues": true,
-                    "fetchHTMLBodyValues": true,
-                }),
+                email_get_args(self.account_id(), id),
                 "e0".into(),
             )])
             .await?;
@@ -543,6 +582,19 @@ impl Client {
     }
 }
 
+/// The Email/get arguments behind [`Client::email`]: both bodies' values,
+/// and no `properties`, so the server's default set (RFC 8621 §4.2, which
+/// includes `attachments`; maild returns every property) comes back. Listing
+/// properties here would have to keep up with every field [`Email`] reads.
+fn email_get_args(account_id: &str, id: &str) -> Value {
+    json!({
+        "accountId": account_id,
+        "ids": [id],
+        "fetchTextBodyValues": true,
+        "fetchHTMLBodyValues": true,
+    })
+}
+
 /// The Email/query filter: the mailbox and the text, each only when given.
 /// An empty object matches every email.
 fn email_filter(mailbox: Option<&str>, text: Option<&str>) -> Value {
@@ -712,6 +764,64 @@ mod tests {
         assert_eq!(email.text_body_value(), Some("Sandwiches?"));
         assert_eq!(email.html_body_value(), None);
         assert!(!email.date_short().is_empty());
+    }
+
+    #[test]
+    fn an_open_asks_for_the_bodies_and_the_default_properties() {
+        let args = email_get_args("A1", "E7");
+        assert_eq!(
+            args,
+            json!({
+                "accountId": "A1",
+                "ids": ["E7"],
+                "fetchTextBodyValues": true,
+                "fetchHTMLBodyValues": true
+            })
+        );
+        // No property list: the default set carries `attachments`.
+        assert!(args.get("properties").is_none());
+    }
+
+    #[test]
+    fn reads_maild_attachments_including_an_undecodable_part() {
+        // maild's add_body_parts projection (cosmix-maild src/jmap/email.rs).
+        let email: Email = serde_json::from_value(json!({
+            "id": "E5",
+            "hasAttachment": true,
+            "attachments": [
+                {
+                    "partId": "2", "blobId": "P5.2", "size": 48213,
+                    "name": "report.pdf", "type": "application/pdf; name=report.pdf",
+                    "disposition": "attachment", "cid": null
+                },
+                {
+                    "partId": "3", "size": 12, "name": null,
+                    "type": "image/png", "disposition": "inline", "cid": "logo@x",
+                    "undecodable": true
+                }
+            ]
+        }))
+        .unwrap();
+        let list = email.attachments.as_deref().unwrap();
+        assert_eq!(list.len(), 2);
+        assert_eq!(list[0].part_id.as_deref(), Some("2"));
+        assert_eq!(list[0].blob_id.as_deref(), Some("P5.2"));
+        assert_eq!(list[0].size, 48213);
+        assert_eq!(list[0].name.as_deref(), Some("report.pdf"));
+        assert_eq!(list[0].mime(), "application/pdf");
+        assert!(list[0].downloadable());
+        assert_eq!(list[1].blob_id, None);
+        assert!(list[1].undecodable && !list[1].downloadable());
+        assert_eq!(list[1].cid.as_deref(), Some("logo@x"));
+        // A listing without the property has none, and says so as absent.
+        let bare: Email = serde_json::from_value(json!({ "id": "E6" })).unwrap();
+        assert_eq!(bare.attachments, None);
+        assert!(
+            serde_json::to_value(&bare)
+                .unwrap()
+                .get("attachments")
+                .is_none()
+        );
     }
 
     #[test]

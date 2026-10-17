@@ -75,6 +75,17 @@ and collating symbols cannot end a range. The stock database uses neither.
   (timestamp or size) since loading, so a long-lived caller can reload.
   `sniff_len()` is how many bytes to read before calling `guess`.
 - `text_fallback(data)` and `looks_like_text(data)` are the two text checks.
+- `extension(mime)` is the type's usual extension without the dot (`pdf`):
+  its heaviest plain `*.ext` glob.
+- `apps_for(mime)` lists the applications that open a type, best first, as
+  desktop ids without `.desktop` (the form `apps.launch` takes), following
+  the freedesktop MIME Applications spec: for the type and then each
+  supertype (never `application/octet-stream`), every `mimeapps.list`'s
+  Default Applications, then Added Associations, then `mimeinfo.cache`,
+  less the Removed Associations; `media/*` keys match the whole media
+  type. `mimeapps_paths()` and `cache_paths()` name the files read, and
+  `apps_in(lists, caches, types)` is the same decision over given texts.
+  Desktop-specific `$desktop-mimeapps.list` files are not read.
 
 ## Example
 
