@@ -592,14 +592,18 @@ fn attachments_save_open_and_refuse_as_they_should() {
     let mut state = with_attachments(opened("text/plain", PLAIN));
     let registry = commands::registry();
     // The command toggles the popup.
-    registry.execute("mail.attachments", &mut state, Origin::Bus).unwrap();
+    registry
+        .execute("mail.attachments", &mut state, Origin::Bus)
+        .unwrap();
     assert!(state.accounts[0].mail.attachments_open);
     state.take_work();
     state.save_attachment("3", false);
     let work = state.take_work();
     assert!(
-        work.iter().any(|w| matches!(w, Work::Attachment { part, name, open: false, blob, .. }
-            if part == "3" && name == "install.sh" && blob == "B3")),
+        work.iter().any(
+            |w| matches!(w, Work::Attachment { part, name, open: false, blob, .. }
+            if part == "3" && name == "install.sh" && blob == "B3")
+        ),
         "{work:?}"
     );
     // A script is never opened; an undecodable part never fetched.

@@ -2718,7 +2718,11 @@ impl State {
                 if let Some(view) = self.account_mut(&account) {
                     view.mail.transfers.insert(part.to_owned(), transfer);
                 }
-                self.status = crate::label(if open { "attachment-opening" } else { "attachment-saving" });
+                self.status = crate::label(if open {
+                    "attachment-opening"
+                } else {
+                    "attachment-saving"
+                });
                 self.queue(work);
             }
             Err((_, message)) => self.status = message,
@@ -2761,7 +2765,11 @@ impl State {
         }
         match result {
             Ok(path) => {
-                let key = if open { "attachment-opened" } else { "attachment-saved" };
+                let key = if open {
+                    "attachment-opened"
+                } else {
+                    "attachment-saved"
+                };
                 self.status = crate::label_with(key, &[("path", &path)]);
                 if let Some(reply) = reply {
                     self.reply(reply, 0, json!({ "path": path }));

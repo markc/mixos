@@ -270,23 +270,54 @@ fn attachments_popup(
                 let part = a.part_id.clone().unwrap_or_default();
                 let usable = a.downloadable();
                 ui.horizontal(|ui| {
-                    let ink = if usable { ui.visuals().text_color() } else { weak };
-                    ui.add(icons::image(type_icon(a.content_type.as_deref()), stroke, 14.0, ink));
-                    ui.allocate_ui(egui::vec2(name_width, ui.spacing().interact_size.y), |ui| {
+                    let ink = if usable {
+                        ui.visuals().text_color()
+                    } else {
+                        weak
+                    };
+                    ui.add(icons::image(
+                        type_icon(a.content_type.as_deref()),
+                        stroke,
+                        14.0,
+                        ink,
+                    ));
+                    // Fixed name and size columns, so the actions line up.
+                    let height = ui.spacing().interact_size.y;
+                    ui.allocate_ui(egui::vec2(name_width, height), |ui| {
+                        ui.set_min_width(name_width);
                         let label = RichText::new(&name).color(ink);
                         ui.add(egui::Label::new(label).truncate())
                             .on_hover_text(a.name.as_deref().unwrap_or(&name));
                     });
-                    ui.label(RichText::new(crate::attachments::human_size(a.size)).weak());
+                    let size = RichText::new(crate::attachments::human_size(a.size)).weak();
+                    ui.allocate_ui_with_layout(
+                        egui::vec2(body * 4.0, height),
+                        egui::Layout::right_to_left(egui::Align::Center),
+                        |ui| {
+                            ui.set_min_width(body * 4.0);
+                            ui.label(size);
+                        },
+                    );
                     if !usable {
-                        ui.label(RichText::new(crate::label("attachment-undecodable")).weak().small());
+                        ui.label(
+                            RichText::new(crate::label("attachment-undecodable"))
+                                .weak()
+                                .small(),
+                        );
                         return;
                     }
-                    if ui.add(Link::new(Icon::Download, crate::label("save"))).clicked() {
+                    if ui
+                        .add(Link::new(Icon::Download, crate::label("save")))
+                        .clicked()
+                    {
                         events.push(UiEvent::SaveAttachment(part.clone()));
                     }
-                    let save_only = crate::attachments::refuses_open(&name, a.content_type.as_deref());
-                    let opened = ui.add_enabled(!save_only, Link::new(Icon::ExternalLink, crate::label("open")));
+                    let save_only =
+                        crate::attachments::refuses_open(&name, a.content_type.as_deref());
+                    let opened = ui.add_enabled(
+                        !save_only,
+                        Link::new(Icon::ExternalLink, crate::label("open")),
+                    );
                     let opened = if save_only {
                         opened.on_disabled_hover_text(crate::label("attachment-save-only"))
                     } else {
@@ -300,16 +331,25 @@ fn attachments_popup(
                     let note = match transfer {
                         Transfer::Saving => crate::label("attachment-saving"),
                         Transfer::Opening => crate::label("attachment-opening"),
-                        Transfer::Saved(path) => crate::label_with("attachment-saved", &[("path", path)]),
-                        Transfer::Opened(path) => crate::label_with("attachment-opened", &[("path", path)]),
-                        Transfer::Failed(error) => crate::label_with("attachment-failed", &[("error", error)]),
+                        Transfer::Saved(path) => {
+                            crate::label_with("attachment-saved", &[("path", path)])
+                        }
+                        Transfer::Opened(path) => {
+                            crate::label_with("attachment-opened", &[("path", path)])
+                        }
+                        Transfer::Failed(error) => {
+                            crate::label_with("attachment-failed", &[("error", error)])
+                        }
                     };
                     ui.label(RichText::new(note).weak().small());
                 }
             }
             ui.separator();
             let any = email.attachments.iter().flatten().any(|a| a.downloadable());
-            if ui.add_enabled(any, Link::new(Icon::Download, crate::label("save-all"))).clicked() {
+            if ui
+                .add_enabled(any, Link::new(Icon::Download, crate::label("save-all")))
+                .clicked()
+            {
                 events.push(UiEvent::Command("mail.save_attachments", Origin::Ui));
             }
         });

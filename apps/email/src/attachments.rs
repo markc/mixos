@@ -24,7 +24,13 @@ const COLLISIONS_MAX: u32 = 999;
 
 /// The extension for a type, for an attachment that arrived without a name.
 pub fn extension(mime: Option<&str>) -> &'static str {
-    let mime = mime.unwrap_or("").split(';').next().unwrap_or("").trim().to_ascii_lowercase();
+    let mime = mime
+        .unwrap_or("")
+        .split(';')
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_ascii_lowercase();
     match mime.as_str() {
         "application/pdf" => "pdf",
         "image/png" => "png",
@@ -131,7 +137,13 @@ pub fn refuses_open(name: &str, mime: Option<&str>) -> bool {
         "exe", "com", "bat", "cmd", "msi", "ps1", "vbs", "scr", "desktop", "run", "appimage",
         "bin", "so", "dll", "deb", "rpm", "elf", "out",
     ];
-    let mime = mime.unwrap_or("").split(';').next().unwrap_or("").trim().to_ascii_lowercase();
+    let mime = mime
+        .unwrap_or("")
+        .split(';')
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_ascii_lowercase();
     let ext = name
         .rsplit_once('.')
         .map(|(_, ext)| ext.to_ascii_lowercase())
@@ -283,12 +295,24 @@ mod tests {
     fn names_are_never_paths_or_hidden() {
         assert_eq!(file_name(Some("plan.pdf"), 1, None), "plan.pdf");
         assert_eq!(file_name(Some("../../etc/passwd"), 1, None), "passwd");
-        assert_eq!(file_name(Some("C:\\Users\\x\\evil.exe"), 1, None), "evil.exe");
+        assert_eq!(
+            file_name(Some("C:\\Users\\x\\evil.exe"), 1, None),
+            "evil.exe"
+        );
         assert_eq!(file_name(Some(".bashrc"), 1, None), "bashrc");
         assert_eq!(file_name(Some("a..b.txt"), 1, None), "ab.txt");
-        assert_eq!(file_name(Some("bell\u{7}\nname.txt"), 1, None), "bellname.txt");
-        assert_eq!(file_name(Some(".."), 2, Some("application/pdf")), "attachment-2.pdf");
-        assert_eq!(file_name(None, 3, Some("image/png; name=x")), "attachment-3.png");
+        assert_eq!(
+            file_name(Some("bell\u{7}\nname.txt"), 1, None),
+            "bellname.txt"
+        );
+        assert_eq!(
+            file_name(Some(".."), 2, Some("application/pdf")),
+            "attachment-2.pdf"
+        );
+        assert_eq!(
+            file_name(None, 3, Some("image/png; name=x")),
+            "attachment-3.png"
+        );
         assert_eq!(file_name(Some("   "), 4, None), "attachment-4.bin");
     }
 
@@ -357,9 +381,16 @@ mod tests {
     #[test]
     fn the_download_dir_follows_xdg() {
         let home = Path::new("/home/ann");
-        assert_eq!(download_dir(None, None, home), PathBuf::from("/home/ann/Downloads"));
-        let dirs = "# comment\nXDG_DESKTOP_DIR=\"$HOME/Desktop\"\nXDG_DOWNLOAD_DIR=\"$HOME/Fetched\"\n";
-        assert_eq!(download_dir(None, Some(dirs), home), PathBuf::from("/home/ann/Fetched"));
+        assert_eq!(
+            download_dir(None, None, home),
+            PathBuf::from("/home/ann/Downloads")
+        );
+        let dirs =
+            "# comment\nXDG_DESKTOP_DIR=\"$HOME/Desktop\"\nXDG_DOWNLOAD_DIR=\"$HOME/Fetched\"\n";
+        assert_eq!(
+            download_dir(None, Some(dirs), home),
+            PathBuf::from("/home/ann/Fetched")
+        );
         assert_eq!(
             download_dir(Some("/data/dl"), Some(dirs), home),
             PathBuf::from("/data/dl")

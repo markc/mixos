@@ -174,7 +174,10 @@ async fn attachment(
     open: bool,
     dir: Option<String>,
 ) -> Result<String, String> {
-    let bytes = client.download_blob(blob).await.map_err(|e| e.to_string())?;
+    let bytes = client
+        .download_blob(blob)
+        .await
+        .map_err(|e| e.to_string())?;
     let path = tokio::task::spawn_blocking(move || -> Result<PathBuf, String> {
         let dir = match (open, dir) {
             (true, _) => crate::attachments::open_dir()?,

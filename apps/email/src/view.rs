@@ -222,7 +222,9 @@ fn window(
             .resizable(true)
             .default_size(remaining * state.ui.reader)
             .frame(bars::dock_frame(ui.ctx()))
-            .show(ui, |ui| reader(ui, state, view, commands, strings, stroke, events));
+            .show(ui, |ui| {
+                reader(ui, state, view, commands, strings, stroke, events)
+            });
         let split = right.response.rect.width() / remaining.max(1.0);
         if (split - state.ui.reader).abs() > 0.005 {
             events.push(UiEvent::SplitReader(split));
