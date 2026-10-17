@@ -11,7 +11,26 @@ use toolkit::datatable::{SelectionMode, TableEvent};
 
 use super::{AccountView, Form, Node, Phase, State};
 use crate::verbs::Write;
-use crate::work::Work;
+use crate::work::{IdsFor, SELECT_CAP, Work};
+
+/// Which side panes the window shows (persisted with its shape).
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct Panes {
+    /// The account tree.
+    pub folder: bool,
+    /// The reader.
+    pub message: bool,
+}
+
+impl Default for Panes {
+    fn default() -> Self {
+        Self {
+            folder: true,
+            message: true,
+        }
+    }
+}
 
 /// Where the search looks.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
@@ -84,6 +103,27 @@ pub enum FolderAction {
     Empty {
         id: String,
     },
+    /// Mark many read: a whole mailbox (`id`), or a search's results (`ids`).
+    MarkRead {
+        id: Option<String>,
+        ids: Vec<String>,
+    },
+}
+
+/// Marking more emails read than this asks first.
+pub const MARK_CONFIRM_ABOVE: u64 = 500;
+
+/// `n` with its thousands grouped: 2866 is "2,866".
+pub fn grouped(n: u64) -> String {
+    let digits = n.to_string();
+    let mut out = String::new();
+    for (i, digit) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i) % 3 == 0 {
+            out.push(',');
+        }
+        out.push(digit);
+    }
+    out
 }
 
 /// A folder dialog: a name to give, or a confirmation.
@@ -123,6 +163,7 @@ impl AccountView {
     /// Run the search as it stands: its first page, nothing selected.
     pub(super) fn run_search(&mut self, limit: u32, work: &mut Vec<Work>) {
         self.mail.search.applied = self.mail.search.text.trim().to_owned();
+        self.mail.everything = None;
         self.mail.table.page = 0;
         self.mail.table.selection.clear();
         self.mail.table.focus = None;
@@ -372,12 +413,204 @@ impl State {
 
     /// Folder › Mark Folder as Read: every unread email in it, on the
     /// server, a batch at a time.
+    ///
+    /// On the folder the list shows while it is searched, it marks the
+    /// search's results instead (as Thunderbird does): their unread ids are
+    /// fetched first. More than [`MARK_CONFIRM_ABOVE`] asks, Cancel first.
     pub fn folder_mark_read(&mut self) {
-        if let Some((view, mailbox)) = self.target_mailbox() {
-            let (account, id) = (view.entry.id.clone(), mailbox.id.clone());
+        let Some((view, mailbox)) = self.target_mailbox() else {
+            self.done_with_node();
+            return;
+        };
+        let (account, id) = (view.entry.id.clone(), mailbox.id.clone());
+        let (name, unread) = (mailbox.name.clone(), mailbox.unread_emails);
+        let searched = view.mail.selected.as_deref() == Some(id.as_str())
+            && view.mail.search.active();
+        if searched {
+            let (text, all) = (view.mail.search.query(), view.mail.search.all());
+            self.query_ids(&account, Some(id).filter(|_| !all), text, true, IdsFor::MarkRead);
+        } else if unread > MARK_CONFIRM_ABOVE {
+            self.folder_form(
+                FolderAction::MarkRead {
+                    id: Some(id.clone()),
+                    ids: Vec::new(),
+                },
+                name,
+                unread,
+            );
+        } else {
+            self.mark_shown_read(&account, None);
             self.mailbox_write(&account, None, Write::MarkMailboxRead { id });
         }
         self.done_with_node();
+    }
+
+    /// The shown rows read at once (`ids`: only those; none: every row), so
+    /// the list stops being bold before the server answers.
+    fn mark_shown_read(&mut self, account: &str, ids: Option<&[String]>) {
+        if let Some(view) = self.accounts.iter_mut().find(|v| v.entry.id == account) {
+            let shown: Vec<String> = view
+                .mail
+                .emails
+                .iter()
+                .map(|e| e.id.clone())
+                .filter(|id| ids.is_none_or(|ids| ids.contains(id)))
+                .collect();
+            view.set_keyword(&shown, "$seen", true);
+        }
+    }
+
+    /// Ask for every id the list's query has (`mailbox` none: every
+    /// mailbox), for `purpose`; only the newest answer is used.
+    fn query_ids(
+        &mut self,
+        account: &str,
+        mailbox: Option<String>,
+        text: Option<String>,
+        unread: bool,
+        purpose: IdsFor,
+    ) {
+        let Some(view) = self.accounts.iter_mut().find(|v| v.entry.id == account) else {
+            return;
+        };
+        view.tickets.ids += 1;
+        let ticket = view.tickets.ids;
+        self.work.push(Work::QueryIds {
+            account: account.to_owned(),
+            ticket,
+            mailbox,
+            text,
+            unread,
+            cap: SELECT_CAP,
+            purpose,
+        });
+    }
+
+    /// "Select all N in folder": every id of the list's query, every page.
+    pub(super) fn select_everything(&mut self, account: &str) {
+        let Some(view) = self.account(account) else {
+            return;
+        };
+        let search = &view.mail.search;
+        let mailbox = view.mail.selected.clone().filter(|_| !search.all());
+        let text = search.query();
+        self.query_ids(account, mailbox, text, false, IdsFor::Select);
+    }
+
+    /// An id query answered.
+    pub(super) fn ids_arrived(
+        &mut self,
+        tag: &super::Tag,
+        ticket: u64,
+        purpose: IdsFor,
+        result: Result<Vec<String>, jmap::Error>,
+    ) {
+        let current = self.accounts.iter_mut().find(|v| {
+            v.entry.id == tag.account && v.generation == tag.generation && v.tickets.ids == ticket
+        });
+        let Some(view) = current else {
+            return;
+        };
+        let ids = match result {
+            Ok(ids) => ids,
+            Err(error) => {
+                self.status = error.to_string();
+                return;
+            }
+        };
+        match purpose {
+            IdsFor::Select => {
+                view.mail.table.selection = view.mail.emails.iter().map(|e| e.id.clone()).collect();
+                view.mail.everything = Some(ids);
+            }
+            IdsFor::MarkRead if ids.is_empty() => {}
+            IdsFor::MarkRead if ids.len() as u64 > MARK_CONFIRM_ABOVE => {
+                let account = tag.account.clone();
+                let generation = view.generation;
+                let count = ids.len() as u64;
+                let name = view.mail.search.applied.clone();
+                self.open_form(Form::Folder(FolderForm {
+                    account,
+                    generation,
+                    action: FolderAction::MarkRead { id: None, ids },
+                    name,
+                    count,
+                    error: None,
+                }));
+            }
+            IdsFor::MarkRead => {
+                let account = tag.account.clone();
+                self.mark_shown_read(&account, Some(&ids));
+                let write = Write::Keywords {
+                    ids,
+                    read: Some(true),
+                    flagged: None,
+                };
+                self.mailbox_write(&account, None, write);
+            }
+        }
+    }
+
+    /// The emails the message actions act on: every id "Select all N"
+    /// fetched, else the list's selection, else the open email.
+    pub fn acting_on(&self) -> Option<(String, Vec<String>)> {
+        let view = self.current()?;
+        let ids = match (&view.mail.everything, &view.mail.open) {
+            (Some(all), _) => all.clone(),
+            (None, _) if !view.mail.table.selection.is_empty() => view.mail.table.selection.clone(),
+            (None, Some(open)) => vec![open.id.clone()],
+            (None, None) => return None,
+        };
+        (!ids.is_empty()).then(|| (view.entry.id.clone(), ids))
+    }
+
+    /// How many emails the list's selection holds (every page's, once
+    /// "Select all N" has run).
+    pub fn selection_count(&self, view: &AccountView) -> usize {
+        view.mail
+            .everything
+            .as_ref()
+            .map_or(view.mail.table.selection.len(), Vec::len)
+    }
+
+    /// Edit › Select All: every row of the list's page.
+    pub fn select_all_mail(&mut self) {
+        let Some(view) = self.current() else {
+            return;
+        };
+        let account = view.entry.id.clone();
+        let keys: Vec<String> = view.mail.emails.iter().map(|e| e.id.clone()).collect();
+        if let Some(event) = view.mail.table.select_all(&keys) {
+            self.mail_table(&account, event);
+        }
+    }
+
+    /// Show or hide the folder pane (`folder`) and the reader (`message`);
+    /// the keyboard leaves a pane that goes, for the list.
+    pub fn set_panes(&mut self, folder: Option<bool>, message: Option<bool>) {
+        let before = self.ui.panes;
+        if let Some(folder) = folder {
+            self.ui.panes.folder = folder;
+        }
+        if let Some(message) = message {
+            self.ui.panes.message = message;
+        }
+        if self.ui.panes != before {
+            if (before.folder && !self.ui.panes.folder) || (before.message && !self.ui.panes.message) {
+                self.ui.focus_list = true;
+            }
+            self.config_dirty = true;
+        }
+    }
+
+    /// View › Layout › Folder Pane.
+    pub fn toggle_folder_pane(&mut self) {
+        self.set_panes(Some(!self.ui.panes.folder), None);
+    }
+
+    /// View › Layout › Message Pane.
+    pub fn toggle_message_pane(&mut self) {
+        self.set_panes(None, Some(!self.ui.panes.message));
     }
 
     /// Refresh the target's account.
@@ -469,6 +702,11 @@ impl State {
         let Node::Mailbox(account, id) = target else {
             return false;
         };
+        // A page of an every-page selection carries them all.
+        let keys = match self.account(account).and_then(|v| v.mail.everything.clone()) {
+            Some(all) if keys.iter().all(|k| all.contains(k)) => all,
+            _ => keys,
+        };
         self.move_emails(account, keys, id.clone(), None);
         true
     }
@@ -487,6 +725,14 @@ impl State {
             },
             FolderAction::Delete { id } => Write::TrashMailbox { id: id.clone() },
             FolderAction::Empty { id } => Write::EmptyMailbox { id: id.clone() },
+            FolderAction::MarkRead { id: Some(id), .. } => {
+                Write::MarkMailboxRead { id: id.clone() }
+            }
+            FolderAction::MarkRead { id: None, ids } => Write::Keywords {
+                ids: ids.clone(),
+                read: Some(true),
+                flagged: None,
+            },
         };
         if let FolderAction::New { .. } | FolderAction::Rename { .. } = &form.action {
             // The other mailboxes under the same parent.
@@ -606,6 +852,8 @@ impl State {
             })
             .collect();
         out["account"] = json!(account);
+        out["selected"] = json!(self.selection_count(view));
+        out["selected_all"] = json!(view.mail.everything.is_some());
         out["search"] = json!({
             "text": view.mail.search.text,
             "applied": view.mail.search.applied,

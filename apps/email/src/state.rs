@@ -29,7 +29,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use settings::email::{AccountEntry, Email as EmailSettings};
 use toolkit::datatable::{
-    Align, Column, Order, PageMove, SelectionMode, Sort, TableEvent, TableState, Total, Width,
+    Align, Column, Order, PageMove, Pick, SelectionMode, Sort, TableEvent, TableState, Total,
+    Width,
 };
 
 use crate::secrets::Secrets;
@@ -37,7 +38,10 @@ use crate::work::{Login, Work};
 use crate::writer::{self, Change, Refusal};
 
 mod list;
-pub use list::{FIXED_ROLES, FolderAction, FolderForm, Scope, Search, name_refusal};
+pub use list::{
+    FIXED_ROLES, FolderAction, FolderForm, MARK_CONFIRM_ABOVE, Panes, Scope, Search, grouped,
+    name_refusal,
+};
 pub mod drafts;
 mod files;
 pub mod suggest;
@@ -137,6 +141,9 @@ pub struct MailState {
     pub table: TableState,
     /// The list's server-side search.
     pub search: Search,
+    /// Every id of the list's query, every page, once "Select all N" has
+    /// fetched them: the selection the message actions take.
+    pub everything: Option<Vec<String>>,
 }
 
 impl Default for MailState {
@@ -151,6 +158,7 @@ impl Default for MailState {
             busy: false,
             table: list_default(),
             search: Search::default(),
+            everything: None,
         }
     }
 }
@@ -162,29 +170,28 @@ pub const COLUMN_DATE: &str = "date";
 
 pub const COLUMN_FOLDER: &str = "folder";
 
-/// The message list's columns: From (a resizable 30%), Subject (the rest)
-/// and Date (`date_width` points, right-aligned). All three sort on the
-/// server, a date newest first. A search of every folder adds Folder,
-/// which the server cannot sort by.
+/// The message list's columns, Subject first: Subject (a resizable 55%),
+/// From (the rest) and Date (`date_width` points, right-aligned). All three
+/// sort on the server, a date newest first. A search of every folder adds
+/// Folder (fixed, before Date), which the server cannot sort by.
+///
+/// Only Subject is resizable: egui_extras' resize handle of a column that
+/// follows the remainder is pinned (the remainder absorbs the drag), so the
+/// remainder sits between the one resizable column and the fixed ones.
 pub fn list_columns(date_width: f32, folders: bool) -> Vec<Column> {
     let mut columns = vec![
-        Column::new(COLUMN_FROM, "column-from")
+        Column::new(COLUMN_SUBJECT, "column-subject")
             .width(Width::Share {
-                share: 0.3,
-                min: 80.0,
+                share: 0.55,
+                min: 120.0,
             })
             .sortable(Order::Ascending),
-        Column::new(COLUMN_SUBJECT, "column-subject")
-            .width(Width::Remainder { min: 120.0 })
+        Column::new(COLUMN_FROM, "column-from")
+            .width(Width::Remainder { min: 80.0 })
             .sortable(Order::Ascending),
     ];
     if folders {
-        columns.push(
-            Column::new(COLUMN_FOLDER, "column-folder").width(Width::Resizable {
-                initial: 110.0,
-                min: 60.0,
-            }),
-        );
+        columns.push(Column::new(COLUMN_FOLDER, "column-folder").width(Width::Fixed(110.0)));
     }
     columns.push(
         Column::new(COLUMN_DATE, "column-date")
@@ -347,6 +354,8 @@ struct Tickets {
     page: u64,
     /// The latest search keystroke: only its debounce runs the query.
     search: u64,
+    /// The latest id query (select all, mark the results read).
+    ids: u64,
     open: u64,
     /// The mailbox the latest open was issued under: its answer is dropped
     /// when the selection has changed since.
@@ -434,6 +443,7 @@ impl AccountView {
         };
         // A folder chosen ends the search; a keystroke still waiting is void.
         self.mail.search = Search::default();
+        self.mail.everything = None;
         self.tickets.search += 1;
         // An open still in flight belongs to the old mailbox.
         self.tickets.open += 1;
@@ -778,6 +788,10 @@ pub struct UiState {
     /// The tree node a context menu was opened on: the folder commands'
     /// target until one runs.
     pub menu_node: Option<Node>,
+    /// The side panes shown (persisted).
+    pub panes: Panes,
+    /// The list is to take the keyboard (a pane holding it went).
+    pub focus_list: bool,
 }
 
 impl Default for UiState {
@@ -792,6 +806,8 @@ impl Default for UiState {
             list: list_default(),
             focus_search: false,
             menu_node: None,
+            panes: Panes::default(),
+            focus_list: false,
         }
     }
 }
@@ -2179,6 +2195,9 @@ impl State {
             // A send is settled by its own ticket even when the account has
             // reconnected since: the person must hear whether it went.
             Event::Account(tag, Done::Sent(ticket, result)) => self.sent(&tag, ticket, result),
+            Event::Account(tag, Done::Ids(ticket, purpose, result)) => {
+                self.ids_arrived(&tag, ticket, purpose, result)
+            }
             // A draft save likewise: its compose, or the cleanup of the
             // draft it made, depends on the save, not the connection.
             Event::Account(tag, Done::DraftSaved(op, result)) => self.draft_saved(&tag, op, result),
@@ -2341,7 +2360,7 @@ impl State {
                         view.run_search(limit, &mut self.work);
                     }
                     Done::SearchDue(_) => {}
-                    Done::Answered(..) | Done::Wrote(..) => {}
+                    Done::Answered(..) | Done::Wrote(..) | Done::Ids(..) => {}
                 }
             }
             Event::Settled(ticket, answer) => self.settled(ticket, answer),
@@ -2549,7 +2568,7 @@ impl State {
                 let Some(mailbox) = view.mail.selected.clone() else {
                     return;
                 };
-                view.mail.table.apply(&event, SelectionMode::Single);
+                view.mail.table.apply(&event, SelectionMode::Multi);
                 if let TableEvent::SortChanged(sort) = &event {
                     self.ui.list.sort = sort.clone();
                     self.config_dirty = true;
@@ -2557,20 +2576,42 @@ impl State {
                 view.mail.busy = true;
                 view.fetch_emails(mailbox, limit, &mut self.work);
             }
-            TableEvent::Selected { key, .. } | TableEvent::Activated { key, .. } => {
+            TableEvent::Selected {
+                key,
+                pick: Pick::Only,
+                ..
+            }
+            | TableEvent::Activated { key, .. } => {
                 let opened = view.mail.open.as_ref().is_some_and(|e| e.id == *key);
-                view.mail.table.apply(&event, SelectionMode::Single);
+                view.mail.table.apply(&event, SelectionMode::Multi);
+                view.mail.everything = None;
                 if !opened {
                     self.open_email(account, key.clone());
                 }
             }
+            // A selection of several: the reader says how many; of one, it
+            // shows that one.
+            TableEvent::Selected { .. } | TableEvent::SelectionChanged { .. } => {
+                view.mail.table.apply(&event, SelectionMode::Multi);
+                view.mail.everything = None;
+                let only = match view.mail.table.selection.as_slice() {
+                    [one] if view.mail.open.as_ref().is_none_or(|e| e.id != *one) => {
+                        Some(one.clone())
+                    }
+                    _ => None,
+                };
+                if let Some(one) = only {
+                    self.open_email(account, one);
+                }
+            }
+            TableEvent::SelectEverything => self.select_everything(account),
             TableEvent::ColumnResized { column, width } => {
                 self.ui.list.widths.insert(column.clone(), *width);
                 self.config_dirty = true;
             }
             // The menu and the drag act on the selection these settle.
             TableEvent::ContextMenu { .. } | TableEvent::DragStarted { .. } => {
-                view.mail.table.apply(&event, SelectionMode::Single);
+                view.mail.table.apply(&event, SelectionMode::Multi);
             }
             TableEvent::ColumnShown { .. } | TableEvent::DensityChanged(_) => {
                 self.list_preference(&event);
@@ -2984,10 +3025,9 @@ impl State {
 
     /// Delete the open email: confirm first when the settings ask to.
     pub fn delete_open(&mut self) {
-        let Some((account, email)) = self.reading() else {
+        let Some((account, ids)) = self.acting_on() else {
             return;
         };
-        let ids = vec![email.id];
         if self.settings.mail.confirm_delete {
             let generation = self.generation_of(&account);
             self.open_form(Form::Delete {
@@ -3009,28 +3049,30 @@ impl State {
 
     /// Choose where the open email moves to.
     pub fn move_open(&mut self) {
-        if let Some((account, email)) = self.reading() {
+        if let Some((account, ids)) = self.acting_on() {
             let generation = self.generation_of(&account);
             self.open_form(Form::Move {
                 account,
                 generation,
-                ids: vec![email.id],
+                ids,
             });
         }
     }
 
-    /// Flag or unflag the open email.
+    /// Flag or unflag the selected emails: unflag when the first is
+    /// flagged, else flag them all.
     pub fn flag_open(&mut self) {
-        let Some((account, email)) = self.reading() else {
+        let Some((account, ids)) = self.acting_on() else {
             return;
         };
-        let flagged = !email
-            .keywords
-            .as_ref()
-            .and_then(|k| k.get("$flagged"))
-            .and_then(Value::as_bool)
-            .unwrap_or(false);
-        let ids = vec![email.id];
+        let first = self.account(&account).and_then(|v| {
+            v.mail
+                .emails
+                .iter()
+                .chain(v.mail.open.iter())
+                .find(|e| ids.first() == Some(&e.id))
+        });
+        let flagged = !first.is_some_and(Email::is_flagged);
         if let Some(view) = self.account_mut(&account) {
             view.set_keyword(&ids, "$flagged", flagged);
         }
@@ -3044,10 +3086,9 @@ impl State {
 
     /// Mark the open email unread.
     pub fn mark_open_unread(&mut self) {
-        let Some((account, email)) = self.reading() else {
+        let Some((account, ids)) = self.acting_on() else {
             return;
         };
-        let ids = vec![email.id];
         if let Some(view) = self.account_mut(&account) {
             view.set_keyword(&ids, "$seen", false);
         }
@@ -3294,6 +3335,8 @@ impl State {
                         "applied": view.mail.search.applied,
                         "scope": view.mail.search.scope.name(),
                     },
+                    "selected": self.selection_count(view),
+                    "selected_all": view.mail.everything.is_some(),
                 });
                 out["calendar"] = json!({
                     "calendars": view.calendars.calendars,
@@ -3343,6 +3386,7 @@ impl State {
                     FolderAction::Rename { id } => ("folder_rename", Some(id), None),
                     FolderAction::Delete { id } => ("folder_delete", Some(id), None),
                     FolderAction::Empty { id } => ("folder_empty", Some(id), None),
+                    FolderAction::MarkRead { id, .. } => ("mark_read", id.as_ref(), None),
                 };
                 json!({"kind": kind, "account": f.account, "id": id, "parent": parent, "name": f.name, "count": f.count, "error": f.error})
             }
@@ -3372,6 +3416,7 @@ impl State {
                 "expanded": self.ui.expanded,
                 "theme_mode": self.ui.theme.mode.map(|m| format!("{m:?}").to_lowercase()),
                 "list": self.ui.list,
+                "panes": self.ui.panes,
             },
             "migrating": self.migration.is_some(),
             "exiting": self.exiting,
@@ -3808,6 +3853,7 @@ impl State {
             UiEvent::SearchScope(account, scope) => self.set_search(&account, None, Some(scope)),
             UiEvent::SearchClear(account) => self.set_search(&account, Some(String::new()), None),
             UiEvent::SearchFocused => self.ui.focus_search = false,
+            UiEvent::ListFocused => self.ui.focus_list = false,
             UiEvent::ContextNode(node) => self.context_node(&node),
             UiEvent::DropOnFolder(node, keys) => {
                 self.drop_on(&node, keys);

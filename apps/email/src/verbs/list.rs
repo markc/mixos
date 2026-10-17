@@ -39,6 +39,12 @@ pub const VERBS: &[Verb] = &[
         "Destroy every email in a Trash or Junk mailbox, 500 at a time",
     ),
     verb(
+        "email.panes",
+        false,
+        r#"{"folder":"optional bool: the account tree","message":"optional bool: the reader"}"#,
+        "Show or hide the side panes (View › Layout); answers what is shown",
+    ),
+    verb(
         "email.form.field",
         false,
         r#"{"name":"title|start|end|location|name|email|phone|organization|folder_name","value":"string"}"#,
@@ -72,6 +78,7 @@ pub fn dispatch(state: &mut State, id: u64, verb: &str, args: &Value) -> Option<
         "email.search.clear" => search_clear(state, id, args),
         "email.mailbox.mark_read" => mailbox_write(state, id, args, false),
         "email.mailbox.empty" => mailbox_write(state, id, args, true),
+        "email.panes" => panes(state, id, args),
         "email.form.field" => form_field(state, id, args),
         "email.form.submit" => form_submit(state, id, args),
         "email.form.cancel" => {
@@ -82,6 +89,13 @@ pub fn dispatch(state: &mut State, id: u64, verb: &str, args: &Value) -> Option<
         }
         _ => return None,
     })
+}
+
+fn panes(state: &mut State, id: u64, args: &Value) -> Checked<()> {
+    let (folder, message) = (flag(args, "folder")?, flag(args, "message")?);
+    state.set_panes(folder, message);
+    state.reply(id, 0, json!({ "panes": state.ui.panes }));
+    Ok(())
 }
 
 fn search_set(state: &mut State, id: u64, args: &Value) -> Checked<()> {

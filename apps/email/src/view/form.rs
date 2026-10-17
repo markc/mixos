@@ -35,11 +35,12 @@ pub fn dialog(ui: &mut Ui, state: &State, events: &mut Vec<UiEvent>) {
             Some(crate::label("save")),
         ),
         Form::Folder(f) => {
-            let (title, confirm) = match f.action {
+            let (title, confirm) = match &f.action {
                 FolderAction::New { .. } => ("folder-new-title", "folder-create"),
                 FolderAction::Rename { .. } => ("folder-rename-title", "folder-rename-confirm"),
                 FolderAction::Delete { .. } => ("folder-delete-title", "folder-delete-confirm"),
                 FolderAction::Empty { .. } => ("folder-empty-title", "folder-empty-confirm"),
+                FolderAction::MarkRead { .. } => ("mark-read-title", "mark-read-confirm"),
             };
             (
                 "form-folder",
@@ -52,7 +53,9 @@ pub fn dialog(ui: &mut Ui, state: &State, events: &mut Vec<UiEvent>) {
     let destructive = matches!(
         form,
         Form::Folder(FolderForm {
-            action: FolderAction::Delete { .. } | FolderAction::Empty { .. },
+            action: FolderAction::Delete { .. }
+                | FolderAction::Empty { .. }
+                | FolderAction::MarkRead { .. },
             ..
         })
     );
@@ -170,7 +173,7 @@ fn body(ui: &mut Ui, state: &State, form: &Form, events: &mut Vec<UiEvent>) {
             error(ui, &f.error);
         }
         Form::Folder(f) => {
-            match f.action {
+            match &f.action {
                 FolderAction::New { .. } | FolderAction::Rename { .. } => {
                     grid(ui, "folder-form", &mut |ui| {
                         line(
@@ -183,15 +186,17 @@ fn body(ui: &mut Ui, state: &State, form: &Form, events: &mut Vec<UiEvent>) {
                         );
                     });
                 }
-                FolderAction::Delete { .. } | FolderAction::Empty { .. } => {
-                    let key = if matches!(f.action, FolderAction::Delete { .. }) {
-                        "folder-delete-body"
-                    } else {
-                        "folder-empty-body"
+                FolderAction::Delete { .. }
+                | FolderAction::Empty { .. }
+                | FolderAction::MarkRead { .. } => {
+                    let key = match &f.action {
+                        FolderAction::Delete { .. } => "folder-delete-body",
+                        FolderAction::Empty { .. } => "folder-empty-body",
+                        _ => "mark-read-body",
                     };
                     ui.label(crate::label_with(
                         key,
-                        &[("name", &f.name), ("count", &f.count.to_string())],
+                        &[("name", &f.name), ("count", &crate::state::grouped(f.count))],
                     ));
                 }
             }

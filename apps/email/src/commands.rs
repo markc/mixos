@@ -46,6 +46,12 @@ fn composable(state: &State) -> bool {
     idle(state) && state.compose_account().is_some()
 }
 
+/// Emails are selected in the list (or one is open): the message actions
+/// act on them all.
+fn acting(state: &State) -> bool {
+    ready(state) && state.mode == Mode::Mail && state.acting_on().is_some()
+}
+
 /// The current account has an email open, in the mail surface.
 fn reading(state: &State) -> bool {
     ready(state)
@@ -202,7 +208,7 @@ pub fn registry() -> Registry<State> {
         menu: Some("mail"),
         shortcut: key(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::U),
         icon: None,
-        enabled: reading,
+        enabled: acting,
         run: State::mark_open_unread,
     })
     .add(Command {
@@ -213,7 +219,7 @@ pub fn registry() -> Registry<State> {
         menu: Some("mail"),
         shortcut: key(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::S),
         icon: None,
-        enabled: reading,
+        enabled: acting,
         run: State::flag_open,
     })
     .add(Command {
@@ -224,7 +230,7 @@ pub fn registry() -> Registry<State> {
         menu: Some("mail"),
         shortcut: key(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::M),
         icon: Some(Icon::FolderInput),
-        enabled: reading,
+        enabled: acting,
         run: State::move_open,
     })
     .add(Command {
@@ -235,7 +241,7 @@ pub fn registry() -> Registry<State> {
         menu: Some("mail"),
         shortcut: key(Modifiers::NONE, Key::Delete),
         icon: Some(Icon::Trash),
-        enabled: reading,
+        enabled: acting,
         run: State::delete_open,
     })
     .add(Command {
@@ -460,6 +466,48 @@ pub fn registry() -> Registry<State> {
             move |s: &State| s.searching_in(scope),
         );
     }
+    // View › Layout: the side panes (no chord: F-keys are the user's).
+    r.add_toggle(
+        Command {
+            id: "view.folder_pane",
+            submenu: Some("layout"),
+            group: 5,
+            label: "folder-pane",
+            menu: Some("view"),
+            shortcut: None,
+            icon: Some(Icon::PanelLeft),
+            enabled: undialogued,
+            run: State::toggle_folder_pane,
+        },
+        |s: &State| s.ui.panes.folder,
+    );
+    r.add_toggle(
+        Command {
+            id: "view.message_pane",
+            submenu: Some("layout"),
+            group: 5,
+            label: "message-pane",
+            menu: Some("view"),
+            shortcut: None,
+            icon: Some(Icon::PanelRight),
+            enabled: undialogued,
+            run: State::toggle_message_pane,
+        },
+        |s: &State| s.ui.panes.message,
+    );
+    // Every row of the list's page. No chord here: Ctrl+A belongs to the
+    // focused text field; the list takes it itself while it has the keyboard.
+    r.add(Command {
+        id: "mail.select_all",
+        submenu: None,
+        group: 4,
+        label: "select-all-mail",
+        menu: Some("mail"),
+        shortcut: None,
+        icon: None,
+        enabled: listing,
+        run: State::select_all_mail,
+    });
     r.add(Command {
         id: "view.previous_page",
         submenu: None,

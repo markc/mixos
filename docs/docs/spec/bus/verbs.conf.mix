@@ -252,6 +252,7 @@
     {name:"email.search.clear", owner:"email", version:"0.1.0", status:"accepted", class:"intent"},
     {name:"email.mailbox.mark_read", owner:"email", version:"0.1.0", status:"accepted", class:"intent"},
     {name:"email.mailbox.empty", owner:"email", version:"0.1.0", status:"accepted", class:"intent"},
+    {name:"email.panes", owner:"email", version:"0.1.0", status:"accepted", class:"intent"},
     {name:"email.form.field", owner:"email", version:"0.1.0", status:"accepted", class:"intent"},
     {name:"email.form.submit", owner:"email", version:"0.1.0", status:"accepted", class:"intent"},
     {name:"email.form.cancel", owner:"email", version:"0.1.0", status:"accepted", class:"intent"},

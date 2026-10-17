@@ -57,8 +57,8 @@ pub fn describe(app: &str) -> Vec<Value> {
         ),
         (
             "table.select",
-            json!({"rows":"row keys (or 0-based indices on the page), the first replacing the selection"}),
-            "Select rows, as clicks (and Ctrl-clicks) do",
+            json!({"rows":"row keys (or 0-based indices on the page), the first replacing the selection","all":"or true: every row of the page (Ctrl+A); or a scope name (the app's, e.g. \"folder\"): every row of the whole set"}),
+            "Select rows, as clicks (and Ctrl-clicks, Ctrl+A, the footer's select-all link) do",
             false,
         ),
         (
@@ -101,7 +101,9 @@ pub fn verb_for(event: &TableEvent) -> Option<&'static str> {
         TableEvent::SortChanged(_) => "table.sort",
         TableEvent::PageChanged(_) => "table.page",
         TableEvent::PageSizeChanged(_) => "table.page_size",
-        TableEvent::Selected { .. } => "table.select",
+        TableEvent::Selected { .. }
+        | TableEvent::SelectionChanged { .. }
+        | TableEvent::SelectEverything => "table.select",
         TableEvent::Activated { .. } => "table.activate",
         TableEvent::ContextMenu { .. } => "table.context",
         TableEvent::ColumnResized { .. } | TableEvent::ColumnShown { .. } => "table.column",
@@ -205,6 +207,13 @@ pub fn request(verb: &str, args: &Value, table: &Table) -> Result<Request, Refus
                 .ok_or_else(|| invalid("n must be a whole number, 1 or more"))?;
             vec![TableEvent::PageSizeChanged(n)]
         }
+        "table.select" if args.get("all").is_some() => match args.get("all") {
+            // Every row of the page, as Ctrl+A.
+            Some(Value::Bool(true)) => state.select_all(table.keys).into_iter().collect(),
+            // Every row of the whole set, as the footer's link.
+            Some(Value::String(_)) => vec![TableEvent::SelectEverything],
+            _ => return Err(invalid("all must be true (the page) or a scope name (every row)")),
+        },
         "table.select" => {
             let rows = match args.get("rows") {
                 Some(Value::Array(rows)) if !rows.is_empty() => rows.clone(),
@@ -456,6 +465,18 @@ mod tests {
         assert!(invalid("table.page", json!({"index": 3})), "past the last");
         assert!(invalid("table.page_size", json!({"n": 0})));
         assert!(missing("table.select", json!({"rows": ["z"]})));
+        assert!(invalid("table.select", json!({"all": 3})));
+        assert_eq!(
+            events("table.select", json!({"all": true})),
+            [TableEvent::SelectionChanged {
+                keys: vec!["a".into(), "b".into(), "c".into()],
+                focus: Some(0),
+            }]
+        );
+        assert_eq!(
+            events("table.select", json!({"all": "folder"})),
+            [TableEvent::SelectEverything]
+        );
         assert!(missing("table.activate", json!({"row": 3})));
         assert!(
             invalid("table.column", json!({"id": "date", "width": 90})),

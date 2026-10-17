@@ -73,6 +73,18 @@ pub enum Work {
         /// Search every mailbox (`mailbox` is only where the search began).
         all: bool,
     },
+    /// Every id matching the list's query (`mailbox`: none is every
+    /// mailbox; `text`; only unread with `unread`), at most `cap`, for
+    /// `purpose`; they come back under `ticket`.
+    QueryIds {
+        account: String,
+        ticket: u64,
+        mailbox: Option<String>,
+        text: Option<String>,
+        unread: bool,
+        cap: usize,
+        purpose: IdsFor,
+    },
     /// The search's debounce: after a pause the state is told, under
     /// `ticket`, and runs the query only if no keystroke came since.
     SearchDue {
@@ -215,6 +227,18 @@ pub enum Work {
     },
 }
 
+/// What a [`Work::QueryIds`] answer is for.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum IdsFor {
+    /// "Select all N in folder": the selection spans every page.
+    Select,
+    /// Mark the search's unread results read.
+    MarkRead,
+}
+
+/// The most ids a select-all over every page takes.
+pub const SELECT_CAP: usize = 10_000;
+
 /// How long typing must pause before a search runs.
 pub const SEARCH_DEBOUNCE: std::time::Duration = std::time::Duration::from_millis(300);
 
@@ -227,6 +251,7 @@ impl Work {
             | Work::FetchMailboxes { account }
             | Work::FetchEmails { account, .. }
             | Work::SearchDue { account, .. }
+            | Work::QueryIds { account, .. }
             | Work::OpenPrefsAt { account }
             | Work::OpenEmail { account, .. }
             | Work::Query { account, .. }

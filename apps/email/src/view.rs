@@ -52,6 +52,8 @@ pub enum UiEvent {
     SearchClear(String),
     /// The search field took the keyboard it was asked to.
     SearchFocused,
+    /// The list took the keyboard it was asked to.
+    ListFocused,
     /// A tree row was right-clicked: select it for its context menu.
     ContextNode(Node),
     /// The list's rows (keys) were dropped on a tree node.
@@ -228,18 +230,23 @@ fn window(
     events: &mut Vec<UiEvent>,
 ) {
     let total = ui.available_width();
-    let left = egui::Panel::left("places")
-        .resizable(true)
-        .default_size(total * state.ui.places)
-        .frame(bars::dock_frame(ui.ctx()))
-        .show(ui, |ui| {
-            tree::show(ui, state, commands, strings, stroke, events)
-        });
-    let split = left.response.rect.width() / total.max(1.0);
-    if (split - state.ui.places).abs() > 0.005 {
-        events.push(UiEvent::SplitPlaces(split));
+    // A hidden pane keeps its split: the panel is skipped, not resized.
+    if state.ui.panes.folder {
+        let left = egui::Panel::left("places")
+            .resizable(true)
+            .default_size(total * state.ui.places)
+            .frame(bars::dock_frame(ui.ctx()))
+            .show(ui, |ui| {
+                tree::show(ui, state, commands, strings, stroke, events)
+            });
+        let split = left.response.rect.width() / total.max(1.0);
+        if (split - state.ui.places).abs() > 0.005 {
+            events.push(UiEvent::SplitPlaces(split));
+        }
     }
-    let ready = state.current().filter(|v| v.phase == Phase::Ready);
+    let ready = state
+        .current()
+        .filter(|v| v.phase == Phase::Ready && state.ui.panes.message);
     if let Some(view) = ready {
         let remaining = ui.available_width();
         let right = egui::Panel::right("reader")

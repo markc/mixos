@@ -196,7 +196,6 @@ fn harness_sized(state: State, theme: &Theme, size: egui::Vec2) -> Harness<'stat
     let strings = strings();
     let mut h = Harness::builder()
         .with_size(size)
-        .with_step_dt(0.05)
         .build_ui_state(
             move |ui, window: &mut Window| {
                 let events = view(ui, &window.state, &registry, &strings, 2.0);

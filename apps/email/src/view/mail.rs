@@ -75,15 +75,35 @@ pub fn list(
                 crate::label_with("dragging-messages", &[("count", &count.to_string())])
             }
         };
+        // "Select all N in folder" (or the search's results), once the page
+        // is all selected; then how many are.
+        let total = crate::state::grouped(view.mail.total);
+        let link = if search.active() {
+            crate::label_with("select-all-results", &[("count", &total)])
+        } else {
+            crate::label_with("select-all-in-folder", &[("count", &total)])
+        };
+        let everything = view.mail.everything.as_ref();
+        let done = everything.map(|all| {
+            let count = crate::state::grouped(all.len() as u64);
+            crate::label_with("all-selected", &[("count", &count)])
+        });
         let fired = DataTable::new(LIST, &columns, &table)
             .total(view.mail.total_rows())
             .strings(strings)
+            .selection(toolkit::datatable::SelectionMode::Multi)
+            .select_everything(toolkit::datatable::Everything { link, done })
+            .selected_count(everything.map(|all| all.len() as u64))
             .empty_text(crate::label(empty))
             .context_menu(&mut menu)
             .draggable(&dragging)
             .show(ui, &rows);
         for event in fired {
             events.push(UiEvent::MailTable(view.id().to_owned(), event));
+        }
+        if state.ui.focus_list {
+            toolkit::datatable::focus(ui.ctx(), LIST);
+            events.push(UiEvent::ListFocused);
         }
         if let Some(id) = chosen {
             events.push(UiEvent::Command(id, Origin::Menu));
@@ -388,6 +408,17 @@ fn date_width(ui: &Ui) -> f32 {
 /// Markdown when it is (or the person asked for it), else as the plain text
 /// it is; a link beside the date flips it.
 pub fn reader(ui: &mut Ui, view: &AccountView, events: &mut Vec<UiEvent>) {
+    // Several selected: the reader says how many, not one of them.
+    let selected = view
+        .mail
+        .everything
+        .as_ref()
+        .map_or(view.mail.table.selection.len(), Vec::len);
+    if selected > 1 {
+        let count = crate::state::grouped(selected as u64);
+        ui.weak(crate::label_with("messages-selected", &[("count", &count)]));
+        return;
+    }
     let Some(email) = &view.mail.open else {
         ui.weak(crate::label("select-email"));
         return;

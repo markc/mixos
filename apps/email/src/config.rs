@@ -88,6 +88,8 @@ pub struct UiConfig {
     /// The message list: its sort, dragged column widths and density (the
     /// page and the selection are a session's, never saved).
     pub list: TableState,
+    /// The side panes shown: hiding one keeps its split for its return.
+    pub panes: crate::state::Panes,
 }
 
 impl Default for UiConfig {
@@ -99,6 +101,7 @@ impl Default for UiConfig {
             account: None,
             expanded: BTreeMap::new(),
             list: crate::state::list_default(),
+            panes: crate::state::Panes::default(),
         }
     }
 }
@@ -361,6 +364,7 @@ impl From<&State> for EmailConfig {
                 account: state.selected.clone(),
                 expanded: state.ui.expanded.clone(),
                 list: saved_list(&state.ui.list),
+                panes: state.ui.panes,
             },
             cache: state.cache(),
         }

@@ -251,6 +251,18 @@ pub struct DataTable<'a> {
     empty: Option<String>,
     context: Option<ContextMenu<'a>>,
     drag: Option<&'a dyn Fn(usize) -> String>,
+    everything: Option<Everything>,
+    /// The selection's size when it is more than the page's rows.
+    selected: Option<u64>,
+}
+
+/// The footer's "select every row" offer (multi-selection tables).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Everything {
+    /// The link's words ("Select all 2,866 in folder").
+    pub link: String,
+    /// Shown in its place once every row is selected ("All 2,866 selected").
+    pub done: Option<String>,
 }
 
 /// Draws a row's context menu: given the menu's `Ui` and the row's index.
@@ -274,7 +286,23 @@ impl<'a> DataTable<'a> {
             empty: None,
             context: None,
             drag: None,
+            everything: None,
+            selected: None,
         }
+    }
+
+    /// Offer, in the footer, to select every row of the whole set once the
+    /// page is all selected (multi-selection).
+    pub fn select_everything(mut self, everything: Everything) -> Self {
+        self.everything = Some(everything);
+        self
+    }
+
+    /// The selection is `count` rows, more than the page holds (every row
+    /// of the set is selected): the footer counts those.
+    pub fn selected_count(mut self, count: Option<u64>) -> Self {
+        self.selected = count;
+        self
     }
 
     /// A right-click on a row reports [`TableEvent::ContextMenu`] (after
@@ -386,6 +414,7 @@ impl<'a> DataTable<'a> {
                         },
                     )
                 });
+                let multi = self.selection == SelectionMode::Multi;
                 for (key, press) in KEYS {
                     if ui.input_mut(|i| i.consume_key(Modifiers::NONE, key)) {
                         for event in self.state.key(press, &keys, visible) {
@@ -394,6 +423,29 @@ impl<'a> DataTable<'a> {
                             }
                             events.push(event);
                         }
+                    }
+                    // Shift with a moving key extends the selection.
+                    if multi
+                        && press != TableKey::Enter
+                        && ui.input_mut(|i| i.consume_key(Modifiers::SHIFT, key))
+                        && let Some(event) = self.state.extend(press, &keys, visible)
+                    {
+                        if let TableEvent::SelectionChanged { focus, .. } = &event {
+                            scroll_to = *focus;
+                        }
+                        events.push(event);
+                    }
+                }
+                if multi {
+                    // Ctrl+A only while the table has the keyboard: in a
+                    // text field it still selects the text.
+                    if ui.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::A)) {
+                        events.extend(self.state.select_all(&keys));
+                    }
+                    if let Some(event) = self.state.collapse(&keys)
+                        && ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape))
+                    {
+                        events.push(event);
                     }
                 }
             }
@@ -537,13 +589,18 @@ impl<'a> DataTable<'a> {
                             key: key.clone(),
                         });
                     } else if response.clicked() {
-                        let toggle = self.selection == SelectionMode::Multi
-                            && response.ctx.input(|i| i.modifiers.command);
-                        events.push(TableEvent::Selected {
-                            index,
-                            key: key.clone(),
-                            pick: if toggle { Pick::Toggle } else { Pick::Only },
-                        });
+                        let multi = self.selection == SelectionMode::Multi;
+                        let modifiers = response.ctx.input(|i| i.modifiers);
+                        if multi && modifiers.shift {
+                            events.extend(self.state.range_to(index, keys));
+                        } else {
+                            let toggle = multi && modifiers.command;
+                            events.push(TableEvent::Selected {
+                                index,
+                                key: key.clone(),
+                                pick: if toggle { Pick::Toggle } else { Pick::Only },
+                            });
+                        }
                     }
                     if response.secondary_clicked() {
                         // A row outside the selection is selected first.
@@ -676,6 +733,36 @@ impl<'a> DataTable<'a> {
 
     /// The pager: the shown range on the left; the page size picker and
     /// first, previous, next and last on the right.
+    /// After the range: "N selected" while several rows are, and, with the
+    /// whole page selected and more rows than it holds, the link that
+    /// selects every row ([`TableEvent::SelectEverything`]), or the app's
+    /// word that it has.
+    fn selection_note(&self, ui: &mut Ui, shown: usize, events: &mut Vec<TableEvent>) {
+        let count = self.selected.unwrap_or(self.state.selection.len() as u64);
+        if count < 2 {
+            return;
+        }
+        let note = crate::strings::own_with("datatable-selected", &[("count", &count.to_string())]);
+        ui.label(egui::RichText::new(note).strong());
+        let Some(everything) = &self.everything else {
+            return;
+        };
+        let whole_page = shown > 0 && self.state.selection.len() >= shown;
+        let more = matches!(self.total, Total::Known(all) if all > shown as u64);
+        match &everything.done {
+            Some(done) => {
+                ui.label(egui::RichText::new(done).weak());
+            }
+            None if whole_page && more => {
+                let link = crate::button::Link::new(Icon::Check, &everything.link);
+                if ui.add(link).clicked() {
+                    events.push(TableEvent::SelectEverything);
+                }
+            }
+            None => {}
+        }
+    }
+
     fn footer(&self, ui: &mut Ui, shown: usize, height: f32, events: &mut Vec<TableEvent>) {
         let state = self.state;
         let total = self.total;
@@ -702,6 +789,7 @@ impl<'a> DataTable<'a> {
                 |ui| {
                     ui.add_space(ui.spacing().item_spacing.x);
                     ui.label(egui::RichText::new(range).weak());
+                    self.selection_note(ui, shown, events);
                 },
                 |ui| {
                     // Right to left: Last is added first.

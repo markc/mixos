@@ -57,6 +57,8 @@ pub enum Done {
     Contacts(u64, Result<Vec<jmap::Contact>, jmap::Error>),
     /// The search debounce `ticket` elapsed.
     SearchDue(u64),
+    /// The ids of query `ticket`, for what it was asked for.
+    Ids(u64, crate::work::IdsFor, Result<Vec<String>, jmap::Error>),
     /// Draft save `op` finished.
     DraftSaved(u64, Result<jmap::SavedDraft, jmap::Error>),
     /// A draft read back for compose; boxed, as `Opened` is.
@@ -368,6 +370,7 @@ pub fn start(
         reader: loaded.config.ui.reader,
         expanded: loaded.config.ui.expanded.clone(),
         list: loaded.config.ui.list.clone(),
+        panes: loaded.config.ui.panes,
         ..UiState::default()
     };
     let mut state = State::new(
@@ -635,6 +638,24 @@ impl Shell {
                             )
                             .await;
                         Event::Account(tag, Done::Page(ticket, page))
+                    });
+                }
+            }
+            Work::QueryIds {
+                account,
+                ticket,
+                mailbox,
+                text,
+                unread,
+                cap,
+                purpose,
+            } => {
+                if let Some((tag, client)) = self.client(&account) {
+                    self.spawn(async move {
+                        let ids = client
+                            .query_ids(mailbox.as_deref(), text.as_deref(), unread, cap)
+                            .await;
+                        Event::Account(tag, Done::Ids(ticket, purpose, ids))
                     });
                 }
             }

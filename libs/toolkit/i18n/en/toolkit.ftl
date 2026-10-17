@@ -15,6 +15,7 @@ datatable-range-open = { $first }–{ $last }
 datatable-none = No rows
 datatable-page-size = Rows per page
 clear-search = Clear search
+datatable-selected = { $count } selected
 toolkit-theme = Theme
 toolkit-theme-ocean = Ocean
 toolkit-theme-crimson = Crimson

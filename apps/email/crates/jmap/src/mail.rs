@@ -504,24 +504,28 @@ impl Client {
         read: Option<bool>,
         flagged: Option<bool>,
     ) -> Result<()> {
-        if ids.is_empty() || (read.is_none() && flagged.is_none()) {
+        if read.is_none() && flagged.is_none() {
             return Ok(());
         }
-        let args = email_update_args(self.account_id(), ids, &keyword_patch(read, flagged));
-        let data = self.set_call("Email/set", args).await?;
-        check_set_reply(&data, "notUpdated", ids)
+        // One Email/set per BATCH ids: a whole folder is many calls.
+        for ids in ids.chunks(BATCH) {
+            let args = email_update_args(self.account_id(), ids, &keyword_patch(read, flagged));
+            let data = self.set_call("Email/set", args).await?;
+            check_set_reply(&data, "notUpdated", ids)?;
+        }
+        Ok(())
     }
 
     /// Move every id into exactly one mailbox: `mailboxIds` becomes
     /// `{to: true}`, dropping any other membership.
     pub async fn move_emails(&self, ids: &[String], to_mailbox: &str) -> Result<()> {
-        if ids.is_empty() {
-            return Ok(());
-        }
         let patch = json!({ "mailboxIds": { to_mailbox: true } });
-        let args = email_update_args(self.account_id(), ids, &patch);
-        let data = self.set_call("Email/set", args).await?;
-        check_set_reply(&data, "notUpdated", ids)
+        for ids in ids.chunks(BATCH) {
+            let args = email_update_args(self.account_id(), ids, &patch);
+            let data = self.set_call("Email/set", args).await?;
+            check_set_reply(&data, "notUpdated", ids)?;
+        }
+        Ok(())
     }
 
     /// Delete every id. With `destroy`, the emails are destroyed; without it
@@ -536,10 +540,47 @@ impl Client {
                 .ok_or_else(|| Error::Protocol("no mailbox has the trash role".into()))?;
             return self.move_emails(ids, &trash.id).await;
         }
-        let args = json!({ "accountId": self.account_id(), "destroy": ids });
-        let data = self.set_call("Email/set", args).await?;
-        check_set_reply(&data, "notDestroyed", ids)?;
-        check_confirmed(&data, "destroyed", ids)
+        for ids in ids.chunks(BATCH) {
+            let args = json!({ "accountId": self.account_id(), "destroy": ids });
+            let data = self.set_call("Email/set", args).await?;
+            check_set_reply(&data, "notDestroyed", ids)?;
+            check_confirmed(&data, "destroyed", ids)?;
+        }
+        Ok(())
+    }
+
+    /// Every email id matching `mailbox` (none: every mailbox) and `text`,
+    /// newest first, at most `cap`: a "select all" over every page.
+    pub async fn query_ids(
+        &self,
+        mailbox: Option<&str>,
+        text: Option<&str>,
+        unread: bool,
+        cap: usize,
+    ) -> Result<Vec<String>> {
+        let mut filter = email_filter(mailbox, text);
+        if unread {
+            filter["notKeyword"] = json!("$seen");
+        }
+        let mut ids = Vec::new();
+        while ids.len() < cap {
+            let call = ids_call(self.account_id(), &filter, ids.len() as u64);
+            let replies = self.call(&[call]).await?;
+            let data = replies.into_iter().next().ok_or(empty("Email/query"))?;
+            let page: Vec<String> = data
+                .get("ids")
+                .cloned()
+                .map(serde_json::from_value)
+                .transpose()?
+                .unwrap_or_default();
+            let short = page.len() < BATCH;
+            ids.extend(page);
+            if short {
+                break;
+            }
+        }
+        ids.truncate(cap);
+        Ok(ids)
     }
 
     /// Create a mailbox under `parent` (or at the top level) and return its id.
@@ -715,6 +756,11 @@ fn email_ids_call(account_id: &str, mailbox: &str, unread: bool, position: u64) 
     if unread {
         filter["notKeyword"] = json!("$seen");
     }
+    ids_call(account_id, &filter, position)
+}
+
+/// One page of the ids matching `filter` from `position`, newest first.
+fn ids_call(account_id: &str, filter: &Value, position: u64) -> Call {
     Call(
         "Email/query".into(),
         json!({

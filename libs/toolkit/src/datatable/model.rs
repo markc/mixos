@@ -248,6 +248,15 @@ pub enum TableEvent {
     /// A drag of these rows began (the selection, or the one unselected
     /// row it started on). The rows ride in a [`super::RowsDrag`] payload.
     DragStarted { keys: Vec<String> },
+    /// The selection is now `keys` with the keyboard on row `focus`
+    /// (select all, a Shift range, Escape back to one row).
+    SelectionChanged {
+        keys: Vec<String>,
+        focus: Option<usize>,
+    },
+    /// Select every row of the whole set, every page (the footer's "Select
+    /// all N" link): the app finds the keys, the page shows them selected.
+    SelectEverything,
 }
 
 /// The page size a fresh state uses.
@@ -275,6 +284,9 @@ pub struct TableState {
     /// Columns the person hid, by id.
     #[serde(skip_serializing_if = "BTreeSet::is_empty")]
     pub hidden: BTreeSet<String>,
+    /// Where a Shift range starts: the row last clicked or picked alone.
+    #[serde(skip)]
+    pub anchor: Option<String>,
     pub density: Density,
 }
 
@@ -288,6 +300,7 @@ impl Default for TableState {
             focus: None,
             widths: BTreeMap::new(),
             hidden: BTreeSet::new(),
+            anchor: None,
             density: Density::Compact,
         }
     }
@@ -446,6 +459,52 @@ impl TableState {
             .collect()
     }
 
+    /// Ctrl+A: every row of the page, the keyboard staying where it is.
+    pub fn select_all(&self, keys: &[String]) -> Option<TableEvent> {
+        (!keys.is_empty()).then(|| TableEvent::SelectionChanged {
+            keys: keys.to_vec(),
+            focus: self.focus.filter(|f| *f < keys.len()).or(Some(0)),
+        })
+    }
+
+    /// Shift+click on row `index`: the rows from the anchor (else the
+    /// focus, else that row) to it, in page order.
+    pub fn range_to(&self, index: usize, keys: &[String]) -> Option<TableEvent> {
+        let last = keys.len().checked_sub(1)?;
+        let index = index.min(last);
+        let from = self
+            .anchor
+            .as_ref()
+            .and_then(|a| keys.iter().position(|k| k == a))
+            .or(self.focus)
+            .unwrap_or(index)
+            .min(last);
+        let (low, high) = (from.min(index), from.max(index));
+        Some(TableEvent::SelectionChanged {
+            keys: keys[low..=high].to_vec(),
+            focus: Some(index),
+        })
+    }
+
+    /// Shift with a moving key: the range from the anchor to where the key
+    /// takes the focus.
+    pub fn extend(&self, key: TableKey, keys: &[String], visible: usize) -> Option<TableEvent> {
+        let to = self.moved(key, keys.len(), visible)?;
+        self.range_to(to, keys)
+    }
+
+    /// Escape: a selection of several rows back to the keyboard's row.
+    pub fn collapse(&self, keys: &[String]) -> Option<TableEvent> {
+        if self.selection.len() < 2 {
+            return None;
+        }
+        let focus = self.focus.filter(|f| *f < keys.len())?;
+        Some(TableEvent::SelectionChanged {
+            keys: vec![keys[focus].clone()],
+            focus: Some(focus),
+        })
+    }
+
     /// The page's rows are now `keys` (a new page, a refresh, a removal):
     /// selected keys no longer shown are dropped, and the focus follows the
     /// first selected row, else stays where it was within the new length.
@@ -524,8 +583,17 @@ impl TableState {
                 self.page = 0;
                 self.focus = None;
             }
+            TableEvent::SelectionChanged { keys, focus } => {
+                self.selection = keys.clone();
+                self.focus = *focus;
+                if self.anchor.is_none() {
+                    self.anchor = keys.first().cloned();
+                }
+            }
+            TableEvent::SelectEverything => {}
             TableEvent::Selected { index, key, pick } => {
                 self.focus = Some(*index);
+                self.anchor = Some(key.clone());
                 match (mode, pick) {
                     (SelectionMode::Multi, Pick::Toggle) => {
                         if self.is_selected(key) {
@@ -906,6 +974,43 @@ mod tests {
             (state.selection.as_slice(), state.focus),
             (&["k0".to_owned()][..], Some(0))
         );
+    }
+
+    #[test]
+    fn ranges_run_from_the_anchor_and_escape_collapses() {
+        let rows = keys(6);
+        let mut state = TableState::default();
+        let pick = |index: usize, pick| TableEvent::Selected {
+            index,
+            key: format!("k{index}"),
+            pick,
+        };
+        state.apply(&pick(1, Pick::Only), SelectionMode::Multi);
+        // Shift+click below and then above the anchor.
+        let range = state.range_to(4, &rows).unwrap();
+        state.apply(&range, SelectionMode::Multi);
+        assert_eq!(state.selection, ["k1", "k2", "k3", "k4"]);
+        assert_eq!(state.focus, Some(4));
+        let range = state.range_to(0, &rows).unwrap();
+        state.apply(&range, SelectionMode::Multi);
+        assert_eq!(state.selection, ["k0", "k1"], "still from the anchor");
+        // Shift+Down extends from the focus, still anchored.
+        let down = state.extend(TableKey::Down, &rows, 10).unwrap();
+        state.apply(&down, SelectionMode::Multi);
+        assert_eq!(state.selection, ["k1"]);
+        state.apply(&state.extend(TableKey::End, &rows, 10).unwrap(), SelectionMode::Multi);
+        assert_eq!(state.selection.len(), 5);
+        // Escape: back to the keyboard's row alone.
+        let one = state.collapse(&rows).unwrap();
+        state.apply(&one, SelectionMode::Multi);
+        assert_eq!(state.selection, ["k5"]);
+        assert!(state.collapse(&rows).is_none(), "one row stays");
+        // Ctrl+A: the page.
+        let all = state.select_all(&rows).unwrap();
+        state.apply(&all, SelectionMode::Multi);
+        assert_eq!(state.selection.len(), 6);
+        assert!(state.select_all(&[]).is_none());
+        assert_eq!(state.range_to(3, &[]), None);
     }
 
     #[test]

@@ -127,6 +127,7 @@ struct Sample {
     pages: bool,
     /// The row the context menu's one item was chosen for.
     archived: Option<usize>,
+    mode: SelectionMode,
 }
 
 impl Sample {
@@ -140,6 +141,7 @@ impl Sample {
             seen: Vec::new(),
             pages: true,
             archived: None,
+            mode: SelectionMode::Single,
         }
     }
 
@@ -202,7 +204,7 @@ fn harness(sample: Sample, scheme: Scheme, mode: Mode) -> Harness<'static, Sampl
                 };
                 let events = DataTable::new("messages", &s.columns, &s.state)
                     .total(Total::Known(MESSAGES.len() as u64))
-                    .selection(SelectionMode::Single)
+                    .selection(s.mode)
                     .page_sizes(&[5, 10, 25])
                     .pager(s.pages)
                     .empty_text("Nothing here")
@@ -213,7 +215,7 @@ fn harness(sample: Sample, scheme: Scheme, mode: Mode) -> Harness<'static, Sampl
                     s.archived = Some(row);
                 }
                 for event in events {
-                    s.state.apply(&event, SelectionMode::Single);
+                    s.state.apply(&event, s.mode);
                     s.seen.push(event);
                 }
                 let keys: Vec<String> = s.rows().rows.into_iter().map(|r| r.key).collect();
@@ -412,6 +414,37 @@ fn a_drag_carries_the_selection_and_shows_its_count() {
     assert_eq!(h.state().state.selection, ["m5"]);
     let drag = egui::DragAndDrop::payload::<RowsDrag>(&h.ctx).expect("a payload");
     assert_eq!(drag.keys, ["m5"]);
+}
+
+#[test]
+fn multi_selection_takes_ctrl_a_shift_clicks_and_escape() {
+    let mut sample = Sample::new(10);
+    sample.mode = SelectionMode::Multi;
+    let mut h = light(sample);
+    h.get_by_label_contains("Lunch on Friday").click();
+    h.run();
+    // Shift+click: the range from the row clicked first.
+    h.get_by_label_contains("Re: build cluster")
+        .click_modifiers(egui::Modifiers::SHIFT);
+    h.run();
+    assert_eq!(h.state().state.selection, ["m1", "m2", "m3", "m4"]);
+    assert!(h.query_by_label("4 selected").is_some());
+    // Ctrl+click takes one out.
+    h.get_by_label_contains("Minutes")
+        .click_modifiers(egui::Modifiers::COMMAND);
+    h.run();
+    assert_eq!(h.state().state.selection, ["m1", "m2", "m4"]);
+    // Ctrl+A: the whole page; Escape: back to the keyboard's row.
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    h.run();
+    assert_eq!(h.state().state.selection.len(), 7);
+    h.key_press(egui::Key::Escape);
+    h.run();
+    assert_eq!(h.state().state.selection, ["m3"]);
+    // Shift+Down extends from there.
+    h.key_press_modifiers(egui::Modifiers::SHIFT, egui::Key::ArrowDown);
+    h.run();
+    assert_eq!(h.state().state.selection.len(), 2);
 }
 
 fn snapshot_sample() -> Sample {
