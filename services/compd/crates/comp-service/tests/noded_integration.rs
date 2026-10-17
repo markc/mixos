@@ -159,6 +159,7 @@ async fn comp_port_registers_answers_and_publishes_through_noded() {
         service: mut port,
         observation_producer: mut producer,
         context,
+        fires: _,
     } = wiring;
     let mut worker = starter.start().expect("start the port worker");
     let stop = Arc::new(AtomicBool::new(false));

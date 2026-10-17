@@ -242,7 +242,8 @@ pub fn chord(stroke: &PhysicalStroke) -> String {
         (m.right_super, "RightSuper"),
     ]
     .into_iter()
-    .filter_map(|(held, name)| held.then(|| name.to_owned()))
+    .filter(|&(held, _)| held)
+    .map(|(_, name)| name.to_owned())
     .collect();
     parts.push(key_name(stroke.code));
     parts.join("+")
