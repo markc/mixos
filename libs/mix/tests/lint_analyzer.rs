@@ -1918,6 +1918,8 @@ fn the_null_fix_is_offered_only_where_the_word_is_surely_a_value() {
     // rewriting it would change the program. Warn, but offer no fix.
     for src in [
         "fn null()\n  print(\"called\")\nend\nprint(\"first\") && null\n",
+        // sol round 6: a bare grouping is no argument list.
+        "fn null()\n  print(\"called\")\nend\nprint(\"first\") && (null)\n",
         "fn f($x = null)\n  return $x\nend\nprint(f())\n",
         "send svc verb open=null\nprint($rc)\n",
     ] {

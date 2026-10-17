@@ -18625,6 +18625,8 @@ the third suppresses MIX-D3015 everywhere in the file.
   directive, so a typo cannot silently disable a check.
 - A suppression that matches nothing is reported as the note `MIX-D3019` at
   the pragma's line, so stale ones get cleaned up. Notes never gate.
+- The text after a `|` on a line is shell text for the external command, so
+  `print(1) | echo -- lint: ignore` holds no pragma.
 - Pragmas are read from comments only: a `-- lint:` line inside a string or
   heredoc (generated Mix source) belongs to that source, not to this file.
   They apply to the analyzer's findings, not to the lexer/parser errors

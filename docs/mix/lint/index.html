@@ -539,6 +539,8 @@ space-separated; the <code>MIX-</code> prefix and case are optional). A bare
 directive, so a typo cannot silently disable a check.</li>
 <li>A suppression that matches nothing is reported as the note <code>MIX-D3019</code> at
 the pragma's line, so stale ones get cleaned up. Notes never gate.</li>
+<li>The text after a <code>|</code> on a line is shell text for the external command, so
+<code>print(1) | echo -- lint: ignore</code> holds no pragma.</li>
 <li>Pragmas are read from comments only: a <code>-- lint:</code> line inside a string or
 heredoc (generated Mix source) belongs to that source, not to this file.
 They apply to the analyzer's findings, not to the lexer/parser errors

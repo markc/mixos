@@ -280,6 +280,15 @@ fn an_include_in_an_expression_body_stands_down() {
 }
 
 #[test]
+fn a_fallback_function_inside_an_expression_body_answers_the_call() {
+    // sol round 6: the program prints 7 — UFCS reaches the caller's `extra`.
+    let dir = tree("exprfallback", &[("lib1.mix", LIB1)]);
+    let src = "$m = require(\"./lib1.mix\")\nfn f() = if true then\n  fn extra($obj) = 7\n  print($m.extra())\nend\nf()\n";
+    let found = codes_at(&dir, src);
+    assert!(!found.iter().any(|(c, _)| c == "MIX-E1404"), "{found:?}");
+}
+
+#[test]
 fn a_module_in_a_status_variable_is_not_proven() {
     // `send` and every command rewrite `$result`, so a call through it may
     // reach a caller function by UFCS instead of the module.

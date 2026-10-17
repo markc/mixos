@@ -243,6 +243,15 @@ fn an_ignore_does_not_reach_a_following_elif_line() {
 }
 
 #[test]
+fn words_after_a_pipe_are_shell_text_not_pragmas() {
+    // sol round 6: this prints `-- lint: ignore`; it is not a bare ignore.
+    assert_eq!(codes("print(1) | echo -- lint: ignore\n"), vec![]);
+    // Nor can such text suppress anything.
+    let src = "print(1) | echo -- lint: ignore-file MIX-E1101\nprint($nope)\n";
+    assert_eq!(codes(src), vec![("MIX-E1101".to_string(), Some(2))]);
+}
+
+#[test]
 fn a_block_header_pragma_covers_only_the_header() {
     let src = "-- lint: ignore MIX-E1101\nif $nope then\n  print($also)\nend\n";
     let found = codes(src);

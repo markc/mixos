@@ -420,7 +420,15 @@ fn version_header_diag(source: &str, file: &str, require: bool) -> Option<Diagno
 pub(crate) fn lint_source_for_execution(source: &str) -> (Vec<Diagnostic>, Vec<Diagnostic>) {
     let mut hard = Vec::new();
     let mut soft = Vec::new();
-    let outcome = lint_one(source, None, &AnalyzerConfig::default());
+    // The program runs under this binary, so its extensions are defined.
+    let cfg = AnalyzerConfig {
+        extensions: analyzer::MIX_SHELL_EXTENSIONS
+            .iter()
+            .map(|name| name.to_string())
+            .collect(),
+        ..AnalyzerConfig::default()
+    };
+    let outcome = lint_one(source, None, &cfg);
     let mut push = |d: Box<Diagnostic>| {
         if HARD_SAFE_EXEC_CODES.contains(&d.code) {
             hard.push(*d);
@@ -737,4 +745,35 @@ fn report_json(
             "denied_warnings": summary.denied_warnings,
         },
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The pre-run lint knows the extensions the program will run with, as
+    /// `mix lint` does: a call to one is no undefined-function finding.
+    #[test]
+    fn the_execution_lint_knows_the_shell_extensions() {
+        let (hard, soft) = lint_source_for_execution("print(context())\nprint(ai(\"q\"))\n");
+        assert!(hard.is_empty(), "{hard:?}");
+        assert!(!soft.iter().any(|d| d.code == "MIX-E1102"), "{soft:?}");
+    }
+
+    #[test]
+    fn fixes_apply_only_where_the_text_matches() {
+        let fix = |line, column, replace: &str| Fix {
+            line,
+            column,
+            replace: replace.to_string(),
+            with: "nil".to_string(),
+        };
+        let a = fix(1, 6, "null");
+        let b = fix(1, 12, "null");
+        let stale = fix(2, 1, "null");
+        let (out, applied) = apply_fixes("$x = null; null\nprint(1)", &[&a, &b, &stale]).unwrap();
+        assert_eq!(out, "$x = nil; nil\nprint(1)");
+        assert_eq!(applied, 2);
+        assert!(apply_fixes("print(1)", &[&stale]).is_none());
+    }
 }

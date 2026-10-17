@@ -210,7 +210,7 @@ pub fn prelude_function_names() -> &'static HashSet<String> {
 /// definitions execute wherever control flow reaches them, and lint
 /// does not model reachability).
 fn collect_function_defs(stmts: &[Stmt], out: &mut HashSet<String>) {
-    walk_stmts(stmts, &mut |stmt| {
+    walk_every_stmt(stmts, &mut |stmt| {
         if let StmtKind::FunctionDef { name, .. } = &stmt.kind {
             out.insert(name.clone());
         }
@@ -6452,8 +6452,8 @@ fn in_bus_words(before: &[crate::token::SpannedToken]) -> bool {
 /// Whether a bareword between `before` and `next` is, without doubt, a
 /// value, so that rewriting it to `nil` cannot change what the program
 /// does. An allow-list, not the warning's own exclusions: the fix is
-/// offered only for a call argument or a list element (after `(`, `[` or
-/// `,`), a map value (after `:`), the right side of `$x =`, an operand of a
+/// offered only for a call argument or a list element (after a call's `(`,
+/// a `[` or a `,`), a map value (after `:`), the right side of `$x =`, an operand of a
 /// comparison or `??`, and a `return` operand. Anywhere else, such as
 /// `print("a") && null`, where `null` may dispatch a function, the warning
 /// stands without a fix.
@@ -6482,7 +6482,13 @@ fn unambiguous_value(before: &[crate::token::SpannedToken], next: Option<&Token>
         .last()
         .map(|tok| &tok.token);
     match prev {
-        Token::LParen | Token::LBracket | Token::Comma | Token::Colon | Token::Return => true,
+        // `(` only opens an argument list after a call name: a bare grouping
+        // `&& (null)` may still dispatch a `fn null()`.
+        Token::LParen => matches!(
+            before.len().checked_sub(2).map(|i| &before[i].token),
+            Some(Token::String(_) | Token::Variable(_) | Token::Print | Token::Eprint)
+        ),
+        Token::LBracket | Token::Comma | Token::Colon | Token::Return => true,
         Token::Assign => matches!(statement_start, Some(Token::Variable(_))),
         _ if comparison(prev) => true,
         _ => next.is_some_and(comparison),
@@ -6701,6 +6707,17 @@ fn parse_lint_pragmas(source: &str) -> LintPragmas {
         let at = code_lines.partition_point(|&l| l <= line);
         code_lines.get(at).copied()
     };
+    // Every `|` the lexer sees, as (line, column).
+    let pipes: Vec<(usize, usize)> = crate::lexer::Lexer::new(source)
+        .tokenize()
+        .map(|tokens| {
+            tokens
+                .iter()
+                .filter(|tok| matches!(tok.token, Token::Pipe))
+                .map(|tok| (tok.line, tok.column))
+                .collect()
+        })
+        .unwrap_or_default();
     for (range, class) in spans {
         if class != crate::lexer::TokenClass::Comment {
             continue;
@@ -6713,6 +6730,13 @@ fn parse_lint_pragmas(source: &str) -> LintPragmas {
             continue;
         };
         let line = line_of(range.start);
+        // The tail of `stmt | external …` is raw shell text, which the
+        // highlighter colours as a comment from any `--` in it on:
+        // `print(1) | echo -- lint: ignore` prints the words, it is no pragma.
+        let column = source[line_starts[line - 1]..range.start].chars().count() + 1;
+        if pipes.iter().any(|&(l, c)| l == line && c < column) {
+            continue;
+        }
         let after_code = !source[line_starts[line - 1]..range.start].trim().is_empty();
         let rest = rest.trim();
         let (directive, args) = rest.split_once(char::is_whitespace).unwrap_or((rest, ""));
