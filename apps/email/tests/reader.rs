@@ -79,6 +79,10 @@ fn done(state: &mut State, account: &str, done: Done) {
 /// One connected account with its inbox, and `body` (of part type `kind`)
 /// open in the reader the way an open really lands.
 fn opened(kind: &str, body: &str) -> State {
+    // Dates (the list's, a reply's attribution) render in UTC, whatever
+    // the worker's zone.
+    // SAFETY: every test sets the same value before any date is drawn.
+    unsafe { std::env::set_var("TZ", "UTC") };
     let entry = AccountEntry {
         id: "home".into(),
         name: "Home".into(),
@@ -336,7 +340,10 @@ fn an_html_text_body_is_never_markdown() {
 
 #[test]
 fn the_toolbar_buttons_are_their_commands() {
-    let mut h = harness(opened("text/plain", PLAIN), &theme(Scheme::Pro, Mode::Light));
+    let mut h = harness(
+        opened("text/plain", PLAIN),
+        &theme(Scheme::Pro, Mode::Light),
+    );
     for (text, id) in [
         (label("reply"), "mail.reply"),
         (label("reply-all"), "mail.reply_all"),
@@ -383,7 +390,10 @@ fn a_quoted_reply_quotes_and_an_unquoted_one_does_not() {
     let body = state.compose.take().unwrap().draft.body;
     assert!(body.contains("Bob wrote:"), "{body}");
     assert!(body.contains("\n> Lunch on Thursday works."), "{body}");
-    assert!(body.contains("\n>> Are we still on for lunch this week?"), "{body}");
+    assert!(
+        body.contains("\n>> Are we still on for lunch this week?"),
+        "{body}"
+    );
     registry
         .execute("mail.reply_unquoted", &mut state, Origin::Bus)
         .unwrap();
@@ -397,7 +407,12 @@ fn mark_unread_keeps_the_email_open_and_unread() {
     let mut state = opened("text/plain", PLAIN);
     let strings = strings();
     assert_eq!(
-        registry.describe(&state, &strings).iter().find(|c| c.id == "mail.mark_unread").unwrap().label,
+        registry
+            .describe(&state, &strings)
+            .iter()
+            .find(|c| c.id == "mail.mark_unread")
+            .unwrap()
+            .label,
         label("mark-unread")
     );
     registry
@@ -405,9 +420,17 @@ fn mark_unread_keeps_the_email_open_and_unread() {
         .unwrap();
     let open = state.current().unwrap().mail.open.clone().unwrap();
     assert!(!open.is_read(), "marked unread at once");
-    assert!(!state.current().unwrap().mail.emails[0].is_read(), "the row too");
+    assert!(
+        !state.current().unwrap().mail.emails[0].is_read(),
+        "the row too"
+    );
     assert_eq!(
-        registry.describe(&state, &strings).iter().find(|c| c.id == "mail.mark_unread").unwrap().label,
+        registry
+            .describe(&state, &strings)
+            .iter()
+            .find(|c| c.id == "mail.mark_unread")
+            .unwrap()
+            .label,
         label("mark-read")
     );
     state.take_work();
@@ -420,12 +443,30 @@ fn mark_unread_keeps_the_email_open_and_unread() {
             .any(|w| matches!(w, Work::MarkRead { read: true, .. })),
         "only a fresh open marks read"
     );
-    assert!(!state.current().unwrap().mail.open.as_ref().unwrap().is_read());
+    assert!(
+        !state
+            .current()
+            .unwrap()
+            .mail
+            .open
+            .as_ref()
+            .unwrap()
+            .is_read()
+    );
     // M again marks it read.
     registry
         .execute("mail.mark_unread", &mut state, Origin::Bus)
         .unwrap();
-    assert!(state.current().unwrap().mail.open.as_ref().unwrap().is_read());
+    assert!(
+        state
+            .current()
+            .unwrap()
+            .mail
+            .open
+            .as_ref()
+            .unwrap()
+            .is_read()
+    );
 }
 
 #[test]
@@ -442,9 +483,13 @@ fn star_toggles_and_relabels() {
             .label
     };
     assert_eq!(label_now(&state), label("flag"));
-    registry.execute("mail.flag", &mut state, Origin::Bus).unwrap();
+    registry
+        .execute("mail.flag", &mut state, Origin::Bus)
+        .unwrap();
     assert_eq!(label_now(&state), label("unflag"));
-    registry.execute("mail.flag", &mut state, Origin::Bus).unwrap();
+    registry
+        .execute("mail.flag", &mut state, Origin::Bus)
+        .unwrap();
     assert_eq!(label_now(&state), label("flag"));
 }
 
@@ -495,7 +540,10 @@ fn reader_plain_ocean_light() {
 
 #[test]
 fn reader_reply_options_studio_dark() {
-    let mut h = harness(opened("text/plain", PLAIN), &theme(Scheme::Studio, Mode::Dark));
+    let mut h = harness(
+        opened("text/plain", PLAIN),
+        &theme(Scheme::Studio, Mode::Dark),
+    );
     h.get_by_label(&label("reply-options")).click();
     h.run();
     h.snapshot("reader_reply_options_studio_dark");
@@ -503,7 +551,10 @@ fn reader_reply_options_studio_dark() {
 
 #[test]
 fn message_menu_studio_dark() {
-    let mut h = window(opened("text/plain", PLAIN), &theme(Scheme::Studio, Mode::Dark));
+    let mut h = window(
+        opened("text/plain", PLAIN),
+        &theme(Scheme::Studio, Mode::Dark),
+    );
     toolkit::menu::open_path(&h.ctx, &[label("message")]).unwrap();
     h.run();
     h.snapshot("message_menu_studio_dark");
@@ -511,7 +562,10 @@ fn message_menu_studio_dark() {
 
 #[test]
 fn view_message_menu_studio_dark() {
-    let mut h = window(opened("text/plain", MARKDOWN), &theme(Scheme::Studio, Mode::Dark));
+    let mut h = window(
+        opened("text/plain", MARKDOWN),
+        &theme(Scheme::Studio, Mode::Dark),
+    );
     toolkit::menu::open_path(&h.ctx, &[label("view"), label("message")]).unwrap();
     h.run();
     h.snapshot("view_message_menu_studio_dark");
@@ -519,7 +573,10 @@ fn view_message_menu_studio_dark() {
 
 #[test]
 fn reader_context_menu_studio_dark() {
-    let mut h = window(opened("text/plain", PLAIN), &theme(Scheme::Studio, Mode::Dark));
+    let mut h = window(
+        opened("text/plain", PLAIN),
+        &theme(Scheme::Studio, Mode::Dark),
+    );
     let at = h.get_by_label(PLAIN).rect().center();
     h.hover_at(at);
     h.run();

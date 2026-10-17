@@ -546,9 +546,7 @@ impl<S> Registry<S> {
             i.events
                 .retain(|event| match self.hit(event, held, clipboard) {
                     // A browsing chord is the text field's while one types.
-                    Some(command) if typing && self.scope_of(command.id) == Scope::Browsing => {
-                        true
-                    }
+                    Some(command) if typing && self.scope_of(command.id) == Scope::Browsing => true,
                     Some(command) if (command.enabled)(state) => {
                         fired.push(command.id);
                         false
@@ -678,12 +676,11 @@ impl<S> Registry<S> {
     ) -> Option<&'static str> {
         let layer = ui.layer_id();
         let ctx = ui.ctx().clone();
-        let opened = ui.input(|i| {
-            i.pointer.secondary_clicked()
-                && i.pointer
-                    .interact_pos()
-                    .is_some_and(|at| rect.contains(at) && ctx.layer_id_at(at) == Some(layer))
-        });
+        // The layer check reads the context: outside the input lock.
+        let at = ui
+            .input(|i| i.pointer.secondary_clicked().then(|| i.pointer.interact_pos()))
+            .flatten();
+        let opened = at.is_some_and(|at| rect.contains(at) && ctx.layer_id_at(at) == Some(layer));
         let popup = egui::Popup::new(id, ctx, egui::PopupAnchor::PointerFixed, layer)
             .kind(egui::PopupKind::Menu)
             .layout(egui::Layout::top_down_justified(egui::Align::Min))
@@ -1280,7 +1277,10 @@ mod tests {
         };
         assert!(frame(vec![press(bare)]).is_empty(), "the field keeps S");
         assert_eq!(
-            frame(vec![press(KeyboardShortcut::new(Modifiers::COMMAND, Key::B))]),
+            frame(vec![press(KeyboardShortcut::new(
+                Modifiers::COMMAND,
+                Key::B
+            ))]),
             ["count.bump"],
             "an anywhere chord still fires"
         );
@@ -1306,7 +1306,10 @@ mod tests {
         assert_eq!(label(&counted), "Reset");
         let described = r.describe(&counted, &strings);
         assert_eq!(described[1].label, "Reset");
-        assert_eq!(r.label_of("count.reset", &Counter::default()), Some("cmd-bump"));
+        assert_eq!(
+            r.label_of("count.reset", &Counter::default()),
+            Some("cmd-bump")
+        );
         assert_eq!(r.label_of("count.bump", &counted), Some("cmd-bump"));
     }
 

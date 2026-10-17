@@ -3388,7 +3388,13 @@ impl State {
 
     /// A compose replying to `email` from `account` (`all`: to everyone it
     /// went to but this account).
-    pub fn reply_to(&mut self, account: &str, open: &Email, all: bool, quote: Option<bool>) -> bool {
+    pub fn reply_to(
+        &mut self,
+        account: &str,
+        open: &Email,
+        all: bool,
+        quote: Option<bool>,
+    ) -> bool {
         let me = self
             .account(account)
             .map(|v| v.entry.email.to_ascii_lowercase())

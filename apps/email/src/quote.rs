@@ -56,7 +56,12 @@ pub fn quoted(text: &str) -> String {
 /// `-- ` block, or empty), and `attribution` with the quoted `original`, in
 /// `position`'s order. The cursor's line is the body's first in `Above`
 /// and the first after the quote in `Below`.
-pub fn reply_body(original: &str, attribution: &str, signature: &str, position: Position) -> String {
+pub fn reply_body(
+    original: &str,
+    attribution: &str,
+    signature: &str,
+    position: Position,
+) -> String {
     let quote = quoted(&unsigned(original));
     let quote = if quote.is_empty() || original.trim().is_empty() {
         attribution.to_owned()
@@ -148,7 +153,10 @@ mod tests {
 
     #[test]
     fn lines_are_marked_and_nested_quotes_take_no_space() {
-        assert_eq!(quoted("hi\n> earlier\n>> older\n\nend"), "> hi\n>> earlier\n>>> older\n>\n> end");
+        assert_eq!(
+            quoted("hi\n> earlier\n>> older\n\nend"),
+            "> hi\n>> earlier\n>>> older\n>\n> end"
+        );
     }
 
     #[test]

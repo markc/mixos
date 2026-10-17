@@ -321,18 +321,21 @@ pub fn registry() -> Registry<State> {
         enabled: several,
         run: |state| state.step_account(false),
     })
-    .add_toggle(Command {
-        id: "view.reader.markdown",
-        submenu: Some("message"),
-        group: 2,
-        label: "reader-markdown",
-        menu: Some("view"),
-        // No chord: Ctrl+U is the text fields' delete-to-line-start.
-        shortcut: None,
-        icon: Some(Icon::FileCode),
-        enabled: readable,
-        run: State::toggle_reader,
-    }, markdown_shown)
+    .add_toggle(
+        Command {
+            id: "view.reader.markdown",
+            submenu: Some("message"),
+            group: 2,
+            label: "reader-markdown",
+            menu: Some("view"),
+            // No chord: Ctrl+U is the text fields' delete-to-line-start.
+            shortcut: None,
+            icon: Some(Icon::FileCode),
+            enabled: readable,
+            run: State::toggle_reader,
+        },
+        markdown_shown,
+    )
     .add(Command {
         id: "help.shortcuts",
         submenu: None,
@@ -373,10 +376,18 @@ pub fn registry() -> Registry<State> {
     }
     // Labels that say what the command will do to the open email.
     r.relabel("mail.flag", |state| {
-        if open_has(state, "$flagged") { "unflag" } else { "flag" }
+        if open_has(state, "$flagged") {
+            "unflag"
+        } else {
+            "flag"
+        }
     })
     .relabel("mail.mark_unread", |state| {
-        if state.current().and_then(|v| v.mail.open.as_ref()).is_some_and(|e| !e.is_read()) {
+        if state
+            .current()
+            .and_then(|v| v.mail.open.as_ref())
+            .is_some_and(|e| !e.is_read())
+        {
             "mark-read"
         } else {
             "mark-unread"
