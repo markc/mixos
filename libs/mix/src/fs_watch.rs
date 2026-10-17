@@ -715,7 +715,11 @@ mod linux {
             let held = crate::fs_watch::inotify_wds(first);
             assert_eq!(held.len(), 1, "{held:?}");
             dirs.rearm(&dir).unwrap();
-            assert_eq!(crate::fs_watch::inotify_wds(first), held, "same directory: same watch");
+            assert_eq!(
+                crate::fs_watch::inotify_wds(first),
+                held,
+                "same directory: same watch"
+            );
             // Renamed away and recreated with no event seen.
             std::fs::rename(&dir, base.join("moved")).unwrap();
             std::fs::create_dir(&dir).unwrap();
