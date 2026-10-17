@@ -601,12 +601,20 @@ impl MixBusHandler {
                     MeshState::Lost => MeshErr::Lost,
                     _ => MeshErr::NeverPresent,
                 };
-                match self.probe().await {
-                    Some(arc) => {
+                // Probe with the lock RELEASED: the latch-only forms
+                // (emit, port_exists, the serve paths) must keep answering
+                // at once while this send dials.
+                drop(state);
+                let probed = self.probe().await;
+                let mut state = self.mesh.lock().await;
+                match (&*state, probed) {
+                    // Another caller connected meanwhile: use its lane.
+                    (MeshState::Connected(current), _) => Ok(current.clone()),
+                    (_, Some(arc)) => {
                         *state = MeshState::Connected(arc.clone());
                         Ok(arc)
                     }
-                    None => Err(failed),
+                    (_, None) => Err(failed),
                 }
             }
             MeshState::NeverPresent => Err(MeshErr::NeverPresent),
@@ -2725,6 +2733,43 @@ mod tests {
         );
         // A failed retry leaves the latch where it was.
         assert_eq!(h.test_state_label().await, "NeverPresent");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn a_dialling_send_does_not_hold_up_latched_forms() {
+        // The retry probes without the state lock, so an emit beside a
+        // send whose dial hangs (a listener that never answers the
+        // handshake) still answers from the latch at once.
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let h = std::rc::Rc::new(MixBusHandler::new());
+        *h.test_probe_url.borrow_mut() = Some(format!("ws://127.0.0.1:{port}/ws"));
+        h.test_force_state(MeshState::NeverPresent).await;
+        let local = tokio::task::LocalSet::new();
+        local
+            .run_until(async move {
+                let held = tokio::task::spawn_local(async move {
+                    // Accept and hold the socket open, never replying.
+                    let (socket, _) = listener.accept().await.unwrap();
+                    std::future::pending::<()>().await;
+                    drop(socket);
+                });
+                let sender = h.clone();
+                let send = tokio::task::spawn_local(async move {
+                    let _ = sender.send("svc.example", "do_something", &Value::Nil).await;
+                });
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                let emitted = tokio::time::timeout(
+                    std::time::Duration::from_secs(1),
+                    h.emit("svc.example", "do_something", &Value::Nil),
+                )
+                .await;
+                assert!(emitted.is_ok(), "emit waited on the dialling send");
+                assert_eq!(h.test_state_label().await, "NeverPresent");
+                send.abort();
+                held.abort();
+            })
+            .await;
     }
 
     #[tokio::test(flavor = "current_thread")]

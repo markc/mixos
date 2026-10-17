@@ -42,6 +42,11 @@ fn interrupted() -> std::io::Error {
 /// the runtime between checks.
 async fn ready(fd: i32, events: libc::c_short) -> std::io::Result<()> {
     loop {
+        // Interruption first: a peer that is always ready must not keep a
+        // Ctrl-C from being seen.
+        if crate::interrupt::is_interrupted() {
+            return Err(interrupted());
+        }
         let mut poll = libc::pollfd {
             fd,
             events,
@@ -58,17 +63,19 @@ async fn ready(fd: i32, events: libc::c_short) -> std::io::Result<()> {
                 return Err(error);
             }
         }
-        if crate::interrupt::is_interrupted() {
-            return Err(interrupted());
-        }
         tokio::time::sleep(IDLE).await;
     }
 }
 
+/// Bytes moved in one burst before the transfer yields to the runtime, so a
+/// peer that never stops producing (or consuming) cannot hold the thread.
+const BURST: usize = 256 * 1024;
+
 /// Read a FIFO to end of file: wait for a writer, then read until every
 /// writer has closed — what a blocking `read_to_end` does, without
-/// blocking.
-pub(crate) async fn read(path: &str) -> std::io::Result<Vec<u8>> {
+/// blocking. With `limit`, reading stops once more than `limit` bytes are
+/// in hand; the caller refuses the oversized result.
+pub(crate) async fn read(path: &str, limit: Option<usize>) -> std::io::Result<Vec<u8>> {
     // A read-only non-blocking open of a FIFO succeeds at once. Until a
     // writer has come and gone, poll reports neither data nor hangup, so
     // the zero-length read that means "no writer yet" is never mistaken
@@ -82,14 +89,24 @@ pub(crate) async fn read(path: &str) -> std::io::Result<Vec<u8>> {
     let mut buf = vec![0u8; 64 * 1024];
     loop {
         ready(fd, libc::POLLIN).await?;
-        loop {
+        let mut burst = 0;
+        while burst < BURST {
             match file.read(&mut buf) {
                 Ok(0) => return Ok(out),
-                Ok(n) => out.extend_from_slice(&buf[..n]),
+                Ok(n) => {
+                    out.extend_from_slice(&buf[..n]);
+                    burst += n;
+                    if limit.is_some_and(|max| out.len() > max) {
+                        return Ok(out);
+                    }
+                }
                 Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
                 Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
                 Err(e) => return Err(e),
             }
+        }
+        if burst >= BURST {
+            tokio::task::yield_now().await;
         }
     }
 }
@@ -116,9 +133,20 @@ pub(crate) async fn write(path: &str, data: &[u8]) -> std::io::Result<()> {
     };
     let fd = file.as_raw_fd();
     let mut rest = data;
+    let mut burst = 0;
     while !rest.is_empty() {
+        if burst >= BURST {
+            burst = 0;
+            if crate::interrupt::is_interrupted() {
+                return Err(interrupted());
+            }
+            tokio::task::yield_now().await;
+        }
         match file.write(rest) {
-            Ok(n) => rest = &rest[n..],
+            Ok(n) => {
+                rest = &rest[n..];
+                burst += n;
+            }
             Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                 ready(fd, libc::POLLOUT).await?;
             }
@@ -180,7 +208,7 @@ mod tests {
         let writer_path = path.clone();
         // The writer runs on THIS thread, so the read must yield for it to
         // run at all.
-        let (got, ()) = tokio::join!(read(&path), async move {
+        let (got, ()) = tokio::join!(read(&path, None), async move {
             tokio::time::sleep(Duration::from_millis(50)).await;
             write(&writer_path, b"hello").await.unwrap();
         });
@@ -193,5 +221,39 @@ mod tests {
         let path = fifo(dir.path());
         let outcome = tokio::time::timeout(Duration::from_millis(100), write(&path, b"x")).await;
         assert!(outcome.is_err(), "no reader: the write must still be waiting");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn a_producer_that_never_stops_cannot_hold_the_thread() {
+        let dir = Scratch::new();
+        let path = fifo(dir.path());
+        let writer_path = path.clone();
+        // A separate OS thread that writes as fast as it can, for ever.
+        let writer = std::thread::spawn(move || {
+            let mut f = std::fs::OpenOptions::new()
+                .write(true)
+                .open(writer_path)
+                .unwrap();
+            let chunk = vec![0u8; 64 * 1024];
+            while f.write_all(&chunk).is_ok() {}
+        });
+        let ticks = std::rc::Rc::new(std::cell::Cell::new(0u32));
+        let counter = ticks.clone();
+        let local = tokio::task::LocalSet::new();
+        let got = local
+            .run_until(async move {
+                tokio::task::spawn_local(async move {
+                    loop {
+                        counter.set(counter.get() + 1);
+                        tokio::task::yield_now().await;
+                    }
+                });
+                read(&path, Some(8 * 1024 * 1024)).await.unwrap()
+            })
+            .await;
+        drop(local);
+        writer.join().unwrap();
+        assert!(got.len() > 8 * 1024 * 1024);
+        assert!(ticks.get() > 0, "the read never yielded to a peer task");
     }
 }

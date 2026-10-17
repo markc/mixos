@@ -23812,10 +23812,13 @@ Runtime error …: `$nosuch` inside `$(...)` is not set: it is neither a Mix var
 ```
 
 The inner shell keeps what is its own: single-quoted text, an escaped `\$`,
-positional and special parameters (`$1`, `$@`, `$?`, `$$`), names the inner
-command binds itself (`for f in …`, `x=1`, `read line`, `export K=…`), and a
-reference with its own default (`${name:-x}`, `${name-x}`, `${name:=x}`,
-`${name:+x}`, `${name?msg}`).
+comments, the body of a quoted shell heredoc (`cat <<'EOF'`), positional and
+special parameters (`$1`, `$@`, `$?`, `$$`, `$#` — not refused inside a
+`$(...)`), names the inner command binds itself (`x=1` in command position,
+`for f in …`, `read line`, `export K=…`, `${x:=v}`), and a reference with its
+own default (`${name:-x}`, `${name-x}`, `${name:=x}`, `${name:+x}`,
+`${name?msg}`). A default operand runs only when the shell needs it, so an
+unset name inside one (`${a:-$b}`) is left to the shell rather than raised.
 
 ## Special parameters: `$$`, and the refused ones
 

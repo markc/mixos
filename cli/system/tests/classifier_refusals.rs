@@ -86,6 +86,10 @@ fn bash_special_parameters_are_refused_with_their_mix_spelling() {
     let (code, out, _) = run(&["-c", "echo '$# $@ $! $*'"]);
     assert_eq!(code, 0, "single-quoted specials are literal");
     assert_eq!(out.trim(), "$# $@ $! $*");
+    // Inside `$(...)` they are the inner shell's own.
+    let (code, out, err) = run(&["-c", "echo n=$(sh -c 'echo $#' x a b) $(printf '%s' $#)"]);
+    assert_eq!(code, 0, "{err}");
+    assert_eq!(out.trim(), "n=2 0");
 }
 
 #[test]
@@ -106,6 +110,22 @@ fn a_mix_variable_reaches_a_command_substitution() {
     let (code, _, err) = run(&["--no-lint", "-c", "print($(echo $zz_no_such_var))"]);
     assert_ne!(code, 0, "an unset name must raise");
     assert!(err.contains("`$zz_no_such_var`"), "{err}");
+    // The inner shell's own text is left alone: a quoted heredoc body, a
+    // comment, an unused default operand, an argument shaped like an
+    // assignment.
+    for (src, want) in [
+        (
+            "print($(cat <<'EOF'\n$zz_no_such_var\nEOF\n))",
+            "$zz_no_such_var",
+        ),
+        ("print($(echo hi # $zz_no_such_var\n))", "hi"),
+        ("$o = \"ok\"\nprint($(echo ${o:-$zz_no_such_var}))", "ok"),
+        ("$zz = \"outer\"\nprint($(echo zz=inner $zz))", "zz=inner outer"),
+    ] {
+        let (code, out, err) = run(&["--no-lint", "-c", src]);
+        assert_eq!(code, 0, "{src}: {err}");
+        assert_eq!(out.trim_end(), want, "{src}");
+    }
 }
 
 #[test]

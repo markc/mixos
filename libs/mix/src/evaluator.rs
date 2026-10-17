@@ -18283,17 +18283,37 @@ impl Evaluator {
                 msg: format!("{name} '{path}': {e}"),
             };
             if name == "read_file" {
+                // Stop reading just past the string cap (Knob D) instead of
+                // buffering an endless producer; the check below raises.
+                let limit = self.ctx.max_string_len;
                 let bytes = self
-                    .await_with_class_c_yield(crate::fifo_io::read(&path))
+                    .await_with_class_c_yield(crate::fifo_io::read(&path, limit))
                     .await?
                     .map_err(fail)?;
+                // Over the cap: refuse before decoding, since the read may
+                // have stopped mid-codepoint. (The length is what was read,
+                // a lower bound on what the producer had to give.)
+                if let Some(max) = limit
+                    && bytes.len() > max
+                {
+                    return Err(self.snapshot_builtin_error(
+                        name,
+                        self.runtime_err(format!(
+                            "string length {} exceeds limit {max}",
+                            bytes.len()
+                        )),
+                    ));
+                }
                 let text = String::from_utf8(bytes).map_err(|_| {
                     fail(std::io::Error::new(
                         std::io::ErrorKind::InvalidData,
                         "stream did not contain valid UTF-8",
                     ))
                 })?;
-                return Ok(Value::String(text));
+                let value = Value::String(text);
+                self.check_collection_size(&value)
+                    .map_err(|e| self.snapshot_builtin_error(name, e))?;
+                return Ok(value);
             }
             let data = builtins::with_write_payload(name, &args[1], <[u8]>::to_vec)?;
             self.await_with_class_c_yield(crate::fifo_io::write(&path, &data))

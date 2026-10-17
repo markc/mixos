@@ -693,3 +693,37 @@ fn operational_failure_annotations_match_what_the_builtins_do() {
         );
     }
 }
+
+/// A FIFO `read_file` honours the string cap like a regular file, and
+/// stops reading an endless producer instead of buffering it.
+#[cfg(unix)]
+#[tokio::test(flavor = "current_thread")]
+async fn fifo_read_file_honours_the_string_cap() {
+    let dir = std::env::temp_dir().join(format!("mix-limits-fifo-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let fifo = dir.join("pipe");
+    let c = std::ffi::CString::new(fifo.to_str().unwrap()).unwrap();
+    // SAFETY: valid NUL-terminated path.
+    assert_eq!(unsafe { libc::mkfifo(c.as_ptr(), 0o600) }, 0);
+    let writer_path = fifo.clone();
+    let writer = std::thread::spawn(move || {
+        use std::io::Write;
+        let mut f = std::fs::OpenOptions::new().write(true).open(writer_path).unwrap();
+        let chunk = vec![b'a'; 64 * 1024];
+        // Endless until the reader goes away (EPIPE).
+        while f.write_all(&chunk).is_ok() {}
+    });
+    let src = format!("read_file({:?})", fifo.to_str().unwrap());
+    let err = run(&src, |e| {
+        e.set_limits(EvalLimits {
+            max_string_len: Some(1000),
+            ..limits(DEFAULT_RECURSION_LIMIT)
+        })
+    })
+    .await
+    .expect_err("an over-cap FIFO read must raise");
+    writer.join().unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+    assert!(err.contains("exceeds limit 1000"), "{err}");
+}

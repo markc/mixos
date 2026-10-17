@@ -532,10 +532,13 @@ $ mix -c 'print($(echo $nosuch))'
 Runtime error …: `$nosuch` inside `$(...)` is not set: it is neither a Mix variable nor an environment variable (write `${nosuch:-}` for an intentionally empty value)
 </code></pre>
 <p>The inner shell keeps what is its own: single-quoted text, an escaped <code>\$</code>,
-positional and special parameters (<code>$1</code>, <code>$@</code>, <code>$?</code>, <code>$$</code>), names the inner
-command binds itself (<code>for f in …</code>, <code>x=1</code>, <code>read line</code>, <code>export K=…</code>), and a
-reference with its own default (<code>${name:-x}</code>, <code>${name-x}</code>, <code>${name:=x}</code>,
-<code>${name:+x}</code>, <code>${name?msg}</code>).</p>
+comments, the body of a quoted shell heredoc (<code>cat &lt;&lt;'EOF'</code>), positional and
+special parameters (<code>$1</code>, <code>$@</code>, <code>$?</code>, <code>$$</code>, <code>$#</code> — not refused inside a
+<code>$(...)</code>), names the inner command binds itself (<code>x=1</code> in command position,
+<code>for f in …</code>, <code>read line</code>, <code>export K=…</code>, <code>${x:=v}</code>), and a reference with its
+own default (<code>${name:-x}</code>, <code>${name-x}</code>, <code>${name:=x}</code>, <code>${name:+x}</code>,
+<code>${name?msg}</code>). A default operand runs only when the shell needs it, so an
+unset name inside one (<code>${a:-$b}</code>) is left to the shell rather than raised.</p>
 <h2 id="special-parameters--and-the-refused-ones">Special parameters: <code>$$</code>, and the refused ones</h2>
 <p>On a shell-command line <code>$$</code> expands to the shell's PID, as in bash and zsh, so
 <code>ps -p $$</code> and <code>kill -0 $$</code> work as typed (in Mix code, call <code>pid()</code>). The other

@@ -507,11 +507,14 @@ const REFUSED_SPECIALS: &[(char, &str)] = &[
 
 /// Byte offset and parameter of a bare (quote-aware: NOT inside single
 /// quotes) refused special parameter (`$?`, `$!`, `$#`, `$@`, `$*`).
+/// The text of a `$(...)` belongs to its inner `/bin/sh`, where these
+/// parameters are its own, so it is skipped.
 fn bare_dollar_special(piece: &str) -> Option<(usize, char)> {
     let mut in_single = false;
     let mut in_double = false;
     let mut escaped = false;
-    for (i, ch) in piece.char_indices() {
+    let mut chars = piece.char_indices().peekable();
+    while let Some((i, ch)) = chars.next() {
         if escaped {
             escaped = false;
             continue;
@@ -520,17 +523,43 @@ fn bare_dollar_special(piece: &str) -> Option<(usize, char)> {
             '\\' => escaped = true,
             '\'' if !in_double => in_single = !in_single,
             '"' if !in_single => in_double = !in_double,
-            '$' if !in_single => {
-                if let Some(next) = piece[i + 1..].chars().next()
-                    && REFUSED_SPECIALS.iter().any(|(c, _)| *c == next)
-                {
+            '$' if !in_single => match chars.peek().map(|&(_, c)| c) {
+                Some('(') => skip_substitution(&mut chars),
+                Some(next) if REFUSED_SPECIALS.iter().any(|(c, _)| *c == next) => {
                     return Some((i, next));
+                }
+                _ => {}
+            },
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Consume a `$(...)` body (the iterator sits on its `(`) up to the
+/// matching `)`, quote-aware like `lex_dollar`.
+fn skip_substitution(chars: &mut std::iter::Peekable<std::str::CharIndices>) {
+    let mut depth = 0usize;
+    let (mut in_single, mut in_double, mut escaped) = (false, false, false);
+    for (_, c) in chars.by_ref() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match c {
+            '\\' if !in_single => escaped = true,
+            '\'' if !in_double => in_single = !in_single,
+            '"' if !in_single => in_double = !in_double,
+            '(' if !in_single && !in_double => depth += 1,
+            ')' if !in_single && !in_double => {
+                depth -= 1;
+                if depth == 0 {
+                    return;
                 }
             }
             _ => {}
         }
     }
-    None
 }
 
 /// B3 (TODO-mix 2026-09-24) + 09-29 #1: the whole-list refusal, run on the
