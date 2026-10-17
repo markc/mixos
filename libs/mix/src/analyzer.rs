@@ -6315,7 +6315,12 @@ struct ModuleCall<'a> {
     line: usize,
 }
 
-fn check_module_call(module: &ModuleExports, call: &ModuleCall, ctx: &FileContext, a: &mut Analysis) {
+fn check_module_call(
+    module: &ModuleExports,
+    call: &ModuleCall,
+    ctx: &FileContext,
+    a: &mut Analysis,
+) {
     let &ModuleCall {
         field,
         argc,
