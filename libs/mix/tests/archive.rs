@@ -1077,16 +1077,18 @@ async fn global_pax_ends_the_local_size_override_chain() {
 }
 
 #[tokio::test]
-async fn gzip_rejects_unread_input_and_second_members() {
+async fn gzip_refuses_what_follows_the_last_member() {
     let d = tmpdir("gzip-tail");
     let mut plain = Vec::new();
     append_raw_member(&mut plain, "a", b"x");
     let first = encode_tar(&plain, "gzip");
-    for (tag, tail) in [
-        ("garbage", vec![1, 2, 3]),
-        ("zeros", vec![0; 32]),
-        ("empty-member", encode_tar(&[], "gzip")),
-        ("archive-member", first.clone()),
+    // (tail, expected code, expected message fragment). Bytes that are not
+    // a gzip member are a corrupt stream; a second whole tar in a second
+    // member decodes, and is non-zero data after the first tar's end.
+    for (tag, tail, code, fragment) in [
+        ("garbage", vec![1, 2, 3], "ARCHIVE_STREAM_CORRUPT", ""),
+        ("zeros", vec![0; 32], "ARCHIVE_STREAM_CORRUPT", ""),
+        ("archive-member", first.clone(), "", "non-zero data after"),
     ] {
         let mut bytes = first.clone();
         bytes.extend(tail);
@@ -1095,23 +1097,85 @@ async fn gzip_rejects_unread_input_and_second_members() {
         assert!(bytes.len() < 1 << 20);
         let arc = d.join(format!("{tag}.gz"));
         fs::write(&arc, bytes).unwrap();
-        let err = run_err(&format!(
+        let (got, err) = run_err_code(&format!(
             "tar_list(\"{}\", {{codec:\"gzip\"}})",
             arc.display()
         ))
         .await;
-        assert!(err.contains("raw bytes remain"), "{tag}: {err}");
+        assert_eq!(got, code, "{tag}: {err}");
+        assert!(err.contains(fragment), "{tag}: {err}");
         let dest = d.join(format!("dest-{tag}"));
-        let err = run_err(&format!(
+        let (got, err) = run_err_code(&format!(
             "tar_unpack(\"{}\", \"{}\", {{codec:\"gzip\"}})",
             arc.display(),
             dest.display()
         ))
         .await;
-        assert!(err.contains("raw bytes remain"), "{tag}: {err}");
+        assert_eq!(got, code, "{tag}: {err}");
+        assert!(err.contains(fragment), "{tag}: {err}");
         assert!(!dest.exists());
         assert_no_staging(&d);
     }
+}
+
+#[tokio::test]
+async fn gzip_accepts_a_tar_split_across_members() {
+    // `pigz` and `cat a.gz b.gz` write several members; RFC 1952 makes the
+    // file their concatenation. Split mid-header, mid-data and before the
+    // end blocks, plus an empty trailing member.
+    let d = tmpdir("gzip-multi");
+    let mut plain = Vec::new();
+    append_raw_member(&mut plain, "a", b"hello members\n");
+    for (tag, cuts) in [
+        ("mid-header", vec![100]),
+        ("mid-data", vec![515]),
+        ("three", vec![200, 600]),
+        ("before-end", vec![1024]),
+    ] {
+        let mut bytes = Vec::new();
+        let mut from = 0;
+        for cut in cuts.into_iter().chain([plain.len()]) {
+            bytes.extend(encode_tar(&plain[from..cut], "gzip"));
+            from = cut;
+        }
+        if tag == "before-end" {
+            bytes.extend(encode_tar(&[], "gzip"));
+        }
+        let arc = d.join(format!("{tag}.tar.gz"));
+        fs::write(&arc, bytes).unwrap();
+        let name = run_ok(&format!(
+            "$l = tar_list(\"{}\", {{codec:\"gzip\"}})\n$l[0].name",
+            arc.display()
+        ))
+        .await;
+        assert_eq!(name.to_mix_string(), "a", "{tag}");
+        let dest = d.join(format!("dest-{tag}"));
+        run_ok(&format!(
+            "tar_unpack(\"{}\", \"{}\", {{codec:\"gzip\"}})",
+            arc.display(),
+            dest.display()
+        ))
+        .await;
+        assert_eq!(fs::read(dest.join("a")).unwrap(), b"hello members\n", "{tag}");
+    }
+    // A corrupt CRC in the second member is still caught.
+    let mut bytes = encode_tar(&plain[..600], "gzip");
+    let mut second = encode_tar(&plain[600..], "gzip");
+    let crc = second.len() - 8;
+    second[crc] ^= 0xff;
+    bytes.extend(second);
+    let arc = d.join("bad-crc.tar.gz");
+    fs::write(&arc, bytes).unwrap();
+    let dest = d.join("dest-bad-crc");
+    let (code, msg) = run_err_code(&format!(
+        "tar_unpack(\"{}\", \"{}\", {{codec:\"gzip\"}})",
+        arc.display(),
+        dest.display()
+    ))
+    .await;
+    assert_eq!(code, "ARCHIVE_STREAM_CORRUPT", "{msg}");
+    assert!(!dest.exists());
+    assert_no_staging(&d);
 }
 
 #[tokio::test]
@@ -1824,4 +1888,369 @@ async fn a_zstd_frame_with_a_corrupt_checksum_footer_is_refused() {
     assert_eq!(code, "ARCHIVE_STREAM_CORRUPT", "{msg}");
     assert!(!dest.exists());
     assert_no_staging(&d);
+}
+
+// ---------------------------------------------------------------------------
+// GNU tar `./` members, contained relative symlinks, owner defaults
+// ---------------------------------------------------------------------------
+
+/// One raw ustar member: header (name, typeflag, link target, mode) plus its
+/// padded data. The tar crate's Builder strips a leading `./`, so GNU tar's
+/// `tar -C dir .` layout has to be packed by hand.
+fn raw_entry(out: &mut Vec<u8>, name: &str, typeflag: u8, link: &str, mode: u32, data: &[u8]) {
+    let mut h = [0u8; 512];
+    h[..name.len()].copy_from_slice(name.as_bytes());
+    h[100..108].copy_from_slice(format!("{mode:07o}\0").as_bytes());
+    h[108..116].copy_from_slice(b"0000000\0");
+    h[116..124].copy_from_slice(b"0000000\0");
+    h[124..136].copy_from_slice(format!("{:011o}\0", data.len()).as_bytes());
+    h[136..148].copy_from_slice(b"00000000000\0");
+    h[148..156].copy_from_slice(b"        ");
+    h[156] = typeflag;
+    h[157..157 + link.len()].copy_from_slice(link.as_bytes());
+    h[257..263].copy_from_slice(b"ustar\0");
+    h[263..265].copy_from_slice(b"00");
+    let sum: u32 = h.iter().map(|&b| b as u32).sum();
+    h[148..156].copy_from_slice(format!("{sum:06o}\0 ").as_bytes());
+    out.extend_from_slice(&h);
+    out.extend_from_slice(data);
+    out.extend(std::iter::repeat_n(0u8, (512 - data.len() % 512) % 512));
+}
+
+/// A plain tar of raw entries `(name, typeflag, link, mode, data)`.
+fn raw_tar(path: &std::path::Path, entries: &[(&str, u8, &str, u32, &[u8])]) {
+    let mut out = Vec::new();
+    for (name, typeflag, link, mode, data) in entries {
+        raw_entry(&mut out, name, *typeflag, link, *mode, data);
+    }
+    out.extend_from_slice(&[0u8; 1024]);
+    fs::write(path, out).unwrap();
+}
+
+#[tokio::test]
+async fn gnu_dot_prefixed_members_unpack_into_the_root() {
+    // `tar -C stage .`: a `./` root entry, then `./`-prefixed members, a
+    // `./`-prefixed hardlink target, and contained relative symlinks.
+    let d = tmpdir("dot-prefix");
+    let arc = d.join("dot.tar");
+    raw_tar(
+        &arc,
+        &[
+            ("./", b'5', "", 0o750, b""),
+            ("./demo/", b'5', "", 0o755, b""),
+            ("./demo/bin/", b'5', "", 0o755, b""),
+            ("./demo/bin/demo", b'0', "", 0o755, b"#!demo\n"),
+            ("./demo/lib/", b'5', "", 0o755, b""),
+            ("./demo/lib/alias", b'2', "../bin/demo", 0o777, b""),
+            ("./demo/hard", b'1', "./demo/bin/demo", 0o755, b""),
+            ("./demo/lib/here", b'2', "./alias", 0o777, b""),
+        ],
+    );
+    let names = run_ok(&format!(
+        "$l = tar_list(\"{}\", {{codec:\"none\"}})\n$n = []\nfor each $e in $l\n  push($n, $e.name)\nend\njoin($n, \",\")",
+        arc.display()
+    ))
+    .await;
+    assert_eq!(
+        names.to_mix_string(),
+        ".,demo,demo/bin,demo/bin/demo,demo/lib,demo/lib/alias,demo/hard,demo/lib/here"
+    );
+    let dest = d.join("dest");
+    let out = run_ok(&format!(
+        "tar_unpack(\"{}\", \"{}\", {{codec:\"none\"}})",
+        arc.display(),
+        dest.display()
+    ))
+    .await;
+    let r = receipt(&out);
+    no_warnings(r);
+    assert_eq!(r["dirs"].to_mix_string(), "4");
+    assert_eq!(r["symlinks"].to_mix_string(), "2");
+    assert_eq!(r["hardlinks"].to_mix_string(), "1");
+    // The root entry's mode lands on dest itself.
+    assert_eq!(
+        fs::metadata(&dest).unwrap().permissions().mode() & 0o7777,
+        0o750
+    );
+    assert_eq!(
+        fs::read_link(dest.join("demo/lib/alias")).unwrap(),
+        PathBuf::from("../bin/demo")
+    );
+    assert_eq!(fs::read(dest.join("demo/lib/alias")).unwrap(), b"#!demo\n");
+    assert_eq!(
+        fs::read_link(dest.join("demo/lib/here")).unwrap(),
+        PathBuf::from("alias")
+    );
+    assert_eq!(fs::read(dest.join("demo/lib/here")).unwrap(), b"#!demo\n");
+    assert_eq!(fs::read(dest.join("demo/hard")).unwrap(), b"#!demo\n");
+    assert_no_staging(&d);
+    // A bare `.` (no slash) is the root entry as well.
+    let arc = d.join("bare-dot.tar");
+    raw_tar(
+        &arc,
+        &[(".", b'5', "", 0o700, b""), ("./f", b'0', "", 0o644, b"f")],
+    );
+    let dest = d.join("dest-bare");
+    run_ok(&format!(
+        "tar_unpack(\"{}\", \"{}\", {{codec:\"none\"}})",
+        arc.display(),
+        dest.display()
+    ))
+    .await;
+    assert_eq!(fs::read(dest.join("f")).unwrap(), b"f");
+}
+
+#[tokio::test]
+async fn only_a_directory_may_name_the_extraction_root() {
+    let d = tmpdir("dot-root-kind");
+    for (tag, typeflag, link) in [("file", b'0', ""), ("symlink", b'2', "elsewhere")] {
+        let arc = d.join(format!("{tag}.tar"));
+        raw_tar(&arc, &[("./", typeflag, link, 0o644, b"")]);
+        let dest = d.join(format!("dest-{tag}"));
+        let err = run_err(&format!(
+            "tar_unpack(\"{}\", \"{}\", {{codec:\"none\"}})",
+            arc.display(),
+            dest.display()
+        ))
+        .await;
+        assert!(err.contains("extraction root"), "{tag}: {err}");
+        assert!(!dest.exists());
+        assert_no_staging(&d);
+    }
+    // `.` only counts at the front: an interior `..` is still refused.
+    let arc = d.join("dot-dot.tar");
+    raw_tar(&arc, &[("./a/../../x", b'0', "", 0o644, b"x")]);
+    let err = run_err(&format!(
+        "tar_unpack(\"{}\", \"{}\", {{codec:\"none\"}})",
+        arc.display(),
+        d.join("dest-dd").display()
+    ))
+    .await;
+    assert!(err.contains("parent component"), "{err}");
+}
+
+#[tokio::test]
+async fn contained_relative_symlinks_are_judged_from_their_own_directory() {
+    let d = tmpdir("sym-relative");
+    // (link name, target, what read_link must return)
+    let accepted: &[(&str, &str, &str)] = &[
+        ("a/b/up2", "../../top", "../../top"),
+        ("a/b/sib", "../c/file", "../c/file"),
+        ("a/self", ".", "."),
+        ("a/root", "..", ".."),
+        ("a/dotted", "./b/./sib", "b/sib"),
+    ];
+    let mut entries: Vec<(&str, u8, &str, u32, &[u8])> = vec![
+        ("a/", b'5', "", 0o755, b""),
+        ("a/b/", b'5', "", 0o755, b""),
+        ("a/c/", b'5', "", 0o755, b""),
+        ("a/c/file", b'0', "", 0o644, b"sibling\n"),
+        ("top", b'0', "", 0o644, b"top\n"),
+    ];
+    for (name, target, _) in accepted {
+        entries.push((name, b'2', target, 0o777, b""));
+    }
+    let arc = d.join("ok.tar");
+    raw_tar(&arc, &entries);
+    let dest = d.join("dest");
+    run_ok(&format!(
+        "tar_unpack(\"{}\", \"{}\", {{codec:\"none\"}})",
+        arc.display(),
+        dest.display()
+    ))
+    .await;
+    for (name, _, written) in accepted {
+        assert_eq!(
+            fs::read_link(dest.join(name)).unwrap(),
+            PathBuf::from(written),
+            "{name}"
+        );
+    }
+    assert_eq!(fs::read(dest.join("a/b/up2")).unwrap(), b"top\n");
+    assert_eq!(fs::read(dest.join("a/b/sib")).unwrap(), b"sibling\n");
+    assert_eq!(fs::read(dest.join("a/dotted")).unwrap(), b"sibling\n");
+    assert!(dest.join("a/root/top").exists());
+
+    // Each refused on its own: (link name, target, error fragment).
+    let refused: &[(&str, &str, &str)] = &[
+        ("esc", "../x", "escaping"),
+        ("a/b/esc", "../../../x", "escaping"),
+        ("a/abs", "/etc/passwd", "absolute"),
+        // `..` after a name could be applied to a symlink that resolves
+        // elsewhere (`d -> ..` makes `d/../..` climb out), so it is refused
+        // even where it would stay inside lexically.
+        ("a/b/mid", "c/../../top", "'..' after a name"),
+        ("a/empty", "", "target"),
+    ];
+    for (i, (name, target, fragment)) in refused.iter().enumerate() {
+        let arc = d.join(format!("bad-{i}.tar"));
+        raw_tar(
+            &arc,
+            &[
+                ("a/", b'5', "", 0o755, b""),
+                ("a/b/", b'5', "", 0o755, b""),
+                (name, b'2', target, 0o777, b""),
+            ],
+        );
+        let dest = d.join(format!("dest-bad-{i}"));
+        let err = run_err(&format!(
+            "tar_unpack(\"{}\", \"{}\", {{codec:\"none\"}})",
+            arc.display(),
+            dest.display()
+        ))
+        .await;
+        assert!(err.contains(fragment), "{name} -> {target}: {err}");
+        assert!(!dest.exists());
+        assert_no_staging(&d);
+    }
+}
+
+#[tokio::test]
+async fn a_symlink_target_never_passes_through_another_symlink() {
+    let d = tmpdir("sym-through");
+    let base: Vec<(&str, u8, &str, u32, &[u8])> = vec![
+        ("real/", b'5', "", 0o755, b""),
+        ("real/file", b'0', "", 0o644, b"real\n"),
+    ];
+    // Either order: the pivot link first, or the link that uses it first.
+    let pivot: (&str, u8, &str, u32, &[u8]) = ("pivot", b'2', "real", 0o777, b"");
+    let user: (&str, u8, &str, u32, &[u8]) = ("user", b'2', "pivot/file", 0o777, b"");
+    for (tag, order, fragment) in [
+        ("pivot-first", [pivot, user], "passes through symlink 'pivot'"),
+        (
+            "pivot-later",
+            [user, pivot],
+            "an earlier symlink's target passes through it",
+        ),
+    ] {
+        let mut entries = base.clone();
+        entries.extend(order);
+        let arc = d.join(format!("{tag}.tar"));
+        raw_tar(&arc, &entries);
+        let dest = d.join(format!("dest-{tag}"));
+        let err = run_err(&format!(
+            "tar_unpack(\"{}\", \"{}\", {{codec:\"none\"}})",
+            arc.display(),
+            dest.display()
+        ))
+        .await;
+        assert!(err.contains(fragment), "{tag}: {err}");
+        assert!(!dest.exists());
+        assert_no_staging(&d);
+    }
+    // Ending AT a link is fine: its own target was contained.
+    let mut entries = base.clone();
+    entries.push(pivot);
+    entries.push(("again", b'2', "pivot", 0o777, b""));
+    let arc = d.join("chain.tar");
+    raw_tar(&arc, &entries);
+    let dest = d.join("dest-chain");
+    run_ok(&format!(
+        "tar_unpack(\"{}\", \"{}\", {{codec:\"none\"}})",
+        arc.display(),
+        dest.display()
+    ))
+    .await;
+    assert_eq!(fs::read(dest.join("again/file")).unwrap(), b"real\n");
+}
+
+/// A supplementary group of this process that new files do not get by
+/// default, or None (the observable half of the owner test then skips).
+fn other_group() -> Option<u32> {
+    let egid = unsafe { libc::getegid() };
+    let mut groups = vec![0 as libc::gid_t; 256];
+    let n = unsafe { libc::getgroups(groups.len() as i32, groups.as_mut_ptr()) };
+    if n < 0 {
+        return None;
+    }
+    groups.truncate(n as usize);
+    groups.into_iter().find(|g| *g != egid)
+}
+
+fn owned_archive(path: &std::path::Path, uid: u32, gid: u32, mode: u32) {
+    let mut b = Builder::new(fs::File::create(path).unwrap());
+    let mut h = Header::new_gnu();
+    h.set_size(1);
+    h.set_mode(mode);
+    h.set_uid(uid as u64);
+    h.set_gid(gid as u64);
+    h.set_mtime(0);
+    b.append_data(&mut h, "f", &b"x"[..]).unwrap();
+    b.into_inner().unwrap().flush().unwrap();
+}
+
+#[tokio::test]
+async fn an_ordinary_user_keeps_their_own_owner_by_default() {
+    use std::os::unix::fs::MetadataExt;
+    let uid = unsafe { libc::geteuid() };
+    let d = tmpdir("owner-default");
+    if uid == 0 {
+        // Root restores the archive's owner by default, as GNU tar does.
+        let arc = d.join("root.tar");
+        owned_archive(&arc, 4242, 4243, 0o644);
+        let dest = d.join("dest-root");
+        run_ok(&format!(
+            "tar_unpack(\"{}\", \"{}\", {{codec:\"none\"}})",
+            arc.display(),
+            dest.display()
+        ))
+        .await;
+        let st = fs::metadata(dest.join("f")).unwrap();
+        assert_eq!((st.uid(), st.gid()), (4242, 4243));
+        return;
+    }
+    let Some(group) = other_group() else {
+        return; // no second group to observe; documented skip
+    };
+    let arc = d.join("group.tar");
+    owned_archive(&arc, uid, group, 0o644);
+    let dest = d.join("dest");
+    run_ok(&format!(
+        "tar_unpack(\"{}\", \"{}\", {{codec:\"none\"}})",
+        arc.display(),
+        dest.display()
+    ))
+    .await;
+    assert_ne!(fs::metadata(dest.join("f")).unwrap().gid(), group);
+    let opted = d.join("opted");
+    run_ok(&format!(
+        "tar_unpack(\"{}\", \"{}\", {{codec:\"none\", numeric_owner:true}})",
+        arc.display(),
+        opted.display()
+    ))
+    .await;
+    assert_eq!(fs::metadata(opted.join("f")).unwrap().gid(), group);
+}
+
+#[tokio::test]
+async fn special_bits_need_the_archive_owner_even_when_owners_are_not_restored() {
+    let uid = unsafe { libc::geteuid() };
+    let gid = unsafe { libc::getegid() };
+    let d = tmpdir("owner-special");
+    // Someone else's setuid file: never setuid on the caller's copy.
+    let arc = d.join("foreign.tar");
+    owned_archive(&arc, uid.wrapping_add(1), gid, 0o4755);
+    let dest = d.join("dest");
+    let out = run_ok(&format!(
+        "tar_unpack(\"{}\", \"{}\", {{codec:\"none\", numeric_owner:false, keep_special_bits:true}})",
+        arc.display(),
+        dest.display()
+    ))
+    .await;
+    let mode = fs::metadata(dest.join("f")).unwrap().permissions().mode();
+    assert_eq!(mode & 0o7777, 0o755);
+    let warnings = receipt(&out)["warnings"].to_mix_string();
+    assert!(warnings.contains("setuid/setgid dropped"), "{warnings}");
+    // The caller's own setuid file keeps the bit.
+    let arc = d.join("own.tar");
+    owned_archive(&arc, uid, gid, 0o4755);
+    let dest = d.join("dest-own");
+    run_ok(&format!(
+        "tar_unpack(\"{}\", \"{}\", {{codec:\"none\", numeric_owner:false, keep_special_bits:true}})",
+        arc.display(),
+        dest.display()
+    ))
+    .await;
+    let mode = fs::metadata(dest.join("f")).unwrap().permissions().mode();
+    assert_eq!(mode & 0o7777, 0o4755);
 }

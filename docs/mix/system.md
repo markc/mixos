@@ -14,7 +14,8 @@ for multi-line remote Mix or anything with nested quotes. This page covers
 the *local* surface — launching processes and reading the machine. The category
 listing also shows families documented on their own pages: the `ssh_*` builtins
 ([remote](remote.md)), `http_*` ([http](http.md)), the date/time helpers
-([datetime](datetime.md)), `dns_lookup` ([builtins index](builtins.md)), and
+([datetime](datetime.md)), `dns_lookup` ([builtins index](builtins.md); its
+fuller sibling `dns_query` is covered below), and
 `panic` ([errors](errors.md)).
 
 ## The structured-return win
@@ -1734,6 +1735,61 @@ hello mix
 
 These (and `base64_*`, `uuid`) are behind the `crypto` feature, which the `mix`
 binary always enables.
+
+## DNS queries — `dns_query` (v0.117.0)
+
+```
+dns_query(name, type[, {server, port, timeout, tcp, recurse}])  -> result map
+```
+
+`dns_lookup(host)` asks the system resolver for addresses and nothing else.
+`dns_query` asks **one server one question** and returns the whole answer, so
+a script can tell an authoritative answer (`aa: true`) from a cached one, or
+an out-of-zone `REFUSED` from `NXDOMAIN`, without `dig`. The wire format is
+hickory-proto (pure Rust, the `dns` feature); no libresolv.
+
+- `type` is a record type name, case-insensitive: `A`, `AAAA`, `MX`, `TXT`,
+  `SRV`, `NS`, `SOA`, `PTR`, `CNAME`, `CAA` and the rest. `PTR` of an IP
+  address asks its reverse name, as `dig -x` does.
+- `name` is always fully qualified: there is no search list.
+- `server` is an address or a host name (default: the first `nameserver` in
+  `/etc/resolv.conf`, else `127.0.0.1`), `port` defaults to 53, `timeout` to
+  5 seconds for the whole query, and `recurse` (default `true`) sets the RD
+  flag. `tcp: true` forces TCP; a truncated UDP answer is retried over TCP
+  on its own.
+
+A reply, whatever its rcode, is `ok: true`:
+
+```
+{ok: true, rcode: "NOERROR", aa: true, ra: false, tc: false,
+ answers: [{name: "mail.example.com.", type: "AAAA", ttl: 300, data: "2001:db8::25"}],
+ authority: [], additional: [], server: "192.0.2.53", port: 53,
+ transport: "udp", duration_ms: 3}
+```
+
+`rcode` is dig's name (`NOERROR`, `NXDOMAIN`, `SERVFAIL`, `REFUSED`, ...).
+Each record's `data` is its zone-file text (`10 mail.example.com.` for an MX;
+a TXT record's strings joined). Names end in a dot.
+
+No reply is an operational failure, returned rather than raised, as
+`ssh_exec` does: `{ok: false, error_code, error, server, duration_ms}` with
+`error_code` one of `DNS_TIMEOUT`, `DNS_UNREACHABLE` (ICMP port unreachable,
+connection refused), `DNS_PROTOCOL` (only malformed replies), `DNS_IO` or
+`DNS_SERVER` (the server name did not resolve). A reply with another id is
+ignored, not taken as the answer. A bad argument (an unknown type or option,
+an invalid name) raises.
+
+```mix
+-- Which servers answer for mail.example.com with authority?
+for each $ns in ["192.0.2.53", "198.51.100.53"]
+  $r = dns_query("mail.example.com", "AAAA", {server: $ns, recurse: false})
+  if not $r.ok then
+    print($ns .. ": " .. $r.error_code)
+  else
+    print($ns .. ": " .. $r.rcode .. " aa=" .. $r.aa)
+  end
+end
+```
 
 ## UDP datagrams — `udp_send`, `udp_recv` (v0.71.0)
 

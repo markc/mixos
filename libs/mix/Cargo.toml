@@ -97,6 +97,11 @@ ws = ["dep:tungstenite", "dep:rustls", "dep:webpki-roots", "dep:socket2", "tokio
 # (<= decoder 128 MiB ceiling, no dictionaries, single frame) is documented
 # in `mix man tar`.
 archive = ["dep:tar", "dep:structured-zstd", "dep:flate2"]
+# `dns_query()` (0.117.0): one question to a chosen server, the whole answer
+# back (rcode, aa/ra/tc, every section with TTLs). hickory-proto encodes and
+# parses the wire format; the transport is std UDP/TCP. The version is the
+# one mail-auth (`dkim`) already pulls, so the binary carries one copy.
+dns = ["dep:hickory-proto"]
 
 [dependencies]
 indexmap = "2"
@@ -186,6 +191,8 @@ uuid = { version = "1", features = ["v4"], optional = true }
 mail-auth = { version = "0.7", optional = true, default-features = false, features = ["ring", "generate"] }
 quick-xml = { version = "0.41.0", optional = true }
 mimedb = { workspace = true, optional = true }
+# `dns` feature only — see the feature comment above.
+hickory-proto = { version = "0.26.0-alpha.1", optional = true, default-features = false, features = ["std"] }
 
 [dev-dependencies]
 # `derive` lives here, not on the `serde` feature: the crate's own
@@ -195,7 +202,7 @@ mimedb = { workspace = true, optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["rt", "macros", "sync", "time", "test-util", "net", "io-util"] }
-mix = { path = ".", features = ["json", "regex", "toml", "datetime", "url", "crypto", "http", "sqlite", "tokio-sleep", "datastar", "xml", "yaml", "ws", "mime", "archive"] }
+mix = { path = ".", features = ["json", "regex", "toml", "datetime", "url", "crypto", "http", "sqlite", "tokio-sleep", "datastar", "xml", "yaml", "ws", "mime", "archive", "dns"] }
 # Property-based testing for the lexer/parser (P1 of the mix tokenizer
 # fuzz/property corpus — _doc/planned/mix-tokenizer-fuzz-corpus.md in the cosmix
 # hub). Test-only; never linked into the shipped library.

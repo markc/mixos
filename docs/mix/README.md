@@ -55,6 +55,7 @@ rot. `mix man syntax` is the mental model; gotchas is the corrections.
 - **[http](http.md)** — `http_get`/`http_post`/`http_request`, deadlines.
 - **[datastar](datastar.md)** — `ds_*` SSE event framing.
 - **[archives](tar.md)** — `tar_list`/`tar_unpack`/`tar_pack`, zstd/gzip/none, safe staged extraction.
+- **[SQLite](sqlopen.md)** — `sqlopen`/`sqlexec`/`sqlclose`, read-only by default, `"rwc"` creates.
 
 ## Mesh & runtime
 

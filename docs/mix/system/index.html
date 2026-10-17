@@ -243,6 +243,7 @@
                         <a href="#sanitize" class="toc-h3">sanitize</a>
                         <a href="#identity--crypto-primitives">Identity &amp; crypto primitives</a>
                         <a href="#-md5-and-sha-1-are-broken--legacy-interop-only" class="toc-h3">⚠ MD5 and SHA-1 are broken — legacy interop only</a>
+                        <a href="#dns-queries--dns_query-v01170">DNS queries — dns_query (v0.117.0)</a>
                         <a href="#udp-datagrams--udp_send-udp_recv-v0710">UDP datagrams — udp_send, udp_recv (v0.71.0)</a>
                         <a href="#websocket-client--ws_connect-ws_send-ws_recv-ws_close-v0740">WebSocket client — ws_connect, ws_send, ws_recv, ws_close (v0.74.0)</a>
                         <a href="#raw-tcp-client--tcp_connect-tcp_send-tcp_recv-tcp_recv_line-tcp_close-v0780">Raw TCP client — tcp_connect, tcp_send, tcp_recv, tcp_recv_line, tcp_close (v0.78.0)</a>
@@ -289,7 +290,8 @@ for multi-line remote Mix or anything with nested quotes. This page covers
 the <em>local</em> surface — launching processes and reading the machine. The category
 listing also shows families documented on their own pages: the <code>ssh_*</code> builtins
 (<a href="/mix/remote/">remote</a>), <code>http_*</code> (<a href="/mix/http/">http</a>), the date/time helpers
-(<a href="/mix/datetime/">datetime</a>), <code>dns_lookup</code> (<a href="/mix/builtins/">builtins index</a>), and
+(<a href="/mix/datetime/">datetime</a>), <code>dns_lookup</code> (<a href="/mix/builtins/">builtins index</a>; its
+fuller sibling <code>dns_query</code> is covered below), and
 <code>panic</code> (<a href="/mix/errors/">errors</a>).</p>
 <h2 id="the-structured-return-win">The structured-return win</h2>
 <p>The headline difference from bash: a command's result is <strong>structured data</strong>, not
@@ -1727,6 +1729,51 @@ hello mix
 </code></pre>
 <p>These (and <code>base64_*</code>, <code>uuid</code>) are behind the <code>crypto</code> feature, which the <code>mix</code>
 binary always enables.</p>
+<h2 id="dns-queries--dns_query-v01170">DNS queries — <code>dns_query</code> (v0.117.0)</h2>
+<pre><code>dns_query(name, type[, {server, port, timeout, tcp, recurse}])  -&gt; result map
+</code></pre>
+<p><code>dns_lookup(host)</code> asks the system resolver for addresses and nothing else.
+<code>dns_query</code> asks <strong>one server one question</strong> and returns the whole answer, so
+a script can tell an authoritative answer (<code>aa: true</code>) from a cached one, or
+an out-of-zone <code>REFUSED</code> from <code>NXDOMAIN</code>, without <code>dig</code>. The wire format is
+hickory-proto (pure Rust, the <code>dns</code> feature); no libresolv.</p>
+<ul>
+<li><code>type</code> is a record type name, case-insensitive: <code>A</code>, <code>AAAA</code>, <code>MX</code>, <code>TXT</code>,
+<code>SRV</code>, <code>NS</code>, <code>SOA</code>, <code>PTR</code>, <code>CNAME</code>, <code>CAA</code> and the rest. <code>PTR</code> of an IP
+address asks its reverse name, as <code>dig -x</code> does.</li>
+<li><code>name</code> is always fully qualified: there is no search list.</li>
+<li><code>server</code> is an address or a host name (default: the first <code>nameserver</code> in
+<code>/etc/resolv.conf</code>, else <code>127.0.0.1</code>), <code>port</code> defaults to 53, <code>timeout</code> to
+5 seconds for the whole query, and <code>recurse</code> (default <code>true</code>) sets the RD
+flag. <code>tcp: true</code> forces TCP; a truncated UDP answer is retried over TCP
+on its own.</li>
+</ul>
+<p>A reply, whatever its rcode, is <code>ok: true</code>:</p>
+<pre><code>{ok: true, rcode: "NOERROR", aa: true, ra: false, tc: false,
+ answers: [{name: "mail.example.com.", type: "AAAA", ttl: 300, data: "2001:db8::25"}],
+ authority: [], additional: [], server: "192.0.2.53", port: 53,
+ transport: "udp", duration_ms: 3}
+</code></pre>
+<p><code>rcode</code> is dig's name (<code>NOERROR</code>, <code>NXDOMAIN</code>, <code>SERVFAIL</code>, <code>REFUSED</code>, ...).
+Each record's <code>data</code> is its zone-file text (<code>10 mail.example.com.</code> for an MX;
+a TXT record's strings joined). Names end in a dot.</p>
+<p>No reply is an operational failure, returned rather than raised, as
+<code>ssh_exec</code> does: <code>{ok: false, error_code, error, server, duration_ms}</code> with
+<code>error_code</code> one of <code>DNS_TIMEOUT</code>, <code>DNS_UNREACHABLE</code> (ICMP port unreachable,
+connection refused), <code>DNS_PROTOCOL</code> (only malformed replies), <code>DNS_IO</code> or
+<code>DNS_SERVER</code> (the server name did not resolve). A reply with another id is
+ignored, not taken as the answer. A bad argument (an unknown type or option,
+an invalid name) raises.</p>
+<pre><code class="language-mix">-- Which servers answer for mail.example.com with authority?
+for each $ns in ["192.0.2.53", "198.51.100.53"]
+  $r = dns_query("mail.example.com", "AAAA", {server: $ns, recurse: false})
+  if not $r.ok then
+    print($ns .. ": " .. $r.error_code)
+  else
+    print($ns .. ": " .. $r.rcode .. " aa=" .. $r.aa)
+  end
+end
+</code></pre>
 <h2 id="udp-datagrams--udp_send-udp_recv-v0710">UDP datagrams — <code>udp_send</code>, <code>udp_recv</code> (v0.71.0)</h2>
 <pre><code>udp_send(host, port, payload)   -&gt; bytes sent; payload string/bytes/buffer, verbatim
 udp_recv(port[, opts])          -&gt; {bytes, text, from_host, from_port} | nil on timeout
