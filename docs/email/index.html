@@ -340,8 +340,8 @@ expand (or go to the parent or first child) and <strong>Enter</strong> selects.<
 <p><strong>The centre</strong>: the selected account's mail page, its calendar's events,
 or its book's contacts, with a server-side filter over name, email and
 company. The mail page is a <a href="/toolkit/datatable/">data table</a>: one
-compact row per email with From (the name, else the address), Subject
-(with flag and attachment markers) and Date (the time today, "Mon 14:02"
+compact row per email with Subject (with flag and attachment markers; its
+edge drags), From (the name, else the address) and Date (the time today, "Mon 14:02"
 this week, "16 Oct" this year, else "16/10/2025"); unread rows are bold
 and long cells end in "…" with the whole text on hover. A header click
 sorts by that column on the server (newest first by default; maild sorts
@@ -364,6 +364,28 @@ field. <strong>Esc</strong> clears it, or lets go when it is empty. <strong>↓<
 the list.</li>
 </ul>
 <p>Choosing a folder in the tree ends the search.</p>
+<p><strong>Selecting several emails.</strong> Once the list has the keyboard:</p>
+<ul>
+<li>Ctrl+click adds or removes an email.</li>
+<li>Shift+click selects a range.</li>
+<li>Shift+↑/↓ extends the selection.</li>
+<li>Ctrl+A selects the page. It does this only while the list has the
+keyboard, so in a text field it still selects the text.</li>
+<li>Esc goes back to one email.</li>
+</ul>
+<p>The footer counts the selection. When the whole page is selected it
+offers <strong>Select all N in folder</strong> (or <strong>in the results</strong> while
+searching), which fetches every id, up to 10,000. Delete, Move, Flag,
+Mark Unread and drag all act on the whole selection, sent to the server
+500 at a time. The reader says "N messages selected".</p>
+<p><strong>Mark Folder as Read</strong> (Folder menu, and the folder's context menu)
+marks every unread email in the folder. While the folder is searched, it
+marks only the results. Above 500 emails it asks first, with Cancel as
+the default.</p>
+<p><strong>View › Layout › Folder Pane / Message Pane</strong> hide or show the tree and
+the reader. They have no shortcut. A pane comes back at its old width,
+and the keyboard moves to the list when the pane holding it goes. The
+window remembers the layout.</p>
 <p>Right-clicking a row selects it and opens the message menu. Dragging
 rows onto a folder moves them, the same move <code>email.move</code> makes. A
 folder that can take them lights up, and a collapsed one opens after
@@ -541,6 +563,7 @@ never waits on them.</p>
 <tr><td><code>email.search.set {account?, text, scope?}</code> / <code>email.search.clear {account?}</code></td><td>intent</td><td>the list's search field and its scope (<code>folder</code> or <code>all</code>)</td></tr>
 <tr><td><code>email.table.*</code> (<code>state</code>, <code>sort</code>, <code>page</code>, <code>page_size</code>, <code>select</code>, <code>activate</code>, <code>context</code>, <code>column</code>, <code>density</code>)</td><td>query / intent</td><td>the message list's <a href="/toolkit/datatable/#the-table-verbs">table verbs</a></td></tr>
 <tr><td><code>email.mailbox.mark_read {account?, id}</code> / <code>email.mailbox.empty {account?, id}</code></td><td>intent</td><td>mark a folder read, or empty a Trash or Junk, 500 emails a write</td></tr>
+<tr><td><code>email.panes {folder?, message?}</code></td><td>intent</td><td>show or hide the tree and the reader; answers <code>panes</code> (also in <code>email.info</code> <code>ui.panes</code>)</td></tr>
 <tr><td><code>email.form.field {name, value}</code> / <code>email.form.submit {choice?}</code> / <code>email.form.cancel</code></td><td>intent</td><td>answer the open form or dialog, such as a folder's name or a delete's confirmation</td></tr>
 <tr><td><code>email.get {account?, id}</code></td><td>query</td><td>one email's headers and <code>text</code> body</td></tr>
 <tr><td><code>email.calendars</code>, <code>email.events {calendar?, from?, to?}</code>, <code>email.event.get {id}</code></td><td>query</td><td>calendars and events</td></tr>

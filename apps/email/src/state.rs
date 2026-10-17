@@ -4512,6 +4512,147 @@ pub(crate) mod tests {
         );
     }
 
+    #[test]
+    fn the_message_actions_take_the_whole_selection() {
+        let mut state = listed(5);
+        state.settings.mail.confirm_delete = false;
+        let keys: Vec<String> = ["E1", "E3", "E4"].map(String::from).to_vec();
+        state.mail_table(
+            "a",
+            TableEvent::SelectionChanged {
+                keys: keys.clone(),
+                focus: Some(1),
+            },
+        );
+        state.take_work();
+        assert_eq!(state.acting_on(), Some(("a".into(), keys.clone())));
+        state.flag_open();
+        assert!(matches!(
+            writes(&mut state).as_slice(),
+            [(None, Write::Keywords { ids, flagged: Some(true), .. })] if *ids == keys
+        ));
+        state.delete_open();
+        assert!(matches!(
+            writes(&mut state).as_slice(),
+            [(None, Write::Delete { ids, .. })] if *ids == keys
+        ));
+        // One email selected opens it; several open none.
+        assert_eq!(state.info()["accounts"][0]["mail"]["selected"], 3);
+    }
+
+    #[test]
+    fn select_every_page_fetches_the_ids_and_actions_take_them_all() {
+        let mut state = listed(1201);
+        state.mail_table("a", TableEvent::SelectEverything);
+        let ticket = match state.take_work().as_slice() {
+            [Work::QueryIds {
+                ticket,
+                mailbox: Some(mailbox),
+                text: None,
+                unread: false,
+                cap: crate::work::SELECT_CAP,
+                purpose: crate::work::IdsFor::Select,
+                ..
+            }] if mailbox == "in" => *ticket,
+            other => panic!("{other:?}"),
+        };
+        let all: Vec<String> = (0..1201).map(|i| format!("E{i}")).collect();
+        let tag = tag(&state, "a");
+        state.apply(Event::Account(
+            tag,
+            Done::Ids(ticket, crate::work::IdsFor::Select, Ok(all.clone())),
+        ));
+        let view = state.account("a").unwrap();
+        assert_eq!(state.selection_count(view), 1201);
+        assert_eq!(view.mail.table.selection.len(), 100, "the page shows selected");
+        // A move takes every id (the client sends them 500 at a time).
+        state.move_open();
+        let Some(Form::Move { ids, .. }) = &state.form else {
+            panic!("{:?}", state.form);
+        };
+        assert_eq!(ids.len(), 1201);
+        // A click on a row is a selection of one again.
+        state.form = None;
+        state.mail_table(
+            "a",
+            TableEvent::Selected {
+                index: 0,
+                key: "E0".into(),
+                pick: toolkit::datatable::Pick::Only,
+            },
+        );
+        assert!(state.account("a").unwrap().mail.everything.is_none());
+    }
+
+    #[test]
+    fn mark_all_read_confirms_above_500_and_takes_a_search_s_results() {
+        let mut state = foldered();
+        // WORK has 3 unread: at once.
+        state.context_node(&Node::Mailbox("a".into(), "work".into()));
+        state.folder_mark_read();
+        assert!(matches!(
+            writes(&mut state).as_slice(),
+            [(None, Write::MarkMailboxRead { id })] if id == "work"
+        ));
+        // 2,866 unread: asked first, Cancel the default.
+        state.account_mut("a").unwrap().mail.mailboxes[0].unread_emails = 2866;
+        state.context_node(&Node::Mailbox("a".into(), "in".into()));
+        state.folder_mark_read();
+        assert!(matches!(&state.form, Some(Form::Folder(f)) if f.count == 2866));
+        assert!(writes(&mut state).is_empty());
+        state.apply_ui(UiEvent::FormSubmit(None));
+        assert!(matches!(
+            writes(&mut state).as_slice(),
+            [(None, Write::MarkMailboxRead { id })] if id == "in"
+        ));
+        // Searching the shown folder: the results' unread ids, then them.
+        state.set_search("a", Some("tax".into()), None);
+        state.take_work();
+        state.context_node(&Node::Mailbox("a".into(), "in".into()));
+        state.folder_mark_read();
+        let ticket = match state.take_work().as_slice() {
+            [Work::QueryIds {
+                ticket,
+                text: Some(text),
+                unread: true,
+                purpose: crate::work::IdsFor::MarkRead,
+                ..
+            }] if text == "tax" => *ticket,
+            other => panic!("{other:?}"),
+        };
+        let found: Vec<String> = ["X1", "X2"].map(String::from).to_vec();
+        let tag = tag(&state, "a");
+        state.apply(Event::Account(
+            tag,
+            Done::Ids(ticket, crate::work::IdsFor::MarkRead, Ok(found.clone())),
+        ));
+        assert!(matches!(
+            writes(&mut state).as_slice(),
+            [(None, Write::Keywords { ids, read: Some(true), .. })] if *ids == found
+        ));
+        assert_eq!(grouped(2866), "2,866");
+        assert_eq!(grouped(12), "12");
+        assert_eq!(grouped(1_000_000), "1,000,000");
+    }
+
+    #[test]
+    fn panes_hide_keep_their_splits_and_hand_the_keyboard_to_the_list() {
+        let mut state = listed(3);
+        let places = state.ui.places;
+        state.toggle_folder_pane();
+        assert!(!state.ui.panes.folder && state.ui.focus_list && state.config_dirty());
+        state.set_panes(Some(true), Some(false));
+        assert_eq!(
+            state.ui.panes,
+            Panes {
+                folder: true,
+                message: false
+            }
+        );
+        assert_eq!(state.ui.places, places, "the split stays");
+        assert_eq!(state.info()["ui"]["panes"]["message"], false);
+    }
+
     /// The page fetches in `work` as (text, all folders, position).
     fn searches(work: &[Work]) -> Vec<(Option<String>, bool, u64)> {
         work.iter()

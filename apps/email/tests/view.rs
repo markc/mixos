@@ -416,17 +416,17 @@ fn list_rows(h: &Harness<'static, Window>) -> Vec<String> {
 }
 
 #[test]
-fn each_email_is_one_row_of_from_subject_and_a_compact_date() {
+fn each_email_is_one_row_of_subject_from_and_a_compact_date() {
     let h = harness(long_list());
     assert_eq!(
         list_rows(&h),
         [
-            "Ann Lee, Lunch today?, 08:05",
-            "Bartholomew Rivera-Montgomery of the Extremely Long Display Name Society, Quarterly report: the full numbers, every appendix, the board's comments on each, and a summary of the summary, Wed 14:02",
-            "cy.no-display-name.but-a-very-long-local-part@subdomain.example.invalid, Minutes, Mon 17:45",
-            "Dee, Re: build cluster, 3 Aug",
-            "Eve, Photos from the weekend, 16 Jan",
-            "Gus, Old thread, 16/10/2025",
+            "Lunch today?, Ann Lee, 08:05",
+            "Quarterly report: the full numbers, every appendix, the board's comments on each, and a summary of the summary, Bartholomew Rivera-Montgomery of the Extremely Long Display Name Society, Wed 14:02",
+            "Minutes, cy.no-display-name.but-a-very-long-local-part@subdomain.example.invalid, Mon 17:45",
+            "Re: build cluster, Dee, 3 Aug",
+            "Photos from the weekend, Eve, 16 Jan",
+            "Old thread, Gus, 16/10/2025",
         ]
     );
     // The pager reads the server's total.
@@ -872,6 +872,125 @@ fn drag_hover_on_a_folder_pro_light() {
     drag_to(&mut h, "Re: build cluster", "Rust");
     h.step();
     h.snapshot("drag_hover_folder_pro_light");
+}
+
+#[test]
+fn subject_comes_first_and_its_edge_drags() {
+    let mut h = harness(long_list());
+    let subject = h.get_by_label(&label("column-subject")).rect();
+    let from = h.get_by_label(&label("column-from")).rect();
+    assert!(subject.left() < from.left(), "Subject first");
+    // Press on Subject's right edge (the column gap) and drag it right.
+    let edge = egui::pos2((subject.right() + from.left()) / 2.0, subject.center().y);
+    h.hover_at(edge);
+    h.event(egui::Event::PointerButton {
+        pos: edge,
+        button: egui::PointerButton::Primary,
+        pressed: true,
+        modifiers: egui::Modifiers::NONE,
+    });
+    h.step();
+    for dx in [20.0, 40.0, 60.0] {
+        h.hover_at(edge + egui::vec2(dx, 0.0));
+        h.step();
+    }
+    h.event(egui::Event::PointerButton {
+        pos: edge + egui::vec2(60.0, 0.0),
+        button: egui::PointerButton::Primary,
+        pressed: false,
+        modifiers: egui::Modifiers::NONE,
+    });
+    h.run();
+    let moved = h.get_by_label(&label("column-from")).rect();
+    assert!(
+        (moved.left() - from.left() - 60.0).abs() < 8.0,
+        "From's edge followed the drag: {} → {}",
+        from.left(),
+        moved.left()
+    );
+    let width = h.state().state.ui.list.widths.get("subject").copied();
+    assert!(width.is_some_and(|w| w > subject.width() + 40.0), "{width:?}");
+}
+
+/// The long list with `keys` selected.
+fn selecting(keys: &[&str]) -> State {
+    let mut state = long_list();
+    let view = &mut state.accounts[0];
+    view.mail.table.selection = keys.iter().map(|k| (*k).to_owned()).collect();
+    view.mail.table.focus = Some(0);
+    state
+}
+
+#[test]
+fn several_selected_count_in_the_footer_and_the_reader() {
+    let h = harness(selecting(&["L1", "L2", "L4"]));
+    assert!(h.query_by_label("3 selected").is_some());
+    assert!(h.query_by_label("3 messages selected").is_some());
+    // The whole page selected offers every page.
+    let h = harness(selecting(&["L1", "L2", "L3", "L4", "L5", "L6"]));
+    assert!(h.query_by_label("Select all 236 in folder").is_some());
+}
+
+#[test]
+fn ctrl_a_selects_the_page_only_when_the_list_has_the_keyboard() {
+    let mut h = harness(long_list());
+    // In the search field it is the field's: no rows.
+    h.get_by_role(egui::accesskit::Role::TextInput).click();
+    h.run();
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    h.run();
+    assert_eq!(h.state().state.accounts[0].mail.table.selection, ["L3"]);
+    h.get_by_label_contains("Lunch today?").click();
+    h.run();
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    h.run();
+    assert_eq!(h.state().state.accounts[0].mail.table.selection.len(), 6);
+    // Shift+click from there: a range; Escape: the keyboard's row again.
+    h.get_by_label_contains("Minutes").click();
+    h.run();
+    h.get_by_label_contains("Photos from")
+        .click_modifiers(egui::Modifiers::SHIFT);
+    h.run();
+    assert_eq!(
+        h.state().state.accounts[0].mail.table.selection,
+        ["L3", "L4", "L5"]
+    );
+    h.key_press(egui::Key::Escape);
+    h.run();
+    assert_eq!(h.state().state.accounts[0].mail.table.selection, ["L5"]);
+}
+
+#[test]
+fn multi_select_pro_light() {
+    snapshot(
+        "multi_select_pro_light",
+        selecting(&["L1", "L2", "L3", "L4", "L5", "L6"]),
+        &theme(Scheme::Pro, Mode::Light),
+    );
+}
+
+#[test]
+fn folder_pane_hidden_pro_light() {
+    let mut state = long_list();
+    state.toggle_folder_pane();
+    assert!(!state.ui.panes.folder && state.ui.focus_list);
+    snapshot(
+        "folder_pane_hidden_pro_light",
+        state,
+        &theme(Scheme::Pro, Mode::Light),
+    );
+}
+
+#[test]
+fn message_pane_hidden_studio_dark() {
+    let mut state = long_list();
+    state.toggle_message_pane();
+    assert_eq!(state.info()["ui"]["panes"]["message"], false);
+    snapshot(
+        "message_pane_hidden_studio_dark",
+        state,
+        &theme(Scheme::Studio, Mode::Dark),
+    );
 }
 
 #[test]

@@ -221,6 +221,7 @@
                         <a href="#using-it">Using it</a>
                         <a href="#sorting-and-paging" class="toc-h3">Sorting and paging</a>
                         <a href="#rows-selection-and-the-keyboard" class="toc-h3">Rows, selection and the keyboard</a>
+                        <a href="#selecting-several-rows" class="toc-h3">Selecting several rows</a>
                         <a href="#context-menus-and-focus" class="toc-h3">Context menus and focus</a>
                         <a href="#dragging-rows" class="toc-h3">Dragging rows</a>
                         <a href="#columns-shown-and-density" class="toc-h3">Columns shown and density</a>
@@ -331,6 +332,27 @@ Then Up, Down, Page Up, Page Down, Home and End move the selection and
 scroll it into view, and Enter activates it. The selection is held as row
 keys, so <code>TableState::rows_changed(&amp;keys)</code> keeps it across a refresh and
 drops what is gone.</p>
+<h3 id="selecting-several-rows">Selecting several rows</h3>
+<p>With <code>.selection(SelectionMode::Multi)</code>, these work while the table has
+the keyboard:</p>
+<ul>
+<li>Ctrl+click toggles a row.</li>
+<li>Shift+click selects the range from the anchor, which is the last row
+clicked alone.</li>
+<li>Shift with Up, Down, Page Up, Page Down, Home or End extends the range.</li>
+<li>Ctrl+A selects the whole page.</li>
+<li>Escape collapses the selection to the focused row.</li>
+</ul>
+<p>Ctrl+A is taken only while the table has the keyboard, so in a text field
+it still selects the text. These raise <code>SelectionChanged { keys, focus }</code>.
+The engine calls are <code>range_to</code>, <code>extend</code>, <code>select_all</code> and <code>collapse</code>.</p>
+<p>The footer reads "N selected" when more than one row is selected. Add
+<code>.select_everything(Everything { link, done })</code>, and once the whole page is
+selected and the set holds more rows than that, a link ("Select all 2,866
+in folder") raises <code>SelectEverything</code>. The app fetches every key, then
+passes <code>.selected_count(Some(n))</code> and <code>done</code> ("All 2,866 selected") so the
+footer counts them. <code>table.select {all: true}</code> selects the page, and
+<code>{all: "&lt;scope&gt;"}</code> selects every row.</p>
 <h3 id="context-menus-and-focus">Context menus and focus</h3>
 <p><code>.context_menu(&amp;mut |ui, row| …)</code> gives rows a right-click menu. A
 right-click on a row outside the selection selects it first (<code>Selected</code>),

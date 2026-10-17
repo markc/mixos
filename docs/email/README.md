@@ -108,8 +108,8 @@ A malformed file loads defaults and is never overwritten.
 - **The centre**: the selected account's mail page, its calendar's events,
   or its book's contacts, with a server-side filter over name, email and
   company. The mail page is a [data table](../toolkit/datatable.md): one
-  compact row per email with From (the name, else the address), Subject
-  (with flag and attachment markers) and Date (the time today, "Mon 14:02"
+  compact row per email with Subject (with flag and attachment markers; its
+  edge drags), From (the name, else the address) and Date (the time today, "Mon 14:02"
   this week, "16 Oct" this year, else "16/10/2025"); unread rows are bold
   and long cells end in "…" with the whole text on hover. A header click
   sorts by that column on the server (newest first by default; maild sorts
@@ -132,6 +132,30 @@ A malformed file loads defaults and is never overwritten.
     the list.
 
   Choosing a folder in the tree ends the search.
+
+  **Selecting several emails.** Once the list has the keyboard:
+  - Ctrl+click adds or removes an email.
+  - Shift+click selects a range.
+  - Shift+↑/↓ extends the selection.
+  - Ctrl+A selects the page. It does this only while the list has the
+    keyboard, so in a text field it still selects the text.
+  - Esc goes back to one email.
+
+  The footer counts the selection. When the whole page is selected it
+  offers **Select all N in folder** (or **in the results** while
+  searching), which fetches every id, up to 10,000. Delete, Move, Flag,
+  Mark Unread and drag all act on the whole selection, sent to the server
+  500 at a time. The reader says "N messages selected".
+
+  **Mark Folder as Read** (Folder menu, and the folder's context menu)
+  marks every unread email in the folder. While the folder is searched, it
+  marks only the results. Above 500 emails it asks first, with Cancel as
+  the default.
+
+  **View › Layout › Folder Pane / Message Pane** hide or show the tree and
+  the reader. They have no shortcut. A pane comes back at its old width,
+  and the keyboard moves to the list when the pane holding it goes. The
+  window remembers the layout.
 
   Right-clicking a row selects it and opens the message menu. Dragging
   rows onto a folder moves them, the same move `email.move` makes. A
@@ -294,6 +318,7 @@ never waits on them.
 | `email.search.set {account?, text, scope?}` / `email.search.clear {account?}` | intent | the list's search field and its scope (`folder` or `all`) |
 | `email.table.*` (`state`, `sort`, `page`, `page_size`, `select`, `activate`, `context`, `column`, `density`) | query / intent | the message list's [table verbs](../toolkit/datatable.md#the-table-verbs) |
 | `email.mailbox.mark_read {account?, id}` / `email.mailbox.empty {account?, id}` | intent | mark a folder read, or empty a Trash or Junk, 500 emails a write |
+| `email.panes {folder?, message?}` | intent | show or hide the tree and the reader; answers `panes` (also in `email.info` `ui.panes`) |
 | `email.form.field {name, value}` / `email.form.submit {choice?}` / `email.form.cancel` | intent | answer the open form or dialog, such as a folder's name or a delete's confirmation |
 | `email.get {account?, id}` | query | one email's headers and `text` body |
 | `email.calendars`, `email.events {calendar?, from?, to?}`, `email.event.get {id}` | query | calendars and events |

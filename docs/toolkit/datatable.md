@@ -98,6 +98,30 @@ scroll it into view, and Enter activates it. The selection is held as row
 keys, so `TableState::rows_changed(&keys)` keeps it across a refresh and
 drops what is gone.
 
+### Selecting several rows
+
+With `.selection(SelectionMode::Multi)`, these work while the table has
+the keyboard:
+
+- Ctrl+click toggles a row.
+- Shift+click selects the range from the anchor, which is the last row
+  clicked alone.
+- Shift with Up, Down, Page Up, Page Down, Home or End extends the range.
+- Ctrl+A selects the whole page.
+- Escape collapses the selection to the focused row.
+
+Ctrl+A is taken only while the table has the keyboard, so in a text field
+it still selects the text. These raise `SelectionChanged { keys, focus }`.
+The engine calls are `range_to`, `extend`, `select_all` and `collapse`.
+
+The footer reads "N selected" when more than one row is selected. Add
+`.select_everything(Everything { link, done })`, and once the whole page is
+selected and the set holds more rows than that, a link ("Select all 2,866
+in folder") raises `SelectEverything`. The app fetches every key, then
+passes `.selected_count(Some(n))` and `done` ("All 2,866 selected") so the
+footer counts them. `table.select {all: true}` selects the page, and
+`{all: "<scope>"}` selects every row.
+
 ### Context menus and focus
 
 `.context_menu(&mut |ui, row| …)` gives rows a right-click menu. A

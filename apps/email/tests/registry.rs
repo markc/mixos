@@ -119,6 +119,11 @@ fn every_table_event_has_a_verb() {
             key: String::new(),
         },
         TableEvent::DragStarted { keys: Vec::new() },
+        TableEvent::SelectionChanged {
+            keys: Vec::new(),
+            focus: None,
+        },
+        TableEvent::SelectEverything,
     ];
     for event in &events {
         let verb = match verb_for(event) {
