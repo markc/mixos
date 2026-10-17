@@ -103,9 +103,9 @@ fn a_let_line_is_named_instead_of_the_mix_shaped_while() {
 
 #[test]
 fn a_bareword_assignment_suggests_the_sigil() {
-    let (code, _, err) = run(&["-c", "count = 1"]);
+    let (code, _, err) = run(&["-c", "zqx_total = 1"]);
     assert_ne!(code, 0, "stderr={err}");
-    assert!(err.contains("write `$count = "), "{err}");
+    assert!(err.contains("write `$zqx_total = "), "{err}");
     // One line: no line number to give.
     assert!(!err.contains("line 1:"), "{err}");
 }

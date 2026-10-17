@@ -10,7 +10,7 @@ parsing prose, and biased hard toward zero false positives on Mix's dynamic
 seams.
 
 ```text
-mix lint [--json | --data] [--deny-warnings] [--require-version]
+mix lint [--json | --data] [--deny-warnings] [--require-version] [--fix]
          [--allow-global NAME]... [--allow-function NAME]...
          FILE...
 ```
@@ -19,7 +19,9 @@ mix lint [--json | --data] [--deny-warnings] [--require-version]
 - Diagnostics go to **stdout**; CLI errors go to **stderr**. `--deny-warnings` changes only the exit decision, never a severity.
 - `--require-version` (0.95.0) reports `MIX-D3016` (a script with no `-- version:` header) as a **warning** instead of a note — the one flag that moves a severity, and only for that code. Pair it with `--deny-warnings` to make a missing header fail a gate.
 - `-` reads stdin (at most once); relative `require()` paths from stdin resolve against the current directory.
-- `--allow-global NAME` / `--allow-function NAME` declare names an embedder or environment provides (repeatable).
+- `--allow-global NAME` / `--allow-function NAME` declare names an embedder or environment provides (repeatable). A file can declare its own with a [`-- lint: globals` pragma](#in-file-pragmas-01170).
+- `--fix` (0.117.0) applies each finding's **quick fix** to the file and lints the result again, so the report shows what is left; it prints `applied N fix(es)` to stderr. Only mechanical rewrites carry one (today `MIX-W2312`, bareword `null` → `nil`), and each edit is checked against the text at its position before it is made. Stdin is never rewritten.
+- The `mix` binary's shell extensions (`ai`, `ai_diagnose`, `context`) are known callables: calling one is never `MIX-E1102`, and defining a function with one of those names is `MIX-W2313`.
 - If script parsing fails, lint tries the same strict-data parser as `load_data()`.
   A successful fallback exits cleanly and prints `validated as strict data (not
   as a script)`. If both parsers fail, an explicit top-level `key:` shape (or a
@@ -53,6 +55,7 @@ in their own summary field, and **never** gating. Current D-codes:
 | `MIX-D3016` | a **script with no `-- version: X.Y.Z` header** in its leading comment region (within the first 32 lines) (0.95.0), so [`mix SCRIPT --version`](invocation.md#--version-for-scripts) and `script_version()` can only say `unversioned` — every binary and every Mix script answers `--version` (Mark, 2026-09-25). Emitted by the lint driver, only for files **run as scripts**, decided by a deliberately simple heuristic over the path *as given*, in this order: (1) line 1 is a `#!` shebang — a script; (2) a `lib`, `_lib`, `tests` or `test` directory component — never reported: a library is loaded by `require`, and a test script must stay header-less, because a header would make it the entry script whose record `script_version()` returns; (3) a `bin`, `_bin`, `scripts` or `build` directory component — a script; (4) a serve citizen — a top-level `on <verb>` handler at column 0, or `--serve` mentioned in the leading comment region. `mix lint deploy.mix` from inside `_bin/` has no directory component, so lint from the repo root. Known false positive, Wontfix: a library under an absolute `/…/bin/…` path with no `lib` component is reported. The mirror holds too: any `/…/lib/…` or `/…/tests/…` ancestor in an absolute path exempts a script beneath it. Only the leading comment region counts as the header (see [invocation](invocation.md#--version-for-scripts)), so a `-- version:` inside a heredoc does not satisfy it. A header line whose value is not `X.Y.Z` is reported on its own line, since the runtime treats it as absent. A note by default; `--require-version` makes it a warning, code unchanged |
 | `MIX-D3017` | an **unprovable variable read inside an `ssh_mix` body with dynamic bindings** — the name is bound nowhere in the body, but the call's opts are unreadable so `bindings`/`env` may supply it at runtime, and it is NOT an error. Fires only when the name is one edit away from something the body DOES bind (a parameter or local), where the typo is the likelier explanation: `'$pott' … did you mean '$port'?` One edit is one edit — an adjacent transposition (`$prot`) is TWO under plain Levenshtein, and the short-name budget stays at one so unrelated dynamic bindings keep their silence. A name with no near neighbour is an ordinary dynamic binding and stays silent |
 | `MIX-D3018` | **`ssh_mix` opts are not a statically readable map** — the injected names are unknown, so undefined-**variable** checks stand down for that body (dynamic bindings may supply any free DATA name). The boundary is split, not blanket: undefined-**function** checks still run (strict-data bindings cannot create a callable, so a function name the body does not define is undefined no matter what the opts hold). A variable bound exactly once to a map literal IS resolved (`$o = {bindings: {…}}`), so the fleet opts-variable shape keeps full checks |
+| `MIX-D3019` | a **`-- lint:` suppression that matches nothing** (0.117.0) — an `ignore CODE` whose next statement no longer reports CODE, or an `ignore-file CODE` in a file that reports none. Reported at the pragma's line so stale suppressions get deleted. See [in-file pragmas](#in-file-pragmas-01170) |
 | `MIX-D3015` | a **bare `$NAME` in a double-quoted string** (0.90.0) where `NAME` is bound in the same file. Double quotes interpolate `${NAME}` only; the bare form is literal BY DESIGN, which is the opposite of bash — four occurrences in one file passed lint and all four failed at runtime. `\$NAME` and a single-quoted `'…'` string are the two clean spellings and neither is reported. The lexer drops the whole batch for a MULTI-LINE string and for one whose spelling contains `\"`: both mark NESTED source (an `ssh_mix` body, a `mix -c` program), where a bare `$rc` is the inner program's variable and correctly literal. A **note** where the heredoc twin `MIX-W2402` is a warning, and the asymmetry is measured — over 785 fleet scripts W2402 costs 4 findings and this one an order of magnitude more even after those exclusions, so a warning would fail `--deny-warnings` on scripts that are not wrong. D3xxx is the promotable namespace precisely so that can change once the residue is worked off |
 
 Member-call spellings are covered too: a builtin-named `.name(` desugars
@@ -64,6 +67,8 @@ MIX-E1002  script parse error               MIX-E1302  duplicate function defini
 MIX-E1003  strict-data parse error          MIX-E1303  function name shadows a builtin
 MIX-E1101  undefined variable               MIX-E1401  require() target missing/unreadable
 MIX-E1102  undefined function               MIX-E1402  require() target invalid Mix
+                                            MIX-E1403  require() export: wrong argument count
+                                            MIX-E1404  require() module has no such export
 MIX-E1201  builtin arity mismatch           MIX-E1501  dead mutation (write is lost)
 MIX-E1203  literal contradicts contract type
 MIX-E1202  user-function arity mismatch     MIX-E1502  discarded pure transform
@@ -73,6 +78,7 @@ MIX-E1202  user-function arity mismatch     MIX-E1502  discarded pure transform
                                             MIX-E1506  write to an outer variable in fn (--agent)
                                             MIX-E1507  shell command written as a bare string
                                             MIX-E1508  assign-back of an in-place mutator
+                                            MIX-E1601  malformed `-- lint:` pragma
                                             MIX-W2101  unreachable statement
                                             MIX-W2201  discarded must-use result
                                             MIX-W2301  `+` on a proven list/map raises
@@ -85,6 +91,8 @@ MIX-E1202  user-function arity mismatch     MIX-E1502  discarded pure transform
                                             MIX-W2309  builtin-named map member unreachable via dot-call
                                             MIX-W2310  proven-missing lookup on a literal collection
                                             MIX-W2311  fmt/sprintf surplus operands
+                                            MIX-W2312  bareword null/None/undefined is a string
+                                            MIX-W2313  function name collides with a shell extension
                                             MIX-W2401  source/include defeats analysis
                                             MIX-W2402  bare bound variable in heredoc
                                             MIX-W2405  unknown escape kept literally
@@ -131,9 +139,16 @@ move, since a code's letter fixes its severity permanently. It is now
 - **MIX-W2304** checks a literal field/index key against the builtin's
   documented result-map fields from `mix builtins --json`. It works on a
   direct builtin call or a variable proven by straight-line assignment to
-  hold that result. The hint names the closest documented key (for example,
-  `exit_code` rather than `code`). Dynamic keys, generic maps and result
-  shapes without declared fields are deliberately silent.
+  hold that result. The message names the declared shape and says what the
+  read does: `process_result (from run_argv()) has no field 'code' — reading
+  it is silently nil`. The hint is a did-you-mean (0.117.0): the bash, Python
+  and Node spellings map to the field they mean first (`code`, `rc`,
+  `status`, `returncode` → `exit_code`; `status_code` → `status`;
+  `success` → `ok`; `output` → `stdout`), then a field ending in `_key`,
+  then the nearest by edit distance, so `$r.rc` no longer suggests `ok`.
+  Dynamic keys, generic maps and result shapes without declared fields are
+  deliberately silent, and the runtime is unchanged: a missing field reads
+  `nil`.
 - **MIX-W2305** flags `index_of()` / `byte_index_of()` / `bytes_find()` (added
   v0.64.0) used **bare as a truth
   value**. They return `-1` for "not found" and `0` for "found at the first
@@ -174,11 +189,73 @@ move, since a code's letter fixes its severity permanently. It is now
   runtime's own "not enough arguments" error), and calls a user function,
   variable, `address` block or `source`/`include` could shadow are silent
   too.
+- **MIX-W2312** (0.117.0) warns on a bareword `null`, `None`, `undefined`,
+  `NULL` or `nullptr` used as a value. Mix's only null is `nil`; every other
+  bareword is a string literal, so `{open: null}` sends `{"open":"null"}`
+  and `if $x == None` compares against text. A map key (`{null: 1}`), a
+  field (`$x.null`), a call name, a statement head, a Bus command word and a
+  quoted `"null"` stay silent. The finding carries a quick fix to `nil`
+  (`mix lint --fix`). There is no runtime alias, by decision: the language
+  keeps one null. Like D3015 it needs the source text.
+- **MIX-W2313** (0.117.0) warns at the definition of a function named after
+  one of the `mix` binary's shell extensions (`ai`, `ai_diagnose`,
+  `context`). An extension beats a user function at a bareword call, so
+  `context()` runs the shell's extension. A member call on a `require()`
+  exports map (`$m.context()`) does reach the function, in every mode.
+- **MIX-E1403 / MIX-E1404** (0.117.0) check member calls into a module
+  bound once to a literal path, `$m = require("./lib.mix")`, against what
+  the module exports: its top-level functions (with their arity) and
+  `$vars`, minus `_`-private names. `$m.helper(1)` for a two-parameter
+  `helper` is E1403; `$m.nosuch(2)` is E1404, with the nearest export as a
+  did-you-mean. E1404 stays silent when anything else can answer the call
+  (an exported `$var` that may hold a function, a function this file
+  defines, the prelude, an extension, an enclosing `address` block). An
+  export bound once to a literal `require()` resolves too, next to its own
+  module (`$a.b.fn()`), and a require cycle cannot loop the check. Both
+  stand down silently for a dynamic path, a rebound `$m` (or one that is
+  also a parameter), a module whose top-level `return` replaces the
+  auto-export or that uses `source`/`include`, and a file that does.
+- **MIX-E1601** (0.117.0) refuses a malformed [`-- lint:` pragma](#in-file-pragmas-01170): a bare `ignore`, an unknown code or directive, a `globals` with no valid names.
 - **MIX-W2401**: one `source`/`include` anywhere disables the undefined-name checks for the whole file (the loaded file can define anything) — reported once so you know analysis is degraded. Prefer `require()`: it is isolated, statically resolvable, and E1401/E1402 verify literal-path modules parse.
 - **MIX-W2402** warns when a heredoc literal contains bare `$NAME` and `NAME` is bound somewhere in the same visible universe. Heredocs interpolate `${NAME}`, not `$NAME`, so the bare form often means a generated config was silently corrupted. It does not fire for `${NAME}`, `$(` command substitution, explicitly escaped `\$NAME`, all-digit names such as `$1`, unknown names, or ordinary double-quoted strings. The warning is lint-only: bare `$NAME` still evaluates to literal `$NAME`, and intentional literal output requires no change. In a heredoc that ships as an `ssh_mix` body it stays silent for the names the **remote** program owns: the call's `bindings`/`env` keys and whatever the body binds itself. There, bare is exactly right, and `${NAME}` would splice the local value into the remote source. Any other bound name still warns.
 - **MIX-E1303** (0.90.0; was `MIX-W2403` from 0.74.0) errors at the *definition* of a function whose name is a builtin: the builtin wins at every call site (a builtin-named dot-call even desugars at parse time), so the definition is unreachable by name — only an extracted function value or an exports-map index still reaches it. The worst shape this produces is a script that keeps running while its own function quietly stops being called, and every release that adds a builtin name arms it again for older scripts. It was a warning on the theory that a compat shim for an older mix is legitimate authoring; the fleet refuted that — two sites across 785 scripts, neither a shim: one a hand-rolled `ends_with` duplicating the builtin, the other an `fn mix_version()` in a pre-commit hook written to report a *named* interpreter's version and silently answering with the running one's, a live wrong answer that sat behind a warning for sixteen releases. Lint is also the only gate an `ssh_mix` body passes through, and a warning stops nothing by default. The **runtime is unchanged** — the builtin still wins; the fix is to rename. Since 0.91.0 the check also covers the evaluator's inline forms that sit outside the builtin table's dispatch gate — `serve_name`, `printf` and its stdio siblings, and the Bus forms `quit`, `reply`, `subscribe` and the rest — which beat a same-named function just the same: `fn quit() return 1 end; print(quit())` printed `nil` with no diagnostic before. Since 0.92.0 the runtime agrees in operand position too: the binary-operator fast path used to call a user `fn printf` for `printf("B") .. "|"` while a bare `printf("B")` called the builtin; now the builtin wins in both.
 - **MIX-W2405** warns when a double-quoted literal contains a backslash escape the lexer does not recognise, so the backslash is kept: `"isn\x27t"` printed `isn\x27t` and nothing said so, which is how a `replace()` wrote that into a committed journal entry. 0.90.0 added `\xHH` (exactly two hex digits), `\0` and `\a \b \f \v`, so what remains is genuinely unrecognised — including `\x` with fewer than two hex digits and `\'`. A deliberate backslash is `\\`, so the warning has a clean escape. An unbraced `\u` is **exempt**: that literal is documented design (it protects embedded JSON and `C:\users`). Single-quoted strings and heredocs keep their own rules and are not scanned.
 - **MIX-D3015** and **MIX-W2405** ask how a literal was *spelled*, which the token stream deliberately forgets (`'$sp/x'` and `"$sp/x"` lex to the same token). They therefore need the source text: `mix lint` supplies it, and so does the nested analysis of an `ssh_mix` body, but an embedder calling `analyze()` without setting `AnalyzerConfig::source` simply does not get these two rules.
+
+## In-file pragmas (0.117.0)
+
+A comment starting `-- lint:` (or `# lint:`) tells lint something the code
+cannot, so the knowledge lives with the file instead of in a per-invocation
+flag. There are three, and they have no runtime effect:
+
+```mix
+-- lint: globals sha, target
+-- lint: ignore MIX-W2402
+-- lint: ignore-file MIX-D3015
+```
+
+The first declares names injected by `ssh_mix` bindings, an embedder or a
+`source`; the second suppresses MIX-W2402 on the next statement only; the
+third suppresses MIX-D3015 everywhere in the file.
+
+- `globals` is the in-file `--allow-global`: each name counts as bound, so a
+  remote body whose caller binds `$sha` lints clean on its own.
+- `ignore` covers the statement that starts on the next code line, through
+  the line before the statement after it: a multi-line statement is covered
+  on every line, but a block header (`if`, `for`, `fn`) covers only its own
+  line — put the pragma inside the block for a statement there. Written
+  after code on the same line, it covers that line.
+- Every suppression names its code (several may be listed, comma- or
+  space-separated; the `MIX-` prefix and case are optional). A bare
+  `-- lint: ignore` is **refused** (`MIX-E1601`), as is an unknown code or
+  directive, so a typo cannot silently disable a check.
+- A suppression that matches nothing is reported as the note `MIX-D3019` at
+  the pragma's line, so stale ones get cleaned up. Notes never gate.
+- Pragmas are read from comments only: a `-- lint:` line inside a string or
+  heredoc (generated Mix source) belongs to that source, not to this file.
+  They apply to the analyzer's findings, not to the lexer/parser errors
+  (`MIX-E1001`–`E1003`) or the driver's `MIX-D3016`, and an embedder that
+  calls `analyze()` without the source text gets none.
 
 ## `mix explain MIX-XXXX` — the offline diagnostics explainer
 
@@ -216,13 +293,18 @@ parsed v1, inventoried 2026-09-03):
     "code": "MIX-E1101", "severity": "error", "file": "worker.mix",
     "line": 412, "column": null,
     "message": "undefined variable '$DOMAIN' (assigned nowhere in this file)",
-    "hint": "assign it, use env(\"DOMAIN\") for environment values, or pass --allow-global DOMAIN"
+    "hint": "assign it, use env(\"DOMAIN\") for environment values, or declare an injected name with `-- lint: globals DOMAIN` (or pass --allow-global DOMAIN)",
+    "fix": null
   }],
   "capabilities": ["fs-read", "network", "process"],
   "handlers": [],
   "summary": {"errors": 1, "warnings": 0, "notes": 0, "denied_warnings": false}
 }
 ```
+
+`fix` (0.117.0, additive) is `null`, or the quick fix `--fix` would apply:
+`{"line": 1, "column": 6, "replace": "null", "with": "nil"}` (1-based line
+and character column).
 
 `--data` emits the same report as strict-data Mix source (parse with
 `data_parse`). `line`/`column` are 1-based or `null`. Most diagnostics are
