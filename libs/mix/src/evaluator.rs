@@ -19004,8 +19004,9 @@ mod standing_interrupt_tests {
                 };
                 let text = format!("{err:?}");
                 assert!(text.contains("interrupted"), "{text}");
-                match eval.get_global("log") {
-                    Some(Value::String(log)) => assert_eq!(log, expected, "{body}"),
+                let log = eval.get_global("log");
+                match &log {
+                    Some(Value::String(text)) => assert_eq!(text, expected, "{body}"),
                     other => panic!("log not a string: {other:?}"),
                 }
                 // Reset for the next case in this process.
