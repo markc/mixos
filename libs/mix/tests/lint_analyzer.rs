@@ -1883,7 +1883,12 @@ fn bareword_null_used_as_a_value_warns_with_a_fix_to_nil() {
     assert!(d[0].message.contains("nil"), "{}", d[0].message);
     let fix = d[0].fix.as_ref().expect("a quick fix");
     assert_eq!(
-        (fix.line, fix.column, fix.replace.as_str(), fix.with.as_str()),
+        (
+            fix.line,
+            fix.column,
+            fix.replace.as_str(),
+            fix.with.as_str()
+        ),
         (1, 26, "null", "nil")
     );
 }
@@ -1938,13 +1943,41 @@ fn null_that_is_not_a_bareword_value_stays_silent() {
 fn a_missing_result_field_names_the_shape_and_the_field_meant() {
     // The 2026-10-17 probe: `$r.code` after run_argv is silently nil.
     for (src, shape, meant) in [
-        ("$r = run_argv([\"true\"])\nprint($r.code)\n", "process_result", "exit_code"),
-        ("$r = run_argv([\"true\"])\nprint($r.rc)\n", "process_result", "exit_code"),
-        ("$r = run_argv([\"true\"])\nprint($r.status)\n", "process_result", "exit_code"),
-        ("$r = run_argv([\"true\"])\nprint($r.returncode)\n", "process_result", "exit_code"),
-        ("$r = ssh_run(\"h\", \"ls\")\nprint($r.rc)\n", "ssh_result", "exit_code"),
-        ("$r = http_get(\"http://192.0.2.1/\")\nprint($r.code)\n", "http_response", "status"),
-        ("$r = run_argv([\"true\"])\nprint($r.success)\n", "process_result", "ok"),
+        (
+            "$r = run_argv([\"true\"])\nprint($r.code)\n",
+            "process_result",
+            "exit_code",
+        ),
+        (
+            "$r = run_argv([\"true\"])\nprint($r.rc)\n",
+            "process_result",
+            "exit_code",
+        ),
+        (
+            "$r = run_argv([\"true\"])\nprint($r.status)\n",
+            "process_result",
+            "exit_code",
+        ),
+        (
+            "$r = run_argv([\"true\"])\nprint($r.returncode)\n",
+            "process_result",
+            "exit_code",
+        ),
+        (
+            "$r = ssh_run(\"h\", \"ls\")\nprint($r.rc)\n",
+            "ssh_result",
+            "exit_code",
+        ),
+        (
+            "$r = http_get(\"http://192.0.2.1/\")\nprint($r.code)\n",
+            "http_response",
+            "status",
+        ),
+        (
+            "$r = run_argv([\"true\"])\nprint($r.success)\n",
+            "process_result",
+            "ok",
+        ),
     ] {
         let d = source_diags(src);
         assert_eq!(d.len(), 1, "{src:?}: {d:?}");

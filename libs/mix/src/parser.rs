@@ -749,7 +749,9 @@ impl Parser {
         }
         let declaration = matches!(head.as_str(), "let" | "var" | "const");
         let msg = match (self.peek_ahead(1), self.peek_ahead(2)) {
-            (Token::String(name), Token::Assign) if declaration && self.bareword_at(self.pos + 1) => {
+            (Token::String(name), Token::Assign)
+                if declaration && self.bareword_at(self.pos + 1) =>
+            {
                 format!(
                     "Mix has no `{head}`: write `${name} = …` (a variable carries the `$` sigil, \
                      and there is no declaration keyword — see `mix man syntax`)"

@@ -64,8 +64,14 @@ fn ignore_is_code_specific() {
     // it, and is itself stale.
     let src = format!("$pid = 1\n-- lint: ignore MIX-E1101\n{HEREDOC}print($s)\n");
     let found = codes(&src);
-    assert!(found.contains(&("MIX-W2402".to_string(), Some(3))), "{found:?}");
-    assert!(found.contains(&("MIX-D3019".to_string(), Some(2))), "{found:?}");
+    assert!(
+        found.contains(&("MIX-W2402".to_string(), Some(3))),
+        "{found:?}"
+    );
+    assert!(
+        found.contains(&("MIX-D3019".to_string(), Some(2))),
+        "{found:?}"
+    );
 }
 
 #[test]
@@ -91,7 +97,11 @@ fn codes_are_matched_case_insensitively_and_without_the_prefix() {
 
 #[test]
 fn a_bare_ignore_is_refused() {
-    for pragma in ["-- lint: ignore", "-- lint: ignore-file", "-- lint: ignore ,"] {
+    for pragma in [
+        "-- lint: ignore",
+        "-- lint: ignore-file",
+        "-- lint: ignore ,",
+    ] {
         let src = format!("$pid = 1\n{pragma}\n{HEREDOC}print($s)\n");
         let found = codes(&src);
         assert!(

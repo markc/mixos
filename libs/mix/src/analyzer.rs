@@ -5421,7 +5421,9 @@ const FOREIGN_RESULT_KEYS: &[(&str, &[&str])] = &[
 /// from [`FOREIGN_RESULT_KEYS`], then a field ending in `_key` (`code` →
 /// `exit_code`), then the nearest by edit distance.
 fn result_key_suggestion<'a>(key: &str, valid: &[&'a str]) -> Option<&'a str> {
-    if let Some((_, targets)) = FOREIGN_RESULT_KEYS.iter().find(|(foreign, _)| *foreign == key)
+    if let Some((_, targets)) = FOREIGN_RESULT_KEYS
+        .iter()
+        .find(|(foreign, _)| *foreign == key)
         && let Some(target) = targets
             .iter()
             .find_map(|target| valid.iter().copied().find(|field| field == target))
@@ -6314,7 +6316,10 @@ fn check_null_barewords(stmts: &[Stmt], ctx: &FileContext, cfg: &AnalyzerConfig,
     let Some(source) = cfg.source.as_deref() else {
         return;
     };
-    if !NULL_SPELLINGS.iter().any(|spelling| source.contains(spelling)) {
+    if !NULL_SPELLINGS
+        .iter()
+        .any(|spelling| source.contains(spelling))
+    {
         return;
     }
     // Only a spelling that reaches the AST as a string literal can be a value.
@@ -6323,7 +6328,8 @@ fn check_null_barewords(stmts: &[Stmt], ctx: &FileContext, cfg: &AnalyzerConfig,
         walk_stmt_exprs(stmt, &mut |expr| {
             for_each_expr(expr, &mut |e| {
                 if let Expr::StringLiteral(text) = e
-                    && let Some(spelling) = NULL_SPELLINGS.iter().copied().find(|s| *s == text.as_str())
+                    && let Some(spelling) =
+                        NULL_SPELLINGS.iter().copied().find(|s| *s == text.as_str())
                 {
                     literals.insert(spelling);
                 }
@@ -6341,7 +6347,8 @@ fn check_null_barewords(stmts: &[Stmt], ctx: &FileContext, cfg: &AnalyzerConfig,
         let Token::String(text) = &tok.token else {
             continue;
         };
-        if !literals.contains(text.as_str()) || chars.get(tok.offset) != text.chars().next().as_ref()
+        if !literals.contains(text.as_str())
+            || chars.get(tok.offset) != text.chars().next().as_ref()
         {
             continue;
         }
@@ -6518,7 +6525,9 @@ fn parse_lint_pragmas(source: &str, stmts: &[Stmt]) -> LintPragmas {
                 };
                 if words.is_empty() {
                     malformed(
-                        format!("a bare `-- lint: {directive}` is refused — every suppression names its code"),
+                        format!(
+                            "a bare `-- lint: {directive}` is refused — every suppression names its code"
+                        ),
                         "name the code it suppresses: `-- lint: ignore MIX-W2402`",
                     );
                 }
@@ -6544,7 +6553,9 @@ fn parse_lint_pragmas(source: &str, stmts: &[Stmt]) -> LintPragmas {
                             used: false,
                         }),
                         None => malformed(
-                            format!("`-- lint: {directive}` names `{word}`, which is not a lint code"),
+                            format!(
+                                "`-- lint: {directive}` names `{word}`, which is not a lint code"
+                            ),
                             "name a code from `mix explain`, e.g. `-- lint: ignore MIX-W2402`",
                         ),
                     }
@@ -6574,18 +6585,19 @@ fn apply_lint_pragmas(mut pragmas: LintPragmas, file: Option<&str>, a: &mut Anal
         }
         !suppressed
     });
-    let report = |code: &'static str, severity: Severity, line: usize, message: String, hint: String| {
-        Diagnostic {
-            code,
-            severity,
-            file: file.map(str::to_string),
-            line: Some(line),
-            column: None,
-            message,
-            hint: Some(hint),
-            fix: None,
-        }
-    };
+    let report =
+        |code: &'static str, severity: Severity, line: usize, message: String, hint: String| {
+            Diagnostic {
+                code,
+                severity,
+                file: file.map(str::to_string),
+                line: Some(line),
+                column: None,
+                message,
+                hint: Some(hint),
+                fix: None,
+            }
+        };
     for (line, message, hint) in pragmas.malformed {
         a.diagnostics
             .push(report("MIX-E1601", Severity::Error, line, message, hint));

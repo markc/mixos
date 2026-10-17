@@ -30,7 +30,10 @@ fn lint(args: &[&str]) -> (i32, String, String) {
 
 #[test]
 fn fix_rewrites_bareword_null_to_nil() {
-    let path = write_temp("null", "$x = {open: null, b: None}\nprint(json_encode($x))\n");
+    let path = write_temp(
+        "null",
+        "$x = {open: null, b: None}\nprint(json_encode($x))\n",
+    );
     let p = path.to_str().unwrap();
     let (code, out, _) = lint(&["--deny-warnings", p]);
     assert_eq!(code, 1, "{out}");

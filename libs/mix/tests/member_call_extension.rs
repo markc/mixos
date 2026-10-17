@@ -54,11 +54,18 @@ fn module() -> std::path::PathBuf {
     let dir = std::env::temp_dir().join(format!(
         "mix-member-ext-{}-{}",
         std::process::id(),
-        std::thread::current().name().unwrap_or("t").replace("::", "-")
+        std::thread::current()
+            .name()
+            .unwrap_or("t")
+            .replace("::", "-")
     ));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("ctxmod.mix");
-    std::fs::write(&path, "fn context($over)\n  return {state_dir: \"/srv\"}\nend\n").unwrap();
+    std::fs::write(
+        &path,
+        "fn context($over)\n  return {state_dir: \"/srv\"}\nend\n",
+    )
+    .unwrap();
     path
 }
 

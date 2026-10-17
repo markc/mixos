@@ -67,7 +67,10 @@ fn correct_calls_defaults_and_exported_vars_stay_clean() {
     let dir = tree("clean", &[("lib1.mix", LIB1)]);
     let src = "$m = require(\"./lib1.mix\")\nprint($m.helper(1, 2))\nprint($m.opt(1))\nprint($m.opt(1, 2))\nprint($m.version)\nprint($m.version(1))\n";
     assert_eq!(codes_at(&dir, src), vec![]);
-    let found = codes_at(&dir, "$m = require(\"./lib1.mix\")\nprint($m.opt(1, 2, 3))\n");
+    let found = codes_at(
+        &dir,
+        "$m = require(\"./lib1.mix\")\nprint($m.opt(1, 2, 3))\n",
+    );
     assert_eq!(found, vec![("MIX-E1403".to_string(), Some(2))]);
 }
 
@@ -100,7 +103,9 @@ fn unproven_bindings_stand_down() {
     ] {
         let found = codes_at(&dir, src);
         assert!(
-            !found.iter().any(|(c, _)| c == "MIX-E1404" || c == "MIX-E1403"),
+            !found
+                .iter()
+                .any(|(c, _)| c == "MIX-E1404" || c == "MIX-E1403"),
             "{src:?}: {found:?}"
         );
     }
@@ -110,7 +115,10 @@ fn unproven_bindings_stand_down() {
 fn a_module_whose_return_replaces_its_exports_stands_down() {
     let dir = tree(
         "return",
-        &[("ret.mix", "fn helper($a, $b)\n  return $a\nend\nreturn {go: helper}\n")],
+        &[(
+            "ret.mix",
+            "fn helper($a, $b)\n  return $a\nend\nreturn {go: helper}\n",
+        )],
     );
     let found = codes_at(
         &dir,
@@ -143,7 +151,10 @@ fn a_nested_require_resolves_next_to_its_module() {
     let dir = tree(
         "nested",
         &[
-            ("a.mix", "$b = require(\"./sub/b.mix\")\nfn fa()\n  return 1\nend\n"),
+            (
+                "a.mix",
+                "$b = require(\"./sub/b.mix\")\nfn fa()\n  return 1\nend\n",
+            ),
             ("sub/b.mix", "fn fb($x)\n  return $x\nend\n"),
         ],
     );
@@ -165,8 +176,14 @@ fn a_require_cycle_terminates_and_still_checks() {
     let dir = tree(
         "cycle",
         &[
-            ("a.mix", "$b = require(\"./b.mix\")\nfn fa($x)\n  return $x\nend\n"),
-            ("b.mix", "$a = require(\"./a.mix\")\nfn fb()\n  return 1\nend\n"),
+            (
+                "a.mix",
+                "$b = require(\"./b.mix\")\nfn fa($x)\n  return $x\nend\n",
+            ),
+            (
+                "b.mix",
+                "$a = require(\"./a.mix\")\nfn fb()\n  return 1\nend\n",
+            ),
         ],
     );
     let found = codes_at(
@@ -189,7 +206,11 @@ fn a_function_named_after_a_shell_extension_warns() {
     assert_eq!(codes, vec!["MIX-W2313"], "{found:?}");
     assert_eq!(found[0].line, Some(1));
     // A call to an extension is defined under the binary's lint...
-    let found = lint_at(&dir.join("x.mix"), "print(context())\nprint(ai(\"q\"))\n", &cfg);
+    let found = lint_at(
+        &dir.join("x.mix"),
+        "print(context())\nprint(ai(\"q\"))\n",
+        &cfg,
+    );
     assert!(found.is_empty(), "{found:?}");
     // ...and an embedder that registers none keeps the old answer.
     let found = lint_at(
@@ -206,7 +227,10 @@ fn a_module_exporting_context_is_called_through_the_member() {
     // caller is clean (the definition warns in the module's own lint).
     let dir = tree(
         "ctx",
-        &[("ctxmod.mix", "fn context($over)\n  return {state_dir: \"/srv\"}\nend\n")],
+        &[(
+            "ctxmod.mix",
+            "fn context($over)\n  return {state_dir: \"/srv\"}\nend\n",
+        )],
     );
     let cfg = AnalyzerConfig {
         extensions: MIX_SHELL_EXTENSIONS.iter().map(|s| s.to_string()).collect(),
