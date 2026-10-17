@@ -497,10 +497,7 @@ const REFUSED_SPECIALS: &[(char, &str)] = &[
         '!',
         "bash's last background PID — Mix has none; keep the PID `spawn(...)` returns",
     ),
-    (
-        '#',
-        "bash's argument count — in Mix use `len(args())`",
-    ),
+    ('#', "bash's argument count — in Mix use `len(args())`"),
     ('@', "bash's argument list — in Mix use `args()`"),
     ('*', "bash's argument list — in Mix use `args()`"),
 ];

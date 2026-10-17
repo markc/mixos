@@ -574,7 +574,10 @@ mod tests {
             p.cmd,
             "echo ${__mix_subst_0} pre-${__mix_subst_0}-post ${__mix_subst_0}"
         );
-        assert_eq!(p.env, vec![("__mix_subst_0".to_string(), "x y".to_string())]);
+        assert_eq!(
+            p.env,
+            vec![("__mix_subst_0".to_string(), "x y".to_string())]
+        );
     }
 
     #[test]
@@ -658,7 +661,10 @@ mod tests {
     fn a_quoted_shell_heredoc_body_is_literal() {
         let cmd = "cat <<'EOF'\n$d $nosuch it's\nEOF\necho $d";
         let p = prepare(cmd, scope).unwrap();
-        assert_eq!(p.cmd, "cat <<'EOF'\n$d $nosuch it's\nEOF\necho ${__mix_subst_0}");
+        assert_eq!(
+            p.cmd,
+            "cat <<'EOF'\n$d $nosuch it's\nEOF\necho ${__mix_subst_0}"
+        );
         // Unquoted: the body expands, and its apostrophe is plain text.
         let p = prepare("cat <<EOF\nit's $d\nEOF", scope).unwrap();
         assert_eq!(p.cmd, "cat <<EOF\nit's ${__mix_subst_0}\nEOF");

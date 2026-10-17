@@ -220,7 +220,10 @@ mod tests {
         let dir = Scratch::new();
         let path = fifo(dir.path());
         let outcome = tokio::time::timeout(Duration::from_millis(100), write(&path, b"x")).await;
-        assert!(outcome.is_err(), "no reader: the write must still be waiting");
+        assert!(
+            outcome.is_err(),
+            "no reader: the write must still be waiting"
+        );
     }
 
     #[tokio::test(flavor = "current_thread")]

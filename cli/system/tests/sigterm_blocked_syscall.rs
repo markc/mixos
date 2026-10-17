@@ -87,10 +87,7 @@ fn sigterm_is_graceful_while_a_file_builtin_waits_on_a_fifo() {
         ("write", "write_file(\"{}\", \"hi\\n\")"),
         ("read", "read_file(\"{}\")"),
     ] {
-        let dir = std::env::temp_dir().join(format!(
-            "sigterm-fifo-{tag}-{}",
-            std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("sigterm-fifo-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let fifo = dir.join("f");
@@ -133,9 +130,16 @@ fn sigterm_is_graceful_while_a_file_builtin_waits_on_a_fifo() {
         };
         let out = child.wait_with_output().unwrap();
         let _ = std::fs::remove_dir_all(&dir);
-        assert_eq!(status.code(), Some(128 + libc::SIGTERM), "{tag}: {status:?}");
+        assert_eq!(
+            status.code(),
+            Some(128 + libc::SIGTERM),
+            "{tag}: {status:?}"
+        );
         let err = String::from_utf8_lossy(&out.stderr);
-        assert!(!err.contains("SIGTERM not honoured"), "{tag}: stderr: {err:?}");
+        assert!(
+            !err.contains("SIGTERM not honoured"),
+            "{tag}: stderr: {err:?}"
+        );
         assert!(!String::from_utf8_lossy(&out.stdout).contains("unreachable"));
     }
 }
@@ -158,10 +162,7 @@ fn file_builtins_still_read_and_write_a_fifo() {
         .spawn()
         .unwrap();
     let out = Command::new(env!("CARGO_BIN_EXE_mix"))
-        .args([
-            "-c",
-            &format!("print(\"got=\" .. read_file(\"{path}\"))"),
-        ])
+        .args(["-c", &format!("print(\"got=\" .. read_file(\"{path}\"))")])
         .env("MIX_STATS", "off")
         .output()
         .unwrap();

@@ -596,7 +596,10 @@ async fn a_handler_waiting_on_a_fifo_does_not_stop_quit() {
         );
         tokio::time::sleep(Duration::from_millis(20)).await;
     };
-    assert!(!trace(&dir).contains("unblocked"), "the FIFO never had a writer");
+    assert!(
+        !trace(&dir).contains("unblocked"),
+        "the FIFO never had a writer"
+    );
     assert_eq!(
         status.code(),
         Some(0),

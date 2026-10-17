@@ -53,7 +53,9 @@ async fn it_ends_only_at_the_tag_line_and_keeps_empty_lines() {
 fn an_unterminated_or_malformed_quoted_tag_is_a_lexer_error() {
     let err = Lexer::new("$s = <<'EOF\nx\nEOF\n").tokenize().unwrap_err();
     assert!(format!("{err}").contains("<<'TAG'"), "{err}");
-    let err = Lexer::new("$s = <<'EOF'\nno closer\n").tokenize().unwrap_err();
+    let err = Lexer::new("$s = <<'EOF'\nno closer\n")
+        .tokenize()
+        .unwrap_err();
     assert!(format!("{err}").contains("unterminated heredoc"), "{err}");
 }
 
@@ -78,7 +80,8 @@ fn lint_reports_no_w2402_inside_a_verbatim_heredoc() {
 fn an_ssh_mix_verbatim_body_is_linted_as_remote_source() {
     // Line 3 calls an undefined function inside the body: lint reports it
     // at its real file line, and there is no "not analysed" MIX-D3012.
-    let src = "$r = ssh_mix(\"host\", <<'EOF'\nprint(\"${remote_side}\")\nno_such_fn_zz()\nEOF\n)\n";
+    let src =
+        "$r = ssh_mix(\"host\", <<'EOF'\nprint(\"${remote_side}\")\nno_such_fn_zz()\nEOF\n)\n";
     let found = diags(src);
     assert!(
         !found.iter().any(|(c, ..)| c == "MIX-D3012"),

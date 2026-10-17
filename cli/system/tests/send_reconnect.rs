@@ -83,7 +83,10 @@ fn a_send_after_a_failed_connect_follows_a_new_url() {
     );
     // The broker answered (an unknown service is a broker refusal, rc >= 10)
     // instead of the latched -3.
-    assert!(got[1] >= 0, "send stayed latched after the URL changed: {stdout}");
+    assert!(
+        got[1] >= 0,
+        "send stayed latched after the URL changed: {stdout}"
+    );
 }
 
 #[test]

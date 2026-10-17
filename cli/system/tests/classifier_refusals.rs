@@ -81,7 +81,10 @@ fn bash_special_parameters_are_refused_with_their_mix_spelling() {
     ] {
         let (code, _, err) = run(&["-c", line]);
         assert_eq!(code, 2, "`{line}` must be refused: {err}");
-        assert!(err.contains(pointer), "`{line}` must point at {pointer}: {err}");
+        assert!(
+            err.contains(pointer),
+            "`{line}` must point at {pointer}: {err}"
+        );
     }
     let (code, out, _) = run(&["-c", "echo '$# $@ $! $*'"]);
     assert_eq!(code, 0, "single-quoted specials are literal");
@@ -100,7 +103,10 @@ fn a_mix_variable_reaches_a_command_substitution() {
         ("$d = \"x\"\nprint($(echo $d))", "x"),
         ("$d = \"x\"\nprint($(echo pre-$d-post))", "pre-x-post"),
         ("$d = \"x\"\nprint($(sh -c \"echo $d\"))", "x"),
-        ("$d = \"; echo injected\"\nprint($(echo $d))", "; echo injected"),
+        (
+            "$d = \"; echo injected\"\nprint($(echo $d))",
+            "; echo injected",
+        ),
         ("print($(for f in a b; do echo $f; done))", "a\nb"),
     ] {
         let (code, out, err) = run(&["--no-lint", "-c", src]);
@@ -120,7 +126,10 @@ fn a_mix_variable_reaches_a_command_substitution() {
         ),
         ("print($(echo hi # $zz_no_such_var\n))", "hi"),
         ("$o = \"ok\"\nprint($(echo ${o:-$zz_no_such_var}))", "ok"),
-        ("$zz = \"outer\"\nprint($(echo zz=inner $zz))", "zz=inner outer"),
+        (
+            "$zz = \"outer\"\nprint($(echo zz=inner $zz))",
+            "zz=inner outer",
+        ),
     ] {
         let (code, out, err) = run(&["--no-lint", "-c", src]);
         assert_eq!(code, 0, "{src}: {err}");

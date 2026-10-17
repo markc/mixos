@@ -709,7 +709,10 @@ async fn fifo_read_file_honours_the_string_cap() {
     let writer_path = fifo.clone();
     let writer = std::thread::spawn(move || {
         use std::io::Write;
-        let mut f = std::fs::OpenOptions::new().write(true).open(writer_path).unwrap();
+        let mut f = std::fs::OpenOptions::new()
+            .write(true)
+            .open(writer_path)
+            .unwrap();
         let chunk = vec![b'a'; 64 * 1024];
         // Endless until the reader goes away (EPIPE).
         while f.write_all(&chunk).is_ok() {}
