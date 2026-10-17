@@ -1,13 +1,15 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Copyright 2026 Mark Constable <mc@mixos.dev>
 -- releases_test: the releasesd logic, offline. Builds fixture release
--- tarballs with bsdtar and drives lib/releases.mix directly: validation,
+-- tarballs with tar_pack and drives lib/releases.mix directly: validation,
 -- catalogue checks, asset choice, checksum verification (and its refusals),
 -- install, prune, rollback, foreign files, a second link target seen through
 -- a view path, an exec_wrapper (quoting, shape, manifest, no double wrap),
 -- layout and path-escape refusals, and remove.
 -- Run from the checkout root: mix services/releasesd/tests/releases_test.mix
--- Needs bsdtar. Prints PASS/FAIL per check; exits 1 on any failure.
+-- Needs bsdtar for two hostile fixtures (a ../ member, an escaping symlink),
+-- which tar_pack refuses to make. Prints PASS/FAIL per check; exits 1 on any
+-- failure.
 
 $r = require("../scripts/lib/releases.mix")
 $tmp = "/var/tmp/releases-test." .. uuid()
@@ -49,7 +51,7 @@ fn make_tarball($name, $version, $opts)
   mkdir($p .. "/share/mime/packages", {parents: true})
   write_file($p .. "/share/mime/packages/dev.example." .. $name .. ".xml", "<mime-info/>\n")
   $out = $tmp .. "/" .. $top .. ".tar.gz"
-  run_argv_must(["bsdtar", "-czf", $out, "-C", $src, $top])
+  $_ = tar_pack($src, $out, {codec: "gzip"})
   return $out
 end
 
@@ -323,6 +325,7 @@ try
   mkdir($tmp .. "/evil/bin", {parents: true})
   write_file($tmp .. "/evil/bin/demo", "x")
   write_file($tmp .. "/evil/escape", "x")
+  -- tar_pack never writes a ../ member, so this hostile archive needs bsdtar.
   run_argv_must(["bsdtar", "-czf", $tmp .. "/evil.tar.gz", "-C", $tmp .. "/evil", "-s", ",^escape,../../escaped,", "bin", "escape"])
   $escaped = false
   try
@@ -375,6 +378,7 @@ try
   write_file($ev .. "/bin/demo", "#!/bin/sh\necho 6.0\n")
   chmod($ev .. "/bin/demo", 0o755)
   symlink("/etc/passwd", $ev .. "/share/applications/leak.desktop")
+  -- tar_pack never packs an escaping symlink either.
   run_argv_must(["bsdtar", "-czf", $tmp .. "/leaky.tar.gz", "-C", $tmp .. "/leaky", "demo-6.0"])
   refuses("tar: a desktop symlink out of the release", "LAYOUT", fn() = $r.install_tarball($ctx, $app, "6.0", $tmp .. "/leaky.tar.gz", proof($tmp .. "/leaky.tar.gz")))
   check("tar: nothing leaked, install untouched", not is_file($ctx.share_dir .. "/applications/leak.desktop") and $r.current_version($ctx, $app) == "3.0")
