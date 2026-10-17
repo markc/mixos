@@ -1626,7 +1626,11 @@ mod tests {
             .unwrap();
         let body: serde_json::Value = serde_json::from_str(&ev.body).unwrap();
         assert_eq!(body["overflow"], true);
-        assert_eq!(inotify_wds(ino), before, "recovery must not replace the watch");
+        assert_eq!(
+            inotify_wds(ino),
+            before,
+            "recovery must not replace the watch"
+        );
         std::fs::write(&file, "after").unwrap();
         let path = file.to_str().unwrap();
         let reported = loop {

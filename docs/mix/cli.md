@@ -232,7 +232,7 @@ Mix reserved words:
 ### `mix man` reads the manual built into the binary
 
 `mix man TOPIC` prints the markdown page `TOPIC.md`. Every page in `docs/mix/`
-is compiled into the `mix` binary (zstd-compressed, about a quarter of a
+is compiled into the `mix` binary (zstd-compressed, about a third of a
 megabyte), so a binary copied alone to a new machine, with no checkout and no
 network, still has its whole manual. The built-in copy is also the one that
 documents exactly the binary you are running: a checkout or the online site may

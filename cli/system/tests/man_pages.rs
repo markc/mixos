@@ -401,17 +401,30 @@ fn apropos_and_doctor_see_the_built_in_manual() {
 
 #[test]
 fn local_mode_reads_and_searches_the_checkout_copy_first() {
-    let page = Some(("overview.md", "# overview\n\n## Zebrafish checkout heading\n"));
+    let page = Some((
+        "overview.md",
+        "# overview\n\n## Zebrafish checkout heading\n",
+    ));
     let out = man_with_checkout_page(&["apropos", "zebrafish"], true, page);
     assert!(
-        String::from_utf8_lossy(&out.stdout).contains("mix man overview  § Zebrafish checkout heading"),
+        String::from_utf8_lossy(&out.stdout)
+            .contains("mix man overview  § Zebrafish checkout heading"),
         "{out:?}"
     );
     let out = man_with_checkout_page(&["man", "overview"], true, page);
-    assert!(String::from_utf8_lossy(&out.stdout).contains("Zebrafish"), "{out:?}");
+    assert!(
+        String::from_utf8_lossy(&out.stdout).contains("Zebrafish"),
+        "{out:?}"
+    );
     // By default the built-in page wins for both.
     let out = man_with_checkout_page(&["apropos", "zebrafish"], false, page);
-    assert!(!String::from_utf8_lossy(&out.stdout).contains("Zebrafish"), "{out:?}");
+    assert!(
+        !String::from_utf8_lossy(&out.stdout).contains("Zebrafish"),
+        "{out:?}"
+    );
     let out = man_with_checkout_page(&["man", "overview"], false, page);
-    assert_eq!(String::from_utf8_lossy(&out.stdout), read_page("overview.md"));
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout),
+        read_page("overview.md")
+    );
 }
