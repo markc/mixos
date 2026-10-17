@@ -2027,7 +2027,7 @@ fn walk_and_append(
                     .map_err(|e| runtime(format!("{caller}: readlink '{}': {e}", rel.display())))?;
                 // Contained targets only, so packed archives always
                 // round-trip through the safe unpacker.
-                clean_link_target(caller, &rel.to_string_lossy(), target.as_os_str(), 4096)?;
+                clean_link_target(caller, &rel, target.as_os_str(), 4096)?;
                 let mut header = Header::new_gnu();
                 header.set_size(0);
                 header.set_entry_type(EntryType::Symlink);
