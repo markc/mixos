@@ -212,9 +212,20 @@ mod tests {
         assert!(is_fifo(&fifo(dir.path())));
     }
 
-    #[tokio::test(flavor = "current_thread")]
-    async fn a_waiting_read_yields_to_the_runtime() {
+    /// Run one async test body on a fresh current-thread runtime. The guard
+    /// is taken outside the runtime: it is never held across an `.await`.
+    fn block_on<T>(fut: impl std::future::Future<Output = T>) -> T {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(fut)
+    }
+
+    #[test]
+    fn a_waiting_read_yields_to_the_runtime() {
         let _guard = interrupt_guard();
+        block_on(async {
         let dir = Scratch::new();
         let path = fifo(dir.path());
         let writer_path = path.clone();
@@ -225,11 +236,13 @@ mod tests {
             write(&writer_path, b"hello").await.unwrap();
         });
         assert_eq!(got.unwrap(), b"hello");
+        });
     }
 
-    #[tokio::test(flavor = "current_thread")]
-    async fn a_waiting_write_is_abandoned_cleanly() {
+    #[test]
+    fn a_waiting_write_is_abandoned_cleanly() {
         let _guard = interrupt_guard();
+        block_on(async {
         let dir = Scratch::new();
         let path = fifo(dir.path());
         let outcome = tokio::time::timeout(Duration::from_millis(100), write(&path, b"x")).await;
@@ -237,11 +250,13 @@ mod tests {
             outcome.is_err(),
             "no reader: the write must still be waiting"
         );
+        });
     }
 
-    #[tokio::test(flavor = "current_thread")]
-    async fn a_producer_that_never_stops_cannot_hold_the_thread() {
+    #[test]
+    fn a_producer_that_never_stops_cannot_hold_the_thread() {
         let _guard = interrupt_guard();
+        block_on(async {
         let dir = Scratch::new();
         let path = fifo(dir.path());
         let writer_path = path.clone();
@@ -272,5 +287,6 @@ mod tests {
         writer.join().unwrap();
         assert!(got.len() > 8 * 1024 * 1024);
         assert!(ticks.get() > 0, "the read never yielded to a peer task");
+        });
     }
 }
