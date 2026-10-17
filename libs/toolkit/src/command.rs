@@ -678,7 +678,11 @@ impl<S> Registry<S> {
         let ctx = ui.ctx().clone();
         // The layer check reads the context: outside the input lock.
         let at = ui
-            .input(|i| i.pointer.secondary_clicked().then(|| i.pointer.interact_pos()))
+            .input(|i| {
+                i.pointer
+                    .secondary_clicked()
+                    .then(|| i.pointer.interact_pos())
+            })
             .flatten();
         let opened = at.is_some_and(|at| rect.contains(at) && ctx.layer_id_at(at) == Some(layer));
         let popup = egui::Popup::new(id, ctx, egui::PopupAnchor::PointerFixed, layer)
