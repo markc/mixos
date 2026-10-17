@@ -36,8 +36,8 @@ use crate::secrets::Secrets;
 use crate::work::{Login, Work};
 use crate::writer::{self, Change, Refusal};
 
-mod files;
 pub mod drafts;
+mod files;
 pub mod suggest;
 
 /// Which surface the centre pane shows.
