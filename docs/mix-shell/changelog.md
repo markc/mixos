@@ -8,6 +8,30 @@ generated: by docs/_build/gen-site.mix from cli/mix-shell/CHANGELOG.md; do not e
 
 > Mirrored from [`cli/mix-shell/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/cli/mix-shell/CHANGELOG.md), where releases update it. The component's page is [mix-shell](README.md). This page describes the current `main` branch of MixOS.
 
+## Unreleased
+
+### Changed
+
+- `mix man` reads the manual built into the binary: every `docs/mix/*.md`
+  page is packed into one zstd frame at build time, so a binary copied alone,
+  with no checkout and no network, has its whole manual. With no
+  `MIXOS_MAN_*` variable set the built-in page wins (it documents exactly this
+  binary), then files on disk, then the online copy. `MIXOS_MAN_SOURCE=local`
+  puts files on disk first, then the built-in manual, and never uses the
+  network. `MIXOS_MAN_SOURCE=auto` or `MIXOS_MAN_URL` keeps the online-first
+  order, with the built-in manual before a stale cached copy. `mix doctor`
+  and `mix apropos` count and search the built-in pages. The compiled-in
+  path to the build checkout's `docs/mix` is no longer a lookup candidate.
+
+### Fixed
+
+- A foreground job stopped (^Z) just after its exec is now stopped, not
+  reported as "job stopped before exec acknowledgement" and aborted. The
+  launch checked for the stop before reading the exec acknowledgement that
+  was already waiting. This was the intermittent failure of the
+  `owned_editor_pty` test
+  `foreground_job_ctrl_z_fg_and_nested_editor_stop_preserve_draft`.
+
 ## 0.116.0
 
 ### Added

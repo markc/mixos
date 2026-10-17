@@ -472,6 +472,38 @@ $ mix -c 'print((((( … 205 deep … )))))'
 Parse error at line 1:202: nesting too deep (limit 200)
 ```
 
+### Asking the lexer: `mix_tokens()`
+
+A tool that reads Mix source (a gate, a highlighter, a refactoring script)
+asks Mix how the source tokenises instead of re-deriving the rules above.
+`mix_tokens(source[, {comments: true}])` runs the real lexer and returns one
+map per token, `{kind, text, line, col}`, in source order. Nothing is run.
+
+```mix
+for $t in mix_tokens('$x = "a ${b}" -- note', {comments: true})
+  print($t.kind .. " " .. $t.text)
+end
+-- variable $x
+-- operator =
+-- interp_string "a ${b}"
+-- comment -- note
+```
+
+- `kind` is `number`, `string` (a quoted literal), `word` (a bare word),
+  `interp_string`, `heredoc`, `variable`, `command_sub`, `keyword`,
+  `operator`, `punct`, `newline`, or `comment`. Comments come back only with
+  `comments: true`; the parser never sees them.
+- `text` is the exact source span: a string keeps its quotes, a heredoc
+  runs from `<<TAG` to its terminator line (a `--` comment after the tag is
+  part of it, not a separate `comment` token).
+- `line` and `col` are 1-based, `col` counted in characters.
+- Newlines inside `(`, `[` and `{` are not tokens, as above.
+- Source that does not lex raises `MIX_SOURCE_LEX`, with `details.line` and
+  `details.col`.
+
+There is no AST builtin yet; for the handlers a file declares, read
+`mix lint --json FILE` (its `handlers` list comes from the parsed AST).
+
 ## The shell/Mix classifier
 
 At a `mix -c '<line>'` one-liner, the interactive REPL, and a mix login shell, Mix

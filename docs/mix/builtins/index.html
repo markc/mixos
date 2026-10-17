@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Every Mix builtin grouped by category, generated from mix builtins (mix 0.116.0). See the linked topical page for prose and examples; mix what NAME prints a…">
+    <meta name="description" content="Every Mix builtin grouped by category, generated from the binary&#x27;s own mix builtins --json. See the linked topical page for prose and examples; mix what NAME…">
     <!-- Favicons from share/brand: the SVG follows the visitor's light/dark preference. -->
     <link rel="icon" href="/favicon.ico?v=c34fdc68c4" sizes="any">
     <link rel="icon" type="image/svg+xml" href="/_web/favicon.svg?v=51993ccf9f">
@@ -261,7 +261,7 @@
     <div id="doc-view" class="content-section">
         <article id="content-doc" class="prose" data-pagefind-body>
 <h1 id="builtin-index">Builtin index</h1>
-<p>Every Mix builtin grouped by category, generated from <code>mix builtins</code> (mix 0.116.0). See the linked topical page for prose and examples; <code>mix what NAME</code> prints a one-line description of any single builtin (or keyword), and <code>mix help</code> prints the compact names-only summary of the same ten categories.</p>
+<p>Every Mix builtin grouped by category, generated from the binary's own <code>mix builtins --json</code>. See the linked topical page for prose and examples; <code>mix what NAME</code> prints a one-line description of any single builtin (or keyword), and <code>mix help</code> prints a compact names-only summary.</p>
 <p>Some builtins are feature-gated on the <code>mixos-lib-mix</code> crate (<code>json</code>, <code>regex</code>, <code>toml</code>, <code>yaml</code>, <code>datetime</code>, <code>url</code>, <code>crypto</code>, <code>http</code>, <code>sqlite</code>, <code>archive</code>, <code>dkim</code>, <code>markdown</code>, <code>datastar</code>, <code>xml</code>, <code>mime</code>) so embedders can pull only what they need — the <code>mix</code> binary turns them all on.</p>
 <h2 id="machine-readable-discovery-metadata_schema-1">Machine-readable discovery (metadata_schema 1)</h2>
 <p>From 0.97.0, <code>required_capabilities</code> lists additional unconditional capability
@@ -281,13 +281,15 @@ encode-first guidance for file payloads; this is additive within metadata_schema
 <li><strong>Argument type gate and nil</strong> (0.103.x): the evaluator checks argument types against the contract for the side-effect classes (fs/process/network/bus) in every mode, and for pure builtins under strict mode. A <code>nil</code> VALUE is checked like any other value — there is no blanket nil exemption, so <code>write_file(nil, "x")</code> and <code>mkdir(nil)</code> raise TYPE_MISMATCH instead of coercing nil into a literal <code>"nil"</code> path. An optional argument that intentionally treats an explicit <code>nil</code> as "omitted/default" declares it in the contract as <code>any_of(…, nil)</code> (e.g. <code>run_argv</code>/<code>exists</code>/<code>write_atomic</code>/<code>stat</code>/<code>walk</code> opts, <code>hash_file</code> algo, <code>bytes_to_string</code> opts, <code>normalize</code> form, <code>slice</code> end); that is the ONLY way a nil reaches the builtin. <code>any</code> args accept nil because they accept everything. A nil in a plain <code>string</code>/<code>number</code>/<code>map</code> slot raises in the same modes as any other wrong type.</li>
 </ul>
 <blockquote>
-<p>Every table category is listed below (0.63.0 — the index is regenerated
-from <code>mix builtins --json</code> by <code>docs/_build/gen-builtins-md.mix</code>; the
-previously-unbucketed <code>db</code>/<code>jmap</code>/<code>bus</code>/<code>datastar</code> families now have
-sections). The Bus-layer callables <code>noded_register</code>, <code>subscribe</code>,
-<code>unsubscribe</code>, <code>bus_reconnect</code>, and <code>reply(...)</code> (inside <code>on</code> handlers)
-remain evaluator forms on top of the keyword layer, not table builtins —
-<code>mix what</code> does not know them; see <a href="/mix/bus/">bus</a>.</p>
+<p>The tables below are generated: <code>docs/_build/gen-builtins-md.mix</code> writes
+one section per category, one row per entry of <code>mix builtins --json</code>, in
+the binary's order. <code>cargo test -p system --test man_pages</code> fails when the
+committed tables differ from the binary it built, so after adding or
+changing a builtin run
+<code>mix docs/_build/gen-builtins-md.mix --mix target/debug/mix</code>. Rows of kind
+<code>statement</code> (<code>print</code>, <code>eprint</code>, and the Bus forms <code>send</code>, <code>emit</code>, <code>on</code>,
+<code>reply</code>, ...) are keyword forms listed beside the builtins; see
+<a href="/mix/bus/">bus</a>.</p>
 </blockquote>
 <h2 id="string--see-strings">string  — see <a href="/mix/strings/">strings</a></h2>
 <p>length          Length of a string (codepoints), list/map (elements), or bytes/buffer (bytes, v0.64.0)
@@ -319,6 +321,7 @@ word            Extract Nth word from string (1-based)
 ord             Unicode codepoint of the FIRST character: ord("A") -&gt; 65, ord("é") -&gt; 233. Empty string raises. Inverse: chr()
 chr             The 1-character string for a Unicode codepoint: chr(65) -&gt; "A", chr(10084) -&gt; "❤". Surrogates (D800-DFFF) and &gt;0x10FFFF raise, same rule as \u{...}. Inverse: ord()
 normalize       Unicode normalisation (UAX #15): normalize(s[, form]) with form "NFC" (default), "NFD", "NFKC" or "NFKD" (case-insensitive; nil selects NFC; anything else raises VALUE_ERROR). Makes canonically-equivalent text compare equal: a decomposed e + combining acute (macOS filenames, NFD) equals the precomposed é after normalize(); NFKC also folds compatibility forms (fullwidth letters, ligatures: normalize("ﬁ", "NFKC") -&gt; "fi"). Emoji and ZWJ sequences pass through unchanged (v0.92.0)
+mix_tokens      How Mix itself tokenises Mix source, for tools that read .mix files: mix_tokens(source[, {comments: bool}]) -&gt; [{kind, text, line, col}] from the real lexer, in source order; nothing is run. kind: number, string (a quoted literal), word (a bare word), interp_string, heredoc, variable, command_sub, keyword, operator, punct, newline, and comment (only with comments:true; # and -- comments). text is the exact source span (a heredoc includes its body and terminator); line and col are 1-based, col in characters. Newlines inside (), [] and {} are not tokens. Source that does not lex raises MIX_SOURCE_LEX with details {line, col} (v0.117.0)
 before          Text before the FIRST delim: before(s, delim) -&gt; string | nil (nil when delim absent; "" is a real result — delim at the start). Empty delim raises
 after           Text after the FIRST delim: after(s, delim) -&gt; string | nil (nil when delim absent; "" when delim at the end). Empty delim raises. Want a default? <code>after($s, "=") or ""</code>
 before_last     Text before the LAST delim -&gt; string | nil (nil when absent). Empty delim raises
@@ -473,8 +476,8 @@ remove          Remove a single file/symlink: remove(path). No-op if already gon
 remove_dir      Recursively remove a directory and its contents: remove_dir(path) (rm -rf). No-op if already gone (v0.22.0).
 chmod           Set file/directory permissions. chmod(path, 0o755) — mode as a VALUE (use an octal literal) or an octal string "0755" (v0.11.0: a number is now the value, not its decimal digits read as octal)
 chown           Set file owner/group by numeric uid/gid: chown(path, 1000, 1000). Follows symlinks. Numeric only (no name resolution) (v0.17.1)
-mime_type       The type of a file from the freedesktop shared-mime-info database, as the desktop names it (requires mime feature): mime_type(path[, {content}]) -&gt; {mime, by, uncertain, exists, parents}. Globs first, magic to settle a missing or ambiguous glob, then a text check (the GLib order). by is stat|glob|magic|content|fallback; parents lists every supertype nearest first, ending text/plain (for text/*) and application/octet-stream. {content:false} never opens the file. A missing path is typed by name with exists:false; an unreadable file by name, uncertain. Follows symlinks (v0.113.0)
-stat            Stat a path → map {uid, gid, nlink, size, mode, perm, ino, dev, ctime, mtime, atime, ctime_nsec, mtime_nsec, atime_nsec, is_file, is_dir, is_symlink}. ino/dev are STRINGS (u64, exceed f64 exact range); mode is full st_mode, perm = mode &amp; 0o7777; *time are epoch seconds (f64) and *_nsec the sub-second part 0..=999999999 (v0.44.0) — compare the PAIR to see a same-second rewrite. Follows symlinks by default; stat(path, {follow_symlinks:false}) is lstat (v0.17.1)
+mime_type       The type of a file from the freedesktop shared-mime-info database, as the desktop names it (requires mime feature): mime_type(path[, {content}]) -&gt; {mime, by, uncertain, exists, parents}. Globs first, magic to settle a missing or ambiguous glob, then a text check (the GLib order). by is stat|glob|magic|content|fallback; parents lists every supertype nearest first, ending text/plain (for text/<em>) and application/octet-stream. {content:false} never opens the file. A missing path is typed by name with exists:false; an unreadable file by name, uncertain. Follows symlinks (v0.113.0)
+stat            Stat a path → map {uid, gid, nlink, size, mode, perm, ino, dev, ctime, mtime, atime, ctime_nsec, mtime_nsec, atime_nsec, is_file, is_dir, is_symlink}. ino/dev are STRINGS (u64, exceed f64 exact range); mode is full st_mode, perm = mode &amp; 0o7777; <em>time are epoch seconds (f64) and <em>_nsec the sub-second part 0..=999999999 (v0.44.0) — compare the PAIR to see a same-second rewrite. Follows symlinks by default; stat(path, {follow_symlinks:false}) is lstat (v0.17.1)
 line_count      Count lines in a file by streaming — never loads the whole file (byte-oriented, so it works on non-UTF-8 files too) (streams since v0.28.1)
 head            First N lines of a file as a list (default 10) — streams and stops after N lines, never reads the rest (the no-slurp twin of take(read_lines(p), n)) (v0.28.1)
 tail            Last N lines of a file as a list (default 10) — reads backwards in blocks from EOF, never slurps the whole file (the no-slurp twin of take(read_lines(p), -n)) (v0.28.1)
@@ -490,6 +493,9 @@ read_stdin_bytes Read all of stdin to EOF as raw bytes — the binary twin of re
 tty_mode        Put the controlling terminal into raw or cooked mode: tty_mode("raw") disables canonical buffering, echo and signal generation (a lone ESC arrives as one byte — the keystroke-recorder primitive), tty_mode("cooked") restores the saved termios. The original termios is restored on process exit if the caller never returns to cooked (v0.103.9)
 stdin_copy      Copy stdin to a file, flushing every chunk, until EOF — the incremental twin of read_stdin_bytes, so a recorder killed mid-stream keeps the bytes it already read. Pair with tty_mode("raw") to capture keystrokes (v0.103.9)
 sqlopen         Open a SQLite database and return a handle
+tar_list        List a tar archive (zstd default, gzip or none codec) WITHOUT extracting: streaming entries {name,size,mode,uid,gid,kind,mtime}; the compressed stream is drained to EOF so the frame checksum is verified
+tar_unpack      Safely unpack a tar archive into dest (which must not exist, in a parent no other user can write unless sticky): every member is validated (no absolute/.. paths, no device/fifo, symlink targets contained, no extraction through a created symlink, hardlinks only to earlier files), entries land in a private staging dir held by descriptor and renamed into place (never replacing dest) only after the stream verifies to EOF — non-zero data after the tar end is refused (single frame); PAX global headers count as metadata. opts: codec (zstd default), numeric_owner, xattrs (default true: user.</em> only), keep_special_bits (default false strips suid/sgid and security.capability), privileged_xattrs (default false: trusted.</em>, ACLs, other security.</em>), max_entries, max_bytes, max_name, max_stream_bytes (bounds the decoded stream, longname/PAX buffers included), max_xattr_bytes (16 MiB). Unapplied owners are listed in the receipt's warnings, and their special bits dropped
+tar_pack        Pack a source DIRECTORY into a new archive at path (deterministic sorted walk, numeric owner/mtime/mode, security.capability captured as a SCHILY.xattr PAX record with keep_special_bits; refuses device/fifo members, an output inside the source, and a file that changes size while packed). opts: codec (zstd default), level (zstd 1..=22 default 7, gzip clamps to 9), keep_special_bits (default false strips suid/sgid)
 sqlexec         Execute SQL on a SQLite handle, return result rows
 sqlclose        Close a SQLite database handle
 write_stdout    Write values to fd 1 AS THEY ARE — no trailing newline, no separator, flushed. bytes/buffer go out verbatim; every other value renders exactly as print() renders it. Never re-opens a path, so it works when fd 1 belongs to another user (the sieve-filter case). A failed write RAISES (catchable): IO_BROKEN_PIPE when the consumer went away, else IO_WRITE_FAILED — print raises the same way since 0.99.0 (B9)
@@ -676,7 +682,7 @@ ds_sse          Assemble a text/event-stream response body from one event string
 <h2 id="see-also">See also</h2>
 <ul>
 <li><a href="/mix/overview/">overview</a> · <a href="/mix/keywords/">keywords</a> · <a href="/mix/cli/">the mix CLI</a></li>
-<li><code>mix builtins [CATEGORY]</code> lists one category with one-line descriptions (<code>mix builtins</code> alone lists all ten); <code>mix what NAME</code> describes one builtin or keyword; <code>mix help</code> prints the compact category / keyword / subcommand summary.</li>
+<li><code>mix builtins [CATEGORY]</code> lists one category with one-line descriptions (<code>mix builtins</code> alone lists them all); <code>mix what NAME</code> describes one builtin or keyword; <code>mix help</code> prints the compact category / keyword / subcommand summary.</li>
 </ul>
         </article>
         <p class="doc-source"><a href="/mix/builtins.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>

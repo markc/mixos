@@ -229,46 +229,49 @@ Mix reserved words:
   ...
 ```
 
-### `mix man` resolves online-first, with a local fallback
+### `mix man` reads the manual built into the binary
 
-`mix man TOPIC` prints the markdown page `TOPIC.md`. The **canonical source is the
-online documentation service** at [`mixos.dev/mix`](https://mixos.dev/mix) — the
-same pages this site renders — because no tool can assume *where* (or whether) a
-local checkout lives. Resolution order in the default `auto` mode:
+`mix man TOPIC` prints the markdown page `TOPIC.md`. Every page in `docs/mix/`
+is compiled into the `mix` binary (zstd-compressed, about a third of a
+megabyte), so a binary copied alone to a new machine, with no checkout and no
+network, still has its whole manual. The built-in copy is also the one that
+documents exactly the binary you are running: a checkout or the online site may
+be ahead of it or behind it.
 
-1. **Fresh disk cache** — a copy fetched within the last 24 h short-circuits
-   everything (no network, no latency on the common path).
-2. **Online fetch** from `mixos.dev/mix` (2 s wall-clock budget, HTTPS-only, no
-   downgrade redirects); a good page is cached under your XDG cache dir.
-3. **Local checkout**, tried in this order — an *explicit* signal beats the
-   default: `$MIXOS_SRC/mix` (when `MIXOS_SRC` is set) → `$MIXOS/docs/mix`
-   (editing the repo's own pages) → `$MIXOS/mix` (a default checkout).
-4. **Stale cache**, if the network is down and no checkout is present.
-5. Otherwise a *not-found* message naming the paths searched and how to force
-   local mode.
+Lookup order, with no `MIXOS_MAN_*` variable set:
+
+1. **The built-in manual.**
+2. **Files on disk**, for a page this binary does not carry: the installed
+   share tree (`$MIXOS_SHARE/mix/man`), then a checkout's `docs/mix`
+   (`$MIXOS`, else the root found above the running binary, else
+   `~/Projects/mixos`).
+3. **The online copy**, as in `auto` mode below.
 
 No argument reads the index (`README.md`); an unknown topic lists the available
 ones (the list excludes `README` itself):
 
 ```mix
-mix man math        -- prints the math page (online, cached, or local)
+mix man math        -- prints the math page from the binary
 mix man             -- prints the index
 mix man nope        -- "no manual page for 'nope'" + available topics
 ```
 
 **Environment controls:**
 
-- `MIXOS_MAN_SOURCE=local` — skip the network entirely; resolve only from a
-  local checkout (then stale cache). Use it when editing pages and wanting your
-  edits to win immediately, or when deliberately offline. Default is `auto`.
-- `MIXOS_MAN_URL=<base>` — override the online base URL (default
-  `https://mixos.dev/mix`). Points the fetch + cache at an alternate host.
-- `MIXOS_SRC=<dir>` — adds `<dir>/mix` as the highest-priority local checkout.
+- `MIXOS_MAN_SOURCE=local` — never use the network. Files on disk win (the
+  share tree, then the checkout), then the built-in manual, then the cache.
+  Use it while editing pages in a checkout, so your edits show before the
+  binary is rebuilt.
+- `MIXOS_MAN_SOURCE=auto` or `MIXOS_MAN_URL=<base>` — the online contract: a
+  copy fetched within the last 24 h, else a fetch from `mixos.dev/mix` (or
+  `<base>`; 2 s wall-clock budget, HTTPS-only, cached under your XDG cache
+  dir), else files on disk, else the built-in manual, else a stale cached copy.
 
+`mix doctor` reports how many pages are readable and how many are built in.
 `mix syntax` and `mix operators` are thin aliases — `mix man variables` and
 `mix man operators` respectively. To add a topic, drop `TOPIC.md` into
-`docs/mix/`; it publishes to `mixos.dev/mix` on the next Pages build and is
-reachable as `mix man TOPIC` with no code change.
+`docs/mix/`; the next build carries it, it publishes to `mixos.dev/mix` on the
+next Pages build, and `mix man TOPIC` finds it with no code change.
 
 ### `mix diff bash`
 

@@ -2915,6 +2915,7 @@ const PURE_BUILTINS: &[&str] = &[
     "ord",
     "chr",
     "normalize",
+    "mix_tokens",
     "before",
     "after",
     "before_last",

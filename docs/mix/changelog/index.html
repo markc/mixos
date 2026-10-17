@@ -317,6 +317,12 @@ order, with duplicates kept. <code>analyze()</code> collects them with the exist
 statement walker. Remote <code>ssh_mix</code> bodies are not included. <code>mix lint --json</code>
 and <code>--data</code> report the same list as an additive <code>handlers</code> field. The data
 is structural: it does not prove that a handler runs or is reachable.</li>
+<li><code>mix_tokens(source[, {comments: true}])</code> returns the real lexer's token
+stream as <code>[{kind, text, line, col}]</code>, with the exact source text of each
+token and, on request, the <code>#</code> and <code>--</code> comments. A tool that reads Mix
+source no longer re-derives the grammar. Source that does not lex raises
+<code>MIX_SOURCE_LEX</code> with <code>details {line, col}</code>. Backed by the new
+<code>Lexer::source_tokens</code>. See <code>mix man syntax</code>.</li>
 </ul>
 <h3 id="changed">Changed</h3>
 <ul>
@@ -328,6 +334,10 @@ neither <code>mix_bin</code> nor <code>MIX_REMOTE_BIN</code> is set. For a host 
 </ul>
 <h3 id="fixed">Fixed</h3>
 <ul>
+<li><code>fs_watch</code> recovery (after a lost or overflowed event stream) re-arms each
+directory watch in place instead of unwatching and watching it again, so a
+change that lands during the repair (the close-write of a save racing the
+overflow) is still reported.</li>
 <li><code>mix lint</code> MIX-W2307 (send result never checked) now counts a status read
 inside an <code>if</code> condition, a map value, a nested call argument or a string
 interpolation. A correctly checked send no longer warns.</li>

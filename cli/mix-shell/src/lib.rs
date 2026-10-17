@@ -35,6 +35,7 @@ mod exec;
 mod job_control;
 mod jobs;
 mod lint;
+mod manual;
 mod meta;
 mod native_session;
 mod node_config;

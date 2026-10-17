@@ -6,9 +6,9 @@ home of these pages is
 [markc/mixos](https://github.com/markc/mixos) monorepo; add a page by dropping
 `TOPIC.md` there. The same files render everywhere:
 
-- **Terminal** — `mix man TOPIC` (`mix man` alone prints this index). Online
-  source with a local `$MIXOS/docs/mix` fallback and a 24 h cache at
-  `~/.cache/mixos/man/`.
+- **Terminal** — `mix man TOPIC` (`mix man` alone prints this index). Every
+  page is built into the `mix` binary, so it needs no checkout and no network;
+  the lookup order and its overrides are in [the mix command](cli.md).
 - **Web** — [mixos.dev/mix](https://mixos.dev/mix/overview) serves this
   directory.
 - **GitHub** — browse [`docs/mix/`](https://github.com/markc/mixos/tree/main/docs/mix)

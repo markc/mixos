@@ -68,9 +68,9 @@ home of these pages is
 [markc/mixos](https://github.com/markc/mixos) monorepo; add a page by dropping
 `TOPIC.md` there. The same files render everywhere:
 
-- **Terminal** — `mix man TOPIC` (`mix man` alone prints this index). Online
-  source with a local `$MIXOS/docs/mix` fallback and a 24 h cache at
-  `~/.cache/mixos/man/`.
+- **Terminal** — `mix man TOPIC` (`mix man` alone prints this index). Every
+  page is built into the `mix` binary, so it needs no checkout and no network;
+  the lookup order and its overrides are in [the mix command](cli.md).
 - **Web** — [mixos.dev/mix](https://mixos.dev/mix/overview) serves this
   directory.
 - **GitHub** — browse [`docs/mix/`](https://github.com/markc/mixos/tree/main/docs/mix)
@@ -7336,7 +7336,7 @@ Gotchas that fall out of reference semantics:
 
 # Builtin index
 
-Every Mix builtin grouped by category, generated from `mix builtins` (mix 0.116.0). See the linked topical page for prose and examples; `mix what NAME` prints a one-line description of any single builtin (or keyword), and `mix help` prints the compact names-only summary of the same ten categories.
+Every Mix builtin grouped by category, generated from the binary's own `mix builtins --json`. See the linked topical page for prose and examples; `mix what NAME` prints a one-line description of any single builtin (or keyword), and `mix help` prints a compact names-only summary.
 
 Some builtins are feature-gated on the `mixos-lib-mix` crate (`json`, `regex`, `toml`, `yaml`, `datetime`, `url`, `crypto`, `http`, `sqlite`, `archive`, `dkim`, `markdown`, `datastar`, `xml`, `mime`) so embedders can pull only what they need — the `mix` binary turns them all on.
 
@@ -7360,13 +7360,15 @@ Since 0.29.0 every builtin carries a structured contract — per-argument names/
 - Arity in the contract is the documented surface; a few older builtins tolerate surplus arguments at runtime. `mix lint` checks calls against the contract, which is deliberately stricter.
 - **Argument type gate and nil** (0.103.x): the evaluator checks argument types against the contract for the side-effect classes (fs/process/network/bus) in every mode, and for pure builtins under strict mode. A `nil` VALUE is checked like any other value — there is no blanket nil exemption, so `write_file(nil, "x")` and `mkdir(nil)` raise TYPE_MISMATCH instead of coercing nil into a literal `"nil"` path. An optional argument that intentionally treats an explicit `nil` as "omitted/default" declares it in the contract as `any_of(…, nil)` (e.g. `run_argv`/`exists`/`write_atomic`/`stat`/`walk` opts, `hash_file` algo, `bytes_to_string` opts, `normalize` form, `slice` end); that is the ONLY way a nil reaches the builtin. `any` args accept nil because they accept everything. A nil in a plain `string`/`number`/`map` slot raises in the same modes as any other wrong type.
 
-> Every table category is listed below (0.63.0 — the index is regenerated
-> from `mix builtins --json` by `docs/_build/gen-builtins-md.mix`; the
-> previously-unbucketed `db`/`jmap`/`bus`/`datastar` families now have
-> sections). The Bus-layer callables `noded_register`, `subscribe`,
-> `unsubscribe`, `bus_reconnect`, and `reply(...)` (inside `on` handlers)
-> remain evaluator forms on top of the keyword layer, not table builtins —
-> `mix what` does not know them; see [bus](bus.md).
+> The tables below are generated: `docs/_build/gen-builtins-md.mix` writes
+> one section per category, one row per entry of `mix builtins --json`, in
+> the binary's order. `cargo test -p system --test man_pages` fails when the
+> committed tables differ from the binary it built, so after adding or
+> changing a builtin run
+> `mix docs/_build/gen-builtins-md.mix --mix target/debug/mix`. Rows of kind
+> `statement` (`print`, `eprint`, and the Bus forms `send`, `emit`, `on`,
+> `reply`, ...) are keyword forms listed beside the builtins; see
+> [bus](bus.md).
 
 ## string  — see [strings](strings.md)
 
@@ -7399,6 +7401,7 @@ Since 0.29.0 every builtin carries a structured contract — per-argument names/
   ord             Unicode codepoint of the FIRST character: ord("A") -> 65, ord("é") -> 233. Empty string raises. Inverse: chr()
   chr             The 1-character string for a Unicode codepoint: chr(65) -> "A", chr(10084) -> "❤". Surrogates (D800-DFFF) and >0x10FFFF raise, same rule as \u{...}. Inverse: ord()
   normalize       Unicode normalisation (UAX #15): normalize(s[, form]) with form "NFC" (default), "NFD", "NFKC" or "NFKD" (case-insensitive; nil selects NFC; anything else raises VALUE_ERROR). Makes canonically-equivalent text compare equal: a decomposed e + combining acute (macOS filenames, NFD) equals the precomposed é after normalize(); NFKC also folds compatibility forms (fullwidth letters, ligatures: normalize("ﬁ", "NFKC") -> "fi"). Emoji and ZWJ sequences pass through unchanged (v0.92.0)
+  mix_tokens      How Mix itself tokenises Mix source, for tools that read .mix files: mix_tokens(source[, {comments: bool}]) -> [{kind, text, line, col}] from the real lexer, in source order; nothing is run. kind: number, string (a quoted literal), word (a bare word), interp_string, heredoc, variable, command_sub, keyword, operator, punct, newline, and comment (only with comments:true; # and -- comments). text is the exact source span (a heredoc includes its body and terminator); line and col are 1-based, col in characters. Newlines inside (), [] and {} are not tokens. Source that does not lex raises MIX_SOURCE_LEX with details {line, col} (v0.117.0)
   before          Text before the FIRST delim: before(s, delim) -> string | nil (nil when delim absent; "" is a real result — delim at the start). Empty delim raises
   after           Text after the FIRST delim: after(s, delim) -> string | nil (nil when delim absent; "" when delim at the end). Empty delim raises. Want a default? `after($s, "=") or ""`
   before_last     Text before the LAST delim -> string | nil (nil when absent). Empty delim raises
@@ -7582,6 +7585,9 @@ Since 0.29.0 every builtin carries a structured contract — per-argument names/
   tty_mode        Put the controlling terminal into raw or cooked mode: tty_mode("raw") disables canonical buffering, echo and signal generation (a lone ESC arrives as one byte — the keystroke-recorder primitive), tty_mode("cooked") restores the saved termios. The original termios is restored on process exit if the caller never returns to cooked (v0.103.9)
   stdin_copy      Copy stdin to a file, flushing every chunk, until EOF — the incremental twin of read_stdin_bytes, so a recorder killed mid-stream keeps the bytes it already read. Pair with tty_mode("raw") to capture keystrokes (v0.103.9)
   sqlopen         Open a SQLite database and return a handle
+  tar_list        List a tar archive (zstd default, gzip or none codec) WITHOUT extracting: streaming entries {name,size,mode,uid,gid,kind,mtime}; the compressed stream is drained to EOF so the frame checksum is verified
+  tar_unpack      Safely unpack a tar archive into dest (which must not exist, in a parent no other user can write unless sticky): every member is validated (no absolute/.. paths, no device/fifo, symlink targets contained, no extraction through a created symlink, hardlinks only to earlier files), entries land in a private staging dir held by descriptor and renamed into place (never replacing dest) only after the stream verifies to EOF — non-zero data after the tar end is refused (single frame); PAX global headers count as metadata. opts: codec (zstd default), numeric_owner, xattrs (default true: user.* only), keep_special_bits (default false strips suid/sgid and security.capability), privileged_xattrs (default false: trusted.*, ACLs, other security.*), max_entries, max_bytes, max_name, max_stream_bytes (bounds the decoded stream, longname/PAX buffers included), max_xattr_bytes (16 MiB). Unapplied owners are listed in the receipt's warnings, and their special bits dropped
+  tar_pack        Pack a source DIRECTORY into a new archive at path (deterministic sorted walk, numeric owner/mtime/mode, security.capability captured as a SCHILY.xattr PAX record with keep_special_bits; refuses device/fifo members, an output inside the source, and a file that changes size while packed). opts: codec (zstd default), level (zstd 1..=22 default 7, gzip clamps to 9), keep_special_bits (default false strips suid/sgid)
   sqlexec         Execute SQL on a SQLite handle, return result rows
   sqlclose        Close a SQLite database handle
   write_stdout    Write values to fd 1 AS THEY ARE — no trailing newline, no separator, flushed. bytes/buffer go out verbatim; every other value renders exactly as print() renders it. Never re-opens a path, so it works when fd 1 belongs to another user (the sieve-filter case). A failed write RAISES (catchable): IO_BROKEN_PIPE when the consumer went away, else IO_WRITE_FAILED — print raises the same way since 0.99.0 (B9)
@@ -7789,7 +7795,7 @@ Since 0.29.0 every builtin carries a structured contract — per-argument names/
 ## See also
 
 - [overview](overview.md) · [keywords](keywords.md) · [the mix CLI](cli.md)
-- `mix builtins [CATEGORY]` lists one category with one-line descriptions (`mix builtins` alone lists all ten); `mix what NAME` describes one builtin or keyword; `mix help` prints the compact category / keyword / subcommand summary.
+- `mix builtins [CATEGORY]` lists one category with one-line descriptions (`mix builtins` alone lists them all); `mix what NAME` describes one builtin or keyword; `mix help` prints the compact category / keyword / subcommand summary.
 
 ---
 
@@ -9122,46 +9128,49 @@ Mix reserved words:
   ...
 ```
 
-### `mix man` resolves online-first, with a local fallback
+### `mix man` reads the manual built into the binary
 
-`mix man TOPIC` prints the markdown page `TOPIC.md`. The **canonical source is the
-online documentation service** at [`mixos.dev/mix`](https://mixos.dev/mix) — the
-same pages this site renders — because no tool can assume *where* (or whether) a
-local checkout lives. Resolution order in the default `auto` mode:
+`mix man TOPIC` prints the markdown page `TOPIC.md`. Every page in `docs/mix/`
+is compiled into the `mix` binary (zstd-compressed, about a third of a
+megabyte), so a binary copied alone to a new machine, with no checkout and no
+network, still has its whole manual. The built-in copy is also the one that
+documents exactly the binary you are running: a checkout or the online site may
+be ahead of it or behind it.
 
-1. **Fresh disk cache** — a copy fetched within the last 24 h short-circuits
-   everything (no network, no latency on the common path).
-2. **Online fetch** from `mixos.dev/mix` (2 s wall-clock budget, HTTPS-only, no
-   downgrade redirects); a good page is cached under your XDG cache dir.
-3. **Local checkout**, tried in this order — an *explicit* signal beats the
-   default: `$MIXOS_SRC/mix` (when `MIXOS_SRC` is set) → `$MIXOS/docs/mix`
-   (editing the repo's own pages) → `$MIXOS/mix` (a default checkout).
-4. **Stale cache**, if the network is down and no checkout is present.
-5. Otherwise a *not-found* message naming the paths searched and how to force
-   local mode.
+Lookup order, with no `MIXOS_MAN_*` variable set:
+
+1. **The built-in manual.**
+2. **Files on disk**, for a page this binary does not carry: the installed
+   share tree (`$MIXOS_SHARE/mix/man`), then a checkout's `docs/mix`
+   (`$MIXOS`, else the root found above the running binary, else
+   `~/Projects/mixos`).
+3. **The online copy**, as in `auto` mode below.
 
 No argument reads the index (`README.md`); an unknown topic lists the available
 ones (the list excludes `README` itself):
 
 ```mix
-mix man math        -- prints the math page (online, cached, or local)
+mix man math        -- prints the math page from the binary
 mix man             -- prints the index
 mix man nope        -- "no manual page for 'nope'" + available topics
 ```
 
 **Environment controls:**
 
-- `MIXOS_MAN_SOURCE=local` — skip the network entirely; resolve only from a
-  local checkout (then stale cache). Use it when editing pages and wanting your
-  edits to win immediately, or when deliberately offline. Default is `auto`.
-- `MIXOS_MAN_URL=<base>` — override the online base URL (default
-  `https://mixos.dev/mix`). Points the fetch + cache at an alternate host.
-- `MIXOS_SRC=<dir>` — adds `<dir>/mix` as the highest-priority local checkout.
+- `MIXOS_MAN_SOURCE=local` — never use the network. Files on disk win (the
+  share tree, then the checkout), then the built-in manual, then the cache.
+  Use it while editing pages in a checkout, so your edits show before the
+  binary is rebuilt.
+- `MIXOS_MAN_SOURCE=auto` or `MIXOS_MAN_URL=<base>` — the online contract: a
+  copy fetched within the last 24 h, else a fetch from `mixos.dev/mix` (or
+  `<base>`; 2 s wall-clock budget, HTTPS-only, cached under your XDG cache
+  dir), else files on disk, else the built-in manual, else a stale cached copy.
 
+`mix doctor` reports how many pages are readable and how many are built in.
 `mix syntax` and `mix operators` are thin aliases — `mix man variables` and
 `mix man operators` respectively. To add a topic, drop `TOPIC.md` into
-`docs/mix/`; it publishes to `mixos.dev/mix` on the next Pages build and is
-reachable as `mix man TOPIC` with no code change.
+`docs/mix/`; the next build carries it, it publishes to `mixos.dev/mix` on the
+next Pages build, and `mix man TOPIC` finds it with no code change.
 
 ### `mix diff bash`
 
@@ -25715,6 +25724,38 @@ $ mix -c 'print((((( … 205 deep … )))))'
 Parse error at line 1:202: nesting too deep (limit 200)
 ```
 
+### Asking the lexer: `mix_tokens()`
+
+A tool that reads Mix source (a gate, a highlighter, a refactoring script)
+asks Mix how the source tokenises instead of re-deriving the rules above.
+`mix_tokens(source[, {comments: true}])` runs the real lexer and returns one
+map per token, `{kind, text, line, col}`, in source order. Nothing is run.
+
+```mix
+for $t in mix_tokens('$x = "a ${b}" -- note', {comments: true})
+  print($t.kind .. " " .. $t.text)
+end
+-- variable $x
+-- operator =
+-- interp_string "a ${b}"
+-- comment -- note
+```
+
+- `kind` is `number`, `string` (a quoted literal), `word` (a bare word),
+  `interp_string`, `heredoc`, `variable`, `command_sub`, `keyword`,
+  `operator`, `punct`, `newline`, or `comment`. Comments come back only with
+  `comments: true`; the parser never sees them.
+- `text` is the exact source span: a string keeps its quotes, a heredoc
+  runs from `<<TAG` to its terminator line (a `--` comment after the tag is
+  part of it, not a separate `comment` token).
+- `line` and `col` are 1-based, `col` counted in characters.
+- Newlines inside `(`, `[` and `{` are not tokens, as above.
+- Source that does not lex raises `MIX_SOURCE_LEX`, with `details.line` and
+  `details.col`.
+
+There is no AST builtin yet; for the handlers a file declares, read
+`mix lint --json FILE` (its `handlers` list comes from the parsed AST).
+
 ## The shell/Mix classifier
 
 At a `mix -c '<line>'` one-liner, the interactive REPL, and a mix login shell, Mix
@@ -31090,6 +31131,12 @@ and recovery directories through the isolated MixOS environment.
   statement walker. Remote `ssh_mix` bodies are not included. `mix lint --json`
   and `--data` report the same list as an additive `handlers` field. The data
   is structural: it does not prove that a handler runs or is reachable.
+- `mix_tokens(source[, {comments: true}])` returns the real lexer's token
+  stream as `[{kind, text, line, col}]`, with the exact source text of each
+  token and, on request, the `#` and `--` comments. A tool that reads Mix
+  source no longer re-derives the grammar. Source that does not lex raises
+  `MIX_SOURCE_LEX` with `details {line, col}`. Backed by the new
+  `Lexer::source_tokens`. See `mix man syntax`.
 
 ### Changed
 
@@ -31101,6 +31148,10 @@ and recovery directories through the isolated MixOS environment.
 
 ### Fixed
 
+- `fs_watch` recovery (after a lost or overflowed event stream) re-arms each
+  directory watch in place instead of unwatching and watching it again, so a
+  change that lands during the repair (the close-write of a save racing the
+  overflow) is still reported.
 - `mix lint` MIX-W2307 (send result never checked) now counts a status read
   inside an `if` condition, a map value, a nested call argument or a string
   interpolation. A correctly checked send no longer warns.
@@ -31305,6 +31356,30 @@ installed Mix path used by existing Cosmix nodes during the migration.
 # Changelog
 
 > Mirrored from [`cli/mix-shell/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/cli/mix-shell/CHANGELOG.md), where releases update it. The component's page is [mix-shell](README.md). This page describes the current `main` branch of MixOS.
+
+## Unreleased
+
+### Changed
+
+- `mix man` reads the manual built into the binary: every `docs/mix/*.md`
+  page is packed into one zstd frame at build time, so a binary copied alone,
+  with no checkout and no network, has its whole manual. With no
+  `MIXOS_MAN_*` variable set the built-in page wins (it documents exactly this
+  binary), then files on disk, then the online copy. `MIXOS_MAN_SOURCE=local`
+  puts files on disk first, then the built-in manual, and never uses the
+  network. `MIXOS_MAN_SOURCE=auto` or `MIXOS_MAN_URL` keeps the online-first
+  order, with the built-in manual before a stale cached copy. `mix doctor`
+  and `mix apropos` count and search the built-in pages. The compiled-in
+  path to the build checkout's `docs/mix` is no longer a lookup candidate.
+
+### Fixed
+
+- A foreground job stopped (^Z) just after its exec is now stopped, not
+  reported as "job stopped before exec acknowledgement" and aborted. The
+  launch checked for the stop before reading the exec acknowledgement that
+  was already waiting. This was the intermittent failure of the
+  `owned_editor_pty` test
+  `foreground_job_ctrl_z_fg_and_nested_editor_stop_preserve_draft`.
 
 ## 0.116.0
 

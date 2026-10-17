@@ -137,7 +137,15 @@ mod linux {
     struct Directories {
         watcher: notify::INotifyWatcher,
         refs: BTreeMap<PathBuf, usize>,
+        /// The (device, inode) each held path was last watched at, so a
+        /// re-arm can tell the same directory from a replacement.
+        inodes: BTreeMap<PathBuf, (u64, u64)>,
         queue: Arc<Queue>,
+    }
+
+    fn identity(path: &Path) -> Option<(u64, u64)> {
+        use std::os::unix::fs::MetadataExt;
+        std::fs::metadata(path).ok().map(|m| (m.dev(), m.ino()))
     }
 
     impl Directories {
@@ -165,6 +173,9 @@ mod linux {
                 return Err(notify_error(e));
             }
             self.refs.insert(path.into(), 1);
+            if let Some(id) = identity(path) {
+                self.inodes.insert(path.into(), id);
+            }
             Ok(())
         }
 
@@ -175,8 +186,25 @@ mod linux {
             *count -= 1;
             if *count == 0 {
                 self.refs.remove(path);
+                self.inodes.remove(path);
                 let _ = self.watcher.unwatch(path);
                 self.queue.directories.fetch_sub(1, Ordering::SeqCst);
+            }
+        }
+
+        /// Re-arm a path we still hold. The same directory is re-armed in
+        /// place, without unwatching it first: notify adds the mask to the
+        /// existing descriptor, so no event is lost. A replaced directory (a
+        /// rename-away and recreate that the lost stream never reported) is
+        /// refreshed, which retires the old inode's watch: re-arming would
+        /// leave it watching the moved-away directory under this name.
+        fn rearm(&mut self, path: &Path) -> MixResult<()> {
+            match (self.inodes.get(path), identity(path)) {
+                (Some(held), Some(now)) if *held == now => self
+                    .watcher
+                    .watch(path, notify::RecursiveMode::NonRecursive)
+                    .map_err(notify_error),
+                _ => self.refresh(path),
             }
         }
 
@@ -186,7 +214,12 @@ mod linux {
             let _ = self.watcher.unwatch(path);
             self.watcher
                 .watch(path, notify::RecursiveMode::NonRecursive)
-                .map_err(notify_error)
+                .map_err(notify_error)?;
+            match identity(path) {
+                Some(id) => self.inodes.insert(path.into(), id),
+                None => self.inodes.remove(path),
+            };
+            Ok(())
         }
     }
 
@@ -289,12 +322,19 @@ mod linux {
             // Lost delete/rename records can leave a path in our index after
             // the kernel removed its inode watch. Rebuild registrations, not
             // just the desired path set, before claiming ongoing coverage.
-            for path in std::mem::take(&mut self.dirs) {
-                let mut watcher = self.watcher.borrow_mut();
-                watcher.remove(&path);
-                if watcher.refs.contains_key(&path) {
-                    let _ = watcher.refresh(&path);
-                }
+            // Re-arm in place: an unwatch-then-watch pair lost every event in
+            // between, such as the close-write of a save that raced the
+            // overflow. A path that can no longer be watched is dropped, and
+            // reconcile then adds whatever is wanted now.
+            let gone: Vec<_> = self
+                .dirs
+                .iter()
+                .filter(|path| self.watcher.borrow_mut().rearm(path).is_err())
+                .cloned()
+                .collect();
+            for path in gone {
+                self.watcher.borrow_mut().remove(&path);
+                self.dirs.remove(&path);
             }
             self.add(&self.parent.clone())?;
             self.reconcile()
@@ -516,6 +556,7 @@ mod linux {
                     let watcher = Rc::new(RefCell::new(Directories {
                         watcher,
                         refs: BTreeMap::new(),
+                        inodes: BTreeMap::new(),
                         queue: queue.clone(),
                     }));
                     let mut states = BTreeMap::<String, State>::new();
@@ -641,7 +682,89 @@ mod linux {
             assert!(!p.redundant(&name(RenameMode::From, None, "/d")));
             assert!(!p.redundant(&name(RenameMode::To, None, "/e")));
         }
+
+        fn ino(path: &Path) -> u64 {
+            identity(path).unwrap().1
+        }
+
+        #[test]
+        fn rearm_keeps_the_same_directory_and_retires_a_replaced_one() {
+            let base = std::env::temp_dir().join(format!(
+                "mix-rearm-dirs-{}-{:?}",
+                std::process::id(),
+                thread::current().id()
+            ));
+            let _ = std::fs::remove_dir_all(&base);
+            let dir = base.join("d");
+            std::fs::create_dir_all(&dir).unwrap();
+            let queue = Arc::new(Queue::default());
+            let watcher = notify::INotifyWatcher::new(
+                |_: notify::Result<notify::Event>| {},
+                notify::Config::default(),
+            )
+            .unwrap();
+            let mut dirs = Directories {
+                watcher,
+                refs: BTreeMap::new(),
+                inodes: BTreeMap::new(),
+                queue: queue.clone(),
+            };
+            dirs.add(&dir).unwrap();
+            dirs.add(&dir).unwrap(); // a second handle shares it
+            let first = ino(&dir);
+            let held = crate::fs_watch::inotify_wds(first);
+            assert_eq!(held.len(), 1, "{held:?}");
+            dirs.rearm(&dir).unwrap();
+            assert_eq!(
+                crate::fs_watch::inotify_wds(first),
+                held,
+                "same directory: same watch"
+            );
+            // Renamed away and recreated with no event seen.
+            std::fs::rename(&dir, base.join("moved")).unwrap();
+            std::fs::create_dir(&dir).unwrap();
+            dirs.rearm(&dir).unwrap();
+            assert!(
+                crate::fs_watch::inotify_wds(first).is_empty(),
+                "the moved-away directory must not stay watched under this name"
+            );
+            assert_eq!(crate::fs_watch::inotify_wds(ino(&dir)).len(), 1);
+            assert_eq!(dirs.refs.get(&dir), Some(&2), "refcounts are untouched");
+            assert_eq!(queue.directories.load(Ordering::SeqCst), 1);
+            dirs.remove(&dir);
+            dirs.remove(&dir);
+            assert!(crate::fs_watch::inotify_wds(ino(&dir)).is_empty());
+            assert_eq!(queue.directories.load(Ordering::SeqCst), 0);
+            std::fs::remove_dir_all(&base).unwrap();
+        }
     }
+}
+
+/// The inotify watch descriptors this process holds on inode `ino`, from
+/// /proc/self/fdinfo (one `inotify wd:N ino:HEX ...` line per watch), as
+/// `fd/wd:N` strings.
+#[cfg(all(test, target_os = "linux"))]
+pub(crate) fn inotify_wds(ino: u64) -> Vec<String> {
+    let ino = format!("ino:{ino:x}");
+    let mut wds = Vec::new();
+    for fd in std::fs::read_dir("/proc/self/fd").unwrap().flatten() {
+        let target = std::fs::read_link(fd.path()).unwrap_or_default();
+        if target.to_string_lossy() != "anon_inode:inotify" {
+            continue;
+        }
+        let info =
+            std::fs::read_to_string(std::path::Path::new("/proc/self/fdinfo").join(fd.file_name()))
+                .unwrap_or_default();
+        for line in info.lines().filter(|l| l.starts_with("inotify wd:")) {
+            let mut fields = line.split_whitespace();
+            let wd = fields.nth(1).unwrap_or_default();
+            if fields.any(|f| f == ino) {
+                wds.push(format!("{}/{wd}", fd.file_name().to_string_lossy()));
+            }
+        }
+    }
+    wds.sort();
+    wds
 }
 
 #[cfg(target_os = "linux")]

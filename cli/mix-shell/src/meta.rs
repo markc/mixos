@@ -455,7 +455,7 @@ Run `mix builtins` for the full remit of all {count} built-in functions
 ## Learn more
 - `mix builtins`        every builtin — name, signature, capability, description
 - `mix what <name>`     one-line lookup for any builtin or keyword
-- `mix man <topic>`     full manual page (online with local fallback)
+- `mix man <topic>`     full manual page (built into this binary)
 - Manual online: https://mixos.dev/mix/
 ",
         version = version,
@@ -1034,8 +1034,8 @@ fn cmd_doctor(eval: &Evaluator, version: &str) -> i32 {
         }
     }
 
-    // 4. Manual — count readable pages across the checkout docs dir and the
-    //    `mix man` cache (a deployed node has only the latter, populated lazily).
+    // 4. Manual — count readable pages: the manual built into the binary,
+    //    the checkout docs dir and the `mix man` cache.
     let mut man_dirs: Vec<PathBuf> = vec![resolve_man_dir()];
     if let Some(root) = man_cache_root(
         env::var_os("XDG_CACHE_HOME").map(PathBuf::from).as_deref(),
@@ -1043,7 +1043,9 @@ fn cmd_doctor(eval: &Evaluator, version: &str) -> i32 {
     ) {
         man_dirs.push(root);
     }
-    let mut man_topics = std::collections::HashSet::new();
+    let built_in = crate::manual::topics().len();
+    let mut man_topics: std::collections::HashSet<String> =
+        crate::manual::topics().into_iter().collect();
     for dir in &man_dirs {
         for t in available_man_topics(dir) {
             man_topics.insert(t);
@@ -1054,7 +1056,11 @@ fn cmd_doctor(eval: &Evaluator, version: &str) -> i32 {
             "  ⚠ manual     no pages found locally — `mix man TOPIC` fetches + caches on first use (needs network once)."
         );
     } else {
-        println!("  ✓ manual     {} page(s) readable", man_topics.len());
+        println!(
+            "  ✓ manual     {} page(s) readable, {built_in} built in ({} KiB compressed)",
+            man_topics.len(),
+            crate::manual::COMPRESSED_BYTES / 1024
+        );
     }
 
     // 5. Stats DB — the usage-tracking directory must be creatable + writable.
@@ -2645,7 +2651,6 @@ fn local_man_dirs() -> Vec<PathBuf> {
     let root = crate::paths::mixos_root();
     let mut candidates = vec![config::path(config::Dir::Share).join("mix/man")];
     candidates.extend(man_dir_candidates(home.as_deref(), root.as_deref()));
-    candidates.push(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/mix"));
     candidates
 }
 
@@ -2855,7 +2860,10 @@ fn print_man_not_found(topic: Option<&str>, base_url: &str) {
     eprintln!("mix man: no manual page for '{}'", topic.unwrap_or("index"));
     eprintln!();
 
-    let topics = available_man_topics(&resolve_man_dir());
+    let mut topics = crate::manual::topics();
+    topics.extend(available_man_topics(&resolve_man_dir()));
+    topics.sort();
+    topics.dedup();
     if topics.is_empty() {
         eprintln!("Browse the manual at {base_url}/");
         eprintln!("Local fallback looked in $MIXOS/docs/mix (default root ~/Projects/mixos).");
@@ -2867,7 +2875,7 @@ fn print_man_not_found(topic: Option<&str>, base_url: &str) {
     }
 }
 
-/// `mix man [TOPIC]`: resolve the canonical online manual with a local fallback.
+/// `mix man [TOPIC]`: print a manual page; the built-in manual by default.
 fn cmd_man(topic: Option<&str>) {
     let source = match parse_man_source(env::var("MIXOS_MAN_SOURCE").ok().as_deref()) {
         Ok(source) => source,
@@ -2886,11 +2894,20 @@ fn cmd_man(topic: Option<&str>) {
     let base_url = man_base_url(env::var("MIXOS_MAN_URL").ok().as_deref());
     let cache_path = configured_man_cache_path(&base_url, &filename);
 
-    // An installed session carries the manual matching its binary. Explicit
-    // remote/cache selection keeps the existing fetch contract available.
+    // Lookup order (docs/mix/README.md, "Where the pages come from"):
+    // - default: the manual built into this binary, which documents exactly
+    //   this binary; then files on disk; then the online fetch below, for a
+    //   page this binary does not carry.
+    // - MIXOS_MAN_SOURCE=local: files on disk first (a checkout's working
+    //   copy, for whoever is editing the manual), then the built-in manual,
+    //   then the cache. Never the network.
+    // - MIXOS_MAN_SOURCE=auto or MIXOS_MAN_URL: the online contract — fresh
+    //   cache, fetch, files on disk, built-in, stale cache.
     if env::var_os("MIXOS_MAN_SOURCE").is_none()
         && env::var_os("MIXOS_MAN_URL").is_none()
-        && let Some(content) = read_local_man_page(&filename)
+        && let Some(content) = crate::manual::page(&filename)
+            .map(str::to_string)
+            .or_else(|| read_local_man_page(&filename))
     {
         print!("{content}");
         return;
@@ -2898,6 +2915,10 @@ fn cmd_man(topic: Option<&str>) {
 
     if source == ManSource::Local {
         if let Some(content) = read_local_man_page(&filename) {
+            print!("{content}");
+            return;
+        }
+        if let Some(content) = crate::manual::page(&filename) {
             print!("{content}");
             return;
         }
@@ -2925,6 +2946,10 @@ fn cmd_man(topic: Option<&str>) {
     }
 
     if let Some(content) = read_local_man_page(&filename) {
+        print!("{content}");
+        return;
+    }
+    if let Some(content) = crate::manual::page(&filename) {
         print!("{content}");
         return;
     }
@@ -3099,54 +3124,72 @@ fn cmd_apropos(term: &str) {
         }
     }
 
-    // 3. Manual section headings — read each local page and match its `#`
-    //    headings. Best-effort: if no docs are present the section arm is
-    //    simply empty (builtins/keywords still work). Scan BOTH the checkout
-    //    docs dir AND the `mix man` cache (`~/.cache/mixos/man`, default-URL
-    //    layout): a deployed node has no checkout but accumulates cached pages,
-    //    so without the cache the manual arm would be dead on the whole fleet.
-    //    Dedup by topic — a checkout copy wins over a cached one.
-    let mut scan_dirs: Vec<PathBuf> = vec![resolve_man_dir()];
-    if let Some(root) = man_cache_root(
+    // 3. Manual section headings — match each page's `#` headings, taking
+    //    each topic from where `mix man` would: the manual built into the
+    //    binary, then the checkout docs dir, then the `mix man` cache
+    //    (`~/.cache/mixos/man`, default-URL layout). With
+    //    MIXOS_MAN_SOURCE=local the checkout comes first, as for `mix man`.
+    let local = env::var("MIXOS_MAN_SOURCE")
+        .ok()
+        .is_some_and(|value| parse_man_source(Some(&value)) == Ok(ManSource::Local));
+    let dir_pages = |dir: &Path| -> Vec<(String, String)> {
+        available_man_topics(dir)
+            .into_iter()
+            .filter_map(|topic| {
+                let content = std::fs::read_to_string(dir.join(format!("{topic}.md"))).ok()?;
+                Some((topic, content))
+            })
+            .collect()
+    };
+    let built_in: Vec<(String, String)> = crate::manual::topics()
+        .into_iter()
+        .filter_map(|topic| {
+            let content = crate::manual::page(&format!("{topic}.md"))?;
+            Some((topic, content.to_string()))
+        })
+        .collect();
+    let checkout = dir_pages(&resolve_man_dir());
+    let cached = man_cache_root(
         env::var_os("XDG_CACHE_HOME").map(PathBuf::from).as_deref(),
         dirs::home_dir().as_deref(),
-    ) {
-        scan_dirs.push(root);
-    }
+    )
+    .map(|root| dir_pages(&root))
+    .unwrap_or_default();
+    let sources = if local {
+        [checkout, built_in, cached]
+    } else {
+        [built_in, checkout, cached]
+    };
     let mut seen_topics = std::collections::HashSet::new();
+    let pages: Vec<(String, String)> = sources
+        .into_iter()
+        .flatten()
+        .filter(|(topic, _)| seen_topics.insert(topic.clone()))
+        .collect();
     let mut section_hits: Vec<(String, String)> = Vec::new();
-    for dir in &scan_dirs {
-        for topic in available_man_topics(dir) {
-            if !seen_topics.insert(topic.clone()) {
+    for (topic, content) in &pages {
+        let mut in_fence = false;
+        for line in content.lines() {
+            let trimmed = line.trim_start();
+            // A ``` / ~~~ line toggles a fenced code block. Its `# comment`
+            // lines are NOT headings — without this, a bash example inside a
+            // page produces phantom "section" hits.
+            if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
+                in_fence = !in_fence;
                 continue;
             }
-            let path = dir.join(format!("{topic}.md"));
-            let Ok(content) = std::fs::read_to_string(&path) else {
+            if in_fence {
                 continue;
-            };
-            let mut in_fence = false;
-            for line in content.lines() {
-                let trimmed = line.trim_start();
-                // A ``` / ~~~ line toggles a fenced code block. Its `# comment`
-                // lines are NOT headings — without this, a bash example inside a
-                // page produces phantom "section" hits.
-                if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
-                    in_fence = !in_fence;
-                    continue;
-                }
-                if in_fence {
-                    continue;
-                }
-                // ATX heading only: one-or-more '#' then a SPACE (so `#!/…`,
-                // `#include`, `#foo` are not mistaken for headings).
-                let hashes = trimmed.chars().take_while(|c| *c == '#').count();
-                if hashes == 0 || trimmed.chars().nth(hashes) != Some(' ') {
-                    continue;
-                }
-                let heading = trimmed[hashes..].trim();
-                if !heading.is_empty() && heading.to_lowercase().contains(&needle) {
-                    section_hits.push((topic.clone(), heading.to_string()));
-                }
+            }
+            // ATX heading only: one-or-more '#' then a SPACE (so `#!/…`,
+            // `#include`, `#foo` are not mistaken for headings).
+            let hashes = trimmed.chars().take_while(|c| *c == '#').count();
+            if hashes == 0 || trimmed.chars().nth(hashes) != Some(' ') {
+                continue;
+            }
+            let heading = trimmed[hashes..].trim();
+            if !heading.is_empty() && heading.to_lowercase().contains(&needle) {
+                section_hits.push((topic.clone(), heading.to_string()));
             }
         }
     }

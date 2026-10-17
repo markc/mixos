@@ -72,6 +72,10 @@ blake3 = "1"
 ed25519-dalek = { version = "2", features = ["zeroize"] }
 zeroize = "1"
 sha2 = "0.10"
+# `mix man` reads the manual built into the binary (src/manual.rs): docs/mix
+# packed into one zstd frame by build.rs. The same pure-Rust codec and pin as
+# mix's archive feature, so no second zstd enters the binary.
+structured-zstd = "0.0.58"
 
 [dev-dependencies]
 # Property-based testing for the shell-dispatch tokenizer (P0 of the mix
@@ -87,6 +91,8 @@ tungstenite = "0.26"
 [build-dependencies]
 # Captures mix HEAD sha + build time for serve-citizen provenance.
 buildinfo.workspace = true
+# Compresses docs/mix into the embedded manual (src/manual.rs).
+structured-zstd = "0.0.58"
 
 [package.metadata.mixos]
 component = "mix-shell"

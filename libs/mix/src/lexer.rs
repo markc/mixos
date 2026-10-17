@@ -84,6 +84,43 @@ pub struct Lexer {
     /// decode the JSON-style `\uXXXX` escape, so JSON-encoded text reads
     /// back unchanged. Program source keeps a bare `\u` literal.
     data_mode: bool,
+    /// `(start, end, line, column)` of every comment, in source order, when
+    /// `comments` is set. Only [`Lexer::source_tokens`] asks for them.
+    comments: Option<Vec<(usize, usize, usize, usize)>>,
+}
+
+/// One token of Mix source as `mix_tokens()` reports it: a coarse `kind`, the
+/// exact source `text`, and its 1-based line and column (in characters).
+#[derive(Debug, Clone, PartialEq)]
+pub struct SourceToken {
+    pub kind: &'static str,
+    pub text: String,
+    pub line: usize,
+    pub column: usize,
+}
+
+/// The coarse `mix_tokens()` kind of a token. `first` is its first source
+/// character: a bare word also lexes to `Token::String`, and only a quote
+/// tells a literal from a word (the test `highlight` uses).
+fn source_token_kind(token: &Token, first: Option<&char>) -> &'static str {
+    use Token::*;
+    match token {
+        Number(_) => "number",
+        String(_) if matches!(first, Some('"' | '\'')) => "string",
+        String(_) => "word",
+        InterpString(_) => "interp_string",
+        HeredocString(_) => "heredoc",
+        Variable(_) => "variable",
+        CommandSub(_) => "command_sub",
+        Plus | Minus | Star | Slash | Percent | Power | Eq | NotEq | Gt | Lt | GtEq | LtEq
+        | StrEq | StrNe | DotDot | NilCoalesce | Question | Pipe | AndAnd | OrOr | Assign
+        | Bang => "operator",
+        LParen | RParen | LBracket | RBracket | LBrace | RBrace | Colon | Comma | Dot | Tilde
+        | At | Semicolon => "punct",
+        Newline => "newline",
+        Eof => "eof",
+        _ => "keyword",
+    }
 }
 
 /// The complete reserved-word set, one name per lexer keyword token.
@@ -188,6 +225,7 @@ impl Lexer {
             literal_maps: Vec::new(),
             record_literal_maps: false,
             data_mode: false,
+            comments: None,
         }
     }
 
@@ -333,6 +371,46 @@ impl Lexer {
         Ok(tokens)
     }
 
+    /// The token stream of `source` for tools (`mix_tokens()`): every token
+    /// the parser would see, minus `Eof`, with its exact source text; with
+    /// `comments`, the `#` and `--` comments too (kind `comment`), merged in
+    /// source order. A source that does not lex is the lexer's error.
+    pub fn source_tokens(source: &str, comments: bool) -> MixResult<Vec<SourceToken>> {
+        let mut lexer = Lexer::new(source);
+        if comments {
+            lexer.comments = Some(Vec::new());
+        }
+        if let Some(error) = lexer.continuation_error.take() {
+            return Err(error);
+        }
+        let mut spans = Vec::new();
+        loop {
+            let tok = lexer.next_token()?;
+            if tok.token == Token::Eof {
+                break;
+            }
+            let kind = source_token_kind(&tok.token, lexer.source.get(tok.offset));
+            spans.push((tok.offset, lexer.pos, tok.line, tok.column, kind));
+        }
+        if let Some(comments) = lexer.comments.take() {
+            spans.extend(
+                comments
+                    .into_iter()
+                    .map(|(start, end, line, column)| (start, end, line, column, "comment")),
+            );
+            spans.sort_by_key(|span| span.0);
+        }
+        Ok(spans
+            .into_iter()
+            .map(|(start, end, line, column, kind)| SourceToken {
+                kind,
+                text: lexer.source[start..end.max(start)].iter().collect(),
+                line,
+                column,
+            })
+            .collect())
+    }
+
     fn peek(&self) -> Option<char> {
         self.source.get(self.pos).copied()
     }
@@ -407,12 +485,11 @@ impl Lexer {
             };
 
             // Comments
-            if ch == '#' {
+            if ch == '#' || (ch == '-' && self.peek_ahead(1) == Some('-')) {
                 self.skip_comment();
-                continue;
-            }
-            if ch == '-' && self.peek_ahead(1) == Some('-') {
-                self.skip_comment();
+                if let Some(comments) = &mut self.comments {
+                    comments.push((self.token_start, self.pos, line, col));
+                }
                 continue;
             }
 
@@ -1439,8 +1516,9 @@ impl Lexer {
                 if !hit_eof {
                     self.pos -= 1;
                     self.line -= 1;
-                    // Rewind column to end of previous line (approximate — column doesn't matter much)
-                    self.column = 1;
+                    // Back at the end of the terminator line: the newline's
+                    // own column, which mix_tokens() reports.
+                    self.column = line_content.chars().count() + 1;
                 }
                 break;
             }

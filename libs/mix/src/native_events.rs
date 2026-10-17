@@ -1563,6 +1563,70 @@ mod tests {
         std::fs::remove_dir(path).unwrap();
     }
 
+    /// Recovery used to unwatch and re-watch every directory, and an event in
+    /// that gap (the close-write of a save racing an overflow) was lost. It
+    /// now re-arms in place: the same watch descriptor before and after, and
+    /// the next write is still reported.
+    #[tokio::test]
+    #[cfg(target_os = "linux")]
+    async fn overflow_recovery_rearms_in_place_and_keeps_reporting_writes() {
+        use std::os::unix::fs::MetadataExt;
+        let dir = std::env::temp_dir().join(format!(
+            "mix-rearm-{}-{}",
+            std::process::id(),
+            NEXT_HANDLE.fetch_add(1, Ordering::Relaxed)
+        ));
+        std::fs::create_dir(&dir).unwrap();
+        let file = dir.join("scene.mix");
+        std::fs::write(&file, "initial").unwrap();
+        let mut r = NativeEvents::default();
+        let h = r
+            .watch(
+                file.to_str().unwrap(),
+                crate::fs_watch::Options::parse(None).unwrap(),
+            )
+            .unwrap();
+        let ino = std::fs::metadata(&dir).unwrap().ino();
+        let before = crate::fs_watch::inotify_wds(ino);
+        assert_eq!(before.len(), 1, "{before:?}");
+        r.filesystem.as_ref().unwrap().inject(Ok(
+            notify::Event::new(notify::EventKind::Other).set_flag(notify::event::Flag::Rescan)
+        ));
+        // The overflow is reported after the repair.
+        let ev = tokio::time::timeout(std::time::Duration::from_secs(5), r.queue.next(Some(&h)))
+            .await
+            .unwrap()
+            .unwrap();
+        let body: serde_json::Value = serde_json::from_str(&ev.body).unwrap();
+        assert_eq!(body["overflow"], true);
+        assert_eq!(
+            crate::fs_watch::inotify_wds(ino),
+            before,
+            "recovery must not replace the watch"
+        );
+        std::fs::write(&file, "after").unwrap();
+        let path = file.to_str().unwrap();
+        let reported = loop {
+            let ev =
+                tokio::time::timeout(std::time::Duration::from_secs(5), r.queue.next(Some(&h)))
+                    .await
+                    .unwrap()
+                    .unwrap();
+            let body: serde_json::Value = serde_json::from_str(&ev.body).unwrap();
+            if let Some(c) = body["changes"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|c| c["path"] == path)
+            {
+                break c["kind"].clone();
+            }
+        };
+        assert_eq!(reported, "modified");
+        r.close();
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
     #[test]
     #[cfg(target_os = "linux")]
     fn handle_or_kernel_limit_is_explicit_and_cleanup_releases_directories() {

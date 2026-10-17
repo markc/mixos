@@ -235,6 +235,7 @@
                         <a href="#heredocs--tag" class="toc-h3">Heredocs — &lt;&lt;TAG</a>
                         <a href="#keywords--reserved-as-identifiers-usable-as-names" class="toc-h3">Keywords — reserved as identifiers, usable as names</a>
                         <a href="#parser-nesting-cap--depth-200" class="toc-h3">Parser nesting cap — depth 200</a>
+                        <a href="#asking-the-lexer-mix_tokens" class="toc-h3">Asking the lexer: mix_tokens()</a>
                         <a href="#the-shellmix-classifier">The shell/Mix classifier</a>
                         <a href="#the-tie-break-real-mix-error-vs-command-not-found" class="toc-h3">The tie-break: real Mix error vs &quot;command not found&quot;</a>
                         <a href="#shell-chaining-vs-mix-chaining" class="toc-h3">Shell chaining vs Mix chaining</a>
@@ -615,6 +616,34 @@ at <strong>depth 200</strong>, matching the evaluator's recursion cap — a path
 <pre><code class="language-text">$ mix -c 'print((((( … 205 deep … )))))'
 Parse error at line 1:202: nesting too deep (limit 200)
 </code></pre>
+<h3 id="asking-the-lexer-mix_tokens">Asking the lexer: <code>mix_tokens()</code></h3>
+<p>A tool that reads Mix source (a gate, a highlighter, a refactoring script)
+asks Mix how the source tokenises instead of re-deriving the rules above.
+<code>mix_tokens(source[, {comments: true}])</code> runs the real lexer and returns one
+map per token, <code>{kind, text, line, col}</code>, in source order. Nothing is run.</p>
+<pre><code class="language-mix">for $t in mix_tokens('$x = "a ${b}" -- note', {comments: true})
+  print($t.kind .. " " .. $t.text)
+end
+-- variable $x
+-- operator =
+-- interp_string "a ${b}"
+-- comment -- note
+</code></pre>
+<ul>
+<li><code>kind</code> is <code>number</code>, <code>string</code> (a quoted literal), <code>word</code> (a bare word),
+<code>interp_string</code>, <code>heredoc</code>, <code>variable</code>, <code>command_sub</code>, <code>keyword</code>,
+<code>operator</code>, <code>punct</code>, <code>newline</code>, or <code>comment</code>. Comments come back only with
+<code>comments: true</code>; the parser never sees them.</li>
+<li><code>text</code> is the exact source span: a string keeps its quotes, a heredoc
+runs from <code>&lt;&lt;TAG</code> to its terminator line (a <code>--</code> comment after the tag is
+part of it, not a separate <code>comment</code> token).</li>
+<li><code>line</code> and <code>col</code> are 1-based, <code>col</code> counted in characters.</li>
+<li>Newlines inside <code>(</code>, <code>[</code> and <code>{</code> are not tokens, as above.</li>
+<li>Source that does not lex raises <code>MIX_SOURCE_LEX</code>, with <code>details.line</code> and
+<code>details.col</code>.</li>
+</ul>
+<p>There is no AST builtin yet; for the handlers a file declares, read
+<code>mix lint --json FILE</code> (its <code>handlers</code> list comes from the parsed AST).</p>
 <h2 id="the-shellmix-classifier">The shell/Mix classifier</h2>
 <p>At a <code>mix -c '&lt;line&gt;'</code> one-liner, the interactive REPL, and a mix login shell, Mix
 follows the universal shell <code>-c</code> contract: it is <strong>shell-first</strong>. Each input is

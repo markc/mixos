@@ -217,24 +217,27 @@
                 <div class="panel-title">On this page</div>
                 <div class="panel-content">
                     <nav id="toc-nav">
+                        <a href="#unreleased">Unreleased</a>
+                        <a href="#changed" class="toc-h3">Changed</a>
+                        <a href="#fixed" class="toc-h3">Fixed</a>
                         <a href="#01160">0.116.0</a>
                         <a href="#added" class="toc-h3">Added</a>
                         <a href="#01150">0.115.0</a>
                         <a href="#added-1" class="toc-h3">Added</a>
                         <a href="#01140">0.114.0</a>
-                        <a href="#changed" class="toc-h3">Changed</a>
-                        <a href="#fixed" class="toc-h3">Fixed</a>
-                        <a href="#01131">0.113.1</a>
+                        <a href="#changed-1" class="toc-h3">Changed</a>
                         <a href="#fixed-1" class="toc-h3">Fixed</a>
+                        <a href="#01131">0.113.1</a>
+                        <a href="#fixed-2" class="toc-h3">Fixed</a>
                         <a href="#01130">0.113.0</a>
                         <a href="#added-2" class="toc-h3">Added</a>
                         <a href="#01121">0.112.1</a>
-                        <a href="#fixed-2" class="toc-h3">Fixed</a>
+                        <a href="#fixed-3" class="toc-h3">Fixed</a>
                         <a href="#01120">0.112.0</a>
                         <a href="#added-3" class="toc-h3">Added</a>
-                        <a href="#fixed-3" class="toc-h3">Fixed</a>
-                        <a href="#01110">0.111.0</a>
                         <a href="#fixed-4" class="toc-h3">Fixed</a>
+                        <a href="#01110">0.111.0</a>
+                        <a href="#fixed-5" class="toc-h3">Fixed</a>
                         <a href="#01094">0.109.4</a>
                     </nav>
                 </div>
@@ -264,6 +267,29 @@
 <blockquote>
 <p>Mirrored from <a href="https://github.com/markc/mixos/blob/main/cli/mix-shell/CHANGELOG.md"><code>cli/mix-shell/CHANGELOG.md</code></a>, where releases update it. The component's page is <a href="/mix-shell/">mix-shell</a>. This page describes the current <code>main</code> branch of MixOS.</p>
 </blockquote>
+<h2 id="unreleased">Unreleased</h2>
+<h3 id="changed">Changed</h3>
+<ul>
+<li><code>mix man</code> reads the manual built into the binary: every <code>docs/mix/*.md</code>
+page is packed into one zstd frame at build time, so a binary copied alone,
+with no checkout and no network, has its whole manual. With no
+<code>MIXOS_MAN_*</code> variable set the built-in page wins (it documents exactly this
+binary), then files on disk, then the online copy. <code>MIXOS_MAN_SOURCE=local</code>
+puts files on disk first, then the built-in manual, and never uses the
+network. <code>MIXOS_MAN_SOURCE=auto</code> or <code>MIXOS_MAN_URL</code> keeps the online-first
+order, with the built-in manual before a stale cached copy. <code>mix doctor</code>
+and <code>mix apropos</code> count and search the built-in pages. The compiled-in
+path to the build checkout's <code>docs/mix</code> is no longer a lookup candidate.</li>
+</ul>
+<h3 id="fixed">Fixed</h3>
+<ul>
+<li>A foreground job stopped (^Z) just after its exec is now stopped, not
+reported as "job stopped before exec acknowledgement" and aborted. The
+launch checked for the stop before reading the exec acknowledgement that
+was already waiting. This was the intermittent failure of the
+<code>owned_editor_pty</code> test
+<code>foreground_job_ctrl_z_fg_and_nested_editor_stop_preserve_draft</code>.</li>
+</ul>
 <h2 id="01160">0.116.0</h2>
 <h3 id="added">Added</h3>
 <ul>
@@ -279,7 +305,7 @@ stream socket, with NUL-terminated frames for Varlink and hostd
 (<code>mix man system</code>).</li>
 </ul>
 <h2 id="01140">0.114.0</h2>
-<h3 id="changed">Changed</h3>
+<h3 id="changed-1">Changed</h3>
 <ul>
 <li>Usage statistics are an append-only JSONL store. A run's exit appends one
 record to <code>runs/YYYY-MM-DD.jsonl</code> with a single write and does nothing
@@ -295,13 +321,13 @@ a clock, under <code>ops.lock</code>. They refuse while the old weekly documents
 moved, and their <code>stats.lock</code> is never taken, so an older mix still writing
 them keeps working. <code>mix man stats</code> documents the store.</li>
 </ul>
-<h3 id="fixed">Fixed</h3>
+<h3 id="fixed-1">Fixed</h3>
 <ul>
 <li>A session task no longer inherits file descriptors the shell itself
 inherited without close-on-exec.</li>
 </ul>
 <h2 id="01131">0.113.1</h2>
-<h3 id="fixed-1">Fixed</h3>
+<h3 id="fixed-2">Fixed</h3>
 <ul>
 <li>Built on mix 0.113.1: <code>on dopus-test.command.executed</code> (a hyphenated
 handler name) now fires; before, it parsed and never did. <code>mix man bus</code>
@@ -314,7 +340,7 @@ documents it.</li>
 file's type as the desktop does. <code>mix man io</code> documents it.</li>
 </ul>
 <h2 id="01121">0.112.1</h2>
-<h3 id="fixed-2">Fixed</h3>
+<h3 id="fixed-3">Fixed</h3>
 <ul>
 <li>Built on mix 0.112.1: SIGTERM and Ctrl-C end a blocking <code>tcp_accept</code>,
 <code>tcp_recv</code>, <code>tcp_recv_line</code> or <code>ws_recv</code> at once, <code>tcp_send</code> takes a
@@ -330,14 +356,14 @@ deadline. <code>mix man system</code> documents them.</li>
 a handler under the <code>--serve</code> name so one generic script serves any
 instance. <code>mix man serve</code> and <code>mix man system</code> document both.</li>
 </ul>
-<h3 id="fixed-3">Fixed</h3>
+<h3 id="fixed-4">Fixed</h3>
 <ul>
 <li>The serve reload lifecycle test's TERM-ignoring fixture creates the trace
 file itself. The citizen spawned it before the first trace line existed,
 so a fast start panicked on open and the grace test timed out.</li>
 </ul>
 <h2 id="01110">0.111.0</h2>
-<h3 id="fixed-4">Fixed</h3>
+<h3 id="fixed-5">Fixed</h3>
 <ul>
 <li>An interrupted run exits with status 130 (128+SIGINT) derived from the signal
 actually received, never from error text: an ordinary error whose message

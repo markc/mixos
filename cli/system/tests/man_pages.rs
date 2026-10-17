@@ -253,3 +253,196 @@ fn no_stale_version_stamps_or_banned_citations() {
         }
     }
 }
+
+/// docs/mix/builtins.md's tables are generated from `mix builtins --json`.
+/// This binary runs the generator in check mode against itself, so a builtin
+/// added, removed or redescribed without regenerating the page fails here.
+#[test]
+fn builtins_page_matches_this_binary() {
+    let mix = env!("CARGO_BIN_EXE_mix");
+    let generator =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/_build/gen-builtins-md.mix");
+    let out = Command::new(mix)
+        .arg(&generator)
+        .args(["--mix", mix, "--check"])
+        .env("MIX_STATS", "off")
+        .env_remove("MIXRC")
+        .output()
+        .expect("run gen-builtins-md.mix");
+    assert!(
+        out.status.success(),
+        "{}{}\nregenerate: mix docs/_build/gen-builtins-md.mix --mix target/debug/mix",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+/// A category the page has no section for is refused, never dropped.
+#[test]
+fn builtins_generator_refuses_an_unplaced_category() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().expect("temp dir");
+    let fake = dir.path().join("fake-mix");
+    // A Mix script run by this binary stands in for one whose table has a
+    // category the page does not know.
+    std::fs::write(
+        &fake,
+        format!(
+            "#!{}\nprint('[{{\"name\":\"x\",\"category\":\"nope\",\"description\":\"d\",\"kind\":\"builtin\"}}]')\n",
+            env!("CARGO_BIN_EXE_mix")
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let generator =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/_build/gen-builtins-md.mix");
+    let out = Command::new(env!("CARGO_BIN_EXE_mix"))
+        .arg(&generator)
+        .arg("--mix")
+        .arg(&fake)
+        .arg("--check")
+        .env("MIX_STATS", "off")
+        .env_remove("MIXRC")
+        .output()
+        .expect("run gen-builtins-md.mix");
+    assert_eq!(out.status.code(), Some(2), "{out:?}");
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("category 'nope'"),
+        "{out:?}"
+    );
+}
+
+/// `mix ARGS` in a home with no checkout, no installed share tree and no
+/// cache. `local` rules the network out (MIXOS_MAN_SOURCE=local); otherwise
+/// the default order applies, which reaches the built-in manual first.
+fn man_alone(args: &[&str], local: bool) -> std::process::Output {
+    man_with_files(args, local, &[])
+}
+
+/// As [`man_alone`], with `(path under the home, body)` files written first:
+/// the checkout pages are `no-checkout/docs/mix/*.md`, the cached ones
+/// `no-cache/mixos/man/*.md`.
+fn man_with_files(args: &[&str], local: bool, files: &[(&str, &str)]) -> std::process::Output {
+    let home = tempfile::tempdir().expect("temp home");
+    let root = home.path().join("no-checkout");
+    std::fs::create_dir(&root).unwrap();
+    for (path, body) in files {
+        let path = home.path().join(path);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, body).unwrap();
+    }
+    let mut command = Command::new(env!("CARGO_BIN_EXE_mix"));
+    command
+        .args(args)
+        .env("HOME", home.path())
+        .env("MIXOS", &root)
+        .env("MIXOS_SHARE", home.path().join("no-share"))
+        .env("XDG_CACHE_HOME", home.path().join("no-cache"))
+        .env("MIX_STATS", "off")
+        .env_remove("MIXRC")
+        .env_remove("MIXOS_MAN_URL")
+        .env_remove("MIXOS_MAN_SOURCE");
+    if local {
+        command.env("MIXOS_MAN_SOURCE", "local");
+    }
+    command.output().expect("run mix")
+}
+
+#[test]
+fn a_binary_alone_reads_its_built_in_manual() {
+    for local in [true, false] {
+        for (args, page) in [
+            (&["man", "overview"][..], "overview.md"),
+            (&["man"][..], "README.md"),
+            (&["syntax"][..], "variables.md"),
+        ] {
+            let out = man_alone(args, local);
+            assert!(out.status.success(), "{args:?}: {out:?}");
+            assert_eq!(
+                String::from_utf8_lossy(&out.stdout),
+                read_page(page),
+                "{args:?} (local: {local}) must print the built-in {page}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_missing_topic_lists_the_built_in_topics() {
+    let out = man_alone(&["man", "no-such-topic"], true);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("no manual page for 'no-such-topic'"),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains("Available topics:") && stderr.contains("gotchas"),
+        "{stderr}"
+    );
+}
+
+#[test]
+fn apropos_and_doctor_see_the_built_in_manual() {
+    let out = man_alone(&["apropos", "heredoc"], true);
+    assert!(
+        String::from_utf8_lossy(&out.stdout).contains("MANUAL SECTIONS"),
+        "{out:?}"
+    );
+    let out = man_alone(&["doctor"], true);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let built_in = pages().len() - 1;
+    assert!(
+        stdout.contains(&format!("{built_in} built in (")),
+        "{stdout}"
+    );
+}
+
+#[test]
+fn local_mode_reads_and_searches_the_checkout_copy_first() {
+    let page = &[(
+        "no-checkout/docs/mix/overview.md",
+        "# overview\n\n## Zebrafish checkout heading\n",
+    )][..];
+    let out = man_with_files(&["apropos", "zebrafish"], true, page);
+    assert!(
+        String::from_utf8_lossy(&out.stdout)
+            .contains("mix man overview  § Zebrafish checkout heading"),
+        "{out:?}"
+    );
+    let out = man_with_files(&["man", "overview"], true, page);
+    assert!(
+        String::from_utf8_lossy(&out.stdout).contains("Zebrafish"),
+        "{out:?}"
+    );
+    // By default the built-in page wins for both.
+    let out = man_with_files(&["apropos", "zebrafish"], false, page);
+    assert!(
+        !String::from_utf8_lossy(&out.stdout).contains("Zebrafish"),
+        "{out:?}"
+    );
+    let out = man_with_files(&["man", "overview"], false, page);
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout),
+        read_page("overview.md")
+    );
+}
+
+#[test]
+fn a_cached_copy_never_outranks_the_built_in_page() {
+    let cached = &[(
+        "no-cache/mixos/man/overview.md",
+        "# overview\n\n## Quagga cached heading\n",
+    )][..];
+    for local in [true, false] {
+        let out = man_with_files(&["apropos", "quagga"], local, cached);
+        assert!(
+            !String::from_utf8_lossy(&out.stdout).contains("Quagga"),
+            "{out:?}"
+        );
+        let out = man_with_files(&["man", "overview"], local, cached);
+        assert_eq!(
+            String::from_utf8_lossy(&out.stdout),
+            read_page("overview.md")
+        );
+    }
+}

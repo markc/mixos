@@ -1,6 +1,6 @@
 # Builtin index
 
-Every Mix builtin grouped by category, generated from `mix builtins` (mix 0.116.0). See the linked topical page for prose and examples; `mix what NAME` prints a one-line description of any single builtin (or keyword), and `mix help` prints the compact names-only summary of the same ten categories.
+Every Mix builtin grouped by category, generated from the binary's own `mix builtins --json`. See the linked topical page for prose and examples; `mix what NAME` prints a one-line description of any single builtin (or keyword), and `mix help` prints a compact names-only summary.
 
 Some builtins are feature-gated on the `mixos-lib-mix` crate (`json`, `regex`, `toml`, `yaml`, `datetime`, `url`, `crypto`, `http`, `sqlite`, `archive`, `dkim`, `markdown`, `datastar`, `xml`, `mime`) so embedders can pull only what they need — the `mix` binary turns them all on.
 
@@ -24,13 +24,15 @@ Since 0.29.0 every builtin carries a structured contract — per-argument names/
 - Arity in the contract is the documented surface; a few older builtins tolerate surplus arguments at runtime. `mix lint` checks calls against the contract, which is deliberately stricter.
 - **Argument type gate and nil** (0.103.x): the evaluator checks argument types against the contract for the side-effect classes (fs/process/network/bus) in every mode, and for pure builtins under strict mode. A `nil` VALUE is checked like any other value — there is no blanket nil exemption, so `write_file(nil, "x")` and `mkdir(nil)` raise TYPE_MISMATCH instead of coercing nil into a literal `"nil"` path. An optional argument that intentionally treats an explicit `nil` as "omitted/default" declares it in the contract as `any_of(…, nil)` (e.g. `run_argv`/`exists`/`write_atomic`/`stat`/`walk` opts, `hash_file` algo, `bytes_to_string` opts, `normalize` form, `slice` end); that is the ONLY way a nil reaches the builtin. `any` args accept nil because they accept everything. A nil in a plain `string`/`number`/`map` slot raises in the same modes as any other wrong type.
 
-> Every table category is listed below (0.63.0 — the index is regenerated
-> from `mix builtins --json` by `docs/_build/gen-builtins-md.mix`; the
-> previously-unbucketed `db`/`jmap`/`bus`/`datastar` families now have
-> sections). The Bus-layer callables `noded_register`, `subscribe`,
-> `unsubscribe`, `bus_reconnect`, and `reply(...)` (inside `on` handlers)
-> remain evaluator forms on top of the keyword layer, not table builtins —
-> `mix what` does not know them; see [bus](bus.md).
+> The tables below are generated: `docs/_build/gen-builtins-md.mix` writes
+> one section per category, one row per entry of `mix builtins --json`, in
+> the binary's order. `cargo test -p system --test man_pages` fails when the
+> committed tables differ from the binary it built, so after adding or
+> changing a builtin run
+> `mix docs/_build/gen-builtins-md.mix --mix target/debug/mix`. Rows of kind
+> `statement` (`print`, `eprint`, and the Bus forms `send`, `emit`, `on`,
+> `reply`, ...) are keyword forms listed beside the builtins; see
+> [bus](bus.md).
 
 ## string  — see [strings](strings.md)
 
@@ -63,6 +65,7 @@ Since 0.29.0 every builtin carries a structured contract — per-argument names/
   ord             Unicode codepoint of the FIRST character: ord("A") -> 65, ord("é") -> 233. Empty string raises. Inverse: chr()
   chr             The 1-character string for a Unicode codepoint: chr(65) -> "A", chr(10084) -> "❤". Surrogates (D800-DFFF) and >0x10FFFF raise, same rule as \u{...}. Inverse: ord()
   normalize       Unicode normalisation (UAX #15): normalize(s[, form]) with form "NFC" (default), "NFD", "NFKC" or "NFKD" (case-insensitive; nil selects NFC; anything else raises VALUE_ERROR). Makes canonically-equivalent text compare equal: a decomposed e + combining acute (macOS filenames, NFD) equals the precomposed é after normalize(); NFKC also folds compatibility forms (fullwidth letters, ligatures: normalize("ﬁ", "NFKC") -> "fi"). Emoji and ZWJ sequences pass through unchanged (v0.92.0)
+  mix_tokens      How Mix itself tokenises Mix source, for tools that read .mix files: mix_tokens(source[, {comments: bool}]) -> [{kind, text, line, col}] from the real lexer, in source order; nothing is run. kind: number, string (a quoted literal), word (a bare word), interp_string, heredoc, variable, command_sub, keyword, operator, punct, newline, and comment (only with comments:true; # and -- comments). text is the exact source span (a heredoc includes its body and terminator); line and col are 1-based, col in characters. Newlines inside (), [] and {} are not tokens. Source that does not lex raises MIX_SOURCE_LEX with details {line, col} (v0.117.0)
   before          Text before the FIRST delim: before(s, delim) -> string | nil (nil when delim absent; "" is a real result — delim at the start). Empty delim raises
   after           Text after the FIRST delim: after(s, delim) -> string | nil (nil when delim absent; "" when delim at the end). Empty delim raises. Want a default? `after($s, "=") or ""`
   before_last     Text before the LAST delim -> string | nil (nil when absent). Empty delim raises
@@ -246,6 +249,9 @@ Since 0.29.0 every builtin carries a structured contract — per-argument names/
   tty_mode        Put the controlling terminal into raw or cooked mode: tty_mode("raw") disables canonical buffering, echo and signal generation (a lone ESC arrives as one byte — the keystroke-recorder primitive), tty_mode("cooked") restores the saved termios. The original termios is restored on process exit if the caller never returns to cooked (v0.103.9)
   stdin_copy      Copy stdin to a file, flushing every chunk, until EOF — the incremental twin of read_stdin_bytes, so a recorder killed mid-stream keeps the bytes it already read. Pair with tty_mode("raw") to capture keystrokes (v0.103.9)
   sqlopen         Open a SQLite database and return a handle
+  tar_list        List a tar archive (zstd default, gzip or none codec) WITHOUT extracting: streaming entries {name,size,mode,uid,gid,kind,mtime}; the compressed stream is drained to EOF so the frame checksum is verified
+  tar_unpack      Safely unpack a tar archive into dest (which must not exist, in a parent no other user can write unless sticky): every member is validated (no absolute/.. paths, no device/fifo, symlink targets contained, no extraction through a created symlink, hardlinks only to earlier files), entries land in a private staging dir held by descriptor and renamed into place (never replacing dest) only after the stream verifies to EOF — non-zero data after the tar end is refused (single frame); PAX global headers count as metadata. opts: codec (zstd default), numeric_owner, xattrs (default true: user.* only), keep_special_bits (default false strips suid/sgid and security.capability), privileged_xattrs (default false: trusted.*, ACLs, other security.*), max_entries, max_bytes, max_name, max_stream_bytes (bounds the decoded stream, longname/PAX buffers included), max_xattr_bytes (16 MiB). Unapplied owners are listed in the receipt's warnings, and their special bits dropped
+  tar_pack        Pack a source DIRECTORY into a new archive at path (deterministic sorted walk, numeric owner/mtime/mode, security.capability captured as a SCHILY.xattr PAX record with keep_special_bits; refuses device/fifo members, an output inside the source, and a file that changes size while packed). opts: codec (zstd default), level (zstd 1..=22 default 7, gzip clamps to 9), keep_special_bits (default false strips suid/sgid)
   sqlexec         Execute SQL on a SQLite handle, return result rows
   sqlclose        Close a SQLite database handle
   write_stdout    Write values to fd 1 AS THEY ARE — no trailing newline, no separator, flushed. bytes/buffer go out verbatim; every other value renders exactly as print() renders it. Never re-opens a path, so it works when fd 1 belongs to another user (the sieve-filter case). A failed write RAISES (catchable): IO_BROKEN_PIPE when the consumer went away, else IO_WRITE_FAILED — print raises the same way since 0.99.0 (B9)
@@ -453,4 +459,4 @@ Since 0.29.0 every builtin carries a structured contract — per-argument names/
 ## See also
 
 - [overview](overview.md) · [keywords](keywords.md) · [the mix CLI](cli.md)
-- `mix builtins [CATEGORY]` lists one category with one-line descriptions (`mix builtins` alone lists all ten); `mix what NAME` describes one builtin or keyword; `mix help` prints the compact category / keyword / subcommand summary.
+- `mix builtins [CATEGORY]` lists one category with one-line descriptions (`mix builtins` alone lists them all); `mix what NAME` describes one builtin or keyword; `mix help` prints the compact category / keyword / subcommand summary.
