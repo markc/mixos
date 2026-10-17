@@ -221,6 +221,7 @@
                         <a href="#what-is-allowed-and-what-is-not" class="toc-h3">What is allowed and what is not</a>
                         <a href="#how-it-is-enforced">How it is enforced</a>
                         <a href="#why">Why</a>
+                        <a href="#alternatives-considered">Alternatives considered</a>
                         <a href="#migration">Migration</a>
                         <a href="#consequences">Consequences</a>
                     </nav>
@@ -300,10 +301,6 @@ name the keys. A default key table that is not a toolkit registry checks
 its chords against them in its own test.</li>
 <li><strong>AGENTS.md §4.1</strong> states the rule.</li>
 </ul>
-<p>A typed check (a default-chord type that cannot hold a function key) was
-weighed. It would change the <code>shortcut</code> field of every command in every
-app for a guard the registry already gives at start-up and in every app's
-tests.</p>
 <h2 id="why">Why</h2>
 <ul>
 <li><strong>The person's own bindings come first.</strong> People put their global
@@ -319,6 +316,35 @@ to, or nothing.</li>
 app's test (screenshot's <code>no_bare_function_key_is_bound</code>), and new apps
 kept breaking it. A rule the registry enforces cannot be forgotten.</li>
 </ul>
+<h2 id="alternatives-considered">Alternatives considered</h2>
+<p><strong>Allow the modified F-keys (Ctrl+F*, Alt+F*) and refuse only the bare
+ones.</strong> Rejected: nearly every modified function key is already taken
+before an app starts.</p>
+<ul>
+<li><strong>Ctrl+Alt+F1–F12</strong> switch virtual terminals. The keyboard layout turns
+them into the XKB <code>SwitchVt1</code>–<code>SwitchVt12</code> keysyms, compd maps those
+(<code>services/compd/crates/slots/src/library/input/keyboard/format/format.rs</code>),
+and MixOS's VT-separated sessions depend on them.</li>
+<li><strong>Ctrl+F*</strong>: a typical stock KDE Plasma session binds Ctrl+F1–F4
+(desktops 1–4), plus Ctrl+F7, Ctrl+F9, Ctrl+F10 and Ctrl+F12 (window
+effects and the overview). Those are global grabs, so an app's default
+on one would silently never fire.</li>
+<li><strong>Alt+F*</strong>: Alt+F1 (application menu), Alt+F3 (window operations) and
+Alt+F4 (close window) are near-universal desktop conventions.</li>
+<li><strong>Shift+F10</strong> is the standard keyboard context-menu key, which
+keyboard-only and assistive use relies on.</li>
+<li><strong>Meta/Super+F*</strong> belong to the compositor.</li>
+<li><strong>Terminal programs</strong>: F-key chords must reach TUI programs inside a
+terminal (mc, htop) unclaimed.</li>
+</ul>
+<p>What is left free changes from desktop to desktop and release to release.
+One simple rule, no default on a function key at all, holds everywhere; a
+deny-list would be tied to one desktop's current configuration. A person
+who wants any F-chord binds it in their keymap.</p>
+<p><strong>A typed check</strong> (a default-chord type that cannot hold a function key).
+Rejected for now: it would change the <code>shortcut</code> field of every command in
+every app, for a guard the registry already gives at start-up and in every
+app's own tests.</p>
 <h2 id="migration">Migration</h2>
 <p>The existing default function-key chords on main are removed. Each command
 keeps its menu row:</p>

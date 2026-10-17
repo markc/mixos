@@ -53,11 +53,6 @@ Status: accepted 2026-10-17. Amends [egui applications](2026-10-09-egui-applicat
   its chords against them in its own test.
 - **AGENTS.md §4.1** states the rule.
 
-A typed check (a default-chord type that cannot hold a function key) was
-weighed. It would change the `shortcut` field of every command in every
-app for a guard the registry already gives at start-up and in every app's
-tests.
-
 ## Why
 
 - **The person's own bindings come first.** People put their global
@@ -72,6 +67,38 @@ tests.
 - **A private note was not enough.** The rule lived in a note and in one
   app's test (screenshot's `no_bare_function_key_is_bound`), and new apps
   kept breaking it. A rule the registry enforces cannot be forgotten.
+
+## Alternatives considered
+
+**Allow the modified F-keys (Ctrl+F\*, Alt+F\*) and refuse only the bare
+ones.** Rejected: nearly every modified function key is already taken
+before an app starts.
+
+- **Ctrl+Alt+F1–F12** switch virtual terminals. The keyboard layout turns
+  them into the XKB `SwitchVt1`–`SwitchVt12` keysyms, compd maps those
+  (`services/compd/crates/slots/src/library/input/keyboard/format/format.rs`),
+  and MixOS's VT-separated sessions depend on them.
+- **Ctrl+F\***: a typical stock KDE Plasma session binds Ctrl+F1–F4
+  (desktops 1–4), plus Ctrl+F7, Ctrl+F9, Ctrl+F10 and Ctrl+F12 (window
+  effects and the overview). Those are global grabs, so an app's default
+  on one would silently never fire.
+- **Alt+F\***: Alt+F1 (application menu), Alt+F3 (window operations) and
+  Alt+F4 (close window) are near-universal desktop conventions.
+- **Shift+F10** is the standard keyboard context-menu key, which
+  keyboard-only and assistive use relies on.
+- **Meta/Super+F\*** belong to the compositor.
+- **Terminal programs**: F-key chords must reach TUI programs inside a
+  terminal (mc, htop) unclaimed.
+
+What is left free changes from desktop to desktop and release to release.
+One simple rule, no default on a function key at all, holds everywhere; a
+deny-list would be tied to one desktop's current configuration. A person
+who wants any F-chord binds it in their keymap.
+
+**A typed check** (a default-chord type that cannot hold a function key).
+Rejected for now: it would change the `shortcut` field of every command in
+every app, for a guard the registry already gives at start-up and in every
+app's own tests.
 
 ## Migration
 
