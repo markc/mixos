@@ -10380,7 +10380,17 @@ impl Evaluator {
                                     MixError::Structured(info) => info,
                                     // Return/Break/Continue/ExitRequest from a
                                     // finally body legitimately hijack control.
-                                    other => return Err(other),
+                                    // Not while a standing interrupt is
+                                    // unwinding: the enclosing loop would take
+                                    // the `continue` and run on.
+                                    other => {
+                                        if crate::interrupt::is_standing()
+                                            && matches!(pending, Err(MixError::RuntimeError { .. } | MixError::DieError { .. } | MixError::Structured(_)))
+                                        {
+                                            return pending;
+                                        }
+                                        return Err(other);
+                                    }
                                 };
                                 // Attach the displaced error (if it was
                                 // a real error, not Return/Break/Continue)
@@ -18887,6 +18897,11 @@ mod fifo_arity_tests {
 
     #[test]
     fn compatible_fifo_write_ignores_a_surplus_argument() {
+        // The FIFO write polls the shared interrupt flag: hold its guard.
+        let _guard = crate::interrupt::TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        crate::interrupt::_test_clear();
         block_on(async {
             let (path, dir) = fifo("compat");
             let reader_path = path.clone();
@@ -18904,6 +18919,10 @@ mod fifo_arity_tests {
 
     #[test]
     fn strict_fifo_write_refuses_a_surplus_argument() {
+        let _guard = crate::interrupt::TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        crate::interrupt::_test_clear();
         block_on(async {
             let (path, dir) = fifo("strict");
             let mut eval = Evaluator::new();
@@ -18989,16 +19008,29 @@ mod standing_interrupt_tests {
                      finally\n  $log = $log .. \"F\"\nend\n",
                     "F",
                 ),
+                // A finally's `continue` must not turn the unwind into a
+                // normal iteration of the enclosing loop.
+                (
+                    "while true\n  try\n    while true\n      $n = 1\n    end\n\
+                     finally\n    continue\n  end\nend\n$log = $log .. \"X\"\n",
+                    "",
+                ),
             ];
             for (body, expected) in cases {
                 eval.execute_script_source("$log = \"\"\n$n = 0\n")
                     .await
                     .expect("init globals");
-                // Stand the interrupt up after the loop has started; the
-                // loop's checkpoints then deliver it.
-                std::thread::spawn(|| {
+                // Stand the interrupt up after the loop has started, and keep
+                // raising it as mix-shell's thread does, until this case ends.
+                let done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+                let stop = done.clone();
+                std::thread::spawn(move || {
                     std::thread::sleep(std::time::Duration::from_millis(100));
                     crate::interrupt::set_standing();
+                    while !stop.load(std::sync::atomic::Ordering::SeqCst) {
+                        crate::interrupt::raise();
+                        std::thread::sleep(std::time::Duration::from_millis(5));
+                    }
                 });
                 let err = match eval.execute_script_source(body).await {
                     Ok(_) => panic!("standing interrupt was caught: {body}"),
@@ -19011,7 +19043,9 @@ mod standing_interrupt_tests {
                     Some(Value::String(text)) => assert_eq!(text, expected, "{body}"),
                     other => panic!("log not a string: {other:?}"),
                 }
-                // Reset for the next case in this process.
+                // Stop the raiser, then reset for the next case.
+                done.store(true, std::sync::atomic::Ordering::SeqCst);
+                std::thread::sleep(std::time::Duration::from_millis(20));
                 crate::interrupt::_test_clear();
             }
             println!("standing child ok");

@@ -191,6 +191,17 @@ mod tests {
         path.to_str().unwrap().to_string()
     }
 
+    /// The FIFO waits poll the process-wide interrupt flag, which other
+    /// tests set and hold. Hold the shared guard, and start from a clear
+    /// flag, for the whole test.
+    fn interrupt_guard() -> std::sync::MutexGuard<'static, ()> {
+        let guard = crate::interrupt::TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        crate::interrupt::_test_clear();
+        guard
+    }
+
     #[test]
     fn only_a_fifo_takes_this_path() {
         let dir = Scratch::new();
@@ -203,6 +214,7 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn a_waiting_read_yields_to_the_runtime() {
+        let _guard = interrupt_guard();
         let dir = Scratch::new();
         let path = fifo(dir.path());
         let writer_path = path.clone();
@@ -217,6 +229,7 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn a_waiting_write_is_abandoned_cleanly() {
+        let _guard = interrupt_guard();
         let dir = Scratch::new();
         let path = fifo(dir.path());
         let outcome = tokio::time::timeout(Duration::from_millis(100), write(&path, b"x")).await;
@@ -228,6 +241,7 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn a_producer_that_never_stops_cannot_hold_the_thread() {
+        let _guard = interrupt_guard();
         let dir = Scratch::new();
         let path = fifo(dir.path());
         let writer_path = path.clone();

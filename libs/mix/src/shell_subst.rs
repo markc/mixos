@@ -166,7 +166,6 @@ impl<'a, F: Fn(&str) -> Option<String>> Scan<'a, F> {
     /// the character that closes `close`, when there is one.
     fn shell(&mut self, close: Close) -> Result<(), String> {
         let level = self.enter();
-        let mut depth = 0usize;
         // The unquoted words of this level, for binding discovery.
         let mut words: Words = Vec::new();
         let mut word = String::new();
@@ -207,16 +206,15 @@ impl<'a, F: Fn(&str) -> Option<String>> Scan<'a, F> {
                 '(' => {
                     flush(&mut words, &mut word);
                     words.push(None);
-                    depth += 1;
                     self.copy(1);
+                    self.subshell()?;
                 }
                 ')' => {
-                    if close == Close::Paren && depth == 0 {
+                    if close == Close::Paren {
                         break;
                     }
                     flush(&mut words, &mut word);
                     words.push(None);
-                    depth = depth.saturating_sub(1);
                     self.copy(1);
                 }
                 // `<<<` is a here-string, not a heredoc.
@@ -299,18 +297,17 @@ impl<'a, F: Fn(&str) -> Option<String>> Scan<'a, F> {
     /// At a `$`.
     fn dollar(&mut self) -> Result<(), String> {
         match self.peek(1) {
+            Some('(') if self.peek(2) == Some('(') => {
+                self.copy(3);
+                self.arithmetic()?;
+            }
             Some('(') => {
-                // `$((…))` arithmetic: the same scan, closed by `))`.
-                let arithmetic = self.peek(2) == Some('(');
-                self.copy(if arithmetic { 3 } else { 2 });
                 // A nested substitution is a fresh shell, with fresh quoting.
+                self.copy(2);
                 let pending = std::mem::take(&mut self.pending);
                 self.shell(Close::Paren)?;
                 self.pending = pending;
                 self.copy(1);
-                if arithmetic && self.peek(0) == Some(')') {
-                    self.copy(1);
-                }
             }
             Some('{') => self.braced()?,
             Some(n) if n.is_ascii_alphabetic() || n == '_' => {
@@ -339,6 +336,53 @@ impl<'a, F: Fn(&str) -> Option<String>> Scan<'a, F> {
             }
             _ => self.copy(1),
         }
+        Ok(())
+    }
+
+    /// The text of a `$((…))`, from just after its `$((`. It is arithmetic,
+    /// not a command, so it runs in the enclosing level: an assignment in it
+    /// binds in that level, and a reference in it resolves there.
+    fn arithmetic(&mut self) -> Result<(), String> {
+        let start = self.i;
+        let mut depth = 0usize;
+        while let Some(c) = self.peek(0) {
+            match c {
+                ')' if depth == 0 => break,
+                ')' => {
+                    depth -= 1;
+                    self.copy(1);
+                }
+                '(' => {
+                    depth += 1;
+                    self.copy(1);
+                }
+                '$' => self.dollar()?,
+                _ => self.copy(1),
+            }
+        }
+        if self.discover {
+            let text: String = self.c[start..self.i].iter().collect();
+            let level = self.current_level();
+            self.found
+                .entry(level)
+                .or_default()
+                .extend(arith_bindings(&text));
+        }
+        // The two closing parentheses.
+        self.copy(1);
+        if self.peek(0) == Some(')') {
+            self.copy(1);
+        }
+        Ok(())
+    }
+
+    /// The body of a `( … )` subshell, from just after its `(`. A subshell
+    /// is a shell of its own: its bindings stay in its own level.
+    fn subshell(&mut self) -> Result<(), String> {
+        let pending = std::mem::take(&mut self.pending);
+        self.shell(Close::Paren)?;
+        self.pending = pending;
+        self.copy(1);
         Ok(())
     }
 
@@ -428,6 +472,10 @@ impl<'a, F: Fn(&str) -> Option<String>> Scan<'a, F> {
                     self.dquote()?;
                 }
                 '$' => self.dollar()?,
+                '`' => {
+                    self.copy(1);
+                    self.backtick()?;
+                }
                 '{' => {
                     depth += 1;
                     self.copy(1);
@@ -475,7 +523,9 @@ impl<'a, F: Fn(&str) -> Option<String>> Scan<'a, F> {
                         // other character it is literal text.
                         if c == '"' && q == '\\' {
                             match self.peek(0) {
-                                Some(e @ ('$' | '`' | '"' | '\\' | '\n')) => {
+                                // A line continuation is removed, not kept.
+                                Some('\n') => self.copy(1),
+                                Some(e @ ('$' | '`' | '"' | '\\')) => {
                                     delim.push(e);
                                     self.copy(1);
                                 }
@@ -487,11 +537,17 @@ impl<'a, F: Fn(&str) -> Option<String>> Scan<'a, F> {
                     }
                 }
                 '\\' => {
-                    quoted = true;
                     self.copy(1);
-                    if let Some(e) = self.peek(0) {
-                        delim.push(e);
-                        self.copy(1);
+                    match self.peek(0) {
+                        // A line continuation is removed before the word is
+                        // read, so it leaves the delimiter unquoted.
+                        Some('\n') => self.copy(1),
+                        Some(e) => {
+                            quoted = true;
+                            delim.push(e);
+                            self.copy(1);
+                        }
+                        None => quoted = true,
                     }
                 }
                 c if c.is_whitespace() || matches!(c, ';' | '&' | '|' | '(' | ')' | '<' | '>') => {
@@ -518,11 +574,7 @@ impl<'a, F: Fn(&str) -> Option<String>> Scan<'a, F> {
     fn heredoc_bodies(&mut self) -> Result<(), String> {
         for doc in std::mem::take(&mut self.pending) {
             while self.i < self.c.len() {
-                let end = self.c[self.i..]
-                    .iter()
-                    .position(|&c| c == '\n')
-                    .map_or(self.c.len(), |n| self.i + n);
-                let line: String = self.c[self.i..end].iter().collect();
+                let (line, end) = self.logical_line(!doc.quoted);
                 let check = if doc.dash {
                     line.trim_start_matches('\t')
                 } else {
@@ -540,6 +592,10 @@ impl<'a, F: Fn(&str) -> Option<String>> Scan<'a, F> {
                             '\n' => break,
                             '\\' => self.copy(2),
                             '$' => self.dollar()?,
+                            '`' => {
+                                self.copy(1);
+                                self.backtick()?;
+                            }
                             _ => self.copy(1),
                         }
                     }
@@ -553,6 +609,38 @@ impl<'a, F: Fn(&str) -> Option<String>> Scan<'a, F> {
             }
         }
         Ok(())
+    }
+
+    /// The body line from `self.i` as the shell reads it, and the index of
+    /// the newline that ends it (or the end of the text). With `joined`, a
+    /// backslash-newline pair is removed from the text, as an unquoted
+    /// heredoc body is read; other backslash pairs stay as they are.
+    fn logical_line(&self, joined: bool) -> (String, usize) {
+        let mut text = String::new();
+        let mut i = self.i;
+        while let Some(&c) = self.c.get(i) {
+            if c == '\n' {
+                break;
+            }
+            if c == '\\' {
+                match self.c.get(i + 1) {
+                    Some(&'\n') if joined => {
+                        i += 2;
+                        continue;
+                    }
+                    Some(&next) if next != '\n' => {
+                        text.push(c);
+                        text.push(next);
+                        i += 2;
+                        continue;
+                    }
+                    _ => {}
+                }
+            }
+            text.push(c);
+            i += 1;
+        }
+        (text, i)
     }
 
     /// Whether a level that encloses this position binds `name` itself.
@@ -598,6 +686,35 @@ fn is_name(w: &str) -> bool {
 /// `NAME` of a `NAME=value` word.
 fn assigned(w: &str) -> Option<&str> {
     w.split_once('=').map(|(n, _)| n).filter(|n| is_name(n))
+}
+
+/// Names an arithmetic expression assigns: `x=…` and `x op=…`, but not a
+/// comparison (`==`, `!=`, `<=`, `>=`).
+fn arith_bindings(text: &str) -> HashSet<String> {
+    let chars: Vec<char> = text.chars().collect();
+    let mut names = HashSet::new();
+    for (k, &c) in chars.iter().enumerate() {
+        if c != '=' {
+            continue;
+        }
+        let prev = k.checked_sub(1).map(|p| chars[p]);
+        if matches!(prev, Some('=' | '!' | '<' | '>')) || chars.get(k + 1) == Some(&'=') {
+            continue;
+        }
+        let mut end = k;
+        while end > 0 && "+-*/%&|^".contains(chars[end - 1]) {
+            end -= 1;
+        }
+        let mut start = end;
+        while start > 0 && (chars[start - 1].is_ascii_alphanumeric() || chars[start - 1] == '_') {
+            start -= 1;
+        }
+        let name: String = chars[start..end].iter().collect();
+        if is_name(&name) {
+            names.insert(name);
+        }
+    }
+    names
 }
 
 /// Names one shell level binds itself, from its unquoted words (quoted and
@@ -878,6 +995,52 @@ mod tests {
     fn a_multiline_substitution_in_a_heredoc_body_leaves_the_next_expansion() {
         let p = prepare("cat <<EOF\n$(printf hi\n)$d\nEOF", scope).unwrap();
         assert_eq!(p.cmd, "cat <<EOF\n$(printf hi\n)${__mix_subst_0}\nEOF");
+    }
+
+    #[test]
+    fn arithmetic_assigns_in_the_enclosing_level() {
+        // `zz` is in no scope; the assignment makes it the shell's.
+        let p = prepare("echo $((zz=1)); echo $zz", scope).unwrap();
+        assert_eq!(p.cmd, "echo $((zz=1)); echo $zz");
+        assert!(p.env.is_empty());
+        // A comparison is not an assignment.
+        assert!(prepare("echo $((zz==1)) $zz", scope).is_err());
+        // Arithmetic that only reads still resolves a Mix name.
+        let p = prepare("echo $(($d)) $d", scope).unwrap();
+        assert_eq!(p.cmd, "echo $((${__mix_subst_0})) ${__mix_subst_0}");
+    }
+
+    #[test]
+    fn a_subshell_binds_in_its_own_level() {
+        let p = prepare("(d=inner; echo $d); echo $d", scope).unwrap();
+        assert_eq!(p.cmd, "(d=inner; echo $d); echo ${__mix_subst_0}");
+        assert_eq!(p.env, vec![("__mix_subst_0".to_string(), "x y".to_string())]);
+    }
+
+    #[test]
+    fn an_escaped_newline_is_not_part_of_a_heredoc_delimiter() {
+        let cmd = "cat <<\"E\\\nOF\"\n$nosuch\nEOF\necho $d";
+        let p = prepare(cmd, scope).unwrap();
+        assert_eq!(p.cmd, "cat <<\"E\\\nOF\"\n$nosuch\nEOF\necho ${__mix_subst_0}");
+    }
+
+    #[test]
+    fn a_continuation_joined_terminator_ends_an_unquoted_heredoc() {
+        // The shell reads `EO\<newline>F` as `EOF`, so the next line is a
+        // command, and its single-quoted text is the shell's.
+        let cmd = "cat <<EOF\n$d\nEO\\\nF\necho '$nosuch'";
+        let p = prepare(cmd, scope).unwrap();
+        assert_eq!(p.cmd, "cat <<EOF\n${__mix_subst_0}\nEO\\\nF\necho '$nosuch'");
+    }
+
+    #[test]
+    fn a_backtick_in_an_operand_or_heredoc_has_its_own_context() {
+        let cmd = "echo ${missing:-`d=inner; echo $d`}";
+        let p = prepare(cmd, scope).unwrap();
+        assert_eq!(p.cmd, cmd);
+        let cmd = "cat <<EOF\n`printf '%s' '$nosuch'`\nEOF";
+        let p = prepare(cmd, scope).unwrap();
+        assert_eq!(p.cmd, cmd);
     }
 
     #[test]
