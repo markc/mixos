@@ -1932,6 +1932,8 @@ fn null_that_is_not_a_bareword_value_stays_silent() {
         // there would not even parse.
         "loop label null\n  break null\nend\nprint(\"null\")\n",
         "parse \"a null b\" with $x null $y\nprint($x .. $y)\n",
+        // An include path is a path, not a value.
+        "include ./lib/null.mix\nprint(\"null\")\n",
         // The text of an external command after `|`.
         "print(\"null\") | echo null\n",
         "send svc verb null=1\nprint($rc)\n",

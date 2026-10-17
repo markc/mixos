@@ -261,6 +261,17 @@ fn a_rebinding_inside_an_expression_body_stands_down() {
 }
 
 #[test]
+fn an_include_in_an_expression_body_stands_down() {
+    let dir = tree("exprinclude", &[("lib1.mix", LIB1), ("more.mix", "fn greet()\n  return 1\nend\n")]);
+    let src = "$m = require(\"./lib1.mix\")\nfn f() = if true then\n  include \"./more.mix\"\n  print($m.greet())\nend\nf()\n";
+    let found = codes_at(&dir, src);
+    assert!(
+        !found.iter().any(|(c, _)| c == "MIX-E1404" || c == "MIX-E1403"),
+        "{found:?}"
+    );
+}
+
+#[test]
 fn a_module_in_a_status_variable_is_not_proven() {
     // `send` and every command rewrite `$result`, so a call through it may
     // reach a caller function by UFCS instead of the module.

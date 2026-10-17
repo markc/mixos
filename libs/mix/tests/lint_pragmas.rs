@@ -185,6 +185,40 @@ fn an_ignore_inside_a_fn_expression_body_targets_its_own_statement() {
 }
 
 #[test]
+fn a_lambda_end_inside_brackets_does_not_cut_the_statement_short() {
+    let src = "-- lint: ignore MIX-W2312\n$m = {f: fn() return 1\nend, value: null}\nprint($m)\n";
+    assert_eq!(codes(src), vec![]);
+}
+
+#[test]
+fn an_ignore_before_a_one_line_block_is_refused() {
+    // The header covers only its own line, and the body shares it.
+    let src = "-- lint: ignore MIX-E1101\nif true then print($missing) end\n";
+    let found = codes(src);
+    assert_eq!(
+        found,
+        vec![
+            ("MIX-E1101".to_string(), Some(2)),
+            ("MIX-E1601".to_string(), Some(1)),
+        ],
+        "{found:?}"
+    );
+}
+
+#[test]
+fn an_ssh_mix_body_honours_its_own_pragmas() {
+    let src = "$r = ssh_mix(\"h\", <<EOF\n-- lint: ignore MIX-W2312\nprint(null)\nEOF\n)\nprint($r.ok)\n";
+    assert_eq!(codes(src), vec![]);
+    let src = "$r = ssh_mix(\"h\", <<EOF\n-- lint: globals sha\nprint($sha)\nEOF\n)\nprint($r.ok)\n";
+    assert_eq!(codes(src), vec![]);
+    // A stale one is reported, mapped into this file.
+    let src = "$r = ssh_mix(\"h\", <<EOF\n-- lint: ignore MIX-W2312\nprint(1)\nEOF\n)\nprint($r.ok)\n";
+    let found = codes(src);
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert_eq!(found[0].0, "MIX-D3019");
+}
+
+#[test]
 fn an_ignore_stops_at_a_following_elif_line() {
     // The `elif` condition has no statement of its own, but its line ends
     // the `print` the pragma targets.

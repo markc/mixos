@@ -517,7 +517,7 @@ fn collect_bindings(
 /// barrier: the loaded file can define arbitrary globals/functions).
 fn has_dynamic_include(stmts: &[Stmt]) -> (bool, Option<usize>) {
     let mut found = None;
-    walk_stmts(stmts, &mut |stmt| {
+    walk_every_stmt(stmts, &mut |stmt| {
         if found.is_none()
             && matches!(
                 stmt.kind,
@@ -4885,8 +4885,13 @@ fn analyse_remote_body(
             );
         }
     };
+    // The body is a program of its own and carries its own `-- lint:`
+    // pragmas: its globals join the injected names, and its suppressions
+    // apply to its findings before they are mapped into this file.
+    let pragmas = parse_lint_pragmas(src, &inner);
     let mut allow_globals = cfg.allow_globals.clone();
     allow_globals.extend(injected.into_iter().flatten().cloned());
+    allow_globals.extend(pragmas.globals.iter().cloned());
     let inner_cfg = AnalyzerConfig {
         allow_globals,
         allow_functions: cfg.allow_functions.clone(),
@@ -4906,7 +4911,8 @@ fn analyse_remote_body(
         // linting its ssh_mix programs wants the same error strength there.
         agent: cfg.agent,
     };
-    let nested = analyze_at(&inner, None, &inner_cfg, true, injected.is_none());
+    let mut nested = analyze_at(&inner, None, &inner_cfg, true, injected.is_none());
+    apply_lint_pragmas(pragmas, None, &mut nested);
     for mut d in nested.diagnostics {
         d.file.clone_from(&ctx.file);
         d.line = Some(map_inner_line(lines, first_line, d.line.unwrap_or(1)));
@@ -6446,14 +6452,15 @@ fn in_bus_words(before: &[crate::token::SpannedToken]) -> bool {
     false
 }
 
-/// Whether the token after `before` is part of a `parse … with` template,
-/// whose words are delimiters and variable names, never values.
-fn in_parse_template(before: &[crate::token::SpannedToken]) -> bool {
+/// Whether the token after `before` is a word of a `parse … with` template
+/// (delimiters and variable names) or of an `include`/`source` path
+/// (`include ./lib/null.mix`): raw words, never values.
+fn in_raw_words(before: &[crate::token::SpannedToken]) -> bool {
     before
         .iter()
         .rev()
         .take_while(|tok| !matches!(tok.token, Token::Newline | Token::Semicolon))
-        .any(|tok| matches!(tok.token, Token::With))
+        .any(|tok| matches!(tok.token, Token::With | Token::Include | Token::Source))
 }
 
 /// Whether the token after `before` is text for an external command: the
@@ -6547,7 +6554,7 @@ fn check_null_barewords(stmts: &[Stmt], ctx: &FileContext, cfg: &AnalyzerConfig,
             )
             || in_bus_words(&tokens[..i])
             || after_a_pipe(&tokens[..i])
-            || in_parse_template(&tokens[..i]);
+            || in_raw_words(&tokens[..i]);
         if not_a_value {
             continue;
         }
@@ -6640,8 +6647,17 @@ fn parse_lint_pragmas(source: &str, stmts: &[Stmt]) -> LintPragmas {
     let mut boundaries = Vec::new();
     if let Ok(tokens) = crate::lexer::Lexer::new(source).tokenize() {
         let mut last_line = 0;
+        // A keyword inside brackets closes a lambda inside an expression
+        // (`{f: fn() return 1\nend, v: null}`), not a statement.
+        let mut depth = 0usize;
         for tok in &tokens {
+            match tok.token {
+                Token::LParen | Token::LBrace | Token::LBracket => depth += 1,
+                Token::RParen | Token::RBrace | Token::RBracket => depth = depth.saturating_sub(1),
+                _ => {}
+            }
             if tok.line != last_line
+                && depth == 0
                 && matches!(
                     tok.token,
                     Token::Elif
@@ -6794,8 +6810,9 @@ fn parse_lint_pragmas(source: &str, stmts: &[Stmt]) -> LintPragmas {
 }
 
 /// Lines where two statements of one statement list start
-/// (`print($a); print($b)`). Diagnostics carry a line, not a statement, so
-/// an `ignore` aimed at one of them would cover both.
+/// (`print($a); print($b)`), or where a block statement's body starts on its
+/// header line (`if c then print($x) end`). Diagnostics carry a line, not a
+/// statement, so an `ignore` aimed at one of them would cover both.
 fn shared_statement_lines(stmts: &[Stmt], out: &mut HashSet<usize>) {
     let mut seen = HashSet::new();
     for stmt in stmts {
@@ -6803,6 +6820,9 @@ fn shared_statement_lines(stmts: &[Stmt], out: &mut HashSet<usize>) {
             out.insert(stmt.line);
         }
         for body in stmt_bodies(&stmt.kind) {
+            if body.iter().any(|inner| inner.line == stmt.line) {
+                out.insert(stmt.line);
+            }
             shared_statement_lines(body, out);
         }
         walk_stmt_exprs(stmt, &mut |expr| {
