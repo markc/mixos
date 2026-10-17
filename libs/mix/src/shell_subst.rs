@@ -64,6 +64,46 @@ fn flush(words: &mut Words, word: &mut String) {
     }
 }
 
+/// Where one open `case` is in its text: before `in`, in a clause's
+/// pattern list (whose `)` is text, not a closer), or in a clause body.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Case {
+    Subject,
+    Pattern,
+    Body,
+}
+
+/// Whether the next word starts a command: after a separator, at the start
+/// of a level, or after a reserved word that introduces one.
+fn starts_command(words: &Words) -> bool {
+    match words.last() {
+        None | Some(None) => true,
+        Some(Some(w)) => matches!(
+            w.as_str(),
+            "{" | "then" | "do" | "else" | "elif" | "if" | "while" | "until" | "!" | "time"
+        ),
+    }
+}
+
+/// Finish the word being read. The keywords that open and close a `case`
+/// are recognised here, in command position only.
+fn finish(words: &mut Words, word: &mut String, cases: &mut Vec<Case>) {
+    if !word.is_empty() {
+        let at_command = starts_command(words);
+        match word.as_str() {
+            "case" if at_command => cases.push(Case::Subject),
+            "in" if cases.last() == Some(&Case::Subject) => {
+                *cases.last_mut().expect("a subject is open") = Case::Pattern;
+            }
+            "esac" if at_command => {
+                cases.pop();
+            }
+            _ => {}
+        }
+    }
+    flush(words, word);
+}
+
 /// A shell heredoc whose body starts after the current line.
 struct Heredoc {
     delim: String,
@@ -169,6 +209,8 @@ impl<'a, F: Fn(&str) -> Option<String>> Scan<'a, F> {
         // The unquoted words of this level, for binding discovery.
         let mut words: Words = Vec::new();
         let mut word = String::new();
+        // The `case` statements open in this level, innermost last.
+        let mut cases: Vec<Case> = Vec::new();
         while let Some(c) = self.peek(0) {
             let word_start = word.is_empty();
             match c {
@@ -198,32 +240,43 @@ impl<'a, F: Fn(&str) -> Option<String>> Scan<'a, F> {
                     }
                 }
                 '\n' => {
-                    flush(&mut words, &mut word);
+                    finish(&mut words, &mut word, &mut cases);
                     words.push(None);
                     self.copy(1);
                     self.heredoc_bodies()?;
                 }
+                // In a `case` pattern list, `(` and `)` are pattern text.
+                '(' if cases.last() == Some(&Case::Pattern) => {
+                    finish(&mut words, &mut word, &mut cases);
+                    self.copy(1);
+                }
                 '(' => {
-                    flush(&mut words, &mut word);
+                    finish(&mut words, &mut word, &mut cases);
                     words.push(None);
                     self.copy(1);
                     self.subshell()?;
+                }
+                ')' if cases.last() == Some(&Case::Pattern) => {
+                    finish(&mut words, &mut word, &mut cases);
+                    words.push(None);
+                    self.copy(1);
+                    *cases.last_mut().expect("a pattern is open") = Case::Body;
                 }
                 ')' => {
                     if close == Close::Paren {
                         break;
                     }
-                    flush(&mut words, &mut word);
+                    finish(&mut words, &mut word, &mut cases);
                     words.push(None);
                     self.copy(1);
                 }
                 // `<<<` is a here-string, not a heredoc.
                 '<' if self.peek(1) == Some('<') && self.peek(2) == Some('<') => {
-                    flush(&mut words, &mut word);
+                    finish(&mut words, &mut word, &mut cases);
                     self.copy(3);
                 }
                 '<' if self.peek(1) == Some('<') => {
-                    flush(&mut words, &mut word);
+                    finish(&mut words, &mut word, &mut cases);
                     self.heredoc_op();
                     word.push(OPAQUE);
                 }
@@ -236,13 +289,20 @@ impl<'a, F: Fn(&str) -> Option<String>> Scan<'a, F> {
                     self.backtick()?;
                     word.push(OPAQUE);
                 }
+                // `;;` ends a clause: the next pattern list follows.
+                ';' if cases.last() == Some(&Case::Body) && self.peek(1) == Some(';') => {
+                    finish(&mut words, &mut word, &mut cases);
+                    words.push(None);
+                    self.copy(2);
+                    *cases.last_mut().expect("a body is open") = Case::Pattern;
+                }
                 ';' | '&' | '|' => {
-                    flush(&mut words, &mut word);
+                    finish(&mut words, &mut word, &mut cases);
                     words.push(None);
                     self.copy(1);
                 }
                 c if c.is_whitespace() => {
-                    flush(&mut words, &mut word);
+                    finish(&mut words, &mut word, &mut cases);
                     self.copy(1);
                 }
                 _ => {
@@ -252,7 +312,7 @@ impl<'a, F: Fn(&str) -> Option<String>> Scan<'a, F> {
             }
         }
         if self.discover {
-            flush(&mut words, &mut word);
+            finish(&mut words, &mut word, &mut cases);
             self.found
                 .entry(level)
                 .or_default()
@@ -343,30 +403,44 @@ impl<'a, F: Fn(&str) -> Option<String>> Scan<'a, F> {
     /// not a command, so it runs in the enclosing level: an assignment in it
     /// binds in that level, and a reference in it resolves there.
     fn arithmetic(&mut self) -> Result<(), String> {
-        let start = self.i;
+        // The arithmetic's own text. A nested substitution is another level
+        // and contributes nothing to this one, so it is left out here.
+        let mut own = String::new();
         let mut depth = 0usize;
         while let Some(c) = self.peek(0) {
             match c {
                 ')' if depth == 0 => break,
                 ')' => {
                     depth -= 1;
+                    own.push(c);
                     self.copy(1);
                 }
                 '(' => {
                     depth += 1;
+                    own.push(c);
                     self.copy(1);
                 }
-                '$' => self.dollar()?,
-                _ => self.copy(1),
+                '$' => {
+                    own.push(' ');
+                    self.dollar()?;
+                }
+                '`' => {
+                    own.push(' ');
+                    self.copy(1);
+                    self.backtick()?;
+                }
+                _ => {
+                    own.push(c);
+                    self.copy(1);
+                }
             }
         }
         if self.discover {
-            let text: String = self.c[start..self.i].iter().collect();
             let level = self.current_level();
             self.found
                 .entry(level)
                 .or_default()
-                .extend(arith_bindings(&text));
+                .extend(arith_bindings(&own));
         }
         // The two closing parentheses.
         self.copy(1);
@@ -697,12 +771,27 @@ fn arith_bindings(text: &str) -> HashSet<String> {
         if c != '=' {
             continue;
         }
-        let prev = k.checked_sub(1).map(|p| chars[p]);
-        if matches!(prev, Some('=' | '!' | '<' | '>')) || chars.get(k + 1) == Some(&'=') {
+        // `==` and `!=` compare; the `=` of `==` is seen twice.
+        if chars.get(k + 1) == Some(&'=') {
             continue;
         }
+        let prev = if k > 0 { chars[k - 1] } else { ' ' };
+        if prev == '=' || prev == '!' {
+            continue;
+        }
+        // The operator of a compound or shift assignment sits before the
+        // `=`: `+=`, `<<=`, `>>=`. A `<=` or `>=` is a comparison.
         let mut end = k;
-        while end > 0 && "+-*/%&|^".contains(chars[end - 1]) {
+        if matches!(prev, '<' | '>') {
+            if !(k >= 2 && chars[k - 2] == prev) {
+                continue;
+            }
+            end = k - 2;
+        } else if "+-*/%&|^".contains(prev) {
+            end = k - 1;
+        }
+        // Whitespace may separate the name from the operator: `zz = 1`.
+        while end > 0 && chars[end - 1].is_whitespace() {
             end -= 1;
         }
         let mut start = end;
@@ -1008,6 +1097,42 @@ mod tests {
         // Arithmetic that only reads still resolves a Mix name.
         let p = prepare("echo $(($d)) $d", scope).unwrap();
         assert_eq!(p.cmd, "echo $((${__mix_subst_0})) ${__mix_subst_0}");
+    }
+
+    #[test]
+    fn arithmetic_assignments_in_every_spelling_bind_in_the_enclosing_level() {
+        for cmd in [
+            "echo $((zz = 1)); echo $zz",
+            "echo $((zz += 1)); echo $zz",
+            "echo $((zz<<=1)); echo $zz",
+            "echo $((zz >>= 1)); echo $zz",
+        ] {
+            let p = prepare(cmd, scope).unwrap();
+            assert_eq!(p.cmd, cmd, "{cmd}");
+        }
+        // A nested substitution's assignment is that level's, not ours.
+        let cmd = "echo $(( $(d=inner; echo 2) + 0 )); echo $d";
+        let p = prepare(cmd, scope).unwrap();
+        assert_eq!(
+            p.cmd,
+            "echo $(( $(d=inner; echo 2) + 0 )); echo ${__mix_subst_0}"
+        );
+    }
+
+    #[test]
+    fn a_case_pattern_does_not_close_the_enclosing_scope() {
+        let cmd = "(case x in x) d=inner; echo $d;; esac); echo $d";
+        let p = prepare(cmd, scope).unwrap();
+        assert_eq!(
+            p.cmd,
+            "(case x in x) d=inner; echo $d;; esac); echo ${__mix_subst_0}"
+        );
+        // Inside a function body the pattern's `)` is text too. The body's
+        // `d=inner` binds in the enclosing level (the conservative rule for
+        // a function body), so the final `$d` stays the shell's.
+        let cmd = "f() { case $1 in a) d=inner;; esac; }; echo $d";
+        let p = prepare(cmd, scope).unwrap();
+        assert_eq!(p.cmd, cmd);
     }
 
     #[test]

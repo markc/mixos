@@ -14883,6 +14883,8 @@ must appear in the error.
 | `is_reload_candidate()` is true while a `--serve` RELOAD is pending | it is true **only while the replacement's init body executes** — false in a plain script, at initial boot, and in every committed generation; the candidate must stay passive (no starts, no persisted writes) and commit-time work belongs in `on lifecycle.commit` | `print(is_reload_candidate())` | `false` |
 | `on $svc .. ".call"` registers a verb under the `--serve` name | `on` takes a static name (that is a parse error); write `on @.call` — the unquoted `@` becomes the serve name when the handler registers, and outside `--serve` it raises `SERVE_PREFIX_OUTSIDE_SERVE` | `try on @.call end catch $m, $e print($e.code) end` | `SERVE_PREFIX_OUTSIDE_SERVE` |
 | `$(...)` sees only the environment, like `/bin/sh` | a `$name` inside resolves like a shell word: the Mix variable first, then the environment, passed to `sh` as data | `$d = "x y"; print($(echo $d))` | `x y` |
+| a binding inside a `$( … )` changes the outer `$d` | a substitution is a shell of its own: its `d=inner` stays inside it, and the outer `$d` is still the Mix variable | `$d = "outer"; print($(x=$(d=inner; echo $d); echo $x $d))` | `inner outer` |
+| a `d=…` inside a `$( … )` nested in arithmetic changes the outer `$d` | the nested substitution is its own shell, so its `d=inner` stays in it; the arithmetic itself binds only the names it assigns | `$d = "outer"; print($(echo $(( $(d=inner; echo 2) + 0 )) $d))` | `2 outer` |
 | — and an unset name expands to `""` | it **raises**; write `${name:-}` for an intentionally empty value | `print($(echo $zz_no_such_var))` | `!is not set` |
 | `$$` in Mix code is the PID | that is a lexer error that names `pid()`; on a shell command line `$$` **is** the PID, as in bash | `print($$)` | `!pid()` |
 | `echo $#` on a command line counts arguments | bash's special parameters `$?` `$!` `$#` `$@` `$*` are **refused** with the Mix spelling — here `len(args())` | `echo $#` | `!len(args())` |
@@ -23820,6 +23822,24 @@ own default (`${name:-x}`, `${name-x}`, `${name:=x}`, `${name:+x}`,
 `${name?msg}`). A default operand runs only when the shell needs it, so an
 unset name inside one (`${a:-$b}`) is left to the shell rather than raised.
 
+### Where a binding lives
+
+Each shell level keeps its own bindings, and a name a level binds is the
+shell's only inside that level and the levels within it:
+
+- **`$((…))` is arithmetic, not a command.** An assignment in it (`d=1`,
+  `d = 1`, `d+=1`, `d<<=1`) binds in the enclosing level, so a later `$d` in
+  that command is the shell's. A comparison (`==`, `!=`, `<=`, `>=`) binds
+  nothing. A nested `$(…)` inside the arithmetic is its own level.
+- **`$( … )`, backticks and `( … )` are separate shells.** A binding inside
+  one stays inside it. An outer `$d` after the substitution still resolves to
+  the Mix variable.
+- **A `case` pattern's `)` is text, not a closer.** Its clause body runs to
+  `;;`, and the `esac` that closes the statement returns the scope to normal.
+- **A function body's bindings count for the level that holds the function.**
+  This is conservative: a `d=…` in a body keeps a later `$d` in the same
+  command the shell's.
+
 ## Special parameters: `$$`, and the refused ones
 
 On a shell-command line `$$` expands to the shell's PID, as in bash and zsh, so
@@ -31180,6 +31200,13 @@ and recovery directories through the isolated MixOS environment.
 
 ### Fixed
 
+- Shell-command `$(...)` scoping: a `$((…))` assignment binds in the enclosing
+  shell (every spelling: `d=1`, `d = 1`, `d+=1`, `d<<=1`), a `( … )` subshell
+  and a `$( … )` keep their bindings to themselves, a `case` pattern's `)` is
+  text, and an escaped newline or a continuation-joined terminator matches a
+  heredoc delimiter the way the shell does. See `mix man shell-mode`.
+- A `finally` that does `return`, `break` or `continue` no longer replaces a
+  pending error while a SIGINT is standing, so an enclosing loop cannot run on.
 - `mix lint` MIX-W2307 (send result never checked) now counts a status read
   inside an `if` condition, a map value, a nested call argument or a string
   interpolation. A correctly checked send no longer warns.

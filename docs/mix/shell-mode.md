@@ -363,6 +363,24 @@ own default (`${name:-x}`, `${name-x}`, `${name:=x}`, `${name:+x}`,
 `${name?msg}`). A default operand runs only when the shell needs it, so an
 unset name inside one (`${a:-$b}`) is left to the shell rather than raised.
 
+### Where a binding lives
+
+Each shell level keeps its own bindings, and a name a level binds is the
+shell's only inside that level and the levels within it:
+
+- **`$((…))` is arithmetic, not a command.** An assignment in it (`d=1`,
+  `d = 1`, `d+=1`, `d<<=1`) binds in the enclosing level, so a later `$d` in
+  that command is the shell's. A comparison (`==`, `!=`, `<=`, `>=`) binds
+  nothing. A nested `$(…)` inside the arithmetic is its own level.
+- **`$( … )`, backticks and `( … )` are separate shells.** A binding inside
+  one stays inside it. An outer `$d` after the substitution still resolves to
+  the Mix variable.
+- **A `case` pattern's `)` is text, not a closer.** Its clause body runs to
+  `;;`, and the `esac` that closes the statement returns the scope to normal.
+- **A function body's bindings count for the level that holds the function.**
+  This is conservative: a `d=…` in a body keeps a later `$d` in the same
+  command the shell's.
+
 ## Special parameters: `$$`, and the refused ones
 
 On a shell-command line `$$` expands to the shell's PID, as in bash and zsh, so

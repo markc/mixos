@@ -65,6 +65,13 @@ generated: by docs/_build/gen-site.mix from libs/mix/CHANGELOG.md; do not edit
 
 ### Fixed
 
+- Shell-command `$(...)` scoping: a `$((…))` assignment binds in the enclosing
+  shell (every spelling: `d=1`, `d = 1`, `d+=1`, `d<<=1`), a `( … )` subshell
+  and a `$( … )` keep their bindings to themselves, a `case` pattern's `)` is
+  text, and an escaped newline or a continuation-joined terminator matches a
+  heredoc delimiter the way the shell does. See `mix man shell-mode`.
+- A `finally` that does `return`, `break` or `continue` no longer replaces a
+  pending error while a SIGINT is standing, so an enclosing loop cannot run on.
 - `mix lint` MIX-W2307 (send result never checked) now counts a status read
   inside an `if` condition, a map value, a nested call argument or a string
   interpolation. A correctly checked send no longer warns.

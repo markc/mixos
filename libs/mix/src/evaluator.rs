@@ -18952,6 +18952,11 @@ mod standing_interrupt_tests {
     use super::{Evaluator, Value};
 
     const CHILD_ENV: &str = "MIX_STANDING_INTERRUPT_CHILD";
+    const CASE_ENV: &str = "MIX_STANDING_INTERRUPT_CASE";
+    const MARKER_ENV: &str = "MIX_STANDING_INTERRUPT_MARKER";
+    /// How long one case's child may run before it is killed and the test
+    /// fails, so a regression fails instead of hanging the suite.
+    const CASE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
 
     fn block_on<T>(fut: impl std::future::Future<Output = T>) -> T {
         tokio::runtime::Builder::new_current_thread()
@@ -18961,97 +18966,151 @@ mod standing_interrupt_tests {
             .block_on(fut)
     }
 
+    /// Each case: the Mix body (which writes `marker` as its first statement
+    /// inside the protected `try`, before its loop), and the expected `$log`.
+    fn cases(marker: &std::path::Path) -> Vec<(String, &'static str)> {
+        let m = marker.display();
+        vec![
+            (
+                format!(
+                    "try\n  $log = $log .. \"T\"\n  write_file(\"{m}\", \"x\")\n  while true\n    $n = 1\n  end\n\
+                     catch $m\n  $log = $log .. \"C\"\n\
+                     finally\n  $log = $log .. \"F\"\nend\n"
+                ),
+                "TF",
+            ),
+            (
+                format!(
+                    "try\n  try\n    write_file(\"{m}\", \"x\")\n    while true\n      $n = 1\n    end\n\
+                     catch $m\n    $log = $log .. \"C\"\n  end\n\
+                     catch $m2\n  $log = $log .. \"O\"\n\
+                     finally\n  $log = $log .. \"F\"\nend\n"
+                ),
+                "F",
+            ),
+            // A finally's `continue` must not turn the unwind into a normal
+            // iteration of the enclosing loop. Without the guard this case
+            // never ends, and the parent's time limit fails it.
+            (
+                format!(
+                    "while true\n  try\n    write_file(\"{m}\", \"x\")\n    while true\n      $n = 1\n    end\n\
+                     finally\n    continue\n  end\nend\n$log = $log .. \"X\"\n"
+                ),
+                "",
+            ),
+        ]
+    }
+
     #[test]
     fn standing_interrupt_reaches_the_host_through_catch() {
         if std::env::var_os(CHILD_ENV).is_some() {
             return;
         }
         let exe = std::env::current_exe().expect("test binary path");
-        let out = std::process::Command::new(exe)
-            .args([
-                "--exact",
-                "evaluator::standing_interrupt_tests::standing_child",
-                "--nocapture",
-                "--test-threads=1",
-            ])
-            .env(CHILD_ENV, "1")
-            .output()
-            .expect("run child test");
-        let text = String::from_utf8_lossy(&out.stdout);
-        assert!(out.status.success(), "child failed:\n{text}");
-        assert!(
-            text.contains("standing child ok"),
-            "child did not run:\n{text}"
-        );
+        let dir = std::env::temp_dir().join(format!("mix-standing-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        for case in 0..cases(&dir).len() {
+            let marker = dir.join(format!("case-{case}"));
+            // A marker left by an earlier run would release the raiser early.
+            let _ = std::fs::remove_file(&marker);
+            let mut child = std::process::Command::new(&exe)
+                .args([
+                    "--exact",
+                    "evaluator::standing_interrupt_tests::standing_child",
+                    "--nocapture",
+                    "--test-threads=1",
+                ])
+                .env(CHILD_ENV, "1")
+                .env(CASE_ENV, case.to_string())
+                .env(MARKER_ENV, &marker)
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .spawn()
+                .expect("spawn child test");
+            let started = std::time::Instant::now();
+            let finished = loop {
+                if child.try_wait().expect("poll child").is_some() {
+                    break true;
+                }
+                if started.elapsed() >= CASE_TIMEOUT {
+                    let _ = child.kill();
+                    break false;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            };
+            let out = child.wait_with_output().expect("collect child output");
+            let text = format!(
+                "{}{}",
+                String::from_utf8_lossy(&out.stdout),
+                String::from_utf8_lossy(&out.stderr)
+            );
+            assert!(
+                finished,
+                "case {case} did not end within {CASE_TIMEOUT:?}: the interrupt was caught \
+                 or the unwind never reached the host\n{text}"
+            );
+            assert!(out.status.success(), "case {case} failed:\n{text}");
+            assert!(
+                text.contains("standing child ok"),
+                "case {case} did not run:\n{text}"
+            );
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// Runs only in the child process (see the parent test above).
+    /// Runs one case in the child process (see the parent test above).
     #[test]
     fn standing_child() {
         if std::env::var_os(CHILD_ENV).is_none() {
             return;
         }
-        // A thread stands the interrupt up while the loop below runs, as the
-        // mix-shell SIGINT thread does after its cleanup grace.
+        let case: usize = std::env::var(CASE_ENV)
+            .expect("case index")
+            .parse()
+            .expect("case index is a number");
+        let marker = std::path::PathBuf::from(std::env::var_os(MARKER_ENV).expect("marker path"));
+        let (body, expected) = cases(&marker)
+            .into_iter()
+            .nth(case)
+            .expect("case in range");
         block_on(async {
             // One evaluator, whose flag is the process interrupt flag, as in
-            // mix-shell. Single try, nested try, and a finally that must still
-            // run.
+            // mix-shell.
             let mut eval = Evaluator::new();
             crate::interrupt::init(eval.interrupt_flag());
-            let cases = [
-                (
-                    "try\n  $log = $log .. \"T\"\n  while true\n    $n = 1\n  end\n\
-                     catch $m\n  $log = $log .. \"C\"\n\
-                     finally\n  $log = $log .. \"F\"\nend\n",
-                    "TF",
-                ),
-                (
-                    "try\n  try\n    while true\n      $n = 1\n    end\n\
-                     catch $m\n    $log = $log .. \"C\"\n  end\n\
-                     catch $m2\n  $log = $log .. \"O\"\n\
-                     finally\n  $log = $log .. \"F\"\nend\n",
-                    "F",
-                ),
-                // A finally's `continue` must not turn the unwind into a
-                // normal iteration of the enclosing loop.
-                (
-                    "while true\n  try\n    while true\n      $n = 1\n    end\n\
-                     finally\n    continue\n  end\nend\n$log = $log .. \"X\"\n",
-                    "",
-                ),
-            ];
-            for (body, expected) in cases {
-                eval.execute_script_source("$log = \"\"\n$n = 0\n")
-                    .await
-                    .expect("init globals");
-                // Stand the interrupt up after the loop has started, and keep
-                // raising it as mix-shell's thread does, until this case ends.
-                let done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-                let stop = done.clone();
-                std::thread::spawn(move || {
-                    std::thread::sleep(std::time::Duration::from_millis(100));
-                    crate::interrupt::set_standing();
-                    while !stop.load(std::sync::atomic::Ordering::SeqCst) {
-                        crate::interrupt::raise();
-                        std::thread::sleep(std::time::Duration::from_millis(5));
-                    }
-                });
-                let err = match eval.execute_script_source(body).await {
-                    Ok(_) => panic!("standing interrupt was caught: {body}"),
-                    Err(e) => e,
-                };
-                let text = format!("{err:?}");
-                assert!(text.contains("interrupted"), "{text}");
-                let log = eval.get_global("log");
-                match &log {
-                    Some(Value::String(text)) => assert_eq!(text, expected, "{body}"),
-                    other => panic!("log not a string: {other:?}"),
+            eval.execute_script_source("$log = \"\"\n$n = 0\n")
+                .await
+                .expect("init globals");
+            // The raiser stands the interrupt up only once the body has
+            // written its marker, which is inside the protected `try`. It then
+            // keeps raising, as mix-shell's thread does, until the case ends.
+            let done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let stop = done.clone();
+            let raiser_marker = marker.clone();
+            let raiser = std::thread::spawn(move || {
+                while !raiser_marker.exists() {
+                    std::thread::sleep(std::time::Duration::from_millis(2));
                 }
-                // Stop the raiser, then reset for the next case.
-                done.store(true, std::sync::atomic::Ordering::SeqCst);
-                std::thread::sleep(std::time::Duration::from_millis(20));
-                crate::interrupt::_test_clear();
+                crate::interrupt::set_standing();
+                while !stop.load(std::sync::atomic::Ordering::SeqCst) {
+                    crate::interrupt::raise();
+                    std::thread::sleep(std::time::Duration::from_millis(2));
+                }
+            });
+            let result = eval.execute_script_source(&body).await;
+            done.store(true, std::sync::atomic::Ordering::SeqCst);
+            raiser.join().expect("raiser thread");
+            crate::interrupt::_test_clear();
+            let err = match result {
+                Ok(_) => panic!("standing interrupt was caught (case {case})"),
+                Err(e) => e,
+            };
+            let text = format!("{err:?}");
+            assert!(text.contains("interrupted"), "case {case}: {text}");
+            let log = eval.get_global("log");
+            match &log {
+                Some(Value::String(text)) => assert_eq!(text, expected, "case {case}"),
+                other => panic!("log not a string: {other:?}"),
             }
             println!("standing child ok");
         });

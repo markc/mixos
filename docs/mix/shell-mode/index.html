@@ -227,6 +227,7 @@
                         <a href="#brace-expansion">Brace expansion</a>
                         <a href="#-command-substitution">$(...) command substitution</a>
                         <a href="#mix-variables-inside-" class="toc-h3">Mix variables inside $(...)</a>
+                        <a href="#where-a-binding-lives" class="toc-h3">Where a binding lives</a>
                         <a href="#special-parameters--and-the-refused-ones">Special parameters: $$, and the refused ones</a>
                         <a href="#redirects">Redirects</a>
                         <a href="#mix-meta-commands-under-plumbing-interactive-repl">mix meta-commands under plumbing (interactive REPL)</a>
@@ -539,6 +540,23 @@ special parameters (<code>$1</code>, <code>$@</code>, <code>$?</code>, <code>$$<
 own default (<code>${name:-x}</code>, <code>${name-x}</code>, <code>${name:=x}</code>, <code>${name:+x}</code>,
 <code>${name?msg}</code>). A default operand runs only when the shell needs it, so an
 unset name inside one (<code>${a:-$b}</code>) is left to the shell rather than raised.</p>
+<h3 id="where-a-binding-lives">Where a binding lives</h3>
+<p>Each shell level keeps its own bindings, and a name a level binds is the
+shell's only inside that level and the levels within it:</p>
+<ul>
+<li><strong><code>$((…))</code> is arithmetic, not a command.</strong> An assignment in it (<code>d=1</code>,
+<code>d = 1</code>, <code>d+=1</code>, <code>d&lt;&lt;=1</code>) binds in the enclosing level, so a later <code>$d</code> in
+that command is the shell's. A comparison (<code>==</code>, <code>!=</code>, <code>&lt;=</code>, <code>&gt;=</code>) binds
+nothing. A nested <code>$(…)</code> inside the arithmetic is its own level.</li>
+<li><strong><code>$( … )</code>, backticks and <code>( … )</code> are separate shells.</strong> A binding inside
+one stays inside it. An outer <code>$d</code> after the substitution still resolves to
+the Mix variable.</li>
+<li><strong>A <code>case</code> pattern's <code>)</code> is text, not a closer.</strong> Its clause body runs to
+<code>;;</code>, and the <code>esac</code> that closes the statement returns the scope to normal.</li>
+<li><strong>A function body's bindings count for the level that holds the function.</strong>
+This is conservative: a <code>d=…</code> in a body keeps a later <code>$d</code> in the same
+command the shell's.</li>
+</ul>
 <h2 id="special-parameters--and-the-refused-ones">Special parameters: <code>$$</code>, and the refused ones</h2>
 <p>On a shell-command line <code>$$</code> expands to the shell's PID, as in bash and zsh, so
 <code>ps -p $$</code> and <code>kill -0 $$</code> work as typed (in Mix code, call <code>pid()</code>). The other

@@ -328,6 +328,13 @@ neither <code>mix_bin</code> nor <code>MIX_REMOTE_BIN</code> is set. For a host 
 </ul>
 <h3 id="fixed">Fixed</h3>
 <ul>
+<li>Shell-command <code>$(...)</code> scoping: a <code>$((…))</code> assignment binds in the enclosing
+shell (every spelling: <code>d=1</code>, <code>d = 1</code>, <code>d+=1</code>, <code>d&lt;&lt;=1</code>), a <code>( … )</code> subshell
+and a <code>$( … )</code> keep their bindings to themselves, a <code>case</code> pattern's <code>)</code> is
+text, and an escaped newline or a continuation-joined terminator matches a
+heredoc delimiter the way the shell does. See <code>mix man shell-mode</code>.</li>
+<li>A <code>finally</code> that does <code>return</code>, <code>break</code> or <code>continue</code> no longer replaces a
+pending error while a SIGINT is standing, so an enclosing loop cannot run on.</li>
 <li><code>mix lint</code> MIX-W2307 (send result never checked) now counts a status read
 inside an <code>if</code> condition, a map value, a nested call argument or a string
 interpolation. A correctly checked send no longer warns.</li>
