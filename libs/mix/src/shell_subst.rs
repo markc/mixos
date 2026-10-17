@@ -256,19 +256,21 @@ impl<'a, F: Fn(&str) -> Option<String>> Scan<'a, F> {
                     self.copy(1);
                     self.subshell()?;
                 }
-                ')' if cases.last() == Some(&Case::Pattern) => {
-                    finish(&mut words, &mut word, &mut cases);
-                    words.push(None);
-                    self.copy(1);
-                    *cases.last_mut().expect("a pattern is open") = Case::Body;
-                }
+                // The word before a `)` is finished first: `esac)` closes
+                // its `case` before the `)` is judged.
                 ')' => {
-                    if close == Close::Paren {
-                        break;
-                    }
                     finish(&mut words, &mut word, &mut cases);
-                    words.push(None);
-                    self.copy(1);
+                    if cases.last() == Some(&Case::Pattern) {
+                        words.push(None);
+                        self.copy(1);
+                        *cases.last_mut().expect("a pattern is open") = Case::Body;
+                    } else {
+                        if close == Close::Paren {
+                            break;
+                        }
+                        words.push(None);
+                        self.copy(1);
+                    }
                 }
                 // `<<<` is a here-string, not a heredoc.
                 '<' if self.peek(1) == Some('<') && self.peek(2) == Some('<') => {
