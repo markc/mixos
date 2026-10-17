@@ -71,6 +71,10 @@ generated: by docs/_build/gen-site.mix from libs/mix/CHANGELOG.md; do not edit
 
 ### Fixed
 
+- `fs_watch` recovery (after a lost or overflowed event stream) re-arms each
+  directory watch in place instead of unwatching and watching it again, so a
+  change that lands during the repair (the close-write of a save racing the
+  overflow) is still reported.
 - `mix lint` MIX-W2307 (send result never checked) now counts a status read
   inside an `if` condition, a map value, a nested call argument or a string
   interpolation. A correctly checked send no longer warns.

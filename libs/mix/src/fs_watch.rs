@@ -180,6 +180,15 @@ mod linux {
             }
         }
 
+        /// Re-arm a path we still hold without unwatching it first: notify adds
+        /// the mask to a watch on the same inode (the same descriptor, so no
+        /// event is lost) and installs a new one on a replacement inode.
+        fn rearm(&mut self, path: &Path) -> MixResult<()> {
+            self.watcher
+                .watch(path, notify::RecursiveMode::NonRecursive)
+                .map_err(notify_error)
+        }
+
         fn refresh(&mut self, path: &Path) -> MixResult<()> {
             // Reinstall even when another handle retains this pathname: the
             // kernel may have forgotten its old inode after a missed delete.
@@ -289,12 +298,19 @@ mod linux {
             // Lost delete/rename records can leave a path in our index after
             // the kernel removed its inode watch. Rebuild registrations, not
             // just the desired path set, before claiming ongoing coverage.
-            for path in std::mem::take(&mut self.dirs) {
-                let mut watcher = self.watcher.borrow_mut();
-                watcher.remove(&path);
-                if watcher.refs.contains_key(&path) {
-                    let _ = watcher.refresh(&path);
-                }
+            // Re-arm in place: an unwatch-then-watch pair lost every event in
+            // between, such as the close-write of a save that raced the
+            // overflow. A path that can no longer be watched is dropped, and
+            // reconcile then adds whatever is wanted now.
+            let gone: Vec<_> = self
+                .dirs
+                .iter()
+                .filter(|path| self.watcher.borrow_mut().rearm(path).is_err())
+                .cloned()
+                .collect();
+            for path in gone {
+                self.watcher.borrow_mut().remove(&path);
+                self.dirs.remove(&path);
             }
             self.add(&self.parent.clone())?;
             self.reconcile()

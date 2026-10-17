@@ -455,7 +455,7 @@ Run `mix builtins` for the full remit of all {count} built-in functions
 ## Learn more
 - `mix builtins`        every builtin — name, signature, capability, description
 - `mix what <name>`     one-line lookup for any builtin or keyword
-- `mix man <topic>`     full manual page (online with local fallback)
+- `mix man <topic>`     full manual page (built into this binary)
 - Manual online: https://mixos.dev/mix/
 ",
         version = version,
@@ -2875,7 +2875,7 @@ fn print_man_not_found(topic: Option<&str>, base_url: &str) {
     }
 }
 
-/// `mix man [TOPIC]`: resolve the canonical online manual with a local fallback.
+/// `mix man [TOPIC]`: print a manual page; the built-in manual by default.
 fn cmd_man(topic: Option<&str>) {
     let source = match parse_man_source(env::var("MIXOS_MAN_SOURCE").ok().as_deref()) {
         Ok(source) => source,
@@ -3124,11 +3124,14 @@ fn cmd_apropos(term: &str) {
         }
     }
 
-    // 3. Manual section headings — match each page's `#` headings. The
-    //    manual built into the binary comes first (it is what `mix man`
-    //    shows), then any page only on disk: the checkout docs dir and the
-    //    `mix man` cache (`~/.cache/mixos/man`, default-URL layout). Dedup by
-    //    topic, in that order.
+    // 3. Manual section headings — match each page's `#` headings, taking
+    //    each topic from where `mix man` would: the manual built into the
+    //    binary, then any page only on disk (the checkout docs dir, then the
+    //    `mix man` cache, `~/.cache/mixos/man`, default-URL layout). With
+    //    MIXOS_MAN_SOURCE=local the disk copies win, as they do for `mix man`.
+    let local = env::var("MIXOS_MAN_SOURCE")
+        .ok()
+        .is_some_and(|value| parse_man_source(Some(&value)) == Ok(ManSource::Local));
     let mut scan_dirs: Vec<PathBuf> = vec![resolve_man_dir()];
     if let Some(root) = man_cache_root(
         env::var_os("XDG_CACHE_HOME").map(PathBuf::from).as_deref(),
@@ -3136,25 +3139,32 @@ fn cmd_apropos(term: &str) {
     ) {
         scan_dirs.push(root);
     }
-    let mut pages: Vec<(String, String)> = crate::manual::topics()
+    let built_in: Vec<(String, String)> = crate::manual::topics()
         .into_iter()
         .filter_map(|topic| {
             let content = crate::manual::page(&format!("{topic}.md"))?;
             Some((topic, content.to_string()))
         })
         .collect();
-    let mut seen_topics: std::collections::HashSet<String> =
-        pages.iter().map(|(topic, _)| topic.clone()).collect();
+    let mut on_disk: Vec<(String, String)> = Vec::new();
     for dir in &scan_dirs {
         for topic in available_man_topics(dir) {
-            if !seen_topics.insert(topic.clone()) {
-                continue;
-            }
             if let Ok(content) = std::fs::read_to_string(dir.join(format!("{topic}.md"))) {
-                pages.push((topic, content));
+                on_disk.push((topic, content));
             }
         }
     }
+    let (first, second) = if local {
+        (on_disk, built_in)
+    } else {
+        (built_in, on_disk)
+    };
+    let mut seen_topics = std::collections::HashSet::new();
+    let pages: Vec<(String, String)> = first
+        .into_iter()
+        .chain(second)
+        .filter(|(topic, _)| seen_topics.insert(topic.clone()))
+        .collect();
     let mut section_hits: Vec<(String, String)> = Vec::new();
     for (topic, content) in &pages {
         let mut in_fence = false;

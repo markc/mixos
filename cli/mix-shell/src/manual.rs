@@ -24,7 +24,7 @@ fn unpack(compressed: &[u8]) -> Option<Vec<(String, String)>> {
     let mut packed = Vec::new();
     decoder.read_to_end(&mut packed).ok()?;
     fn take(rest: &mut &[u8]) -> Option<String> {
-        let s: &[u8] = *rest;
+        let s = std::mem::take(rest);
         let len = u32::from_le_bytes(s.get(..4)?.try_into().ok()?) as usize;
         let field = s.get(4..4 + len)?;
         *rest = &s[4 + len..];
