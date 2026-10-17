@@ -738,10 +738,18 @@ fn each_tree_node_has_its_registry_menu() {
         Some("m-lists"),
         "a right-click selects"
     );
+}
+
+#[test]
+fn the_account_root_has_its_own_menu() {
     let h = tree_menu("Home", "tree_menu_account_pro_light");
     for item in ["Compose from This Account", "Reconnect", "Account Settings…"] {
         assert!(h.query_by_label(item).is_some(), "{item}");
     }
+}
+
+#[test]
+fn a_calendar_menu_runs_its_command() {
     let mut h = tree_menu("Main", "tree_menu_calendar_pro_light");
     assert!(h.query_by_label_contains(&label("new-event")).is_some());
     h.get_by_label_contains(&label("new-event")).click();
