@@ -214,14 +214,16 @@ fn inner_bindings(cmd: &str) -> HashSet<String> {
         .split(|c: char| c.is_whitespace() || matches!(c, ';' | '&' | '|' | '(' | ')' | '`'))
         .filter(|w| !w.is_empty())
         .collect();
-    let is_name = |w: &str| {
+    fn is_name(w: &str) -> bool {
         let mut chars = w.chars();
         chars
             .next()
             .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
             && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
-    };
-    let assigned = |w: &str| w.split_once('=').map(|(n, _)| n).filter(|n| is_name(n));
+    }
+    fn assigned(w: &str) -> Option<&str> {
+        w.split_once('=').map(|(n, _)| n).filter(|n| is_name(n))
+    }
     let mut names = HashSet::new();
     let mut i = 0;
     while i < words.len() {
