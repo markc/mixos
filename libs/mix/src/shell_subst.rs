@@ -841,11 +841,11 @@ mod tests {
         // The inner `d=inner` owns only the inner `$d`; the outer `$d`
         // is still the Mix variable.
         let p = prepare("echo $(d=inner; echo $d); echo $d", scope).unwrap();
+        assert_eq!(p.cmd, "echo $(d=inner; echo $d); echo ${__mix_subst_0}");
         assert_eq!(
-            p.cmd,
-            "echo $(d=inner; echo $d); echo ${__mix_subst_0}"
+            p.env,
+            vec![("__mix_subst_0".to_string(), "x y".to_string())]
         );
-        assert_eq!(p.env, vec![("__mix_subst_0".to_string(), "x y".to_string())]);
         // A binding in an enclosing level still covers a nested reference.
         let p = prepare("d=1; echo $(echo $d)", scope).unwrap();
         assert_eq!(p.cmd, "d=1; echo $(echo $d)");
@@ -868,7 +868,10 @@ mod tests {
         // In double quotes `\O` is not an escape: the delimiter is `E\OF`.
         let cmd = "cat <<\"E\\OF\"\n$nosuch\nE\\OF\necho $d";
         let p = prepare(cmd, scope).unwrap();
-        assert_eq!(p.cmd, "cat <<\"E\\OF\"\n$nosuch\nE\\OF\necho ${__mix_subst_0}");
+        assert_eq!(
+            p.cmd,
+            "cat <<\"E\\OF\"\n$nosuch\nE\\OF\necho ${__mix_subst_0}"
+        );
     }
 
     #[test]

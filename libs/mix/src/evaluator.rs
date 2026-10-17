@@ -18327,7 +18327,10 @@ impl Evaluator {
             let Some(payload) = args.get(1) else {
                 return Err(MixError::RuntimeError {
                     span: None,
-                    msg: format!("{name}() expects at least 2 argument(s), got {}", args.len()),
+                    msg: format!(
+                        "{name}() expects at least 2 argument(s), got {}",
+                        args.len()
+                    ),
                 });
             };
             let data = builtins::with_write_payload(name, payload, <[u8]>::to_vec)?;
@@ -18871,10 +18874,7 @@ mod fifo_arity_tests {
 
     /// A fresh FIFO in a private directory, and the directory to remove.
     fn fifo(tag: &str) -> (std::path::PathBuf, std::path::PathBuf) {
-        let dir = std::env::temp_dir().join(format!(
-            "mix-fifo-arity-{}-{tag}",
-            std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("mix-fifo-arity-{}-{tag}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("pipe");
         let status = std::process::Command::new("mkfifo")
@@ -18955,7 +18955,10 @@ mod standing_interrupt_tests {
             .expect("run child test");
         let text = String::from_utf8_lossy(&out.stdout);
         assert!(out.status.success(), "child failed:\n{text}");
-        assert!(text.contains("standing child ok"), "child did not run:\n{text}");
+        assert!(
+            text.contains("standing child ok"),
+            "child did not run:\n{text}"
+        );
     }
 
     /// Runs only in the child process (see the parent test above).
