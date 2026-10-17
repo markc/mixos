@@ -160,6 +160,16 @@ pub struct Email {
     /// The non-body parts, when the get asked for them (an open does).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attachments: Option<Vec<Attachment>>,
+    /// A draft's Bcc (a sent message carries none in its bytes).
+    #[serde(default, deserialize_with = "addresses")]
+    pub bcc: Option<Vec<EmailAddress>>,
+    /// The ids this message replies to, bracketed. maild projects `null`
+    /// for now; a resumed draft reads its own header instead.
+    #[serde(rename = "inReplyTo", default)]
+    pub in_reply_to: Option<Vec<String>>,
+    /// The raw message's blob.
+    #[serde(rename = "blobId", default)]
+    pub blob_id: Option<String>,
 }
 
 impl Email {
@@ -215,6 +225,15 @@ impl Email {
         self.keywords
             .as_ref()
             .and_then(|k| k.get("$seen"))
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    }
+
+    /// Whether the `$draft` keyword is set.
+    pub fn is_draft(&self) -> bool {
+        self.keywords
+            .as_ref()
+            .and_then(|k| k.get("$draft"))
             .and_then(Value::as_bool)
             .unwrap_or(false)
     }
