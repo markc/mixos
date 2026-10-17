@@ -151,7 +151,9 @@ async fn delivered(e: &mut Evaluator, path: &Path, kind: &str) -> Value {
     // Every batch the handler saw, so a deadline names what arrived instead.
     let batches = e.get_global("batches").map(|b| b.to_mix_string());
     pumped
-        .unwrap_or_else(|_| panic!("native event deadline waiting for {kind} {path:?}; batches: {batches:?}"))
+        .unwrap_or_else(|_| {
+            panic!("native event deadline waiting for {kind} {path:?}; batches: {batches:?}")
+        })
         .unwrap();
     e.get_global("seen")
         .expect("handler stores the ordinary $event.args envelope")

@@ -1147,9 +1147,7 @@ mod tests {
     fn exec_errno_still_wins_over_a_stop() {
         let (stage, _gate, trampoline) = stage(false);
         let mut trampoline = trampoline.unwrap();
-        trampoline
-            .write_all(&libc::ENOENT.to_ne_bytes())
-            .unwrap();
+        trampoline.write_all(&libc::ENOENT.to_ne_bytes()).unwrap();
         drop(trampoline);
         let error = stage.release_with_stop(|| true).unwrap_err();
         assert_eq!(error.raw_os_error(), Some(libc::ENOENT));

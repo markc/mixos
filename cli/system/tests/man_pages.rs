@@ -260,7 +260,8 @@ fn no_stale_version_stamps_or_banned_citations() {
 #[test]
 fn builtins_page_matches_this_binary() {
     let mix = env!("CARGO_BIN_EXE_mix");
-    let generator = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/_build/gen-builtins-md.mix");
+    let generator =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/_build/gen-builtins-md.mix");
     let out = Command::new(mix)
         .arg(&generator)
         .args(["--mix", mix, "--check"])
@@ -288,7 +289,8 @@ fn builtins_generator_refuses_an_unplaced_category() {
     )
     .unwrap();
     std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
-    let generator = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/_build/gen-builtins-md.mix");
+    let generator =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/_build/gen-builtins-md.mix");
     let out = Command::new(env!("CARGO_BIN_EXE_mix"))
         .arg(&generator)
         .arg("--mix")

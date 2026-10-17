@@ -3157,30 +3157,30 @@ fn cmd_apropos(term: &str) {
     }
     let mut section_hits: Vec<(String, String)> = Vec::new();
     for (topic, content) in &pages {
-            let mut in_fence = false;
-            for line in content.lines() {
-                let trimmed = line.trim_start();
-                // A ``` / ~~~ line toggles a fenced code block. Its `# comment`
-                // lines are NOT headings — without this, a bash example inside a
-                // page produces phantom "section" hits.
-                if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
-                    in_fence = !in_fence;
-                    continue;
-                }
-                if in_fence {
-                    continue;
-                }
-                // ATX heading only: one-or-more '#' then a SPACE (so `#!/…`,
-                // `#include`, `#foo` are not mistaken for headings).
-                let hashes = trimmed.chars().take_while(|c| *c == '#').count();
-                if hashes == 0 || trimmed.chars().nth(hashes) != Some(' ') {
-                    continue;
-                }
-                let heading = trimmed[hashes..].trim();
-                if !heading.is_empty() && heading.to_lowercase().contains(&needle) {
-                    section_hits.push((topic.clone(), heading.to_string()));
-                }
+        let mut in_fence = false;
+        for line in content.lines() {
+            let trimmed = line.trim_start();
+            // A ``` / ~~~ line toggles a fenced code block. Its `# comment`
+            // lines are NOT headings — without this, a bash example inside a
+            // page produces phantom "section" hits.
+            if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
+                in_fence = !in_fence;
+                continue;
             }
+            if in_fence {
+                continue;
+            }
+            // ATX heading only: one-or-more '#' then a SPACE (so `#!/…`,
+            // `#include`, `#foo` are not mistaken for headings).
+            let hashes = trimmed.chars().take_while(|c| *c == '#').count();
+            if hashes == 0 || trimmed.chars().nth(hashes) != Some(' ') {
+                continue;
+            }
+            let heading = trimmed[hashes..].trim();
+            if !heading.is_empty() && heading.to_lowercase().contains(&needle) {
+                section_hits.push((topic.clone(), heading.to_string()));
+            }
+        }
     }
     if !section_hits.is_empty() {
         println!("\nMANUAL SECTIONS");

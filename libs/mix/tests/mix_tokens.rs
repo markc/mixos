@@ -63,7 +63,8 @@ fn kinds_text_and_positions_come_from_the_lexer() {
 
 #[test]
 fn comment_markers_inside_strings_and_heredocs_are_text() {
-    let source = "$a = \"-- not\" # yes\n$b = 'multi\n# line'\n$c = <<EOF\n-- body # too\nEOF\n$d = 1\n";
+    let source =
+        "$a = \"-- not\" # yes\n$b = 'multi\n# line'\n$c = <<EOF\n-- body # too\nEOF\n$d = 1\n";
     let tokens = Lexer::source_tokens(source, true).unwrap();
     let comments: Vec<_> = tokens
         .iter()
@@ -71,7 +72,10 @@ fn comment_markers_inside_strings_and_heredocs_are_text() {
         .map(|t| (t.text.as_str(), t.line))
         .collect();
     assert_eq!(comments, vec![("# yes", 1)]);
-    let multi = tokens.iter().find(|t| t.text.starts_with("'multi")).unwrap();
+    let multi = tokens
+        .iter()
+        .find(|t| t.text.starts_with("'multi"))
+        .unwrap();
     assert_eq!((multi.kind, multi.line, multi.column), ("string", 2, 6));
     assert_eq!(multi.text, "'multi\n# line'");
     let heredoc = tokens.iter().find(|t| t.kind == "heredoc").unwrap();
@@ -91,7 +95,12 @@ fn every_token_points_back_into_a_real_tool_source() {
     for t in &tokens {
         let at: String = lines[t.line - 1][t.column - 1..].iter().collect();
         let first = t.text.split('\n').next().unwrap();
-        assert!(at.starts_with(first), "{t:?} is not at {}:{}", t.line, t.column);
+        assert!(
+            at.starts_with(first),
+            "{t:?} is not at {}:{}",
+            t.line,
+            t.column
+        );
     }
     assert!(tokens.iter().any(|t| t.kind == "comment"));
 }
@@ -109,10 +118,11 @@ async fn the_builtin_returns_maps_and_validates_its_options() {
     assert_eq!(
         out,
         concat!(
-            "[{\"kind\":\"variable\",\"text\":\"$x\",\"line\":1,\"col\":1},",
-            "{\"kind\":\"operator\",\"text\":\"=\",\"line\":1,\"col\":4},",
-            "{\"kind\":\"number\",\"text\":\"1\",\"line\":1,\"col\":6},",
-            "{\"kind\":\"comment\",\"text\":\"-- c\",\"line\":1,\"col\":8}]\n",
+            // json_encode sorts keys.
+            "[{\"col\":1,\"kind\":\"variable\",\"line\":1,\"text\":\"$x\"},",
+            "{\"col\":4,\"kind\":\"operator\",\"line\":1,\"text\":\"=\"},",
+            "{\"col\":6,\"kind\":\"number\",\"line\":1,\"text\":\"1\"},",
+            "{\"col\":8,\"kind\":\"comment\",\"line\":1,\"text\":\"-- c\"}]\n",
             "3\n0\n",
         )
     );
