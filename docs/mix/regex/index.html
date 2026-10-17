@@ -309,10 +309,13 @@ h_ll_ w_rld
 <a href="#errors-and-validation">Errors</a>). Since 0.117.0 they share a small cache of
 compiled patterns, keyed by the exact pattern string (inline flags such as
 <code>(?i)</code> included): a loop that calls <code>re_match</code> with the same pattern on every
-line compiles it once. The cache holds at most 64 patterns and 64 KiB of
-pattern text, evicting the least recently used; a pattern over 4 KiB is never
-cached. Invalid patterns are not cached, so they raise the same error on every
-call. There is still no Mix-visible compiled-pattern value.</p>
+line reuses one compile while the pattern stays cached. The cache holds at most
+32 patterns and 64 KiB of pattern text, evicting the least recently used. A
+pattern over 4 KiB, or one that compiles to more than a small size limit (a
+Unicode repetition such as <code>\w{60}</code>), is never cached and compiles on every
+call, as before. Invalid patterns are not cached either, so they raise the same
+error on every call. Caching changes speed only, never what matches. There is
+still no Mix-visible compiled-pattern value.</p>
 <p>Arity is checked as a <strong>minimum</strong>: a missing argument raises, but surplus
 arguments are <strong>silently ignored</strong> (<code>re_match("abc", "b", "extra")</code> →
 <code>true</code>). Non-string arguments are coerced with the standard string coercion —
@@ -581,8 +584,10 @@ error: look-around, including look-ahead and look-behind, is not supported
 <code>contains</code>/<code>split</code>/<code>replace</code>/<code>starts_with</code> for fixed substrings (byte-exact, no
 pattern compile), or extract groups with <code>re_find</code> then compare in Mix code.</p>
 <p>There is also no compiled-pattern value type; the shared compile cache (see
-<a href="#the-family">The family</a>) means a repeated pattern compiles once. A
-script that builds a new pattern on every iteration still compiles every time,
+<a href="#the-family">The family</a>) means a repeated pattern is usually compiled
+once, but a pattern evicted by more than 32 others, or too big to cache,
+compiles again. A script that builds a new pattern on every iteration still
+compiles every time,
 and for a tight inner loop one <code>re_find</code> over the whole input still beats a
 per-element <code>re_match</code>, because each call costs an interpreter round trip.</p>
 <h2 id="recipes">Recipes</h2>

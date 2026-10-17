@@ -15803,15 +15803,18 @@ fn builtin_json_encode(args: Vec<Value>) -> MixResult<Option<Value>> {
 // --- Regex builtins (feature-gated) ---
 
 #[cfg(feature = "regex")]
-fn compile_regex(pattern: &str) -> MixResult<regex::Regex> {
-    // Bounded LRU of successful compiles (0.117.0); errors are rebuilt
-    // below on every call, so their text never changes.
+pub(crate) fn compile_regex(pattern: &str) -> MixResult<regex::Regex> {
+    // Bounded LRU of successful compiles (0.117.0). A pattern that fails
+    // the cache's size limits, or does not compile, falls through to the
+    // uncached default-limit compile, so errors keep their exact text.
     if let Some(re) = crate::regex_cache::get(pattern) {
         return Ok(re);
     }
-    let re = compile_regex_uncached(pattern)?;
-    crate::regex_cache::put(pattern, &re);
-    Ok(re)
+    if let Some(re) = crate::regex_cache::compile_bounded(pattern) {
+        crate::regex_cache::put(pattern, &re);
+        return Ok(re);
+    }
+    compile_regex_uncached(pattern)
 }
 
 #[cfg(feature = "regex")]

@@ -7,8 +7,10 @@
 //! (cold) and second (warm) call with a pattern give the same answer,
 //! an invalid pattern raises the same error every time, and a script
 //! that churns through far more unique patterns than the cache holds
-//! still gets correct results. The size bounds themselves are unit
-//! tests in `src/regex_cache.rs`.
+//! still gets correct results. Parallel tests here can evict each
+//! other's entries, so these pin results only; that the builtins really
+//! hit the cache, and the size bounds, are unit tests in
+//! `src/regex_cache.rs`.
 
 use mix::run_capturing;
 
@@ -96,7 +98,7 @@ end
 
 #[tokio::test]
 async fn churn_past_the_bound_stays_correct() {
-    // 500 unique patterns overflows the 64-entry cache many times over;
+    // 500 unique patterns overflows the 32-entry cache many times over;
     // every match must still be right, and the early pattern recompiles
     // correctly after its eviction.
     let src = r#"

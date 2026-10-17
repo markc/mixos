@@ -60,10 +60,13 @@ All of them **raise a catchable runtime error** on an invalid pattern (see
 [Errors](#errors-and-validation)). Since 0.117.0 they share a small cache of
 compiled patterns, keyed by the exact pattern string (inline flags such as
 `(?i)` included): a loop that calls `re_match` with the same pattern on every
-line compiles it once. The cache holds at most 64 patterns and 64 KiB of
-pattern text, evicting the least recently used; a pattern over 4 KiB is never
-cached. Invalid patterns are not cached, so they raise the same error on every
-call. There is still no Mix-visible compiled-pattern value.
+line reuses one compile while the pattern stays cached. The cache holds at most
+32 patterns and 64 KiB of pattern text, evicting the least recently used. A
+pattern over 4 KiB, or one that compiles to more than a small size limit (a
+Unicode repetition such as `\w{60}`), is never cached and compiles on every
+call, as before. Invalid patterns are not cached either, so they raise the same
+error on every call. Caching changes speed only, never what matches. There is
+still no Mix-visible compiled-pattern value.
 
 Arity is checked as a **minimum**: a missing argument raises, but surplus
 arguments are **silently ignored** (`re_match("abc", "b", "extra")` →
@@ -439,8 +442,10 @@ If you reach for a backreference, usually a non-regex approach works:
 pattern compile), or extract groups with `re_find` then compare in Mix code.
 
 There is also no compiled-pattern value type; the shared compile cache (see
-[The family](#the-family)) means a repeated pattern compiles once. A
-script that builds a new pattern on every iteration still compiles every time,
+[The family](#the-family)) means a repeated pattern is usually compiled
+once, but a pattern evicted by more than 32 others, or too big to cache,
+compiles again. A script that builds a new pattern on every iteration still
+compiles every time,
 and for a tight inner loop one `re_find` over the whole input still beats a
 per-element `re_match`, because each call costs an interpreter round trip.
 
