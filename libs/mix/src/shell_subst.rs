@@ -38,22 +38,30 @@ const PARAM_PREFIX: &str = "__mix_subst_";
 /// Rewrite every resolvable `$name` in `cmd` and refuse an unset one.
 /// `lookup` is the shell-word resolver: Mix scope, then the environment.
 pub fn prepare(cmd: &str, lookup: impl Fn(&str) -> Option<String>) -> Result<Prepared, String> {
-    let mut scan = Scan {
-        c: cmd.chars().collect(),
-        i: 0,
-        out: String::with_capacity(cmd.len()),
-        params: HashMap::new(),
-        env: Vec::new(),
-        inner: inner_bindings(cmd),
-        lookup: &lookup,
-        lenient: 0,
-        pending: Vec::new(),
-    };
+    // Pass 1 only discovers the names the inner command binds, with the
+    // same quoting, comment and heredoc rules as the rewrite; pass 2
+    // rewrites against them.
+    let mut discover = Scan::new(cmd, &lookup, HashSet::new(), true);
+    discover.shell(false)?;
+    let mut scan = Scan::new(cmd, &lookup, discover.found, false);
     scan.shell(false)?;
     Ok(Prepared {
         cmd: scan.out,
         env: scan.env,
     })
+}
+
+/// A placeholder for word text that is quoted or expanded: never part of
+/// a name, so `'x'=1` or `$a=b` is no assignment.
+const OPAQUE: char = '\u{0}';
+
+/// Words of one shell level, `None` for a command separator.
+type Words = Vec<Option<String>>;
+
+fn flush(words: &mut Words, word: &mut String) {
+    if !word.is_empty() {
+        words.push(Some(std::mem::take(word)));
+    }
 }
 
 /// A shell heredoc whose body starts after the current line.
@@ -77,9 +85,29 @@ struct Scan<'a, F: Fn(&str) -> Option<String>> {
     /// run, so an unset one is left to the shell instead of raising.
     lenient: usize,
     pending: Vec<Heredoc>,
+    /// Discovery pass: resolve nothing, raise nothing, and collect the
+    /// names the inner command binds into `found`.
+    discover: bool,
+    found: HashSet<String>,
 }
 
-impl<F: Fn(&str) -> Option<String>> Scan<'_, F> {
+impl<'a, F: Fn(&str) -> Option<String>> Scan<'a, F> {
+    fn new(cmd: &str, lookup: &'a F, inner: HashSet<String>, discover: bool) -> Self {
+        Scan {
+            c: cmd.chars().collect(),
+            i: 0,
+            out: String::with_capacity(cmd.len()),
+            params: HashMap::new(),
+            env: Vec::new(),
+            inner,
+            lookup,
+            lenient: 0,
+            pending: Vec::new(),
+            discover,
+            found: HashSet::new(),
+        }
+    }
+
     fn peek(&self, ahead: usize) -> Option<char> {
         self.c.get(self.i + ahead).copied()
     }
@@ -97,8 +125,11 @@ impl<F: Fn(&str) -> Option<String>> Scan<'_, F> {
     /// at the `)` that closes the enclosing `$(`.
     fn shell(&mut self, in_subst: bool) -> Result<(), String> {
         let mut depth = 0usize;
-        let mut word_start = true;
+        // The unquoted words of this level, for binding discovery.
+        let mut words: Words = Vec::new();
+        let mut word = String::new();
         while let Some(c) = self.peek(0) {
+            let word_start = word.is_empty();
             match c {
                 '\'' => {
                     self.copy(1);
@@ -108,16 +139,16 @@ impl<F: Fn(&str) -> Option<String>> Scan<'_, F> {
                             break;
                         }
                     }
-                    word_start = false;
+                    word.push(OPAQUE);
                 }
                 '"' => {
                     self.copy(1);
                     self.dquote()?;
-                    word_start = false;
+                    word.push(OPAQUE);
                 }
                 '\\' => {
                     self.copy(2);
-                    word_start = false;
+                    word.push(OPAQUE);
                 }
                 '#' if word_start => {
                     while self.peek(0).is_some_and(|c| c != '\n') {
@@ -125,45 +156,58 @@ impl<F: Fn(&str) -> Option<String>> Scan<'_, F> {
                     }
                 }
                 '\n' => {
+                    flush(&mut words, &mut word);
+                    words.push(None);
                     self.copy(1);
                     self.heredoc_bodies()?;
-                    word_start = true;
                 }
                 '(' => {
+                    flush(&mut words, &mut word);
+                    words.push(None);
                     depth += 1;
                     self.copy(1);
-                    word_start = true;
                 }
                 ')' => {
                     if in_subst && depth == 0 {
-                        return Ok(());
+                        break;
                     }
+                    flush(&mut words, &mut word);
+                    words.push(None);
                     depth = depth.saturating_sub(1);
                     self.copy(1);
-                    word_start = true;
                 }
                 // `<<<` is a here-string, not a heredoc.
                 '<' if self.peek(1) == Some('<') && self.peek(2) == Some('<') => {
+                    flush(&mut words, &mut word);
                     self.copy(3);
-                    word_start = true;
                 }
                 '<' if self.peek(1) == Some('<') => {
+                    flush(&mut words, &mut word);
                     self.heredoc_op();
-                    word_start = false;
+                    word.push(OPAQUE);
                 }
                 '$' => {
                     self.dollar()?;
-                    word_start = false;
+                    word.push(OPAQUE);
                 }
-                c if c.is_whitespace() || matches!(c, ';' | '&' | '|') => {
+                c if matches!(c, ';' | '&' | '|' | '`') => {
+                    flush(&mut words, &mut word);
+                    words.push(None);
                     self.copy(1);
-                    word_start = true;
+                }
+                c if c.is_whitespace() => {
+                    flush(&mut words, &mut word);
+                    self.copy(1);
                 }
                 _ => {
+                    word.push(c);
                     self.copy(1);
-                    word_start = false;
                 }
             }
+        }
+        if self.discover {
+            flush(&mut words, &mut word);
+            self.found.extend(bindings_of(&words));
         }
         Ok(())
     }
@@ -270,6 +314,10 @@ impl<F: Fn(&str) -> Option<String>> Scan<'_, F> {
             _ => 0,
         };
         let defaulted = !length && op_len > 0;
+        // An assigning form binds the name when it runs.
+        if self.discover && op_len > 0 && self.c.get(j + op_len - 1) == Some(&'=') {
+            self.found.insert(name.clone());
+        }
         let param = self.reference(&name, !defaulted)?;
         self.out.push_str("${");
         if length {
@@ -340,20 +388,50 @@ impl<F: Fn(&str) -> Option<String>> Scan<'_, F> {
         while self.peek(0).is_some_and(|c| c == ' ' || c == '\t') {
             self.copy(1);
         }
+        // The delimiter word, with shell quote removal: `<<'END TAG'`,
+        // `<<"E"OF`, `<<\EOF` and `<<''` are all quoted delimiters.
         let mut delim = String::new();
         let mut quoted = false;
         while let Some(c) = self.peek(0) {
-            if c.is_whitespace() || matches!(c, ';' | '&' | '|' | '(' | ')' | '<' | '>') {
-                break;
+            match c {
+                '\'' | '"' => {
+                    quoted = true;
+                    self.copy(1);
+                    while let Some(q) = self.peek(0) {
+                        self.copy(1);
+                        if q == c {
+                            break;
+                        }
+                        if c == '"' && q == '\\' {
+                            if let Some(e) = self.peek(0) {
+                                delim.push(e);
+                                self.copy(1);
+                            }
+                            continue;
+                        }
+                        delim.push(q);
+                    }
+                }
+                '\\' => {
+                    quoted = true;
+                    self.copy(1);
+                    if let Some(e) = self.peek(0) {
+                        delim.push(e);
+                        self.copy(1);
+                    }
+                }
+                c if c.is_whitespace()
+                    || matches!(c, ';' | '&' | '|' | '(' | ')' | '<' | '>') =>
+                {
+                    break;
+                }
+                c => {
+                    delim.push(c);
+                    self.copy(1);
+                }
             }
-            if matches!(c, '\'' | '"' | '\\') {
-                quoted = true;
-            } else {
-                delim.push(c);
-            }
-            self.copy(1);
         }
-        if !delim.is_empty() {
+        if quoted || !delim.is_empty() {
             self.pending.push(Heredoc {
                 delim,
                 quoted,
@@ -402,7 +480,7 @@ impl<F: Fn(&str) -> Option<String>> Scan<'_, F> {
     /// Resolve one referenced `name`: `Some(param)` when it carries a
     /// value into the child, `None` when the inner shell owns it.
     fn reference(&mut self, name: &str, required: bool) -> Result<Option<String>, String> {
-        if self.inner.contains(name) {
+        if self.discover || self.inner.contains(name) {
             return Ok(None);
         }
         if let Some(param) = self.params.get(name) {
@@ -437,34 +515,14 @@ fn assigned(w: &str) -> Option<&str> {
     w.split_once('=').map(|(n, _)| n).filter(|n| is_name(n))
 }
 
-/// Names the inner command binds itself, so a reference to them is the
-/// inner shell's business: assignments in command position (`x=1`,
-/// `x=1 cmd`), `for`/`select` loop variables, `read` targets,
-/// `local`/`export`/`readonly`/`declare`/`typeset` operands, `getopts`'
-/// variable, and `${name:=…}` / `${name=…}`. Word-level and quote-blind
-/// on purpose: a false positive only hands a name back to `/bin/sh`, which
-/// is the old behaviour.
-fn inner_bindings(cmd: &str) -> HashSet<String> {
-    // Words, with `None` for a command separator.
-    let mut tokens: Vec<Option<String>> = Vec::new();
-    let mut word = String::new();
-    for c in cmd.chars() {
-        let sep = matches!(c, ';' | '&' | '|' | '(' | ')' | '`' | '\n');
-        if sep || c.is_whitespace() {
-            if !word.is_empty() {
-                tokens.push(Some(std::mem::take(&mut word)));
-            }
-            if sep {
-                tokens.push(None);
-            }
-        } else if !matches!(c, '"' | '\'') {
-            word.push(c);
-        }
-    }
-    if !word.is_empty() {
-        tokens.push(Some(word));
-    }
-
+/// Names one shell level binds itself, from its unquoted words (quoted and
+/// expanded text is [`OPAQUE`], comments and heredoc bodies are absent):
+/// assignments in command position (`x=1`, `x=1 cmd`), `for`/`select` loop
+/// variables, `read` targets, `local`/`export`/`readonly`/`declare`/
+/// `typeset` operands and `getopts`' variable. (`${name:=…}` is found by
+/// the scanner itself.) A false positive only hands a name back to
+/// `/bin/sh`, which is the old behaviour.
+fn bindings_of(tokens: &[Option<String>]) -> HashSet<String> {
     let mut names = HashSet::new();
     let mut command_position = true;
     let mut i = 0;
@@ -525,30 +583,6 @@ fn inner_bindings(cmd: &str) -> HashSet<String> {
         }
         command_position = false;
         i += 1;
-    }
-
-    // `${name:=v}` / `${name=v}` assign when they run.
-    let chars: Vec<char> = cmd.chars().collect();
-    for k in 0..chars.len() {
-        if chars[k] == '$' && chars.get(k + 1) == Some(&'{') {
-            let start = k + 2;
-            let mut end = start;
-            while chars
-                .get(end)
-                .is_some_and(|c| c.is_ascii_alphanumeric() || *c == '_')
-            {
-                end += 1;
-            }
-            let assigns = match chars.get(end) {
-                Some('=') => true,
-                Some(':') => chars.get(end + 1) == Some(&'='),
-                _ => false,
-            };
-            let name: String = chars[start..end].iter().collect();
-            if assigns && is_name(&name) {
-                names.insert(name);
-            }
-        }
     }
     names
 }
@@ -655,6 +689,36 @@ mod tests {
         let p = prepare("echo zz=inner $d", scope).unwrap();
         assert_eq!(p.cmd, "echo zz=inner ${__mix_subst_0}");
         assert!(prepare("echo d2=inner $nosuch", scope).is_err());
+        // Quoted text, comments and heredoc bodies bind nothing either.
+        let p = prepare("echo 'note; d=inner' $d", scope).unwrap();
+        assert_eq!(p.cmd, "echo 'note; d=inner' ${__mix_subst_0}");
+        let p = prepare("echo \"x; d=1\" $d # ; d=2\necho $d", scope).unwrap();
+        assert_eq!(p.cmd, "echo \"x; d=1\" ${__mix_subst_0} # ; d=2\necho ${__mix_subst_0}");
+        let p = prepare("cat <<'EOF'\nd=1\nEOF\necho $d", scope).unwrap();
+        assert_eq!(p.cmd, "cat <<'EOF'\nd=1\nEOF\necho ${__mix_subst_0}");
+        // A real assignment with a quoted value still binds.
+        let p = prepare("d=\"a b\"; echo $d", scope).unwrap();
+        assert_eq!(p.cmd, "d=\"a b\"; echo $d");
+        // So does one inside a nested substitution (conservatively, for the
+        // whole command).
+        let p = prepare("echo $(d=1; echo $d)", scope).unwrap();
+        assert_eq!(p.cmd, "echo $(d=1; echo $d)");
+    }
+
+    #[test]
+    fn a_quoted_heredoc_delimiter_may_hold_spaces_and_quotes() {
+        for cmd in [
+            "cat <<'END TAG'\n$nosuch\nEND TAG\necho $d",
+            "cat <<\"E\"OF\n$nosuch\nEOF\necho $d",
+            "cat <<\\EOF\n$nosuch\nEOF\necho $d",
+        ] {
+            let p = prepare(cmd, scope).unwrap();
+            assert!(p.cmd.ends_with("echo ${__mix_subst_0}"), "{cmd}: {}", p.cmd);
+            assert!(p.cmd.contains("\n$nosuch\n"), "{cmd}: {}", p.cmd);
+        }
+        // `<<''` ends at the first empty line.
+        let p = prepare("cat <<''\n$nosuch\n\necho $d", scope).unwrap();
+        assert!(p.cmd.ends_with("echo ${__mix_subst_0}"), "{}", p.cmd);
     }
 
     #[test]

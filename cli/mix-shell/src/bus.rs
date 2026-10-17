@@ -207,6 +207,9 @@ pub struct MixBusHandler {
     /// and undo the reset. `Cell` is fine — `MixBusHandler` is `!Send`,
     /// only the current-thread evaluator touches it.
     incoming_generation: Cell<u64>,
+    /// Bumped by every reset of `mesh` to `Unprobed`, so a `send` retry
+    /// probing without the lock can tell its result went stale.
+    mesh_generation: Cell<u64>,
     /// Unit tests: probe this URL (anonymous only) instead of the real
     /// configuration, so a retry never reaches a broker on the build host.
     #[cfg(test)]
@@ -361,6 +364,7 @@ impl MixBusHandler {
             incoming_closed: RefCell::new(false),
             incoming_broken: RefCell::new(false),
             incoming_generation: Cell::new(0),
+            mesh_generation: Cell::new(0),
             #[cfg(test)]
             test_probe_url: RefCell::new(None),
         }
@@ -435,6 +439,8 @@ impl MixBusHandler {
         // Repairing one must neither discard nor consume the other's notice.
         if !keep {
             *mesh = MeshState::Unprobed;
+            self.mesh_generation
+                .set(self.mesh_generation.get().wrapping_add(1));
             observed.set(generation);
         }
         if !keep_serve {
@@ -594,29 +600,37 @@ impl MixBusHandler {
     async fn noded_access_with(&self, retry: bool) -> Result<std::sync::Arc<Lane>, MeshErr> {
         self.reconcile_native_attachment().await;
         let mut state = self.mesh.lock().await;
+        // A reset (bus_reconnect, a native re-attachment) that lands while
+        // a retry probes without the lock makes that probe stale: it may
+        // have dialled the old configuration. Start over instead of
+        // publishing it.
+        while retry && matches!(&*state, MeshState::NeverPresent | MeshState::Lost) {
+            let failed = match &*state {
+                MeshState::Lost => MeshErr::Lost,
+                _ => MeshErr::NeverPresent,
+            };
+            // Probe with the lock RELEASED: the latch-only forms (emit,
+            // port_exists, the serve paths) must keep answering at once
+            // while this send dials.
+            let generation = self.mesh_generation.get();
+            drop(state);
+            let probed = self.probe().await;
+            state = self.mesh.lock().await;
+            if self.mesh_generation.get() != generation {
+                continue;
+            }
+            return match (&*state, probed) {
+                // Another caller connected meanwhile: use its lane.
+                (MeshState::Connected(current), _) => Ok(current.clone()),
+                (_, Some(arc)) => {
+                    *state = MeshState::Connected(arc.clone());
+                    Ok(arc)
+                }
+                (_, None) => Err(failed),
+            };
+        }
         match &*state {
             MeshState::Connected(c) => Ok(c.clone()),
-            MeshState::NeverPresent | MeshState::Lost if retry => {
-                let failed = match &*state {
-                    MeshState::Lost => MeshErr::Lost,
-                    _ => MeshErr::NeverPresent,
-                };
-                // Probe with the lock RELEASED: the latch-only forms
-                // (emit, port_exists, the serve paths) must keep answering
-                // at once while this send dials.
-                drop(state);
-                let probed = self.probe().await;
-                let mut state = self.mesh.lock().await;
-                match (&*state, probed) {
-                    // Another caller connected meanwhile: use its lane.
-                    (MeshState::Connected(current), _) => Ok(current.clone()),
-                    (_, Some(arc)) => {
-                        *state = MeshState::Connected(arc.clone());
-                        Ok(arc)
-                    }
-                    (_, None) => Err(failed),
-                }
-            }
             MeshState::NeverPresent => Err(MeshErr::NeverPresent),
             MeshState::Lost => Err(MeshErr::Lost),
             MeshState::Unprobed => match self.probe().await {
@@ -1268,6 +1282,8 @@ impl BusHandler for MixBusHandler {
             let mut mesh = self.mesh.lock().await;
             let mut serve = self.serve.lock().await;
             *mesh = MeshState::Unprobed;
+            self.mesh_generation
+                .set(self.mesh_generation.get().wrapping_add(1));
             *serve = None;
             self.serve_epoch.set(None);
             // Also clear the incoming-receiver state. Without this, a
@@ -2772,6 +2788,60 @@ mod tests {
                 assert_eq!(h.test_state_label().await, "NeverPresent");
                 send.abort();
                 held.abort();
+            })
+            .await;
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn a_reconnect_during_a_retry_probe_makes_it_start_over() {
+        // The retry probes without the lock. A bus_reconnect() that lands
+        // meanwhile (the script re-pointed MIXOS_NODED_URL) must not be
+        // answered from the stale probe: the send starts over and dials
+        // the new configuration.
+        let old = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let old_port = old.local_addr().unwrap().port();
+        let new = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let new_port = new.local_addr().unwrap().port();
+        let h = std::rc::Rc::new(MixBusHandler::new());
+        *h.test_probe_url.borrow_mut() = Some(format!("ws://127.0.0.1:{old_port}/ws"));
+        h.test_force_state(MeshState::NeverPresent).await;
+        let dialled_new = std::rc::Rc::new(Cell::new(0u32));
+        let counter = dialled_new.clone();
+        let (release_tx, release_rx) = tokio::sync::oneshot::channel::<()>();
+        let local = tokio::task::LocalSet::new();
+        local
+            .run_until(async move {
+                tokio::task::spawn_local(async move {
+                    // Hold the old dial open until released, then fail it.
+                    let (socket, _) = old.accept().await.unwrap();
+                    let _ = release_rx.await;
+                    drop(socket);
+                });
+                tokio::task::spawn_local(async move {
+                    while let Ok((socket, _)) = new.accept().await {
+                        counter.set(counter.get() + 1);
+                        drop(socket);
+                    }
+                });
+                let sender = h.clone();
+                let send = tokio::task::spawn_local(async move {
+                    let _ = sender.send("svc.example", "do_something", &Value::Nil).await;
+                });
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                h.reconnect().await.unwrap();
+                *h.test_probe_url.borrow_mut() = Some(format!("ws://127.0.0.1:{new_port}/ws"));
+                let _ = release_tx.send(());
+                for _ in 0..100 {
+                    if dialled_new.get() > 0 {
+                        break;
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                }
+                assert!(
+                    dialled_new.get() > 0,
+                    "the send answered from its stale probe instead of starting over"
+                );
+                send.abort();
             })
             .await;
     }
