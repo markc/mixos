@@ -219,7 +219,7 @@
                     <nav id="toc-nav">
                         <a href="#introspection--what-is-in-the-session">Introspection — what is in the session</a>
                         <a href="#reference--learn-the-language">Reference — learn the language</a>
-                        <a href="#mix-man-resolves-online-first-with-a-local-fallback" class="toc-h3">mix man resolves online-first, with a local fallback</a>
+                        <a href="#mix-man-reads-the-manual-built-into-the-binary" class="toc-h3">mix man reads the manual built into the binary</a>
                         <a href="#mix-diff-bash" class="toc-h3">mix diff bash</a>
                         <a href="#build--rebuild-the-interpreter-from-itself">Build — rebuild the interpreter from itself</a>
                         <a href="#mix-watch--the-edit-test-loop" class="toc-h3">mix watch — the edit-test loop</a>
@@ -433,42 +433,44 @@ quoting as a key. See <a href="/mix/keywords/">keywords</a>.</p>
   select
   ...
 </code></pre>
-<h3 id="mix-man-resolves-online-first-with-a-local-fallback"><code>mix man</code> resolves online-first, with a local fallback</h3>
-<p><code>mix man TOPIC</code> prints the markdown page <code>TOPIC.md</code>. The <strong>canonical source is the
-online documentation service</strong> at <a href="https://mixos.dev/mix"><code>mixos.dev/mix</code></a> — the
-same pages this site renders — because no tool can assume <em>where</em> (or whether) a
-local checkout lives. Resolution order in the default <code>auto</code> mode:</p>
+<h3 id="mix-man-reads-the-manual-built-into-the-binary"><code>mix man</code> reads the manual built into the binary</h3>
+<p><code>mix man TOPIC</code> prints the markdown page <code>TOPIC.md</code>. Every page in <code>docs/mix/</code>
+is compiled into the <code>mix</code> binary (zstd-compressed, about a quarter of a
+megabyte), so a binary copied alone to a new machine, with no checkout and no
+network, still has its whole manual. The built-in copy is also the one that
+documents exactly the binary you are running: a checkout or the online site may
+be ahead of it or behind it.</p>
+<p>Lookup order, with no <code>MIXOS_MAN_*</code> variable set:</p>
 <ol>
-<li><strong>Fresh disk cache</strong> — a copy fetched within the last 24 h short-circuits
-everything (no network, no latency on the common path).</li>
-<li><strong>Online fetch</strong> from <code>mixos.dev/mix</code> (2 s wall-clock budget, HTTPS-only, no
-downgrade redirects); a good page is cached under your XDG cache dir.</li>
-<li><strong>Local checkout</strong>, tried in this order — an <em>explicit</em> signal beats the
-default: <code>$MIXOS_SRC/mix</code> (when <code>MIXOS_SRC</code> is set) → <code>$MIXOS/docs/mix</code>
-(editing the repo's own pages) → <code>$MIXOS/mix</code> (a default checkout).</li>
-<li><strong>Stale cache</strong>, if the network is down and no checkout is present.</li>
-<li>Otherwise a <em>not-found</em> message naming the paths searched and how to force
-local mode.</li>
+<li><strong>The built-in manual.</strong></li>
+<li><strong>Files on disk</strong>, for a page this binary does not carry: the installed
+share tree (<code>$MIXOS_SHARE/mix/man</code>), then a checkout's <code>docs/mix</code>
+(<code>$MIXOS</code>, else the root found above the running binary, else
+<code>~/Projects/mixos</code>).</li>
+<li><strong>The online copy</strong>, as in <code>auto</code> mode below.</li>
 </ol>
 <p>No argument reads the index (<code>README.md</code>); an unknown topic lists the available
 ones (the list excludes <code>README</code> itself):</p>
-<pre><code class="language-mix">mix man math        -- prints the math page (online, cached, or local)
+<pre><code class="language-mix">mix man math        -- prints the math page from the binary
 mix man             -- prints the index
 mix man nope        -- "no manual page for 'nope'" + available topics
 </code></pre>
 <p><strong>Environment controls:</strong></p>
 <ul>
-<li><code>MIXOS_MAN_SOURCE=local</code> — skip the network entirely; resolve only from a
-local checkout (then stale cache). Use it when editing pages and wanting your
-edits to win immediately, or when deliberately offline. Default is <code>auto</code>.</li>
-<li><code>MIXOS_MAN_URL=&lt;base&gt;</code> — override the online base URL (default
-<code>https://mixos.dev/mix</code>). Points the fetch + cache at an alternate host.</li>
-<li><code>MIXOS_SRC=&lt;dir&gt;</code> — adds <code>&lt;dir&gt;/mix</code> as the highest-priority local checkout.</li>
+<li><code>MIXOS_MAN_SOURCE=local</code> — never use the network. Files on disk win (the
+share tree, then the checkout), then the built-in manual, then the cache.
+Use it while editing pages in a checkout, so your edits show before the
+binary is rebuilt.</li>
+<li><code>MIXOS_MAN_SOURCE=auto</code> or <code>MIXOS_MAN_URL=&lt;base&gt;</code> — the online contract: a
+copy fetched within the last 24 h, else a fetch from <code>mixos.dev/mix</code> (or
+<code>&lt;base&gt;</code>; 2 s wall-clock budget, HTTPS-only, cached under your XDG cache
+dir), else files on disk, else the built-in manual, else a stale cached copy.</li>
 </ul>
-<p><code>mix syntax</code> and <code>mix operators</code> are thin aliases — <code>mix man variables</code> and
+<p><code>mix doctor</code> reports how many pages are readable and how many are built in.
+<code>mix syntax</code> and <code>mix operators</code> are thin aliases — <code>mix man variables</code> and
 <code>mix man operators</code> respectively. To add a topic, drop <code>TOPIC.md</code> into
-<code>docs/mix/</code>; it publishes to <code>mixos.dev/mix</code> on the next Pages build and is
-reachable as <code>mix man TOPIC</code> with no code change.</p>
+<code>docs/mix/</code>; the next build carries it, it publishes to <code>mixos.dev/mix</code> on the
+next Pages build, and <code>mix man TOPIC</code> finds it with no code change.</p>
 <h3 id="mix-diff-bash"><code>mix diff bash</code></h3>
 <p>A side-by-side translation table for anyone arriving from bash — it captures the
 sharp edges directly (<code>$</code> sigils everywhere, <code>..</code> for concat, <code>end</code>/<code>done</code>/<code>next</code>

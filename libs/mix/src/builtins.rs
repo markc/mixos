@@ -115,6 +115,7 @@ builtin_table! {
     ("ord", CapabilityClass::Pure,             "string",  "Unicode codepoint of the FIRST character: ord(\"A\") -> 65, ord(\"é\") -> 233. Empty string raises. Inverse: chr()", contract!((s: string) -> number; failure[raises])),
     ("chr", CapabilityClass::Pure,             "string",  "The 1-character string for a Unicode codepoint: chr(65) -> \"A\", chr(10084) -> \"❤\". Surrogates (D800-DFFF) and >0x10FFFF raise, same rule as \\u{...}. Inverse: ord()", contract!((n: number) -> string; failure[raises])),
     ("normalize", CapabilityClass::Pure,       "string",  "Unicode normalisation (UAX #15): normalize(s[, form]) with form \"NFC\" (default), \"NFD\", \"NFKC\" or \"NFKD\" (case-insensitive; nil selects NFC; anything else raises VALUE_ERROR). Makes canonically-equivalent text compare equal: a decomposed e + combining acute (macOS filenames, NFD) equals the precomposed é after normalize(); NFKC also folds compatibility forms (fullwidth letters, ligatures: normalize(\"ﬁ\", \"NFKC\") -> \"fi\"). Emoji and ZWJ sequences pass through unchanged (v0.92.0)", contract!((s: string, form?: any_of(string, nil)) -> string; failure[raises])),
+    ("mix_tokens", CapabilityClass::Pure,      "string",  "How Mix itself tokenises Mix source, for tools that read .mix files: mix_tokens(source[, {comments: bool}]) -> [{kind, text, line, col}] from the real lexer, in source order; nothing is run. kind: number, string (a quoted literal), word (a bare word), interp_string, heredoc, variable, command_sub, keyword, operator, punct, newline, and comment (only with comments:true; # and -- comments). text is the exact source span (a heredoc includes its body and terminator); line and col are 1-based, col in characters. Newlines inside (), [] and {} are not tokens. Source that does not lex raises MIX_SOURCE_LEX with details {line, col} (v0.117.0)", contract!((source: string, opts?: any_of(map("mix_tokens_options", {comments: bool}), nil)) -> list(map("mix_token", {kind: string, text: string, line: number, col: number})); failure[raises])),
     // --- Subject-first string helpers (0.63.0). Tier 1 (delimiter family):
     // absent delimiter/marker -> nil, "" is a REAL result (delimiter at the
     // edge), empty delimiter raises — nil and "" never blur. Tier 2
@@ -489,6 +490,7 @@ pub fn call_builtin(name: &str, args: Vec<Value>) -> MixResult<Option<Value>> {
         "ord" => builtin_ord(args),
         "chr" => builtin_chr(args),
         "normalize" => builtin_normalize(args),
+        "mix_tokens" => builtin_mix_tokens(args),
         // Char-aware string ops (P0) — see the registry block above.
         "byte_length" => builtin_byte_length(args),
         "byte_pos" => builtin_byte_pos(args),
@@ -2418,6 +2420,86 @@ fn builtin_ord(args: Vec<Value>) -> MixResult<Option<Value>> {
         "ord(): empty string has no codepoint — guard with `if $s != \"\"` (0 is NUL, a real codepoint, so it cannot be the absent answer)",
     ))?;
     Ok(Some(Value::Number(c as u32 as f64)))
+}
+
+/// `mix_tokens(source[, {comments}])` — the real lexer's token stream as
+/// data (`Lexer::source_tokens`), so a tool that reads Mix source asks Mix
+/// how it tokenises instead of re-deriving the grammar. Nothing is run.
+fn builtin_mix_tokens(args: Vec<Value>) -> MixResult<Option<Value>> {
+    expect_args_between("mix_tokens", &args, 1, 2)?;
+    let Value::String(source) = &args[0] else {
+        return Err(MixError::structured(
+            "TYPE_MISMATCH",
+            format!(
+                "mix_tokens(): source must be a string, got {}",
+                args[0].type_name()
+            ),
+        ));
+    };
+    let comments = match args.get(1) {
+        None | Some(Value::Nil) => false,
+        Some(Value::Map(opts)) => {
+            if let Some(key) = opts.keys().find(|k| k.as_str() != "comments") {
+                return Err(MixError::structured(
+                    "OPTION_INVALID",
+                    format!("mix_tokens(): unknown option '{key}' (known: comments)"),
+                ));
+            }
+            match opts.get("comments") {
+                None | Some(Value::Nil) => false,
+                Some(Value::Bool(b)) => *b,
+                Some(other) => {
+                    return Err(MixError::structured(
+                        "OPTION_INVALID",
+                        format!(
+                            "mix_tokens(): comments must be a bool, got {}",
+                            other.type_name()
+                        ),
+                    ));
+                }
+            }
+        }
+        Some(other) => {
+            return Err(MixError::structured(
+                "TYPE_MISMATCH",
+                format!(
+                    "mix_tokens(): options must be a map, got {}",
+                    other.type_name()
+                ),
+            ));
+        }
+    };
+    let tokens = crate::lexer::Lexer::source_tokens(source, comments).map_err(|e| {
+        let (line, col, msg) = match &e {
+            MixError::LexerError { msg, span } | MixError::ParseError { msg, span } => {
+                (span.line, span.column, msg.clone())
+            }
+            other => (0, 0, other.to_string()),
+        };
+        let mut details = indexmap::IndexMap::new();
+        details.insert("line".into(), Value::Number(line as f64));
+        details.insert("col".into(), Value::Number(col as f64));
+        MixError::Structured(Box::new(
+            crate::error::ErrorInfo::new(
+                "MIX_SOURCE_LEX",
+                format!("mix_tokens(): line {line}, col {col}: {msg}"),
+            )
+            .with_details(Value::map(details)),
+        ))
+    })?;
+    Ok(Some(Value::list(
+        tokens
+            .into_iter()
+            .map(|t| {
+                let mut m = indexmap::IndexMap::new();
+                m.insert("kind".into(), Value::String(t.kind.into()));
+                m.insert("text".into(), Value::String(t.text));
+                m.insert("line".into(), Value::Number(t.line as f64));
+                m.insert("col".into(), Value::Number(t.column as f64));
+                Value::map(m)
+            })
+            .collect(),
+    )))
 }
 
 /// `normalize(s[, form])` — UAX #15 normalisation. The subject is taken with
@@ -37889,6 +37971,7 @@ mod char_aware_tests {
             "markdown",
             "markdown_escape",
             "merge",
+            "mix_tokens",
             "mix_version",
             "script_version",
             "monotonic",

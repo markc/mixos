@@ -1,0 +1,124 @@
+#!/opt/mixos/bin/mix
+-- version: 0.1.0
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- gen-builtins-md.mix — regenerate the category tables of docs/mix/builtins.md
+-- from a mix binary's own `mix builtins --json`.
+--
+--   mix docs/_build/gen-builtins-md.mix [--mix BIN]           rewrite the page
+--   mix docs/_build/gen-builtins-md.mix [--mix BIN] --check   exit 1 if it differs
+--
+-- BIN is the binary whose table is documented (default /opt/mixos/bin/mix).
+-- cli/system/tests/man_pages.rs runs --check with the binary it just built, so
+-- a builtin added or changed without regenerating fails the build.
+--
+-- The page is hand-written prose around one generated region: from the first
+-- category heading (`## string  — see ...`) up to `## Prelude`. Prose above and
+-- below is kept byte for byte. In the region each category is one heading and
+-- one row per builtin, in the binary's table order: two spaces, the name padded
+-- to 15 columns, a space, the description. Category order and the topic page
+-- each heading links to are fixed below; a category the binary has and this
+-- list lacks is refused, so none is dropped silently. Nothing here reads the
+-- clock or the environment: the same binary always gives the same page.
+
+$CATEGORIES = [
+  ["string", "strings"], ["type", "numbers"], ["math", "math"],
+  ["list", "collections"], ["map", "collections"], ["buffer", "buffer"],
+  ["io", "io"], ["system", "system"], ["format", "strings"], ["json", "data"],
+  ["validate", "data"], ["hof", "hof"], ["bus", "bus"], ["db", "capabilities"],
+  ["jmap", "capabilities"], ["datastar", "datastar"]
+]
+$TAIL = "## Prelude"
+
+fn fail($msg)
+  eprint("gen-builtins-md: " .. $msg)
+  exit(2)
+end
+
+$mix = "/opt/mixos/bin/mix"
+$check = false
+$argv = args()
+$i = 0
+while $i < len($argv)
+  $a = $argv[$i]
+  if $a == "--check" then
+    $check = true
+  elif $a == "--mix" and $i + 1 < len($argv) then
+    $i = $i + 1
+    $mix = $argv[$i]
+  else
+    fail("usage: mix docs/_build/gen-builtins-md.mix [--mix BIN] [--check]")
+  end
+  $i = $i + 1
+end
+
+$page_path = dirname(dirname(script_path())) .. "/mix/builtins.md"
+
+-- The binary's table.
+$r = run_argv([$mix, "builtins", "--json"], {timeout: 60, env: {MIX_STATS: "off"}})
+if not $r.ok then
+  fail($mix .. " builtins --json failed (exit " .. to_string($r.exit_code) .. "): " .. $r.stderr)
+end
+$table = json_parse($r.stdout)
+
+-- Rows per category, in table order.
+$rows = {}
+for $b in $table
+  if not has_key($rows, $b.category) then
+    $rows[$b.category] = []
+  end
+  $line = "  " .. rpad($b.name, 15) .. " " .. $b.description
+  $rows[$b.category] = concat($rows[$b.category], [$line])
+end
+$known = map($CATEGORIES, function($c) = $c[0])
+for $cat in keys($rows)
+  if not contains($known, $cat) then
+    fail("category '" .. $cat .. "' has no place in this page: add it to \$CATEGORIES")
+  end
+end
+
+-- The generated region.
+$region = []
+for $c in $CATEGORIES
+  if has_key($rows, $c[0]) then
+    $region = concat($region, ["## " .. $c[0] .. "  — see [" .. $c[1] .. "](" .. $c[1] .. ".md)", ""])
+    $region = concat($region, $rows[$c[0]])
+    $region = concat($region, [""])
+  end
+end
+
+-- Splice it between the hand-written head and tail.
+$old = read_file($page_path)
+$lines = split($old, "\n")
+$start = -1
+$stop = -1
+$n = 0
+for $l in $lines
+  if $start < 0 and re_match($l, "^## [a-z]+  — see \\[") then
+    $start = $n
+  end
+  if $stop < 0 and starts_with($l, $TAIL) then
+    $stop = $n
+  end
+  $n = $n + 1
+end
+if $start < 0 or $stop < $start then
+  fail($page_path .. ": no category headings before '" .. $TAIL .. "'")
+end
+$new = join(concat(concat(slice($lines, 0, $start), $region), slice($lines, $stop)), "\n")
+
+if $check then
+  if $new != $old then
+    eprint("gen-builtins-md --check: docs/mix/builtins.md does not match " .. $mix ..
+      " builtins --json - run: mix docs/_build/gen-builtins-md.mix --mix " .. $mix)
+    exit(1)
+  end
+  print("gen-builtins-md --check: docs/mix/builtins.md matches " .. to_string(len($table)) .. " builtins")
+  exit(0)
+end
+if $new != $old then
+  write_file($page_path, $new)
+  print("gen-builtins-md: wrote docs/mix/builtins.md (" .. to_string(len($table)) .. " builtins)")
+else
+  print("gen-builtins-md: docs/mix/builtins.md already up to date")
+end

@@ -260,9 +260,9 @@ home of these pages is
 <a href="https://github.com/markc/mixos">markc/mixos</a> monorepo; add a page by dropping
 <code>TOPIC.md</code> there. The same files render everywhere:</p>
 <ul>
-<li><strong>Terminal</strong> — <code>mix man TOPIC</code> (<code>mix man</code> alone prints this index). Online
-source with a local <code>$MIXOS/docs/mix</code> fallback and a 24 h cache at
-<code>~/.cache/mixos/man/</code>.</li>
+<li><strong>Terminal</strong> — <code>mix man TOPIC</code> (<code>mix man</code> alone prints this index). Every
+page is built into the <code>mix</code> binary, so it needs no checkout and no network;
+the lookup order and its overrides are in <a href="/mix/cli/">the mix command</a>.</li>
 <li><strong>Web</strong> — <a href="https://mixos.dev/mix/overview">mixos.dev/mix</a> serves this
 directory.</li>
 <li><strong>GitHub</strong> — browse <a href="https://github.com/markc/mixos/tree/main/docs/mix"><code>docs/mix/</code></a>

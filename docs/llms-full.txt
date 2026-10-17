@@ -68,9 +68,9 @@ home of these pages is
 [markc/mixos](https://github.com/markc/mixos) monorepo; add a page by dropping
 `TOPIC.md` there. The same files render everywhere:
 
-- **Terminal** — `mix man TOPIC` (`mix man` alone prints this index). Online
-  source with a local `$MIXOS/docs/mix` fallback and a 24 h cache at
-  `~/.cache/mixos/man/`.
+- **Terminal** — `mix man TOPIC` (`mix man` alone prints this index). Every
+  page is built into the `mix` binary, so it needs no checkout and no network;
+  the lookup order and its overrides are in [the mix command](cli.md).
 - **Web** — [mixos.dev/mix](https://mixos.dev/mix/overview) serves this
   directory.
 - **GitHub** — browse [`docs/mix/`](https://github.com/markc/mixos/tree/main/docs/mix)
@@ -7336,7 +7336,7 @@ Gotchas that fall out of reference semantics:
 
 # Builtin index
 
-Every Mix builtin grouped by category, generated from `mix builtins` (mix 0.116.0). See the linked topical page for prose and examples; `mix what NAME` prints a one-line description of any single builtin (or keyword), and `mix help` prints the compact names-only summary of the same ten categories.
+Every Mix builtin grouped by category, generated from the binary's own `mix builtins --json`. See the linked topical page for prose and examples; `mix what NAME` prints a one-line description of any single builtin (or keyword), and `mix help` prints a compact names-only summary.
 
 Some builtins are feature-gated on the `mixos-lib-mix` crate (`json`, `regex`, `toml`, `yaml`, `datetime`, `url`, `crypto`, `http`, `sqlite`, `archive`, `dkim`, `markdown`, `datastar`, `xml`, `mime`) so embedders can pull only what they need — the `mix` binary turns them all on.
 
@@ -7360,13 +7360,15 @@ Since 0.29.0 every builtin carries a structured contract — per-argument names/
 - Arity in the contract is the documented surface; a few older builtins tolerate surplus arguments at runtime. `mix lint` checks calls against the contract, which is deliberately stricter.
 - **Argument type gate and nil** (0.103.x): the evaluator checks argument types against the contract for the side-effect classes (fs/process/network/bus) in every mode, and for pure builtins under strict mode. A `nil` VALUE is checked like any other value — there is no blanket nil exemption, so `write_file(nil, "x")` and `mkdir(nil)` raise TYPE_MISMATCH instead of coercing nil into a literal `"nil"` path. An optional argument that intentionally treats an explicit `nil` as "omitted/default" declares it in the contract as `any_of(…, nil)` (e.g. `run_argv`/`exists`/`write_atomic`/`stat`/`walk` opts, `hash_file` algo, `bytes_to_string` opts, `normalize` form, `slice` end); that is the ONLY way a nil reaches the builtin. `any` args accept nil because they accept everything. A nil in a plain `string`/`number`/`map` slot raises in the same modes as any other wrong type.
 
-> Every table category is listed below (0.63.0 — the index is regenerated
-> from `mix builtins --json` by `docs/_build/gen-builtins-md.mix`; the
-> previously-unbucketed `db`/`jmap`/`bus`/`datastar` families now have
-> sections). The Bus-layer callables `noded_register`, `subscribe`,
-> `unsubscribe`, `bus_reconnect`, and `reply(...)` (inside `on` handlers)
-> remain evaluator forms on top of the keyword layer, not table builtins —
-> `mix what` does not know them; see [bus](bus.md).
+> The tables below are generated: `docs/_build/gen-builtins-md.mix` writes
+> one section per category, one row per entry of `mix builtins --json`, in
+> the binary's order. `cargo test -p system --test man_pages` fails when the
+> committed tables differ from the binary it built, so after adding or
+> changing a builtin run
+> `mix docs/_build/gen-builtins-md.mix --mix target/debug/mix`. Rows of kind
+> `statement` (`print`, `eprint`, and the Bus forms `send`, `emit`, `on`,
+> `reply`, ...) are keyword forms listed beside the builtins; see
+> [bus](bus.md).
 
 ## string  — see [strings](strings.md)
 
@@ -7789,7 +7791,7 @@ Since 0.29.0 every builtin carries a structured contract — per-argument names/
 ## See also
 
 - [overview](overview.md) · [keywords](keywords.md) · [the mix CLI](cli.md)
-- `mix builtins [CATEGORY]` lists one category with one-line descriptions (`mix builtins` alone lists all ten); `mix what NAME` describes one builtin or keyword; `mix help` prints the compact category / keyword / subcommand summary.
+- `mix builtins [CATEGORY]` lists one category with one-line descriptions (`mix builtins` alone lists them all); `mix what NAME` describes one builtin or keyword; `mix help` prints the compact category / keyword / subcommand summary.
 
 ---
 
@@ -9122,46 +9124,49 @@ Mix reserved words:
   ...
 ```
 
-### `mix man` resolves online-first, with a local fallback
+### `mix man` reads the manual built into the binary
 
-`mix man TOPIC` prints the markdown page `TOPIC.md`. The **canonical source is the
-online documentation service** at [`mixos.dev/mix`](https://mixos.dev/mix) — the
-same pages this site renders — because no tool can assume *where* (or whether) a
-local checkout lives. Resolution order in the default `auto` mode:
+`mix man TOPIC` prints the markdown page `TOPIC.md`. Every page in `docs/mix/`
+is compiled into the `mix` binary (zstd-compressed, about a quarter of a
+megabyte), so a binary copied alone to a new machine, with no checkout and no
+network, still has its whole manual. The built-in copy is also the one that
+documents exactly the binary you are running: a checkout or the online site may
+be ahead of it or behind it.
 
-1. **Fresh disk cache** — a copy fetched within the last 24 h short-circuits
-   everything (no network, no latency on the common path).
-2. **Online fetch** from `mixos.dev/mix` (2 s wall-clock budget, HTTPS-only, no
-   downgrade redirects); a good page is cached under your XDG cache dir.
-3. **Local checkout**, tried in this order — an *explicit* signal beats the
-   default: `$MIXOS_SRC/mix` (when `MIXOS_SRC` is set) → `$MIXOS/docs/mix`
-   (editing the repo's own pages) → `$MIXOS/mix` (a default checkout).
-4. **Stale cache**, if the network is down and no checkout is present.
-5. Otherwise a *not-found* message naming the paths searched and how to force
-   local mode.
+Lookup order, with no `MIXOS_MAN_*` variable set:
+
+1. **The built-in manual.**
+2. **Files on disk**, for a page this binary does not carry: the installed
+   share tree (`$MIXOS_SHARE/mix/man`), then a checkout's `docs/mix`
+   (`$MIXOS`, else the root found above the running binary, else
+   `~/Projects/mixos`).
+3. **The online copy**, as in `auto` mode below.
 
 No argument reads the index (`README.md`); an unknown topic lists the available
 ones (the list excludes `README` itself):
 
 ```mix
-mix man math        -- prints the math page (online, cached, or local)
+mix man math        -- prints the math page from the binary
 mix man             -- prints the index
 mix man nope        -- "no manual page for 'nope'" + available topics
 ```
 
 **Environment controls:**
 
-- `MIXOS_MAN_SOURCE=local` — skip the network entirely; resolve only from a
-  local checkout (then stale cache). Use it when editing pages and wanting your
-  edits to win immediately, or when deliberately offline. Default is `auto`.
-- `MIXOS_MAN_URL=<base>` — override the online base URL (default
-  `https://mixos.dev/mix`). Points the fetch + cache at an alternate host.
-- `MIXOS_SRC=<dir>` — adds `<dir>/mix` as the highest-priority local checkout.
+- `MIXOS_MAN_SOURCE=local` — never use the network. Files on disk win (the
+  share tree, then the checkout), then the built-in manual, then the cache.
+  Use it while editing pages in a checkout, so your edits show before the
+  binary is rebuilt.
+- `MIXOS_MAN_SOURCE=auto` or `MIXOS_MAN_URL=<base>` — the online contract: a
+  copy fetched within the last 24 h, else a fetch from `mixos.dev/mix` (or
+  `<base>`; 2 s wall-clock budget, HTTPS-only, cached under your XDG cache
+  dir), else files on disk, else the built-in manual, else a stale cached copy.
 
+`mix doctor` reports how many pages are readable and how many are built in.
 `mix syntax` and `mix operators` are thin aliases — `mix man variables` and
 `mix man operators` respectively. To add a topic, drop `TOPIC.md` into
-`docs/mix/`; it publishes to `mixos.dev/mix` on the next Pages build and is
-reachable as `mix man TOPIC` with no code change.
+`docs/mix/`; the next build carries it, it publishes to `mixos.dev/mix` on the
+next Pages build, and `mix man TOPIC` finds it with no code change.
 
 ### `mix diff bash`
 
@@ -25704,6 +25709,37 @@ $ mix -c 'print((((( … 205 deep … )))))'
 Parse error at line 1:202: nesting too deep (limit 200)
 ```
 
+### Asking the lexer: `mix_tokens()`
+
+A tool that reads Mix source (a gate, a highlighter, a refactoring script)
+asks Mix how the source tokenises instead of re-deriving the rules above.
+`mix_tokens(source[, {comments: true}])` runs the real lexer and returns one
+map per token, `{kind, text, line, col}`, in source order. Nothing is run.
+
+```mix
+for $t in mix_tokens('$x = "a ${b}" -- note', {comments: true})
+  print($t.kind .. " " .. $t.text)
+end
+-- variable $x
+-- operator =
+-- interp_string "a ${b}"
+-- comment -- note
+```
+
+- `kind` is `number`, `string` (a quoted literal), `word` (a bare word),
+  `interp_string`, `heredoc`, `variable`, `command_sub`, `keyword`,
+  `operator`, `punct`, `newline`, or `comment`. Comments come back only with
+  `comments: true`; the parser never sees them.
+- `text` is the exact source span: a string keeps its quotes, a heredoc
+  includes its body and terminator line.
+- `line` and `col` are 1-based, `col` counted in characters.
+- Newlines inside `(`, `[` and `{` are not tokens, as above.
+- Source that does not lex raises `MIX_SOURCE_LEX`, with `details.line` and
+  `details.col`.
+
+There is no AST builtin yet; for the handlers a file declares, read
+`mix lint --json FILE` (its `handlers` list comes from the parsed AST).
+
 ## The shell/Mix classifier
 
 At a `mix -c '<line>'` one-liner, the interactive REPL, and a mix login shell, Mix
@@ -31079,6 +31115,12 @@ and recovery directories through the isolated MixOS environment.
   statement walker. Remote `ssh_mix` bodies are not included. `mix lint --json`
   and `--data` report the same list as an additive `handlers` field. The data
   is structural: it does not prove that a handler runs or is reachable.
+- `mix_tokens(source[, {comments: true}])` returns the real lexer's token
+  stream as `[{kind, text, line, col}]`, with the exact source text of each
+  token and, on request, the `#` and `--` comments. A tool that reads Mix
+  source no longer re-derives the grammar. Source that does not lex raises
+  `MIX_SOURCE_LEX` with `details {line, col}`. Backed by the new
+  `Lexer::source_tokens`. See `mix man syntax`.
 
 ### Changed
 
@@ -31294,6 +31336,30 @@ installed Mix path used by existing Cosmix nodes during the migration.
 # Changelog
 
 > Mirrored from [`cli/mix-shell/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/cli/mix-shell/CHANGELOG.md), where releases update it. The component's page is [mix-shell](README.md). This page describes the current `main` branch of MixOS.
+
+## Unreleased
+
+### Changed
+
+- `mix man` reads the manual built into the binary: every `docs/mix/*.md`
+  page is packed into one zstd frame at build time, so a binary copied alone,
+  with no checkout and no network, has its whole manual. With no
+  `MIXOS_MAN_*` variable set the built-in page wins (it documents exactly this
+  binary), then files on disk, then the online copy. `MIXOS_MAN_SOURCE=local`
+  puts files on disk first, then the built-in manual, and never uses the
+  network. `MIXOS_MAN_SOURCE=auto` or `MIXOS_MAN_URL` keeps the online-first
+  order, with the built-in manual before a stale cached copy. `mix doctor`
+  and `mix apropos` count and search the built-in pages. The compiled-in
+  path to the build checkout's `docs/mix` is no longer a lookup candidate.
+
+### Fixed
+
+- A foreground job stopped (^Z) just after its exec is now stopped, not
+  reported as "job stopped before exec acknowledgement" and aborted. The
+  launch checked for the stop before reading the exec acknowledgement that
+  was already waiting. This was the intermittent failure of the
+  `owned_editor_pty` test
+  `foreground_job_ctrl_z_fg_and_nested_editor_stop_preserve_draft`.
 
 ## 0.116.0
 

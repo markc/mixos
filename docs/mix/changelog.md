@@ -54,6 +54,12 @@ generated: by docs/_build/gen-site.mix from libs/mix/CHANGELOG.md; do not edit
   statement walker. Remote `ssh_mix` bodies are not included. `mix lint --json`
   and `--data` report the same list as an additive `handlers` field. The data
   is structural: it does not prove that a handler runs or is reachable.
+- `mix_tokens(source[, {comments: true}])` returns the real lexer's token
+  stream as `[{kind, text, line, col}]`, with the exact source text of each
+  token and, on request, the `#` and `--` comments. A tool that reads Mix
+  source no longer re-derives the grammar. Source that does not lex raises
+  `MIX_SOURCE_LEX` with `details {line, col}`. Backed by the new
+  `Lexer::source_tokens`. See `mix man syntax`.
 
 ### Changed
 

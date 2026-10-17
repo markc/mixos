@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Every Mix builtin grouped by category, generated from mix builtins (mix 0.116.0). See the linked topical page for prose and examples; mix what NAME prints a…">
+    <meta name="description" content="Every Mix builtin grouped by category, generated from the binary&#x27;s own mix builtins --json. See the linked topical page for prose and examples; mix what NAME…">
     <!-- Favicons from share/brand: the SVG follows the visitor's light/dark preference. -->
     <link rel="icon" href="/favicon.ico?v=c34fdc68c4" sizes="any">
     <link rel="icon" type="image/svg+xml" href="/_web/favicon.svg?v=51993ccf9f">
@@ -261,7 +261,7 @@
     <div id="doc-view" class="content-section">
         <article id="content-doc" class="prose" data-pagefind-body>
 <h1 id="builtin-index">Builtin index</h1>
-<p>Every Mix builtin grouped by category, generated from <code>mix builtins</code> (mix 0.116.0). See the linked topical page for prose and examples; <code>mix what NAME</code> prints a one-line description of any single builtin (or keyword), and <code>mix help</code> prints the compact names-only summary of the same ten categories.</p>
+<p>Every Mix builtin grouped by category, generated from the binary's own <code>mix builtins --json</code>. See the linked topical page for prose and examples; <code>mix what NAME</code> prints a one-line description of any single builtin (or keyword), and <code>mix help</code> prints a compact names-only summary.</p>
 <p>Some builtins are feature-gated on the <code>mixos-lib-mix</code> crate (<code>json</code>, <code>regex</code>, <code>toml</code>, <code>yaml</code>, <code>datetime</code>, <code>url</code>, <code>crypto</code>, <code>http</code>, <code>sqlite</code>, <code>archive</code>, <code>dkim</code>, <code>markdown</code>, <code>datastar</code>, <code>xml</code>, <code>mime</code>) so embedders can pull only what they need — the <code>mix</code> binary turns them all on.</p>
 <h2 id="machine-readable-discovery-metadata_schema-1">Machine-readable discovery (metadata_schema 1)</h2>
 <p>From 0.97.0, <code>required_capabilities</code> lists additional unconditional capability
@@ -281,13 +281,15 @@ encode-first guidance for file payloads; this is additive within metadata_schema
 <li><strong>Argument type gate and nil</strong> (0.103.x): the evaluator checks argument types against the contract for the side-effect classes (fs/process/network/bus) in every mode, and for pure builtins under strict mode. A <code>nil</code> VALUE is checked like any other value — there is no blanket nil exemption, so <code>write_file(nil, "x")</code> and <code>mkdir(nil)</code> raise TYPE_MISMATCH instead of coercing nil into a literal <code>"nil"</code> path. An optional argument that intentionally treats an explicit <code>nil</code> as "omitted/default" declares it in the contract as <code>any_of(…, nil)</code> (e.g. <code>run_argv</code>/<code>exists</code>/<code>write_atomic</code>/<code>stat</code>/<code>walk</code> opts, <code>hash_file</code> algo, <code>bytes_to_string</code> opts, <code>normalize</code> form, <code>slice</code> end); that is the ONLY way a nil reaches the builtin. <code>any</code> args accept nil because they accept everything. A nil in a plain <code>string</code>/<code>number</code>/<code>map</code> slot raises in the same modes as any other wrong type.</li>
 </ul>
 <blockquote>
-<p>Every table category is listed below (0.63.0 — the index is regenerated
-from <code>mix builtins --json</code> by <code>docs/_build/gen-builtins-md.mix</code>; the
-previously-unbucketed <code>db</code>/<code>jmap</code>/<code>bus</code>/<code>datastar</code> families now have
-sections). The Bus-layer callables <code>noded_register</code>, <code>subscribe</code>,
-<code>unsubscribe</code>, <code>bus_reconnect</code>, and <code>reply(...)</code> (inside <code>on</code> handlers)
-remain evaluator forms on top of the keyword layer, not table builtins —
-<code>mix what</code> does not know them; see <a href="/mix/bus/">bus</a>.</p>
+<p>The tables below are generated: <code>docs/_build/gen-builtins-md.mix</code> writes
+one section per category, one row per entry of <code>mix builtins --json</code>, in
+the binary's order. <code>cargo test -p system --test man_pages</code> fails when the
+committed tables differ from the binary it built, so after adding or
+changing a builtin run
+<code>mix docs/_build/gen-builtins-md.mix --mix target/debug/mix</code>. Rows of kind
+<code>statement</code> (<code>print</code>, <code>eprint</code>, and the Bus forms <code>send</code>, <code>emit</code>, <code>on</code>,
+<code>reply</code>, ...) are keyword forms listed beside the builtins; see
+<a href="/mix/bus/">bus</a>.</p>
 </blockquote>
 <h2 id="string--see-strings">string  — see <a href="/mix/strings/">strings</a></h2>
 <p>length          Length of a string (codepoints), list/map (elements), or bytes/buffer (bytes, v0.64.0)
@@ -676,7 +678,7 @@ ds_sse          Assemble a text/event-stream response body from one event string
 <h2 id="see-also">See also</h2>
 <ul>
 <li><a href="/mix/overview/">overview</a> · <a href="/mix/keywords/">keywords</a> · <a href="/mix/cli/">the mix CLI</a></li>
-<li><code>mix builtins [CATEGORY]</code> lists one category with one-line descriptions (<code>mix builtins</code> alone lists all ten); <code>mix what NAME</code> describes one builtin or keyword; <code>mix help</code> prints the compact category / keyword / subcommand summary.</li>
+<li><code>mix builtins [CATEGORY]</code> lists one category with one-line descriptions (<code>mix builtins</code> alone lists them all); <code>mix what NAME</code> describes one builtin or keyword; <code>mix help</code> prints the compact category / keyword / subcommand summary.</li>
 </ul>
         </article>
         <p class="doc-source"><a href="/mix/builtins.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>

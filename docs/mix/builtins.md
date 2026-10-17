@@ -1,6 +1,6 @@
 # Builtin index
 
-Every Mix builtin grouped by category, generated from `mix builtins` (mix 0.116.0). See the linked topical page for prose and examples; `mix what NAME` prints a one-line description of any single builtin (or keyword), and `mix help` prints the compact names-only summary of the same ten categories.
+Every Mix builtin grouped by category, generated from the binary's own `mix builtins --json`. See the linked topical page for prose and examples; `mix what NAME` prints a one-line description of any single builtin (or keyword), and `mix help` prints a compact names-only summary.
 
 Some builtins are feature-gated on the `mixos-lib-mix` crate (`json`, `regex`, `toml`, `yaml`, `datetime`, `url`, `crypto`, `http`, `sqlite`, `archive`, `dkim`, `markdown`, `datastar`, `xml`, `mime`) so embedders can pull only what they need — the `mix` binary turns them all on.
 
@@ -24,13 +24,15 @@ Since 0.29.0 every builtin carries a structured contract — per-argument names/
 - Arity in the contract is the documented surface; a few older builtins tolerate surplus arguments at runtime. `mix lint` checks calls against the contract, which is deliberately stricter.
 - **Argument type gate and nil** (0.103.x): the evaluator checks argument types against the contract for the side-effect classes (fs/process/network/bus) in every mode, and for pure builtins under strict mode. A `nil` VALUE is checked like any other value — there is no blanket nil exemption, so `write_file(nil, "x")` and `mkdir(nil)` raise TYPE_MISMATCH instead of coercing nil into a literal `"nil"` path. An optional argument that intentionally treats an explicit `nil` as "omitted/default" declares it in the contract as `any_of(…, nil)` (e.g. `run_argv`/`exists`/`write_atomic`/`stat`/`walk` opts, `hash_file` algo, `bytes_to_string` opts, `normalize` form, `slice` end); that is the ONLY way a nil reaches the builtin. `any` args accept nil because they accept everything. A nil in a plain `string`/`number`/`map` slot raises in the same modes as any other wrong type.
 
-> Every table category is listed below (0.63.0 — the index is regenerated
-> from `mix builtins --json` by `docs/_build/gen-builtins-md.mix`; the
-> previously-unbucketed `db`/`jmap`/`bus`/`datastar` families now have
-> sections). The Bus-layer callables `noded_register`, `subscribe`,
-> `unsubscribe`, `bus_reconnect`, and `reply(...)` (inside `on` handlers)
-> remain evaluator forms on top of the keyword layer, not table builtins —
-> `mix what` does not know them; see [bus](bus.md).
+> The tables below are generated: `docs/_build/gen-builtins-md.mix` writes
+> one section per category, one row per entry of `mix builtins --json`, in
+> the binary's order. `cargo test -p system --test man_pages` fails when the
+> committed tables differ from the binary it built, so after adding or
+> changing a builtin run
+> `mix docs/_build/gen-builtins-md.mix --mix target/debug/mix`. Rows of kind
+> `statement` (`print`, `eprint`, and the Bus forms `send`, `emit`, `on`,
+> `reply`, ...) are keyword forms listed beside the builtins; see
+> [bus](bus.md).
 
 ## string  — see [strings](strings.md)
 
@@ -453,4 +455,4 @@ Since 0.29.0 every builtin carries a structured contract — per-argument names/
 ## See also
 
 - [overview](overview.md) · [keywords](keywords.md) · [the mix CLI](cli.md)
-- `mix builtins [CATEGORY]` lists one category with one-line descriptions (`mix builtins` alone lists all ten); `mix what NAME` describes one builtin or keyword; `mix help` prints the compact category / keyword / subcommand summary.
+- `mix builtins [CATEGORY]` lists one category with one-line descriptions (`mix builtins` alone lists them all); `mix what NAME` describes one builtin or keyword; `mix help` prints the compact category / keyword / subcommand summary.

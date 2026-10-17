@@ -1034,8 +1034,8 @@ fn cmd_doctor(eval: &Evaluator, version: &str) -> i32 {
         }
     }
 
-    // 4. Manual — count readable pages across the checkout docs dir and the
-    //    `mix man` cache (a deployed node has only the latter, populated lazily).
+    // 4. Manual — count readable pages: the manual built into the binary,
+    //    the checkout docs dir and the `mix man` cache.
     let mut man_dirs: Vec<PathBuf> = vec![resolve_man_dir()];
     if let Some(root) = man_cache_root(
         env::var_os("XDG_CACHE_HOME").map(PathBuf::from).as_deref(),
@@ -1043,7 +1043,9 @@ fn cmd_doctor(eval: &Evaluator, version: &str) -> i32 {
     ) {
         man_dirs.push(root);
     }
-    let mut man_topics = std::collections::HashSet::new();
+    let built_in = crate::manual::topics().len();
+    let mut man_topics: std::collections::HashSet<String> =
+        crate::manual::topics().into_iter().collect();
     for dir in &man_dirs {
         for t in available_man_topics(dir) {
             man_topics.insert(t);
@@ -1054,7 +1056,11 @@ fn cmd_doctor(eval: &Evaluator, version: &str) -> i32 {
             "  ⚠ manual     no pages found locally — `mix man TOPIC` fetches + caches on first use (needs network once)."
         );
     } else {
-        println!("  ✓ manual     {} page(s) readable", man_topics.len());
+        println!(
+            "  ✓ manual     {} page(s) readable, {built_in} built in ({} KiB compressed)",
+            man_topics.len(),
+            crate::manual::COMPRESSED_BYTES / 1024
+        );
     }
 
     // 5. Stats DB — the usage-tracking directory must be creatable + writable.
@@ -2645,7 +2651,6 @@ fn local_man_dirs() -> Vec<PathBuf> {
     let root = crate::paths::mixos_root();
     let mut candidates = vec![config::path(config::Dir::Share).join("mix/man")];
     candidates.extend(man_dir_candidates(home.as_deref(), root.as_deref()));
-    candidates.push(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/mix"));
     candidates
 }
 
@@ -2855,7 +2860,10 @@ fn print_man_not_found(topic: Option<&str>, base_url: &str) {
     eprintln!("mix man: no manual page for '{}'", topic.unwrap_or("index"));
     eprintln!();
 
-    let topics = available_man_topics(&resolve_man_dir());
+    let mut topics = crate::manual::topics();
+    topics.extend(available_man_topics(&resolve_man_dir()));
+    topics.sort();
+    topics.dedup();
     if topics.is_empty() {
         eprintln!("Browse the manual at {base_url}/");
         eprintln!("Local fallback looked in $MIXOS/docs/mix (default root ~/Projects/mixos).");
@@ -2886,11 +2894,20 @@ fn cmd_man(topic: Option<&str>) {
     let base_url = man_base_url(env::var("MIXOS_MAN_URL").ok().as_deref());
     let cache_path = configured_man_cache_path(&base_url, &filename);
 
-    // An installed session carries the manual matching its binary. Explicit
-    // remote/cache selection keeps the existing fetch contract available.
+    // Lookup order (docs/mix/README.md, "Where the pages come from"):
+    // - default: the manual built into this binary, which documents exactly
+    //   this binary; then files on disk; then the online fetch below, for a
+    //   page this binary does not carry.
+    // - MIXOS_MAN_SOURCE=local: files on disk first (a checkout's working
+    //   copy, for whoever is editing the manual), then the built-in manual,
+    //   then the cache. Never the network.
+    // - MIXOS_MAN_SOURCE=auto or MIXOS_MAN_URL: the online contract — fresh
+    //   cache, fetch, files on disk, built-in, stale cache.
     if env::var_os("MIXOS_MAN_SOURCE").is_none()
         && env::var_os("MIXOS_MAN_URL").is_none()
-        && let Some(content) = read_local_man_page(&filename)
+        && let Some(content) = crate::manual::page(&filename)
+            .map(str::to_string)
+            .or_else(|| read_local_man_page(&filename))
     {
         print!("{content}");
         return;
@@ -2898,6 +2915,10 @@ fn cmd_man(topic: Option<&str>) {
 
     if source == ManSource::Local {
         if let Some(content) = read_local_man_page(&filename) {
+            print!("{content}");
+            return;
+        }
+        if let Some(content) = crate::manual::page(&filename) {
             print!("{content}");
             return;
         }
@@ -2925,6 +2946,10 @@ fn cmd_man(topic: Option<&str>) {
     }
 
     if let Some(content) = read_local_man_page(&filename) {
+        print!("{content}");
+        return;
+    }
+    if let Some(content) = crate::manual::page(&filename) {
         print!("{content}");
         return;
     }
@@ -3099,13 +3124,11 @@ fn cmd_apropos(term: &str) {
         }
     }
 
-    // 3. Manual section headings — read each local page and match its `#`
-    //    headings. Best-effort: if no docs are present the section arm is
-    //    simply empty (builtins/keywords still work). Scan BOTH the checkout
-    //    docs dir AND the `mix man` cache (`~/.cache/mixos/man`, default-URL
-    //    layout): a deployed node has no checkout but accumulates cached pages,
-    //    so without the cache the manual arm would be dead on the whole fleet.
-    //    Dedup by topic — a checkout copy wins over a cached one.
+    // 3. Manual section headings — match each page's `#` headings. The
+    //    manual built into the binary comes first (it is what `mix man`
+    //    shows), then any page only on disk: the checkout docs dir and the
+    //    `mix man` cache (`~/.cache/mixos/man`, default-URL layout). Dedup by
+    //    topic, in that order.
     let mut scan_dirs: Vec<PathBuf> = vec![resolve_man_dir()];
     if let Some(root) = man_cache_root(
         env::var_os("XDG_CACHE_HOME").map(PathBuf::from).as_deref(),
@@ -3113,17 +3136,27 @@ fn cmd_apropos(term: &str) {
     ) {
         scan_dirs.push(root);
     }
-    let mut seen_topics = std::collections::HashSet::new();
-    let mut section_hits: Vec<(String, String)> = Vec::new();
+    let mut pages: Vec<(String, String)> = crate::manual::topics()
+        .into_iter()
+        .filter_map(|topic| {
+            let content = crate::manual::page(&format!("{topic}.md"))?;
+            Some((topic, content.to_string()))
+        })
+        .collect();
+    let mut seen_topics: std::collections::HashSet<String> =
+        pages.iter().map(|(topic, _)| topic.clone()).collect();
     for dir in &scan_dirs {
         for topic in available_man_topics(dir) {
             if !seen_topics.insert(topic.clone()) {
                 continue;
             }
-            let path = dir.join(format!("{topic}.md"));
-            let Ok(content) = std::fs::read_to_string(&path) else {
-                continue;
-            };
+            if let Ok(content) = std::fs::read_to_string(dir.join(format!("{topic}.md"))) {
+                pages.push((topic, content));
+            }
+        }
+    }
+    let mut section_hits: Vec<(String, String)> = Vec::new();
+    for (topic, content) in &pages {
             let mut in_fence = false;
             for line in content.lines() {
                 let trimmed = line.trim_start();
@@ -3148,7 +3181,6 @@ fn cmd_apropos(term: &str) {
                     section_hits.push((topic.clone(), heading.to_string()));
                 }
             }
-        }
     }
     if !section_hits.is_empty() {
         println!("\nMANUAL SECTIONS");
