@@ -2825,7 +2825,9 @@ mod tests {
                 });
                 let sender = h.clone();
                 let send = tokio::task::spawn_local(async move {
-                    let _ = sender.send("svc.example", "do_something", &Value::Nil).await;
+                    let _ = sender
+                        .send("svc.example", "do_something", &Value::Nil)
+                        .await;
                 });
                 tokio::time::sleep(std::time::Duration::from_millis(50)).await;
                 h.reconnect().await.unwrap();

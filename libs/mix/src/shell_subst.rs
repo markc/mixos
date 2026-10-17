@@ -420,9 +420,7 @@ impl<'a, F: Fn(&str) -> Option<String>> Scan<'a, F> {
                         self.copy(1);
                     }
                 }
-                c if c.is_whitespace()
-                    || matches!(c, ';' | '&' | '|' | '(' | ')' | '<' | '>') =>
-                {
+                c if c.is_whitespace() || matches!(c, ';' | '&' | '|' | '(' | ')' | '<' | '>') => {
                     break;
                 }
                 c => {
@@ -693,7 +691,10 @@ mod tests {
         let p = prepare("echo 'note; d=inner' $d", scope).unwrap();
         assert_eq!(p.cmd, "echo 'note; d=inner' ${__mix_subst_0}");
         let p = prepare("echo \"x; d=1\" $d # ; d=2\necho $d", scope).unwrap();
-        assert_eq!(p.cmd, "echo \"x; d=1\" ${__mix_subst_0} # ; d=2\necho ${__mix_subst_0}");
+        assert_eq!(
+            p.cmd,
+            "echo \"x; d=1\" ${__mix_subst_0} # ; d=2\necho ${__mix_subst_0}"
+        );
         let p = prepare("cat <<'EOF'\nd=1\nEOF\necho $d", scope).unwrap();
         assert_eq!(p.cmd, "cat <<'EOF'\nd=1\nEOF\necho ${__mix_subst_0}");
         // A real assignment with a quoted value still binds.
