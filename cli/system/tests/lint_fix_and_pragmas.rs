@@ -81,6 +81,27 @@ fn pragmas_make_an_injected_body_and_a_generator_lint_clean() {
 }
 
 #[test]
+fn the_w2307_reproducer_lints_clean_through_the_driver() {
+    // TODO-mix 2026-10-06, verbatim: the status is read in the condition and
+    // in a map value nested in a call argument. A truly unchecked send and a
+    // read that only follows the NEXT send still warn.
+    let checked = write_temp(
+        "w2307",
+        "$target=\"svc\"\n$verb=\"ping\"\n$payload=\"{}\"\nsend $target $verb body=$payload timeout=45\nif $rc != 0 then exit(1) end\nprint(json_encode({rc:$rc,result:$result}))\n",
+    );
+    let (code, out, _) = lint(&["--deny-warnings", checked.to_str().unwrap()]);
+    assert_eq!(code, 0, "{out}");
+    assert!(!out.contains("MIX-W2307"), "{out}");
+    let unchecked = write_temp(
+        "w2307_unchecked",
+        "send svc ping\nsend svc ping\nif $rc != 0 then exit(1) end\n",
+    );
+    let (_, out, _) = lint(&[unchecked.to_str().unwrap()]);
+    assert_eq!(out.matches("MIX-W2307").count(), 1, "{out}");
+    assert!(out.contains(":1: MIX-W2307"), "the first send: {out}");
+}
+
+#[test]
 fn shell_extensions_are_known_and_shadowing_one_warns() {
     let path = write_temp(
         "ext",

@@ -1916,6 +1916,7 @@ fn null_that_is_not_a_bareword_value_stays_silent() {
         "$m = {null: 1, None: 2}\nprint($m)\n",
         "$m = {a: 1}\nprint($m.null)\n",
         "send svc null\nprint($rc)\n",
+        "send svc verb null=1\nprint($rc)\n",
         // The real null.
         "$x = nil\nprint($x)\n",
         // A statement head is a bareword dispatch, not a value.

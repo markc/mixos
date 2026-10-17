@@ -14843,6 +14843,8 @@ must appear in the error.
 | you will guess | Mix is | probe | prints |
 |---|---|---|---|
 | a bare name reads the variable | a bare word is a **string literal** — `$` is not optional, and omitting it is silent | `$x = 5; print(x)` | `x` |
+| `null` (or `None`, `undefined`) is null | it is a bare word, so it is the **string** `"null"`; Mix's null is `nil` (`mix lint` warns, MIX-W2312, and `--fix` rewrites it) | `print(json_encode({a: null}))` | `{"a":"null"}` |
+| `let i = 0` declares a variable | Mix has no `let`, `var` or `const`: write `$i = 0` (and `$i = $i + 1`, never a bare `i = …`) | `let i = 0` | `!$i =` |
 | `"hi $name"` interpolates | only `${...}` interpolates; a bare `$name` in a string is **literal text** | `$n = "world"; print("hi $n")` | `hi $n` |
 | — so use braces | `${name}` — and it is the **same rule everywhere** a string is built, heredocs included | `$n = "world"; print("hi ${n}")` | `hi world` |
 | `elseif` | `elif` | `if 1 == 2 then print("a") elif 1 == 1 then print("b") end` | `b` |

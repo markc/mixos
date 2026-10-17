@@ -6308,8 +6308,8 @@ const NULL_SPELLINGS: &[&str] = &["null", "None", "undefined", "NULL", "nullptr"
 /// Needs the source text: a bareword and a quoted `"null"` parse to the same
 /// `StringLiteral`, so the analyzer re-lexes and reads the character at each
 /// token's offset. A map key (`{null: 1}`), a field (`$x.null`), a call
-/// (`null()`), a statement head and a Bus command word are not values and stay
-/// silent. The fix is mechanical, so the finding carries it (`mix lint --fix`).
+/// (`null()`), a `send` argument name (`null=1`), a statement head and a Bus
+/// command word are not values and stay silent. The fix is mechanical, so the finding carries it (`mix lint --fix`).
 fn check_null_barewords(stmts: &[Stmt], ctx: &FileContext, cfg: &AnalyzerConfig, a: &mut Analysis) {
     let Some(source) = cfg.source.as_deref() else {
         return;
@@ -6353,7 +6353,8 @@ fn check_null_barewords(stmts: &[Stmt], ctx: &FileContext, cfg: &AnalyzerConfig,
             && matches!(prev, Some(Token::LBrace | Token::Comma));
         let not_a_value = statement_head
             || map_key
-            || matches!(next, Some(Token::LParen))
+            // A call name, or a `send` argument name (`null=1`).
+            || matches!(next, Some(Token::LParen | Token::Assign))
             || matches!(
                 prev,
                 Some(
