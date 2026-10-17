@@ -6817,7 +6817,9 @@ fn shared_statement_lines(stmts: &[Stmt], out: &mut HashSet<usize>) {
                     FunctionBody::Block(_) => None,
                 });
             for expr in exprs {
-                for_each_embedded_stmt_list(expr, true, &mut |body| shared_statement_lines(body, out));
+                for_each_embedded_stmt_list(expr, true, &mut |body| {
+                    shared_statement_lines(body, out)
+                });
             }
         }
     }
