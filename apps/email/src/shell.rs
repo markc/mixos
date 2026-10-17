@@ -185,7 +185,10 @@ pub fn write_print(
             let stale = entry
                 .metadata()
                 .and_then(|m| m.modified())
-                .is_ok_and(|modified| now.duration_since(modified).is_ok_and(|age| age > PRINT_KEEP));
+                .is_ok_and(|modified| {
+                    now.duration_since(modified)
+                        .is_ok_and(|age| age > PRINT_KEEP)
+                });
             if stale && path.extension().is_some_and(|e| e == "html") {
                 let _ = std::fs::remove_file(path);
             }
@@ -909,7 +912,11 @@ impl Shell {
             };
             let uri = format!("file://{}", path.display());
             let launched = bus
-                .call("apps", "apps.launch", json!({"id": BROWSER_APP_ID, "uris": [uri]}))
+                .call(
+                    "apps",
+                    "apps.launch",
+                    json!({"id": BROWSER_APP_ID, "uris": [uri]}),
+                )
                 .await;
             let opened = launched.is_ok_and(|r| r.rc == 0);
             Event::Printed(reply, Ok((path.display().to_string(), opened)))

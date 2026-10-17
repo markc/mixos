@@ -2672,7 +2672,11 @@ impl State {
     pub fn printed(&mut self, reply: Option<u64>, result: Result<(String, bool), String>) {
         match result {
             Ok((path, opened)) => {
-                let key = if opened { "printed" } else { "print-no-browser" };
+                let key = if opened {
+                    "printed"
+                } else {
+                    "print-no-browser"
+                };
                 self.status = crate::label_with(key, &[("path", &path)]);
                 if let Some(reply) = reply {
                     self.reply(reply, 0, json!({ "path": path, "opened": opened }));

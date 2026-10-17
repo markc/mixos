@@ -249,7 +249,10 @@ mod tests {
     fn the_headers_are_there_and_escaped() {
         let page = page(&email("hi"), false, 15.0, &palette());
         for key in ["from", "to", "cc", "print-date", "subject"] {
-            assert!(page.contains(&format!("<th>{}</th>", crate::label(key))), "{key}");
+            assert!(
+                page.contains(&format!("<th>{}</th>", crate::label(key))),
+                "{key}"
+            );
         }
         assert!(page.contains("Plans &lt;b&gt;&amp;&lt;/b&gt; more"));
         assert!(!page.contains("<b>&</b>"));
@@ -270,7 +273,9 @@ mod tests {
     #[test]
     fn plain_text_is_escaped_in_a_wrapping_pre() {
         let page = page(&email("a <script>x</script> & b"), false, 12.0, &palette());
-        assert!(page.contains("<pre class=\"plain\">a &lt;script&gt;x&lt;/script&gt; &amp; b</pre>"));
+        assert!(
+            page.contains("<pre class=\"plain\">a &lt;script&gt;x&lt;/script&gt; &amp; b</pre>")
+        );
         // The page's own script is the only one.
         assert_eq!(page.matches("<script>").count(), 1);
     }
@@ -281,11 +286,23 @@ mod tests {
             "# Hi\n\n<div onclick=\"x\">raw</div>\n\nan <b>inline</b> tag ![a cat](https://track.invalid/p.gif)\n\n[ok](https://mixos.dev/) [bad](javascript:alert(1)) [file](file:///etc/passwd)",
         );
         assert!(html.contains("<h1>Hi</h1>"));
-        assert!(html.contains("&lt;div onclick=&quot;x&quot;&gt;raw&lt;/div&gt;"), "{html}");
-        assert!(html.contains("an &lt;b&gt;inline&lt;/b&gt; tag a cat"), "{html}");
+        assert!(
+            html.contains("&lt;div onclick=&quot;x&quot;&gt;raw&lt;/div&gt;"),
+            "{html}"
+        );
+        assert!(
+            html.contains("an &lt;b&gt;inline&lt;/b&gt; tag a cat"),
+            "{html}"
+        );
         assert!(!html.contains("<img"), "{html}");
-        assert!(!html.contains("track.invalid"), "no remote URL survives: {html}");
-        assert!(html.contains("<a href=\"https://mixos.dev/\">ok</a>"), "{html}");
+        assert!(
+            !html.contains("track.invalid"),
+            "no remote URL survives: {html}"
+        );
+        assert!(
+            html.contains("<a href=\"https://mixos.dev/\">ok</a>"),
+            "{html}"
+        );
         assert!(!html.contains("javascript:"), "{html}");
         assert!(!html.contains("file://"), "{html}");
         assert!(html.contains("bad") && html.contains("file"));
