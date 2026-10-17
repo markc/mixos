@@ -10333,12 +10333,14 @@ impl Evaluator {
                         // Catchable = DieError | RuntimeError | Structured.
                         // Control-flow signals (Return/Break/Continue) and
                         // lex/parse errors are NOT caught — but `finally`
-                        // still runs for them (below).
+                        // still runs for them (below). Once the interrupt is
+                        // standing (crate::interrupt::set_standing) nothing
+                        // is caught: the unwind must reach the host.
                         Err(
                             e @ (MixError::DieError { .. }
                             | MixError::RuntimeError { .. }
                             | MixError::Structured(_)),
-                        ) if catch.is_some() => {
+                        ) if catch.is_some() && !crate::interrupt::is_standing() => {
                             let clause = catch.as_ref().unwrap();
                             // Snapshot BEFORE binding so the optional
                             // second binding sees code/frames even for
@@ -18276,7 +18278,13 @@ impl Evaluator {
     ) -> Pin<Box<dyn Future<Output = MixResult<Value>> + 'a>> {
         Box::pin(async move {
             self.check_capability(name)?;
-            self.check_builtin_arity(name, args.len())?;
+            // The same arity rule as the sync path: strict mode rejects a bad
+            // count, compatible mode warns about a surplus and goes on.
+            if self.ctx.arity_strict {
+                self.check_builtin_arity(name, args.len())?;
+            } else {
+                self.warn_surplus_arity(name, args.len());
+            }
             let path = args[0].to_mix_string();
             let fail = |e: std::io::Error| MixError::RuntimeError {
                 span: None,
@@ -18315,7 +18323,14 @@ impl Evaluator {
                     .map_err(|e| self.snapshot_builtin_error(name, e))?;
                 return Ok(value);
             }
-            let data = builtins::with_write_payload(name, &args[1], <[u8]>::to_vec)?;
+            // Same error as the sync builtin's expect_args, in either mode.
+            let Some(payload) = args.get(1) else {
+                return Err(MixError::RuntimeError {
+                    span: None,
+                    msg: format!("{name}() expects at least 2 argument(s), got {}", args.len()),
+                });
+            };
+            let data = builtins::with_write_payload(name, payload, <[u8]>::to_vec)?;
             self.await_with_class_c_yield(crate::fifo_io::write(&path, &data))
                 .await?
                 .map_err(fail)?;
@@ -18837,6 +18852,164 @@ mod chain_class_tests {
     #[test]
     fn single_async_promotes_chain() {
         assert_eq!(ChainClass::from_entries(&[entry(true)]), ChainClass::ClassC);
+    }
+}
+
+/// A FIFO write takes the same arity path as a regular file: a surplus
+/// argument is ignored in compatible mode and refused in strict mode.
+#[cfg(all(test, unix))]
+mod fifo_arity_tests {
+    use super::{ArityMode, Evaluator};
+
+    fn block_on<T>(fut: impl std::future::Future<Output = T>) -> T {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(fut)
+    }
+
+    /// A fresh FIFO in a private directory, and the directory to remove.
+    fn fifo(tag: &str) -> (std::path::PathBuf, std::path::PathBuf) {
+        let dir = std::env::temp_dir().join(format!(
+            "mix-fifo-arity-{}-{tag}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("pipe");
+        let status = std::process::Command::new("mkfifo")
+            .arg(&path)
+            .status()
+            .expect("run mkfifo");
+        assert!(status.success(), "mkfifo failed");
+        (path, dir)
+    }
+
+    #[test]
+    fn compatible_fifo_write_ignores_a_surplus_argument() {
+        block_on(async {
+            let (path, dir) = fifo("compat");
+            let reader_path = path.clone();
+            let reader = std::thread::spawn(move || std::fs::read(reader_path).unwrap());
+            let mut eval = Evaluator::new();
+            eval.set_arity_mode(ArityMode::Compatible);
+            let script = format!("write_file(\"{}\", \"x\", \"extra\")", path.display());
+            let result = eval.execute_script_source(&script).await;
+            let data = reader.join().unwrap();
+            let _ = std::fs::remove_dir_all(&dir);
+            result.expect("surplus is ignored in compatible mode");
+            assert_eq!(data, b"x");
+        });
+    }
+
+    #[test]
+    fn strict_fifo_write_refuses_a_surplus_argument() {
+        block_on(async {
+            let (path, dir) = fifo("strict");
+            let mut eval = Evaluator::new();
+            eval.set_arity_mode(ArityMode::Strict);
+            let script = format!("write_file(\"{}\", \"x\", \"extra\")", path.display());
+            let result = eval.execute_script_source(&script).await;
+            let _ = std::fs::remove_dir_all(&dir);
+            let err = match result {
+                Ok(_) => panic!("strict mode accepted a surplus argument"),
+                Err(e) => format!("{e:?}"),
+            };
+            assert!(err.contains("not accepted"), "{err}");
+        });
+    }
+}
+
+/// The standing interrupt is process-wide state, so these tests run their
+/// body in a child process of this test binary. Otherwise a standing
+/// interrupt would reach every other `try`/`catch` test in the crate.
+#[cfg(test)]
+mod standing_interrupt_tests {
+    use super::{Evaluator, Value};
+
+    const CHILD_ENV: &str = "MIX_STANDING_INTERRUPT_CHILD";
+
+    fn block_on<T>(fut: impl std::future::Future<Output = T>) -> T {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(fut)
+    }
+
+    #[test]
+    fn standing_interrupt_reaches_the_host_through_catch() {
+        if std::env::var_os(CHILD_ENV).is_some() {
+            return;
+        }
+        let exe = std::env::current_exe().expect("test binary path");
+        let out = std::process::Command::new(exe)
+            .args([
+                "--exact",
+                "evaluator::standing_interrupt_tests::standing_child",
+                "--nocapture",
+                "--test-threads=1",
+            ])
+            .env(CHILD_ENV, "1")
+            .output()
+            .expect("run child test");
+        let text = String::from_utf8_lossy(&out.stdout);
+        assert!(out.status.success(), "child failed:\n{text}");
+        assert!(text.contains("standing child ok"), "child did not run:\n{text}");
+    }
+
+    /// Runs only in the child process (see the parent test above).
+    #[test]
+    fn standing_child() {
+        if std::env::var_os(CHILD_ENV).is_none() {
+            return;
+        }
+        // A thread stands the interrupt up while the loop below runs, as the
+        // mix-shell SIGINT thread does after its cleanup grace.
+        block_on(async {
+            // One evaluator, whose flag is the process interrupt flag, as in
+            // mix-shell. Single try, nested try, and a finally that must still
+            // run.
+            let mut eval = Evaluator::new();
+            crate::interrupt::init(eval.interrupt_flag());
+            let cases = [
+                (
+                    "try { $log = $log + \"T\"; while true { $n = 1 } } \
+                     catch e { $log = $log + \"C\" } finally { $log = $log + \"F\" }",
+                    "TF",
+                ),
+                (
+                    "try { try { while true { $n = 1 } } \
+                     catch e { $log = $log + \"C\" } } \
+                     catch e2 { $log = $log + \"O\" } finally { $log = $log + \"F\" }",
+                    "F",
+                ),
+            ];
+            for (body, expected) in cases {
+                eval.execute_script_source("$log = \"\"; $n = 0")
+                    .await
+                    .expect("init globals");
+                // Stand the interrupt up after the loop has started; the
+                // loop's checkpoints then deliver it.
+                std::thread::spawn(|| {
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                    crate::interrupt::set_standing();
+                });
+                let err = match eval.execute_script_source(body).await {
+                    Ok(_) => panic!("standing interrupt was caught: {body}"),
+                    Err(e) => e,
+                };
+                let text = format!("{err:?}");
+                assert!(text.contains("interrupted"), "{text}");
+                match eval.get_global("log") {
+                    Some(Value::String(log)) => assert_eq!(log, expected, "{body}"),
+                    other => panic!("log not a string: {other:?}"),
+                }
+                // Reset for the next case in this process.
+                crate::interrupt::_test_clear();
+            }
+            println!("standing child ok");
+        });
     }
 }
 

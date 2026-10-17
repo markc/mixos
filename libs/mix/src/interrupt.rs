@@ -83,6 +83,25 @@ pub fn raise() {
     }
 }
 
+/// Set once an interrupt has stopped being cooperative: the host has
+/// given the catch-and-continue window up, so the interrupt is a standing
+/// unwind. See [`set_standing`].
+static STANDING: AtomicBool = AtomicBool::new(false);
+
+/// Make the interrupt standing: from now on every `try`/`catch` lets it
+/// propagate (its `finally` still runs), so no `catch` can resume the
+/// work it stopped, and each checkpoint raises it again until the
+/// evaluation unwinds. Raises the flag too.
+pub fn set_standing() {
+    STANDING.store(true, Ordering::SeqCst);
+    raise();
+}
+
+/// Whether [`set_standing`] has been called.
+pub fn is_standing() -> bool {
+    STANDING.load(Ordering::SeqCst)
+}
+
 /// Wire `flag` as the process-wide interrupt flag and register a
 /// SIGINT handler that atomically stores `true` into it.
 ///

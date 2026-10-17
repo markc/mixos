@@ -539,6 +539,9 @@ fn arm_sigint_standing() {
                 return;
             }
             std::thread::sleep(SIGINT_CLEANUP_GRACE);
+            // Past the grace, catch no longer resumes the work: the unwind
+            // reaches the host whatever a `catch` does with the error.
+            mix::interrupt::set_standing();
             loop {
                 mix::interrupt::raise();
                 std::thread::sleep(SIGINT_REASSERT_EVERY);

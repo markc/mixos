@@ -41,10 +41,10 @@ pub fn prepare(cmd: &str, lookup: impl Fn(&str) -> Option<String>) -> Result<Pre
     // Pass 1 only discovers the names the inner command binds, with the
     // same quoting, comment and heredoc rules as the rewrite; pass 2
     // rewrites against them.
-    let mut discover = Scan::new(cmd, &lookup, HashSet::new(), true);
-    discover.shell(false)?;
+    let mut discover = Scan::new(cmd, &lookup, HashMap::new(), true);
+    discover.shell(Close::Top)?;
     let mut scan = Scan::new(cmd, &lookup, discover.found, false);
-    scan.shell(false)?;
+    scan.shell(Close::Top)?;
     Ok(Prepared {
         cmd: scan.out,
         env: scan.env,
@@ -73,39 +73,80 @@ struct Heredoc {
     dash: bool,
 }
 
+/// What ends the shell level being scanned.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Close {
+    /// The whole command text.
+    Top,
+    /// The `)` of a `$(...)`, or of `$((...))`.
+    Paren,
+    /// The closing backtick of a `` `...` `` substitution.
+    Backtick,
+}
+
 struct Scan<'a, F: Fn(&str) -> Option<String>> {
     c: Vec<char>,
     i: usize,
     out: String,
     params: HashMap<String, String>,
     env: Vec<(String, String)>,
-    inner: HashSet<String>,
+    /// Discovery output of the previous pass: the names each shell level
+    /// binds itself, keyed by level number (see `levels`).
+    bound: HashMap<usize, HashSet<String>>,
+    /// Shell levels entered so far. Both passes enter the same levels in
+    /// the same order, so a number names the same level in each.
+    levels: usize,
+    /// The levels enclosing the current position, innermost last. A name a
+    /// level binds is the shell's wherever that level or a level inside it
+    /// is scanning, and only there.
+    stack: Vec<usize>,
     lookup: &'a F,
     /// Inside a default operand (`${a:-…}`): references there may never
     /// run, so an unset one is left to the shell instead of raising.
     lenient: usize,
     pending: Vec<Heredoc>,
     /// Discovery pass: resolve nothing, raise nothing, and collect the
-    /// names the inner command binds into `found`.
+    /// names each level binds into `found`.
     discover: bool,
-    found: HashSet<String>,
+    found: HashMap<usize, HashSet<String>>,
 }
 
 impl<'a, F: Fn(&str) -> Option<String>> Scan<'a, F> {
-    fn new(cmd: &str, lookup: &'a F, inner: HashSet<String>, discover: bool) -> Self {
+    fn new(
+        cmd: &str,
+        lookup: &'a F,
+        bound: HashMap<usize, HashSet<String>>,
+        discover: bool,
+    ) -> Self {
         Scan {
             c: cmd.chars().collect(),
             i: 0,
             out: String::with_capacity(cmd.len()),
             params: HashMap::new(),
             env: Vec::new(),
-            inner,
+            bound,
+            levels: 0,
+            stack: Vec::new(),
             lookup,
             lenient: 0,
             pending: Vec::new(),
             discover,
-            found: HashSet::new(),
+            found: HashMap::new(),
         }
+    }
+
+    /// Enter a shell level: it gets the next number, and the scan of its
+    /// text sits on top of the enclosing levels.
+    fn enter(&mut self) -> usize {
+        let level = self.levels;
+        self.levels += 1;
+        self.stack.push(level);
+        level
+    }
+
+    /// The innermost level being scanned.
+    fn current_level(&self) -> usize {
+        self.stack.last().copied().unwrap_or(0)
     }
 
     fn peek(&self, ahead: usize) -> Option<char> {
@@ -121,9 +162,10 @@ impl<'a, F: Fn(&str) -> Option<String>> Scan<'a, F> {
         }
     }
 
-    /// Unquoted shell text. With `in_subst`, stops (without consuming it)
-    /// at the `)` that closes the enclosing `$(`.
-    fn shell(&mut self, in_subst: bool) -> Result<(), String> {
+    /// Unquoted shell text of one level. Stops (without consuming it) at
+    /// the character that closes `close`, when there is one.
+    fn shell(&mut self, close: Close) -> Result<(), String> {
+        let level = self.enter();
         let mut depth = 0usize;
         // The unquoted words of this level, for binding discovery.
         let mut words: Words = Vec::new();
@@ -131,6 +173,7 @@ impl<'a, F: Fn(&str) -> Option<String>> Scan<'a, F> {
         while let Some(c) = self.peek(0) {
             let word_start = word.is_empty();
             match c {
+                '`' if close == Close::Backtick => break,
                 '\'' => {
                     self.copy(1);
                     while let Some(q) = self.peek(0) {
@@ -168,7 +211,7 @@ impl<'a, F: Fn(&str) -> Option<String>> Scan<'a, F> {
                     self.copy(1);
                 }
                 ')' => {
-                    if in_subst && depth == 0 {
+                    if close == Close::Paren && depth == 0 {
                         break;
                     }
                     flush(&mut words, &mut word);
@@ -190,7 +233,12 @@ impl<'a, F: Fn(&str) -> Option<String>> Scan<'a, F> {
                     self.dollar()?;
                     word.push(OPAQUE);
                 }
-                ';' | '&' | '|' | '`' => {
+                '`' => {
+                    self.copy(1);
+                    self.backtick()?;
+                    word.push(OPAQUE);
+                }
+                ';' | '&' | '|' => {
                     flush(&mut words, &mut word);
                     words.push(None);
                     self.copy(1);
@@ -207,13 +255,28 @@ impl<'a, F: Fn(&str) -> Option<String>> Scan<'a, F> {
         }
         if self.discover {
             flush(&mut words, &mut word);
-            self.found.extend(bindings_of(&words));
+            self.found
+                .entry(level)
+                .or_default()
+                .extend(bindings_of(&words));
         }
+        self.stack.pop();
         Ok(())
     }
 
-    /// Inside `"…"` (the opening quote already copied): only `\` and `$`
-    /// are special.
+    /// The text of a `` `…` `` substitution, the opening backtick already
+    /// copied. It is a shell of its own, with its own quoting, and the
+    /// closing backtick is copied after it.
+    fn backtick(&mut self) -> Result<(), String> {
+        let pending = std::mem::take(&mut self.pending);
+        self.shell(Close::Backtick)?;
+        self.pending = pending;
+        self.copy(1);
+        Ok(())
+    }
+
+    /// Inside `"…"` (the opening quote already copied): `\`, `$` and the
+    /// backtick are special.
     fn dquote(&mut self) -> Result<(), String> {
         while let Some(c) = self.peek(0) {
             match c {
@@ -223,6 +286,10 @@ impl<'a, F: Fn(&str) -> Option<String>> Scan<'a, F> {
                 }
                 '\\' => self.copy(2),
                 '$' => self.dollar()?,
+                '`' => {
+                    self.copy(1);
+                    self.backtick()?;
+                }
                 _ => self.copy(1),
             }
         }
@@ -238,7 +305,7 @@ impl<'a, F: Fn(&str) -> Option<String>> Scan<'a, F> {
                 self.copy(if arithmetic { 3 } else { 2 });
                 // A nested substitution is a fresh shell, with fresh quoting.
                 let pending = std::mem::take(&mut self.pending);
-                self.shell(true)?;
+                self.shell(Close::Paren)?;
                 self.pending = pending;
                 self.copy(1);
                 if arithmetic && self.peek(0) == Some(')') {
@@ -316,7 +383,8 @@ impl<'a, F: Fn(&str) -> Option<String>> Scan<'a, F> {
         let defaulted = !length && op_len > 0;
         // An assigning form binds the name when it runs.
         if self.discover && op_len > 0 && self.c.get(j + op_len - 1) == Some(&'=') {
-            self.found.insert(name.clone());
+            let level = self.current_level();
+            self.found.entry(level).or_default().insert(name.clone());
         }
         let param = self.reference(&name, !defaulted)?;
         self.out.push_str("${");
@@ -402,10 +470,16 @@ impl<'a, F: Fn(&str) -> Option<String>> Scan<'a, F> {
                         if q == c {
                             break;
                         }
+                        // Inside double quotes a backslash escapes only
+                        // `$`, backtick, `"`, `\` and newline; before any
+                        // other character it is literal text.
                         if c == '"' && q == '\\' {
-                            if let Some(e) = self.peek(0) {
-                                delim.push(e);
-                                self.copy(1);
+                            match self.peek(0) {
+                                Some(e @ ('$' | '`' | '"' | '\\' | '\n')) => {
+                                    delim.push(e);
+                                    self.copy(1);
+                                }
+                                _ => delim.push('\\'),
                             }
                             continue;
                         }
@@ -458,15 +532,21 @@ impl<'a, F: Fn(&str) -> Option<String>> Scan<'a, F> {
                 if closer || doc.quoted {
                     self.copy(end - self.i);
                 } else {
-                    while self.i < end {
-                        match self.peek(0) {
-                            Some('\\') => self.copy(2),
-                            Some('$') => self.dollar()?,
+                    // An expansion may run past this line (a `$(` that
+                    // closes on a later one), so the line ends at the first
+                    // newline the scan reaches, not at `end`.
+                    while let Some(c) = self.peek(0) {
+                        match c {
+                            '\n' => break,
+                            '\\' => self.copy(2),
+                            '$' => self.dollar()?,
                             _ => self.copy(1),
                         }
                     }
                 }
-                self.copy(1); // the newline
+                if self.peek(0) == Some('\n') {
+                    self.copy(1);
+                }
                 if closer {
                     break;
                 }
@@ -475,10 +555,17 @@ impl<'a, F: Fn(&str) -> Option<String>> Scan<'a, F> {
         Ok(())
     }
 
+    /// Whether a level that encloses this position binds `name` itself.
+    fn bound_by_scope(&self, name: &str) -> bool {
+        self.stack
+            .iter()
+            .any(|level| self.bound.get(level).is_some_and(|s| s.contains(name)))
+    }
+
     /// Resolve one referenced `name`: `Some(param)` when it carries a
     /// value into the child, `None` when the inner shell owns it.
     fn reference(&mut self, name: &str, required: bool) -> Result<Option<String>, String> {
-        if self.discover || self.inner.contains(name) {
+        if self.discover || self.bound_by_scope(name) {
             return Ok(None);
         }
         if let Some(param) = self.params.get(name) {
@@ -747,6 +834,47 @@ mod tests {
         assert_eq!(p.cmd, "echo $(( $(echo 1) + 2 )) ${__mix_subst_0}");
         let p = prepare("cat <<< $d", scope).unwrap();
         assert_eq!(p.cmd, "cat <<< ${__mix_subst_0}");
+    }
+
+    #[test]
+    fn a_binding_in_a_nested_substitution_stays_there() {
+        // The inner `d=inner` owns only the inner `$d`; the outer `$d`
+        // is still the Mix variable.
+        let p = prepare("echo $(d=inner; echo $d); echo $d", scope).unwrap();
+        assert_eq!(
+            p.cmd,
+            "echo $(d=inner; echo $d); echo ${__mix_subst_0}"
+        );
+        assert_eq!(p.env, vec![("__mix_subst_0".to_string(), "x y".to_string())]);
+        // A binding in an enclosing level still covers a nested reference.
+        let p = prepare("d=1; echo $(echo $d)", scope).unwrap();
+        assert_eq!(p.cmd, "d=1; echo $(echo $d)");
+    }
+
+    #[test]
+    fn a_backtick_inside_double_quotes_has_its_own_quoting() {
+        let p = prepare("echo \"`printf '%s' '$nosuch'`\"", scope).unwrap();
+        assert_eq!(p.cmd, "echo \"`printf '%s' '$nosuch'`\"");
+        let p = prepare("echo \"`echo $d`\"", scope).unwrap();
+        assert_eq!(p.cmd, "echo \"`echo ${__mix_subst_0}`\"");
+        // Unquoted backticks are a substitution too.
+        let p = prepare("echo `echo $d` $d", scope).unwrap();
+        assert_eq!(p.cmd, "echo `echo ${__mix_subst_0}` ${__mix_subst_0}");
+        assert!(prepare("echo `echo $nosuch`", scope).is_err());
+    }
+
+    #[test]
+    fn a_heredoc_delimiter_keeps_a_backslash_before_plain_text() {
+        // In double quotes `\O` is not an escape: the delimiter is `E\OF`.
+        let cmd = "cat <<\"E\\OF\"\n$nosuch\nE\\OF\necho $d";
+        let p = prepare(cmd, scope).unwrap();
+        assert_eq!(p.cmd, "cat <<\"E\\OF\"\n$nosuch\nE\\OF\necho ${__mix_subst_0}");
+    }
+
+    #[test]
+    fn a_multiline_substitution_in_a_heredoc_body_leaves_the_next_expansion() {
+        let p = prepare("cat <<EOF\n$(printf hi\n)$d\nEOF", scope).unwrap();
+        assert_eq!(p.cmd, "cat <<EOF\n$(printf hi\n)${__mix_subst_0}\nEOF");
     }
 
     #[test]
