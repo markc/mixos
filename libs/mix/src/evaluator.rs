@@ -18977,19 +18977,21 @@ mod standing_interrupt_tests {
             crate::interrupt::init(eval.interrupt_flag());
             let cases = [
                 (
-                    "try { $log = $log + \"T\"; while true { $n = 1 } } \
-                     catch e { $log = $log + \"C\" } finally { $log = $log + \"F\" }",
+                    "try\n  $log = $log .. \"T\"\n  while true\n    $n = 1\n  end\n\
+                     catch $m\n  $log = $log .. \"C\"\n\
+                     finally\n  $log = $log .. \"F\"\nend\n",
                     "TF",
                 ),
                 (
-                    "try { try { while true { $n = 1 } } \
-                     catch e { $log = $log + \"C\" } } \
-                     catch e2 { $log = $log + \"O\" } finally { $log = $log + \"F\" }",
+                    "try\n  try\n    while true\n      $n = 1\n    end\n\
+                     catch $m\n    $log = $log .. \"C\"\n  end\n\
+                     catch $m2\n  $log = $log .. \"O\"\n\
+                     finally\n  $log = $log .. \"F\"\nend\n",
                     "F",
                 ),
             ];
             for (body, expected) in cases {
-                eval.execute_script_source("$log = \"\"; $n = 0")
+                eval.execute_script_source("$log = \"\"\n$n = 0\n")
                     .await
                     .expect("init globals");
                 // Stand the interrupt up after the loop has started; the
