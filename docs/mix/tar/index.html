@@ -335,6 +335,7 @@ a directory that is really a symlink would climb from wherever that link
 points. A target may end at another symlink, but never pass through one,
 in either order: a link whose target walks through an existing symlink is
 refused, and so is a symlink created where an earlier link's target walks.
+<code>tar_pack</code> applies the same rules, so a tree it packs always unpacks.
 A leading <code>./</code> and interior <code>.</code> components are dropped from the written
 target; a target of only <code>.</code> is written as <code>.</code>. Nothing is ever extracted
 <em>through</em> a symlink the archive created. Hardlinks may only target an
@@ -369,7 +370,13 @@ xattr names and values held for the whole archive until the post-pass
 applies them; one archive of many small records cannot exhaust memory.</li>
 <li>Directory and symlink metadata (mode, mtime, owner) is applied in a
 children-first post-pass, so directory mtimes stick. A <code>./</code> root entry's
-metadata is applied last, to the staging directory that becomes <code>dest</code>.</li>
+metadata is applied after the commit, through the descriptor of what is
+now <code>dest</code>: until then the staging directory stays the caller's own and
+<code>0700</code>, so an archive-named owner can never rename it in a sticky parent,
+and a restrictive root mode cannot lock the caller out of the post-pass.
+The tree is already in place by then, so a failure there is a <code>warnings</code>
+entry rather than an error. When several <code>./</code> entries appear, the last
+one wins.</li>
 <li>Limits: <code>max_entries</code> (200k, counting both members and every parent
 directory created implicitly for a member whose directory the archive
 does not list; the receipt's <code>implicit_dirs</code> reports those),

@@ -585,9 +585,10 @@ shouldn't abort the whole walk.
 
 A gate cannot tell "no matches" from "could not look" that way, so it passes
 `strict: true`. Then the first directory that cannot be read (the top-level one
-included, or a `dir` that is a file) or entry that cannot be stat'ed raises
+included, a `dir` that cannot even be stat'ed, or a `dir` that is a file) or
+entry that cannot be stat'ed raises
 `WALK_UNREADABLE`; `details.path` names it and `details.error` says why. An
-entry that vanished between listing and stat, or a dangling symlink under
+entry or directory that vanished since it was listed, or a dangling symlink under
 `follow_symlinks`, is still skipped: it was looked at, and nothing is there.
 
 ```

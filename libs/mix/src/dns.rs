@@ -240,28 +240,60 @@ fn via_tcp(addr: SocketAddr, wire: &[u8], id: u16, deadline: Instant) -> Result<
     framed.extend_from_slice(wire);
     stream.write_all(&framed).map_err(classify)?;
     loop {
-        stream
-            .set_read_timeout(Some(remaining(deadline)?))
-            .map_err(Failure::Io)?;
         let mut len = [0u8; 2];
-        stream.read_exact(&mut len).map_err(|e| match e.kind() {
-            std::io::ErrorKind::UnexpectedEof => {
-                Failure::Protocol("the server closed the connection without a reply".into())
-            }
-            _ => classify(e),
-        })?;
+        read_by(&mut stream, &mut len, deadline, "the server closed the connection without a reply")?;
         let mut body = vec![0u8; usize::from(u16::from_be_bytes(len))];
-        stream.read_exact(&mut body).map_err(|e| match e.kind() {
-            std::io::ErrorKind::UnexpectedEof => {
-                Failure::Protocol("the reply was cut short".into())
-            }
-            _ => classify(e),
-        })?;
+        read_by(&mut stream, &mut body, deadline, "the reply was cut short")?;
         let reply = Message::from_vec(&body)
             .map_err(|e| Failure::Protocol(format!("malformed reply: {e}")))?;
         if ours(&reply, id) {
             return Ok(reply);
         }
+    }
+}
+
+/// `read_exact`, but the whole read ends by `deadline`: the socket timeout is
+/// re-armed with what is left before every read, so a server that trickles a
+/// frame byte by byte cannot stretch the query past its timeout.
+fn read_by(
+    stream: &mut TcpStream,
+    buf: &mut [u8],
+    deadline: Instant,
+    short: &str,
+) -> Result<(), Failure> {
+    let mut got = 0;
+    while got < buf.len() {
+        stream
+            .set_read_timeout(Some(remaining(deadline)?))
+            .map_err(Failure::Io)?;
+        match stream.read(&mut buf[got..]) {
+            Ok(0) => return Err(Failure::Protocol(short.to_string())),
+            Ok(n) => got += n,
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(e) => return Err(classify(e)),
+        }
+    }
+    Ok(())
+}
+
+/// Resolve a server host name within the query deadline. The system
+/// resolver has no timeout of its own, so it runs on a helper thread; past
+/// the deadline the answer is abandoned (the thread ends when getaddrinfo
+/// returns) and the query reports a timeout.
+fn resolve_server(server: &str, port: u16, deadline: Instant) -> Result<SocketAddr, Failure> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    let host = server.to_string();
+    std::thread::Builder::new()
+        .name("dns_query-resolve".into())
+        .spawn(move || {
+            let _ = tx.send((host.as_str(), port).to_socket_addrs().map(|mut a| a.next()));
+        })
+        .map_err(Failure::Io)?;
+    match rx.recv_timeout(remaining(deadline)?) {
+        Ok(Ok(Some(addr))) => Ok(addr),
+        Ok(Ok(None)) => Err(Failure::Protocol(format!("server '{server}' has no address"))),
+        Ok(Err(e)) => Err(Failure::Protocol(format!("cannot resolve server '{server}': {e}"))),
+        Err(_) => Err(Failure::Timeout),
     }
 }
 
@@ -305,25 +337,30 @@ pub fn builtin_dns_query(args: Vec<Value>) -> MixResult<Option<Value>> {
     };
 
     let started = Instant::now();
-    let deadline = started + opts.timeout;
+    let deadline = started
+        .checked_add(opts.timeout)
+        .ok_or_else(|| opt_invalid(CALLER, "timeout is too large"))?;
     let server = opts.server.clone().unwrap_or_else(system_server);
     // An address literal (IPv6 with or without brackets), else a host name
     // resolved by the system resolver.
     let literal = server.trim_start_matches('[').trim_end_matches(']');
     let addr = match IpAddr::from_str(literal) {
         Ok(ip) => SocketAddr::new(ip, opts.port),
-        Err(_) => match (server.as_str(), opts.port)
-            .to_socket_addrs()
-            .map(|mut a| a.next())
-        {
-            Ok(Some(addr)) => addr,
-            Ok(None) | Err(_) => {
-                return Ok(Some(failure(
-                    "DNS_SERVER",
-                    format!("{CALLER}: cannot resolve server '{server}'"),
-                    &server,
-                    started,
-                )));
+        Err(_) => match resolve_server(&server, opts.port, deadline) {
+            Ok(addr) => addr,
+            Err(f) => {
+                let (code, msg) = match f {
+                    Failure::Timeout => (
+                        "DNS_TIMEOUT",
+                        format!("{CALLER}: resolving server '{server}' took longer than the timeout"),
+                    ),
+                    Failure::Protocol(m) => ("DNS_SERVER", format!("{CALLER}: {m}")),
+                    Failure::Io(e) | Failure::Unreachable(e) => (
+                        "DNS_SERVER",
+                        format!("{CALLER}: cannot resolve server '{server}': {e}"),
+                    ),
+                };
+                return Ok(Some(failure(code, msg, &server, started)));
             }
         },
     };

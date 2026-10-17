@@ -51,7 +51,7 @@
 //! as its own directory's depth allows, then only descend, and never through
 //! another symlink.
 
-use crate::builtins::{opt_invalid, sanitize_for_diag};
+use crate::builtins::{directory_names, opt_invalid, sanitize_for_diag};
 use crate::error::{MixError, MixResult};
 use crate::value::Value;
 use indexmap::IndexMap;
@@ -603,6 +603,49 @@ fn clean_link_target(
     Ok((written, resolved.iter().collect()))
 }
 
+/// The archive's symlinks, kept so that no link's target passes through
+/// another link, whichever comes first. A link may end at another link (its
+/// own target is contained too), but a directory on the way that is really a
+/// link would resolve wherever that link points. Shared by the unpacker and
+/// the packer, so a packed archive always unpacks.
+#[derive(Default)]
+struct LinkGraph {
+    links: HashSet<PathBuf>,
+    /// Every directory a link target passes through on its way down.
+    traversed: HashSet<PathBuf>,
+}
+
+impl LinkGraph {
+    /// Record the link at `rel` resolving to `resolved`, or say why not.
+    fn add(&mut self, rel: &Path, resolved: &Path) -> Result<(), String> {
+        let ancestors: Vec<&Path> = resolved
+            .ancestors()
+            .skip(1)
+            .filter(|a| !a.as_os_str().is_empty())
+            .collect();
+        if let Some(through) = ancestors.iter().find(|a| self.links.contains(**a)) {
+            return Err(format!(
+                "its target passes through symlink '{}'",
+                through.display()
+            ));
+        }
+        if ancestors.contains(&rel) {
+            return Err("its target passes through itself".to_string());
+        }
+        if self.traversed.contains(rel) {
+            return Err("an earlier symlink's target passes through it".to_string());
+        }
+        self.traversed
+            .extend(ancestors.iter().map(|a| a.to_path_buf()));
+        self.links.insert(rel.to_path_buf());
+        Ok(())
+    }
+
+    fn contains(&self, rel: &Path) -> bool {
+        self.links.contains(rel)
+    }
+}
+
 // ---------------------------------------------------------------------------
 // tar_list
 // ---------------------------------------------------------------------------
@@ -735,11 +778,13 @@ pub fn builtin_tar_unpack(args: Vec<Value>) -> MixResult<Option<Value>> {
     }
     let path = args[0].to_mix_string();
     let dest = args[1].to_mix_string();
-    let mut opts = UnpackOpts::default();
     // GNU tar's rule: root restores the archive's owners, an ordinary user
     // keeps their own. A non-root chown can still hand a file to any group
     // the caller belongs to, which the archive should not choose.
-    opts.numeric_owner = unsafe { libc::geteuid() } == 0;
+    let mut opts = UnpackOpts {
+        numeric_owner: unsafe { libc::geteuid() } == 0,
+        ..UnpackOpts::default()
+    };
     match args.get(2) {
         None | Some(Value::Nil) => {}
         Some(Value::Map(m)) => {
@@ -824,9 +869,15 @@ pub fn builtin_tar_unpack(args: Vec<Value>) -> MixResult<Option<Value>> {
     let staging =
         Staging::create(parent).map_err(|e| runtime(format!("{caller}: staging: {e}")))?;
     match unpack_staged(&path, &staging.dir, &opts, caller) {
-        Ok(receipt) => {
+        Ok((mut receipt, root_meta)) => {
             if let Err(e) = staging.commit(&leaf) {
                 return Err(staging.rollback(runtime(format!("{caller}: commit '{dest}': {e}"))));
+            }
+            if let Some(m) = root_meta {
+                let late = apply_root_meta(&staging.dir, &m, &opts, caller);
+                if let Some(Value::List(list)) = receipt.get_mut("warnings") {
+                    std::rc::Rc::make_mut(list).extend(late.into_iter().map(Value::String));
+                }
             }
             Ok(Some(Value::Map(std::rc::Rc::new(receipt))))
         }
@@ -1210,7 +1261,7 @@ fn unpack_staged(
     staging: &File,
     opts: &UnpackOpts,
     caller: &str,
-) -> MixResult<IndexMap<String, Value>> {
+) -> MixResult<(IndexMap<String, Value>, Option<DeferredMeta>)> {
     let mut dec = VerifiedDecode::open(Path::new(path), opts.codec, caller)?;
     let mut files: u64 = 0;
     let mut dirs: u64 = 0;
@@ -1223,11 +1274,10 @@ fn unpack_staged(
     let mut entry_count: u64 = 0;
     let mut implicit_dirs: u64 = 0;
     let mut warnings: Vec<String> = Vec::new();
-    let mut symlinks_created: HashSet<PathBuf> = HashSet::new();
-    // Every directory a symlink target passes through on its way down.
-    let mut link_traversed: HashSet<PathBuf> = HashSet::new();
+    let mut links = LinkGraph::default();
     let mut extracted_files: HashSet<PathBuf> = HashSet::new();
     let mut deferred: Vec<DeferredMeta> = Vec::new();
+    let mut root_meta: Option<DeferredMeta> = None;
     let mut limited = LimitedRead {
         inner: &mut dec,
         remaining: opts.max_stream_bytes,
@@ -1280,7 +1330,7 @@ fn unpack_staged(
 
             // `./` (GNU tar `-C dir .`) names the extraction root itself: the
             // staging directory, which already exists. Only its metadata is
-            // applied, last, like any directory's.
+            // applied, by the caller, after the commit (`apply_root_meta`).
             if rel.as_os_str().is_empty() {
                 if header.entry_type() != EntryType::Directory {
                     return Err(runtime(format!(
@@ -1290,14 +1340,14 @@ fn unpack_staged(
                     )));
                 }
                 dirs += 1;
-                deferred.push(meta);
+                root_meta = Some(meta);
                 continue;
             }
 
             // Never extract THROUGH a symlink this archive created. The
             // O_NOFOLLOW walk below would refuse it too; this names it.
             for ancestor in rel.ancestors().skip(1) {
-                if !ancestor.as_os_str().is_empty() && symlinks_created.contains(ancestor) {
+                if !ancestor.as_os_str().is_empty() && links.contains(ancestor) {
                     return Err(runtime(format!(
                         "{caller}: refusing to extract '{}' through symlink '{}'",
                         rel.display(),
@@ -1391,31 +1441,9 @@ fn unpack_staged(
                         .clone();
                     let (clean, resolved) =
                         clean_link_target(caller, &rel, target.as_os_str(), opts.max_name)?;
-                    // A link may end at another link (its own target is
-                    // contained too), but never pass through one: that
-                    // directory would resolve wherever the other link points.
-                    // Order-independent: a link created later at a directory
-                    // an earlier target passes through is refused as well.
-                    for ancestor in resolved.ancestors().skip(1) {
-                        if !ancestor.as_os_str().is_empty() {
-                            if symlinks_created.contains(ancestor) {
-                                return Err(runtime(format!(
-                                    "{caller}: refusing symlink '{}': its target passes through \
-                                     symlink '{}'",
-                                    rel.display(),
-                                    ancestor.display()
-                                )));
-                            }
-                            link_traversed.insert(ancestor.to_path_buf());
-                        }
-                    }
-                    if link_traversed.contains(&rel) {
-                        return Err(runtime(format!(
-                            "{caller}: refusing symlink '{}': an earlier symlink's target \
-                             passes through it",
-                            rel.display()
-                        )));
-                    }
+                    links.add(&rel, &resolved).map_err(|why| {
+                        runtime(format!("{caller}: refusing symlink '{}': {why}", rel.display()))
+                    })?;
                     let clean = std::ffi::CString::new(clean.as_os_str().as_bytes())
                         .map_err(|_| runtime(format!("{caller}: link target contains NUL")))?;
                     if unsafe { libc::symlinkat(clean.as_ptr(), parent.as_raw_fd(), leaf.as_ptr()) }
@@ -1428,7 +1456,6 @@ fn unpack_staged(
                         )));
                     }
                     symlinks += 1;
-                    symlinks_created.insert(rel.clone());
                     let mut m = meta;
                     m.is_symlink = true;
                     deferred.push(m);
@@ -1539,76 +1566,26 @@ fn unpack_staged(
             }
             continue;
         }
-        // The root entry (`./`) is the held staging directory itself.
-        let is_root = m.rel.as_os_str().is_empty();
-        let shown = if is_root { Path::new(".") } else { &m.rel };
-        let file = if is_root {
-            staging
-                .try_clone()
-                .map_err(|e| runtime(format!("{caller}: metadata '.': {e}")))?
-        } else {
-            let (parent, leaf) = parent_at(staging, &m.rel, None)
-                .map_err(|e| runtime(format!("{caller}: metadata '{}': {e}", m.rel.display())))?;
-            // O_NONBLOCK: the entry is a file or directory this unpack made,
-            // so nothing can block; it is defence against a swapped-in fifo.
-            let fd = unsafe {
-                libc::openat(
-                    parent.as_raw_fd(),
-                    leaf.as_ptr(),
-                    libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC,
-                )
-            };
-            if fd < 0 {
-                return Err(runtime(format!(
-                    "{caller}: metadata '{}': {}",
-                    m.rel.display(),
-                    last_error()
-                )));
-            }
-            unsafe { File::from_raw_fd(fd) }
+        let (parent, leaf) = parent_at(staging, &m.rel, None)
+            .map_err(|e| runtime(format!("{caller}: metadata '{}': {e}", m.rel.display())))?;
+        // O_NONBLOCK: the entry is a file or directory this unpack made, so
+        // nothing can block; it is defence against a swapped-in fifo.
+        let fd = unsafe {
+            libc::openat(
+                parent.as_raw_fd(),
+                leaf.as_ptr(),
+                libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC,
+            )
         };
-        let owner_applied = if !opts.numeric_owner {
-            // Owners are not restored: the archive's owner is "applied" only
-            // where the entry already has it, so a special bit or capability
-            // never lands on an owner the archive did not name.
-            file.metadata()
-                .is_ok_and(|st| st.uid() == m.uid && st.gid() == m.gid)
-        } else if unsafe { libc::fchown(file.as_raw_fd(), m.uid, m.gid) } != 0 {
-            owner_not_applied(&mut warnings, shown, m.uid, m.gid, root);
-            false
-        } else {
-            true
-        };
-        let mut mode = m.mode;
-        if !owner_applied && mode & 0o6000 != 0 {
-            mode &= !0o6000;
-            warnings.push(format!(
-                "'{}': setuid/setgid dropped because its owner was not applied",
-                shown.display()
-            ));
-        }
-        if unsafe { libc::fchmod(file.as_raw_fd(), mode) } != 0 {
+        if fd < 0 {
             return Err(runtime(format!(
-                "{caller}: mode of '{}': {}",
-                shown.display(),
+                "{caller}: metadata '{}': {}",
+                m.rel.display(),
                 last_error()
             )));
         }
-        if unsafe { libc::futimens(file.as_raw_fd(), times.as_ptr()) } != 0 {
-            return Err(runtime(format!(
-                "{caller}: mtime of '{}': {}",
-                shown.display(),
-                last_error()
-            )));
-        }
-        xattrs_restored += apply_xattrs(
-            &file,
-            shown,
-            &m.xattrs,
-            owner_applied,
-            &mut warnings,
-            caller,
-        )?;
+        let file = unsafe { File::from_raw_fd(fd) };
+        xattrs_restored += apply_entry_meta(&file, m, &m.rel, opts, &mut warnings, caller)?;
     }
 
     let mut map = IndexMap::new();
@@ -1642,6 +1619,83 @@ fn unpack_staged(
         )),
     );
     Ok(map)
+}
+
+/// Apply one file's or directory's deferred metadata through its descriptor
+/// and return the xattrs restored. The order is owner, then mode, then
+/// mtime, then xattrs: chown clears setuid/setgid and security.capability,
+/// so chmod must follow it for a kept special bit to survive, and xattrs come
+/// last so nothing strips them again. A special bit or a capability is kept
+/// only where the entry ends up with the owner the archive named.
+fn apply_entry_meta(
+    file: &File,
+    m: &DeferredMeta,
+    shown: &Path,
+    opts: &UnpackOpts,
+    warnings: &mut Vec<String>,
+    caller: &str,
+) -> MixResult<u64> {
+    let root = unsafe { libc::geteuid() } == 0;
+    let times = [
+        libc::timespec {
+            tv_sec: m.mtime,
+            tv_nsec: 0,
+        },
+        libc::timespec {
+            tv_sec: m.mtime,
+            tv_nsec: 0,
+        },
+    ];
+    let owner_applied = if !opts.numeric_owner {
+        // Owners are not restored: the archive's owner is "applied" only
+        // where the entry already has it, so a special bit or capability
+        // never lands on an owner the archive did not name.
+        file.metadata()
+            .is_ok_and(|st| st.uid() == m.uid && st.gid() == m.gid)
+    } else if unsafe { libc::fchown(file.as_raw_fd(), m.uid, m.gid) } != 0 {
+        owner_not_applied(warnings, shown, m.uid, m.gid, root);
+        false
+    } else {
+        true
+    };
+    let mut mode = m.mode;
+    if !owner_applied && mode & 0o6000 != 0 {
+        mode &= !0o6000;
+        warnings.push(format!(
+            "'{}': setuid/setgid dropped because its owner was not applied",
+            shown.display()
+        ));
+    }
+    if unsafe { libc::fchmod(file.as_raw_fd(), mode) } != 0 {
+        return Err(runtime(format!(
+            "{caller}: mode of '{}': {}",
+            shown.display(),
+            last_error()
+        )));
+    }
+    if unsafe { libc::futimens(file.as_raw_fd(), times.as_ptr()) } != 0 {
+        return Err(runtime(format!(
+            "{caller}: mtime of '{}': {}",
+            shown.display(),
+            last_error()
+        )));
+    }
+    apply_xattrs(file, shown, &m.xattrs, owner_applied, warnings, caller)
+}
+
+/// The `./` root entry's metadata, applied AFTER the commit through the held
+/// descriptor of what is now `dest`. Before the commit the staging directory
+/// must stay the caller's own and private: handed to the archive's owner
+/// inside a sticky parent, that user could rename it and have something else
+/// published in its place, and a restrictive mode would lock the caller out
+/// of the children's post-pass. A failure here cannot roll back a committed
+/// tree, so it is a warning in the receipt, never an error.
+fn apply_root_meta(dir: &File, m: &DeferredMeta, opts: &UnpackOpts, caller: &str) -> Vec<String> {
+    let mut warnings = Vec::new();
+    if let Err(e) = apply_entry_meta(dir, m, Path::new("."), opts, &mut warnings, caller) {
+        warnings.push(format!("'.': {e} (dest is in place)"));
+    }
+    warnings
 }
 
 /// Record an owner that could not be applied. A non-root caller cannot give
@@ -1984,6 +2038,7 @@ fn walk_and_append(
     let mut symlinks: u64 = 0;
     let mut bytes: u64 = 0;
     let mut caps: u64 = 0;
+    let mut links = LinkGraph::default();
 
     let mut queue = vec![(PathBuf::new(), source)];
     while let Some((dir_rel, dir)) = queue.pop() {
@@ -2025,9 +2080,12 @@ fn walk_and_append(
             } else if meta.file_type().is_symlink() {
                 let target = readlink_fd(&child)
                     .map_err(|e| runtime(format!("{caller}: readlink '{}': {e}", rel.display())))?;
-                // Contained targets only, so packed archives always
-                // round-trip through the safe unpacker.
-                clean_link_target(caller, &rel, target.as_os_str(), 4096)?;
+                // Contained targets only, by the unpacker's own rules, so packed
+                // archives always round-trip through the safe unpacker.
+                let (_, resolved) = clean_link_target(caller, &rel, target.as_os_str(), 4096)?;
+                links.add(&rel, &resolved).map_err(|why| {
+                    runtime(format!("{caller}: refusing symlink '{}': {why}", rel.display()))
+                })?;
                 let mut header = Header::new_gnu();
                 header.set_size(0);
                 header.set_entry_type(EntryType::Symlink);
@@ -2154,51 +2212,6 @@ fn open_child_checked(
 }
 
 /// Enumerate the directory already opened and queued, never its pathname.
-fn directory_names(dir: &File) -> std::io::Result<Vec<std::ffi::OsString>> {
-    struct DirStream(*mut libc::DIR);
-    impl Drop for DirStream {
-        fn drop(&mut self) {
-            unsafe {
-                libc::closedir(self.0);
-            }
-        }
-    }
-    let fd = unsafe { libc::fcntl(dir.as_raw_fd(), libc::F_DUPFD_CLOEXEC, 0) };
-    if fd < 0 {
-        return Err(std::io::Error::last_os_error());
-    }
-    let stream = unsafe { libc::fdopendir(fd) };
-    if stream.is_null() {
-        let err = std::io::Error::last_os_error();
-        unsafe {
-            libc::close(fd);
-        }
-        return Err(err);
-    }
-    let stream = DirStream(stream);
-    // The dup shares the held descriptor's offset, so an earlier listing
-    // left it at the end; without the rewind a second listing is empty.
-    unsafe { libc::rewinddir(stream.0) };
-    let mut names = Vec::new();
-    loop {
-        unsafe {
-            *libc::__errno_location() = 0;
-        }
-        let entry = unsafe { libc::readdir(stream.0) };
-        if entry.is_null() {
-            let err = std::io::Error::last_os_error();
-            if err.raw_os_error() != Some(0) {
-                return Err(err);
-            }
-            return Ok(names);
-        }
-        let bytes = unsafe { std::ffi::CStr::from_ptr((*entry).d_name.as_ptr()) }.to_bytes();
-        if bytes != b"." && bytes != b".." {
-            names.push(std::ffi::OsString::from_vec(bytes.to_vec()));
-        }
-    }
-}
-
 fn readlink_fd(file: &File) -> std::io::Result<PathBuf> {
     let mut target = vec![0u8; 4097];
     // Linux readlinkat with an empty name operates on the pinned O_PATH fd.

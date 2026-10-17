@@ -256,6 +256,41 @@ async fn operational_failures_are_returned_not_raised() {
 }
 
 #[tokio::test]
+async fn a_trickled_tcp_reply_cannot_outlast_the_timeout() {
+    // Announces a long frame, then sends one byte every 100 ms: each read
+    // succeeds well within any per-read timeout, so only a whole-query
+    // deadline ends it.
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    std::thread::spawn(move || {
+        if let Ok((mut stream, _)) = listener.accept() {
+            let mut len = [0u8; 2];
+            let _ = stream.read_exact(&mut len);
+            let mut body = vec![0u8; usize::from(u16::from_be_bytes(len))];
+            let _ = stream.read_exact(&mut body);
+            let _ = stream.write_all(&[0x01, 0x00]);
+            for _ in 0..100 {
+                if stream.write_all(&[0]).is_err() {
+                    return;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+        }
+    });
+    let started = std::time::Instant::now();
+    let r = run_ok(&format!(
+        "dns_query(\"a.example.test\", \"A\", {{server: \"127.0.0.1\", port: {port}, timeout: 0.5, tcp: true}})"
+    ))
+    .await;
+    assert_eq!(field(&r, "error_code").to_mix_string(), "DNS_TIMEOUT", "{r:?}");
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(3),
+        "took {:?}",
+        started.elapsed()
+    );
+}
+
+#[tokio::test]
 async fn bad_arguments_raise() {
     for (source, fragment) in [
         (
@@ -276,6 +311,11 @@ async fn bad_arguments_raise() {
             "timeout",
         ),
         ("dns_query(\"a.example.test\")", "expects"),
+        // A valid duration that no clock can add: refused, not a panic.
+        (
+            "dns_query(\"a.example.test\", \"A\", {server: \"127.0.0.1\", timeout: 1e19})",
+            "timeout is too large",
+        ),
     ] {
         let err = run_err(source).await;
         assert!(err.contains(fragment), "{source}: {err}");

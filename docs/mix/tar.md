@@ -96,6 +96,7 @@ For artifacts that people unpack with stock tools, use `codec:"gzip"`
   points. A target may end at another symlink, but never pass through one,
   in either order: a link whose target walks through an existing symlink is
   refused, and so is a symlink created where an earlier link's target walks.
+  `tar_pack` applies the same rules, so a tree it packs always unpacks.
   A leading `./` and interior `.` components are dropped from the written
   target; a target of only `.` is written as `.`. Nothing is ever extracted
   *through* a symlink the archive created. Hardlinks may only target an
@@ -130,7 +131,13 @@ For artifacts that people unpack with stock tools, use `codec:"gzip"`
   applies them; one archive of many small records cannot exhaust memory.
 - Directory and symlink metadata (mode, mtime, owner) is applied in a
   children-first post-pass, so directory mtimes stick. A `./` root entry's
-  metadata is applied last, to the staging directory that becomes `dest`.
+  metadata is applied after the commit, through the descriptor of what is
+  now `dest`: until then the staging directory stays the caller's own and
+  `0700`, so an archive-named owner can never rename it in a sticky parent,
+  and a restrictive root mode cannot lock the caller out of the post-pass.
+  The tree is already in place by then, so a failure there is a `warnings`
+  entry rather than an error. When several `./` entries appear, the last
+  one wins.
 - Limits: `max_entries` (200k, counting both members and every parent
   directory created implicitly for a member whose directory the archive
   does not list; the receipt's `implicit_dirs` reports those),

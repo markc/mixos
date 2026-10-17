@@ -761,9 +761,10 @@ and so is an individual entry that fails to stat. One bad file deep in a subtree
 shouldn't abort the whole walk.</p>
 <p>A gate cannot tell "no matches" from "could not look" that way, so it passes
 <code>strict: true</code>. Then the first directory that cannot be read (the top-level one
-included, or a <code>dir</code> that is a file) or entry that cannot be stat'ed raises
+included, a <code>dir</code> that cannot even be stat'ed, or a <code>dir</code> that is a file) or
+entry that cannot be stat'ed raises
 <code>WALK_UNREADABLE</code>; <code>details.path</code> names it and <code>details.error</code> says why. An
-entry that vanished between listing and stat, or a dangling symlink under
+entry or directory that vanished since it was listed, or a dangling symlink under
 <code>follow_symlinks</code>, is still skipped: it was looked at, and nothing is there.</p>
 <pre><code>try
   $files = walk("/srv/repo", {strict: true})

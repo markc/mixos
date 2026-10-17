@@ -1754,7 +1754,8 @@ hickory-proto (pure Rust, the `dns` feature); no libresolv.
 - `name` is always fully qualified: there is no search list.
 - `server` is an address or a host name (default: the first `nameserver` in
   `/etc/resolv.conf`, else `127.0.0.1`), `port` defaults to 53, `timeout` to
-  5 seconds for the whole query, and `recurse` (default `true`) sets the RD
+  5 seconds for the whole query (resolving a server host name, a TCP retry
+  and a slowly delivered reply all count against it), and `recurse` (default `true`) sets the RD
   flag. `tcp: true` forces TCP; a truncated UDP answer is retried over TCP
   on its own.
 

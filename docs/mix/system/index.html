@@ -1744,7 +1744,8 @@ address asks its reverse name, as <code>dig -x</code> does.</li>
 <li><code>name</code> is always fully qualified: there is no search list.</li>
 <li><code>server</code> is an address or a host name (default: the first <code>nameserver</code> in
 <code>/etc/resolv.conf</code>, else <code>127.0.0.1</code>), <code>port</code> defaults to 53, <code>timeout</code> to
-5 seconds for the whole query, and <code>recurse</code> (default <code>true</code>) sets the RD
+5 seconds for the whole query (resolving a server host name, a TCP retry
+and a slowly delivered reply all count against it), and <code>recurse</code> (default <code>true</code>) sets the RD
 flag. <code>tcp: true</code> forces TCP; a truncated UDP answer is retried over TCP
 on its own.</li>
 </ul>

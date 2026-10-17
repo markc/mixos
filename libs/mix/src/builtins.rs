@@ -14105,13 +14105,24 @@ fn open_lock_file(name: &str, path: &str, shared: bool, create: bool) -> MixResu
         )
     };
     if shared {
-        match std::fs::OpenOptions::new().read(true).open(path) {
+        // O_NONBLOCK: a read-only open of a fifo with no writer would block
+        // before any lock is tried. Only a regular file is a lock file.
+        match std::fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_NONBLOCK)
+            .open(path)
+        {
             // A directory opens read-only; refuse it as the read-write
             // open of an exclusive lock does (EISDIR).
             Ok(file) if file.metadata().is_ok_and(|m| m.is_dir()) => {
                 return Err(flock_runtime_error(format!(
                     "{name} '{path}': {}",
                     std::io::Error::from_raw_os_error(libc::EISDIR)
+                )));
+            }
+            Ok(file) if !file.metadata().is_ok_and(|m| m.is_file()) => {
+                return Err(flock_runtime_error(format!(
+                    "{name} '{path}': not a regular file"
                 )));
             }
             Ok(file) => return Ok(file),
@@ -14713,6 +14724,7 @@ fn builtin_chown(args: Vec<Value>) -> MixResult<Option<Value>> {
 /// form (a tree built by `copy_tree`, a journal of directory renames)
 /// without `sync -f`'s whole-filesystem flush.
 fn builtin_fsync(args: Vec<Value>) -> MixResult<Option<Value>> {
+    use std::os::unix::fs::OpenOptionsExt;
     expect_args_between("fsync", &args, 1, 2)?;
     let path = args[0].to_mix_string();
     let mut recursive = false;
@@ -14741,7 +14753,13 @@ fn builtin_fsync(args: Vec<Value>) -> MixResult<Option<Value>> {
     let root = std::path::Path::new(&path);
     let mut synced = 0u64;
     let result = if recursive && root.is_dir() {
-        fsync_tree(root, false, &mut synced)
+        // The path itself may be a symlink; nothing beneath it is followed.
+        std::fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_DIRECTORY | libc::O_CLOEXEC)
+            .open(root)
+            .map_err(|e| (root.to_path_buf(), e))
+            .and_then(|dir| fsync_tree(root, &dir, &mut synced))
     } else {
         fsync_one(root, false).map(|()| synced += 1)
     };
@@ -14781,28 +14799,132 @@ fn fsync_one(
 }
 
 /// Children first, then the directory: when it returns, every entry and
-/// every regular file's data beneath `dir` is on disk. Symlinks and special
-/// files are not opened; their directory's fsync persists the entry.
+/// every regular file's data beneath `dir` is on disk. The walk goes through
+/// held descriptors, each child opened relative to its parent with
+/// O_NOFOLLOW, and the descriptor enumerated is the one synced: a directory
+/// swapped for a symlink after it was listed is refused, never followed out
+/// of the tree. Symlinks and special files are not opened; their
+/// directory's fsync persists the entry. An entry removed since the listing
+/// is skipped.
 fn fsync_tree(
-    dir: &std::path::Path,
-    nofollow: bool,
+    path: &std::path::Path,
+    dir: &std::fs::File,
     synced: &mut u64,
 ) -> Result<(), (std::path::PathBuf, std::io::Error)> {
-    let fail = |e| (dir.to_path_buf(), e);
-    for entry in std::fs::read_dir(dir).map_err(fail)? {
-        let entry = entry.map_err(fail)?;
-        let path = entry.path();
-        let kind = entry.file_type().map_err(|e| (path.clone(), e))?;
-        if kind.is_dir() {
-            fsync_tree(&path, true, synced)?;
-        } else if kind.is_file() {
-            fsync_one(&path, true)?;
+    use std::os::fd::{AsRawFd, FromRawFd};
+    use std::os::unix::ffi::OsStrExt;
+    for name in directory_names(dir).map_err(|e| (path.to_path_buf(), e))? {
+        let child = path.join(&name);
+        let cname = std::ffi::CString::new(name.as_bytes()).map_err(|e| (child.clone(), e.into()))?;
+        let mut st = std::mem::MaybeUninit::<libc::stat>::uninit();
+        // SAFETY: a valid dirfd, a NUL-terminated name and a stat buffer.
+        if unsafe {
+            libc::fstatat(
+                dir.as_raw_fd(),
+                cname.as_ptr(),
+                st.as_mut_ptr(),
+                libc::AT_SYMLINK_NOFOLLOW,
+            )
+        } != 0
+        {
+            let e = std::io::Error::last_os_error();
+            if e.kind() == std::io::ErrorKind::NotFound {
+                continue;
+            }
+            return Err((child, e));
+        }
+        // SAFETY: fstatat succeeded and filled the buffer.
+        let kind = unsafe { st.assume_init() }.st_mode & libc::S_IFMT;
+        let flags = match kind {
+            libc::S_IFDIR => libc::O_RDONLY | libc::O_DIRECTORY,
+            libc::S_IFREG => libc::O_RDONLY | libc::O_NONBLOCK,
+            _ => continue,
+        };
+        // SAFETY: as above; the returned descriptor is owned below.
+        let fd = unsafe {
+            libc::openat(
+                dir.as_raw_fd(),
+                cname.as_ptr(),
+                flags | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+            )
+        };
+        if fd < 0 {
+            let e = std::io::Error::last_os_error();
+            if e.kind() == std::io::ErrorKind::NotFound {
+                continue;
+            }
+            return Err((child, e));
+        }
+        // SAFETY: openat returned a fresh descriptor this scope now owns.
+        let opened = unsafe { std::fs::File::from_raw_fd(fd) };
+        if kind == libc::S_IFDIR {
+            fsync_tree(&child, &opened, synced)?;
+        } else {
+            // A swapped-in non-file is refused rather than synced as one.
+            let meta = opened.metadata().map_err(|e| (child.clone(), e))?;
+            if !meta.is_file() {
+                return Err((
+                    child,
+                    std::io::Error::other("replaced by a non-file while being synced"),
+                ));
+            }
+            opened.sync_all().map_err(|e| (child.clone(), e))?;
             *synced += 1;
         }
     }
-    fsync_one(dir, nofollow)?;
+    dir.sync_all().map_err(|e| (path.to_path_buf(), e))?;
     *synced += 1;
     Ok(())
+}
+
+/// The names in a held directory, without `.` and `..`, read through a
+/// duplicate of its descriptor (no path is resolved). Shared with the
+/// archive builtins.
+pub(crate) fn directory_names(dir: &std::fs::File) -> std::io::Result<Vec<std::ffi::OsString>> {
+    use std::os::fd::AsRawFd;
+    use std::os::unix::ffi::OsStringExt;
+    struct DirStream(*mut libc::DIR);
+    impl Drop for DirStream {
+        fn drop(&mut self) {
+            unsafe {
+                libc::closedir(self.0);
+            }
+        }
+    }
+    let fd = unsafe { libc::fcntl(dir.as_raw_fd(), libc::F_DUPFD_CLOEXEC, 0) };
+    if fd < 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    let stream = unsafe { libc::fdopendir(fd) };
+    if stream.is_null() {
+        let err = std::io::Error::last_os_error();
+        unsafe {
+            libc::close(fd);
+        }
+        return Err(err);
+    }
+    let stream = DirStream(stream);
+    // The dup shares the held descriptor's offset, so an earlier listing
+    // left it at the end; without the rewind a second listing is empty.
+    unsafe { libc::rewinddir(stream.0) };
+    let mut names = Vec::new();
+    loop {
+        unsafe {
+            *libc::__errno_location() = 0;
+        }
+        let entry = unsafe { libc::readdir(stream.0) };
+        if entry.is_null() {
+            let err = std::io::Error::last_os_error();
+            if err.raw_os_error() != Some(0) {
+                return Err(err);
+            }
+            return Ok(names);
+        }
+        let bytes = unsafe { std::ffi::CStr::from_ptr((*entry).d_name.as_ptr()) }.to_bytes();
+        if bytes != b"." && bytes != b".." {
+            names.push(std::ffi::OsString::from_vec(bytes.to_vec()));
+        }
+    }
 }
 
 /// Parse a numeric uid/gid argument: must be a finite, non-negative
@@ -16917,11 +17039,19 @@ fn builtin_walk(args: Vec<Value>) -> MixResult<Option<Value>> {
     }
 
     let root_path = std::path::PathBuf::from(&root);
-    if !root_path.exists() {
-        return Err(MixError::RuntimeError {
-            span: None,
-            msg: format!("walk(): '{}' does not exist", root),
-        });
+    match std::fs::metadata(&root_path) {
+        Ok(_) => {}
+        // A root that cannot even be stat'ed (a parent without search
+        // permission) is "could not look", which strict must say.
+        Err(e) if strict && e.kind() != std::io::ErrorKind::NotFound => {
+            return Err(walk_unreadable(&root_path, &e));
+        }
+        Err(_) => {
+            return Err(MixError::RuntimeError {
+                span: None,
+                msg: format!("walk(): '{}' does not exist", root),
+            });
+        }
     }
 
     let mut visited: std::collections::HashSet<(u64, u64)> = std::collections::HashSet::new();
@@ -16934,26 +17064,30 @@ fn builtin_walk(args: Vec<Value>) -> MixResult<Option<Value>> {
         strict,
     };
     if let Err((path, e)) = walk_recursive(&root_path, 0, &walk, &mut visited, &mut out) {
-        let mut details = indexmap::IndexMap::new();
-        details.insert(
-            "path".to_string(),
-            Value::String(path.to_string_lossy().into_owned()),
-        );
-        details.insert("error".to_string(), Value::String(e.to_string()));
-        return Err(MixError::Structured(Box::new(
-            crate::error::ErrorInfo::new(
-                "WALK_UNREADABLE",
-                format!(
-                    "walk(): cannot read '{}': {e} (strict: true raises rather than skip it)",
-                    path.display()
-                ),
-            )
-            .with_details(Value::map(details)),
-        )));
+        return Err(walk_unreadable(&path, &e));
     }
 
     out.sort_by_key(|a| a.to_mix_string());
     Ok(Some(Value::list(out)))
+}
+
+fn walk_unreadable(path: &std::path::Path, e: &std::io::Error) -> MixError {
+    let mut details = indexmap::IndexMap::new();
+    details.insert(
+        "path".to_string(),
+        Value::String(path.to_string_lossy().into_owned()),
+    );
+    details.insert("error".to_string(), Value::String(e.to_string()));
+    MixError::Structured(Box::new(
+        crate::error::ErrorInfo::new(
+            "WALK_UNREADABLE",
+            format!(
+                "walk(): cannot read '{}': {e} (strict: true raises rather than skip it)",
+                path.display()
+            ),
+        )
+        .with_details(Value::map(details)),
+    ))
 }
 
 struct WalkOpts {
@@ -16975,6 +17109,8 @@ fn walk_recursive(
     let follow_symlinks = opts.follow_symlinks;
     let entries = match std::fs::read_dir(dir) {
         Ok(e) => e,
+        // Removed since it was listed: looked at, nothing there.
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
         Err(e) if opts.strict => return Err((dir.to_path_buf(), e)),
         // Unreadable directory — skip silently.
         Err(_) => return Ok(()),
@@ -34802,6 +34938,24 @@ mod flock_tests {
     }
 
     #[test]
+    fn a_shared_lock_on_a_fifo_raises_instead_of_hanging() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let d = tmpdir("shared-fifo");
+        let fifo = d.join("fifo");
+        let c = std::ffi::CString::new(fifo.to_string_lossy().as_bytes()).unwrap();
+        assert_eq!(unsafe { libc::mkfifo(c.as_ptr(), 0o644) }, 0);
+        for (name, lock) in [
+            ("flock", builtin_flock as fn(Vec<Value>) -> MixResult<Option<Value>>),
+            ("fcntl_lock", builtin_fcntl_lock),
+        ] {
+            // A blocking open would never return here: no writer exists.
+            let err = lock(vec![s(&fifo), shared_opts()]).expect_err("a fifo is no lock file");
+            assert!(format!("{err}").contains("not a regular file"), "{name}: {err}");
+        }
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    #[test]
     fn create_false_refuses_a_missing_lock_file_and_creates_nothing() {
         let _guard = TEST_LOCK.lock().unwrap();
         let d = tmpdir("create-false");
@@ -40657,7 +40811,19 @@ mod strict_write_and_bool_option_tests {
                 unreadable(builtin_walk(vec![s(&locked), strict()]).unwrap_err()),
                 locked.to_string_lossy()
             );
+            // A root under an unsearchable parent cannot even be stat'ed:
+            // strict names it rather than calling it missing.
+            let beneath = locked.join("sub");
+            assert_eq!(
+                unreadable(builtin_walk(vec![s(&beneath), strict()]).unwrap_err()),
+                beneath.to_string_lossy()
+            );
+            let err = builtin_walk(vec![s(&beneath)]).unwrap_err();
+            assert!(format!("{err}").contains("does not exist"), "{err}");
         }
+        // A missing root is missing, strict or not.
+        let err = builtin_walk(vec![s(&d.join("absent")), strict()]).unwrap_err();
+        assert!(format!("{err}").contains("does not exist"), "{err}");
         std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
         let err = builtin_walk(vec![s(&d), opts(&[("strict", Value::Number(1.0))])]).unwrap_err();
         assert!(is_type_mismatch(&err), "{err:?}");

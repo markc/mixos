@@ -2005,6 +2005,104 @@ async fn gnu_dot_prefixed_members_unpack_into_the_root() {
 }
 
 #[tokio::test]
+async fn the_root_entry_is_applied_after_every_child_wherever_it_sits() {
+    use std::os::unix::fs::MetadataExt;
+    let d = tmpdir("dot-root-order");
+    // A restrictive root mode applied early would lock the caller out of
+    // the children's metadata post-pass.
+    for (tag, at) in [("first", 0), ("middle", 1), ("last", 2)] {
+        let mut entries: Vec<(&str, u8, &str, u32, &[u8])> = vec![
+            ("./a", b'0', "", 0o644, b"a"),
+            ("./sub/", b'5', "", 0o755, b""),
+        ];
+        entries.insert(at, ("./", b'5', "", 0o500, b""));
+        let arc = d.join(format!("{tag}.tar"));
+        raw_tar(&arc, &entries);
+        let dest = d.join(format!("dest-{tag}"));
+        let out = run_ok(&format!(
+            "tar_unpack(\"{}\", \"{}\", {{codec:\"none\"}})",
+            arc.display(),
+            dest.display()
+        ))
+        .await;
+        no_warnings(receipt(&out));
+        assert_eq!(fs::metadata(&dest).unwrap().mode() & 0o7777, 0o500, "{tag}");
+        assert_eq!(fs::read(dest.join("a")).unwrap(), b"a", "{tag}");
+        assert!(dest.join("sub").is_dir(), "{tag}");
+        fs::set_permissions(&dest, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    assert_no_staging(&d);
+    if unsafe { libc::geteuid() } == 0 {
+        // Root restores a foreign owner on dest only after the commit: the
+        // staging directory stays root's own until it is in place.
+        let mut out = Vec::new();
+        raw_entry(&mut out, "./", b'5', "", 0o755, b"");
+        // uid/gid 4242 in the raw header's octal fields, checksum redone.
+        let h = &mut out[..512];
+        h[108..116].copy_from_slice(b"0010222\0");
+        h[116..124].copy_from_slice(b"0010222\0");
+        h[148..156].copy_from_slice(b"        ");
+        let sum: u32 = h.iter().map(|&b| b as u32).sum();
+        h[148..156].copy_from_slice(format!("{sum:06o}\0 ").as_bytes());
+        raw_entry(&mut out, "./f", b'0', "", 0o644, b"f");
+        out.extend_from_slice(&[0u8; 1024]);
+        let arc = d.join("owned-root.tar");
+        fs::write(&arc, out).unwrap();
+        let dest = d.join("dest-owned");
+        run_ok(&format!(
+            "tar_unpack(\"{}\", \"{}\", {{codec:\"none\"}})",
+            arc.display(),
+            dest.display()
+        ))
+        .await;
+        let st = fs::metadata(&dest).unwrap();
+        assert_eq!((st.uid(), st.gid()), (4242, 4242));
+        assert_eq!(fs::read(dest.join("f")).unwrap(), b"f");
+    }
+}
+
+#[tokio::test]
+async fn tar_pack_refuses_a_link_layout_the_unpacker_would_refuse() {
+    let d = tmpdir("pack-link-graph");
+    let src = d.join("src");
+    fs::create_dir_all(src.join("real")).unwrap();
+    fs::create_dir_all(src.join("a")).unwrap();
+    fs::write(src.join("real/file"), b"x").unwrap();
+    std::os::unix::fs::symlink("real", src.join("pivot")).unwrap();
+    std::os::unix::fs::symlink("../pivot/file", src.join("a/user")).unwrap();
+    let arc = d.join("out.tar");
+    let err = run_err(&format!(
+        "tar_pack(\"{}\", \"{}\", {{codec:\"none\"}})",
+        src.display(),
+        arc.display()
+    ))
+    .await;
+    assert!(
+        err.contains("passes through symlink 'pivot'")
+            || err.contains("an earlier symlink's target passes through it"),
+        "{err}"
+    );
+    // A contained climbing link packs and round-trips.
+    fs::remove_file(src.join("a/user")).unwrap();
+    std::os::unix::fs::symlink("../real/file", src.join("a/user")).unwrap();
+    let arc = d.join("ok.tar");
+    run_ok(&format!(
+        "tar_pack(\"{}\", \"{}\", {{codec:\"none\"}})",
+        src.display(),
+        arc.display()
+    ))
+    .await;
+    let dest = d.join("dest");
+    run_ok(&format!(
+        "tar_unpack(\"{}\", \"{}\", {{codec:\"none\"}})",
+        arc.display(),
+        dest.display()
+    ))
+    .await;
+    assert_eq!(fs::read(dest.join("a/user")).unwrap(), b"x");
+}
+
+#[tokio::test]
 async fn only_a_directory_may_name_the_extraction_root() {
     let d = tmpdir("dot-root-kind");
     for (tag, typeflag, link) in [("file", b'0', ""), ("symlink", b'2', "elsewhere")] {
