@@ -316,22 +316,20 @@ fn builtins_generator_refuses_an_unplaced_category() {
 /// cache. `local` rules the network out (MIXOS_MAN_SOURCE=local); otherwise
 /// the default order applies, which reaches the built-in manual first.
 fn man_alone(args: &[&str], local: bool) -> std::process::Output {
-    man_with_checkout_page(args, local, None)
+    man_with_files(args, local, &[])
 }
 
-/// As [`man_alone`], with one `(filename, body)` page in an otherwise empty
-/// checkout `docs/mix`.
-fn man_with_checkout_page(
-    args: &[&str],
-    local: bool,
-    page: Option<(&str, &str)>,
-) -> std::process::Output {
+/// As [`man_alone`], with `(path under the home, body)` files written first:
+/// the checkout pages are `no-checkout/docs/mix/*.md`, the cached ones
+/// `no-cache/mixos/man/*.md`.
+fn man_with_files(args: &[&str], local: bool, files: &[(&str, &str)]) -> std::process::Output {
     let home = tempfile::tempdir().expect("temp home");
     let root = home.path().join("no-checkout");
     std::fs::create_dir(&root).unwrap();
-    if let Some((name, body)) = page {
-        std::fs::create_dir_all(root.join("docs/mix")).unwrap();
-        std::fs::write(root.join("docs/mix").join(name), body).unwrap();
+    for (path, body) in files {
+        let path = home.path().join(path);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, body).unwrap();
     }
     let mut command = Command::new(env!("CARGO_BIN_EXE_mix"));
     command
@@ -401,30 +399,50 @@ fn apropos_and_doctor_see_the_built_in_manual() {
 
 #[test]
 fn local_mode_reads_and_searches_the_checkout_copy_first() {
-    let page = Some((
-        "overview.md",
+    let page = &[(
+        "no-checkout/docs/mix/overview.md",
         "# overview\n\n## Zebrafish checkout heading\n",
-    ));
-    let out = man_with_checkout_page(&["apropos", "zebrafish"], true, page);
+    )][..];
+    let out = man_with_files(&["apropos", "zebrafish"], true, page);
     assert!(
         String::from_utf8_lossy(&out.stdout)
             .contains("mix man overview  § Zebrafish checkout heading"),
         "{out:?}"
     );
-    let out = man_with_checkout_page(&["man", "overview"], true, page);
+    let out = man_with_files(&["man", "overview"], true, page);
     assert!(
         String::from_utf8_lossy(&out.stdout).contains("Zebrafish"),
         "{out:?}"
     );
     // By default the built-in page wins for both.
-    let out = man_with_checkout_page(&["apropos", "zebrafish"], false, page);
+    let out = man_with_files(&["apropos", "zebrafish"], false, page);
     assert!(
         !String::from_utf8_lossy(&out.stdout).contains("Zebrafish"),
         "{out:?}"
     );
-    let out = man_with_checkout_page(&["man", "overview"], false, page);
+    let out = man_with_files(&["man", "overview"], false, page);
     assert_eq!(
         String::from_utf8_lossy(&out.stdout),
         read_page("overview.md")
     );
+}
+
+#[test]
+fn a_cached_copy_never_outranks_the_built_in_page() {
+    let cached = &[(
+        "no-cache/mixos/man/overview.md",
+        "# overview\n\n## Quagga cached heading\n",
+    )][..];
+    for local in [true, false] {
+        let out = man_with_files(&["apropos", "quagga"], local, cached);
+        assert!(
+            !String::from_utf8_lossy(&out.stdout).contains("Quagga"),
+            "{out:?}"
+        );
+        let out = man_with_files(&["man", "overview"], local, cached);
+        assert_eq!(
+            String::from_utf8_lossy(&out.stdout),
+            read_page("overview.md")
+        );
+    }
 }

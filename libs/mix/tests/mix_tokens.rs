@@ -86,6 +86,15 @@ fn comment_markers_inside_strings_and_heredocs_are_text() {
 }
 
 #[test]
+fn the_newline_after_a_heredoc_terminator_is_at_its_real_column() {
+    let tokens = Lexer::source_tokens("$x = <<EOF\nbody\n  EOF\n$y = 1\n", false).unwrap();
+    let heredoc = tokens.iter().position(|t| t.kind == "heredoc").unwrap();
+    assert_eq!(tokens[heredoc].text, "<<EOF\nbody\n  EOF");
+    assert_eq!(tokens[heredoc + 1], tok("newline", "\n", 3, 6));
+    assert_eq!(tokens[heredoc + 2], tok("variable", "$y", 4, 1));
+}
+
+#[test]
 fn every_token_points_back_into_a_real_tool_source() {
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tools/verb_registry.mix");
     let source = std::fs::read_to_string(path).unwrap();

@@ -635,7 +635,8 @@ end
 <code>operator</code>, <code>punct</code>, <code>newline</code>, or <code>comment</code>. Comments come back only with
 <code>comments: true</code>; the parser never sees them.</li>
 <li><code>text</code> is the exact source span: a string keeps its quotes, a heredoc
-includes its body and terminator line.</li>
+runs from <code>&lt;&lt;TAG</code> to its terminator line (a <code>--</code> comment after the tag is
+part of it, not a separate <code>comment</code> token).</li>
 <li><code>line</code> and <code>col</code> are 1-based, <code>col</code> counted in characters.</li>
 <li>Newlines inside <code>(</code>, <code>[</code> and <code>{</code> are not tokens, as above.</li>
 <li>Source that does not lex raises <code>MIX_SOURCE_LEX</code>, with <code>details.line</code> and

@@ -3126,19 +3126,21 @@ fn cmd_apropos(term: &str) {
 
     // 3. Manual section headings — match each page's `#` headings, taking
     //    each topic from where `mix man` would: the manual built into the
-    //    binary, then any page only on disk (the checkout docs dir, then the
-    //    `mix man` cache, `~/.cache/mixos/man`, default-URL layout). With
-    //    MIXOS_MAN_SOURCE=local the disk copies win, as they do for `mix man`.
+    //    binary, then the checkout docs dir, then the `mix man` cache
+    //    (`~/.cache/mixos/man`, default-URL layout). With
+    //    MIXOS_MAN_SOURCE=local the checkout comes first, as for `mix man`.
     let local = env::var("MIXOS_MAN_SOURCE")
         .ok()
         .is_some_and(|value| parse_man_source(Some(&value)) == Ok(ManSource::Local));
-    let mut scan_dirs: Vec<PathBuf> = vec![resolve_man_dir()];
-    if let Some(root) = man_cache_root(
-        env::var_os("XDG_CACHE_HOME").map(PathBuf::from).as_deref(),
-        dirs::home_dir().as_deref(),
-    ) {
-        scan_dirs.push(root);
-    }
+    let dir_pages = |dir: &Path| -> Vec<(String, String)> {
+        available_man_topics(dir)
+            .into_iter()
+            .filter_map(|topic| {
+                let content = std::fs::read_to_string(dir.join(format!("{topic}.md"))).ok()?;
+                Some((topic, content))
+            })
+            .collect()
+    };
     let built_in: Vec<(String, String)> = crate::manual::topics()
         .into_iter()
         .filter_map(|topic| {
@@ -3146,23 +3148,22 @@ fn cmd_apropos(term: &str) {
             Some((topic, content.to_string()))
         })
         .collect();
-    let mut on_disk: Vec<(String, String)> = Vec::new();
-    for dir in &scan_dirs {
-        for topic in available_man_topics(dir) {
-            if let Ok(content) = std::fs::read_to_string(dir.join(format!("{topic}.md"))) {
-                on_disk.push((topic, content));
-            }
-        }
-    }
-    let (first, second) = if local {
-        (on_disk, built_in)
+    let checkout = dir_pages(&resolve_man_dir());
+    let cached = man_cache_root(
+        env::var_os("XDG_CACHE_HOME").map(PathBuf::from).as_deref(),
+        dirs::home_dir().as_deref(),
+    )
+    .map(|root| dir_pages(&root))
+    .unwrap_or_default();
+    let sources = if local {
+        [checkout, built_in, cached]
     } else {
-        (built_in, on_disk)
+        [built_in, checkout, cached]
     };
     let mut seen_topics = std::collections::HashSet::new();
-    let pages: Vec<(String, String)> = first
+    let pages: Vec<(String, String)> = sources
         .into_iter()
-        .chain(second)
+        .flatten()
         .filter(|(topic, _)| seen_topics.insert(topic.clone()))
         .collect();
     let mut section_hits: Vec<(String, String)> = Vec::new();

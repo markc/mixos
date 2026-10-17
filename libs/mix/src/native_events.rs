@@ -1563,33 +1563,6 @@ mod tests {
         std::fs::remove_dir(path).unwrap();
     }
 
-    /// The inotify watch descriptors this process holds on inode `ino`, from
-    /// /proc/self/fdinfo (`inotify wd:N ino:HEX ...` per watch).
-    #[cfg(target_os = "linux")]
-    fn inotify_wds(ino: u64) -> Vec<String> {
-        let ino = format!("ino:{ino:x}");
-        let mut wds = Vec::new();
-        for fd in std::fs::read_dir("/proc/self/fd").unwrap().flatten() {
-            let target = std::fs::read_link(fd.path()).unwrap_or_default();
-            if target.to_string_lossy() != "anon_inode:inotify" {
-                continue;
-            }
-            let info = std::fs::read_to_string(
-                std::path::Path::new("/proc/self/fdinfo").join(fd.file_name()),
-            )
-            .unwrap_or_default();
-            for line in info.lines().filter(|l| l.starts_with("inotify wd:")) {
-                let mut fields = line.split_whitespace();
-                let wd = fields.nth(1).unwrap_or_default();
-                if fields.any(|f| f == ino) {
-                    wds.push(format!("{}/{wd}", fd.file_name().to_string_lossy()));
-                }
-            }
-        }
-        wds.sort();
-        wds
-    }
-
     /// Recovery used to unwatch and re-watch every directory, and an event in
     /// that gap (the close-write of a save racing an overflow) was lost. It
     /// now re-arms in place: the same watch descriptor before and after, and
@@ -1614,7 +1587,7 @@ mod tests {
             )
             .unwrap();
         let ino = std::fs::metadata(&dir).unwrap().ino();
-        let before = inotify_wds(ino);
+        let before = crate::fs_watch::inotify_wds(ino);
         assert_eq!(before.len(), 1, "{before:?}");
         r.filesystem.as_ref().unwrap().inject(Ok(
             notify::Event::new(notify::EventKind::Other).set_flag(notify::event::Flag::Rescan)
@@ -1627,7 +1600,7 @@ mod tests {
         let body: serde_json::Value = serde_json::from_str(&ev.body).unwrap();
         assert_eq!(body["overflow"], true);
         assert_eq!(
-            inotify_wds(ino),
+            crate::fs_watch::inotify_wds(ino),
             before,
             "recovery must not replace the watch"
         );

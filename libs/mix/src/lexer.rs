@@ -1516,8 +1516,9 @@ impl Lexer {
                 if !hit_eof {
                     self.pos -= 1;
                     self.line -= 1;
-                    // Rewind column to end of previous line (approximate — column doesn't matter much)
-                    self.column = 1;
+                    // Back at the end of the terminator line: the newline's
+                    // own column, which mix_tokens() reports.
+                    self.column = line_content.chars().count() + 1;
                 }
                 break;
             }

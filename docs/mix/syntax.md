@@ -494,7 +494,8 @@ end
   `operator`, `punct`, `newline`, or `comment`. Comments come back only with
   `comments: true`; the parser never sees them.
 - `text` is the exact source span: a string keeps its quotes, a heredoc
-  includes its body and terminator line.
+  runs from `<<TAG` to its terminator line (a `--` comment after the tag is
+  part of it, not a separate `comment` token).
 - `line` and `col` are 1-based, `col` counted in characters.
 - Newlines inside `(`, `[` and `{` are not tokens, as above.
 - Source that does not lex raises `MIX_SOURCE_LEX`, with `details.line` and
