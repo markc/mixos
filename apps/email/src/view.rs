@@ -51,7 +51,14 @@ pub enum UiEvent {
     /// The compose dialog's From account.
     ComposeAccount(String),
     ComposeField(crate::state::ComposeField, String),
+    /// Close asked for: closes, or asks Save draft / Discard / Cancel.
     CloseCompose,
+    /// The close prompt's answer.
+    ComposeClose(crate::state::drafts::CloseChoice),
+    /// A key for the open address dropdown.
+    SuggestKey(crate::state::suggest::SuggestKey),
+    /// A suggestion clicked.
+    SuggestAccept(usize),
     /// Take the account's new address as the stale draft's From.
     ComposeUseNewFrom,
     SendCompose,

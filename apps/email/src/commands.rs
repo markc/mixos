@@ -137,6 +137,18 @@ pub fn registry() -> Registry<State> {
         enabled: composable,
         run: State::compose,
     })
+    // The open compose's draft, to the account's Drafts mailbox now.
+    .add(Command {
+        id: "compose.save_draft",
+        submenu: None,
+        group: 0,
+        label: "save-draft",
+        menu: Some("mail"),
+        shortcut: key(Modifiers::COMMAND, Key::S),
+        icon: None,
+        enabled: State::draft_savable,
+        run: State::save_draft_now,
+    })
     .add(Command {
         id: "mail.reply",
         submenu: None,

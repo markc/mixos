@@ -6558,6 +6558,28 @@ A malformed file loads defaults and is never overwritten.
   uses maild's extension of a top-level `blobId` on `Email/set`. A strict
   RFC 8621 server builds an Email from uploaded MIME with `Email/import`,
   so it refuses the send; `Email/import` is future work.
+- **Drafts** are saved to the account's Drafts mailbox as you write, five
+  seconds after the last edit. Nothing runs while nobody types. Each save
+  is one `Email/set` that creates the new draft (`$draft $seen`, its Bcc
+  kept in the bytes) and destroys the one it replaces. Only one save runs
+  at a time per compose; edits made during it go when it lands. A quiet
+  line under the body says **Saving…**, **Saved hh:mm** or **Not saved:**
+  and why (no Drafts mailbox, or the server's refusal). Closing with unsaved
+  work asks **Save Draft / Discard / Cancel**, with Cancel the default.
+  Discard destroys the saved draft, and so does a send that goes. Opening
+  a message in Drafts (or one marked `$draft`) resumes it in compose with
+  its To, Cc, Bcc, subject, body and the message it replies to, and later
+  saves replace it. Quitting saves the open draft within the close's
+  five-second budget. Autosave follows `email.compose.autosave` (Prefs ›
+  Email); Ctrl+S saves now either way.
+- **Address completion** in To, Cc and Bcc: from two characters, the entry
+  being typed (the one after the last `,` or `;` outside quotes) is looked
+  up once typing pauses. Contacts across every address book come first,
+  one per address on the card. After them come the people the loaded Sent
+  pages went to and the loaded inbox pages came from, held in memory only
+  and never fetched for this. Addresses already in the field are skipped.
+  Up and Down move, Enter or Tab take one (`Name <addr>, `, the name quoted
+  when it needs it), and Esc closes the list.
 - **Mail actions**: delete to Trash (confirmed when the settings ask),
   move to a mailbox, flag, and mark unread.
 - **New Event** and **New Contact** forms. Start and end are RFC 3339
@@ -6570,6 +6592,7 @@ A malformed file loads defaults and is never overwritten.
 | Ctrl+R | Refresh the account |
 | Ctrl+Q | Quit |
 | Ctrl+N | Compose |
+| Ctrl+S | Save the open compose as a draft |
 | Ctrl+Shift+R | Reply |
 | Ctrl+Shift+A | Reply all |
 | Ctrl+L | Forward |
@@ -6619,6 +6642,7 @@ never waits on them.
 | `email.get {account?, id}` | query | one email's headers and `text` body |
 | `email.calendars`, `email.events {calendar?, from?, to?}`, `email.event.get {id}` | query | calendars and events |
 | `email.books`, `email.contacts {book?, filter?}`, `email.contact.get {id}` | query | address books and contacts |
+| `email.contacts.suggest {account?, text, limit?}` | query | address completions: contacts across every book, then recent correspondents (`{suggestions: [{name, email, address, source}]}`) |
 | `email.show`, `email.quit` | system, intent | raise, close |
 | `email.execute {id}` | intent | run any registry command (published with origin `bus`) |
 | `email.mode {name}`, `email.refresh {account?}` | intent | switch surface; fetch again (a failed account reconnects) |
@@ -6630,7 +6654,8 @@ never waits on them.
 | `email.open {id}` | intent | show an email in the reader; answers once loaded |
 | `email.mark {ids, read?, flagged?}`, `email.move {ids, mailbox}`, `email.delete {ids, destroy?}` | intent | the list and counts refresh after |
 | `email.send {to, cc?, bcc?, subject, body, in_reply_to?}` | intent | send without the dialog |
-| `email.compose {…}`, `email.reply {id, all?}`, `email.forward {id, to?}` | intent | open the compose dialog, filled in |
+| `email.compose {…}`, `email.reply {id, all?}`, `email.forward {id, to?}` | intent | open the compose dialog, filled in; answers with its `compose` id |
+| `email.draft.save {compose?}` | intent | save the open compose to Drafts now; answers `{id, compose}` once the server confirms (`OUTCOME_UNKNOWN` if Email closes first) |
 | `email.calendar.select`, `email.event.create/update/delete` | intent | `create` answers `{id}`; `end` or an ISO 8601 `duration` |
 | `email.book.select`, `email.contact.create/update/delete` | intent | `create` answers `{id}` |
 | `email.ui.*`, `email.window`, `email.window.state` | input, query | the toolkit [drive verbs](../docs/drive.md) |
@@ -6643,6 +6668,12 @@ is published on `email.command.executed` with how it was reached.
 where `auto` is false once the person (or `email.execute
 {"id":"view.reader.markdown"}`) has flipped it. The command is disabled
 when the open email has no text body.
+
+Its `compose` object carries the compose `id`, the close prompt
+(`closing`), the address dropdown (`suggest`: field, query, cursor,
+suggestions), and `draft`: `{id, state, saved_at, error, queued,
+autosave, line}`. `state` is `none`, `unsaved`, `saving`, `saved` or
+`failed`, and `line` is what the dialog's save line says.
 
 From Mix:
 

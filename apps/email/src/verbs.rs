@@ -152,6 +152,12 @@ pub const VERBS: &[Verb] = &[
         r#"{"account":"optional account id","id":"contact id"}"#,
         "One contact with its JSContact data",
     ),
+    verb(
+        "email.contacts.suggest",
+        true,
+        r#"{"account":"optional account id","text":"string, the address being typed","limit":"optional integer 1..50 (default 8)"}"#,
+        "Address completions for text: matching contacts across every address book first (one per address), then the account's recent correspondents from the pages loaded",
+    ),
     verb("email.show", false, "{}", "Restore and focus the window"),
     verb("email.quit", false, "{}", "Close the window"),
     verb(
@@ -266,7 +272,13 @@ pub const VERBS: &[Verb] = &[
         "email.compose",
         false,
         r#"{"account":"optional account id","to":"optional addresses","cc":"optional addresses","subject":"optional string","body":"optional string"}"#,
-        "Open the compose dialog, filled in",
+        "Open the compose dialog, filled in; answers {composing, compose} with the compose id",
+    ),
+    verb(
+        "email.draft.save",
+        false,
+        r#"{"compose":"optional compose id (default the open one)"}"#,
+        "Save the open compose to the account's Drafts mailbox now, replacing its saved draft; answers {id, compose} once the server confirms it",
     ),
     verb(
         "email.reply",
@@ -388,6 +400,11 @@ pub enum Query {
     Contact {
         id: String,
     },
+    /// Contacts across every address book matching `text`.
+    Suggest {
+        text: String,
+        limit: u64,
+    },
 }
 
 /// What happens with a query's answer besides the reply.
@@ -399,6 +416,9 @@ pub enum Then {
     Reply(bool),
     /// Open a compose forwarding the email fetched, to these addresses.
     Forward(String),
+    /// Merge the contacts found with the account's recent correspondents
+    /// for `text`, at most `limit`, and answer those.
+    Suggest { text: String, limit: usize },
 }
 
 /// A change on the account's server.
@@ -527,6 +547,9 @@ pub async fn run_query(client: &Client, query: Query) -> Result<Value, jmap::Err
             json!({ "contacts": to_value(client.contacts(&book, &filter).await?) })
         }
         Query::Contact { id } => to_value(client.contact(&id).await?),
+        Query::Suggest { text, limit } => {
+            json!({ "contacts": to_value(client.contacts_search(&text, limit).await?) })
+        }
     })
 }
 
@@ -937,6 +960,13 @@ fn dispatch(
                 id: required(args, "id")?,
             });
         }
+        "email.contacts.suggest" => {
+            let account = connected(state, args)?;
+            let text = required(args, "text")?;
+            let limit = number(args, "limit")?.unwrap_or(8).clamp(1, 50);
+            let then = Then::Suggest { text: text.clone(), limit: limit as usize };
+            state.query(account, id, Query::Suggest { text, limit }, then);
+        }
         "email.quit" => {
             state.reply(id, 0, json!({ "quitting": true }));
             state.quit();
@@ -1109,7 +1139,14 @@ fn dispatch(
                 ..Composed::default()
             };
             state.open_compose(Some(&account), draft);
-            state.reply(id, 0, json!({ "composing": account }));
+            let compose = state.compose.as_ref().map(|c| c.id);
+            state.reply(id, 0, json!({ "composing": account, "compose": compose }));
+        }
+        "email.draft.save" => {
+            let compose = number(args, "compose")?;
+            state
+                .draft_save_bus(id, compose)
+                .map_err(|(code, message)| Bad(code, message))?;
         }
         "email.reply" | "email.forward" => {
             let account = connected(state, args)?;

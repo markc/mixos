@@ -30,7 +30,10 @@ pub mod session;
 pub use auth::{Account, Token};
 pub use calendar::{Calendar, CalendarEvent, EventDraft, EventPatch, duration_between};
 pub use client::{Call, Client, backref};
-pub use compose::{Composed, build_mime, format_address, parse_addresses};
+pub use compose::{
+    Composed, SavedDraft, Split, build_draft_mime, build_mime, draft_addresses, format_address,
+    parse_addresses, split_addresses,
+};
 pub use contact::{AddressBook, Contact, ContactDraft, ContactPatch};
 pub use error::{Error, Result};
 pub use mail::{BodyPart, Email, EmailAddress, EmailPage, EmailSort, Mailbox, SortProperty};

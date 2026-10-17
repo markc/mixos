@@ -11,7 +11,7 @@ use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 use email::secrets::Secrets;
 use email::shell::{Done, Event};
-use email::state::{Mode as Surface, Node, Phase, SessionInfo, State, Tag, UiState};
+use email::state::{ComposeField, Mode as Surface, Node, Phase, SessionInfo, State, Tag, UiState};
 use email::view::{UiEvent, view};
 use email::work::Work;
 use email::{commands, label, strings};
@@ -638,5 +638,139 @@ fn no_accounts_studio_dark() {
         "no_accounts_studio_dark",
         empty(),
         &theme(Scheme::Studio, Mode::Dark),
+    );
+}
+
+/// Account Home with a Drafts mailbox too, and a compose open from it
+/// with a recipient, a subject and a body.
+fn composing() -> State {
+    let mut state = fixture();
+    let boxes = [
+        ("m-in", "Inbox", "inbox"),
+        ("m-drafts", "Drafts", "drafts"),
+        ("m-sent", "Sent", "sent"),
+    ]
+    .map(|(id, name, role)| jmap::Mailbox {
+        id: id.into(),
+        name: name.into(),
+        role: Some(role.into()),
+        ..jmap::Mailbox::default()
+    });
+    done(&mut state, "home", Done::Mailboxes(Ok(boxes.to_vec())));
+    state.apply_ui(UiEvent::Compose);
+    for (field, text) in [
+        (ComposeField::To, "Bob <bob@example.invalid>"),
+        (ComposeField::Subject, "Lunch on Friday"),
+        (ComposeField::Body, "Noon at the usual place?"),
+    ] {
+        state.apply_ui(UiEvent::ComposeField(field, text.into()));
+    }
+    state.take_work();
+    state
+}
+
+/// The compose with To being typed and the server's contacts in: the
+/// dropdown open under the field.
+fn suggesting() -> State {
+    let mut state = composing();
+    state.apply_ui(UiEvent::ComposeField(
+        ComposeField::To,
+        "Bob <bob@example.invalid>, an".into(),
+    ));
+    let ticket = state
+        .take_work()
+        .into_iter()
+        .find_map(|w| match w {
+            Work::SuggestTimer { ticket, .. } => Some(ticket),
+            _ => None,
+        })
+        .expect("a suggestion timer");
+    let card = |name: &str, email: &str| -> jmap::Contact {
+        serde_json::from_value(serde_json::json!({"id": email, "addressBookId": "B1", "fullName": name, "email": email})).unwrap()
+    };
+    let cards = vec![
+        card("Ann Example", "ann@example.invalid"),
+        card("Joanne Andrews", "joanne@example.invalid"),
+        card("Dan Smith", "dan.smith@example.invalid"),
+    ];
+    done(&mut state, "home", Done::Suggested(ticket, Ok(cards)));
+    state.take_work();
+    state
+}
+
+#[test]
+fn the_dropdown_takes_its_keys_while_the_field_has_the_keyboard() {
+    let mut h = harness(suggesting());
+    h.ctx
+        .memory_mut(|m| m.request_focus(egui::Id::new(("compose-address", "to"))));
+    h.run();
+    h.key_press(egui::Key::ArrowDown);
+    h.run();
+    assert_eq!(
+        h.state()
+            .state
+            .compose
+            .as_ref()
+            .unwrap()
+            .suggest
+            .as_ref()
+            .unwrap()
+            .cursor,
+        1
+    );
+    h.key_press(egui::Key::Enter);
+    h.run();
+    let compose = h
+        .state()
+        .state
+        .compose
+        .clone()
+        .expect("Enter took a suggestion, not Send");
+    assert_eq!(
+        compose.to_text,
+        "Bob <bob@example.invalid>, Joanne Andrews <joanne@example.invalid>, "
+    );
+    assert!(compose.suggest.is_none());
+    // Esc with no dropdown open is the dialog's again: it asks to close.
+    h.key_press(egui::Key::Escape);
+    h.run();
+    assert!(h.state().state.compose.as_ref().unwrap().closing);
+}
+
+#[test]
+fn compose_draft_saved_pro_light() {
+    let mut state = composing();
+    if let Some(compose) = &mut state.compose {
+        // A fixed time, so the picture does not move with the clock.
+        compose.save.draft_id = Some("E-draft".into());
+        compose.save.saved = compose.save.edits;
+        compose.save.saved_at = Some("14:05".into());
+    }
+    assert_eq!(state.draft_line().as_deref(), Some("Saved 14:05"));
+    snapshot(
+        "compose_draft_saved_pro_light",
+        state,
+        &theme(Scheme::Pro, Mode::Light),
+    );
+}
+
+#[test]
+fn compose_suggestions_studio_dark() {
+    snapshot(
+        "compose_suggestions_studio_dark",
+        suggesting(),
+        &theme(Scheme::Studio, Mode::Dark),
+    );
+}
+
+#[test]
+fn compose_close_prompt_pro_light() {
+    let mut state = composing();
+    state.apply_ui(UiEvent::CloseCompose);
+    assert!(state.compose.as_ref().unwrap().closing);
+    snapshot(
+        "compose_close_prompt_pro_light",
+        state,
+        &theme(Scheme::Pro, Mode::Light),
     );
 }

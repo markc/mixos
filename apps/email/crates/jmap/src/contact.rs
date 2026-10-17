@@ -176,7 +176,8 @@ pub struct Contact {
     /// The full JSContact Card as submitted.
     #[serde(default)]
     pub data: Value,
-    #[serde(default)]
+    /// maild sends `fullName`; the struct serialises it as `full_name`.
+    #[serde(default, alias = "fullName")]
     pub full_name: Option<String>,
     #[serde(default)]
     pub email: Option<String>,
@@ -217,9 +218,77 @@ impl Contact {
             })
             .unwrap_or_default()
     }
+
+    /// Every address on the card, as recipients: the card's `emails` in
+    /// key order, then the indexed email if the map lacks it, each under
+    /// the card's name. No address, no entry.
+    pub fn addresses(&self) -> Vec<crate::EmailAddress> {
+        let name = Some(self.display_name()).filter(|name| !name.trim().is_empty());
+        let mut out: Vec<crate::EmailAddress> = Vec::new();
+        let listed = self
+            .data
+            .get("emails")
+            .and_then(Value::as_object)
+            .into_iter()
+            .flat_map(|emails| emails.values())
+            .filter_map(|entry| entry.get("address").and_then(Value::as_str));
+        for address in listed.chain(self.email.as_deref()) {
+            let address = address.trim();
+            if !address.is_empty() && !out.iter().any(|a| a.email.eq_ignore_ascii_case(address)) {
+                out.push(crate::EmailAddress {
+                    name: name.clone(),
+                    email: address.to_owned(),
+                });
+            }
+        }
+        out
+    }
+}
+
+/// The Contact/query and Contact/get pair behind [`Client::contacts_search`]:
+/// every address book (no `addressBookId`), matched on name, email and
+/// company, full name first, at most `limit` cards.
+fn contacts_search_calls(account_id: &str, text: &str, limit: u64) -> Vec<Call> {
+    vec![
+        Call(
+            "Contact/query".into(),
+            json!({
+                "accountId": account_id,
+                "filter": { "text": text.trim() },
+                "sort": [{ "property": "fullName", "isAscending": true }],
+                "limit": limit.clamp(1, 100),
+            }),
+            "q0".into(),
+        ),
+        Call(
+            "Contact/get".into(),
+            json!({
+                "accountId": account_id,
+                "#ids": crate::client::backref("q0", "Contact/query", "/ids"),
+            }),
+            "c0".into(),
+        ),
+    ]
 }
 
 impl Client {
+    /// The contacts matching `text` across every address book, for address
+    /// completion. One round trip.
+    pub async fn contacts_search(&self, text: &str, limit: u64) -> Result<Vec<Contact>> {
+        let replies = self
+            .call(&contacts_search_calls(self.account_id(), text, limit))
+            .await?;
+        let data = replies
+            .into_iter()
+            .last()
+            .ok_or_else(|| Error::Protocol("Contact/get reply is empty".into()))?;
+        let list = data
+            .get("list")
+            .cloned()
+            .ok_or_else(|| Error::Protocol("Contact/get reply has no list".into()))?;
+        Ok(serde_json::from_value(list)?)
+    }
+
     /// Every address book on the account.
     pub async fn address_books(&self) -> Result<Vec<AddressBook>> {
         let replies = self
@@ -503,6 +572,55 @@ mod tests {
                 }
             })
         );
+    }
+
+    /// The exact request: a query over every book (no `addressBookId`)
+    /// chained into a get.
+    #[test]
+    fn a_search_spans_every_book_in_one_round_trip() {
+        let calls = serde_json::to_value(contacts_search_calls("A1", " ann ", 8)).unwrap();
+        assert_eq!(
+            calls,
+            json!([
+                ["Contact/query", {
+                    "accountId": "A1",
+                    "filter": { "text": "ann" },
+                    "sort": [{ "property": "fullName", "isAscending": true }],
+                    "limit": 8
+                }, "q0"],
+                ["Contact/get", {
+                    "accountId": "A1",
+                    "#ids": { "resultOf": "q0", "name": "Contact/query", "path": "/ids" }
+                }, "c0"]
+            ])
+        );
+    }
+
+    #[test]
+    fn a_card_gives_one_recipient_per_address() {
+        let contact: Contact = serde_json::from_value(json!({
+            "id": "P1",
+            "addressBookId": "B1",
+            "fullName": "Ann Example",
+            "email": "ann@example.invalid",
+            "data": {
+                "emails": {
+                    "e1": { "address": "ann@example.invalid" },
+                    "e2": { "address": "a.example@work.invalid" }
+                }
+            }
+        }))
+        .unwrap();
+        let emails: Vec<String> = contact.addresses().into_iter().map(|a| a.email).collect();
+        assert_eq!(emails, ["ann@example.invalid", "a.example@work.invalid"]);
+        assert_eq!(
+            contact.addresses()[0].name.as_deref(),
+            Some("Ann Example"),
+            "maild's fullName is read"
+        );
+        let none: Contact =
+            serde_json::from_value(json!({ "id": "P2", "addressBookId": "B1" })).unwrap();
+        assert!(none.addresses().is_empty());
     }
 
     #[test]
