@@ -19088,10 +19088,7 @@ mod standing_interrupt_tests {
             let mut eval = Evaluator::new();
             crate::interrupt::init(eval.interrupt_flag());
             // The marker path is bound as data; the source names it as `$marker`.
-            eval.set_global(
-                "marker",
-                Value::String(marker.display().to_string()),
-            );
+            eval.set_global("marker", Value::String(marker.display().to_string()));
             eval.execute_script_source("$log = \"\"\n$n = 0\n")
                 .await
                 .expect("init globals");
