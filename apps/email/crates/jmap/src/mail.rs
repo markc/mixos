@@ -636,7 +636,10 @@ mod tests {
         let attachments = email.attachments.unwrap();
         assert_eq!(attachments[0].blob_id.as_deref(), Some("B2"));
         assert_eq!(attachments[0].size, 1234);
-        assert_eq!(attachments[0].content_type.as_deref(), Some("application/pdf"));
+        assert_eq!(
+            attachments[0].content_type.as_deref(),
+            Some("application/pdf")
+        );
         assert!(attachments[0].downloadable());
         assert!(attachments[1].undecodable && !attachments[1].downloadable());
         // An email without the property reads as none.
