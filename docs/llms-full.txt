@@ -782,7 +782,7 @@ checked separately by the layering gate.
 | [mix](https://github.com/markc/mixos/blob/main/libs/mix/Cargo.toml) | mix | lib | mix | public | 0.116.0 |
 | [props](https://github.com/markc/mixos/blob/main/libs/props/Cargo.toml) | props | lib | core | none | 0.1.1 |
 | [scene](https://github.com/markc/mixos/blob/main/libs/scene/Cargo.toml) | scene | lib | core | none | 0.1.1 |
-| [settings](https://github.com/markc/mixos/blob/main/libs/settings/Cargo.toml) | settings | lib | core | public | 0.8.0 |
+| [settings](https://github.com/markc/mixos/blob/main/libs/settings/Cargo.toml) | settings | lib | core | public | 0.9.0 |
 | [strict](https://github.com/markc/mixos/blob/main/libs/strict/Cargo.toml) | strict | lib | core | none | 0.1.1 |
 | [syntax](https://github.com/markc/mixos/blob/main/libs/syntax/Cargo.toml) | syntax | lib | core | none | 0.1.1 |
 | [test-broker](https://github.com/markc/mixos/blob/main/libs/test-broker/Cargo.toml) | test-broker | lib | core | none | 0.1.1 |
@@ -5859,6 +5859,11 @@ resolved design.
 | `email.mail.page_size` | integer 10–500 | 100 |
 | `email.mail.mark_read_on_open` | boolean | true |
 | `email.mail.confirm_delete` | boolean | true |
+| `email.reader.font_size` | number 10–32 (pt), step 0.5: the message reader's text size | 15 |
+| `email.reader.theme` | `auto` (the session theme), `light` or `dark`: the message body's colours | `auto` |
+| `email.compose.quote_on_reply` | boolean: quote the original in a reply | true |
+| `email.compose.reply_position` | `above` or `below`: the reply's text relative to the quote | `above` |
+| `email.compose.autosave` | boolean: save drafts as they are written | true |
 
 Each account is a record of exactly these keys:
 
@@ -5876,7 +5881,7 @@ A refused account is named by position: `email.accounts[2].url`. The default
 account must name an account, so removing it from the list needs
 `email.default_account` changed or reset in the same batch. Apply and reset
 take each path, or `email` for the whole group (null resets it too);
-`email.mail` alone is not a path. The summary carries `email` when any value
+`email.mail`, `email.reader` and `email.compose` alone are not paths. The summary carries `email` when any value
 is set; `settings::email::from_snapshot` and `from_summary` read it.
 
 ## Topics and storage
@@ -6563,7 +6568,21 @@ A malformed file loads defaults and is never overwritten.
   has. Deleting or emptying a folder asks first and says how many emails
   it affects, with Cancel as the default.
 - **The reader**: the open email (plain text first, the HTML source when
-  there is no plain text), event or contact.
+  there is no plain text), event or contact. A text body written as
+  Markdown is rendered: a `text/markdown` part always, and a
+  `text/plain` one when the toolkit's conservative detector finds
+  Markdown in it (a fence, a table, two headings, or two of a heading,
+  a list, bold, inline code, a link and a block quote). Quoted replies,
+  signatures, forwarded headers, bare URLs and ASCII art never trigger
+  it. Rendered mail shows headings, lists and task boxes, code blocks
+  that scroll sideways, tables, quotes and links (http, https and mailto
+  open in the desktop's browser or mail handler; the address shows on
+  hover). Images are never fetched, because remote images in mail track
+  their reader: the alt text is a link to the image. Raw HTML is shown as
+  text. **Show Source** beside the date (or View › Message › Render
+  Markdown / Show Source) flips one email between the rendering and its
+  text, and **Render Markdown** does the reverse for any plain email.
+  The choice lasts while that email is open.
 - **Compose** (To, Cc, Bcc, Subject, body, and From when there are
   several accounts), reply, reply all and forward. If the account's login
   (server or address) changes while a draft is open, Send waits: the
@@ -6573,8 +6592,61 @@ A malformed file loads defaults and is never overwritten.
   uses maild's extension of a top-level `blobId` on `Email/set`. A strict
   RFC 8621 server builds an Email from uploaded MIME with `Email/import`,
   so it refuses the send; `Email/import` is future work.
+- **Drafts** are saved to the account's Drafts mailbox as you write, five
+  seconds after the last edit. Nothing runs while nobody types. Each save
+  is one `Email/set` that creates the new draft (`$draft $seen`, its Bcc
+  kept in the bytes) and destroys the one it replaces. Only one save runs
+  at a time per compose; edits made during it go when it lands. A quiet
+  line under the body says **Saving…**, **Saved hh:mm** or **Not saved:**
+  and why (no Drafts mailbox, or the server's refusal). Closing with unsaved
+  work asks **Save Draft / Discard / Cancel**, with Cancel the default.
+  Discard destroys the saved draft, and so does a send that goes. Opening
+  a message in Drafts (or one marked `$draft`) resumes it in compose with
+  its To, Cc, Bcc, subject, body and the message it replies to, and later
+  saves replace it. Quitting saves the open draft within the close's
+  five-second budget. Autosave follows `email.compose.autosave` (Prefs ›
+  Email); Ctrl+S saves now either way.
+- **Address completion** in To, Cc and Bcc: from two characters, the entry
+  being typed (the one after the last `,` or `;` outside quotes) is looked
+  up once typing pauses. Contacts across every address book come first,
+  one per address on the card. After them come the people the loaded Sent
+  pages went to and the loaded inbox pages came from, held in memory only
+  and never fetched for this. Addresses already in the field are skipped.
+  Up and Down move, Enter or Tab take one (`Name <addr>, `, the name quoted
+  when it needs it), and Esc closes the list.
 - **Mail actions**: delete to Trash (confirmed when the settings ask),
   move to a mailbox, flag, and mark unread.
+- **Print** (Ctrl+P). MixOS has no print service, so Email writes the open
+  email as one self-contained page, in `$XDG_RUNTIME_DIR/email-print/`
+  (private to you, pages older than a day pruned), and opens it in the
+  browser, whose print dialog appears at once. That dialog also offers
+  **Save to PDF**. The page carries From, To, Cc, Date and Subject, then
+  the body as the reader shows it (rendered Markdown, or the plain text
+  wrapped) at the reader's text size, on light paper styles. Nothing from
+  the message is passed through as markup: raw HTML is printed as text,
+  remote images are left out (their alt text stays), and the page's
+  security policy forbids it from fetching anything. If no browser opens
+  it, the status line names the page so you can open it yourself.
+- **Attachments** (Mail › Attachments…). A popup lists the open email's
+  attachments: each with its type's icon, its name (elided, whole on
+  hover), its size, and **Save** and **Open**; **Save All** is at the
+  bottom. A part the server could not decode is greyed with a note.
+  Downloads run in the background, never in the window's thread, and stop
+  when Email closes.
+  - **Save** writes to your download directory (`XDG_DOWNLOAD_DIR` in
+    `~/.config/user-dirs.dirs`, else `~/Downloads`), as a new file only
+    you can read. It is written in full, then put in place, so a
+    half-written file never appears, and it never replaces a file:
+    `report.pdf` becomes `report (1).pdf`. The sender's name is cleaned
+    first (no `/`, `\`, `..`, control characters or leading dots, at most
+    200 bytes); a part with no name is `attachment-<n>` with its type's
+    usual extension. The status line shows where it went.
+  - **Open** puts the file in `$XDG_RUNTIME_DIR/email-attach/` (private,
+    pruned after a day) and opens it in the app the desktop associates
+    with its type (`mimeapps.list`, then `mimeinfo.cache`). Programs and
+    scripts (ELF executables and libraries, shell and other scripts,
+    `.desktop` launchers, AppImages, Windows executables) are never opened,
+    by their type, their name or their first bytes: they can only be saved.
 - **New Event** and **New Contact** forms. Start and end are RFC 3339
   instants.
 
@@ -6585,6 +6657,7 @@ A malformed file loads defaults and is never overwritten.
 | Ctrl+R | Refresh the account |
 | Ctrl+Q | Quit |
 | Ctrl+N | Compose |
+| Ctrl+S | Save the open compose as a draft |
 | Ctrl+Shift+R | Reply |
 | Ctrl+Shift+A | Reply all |
 | Ctrl+L | Forward |
@@ -6592,6 +6665,7 @@ A malformed file loads defaults and is never overwritten.
 | Ctrl+Shift+M | Move the open email |
 | Ctrl+Shift+S | Flag or unflag |
 | Ctrl+Shift+U | Mark unread |
+| Ctrl+P | Print the open email |
 | Ctrl+Shift+E | New event |
 | Ctrl+Shift+K | New contact |
 | Ctrl+1 / 2 / 3 | Mail / Calendar / Contacts |
@@ -6619,7 +6693,7 @@ was pending, so its answer would come from the old connection),
 from the old config, so its password cannot change, and it cannot be
 removed, until that finishes), `CANCELLED` (Email closed before the
 request ran; a write that may have run answers `OUTCOME_UNKNOWN`),
-`SERVER`,
+`SERVER`, `FILE` (a file could not be written, or nothing opened it),
 `BUSY`, `UNKNOWN_VERB`, `UNKNOWN_COMMAND` and `DISABLED`.
 
 Queries that need the server answer when the server does. The window
@@ -6639,6 +6713,7 @@ never waits on them.
 | `email.get {account?, id}` | query | one email's headers and `text` body |
 | `email.calendars`, `email.events {calendar?, from?, to?}`, `email.event.get {id}` | query | calendars and events |
 | `email.books`, `email.contacts {book?, filter?}`, `email.contact.get {id}` | query | address books and contacts |
+| `email.contacts.suggest {account?, text, limit?}` | query | address completions: contacts across every book, then recent correspondents (`{suggestions: [{name, email, address, source}]}`) |
 | `email.show`, `email.quit` | system, intent | raise, close |
 | `email.execute {id}` | intent | run any registry command (published with origin `bus`) |
 | `email.mode {name}`, `email.refresh {account?}` | intent | switch surface; fetch again (a failed account reconnects) |
@@ -6650,13 +6725,29 @@ never waits on them.
 | `email.open {id}` | intent | show an email in the reader; answers once loaded |
 | `email.mark {ids, read?, flagged?}`, `email.move {ids, mailbox}`, `email.delete {ids, destroy?}` | intent | the list and counts refresh after |
 | `email.send {to, cc?, bcc?, subject, body, in_reply_to?}` | intent | send without the dialog |
-| `email.compose {…}`, `email.reply {id, all?}`, `email.forward {id, to?}` | intent | open the compose dialog, filled in |
+| `email.compose {…}`, `email.reply {id, all?}`, `email.forward {id, to?}` | intent | open the compose dialog, filled in; answers with its `compose` id |
+| `email.print {id?}` | intent | print an email (default the open one) through the browser; answers `{path}` of the page, or `FILE` naming it when no browser opened it |
+| `email.attachments {id}` | query | the email's attachments: `part`, `name`, `type`, `size`, `disposition`, `cid`, `downloadable`, `openable` |
+| `email.attachment.save {id, part, dir?}` | intent | save one attachment, never over a file; `dir` must be an absolute, existing directory (default the download directory); answers `{path}`. A part that cannot be decoded is `INVALID_ARGUMENT`, an unknown part `NOT_FOUND` |
+| `email.draft.save {compose?}` | intent | save the open compose to Drafts now; answers `{id, compose}` once the server confirms (`OUTCOME_UNKNOWN` if Email closes first) |
 | `email.calendar.select`, `email.event.create/update/delete` | intent | `create` answers `{id}`; `end` or an ISO 8601 `duration` |
 | `email.book.select`, `email.contact.create/update/delete` | intent | `create` answers `{id}` |
 | `email.ui.*`, `email.window`, `email.window.state` | input, query | the toolkit [drive verbs](../docs/drive.md) |
 
 Every command the window runs (menu, shortcut, button or `email.execute`)
 is published on `email.command.executed` with how it was reached.
+
+`email.info` reports how the open email is shown under each account's
+`mail.reader`: `{"format": "markdown" | "plain", "auto": true | false}`,
+where `auto` is false once the person (or `email.execute
+{"id":"view.reader.markdown"}`) has flipped it. The command is disabled
+when the open email has no text body.
+
+Its `compose` object carries the compose `id`, the close prompt
+(`closing`), the address dropdown (`suggest`: field, query, cursor,
+suggestions), and `draft`: `{id, state, saved_at, error, queued,
+autosave, line}`. `state` is `none`, `unsaved`, `saving`, `saved` or
+`failed`, and `line` is what the dialog's save line says.
 
 From Mix:
 
@@ -7185,6 +7276,17 @@ and collating symbols cannot end a range. The stock database uses neither.
   (timestamp or size) since loading, so a long-lived caller can reload.
   `sniff_len()` is how many bytes to read before calling `guess`.
 - `text_fallback(data)` and `looks_like_text(data)` are the two text checks.
+- `extension(mime)` is the type's usual extension without the dot (`pdf`):
+  its heaviest plain `*.ext` glob.
+- `apps_for(mime)` lists the applications that open a type, best first, as
+  desktop ids without `.desktop` (the form `apps.launch` takes), following
+  the freedesktop MIME Applications spec: for the type and then each
+  supertype (never `application/octet-stream`), every `mimeapps.list`'s
+  Default Applications, then Added Associations, then `mimeinfo.cache`,
+  less the Removed Associations; `media/*` keys match the whole media
+  type. `mimeapps_paths()` and `cache_paths()` name the files read, and
+  `apps_in(lists, caches, types)` is the same decision over given texts.
+  Desktop-specific `$desktop-mimeapps.list` files are not read.
 
 ## Example
 
@@ -29500,6 +29602,11 @@ the settings service like the session's look. It is separate from
 Applications, which installs apps. Its first section is **Email**, the
 [email app](../email/README.md)'s accounts and mail options (`email.*` in
 settingsd; see the [email settings](../docs/spec/settings/README.md)).
+It has four tabs, **Accounts**, **Mail**, **Reader** and **Compose**; an
+agent opens one with `prefs.section {name:"email", tab:"reader"}`, and
+`prefs.section {name:"email", tab:"accounts", account:"<id>"}` also
+selects that account (Email's **Account Settings…** does this; an
+unknown id selects none).
 
 - **Accounts** lists the accounts in the order Email's folder tree shows
   them, marking the default and any that are disabled. **Add account**
@@ -29514,7 +29621,14 @@ settingsd; see the [email settings](../docs/spec/settings/README.md)).
   would refuse is named under the field and nothing is sent. **Enabled**
   applies at once.
 - **Mail** holds messages per page (10 to 500), marking messages read when
-  opened, and asking before deleting them; each applies at once. **Reset
+  opened, and asking before deleting them; each applies at once.
+- **Reader** sets the text size of the message reader, 10 to 32 points
+  in half-point steps (default 15), and its **colours**: Follow window,
+  Light or Dark. A line set at that size, on those colours, shows it;
+  **Default size** puts the size back. Each applies at once.
+- **Compose**: **Quote the original when replying**, **Write my reply**
+  above or below the quote (only while quoting), and **Autosave drafts**.
+  Each applies at once. **Reset
   email settings…** asks first, then puts every email setting back to its
   default, which means no accounts.
 
@@ -29562,8 +29676,9 @@ send prefs prefs.email.set body='{"op":"default","id":"acct-0f3a2b1c9d8e"}'
 send prefs prefs.email.set body='{"op":"move","id":"acct-0f3a2b1c9d8e","direction":"up"}'
 send prefs prefs.email.set body='{"op":"enable","id":"acct-0f3a2b1c9d8e","enabled":false}'
 
--- A mail option.
+-- A mail option, and the reader's text size.
 send prefs prefs.email.set body='{"path":"email.mail.page_size","value":50}'
+send prefs prefs.email.set body='{"path":"email.reader.font_size","value":18.5}'
 
 -- Hand a password to Email (answered once Email has), or forget it.
 send prefs prefs.email.password body='{"id":"acct-0f3a2b1c9d8e","password":"…"}'
@@ -29571,11 +29686,44 @@ send prefs prefs.email.password body='{"id":"acct-0f3a2b1c9d8e","forget":true}'
 ```
 
 `prefs.email.set` takes `op` `add`, `update`, `remove`, `move`, `default`
-or `enable`, or `path` and `value` for a mail option. Over the Bus,
+or `enable`, or `path` and `value` for a mail option or `email.reader.font_size`. Over the Bus,
 `remove` removes at once: the confirmation belongs to the window. A field
 the settings service would refuse is answered with `ARGUMENT`, naming it.
 For scripts that do not need Prefs open, call `settings.apply` on the
 `email.*` paths directly, and `email.account.password.set` on Email.
+
+### Every control and its Bus verb
+
+Every option in the section can be reached by an agent. `prefs.email`
+lists the settings paths it takes as `paths`; `prefs.email.set {path,
+value}` sets any of them and `prefs.email.reset {path}` puts one back to
+its default (no `path`: the whole group).
+
+| Control | Settings path | Bus |
+|---|---|---|
+| Account list, order | `email.accounts` | `prefs.email.set` `op` `add`/`update`/`remove`/`move`/`enable`, or `{path:"email.accounts"}` (a list that drops an account is refused: removals go through `op remove`) |
+| Make default | `email.default_account` | `prefs.email.set {op:"default", id}` or `{path}`; `prefs.execute email.account.default` |
+| Messages per page | `email.mail.page_size` | `prefs.email.set {path, value}` |
+| Mark messages read when opened | `email.mail.mark_read_on_open` | `prefs.email.set {path, value}` |
+| Ask before deleting messages | `email.mail.confirm_delete` | `prefs.email.set {path, value}` |
+| Reader text size, Default size | `email.reader.font_size` | `prefs.email.set {path, value}`, `prefs.email.reset {path}`; `prefs.execute email.reader.reset` |
+| Reader colours (Follow window, Light, Dark) | `email.reader.theme` (`auto`, `light`, `dark`) | `prefs.email.set {path, value}`, `prefs.email.reset {path}` |
+| Quote the original when replying | `email.compose.quote_on_reply` | `prefs.email.set {path, value}`, `prefs.email.reset {path}` |
+| Write my reply above / below the quote | `email.compose.reply_position` (`above`, `below`) | `prefs.email.set {path, value}`, `prefs.email.reset {path}` |
+| Autosave drafts | `email.compose.autosave` | `prefs.email.set {path, value}`, `prefs.email.reset {path}` |
+| Reset email settings… | `email` | `prefs.email.reset` (refused while Email runs and holds accounts); `prefs.execute email.reset`, then `dialog.confirm` |
+
+| Button | Command (`prefs.execute {id}`) |
+|---|---|
+| Add account, Save, Revert | `email.account.add`, `email.account.save`, `email.account.revert` |
+| Remove… | `email.account.remove`, then `dialog.confirm` (or `prefs.email.set {op:"remove", id}`) |
+| Move up, Move down, Make default, Enabled | `email.account.up`, `email.account.down`, `email.account.default`, `email.account.enable` |
+| Set password, Forget password…, Connect now | `email.password.set`, `email.password.forget` then `dialog.confirm`, `email.account.connect` (or `prefs.email.password {id, password}` / `{id, forget:true}`) |
+| The Accounts, Mail, Reader and Compose tabs | `view.email.accounts`, `view.email.mail`, `view.email.reader`, `view.email.compose` (or `prefs.section {name:"email", tab}`) |
+| A confirmation's Confirm / Cancel | `dialog.confirm`, `dialog.cancel` (`prefs.dialog {open:null}` also cancels) |
+
+The form's fields are typed through the window (`prefs.ui.type`), or set
+in one call with `prefs.email.set {op:"update", id, …}`.
 
 ## For agents
 
@@ -30773,6 +30921,23 @@ let _ = toolkit::titlebar::show(ui, "Demo", Some(Icon::Server), stroke,
   document tabs, value, text and search fields, checkboxes and switches,
   combo boxes, sliders, canvas scrollbars, tooltip wording, and modal
   dialogs).
+- `markdown`: Markdown drawn natively. `Document::parse(&str)` turns
+  CommonMark with GFM tables, strikethrough and task lists into plain data
+  (pulldown-cmark, parser only), so an app parses once and keeps the
+  document in its state. `markdown::show(ui, &document)` draws it every
+  frame from the theme: heading sizes stepped from the `Heading` style,
+  code in the monospace face on the field surface (scrolled sideways,
+  never wrapped), quotes after a rule, lists with read-only task boxes,
+  striped tables, rules and links. Each text run is one selectable label.
+  Links go to `Context::open_url` only for http, https and mailto
+  (`markdown::openable`), with the address on hover, and `show` returns
+  the link clicked. Images are never fetched (the alt text links to
+  them) and raw HTML shows as text. `markdown::looks_like_markdown(&str)`
+  is a conservative test for plain text written as Markdown: one fence,
+  table or pair of headings, or two distinct signals among a heading, a
+  list, bold or emphasis, inline code, a link and a non-reply quote,
+  scanned outside quoted lines and the signature. The email reader uses
+  both.
 - `datatable`: sortable, resizable columns over virtualised one-line rows,
   with a pager, keyboard navigation and a drive surface. It reports sorts
   and pages as events and leaves them to the app. See
@@ -31695,6 +31860,28 @@ Use strict MixOS configuration and owned shutdown signalling.
 # settings contract changes
 
 > Mirrored from [`libs/settings/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/libs/settings/CHANGELOG.md), where releases update it. The component's page is [settings](README.md). This page describes the current `main` branch of MixOS.
+
+## 0.9.0
+
+Additive, store format unchanged (3):
+
+- `Email.reader` (`email::ReaderOptions { font_size: f64 }`): the message
+  reader's text size under `email.reader.font_size`, in points,
+  `READER_FONT_MIN` 10 to `READER_FONT_MAX` 32 in steps of
+  `READER_FONT_STEP` 0.5, default `READER_FONT_DEFAULT` 15. Omitted at its
+  default, so older profiles keep their seals. A profile that sets it will
+  not load in a 0.8.0 build: reset `email.reader.font_size` first.
+- `email.reader.theme` (`ReaderOptions.theme: email::ReaderTheme`):
+  `auto` (the session theme, default), `light` or `dark`.
+- `Email.compose` (`email::ComposeOptions`): `email.compose.quote_on_reply`
+  (default true), `email.compose.reply_position`
+  (`email::ReplyPosition`: `above`, default, or `below`) and
+  `email.compose.autosave` (default true).
+- Every new value is omitted at its default; unknown enum values are
+  refused.
+- `email::valid_reader_font_size` checks a value as settingsd does.
+- `email.reader` and `email.compose` alone are not paths, as `email.mail`
+  is not; `settings.describe` lists each new path.
 
 ## 0.8.0
 

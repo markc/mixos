@@ -154,6 +154,12 @@ pub const VERBS: &[Verb] = &[
         r#"{"account":"optional account id","id":"contact id"}"#,
         "One contact with its JSContact data",
     ),
+    verb(
+        "email.contacts.suggest",
+        true,
+        r#"{"account":"optional account id","text":"string, the address being typed","limit":"optional integer 1..50 (default 8)"}"#,
+        "Address completions for text: matching contacts across every address book first (one per address), then the account's recent correspondents from the pages loaded",
+    ),
     verb("email.show", false, "{}", "Restore and focus the window"),
     verb("email.quit", false, "{}", "Close the window"),
     verb(
@@ -268,7 +274,13 @@ pub const VERBS: &[Verb] = &[
         "email.compose",
         false,
         r#"{"account":"optional account id","to":"optional addresses","cc":"optional addresses","subject":"optional string","body":"optional string"}"#,
-        "Open the compose dialog, filled in",
+        "Open the compose dialog, filled in; answers {composing, compose} with the compose id",
+    ),
+    verb(
+        "email.draft.save",
+        false,
+        r#"{"compose":"optional compose id (default the open one)"}"#,
+        "Save the open compose to the account's Drafts mailbox now, replacing its saved draft; answers {id, compose} once the server confirms it",
     ),
     verb(
         "email.reply",
@@ -281,6 +293,24 @@ pub const VERBS: &[Verb] = &[
         false,
         r#"{"account":"optional account id","id":"email id","to":"optional addresses"}"#,
         "Open the compose dialog forwarding an email",
+    ),
+    verb(
+        "email.print",
+        false,
+        r#"{"account":"optional account id","id":"optional email id (default the open email)"}"#,
+        "Print an email through the browser's print dialog; answers {path} of the page",
+    ),
+    verb(
+        "email.attachments",
+        true,
+        r#"{"account":"optional account id","id":"email id"}"#,
+        "An email's attachments: part, name, type, size, and whether each can be downloaded and opened",
+    ),
+    verb(
+        "email.attachment.save",
+        false,
+        r#"{"account":"optional account id","id":"email id","part":"attachment part id","dir":"optional absolute existing directory (default the download directory)"}"#,
+        "Save an attachment, never over an existing file; answers {path}",
     ),
     verb(
         "email.calendar.select",
@@ -379,6 +409,10 @@ pub enum Query {
     Get {
         id: String,
     },
+    /// One email's attachments.
+    Attachments {
+        id: String,
+    },
     Calendars,
     Events {
         calendar: String,
@@ -396,6 +430,11 @@ pub enum Query {
     Contact {
         id: String,
     },
+    /// Contacts across every address book matching `text`.
+    Suggest {
+        text: String,
+        limit: u64,
+    },
 }
 
 /// What happens with a query's answer besides the reply.
@@ -407,6 +446,17 @@ pub enum Then {
     Reply(bool),
     /// Open a compose forwarding the email fetched, to these addresses.
     Forward(String),
+    /// Print the email fetched, answering with the page's path.
+    Print,
+    /// Save the email fetched's attachment `part` in `dir` (the download
+    /// directory when `None`), answering with its path.
+    Save {
+        part: String,
+        dir: Option<std::path::PathBuf>,
+    },
+    /// Merge the contacts found with the account's recent correspondents
+    /// for `text`, at most `limit`, and answer those.
+    Suggest { text: String, limit: usize },
 }
 
 /// A change on the account's server.
@@ -534,6 +584,7 @@ pub async fn run_query(client: &Client, query: Query) -> Result<Value, jmap::Err
             }
             value
         }
+        Query::Attachments { id } => crate::attachments::describe(&client.email(&id).await?),
         Query::Calendars => json!({ "calendars": to_value(client.calendars().await?) }),
         Query::Events { calendar, from, to } => {
             let events = client
@@ -547,6 +598,9 @@ pub async fn run_query(client: &Client, query: Query) -> Result<Value, jmap::Err
             json!({ "contacts": to_value(client.contacts(&book, &filter).await?) })
         }
         Query::Contact { id } => to_value(client.contact(&id).await?),
+        Query::Suggest { text, limit } => {
+            json!({ "contacts": to_value(client.contacts_search(&text, limit).await?) })
+        }
     })
 }
 
@@ -985,6 +1039,13 @@ fn dispatch(
                 id: required(args, "id")?,
             });
         }
+        "email.contacts.suggest" => {
+            let account = connected(state, args)?;
+            let text = required(args, "text")?;
+            let limit = number(args, "limit")?.unwrap_or(8).clamp(1, 50);
+            let then = Then::Suggest { text: text.clone(), limit: limit as usize };
+            state.query(account, id, Query::Suggest { text, limit }, then);
+        }
         "email.quit" => {
             state.reply(id, 0, json!({ "quitting": true }));
             state.quit();
@@ -1154,7 +1215,14 @@ fn dispatch(
                 ..Composed::default()
             };
             state.open_compose(Some(&account), draft);
-            state.reply(id, 0, json!({ "composing": account }));
+            let compose = state.compose.as_ref().map(|c| c.id);
+            state.reply(id, 0, json!({ "composing": account, "compose": compose }));
+        }
+        "email.draft.save" => {
+            let compose = number(args, "compose")?;
+            state
+                .draft_save_bus(id, compose)
+                .map_err(|(code, message)| Bad(code, message))?;
         }
         "email.reply" | "email.forward" => {
             let account = connected(state, args)?;
@@ -1167,6 +1235,46 @@ fn dispatch(
             } else {
                 Then::Forward(list(args, "to")?.unwrap_or_default().join(", "))
             };
+            state.query(account, id, Query::Get { id: email }, then);
+        }
+        "email.print" => {
+            let account = account(state, args)?;
+            // The account's open email prints as its reader shows it; any
+            // other is fetched first.
+            let open = state.account(&account).and_then(|v| v.mail.open.clone());
+            match (text(args, "id")?, open) {
+                (None, Some(email)) => state.print_email(&account, &email, Some(id)),
+                (None, None) => return Err(Bad(code::NOT_FOUND, crate::label("no-open-email"))),
+                (Some(wanted), Some(email)) if wanted == email.id => {
+                    state.print_email(&account, &email, Some(id));
+                }
+                (Some(wanted), _) => {
+                    let account = connected(state, args)?;
+                    state.query(account, id, Query::Get { id: wanted }, Then::Print);
+                }
+            }
+        }
+        "email.attachments" => {
+            let account = connected(state, args)?;
+            query(state, account, Query::Attachments {
+                id: required(args, "id")?,
+            });
+        }
+        "email.attachment.save" => {
+            let account = connected(state, args)?;
+            let email = required(args, "id")?;
+            let part = required(args, "part")?;
+            let dir = match text(args, "dir")? {
+                None => None,
+                Some(dir) => {
+                    let dir = std::path::PathBuf::from(dir);
+                    if !dir.is_absolute() || !dir.is_dir() {
+                        return Err(invalid(crate::label("dir-not-directory")));
+                    }
+                    Some(dir)
+                }
+            };
+            let then = Then::Save { part, dir };
             state.query(account, id, Query::Get { id: email }, then);
         }
         "email.calendar.select" => {

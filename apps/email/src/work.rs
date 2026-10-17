@@ -158,6 +158,61 @@ pub enum Work {
     OpenPrefsAt {
         account: String,
     },
+    /// Write a print page and open it in the browser; `reply` (a Bus
+    /// request) hears the page's path.
+    Print {
+        html: String,
+        reply: Option<u64>,
+    },
+    /// Download attachment blob `blob` (the email's `index`th, from 1, of
+    /// type `mime`) and save or open it as `target` says; the outcome comes
+    /// back under `ticket`, and to `reply` (a Bus request) if one asked.
+    Attachment {
+        account: String,
+        ticket: u64,
+        blob: String,
+        name: Option<String>,
+        index: usize,
+        mime: String,
+        target: crate::attachments::Target,
+        reply: Option<u64>,
+    },
+    /// Compose `compose`'s edit number `edits` arms the draft timer:
+    /// [`crate::state::State::draft_due`] is called with both once
+    /// [`crate::state::drafts::DRAFT_DELAY`] has passed.
+    DraftTimer {
+        compose: u64,
+        edits: u64,
+    },
+    /// Save `draft` in `mailbox` (Drafts), replacing draft `replaces`; the
+    /// answer comes back under operation `op`.
+    SaveDraft {
+        account: String,
+        op: u64,
+        draft: Composed,
+        mailbox: String,
+        replaces: Option<String>,
+    },
+    /// Read draft `id` back for compose.
+    ResumeDraft {
+        account: String,
+        ticket: u64,
+        id: String,
+    },
+    /// An address field's edit `ticket` arms the suggestion timer:
+    /// [`crate::state::State::suggest_due`] after
+    /// [`crate::state::suggest::SUGGEST_DELAY`].
+    SuggestTimer {
+        compose: u64,
+        ticket: u64,
+    },
+    /// Find the contacts matching `text` for suggestion request `ticket`.
+    Suggest {
+        account: String,
+        ticket: u64,
+        text: String,
+        limit: u64,
+    },
 }
 
 /// How long typing must pause before a search runs.
@@ -181,12 +236,19 @@ impl Work {
             | Work::FetchCalendars { account }
             | Work::FetchEvents { account, .. }
             | Work::FetchBooks { account }
-            | Work::FetchContacts { account, .. } => Some(account),
+            | Work::FetchContacts { account, .. }
+            | Work::Attachment { account, .. }
+            | Work::SaveDraft { account, .. }
+            | Work::ResumeDraft { account, .. }
+            | Work::Suggest { account, .. } => Some(account),
             Work::Settings { .. }
             | Work::WriteDeadline { .. }
             | Work::ReadSettings
             | Work::SaveSecrets { .. }
-            | Work::OpenPrefs => None,
+            | Work::OpenPrefs
+            | Work::Print { .. }
+            | Work::DraftTimer { .. }
+            | Work::SuggestTimer { .. } => None,
         }
     }
 }

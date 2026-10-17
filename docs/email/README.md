@@ -153,7 +153,21 @@ A malformed file loads defaults and is never overwritten.
   has. Deleting or emptying a folder asks first and says how many emails
   it affects, with Cancel as the default.
 - **The reader**: the open email (plain text first, the HTML source when
-  there is no plain text), event or contact.
+  there is no plain text), event or contact. A text body written as
+  Markdown is rendered: a `text/markdown` part always, and a
+  `text/plain` one when the toolkit's conservative detector finds
+  Markdown in it (a fence, a table, two headings, or two of a heading,
+  a list, bold, inline code, a link and a block quote). Quoted replies,
+  signatures, forwarded headers, bare URLs and ASCII art never trigger
+  it. Rendered mail shows headings, lists and task boxes, code blocks
+  that scroll sideways, tables, quotes and links (http, https and mailto
+  open in the desktop's browser or mail handler; the address shows on
+  hover). Images are never fetched, because remote images in mail track
+  their reader: the alt text is a link to the image. Raw HTML is shown as
+  text. **Show Source** beside the date (or View › Message › Render
+  Markdown / Show Source) flips one email between the rendering and its
+  text, and **Render Markdown** does the reverse for any plain email.
+  The choice lasts while that email is open.
 - **Compose** (To, Cc, Bcc, Subject, body, and From when there are
   several accounts), reply, reply all and forward. If the account's login
   (server or address) changes while a draft is open, Send waits: the
@@ -163,8 +177,61 @@ A malformed file loads defaults and is never overwritten.
   uses maild's extension of a top-level `blobId` on `Email/set`. A strict
   RFC 8621 server builds an Email from uploaded MIME with `Email/import`,
   so it refuses the send; `Email/import` is future work.
+- **Drafts** are saved to the account's Drafts mailbox as you write, five
+  seconds after the last edit. Nothing runs while nobody types. Each save
+  is one `Email/set` that creates the new draft (`$draft $seen`, its Bcc
+  kept in the bytes) and destroys the one it replaces. Only one save runs
+  at a time per compose; edits made during it go when it lands. A quiet
+  line under the body says **Saving…**, **Saved hh:mm** or **Not saved:**
+  and why (no Drafts mailbox, or the server's refusal). Closing with unsaved
+  work asks **Save Draft / Discard / Cancel**, with Cancel the default.
+  Discard destroys the saved draft, and so does a send that goes. Opening
+  a message in Drafts (or one marked `$draft`) resumes it in compose with
+  its To, Cc, Bcc, subject, body and the message it replies to, and later
+  saves replace it. Quitting saves the open draft within the close's
+  five-second budget. Autosave follows `email.compose.autosave` (Prefs ›
+  Email); Ctrl+S saves now either way.
+- **Address completion** in To, Cc and Bcc: from two characters, the entry
+  being typed (the one after the last `,` or `;` outside quotes) is looked
+  up once typing pauses. Contacts across every address book come first,
+  one per address on the card. After them come the people the loaded Sent
+  pages went to and the loaded inbox pages came from, held in memory only
+  and never fetched for this. Addresses already in the field are skipped.
+  Up and Down move, Enter or Tab take one (`Name <addr>, `, the name quoted
+  when it needs it), and Esc closes the list.
 - **Mail actions**: delete to Trash (confirmed when the settings ask),
   move to a mailbox, flag, and mark unread.
+- **Print** (Ctrl+P). MixOS has no print service, so Email writes the open
+  email as one self-contained page, in `$XDG_RUNTIME_DIR/email-print/`
+  (private to you, pages older than a day pruned), and opens it in the
+  browser, whose print dialog appears at once. That dialog also offers
+  **Save to PDF**. The page carries From, To, Cc, Date and Subject, then
+  the body as the reader shows it (rendered Markdown, or the plain text
+  wrapped) at the reader's text size, on light paper styles. Nothing from
+  the message is passed through as markup: raw HTML is printed as text,
+  remote images are left out (their alt text stays), and the page's
+  security policy forbids it from fetching anything. If no browser opens
+  it, the status line names the page so you can open it yourself.
+- **Attachments** (Mail › Attachments…). A popup lists the open email's
+  attachments: each with its type's icon, its name (elided, whole on
+  hover), its size, and **Save** and **Open**; **Save All** is at the
+  bottom. A part the server could not decode is greyed with a note.
+  Downloads run in the background, never in the window's thread, and stop
+  when Email closes.
+  - **Save** writes to your download directory (`XDG_DOWNLOAD_DIR` in
+    `~/.config/user-dirs.dirs`, else `~/Downloads`), as a new file only
+    you can read. It is written in full, then put in place, so a
+    half-written file never appears, and it never replaces a file:
+    `report.pdf` becomes `report (1).pdf`. The sender's name is cleaned
+    first (no `/`, `\`, `..`, control characters or leading dots, at most
+    200 bytes); a part with no name is `attachment-<n>` with its type's
+    usual extension. The status line shows where it went.
+  - **Open** puts the file in `$XDG_RUNTIME_DIR/email-attach/` (private,
+    pruned after a day) and opens it in the app the desktop associates
+    with its type (`mimeapps.list`, then `mimeinfo.cache`). Programs and
+    scripts (ELF executables and libraries, shell and other scripts,
+    `.desktop` launchers, AppImages, Windows executables) are never opened,
+    by their type, their name or their first bytes: they can only be saved.
 - **New Event** and **New Contact** forms. Start and end are RFC 3339
   instants.
 
@@ -175,6 +242,7 @@ A malformed file loads defaults and is never overwritten.
 | Ctrl+R | Refresh the account |
 | Ctrl+Q | Quit |
 | Ctrl+N | Compose |
+| Ctrl+S | Save the open compose as a draft |
 | Ctrl+Shift+R | Reply |
 | Ctrl+Shift+A | Reply all |
 | Ctrl+L | Forward |
@@ -182,6 +250,7 @@ A malformed file loads defaults and is never overwritten.
 | Ctrl+Shift+M | Move the open email |
 | Ctrl+Shift+S | Flag or unflag |
 | Ctrl+Shift+U | Mark unread |
+| Ctrl+P | Print the open email |
 | Ctrl+Shift+E | New event |
 | Ctrl+Shift+K | New contact |
 | Ctrl+1 / 2 / 3 | Mail / Calendar / Contacts |
@@ -209,7 +278,7 @@ was pending, so its answer would come from the old connection),
 from the old config, so its password cannot change, and it cannot be
 removed, until that finishes), `CANCELLED` (Email closed before the
 request ran; a write that may have run answers `OUTCOME_UNKNOWN`),
-`SERVER`,
+`SERVER`, `FILE` (a file could not be written, or nothing opened it),
 `BUSY`, `UNKNOWN_VERB`, `UNKNOWN_COMMAND` and `DISABLED`.
 
 Queries that need the server answer when the server does. The window
@@ -229,6 +298,7 @@ never waits on them.
 | `email.get {account?, id}` | query | one email's headers and `text` body |
 | `email.calendars`, `email.events {calendar?, from?, to?}`, `email.event.get {id}` | query | calendars and events |
 | `email.books`, `email.contacts {book?, filter?}`, `email.contact.get {id}` | query | address books and contacts |
+| `email.contacts.suggest {account?, text, limit?}` | query | address completions: contacts across every book, then recent correspondents (`{suggestions: [{name, email, address, source}]}`) |
 | `email.show`, `email.quit` | system, intent | raise, close |
 | `email.execute {id}` | intent | run any registry command (published with origin `bus`) |
 | `email.mode {name}`, `email.refresh {account?}` | intent | switch surface; fetch again (a failed account reconnects) |
@@ -240,13 +310,29 @@ never waits on them.
 | `email.open {id}` | intent | show an email in the reader; answers once loaded |
 | `email.mark {ids, read?, flagged?}`, `email.move {ids, mailbox}`, `email.delete {ids, destroy?}` | intent | the list and counts refresh after |
 | `email.send {to, cc?, bcc?, subject, body, in_reply_to?}` | intent | send without the dialog |
-| `email.compose {…}`, `email.reply {id, all?}`, `email.forward {id, to?}` | intent | open the compose dialog, filled in |
+| `email.compose {…}`, `email.reply {id, all?}`, `email.forward {id, to?}` | intent | open the compose dialog, filled in; answers with its `compose` id |
+| `email.print {id?}` | intent | print an email (default the open one) through the browser; answers `{path}` of the page, or `FILE` naming it when no browser opened it |
+| `email.attachments {id}` | query | the email's attachments: `part`, `name`, `type`, `size`, `disposition`, `cid`, `downloadable`, `openable` |
+| `email.attachment.save {id, part, dir?}` | intent | save one attachment, never over a file; `dir` must be an absolute, existing directory (default the download directory); answers `{path}`. A part that cannot be decoded is `INVALID_ARGUMENT`, an unknown part `NOT_FOUND` |
+| `email.draft.save {compose?}` | intent | save the open compose to Drafts now; answers `{id, compose}` once the server confirms (`OUTCOME_UNKNOWN` if Email closes first) |
 | `email.calendar.select`, `email.event.create/update/delete` | intent | `create` answers `{id}`; `end` or an ISO 8601 `duration` |
 | `email.book.select`, `email.contact.create/update/delete` | intent | `create` answers `{id}` |
 | `email.ui.*`, `email.window`, `email.window.state` | input, query | the toolkit [drive verbs](../docs/drive.md) |
 
 Every command the window runs (menu, shortcut, button or `email.execute`)
 is published on `email.command.executed` with how it was reached.
+
+`email.info` reports how the open email is shown under each account's
+`mail.reader`: `{"format": "markdown" | "plain", "auto": true | false}`,
+where `auto` is false once the person (or `email.execute
+{"id":"view.reader.markdown"}`) has flipped it. The command is disabled
+when the open email has no text body.
+
+Its `compose` object carries the compose `id`, the close prompt
+(`closing`), the address dropdown (`suggest`: field, query, cursor,
+suggestions), and `draft`: `{id, state, saved_at, error, queued,
+autosave, line}`. `state` is `none`, `unsaved`, `saving`, `saved` or
+`failed`, and `line` is what the dialog's save line says.
 
 From Mix:
 

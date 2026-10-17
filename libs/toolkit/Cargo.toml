@@ -29,6 +29,8 @@ fluent-bundle.workspace = true
 # thumbnail: decodes the shared thumbnail cache's PNGs (never a user's file).
 image.workspace = true
 png.workspace = true
+# markdown: CommonMark + GFM parsing into the toolkit's own document.
+pulldown-cmark.workspace = true
 serde.workspace = true
 # executed: a run identity per process.
 uuid.workspace = true

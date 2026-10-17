@@ -23,13 +23,14 @@ use serde_json::{Value, json};
 use toolkit::command::Origin;
 use toolkit::{Registry, Strings, Theme, drive};
 
+use crate::attachments::{self, Target};
 use crate::commands;
 use crate::secrets::{Secrets, SecretsFile};
 use crate::state::{Mode, SessionInfo, Settled, State, Tag, UiState, code};
 use crate::verbs::{Forward, Then, Write};
 use crate::view::{UiEvent, view};
 use crate::work::{Login, Work};
-use crate::{APP, APP_ID, label};
+use crate::{APP, APP_ID, label, label_with};
 
 /// One account's answer, addressed by [`Tag`] in [`Event::Account`]. The
 /// tickets are the requests' (see [`crate::work::Work`]).
@@ -56,6 +57,12 @@ pub enum Done {
     Contacts(u64, Result<Vec<jmap::Contact>, jmap::Error>),
     /// The search debounce `ticket` elapsed.
     SearchDue(u64),
+    /// Draft save `op` finished.
+    DraftSaved(u64, Result<jmap::SavedDraft, jmap::Error>),
+    /// A draft read back for compose; boxed, as `Opened` is.
+    Resumed(u64, Box<Result<jmap::Composed, jmap::Error>>),
+    /// The contacts for suggestion request `ticket`.
+    Suggested(u64, Result<Vec<jmap::Contact>, jmap::Error>),
 }
 
 /// What finished off the UI thread. Completions carry their result; the
@@ -82,6 +89,16 @@ pub enum Event {
     Shown(u64, Result<Value, String>),
     /// Open Email Settings finished; an error is for the status line.
     PrefsOpened(Result<(), String>),
+    /// A print page was written and handed to the browser (its path), for
+    /// Bus request `reply` if one asked.
+    Printed(Option<u64>, Result<String, String>),
+    /// Attachment download `ticket` finished (`true`: it was to open),
+    /// with the file's path, for Bus request `reply` if one asked.
+    Attached(u64, Option<u64>, bool, Result<String, String>),
+    /// Compose `0`'s draft timer for edit `1` ran out.
+    DraftDue(u64, u64),
+    /// Compose `0`'s suggestion timer `1` ran out.
+    SuggestDue(u64, u64),
 }
 
 pub struct Shell {
@@ -128,6 +145,9 @@ pub struct Shell {
     comp: String,
     /// `email.show` requests forwarded to the compositor, not yet answered.
     shows: std::collections::BTreeSet<u64>,
+    /// Attachment downloads running, by ticket: aborted when the window
+    /// closes.
+    downloads: HashMap<u64, tokio::task::AbortHandle>,
 }
 
 /// This host's name: the settingsd instance to try first (settingsd runs
@@ -301,16 +321,23 @@ fn closing(event: &Event) -> Closing {
         | Event::Account(..)
         | Event::Settled(..)
         | Event::SecretsSaved(..)
-        | Event::WriteDeadline(_) => Closing::Apply,
+        | Event::WriteDeadline(_)
+        | Event::Printed(..)
+        | Event::Attached(..) => Closing::Apply,
         Event::Delivery(citizen::Delivery::Command { id, .. }) => Closing::Cancel(*id),
         Event::Shown(..) => Closing::Shown,
-        Event::Delivery(_) | Event::Look(..) | Event::LookRetry(_) | Event::PrefsOpened(_) => {
-            Closing::Ignore
-        }
+        // The quit-time save went out already; timers have nothing to do.
+        Event::Delivery(_)
+        | Event::Look(..)
+        | Event::LookRetry(_)
+        | Event::PrefsOpened(_)
+        | Event::DraftDue(..)
+        | Event::SuggestDue(..) => Closing::Ignore,
     }
 }
 
-/// How long closing waits for the secrets saver to finish its queue.
+/// How long closing waits for the secrets saver to finish its queue and
+/// the compose's draft save to land.
 const SAVER_DRAIN: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// The state a launch starts in, from the app's config directory: the
@@ -439,6 +466,7 @@ impl Shell {
             held: std::collections::VecDeque::new(),
             comp: std::env::var("MIXOS_COMP_SERVICE").unwrap_or_else(|_| "comp".into()),
             shows: std::collections::BTreeSet::new(),
+            downloads: HashMap::new(),
         };
         shell.read_look();
         shell.settle();
@@ -453,16 +481,19 @@ impl Shell {
         &mut self.state
     }
 
-    /// Spawn `work` and send its result back as an event.
-    fn spawn<F>(&self, work: F)
+    /// Spawn `work` and send its result back as an event; the handle aborts
+    /// it.
+    fn spawn<F>(&self, work: F) -> tokio::task::AbortHandle
     where
         F: Future<Output = Event> + Send + 'static,
     {
         let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
-        self.runtime.spawn(async move {
-            let _ = tx.send(work.await);
-            ctx.request_repaint();
-        });
+        self.runtime
+            .spawn(async move {
+                let _ = tx.send(work.await);
+                ctx.request_repaint();
+            })
+            .abort_handle()
     }
 
     /// Perform the state's queued work until none is left (a save answers
@@ -816,6 +847,118 @@ impl Shell {
             Work::OpenPrefsAt { account } => {
                 self.open_prefs(json!({"name": "email", "tab": "accounts", "account": account}))
             }
+            Work::Print { html, reply } => {
+                let bus = self.bus.clone();
+                self.spawn(async move {
+                    let written =
+                        tokio::task::spawn_blocking(move || crate::print::write_page(&html))
+                            .await
+                            .unwrap_or_else(|e| Err(e.to_string()));
+                    let result = match written {
+                        Ok(path) => launch(&bus, crate::print::BROWSER, &path)
+                            .await
+                            .map(|()| path.display().to_string())
+                            .map_err(|_| {
+                                let path = path.display().to_string();
+                                label_with("print-no-browser", &[("path", &path)])
+                            }),
+                        Err(error) => Err(error),
+                    };
+                    Event::Printed(reply, result)
+                });
+            }
+            Work::Attachment {
+                account,
+                ticket,
+                blob,
+                name,
+                index,
+                mime,
+                target,
+                reply,
+            } => {
+                let open = target == Target::Open;
+                let Some((_, client)) = self.client(&account) else {
+                    let error = label("not-connected");
+                    self.state
+                        .apply(Event::Attached(ticket, reply, open, Err(error)));
+                    return;
+                };
+                let bus = self.bus.clone();
+                let handle = self.spawn(async move {
+                    let result = attachment(&client, &bus, &blob, name, index, mime, target).await;
+                    Event::Attached(ticket, reply, open, result)
+                });
+                self.downloads.insert(ticket, handle);
+            }
+            Work::DraftTimer { compose, edits } => {
+                self.spawn(async move {
+                    tokio::time::sleep(crate::state::drafts::DRAFT_DELAY).await;
+                    Event::DraftDue(compose, edits)
+                });
+            }
+            Work::SaveDraft {
+                account,
+                op,
+                draft,
+                mailbox,
+                replaces,
+            } => match self.client(&account) {
+                Some((tag, client)) => {
+                    self.spawn(async move {
+                        let saved = client
+                            .save_draft(&draft, &mailbox, replaces.as_deref())
+                            .await;
+                        Event::Account(tag, Done::DraftSaved(op, saved))
+                    });
+                }
+                // Settled at once: the compose never waits on a save that
+                // never went.
+                None => {
+                    let generation = self
+                        .state
+                        .account(&account)
+                        .map_or(0, crate::state::AccountView::generation);
+                    let tag = Tag {
+                        account,
+                        generation,
+                    };
+                    let error = jmap::Error::Protocol(label("not-connected"));
+                    self.state
+                        .apply(Event::Account(tag, Done::DraftSaved(op, Err(error))));
+                }
+            },
+            Work::ResumeDraft {
+                account,
+                ticket,
+                id,
+            } => {
+                if let Some((tag, client)) = self.client(&account) {
+                    self.spawn(async move {
+                        let draft = client.resume_draft(&id).await;
+                        Event::Account(tag, Done::Resumed(ticket, Box::new(draft)))
+                    });
+                }
+            }
+            Work::SuggestTimer { compose, ticket } => {
+                self.spawn(async move {
+                    tokio::time::sleep(crate::state::suggest::SUGGEST_DELAY).await;
+                    Event::SuggestDue(compose, ticket)
+                });
+            }
+            Work::Suggest {
+                account,
+                ticket,
+                text,
+                limit,
+            } => {
+                if let Some((tag, client)) = self.client(&account) {
+                    self.spawn(async move {
+                        let found = client.contacts_search(&text, limit).await;
+                        Event::Account(tag, Done::Suggested(ticket, found))
+                    });
+                }
+            }
         }
     }
 
@@ -893,46 +1036,54 @@ impl Shell {
                 self.shown(id, result);
                 continue;
             }
+            if let Event::Attached(ticket, ..) = &event {
+                self.downloads.remove(ticket);
+            }
             self.state.apply(event);
             self.settle();
         }
         self.release();
     }
 
-    /// Closing: no more saves are queued; the saver finishes the ones it
-    /// has (waiting at most [`SAVER_DRAIN`]) and their answers are applied,
-    /// so a password the caller was told about is on disk.
+    /// Closing: no more secrets saves are queued; the saver finishes the
+    /// ones it has and the compose's draft save lands, both within
+    /// [`SAVER_DRAIN`], and their answers are applied, so a password the
+    /// caller was told about is on disk and the draft is on the server. A
+    /// draft save still unanswered then is OUTCOME_UNKNOWN (`close_out`).
     fn drain_saver(&mut self) {
         self.saver = None;
-        if let Some(thread) = self.saver_thread.take() {
-            let deadline = std::time::Instant::now() + SAVER_DRAIN;
-            while !thread.is_finished() && std::time::Instant::now() < deadline {
-                std::thread::sleep(std::time::Duration::from_millis(10));
+        let thread = self.saver_thread.take();
+        let deadline = std::time::Instant::now() + SAVER_DRAIN;
+        loop {
+            let saved = thread
+                .as_ref()
+                .is_none_or(std::thread::JoinHandle::is_finished);
+            let left = deadline.saturating_duration_since(std::time::Instant::now());
+            if (saved && !self.state.drafts_pending()) || left.is_zero() {
+                break;
             }
+            let wait = left.min(std::time::Duration::from_millis(10));
+            match self.rx.recv_timeout(wait) {
+                Ok(event) => self.closing_event(event),
+                Err(mpsc::RecvTimeoutError::Timeout) => {}
+                Err(mpsc::RecvTimeoutError::Disconnected) => break,
+            }
+        }
+        if let Some(thread) = thread {
             if thread.is_finished() {
                 let _ = thread.join();
             } else {
                 eprintln!("email: the secrets saver did not finish in time");
             }
         }
+        if self.state.drafts_pending() {
+            eprintln!("email: the draft save did not finish in time");
+        }
         // Nothing that arrived meanwhile is dropped: completions are
         // applied (their callers hear), a command is cancelled, a Show is
         // answered; then any Show still waiting is cancelled.
         while let Ok(event) = self.rx.try_recv() {
-            match closing(&event) {
-                Closing::Apply => self.state.apply(event),
-                Closing::Cancel(id) => self.bus.reply(
-                    id,
-                    10,
-                    crate::state::refusal(code::CANCELLED, &label("closing-cancelled")),
-                ),
-                Closing::Shown => {
-                    if let Event::Shown(id, result) = event {
-                        self.shown(id, result);
-                    }
-                }
-                Closing::Ignore => {}
-            }
+            self.closing_event(event);
         }
         for id in std::mem::take(&mut self.shows) {
             self.bus.reply(
@@ -940,6 +1091,30 @@ impl Shell {
                 10,
                 crate::state::refusal(code::CANCELLED, &label("closing-cancelled")),
             );
+        }
+    }
+
+    /// One event arriving while closing. A completion is applied, and what
+    /// it queues runs (a draft save whose queued edits go next).
+    fn closing_event(&mut self, event: Event) {
+        match closing(&event) {
+            Closing::Apply => {
+                self.state.apply(event);
+                for work in self.state.take_work() {
+                    self.perform(work);
+                }
+            }
+            Closing::Cancel(id) => self.bus.reply(
+                id,
+                10,
+                crate::state::refusal(code::CANCELLED, &label("closing-cancelled")),
+            ),
+            Closing::Shown => {
+                if let Event::Shown(id, result) = event {
+                    self.shown(id, result);
+                }
+            }
+            Closing::Ignore => {}
         }
     }
 
@@ -1210,6 +1385,17 @@ impl Shell {
             for (id, _, _) in std::mem::take(&mut self.held) {
                 self.refuse_closing(id);
             }
+            // Downloads stop here; their callers hear from close_out.
+            for (_, download) in self.downloads.drain() {
+                download.abort();
+            }
+            // The open compose's unsaved edits go to Drafts first, so the
+            // drain below waits for them too.
+            if self.state.save_at_quit() {
+                for work in self.state.take_work() {
+                    self.perform(work);
+                }
+            }
             self.drain_saver();
             self.state.close_out();
             for reply in self.state.take_replies() {
@@ -1226,6 +1412,7 @@ impl Shell {
         let fired = self.commands.shortcuts(ui.ctx(), &self.state);
         let stroke = toolkit::icons::stroke_width(&self.theme);
         let mut events = view(ui, &self.state, &self.commands, &self.strings, stroke);
+        open_links(ui.ctx());
         events.extend(
             fired
                 .into_iter()
@@ -1252,6 +1439,99 @@ impl Shell {
         if self.choice() != self.installed {
             ui.ctx().request_repaint();
         }
+    }
+}
+
+/// Hand the frame's link requests (a Markdown link clicked in the reader)
+/// to the desktop's handler, detached. eframe is built without its own
+/// browser launcher, so the requests are taken out of egui's output here;
+/// only http, https and mailto addresses are opened, as one argument and
+/// never through a shell.
+fn open_links(ctx: &egui::Context) {
+    let urls = ctx.output_mut(|output| {
+        let mut urls = Vec::new();
+        output.commands.retain(|command| match command {
+            egui::OutputCommand::OpenUrl(open) => {
+                urls.push(open.url.clone());
+                false
+            }
+            _ => true,
+        });
+        urls
+    });
+    for url in urls
+        .into_iter()
+        .filter(|url| toolkit::markdown::openable(url))
+    {
+        match std::process::Command::new("xdg-open")
+            .arg(url.trim())
+            .spawn()
+        {
+            Ok(mut child) => {
+                // Reaped off the UI thread, so it never lingers as a zombie.
+                let reaped = std::thread::Builder::new()
+                    .name("email-xdg-open-reap".into())
+                    .spawn(move || drop(child.wait()));
+                if reaped.is_err() {
+                    eprintln!("email: the link opener's reaper did not start");
+                }
+            }
+            Err(error) => eprintln!("email: opening a link: {error}"),
+        }
+    }
+}
+
+/// Download one attachment, put it where `target` says (on the blocking
+/// pool), and when the target is Open, open it in the first of its type's
+/// applications the launcher starts; the file's path.
+async fn attachment(
+    client: &Client,
+    bus: &citizen::Handle,
+    blob: &str,
+    name: Option<String>,
+    index: usize,
+    mime: String,
+    target: Target,
+) -> Result<String, String> {
+    let data = client
+        .download_blob(blob)
+        .await
+        .map_err(|e| e.to_string())?;
+    let open = target == Target::Open;
+    let (path, apps) = tokio::task::spawn_blocking(move || {
+        let path = attachments::place(&target, name.as_deref(), index, &mime, &data)?;
+        let apps = if open {
+            attachments::open_with(&path, &mime)?
+        } else {
+            Vec::new()
+        };
+        Ok::<_, String>((path, apps))
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    let shown = path.display().to_string();
+    if !open {
+        return Ok(shown);
+    }
+    for app in &apps {
+        if launch(bus, app, &path).await.is_ok() {
+            return Ok(shown);
+        }
+    }
+    Err(label_with("attachment-no-app", &[("path", &shown)]))
+}
+
+/// Open `path` in desktop app `id` through the session's launcher
+/// (`apps.launch` on `apps`); the launcher's refusal when it would not.
+async fn launch(bus: &citizen::Handle, id: &str, path: &Path) -> Result<(), String> {
+    let uris = [crate::print::file_uri(path)];
+    match bus
+        .call("apps", "apps.launch", json!({"id": id, "uris": uris}))
+        .await
+    {
+        Ok(reply) if reply.rc == 0 => Ok(()),
+        Ok(reply) => Err(reply.error.unwrap_or(reply.body)),
+        Err(error) => Err(error),
     }
 }
 

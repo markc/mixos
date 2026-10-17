@@ -53,6 +53,25 @@ fn reading(state: &State) -> bool {
         && state.current().is_some_and(|v| v.mail.open.is_some())
 }
 
+/// The open email has a text body the reader can show as Markdown or as
+/// its source.
+fn readable(state: &State) -> bool {
+    reading(state)
+        && state
+            .current()
+            .and_then(|v| v.mail.open.as_ref())
+            .is_some_and(crate::reader::has_text)
+}
+
+/// The open email has attachments.
+fn attached(state: &State) -> bool {
+    reading(state)
+        && state
+            .current()
+            .and_then(|v| v.mail.open.as_ref())
+            .is_some_and(|e| !crate::attachments::of(e).is_empty())
+}
+
 /// The current account shows a mailbox's list (it can sort and page).
 fn listing(state: &State) -> bool {
     undialogued(state)
@@ -130,6 +149,18 @@ pub fn registry() -> Registry<State> {
         enabled: composable,
         run: State::compose,
     })
+    // The open compose's draft, to the account's Drafts mailbox now.
+    .add(Command {
+        id: "compose.save_draft",
+        submenu: None,
+        group: 0,
+        label: "save-draft",
+        menu: Some("mail"),
+        shortcut: key(Modifiers::COMMAND, Key::S),
+        icon: None,
+        enabled: State::draft_savable,
+        run: State::save_draft_now,
+    })
     .add(Command {
         id: "mail.reply",
         submenu: None,
@@ -206,6 +237,28 @@ pub fn registry() -> Registry<State> {
         icon: Some(Icon::Trash),
         enabled: reading,
         run: State::delete_open,
+    })
+    .add(Command {
+        id: "mail.print",
+        submenu: None,
+        group: 4,
+        label: "print",
+        menu: Some("mail"),
+        shortcut: key(Modifiers::COMMAND, Key::P),
+        icon: None,
+        enabled: reading,
+        run: State::print_open,
+    })
+    .add(Command {
+        id: "mail.attachments",
+        submenu: None,
+        group: 4,
+        label: "attachments",
+        menu: Some("mail"),
+        shortcut: None,
+        icon: Some(Icon::Paperclip),
+        enabled: attached,
+        run: State::open_attachments,
     })
     .add(Command {
         id: "calendar.new_event",
@@ -528,6 +581,18 @@ pub fn registry() -> Registry<State> {
         icon: Some(Icon::Settings),
         enabled: State::account_targeted,
         run: State::account_settings,
+    })
+    .add(Command {
+        id: "view.reader.markdown",
+        submenu: Some("message"),
+        group: 2,
+        label: "reader-markdown",
+        menu: Some("view"),
+        // No chord: Ctrl+U is the text fields' delete-to-line-start.
+        shortcut: None,
+        icon: Some(Icon::FileCode),
+        enabled: readable,
+        run: State::toggle_reader,
     })
     .add(Command {
         id: "help.shortcuts",

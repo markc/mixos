@@ -119,27 +119,38 @@ impl Widget for Checkbox<'_> {
         }
         if ui.is_rect_visible(response.rect) {
             let p = Chrome::of(ui.ctx()).palette;
-            let painter = ui.painter();
-            if *self.checked {
-                painter.rect_filled(b, BOX_RADIUS, p.accent);
-                painter.add(egui::Shape::line(tick(b).to_vec(), Stroke::new(TICK, MARK)));
+            let outline = if response.hovered() {
+                p.text_dim
             } else {
-                let outline = if response.hovered() {
-                    p.text_dim
-                } else {
-                    p.text_faint
-                };
-                painter.rect_filled(b, BOX_RADIUS, p.field);
-                painter.rect_stroke(
-                    b,
-                    BOX_RADIUS,
-                    Stroke::new(OUTLINE, outline),
-                    StrokeKind::Inside,
-                );
-            }
+                p.text_faint
+            };
+            paint_box(ui.painter(), &p, b, *self.checked, outline);
             paint_label(ui, b, galley, p.text_dim);
         }
         response
+    }
+}
+
+/// A checkbox's box `b` as [`Checkbox`] draws it, with `outline` round an
+/// unchecked one: also the read-only mark of a Markdown task.
+pub fn paint_box(
+    painter: &egui::Painter,
+    p: &chrome::Palette,
+    b: Rect,
+    checked: bool,
+    outline: Color32,
+) {
+    if checked {
+        painter.rect_filled(b, BOX_RADIUS, p.accent);
+        painter.add(egui::Shape::line(tick(b).to_vec(), Stroke::new(TICK, MARK)));
+    } else {
+        painter.rect_filled(b, BOX_RADIUS, p.field);
+        painter.rect_stroke(
+            b,
+            BOX_RADIUS,
+            Stroke::new(OUTLINE, outline),
+            StrokeKind::Inside,
+        );
     }
 }
 

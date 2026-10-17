@@ -217,6 +217,7 @@
                 <div class="panel-title">On this page</div>
                 <div class="panel-content">
                     <nav id="toc-nav">
+                        <a href="#090">0.9.0</a>
                         <a href="#080">0.8.0</a>
                         <a href="#070">0.7.0</a>
                         <a href="#060">0.6.0</a>
@@ -258,6 +259,27 @@
 <blockquote>
 <p>Mirrored from <a href="https://github.com/markc/mixos/blob/main/libs/settings/CHANGELOG.md"><code>libs/settings/CHANGELOG.md</code></a>, where releases update it. The component's page is <a href="/settings/">settings</a>. This page describes the current <code>main</code> branch of MixOS.</p>
 </blockquote>
+<h2 id="090">0.9.0</h2>
+<p>Additive, store format unchanged (3):</p>
+<ul>
+<li><code>Email.reader</code> (<code>email::ReaderOptions { font_size: f64 }</code>): the message
+reader's text size under <code>email.reader.font_size</code>, in points,
+<code>READER_FONT_MIN</code> 10 to <code>READER_FONT_MAX</code> 32 in steps of
+<code>READER_FONT_STEP</code> 0.5, default <code>READER_FONT_DEFAULT</code> 15. Omitted at its
+default, so older profiles keep their seals. A profile that sets it will
+not load in a 0.8.0 build: reset <code>email.reader.font_size</code> first.</li>
+<li><code>email.reader.theme</code> (<code>ReaderOptions.theme: email::ReaderTheme</code>):
+<code>auto</code> (the session theme, default), <code>light</code> or <code>dark</code>.</li>
+<li><code>Email.compose</code> (<code>email::ComposeOptions</code>): <code>email.compose.quote_on_reply</code>
+(default true), <code>email.compose.reply_position</code>
+(<code>email::ReplyPosition</code>: <code>above</code>, default, or <code>below</code>) and
+<code>email.compose.autosave</code> (default true).</li>
+<li>Every new value is omitted at its default; unknown enum values are
+refused.</li>
+<li><code>email::valid_reader_font_size</code> checks a value as settingsd does.</li>
+<li><code>email.reader</code> and <code>email.compose</code> alone are not paths, as <code>email.mail</code>
+is not; <code>settings.describe</code> lists each new path.</li>
+</ul>
 <h2 id="080">0.8.0</h2>
 <p>Additive, store format unchanged (3):</p>
 <ul>

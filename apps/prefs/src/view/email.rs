@@ -4,14 +4,18 @@
 //! form, its password and connection, then the mail options. The values
 //! are settingsd's as last read; the form is the person's typing until
 //! Save. Each list action and option applies at once.
-use super::{Numeric, UiEvent, command_button, number};
+use super::{Numeric, UiEvent, choices, command_button, number};
 use crate::{label, label_with};
 use egui::{Align, Layout, RichText, Ui};
 use preferences::Engine;
 use preferences::appearance::Availability as Settings;
 use preferences::email::{
-    AccountEntry, Change, Email, Field, Form, PAGE_SIZE_MAX, PAGE_SIZE_MIN, Secret, Service,
+    AccountEntry, Change, Email, EmailTab, Field, Form, PAGE_SIZE_MAX, PAGE_SIZE_MIN,
+    READER_FONT_MAX, READER_FONT_MIN, READER_FONT_STEP, ReaderTheme, ReplyPosition, Secret,
+    Service,
 };
+use serde_json::json;
+use toolkit::command::Origin;
 use toolkit::toggle::Toggle;
 use toolkit::{Registry, Strings, bars, field, panel};
 
@@ -32,72 +36,123 @@ pub fn section(
     strings: &Strings,
     events: &mut Vec<UiEvent>,
 ) {
-    // One group: a dock group fills the height left, so a second one
-    // would start below the fold.
-    let title = label("section-email");
-    panel::group(ui, "email", &[title.as_str()], |ui, _| {
-        ui.horizontal(|ui| {
-            for (id, primary) in [
-                ("email.account.add", false),
-                ("email.account.up", false),
-                ("email.account.down", false),
-                ("email.account.default", false),
-                ("email.account.remove", false),
+    // One group whose tabs are the sub-sections. The engine holds the tab
+    // (prefs.section name=email tab=…): the strip is told which it shows,
+    // and a click is the tab's command.
+    let titles: Vec<String> = EmailTab::ALL.iter().map(|t| label(t.label())).collect();
+    let tabs: Vec<&str> = titles.iter().map(String::as_str).collect();
+    let tab = engine.ui.email_tab;
+    let selected = EmailTab::ALL.iter().position(|t| *t == tab).unwrap_or(0);
+    let id = ui.make_persistent_id("email");
+    ui.data_mut(|d| {
+        d.insert_temp(
+            id,
+            panel::GroupState {
+                selected,
+                collapsed: false,
+            },
+        )
+    });
+    let shown = panel::group(ui, "email", &tabs, |ui, _| {
+        tab_body(ui, engine, commands, strings, tab, events)
+    });
+    if shown.state.selected != selected
+        && let Some(picked) = EmailTab::ALL.get(shown.state.selected)
+    {
+        events.push(UiEvent::Command(picked.command(), Origin::Ui));
+    }
+}
+
+/// One tab: Accounts (the list beside the form), Mail (the list options
+/// and Reset email settings), Reader, Compose.
+fn tab_body(
+    ui: &mut Ui,
+    engine: &Engine,
+    commands: &Registry<Engine>,
+    strings: &Strings,
+    tab: EmailTab,
+    events: &mut Vec<UiEvent>,
+) {
+    ui.horizontal(|ui| {
+        if tab == EmailTab::Accounts {
+            for id in [
+                "email.account.add",
+                "email.account.up",
+                "email.account.down",
+                "email.account.default",
+                "email.account.remove",
             ] {
-                command_button(ui, engine, commands, strings, id, primary, events);
+                command_button(ui, engine, commands, strings, id, false, events);
             }
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                command_button(ui, engine, commands, strings, "view.refresh", false, events);
-            });
-        });
-        bars::hairline(ui);
-        if engine.look.settings == Settings::Missing {
-            ui.add(egui::Label::new(RichText::new(label("look-missing")).weak()).wrap());
-            return;
         }
-        let Some(email) = engine.email() else {
-            ui.label(RichText::new(label("email-reading")).weak());
-            return;
-        };
-        // The divider is painted once the row's height is known: a
-        // separator would claim all the height left.
-        let row = ui.horizontal_top(|ui| {
-            ui.vertical(|ui| {
-                ui.set_width(LIST_WIDTH);
-                accounts(ui, engine, email, events);
-            });
-            ui.add_space(ui.spacing().item_spacing.x * 2.0);
-            ui.vertical(|ui| {
-                ui.set_width(ui.available_width());
-                match &engine.email.form {
-                    Some(form) => account(ui, engine, commands, strings, form, events),
-                    None => {
-                        let key = if email.accounts.is_empty() {
-                            "email-empty"
-                        } else {
-                            "email-select"
-                        };
-                        ui.add(egui::Label::new(RichText::new(label(key)).weak()).wrap());
-                    }
-                }
-            });
-        });
-        let rect = row.response.rect;
-        // Midway across the gap: item spacing either side of the space.
-        let x = rect.left() + LIST_WIDTH + ui.spacing().item_spacing.x * 2.0;
-        ui.painter().vline(
-            x,
-            rect.y_range(),
-            ui.visuals().widgets.noninteractive.bg_stroke,
-        );
-        bars::hairline(ui);
-        ui.strong(label("email-mail"));
-        mail_options(ui, engine, email, events);
-        ui.horizontal(|ui| {
-            command_button(ui, engine, commands, strings, "email.reset", false, events);
-            ui.add(egui::Label::new(RichText::new(label("email-note")).weak()).wrap());
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            command_button(ui, engine, commands, strings, "view.refresh", false, events);
         });
     });
+    bars::hairline(ui);
+    if engine.look.settings == Settings::Missing {
+        ui.add(egui::Label::new(RichText::new(label("look-missing")).weak()).wrap());
+        return;
+    }
+    let Some(email) = engine.email() else {
+        ui.label(RichText::new(label("email-reading")).weak());
+        return;
+    };
+    match tab {
+        EmailTab::Accounts => accounts_tab(ui, engine, commands, strings, email, events),
+        EmailTab::Mail => {
+            mail_options(ui, engine, email, events);
+            bars::hairline(ui);
+            ui.horizontal(|ui| {
+                command_button(ui, engine, commands, strings, "email.reset", false, events);
+                ui.add(egui::Label::new(RichText::new(label("email-note")).weak()).wrap());
+            });
+        }
+        EmailTab::Reader => reader(ui, engine, commands, strings, email, events),
+        EmailTab::Compose => compose(ui, engine, email, events),
+    }
+}
+
+/// The account list beside the selected account's form.
+fn accounts_tab(
+    ui: &mut Ui,
+    engine: &Engine,
+    commands: &Registry<Engine>,
+    strings: &Strings,
+    email: &Email,
+    events: &mut Vec<UiEvent>,
+) {
+    // The divider is painted once the row's height is known: a
+    // separator would claim all the height left.
+    let row = ui.horizontal_top(|ui| {
+        ui.vertical(|ui| {
+            ui.set_width(LIST_WIDTH);
+            accounts(ui, engine, email, events);
+        });
+        ui.add_space(ui.spacing().item_spacing.x * 2.0);
+        ui.vertical(|ui| {
+            ui.set_width(ui.available_width());
+            match &engine.email.form {
+                Some(form) => account(ui, engine, commands, strings, form, events),
+                None => {
+                    let key = if email.accounts.is_empty() {
+                        "email-empty"
+                    } else {
+                        "email-select"
+                    };
+                    ui.add(egui::Label::new(RichText::new(label(key)).weak()).wrap());
+                }
+            }
+        });
+    });
+    let rect = row.response.rect;
+    // Midway across the gap: item spacing either side of the space.
+    let x = rect.left() + LIST_WIDTH + ui.spacing().item_spacing.x * 2.0;
+    ui.painter().vline(
+        x,
+        rect.y_range(),
+        ui.visuals().widgets.noninteractive.bg_stroke,
+    );
 }
 
 /// The accounts in tree order, each with its address and what marks it:
@@ -353,6 +408,170 @@ fn mail_options(ui: &mut Ui, engine: &Engine, email: &Email, events: &mut Vec<Ui
             }
         });
     });
+}
+
+/// The reader's text size: typed or dragged (each edit one apply, on a
+/// half-point step), a line set at that size, and back to the default.
+fn reader(
+    ui: &mut Ui,
+    engine: &Engine,
+    commands: &Registry<Engine>,
+    strings: &Strings,
+    email: &Email,
+    events: &mut Vec<UiEvent>,
+) {
+    let current = email.reader.font_size;
+    ui.add_enabled_ui(engine.can_edit_email(), |ui| {
+        ui.vertical(|ui| {
+            ui.set_width(ui.available_width());
+            let size = Numeric {
+                key: "email-reader-font",
+                title: label("email-reader-font"),
+                unit: "pt",
+                places: 1,
+                slider: true,
+            };
+            if let Some(value) = number(ui, size, current, READER_FONT_MIN..=READER_FONT_MAX) {
+                let stepped = (value / READER_FONT_STEP).round() * READER_FONT_STEP;
+                if stepped != current {
+                    events.push(UiEvent::EmailChange(Change::ReaderFontSize(stepped)));
+                }
+            }
+        });
+    });
+    ui.add_enabled_ui(engine.can_edit_email(), |ui| {
+        panel::section_label(ui, &label("email-reader-theme"));
+        let themes = [
+            (ReaderTheme::Auto, label("email-reader-theme-auto")),
+            (ReaderTheme::Light, label("email-reader-theme-light")),
+            (ReaderTheme::Dark, label("email-reader-theme-dark")),
+        ];
+        if let Some(theme) = choices(ui, email.reader.theme, &themes) {
+            events.push(UiEvent::EmailChange(Change::Path(
+                "email.reader.theme".into(),
+                json!(theme),
+            )));
+        }
+    });
+    // The preview is what the reader will show: its size, on its colours.
+    let palette = reader_palette(ui.ctx(), engine, email.reader.theme);
+    egui::Frame::new()
+        .fill(palette.card)
+        .stroke(egui::Stroke::new(1.0, palette.card_border))
+        .corner_radius(toolkit::chrome::Chrome::of(ui.ctx()).metrics.radius_sm)
+        .inner_margin(egui::Margin::symmetric(12, 8))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            let text = RichText::new(label("email-reader-preview"))
+                .size(current as f32)
+                .color(palette.text);
+            ui.add(egui::Label::new(text).wrap());
+        });
+    ui.horizontal(|ui| {
+        command_button(
+            ui,
+            engine,
+            commands,
+            strings,
+            "email.reader.reset",
+            false,
+            events,
+        );
+        let note = label_with(
+            "email-reader-default",
+            &[(
+                "size",
+                &format_size(preferences::email::READER_FONT_DEFAULT),
+            )],
+        );
+        ui.label(RichText::new(note).weak());
+    });
+}
+
+/// The colours the reader draws a message on: the window's for Follow
+/// window, else the light or dark variant of the scheme the window shows,
+/// from its design tokens (compiled once per scheme and mode).
+fn reader_palette(
+    ctx: &egui::Context,
+    engine: &Engine,
+    theme: ReaderTheme,
+) -> toolkit::chrome::Palette {
+    use std::collections::HashMap;
+    use std::sync::{Mutex, OnceLock};
+    let mode = match theme {
+        ReaderTheme::Auto => return toolkit::chrome::Chrome::of(ctx).palette,
+        ReaderTheme::Light => design::Mode::Light,
+        ReaderTheme::Dark => design::Mode::Dark,
+    };
+    type Cache = Mutex<HashMap<(design::Scheme, design::Mode), toolkit::chrome::Palette>>;
+    static CACHE: OnceLock<Cache> = OnceLock::new();
+    let scheme = engine.effective_theme().0;
+    let mut cache = CACHE
+        .get_or_init(Default::default)
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    *cache.entry((scheme, mode)).or_insert_with(|| {
+        let theme = toolkit::Theme::for_context(design::DesignContext {
+            scheme,
+            mode,
+            ..design::DesignContext::default()
+        });
+        toolkit::chrome::Chrome::for_theme(&theme).palette
+    })
+}
+
+/// Quote on reply, where the reply goes, autosave: each applies at once.
+fn compose(ui: &mut Ui, engine: &Engine, email: &Email, events: &mut Vec<UiEvent>) {
+    let compose = &email.compose;
+    let path = |name: &str| format!("email.compose.{name}");
+    ui.add_enabled_ui(engine.can_edit_email(), |ui| {
+        ui.vertical(|ui| {
+            ui.set_width(ui.available_width());
+            let mut quote = compose.quote_on_reply;
+            if ui
+                .add(Toggle::new(&mut quote, label("email-quote-on-reply")))
+                .changed()
+            {
+                events.push(UiEvent::EmailChange(Change::Path(
+                    path("quote_on_reply"),
+                    json!(quote),
+                )));
+            }
+            // Where the reply goes only matters when the original is quoted.
+            ui.add_enabled_ui(compose.quote_on_reply, |ui| {
+                panel::section_label(ui, &label("email-reply-position"));
+                let positions = [
+                    (ReplyPosition::Above, label("email-reply-above")),
+                    (ReplyPosition::Below, label("email-reply-below")),
+                ];
+                if let Some(position) = choices(ui, compose.reply_position, &positions) {
+                    events.push(UiEvent::EmailChange(Change::Path(
+                        path("reply_position"),
+                        json!(position),
+                    )));
+                }
+            });
+            let mut autosave = compose.autosave;
+            if ui
+                .add(Toggle::new(&mut autosave, label("email-autosave")))
+                .changed()
+            {
+                events.push(UiEvent::EmailChange(Change::Path(
+                    path("autosave"),
+                    json!(autosave),
+                )));
+            }
+        });
+    });
+}
+
+/// A size in points as the panel writes it: 15, 15.5.
+fn format_size(size: f64) -> String {
+    if size.fract() == 0.0 {
+        format!("{size:.0}")
+    } else {
+        format!("{size:.1}")
+    }
 }
 
 /// The remove and reset confirmations: Cancel is the default, so Enter

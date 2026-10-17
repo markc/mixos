@@ -8,12 +8,14 @@ use std::fmt::Write as _;
 use chrono::{DateTime, Datelike, FixedOffset, Local, TimeZone};
 use egui::{RichText, ScrollArea, Ui};
 use jmap::Email;
-use toolkit::button::PushButton;
+use toolkit::button::{Link, PushButton};
 use toolkit::command::Origin;
 use toolkit::datatable::{Cell, DataTable, RowStyle, Rows};
+use toolkit::markdown::{self, Document};
 use toolkit::{Icon, Registry, Strings, panel};
 
 use super::UiEvent;
+use crate::reader::{self, Format};
 use crate::state::{
     AccountView, COLUMN_FOLDER, COLUMN_FROM, COLUMN_SUBJECT, Scope, State, list_columns,
 };
@@ -382,12 +384,23 @@ fn date_width(ui: &Ui) -> f32 {
     dates.map(width).fold(header, f32::max) + ui.spacing().item_spacing.x + 2.0
 }
 
-/// The reader: the open email's headers and body.
-pub fn reader(ui: &mut Ui, view: &AccountView) {
+/// The reader: the open email's headers and body. A text body is shown as
+/// Markdown when it is (or the person asked for it), else as the plain text
+/// it is; a link beside the date flips it.
+pub fn reader(ui: &mut Ui, view: &AccountView, events: &mut Vec<UiEvent>) {
     let Some(email) = &view.mail.open else {
         ui.weak(crate::label("select-email"));
         return;
     };
+    let reader = &view.mail.reader;
+    // The cache is the open email's once it has loaded; until then (or for
+    // an email put in place without opening), detect afresh.
+    let format = if reader.is_for(email) {
+        reader.format()
+    } else {
+        reader::detect(email)
+    };
+    let switchable = reader::has_text(email) && (format == Format::Markdown || !reader.auto());
     panel::section_label(ui, email.subject.as_deref().unwrap_or(""));
     ui.label(
         RichText::new(crate::label_with(
@@ -409,10 +422,40 @@ pub fn reader(ui: &mut Ui, view: &AccountView) {
     if !to.is_empty() {
         ui.label(RichText::new(crate::label_with("to-line", &[("to", &to)])).weak());
     }
-    ui.label(RichText::new(email.date_short()).weak());
+    let date = RichText::new(email.date_short()).weak();
+    if switchable {
+        egui::Sides::new().show(
+            ui,
+            |ui| {
+                ui.label(date);
+            },
+            |ui| {
+                let (icon, key) = match format {
+                    Format::Markdown => (Icon::FileCode, "show-source"),
+                    Format::Plain => (Icon::FileText, "render-markdown"),
+                };
+                if ui.add(Link::new(icon, crate::label(key))).clicked() {
+                    events.push(UiEvent::Command("view.reader.markdown", Origin::Ui));
+                }
+            },
+        );
+    } else {
+        ui.label(date);
+    }
     toolkit::bars::hairline(ui);
     ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
         match email.text_body_value() {
+            Some(body) if format == Format::Markdown => {
+                let parsed;
+                let document = match reader.document(email) {
+                    Some(document) => document,
+                    None => {
+                        parsed = Document::parse(body);
+                        &parsed
+                    }
+                };
+                markdown::show(ui, document);
+            }
             Some(body) => {
                 ui.add(egui::Label::new(body).wrap());
             }
