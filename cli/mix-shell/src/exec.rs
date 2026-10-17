@@ -36,12 +36,12 @@ impl ShellVarResolver for NoVars {
         Some(name.to_string())
     }
 
-    fn command_subst(&self, _cmd: &str) -> Option<String> {
+    fn command_subst(&self, _cmd: &str) -> Result<Option<String>, String> {
         // Structural mode: NEVER spawn. Resolve to a non-empty placeholder
         // (like `resolve` above) so a word containing `$(...)` stays
         // structurally present for classification/validation instead of
         // dropping out — the substituted text is never executed here.
-        Some("x".to_string())
+        Ok(Some("x".to_string()))
     }
 }
 
@@ -484,8 +484,30 @@ pub fn has_unquoted_control_op(line: &str) -> bool {
     false
 }
 
-/// Byte offset of a bare (quote-aware: NOT inside single quotes) `$?`.
-fn bare_dollar_question(piece: &str) -> Option<usize> {
+/// Bash special parameters Mix refuses on the shell path, with the Mix
+/// spelling each message points at. `$$` is not here: it expands to the
+/// shell's PID, as in bash and zsh. `$0`..`$9` are not either: in a script
+/// they are Mix's own positional globals.
+const REFUSED_SPECIALS: &[(char, &str)] = &[
+    (
+        '?',
+        "bash syntax — in Mix read `$rc` (or a run result's `.exit_code`)",
+    ),
+    (
+        '!',
+        "bash's last background PID — Mix has none; keep the PID `spawn(...)` returns",
+    ),
+    (
+        '#',
+        "bash's argument count — in Mix use `len(args())`",
+    ),
+    ('@', "bash's argument list — in Mix use `args()`"),
+    ('*', "bash's argument list — in Mix use `args()`"),
+];
+
+/// Byte offset and parameter of a bare (quote-aware: NOT inside single
+/// quotes) refused special parameter (`$?`, `$!`, `$#`, `$@`, `$*`).
+fn bare_dollar_special(piece: &str) -> Option<(usize, char)> {
     let mut in_single = false;
     let mut in_double = false;
     let mut escaped = false;
@@ -498,8 +520,12 @@ fn bare_dollar_question(piece: &str) -> Option<usize> {
             '\\' => escaped = true,
             '\'' if !in_double => in_single = !in_single,
             '"' if !in_single => in_double = !in_double,
-            '$' if !in_single && piece[i + 1..].starts_with('?') => {
-                return Some(i);
+            '$' if !in_single => {
+                if let Some(next) = piece[i + 1..].chars().next()
+                    && REFUSED_SPECIALS.iter().any(|(c, _)| *c == next)
+                {
+                    return Some((i, next));
+                }
             }
             _ => {}
         }
@@ -513,12 +539,17 @@ fn bare_dollar_question(piece: &str) -> Option<usize> {
 pub fn refuse_bash_keywords(items: &[(Connector, &str)]) -> Result<(), String> {
     for (_, piece) in items {
         // A literal `$?` is bash's last-status — Mix has `$rc` and
-        // `.exit_code`. Quote-aware: inside single quotes `$?` is literal
-        // text, so it stays.
-        if let Some(pos) = bare_dollar_question(piece) {
+        // `.exit_code`; `$!`, `$#`, `$@` and `$*` likewise have Mix
+        // spellings. Quote-aware: inside single quotes they are literal
+        // text, so they stay.
+        if let Some((pos, param)) = bare_dollar_special(piece) {
+            let advice = REFUSED_SPECIALS
+                .iter()
+                .find(|(c, _)| *c == param)
+                .map(|(_, advice)| *advice)
+                .unwrap_or_default();
             return Err(format!(
-                "`$?` at byte {pos} is bash syntax — in Mix read `$rc` (or a run result's \
-                 `.exit_code`); the whole command list was refused"
+                "`${param}` at byte {pos} is {advice}; the whole command list was refused"
             ));
         }
         let head = head_word(piece);
@@ -732,7 +763,7 @@ fn split_on_pipes(s: &str) -> Vec<&str> {
 /// — decided from LITERAL input — so an expanded `$VAR` value is always a word
 /// (arg/value), never reinterpreted as syntax.
 fn parse_segment(s: &str, vars: &dyn ShellVarResolver) -> Result<PipeSegment, String> {
-    let tokens = shell_tokenize(s, vars);
+    let tokens = try_shell_tokenize(s, vars)?;
     let mut words: Vec<Tok> = Vec::new();
     let mut redirects: Vec<Redirect> = Vec::new();
     let mut i = 0;
@@ -1146,6 +1177,11 @@ fn lex_dollar(
             name.push(c);
         }
         w.push_var(name, true, source);
+    } else if chars.peek() == Some(&'$') {
+        // `$$`: the shell's PID. A reserved Var name phase 2 recognises;
+        // no Mix or environment name can be spelled `$`.
+        chars.next();
+        w.push_var("$".to_string(), false, source);
     } else {
         let mut name = String::new();
         while let Some(&c) = chars.peek() {
@@ -1712,7 +1748,7 @@ fn expand_braces(tokens: Vec<LiteralToken>) -> Vec<LiteralToken> {
 /// Tilde, concatenates a word's segments, drops an unquoted word that resolved to
 /// empty, and stamps `quoted`/`op`/`assign`. It NEVER reconsiders structure — the
 /// operator/assign decisions were fixed in phase 1 from literal text alone.
-fn expand(tokens: Vec<LiteralToken>, vars: &dyn ShellVarResolver) -> Vec<Tok> {
+fn try_expand(tokens: Vec<LiteralToken>, vars: &dyn ShellVarResolver) -> Result<Vec<Tok>, String> {
     let home = std::env::var("HOME").unwrap_or_default();
     let mut out: Vec<Tok> = Vec::new();
     for tok in tokens {
@@ -1742,7 +1778,12 @@ fn expand(tokens: Vec<LiteralToken>, vars: &dyn ShellVarResolver) -> Vec<Tok> {
                         }
                         SegKind::Var { name, .. } => {
                             if !name.is_empty() {
-                                let v = vars.resolve(&name).unwrap_or_default();
+                                // `$$` is the shell's PID, as in bash and zsh.
+                                let v = if name == "$" {
+                                    std::process::id().to_string()
+                                } else {
+                                    vars.resolve(&name).unwrap_or_default()
+                                };
                                 if !v.is_empty() {
                                     word_started = true;
                                 }
@@ -1754,7 +1795,7 @@ fn expand(tokens: Vec<LiteralToken>, vars: &dyn ShellVarResolver) -> Vec<Tok> {
                             // substitution entirely; `Some` splices captured stdout
                             // as DATA. Like `Var`, a non-empty result starts the
                             // word so a bare `$(cmd)` survives the empty-drop.
-                            if let Some(out) = vars.command_subst(&cmd) {
+                            if let Some(out) = vars.command_subst(&cmd)? {
                                 if !out.is_empty() {
                                     word_started = true;
                                 }
@@ -1782,7 +1823,14 @@ fn expand(tokens: Vec<LiteralToken>, vars: &dyn ShellVarResolver) -> Vec<Tok> {
             }
         }
     }
-    out
+    Ok(out)
+}
+
+/// [`try_expand`] for resolvers that cannot refuse (structural and test
+/// resolvers).
+#[cfg(test)]
+fn expand(tokens: Vec<LiteralToken>, vars: &dyn ShellVarResolver) -> Vec<Tok> {
+    try_expand(tokens, vars).expect("test resolver refused a substitution")
 }
 
 /// Tokenize a single command segment into typed `Tok`s via the phased
@@ -1794,9 +1842,15 @@ fn expand(tokens: Vec<LiteralToken>, vars: &dyn ShellVarResolver) -> Vec<Tok> {
 /// operators, fd prefixes, `name=` assignments, AND brace groups are recognised
 /// ONLY from literal input, so a variable's value is always DATA and can never
 /// become syntax or multiply words. Single quotes are fully literal; an unquoted
-/// empty expansion produces no word.
+/// empty expansion produces no word. `Err` is a refused `$(...)` (an unset
+/// `$name` inside it).
+fn try_shell_tokenize(s: &str, vars: &dyn ShellVarResolver) -> Result<Vec<Tok>, String> {
+    try_expand(expand_braces(lex_literal(s)), vars)
+}
+
+#[cfg(test)]
 fn shell_tokenize(s: &str, vars: &dyn ShellVarResolver) -> Vec<Tok> {
-    expand(expand_braces(lex_literal(s)), vars)
+    try_shell_tokenize(s, vars).expect("test resolver refused a substitution")
 }
 
 /// Result of executing a pipeline.
@@ -2379,8 +2433,8 @@ mod redirect_tests {
         fn resolve(&self, _name: &str) -> Option<String> {
             Some("V".to_string())
         }
-        fn command_subst(&self, cmd: &str) -> Option<String> {
-            Some(format!("<{cmd}>"))
+        fn command_subst(&self, cmd: &str) -> Result<Option<String>, String> {
+            Ok(Some(format!("<{cmd}>")))
         }
     }
 
@@ -2844,9 +2898,9 @@ mod redirect_tests {
             fn resolve(&self, _name: &str) -> Option<String> {
                 Some("x".to_string())
             }
-            fn command_subst(&self, _cmd: &str) -> Option<String> {
+            fn command_subst(&self, _cmd: &str) -> Result<Option<String>, String> {
                 self.ran.set(true);
-                Some(String::new())
+                Ok(Some(String::new()))
             }
         }
 

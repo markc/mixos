@@ -252,7 +252,8 @@ impl Lexer {
                         .copied()
                         .and_then(|b| source.get(b..))
                         .and_then(|r| r.chars().next());
-                    let quoted = matches!(first, Some('"' | '\''));
+                    // `<`: a verbatim `<<'TAG'` heredoc, also a String.
+                    let quoted = matches!(first, Some('"' | '\'' | '<'));
                     (quoted.then_some(s.clone()), quoted)
                 }
                 _ => (None, false),
@@ -1358,6 +1359,12 @@ impl Lexer {
     }
 
     fn lex_heredoc(&mut self, line: usize, col: usize) -> MixResult<SpannedToken> {
+        // `<<'TAG'` is the verbatim form: no interpolation, no escapes, no
+        // `~` — the body is the bytes between the opener and the tag line.
+        let verbatim = self.peek() == Some('\'');
+        if verbatim {
+            self.advance();
+        }
         // Read the delimiter tag (e.g., END, HTML, EOF)
         let mut tag = String::new();
         while let Some(ch) = self.peek() {
@@ -1368,15 +1375,20 @@ impl Lexer {
                 break;
             }
         }
-        if tag.is_empty() {
+        if tag.is_empty() || (verbatim && self.peek() != Some('\'')) {
             return Err(MixError::LexerError {
-                msg: "expected heredoc tag after '<<'".to_string(),
+                msg: "expected heredoc tag after '<<': write <<TAG, or <<'TAG' for verbatim \
+                      text (no ${...}, $(...) or escapes)"
+                    .to_string(),
                 span: Span {
                     line,
                     column: col,
                     file: None,
                 },
             });
+        }
+        if verbatim {
+            self.advance(); // the closing quote
         }
 
         // Skip to end of current line (consume the newline after <<TAG)
@@ -1463,6 +1475,22 @@ impl Lexer {
         // Remove trailing newline
         if body.ends_with('\n') {
             body.pop();
+        }
+
+        // Verbatim: a plain string token. To the parser, the evaluator and
+        // lint it is a literal — no W2402 inside it, and an `ssh_mix` body
+        // written this way is analysed as remote source. Its line map
+        // starts on the line after the opener, like any heredoc's.
+        if verbatim {
+            if self.record_literal_maps {
+                let count = body.matches('\n').count() + 1;
+                self.literal_maps.push(LiteralLineMap {
+                    opener_line: line,
+                    heredoc: true,
+                    lines: (phys..phys + count).collect(),
+                });
+            }
+            return Ok(self.spanned(Token::String(body), line, col));
         }
 
         // Process interpolation (same as double-quoted strings)
@@ -1616,8 +1644,20 @@ impl Lexer {
             }
         }
         if name.is_empty() {
+            // Bash special parameters get their Mix spelling, not the
+            // generic message.
+            let msg = match self.peek() {
+                Some('$') => "`$$` is the shell's PID in bash — in Mix call `pid()`",
+                Some('?') => "`$?` is bash's last status — in Mix read `$rc`",
+                Some('#') => "`$#` is bash's argument count — in Mix use `len(args())`",
+                Some('@' | '*') => "bash's argument list is `args()` in Mix",
+                Some('!') => {
+                    "`$!` is bash's last background PID — keep the PID `spawn(...)` returns"
+                }
+                _ => "expected variable name after '$'",
+            };
             return Err(MixError::LexerError {
-                msg: "expected variable name after '$'".to_string(),
+                msg: msg.to_string(),
                 span: Span {
                     line,
                     column: col,
@@ -1811,9 +1851,10 @@ fn opener_key(lx: &Lexer, ch: char) -> Option<String> {
         ('<', Some('<')) => {
             let mut key = "<<".to_string();
             let mut i = 2;
+            // The quotes of a verbatim `<<'TAG'` are part of its key.
             while let Some(c) = lx
                 .peek_ahead(i)
-                .filter(|c| c.is_ascii_alphanumeric() || *c == '_')
+                .filter(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '\'')
             {
                 key.push(c);
                 i += 1;
@@ -1830,7 +1871,8 @@ fn classify(token: &Token, first: char) -> TokenClass {
         Token::Number(_) => TokenClass::Number,
         // A bare word lexes to `String` too; only a quote makes it a literal.
         // A digit-led `String` is a segment of a hyphenated send target.
-        Token::String(_) if first == '"' || first == '\'' => TokenClass::String,
+        // `<`: a verbatim `<<'TAG'` heredoc.
+        Token::String(_) if matches!(first, '"' | '\'' | '<') => TokenClass::String,
         Token::String(_) => TokenClass::Identifier,
         Token::InterpString(_) | Token::HeredocString(_) => TokenClass::String,
         Token::Variable(_) | Token::CommandSub(_) => TokenClass::Variable,

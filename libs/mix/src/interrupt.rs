@@ -72,6 +72,17 @@ pub fn is_interrupted() -> bool {
         .unwrap_or(false)
 }
 
+/// Raise the published flag again, as a fresh SIGINT would, so the next
+/// evaluator checkpoint raises `interrupted`. For hosts that keep an
+/// interrupt standing after the first one was caught: a non-interactive
+/// `mix` re-raises it until a `catch` or `finally` that keeps computing
+/// unwinds. No-op before [`init`].
+pub fn raise() {
+    if let Some(flag) = INTERRUPT_FLAG.get() {
+        flag.store(true, Ordering::SeqCst);
+    }
+}
+
 /// Wire `flag` as the process-wide interrupt flag and register a
 /// SIGINT handler that atomically stores `true` into it.
 ///

@@ -487,3 +487,120 @@ async fn sigint_during_cpu_only_prelude_exits_promptly_with_130() {
         );
     }
 }
+
+// TODO-mix 2026-10-09: a catch that keeps computing after SIGINT held the
+// runtime thread, so the shutdown arm was never polled and the citizen
+// ignored the signal. The interrupt now stands after a short cleanup grace;
+// the citizen takes its ordinary graceful SIGINT exit (deregister, then 0).
+#[tokio::test]
+async fn sigint_ends_a_citizen_whose_catch_keeps_computing() {
+    let _g = lock().await;
+    let dir = Dir::new("looping-catch");
+    let broker = Broker::start();
+    let node_conf = dir.write("node.conf.mix", &node_conf_text(broker_tcp_port(&broker)));
+    let script = dir.write(
+        "svc.mix",
+        "-- version: 0.1.0\n\
+         $TRACE = env(\"HONEST_TRACE\")\n\
+         on rel.state\nreply(0, \"{}\")\nend\n\
+         try\n\
+         append_file($TRACE, \"ready\\n\")\n\
+         $n = 0\nwhile true\n$n = $n + 1\nend\n\
+         catch $err\n\
+         append_file($TRACE, \"caught\\n\")\n\
+         $m = 0\nwhile true\n$m = $m + 1\nend\n\
+         end\n",
+    );
+    let mut citizen = Citizen::spawn(
+        Path::new(env!("CARGO_BIN_EXE_mix")),
+        &dir,
+        &node_conf,
+        &script,
+    );
+    wait_trace(&dir, "ready", HARD).await;
+    assert_eq!(unsafe { libc::kill(citizen.pgid, libc::SIGINT) }, 0);
+    let sent_at = Instant::now();
+    let status = loop {
+        if let Some(status) = citizen.child.try_wait().unwrap() {
+            break status;
+        }
+        assert!(
+            sent_at.elapsed() < Duration::from_secs(10),
+            "SIGINT never ended a citizen whose catch keeps computing: {}",
+            dir.read("citizen.stderr")
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    };
+    assert!(trace(&dir).contains("caught"), "the catch never ran");
+    assert_eq!(
+        status.code(),
+        Some(0),
+        "graceful SIGINT exit expected; citizen stderr: {}",
+        dir.read("citizen.stderr")
+    );
+}
+
+// TODO-mix 2026-10-02: a blocking fs builtin stalled the single runtime
+// thread, so a citizen with one handler waiting on a FIFO answered nothing.
+// The FIFO wait now yields: other verbs and QUIT are still answered.
+#[tokio::test]
+async fn a_handler_waiting_on_a_fifo_does_not_stop_quit() {
+    let _g = lock().await;
+    let dir = Dir::new("fifo-quit");
+    let fifo = dir.0.join("pipe");
+    let c_path = std::ffi::CString::new(fifo.to_str().unwrap()).unwrap();
+    assert_eq!(unsafe { libc::mkfifo(c_path.as_ptr(), 0o600) }, 0, "mkfifo");
+    let broker = Broker::start();
+    let node_conf = dir.write("node.conf.mix", &node_conf_text(broker_tcp_port(&broker)));
+    let script = dir.write(
+        "svc.mix",
+        &format!(
+            "-- version: 0.1.0\n\
+             $TRACE = env(\"HONEST_TRACE\")\n\
+             on rel.state\nreply(0, \"{{}}\")\nend\n\
+             on block async\n\
+             append_file($TRACE, \"blocking\\n\")\n\
+             read_file({fifo:?})\n\
+             append_file($TRACE, \"unblocked\\n\")\n\
+             end\n\
+             task_start(\"block\", \"{{}}\")\n",
+            fifo = fifo.to_str().unwrap()
+        ),
+    );
+    let mut citizen = Citizen::spawn(
+        Path::new(env!("CARGO_BIN_EXE_mix")),
+        &dir,
+        &node_conf,
+        &script,
+    );
+    let c = connect(&broker).await;
+    wait_trace(&dir, "blocking", HARD).await;
+    // Another verb is answered while the handler waits.
+    tokio::time::timeout(Duration::from_secs(5), call(&c, "rel.state", json!({})))
+        .await
+        .expect("rel.state unanswered while a handler waits on a FIFO")
+        .expect("rel.state");
+    tokio::time::timeout(Duration::from_secs(5), call(&c, "QUIT", json!({})))
+        .await
+        .expect("QUIT unanswered while a handler waits on a FIFO")
+        .expect("QUIT");
+    let sent_at = Instant::now();
+    let status = loop {
+        if let Some(status) = citizen.child.try_wait().unwrap() {
+            break status;
+        }
+        assert!(
+            sent_at.elapsed() < Duration::from_secs(15),
+            "QUIT did not end the citizen: {}",
+            dir.read("citizen.stderr")
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    };
+    assert!(!trace(&dir).contains("unblocked"), "the FIFO never had a writer");
+    assert_eq!(
+        status.code(),
+        Some(0),
+        "QUIT is a clean exit; citizen stderr: {}",
+        dir.read("citizen.stderr")
+    );
+}

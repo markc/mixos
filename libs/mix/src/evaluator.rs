@@ -1791,8 +1791,12 @@ pub trait ShellVarResolver {
     /// captured text is pure DATA in phase 2: it is concatenated into the
     /// word's value and never re-lexed for operators, so a substitution
     /// can no more inject structure than a `$VAR` value can.
-    fn command_subst(&self, _cmd: &str) -> Option<String> {
-        None
+    ///
+    /// `Err` refuses the whole command: the live resolver raises for a
+    /// `$name` inside the substitution that is set nowhere (see
+    /// [`crate::shell_subst`]).
+    fn command_subst(&self, _cmd: &str) -> Result<Option<String>, String> {
+        Ok(None)
     }
 }
 
@@ -5774,19 +5778,25 @@ impl ShellVarResolver for Evaluator {
     /// trailing newlines stripped. A spawn failure or non-UTF-8 output is
     /// tolerated as empty (`Some("")`) rather than aborting the whole
     /// line, mirroring the lenient REPL posture. stderr is inherited so
-    /// the inner command's diagnostics still reach the terminal.
-    fn command_subst(&self, cmd: &str) -> Option<String> {
-        let output = std::process::Command::new("/bin/sh")
+    /// the inner command's diagnostics still reach the terminal. A `$name`
+    /// inside resolves like a shell word (Mix scope, then environment) and
+    /// an unset one refuses the command — see [`crate::shell_subst`].
+    fn command_subst(&self, cmd: &str) -> Result<Option<String>, String> {
+        let prepared = crate::shell_subst::prepare(cmd, |name| self.resolve(name))?;
+        let Ok(output) = std::process::Command::new("/bin/sh")
             .arg("-c")
-            .arg(cmd)
+            .arg(&prepared.cmd)
+            .envs(prepared.env)
             .stderr(std::process::Stdio::inherit())
             .output()
-            .ok()?;
+        else {
+            return Ok(None);
+        };
         let mut s = String::from_utf8_lossy(&output.stdout).into_owned();
         while s.ends_with('\n') || s.ends_with('\r') {
             s.pop();
         }
-        Some(s)
+        Ok(Some(s))
     }
 }
 
@@ -13795,6 +13805,42 @@ impl Evaluator {
                         }
                     }
 
+                    // A FIFO path waits without holding the runtime thread
+                    // (crate::fifo_io): shutdown, QUIT and Class C peers
+                    // keep running. Any other path stays on the sync
+                    // builtin; the only added cost is one stat.
+                    #[cfg(unix)]
+                    if matches!(name.as_str(), "read_file" | "write_file" | "append_file")
+                        && let Some(Value::String(path)) = eval_args.first()
+                        && crate::fifo_io::is_fifo(path)
+                    {
+                        self.check_capability(name)?;
+                        self.check_builtin_arity(name, eval_args.len())?;
+                        let path = path.clone();
+                        let fail = |e: std::io::Error| MixError::RuntimeError {
+                            span: None,
+                            msg: format!("{name} '{path}': {e}"),
+                        };
+                        if name == "read_file" {
+                            let bytes = self
+                                .await_with_class_c_yield(crate::fifo_io::read(&path))
+                                .await?
+                                .map_err(fail)?;
+                            let text = String::from_utf8(bytes).map_err(|_| {
+                                fail(std::io::Error::new(
+                                    std::io::ErrorKind::InvalidData,
+                                    "stream did not contain valid UTF-8",
+                                ))
+                            })?;
+                            return Ok(Value::String(text));
+                        }
+                        let data = builtins::with_write_payload(name, &eval_args[1], <[u8]>::to_vec)?;
+                        self.await_with_class_c_yield(crate::fifo_io::write(&path, &data))
+                            .await?
+                            .map_err(fail)?;
+                        return Ok(Value::Nil);
+                    }
+
                     // Async builtins (must be handled before sync builtins)
                     if name == "sleep" {
                         self.check_capability(name)?; // Knob A
@@ -18243,9 +18289,14 @@ impl Evaluator {
     /// Execute `sh "command"` as an expression — captures stdout.
     fn exec_sh_expr(&mut self, cmd: &str) -> MixResult<Value> {
         self.check_capability_class(crate::builtins::CapabilityClass::Process, "$()")?;
+        // `$name` inside resolves like a shell word and an unset one raises;
+        // values reach `sh` as data in its environment (crate::shell_subst).
+        let prepared = crate::shell_subst::prepare(cmd, |name| self.resolve(name))
+            .map_err(|msg| self.runtime_err(msg))?;
         let output = std::process::Command::new("sh")
             .arg("-c")
-            .arg(cmd)
+            .arg(&prepared.cmd)
+            .envs(prepared.env)
             .output()
             .map_err(|e| MixError::RuntimeError {
                 span: None,

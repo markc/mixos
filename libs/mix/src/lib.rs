@@ -12,6 +12,8 @@ mod desktop_events;
 pub mod error;
 pub mod evaluator;
 pub mod fd_hygiene;
+#[cfg(unix)]
+mod fifo_io;
 mod fs_watch;
 pub mod interrupt;
 pub mod lexer;
@@ -22,6 +24,7 @@ pub mod parser;
 pub mod scope;
 pub mod script_version;
 pub mod shell_observation;
+mod shell_subst;
 pub mod stats;
 pub mod token;
 pub mod value;
