@@ -654,7 +654,9 @@ impl MixBusHandler {
     /// answers.
     async fn probe(&self) -> Option<std::sync::Arc<Lane>> {
         #[cfg(test)]
-        if let Some(url) = self.test_probe_url.borrow().clone() {
+        let test_url = self.test_probe_url.borrow().clone();
+        #[cfg(test)]
+        if let Some(url) = test_url {
             return ::bus::native_client::NodedClient::connect_anonymous(&url)
                 .await
                 .ok()
