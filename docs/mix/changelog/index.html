@@ -219,16 +219,17 @@
                     <nav id="toc-nav">
                         <a href="#unreleased">Unreleased</a>
                         <a href="#added" class="toc-h3">Added</a>
+                        <a href="#changed" class="toc-h3">Changed</a>
                         <a href="#fixed" class="toc-h3">Fixed</a>
                         <a href="#01160">0.116.0</a>
                         <a href="#added-1" class="toc-h3">Added</a>
-                        <a href="#changed" class="toc-h3">Changed</a>
+                        <a href="#changed-1" class="toc-h3">Changed</a>
                         <a href="#01150">0.115.0</a>
                         <a href="#added-2" class="toc-h3">Added</a>
-                        <a href="#changed-1" class="toc-h3">Changed</a>
+                        <a href="#changed-2" class="toc-h3">Changed</a>
                         <a href="#fixed-1" class="toc-h3">Fixed</a>
                         <a href="#01140">0.114.0</a>
-                        <a href="#changed-2" class="toc-h3">Changed</a>
+                        <a href="#changed-3" class="toc-h3">Changed</a>
                         <a href="#01131">0.113.1</a>
                         <a href="#fixed-2" class="toc-h3">Fixed</a>
                         <a href="#01130">0.113.0</a>
@@ -317,6 +318,14 @@ statement walker. Remote <code>ssh_mix</code> bodies are not included. <code>mix
 and <code>--data</code> report the same list as an additive <code>handlers</code> field. The data
 is structural: it does not prove that a handler runs or is reachable.</li>
 </ul>
+<h3 id="changed">Changed</h3>
+<ul>
+<li>The default remote mix binary is now <code>/opt/mixos/bin/mix</code> (was the legacy
+<code>/opt/cosmix/bin/mix</code>). It applies to <code>ssh_mix</code>, <code>ssh_mix_many</code>, <code>ssh_exec</code>,
+<code>ssh_run</code>'s <code>env_transport: "mix"</code> and <code>send_mail</code>'s <code>host</code> hop whenever
+neither <code>mix_bin</code> nor <code>MIX_REMOTE_BIN</code> is set. For a host still on
+<code>/opt/cosmix</code>, pass <code>mix_bin</code> or set <code>MIX_REMOTE_BIN=/opt/cosmix/bin/mix</code>.</li>
+</ul>
 <h3 id="fixed">Fixed</h3>
 <ul>
 <li><code>mix lint</code> MIX-W2307 (send result never checked) now counts a status read
@@ -354,7 +363,7 @@ it must be an absolute path or a bare name using only <code>[A-Za-z0-9_./+-]</co
 anything else raises <code>OPTION_INVALID</code> locally before ssh runs. A host with
 mix only at <code>/opt/mixos/bin/mix</code> used to fail with exit 127.</li>
 </ul>
-<h3 id="changed">Changed</h3>
+<h3 id="changed-1">Changed</h3>
 <ul>
 <li><code>ssh_exec</code>'s <code>remote_mix</code> option is now validated the same way (it was
 interpolated unchecked) and is an alias of <code>mix_bin</code>; passing both
@@ -372,7 +381,7 @@ frame, the framing of systemd's Varlink services and of hostd, for
 <code>tcp_recv_line</code> and <code>tcp_on {frame: "line"}</code> alike. Refusals carry
 <code>UNIX_CONNECT_*</code> codes. <code>mix man system</code> documents it.</li>
 </ul>
-<h3 id="changed-1">Changed</h3>
+<h3 id="changed-2">Changed</h3>
 <ul>
 <li>One frame splitter serves <code>tcp_recv_line</code> (blocking and Class C) and
 <code>tcp_on</code> line mode, keyed to the connection's delimiter. One trailing CR
@@ -386,7 +395,7 @@ was refused depended on packet timing. All three paths (<code>tcp_recv_line</cod
 blocking and Class C, <code>tcp_on</code> line mode) now refuse it the same way.</li>
 </ul>
 <h2 id="01140">0.114.0</h2>
-<h3 id="changed-2">Changed</h3>
+<h3 id="changed-3">Changed</h3>
 <ul>
 <li>Released with mix-shell 0.114.0, whose usage-statistics store is now an
 append-only JSONL store (<code>mix man stats</code>). The language and its builtins

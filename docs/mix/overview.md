@@ -58,7 +58,7 @@ is silently dropped — and it lights up unchanged when a broker appears (more i
 
 - **A Bus-native shell + scripting language.** `send`, `emit`, `address`, and `on … end` are language keywords that reach peer services over the [Bus](https://github.com/markc/mixos) mesh. No client library, no boilerplate — remote orchestration reads like a local script. See [Bus messaging](bus.md).
 - **A real scripting language.** First-class functions and terse lambdas, higher-order builtins (`map` / `filter` / `reduce` / `sort_by` / …), structured values (string, number, bool, bytes, list, map), `try`/`catch`, closures. See [functions](functions.md) and the [builtins index](builtins.md).
-- **A shell.** It runs external commands, has a REPL with meta-commands (`mix status`, `mix help`, `mix what NAME`), and serves as a daily-driver login shell (`chsh -s /opt/cosmix/bin/mix`). Command results are **structured** — `run_rc("cmd")` returns `{rc, stdout, stderr, timed_out, interrupted}`, not exit-code soup. See [running commands](system.md), the [shell](shell-mode.md) page, and [the `mix` meta-command](cli.md).
+- **A shell.** It runs external commands, has a REPL with meta-commands (`mix status`, `mix help`, `mix what NAME`), and serves as a daily-driver login shell (`chsh -s /opt/mixos/bin/mix`). Command results are **structured** — `run_rc("cmd")` returns `{rc, stdout, stderr, timed_out, interrupted}`, not exit-code soup. See [running commands](system.md), the [shell](shell-mode.md) page, and [the `mix` meta-command](cli.md).
 - **A structured-data format.** Strict-data `.*.mix` files (`.conf.mix`, `.spec.mix`, …) are parsed without executing anything — the substrate's config/state format. See [data & serialization](data.md).
 - **A Bus citizen.** `mix --serve service.mix` runs a script as a supervised, mesh-registered daemon. A script with one `on` handler is a complete service. See [serving as a citizen](serve.md).
 
@@ -154,7 +154,7 @@ most of the surprises disappear:
 2. **Concatenation is `..`**, never `+` or `.`: `"a" .. $x .. "b"`. (`+` *adds* when both sides look numeric — `"5" + "5"` is `10`, not `"55"` — and `.` is field access.)
 3. **Statements use newline or `;`.** Prefer newlines in files; use `;` for compact `mix -c` / generated source. On shell-dispatch lines the same glyph remains the shell command-list operator; classification is whole-line, never mixed. See [syntax](syntax.md).
 4. **`${...}` interpolates, bare `$name` is literal** inside double quotes; `'single quotes'` are fully raw; `$(...)` is literal in a Mix string. See [strings](strings.md).
-5. **`run` / `run_rc` spawn `/bin/sh` with a minimal `PATH`** — inside scripts, call binaries by full path (`/opt/cosmix/bin/mix`, never bare `mix`). See [running commands](system.md).
+5. **`run` / `run_rc` spawn `/bin/sh` with a minimal `PATH`** — inside scripts, call binaries by full path (`/opt/mixos/bin/mix`, never bare `mix`). See [running commands](system.md).
 
 Close behind those five: blocks close with `end` (there is no `do` keyword);
 `push()` mutates in place and returns `nil`; and `pos()` is 1-based (0 = not

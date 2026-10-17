@@ -55,6 +55,14 @@ generated: by docs/_build/gen-site.mix from libs/mix/CHANGELOG.md; do not edit
   and `--data` report the same list as an additive `handlers` field. The data
   is structural: it does not prove that a handler runs or is reachable.
 
+### Changed
+
+- The default remote mix binary is now `/opt/mixos/bin/mix` (was the legacy
+  `/opt/cosmix/bin/mix`). It applies to `ssh_mix`, `ssh_mix_many`, `ssh_exec`,
+  `ssh_run`'s `env_transport: "mix"` and `send_mail`'s `host` hop whenever
+  neither `mix_bin` nor `MIX_REMOTE_BIN` is set. For a host still on
+  `/opt/cosmix`, pass `mix_bin` or set `MIX_REMOTE_BIN=/opt/cosmix/bin/mix`.
+
 ### Fixed
 
 - `mix lint` MIX-W2307 (send result never checked) now counts a status read

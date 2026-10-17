@@ -292,7 +292,7 @@ impl Bed {
         let n = argv.len();
         assert_eq!(
             &argv[n - 3..],
-            ["--", host, "/opt/cosmix/bin/mix -"],
+            ["--", host, "/opt/mixos/bin/mix -"],
             "{argv:?}"
         );
     }

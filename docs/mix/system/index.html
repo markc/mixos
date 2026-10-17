@@ -909,7 +909,7 @@ sendmail run is remote, with <code>/usr/sbin/sendmail</code> as the default ther
 result carries <code>host</code> as <code>ssh_exec</code>'s does, and only then. <strong><code>mix_bin</code></strong>
 (with <code>host</code> only) names the remote mix binary the hop runs, resolved as
 for <a href="/mix/remote/"><code>ssh_mix</code></a>: <code>mix_bin</code>, else local <code>MIX_REMOTE_BIN</code>, else
-<code>/opt/cosmix/bin/mix</code>.</li>
+<code>/opt/mixos/bin/mix</code>.</li>
 <li><strong>The result is <code>run_argv</code>'s <code>process_result</code> plus <code>message_id</code></strong>. <code>ok</code>
 means the MTA accepted the message for submission, not that it was
 delivered. An MTA that refuses the message, or a sendmail that is not
@@ -967,7 +967,7 @@ process had — non-interactively that is <strong>minimal</strong>, and <code>~/
 run("mix --version")
 
 -- robust: absolute path always resolves
-print(run("/opt/cosmix/bin/mix --version"))
+print(run("/opt/mixos/bin/mix --version"))
 </code></pre>
 <pre><code class="language-text">mix 0.21.2
 </code></pre>

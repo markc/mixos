@@ -15,7 +15,7 @@ statistics](stats.md).
 ## Headline idiom: `ssh_mix` + heredoc
 
 For multi-line remote Mix, pass a heredoc directly as the `source` argument to
-`ssh_mix`. The bytes travel over ssh stdin into `/opt/cosmix/bin/mix -` (or the
+`ssh_mix`. The bytes travel over ssh stdin into `/opt/mixos/bin/mix -` (or the
 [`mix_bin`](#ssh_mixhost-source-opts--map) you name); no
 shell parses the source on the way.
 
@@ -97,7 +97,7 @@ The exit-status key is **`exit_code`**, not `rc`. Reading `$r["rc"]` yields
 that string creates escape ladders:
 
 ```mix
-ssh_run("alpha", "print(run(\"/opt/cosmix/bin/mix -c 'print(which(\\\"sh\\\"))'\"))")
+ssh_run("alpha", "print(run(\"/opt/mixos/bin/mix -c 'print(which(\\\"sh\\\"))'\"))")
 ```
 
 The heredoc form ships the intended program directly:
@@ -272,7 +272,7 @@ end
 
 ## `ssh_mix(host, source[, opts])` → map
 
-Runs Mix **source** on a remote node with zero quoting pain. It ships `source` over ssh's **stdin** byte-channel into `/opt/cosmix/bin/mix -`, so the source never becomes an argv word and bypasses *every* shell-quoting layer — the local shell, ssh, and the remote login-shell classifier. Arbitrary quotes, `$`, backslashes, and newlines survive intact. It is the discoverable, first-class form of the `ssh_run(host, "mix -", { stdin: $source })` idiom.
+Runs Mix **source** on a remote node with zero quoting pain. It ships `source` over ssh's **stdin** byte-channel into `/opt/mixos/bin/mix -`, so the source never becomes an argv word and bypasses *every* shell-quoting layer — the local shell, ssh, and the remote login-shell classifier. Arbitrary quotes, `$`, backslashes, and newlines survive intact. It is the discoverable, first-class form of the `ssh_run(host, "mix -", { stdin: $source })` idiom.
 
 Start with the [headline `ssh_mix` + heredoc pattern](#headline-idiom-ssh_mix--heredoc)
 above. This section supplies the remaining option and decoding contract.
@@ -323,7 +323,7 @@ $r = ssh_mix("example.com", $source, {
 - **Order of the prepended prefix is `env` exports, then `bindings`, then your source.** A binding of the same name therefore shadows the exported **variable** but not the exported **environment**: with `{env: {FOO: "x"}, bindings: {FOO: "y"}}` the remote sees `$FOO == "y"` while `env("FOO") == "x"` and any child process still inherits `FOO=x`. Your source can rebind either. Give them distinct names unless you mean exactly that.
 - **Accepts every `ssh_run` opt except two:** `stdin` (the source *is* the stdin — passing it is an error) and `env_transport` (not applicable — see below).
 - **`env` works and is secret-safe:** the values are translated into hidden `export KEY = "value"` lines (strict-data-escaped) *prepended to the shipped source*, so they travel on stdin and never touch `ps` argv on either end.
-- **The remote binary is configurable** (0.116.0). In order: the **`mix_bin`** option, else the **local** environment variable **`MIX_REMOTE_BIN`** (an empty value counts as unset), else the default **`/opt/cosmix/bin/mix`**. The same resolution serves every builtin that drives a remote mix: `ssh_mix`, `ssh_mix_many`, `ssh_exec` (which also keeps its older name `remote_mix`), `ssh_run`'s default `env_transport: "mix"`, and `send_mail`'s `host` hop. The value lands in the remote command string, so it must be an absolute path (`/opt/mixos/bin/mix`) or a bare name the remote PATH resolves (`mix`), using only `[A-Za-z0-9_./+-]`; anything else (a space, `;`, `$`, a leading `-`, a relative path) raises `OPTION_INVALID` locally before ssh runs. Prefer a full path: a bare `mix` is often not on the remote's non-interactive PATH. `ssh_mix` is for nodes with mix installed, not arbitrary POSIX hosts.
+- **The remote binary is configurable** (0.116.0). In order: the **`mix_bin`** option, else the **local** environment variable **`MIX_REMOTE_BIN`** (an empty value counts as unset), else the default **`/opt/mixos/bin/mix`** (the canonical MixOS install dir; it was the legacy `/opt/cosmix/bin/mix` up to 0.116.0, so pass `mix_bin` or set `MIX_REMOTE_BIN` for a not-yet-migrated host). The same resolution serves every builtin that drives a remote mix: `ssh_mix`, `ssh_mix_many`, `ssh_exec` (which also keeps its older name `remote_mix`), `ssh_run`'s default `env_transport: "mix"`, and `send_mail`'s `host` hop. The value lands in the remote command string, so it must be an absolute path (`/opt/mixos/bin/mix`) or a bare name the remote PATH resolves (`mix`), using only `[A-Za-z0-9_./+-]`; anything else (a space, `;`, `$`, a leading `-`, a relative path) raises `OPTION_INVALID` locally before ssh runs. Prefer a full path: a bare `mix` is often not on the remote's non-interactive PATH. `ssh_mix` is for nodes with mix installed, not arbitrary POSIX hosts.
 
   ```mix
   $r = ssh_mix("node1", "print(1+1)", {mix_bin: "/opt/mixos/bin/mix"})
@@ -419,7 +419,7 @@ end
 - **`mix lint` reads the body** exactly as it does for `ssh_mix`, including
   the `bindings`/`env` names.
 
-This is the sugar over `run_parallel` + hand-built `["ssh", host, "/opt/cosmix/bin/mix", "-"]`
+This is the sugar over `run_parallel` + hand-built `["ssh", host, "/opt/mixos/bin/mix", "-"]`
 jobs: those lose `bindings`, `decode` and the `host`/`ok` result shape.
 
 ---
@@ -449,7 +449,7 @@ truncation/lossy flags, …) plus **`host`**. Options split into two groups:
   `cwd`, `env`, `clear_env`, `max_output`, plus the protocol-safe stdio routes
   below — are encoded into the driver and applied to the remote `run_argv`
   call. `env`/`stdin` never appear in argv on either end.
-- **SSH transport options** — `connect_timeout`, `transport_timeout` (the ssh wall-clock deadline, default = remote `timeout` + `connect_timeout` + 5 s), `batch`, `strict_host_key`, `multiplex`, `extra_ssh_args`, and `mix_bin` (the remote binary path; older name `remote_mix`, still accepted; resolved and validated exactly as for [`ssh_mix`](#ssh_mixhost-source-opts--map): `mix_bin` > local `MIX_REMOTE_BIN` > `/opt/cosmix/bin/mix`).
+- **SSH transport options** — `connect_timeout`, `transport_timeout` (the ssh wall-clock deadline, default = remote `timeout` + `connect_timeout` + 5 s), `batch`, `strict_host_key`, `multiplex`, `extra_ssh_args`, and `mix_bin` (the remote binary path; older name `remote_mix`, still accepted; resolved and validated exactly as for [`ssh_mix`](#ssh_mixhost-source-opts--map): `mix_bin` > local `MIX_REMOTE_BIN` > `/opt/mixos/bin/mix`).
 
 The remote stdio allowlist is deliberately narrower than local `run_argv`:
 
@@ -520,7 +520,7 @@ Every key is optional; unknown keys raise an error. `ssh_mix` takes the same map
 | `cwd` | string | — | Prepends `cd '<cwd>' && ` to the remote command (quoted for you). |
 | `stdin` | string | — | Fed to the remote command's stdin over the local ssh pipe. May contain NULs (binary payloads). Conflicts with `env` under the secure transports (§"Remote env"). |
 | `extra_ssh_args` | list of strings | `[]` | Extra argv inserted before the host: `["-p", "2222"]`, `["-J", "jump"]`, `["-o", "IdentitiesOnly=yes"]`. Always followed by the `--` host guard. |
-| `mix_bin` | string | local `MIX_REMOTE_BIN`, else `/opt/cosmix/bin/mix` | The remote mix binary for `env_transport: "mix"` (and for `ssh_mix`, which always pipes into it). Absolute path or bare name, `[A-Za-z0-9_./+-]` only; see [`ssh_mix`](#ssh_mixhost-source-opts--map). (0.116.0) |
+| `mix_bin` | string | local `MIX_REMOTE_BIN`, else `/opt/mixos/bin/mix` | The remote mix binary for `env_transport: "mix"` (and for `ssh_mix`, which always pipes into it). Absolute path or bare name, `[A-Za-z0-9_./+-]` only; see [`ssh_mix`](#ssh_mixhost-source-opts--map). (0.116.0) |
 
 Omitting `max_output` preserves unbounded local capture. The truncation flags
 are also true when capture is abandoned at a deadline, even without a limit.
@@ -600,7 +600,7 @@ Naively, remote env means prefixing `export K='v'; ` onto the command string —
 
 | Transport | Mechanism | Visible in `ps`? | For |
 |---|---|---|---|
-| `"mix"` (default) | A generated Mix driver ships over ssh **stdin** into `<mix_bin> -`: strict-data-escaped `export` lines, then `exit(run_stream(["sh", "-c", <command>]))`. | **No** — local `ps` shows only `ssh … <mix_bin> -`; remote `ps` shows `sh -c <command>` (the command, never the env). | Every mixos-managed node, regardless of login shell. Requires mix on the remote at the `mix_bin` option, else local `MIX_REMOTE_BIN`, else `/opt/cosmix/bin/mix` (see [`ssh_mix`](#ssh_mixhost-source-opts--map)). |
+| `"mix"` (default) | A generated Mix driver ships over ssh **stdin** into `<mix_bin> -`: strict-data-escaped `export` lines, then `exit(run_stream(["sh", "-c", <command>]))`. | **No** — local `ps` shows only `ssh … <mix_bin> -`; remote `ps` shows `sh -c <command>` (the command, never the env). | Every mixos-managed node, regardless of login shell. Requires mix on the remote at the `mix_bin` option, else local `MIX_REMOTE_BIN`, else `/opt/mixos/bin/mix` (see [`ssh_mix`](#ssh_mixhost-source-opts--map)). |
 | `"sh"` | A POSIX driver (`export K='v'` lines + the command) ships over stdin into `sh -s`. | **No** — the script travels on stdin. | Arbitrary **non-mixos** POSIX hosts. **Broken on mix-login-shell nodes** — the remote `sh -s` misroutes through the Mix classifier. |
 | `"argv"` | The legacy `export K='v'; ` command-string prefix. | **Yes, on both ends.** | Compatibility only. Never for secrets. |
 
@@ -671,7 +671,7 @@ For threading a *Mix value* (a map/list, not a shell string) to a remote Mix int
 
 ## When the remote login shell is Mix
 
-If a host runs `/opt/cosmix/bin/mix` as the login shell, then the snippet you send is evaluated by **Mix**, not by a POSIX shell. Two distinct modes:
+If a host runs `/opt/mixos/bin/mix` as the login shell, then the snippet you send is evaluated by **Mix**, not by a POSIX shell. Two distinct modes:
 
 - **Send Mix source for Mix behaviour.** The remote evaluates it as a Mix program.
 

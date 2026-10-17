@@ -736,7 +736,7 @@ end
   result carries `host` as `ssh_exec`'s does, and only then. **`mix_bin`**
   (with `host` only) names the remote mix binary the hop runs, resolved as
   for [`ssh_mix`](remote.md): `mix_bin`, else local `MIX_REMOTE_BIN`, else
-  `/opt/cosmix/bin/mix`.
+  `/opt/mixos/bin/mix`.
 - **The result is `run_argv`'s `process_result` plus `message_id`**. `ok`
   means the MTA accepted the message for submission, not that it was
   delivered. An MTA that refuses the message, or a sendmail that is not
@@ -801,7 +801,7 @@ process had — non-interactively that is **minimal**, and `~/.mixrc` aliases ar
 run("mix --version")
 
 -- robust: absolute path always resolves
-print(run("/opt/cosmix/bin/mix --version"))
+print(run("/opt/mixos/bin/mix --version"))
 ```
 ```text
 mix 0.21.2

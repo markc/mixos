@@ -7,7 +7,7 @@ that looks like a command rather than Mix code — `git status`, `ls -la | wc -l
 substitution, redirects. This is **shell-dispatch mode**, the shell half of the
 `mix -c` / login-shell contract.
 
-The whole point: a node that runs `/opt/cosmix/bin/mix` as root's login shell
+The whole point: a node that runs `/opt/mixos/bin/mix` as root's login shell
 must still honour the universal `sh -c` contract — `ssh host 'hostname'` and
 `ssh host 'systemctl restart foo'` have to *just work*, while `print(1 + 1)` and
 every other Mix statement still evaluate as [Mix](overview.md). One classifier
