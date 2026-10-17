@@ -14882,6 +14882,10 @@ must appear in the error.
 | a provable `-c` arity/dead-mutation snippet runs | the D1 lint gate REFUSES it with exit 2 before any line runs — `--no-lint` overrides (0.103.4) | `mix -c '$m = {}; remove($m, "k")'` | `!refusing to run` |
 | `is_reload_candidate()` is true while a `--serve` RELOAD is pending | it is true **only while the replacement's init body executes** — false in a plain script, at initial boot, and in every committed generation; the candidate must stay passive (no starts, no persisted writes) and commit-time work belongs in `on lifecycle.commit` | `print(is_reload_candidate())` | `false` |
 | `on $svc .. ".call"` registers a verb under the `--serve` name | `on` takes a static name (that is a parse error); write `on @.call` — the unquoted `@` becomes the serve name when the handler registers, and outside `--serve` it raises `SERVE_PREFIX_OUTSIDE_SERVE` | `try on @.call end catch $m, $e print($e.code) end` | `SERVE_PREFIX_OUTSIDE_SERVE` |
+| `$(...)` sees only the environment, like `/bin/sh` | a `$name` inside resolves like a shell word: the Mix variable first, then the environment, passed to `sh` as data | `$d = "x y"; print($(echo $d))` | `x y` |
+| — and an unset name expands to `""` | it **raises**; write `${name:-}` for an intentionally empty value | `print($(echo $zz_no_such_var))` | `!is not set` |
+| `$$` in Mix code is the PID | that is a lexer error that names `pid()`; on a shell command line `$$` **is** the PID, as in bash | `print($$)` | `!pid()` |
+| `echo $#` on a command line counts arguments | bash's special parameters `$?` `$!` `$#` `$@` `$*` are **refused** with the Mix spelling — here `len(args())` | `echo $#` | `!len(args())` |
 
 ## Three rules that are not a syntax trap
 
