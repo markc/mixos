@@ -18966,9 +18966,14 @@ mod standing_interrupt_tests {
             .block_on(fut)
     }
 
-    /// Each case: the Mix body (which writes `marker` as its first statement
-    /// inside the protected `try`, before its loop), and the expected `$log`.
-    fn cases(marker: &std::path::Path) -> Vec<(String, &'static str)> {
+    /// One case: the Mix body (which writes `marker` as its first statement
+    /// inside the protected `try`, before its loop), the expected `$log` (if
+    /// the case checks it), and whether the raiser keeps raising.
+    ///
+    /// The three guard cases raise ONCE, so the one interrupt lands at the
+    /// first checkpoint inside the protected body and the outcome is fixed.
+    /// The liveness case raises repeatedly and checks only that the run ends.
+    fn cases(marker: &std::path::Path) -> Vec<(String, Option<&'static str>, bool)> {
         let m = marker.display();
         vec![
             (
@@ -18977,7 +18982,8 @@ mod standing_interrupt_tests {
                      catch $m\n  $log = $log .. \"C\"\n\
                      finally\n  $log = $log .. \"F\"\nend\n"
                 ),
-                "TF",
+                Some("TF"),
+                false,
             ),
             (
                 format!(
@@ -18986,17 +18992,30 @@ mod standing_interrupt_tests {
                      catch $m2\n  $log = $log .. \"O\"\n\
                      finally\n  $log = $log .. \"F\"\nend\n"
                 ),
-                "F",
+                Some("F"),
+                false,
             ),
             // A finally's `continue` must not turn the unwind into a normal
-            // iteration of the enclosing loop. Without the guard this case
-            // never ends, and the parent's time limit fails it.
+            // iteration of the enclosing loop. Without the guard the loop
+            // runs on with no further interrupt, and the parent's time limit
+            // fails the case.
             (
                 format!(
                     "while true\n  try\n    write_file(\"{m}\", \"x\")\n    while true\n      $n = 1\n    end\n\
                      finally\n    continue\n  end\nend\n$log = $log .. \"X\"\n"
                 ),
-                "",
+                Some(""),
+                false,
+            ),
+            // Liveness: repeated raises must still end the run, however the
+            // catch and finally clauses are entered.
+            (
+                format!(
+                    "try\n  write_file(\"{m}\", \"x\")\n  while true\n    $n = 1\n  end\n\
+                     catch $m\n  $log = $log .. \"C\"\nend\n"
+                ),
+                None,
+                true,
             ),
         ]
     }
@@ -19069,7 +19088,7 @@ mod standing_interrupt_tests {
             .parse()
             .expect("case index is a number");
         let marker = std::path::PathBuf::from(std::env::var_os(MARKER_ENV).expect("marker path"));
-        let (body, expected) = cases(&marker).into_iter().nth(case).expect("case in range");
+        let (body, expected, repeated) = cases(&marker).into_iter().nth(case).expect("case in range");
         block_on(async {
             // One evaluator, whose flag is the process interrupt flag, as in
             // mix-shell.
@@ -19079,8 +19098,9 @@ mod standing_interrupt_tests {
                 .await
                 .expect("init globals");
             // The raiser stands the interrupt up only once the body has
-            // written its marker, which is inside the protected `try`. It then
-            // keeps raising, as mix-shell's thread does, until the case ends.
+            // written its marker, which is inside the protected `try`. A
+            // guard case stops there; the liveness case keeps raising, as
+            // mix-shell's thread does, until the case ends.
             let done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
             let stop = done.clone();
             let raiser_marker = marker.clone();
@@ -19089,9 +19109,11 @@ mod standing_interrupt_tests {
                     std::thread::sleep(std::time::Duration::from_millis(2));
                 }
                 crate::interrupt::set_standing();
-                while !stop.load(std::sync::atomic::Ordering::SeqCst) {
-                    crate::interrupt::raise();
-                    std::thread::sleep(std::time::Duration::from_millis(2));
+                if repeated {
+                    while !stop.load(std::sync::atomic::Ordering::SeqCst) {
+                        crate::interrupt::raise();
+                        std::thread::sleep(std::time::Duration::from_millis(2));
+                    }
                 }
             });
             let result = eval.execute_script_source(&body).await;
@@ -19104,10 +19126,12 @@ mod standing_interrupt_tests {
             };
             let text = format!("{err:?}");
             assert!(text.contains("interrupted"), "case {case}: {text}");
-            let log = eval.get_global("log");
-            match &log {
-                Some(Value::String(text)) => assert_eq!(text, expected, "case {case}"),
-                other => panic!("log not a string: {other:?}"),
+            if let Some(expected) = expected {
+                let log = eval.get_global("log");
+                match &log {
+                    Some(Value::String(text)) => assert_eq!(text, expected, "case {case}"),
+                    other => panic!("log not a string: {other:?}"),
+                }
             }
             println!("standing child ok");
         });

@@ -72,6 +72,26 @@ fn double_dollar_is_the_shell_pid() {
 }
 
 #[test]
+fn double_dollar_followed_by_text_is_the_pid_then_the_text() {
+    // `$$` is one parameter: the second `$` is not a new reference, so
+    // `$$?` and `$$#` are the PID followed by a literal `?` or `#`.
+    for (line, suffix) in [("echo pid=$$?", "?"), ("echo pid=$$#", "#")] {
+        let child = Command::new(env!("CARGO_BIN_EXE_mix"))
+            .args(["-c", line])
+            .env("MIX_STATS", "off")
+            .env_remove("MIXRC")
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .expect("run mix");
+        let pid = child.id();
+        let out = child.wait_with_output().unwrap();
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(out.status.success(), "{line}: {stdout}");
+        assert_eq!(stdout.trim(), format!("pid={pid}{suffix}"), "{line}");
+    }
+}
+
+#[test]
 fn bash_special_parameters_are_refused_with_their_mix_spelling() {
     for (line, pointer) in [
         ("echo $!", "spawn("),

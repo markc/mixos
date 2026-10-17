@@ -522,6 +522,11 @@ fn bare_dollar_special(piece: &str) -> Option<(usize, char)> {
             '"' if !in_single => in_double = !in_double,
             '$' if !in_single => match chars.peek().map(|&(_, c)| c) {
                 Some('(') => skip_substitution(&mut chars),
+                // `$$` is the PID, a single parameter: the second `$` belongs
+                // to it, so `$$?` and `$$#` are the PID followed by text.
+                Some('$') => {
+                    chars.next();
+                }
                 Some(next) if REFUSED_SPECIALS.iter().any(|(c, _)| *c == next) => {
                     return Some((i, next));
                 }

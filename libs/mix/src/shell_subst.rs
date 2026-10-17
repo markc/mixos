@@ -90,12 +90,17 @@ fn starts_command(words: &Words) -> bool {
 fn finish(words: &mut Words, word: &mut String, cases: &mut Vec<Case>) {
     if !word.is_empty() {
         let at_command = starts_command(words);
+        let after_in = matches!(words.last(), Some(Some(w)) if w == "in");
+        let top = cases.last().copied();
         match word.as_str() {
-            "case" if at_command => cases.push(Case::Subject),
-            "in" if cases.last() == Some(&Case::Subject) => {
+            // A statement opens a `case`. A pattern list's `case` is a pattern.
+            "case" if at_command && top != Some(Case::Pattern) => cases.push(Case::Subject),
+            "in" if top == Some(Case::Subject) => {
                 *cases.last_mut().expect("a subject is open") = Case::Pattern;
             }
-            "esac" if at_command => {
+            // `esac` closes the case where a clause or statement can start,
+            // or straight after `in` for an empty case.
+            "esac" if matches!(top, Some(Case::Pattern | Case::Body)) && (at_command || after_in) => {
                 cases.pop();
             }
             _ => {}
@@ -291,17 +296,19 @@ impl<'a, F: Fn(&str) -> Option<String>> Scan<'a, F> {
                     self.backtick()?;
                     word.push(OPAQUE);
                 }
-                // `;;` ends a clause: the next pattern list follows.
-                ';' if cases.last() == Some(&Case::Body) && self.peek(1) == Some(';') => {
-                    finish(&mut words, &mut word, &mut cases);
-                    words.push(None);
-                    self.copy(2);
-                    *cases.last_mut().expect("a body is open") = Case::Pattern;
-                }
                 ';' | '&' | '|' => {
+                    // The pending word is finished first, so an `esac` before
+                    // this `;;` has already closed its own case.
                     finish(&mut words, &mut word, &mut cases);
                     words.push(None);
-                    self.copy(1);
+                    // `;;` ends a clause: the next pattern list follows.
+                    if c == ';' && self.peek(1) == Some(';') && cases.last() == Some(&Case::Body)
+                    {
+                        self.copy(2);
+                        *cases.last_mut().expect("a body is open") = Case::Pattern;
+                    } else {
+                        self.copy(1);
+                    }
                 }
                 c if c.is_whitespace() => {
                     finish(&mut words, &mut word, &mut cases);
@@ -396,6 +403,8 @@ impl<'a, F: Fn(&str) -> Option<String>> Scan<'a, F> {
                 }
                 self.i = end;
             }
+            // `$$` is the PID: the second `$` is part of that parameter.
+            Some('$') => self.copy(2),
             _ => self.copy(1),
         }
         Ok(())
@@ -1177,6 +1186,40 @@ mod tests {
         let cmd = "cat <<EOF\n`printf '%s' '$nosuch'`\nEOF";
         let p = prepare(cmd, scope).unwrap();
         assert_eq!(p.cmd, cmd);
+    }
+
+    #[test]
+    fn an_empty_case_closes_before_its_subshell_does() {
+        let cmd = "(d=inner; case x in esac); echo $d";
+        let p = prepare(cmd, scope).unwrap();
+        assert_eq!(p.cmd, "(d=inner; case x in esac); echo ${__mix_subst_0}");
+    }
+
+    #[test]
+    fn a_pattern_named_case_opens_nothing() {
+        let cmd = "(case x in a) :;; case) d=inner;; esac); echo $d";
+        let p = prepare(cmd, scope).unwrap();
+        assert_eq!(
+            p.cmd,
+            "(case x in a) :;; case) d=inner;; esac); echo ${__mix_subst_0}"
+        );
+    }
+
+    #[test]
+    fn a_nested_esac_before_a_clause_terminator_closes_only_its_own_case() {
+        let cmd = "(case z in x) case y in y) :;; esac;; z) d=inner;; esac); echo $d";
+        let p = prepare(cmd, scope).unwrap();
+        assert_eq!(
+            p.cmd,
+            "(case z in x) case y in y) :;; esac;; z) d=inner;; esac); echo ${__mix_subst_0}"
+        );
+    }
+
+    #[test]
+    fn a_double_dollar_is_one_parameter() {
+        // `$$` is the PID: the text after it is not a reference.
+        let p = prepare("echo $$nosuch $(echo $$x)", scope).unwrap();
+        assert_eq!(p.cmd, "echo $$nosuch $(echo $$x)");
     }
 
     #[test]
