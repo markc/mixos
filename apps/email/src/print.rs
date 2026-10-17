@@ -112,7 +112,10 @@ pub fn markdown_html(source: &str) -> String {
     // Whether each open link was kept, so its end goes with it.
     let mut links: Vec<bool> = Vec::new();
     let events = Parser::new_ext(source, options).filter_map(|event| match event {
-        Event::Html(text) | Event::InlineHtml(text) => Some(Event::Text(text)),
+        // Escaped here, quotes and all, and passed on as already-safe markup.
+        Event::Html(text) | Event::InlineHtml(text) => {
+            Some(Event::InlineHtml(escape(&text).into()))
+        }
         Event::Start(Tag::HtmlBlock) => Some(Event::Start(Tag::Paragraph)),
         Event::End(TagEnd::HtmlBlock) => Some(Event::End(TagEnd::Paragraph)),
         Event::Start(Tag::Image { .. }) | Event::End(TagEnd::Image) => None,
