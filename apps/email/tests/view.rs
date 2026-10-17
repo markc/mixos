@@ -778,7 +778,7 @@ fn a_row_right_click_selects_it_and_opens_the_message_menu() {
     );
     assert_eq!(h.state().state.accounts[0].mail.table.selection, ["L5"]);
     assert!(
-        h.query_by_label_contains(&label("reply")).is_some(),
+        h.query_all_by_label_contains(&label("reply")).next().is_some(),
         "the message commands"
     );
     h.snapshot("list_menu_pro_light");
