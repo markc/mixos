@@ -102,7 +102,10 @@ async fn check_outer(label: &str, stored: &[u8]) {
     println!(
         "{label}: nested DKIM outputs={} results={:?}",
         nested_outputs.len(),
-        nested_outputs.iter().map(|o| o.result()).collect::<Vec<_>>()
+        nested_outputs
+            .iter()
+            .map(|o| o.result())
+            .collect::<Vec<_>>()
     );
     assert!(!nested_outputs.is_empty());
     assert_eq!(nested_outputs.len(), nested.dkim_headers.len());
