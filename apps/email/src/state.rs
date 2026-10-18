@@ -2714,7 +2714,8 @@ impl State {
             Ok(info) => {
                 view.phase = Phase::Ready;
                 view.session = Some(info);
-                self.status = crate::label("connected");
+                // The status bar reads each account's connection from its
+                // own phase; the status line is for operations only.
                 for work in [
                     Work::FetchMailboxes {
                         account: tag.account.clone(),

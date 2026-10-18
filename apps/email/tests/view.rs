@@ -776,6 +776,25 @@ fn a_failed_account_retries() {
     );
 }
 
+#[test]
+fn the_status_bar_shows_the_current_accounts_own_connection() {
+    let mut state = fixture();
+    state.select_account("work");
+    let mut h = harness(state);
+    h.run();
+    let failed = format!("Work — {}", label("not-connected"));
+    assert!(h.query_by_label(&failed).is_some(), "{failed}");
+    let wrong = format!("Work — {}", label("connected"));
+    assert!(
+        h.query_by_label_contains(&wrong).is_none(),
+        "another account's connection never shows on this one"
+    );
+    h.state_mut().state.select_account("home");
+    h.run();
+    let ready = format!("Home — {}", label("connected"));
+    assert!(h.query_by_label(&ready).is_some(), "{ready}");
+}
+
 fn snapshot(name: &str, state: State, theme: &Theme) {
     let mut h = harness_with(state, theme);
     h.run();

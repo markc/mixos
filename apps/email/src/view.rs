@@ -186,8 +186,18 @@ pub fn view(
     events
 }
 
-/// The status bar: the current account's connection and name, the last
-/// word, and a note while the accounts are read-only.
+/// The connection word for an account's phase, as the status bar shows it.
+pub fn connection(phase: &Phase) -> String {
+    crate::label(match phase {
+        Phase::Ready => "connected",
+        Phase::Connecting => "connecting",
+        Phase::Failed(_) | Phase::NoPassword | Phase::Disabled => "not-connected",
+    })
+}
+
+/// The status bar: the current account's name and its connection (from
+/// that account's own phase, never another account's news), then the last
+/// operation's word, and a note while the accounts are read-only.
 fn status(ui: &mut egui::Ui, state: &State, stroke: f32) {
     bars::status(ui, |ui| {
         let current = state.current();
@@ -196,7 +206,9 @@ fn status(ui: &mut egui::Ui, state: &State, stroke: f32) {
             _ => (Icon::Unplug, ui.visuals().error_fg_color),
         };
         ui.add(toolkit::icons::image(icon, stroke, ICON, colour));
-        let mut line = current.map(|v| v.entry.name.clone()).unwrap_or_default();
+        let mut line = current
+            .map(|v| format!("{} — {}", v.entry.name, connection(&v.phase)))
+            .unwrap_or_default();
         let mut push = |text: &str| {
             if !line.is_empty() {
                 line.push_str(" — ");
