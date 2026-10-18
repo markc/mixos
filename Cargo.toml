@@ -193,6 +193,8 @@ mesh = { path = "services/noded/crates/mesh" }
 mesh-trust = { path = "services/noded/crates/mesh-trust" }
 
 [patch.crates-io]
+# maild's parser nesting safeguard; see vendor/mail-parser/PATCHES.md.
+mail-parser = { path = "vendor/mail-parser" }
 # dirs-sys without option-ext; calloop with composed-channel idle wakeups;
 # input-rs with the tablet-pad DIAL event. See vendor/README.md.
 dirs-sys = { path = "vendor/dirs-sys" }
