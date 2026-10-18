@@ -6,7 +6,7 @@ version = 1
 [[annotations]]
 path = "vendor/mail-parser/**"
 precedence = "override"
-SPDX-FileCopyrightText = "2020 Stalwart Labs Ltd."
+SPDX-FileCopyrightText = "2020 Stalwart Labs LLC <hello@stalw.art>"
 SPDX-License-Identifier = "Apache-2.0 OR MIT"
 
 [[annotations]]

@@ -30,7 +30,7 @@ hyper-util = { version = "0.1", features = ["tokio", "server-auto", "service"] }
 linkify = "0.10"
 mail-auth = { version = "0.7", default-features = false, features = ["ring", "generate"] }
 mail-builder = "0.4"
-mail-parser = "0.11"
+mail-parser = "=0.11.5"
 mail-send = "0.5"
 quick-xml = "0.37"
 regex = "1"
