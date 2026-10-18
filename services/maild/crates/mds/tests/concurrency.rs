@@ -30,7 +30,7 @@
 //! Round count is `MDS_STRESS_ITERS` (default 2) so CI gets bounded,
 //! deterministic contention while local pressure-testing can crank it.
 
-#[path = "../../../test-support/load_guard.rs"]
+#[path = "support/load_guard.rs"]
 mod load_guard;
 
 use mds::{

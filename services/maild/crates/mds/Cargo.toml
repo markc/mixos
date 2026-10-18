@@ -41,7 +41,7 @@ _stress-helper = []
 tokio.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-uuid.workspace = true
+uuid = { workspace = true, features = ["v4"] }
 thiserror.workspace = true
 rusqlite.workspace = true
 blake3.workspace = true
