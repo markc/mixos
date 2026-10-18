@@ -82,9 +82,9 @@ fn verify(root: &Path, before: &Snapshot) -> TestResult {
             OpenFlags::SQLITE_OPEN_READ_ONLY,
         )?;
         assert!(connection.is_readonly(rusqlite::MAIN_DB)?);
-        let envelopes: usize =
+        let envelopes: i64 =
             connection.query_row("SELECT count(*) FROM mail_envelopes", [], |r| r.get(0))?;
-        let item_count: usize =
+        let item_count: i64 =
             connection.query_row("SELECT count(*) FROM item", [], |r| r.get(0))?;
         let ids = connection
             .prepare("SELECT id FROM item ORDER BY id")?
@@ -94,23 +94,23 @@ fn verify(root: &Path, before: &Snapshot) -> TestResult {
         for id in &ids {
             container::fetch_item_meta(&connection, &ItemId(uuid::Uuid::parse_str(id)?))?;
         }
-        assert_eq!(ids.len(), item_count);
+        assert_eq!(ids.len() as i64, item_count);
         let containers = container::list_containers(&connection)?;
-        let sql_containers: usize =
+        let sql_containers: i64 =
             connection.query_row("SELECT count(*) FROM container", [], |r| r.get(0))?;
-        assert_eq!(containers.len(), sql_containers);
+        assert_eq!(containers.len() as i64, sql_containers);
         let mut listed = BTreeSet::new();
         let mut memberships = BTreeMap::new();
         let mut membership_total = 0;
         let mut samples = BTreeMap::new();
         for info in containers {
             let items = container::list_items(&connection, &info.id, SeqRange::All)?;
-            let expected: usize = connection.query_row(
+            let expected: i64 = connection.query_row(
                 "SELECT count(*) FROM membership WHERE container_id = ?1",
                 [info.id.0.to_string()],
                 |r| r.get(0),
             )?;
-            assert_eq!(items.len(), expected, "{set}/{}", info.id.0);
+            assert_eq!(items.len() as i64, expected, "{set}/{}", info.id.0);
             assert_eq!(
                 container::container_status(&connection, &info.id)?.exists,
                 expected as u64,
@@ -129,7 +129,7 @@ fn verify(root: &Path, before: &Snapshot) -> TestResult {
                 }
             }
         }
-        let sql_memberships: usize =
+        let sql_memberships: i64 =
             connection.query_row("SELECT count(*) FROM membership", [], |r| r.get(0))?;
         assert_eq!(membership_total, sql_memberships);
         assert!(listed.is_subset(&ids));
