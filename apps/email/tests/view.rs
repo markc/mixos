@@ -42,6 +42,7 @@ fn entry(id: &str, name: &str) -> AccountEntry {
         ca_path: None,
         enabled: true,
         signature: String::new(),
+        identities: Vec::new(),
     }
 }
 

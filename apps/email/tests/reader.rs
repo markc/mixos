@@ -91,6 +91,7 @@ fn opened(kind: &str, body: &str) -> State {
         ca_path: None,
         enabled: true,
         signature: String::new(),
+        identities: Vec::new(),
     };
     let settings = EmailSettings {
         accounts: vec![entry],
