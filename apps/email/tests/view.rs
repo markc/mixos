@@ -819,10 +819,18 @@ fn mail_list_studio_dark() {
 }
 
 /// `long_list` shown as the second page of 236, sorted by `column` in
-/// `order`: the header's arrow and the pager's "101–106 of 236".
+/// `order` (its rows in that order, as the server would send them): the
+/// header's arrow and the pager's "101–106 of 236".
 fn sorted_page(column: &str, order: toolkit::datatable::Order) -> State {
     let mut state = long_list();
     let view = &mut state.accounts[0];
+    let text = |e: &jmap::Email| match column {
+        "from" => e.from_display().to_lowercase(),
+        _ => e.subject.clone().unwrap_or_default().to_lowercase(),
+    };
+    view.mail
+        .emails
+        .sort_by(|a, b| order.apply(text(a).cmp(&text(b))));
     view.mail.table.sort = Some(toolkit::datatable::Sort::new(column, order));
     view.mail.table.page = 1;
     view.mail.table.selection.clear();
