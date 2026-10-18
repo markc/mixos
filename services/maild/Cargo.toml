@@ -7,7 +7,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 publish = false
-description = "Mail service storage foundation"
+description = "JMAP, SMTP, IMAP and DAV mail service"
 
 [package.metadata.mixos]
 component = "maild"
@@ -20,3 +20,63 @@ mod_module_files = "deny"
 
 [dependencies]
 mds = { path = "crates/mds" }
+maild-auth = { path = "crates/maild-auth" }
+maild-rules = { path = "crates/maild-rules" }
+maild-bayesian = { path = "crates/maild-bayesian" }
+bus = { workspace = true, features = ["native"] }
+config = { workspace = true, features = ["tls"] }
+logging = { workspace = true, features = ["props"] }
+buildinfo.workspace = true
+davproto.workspace = true
+mix = { workspace = true, features = ["json", "serde"] }
+props = { workspace = true, features = ["store", "sqlite", "router"] }
+anyhow.workspace = true
+arc-swap.workspace = true
+async-stream.workspace = true
+axum.workspace = true
+base64.workspace = true
+bcrypt.workspace = true
+blake3.workspace = true
+chrono.workspace = true
+clap.workspace = true
+directories.workspace = true
+hex.workspace = true
+hickory-resolver.workspace = true
+hmac.workspace = true
+hyper.workspace = true
+hyper-util.workspace = true
+libc.workspace = true
+mail-auth.workspace = true
+mail-builder.workspace = true
+mail-parser.workspace = true
+mail-send.workspace = true
+mimalloc.workspace = true
+quick-xml.workspace = true
+rand.workspace = true
+reqwest = { workspace = true, features = ["stream", "http2", "charset"] }
+rpassword.workspace = true
+rusqlite.workspace = true
+rustls.workspace = true
+rustls-native-certs.workspace = true
+rustls-pemfile.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+smtp-proto.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "net", "io-util", "signal", "fs", "process"] }
+tokio-rustls.workspace = true
+tokio-stream.workspace = true
+tower-http.workspace = true
+tracing.workspace = true
+unicode-normalization.workspace = true
+uuid = { workspace = true, features = ["v4", "v5"] }
+webpki-roots.workspace = true
+x509-parser.workspace = true
+
+[dev-dependencies]
+async-trait.workspace = true
+tempfile.workspace = true
+rcgen.workspace = true
+
+[build-dependencies]
+buildinfo.workspace = true

@@ -28,5 +28,5 @@ deny = [
 unknown-registry = "deny"
 unknown-git = "deny"
 # Term's VT parser and PTY; manifests pin the complete revision.
-allow-git = ["https://github.com/raphamorim/rio"]
+allow-git = ["https://github.com/raphamorim/rio", "https://github.com/markc/spamlite"]
 required-git-spec = "rev"

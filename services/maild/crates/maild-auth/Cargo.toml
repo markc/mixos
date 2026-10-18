@@ -1,0 +1,33 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+[package]
+name = "maild-auth"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "Mail authentication verification, DKIM signing and ARC sealing"
+
+[package.metadata.mixos]
+component = "maild"
+kind = "service"
+layer = "core"
+contract = "none"
+
+[lints.clippy]
+mod_module_files = "deny"
+
+[features]
+default = ["core"]
+core = []
+mixos = ["dep:bus"]
+
+[dependencies]
+mail-auth.workspace = true
+rustls-pki-types.workspace = true
+tokio.workspace = true
+serde.workspace = true
+tracing.workspace = true
+thiserror.workspace = true
+bus = { workspace = true, features = ["native"], optional = true }

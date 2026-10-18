@@ -1,0 +1,46 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+[package]
+name = "maild-rules"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "Deterministic inbound mail filtering rules"
+
+[package.metadata.mixos]
+component = "maild"
+kind = "service"
+layer = "core"
+contract = "none"
+
+[lints.clippy]
+mod_module_files = "deny"
+
+[features]
+default = ["core"]
+core = []
+dnsbl = ["dep:hickory-resolver"]
+mixos = ["dep:bus", "dnsbl"]
+
+[dependencies]
+buildinfo.workspace = true
+maild-auth = { path = "../maild-auth" }
+mail-parser.workspace = true
+regex.workspace = true
+linkify.workspace = true
+glob.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+mix = { workspace = true, features = ["serde"] }
+tokio.workspace = true
+tracing.workspace = true
+async-trait.workspace = true
+futures-util.workspace = true
+thiserror.workspace = true
+bus = { workspace = true, features = ["native"], optional = true }
+hickory-resolver = { workspace = true, optional = true }
+
+[build-dependencies]
+buildinfo.workspace = true

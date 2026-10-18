@@ -19,6 +19,31 @@ repository = "https://github.com/markc/mixos"
 warnings = "allow"
 
 [workspace.dependencies]
+async-stream = "0.3"
+async-trait = "0.1"
+bcrypt = "0.16"
+directories = "6"
+glob = "0.3"
+hickory-resolver = { version = "0.25", features = ["tokio", "system-config"] }
+hyper = { version = "1", features = ["server"] }
+hyper-util = { version = "0.1", features = ["tokio", "server-auto", "service"] }
+linkify = "0.10"
+mail-auth = { version = "0.7", default-features = false, features = ["ring", "generate"] }
+mail-builder = "0.4"
+mail-parser = "0.11"
+mail-send = "0.5"
+quick-xml = "0.37"
+regex = "1"
+rpassword = "7"
+rustls-native-certs = "0.8"
+rustls-pki-types = "1.13"
+smtp-proto = "0.2"
+spamlite = { git = "https://github.com/markc/spamlite", rev = "98f91a9d8142f92ae89ba4f070a165ce86fa5e8d", default-features = false }
+tokio-stream = "0.1"
+tower-http = { version = "0.6", features = ["fs", "cors"] }
+unicode-normalization = "0.1"
+webpki-roots = "0.26"
+x509-parser = "0.18"
 anyhow = "1"
 axum = { version = "0.8", features = ["ws"] }
 arc-swap = "1"
@@ -81,6 +106,7 @@ pulldown-cmark = { version = "=0.12.2", default-features = false }
 # Shared libraries (libs/).
 assets = { path = "libs/assets" }
 buildinfo = { path = "libs/buildinfo" }
+davproto = { path = "libs/davproto" }
 bus = { path = "libs/bus", default-features = false }
 config = { path = "libs/config" }
 design = { path = "libs/design" }
