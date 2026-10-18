@@ -110,3 +110,6 @@ pub mod dispatcher;
 pub use bus::mutation::PropsRouter;
 #[cfg(feature = "router")]
 pub use subscribe_granter::SubscribeGranter;
+
+#[cfg(feature = "router")]
+pub use dispatcher::{DispatchPublisher, DispatcherHandle, audit_topic, records_changed_topic, spawn_dispatcher};
