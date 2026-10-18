@@ -30,6 +30,19 @@ pub mod revwrite;
 pub mod tree;
 pub mod value;
 
+#[cfg(feature = "store")]
+pub mod capability;
+#[cfg(feature = "store")]
+pub mod hooks;
+#[cfg(feature = "store")]
+pub mod lifecycle;
+#[cfg(feature = "store")]
+pub mod namespace;
+#[cfg(feature = "store")]
+pub mod record;
+#[cfg(feature = "store")]
+pub mod store;
+
 #[cfg(feature = "bus")]
 pub mod bus;
 #[cfg(feature = "bus")]
@@ -45,3 +58,29 @@ pub use revwrite::{
 };
 pub use tree::PropTree;
 pub use value::PropValue;
+
+#[cfg(feature = "store")]
+pub use capability::{AuthDecision, Capability, CapabilityError, CapabilitySet};
+#[cfg(feature = "store")]
+pub use hooks::{
+    HookCtx, HookError, HookFuture, HookHandler, HookResult, Hooks, NoopHooks, WriteOrigin,
+};
+#[cfg(feature = "store")]
+pub use lifecycle::{LIFECYCLE_FIELD, Lifecycle};
+#[cfg(feature = "store")]
+pub use namespace::{
+    AuthPolicy, Cardinality, ConformanceLevel, DeleteMode, ExternalEditPolicy, FieldSchema,
+    FieldType, NamespaceLifecycle, NamespaceName, NamespaceNameError, NamespaceSpec, PeerIdentity,
+    PropertySchema, ReplayWindow, SchemaPublic, SchemaVersion, StorageBackendKind,
+    SubscribePayload, Validator, ValidatorFn,
+};
+#[cfg(feature = "store")]
+pub use record::{
+    Actor, ActorError, AuditEpoch, AuditRow, EventKind, FieldPathSegment, Nseq, Record,
+    RecordEvent, RecordKey, Version,
+};
+#[cfg(feature = "store")]
+pub use store::{
+    CompleteCommit, DeleteCommit, MergeMode, PropertyStore, ReconcileCommit, SetCommit, Snapshot,
+    StoreError, StoreFuture, StoreResult,
+};
