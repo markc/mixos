@@ -290,9 +290,9 @@ impl View {
             return;
         };
         let hover = if link.image {
-            own_with("markdown-image-hover", &[("url", &link.url)])
+            own_with("markdown-image-hover", &[("url", &*link.url)])
         } else {
-            link.url.clone()
+            link.url.to_string()
         };
         if super::openable(&link.url) {
             ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
@@ -302,7 +302,7 @@ impl View {
             if super::openable(&link.url) {
                 ui.ctx().open_url(egui::OpenUrl::new_tab(&link.url));
             }
-            self.clicked = Some(link.url.clone());
+            self.clicked = Some(link.url.to_string());
         }
     }
 

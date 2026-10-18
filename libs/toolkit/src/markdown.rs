@@ -155,11 +155,30 @@ pub struct Marks {
 
 /// Where a span points. An image is a link to the image, never fetched
 /// (remote images in mail are a tracking risk); its span is the alt text.
+///
+/// The address is shared: every span of one link holds the same `Arc`, so
+/// a long address with many styled spans is stored once. Comparing two
+/// spans of one link is a pointer test (`Arc<str>`'s `PartialEq` checks
+/// identity before content).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Link {
-    pub url: String,
+    pub url: std::sync::Arc<str>,
     pub image: bool,
 }
+
+/// The most nested quotes and list items read as structure; deeper text
+/// is kept as plain text in the innermost container. Every layer of the
+/// document (parse, draw, drop) recurses once per level.
+pub const MAX_DEPTH: usize = 32;
+
+/// The most blocks and spans one document holds. Past it, the rest of the
+/// source is shown as one plain-text paragraph.
+pub const MAX_NODES: usize = 50_000;
+
+/// The most bytes of text and link addresses one document holds (each
+/// address counted once, however many spans share it). Past it, the rest of
+/// the source is shown as one plain-text paragraph.
+pub const MAX_BYTES: usize = 16 * 1024 * 1024;
 
 /// Whether a link may be opened in the desktop's handler: http, https and
 /// mailto only (any case), never a file, a script or an app's own scheme.

@@ -69,9 +69,9 @@ fn signals(text: &str) -> Signals {
         .collect();
     let mut fence: Option<(char, usize)> = None;
     let mut previous = "";
-    // The last non-blank, non-quoted line: the attribution a reply's quote
-    // follows.
-    let mut lead = "";
+    // Whether the last non-blank, non-quoted line is the attribution a
+    // reply's quote follows: read once per such line, never per quoted line.
+    let mut lead_attributes = false;
     for &line in &lines {
         if let Some((mark, width)) = fence {
             if fence_marker(line)
@@ -84,7 +84,7 @@ fn signals(text: &str) -> Signals {
         }
         let trimmed = line.trim_start();
         if trimmed.starts_with('>') {
-            if !attribution(lead) && !trimmed.trim_start_matches('>').trim().is_empty() {
+            if !lead_attributes && !trimmed.trim_start_matches('>').trim().is_empty() {
                 found.quote = true;
             }
             previous = line;
@@ -109,7 +109,7 @@ fn signals(text: &str) -> Signals {
         found.code |= inline_code(line);
         found.link |= link(line);
         if !line.trim().is_empty() {
-            lead = line;
+            lead_attributes = attribution(line);
         }
         previous = line;
     }
@@ -259,25 +259,39 @@ fn inline_code(line: &str) -> bool {
     wrapped(line, "`", true)
 }
 
-/// `[text](http…)` or `(mailto:…)`, or a `[label]: http…` definition.
+/// Whether `rest` (after leading white space) starts with `http://`,
+/// `https://` or `mailto:` in any case. Compares only the scheme's bytes and
+/// allocates nothing. The white space skipped runs up to the next non-space
+/// character, so over a line's `](` pairs it is read once in all.
+fn web_target(rest: &str) -> bool {
+    let rest = rest.trim_start().as_bytes();
+    [&b"http://"[..], b"https://", b"mailto:"].iter().any(|scheme| {
+        rest.get(..scheme.len())
+            .is_some_and(|head| head.eq_ignore_ascii_case(scheme))
+    })
+}
+
+/// `[text](http…)` or `(mailto:…)`, or a `[label]: http…` definition. One
+/// pass over the line: a `](` counts once some `[` came before it.
 fn link(line: &str) -> bool {
-    let target = |rest: &str| {
-        let rest = rest.trim_start().to_ascii_lowercase();
-        rest.starts_with("http://") || rest.starts_with("https://") || rest.starts_with("mailto:")
-    };
     if let Some(label) = line.trim_start().strip_prefix('[')
         && let Some(close) = label.find("]:")
         && close > 0
-        && target(&label[close + 2..])
+        && web_target(&label[close + 2..])
     {
         return true;
     }
-    let mut from = 0;
-    while let Some(at) = line[from..].find("](").map(|i| i + from) {
-        if line[..at].contains('[') && target(&line[at + 2..]) {
-            return true;
+    let bytes = line.as_bytes();
+    let mut opened = false;
+    for (at, byte) in bytes.iter().enumerate() {
+        match byte {
+            b'[' => opened = true,
+            // `](` is ASCII, so `at + 2` is a character boundary.
+            b']' if opened && bytes.get(at + 1) == Some(&b'(') && web_target(&line[at + 2..]) => {
+                return true;
+            }
+            _ => {}
         }
-        from = at + 2;
     }
     false
 }
@@ -457,5 +471,36 @@ Looks fine to me. The file is my_notes_final.txt in the share.
         // A fence counts only once it closes.
         assert!(!looks_like_markdown("```\nnever closed"));
         assert!(looks_like_markdown("```\nclosed\n```"));
+        assert!(link("[x](  HTTPS://x.invalid)"));
+        assert!(!link("](https://x.invalid) no opening bracket"));
+        assert!(!link("[é](ftp://x.invalid) ](") && web_target(" mailto:a@x.invalid"));
+    }
+
+    /// The most a 1 MB crafted input may take, in a debug build on a build
+    /// worker. The quadratic scan took minutes on the first of these.
+    const BOUND: std::time::Duration = std::time::Duration::from_secs(2);
+
+    #[test]
+    fn crafted_one_megabyte_inputs_are_scanned_in_linear_time() {
+        const MB: usize = 1024 * 1024;
+        let fill = |unit: &str| unit.repeat(MB / unit.len());
+        let lead = "x".repeat(MB / 2);
+        let cases = [
+            ("bracket then many ](", format!("[{}", fill("](HTTPX"))),
+            ("many ]( with spaces", format!("[{}", fill("](    x"))),
+            ("unicode before ](", format!("[{}", fill("é](ÄÖ"))),
+            ("long lead, many quotes", format!("{lead}\n{}", fill(">a\n"))),
+            ("open emphasis", fill(" _a")),
+            ("open strong", fill("**a ")),
+            ("open code", fill("`a ")),
+            ("pipes and dashes", fill("|---")),
+        ];
+        for (name, text) in &cases {
+            let started = std::time::Instant::now();
+            let _ = looks_like_markdown(text);
+            let elapsed = started.elapsed();
+            eprintln!("{name}: {} bytes in {elapsed:?}", text.len());
+            assert!(elapsed < BOUND, "{name}: {elapsed:?}");
+        }
     }
 }
