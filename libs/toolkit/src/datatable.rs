@@ -404,7 +404,7 @@ impl<'a> DataTable<'a> {
             }
             // Without the pager, a bar of its own still says how many are
             // selected (and offers the whole set) while several are.
-            let noted = !self.pager && self.selected_count() >= 2;
+            let noted = !self.pager && self.selection_total() >= 2;
             let footer = if self.pager || noted { height } else { 0.0 };
             let body = (ui.available_height() - footer - height).max(height);
             let visible = (body / height).floor().max(1.0) as usize;
@@ -750,7 +750,7 @@ impl<'a> DataTable<'a> {
     /// selects every row ([`TableEvent::SelectEverything`]), or the app's
     /// word that it has.
     fn selection_note(&self, ui: &mut Ui, shown: usize, events: &mut Vec<TableEvent>) {
-        let count = self.selected_count();
+        let count = self.selection_total();
         if count < 2 {
             return;
         }
@@ -777,7 +777,7 @@ impl<'a> DataTable<'a> {
 
     /// How many rows are selected: the app's count of the whole set, else
     /// the page's.
-    fn selected_count(&self) -> u64 {
+    fn selection_total(&self) -> u64 {
         self.selected.unwrap_or(self.state.selection.len() as u64)
     }
 

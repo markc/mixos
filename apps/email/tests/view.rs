@@ -502,7 +502,10 @@ fn up_and_down_move_the_selection_and_enter_opens() {
     h.key_press(egui::Key::ArrowDown);
     h.run();
     let work = h.state_mut().state.take_work();
-    assert!(work.is_empty(), "Down neither opens nor marks read: {work:?}");
+    assert!(
+        work.is_empty(),
+        "Down neither opens nor marks read: {work:?}"
+    );
     let mail = &h.state().state.account("home").unwrap().mail;
     assert_eq!(mail.table.selection, ["L4"]);
     assert!(!mail.emails[3].is_read(), "the unread row stays unread");

@@ -6426,7 +6426,10 @@ pub(crate) mod tests {
         let mail = &state.account("a").unwrap().mail;
         assert!(mail.everything);
         assert_eq!(mail.selection_count(), 2866);
-        assert_eq!(state.info()["accounts"][0]["mail"]["selection"]["count"], 2866);
+        assert_eq!(
+            state.info()["accounts"][0]["mail"]["selection"]["count"],
+            2866
+        );
         // Activating a selected row opens it and keeps the selection.
         state.mail_table(
             "a",
