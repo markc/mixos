@@ -717,6 +717,7 @@ profile: [desktop](desktop.md) and [server](server.md). This page describes the 
 | [mimedb](../mimedb/README.md) | lib | none (library) | [`libs/mimedb`](https://github.com/markc/mixos/tree/main/libs/mimedb) | A library that reads the freedesktop shared-mime-info database and decides a file's type from its name and content the way GLib does, so MixOS names a file's type as the desktop does. |
 | [mix](../mix/README.md) · [changelog](../mix/changelog.md) | lib | none (library) | [`libs/mix`](https://github.com/markc/mixos/tree/main/libs/mix) |  |
 | [mix-shell](../mix-shell/README.md) · [changelog](../mix-shell/changelog.md) | cli | unclassified | [`cli/mix-shell`](https://github.com/markc/mixos/tree/main/cli/mix-shell) | The Mix shell library, holding the interactive line editor, the command classifier, the native-session bootstrap and the Bus citizen runtime that the mix binary runs. |
+| [mixos-mcp](../mixos-mcp/README.md) | cli | base | [`cli/mixos-mcp`](https://github.com/markc/mixos/tree/main/cli/mixos-mcp) | MCP stdio access to the native MixOS Bus. |
 | [monitor](../monitor/README.md) | app | desktop | [`apps/monitor`](https://github.com/markc/mixos/tree/main/apps/monitor) | Monitor is the MixOS task manager, showing the processes and performance that monitord reports for this node or any node on the mesh, with End task and Kill for this node's processes. |
 | [monitord](../monitord/README.md) · [changelog](../monitord/changelog.md) | service | base | [`services/monitord`](https://github.com/markc/mixos/tree/main/services/monitord) | How monitord samples a host's CPU, memory, disks, network and processes, keeps history in memory and SQLite, and answers read verbs on the Bus, so any node's load can be read from anywhere on the… |
 | [noded](../noded/README.md) · [changelog](../noded/changelog.md) | service | unclassified | [`services/noded`](https://github.com/markc/mixos/tree/main/services/noded) | The MixOS Bus broker, which handles service registration, discovery, routing, subscriptions, authenticated local session grants and mesh peering between nodes. |
@@ -766,6 +767,7 @@ checked separately by the layering gate.
 | [term-core](https://github.com/markc/mixos/blob/main/apps/term/crates/term-core/Cargo.toml) | term | app | core | none | 0.1.1 |
 | [term-render](https://github.com/markc/mixos/blob/main/apps/term/crates/term-render/Cargo.toml) | term | app | desktop | none | 0.1.1 |
 | [mix-shell](https://github.com/markc/mixos/blob/main/cli/mix-shell/Cargo.toml) | mix-shell | cli | mix | public | 0.116.0 |
+| [mixos-mcp](https://github.com/markc/mixos/blob/main/cli/mixos-mcp/Cargo.toml) | mixos-mcp | cli | core | none | 0.1.1 |
 | [system](https://github.com/markc/mixos/blob/main/cli/system/Cargo.toml) | system | cli | core | none | 0.1.1 |
 | [assets](https://github.com/markc/mixos/blob/main/libs/assets/Cargo.toml) | assets | lib | core | public | 0.1.1 |
 | [buildinfo](https://github.com/markc/mixos/blob/main/libs/buildinfo/Cargo.toml) | buildinfo | lib | core | none | 0.1.1 |
@@ -4917,6 +4919,23 @@ continues to govern app passwords. Fields declared secret are redacted on
 ordinary reads, public describe and passive events; audit keys never enter
 the Bus. An explicit secrets-read capability remains part of the existing
 privileged service contract. No application password publication is added.
+
+---
+
+<!-- page: https://mixos.dev/docs/decisions/2026-10-19-mcp-program-name/ (source: https://mixos.dev/docs/decisions/2026-10-19-mcp-program-name.md) -->
+
+# MCP bridge program name
+
+Status: accepted.
+
+The MCP stdio bridge is the CLI component `cli/mixos-mcp`, package and
+binary `mixos-mcp`. It is the single exception to the ban on a `mixos-`
+program prefix. All other component naming rules remain in force.
+
+Clients register the server as `mixos`, so qualified tool names are
+`mcp__mixos__<tool>`. The bridge uses the native Bus client and the same node
+configuration discovery as other MixOS clients. It ships in the server
+prefix archive, alongside the system binary.
 
 ---
 
@@ -29287,6 +29306,87 @@ mix keywords          list the reserved words
 
 ---
 
+<!-- page: https://mixos.dev/mixos-mcp/ (source: https://mixos.dev/mixos-mcp/README.md) -->
+
+# mixos-mcp
+
+`mixos-mcp` is an MCP stdio server for agents. Install the binary at
+`/opt/mixos/bin/mixos-mcp` and register the MCP server as `mixos`.
+It ships in the server prefix archive. Its package, binary and component
+are the [single naming exception](../docs/decisions/2026-10-19-mcp-program-name.md).
+
+## Connection
+
+The server starts without a Bus connection. The first Bus tool connects
+using `libs/bus`. `MIXOS_NODED_URL` overrides the node configuration URL;
+otherwise the native client's node config discovery applies, including
+`MIXOS_NODE_CONFIG`, `MIXOS_ETC` and the user/system defaults.
+
+Set `MIXOS_BROKER_ACCOUNT` to the broker's operating-system account and
+`MIXOS_BUS_SOCKET` to the session's Unix socket. With either set, verified
+Unix ingress is required and connection failures never fall back to TCP.
+Without an explicit socket, the node config or MixOS runtime directory
+provides the endpoint. Without either variable, the native WebSocket client
+uses the discovered URL. Calls are never replayed after reconnecting.
+
+```json
+{
+  "mcpServers": {
+    "mixos": {
+      "command": "/opt/mixos/bin/mixos-mcp",
+      "env": {
+        "MIXOS_NODED_URL": "ws://192.0.2.10:4200/ws",
+        "MIXOS_BROKER_ACCOUNT": "user",
+        "MIXOS_BUS_SOCKET": "/run/mixos/session/4/noded/bus.sock"
+      }
+    }
+  }
+}
+```
+
+## Tools
+
+Each name below is exposed as `mcp__mixos__<name>` in Claude Code.
+
+- `bus_call`, `bus_list_services`, `bus_node_info`, `bus_list_peers`, `noded_ping`
+- `term_list`, `term_snapshot`, `term_type`, `term_tab`, `term_pane`
+- `log_tail`, `log_search`
+- `app_describe`, `app_controls_list`, `app_control_get`, `app_control_set`,
+  `app_actions_list`, `app_action_invoke`, `app_control_wait`
+- `desktop_windows`, `desktop_window_wait`
+- `context_search`, `index_workspace`, `knowledge_digest`, `knowledge_brief`
+- `skills_retrieve`, `skills_store`, `skills_refine`, `skills_graduate`,
+  `skills_list`, `skills_delete`
+- `docs_feedback`, `journal_feedback`, `memory_feedback`, `journal_supersede`
+- `mix_execute`, `mcp_status`
+
+Knowledge tools retain their ranking, indexing, feedback and skill-learning
+behaviour. They require an `indexd` service on the selected Bus and send
+`indexd.<action>` requests through that broker. This bridge does not install
+indexd; an absent backend returns an explicit tool error. Skill refinement
+also needs a configured LLM backend. Settings are MixOS strict-data files:
+`knowledge.conf.mix`, `domains.conf.mix`, `skills.conf.mix` and `llm.conf.mix`.
+LLM Bus providers use the same broker. `api_key_cmd` is Mix source, executed
+by `/opt/mixos/bin/mix -c`.
+
+Terminal tools preserve explicit pane selection and instance checks. Native
+application tools require an exact service and semantic target. Read-only
+tools do not invoke mutations; arbitrary `bus_call` and `mix_execute` can.
+Mix execution runs in an isolated worker with bounded output.
+
+## Logging and tests
+
+Stdout is reserved for MCP. Logs go to stderr, journald and
+`~/.local/log/mixos/mixos-mcp.log`. Arguments and results are redacted by
+default; `RUST_LOG=mixos_mcp=trace` explicitly enables full arguments.
+`--version --json` reports build provenance without starting MCP or the Bus.
+
+Package tests cover parameter translation, target guards, output schemas,
+redaction and provider decoding. The stdio integration test uses the real
+fixture broker, including verified Unix ingress and lazy reconnection.
+
+---
+
 <!-- page: https://mixos.dev/monitor/ (source: https://mixos.dev/monitor/README.md) -->
 
 # Monitor
@@ -32283,6 +32383,7 @@ the [server](server.md) list. This page describes the current `main` branch of M
 
 On every MixOS system.
 
+- [mixos-mcp](../mixos-mcp/README.md) (cli): MCP stdio access to the native MixOS Bus.
 - [monitord](../monitord/README.md) (service): How monitord samples a host's CPU, memory, disks, network and processes, keeps history in memory and SQLite, and answers read verbs on the Bus, so any node's load can be read from anywhere on the…
 
 ## Desktop components
@@ -32329,6 +32430,7 @@ the [desktop](desktop.md) list. This page describes the current `main` branch of
 
 On every MixOS system.
 
+- [mixos-mcp](../mixos-mcp/README.md) (cli): MCP stdio access to the native MixOS Bus.
 - [monitord](../monitord/README.md) (service): How monitord samples a host's CPU, memory, disks, network and processes, keeps history in memory and SQLite, and answers read verbs on the Bus, so any node's load can be read from anywhere on the…
 
 ## Server components

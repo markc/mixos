@@ -39,6 +39,7 @@ profile: [desktop](desktop.md) and [server](server.md). This page describes the 
 | [mimedb](../mimedb/README.md) | lib | none (library) | [`libs/mimedb`](https://github.com/markc/mixos/tree/main/libs/mimedb) | A library that reads the freedesktop shared-mime-info database and decides a file's type from its name and content the way GLib does, so MixOS names a file's type as the desktop does. |
 | [mix](../mix/README.md) · [changelog](../mix/changelog.md) | lib | none (library) | [`libs/mix`](https://github.com/markc/mixos/tree/main/libs/mix) |  |
 | [mix-shell](../mix-shell/README.md) · [changelog](../mix-shell/changelog.md) | cli | unclassified | [`cli/mix-shell`](https://github.com/markc/mixos/tree/main/cli/mix-shell) | The Mix shell library, holding the interactive line editor, the command classifier, the native-session bootstrap and the Bus citizen runtime that the mix binary runs. |
+| [mixos-mcp](../mixos-mcp/README.md) | cli | base | [`cli/mixos-mcp`](https://github.com/markc/mixos/tree/main/cli/mixos-mcp) | MCP stdio access to the native MixOS Bus. |
 | [monitor](../monitor/README.md) | app | desktop | [`apps/monitor`](https://github.com/markc/mixos/tree/main/apps/monitor) | Monitor is the MixOS task manager, showing the processes and performance that monitord reports for this node or any node on the mesh, with End task and Kill for this node's processes. |
 | [monitord](../monitord/README.md) · [changelog](../monitord/changelog.md) | service | base | [`services/monitord`](https://github.com/markc/mixos/tree/main/services/monitord) | How monitord samples a host's CPU, memory, disks, network and processes, keeps history in memory and SQLite, and answers read verbs on the Bus, so any node's load can be read from anywhere on the… |
 | [noded](../noded/README.md) · [changelog](../noded/changelog.md) | service | unclassified | [`services/noded`](https://github.com/markc/mixos/tree/main/services/noded) | The MixOS Bus broker, which handles service registration, discovery, routing, subscriptions, authenticated local session grants and mesh peering between nodes. |
@@ -88,6 +89,7 @@ checked separately by the layering gate.
 | [term-core](https://github.com/markc/mixos/blob/main/apps/term/crates/term-core/Cargo.toml) | term | app | core | none | 0.1.1 |
 | [term-render](https://github.com/markc/mixos/blob/main/apps/term/crates/term-render/Cargo.toml) | term | app | desktop | none | 0.1.1 |
 | [mix-shell](https://github.com/markc/mixos/blob/main/cli/mix-shell/Cargo.toml) | mix-shell | cli | mix | public | 0.116.0 |
+| [mixos-mcp](https://github.com/markc/mixos/blob/main/cli/mixos-mcp/Cargo.toml) | mixos-mcp | cli | core | none | 0.1.1 |
 | [system](https://github.com/markc/mixos/blob/main/cli/system/Cargo.toml) | system | cli | core | none | 0.1.1 |
 | [assets](https://github.com/markc/mixos/blob/main/libs/assets/Cargo.toml) | assets | lib | core | public | 0.1.1 |
 | [buildinfo](https://github.com/markc/mixos/blob/main/libs/buildinfo/Cargo.toml) | buildinfo | lib | core | none | 0.1.1 |

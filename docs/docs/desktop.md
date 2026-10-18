@@ -15,6 +15,7 @@ the [server](server.md) list. This page describes the current `main` branch of M
 
 On every MixOS system.
 
+- [mixos-mcp](../mixos-mcp/README.md) (cli): MCP stdio access to the native MixOS Bus.
 - [monitord](../monitord/README.md) (service): How monitord samples a host's CPU, memory, disks, network and processes, keeps history in memory and SQLite, and answers read verbs on the Bus, so any node's load can be read from anywhere on the…
 
 ## Desktop components

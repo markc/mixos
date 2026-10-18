@@ -1,0 +1,46 @@
+[package]
+name = "mixos-mcp"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "MCP stdio bridge to the MixOS Bus"
+
+[package.metadata.mixos]
+component = "mixos-mcp"
+kind = "cli"
+layer = "core"
+contract = "none"
+profiles = ["base"]
+
+[lints.clippy]
+mod_module_files = "deny"
+
+[dependencies]
+anyhow.workspace = true
+directories.workspace = true
+reqwest.workspace = true
+glob.workspace = true
+rmcp = { version = "=3.1.2", features = ["server", "transport-io", "macros", "schemars"] }
+bus = { workspace = true, features = ["native"] }
+buildinfo.workspace = true
+config.workspace = true
+logging.workspace = true
+mix = { workspace = true, features = ["json", "regex", "toml", "datetime", "url", "crypto"] }
+serde_json.workspace = true
+serde.workspace = true
+schemars = "1"
+tokio = { workspace = true, features = ["rt-multi-thread", "process", "io-std", "io-util"] }
+tracing.workspace = true
+chrono.workspace = true
+libc.workspace = true
+
+[dev-dependencies]
+rmcp = { version = "=3.1.2", features = ["client", "transport-child-process"] }
+test-broker = { path = "../../libs/test-broker" }
+tempfile.workspace = true
+
+[build-dependencies]
+buildinfo.workspace = true

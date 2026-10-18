@@ -25,7 +25,7 @@ if $g.opts.help then
 end
 
 $PACKAGES = {
-  "mixos-server": ["mix", "noded", "editd", "settingsd", "portald", "maild"],
+  "mixos-server": ["mix", "mixos-mcp", "noded", "editd", "settingsd", "portald", "maild"],
   "mixos-desktop": ["compd", "ced", "dopus", "prefs", "busviewer", "monitor", "screenshot"]
 }
 -- Desktop entries ship with their app: a packaged binary NAME with an

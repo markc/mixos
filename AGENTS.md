@@ -178,7 +178,8 @@ services/releasesd/
 
 1. **Plain names only.** Every package, binary and directory has a plain
    name that says what it is: `registry`, `design`, `maild`, `ced`. There is
-   **no brand prefix** (`mixos-` or any other brand) and **no layer
+   **no brand prefix** (`mixos-` or any other brand), except the single
+   `mixos-mcp` CLI ([decision](docs/docs/decisions/2026-10-19-mcp-program-name.md)), and **no layer
    prefix** (`bus-`, `mix-`, `core-`). Don't put a technology in a name when
    the technology may change: it's `toolkit`, not `egui-toolkit`.
 2. **Form:**
