@@ -55,6 +55,7 @@ macro_rules! icons {
 
 icons! {
     AppWindow => "app-window",
+    ArrowDown => "arrow-down",
     ArrowLeft => "arrow-left",
     ArrowRight => "arrow-right",
     ArrowUp => "arrow-up",
@@ -63,7 +64,9 @@ icons! {
     Camera => "camera",
     Check => "check",
     ChevronDown => "chevron-down",
+    ChevronLeft => "chevron-left",
     ChevronRight => "chevron-right",
+    ChevronsLeft => "chevrons-left",
     ChevronsRight => "chevrons-right",
     Circle => "circle",
     CircleAlert => "circle-alert",
