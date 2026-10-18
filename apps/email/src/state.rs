@@ -5919,7 +5919,10 @@ pub(crate) mod tests {
 
         // An edited quote is left as the person wrote it: the switch does nothing.
         let edited = compose.draft.body.replace("wrote:", "wrote this:");
-        assert_ne!(edited, compose.draft.body, "the attribution is in the quote");
+        assert_ne!(
+            edited, compose.draft.body,
+            "the attribution is in the quote"
+        );
         state.apply_ui(UiEvent::ComposeField(ComposeField::Body, edited.clone()));
         state.apply_ui(UiEvent::ComposeReplyPosition(Position::Below));
         let compose = state.compose.clone().unwrap();
