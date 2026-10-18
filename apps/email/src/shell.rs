@@ -56,6 +56,8 @@ pub enum Done {
     Contacts(u64, Result<Vec<jmap::Contact>, jmap::Error>),
     /// An attachment save or open finished (boxed: it carries a path).
     Attachment(Box<AttachmentDone>),
+    /// Contacts for compose suggestion `ticket`.
+    Suggested(u64, Result<Vec<jmap::Contact>, jmap::Error>),
 }
 
 /// An attachment save or open: which, for whom, and where it landed.
@@ -95,6 +97,8 @@ pub enum Event {
     /// A print page was written: its path and whether the browser took it,
     /// for Bus request `reply`; or why it could not be written.
     Printed(Option<u64>, Result<(String, bool), String>),
+    /// Compose suggestion `ticket`'s debounce has passed.
+    SuggestDue(u64),
 }
 
 pub struct Shell {
@@ -428,6 +432,7 @@ fn closing(event: &Event) -> Closing {
         | Event::SecretsSaved(..)
         | Event::Printed(..)
         | Event::WriteDeadline(_) => Closing::Apply,
+        Event::SuggestDue(_) => Closing::Ignore,
         Event::Delivery(citizen::Delivery::Command { id, .. }) => Closing::Cancel(*id),
         Event::Shown(..) => Closing::Shown,
         Event::Delivery(_) | Event::Look(..) | Event::LookRetry(_) | Event::PrefsOpened(_) => {
@@ -918,6 +923,24 @@ impl Shell {
             }
             Work::OpenPrefs => self.open_prefs(),
             Work::Print { reply, name, html } => self.print(reply, name, html),
+            Work::SuggestWait { ticket } => self.spawn(async move {
+                tokio::time::sleep(crate::state::SUGGEST_DEBOUNCE).await;
+                Event::SuggestDue(ticket)
+            }),
+            Work::Suggest {
+                account,
+                ticket,
+                text,
+            } => {
+                if let Some((tag, client)) = self.client(&account) {
+                    self.spawn(async move {
+                        let found = client
+                            .contacts_search(&text, crate::verbs::SUGGEST_FETCH)
+                            .await;
+                        Event::Account(tag, Done::Suggested(ticket, found))
+                    });
+                }
+            }
             Work::Attachment {
                 account,
                 email,

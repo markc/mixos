@@ -125,6 +125,7 @@ not-a-directory = Not an existing directory: { $path }
 name-taken = Every name for this file is taken
 no-home = No home directory (HOME) to save into
 attachment-count = { $count } attachments
+suggestions = Suggested addresses
 move = Move To…
 move-title = Move To
 move-body = Choose the mailbox to move this email to.

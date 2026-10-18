@@ -644,6 +644,112 @@ fn reader_attachments_studio_dark() {
     h.snapshot("reader_attachments_studio_dark");
 }
 
+/// A contact card for the completion tests.
+fn card(name: &str, emails: &[&str]) -> jmap::Contact {
+    let map: serde_json::Map<String, serde_json::Value> = emails
+        .iter()
+        .enumerate()
+        .map(|(n, e)| (format!("e{n}"), serde_json::json!({ "address": e })))
+        .collect();
+    serde_json::from_value(serde_json::json!({
+        "id": name,
+        "addressBookId": "B1",
+        "data": { "name": { "full": name }, "emails": map }
+    }))
+    .unwrap()
+}
+
+/// A compose open with `typed` in To and the account having seen Bob and
+/// Annabel; the suggestion ticket the typing issued.
+fn composing(typed: &str) -> (State, u64) {
+    let mut state = opened("text/plain", PLAIN);
+    state.accounts[0].mail.recent = vec![
+        email::suggest::Suggestion {
+            name: "Annabel Lee".into(),
+            email: "annabel@y.invalid".into(),
+            source: email::suggest::Source::Recent,
+        },
+        email::suggest::Suggestion {
+            name: "Bob".into(),
+            email: "bob@example.invalid".into(),
+            source: email::suggest::Source::Recent,
+        },
+    ];
+    commands::registry()
+        .execute("mail.compose", &mut state, Origin::Bus)
+        .unwrap();
+    state.take_work();
+    state.apply_ui(UiEvent::ComposeField(
+        email::state::ComposeField::To,
+        typed.into(),
+    ));
+    let ticket = state.compose.as_ref().unwrap().suggest.as_ref().map_or(0, |s| s.ticket);
+    (state, ticket)
+}
+
+#[test]
+fn typing_suggests_recent_at_once_then_contacts_after_the_pause() {
+    let (mut state, ticket) = composing("cy@example.invalid, ann");
+    let suggest = state.compose.as_ref().unwrap().suggest.clone().unwrap();
+    assert_eq!(suggest.query, "ann");
+    assert_eq!(suggest.items.len(), 1, "the recent address that matches");
+    assert!(matches!(state.take_work()[..], [Work::SuggestWait { ticket: t }] if t == ticket));
+    // The pause passes: the contacts are looked up.
+    state.apply(Event::SuggestDue(ticket));
+    assert!(
+        matches!(&state.take_work()[..], [Work::Suggest { ticket: t, text, .. }] if *t == ticket && text == "ann")
+    );
+    let home = tag(&state, "home");
+    state.apply(Event::Account(
+        home.clone(),
+        Done::Suggested(ticket, Ok(vec![card("Ann Example", &["ann@x.invalid", "ann@work.invalid"])])),
+    ));
+    let items = state.compose.as_ref().unwrap().suggest.clone().unwrap().items;
+    let emails: Vec<&str> = items.iter().map(|s| s.email.as_str()).collect();
+    assert_eq!(emails, ["ann@x.invalid", "ann@work.invalid", "annabel@y.invalid"]);
+    // Typing on makes the old answer late: it is dropped.
+    state.apply_ui(UiEvent::ComposeField(
+        email::state::ComposeField::To,
+        "cy@example.invalid, anna".into(),
+    ));
+    state.apply(Event::Account(
+        home,
+        Done::Suggested(ticket, Ok(vec![card("Ann Example", &["ann@x.invalid"])])),
+    ));
+    let items = state.compose.as_ref().unwrap().suggest.clone().unwrap().items;
+    assert_eq!(items.len(), 1, "only the newest lookup applies");
+    // Taking one replaces only the typed entry.
+    state.apply_ui(UiEvent::SuggestAccept(Some(0)));
+    let compose = state.compose.as_ref().unwrap();
+    assert_eq!(compose.to_text, "cy@example.invalid, Annabel Lee <annabel@y.invalid>, ");
+    assert!(compose.suggest.is_none());
+    // A single character shows nothing and looks nothing up.
+    state.take_work();
+    state.apply_ui(UiEvent::ComposeField(email::state::ComposeField::Cc, "a".into()));
+    assert!(state.compose.as_ref().unwrap().suggest.is_none());
+    assert!(state.take_work().is_empty());
+}
+
+#[test]
+fn compose_suggestions_studio_dark() {
+    let (mut state, ticket) = composing("an");
+    let home = tag(&state, "home");
+    state.apply(Event::Account(
+        home,
+        Done::Suggested(
+            ticket,
+            Ok(vec![
+                card("Ann Example", &["ann@x.invalid", "ann@work.invalid"]),
+                card("Smith, Anna", &["anna.smith@z.invalid"]),
+            ]),
+        ),
+    ));
+    let mut h = window(state, &theme(Scheme::Studio, Mode::Dark));
+    h.ctx.memory_mut(|m| m.request_focus(egui::Id::new("compose-recipients").with("to")));
+    h.run();
+    h.snapshot("compose_suggestions_studio_dark");
+}
+
 fn snapshot(name: &str, state: State, theme: &Theme) {
     let mut h = harness(state, theme);
     h.run();

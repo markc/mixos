@@ -146,6 +146,17 @@ pub enum Work {
     /// save it as `name`: in `dir`, else the downloads directory, or
     /// (`open`) in a private directory, then open it with the desktop's
     /// default application. `reply`: the Bus request to answer.
+    /// Wait out the completion debounce for compose suggestion `ticket`;
+    /// the shell answers with [`crate::shell::Event::SuggestDue`].
+    SuggestWait {
+        ticket: u64,
+    },
+    /// Fetch `account`'s contacts matching `text` for suggestion `ticket`.
+    Suggest {
+        account: String,
+        ticket: u64,
+        text: String,
+    },
     Attachment {
         account: String,
         email: String,
@@ -182,12 +193,14 @@ impl Work {
             | Work::FetchEvents { account, .. }
             | Work::FetchBooks { account }
             | Work::FetchContacts { account, .. }
-            | Work::Attachment { account, .. } => Some(account),
+            | Work::Attachment { account, .. }
+            | Work::Suggest { account, .. } => Some(account),
             Work::Settings { .. }
             | Work::WriteDeadline { .. }
             | Work::ReadSettings
             | Work::SaveSecrets { .. }
             | Work::Print { .. }
+            | Work::SuggestWait { .. }
             | Work::OpenPrefs => None,
         }
     }

@@ -420,6 +420,18 @@ session launcher; without one, the status line names the file to open.
 Pages older than a day are removed on the next print.</p>
 </li>
 <li>
+<p><strong>Address completion</strong> in To, Cc and Bcc. After two characters of an
+address the field offers up to eight: the account's contacts (from
+every address book) first, then addresses it has seen (recipients of
+loaded Sent pages, senders of other loaded pages, kept in memory only).
+Only the entry being typed is completed, the one after the last <code>,</code> or
+<code>;</code> outside quotes. <strong>Up</strong>/<strong>Down</strong> move, <strong>Enter</strong> or <strong>Tab</strong> take one
+as <code>Name &lt;address&gt;, </code> (the name quoted when it holds a comma or another
+special character), <strong>Escape</strong> closes the list. Addresses already in the
+field are left out. The contacts are looked up once typing pauses
+(200 ms), and only the newest lookup's answer is shown.</p>
+</li>
+<li>
 <p><strong>Quoted replies.</strong> A reply quotes the original's text body (a Markdown
 email's source; an HTML-only email's text) under an "On …, Ann wrote:"
 line, every line marked <code>&gt; </code> (an already quoted line gains another
@@ -497,6 +509,7 @@ never waits on them.</p>
 <tr><td><code>email.mark {ids, read?, flagged?}</code>, <code>email.move {ids, mailbox}</code>, <code>email.delete {ids, destroy?}</code></td><td>intent</td><td>the list and counts refresh after</td></tr>
 <tr><td><code>email.attachments {id}</code></td><td>query</td><td>the email's attachments (part, name, type, size, undecodable, save_only), never their content</td></tr>
 <tr><td><code>email.attachment.save {id, part, dir?}</code></td><td>intent</td><td>save one attachment (into <code>dir</code>, absolute and existing, else the downloads directory) without replacing a file; answers <code>{path}</code></td></tr>
+<tr><td><code>email.contacts.suggest {text, limit?}</code></td><td>query</td><td>address completions for <code>text</code>: contacts first, then addresses the account has seen; at most <code>limit</code> (8)</td></tr>
 <tr><td><code>email.print {id?}</code></td><td>intent</td><td>write the print page (the open email by default) and open it in the browser; answers <code>{path, opened}</code></td></tr>
 <tr><td><code>email.junk {ids, junk}</code></td><td>intent</td><td>move to the Junk mailbox (<code>junk: true</code>) or back to the inbox; maild trains spam or ham on the move; answers <code>{ids, mailbox}</code></td></tr>
 <tr><td><code>email.send {to, cc?, bcc?, subject, body, in_reply_to?}</code></td><td>intent</td><td>send without the dialog</td></tr>

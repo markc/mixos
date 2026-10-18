@@ -29,6 +29,7 @@ pub mod quote;
 pub mod reader;
 pub mod secrets;
 pub mod shell;
+pub mod suggest;
 pub mod state;
 pub mod verbs;
 pub mod view;

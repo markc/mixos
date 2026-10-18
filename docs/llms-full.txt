@@ -6587,6 +6587,16 @@ A malformed file loads defaults and is never overwritten.
   script that opens the dialog. The page opens in Firefox through the
   session launcher; without one, the status line names the file to open.
   Pages older than a day are removed on the next print.
+- **Address completion** in To, Cc and Bcc. After two characters of an
+  address the field offers up to eight: the account's contacts (from
+  every address book) first, then addresses it has seen (recipients of
+  loaded Sent pages, senders of other loaded pages, kept in memory only).
+  Only the entry being typed is completed, the one after the last `,` or
+  `;` outside quotes. **Up**/**Down** move, **Enter** or **Tab** take one
+  as `Name <address>, ` (the name quoted when it holds a comma or another
+  special character), **Escape** closes the list. Addresses already in the
+  field are left out. The contacts are looked up once typing pauses
+  (200 ms), and only the newest lookup's answer is shown.
 - **Quoted replies.** A reply quotes the original's text body (a Markdown
   email's source; an HTML-only email's text) under an "On …, Ann wrote:"
   line, every line marked `> ` (an already quoted line gains another
@@ -6668,6 +6678,7 @@ never waits on them.
 | `email.mark {ids, read?, flagged?}`, `email.move {ids, mailbox}`, `email.delete {ids, destroy?}` | intent | the list and counts refresh after |
 | `email.attachments {id}` | query | the email's attachments (part, name, type, size, undecodable, save_only), never their content |
 | `email.attachment.save {id, part, dir?}` | intent | save one attachment (into `dir`, absolute and existing, else the downloads directory) without replacing a file; answers `{path}` |
+| `email.contacts.suggest {text, limit?}` | query | address completions for `text`: contacts first, then addresses the account has seen; at most `limit` (8) |
 | `email.print {id?}` | intent | write the print page (the open email by default) and open it in the browser; answers `{path, opened}` |
 | `email.junk {ids, junk}` | intent | move to the Junk mailbox (`junk: true`) or back to the inbox; maild trains spam or ham on the move; answers `{ids, mailbox}` |
 | `email.send {to, cc?, bcc?, subject, body, in_reply_to?}` | intent | send without the dialog |

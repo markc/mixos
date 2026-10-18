@@ -72,6 +72,12 @@ pub enum UiEvent {
     SaveAttachment(String),
     /// Open the open email's attachment with the desktop's application.
     OpenAttachment(String),
+    /// Move the completion highlight up (-1) or down (1).
+    SuggestMove(i32),
+    /// Take a completion: this row, or (`None`) the highlighted one.
+    SuggestAccept(Option<usize>),
+    /// Close the completions.
+    SuggestClose,
 }
 
 const ICON: f32 = 14.0;

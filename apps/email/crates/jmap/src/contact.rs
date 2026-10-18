@@ -333,10 +333,68 @@ impl Client {
     }
 }
 
+/// The Contact/query + Contact/get pair behind [`Client::contacts_search`]:
+/// every address book (no `addressBookId`), the text filter over name,
+/// email and company, at most `limit` cards.
+pub fn contacts_search_calls(account_id: &str, text: &str, limit: u32) -> Vec<Call> {
+    vec![
+        Call(
+            "Contact/query".into(),
+            json!({
+                "accountId": account_id,
+                "filter": { "text": text.trim() },
+                "sort": [{ "property": "fullName", "isAscending": true }],
+                "limit": limit,
+            }),
+            "q0".into(),
+        ),
+        Call(
+            "Contact/get".into(),
+            json!({
+                "accountId": account_id,
+                "#ids": crate::client::backref("q0", "Contact/query", "/ids"),
+            }),
+            "c0".into(),
+        ),
+    ]
+}
+
+impl Client {
+    /// Contacts in any of the account's address books whose name, email or
+    /// company holds `text`: for address completion. One round trip.
+    pub async fn contacts_search(&self, text: &str, limit: u32) -> Result<Vec<Contact>> {
+        let replies = self
+            .call(&contacts_search_calls(self.account_id(), text, limit))
+            .await?;
+        let data = replies
+            .into_iter()
+            .last()
+            .ok_or_else(|| Error::Protocol("Contact/get reply is empty".into()))?;
+        let list = data
+            .get("list")
+            .cloned()
+            .ok_or_else(|| Error::Protocol("Contact/get reply has no list".into()))?;
+        Ok(serde_json::from_value(list)?)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn the_search_asks_every_book_by_text() {
+        let calls = contacts_search_calls("A7", "  ann ", 20);
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[0].0, "Contact/query");
+        assert_eq!(calls[0].1["filter"], json!({ "text": "ann" }));
+        assert!(calls[0].1["filter"].get("addressBookId").is_none());
+        assert_eq!(calls[0].1["limit"], 20);
+        assert_eq!(calls[0].1["accountId"], "A7");
+        assert_eq!(calls[1].0, "Contact/get");
+        assert_eq!(calls[1].1["#ids"]["resultOf"], "q0");
+    }
 
     /// RFC 9553 §1.4.1: a create with no (or only blank) emails or phones
     /// omits the map rather than sending `{}`.

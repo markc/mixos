@@ -124,6 +124,49 @@ pub struct MailState {
     pub attachments_open: bool,
     /// The open email's attachment saves and opens, by part id.
     pub transfers: BTreeMap<String, Transfer>,
+    /// Addresses this account has seen: Sent pages' recipients and other
+    /// pages' senders, for completion. In memory only.
+    pub recent: Vec<crate::suggest::Suggestion>,
+}
+
+/// The most recent addresses remembered per account.
+pub const RECENT_MAX: usize = 500;
+
+/// How long typing pauses before contacts are looked up.
+pub const SUGGEST_DEBOUNCE: std::time::Duration = std::time::Duration::from_millis(200);
+
+impl MailState {
+    /// Remember the addresses on `emails`, a page of the selected mailbox:
+    /// recipients in Sent, senders elsewhere.
+    fn remember(&mut self, emails: &[Email]) {
+        let sent = self
+            .selected_mailbox()
+            .is_some_and(|m| m.role.as_deref() == Some("sent"));
+        for email in emails {
+            let lists: Vec<&Option<Vec<EmailAddress>>> = if sent {
+                vec![&email.to, &email.cc]
+            } else {
+                vec![&email.from]
+            };
+            for address in lists.into_iter().flatten().flatten() {
+                let known = self
+                    .recent
+                    .iter()
+                    .any(|s| s.email.eq_ignore_ascii_case(&address.email));
+                if !known && !address.email.trim().is_empty() {
+                    self.recent.push(crate::suggest::Suggestion {
+                        name: address.name.clone().unwrap_or_default(),
+                        email: address.email.clone(),
+                        source: crate::suggest::Source::Recent,
+                    });
+                }
+            }
+        }
+        if self.recent.len() > RECENT_MAX {
+            let excess = self.recent.len() - RECENT_MAX;
+            self.recent.drain(..excess);
+        }
+    }
 }
 
 /// Where one attachment's save or open has got to.
@@ -199,6 +242,33 @@ pub struct ComposeState {
     /// The account's new address, when its login (URL or address) changed
     /// while this draft was open: Send waits until the person takes it.
     pub stale: Option<StaleFrom>,
+    /// The address completions showing under a recipient field.
+    pub suggest: Option<Suggest>,
+}
+
+/// Completions for the entry being typed in a recipient field.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Suggest {
+    pub field: ComposeField,
+    /// The entry looked up.
+    pub query: String,
+    /// The newest lookup: only its answer applies.
+    pub ticket: u64,
+    pub items: Vec<crate::suggest::Suggestion>,
+    /// The highlighted row.
+    pub cursor: usize,
+}
+
+impl ComposeState {
+    /// The text of recipient field `field` (empty for the others).
+    pub fn recipients(&self, field: ComposeField) -> &str {
+        match field {
+            ComposeField::To => &self.to_text,
+            ComposeField::Cc => &self.cc_text,
+            ComposeField::Bcc => &self.bcc_text,
+            ComposeField::Subject | ComposeField::Body => "",
+        }
+    }
 }
 
 /// A replacement From, bound to the account and connection it came from:
@@ -228,6 +298,7 @@ impl ComposeState {
             error: None,
             sending: None,
             stale: None,
+            suggest: None,
         }
     }
 }
@@ -2084,6 +2155,7 @@ impl State {
                     }
                     Done::Page(ticket, _) if ticket != view.tickets.page => {}
                     Done::Page(_, Ok(page)) => {
+                        view.mail.remember(&page.emails);
                         view.mail.busy = false;
                         view.mail.emails = page.emails;
                         view.mail.total = page.total;
@@ -2162,6 +2234,33 @@ impl State {
                     | Done::Books(Err(error)) => self.status = error.to_string(),
                     // Answered above, before the generation check.
                     Done::Answered(..) | Done::Wrote(..) | Done::Attachment(..) => {}
+                    Done::Suggested(ticket, found) => {
+                        let contacts = found.unwrap_or_default();
+                        let recent = view.mail.recent.clone();
+                        if let Some(compose) = self.compose.as_mut()
+                            && compose.account == tag.account
+                            && let Some(suggest) = compose.suggest.as_mut()
+                            && suggest.ticket == ticket
+                        {
+                            let text = match suggest.field {
+                                ComposeField::To => &compose.to_text,
+                                ComposeField::Cc => &compose.cc_text,
+                                _ => &compose.bcc_text,
+                            };
+                            let found: Vec<_> = contacts
+                                .iter()
+                                .flat_map(crate::suggest::from_contact)
+                                .collect();
+                            suggest.items = crate::suggest::rank(
+                                found,
+                                &recent,
+                                &suggest.query,
+                                &crate::suggest::present(text),
+                                crate::suggest::LIMIT,
+                            );
+                            suggest.cursor = suggest.cursor.min(suggest.items.len().saturating_sub(1));
+                        }
+                    }
                 }
             }
             Event::Settled(ticket, answer) => self.settled(ticket, answer),
@@ -2175,6 +2274,7 @@ impl State {
             | Event::Shown(..)
             | Event::PrefsOpened(_) => {}
             Event::Printed(reply, result) => self.printed(reply, result),
+            Event::SuggestDue(ticket) => self.suggest_due(ticket),
         }
     }
 
@@ -2439,6 +2539,20 @@ impl State {
                 return self.refuse(reply, code, &message);
             }
         };
+        if let Then::Suggest { text, limit } = &then {
+            let contacts: Vec<jmap::Contact> = value
+                .get("contacts")
+                .cloned()
+                .and_then(|list| serde_json::from_value(list).ok())
+                .unwrap_or_default();
+            let recent = self
+                .account(&tag.account)
+                .map(|v| v.mail.recent.clone())
+                .unwrap_or_default();
+            let found: Vec<_> = contacts.iter().flat_map(crate::suggest::from_contact).collect();
+            let ranked = crate::suggest::rank(found, &recent, text.trim(), &[], *limit);
+            return self.reply(reply, 0, json!({ "suggestions": ranked }));
+        }
         let email = match then {
             Then::Answer => return self.reply(reply, 0, value),
             _ => serde_json::from_value::<Email>(value),
@@ -2477,7 +2591,9 @@ impl State {
             return self.refuse(reply, code::BUSY, &crate::label("compose-open"));
         }
         let opened = match then {
-            Then::Print | Then::Attachments | Then::SaveAttachment { .. } => false,
+            Then::Print | Then::Attachments | Then::SaveAttachment { .. } | Then::Suggest { .. } => {
+                false
+            }
             Then::Reply(all, quote) => self.reply_to(account, &email, all, quote),
             Then::Forward(to) => self.forward(account, &email, &to),
             Then::Answer => false,
@@ -2679,6 +2795,84 @@ impl State {
                 },
             );
         }
+    }
+
+    /// The entry typed in recipient `field` changed: show the recent
+    /// addresses that match at once, and look the contacts up once typing
+    /// pauses ([`SUGGEST_DEBOUNCE`]). Fewer than two characters close the
+    /// list.
+    fn suggest_typed(&mut self, field: ComposeField) {
+        let ticket = self.ticket();
+        let Some(compose) = self.compose.as_ref() else {
+            return;
+        };
+        let text = compose.recipients(field).to_owned();
+        let Some(query) = crate::suggest::query(&text).map(str::to_owned) else {
+            if let Some(compose) = self.compose.as_mut() {
+                compose.suggest = None;
+            }
+            return;
+        };
+        let recent = self
+            .account(&compose.account)
+            .map(|v| v.mail.recent.clone())
+            .unwrap_or_default();
+        let items = crate::suggest::rank(
+            Vec::new(),
+            &recent,
+            &query,
+            &crate::suggest::present(&text),
+            crate::suggest::LIMIT,
+        );
+        if let Some(compose) = self.compose.as_mut() {
+            compose.suggest = Some(Suggest {
+                field,
+                query,
+                ticket,
+                items,
+                cursor: 0,
+            });
+        }
+        self.queue(Work::SuggestWait { ticket });
+    }
+
+    /// The debounce for suggestion `ticket` passed: look its contacts up,
+    /// if it is still the newest.
+    fn suggest_due(&mut self, ticket: u64) {
+        let Some(compose) = self.compose.as_ref() else {
+            return;
+        };
+        if let Some(suggest) = &compose.suggest
+            && suggest.ticket == ticket
+        {
+            let work = Work::Suggest {
+                account: compose.account.clone(),
+                ticket,
+                text: suggest.query.clone(),
+            };
+            self.queue(work);
+        }
+    }
+
+    /// Take suggestion `index` (or the highlighted one): the typed entry
+    /// becomes it, with a separator for the next.
+    fn suggest_accept(&mut self, index: Option<usize>) {
+        let Some(compose) = self.compose.as_mut() else {
+            return;
+        };
+        let Some(suggest) = compose.suggest.take() else {
+            return;
+        };
+        let Some(item) = suggest.items.get(index.unwrap_or(suggest.cursor)) else {
+            return;
+        };
+        let text = match suggest.field {
+            ComposeField::To => &mut compose.to_text,
+            ComposeField::Cc => &mut compose.cc_text,
+            ComposeField::Bcc => &mut compose.bcc_text,
+            ComposeField::Subject | ComposeField::Body => return,
+        };
+        *text = crate::suggest::accept(text, item);
     }
 
     /// `mail.attachments`: show or hide the open email's attachments.
@@ -3795,6 +3989,27 @@ impl State {
                         ComposeField::Subject => compose.draft.subject = value,
                         ComposeField::Body => compose.draft.body = value,
                     }
+                    if matches!(field, ComposeField::To | ComposeField::Cc | ComposeField::Bcc) {
+                        self.suggest_typed(field);
+                    }
+                }
+            }
+            UiEvent::SuggestMove(step) => {
+                if let Some(suggest) = self.compose.as_mut().and_then(|c| c.suggest.as_mut())
+                    && !suggest.items.is_empty()
+                {
+                    let last = suggest.items.len() - 1;
+                    suggest.cursor = if step < 0 {
+                        suggest.cursor.saturating_sub(1)
+                    } else {
+                        (suggest.cursor + 1).min(last)
+                    };
+                }
+            }
+            UiEvent::SuggestAccept(index) => self.suggest_accept(index),
+            UiEvent::SuggestClose => {
+                if let Some(compose) = self.compose.as_mut() {
+                    compose.suggest = None;
                 }
             }
             UiEvent::CloseCompose => self.compose = None,

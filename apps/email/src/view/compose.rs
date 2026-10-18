@@ -39,6 +39,105 @@ pub fn dialog(ui: &mut Ui, state: &State, events: &mut Vec<UiEvent>) {
     }
 }
 
+/// A recipient field with its address completions under it. While the
+/// list shows and the field has the keyboard, Up and Down move through
+/// it, Enter or Tab take the highlighted address, and Escape closes it:
+/// those keys are taken before the field sees them.
+fn recipients(
+    ui: &mut Ui,
+    compose: &ComposeState,
+    label: &str,
+    field: ComposeField,
+    width: f32,
+    events: &mut Vec<UiEvent>,
+) {
+    let id = egui::Id::new("compose-recipients").with(label);
+    let suggest = compose
+        .suggest
+        .as_ref()
+        .filter(|s| s.field == field && !s.items.is_empty());
+    let focused = ui.memory(|m| m.has_focus(id));
+    if let Some(suggest) = suggest
+        && focused
+    {
+        let none = egui::Modifiers::NONE;
+        ui.input_mut(|i| {
+            if i.consume_key(none, egui::Key::ArrowDown) {
+                events.push(UiEvent::SuggestMove(1));
+            }
+            if i.consume_key(none, egui::Key::ArrowUp) {
+                events.push(UiEvent::SuggestMove(-1));
+            }
+            if i.consume_key(none, egui::Key::Enter) || i.consume_key(none, egui::Key::Tab) {
+                events.push(UiEvent::SuggestAccept(Some(suggest.cursor)));
+            }
+            if i.consume_key(none, egui::Key::Escape) {
+                events.push(UiEvent::SuggestClose);
+            }
+        });
+    }
+    let mut buffer = compose.recipients(field).to_owned();
+    let response = ui.add(field::text_edit(&mut buffer, &crate::label(label), width).id(id));
+    if response.changed() {
+        events.push(UiEvent::ComposeField(field, buffer));
+    }
+    if let Some(suggest) = suggest
+        && (focused || response.has_focus())
+    {
+        dropdown(ui, &response, suggest, events);
+    }
+}
+
+/// The completions under `field`: the name strong, the address weak, the
+/// typed part highlighted, the keyboard's row selected.
+fn dropdown(
+    ui: &Ui,
+    field: &egui::Response,
+    suggest: &crate::state::Suggest,
+    events: &mut Vec<UiEvent>,
+) {
+    egui::Area::new(field.id.with("suggestions"))
+        .order(egui::Order::Foreground)
+        .fixed_pos(field.rect.left_bottom())
+        .show(ui.ctx(), |ui| {
+            egui::Frame::popup(ui.style()).show(ui, |ui| {
+                ui.set_width(field.rect.width());
+                let strong = ui.visuals().strong_text_color();
+                let weak = ui.visuals().weak_text_color();
+                let mark = ui.visuals().selection.bg_fill.gamma_multiply(0.5);
+                let body = egui::TextStyle::Body.resolve(ui.style());
+                let bold = toolkit::fonts::bound(ui.ctx(), toolkit::fonts::heading(body.size));
+                for (index, item) in suggest.items.iter().enumerate() {
+                    let mut job = egui::text::LayoutJob::default();
+                    let mut add = |text: &str, font: &egui::FontId, colour: egui::Color32| {
+                        let base = egui::TextFormat::simple(font.clone(), colour);
+                        match crate::suggest::highlight(text, &suggest.query) {
+                            Some(range) => {
+                                job.append(&text[..range.start], 0.0, base.clone());
+                                let marked = egui::TextFormat {
+                                    background: mark,
+                                    ..base.clone()
+                                };
+                                job.append(&text[range.clone()], 0.0, marked);
+                                job.append(&text[range.end..], 0.0, base);
+                            }
+                            None => job.append(text, 0.0, base),
+                        }
+                    };
+                    if !item.name.is_empty() {
+                        add(&item.name, &bold, strong);
+                        add("  ", &body, weak);
+                    }
+                    add(&item.email, &body, weak);
+                    let row = toolkit::selectable(ui, index == suggest.cursor, job);
+                    if row.clicked() {
+                        events.push(UiEvent::SuggestAccept(Some(index)));
+                    }
+                }
+            });
+        });
+}
+
 /// The dialog's fields. Each edit is one event; the state owns the draft.
 fn form(ui: &mut Ui, compose: &ComposeState, state: &State, events: &mut Vec<UiEvent>) {
     let width = ui.available_width();
@@ -73,9 +172,13 @@ fn form(ui: &mut Ui, compose: &ComposeState, state: &State, events: &mut Vec<UiE
                 }
             });
         }
-        line(ui, "to", ComposeField::To, &compose.to_text, events);
-        line(ui, "cc", ComposeField::Cc, &compose.cc_text, events);
-        line(ui, "bcc", ComposeField::Bcc, &compose.bcc_text, events);
+        for (label, field) in [
+            ("to", ComposeField::To),
+            ("cc", ComposeField::Cc),
+            ("bcc", ComposeField::Bcc),
+        ] {
+            recipients(ui, compose, label, field, width, events);
+        }
         line(
             ui,
             "subject",

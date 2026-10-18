@@ -299,6 +299,12 @@ pub const VERBS: &[Verb] = &[
         "Save one attachment, never replacing a file (a taken name is numbered); answers {path}",
     ),
     verb(
+        "email.contacts.suggest",
+        true,
+        r#"{"account":"optional account id","text":"what is typed (at least 2 characters)","limit":"optional count, default 8"}"#,
+        "Address completions for text: the account's contacts first, then addresses it has seen, ranked and deduplicated",
+    ),
+    verb(
         "email.print",
         false,
         r#"{"account":"optional account id","id":"optional email id (default: the open email)"}"#,
@@ -411,7 +417,15 @@ pub enum Query {
     Contact {
         id: String,
     },
+    /// Contacts in any address book matching `text` (address completion).
+    Suggest {
+        text: String,
+    },
 }
+
+/// How many matching contacts a completion fetches: more than it shows,
+/// since one card can hold several addresses and some are deduplicated.
+pub const SUGGEST_FETCH: u32 = 20;
 
 /// What happens with a query's answer besides the reply.
 #[derive(Clone, Debug, PartialEq)]
@@ -425,6 +439,9 @@ pub enum Then {
     Forward(String),
     /// Print the email fetched (`email.print`).
     Print,
+    /// Answer with the ranked completions for `text`, at most `limit`
+    /// (`email.contacts.suggest`).
+    Suggest { text: String, limit: usize },
     /// Answer with the email fetched's attachments (`email.attachments`).
     Attachments,
     /// Save the email fetched's attachment `part`, in `dir` or the
@@ -550,6 +567,9 @@ pub async fn run_query(client: &Client, query: Query) -> Result<Value, jmap::Err
             json!({ "contacts": to_value(client.contacts(&book, &filter).await?) })
         }
         Query::Contact { id } => to_value(client.contact(&id).await?),
+        Query::Suggest { text } => {
+            json!({ "contacts": to_value(client.contacts_search(&text, SUGGEST_FETCH).await?) })
+        }
     })
 }
 
@@ -1134,6 +1154,18 @@ fn dispatch(
                 Then::Forward(list(args, "to")?.unwrap_or_default().join(", "))
             };
             state.query(account, id, Query::Get { id: email }, then);
+        }
+        "email.contacts.suggest" => {
+            let account = connected(state, args)?;
+            let text = required(args, "text")?;
+            let limit = number(args, "limit")?.map_or(crate::suggest::LIMIT, |n| n.clamp(1, 50) as usize);
+            if text.trim().chars().count() < crate::suggest::MIN_CHARS {
+                return Err(invalid("text needs at least 2 characters"));
+            }
+            let query = Query::Suggest {
+                text: text.trim().to_owned(),
+            };
+            state.query(account, id, query, Then::Suggest { text, limit });
         }
         "email.attachments" | "email.attachment.save" => {
             let account = connected(state, args)?;
