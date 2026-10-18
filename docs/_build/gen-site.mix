@@ -483,7 +483,22 @@ end
 
 -- Subset + compress one face. $instance is "" to keep every variation axis
 -- or an hb-subset axis location ("opsz=14,wght=400") to pin one.
+-- Cut faces are cached in $FONT_CACHE, keyed by everything that shapes the
+-- bytes: the source's content hash, the codepoints, the instance and the
+-- hb-subset version. woff2_compress (Brotli q11, one core) is the slow step,
+-- and on a hit both it and hb-subset are skipped: a rebuild with no font
+-- change costs one hash per source. Delete the cache dir to force a re-cut.
+$FONT_CACHE = env("XDG_CACHE_HOME", env("HOME") .. "/.cache") .. "/mixos/site-fonts"
+
 fn cut_font($role, $src, $unicodes, $instance, $code)
+  $out = $tmp .. "/" .. $role .. ".woff2"
+  $key = hash_sha256(join([hash_file($src, "sha256"), $unicodes, $instance,
+    trim(run_argv_must(["hb-subset", "--version"]))], "\n"))
+  $cached = $FONT_CACHE .. "/" .. $role .. "-" .. substr($key, 0, 16) .. ".woff2"
+  if is_file($cached) then
+    copy($cached, $out)
+    return $out
+  end
   $ttf = $tmp .. "/" .. $role .. ".ttf"
   $cmd = ["hb-subset", $src, "--unicodes=" .. $unicodes, "--output-file=" .. $ttf]
   if $instance != "" then
@@ -491,10 +506,13 @@ fn cut_font($role, $src, $unicodes, $instance, $code)
   end
   run_argv_must($cmd)
   run_argv_must(["woff2_compress", $ttf])
-  $out = $tmp .. "/" .. $role .. ".woff2"
   if not is_file($out) then
     raise($code, "woff2_compress produced no output for " .. $role)
   end
+  -- Publish atomically: a killed build must not leave a truncated cache entry.
+  mkdir($FONT_CACHE)
+  copy($out, $cached .. ".tmp")
+  rename($cached .. ".tmp", $cached)
   return $out
 end
 
