@@ -653,8 +653,8 @@ end
 -- share/brand is the one source for MixOS brand art; the site never keeps a
 -- second original. favicon.svg is generated from the transparent mark and
 -- follows the visitor's prefers-color-scheme (black on light, white on dark).
--- The raster fallbacks are copied byte for byte. shell.html (top bar) and
--- home.html (hero) take the mark's outline through {{brand:mark}}.
+-- The raster fallbacks are copied byte for byte. The Alien Cyclops mascot is
+-- copied to _web/brand/ and drawn by shell.html (top bar) and home.html (hero).
 $brand = $repo .. "/share/brand"
 $mark_d = re_find(read_file($brand .. "/logos/mixos-black-transparent.svg"), " d=\"([^\"]+)\"")
 if len($mark_d) != 1 then
@@ -671,8 +671,6 @@ $copies = {
   "_web/brand/apple-touch-icon.png": $brand .. "/favicons/black-on-white/apple-touch-icon.png",
   "_web/brand/alien-cyclops.svg": $brand .. "/logos/alien-cyclops.svg"
 }
-$home_src = replace($home_src, "{{brand:mark}}", $mark_path)
-$shell_src = replace($shell_src, "{{brand:mark}}", $mark_path)
 
 -- ---------------------------------------------------------------- asset versions
 fn asset_ver($rel)
