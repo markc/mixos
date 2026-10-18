@@ -20,6 +20,10 @@ contract = "none"
 [lints.clippy]
 mod_module_files = "deny"
 
+[features]
+default = []
+tls = ["dep:rustls", "dep:rustls-pemfile", "dep:tokio-rustls"]
+
 [dependencies]
 anyhow.workspace = true
 serde.workspace = true
@@ -29,3 +33,10 @@ tracing.workspace = true
 # else the XDG ones.
 libc = "=0.2.189"
 strict = { path = "../strict" }
+rustls = { workspace = true, optional = true }
+rustls-pemfile = { workspace = true, optional = true }
+tokio-rustls = { workspace = true, optional = true }
+
+[dev-dependencies]
+rcgen.workspace = true
+tempfile.workspace = true

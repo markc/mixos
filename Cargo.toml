@@ -42,6 +42,10 @@ notify = { version = "7", default-features = false, features = ["macos_fsevent"]
 # is added per client, never a global invalid-certificate acceptance.
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 rand = "0.8"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+rustls-pemfile = "2"
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
+rcgen = { version = "0.13", default-features = false, features = ["crypto", "pem", "ring"] }
 rusqlite = { version = "0.38", features = ["bundled"] }
 rustc-hash = "2"
 serde = { version = "=1.0.229", features = ["derive", "rc"] }

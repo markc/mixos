@@ -208,6 +208,7 @@
                 <div class="panel-title">On this page</div>
                 <div class="panel-content">
                     <nav id="toc-nav">
+                        <a href="#node-configuration-and-tls">Node configuration and TLS</a>
                         <a href="#application-directories">Application directories</a>
                         <a href="#atomic-directories">Atomic directories</a>
                     </nav>
@@ -252,6 +253,30 @@ loader, re-exported so a config reader needs one dependency. Typed
 loading is <code>strict::from_file</code>.</li>
 </ul>
 <p>No dependency on the Mix language. Test with <code>cargo test -p config</code>.</p>
+<h2 id="node-configuration-and-tls">Node configuration and TLS</h2>
+<p><code>node::NodeConfig</code> reads <code>node.conf.mix</code>, selected by <code>MIXOS_NODE_CONFIG</code>
+or the native <code>Dir::Etc</code> search paths. The optional <code>maild</code> section contains
+typed ports, hostname, storage paths, spam settings, the legacy <code>tls_cert</code> /
+<code>tls_key</code> pair and <code>tls: { identity: [...], strict_sni: false }</code>. Mail state
+defaults to <code>path(Dir::Var)/maild/{mail.db,blobs,mds}</code>. Unknown service and
+mail settings survive typed round trips.</p>
+<p>Optional <code>jmap_listen</code>, <code>jmap_upstream</code>, <code>smtp_inbound_listen</code> and
+<code>smtps_listen</code> fields override the corresponding address helpers. Otherwise
+the helpers use the node IP and mail ports (8443, 25 and 465 by default).
+<code>jmap_upstream()</code> uses HTTPS. Missing mail settings remain valid.</p>
+<p><code>node::{TlsConfig,TlsIdentityConfig}</code> are always available. Each identity
+requires <code>server_name</code>, <code>cert</code> and <code>key</code>; its independent <code>default</code> and
+<code>no_sni_fallback</code> flags default to false. Enable the optional <code>tls</code> feature
+for <code>load_tls_config(cert_path, key_path)</code> and
+<code>tls::sni::{SniCertResolver,TlsIdentity,pick_identity}</code>. The resolver loads
+PEM pairs and matches names case-insensitively. Unknown SNI uses the default;
+absent SNI prefers the no-SNI identity then the default. If neither flag is
+set anywhere, the first identity fills both roles. Strict SNI rejects unknown
+names and clients which omit SNI. <code>default_identity()</code> remains available for
+pre-TLS greetings, including in strict mode.</p>
+<p><code>from_conf_mix_str</code> and <code>load_conf_mix_path</code> return <code>config::Error</code> (the
+strict loader error); node search/load functions retain <code>anyhow::Result</code>.
+Verify TLS with <code>cargo test -p config --features tls</code>.</p>
 <p>The source is <a href="https://github.com/markc/mixos/tree/main/libs/config"><code>libs/config</code></a>.</p>
 <h2 id="application-directories">Application directories</h2>
 <p><code>AppDirs</code> shares the existing Ced/Dopus per-application root, config, state

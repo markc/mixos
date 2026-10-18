@@ -16,6 +16,17 @@ pub struct NodeConfig {
     pub mesh: Option<String>,
     pub noded: NodedConfig,
     pub observe: ObserveConfig,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub maild: Option<MaildConfig>,
+    /// Optional address overrides; absent values derive from the node IP and mail ports.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub jmap_listen: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub jmap_upstream: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub smtp_inbound_listen: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub smtps_listen: Option<String>,
 }
 
 impl NodeConfig {
@@ -30,6 +41,101 @@ impl NodeConfig {
     pub fn noded_url(&self) -> String {
         format!("ws://{}/ws", self.noded_listen())
     }
+
+    /// JMAP listen address, derived from the node IP unless explicitly set.
+    pub fn jmap_listen(&self) -> String {
+        self.jmap_listen.clone().unwrap_or_else(|| {
+            format!("{}:{}", self.wg_ip, self.maild.as_ref().map_or(8443, |m| m.jmap_port))
+        })
+    }
+
+    /// JMAP reverse-proxy upstream URL.
+    pub fn jmap_upstream(&self) -> String {
+        self.jmap_upstream.clone().unwrap_or_else(|| format!("https://{}", self.jmap_listen()))
+    }
+
+    /// Inbound SMTP listen address.
+    pub fn smtp_inbound_listen(&self) -> String {
+        self.smtp_inbound_listen.clone().unwrap_or_else(|| {
+            format!("{}:{}", self.wg_ip, self.maild.as_ref().map_or(25, |m| m.smtp_port))
+        })
+    }
+
+    /// Implicit-TLS SMTP listen address.
+    pub fn smtps_listen(&self) -> String {
+        self.smtps_listen.clone().unwrap_or_else(|| {
+            format!("{}:{}", self.wg_ip, self.maild.as_ref().map_or(465, |m| m.smtps_port))
+        })
+    }
+}
+
+/// Optional node-wide mail service settings. Missing members use service defaults.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct MaildConfig {
+    #[serde(flatten)]
+    pub extra: std::collections::BTreeMap<String, serde_json::Value>,
+    pub enabled: bool,
+    pub jmap_port: u16,
+    pub smtp_port: u16,
+    pub smtps_port: u16,
+    pub hostname: String,
+    pub database: String,
+    pub blob_dir: String,
+    pub mds_dir: String,
+    pub tls_cert: Option<String>,
+    pub tls_key: Option<String>,
+    /// A non-empty identity list takes precedence over the legacy cert/key pair.
+    pub tls: TlsConfig,
+    pub spam_enabled: bool,
+    pub spam_db_dir: Option<String>,
+}
+
+impl Default for MaildConfig {
+    fn default() -> Self {
+        let state = crate::path(crate::Dir::Var).join("maild");
+        Self {
+            extra: Default::default(),
+            enabled: false,
+            jmap_port: 8443,
+            smtp_port: 25,
+            smtps_port: 465,
+            hostname: String::new(),
+            database: state.join("mail.db").to_string_lossy().into_owned(),
+            blob_dir: state.join("blobs").to_string_lossy().into_owned(),
+            mds_dir: state.join("mds").to_string_lossy().into_owned(),
+            tls_cert: None,
+            tls_key: None,
+            tls: TlsConfig::default(),
+            spam_enabled: true,
+            spam_db_dir: None,
+        }
+    }
+}
+
+/// Multi-identity TLS settings, available without the `tls` feature.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TlsConfig {
+    #[serde(flatten)]
+    pub extra: std::collections::BTreeMap<String, serde_json::Value>,
+    pub identity: Vec<TlsIdentityConfig>,
+    /// Refuse both unknown SNI names and clients which omit SNI.
+    pub strict_sni: bool,
+}
+
+/// One SNI identity. Name and PEM paths are required; flags default to false.
+/// `default` controls mismatches and pre-TLS greetings; `no_sni_fallback`
+/// independently controls clients which omit SNI in non-strict mode.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct TlsIdentityConfig {
+    pub server_name: String,
+    pub cert: String,
+    pub key: String,
+    #[serde(default)]
+    pub default: bool,
+    #[serde(default)]
+    pub no_sni_fallback: bool,
 }
 
 // SPDX-License-Identifier: MIT OR Apache-2.0

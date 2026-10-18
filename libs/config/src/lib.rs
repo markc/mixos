@@ -31,6 +31,11 @@ pub mod atomic;
 mod dir;
 pub mod node;
 pub mod store;
+#[cfg(feature = "tls")]
+pub mod tls;
+
+#[cfg(feature = "tls")]
+pub use tls::load_tls_config;
 
 pub use app_dirs::AppDirs;
 pub use dir::{Dir, Dirs, Environment, path};
