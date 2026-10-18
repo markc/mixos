@@ -2,15 +2,126 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The compose dialog: a modal over the whole window with the address
 //! fields, the subject, the body, and Send/Cancel. Send runs the state's
-//! recipe (create in Sent, submit); a failure keeps the dialog open with
-//! the error so nothing typed is lost.
+//! recipe (create in Drafts, submit, file in Sent); a failure keeps the
+//! dialog open with the error so nothing typed is lost.
+//!
+//! What is typed is kept as a local draft. Cancel, Escape or closing the
+//! window over a draft with something in it asks first, keeping the draft
+//! by default; a draft kept from an earlier run is offered at start.
 
 use egui::{TextEdit, Ui};
 use toolkit::dialog::{self, Choice};
 use toolkit::field;
 
 use super::UiEvent;
-use crate::state::{ComposeField, ComposeState, State};
+use crate::state::{ComposeField, ComposeState, Confirm, DraftChoice, State};
+
+/// The close or quit question over a draft: Keep Draft (the default, and
+/// Enter), Discard, or Keep Editing (Escape).
+pub fn confirm(ui: &mut Ui, state: &State, events: &mut Vec<UiEvent>) {
+    let Some(asked) = state.confirm else {
+        return;
+    };
+    let (key, title, keep, discard) = match asked {
+        Confirm::CloseCompose => (
+            "confirm-close-draft",
+            "close-draft-title",
+            "keep-draft",
+            "discard-draft",
+        ),
+        Confirm::Quit => (
+            "confirm-quit-draft",
+            "quit-draft-title",
+            "keep-draft-quit",
+            "discard-draft-quit",
+        ),
+    };
+    let id = egui::Id::new(key);
+    let choices = vec![
+        Choice::new(crate::label(keep), dialog::Role::Default),
+        Choice::new(crate::label(discard), dialog::Role::Other),
+        Choice::new(crate::label("keep-editing"), dialog::Role::Cancel),
+    ];
+    let shown = dialog::Dialog::new(id, crate::label(title))
+        .buttons(choices)
+        .show(ui.ctx(), |ui| {
+            ui.add(egui::Label::new(crate::label("close-draft-body")).wrap());
+        });
+    let choice = match shown.chosen {
+        Some(0) => Some(DraftChoice::Keep),
+        Some(1) => Some(DraftChoice::Discard),
+        Some(_) => Some(DraftChoice::Back),
+        None if shown.dismissed => Some(DraftChoice::Back),
+        None => None,
+    };
+    if let Some(choice) = choice {
+        dialog::Dialog::reset(ui.ctx(), id);
+        events.push(UiEvent::ConfirmDraft(choice));
+    }
+}
+
+/// The offer of the first kept draft, while no compose is open: Restore
+/// (the default), Discard, or Later (Escape; every draft stays kept).
+pub fn restore(ui: &mut Ui, state: &State, events: &mut Vec<UiEvent>) {
+    if state.compose.is_some() || state.form.is_some() {
+        return;
+    }
+    let Some(draft) = state.restore.first() else {
+        return;
+    };
+    let id = egui::Id::new("restore-draft");
+    let choices = vec![
+        Choice::new(crate::label("restore-draft"), dialog::Role::Default),
+        Choice::new(crate::label("discard-draft"), dialog::Role::Other),
+        Choice::new(crate::label("later"), dialog::Role::Cancel),
+    ];
+    let subject = if draft.subject.trim().is_empty() {
+        crate::label("no-subject")
+    } else {
+        draft.subject.clone()
+    };
+    let to = if draft.to.trim().is_empty() {
+        crate::label("no-recipients")
+    } else {
+        draft.to.trim().trim_end_matches([',', ';']).to_owned()
+    };
+    let saved = chrono::DateTime::parse_from_rfc3339(&draft.saved_at)
+        .map(|at| {
+            at.with_timezone(&chrono::Local)
+                .format("%-d %b %Y, %H:%M")
+                .to_string()
+        })
+        .unwrap_or_default();
+    let more = state.restore.len() - 1;
+    let shown = dialog::Dialog::new(id, crate::label("restore-title"))
+        .buttons(choices)
+        .show(ui.ctx(), |ui| {
+            ui.add(egui::Label::new(crate::label("restore-body")).wrap());
+            ui.add_space(4.0);
+            ui.strong(&subject);
+            ui.label(crate::label_with("to-line", &[("to", &to)]));
+            if !saved.is_empty() {
+                ui.weak(crate::label_with("saved-line", &[("when", &saved)]));
+            }
+            if more > 0 {
+                ui.weak(crate::label_with(
+                    "restore-more",
+                    &[("count", &more.to_string())],
+                ));
+            }
+        });
+    let choice = match shown.chosen {
+        Some(0) => Some(DraftChoice::Keep),
+        Some(1) => Some(DraftChoice::Discard),
+        Some(_) => Some(DraftChoice::Back),
+        None if shown.dismissed => Some(DraftChoice::Back),
+        None => None,
+    };
+    if let Some(choice) = choice {
+        dialog::Dialog::reset(ui.ctx(), id);
+        events.push(UiEvent::RestoreDraft(choice));
+    }
+}
 
 /// The compose dialog, when a draft is open.
 pub fn dialog(ui: &mut Ui, state: &State, events: &mut Vec<UiEvent>) {

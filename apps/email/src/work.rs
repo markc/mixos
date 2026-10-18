@@ -100,11 +100,13 @@ pub enum Work {
         id: String,
         read: bool,
     },
-    /// The send recipe (build, upload, create in Sent, submit).
+    /// The send recipe (build, upload, create in Drafts, submit, file in
+    /// Sent), resumed from what earlier tries of this message did.
     Send {
         account: String,
         ticket: u64,
         draft: Composed,
+        attempt: jmap::SendAttempt,
     },
     FetchCalendars {
         account: String,

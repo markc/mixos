@@ -573,12 +573,12 @@ pub async fn run_query(client: &Client, query: Query) -> Result<Value, jmap::Err
     })
 }
 
-/// Run `write` on `client` (`sent`: the Sent mailbox, for a send); the
-/// answer's JSON (a created id).
+/// Run `write` on `client` (`sent`: the Drafts and Sent mailboxes, for a
+/// send); the answer's JSON (a created id).
 pub async fn run_write(
     client: &Client,
     write: Write,
-    sent: Option<String>,
+    sent: Option<jmap::SendBoxes>,
 ) -> Result<Value, jmap::Error> {
     Ok(match write {
         Write::Keywords { ids, read, flagged } => {
@@ -605,10 +605,15 @@ pub async fn run_write(
             json!({ "id": id })
         }
         Write::Send { draft } => {
-            let sent =
+            let boxes =
                 sent.ok_or_else(|| jmap::Error::Protocol(crate::label("no-sent-mailbox")))?;
-            client.send(&draft, &sent).await?;
-            json!({ "sent": true })
+            // A Bus send is one try: created in Drafts, filed in Sent only
+            // once submitted. Its caller hears whether it went.
+            let (_, result) = client
+                .send(&draft, &boxes, jmap::SendAttempt::default())
+                .await;
+            let report = result?;
+            json!({ "sent": true, "filed": report.unfiled.is_none() })
         }
         Write::CreateEvent { calendar, draft } => {
             json!({ "id": client.create_event(&calendar, &draft).await? })
@@ -953,8 +958,15 @@ fn dispatch(
             });
         }
         "email.quit" => {
-            state.reply(id, 0, json!({ "quitting": true }));
+            // A draft open with something typed is saved and the person is
+            // asked first: the caller hears that it waits on them.
             state.quit();
+            let waiting = state.confirm.is_some();
+            state.reply(
+                id,
+                0,
+                json!({ "quitting": !waiting, "confirming": waiting }),
+            );
         }
         "email.execute" => {
             let command = required(args, "id")?;

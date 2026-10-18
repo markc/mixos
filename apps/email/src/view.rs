@@ -48,7 +48,13 @@ pub enum UiEvent {
     /// The compose dialog's From account.
     ComposeAccount(String),
     ComposeField(crate::state::ComposeField, String),
+    /// Cancel or Escape on the compose: it closes, or (something typed)
+    /// the person is asked first.
     CloseCompose,
+    /// The answer to the close or quit question over a draft.
+    ConfirmDraft(crate::state::DraftChoice),
+    /// The answer to the offer of a kept draft.
+    RestoreDraft(crate::state::DraftChoice),
     /// Take the account's new address as the stale draft's From.
     ComposeUseNewFrom,
     SendCompose,
@@ -146,6 +152,8 @@ pub fn view(
         window(ui, state, commands, strings, stroke, &mut events);
     }
     compose::dialog(ui, state, &mut events);
+    compose::confirm(ui, state, &mut events);
+    compose::restore(ui, state, &mut events);
     form::dialog(ui, state, &mut events);
     if let Some(dialog) = state.ui.dialog {
         let title = match dialog {

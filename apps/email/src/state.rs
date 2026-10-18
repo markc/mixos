@@ -26,6 +26,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use settings::email::{AccountEntry, Email as EmailSettings};
 
+use crate::drafts::{DraftOp, SavedDraft};
 use crate::secrets::Secrets;
 use crate::work::{Login, Work};
 use crate::writer::{self, Change, Refusal};
@@ -244,7 +245,43 @@ pub struct ComposeState {
     pub stale: Option<StaleFrom>,
     /// The address completions showing under a recipient field.
     pub suggest: Option<Suggest>,
+    /// The local draft this compose is kept as (its file name), until the
+    /// message is sent or the person discards it.
+    pub draft_id: String,
+    /// Bumped on every edit; `saved` is the revision last handed to the
+    /// draft store.
+    pub revision: u64,
+    pub saved: u64,
+    /// Opened from a draft an earlier run kept.
+    pub restored: bool,
+    /// What earlier sends of this message did on the server: a retry
+    /// submits the same message instead of creating a second copy.
+    pub attempt: jmap::SendAttempt,
 }
+
+/// A question that must be answered before a draft would close.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Confirm {
+    /// Cancel or Escape on a compose that holds something typed.
+    CloseCompose,
+    /// The window (or `file.quit`) closing over one.
+    Quit,
+}
+
+/// The answer to a [`Confirm`], or to the offer of a kept draft.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DraftChoice {
+    /// The default: keep the draft (and close); for an offer, restore it.
+    Keep,
+    /// Delete the draft for good.
+    Discard,
+    /// Back to editing; for an offer, later (every draft stays kept).
+    Back,
+}
+
+/// How long typing pauses before the draft is saved (the shell's timer).
+/// Every close path saves at once, whatever the timer.
+pub const DRAFT_DEBOUNCE: std::time::Duration = std::time::Duration::from_secs(1);
 
 /// Completions for the entry being typed in a recipient field.
 #[derive(Clone, Debug, PartialEq)]
@@ -267,6 +304,30 @@ impl ComposeState {
             ComposeField::Cc => &self.cc_text,
             ComposeField::Bcc => &self.bcc_text,
             ComposeField::Subject | ComposeField::Body => "",
+        }
+    }
+
+    /// Whether closing this compose could lose something: it was edited,
+    /// restored from a kept draft, or has been sent before.
+    pub fn keepable(&self) -> bool {
+        self.revision > 0 || self.restored || self.attempt != jmap::SendAttempt::default()
+    }
+
+    /// The compose as the draft store keeps it.
+    pub fn saved_draft(&self) -> SavedDraft {
+        SavedDraft {
+            schema_version: crate::drafts::CURRENT_SCHEMA,
+            id: self.draft_id.clone(),
+            account: self.account.clone(),
+            from: self.draft.from.clone(),
+            to: self.to_text.clone(),
+            cc: self.cc_text.clone(),
+            bcc: self.bcc_text.clone(),
+            subject: self.draft.subject.clone(),
+            body: self.draft.body.clone(),
+            in_reply_to: self.draft.in_reply_to.clone(),
+            saved_at: chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+            attempt: self.attempt.clone(),
         }
     }
 }
@@ -299,6 +360,11 @@ impl ComposeState {
             sending: None,
             stale: None,
             suggest: None,
+            draft_id: String::new(),
+            revision: 0,
+            saved: 0,
+            restored: false,
+            attempt: jmap::SendAttempt::default(),
         }
     }
 }
@@ -944,6 +1010,22 @@ pub struct State {
     /// The migration completed: the shell rewrites the config as schema 2.
     migrated: bool,
     pub compose: Option<ComposeState>,
+    /// A question over the compose before a draft closes.
+    pub confirm: Option<Confirm>,
+    /// Drafts kept from earlier (an earlier run, or a compose set aside),
+    /// offered one at a time while no compose is open.
+    pub restore: Vec<SavedDraft>,
+    /// Draft saves and removals for the shell's store, in order.
+    draft_ops: Vec<DraftOp>,
+    /// Draft ids handed out this run.
+    drafts_made: u64,
+    /// Drafts the person discarded this run: a send still in flight never
+    /// brings one back.
+    discarded: std::collections::BTreeSet<String>,
+    /// Each send in flight, by ticket, with the draft as it was sent.
+    sends: BTreeMap<u64, SavedDraft>,
+    /// The person answered the quit question: closing goes ahead.
+    quit_ok: bool,
     /// A form over the window: a delete to confirm, a move's target, a new
     /// event or contact.
     pub form: Option<Form>,
@@ -1001,6 +1083,13 @@ impl State {
             migration: None,
             migrated: false,
             compose: None,
+            confirm: None,
+            restore: Vec::new(),
+            draft_ops: Vec::new(),
+            drafts_made: 0,
+            discarded: std::collections::BTreeSet::new(),
+            sends: BTreeMap::new(),
+            quit_ok: false,
             form: None,
             form_note: None,
             ui,
@@ -1284,7 +1373,8 @@ impl State {
             };
             next.push(view);
         }
-        // What is left was removed: its client and view go.
+        // What is left was removed: its client and view go. A draft open on
+        // it is kept and offered again, never dropped.
         for mut gone in old {
             self.disconnect(&mut gone);
             if self
@@ -1292,7 +1382,7 @@ impl State {
                 .as_ref()
                 .is_some_and(|c| c.account == gone.entry.id)
             {
-                self.compose = None;
+                self.set_aside_compose();
             }
         }
         self.accounts = next;
@@ -2090,7 +2180,9 @@ impl State {
             }
             // A send is settled by its own ticket even when the account has
             // reconnected since: the person must hear whether it went.
-            Event::Account(tag, Done::Sent(ticket, result)) => self.sent(&tag, ticket, result),
+            Event::Account(tag, Done::Sent(ticket, attempt, result)) => {
+                self.sent(&tag, ticket, attempt, result)
+            }
             // A save is answered whatever became of the connection: the
             // file is on disk (or not) either way.
             Event::Account(tag, Done::Attachment(done)) => self.attachment_done(&tag, *done),
@@ -2722,16 +2814,36 @@ impl State {
     /// whatever became of the account's connection since, so a send that
     /// went (or failed) is always reported; the views are refreshed only
     /// when the connection is still the one that sent.
-    fn sent(&mut self, tag: &Tag, ticket: u64, result: Result<(), jmap::Error>) {
+    ///
+    /// A message that went has its local draft removed, whether or not its
+    /// compose is still open. One that did not keeps its draft, with what
+    /// the try did on the server (`attempt`), so the next Send resumes it
+    /// rather than sending a second copy.
+    fn sent(
+        &mut self,
+        tag: &Tag,
+        ticket: u64,
+        attempt: jmap::SendAttempt,
+        result: Result<jmap::SendReport, jmap::Error>,
+    ) {
         let mine = self.compose.as_ref().is_some_and(|compose| {
             compose.account == tag.account && compose.sending == Some(ticket)
         });
+        let snapshot = self.sends.remove(&ticket);
         match result {
-            Ok(()) => {
+            Ok(report) => {
+                if let Some(draft) = &snapshot {
+                    self.discard_draft(&draft.id);
+                }
                 if mine {
                     self.compose = None;
+                    self.confirm = None;
                 }
-                self.status = crate::label("sent");
+                self.status = match report.unfiled {
+                    Some(error) => crate::label_with("sent-unfiled", &[("error", &error)]),
+                    None if report.earlier => crate::label("sent-earlier"),
+                    None => crate::label("sent"),
+                };
                 let limit = self.settings.mail.page_size;
                 if let Some(view) = self
                     .accounts
@@ -2754,9 +2866,203 @@ impl State {
                     compose.busy = false;
                     compose.sending = None;
                     compose.error = Some(error.clone());
+                    compose.attempt = attempt;
+                    self.store_draft(true);
+                } else if let Some(mut draft) = snapshot
+                    && !self.discarded.contains(&draft.id)
+                {
+                    // Its compose was closed (and kept) while sending.
+                    draft.attempt = attempt;
+                    self.draft_ops.push(DraftOp::Save(Box::new(draft)));
                 }
                 self.status = error;
             }
+        }
+    }
+
+    // Drafts: kept locally as the person types, and on every close path.
+
+    /// A fresh draft id: the time and a counter, lowercase hex.
+    fn new_draft_id(&mut self) -> String {
+        self.drafts_made += 1;
+        let nanos = chrono::Utc::now()
+            .timestamp_nanos_opt()
+            .unwrap_or_default()
+            .unsigned_abs();
+        format!("{nanos:016x}{:08x}{:04x}", std::process::id(), self.drafts_made)
+    }
+
+    /// Hand the open draft to the store when it holds something worth
+    /// keeping and changed since its last save (`force`: whatever changed).
+    fn store_draft(&mut self, force: bool) {
+        let Some(compose) = self.compose.as_mut() else {
+            return;
+        };
+        if !compose.keepable() || compose.draft_id.is_empty() {
+            return;
+        }
+        if !force && compose.saved == compose.revision {
+            return;
+        }
+        compose.saved = compose.revision;
+        let draft = compose.saved_draft();
+        self.discarded.remove(&draft.id);
+        self.draft_ops.push(DraftOp::Save(Box::new(draft)));
+    }
+
+    /// The shell's debounce fired: save the open draft if it changed.
+    pub fn save_draft(&mut self) {
+        self.store_draft(false);
+    }
+
+    /// The open draft's revision while it has changes not yet saved.
+    pub fn draft_unsaved(&self) -> Option<u64> {
+        self.compose
+            .as_ref()
+            .filter(|c| c.keepable() && !c.draft_id.is_empty() && c.saved != c.revision)
+            .map(|c| c.revision)
+    }
+
+    /// The draft saves and removals decided since the last call, in order.
+    pub fn take_draft_ops(&mut self) -> Vec<DraftOp> {
+        std::mem::take(&mut self.draft_ops)
+    }
+
+    /// Remove draft `id` from the store for good.
+    fn discard_draft(&mut self, id: &str) {
+        if !id.is_empty() {
+            self.discarded.insert(id.to_owned());
+            self.draft_ops.push(DraftOp::Remove(id.to_owned()));
+        }
+    }
+
+    /// Close the compose without asking, keeping its draft: saved, and
+    /// offered again once nothing else is open.
+    fn set_aside_compose(&mut self) {
+        self.store_draft(false);
+        if let Some(compose) = self.compose.take()
+            && compose.keepable()
+            && !compose.draft_id.is_empty()
+            && !self.restore.iter().any(|d| d.id == compose.draft_id)
+        {
+            self.restore.insert(0, compose.saved_draft());
+        }
+        self.confirm = None;
+    }
+
+    /// Cancel or Escape on the compose: one with nothing typed closes; one
+    /// with something typed is saved at once and the person is asked.
+    fn close_compose(&mut self) {
+        match &self.compose {
+            Some(compose) if compose.keepable() => {
+                self.store_draft(false);
+                self.confirm = Some(Confirm::CloseCompose);
+            }
+            Some(_) => self.compose = None,
+            None => {}
+        }
+    }
+
+    /// The answer to the close or quit question.
+    fn confirm_draft(&mut self, choice: DraftChoice) {
+        let Some(asked) = self.confirm.take() else {
+            return;
+        };
+        match choice {
+            DraftChoice::Back => return,
+            DraftChoice::Keep => {
+                self.store_draft(false);
+                if self.compose.take().is_some() {
+                    self.status = crate::label("draft-kept");
+                }
+            }
+            DraftChoice::Discard => {
+                if let Some(compose) = self.compose.take() {
+                    self.discard_draft(&compose.draft_id);
+                    self.status = crate::label("draft-discarded");
+                }
+            }
+        }
+        if asked == Confirm::Quit {
+            self.quit_ok = true;
+            self.exiting = true;
+        }
+    }
+
+    /// Drafts an earlier run kept: offered one at a time.
+    pub fn offer_drafts(&mut self, drafts: Vec<SavedDraft>) {
+        for draft in drafts {
+            if !self.restore.iter().any(|d| d.id == draft.id) {
+                self.restore.push(draft);
+            }
+        }
+    }
+
+    /// The answer to the offer of the first kept draft.
+    fn restore_draft(&mut self, choice: DraftChoice) {
+        if self.compose.is_some() || self.restore.is_empty() {
+            return;
+        }
+        match choice {
+            // Later: every draft stays kept, offered at the next start.
+            DraftChoice::Back => self.restore.clear(),
+            DraftChoice::Discard => {
+                let draft = self.restore.remove(0);
+                self.discard_draft(&draft.id);
+            }
+            DraftChoice::Keep => {
+                let draft = self.restore.remove(0);
+                self.open_saved(draft);
+            }
+        }
+    }
+
+    /// Open a kept draft in the compose dialog, as it was typed. Its
+    /// account, when it is gone, becomes the default one (with its From).
+    fn open_saved(&mut self, saved: SavedDraft) {
+        let (account, from) = match self.account(&saved.account) {
+            Some(_) => (saved.account.clone(), saved.from.clone()),
+            None => match self.compose_account() {
+                Some(id) => {
+                    let from = self
+                        .account(&id)
+                        .map_or(saved.from.clone(), |v| v.entry.email.clone());
+                    (id, from)
+                }
+                None => (saved.account.clone(), saved.from.clone()),
+            },
+        };
+        let draft = Composed {
+            from,
+            subject: saved.subject,
+            body: saved.body,
+            in_reply_to: saved.in_reply_to,
+            ..Composed::default()
+        };
+        let mut compose = ComposeState::new(&account, draft);
+        compose.to_text = saved.to;
+        compose.cc_text = saved.cc;
+        compose.bcc_text = saved.bcc;
+        compose.draft_id = saved.id;
+        compose.restored = true;
+        compose.attempt = saved.attempt;
+        self.compose = Some(compose);
+    }
+
+    /// The window is asked to close: yes at once, unless a draft is open
+    /// with something typed. Then it is saved and the person is asked
+    /// (keeping the draft is the default).
+    pub fn request_quit(&mut self) -> bool {
+        if self.quit_ok {
+            return true;
+        }
+        match &self.compose {
+            Some(compose) if compose.keepable() => {
+                self.store_draft(false);
+                self.confirm = Some(Confirm::Quit);
+                false
+            }
+            _ => true,
         }
     }
 
@@ -2878,6 +3184,7 @@ impl State {
             ComposeField::Subject | ComposeField::Body => return,
         };
         *text = crate::suggest::accept(text, item);
+        compose.revision += 1;
     }
 
     /// `mail.attachments`: show or hide the open email's attachments.
@@ -3475,6 +3782,8 @@ impl State {
             "accounts": views,
             "tree": self.tree().iter().map(|r| json!({"key": r.node.key(), "depth": r.depth, "label": r.label, "unread": r.unread, "expandable": r.expandable, "expanded": r.expanded, "selected": r.selected})).collect::<Vec<_>>(),
             "compose": compose,
+            "confirm": self.confirm.map(|c| match c { Confirm::CloseCompose => "close_compose", Confirm::Quit => "quit" }),
+            "drafts_offered": self.restore.len(),
             "form": form,
             "dialog": self.ui.dialog.map(|d| match d { Dialog::About => "about", Dialog::Shortcuts => "shortcuts" }),
             "ui": {
@@ -3786,7 +4095,14 @@ impl State {
         if draft.body.is_empty() {
             draft.body = self.signed_body(&account);
         }
-        self.compose = Some(ComposeState::new(&account, draft));
+        // A compose already open is never dropped: its draft is kept and
+        // offered again.
+        if self.compose.is_some() {
+            self.set_aside_compose();
+        }
+        let mut compose = ComposeState::new(&account, draft);
+        compose.draft_id = self.new_draft_id();
+        self.compose = Some(compose);
         true
     }
 
@@ -3982,6 +4298,7 @@ impl State {
                     // The new account's From is its current address.
                     compose.stale = None;
                     compose.error = None;
+                    compose.revision += 1;
                 }
             }
             UiEvent::ComposeField(field, value) => {
@@ -3998,6 +4315,7 @@ impl State {
                         ComposeField::Subject => compose.draft.subject = value,
                         ComposeField::Body => compose.draft.body = value,
                     }
+                    compose.revision += 1;
                     if matches!(
                         field,
                         ComposeField::To | ComposeField::Cc | ComposeField::Bcc
@@ -4024,7 +4342,9 @@ impl State {
                     compose.suggest = None;
                 }
             }
-            UiEvent::CloseCompose => self.compose = None,
+            UiEvent::CloseCompose => self.close_compose(),
+            UiEvent::ConfirmDraft(choice) => self.confirm_draft(choice),
+            UiEvent::RestoreDraft(choice) => self.restore_draft(choice),
             UiEvent::ComposeUseNewFrom => {
                 // Only for the account and connection the address came from.
                 let current = self.compose.as_ref().and_then(|c| {
@@ -4141,12 +4461,19 @@ impl State {
                 compose.error = None;
                 compose.sending = Some(ticket);
                 let draft = compose.draft.clone();
+                let attempt = compose.attempt.clone();
+                let snapshot = compose.saved_draft();
                 view.tickets.send = ticket;
                 self.work.push(Work::Send {
                     account,
                     ticket,
                     draft,
+                    attempt,
                 });
+                // Kept on disk until the server confirms it went, so a
+                // crash or a lost reply mid-send loses nothing.
+                self.store_draft(true);
+                self.sends.insert(ticket, snapshot);
             }
         }
     }
@@ -4169,12 +4496,15 @@ impl State {
         }
     }
 
-    /// `account`'s Sent mailbox id, for the send recipe.
-    pub fn sent_mailbox_id(&self, account: &str) -> Option<String> {
-        self.account(account)?
-            .mail
-            .by_role("sent")
-            .map(|m| m.id.clone())
+    /// `account`'s Drafts and Sent mailboxes, for the send recipe, or why
+    /// there are none yet (the catalogue key).
+    pub fn send_boxes(&self, account: &str) -> Result<jmap::SendBoxes, &'static str> {
+        let mail = &self.account(account).ok_or("not-connected")?.mail;
+        let id = |role: &str| mail.by_role(role).map(|m| m.id.clone());
+        Ok(jmap::SendBoxes {
+            drafts: id("drafts").ok_or("no-drafts-mailbox")?,
+            sent: id("sent").ok_or("no-sent-mailbox")?,
+        })
     }
 
     // The command registry's entry points (commands.rs).
@@ -4203,9 +4533,12 @@ impl State {
         true
     }
 
-    /// A command asked the window to close.
+    /// A command asked the window to close: it does, unless a draft open
+    /// with something typed needs the person's answer first.
     pub fn quit(&mut self) {
-        self.exiting = true;
+        if self.request_quit() {
+            self.exiting = true;
+        }
     }
 
     /// Open a compose dialog.
@@ -4957,6 +5290,233 @@ pub(crate) mod tests {
         assert!(!state.compose_sendable());
     }
 
+    // Drafts: nothing typed is lost to Cancel, Escape, a close or a crash.
+
+    use crate::drafts::{DraftStore, MemoryStore};
+
+    /// Carry the state's draft operations out on `store`.
+    fn keep(state: &mut State, store: &mut MemoryStore) {
+        let errors = crate::drafts::apply(store, state.take_draft_ops());
+        assert!(errors.is_empty(), "{errors:?}");
+    }
+
+    /// A compose with a recipient, a subject and a body typed.
+    fn typed(state: &mut State) {
+        state.apply_ui(UiEvent::Compose);
+        for (field, value) in [
+            (ComposeField::To, "bob@example.invalid"),
+            (ComposeField::Subject, "Lunch"),
+            (ComposeField::Body, "Noon at the usual place?"),
+        ] {
+            state.apply_ui(UiEvent::ComposeField(field, value.into()));
+        }
+    }
+
+    #[test]
+    fn cancel_keeps_the_draft() {
+        let mut state = connected();
+        let mut store = MemoryStore::default();
+        typed(&mut state);
+        // Cancel and Escape both report CloseCompose: the person is asked,
+        // and the draft is already on disk.
+        state.apply_ui(UiEvent::CloseCompose);
+        assert_eq!(state.confirm, Some(Confirm::CloseCompose));
+        assert!(state.compose.is_some(), "nothing closes unasked");
+        keep(&mut state, &mut store);
+        let saved = store.list();
+        assert_eq!(saved.len(), 1);
+        assert_eq!(saved[0].body, "Noon at the usual place?");
+        assert_eq!(saved[0].to, "bob@example.invalid");
+        // Keep Editing goes back to the compose.
+        state.apply_ui(UiEvent::ConfirmDraft(DraftChoice::Back));
+        assert!(state.confirm.is_none() && state.compose.is_some());
+        // The default, Keep Draft, closes and keeps it.
+        state.apply_ui(UiEvent::CloseCompose);
+        state.apply_ui(UiEvent::ConfirmDraft(DraftChoice::Keep));
+        keep(&mut state, &mut store);
+        assert!(state.compose.is_none());
+        assert_eq!(store.list().len(), 1, "the draft is kept");
+    }
+
+    #[test]
+    fn a_draft_is_removed_only_when_discarded_or_sent() {
+        let mut state = connected();
+        let mut store = MemoryStore::default();
+        typed(&mut state);
+        state.save_draft();
+        keep(&mut state, &mut store);
+        assert_eq!(store.list().len(), 1);
+        state.apply_ui(UiEvent::CloseCompose);
+        state.apply_ui(UiEvent::ConfirmDraft(DraftChoice::Discard));
+        keep(&mut state, &mut store);
+        assert!(state.compose.is_none());
+        assert!(store.list().is_empty(), "discarded on request");
+        // A send that went removes its draft.
+        state.account_mut("a").unwrap().mail.mailboxes = vec![
+            mailbox("m-drafts", Some("drafts"), 0),
+            mailbox("m-sent", Some("sent"), 0),
+        ];
+        typed(&mut state);
+        state.apply_ui(UiEvent::SendCompose);
+        let (_, ticket) = sent_ticket(&mut state);
+        keep(&mut state, &mut store);
+        assert_eq!(store.list().len(), 1, "kept while sending");
+        done(&mut state, "a", went(ticket));
+        keep(&mut state, &mut store);
+        assert!(store.list().is_empty());
+    }
+
+    #[test]
+    fn an_untouched_compose_closes_without_asking() {
+        let mut state = connected();
+        state.apply_ui(UiEvent::Compose);
+        state.apply_ui(UiEvent::CloseCompose);
+        assert!(state.compose.is_none() && state.confirm.is_none());
+        assert!(state.take_draft_ops().is_empty());
+        state.apply_ui(UiEvent::Compose);
+        assert!(state.request_quit(), "nothing typed: the window closes");
+    }
+
+    #[test]
+    fn close_with_unsaved_changes_asks() {
+        let mut state = connected();
+        let mut store = MemoryStore::default();
+        typed(&mut state);
+        assert!(state.draft_unsaved().is_some());
+        // The window's close button (and file.quit) ask; the draft is saved
+        // before the question shows.
+        assert!(!state.request_quit());
+        state.quit();
+        assert!(!state.exiting);
+        assert_eq!(state.confirm, Some(Confirm::Quit));
+        keep(&mut state, &mut store);
+        assert_eq!(store.list().len(), 1);
+        assert!(state.draft_unsaved().is_none());
+        state.apply_ui(UiEvent::ConfirmDraft(DraftChoice::Back));
+        assert!(!state.exiting && state.compose.is_some());
+        // Keep Draft and Quit: the window closes, the draft stays.
+        assert!(!state.request_quit());
+        state.apply_ui(UiEvent::ConfirmDraft(DraftChoice::Keep));
+        keep(&mut state, &mut store);
+        assert!(state.exiting);
+        assert!(state.request_quit(), "answered: closing goes ahead");
+        assert_eq!(store.list().len(), 1);
+    }
+
+    #[test]
+    fn restore_after_restart() {
+        let mut store = MemoryStore::default();
+        let mut first = connected();
+        typed(&mut first);
+        first.apply_ui(UiEvent::ComposeField(ComposeField::Cc, "cy@example.invalid".into()));
+        // An earlier send got as far as creating the server copy.
+        first.compose.as_mut().unwrap().attempt.email_id = Some("E1".into());
+        first.save_draft();
+        keep(&mut first, &mut store);
+        let id = first.compose.as_ref().unwrap().draft_id.clone();
+        drop(first);
+        // A new run: the draft is offered.
+        let mut state = connected();
+        state.offer_drafts(store.list());
+        assert_eq!(state.restore.len(), 1);
+        assert!(state.compose.is_none());
+        state.apply_ui(UiEvent::RestoreDraft(DraftChoice::Keep));
+        let compose = state.compose.clone().expect("restored");
+        assert!(state.restore.is_empty());
+        assert_eq!(compose.draft_id, id);
+        assert!(compose.restored);
+        assert_eq!(compose.to_text, "bob@example.invalid");
+        assert_eq!(compose.cc_text, "cy@example.invalid");
+        assert_eq!(compose.draft.subject, "Lunch");
+        assert_eq!(compose.draft.body, "Noon at the usual place?");
+        assert_eq!(compose.attempt.email_id.as_deref(), Some("E1"));
+        // Closing a restored draft asks too: it holds text.
+        state.apply_ui(UiEvent::CloseCompose);
+        assert_eq!(state.confirm, Some(Confirm::CloseCompose));
+    }
+
+    #[test]
+    fn a_later_offer_keeps_every_draft() {
+        let mut store = MemoryStore::default();
+        let mut first = connected();
+        typed(&mut first);
+        first.save_draft();
+        keep(&mut first, &mut store);
+        let mut state = connected();
+        state.offer_drafts(store.list());
+        state.apply_ui(UiEvent::RestoreDraft(DraftChoice::Back));
+        keep(&mut state, &mut store);
+        assert!(state.restore.is_empty() && state.compose.is_none());
+        assert_eq!(store.list().len(), 1, "Later deletes nothing");
+        state.offer_drafts(store.list());
+        state.apply_ui(UiEvent::RestoreDraft(DraftChoice::Discard));
+        keep(&mut state, &mut store);
+        assert!(store.list().is_empty());
+    }
+
+    #[test]
+    fn a_compose_replaced_or_orphaned_is_kept_and_offered() {
+        let mut state = connected_many(&["a", "b"]);
+        let mut store = MemoryStore::default();
+        typed(&mut state);
+        // A second compose over the first never drops it.
+        assert!(state.open_compose(Some("b"), Composed::default()));
+        keep(&mut state, &mut store);
+        assert_eq!(store.list().len(), 1);
+        assert_eq!(state.restore.len(), 1);
+        assert_eq!(state.restore[0].subject, "Lunch");
+    }
+
+    #[test]
+    fn a_failed_send_keeps_the_draft_and_what_the_server_did() {
+        let mut state = connected();
+        let mut store = MemoryStore::default();
+        typed(&mut state);
+        state.apply_ui(UiEvent::SendCompose);
+        let (_, ticket) = sent_ticket(&mut state);
+        let attempt = jmap::SendAttempt {
+            email_id: Some("E1".into()),
+            ambiguous: true,
+            ..jmap::SendAttempt::default()
+        };
+        done(
+            &mut state,
+            "a",
+            Done::Sent(
+                ticket,
+                attempt.clone(),
+                Err(jmap::Error::Protocol("the reply was lost".into())),
+            ),
+        );
+        keep(&mut state, &mut store);
+        assert_eq!(store.list()[0].attempt, attempt, "kept with the draft");
+        // The retry resumes the same server copy instead of a new one.
+        state.apply_ui(UiEvent::SendCompose);
+        let resumed = state
+            .take_work()
+            .into_iter()
+            .find_map(|w| match w {
+                Work::Send { attempt, .. } => Some(attempt),
+                _ => None,
+            })
+            .expect("a send");
+        assert_eq!(resumed, attempt);
+    }
+
+    /// A send that went.
+    fn went(ticket: u64) -> Done {
+        Done::Sent(
+            ticket,
+            jmap::SendAttempt::default(),
+            Ok(jmap::SendReport::default()),
+        )
+    }
+
+    /// A send that failed, having done nothing on the server.
+    fn failed(ticket: u64, error: jmap::Error) -> Done {
+        Done::Sent(ticket, jmap::SendAttempt::default(), Err(error))
+    }
+
     /// Take the queued work and return the send's account and ticket.
     fn sent_ticket(state: &mut State) -> (String, u64) {
         state
@@ -4986,7 +5546,7 @@ pub(crate) mod tests {
         assert!(state.compose.as_ref().is_some_and(|c| c.busy));
         let (account, ticket) = sent_ticket(&mut state);
         assert_eq!(account, "a");
-        done(&mut state, "a", Done::Sent(ticket, Ok(())));
+        done(&mut state, "a", went(ticket));
         assert!(state.compose.is_none());
         let work = state.take_work();
         assert!(
@@ -5012,10 +5572,7 @@ pub(crate) mod tests {
         done(
             &mut state,
             "a",
-            Done::Sent(
-                ticket,
-                Err(jmap::Error::method("serverFail", Some("no relay"))),
-            ),
+            failed(ticket, jmap::Error::method("serverFail", Some("no relay"))),
         );
         let compose = state.compose.expect("the dialog stays");
         assert!(!compose.busy);
@@ -5032,14 +5589,19 @@ pub(crate) mod tests {
         ));
         state.apply_ui(UiEvent::SendCompose);
         let (_, first) = sent_ticket(&mut state);
-        // Cancelled while sending, then a new draft.
+        let first_draft = state.compose.as_ref().unwrap().draft_id.clone();
+        // Cancelled while sending (the draft kept), then a new draft.
         state.apply_ui(UiEvent::CloseCompose);
+        state.apply_ui(UiEvent::ConfirmDraft(DraftChoice::Keep));
         state.apply_ui(UiEvent::Compose);
         state.apply_ui(UiEvent::ComposeField(ComposeField::Subject, "next".into()));
-        done(&mut state, "a", Done::Sent(first, Ok(())));
+        state.take_draft_ops();
+        done(&mut state, "a", went(first));
         let compose = state.compose.as_ref().expect("the new draft stays");
         assert_eq!(compose.draft.subject, "next");
         assert!(!compose.busy);
+        // The first message went: its kept draft goes.
+        assert_eq!(state.take_draft_ops(), [DraftOp::Remove(first_draft)]);
     }
 
     #[test]
@@ -5053,7 +5615,7 @@ pub(crate) mod tests {
         state.apply_ui(UiEvent::SendCompose);
         let (account, ticket) = sent_ticket(&mut state);
         assert_eq!(account, "a");
-        done(&mut state, "b", Done::Sent(ticket, Ok(())));
+        done(&mut state, "b", went(ticket));
         assert!(
             state.compose.as_ref().is_some_and(|c| c.busy),
             "still sending"
@@ -6191,7 +6753,7 @@ pub(crate) mod tests {
         state.reconnect("a");
         state.apply(Event::Account(
             old.clone(),
-            Done::Sent(ticket, Err(jmap::Error::Protocol("relay down".into()))),
+            failed(ticket, jmap::Error::Protocol("relay down".into())),
         ));
         let compose = state.compose.clone().expect("the dialog stays");
         assert!(!compose.busy && compose.error.is_some());
@@ -6199,7 +6761,7 @@ pub(crate) mod tests {
         state.apply_ui(UiEvent::SendCompose);
         let (_, ticket) = sent_ticket(&mut state);
         state.reconnect("a");
-        state.apply(Event::Account(old, Done::Sent(ticket, Ok(()))));
+        state.apply(Event::Account(old, went(ticket)));
         assert!(state.compose.is_none());
         assert_eq!(state.status, crate::label("sent"));
     }
@@ -6588,7 +7150,7 @@ pub(crate) mod tests {
         state.take_work();
         let second = send(&mut state);
         assert_ne!(first, second);
-        state.apply(Event::Account(old, Done::Sent(first, Ok(()))));
+        state.apply(Event::Account(old, went(first)));
         assert!(
             state.compose.as_ref().is_some_and(|c| c.busy),
             "the old completion leaves the new send pending"

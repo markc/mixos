@@ -37,6 +37,28 @@ pub enum Error {
     /// id, a Session without the URL templates.
     #[error("protocol: {0}")]
     Protocol(String),
+    /// A send retry found that an earlier attempt of the message had
+    /// already been submitted, but the message was edited since: the edits
+    /// were not sent, and nothing was sent twice.
+    #[error("an earlier attempt of this message was already sent; your later edits were not sent")]
+    AlreadySent,
+}
+
+impl Error {
+    /// Whether a failed request may still have taken effect on the server:
+    /// the reply was lost (a timeout, a dropped connection after the
+    /// request went out, a gateway error) or could not be read. A refusal
+    /// the server stated, or a connection that never opened, is not.
+    pub fn ambiguous(&self) -> bool {
+        match self {
+            Error::Transport(error) => !error.is_connect() && !error.is_builder(),
+            Error::Status(status) => {
+                status.is_server_error() || *status == reqwest::StatusCode::REQUEST_TIMEOUT
+            }
+            Error::Wire(_) | Error::Protocol(_) => true,
+            Error::Unauthorized(_) | Error::Method { .. } | Error::AlreadySent => false,
+        }
+    }
 }
 
 impl Error {

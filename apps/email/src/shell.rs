@@ -24,8 +24,9 @@ use toolkit::command::Origin;
 use toolkit::{Registry, Strings, Theme, drive};
 
 use crate::commands;
+use crate::drafts::{DirStore, DraftStore, MemoryStore};
 use crate::secrets::{Secrets, SecretsFile};
-use crate::state::{Mode, SessionInfo, Settled, State, Tag, UiState, code};
+use crate::state::{DRAFT_DEBOUNCE, Mode, SessionInfo, Settled, State, Tag, UiState, code};
 use crate::verbs::{Forward, Then, Write};
 use crate::view::{UiEvent, view};
 use crate::work::{Login, Work};
@@ -49,7 +50,13 @@ pub enum Done {
         Result<Value, jmap::Error>,
     ),
     Marked(Result<(), jmap::Error>),
-    Sent(u64, Result<(), jmap::Error>),
+    /// A send finished: its ticket, what the try did on the server (kept
+    /// for a retry), and the outcome.
+    Sent(
+        u64,
+        jmap::SendAttempt,
+        Result<jmap::SendReport, jmap::Error>,
+    ),
     Calendars(Result<Vec<jmap::Calendar>, jmap::Error>),
     Events(u64, Result<Vec<jmap::CalendarEvent>, jmap::Error>),
     Books(Result<Vec<jmap::AddressBook>, jmap::Error>),
@@ -145,6 +152,10 @@ pub struct Shell {
     comp: String,
     /// `email.show` requests forwarded to the compositor, not yet answered.
     shows: std::collections::BTreeSet<u64>,
+    /// Where unsent messages are kept (the app's state directory).
+    drafts: Box<dyn DraftStore>,
+    /// When the open draft's unsaved edits are saved, if it has any.
+    draft_due: Option<std::time::Instant>,
 }
 
 /// This host's name: the settingsd instance to try first (settingsd runs
@@ -536,8 +547,15 @@ impl Shell {
             let _ = forward.send(Event::Delivery(citizen::Delivery::Disconnected));
             wake.request_repaint();
         });
-        let dir: Option<PathBuf> = config::AppDirs::resolve(APP).map(|dirs| dirs.config());
+        let dirs = config::AppDirs::resolve(APP);
+        let dir: Option<PathBuf> = dirs.as_ref().map(config::AppDirs::config);
         let (state, config, secrets) = start(dir.as_deref());
+        // Drafts live in the state directory, not the config: they are not
+        // settings. Without one they are kept in memory for this run only.
+        let drafts: Box<dyn DraftStore> = match &dirs {
+            Some(dirs) => Box::new(DirStore::new(&dirs.state())),
+            None => Box::new(MemoryStore::default()),
+        };
         let (saver, saver_thread) = match secrets.map(|file| saver(file, tx.clone(), ctx.clone())) {
             Some((saver, thread)) => (Some(saver), thread),
             None => (None, None),
@@ -569,7 +587,12 @@ impl Shell {
             held: std::collections::VecDeque::new(),
             comp: std::env::var("MIXOS_COMP_SERVICE").unwrap_or_else(|_| "comp".into()),
             shows: std::collections::BTreeSet::new(),
+            drafts,
+            draft_due: None,
         };
+        // Drafts an earlier run kept are offered once the window is up.
+        let kept = shell.drafts.list();
+        shell.state.offer_drafts(kept);
         shell.read_look();
         shell.settle();
         Ok(shell)
@@ -618,8 +641,41 @@ impl Shell {
         for reply in self.state.take_replies() {
             self.bus.reply(reply.id, reply.rc, reply.body);
         }
+        self.apply_drafts();
         self.publish_executed();
         self.save_config_if_dirty();
+    }
+
+    /// Carry out the state's draft saves and removals on the store. A
+    /// failure is shown: the draft is still open, and the next save tries
+    /// again.
+    fn apply_drafts(&mut self) {
+        let ops = self.state.take_draft_ops();
+        if ops.is_empty() {
+            return;
+        }
+        for error in crate::drafts::apply(self.drafts.as_mut(), ops) {
+            eprintln!("email: draft: {error}");
+            self.state.status = crate::label_with("draft-save-failed", &[("error", &error)]);
+        }
+    }
+
+    /// Save the open draft's edits within [`DRAFT_DEBOUNCE`] of the first
+    /// unsaved one; a timed repaint wakes the window for it (no polling).
+    fn draft_timer(&mut self) {
+        if self.state.draft_unsaved().is_none() {
+            self.draft_due = None;
+            return;
+        }
+        let now = std::time::Instant::now();
+        let due = *self.draft_due.get_or_insert(now + DRAFT_DEBOUNCE);
+        if now >= due {
+            self.draft_due = None;
+            self.state.save_draft();
+            self.apply_drafts();
+        } else {
+            self.ctx.request_repaint_after(due - now);
+        }
     }
 
     /// Publish the commands run since the last call on
@@ -759,7 +815,7 @@ impl Shell {
                 expect,
                 write,
             } => {
-                let sent = self.state.sent_mailbox_id(&account);
+                let sent = self.state.send_boxes(&account).ok();
                 match self.client(&account) {
                     // A form's write through a connection other than the one
                     // it was opened on is refused as stale.
@@ -801,21 +857,21 @@ impl Shell {
                 account,
                 ticket,
                 draft,
+                attempt,
             } => {
-                // The send recipe needs the Sent mailbox; without the mail
-                // listing yet, there is nothing to file under. Either way
-                // the compose hears back, so it never stays busy.
-                let sent = self.state.sent_mailbox_id(&account);
-                match (self.client(&account), sent) {
-                    (Some((tag, client)), Some(sent)) => {
+                // The send recipe needs the Drafts and Sent mailboxes;
+                // without the mail listing yet, there is nothing to file
+                // under. Either way the compose hears back, so it never
+                // stays busy.
+                let boxes = self.state.send_boxes(&account);
+                match (self.client(&account), boxes) {
+                    (Some((tag, client)), Ok(boxes)) => {
                         self.spawn(async move {
-                            Event::Account(
-                                tag,
-                                Done::Sent(ticket, client.send(&draft, &sent).await),
-                            )
+                            let (attempt, result) = client.send(&draft, &boxes, attempt).await;
+                            Event::Account(tag, Done::Sent(ticket, attempt, result))
                         });
                     }
-                    (found, _) => {
+                    (found, missing) => {
                         let generation = self
                             .state
                             .account(&account)
@@ -824,9 +880,10 @@ impl Shell {
                             account,
                             generation,
                         });
-                        let error = jmap::Error::Protocol(label("no-sent-mailbox"));
+                        let key = missing.err().unwrap_or("not-connected");
+                        let error = jmap::Error::Protocol(label(key));
                         self.state
-                            .apply(Event::Account(tag, Done::Sent(ticket, Err(error))));
+                            .apply(Event::Account(tag, Done::Sent(ticket, attempt, Err(error))));
                     }
                 }
             }
@@ -1373,13 +1430,28 @@ impl Shell {
         }
         self.pump();
         self.follow_theme();
+        self.draft_timer();
         // Closing waits for the drive layer's accepted work. A close is
         // asked for by the window (the close button) or a command
-        // (file.quit, which sets the state's exiting flag).
-        let closing = ctx.input(|i| i.viewport().close_requested()) || self.state.exiting;
+        // (file.quit, which sets the state's exiting flag). A draft open
+        // with something typed is saved and the person asked first.
+        let asked = ctx.input(|i| i.viewport().close_requested());
+        let mut closing = self.state.exiting;
+        if asked && !closing && !self.exiting {
+            if self.state.request_quit() {
+                closing = true;
+            } else {
+                ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+                self.apply_drafts();
+                ctx.request_repaint();
+            }
+        }
         if closing && !self.exiting {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             self.exiting = true;
+            // Whatever is typed is on disk before anything else closes.
+            self.state.save_draft();
+            self.apply_drafts();
             for answer in drive::finish(&self.ctx) {
                 self.bus.reply(answer.id, answer.rc, answer.body);
             }
@@ -1392,6 +1464,7 @@ impl Shell {
             for reply in self.state.take_replies() {
                 self.bus.reply(reply.id, reply.rc, reply.body);
             }
+            self.apply_drafts();
             self.save_config_if_dirty();
             self.bus.quit();
             self.ctx.send_viewport_cmd(egui::ViewportCommand::Close);
@@ -1426,8 +1499,9 @@ impl Shell {
         }
         self.settle();
         // A theme change is installed by the next frame's logic, before any
-        // drawing: never midway through the frame that saw the click.
-        if self.choice() != self.installed {
+        // drawing: never midway through the frame that saw the click. So is
+        // a close the person just confirmed.
+        if self.choice() != self.installed || self.state.exiting {
             ui.ctx().request_repaint();
         }
     }

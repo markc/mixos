@@ -9,9 +9,12 @@
 use design::{DesignContext, Mode, Scheme};
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
+use email::drafts::{DraftOp, SavedDraft};
 use email::secrets::Secrets;
 use email::shell::{Done, Event};
-use email::state::{Mode as Surface, Node, Phase, SessionInfo, State, Tag, UiState};
+use email::state::{
+    ComposeField, Confirm, Mode as Surface, Node, Phase, SessionInfo, State, Tag, UiState,
+};
 use email::view::{UiEvent, view};
 use email::work::Work;
 use email::{commands, label, strings};
@@ -443,4 +446,100 @@ fn no_accounts_studio_dark() {
         empty(),
         &theme(Scheme::Studio, Mode::Dark),
     );
+}
+
+/// The fixture with a compose open on Home and something typed in it.
+fn typing() -> State {
+    let mut state = fixture();
+    state.apply_ui(UiEvent::Compose);
+    for (field, value) in [
+        (ComposeField::To, "bob@example.invalid"),
+        (ComposeField::Subject, "Lunch on Friday"),
+        (ComposeField::Body, "Noon at the usual place?"),
+    ] {
+        state.apply_ui(UiEvent::ComposeField(field, value.into()));
+    }
+    state
+}
+
+#[test]
+fn escape_on_a_typed_compose_asks_and_keeps_the_draft() {
+    let mut h = harness(typing());
+    h.key_press(egui::Key::Escape);
+    h.run();
+    let state = &h.state().state;
+    assert_eq!(state.confirm, Some(Confirm::CloseCompose));
+    assert!(state.compose.is_some(), "Escape never drops what is typed");
+    // Escape again is Keep Editing: the question goes, the compose stays.
+    h.key_press(egui::Key::Escape);
+    h.run();
+    assert!(h.state().state.confirm.is_none());
+    assert!(h.state().state.compose.is_some());
+    // Cancel asks; Keep Draft, the default, closes and keeps it.
+    h.get_by_label(&label("cancel")).click();
+    h.run();
+    assert_eq!(h.state().state.confirm, Some(Confirm::CloseCompose));
+    h.get_by_label(&label("keep-draft")).click();
+    h.run();
+    let state = &mut h.state_mut().state;
+    assert!(state.compose.is_none() && state.confirm.is_none());
+    let kept = state.take_draft_ops();
+    assert!(
+        kept.iter()
+            .any(|op| matches!(op, DraftOp::Save(d) if d.body == "Noon at the usual place?")),
+        "{kept:?}"
+    );
+    assert!(!kept.iter().any(|op| matches!(op, DraftOp::Remove(_))));
+}
+
+#[test]
+fn confirm_close_draft_studio_dark() {
+    let mut state = typing();
+    state.apply_ui(UiEvent::CloseCompose);
+    assert_eq!(state.confirm, Some(Confirm::CloseCompose));
+    snapshot(
+        "confirm_close_draft_studio_dark",
+        state,
+        &theme(Scheme::Studio, Mode::Dark),
+    );
+}
+
+#[test]
+fn confirm_quit_draft_pro_light() {
+    let mut state = typing();
+    assert!(!state.request_quit());
+    snapshot(
+        "confirm_quit_draft_pro_light",
+        state,
+        &theme(Scheme::Pro, Mode::Light),
+    );
+}
+
+#[test]
+fn restore_draft_studio_dark() {
+    let mut state = fixture();
+    let kept = |id: &str, subject: &str, saved_at: &str| SavedDraft {
+        schema_version: email::drafts::CURRENT_SCHEMA,
+        id: id.into(),
+        account: "home".into(),
+        from: "ann@home.example.invalid".into(),
+        to: "bob@example.invalid, ".into(),
+        subject: subject.into(),
+        body: "Noon at the usual place?".into(),
+        saved_at: saved_at.into(),
+        ..SavedDraft::default()
+    };
+    state.offer_drafts(vec![
+        kept("0b", "Lunch on Friday", "2026-10-17T23:40:00Z"),
+        kept("0a", "Minutes", "2026-10-16T08:00:00Z"),
+    ]);
+    let mut h = harness_with(state, &theme(Scheme::Studio, Mode::Dark));
+    h.run();
+    h.snapshot("restore_draft_studio_dark");
+    h.get_by_label(&label("restore-draft")).click();
+    h.run();
+    let state = &h.state().state;
+    let compose = state.compose.as_ref().expect("restored");
+    assert_eq!(compose.draft.subject, "Lunch on Friday");
+    assert_eq!(state.restore.len(), 1, "the next waits its turn");
 }
