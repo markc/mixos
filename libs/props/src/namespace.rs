@@ -1057,7 +1057,7 @@ mod tests {
 
     #[test]
     fn schema_version_dotted_wire_shape() {
-        //: `"schema_version": "0.1.0"`.
+        // The schema version is a dotted string on the wire.
         let v = SchemaVersion::new(0, 1, 0);
         assert_eq!(v.to_string(), "0.1.0");
         let j = serde_json::to_value(v).unwrap();

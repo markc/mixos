@@ -811,7 +811,7 @@ mod tests {
         assert!(j.get("cause").is_none());
         // digest persists on the row for faithful audit replay.
         assert_eq!(j["audit_digest"], "deadbeefcafe");
-        //: event-history row carries `at`, not `ts`.
+        // The event-history row carries `at`, not `ts`.
         // The dispatcher renames to `ts` when projecting to
         // records.changed bodies.
         assert_eq!(j["at"].as_str().unwrap(), "2026-05-11T12:00:00Z");
@@ -820,7 +820,7 @@ mod tests {
             "event-history row serialises as `at`, dispatcher remaps to `ts` on the records.changed projection"
         );
         assert_eq!(j["kind"], "created");
-        //: event-history row carries the service-prefixed verb.
+        // The event-history row carries the service-prefixed verb.
         assert_eq!(j["verb"], "demod.props.set");
         assert_eq!(j["secret_fields_changed_count"], 1);
         // records.changed body has flat namespace + key at top
@@ -891,7 +891,7 @@ mod tests {
         );
         assert_eq!(j["fields_changed"][0], "email");
         assert_eq!(j["audit_digest"], "deadbeef");
-        //: no chained prev_digest; no inner RecordEvent nesting.
+        // No chained prev_digest; no inner RecordEvent nesting.
         assert!(j.get("prev_digest").is_none());
         assert!(j.get("event").is_none());
         // No records.changed-only fields leak into the audit body.

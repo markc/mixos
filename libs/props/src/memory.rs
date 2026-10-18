@@ -412,7 +412,7 @@ impl PropertyStore for MemoryStore {
                 .unwrap_or(Version::zero());
             let preserved_lifecycle = existing.as_ref().and_then(|r| r.lifecycle.clone());
 
-            // Reconcile is the ONLY path that bumps audit_epoch .
+            // Reconcile is the ONLY path that bumps audit_epoch.
             ns_state.audit_epoch = ns_state.audit_epoch.next();
 
             let new_version = prev_version.next();
