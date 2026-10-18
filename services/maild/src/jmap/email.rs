@@ -3411,7 +3411,7 @@ mod tests {
     /// failure cannot leave an email in only some of its requested
     /// mailboxes.
     #[test]
-    #[ignore = "contract-stub for Task 3.3 — see comment"]
+    #[ignore = "inherited placeholder: needs executable multi-mailbox creation assertions"]
     fn email_set_contract_create_honours_multi_mailbox_ids() {
         panic!(
             "Email/set create with `mailboxIds: {{ inboxId: true, archiveId: true }}` \
@@ -3426,7 +3426,7 @@ mod tests {
     /// mailbox memberships is ill-formed under the JMAP data
     /// model). The legacy SQL path silently accepted it.
     #[test]
-    #[ignore = "contract-stub for Task 3.3 — see comment"]
+    #[ignore = "inherited placeholder: needs executable empty mailboxIds rejection assertions"]
     fn email_set_contract_create_rejects_empty_mailbox_ids() {
         panic!(
             "Email/set create with empty `mailboxIds` must enter `notCreated` with \
@@ -3441,7 +3441,7 @@ mod tests {
     /// current handler short-circuits on the first error, dropping
     /// later valid updates on the floor.
     #[test]
-    #[ignore = "contract-stub for Task 3.4 — see comment"]
+    #[ignore = "inherited placeholder: needs executable per-id partial update assertions"]
     fn email_set_contract_update_partial_success_per_id() {
         panic!(
             "Three updates: id_a (valid), id_b (unknown id), id_c (valid). The response \
@@ -3458,7 +3458,7 @@ mod tests {
     /// readers and violate the changelog state-monotonicity
     /// invariant relied on by `Email/changes`.
     #[test]
-    #[ignore = "contract-stub for Task 3.5 — see comment"]
+    #[ignore = "inherited placeholder: needs executable update-before-destroy ordering assertions"]
     fn email_set_contract_destroy_runs_after_update_in_same_state_tx() {
         panic!(
             "An Email/set with both `update: {{ id: {{ keywords/$seen: true }} }}` and \
@@ -3478,7 +3478,7 @@ mod tests {
     /// substrate property that lets a mailbox replay against
     /// the same staging directory without exploding.
     #[test]
-    #[ignore = "contract-stub for Task 3.5b — see comment"]
+    #[ignore = "inherited placeholder: needs executable blob import idempotence assertions"]
     fn email_set_contract_import_is_idempotent_on_blob_hash() {
         panic!(
             "Email/import called twice with the same `blobId` and the same target \
