@@ -53,3 +53,8 @@ pub use client::{
     RegistrationRejected, RegistrationRejectionKind, SubscriptionRegistry, SupervisedClient,
     SupervisedConnectOptions, SupervisedError, noded_url,
 };
+
+#[cfg(all(feature = "client", unix))]
+mod native_port;
+#[cfg(all(feature = "client", unix))]
+pub use native_port::call_port_typed;
