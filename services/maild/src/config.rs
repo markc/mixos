@@ -564,7 +564,7 @@ impl Config {
     /// The XDG user path remains a fallback for per-user / dev
     /// installs where no system config exists.
     pub fn system_config_path() -> PathBuf {
-        PathBuf::from("/etc/cosmix/maild/config.conf.mix")
+        ::config::path(::config::Dir::Etc).join("maild/config.conf.mix")
     }
 
     pub fn spam_db_dir(&self) -> String {

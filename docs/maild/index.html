@@ -209,7 +209,8 @@
                 <div class="panel-content">
                     <nav id="toc-nav">
                         <a href="#properties">Properties</a>
-                        <a href="#storage">Storage</a>
+                        <a href="#shared-libraries">Shared libraries</a>
+                        <a href="#metadata-store">Metadata store</a>
                     </nav>
                 </div>
             </div>
@@ -251,7 +252,21 @@ namespace modules register their schemas, SQLite mappings and hooks during
 semantics, capability strings, error tokens and the five <code>__props_*</code>
 SQLite table names follow the shared props contract unchanged. Account,
 alias and domain hooks reconcile the mail store after committed changes.</p>
-<h2 id="storage">Storage</h2>
+<h2 id="shared-libraries">Shared libraries</h2>
+<p>Maild uses <code>bus::native_client::NodedClient</code> and the Bus connection helpers.
+Its advertised verbs are registered in the repository Bus registry and checked
+by <code>tests/registry.rs</code>. Incoming commands retain their connection generation;
+the typed port helper preserves the remote return code and parsed reply.</p>
+<p>Configuration uses <code>config::Dir::{Etc, Var}</code> and <code>config::path</code>. The system
+file is <code>&lt;Etc&gt;/maild/config.conf.mix</code>; strict-data loaders return typed errors.
+Node-wide mail settings use the typed <code>config::node::NodeConfig</code> fields, with
+the shared <code>config::tls</code> SNI resolver. Logging attaches the namespace returned
+by <code>logging::props::register</code> through <code>logging::props::attach</code>.</p>
+<p>Build provenance comes from <code>buildinfo</code> and its <code>MIXOS_*</code> build variables.
+Mail filters use the shared <code>mix</code> interpreter with its <code>json</code> and <code>serde</code>
+features. DAV uses <code>davproto</code> and the <code>mixos:rawICalendar</code> and <code>mixos:rawVCard</code>
+keys; retired raw keys remain errors.</p>
+<h2 id="metadata-store">Metadata store</h2>
 <p><code>Mds</code> is the storage interface. <code>SqliteCasMds</code> stores per-set metadata in
 SQLite, shares a content-addressable blob store, and emits notifications
 after transactions commit. The library supports verification, garbage

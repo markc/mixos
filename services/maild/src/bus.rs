@@ -321,7 +321,8 @@ pub async fn run(
     }
 }
 
-fn verb_manifest() -> Vec<::bus::VerbDescriptor> {
+/// The verbs advertised by maild, checked against the repository registry.
+pub fn verb_manifest() -> Vec<::bus::VerbDescriptor> {
     use ::bus::VerbDescriptor;
     vec![
         VerbDescriptor::new("HELP", &[], "List all commands this service accepts", true),

@@ -25,7 +25,25 @@ semantics, capability strings, error tokens and the five `__props_*`
 SQLite table names follow the shared props contract unchanged. Account,
 alias and domain hooks reconcile the mail store after committed changes.
 
-## Storage
+## Shared libraries
+
+Maild uses `bus::native_client::NodedClient` and the Bus connection helpers.
+Its advertised verbs are registered in the repository Bus registry and checked
+by `tests/registry.rs`. Incoming commands retain their connection generation;
+the typed port helper preserves the remote return code and parsed reply.
+
+Configuration uses `config::Dir::{Etc, Var}` and `config::path`. The system
+file is `<Etc>/maild/config.conf.mix`; strict-data loaders return typed errors.
+Node-wide mail settings use the typed `config::node::NodeConfig` fields, with
+the shared `config::tls` SNI resolver. Logging attaches the namespace returned
+by `logging::props::register` through `logging::props::attach`.
+
+Build provenance comes from `buildinfo` and its `MIXOS_*` build variables.
+Mail filters use the shared `mix` interpreter with its `json` and `serde`
+features. DAV uses `davproto` and the `mixos:rawICalendar` and `mixos:rawVCard`
+keys; retired raw keys remain errors.
+
+## Metadata store
 
 `Mds` is the storage interface. `SqliteCasMds` stores per-set metadata in
 SQLite, shares a content-addressable blob store, and emits notifications
