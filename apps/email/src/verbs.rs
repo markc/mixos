@@ -1971,7 +1971,11 @@ mod tests {
         assert_eq!(read[0].id, "work");
         assert_eq!(read[0].reply_to, None);
         assert!(identities(&json!({}), "identities").unwrap().is_none());
-        assert!(identities(&json!({"identities": null}), "identities").unwrap().is_none());
+        assert!(
+            identities(&json!({"identities": null}), "identities")
+                .unwrap()
+                .is_none()
+        );
         assert!(identities(&json!({"identities": "work"}), "identities").is_err());
         assert!(identities(&json!({"identities": [{"id": "work"}]}), "identities").is_err());
     }
