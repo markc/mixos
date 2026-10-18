@@ -81,7 +81,7 @@ use std::time::Instant;
 
 /// Stable on-disk format identifier embedded in `manifest.format`.
 /// Importers MUST verify this string matches before trusting any
-/// other field — it's how we distinguish a Cosmix MDS export from
+/// other field — it's how we distinguish a v1 MDS export from
 /// some other tarball that happened to land at this path.
 pub const FORMAT_TAG: &str = "cosmix-mds-set-export";
 

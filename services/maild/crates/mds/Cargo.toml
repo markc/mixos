@@ -52,5 +52,6 @@ chrono.workspace = true
 libc.workspace = true
 
 [dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread"] }
 tempfile.workspace = true
 proptest = "1"
