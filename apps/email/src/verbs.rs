@@ -1224,6 +1224,8 @@ fn dispatch(
                 subject: required(args, "subject")?,
                 body: text(args, "body")?.unwrap_or_default(),
                 in_reply_to: text(args, "in_reply_to")?,
+                from_name: String::new(),
+                reply_to: None,
             };
             state.write_server(account, Some(id), Write::Send { draft });
         }
@@ -1478,6 +1480,7 @@ fn account_set(state: &mut State, id: u64, args: &Value) -> Checked<()> {
                 ca_path: None,
                 enabled: true,
                 signature: String::new(),
+                identities: Vec::new(),
             };
             patch.apply(&mut entry);
             Change::Upsert(entry)

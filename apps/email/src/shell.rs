@@ -358,6 +358,7 @@ fn legacy_entry(
             ca_path,
             enabled: true,
             signature: String::new(),
+            identities: Vec::new(),
         },
         stripped,
     ))

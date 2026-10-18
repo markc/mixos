@@ -5636,6 +5636,7 @@ pub(crate) mod tests {
             ca_path: None,
             enabled: true,
             signature: String::new(),
+            identities: Vec::new(),
         }
     }
 
@@ -7002,6 +7003,7 @@ pub(crate) mod tests {
             ca_path: None,
             enabled: true,
             signature: String::new(),
+            identities: Vec::new(),
         };
         let id = legacy.id.clone();
         let mut state = State::new(
