@@ -426,6 +426,21 @@ impl<'a> DataTable<'a> {
                     )
                 });
                 for (key, press) in KEYS {
+                    // Shift with a moving key extends the selection. Taken
+                    // first: egui's match for a key with no modifiers
+                    // ignores Shift, so the plain move would eat it.
+                    if multi
+                        && press != TableKey::Enter
+                        && ui.input_mut(|i| i.consume_key(Modifiers::SHIFT, key))
+                    {
+                        if let Some(event) = self.state.extend(press, &keys, visible) {
+                            if let TableEvent::SelectionChanged { focus, .. } = &event {
+                                scroll_to = *focus;
+                            }
+                            events.push(event);
+                        }
+                        continue;
+                    }
                     if ui.input_mut(|i| i.consume_key(Modifiers::NONE, key)) {
                         for event in self.state.key(press, &keys, visible) {
                             if let TableEvent::Selected { index, .. } = &event {
@@ -433,17 +448,6 @@ impl<'a> DataTable<'a> {
                             }
                             events.push(event);
                         }
-                    }
-                    // Shift with a moving key extends the selection.
-                    if multi
-                        && press != TableKey::Enter
-                        && ui.input_mut(|i| i.consume_key(Modifiers::SHIFT, key))
-                        && let Some(event) = self.state.extend(press, &keys, visible)
-                    {
-                        if let TableEvent::SelectionChanged { focus, .. } = &event {
-                            scroll_to = *focus;
-                        }
-                        events.push(event);
                     }
                 }
                 if multi {
