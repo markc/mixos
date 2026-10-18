@@ -399,13 +399,17 @@ impl Widget for ValueField<'_> {
 
 /// A single-line text field (§3.15), `width` wide and one control high.
 pub fn text(ui: &mut Ui, text: &mut String, hint: &str, width: f32) -> Response {
-    ui.add(
-        TextEdit::singleline(text)
-            .hint_text(hint)
-            .desired_width(width)
-            .min_size(vec2(0.0, HEIGHT))
-            .vertical_align(Align::Center),
-    )
+    ui.add(text_edit(text, hint, width))
+}
+
+/// The text field [`text`] adds, for a caller that sets more on it (an
+/// id, to know its focus before it is drawn).
+pub fn text_edit<'t>(text: &'t mut String, hint: &str, width: f32) -> TextEdit<'t> {
+    TextEdit::singleline(text)
+        .hint_text(hint)
+        .desired_width(width)
+        .min_size(vec2(0.0, HEIGHT))
+        .vertical_align(Align::Center)
 }
 
 /// A search field: a text field led by the search icon in `text_faint`.

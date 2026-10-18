@@ -116,6 +116,38 @@ pub struct Email {
     pub text_body: Option<Vec<BodyPart>>,
     #[serde(rename = "htmlBody", default)]
     pub html_body: Option<Vec<BodyPart>>,
+    /// The parts that are not the body (RFC 8621 `attachments`).
+    #[serde(default)]
+    pub attachments: Option<Vec<Attachment>>,
+}
+
+/// One attachment: a part that is not the body. maild marks a part it
+/// could not decode `undecodable` and gives it no blob.
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+pub struct Attachment {
+    #[serde(rename = "partId", default)]
+    pub part_id: Option<String>,
+    #[serde(rename = "blobId", default)]
+    pub blob_id: Option<String>,
+    #[serde(default)]
+    pub size: u64,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(rename = "type", default)]
+    pub content_type: Option<String>,
+    #[serde(default)]
+    pub disposition: Option<String>,
+    #[serde(default)]
+    pub cid: Option<String>,
+    #[serde(default)]
+    pub undecodable: bool,
+}
+
+impl Attachment {
+    /// Whether its bytes can be fetched.
+    pub fn downloadable(&self) -> bool {
+        !self.undecodable && self.blob_id.as_deref().is_some_and(|b| !b.is_empty())
+    }
 }
 
 impl Email {
@@ -174,10 +206,19 @@ impl Email {
             .and_then(Value::as_bool)
             .unwrap_or(false)
     }
+
+    /// Whether the `$flagged` keyword is set.
+    pub fn is_flagged(&self) -> bool {
+        self.keywords
+            .as_ref()
+            .and_then(|k| k.get("$flagged"))
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    }
 }
 
 /// A mailbox listing page: the ids' emails and the full match count behind
-/// them. `position` counts from the newest under the default sort.
+/// them. `position` counts from the first email under the query's sort.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct EmailPage {
     pub emails: Vec<Email>,
@@ -185,7 +226,251 @@ pub struct EmailPage {
     pub total: u64,
 }
 
+/// The property an email list is ordered by: the RFC 8621 sort properties
+/// the client asks for. maild accepts exactly these three (one comparator,
+/// no collation); `size` is standard but maild refuses it, so it is not
+/// offered.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum SortBy {
+    #[default]
+    ReceivedAt,
+    Subject,
+    From,
+}
+
+impl SortBy {
+    /// The JMAP property name.
+    pub fn property(self) -> &'static str {
+        match self {
+            SortBy::ReceivedAt => "receivedAt",
+            SortBy::Subject => "subject",
+            SortBy::From => "from",
+        }
+    }
+}
+
+/// An Email/query sort: one property, one direction. The default is the
+/// server's own, newest first.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct EmailSort {
+    pub by: SortBy,
+    pub ascending: bool,
+}
+
+impl EmailSort {
+    pub fn new(by: SortBy, ascending: bool) -> Self {
+        Self { by, ascending }
+    }
+
+    /// The `sort` argument: a single comparator, no collation.
+    fn comparators(self) -> Value {
+        json!([{ "property": self.by.property(), "isAscending": self.ascending }])
+    }
+}
+
+/// The most ids one Email/set or one Email/query page names. maild
+/// advertises `maxObjectsInSet` 500 but does not enforce it, so the client
+/// keeps to it itself: a larger batch goes as successive requests.
+pub const MAX_IDS_PER_REQUEST: usize = 500;
+
+/// One change applied to every email of a batch.
+#[derive(Clone, Debug, PartialEq)]
+pub enum EmailChange {
+    /// Set (`Some(true)`), clear (`Some(false)`) or leave (`None`) `$seen`
+    /// and `$flagged`.
+    Keywords {
+        read: Option<bool>,
+        flagged: Option<bool>,
+    },
+    /// Into exactly this mailbox (a delete is a move to Trash).
+    Move { mailbox: String },
+    /// Destroyed for good (`Email/set` `destroy`, not a move to Trash).
+    Destroy,
+}
+
+impl EmailChange {
+    /// The Email/set arguments applying this change to `ids`.
+    fn args(&self, account_id: &str, ids: &[String]) -> Value {
+        match self {
+            EmailChange::Keywords { read, flagged } => {
+                email_update_args(account_id, ids, &keyword_patch(*read, *flagged))
+            }
+            EmailChange::Move { mailbox } => {
+                email_update_args(account_id, ids, &json!({ "mailboxIds": { mailbox: true } }))
+            }
+            EmailChange::Destroy => json!({ "accountId": account_id, "destroy": ids }),
+        }
+    }
+}
+
+/// What a batched Email/set did to each id it named: the ids it changed,
+/// and each id it did not with the reason.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct SetOutcome {
+    pub done: Vec<String>,
+    pub failed: Vec<(String, String)>,
+}
+
+/// The Email/set calls for `change` on `ids`: one call per
+/// [`MAX_IDS_PER_REQUEST`] ids, each sent as its own request.
+pub fn email_set_calls(account_id: &str, ids: &[String], change: &EmailChange) -> Vec<Call> {
+    ids.chunks(MAX_IDS_PER_REQUEST)
+        .map(|chunk| {
+            Call(
+                "Email/set".into(),
+                change.args(account_id, chunk),
+                "s0".into(),
+            )
+        })
+        .collect()
+}
+
+/// Read one Email/set reply for `ids`: an id under `notUpdated` failed with
+/// its type and description; every other id is done (RFC 8620 §5.3 omits
+/// a no-op update from `updated`, so absence there is not a failure).
+pub fn set_outcome(data: &Value, ids: &[String]) -> SetOutcome {
+    let mut outcome = SetOutcome::default();
+    for id in ids {
+        match Client::set_error(data, "notUpdated", id) {
+            Some(error) => outcome.failed.push((id.clone(), reason(&error))),
+            None => outcome.done.push(id.clone()),
+        }
+    }
+    outcome
+}
+
+/// Read one Email/set reply for `ids` under `change`: an update as
+/// [`set_outcome`]; a destroy fails an id under `notDestroyed`, and an id
+/// the reply does not list as `destroyed` (maild confirms every destroy).
+pub fn change_outcome(data: &Value, ids: &[String], change: &EmailChange) -> SetOutcome {
+    if *change != EmailChange::Destroy {
+        return set_outcome(data, ids);
+    }
+    let destroyed = |id: &str| {
+        data.get("destroyed")
+            .and_then(Value::as_array)
+            .is_some_and(|list| list.iter().any(|entry| entry.as_str() == Some(id)))
+    };
+    let mut outcome = SetOutcome::default();
+    for id in ids {
+        match Client::set_error(data, "notDestroyed", id) {
+            Some(error) => outcome.failed.push((id.clone(), reason(&error))),
+            None if destroyed(id) => outcome.done.push(id.clone()),
+            None => outcome.failed.push((
+                id.clone(),
+                format!("serverFail: server did not confirm {id:?} as destroyed"),
+            )),
+        }
+    }
+    outcome
+}
+
+/// A failure as a person reads it: the type, and the description when
+/// there is one.
+fn reason(error: &Error) -> String {
+    match error {
+        Error::Method {
+            error_type,
+            description,
+        } if description.is_empty() => error_type.clone(),
+        Error::Method {
+            error_type,
+            description,
+        } => format!("{error_type}: {description}"),
+        other => other.to_string(),
+    }
+}
+
+/// The Email/query call listing ids only (no Email/get), `limit` of them
+/// from `position` in `sort` order, with the total.
+pub fn email_ids_call(
+    account_id: &str,
+    mailbox: &str,
+    sort: EmailSort,
+    position: u64,
+    limit: u64,
+) -> Call {
+    Call(
+        "Email/query".into(),
+        json!({
+            "accountId": account_id,
+            "filter": email_filter(Some(mailbox), None),
+            "sort": sort.comparators(),
+            "position": position,
+            "limit": limit.clamp(1, MAX_IDS_PER_REQUEST as u64),
+            "calculateTotal": true,
+        }),
+        "q0".into(),
+    )
+}
+
+/// A page of a query's ids, and the query's whole count.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct IdPage {
+    pub ids: Vec<String>,
+    pub total: u64,
+}
+
 impl Client {
+    /// Apply `change` to every id: one Email/set per
+    /// [`MAX_IDS_PER_REQUEST`] ids, sent one after another. Each id comes
+    /// back done or failed with its reason; a request that fails as a
+    /// whole fails its own ids with that error and the next still goes.
+    pub async fn change_emails(&self, ids: &[String], change: &EmailChange) -> SetOutcome {
+        let mut outcome = SetOutcome::default();
+        let calls = email_set_calls(self.account_id(), ids, change);
+        for (call, chunk) in calls.into_iter().zip(ids.chunks(MAX_IDS_PER_REQUEST)) {
+            let answer = self
+                .call(&[call])
+                .await
+                .and_then(|replies| replies.into_iter().next().ok_or_else(|| empty("Email/set")));
+            match answer {
+                Ok(data) => {
+                    let part = change_outcome(&data, chunk, change);
+                    outcome.done.extend(part.done);
+                    outcome.failed.extend(part.failed);
+                }
+                Err(error) => {
+                    let why = reason(&error);
+                    outcome
+                        .failed
+                        .extend(chunk.iter().map(|id| (id.clone(), why.clone())));
+                }
+            }
+        }
+        outcome
+    }
+
+    /// One page of a mailbox's ids in `sort` order (at most
+    /// [`MAX_IDS_PER_REQUEST`]), with the query's total.
+    pub async fn email_ids(
+        &self,
+        mailbox: &str,
+        sort: EmailSort,
+        position: u64,
+        limit: u64,
+    ) -> Result<IdPage> {
+        let call = email_ids_call(self.account_id(), mailbox, sort, position, limit);
+        let reply = self
+            .call(&[call])
+            .await?
+            .into_iter()
+            .next()
+            .ok_or_else(|| empty("Email/query"))?;
+        let total = reply.get("total").and_then(Value::as_u64).unwrap_or(0);
+        let ids = reply
+            .get("ids")
+            .and_then(Value::as_array)
+            .map(|ids| {
+                ids.iter()
+                    .filter_map(Value::as_str)
+                    .map(str::to_owned)
+                    .collect()
+            })
+            .unwrap_or_default();
+        Ok(IdPage { ids, total })
+    }
+
     /// Every mailbox on the account, role-sorted by the server.
     pub async fn mailboxes(&self) -> Result<Vec<Mailbox>> {
         let replies = self
@@ -199,27 +484,23 @@ impl Client {
         Ok(parse_get::<Mailbox>(data)?.0)
     }
 
-    /// One page of a mailbox's email, newest first, with the full count.
-    /// A thin wrapper over [`Client::email_query`] with no text filter.
+    /// One page of a mailbox's email in `sort` order, starting `position`
+    /// emails in, with the full count. A thin wrapper over
+    /// [`Client::email_query_sorted`] with no text filter.
     pub async fn email_page(
         &self,
         mailbox_id: &str,
-        position: u32,
+        sort: EmailSort,
+        position: u64,
         limit: u32,
     ) -> Result<EmailPage> {
-        self.email_query(
-            Some(mailbox_id),
-            None,
-            u64::from(position),
-            u64::from(limit),
-        )
-        .await
+        self.email_query_sorted(Some(mailbox_id), None, sort, position, u64::from(limit))
+            .await
     }
 
     /// One page of the email matching an optional mailbox and an optional
     /// full-text query, newest first, with the full match count. `None` for
-    /// both lists the whole account. One round trip: `Email/query` chains
-    /// into `Email/get` through a ResultReference.
+    /// both lists the whole account.
     pub async fn email_query(
         &self,
         mailbox: Option<&str>,
@@ -227,9 +508,24 @@ impl Client {
         position: u64,
         limit: u64,
     ) -> Result<EmailPage> {
+        self.email_query_sorted(mailbox, text, EmailSort::default(), position, limit)
+            .await
+    }
+
+    /// [`Client::email_query`] in `sort` order. One round trip:
+    /// `Email/query` chains into `Email/get` through a ResultReference.
+    pub async fn email_query_sorted(
+        &self,
+        mailbox: Option<&str>,
+        text: Option<&str>,
+        sort: EmailSort,
+        position: u64,
+        limit: u64,
+    ) -> Result<EmailPage> {
         let calls = email_query_calls(
             self.account_id(),
             email_filter(mailbox, text),
+            sort,
             position,
             limit,
         );
@@ -439,14 +735,20 @@ fn email_filter(mailbox: Option<&str>, text: Option<&str>) -> Value {
 
 /// The Email/query and Email/get pair behind [`Client::email_query`]: one
 /// round trip, the get chained to the query's ids.
-fn email_query_calls(account_id: &str, filter: Value, position: u64, limit: u64) -> Vec<Call> {
+fn email_query_calls(
+    account_id: &str,
+    filter: Value,
+    sort: EmailSort,
+    position: u64,
+    limit: u64,
+) -> Vec<Call> {
     vec![
         Call(
             "Email/query".into(),
             json!({
                 "accountId": account_id,
                 "filter": filter,
-                "sort": [{ "property": "receivedAt", "isAscending": false }],
+                "sort": sort.comparators(),
                 "position": position,
                 "limit": limit.clamp(1, 500),
                 "calculateTotal": true,
@@ -590,6 +892,32 @@ mod tests {
     }
 
     #[test]
+    fn reads_maild_attachments() {
+        let email: Email = serde_json::from_value(json!({
+            "id": "E1",
+            "attachments": [
+                { "partId": "2", "blobId": "B2", "size": 1234, "name": "plan.pdf",
+                  "type": "application/pdf", "disposition": "attachment", "cid": null },
+                { "partId": "3", "size": 10, "name": "odd.bin",
+                  "type": "application/octet-stream", "undecodable": true }
+            ]
+        }))
+        .unwrap();
+        let attachments = email.attachments.unwrap();
+        assert_eq!(attachments[0].blob_id.as_deref(), Some("B2"));
+        assert_eq!(attachments[0].size, 1234);
+        assert_eq!(
+            attachments[0].content_type.as_deref(),
+            Some("application/pdf")
+        );
+        assert!(attachments[0].downloadable());
+        assert!(attachments[1].undecodable && !attachments[1].downloadable());
+        // An email without the property reads as none.
+        let bare: Email = serde_json::from_value(json!({ "id": "E2" })).unwrap();
+        assert!(bare.attachments.is_none());
+    }
+
+    #[test]
     fn a_missing_from_falls_back_to_the_address() {
         let email: Email = serde_json::from_value(json!({
             "id": "E2",
@@ -602,7 +930,13 @@ mod tests {
 
     #[test]
     fn the_query_pair_is_one_request_with_the_filter_applied() {
-        let calls = email_query_calls("A1", email_filter(Some("M1"), Some("  invoice ")), 20, 500);
+        let calls = email_query_calls(
+            "A1",
+            email_filter(Some("M1"), Some("  invoice ")),
+            EmailSort::default(),
+            20,
+            500,
+        );
         assert_eq!(
             crate::client::request_body(&["urn:ietf:params:jmap:mail".into()], &calls),
             json!({
@@ -629,13 +963,53 @@ mod tests {
 
     #[test]
     fn no_mailbox_and_no_text_matches_the_whole_account_at_a_clamped_limit() {
-        let calls = email_query_calls("A1", email_filter(None, Some("   ")), 0, 0);
+        let sort = EmailSort::default();
+        let calls = email_query_calls("A1", email_filter(None, Some("   ")), sort, 0, 0);
         let body = serde_json::to_value(&calls).unwrap();
         assert_eq!(body[0][1]["filter"], json!({}));
         assert_eq!(body[0][1]["limit"], json!(1));
-        let calls = email_query_calls("A1", email_filter(None, None), 0, 9_000);
+        let calls = email_query_calls("A1", email_filter(None, None), sort, 0, 9_000);
         let body = serde_json::to_value(&calls).unwrap();
         assert_eq!(body[0][1]["limit"], json!(500));
+    }
+
+    #[test]
+    fn each_sort_is_one_comparator_at_the_page_position() {
+        // A mailbox page: subject, from and receivedAt, both ways, at the
+        // page's position; never a collation or a second comparator.
+        for (by, property) in [
+            (SortBy::Subject, "subject"),
+            (SortBy::From, "from"),
+            (SortBy::ReceivedAt, "receivedAt"),
+        ] {
+            for ascending in [true, false] {
+                let calls = email_query_calls(
+                    "A1",
+                    email_filter(Some("M1"), None),
+                    EmailSort::new(by, ascending),
+                    200,
+                    100,
+                );
+                let body =
+                    crate::client::request_body(&["urn:ietf:params:jmap:mail".into()], &calls);
+                assert_eq!(
+                    body["methodCalls"][0],
+                    json!(["Email/query", {
+                        "accountId": "A1",
+                        "filter": { "inMailbox": "M1" },
+                        "sort": [{ "property": property, "isAscending": ascending }],
+                        "position": 200,
+                        "limit": 100,
+                        "calculateTotal": true
+                    }, "q0"])
+                );
+            }
+        }
+        // The default is the server's own: newest first.
+        assert_eq!(
+            EmailSort::default(),
+            EmailSort::new(SortBy::ReceivedAt, false)
+        );
     }
 
     #[test]
@@ -676,6 +1050,145 @@ mod tests {
         assert_eq!(
             email_update_args("A1", &ids, &patch),
             json!({ "accountId": "A1", "update": { "E1": { "mailboxIds": { "M9": true } } } })
+        );
+    }
+
+    fn ids(n: usize) -> Vec<String> {
+        (0..n).map(|i| format!("E{i}")).collect()
+    }
+
+    #[test]
+    fn batch_flag_is_one_email_set_request_for_n_ids() {
+        let ids = ids(6);
+        let change = EmailChange::Keywords {
+            read: None,
+            flagged: Some(true),
+        };
+        let calls = email_set_calls("A1", &ids, &change);
+        assert_eq!(calls.len(), 1, "one request for six ids");
+        let body = crate::client::request_body(&["urn:ietf:params:jmap:mail".into()], &calls);
+        let update: serde_json::Map<String, Value> = ids
+            .iter()
+            .map(|id| (id.clone(), json!({ "keywords/$flagged": true })))
+            .collect();
+        assert_eq!(
+            body,
+            json!({
+                "using": ["urn:ietf:params:jmap:mail"],
+                "methodCalls": [["Email/set", { "accountId": "A1", "update": update }, "s0"]]
+            })
+        );
+    }
+
+    #[test]
+    fn batch_delete_is_one_email_set_moving_n_ids_to_trash() {
+        let ids = ids(3);
+        let change = EmailChange::Move {
+            mailbox: "M-trash".into(),
+        };
+        let calls = email_set_calls("A1", &ids, &change);
+        let body = crate::client::request_body(&["urn:ietf:params:jmap:mail".into()], &calls);
+        assert_eq!(
+            body["methodCalls"],
+            json!([["Email/set", {
+                "accountId": "A1",
+                "update": {
+                    "E0": { "mailboxIds": { "M-trash": true } },
+                    "E1": { "mailboxIds": { "M-trash": true } },
+                    "E2": { "mailboxIds": { "M-trash": true } }
+                }
+            }, "s0"]])
+        );
+    }
+
+    #[test]
+    fn batch_of_more_than_500_ids_splits_into_requests_of_500() {
+        let ids = ids(1_201);
+        let change = EmailChange::Keywords {
+            read: Some(true),
+            flagged: None,
+        };
+        let calls = email_set_calls("A1", &ids, &change);
+        let sizes: Vec<usize> = calls
+            .iter()
+            .map(|c| c.1["update"].as_object().unwrap().len())
+            .collect();
+        assert_eq!(sizes, [500, 500, 201]);
+        assert!(calls[1].1["update"].get("E500").is_some());
+        assert!(email_set_calls("A1", &ids[..500], &change).len() == 1);
+    }
+
+    #[test]
+    fn batch_partial_failure_reports_each_failed_id_with_its_reason() {
+        let ids = ids(4);
+        let reply = json!({
+            "updated": { "E0": null, "E3": null },
+            "notUpdated": {
+                "E1": { "type": "notFound", "description": "no such email" },
+                "E2": { "type": "forbidden" }
+            }
+        });
+        assert_eq!(
+            set_outcome(&reply, &ids),
+            SetOutcome {
+                done: vec!["E0".into(), "E3".into()],
+                failed: vec![
+                    ("E1".into(), "notFound: no such email".into()),
+                    ("E2".into(), "forbidden".into()),
+                ],
+            }
+        );
+    }
+
+    #[test]
+    fn batch_destroy_is_one_email_set_destroy_per_500_ids() {
+        let ids = ids(1_001);
+        let calls = email_set_calls("A1", &ids, &EmailChange::Destroy);
+        let sizes: Vec<usize> = calls
+            .iter()
+            .map(|c| c.1["destroy"].as_array().unwrap().len())
+            .collect();
+        assert_eq!(sizes, [500, 500, 1]);
+        assert_eq!(calls[0].0, "Email/set");
+        assert!(
+            calls[0].1.get("update").is_none(),
+            "a destroy, never a move"
+        );
+        assert_eq!(calls[2].1["destroy"], json!(["E1000"]));
+    }
+
+    #[test]
+    fn batch_destroy_reports_refused_and_unconfirmed_ids() {
+        let ids = ids(3);
+        let reply = json!({
+            "destroyed": ["E0"],
+            "notDestroyed": { "E1": { "type": "notFound" } }
+        });
+        let outcome = change_outcome(&reply, &ids, &EmailChange::Destroy);
+        assert_eq!(outcome.done, ["E0"]);
+        assert_eq!(outcome.failed[0], ("E1".into(), "notFound".into()));
+        assert_eq!(outcome.failed[1].0, "E2", "not confirmed is not done");
+        // An update reads notUpdated only, as before.
+        let change = EmailChange::Move {
+            mailbox: "M".into(),
+        };
+        assert_eq!(change_outcome(&json!({}), &ids, &change).done.len(), 3);
+    }
+
+    #[test]
+    fn an_id_page_query_asks_for_ids_only_at_most_500() {
+        let call = email_ids_call("A1", "M1", EmailSort::default(), 500, 9_000);
+        assert_eq!(call.0, "Email/query");
+        assert_eq!(
+            call.1,
+            json!({
+                "accountId": "A1",
+                "filter": { "inMailbox": "M1" },
+                "sort": [{ "property": "receivedAt", "isAscending": false }],
+                "position": 500,
+                "limit": 500,
+                "calculateTotal": true
+            })
         );
     }
 

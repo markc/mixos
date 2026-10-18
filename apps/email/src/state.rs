@@ -25,9 +25,13 @@ use jmap::{AddressBook, Calendar, CalendarEvent, Composed, Contact, Email, Email
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use settings::email::{AccountEntry, Email as EmailSettings};
+use toolkit::datatable::{
+    Align, Column, Order, SelectionMode, Sort, TableEvent, TableState, Total, Width,
+};
 
+use crate::drafts::{DraftOp, SavedDraft};
 use crate::secrets::Secrets;
-use crate::work::{Login, Work};
+use crate::work::{Batch, BatchKind, Login, Work};
 use crate::writer::{self, Change, Refusal};
 
 /// Which surface the centre pane shows.
@@ -117,10 +121,282 @@ pub struct MailState {
     pub emails: Vec<Email>,
     pub total: u64,
     pub open: Option<Email>,
+    /// How the open email's text body is shown, and its cached parse.
+    pub reader: crate::reader::Reader,
     pub busy: bool,
+    /// The open email's attachments popup is showing.
+    pub attachments_open: bool,
+    /// The open email's attachment saves and opens, by part id.
+    pub transfers: BTreeMap<String, Transfer>,
+    /// Addresses this account has seen: Sent pages' recipients and other
+    /// pages' senders, for completion. In memory only.
+    pub recent: Vec<crate::suggest::Suggestion>,
+    /// The message list's table: its sort, page, selection, keyboard row
+    /// and dragged widths. The list is one page of the server's query, in
+    /// the table's sort (newest first when it has none); the sort and the
+    /// page live here only, never in settings.
+    pub table: TableState,
+    /// "Select all N" was taken: every email of the selected mailbox's
+    /// query (`total` of them) is selected, not only the shown page.
+    pub everything: bool,
+    /// The keyboard row's email while a new sort or page loads: the row
+    /// stays on it if the new page still holds it.
+    pub refocus: Option<String>,
+    /// A "Select all N" action waiting on the query's ids.
+    pub fetching: Option<Fetching>,
+    /// The ids the last batch could not change, each with the reason.
+    pub failed: Vec<(String, String)>,
+}
+
+/// A message action on the list's target (`mail.flag`, `mail.mark_unread`,
+/// `mail.delete`, `mail.move`, `mail.junk`, `mail.not_junk`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Action {
+    /// Flag every target, or unflag them when every shown one is flagged.
+    Flag,
+    /// Mark every target read, or unread when every shown one is read.
+    Read,
+    /// To Trash: asks first for two or more, else as the settings say.
+    Delete,
+    /// Choose a mailbox, then move.
+    Move,
+    /// To Junk (`true`) or out of it to the inbox.
+    Junk(bool),
+}
+
+/// What a message action applies to.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Target {
+    /// "Select all N": every email of the mailbox's query, `N` of them;
+    /// their ids are fetched before acting.
+    Everything(u64),
+    /// These shown rows, in list order.
+    Rows(Vec<String>),
+}
+
+/// The most emails "Select all N" acts on: above it, nothing is done.
+pub const SELECT_ALL_CAP: u64 = 5000;
+
+/// A "Select all N" id fetch in flight, in pages of
+/// [`jmap::MAX_IDS_PER_REQUEST`].
+#[derive(Clone, Debug, PartialEq)]
+pub struct Fetching {
+    pub ticket: u64,
+    pub action: Action,
+    pub mailbox: String,
+    pub sort: jmap::EmailSort,
+    /// The query's count: the list's total, then the server's.
+    pub expected: u64,
+    pub ids: Vec<String>,
+}
+
+/// The message list's column ids.
+pub const COLUMN_SUBJECT: &str = "subject";
+pub const COLUMN_FROM: &str = "from";
+pub const COLUMN_DATE: &str = "date";
+
+/// `n` with its thousands grouped: 2866 is "2,866".
+pub fn grouped(n: u64) -> String {
+    let digits = n.to_string();
+    let mut out = String::new();
+    for (i, digit) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(digit);
+    }
+    out
+}
+
+/// The message list's columns, Subject first: Subject (a resizable 55%),
+/// From (the rest) and Date (`date_width` points, right-aligned). Each
+/// sorts from its header, ascending first; the server does the sorting.
+///
+/// Only Subject is resizable: egui_extras' resize handle of a column that
+/// follows the remainder is pinned (the remainder absorbs the drag), so the
+/// remainder sits between the one resizable column and the fixed one.
+pub fn list_columns(date_width: f32) -> Vec<Column> {
+    vec![
+        Column::new(COLUMN_SUBJECT, "column-subject")
+            .width(Width::Share {
+                share: 0.55,
+                min: 120.0,
+            })
+            .sortable(Order::Ascending),
+        Column::new(COLUMN_FROM, "column-from")
+            .width(Width::Remainder { min: 80.0 })
+            .sortable(Order::Ascending),
+        Column::new(COLUMN_DATE, "column-date")
+            .width(Width::Fixed(date_width))
+            .align(Align::End)
+            .sortable(Order::Ascending),
+    ]
+}
+
+/// The list's sort when the person has chosen none: the server's own,
+/// newest first.
+pub fn default_sort() -> Sort {
+    Sort::new(COLUMN_DATE, Order::Descending)
+}
+
+/// The Email/query sort for the list's `sort`: Subject is `subject`, From
+/// `from`, Date `receivedAt` (the date the list shows). No sort, or a
+/// column the server cannot sort by, is the server's own order.
+pub fn email_sort(sort: Option<&Sort>) -> jmap::EmailSort {
+    let Some(sort) = sort else {
+        return jmap::EmailSort::default();
+    };
+    let by = match sort.column.as_str() {
+        COLUMN_SUBJECT => jmap::SortBy::Subject,
+        COLUMN_FROM => jmap::SortBy::From,
+        COLUMN_DATE => jmap::SortBy::ReceivedAt,
+        _ => return jmap::EmailSort::default(),
+    };
+    jmap::EmailSort::new(by, sort.order == Order::Ascending)
+}
+
+/// The most recent addresses remembered per account.
+pub const RECENT_MAX: usize = 500;
+
+/// How long typing pauses before contacts are looked up.
+pub const SUGGEST_DEBOUNCE: std::time::Duration = std::time::Duration::from_millis(200);
+
+impl MailState {
+    /// Remember the addresses on `emails`, a page of the selected mailbox:
+    /// recipients in Sent, senders elsewhere.
+    fn remember(&mut self, emails: &[Email]) {
+        let sent = self
+            .selected_mailbox()
+            .is_some_and(|m| m.role.as_deref() == Some("sent"));
+        for email in emails {
+            let lists: Vec<&Option<Vec<EmailAddress>>> = if sent {
+                vec![&email.to, &email.cc]
+            } else {
+                vec![&email.from]
+            };
+            for address in lists.into_iter().flatten().flatten() {
+                let known = self
+                    .recent
+                    .iter()
+                    .any(|s| s.email.eq_ignore_ascii_case(&address.email));
+                if !known && !address.email.trim().is_empty() {
+                    self.recent.push(crate::suggest::Suggestion {
+                        name: address.name.clone().unwrap_or_default(),
+                        email: address.email.clone(),
+                        source: crate::suggest::Source::Recent,
+                    });
+                }
+            }
+        }
+        if self.recent.len() > RECENT_MAX {
+            let excess = self.recent.len() - RECENT_MAX;
+            self.recent.drain(..excess);
+        }
+    }
+}
+
+/// Where one attachment's save or open has got to.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(tag = "state", content = "detail", rename_all = "lowercase")]
+pub enum Transfer {
+    Saving,
+    Opening,
+    /// Saved at this path.
+    Saved(String),
+    /// Saved at this path and handed to the desktop.
+    Opened(String),
+    Failed(String),
 }
 
 impl MailState {
+    /// The shown rows' keys (email ids), in list order.
+    pub fn keys(&self) -> Vec<String> {
+        self.emails.iter().map(|e| e.id.clone()).collect()
+    }
+
+    /// How many emails are selected: the mailbox's total once "Select all
+    /// N" was taken, else the shown page's selected rows.
+    pub fn selection_count(&self) -> u64 {
+        if self.everything {
+            self.total.max(self.table.selection.len() as u64)
+        } else {
+            self.table.selection.len() as u64
+        }
+    }
+
+    /// The list's sort in force: the person's, else newest first.
+    pub fn sort(&self) -> Sort {
+        self.table.sort.clone().unwrap_or_else(default_sort)
+    }
+
+    /// The list's table as it is drawn: its sort in force (the Date arrow
+    /// down until another is chosen), and an email opened some other way
+    /// (the Bus, a delete's advance) shown as selected.
+    pub fn list_table(&self) -> TableState {
+        let mut table = self.table.clone();
+        table.sort = Some(self.sort());
+        if let Some(open) = &self.open
+            && table.selection.is_empty()
+        {
+            table.selection = vec![open.id.clone()];
+            table.focus = self.emails.iter().position(|e| e.id == open.id);
+        }
+        table
+    }
+
+    /// What a message action applies to: the selection when there is one
+    /// (two or more rows, or one picked by Ctrl+click), else the keyboard
+    /// row. The open email is the target only when it is the keyboard
+    /// row as the list draws it (an email opened from elsewhere with
+    /// nothing selected).
+    pub fn target(&self) -> Option<Target> {
+        if self.everything {
+            return Some(Target::Everything(self.selection_count()));
+        }
+        let table = self.list_table();
+        let selected: Vec<String> = self
+            .emails
+            .iter()
+            .filter(|e| table.selection.contains(&e.id))
+            .map(|e| e.id.clone())
+            .collect();
+        if !selected.is_empty() {
+            return Some(Target::Rows(selected));
+        }
+        table
+            .focus
+            .and_then(|at| self.emails.get(at))
+            .map(|e| Target::Rows(vec![e.id.clone()]))
+    }
+
+    /// The shown rows of the target (the whole page for "Select all N").
+    pub fn target_rows(&self) -> Vec<&Email> {
+        match self.target() {
+            None => Vec::new(),
+            Some(Target::Everything(_)) => self.emails.iter().collect(),
+            Some(Target::Rows(ids)) => self.emails.iter().filter(|e| ids.contains(&e.id)).collect(),
+        }
+    }
+
+    /// The line beside the actions naming their target: "Applies to 6
+    /// selected", "Applies to this email", or "Fetching N…" while
+    /// "Select all N"'s ids load. None when there is no target.
+    pub fn target_line(&self) -> Option<String> {
+        if let Some(fetching) = &self.fetching {
+            let count = grouped(fetching.expected);
+            return Some(crate::label_with("fetching-ids", &[("count", &count)]));
+        }
+        let count = match self.target()? {
+            Target::Everything(n) => n,
+            Target::Rows(ids) => ids.len() as u64,
+        };
+        Some(if count == 1 {
+            crate::label("applies-this")
+        } else {
+            crate::label_with("applies-selected", &[("count", &grouped(count))])
+        })
+    }
+
     /// The selected mailbox, when it is still in the list.
     pub fn selected_mailbox(&self) -> Option<&Mailbox> {
         self.selected
@@ -133,6 +409,19 @@ impl MailState {
         self.mailboxes
             .iter()
             .find(|m| m.role.as_deref() == Some(role))
+    }
+
+    /// Change the selected mailbox's unread count by `delta`, ahead of the
+    /// server's word.
+    fn shift_unread(&mut self, delta: i64) {
+        let selected = self.selected.clone();
+        if let Some(mailbox) = self
+            .mailboxes
+            .iter_mut()
+            .find(|m| Some(&m.id) == selected.as_ref())
+        {
+            mailbox.unread_emails = mailbox.unread_emails.saturating_add_signed(delta);
+        }
     }
 
     /// Every mailbox's unread count, summed.
@@ -180,6 +469,93 @@ pub struct ComposeState {
     /// The account's new address, when its login (URL or address) changed
     /// while this draft was open: Send waits until the person takes it.
     pub stale: Option<StaleFrom>,
+    /// The address completions showing under a recipient field.
+    pub suggest: Option<Suggest>,
+    /// The local draft this compose is kept as (its file name), until the
+    /// message is sent or the person discards it.
+    pub draft_id: String,
+    /// Bumped on every edit; `saved` is the revision last handed to the
+    /// draft store.
+    pub revision: u64,
+    pub saved: u64,
+    /// Opened from a draft an earlier run kept.
+    pub restored: bool,
+    /// What earlier sends of this message did on the server: a retry
+    /// submits the same message instead of creating a second copy.
+    pub attempt: jmap::SendAttempt,
+}
+
+/// A question that must be answered before a draft would close.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Confirm {
+    /// Cancel or Escape on a compose that holds something typed.
+    CloseCompose,
+    /// The window (or `file.quit`) closing over one.
+    Quit,
+}
+
+/// The answer to a [`Confirm`], or to the offer of a kept draft.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DraftChoice {
+    /// The default: keep the draft (and close); for an offer, restore it.
+    Keep,
+    /// Delete the draft for good.
+    Discard,
+    /// Back to editing; for an offer, later (every draft stays kept).
+    Back,
+}
+
+/// How long typing pauses before the draft is saved (the shell's timer).
+/// Every close path saves at once, whatever the timer.
+pub const DRAFT_DEBOUNCE: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// Completions for the entry being typed in a recipient field.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Suggest {
+    pub field: ComposeField,
+    /// The entry looked up.
+    pub query: String,
+    /// The newest lookup: only its answer applies.
+    pub ticket: u64,
+    pub items: Vec<crate::suggest::Suggestion>,
+    /// The highlighted row.
+    pub cursor: usize,
+}
+
+impl ComposeState {
+    /// The text of recipient field `field` (empty for the others).
+    pub fn recipients(&self, field: ComposeField) -> &str {
+        match field {
+            ComposeField::To => &self.to_text,
+            ComposeField::Cc => &self.cc_text,
+            ComposeField::Bcc => &self.bcc_text,
+            ComposeField::Subject | ComposeField::Body => "",
+        }
+    }
+
+    /// Whether closing this compose could lose something: it was edited,
+    /// restored from a kept draft, or has been sent before.
+    pub fn keepable(&self) -> bool {
+        self.revision > 0 || self.restored || self.attempt != jmap::SendAttempt::default()
+    }
+
+    /// The compose as the draft store keeps it.
+    pub fn saved_draft(&self) -> SavedDraft {
+        SavedDraft {
+            schema_version: crate::drafts::CURRENT_SCHEMA,
+            id: self.draft_id.clone(),
+            account: self.account.clone(),
+            from: self.draft.from.clone(),
+            to: self.to_text.clone(),
+            cc: self.cc_text.clone(),
+            bcc: self.bcc_text.clone(),
+            subject: self.draft.subject.clone(),
+            body: self.draft.body.clone(),
+            in_reply_to: self.draft.in_reply_to.clone(),
+            saved_at: chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+            attempt: self.attempt.clone(),
+        }
+    }
 }
 
 /// A replacement From, bound to the account and connection it came from:
@@ -209,6 +585,12 @@ impl ComposeState {
             error: None,
             sending: None,
             stale: None,
+            suggest: None,
+            draft_id: String::new(),
+            revision: 0,
+            saved: 0,
+            restored: false,
+            attempt: jmap::SendAttempt::default(),
         }
     }
 }
@@ -226,6 +608,9 @@ struct Tickets {
     events: u64,
     contacts: u64,
     send: u64,
+    /// The latest "Select all N" id fetch: a cancelled or replaced one's
+    /// pages are dropped.
+    ids: u64,
 }
 
 /// One settings account and everything the window holds for it.
@@ -279,6 +664,7 @@ impl AccountView {
         };
         self.tickets.open += 1;
         self.tickets.open_mailbox = None;
+        self.tickets.ids += 1;
     }
 
     fn work(&self) -> String {
@@ -293,21 +679,102 @@ impl AccountView {
         // under the new selection while its page loads.
         self.mail.emails.clear();
         self.mail.total = 0;
+        // Nothing selected in the new list, and its first page; the sort
+        // and the dragged widths stay.
+        self.mail.table = TableState {
+            widths: std::mem::take(&mut self.mail.table.widths),
+            sort: self.mail.table.sort.take(),
+            ..TableState::default()
+        };
+        self.mail.everything = false;
+        self.mail.refocus = None;
+        self.cancel_fetch();
         // An open still in flight belongs to the old mailbox.
         self.tickets.open += 1;
         self.mail.busy = true;
         self.fetch_emails(id, limit, work);
     }
 
-    /// Queue a page fetch; only the newest one's answer is applied.
+    /// Queue a fetch of the list's page, in its sort, `limit` to a page;
+    /// only the newest one's answer is applied.
     fn fetch_emails(&mut self, mailbox: String, limit: u32, work: &mut Vec<Work>) {
         self.tickets.page += 1;
+        // The pager counts in the page size the server is asked for.
+        self.mail.table.page_size = limit.max(1);
         work.push(Work::FetchEmails {
             account: self.work(),
             ticket: self.tickets.page,
             mailbox,
+            sort: email_sort(self.mail.table.sort.as_ref()),
+            position: self.mail.table.offset(),
             limit,
         });
+    }
+
+    /// A header click or the pager (`event`, a sort or a page change):
+    /// the selection goes, the keyboard row is remembered by its email,
+    /// and the new page is asked for.
+    fn requery(&mut self, event: &TableEvent, limit: u32, work: &mut Vec<Work>) {
+        let Some(mailbox) = self.mail.selected.clone() else {
+            return;
+        };
+        self.mail.refocus = self
+            .mail
+            .list_table()
+            .focus
+            .and_then(|at| self.mail.emails.get(at))
+            .map(|e| e.id.clone());
+        self.mail.table.apply(event, SelectionMode::Multi);
+        self.mail.table.selection.clear();
+        self.mail.table.anchor = None;
+        self.mail.everything = false;
+        self.cancel_fetch();
+        self.mail.busy = true;
+        self.fetch_emails(mailbox, limit, work);
+    }
+
+    /// Drop a "Select all N" id fetch in flight; its pages are ignored.
+    /// True when there was one.
+    fn cancel_fetch(&mut self) -> bool {
+        if self.mail.fetching.take().is_some() {
+            self.tickets.ids += 1;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// A page of the list arrived. The keyboard row stays on its email if
+    /// the page holds it; a page past the end (the list shrank under a
+    /// reload) asks for the last page instead.
+    fn page_arrived(&mut self, page: jmap::EmailPage, limit: u32, work: &mut Vec<Work>) {
+        let last = self
+            .mail
+            .table
+            .last_page(Total::Known(page.total))
+            .unwrap_or(0);
+        if page.emails.is_empty()
+            && self.mail.table.page > last
+            && let Some(mailbox) = self.mail.selected.clone()
+        {
+            self.mail.table.page = last;
+            self.mail.total = page.total;
+            self.fetch_emails(mailbox, limit, work);
+            return;
+        }
+        self.mail.remember(&page.emails);
+        self.mail.busy = false;
+        self.mail.emails = page.emails;
+        self.mail.total = page.total;
+        let keys = self.mail.keys();
+        if let Some(key) = self.mail.refocus.take() {
+            self.mail.table.focus = keys.iter().position(|k| *k == key);
+        }
+        self.mail.table.rows_changed(&keys);
+        // Every email still selected: the new page shows so.
+        if self.mail.everything {
+            self.mail.table.selection = keys;
+        }
     }
 
     /// Queue an email open; only the newest one's answer is applied (and
@@ -803,6 +1270,10 @@ enum AfterSave {
     Transfer,
 }
 
+/// The print page's body size, in points: the reader's default until the
+/// reader font setting lands.
+pub const PRINT_FONT_PT: f32 = 15.0;
+
 /// How many times a write is sent before a conflict is reported.
 const WRITE_ATTEMPTS: u32 = 3;
 
@@ -850,6 +1321,22 @@ pub struct State {
     /// The migration completed: the shell rewrites the config as schema 2.
     migrated: bool,
     pub compose: Option<ComposeState>,
+    /// A question over the compose before a draft closes.
+    pub confirm: Option<Confirm>,
+    /// Drafts kept from earlier (an earlier run, or a compose set aside),
+    /// offered one at a time while no compose is open.
+    pub restore: Vec<SavedDraft>,
+    /// Draft saves and removals for the shell's store, in order.
+    draft_ops: Vec<DraftOp>,
+    /// Draft ids handed out this run.
+    drafts_made: u64,
+    /// Drafts the person discarded this run: a send still in flight never
+    /// brings one back.
+    discarded: std::collections::BTreeSet<String>,
+    /// Each send in flight, by ticket, with the draft as it was sent.
+    sends: BTreeMap<u64, SavedDraft>,
+    /// The person answered the quit question: closing goes ahead.
+    quit_ok: bool,
     /// A form over the window: a delete to confirm, a move's target, a new
     /// event or contact.
     pub form: Option<Form>,
@@ -907,6 +1394,13 @@ impl State {
             migration: None,
             migrated: false,
             compose: None,
+            confirm: None,
+            restore: Vec::new(),
+            draft_ops: Vec::new(),
+            drafts_made: 0,
+            discarded: std::collections::BTreeSet::new(),
+            sends: BTreeMap::new(),
+            quit_ok: false,
             form: None,
             form_note: None,
             ui,
@@ -1044,6 +1538,11 @@ impl State {
 
     fn queue(&mut self, work: Work) {
         self.work.push(work);
+    }
+
+    /// Queue `work` from a Bus verb (`verbs.rs` builds it).
+    pub fn queue_work(&mut self, work: Work) {
+        self.queue(work);
     }
 
     fn ticket(&mut self) -> u64 {
@@ -1185,7 +1684,8 @@ impl State {
             };
             next.push(view);
         }
-        // What is left was removed: its client and view go.
+        // What is left was removed: its client and view go. A draft open on
+        // it is kept and offered again, never dropped.
         for mut gone in old {
             self.disconnect(&mut gone);
             if self
@@ -1193,7 +1693,7 @@ impl State {
                 .as_ref()
                 .is_some_and(|c| c.account == gone.entry.id)
             {
-                self.compose = None;
+                self.set_aside_compose();
             }
         }
         self.accounts = next;
@@ -1312,6 +1812,8 @@ impl State {
                 if view.phase == Phase::Ready
                     && let Some(mailbox) = view.mail.selected.clone()
                 {
+                    // Pages of another size: back to the first.
+                    view.mail.table.page = 0;
                     view.fetch_emails(mailbox, limit, &mut self.work);
                 }
             }
@@ -1989,9 +2491,20 @@ impl State {
             Event::Account(tag, Done::Wrote(reply, form, write, result)) => {
                 self.wrote(&tag, reply, form, *write, result);
             }
+            Event::Account(tag, Done::Batched(batch, outcome)) => {
+                self.batched(&tag, *batch, outcome);
+            }
+            Event::Account(tag, Done::Ids(ticket, result)) => {
+                self.ids_arrived(&tag, ticket, result);
+            }
             // A send is settled by its own ticket even when the account has
             // reconnected since: the person must hear whether it went.
-            Event::Account(tag, Done::Sent(ticket, result)) => self.sent(&tag, ticket, result),
+            Event::Account(tag, Done::Sent(ticket, attempt, result)) => {
+                self.sent(&tag, ticket, attempt, result)
+            }
+            // A save is answered whatever became of the connection: the
+            // file is on disk (or not) either way.
+            Event::Account(tag, Done::Attachment(done)) => self.attachment_done(&tag, *done),
             Event::Account(tag, Done::Opened(ticket, Some(reply), result)) => {
                 // The caller hears "loaded" only if the reader will show it:
                 // the same connection, and still the latest open.
@@ -2052,10 +2565,18 @@ impl State {
                         }
                     }
                     Done::Page(ticket, _) if ticket != view.tickets.page => {}
-                    Done::Page(_, Ok(page)) => {
-                        view.mail.busy = false;
-                        view.mail.emails = page.emails;
-                        view.mail.total = page.total;
+                    Done::Page(_, Ok(page)) => view.page_arrived(page, limit, &mut self.work),
+                    // A server that refuses the chosen sort: back to its
+                    // own order (newest first), saying so.
+                    Done::Page(_, Err(jmap::Error::Method { error_type, .. }))
+                        if error_type == "unsupportedSort" && view.mail.table.sort.is_some() =>
+                    {
+                        view.mail.table.sort = None;
+                        view.mail.table.page = 0;
+                        self.status = crate::label("sort-unsupported");
+                        if let Some(mailbox) = view.mail.selected.clone() {
+                            view.fetch_emails(mailbox, limit, &mut self.work);
+                        }
                     }
                     Done::Page(_, Err(error)) => {
                         view.mail.busy = false;
@@ -2065,7 +2586,15 @@ impl State {
                         if ticket != view.tickets.open
                             || view.tickets.open_mailbox != view.mail.selected => {}
                     Done::Opened(_, _, result) => match *result {
-                        Ok(email) => view.mail.open = Some(email),
+                        Ok(email) => {
+                            view.mail.reader.open(&email);
+                            // Another email: its own attachments, popup shut.
+                            if view.mail.open.as_ref().is_none_or(|o| o.id != email.id) {
+                                view.mail.transfers.clear();
+                                view.mail.attachments_open = false;
+                            }
+                            view.mail.open = Some(email);
+                        }
                         Err(ref error) => self.status = error.to_string(),
                     },
                     Done::Marked(Ok(())) => self.work.push(Work::FetchMailboxes {
@@ -2122,7 +2651,39 @@ impl State {
                     | Done::Calendars(Err(error))
                     | Done::Books(Err(error)) => self.status = error.to_string(),
                     // Answered above, before the generation check.
-                    Done::Answered(..) | Done::Wrote(..) => {}
+                    Done::Answered(..)
+                    | Done::Wrote(..)
+                    | Done::Batched(..)
+                    | Done::Ids(..)
+                    | Done::Attachment(..) => {}
+                    Done::Suggested(ticket, found) => {
+                        let contacts = found.unwrap_or_default();
+                        let recent = view.mail.recent.clone();
+                        if let Some(compose) = self.compose.as_mut()
+                            && compose.account == tag.account
+                            && let Some(suggest) = compose.suggest.as_mut()
+                            && suggest.ticket == ticket
+                        {
+                            let text = match suggest.field {
+                                ComposeField::To => &compose.to_text,
+                                ComposeField::Cc => &compose.cc_text,
+                                _ => &compose.bcc_text,
+                            };
+                            let found: Vec<_> = contacts
+                                .iter()
+                                .flat_map(crate::suggest::from_contact)
+                                .collect();
+                            suggest.items = crate::suggest::rank(
+                                found,
+                                &recent,
+                                &suggest.query,
+                                &crate::suggest::present(text),
+                                crate::suggest::LIMIT,
+                            );
+                            suggest.cursor =
+                                suggest.cursor.min(suggest.items.len().saturating_sub(1));
+                        }
+                    }
                 }
             }
             Event::Settled(ticket, answer) => self.settled(ticket, answer),
@@ -2135,6 +2696,8 @@ impl State {
             | Event::LookRetry(_)
             | Event::Shown(..)
             | Event::PrefsOpened(_) => {}
+            Event::Printed(reply, result) => self.printed(reply, result),
+            Event::SuggestDue(ticket) => self.suggest_due(ticket),
         }
     }
 
@@ -2151,7 +2714,8 @@ impl State {
             Ok(info) => {
                 view.phase = Phase::Ready;
                 view.session = Some(info);
-                self.status = crate::label("connected");
+                // The status bar reads each account's connection from its
+                // own phase; the status line is for operations only.
                 for work in [
                     Work::FetchMailboxes {
                         account: tag.account.clone(),
@@ -2291,8 +2855,68 @@ impl State {
                 read: true,
             });
         }
+        // The list's keyboard row is the row it opened; a row outside the
+        // selection becomes the selection, one inside it keeps it.
+        let index = view.mail.emails.iter().position(|e| e.id == id);
+        if !view.mail.table.is_selected(&id) {
+            view.mail.table.selection = vec![id.clone()];
+            view.mail.everything = false;
+        }
+        view.mail.table.focus = index;
         view.open_email(id, None, &mut self.work);
         true
+    }
+
+    /// The message list reported `event` on `account`'s view. Selecting
+    /// only selects: a click picks one row, Ctrl+click toggles one,
+    /// Shift+click and Shift with an arrow take a range, Ctrl+A the page,
+    /// Escape collapses to the keyboard's row, and Up and Down move the
+    /// keyboard's row and the selection. None of them opens or marks read:
+    /// opening is Enter or a double-click (activation). "Select all N"
+    /// selects every email of the mailbox's query; a dragged width is
+    /// remembered. A header click or a pager button asks the server for
+    /// that sort or page and clears the selection.
+    pub fn mail_table(&mut self, account: &str, event: TableEvent) {
+        let limit = self.settings.mail.page_size;
+        let Some(view) = self.accounts.iter_mut().find(|v| v.entry.id == account) else {
+            return;
+        };
+        match &event {
+            TableEvent::Activated { key, .. } => {
+                let opened = view.mail.open.as_ref().is_some_and(|e| e.id == *key);
+                if !view.mail.table.is_selected(key) {
+                    view.mail.everything = false;
+                    view.cancel_fetch();
+                }
+                view.mail.table.apply(&event, SelectionMode::Multi);
+                if !opened {
+                    self.open_email(account, key.clone());
+                }
+            }
+            // A new selection drops a "Select all N" fetch still loading:
+            // it was for the old one.
+            TableEvent::Selected { .. } | TableEvent::SelectionChanged { .. } => {
+                view.cancel_fetch();
+                view.mail.table.apply(&event, SelectionMode::Multi);
+                view.mail.everything = false;
+            }
+            // Offered only once the whole page is selected: the count is
+            // the mailbox's total, which the list already has (its ids are
+            // fetched only when an action needs them).
+            TableEvent::SelectEverything => {
+                view.mail.table.selection = view.mail.keys();
+                view.mail.everything = true;
+            }
+            TableEvent::ColumnResized { .. } => {
+                view.mail.table.apply(&event, SelectionMode::Multi);
+            }
+            // A header click or the pager: the server sorts and pages.
+            TableEvent::SortChanged(_) | TableEvent::PageChanged(_) => {
+                view.requery(&event, limit, &mut self.work);
+            }
+            // No page size picker, menu or drag in this list yet.
+            _ => {}
+        }
     }
 
     /// `email.open`: show `account`'s email `id` in the reader, whether or
@@ -2399,6 +3023,23 @@ impl State {
                 return self.refuse(reply, code, &message);
             }
         };
+        if let Then::Suggest { text, limit } = &then {
+            let contacts: Vec<jmap::Contact> = value
+                .get("contacts")
+                .cloned()
+                .and_then(|list| serde_json::from_value(list).ok())
+                .unwrap_or_default();
+            let recent = self
+                .account(&tag.account)
+                .map(|v| v.mail.recent.clone())
+                .unwrap_or_default();
+            let found: Vec<_> = contacts
+                .iter()
+                .flat_map(crate::suggest::from_contact)
+                .collect();
+            let ranked = crate::suggest::rank(found, &recent, text.trim(), &[], *limit);
+            return self.reply(reply, 0, json!({ "suggestions": ranked }));
+        }
         let email = match then {
             Then::Answer => return self.reply(reply, 0, value),
             _ => serde_json::from_value::<Email>(value),
@@ -2413,11 +3054,35 @@ impl State {
         if self.account(account).map(AccountView::generation) != Some(tag.generation) {
             return self.refuse(reply, code::STALE, &crate::label("stale-connection"));
         }
+        // Attachment queries and saves need no compose either.
+        match &then {
+            Then::Attachments => {
+                let list = attachments_view(&email, None);
+                return self.reply(reply, 0, json!({ "id": email.id, "attachments": list }));
+            }
+            Then::SaveAttachment { part, dir } => {
+                let (part, dir) = (part.clone(), dir.clone());
+                return match attachment_work(account, &email, &part, false, dir, Some(reply)) {
+                    Ok(work) => self.queue(work),
+                    Err((code, message)) => self.refuse(reply, code, &message),
+                };
+            }
+            _ => {}
+        }
+        // A print needs no compose: it goes ahead whatever is open.
+        if then == Then::Print {
+            let markdown = crate::reader::detect(&email) == crate::reader::Format::Markdown;
+            return self.print_email(&email, markdown, Some(reply));
+        }
         if self.compose.is_some() {
             return self.refuse(reply, code::BUSY, &crate::label("compose-open"));
         }
         let opened = match then {
-            Then::Reply(all) => self.reply_to(account, &email, all),
+            Then::Print
+            | Then::Attachments
+            | Then::SaveAttachment { .. }
+            | Then::Suggest { .. } => false,
+            Then::Reply(all, quote) => self.reply_to(account, &email, all, quote),
             Then::Forward(to) => self.forward(account, &email, &to),
             Then::Answer => false,
         };
@@ -2480,6 +3145,8 @@ impl State {
             }
         };
         let limit = self.settings.mail.page_size;
+        // The row to open once the open email has gone (delete, move, junk).
+        let mut advance = None;
         if let Some(view) = self
             .accounts
             .iter_mut()
@@ -2487,8 +3154,56 @@ impl State {
         {
             match write.touches() {
                 Mode::Mail => {
-                    let gone = write.removes();
+                    // A batched write names the ids it changed: an id that
+                    // failed stays in the list.
+                    let done: Option<Vec<&str>> = value
+                        .get("done")
+                        .and_then(Value::as_array)
+                        .map(|list| list.iter().filter_map(Value::as_str).collect());
+                    let gone: Vec<String> = write
+                        .removes()
+                        .iter()
+                        .filter(|id| done.as_ref().is_none_or(|d| d.contains(&id.as_str())))
+                        .cloned()
+                        .collect();
+                    let gone = gone.as_slice();
+                    let failed: Vec<(String, String)> = value
+                        .get("failed")
+                        .and_then(Value::as_array)
+                        .map(|list| {
+                            list.iter()
+                                .map(|f| {
+                                    let field =
+                                        |k: &str| f[k].as_str().unwrap_or_default().to_owned();
+                                    (field("id"), field("reason"))
+                                })
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    if !failed.is_empty() {
+                        let reasons = failed
+                            .iter()
+                            .map(|(id, why)| format!("{id} ({why})"))
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        self.status = crate::label_with(
+                            "batch-failed",
+                            &[
+                                ("failed", &failed.len().to_string()),
+                                ("count", &write.ids().len().to_string()),
+                                ("reasons", &reasons),
+                            ],
+                        );
+                    }
+                    if let Some(open) = view.mail.open.as_ref().filter(|e| gone.contains(&e.id)) {
+                        advance = neighbour(&view.mail.emails, &open.id, gone);
+                    }
                     view.mail.emails.retain(|e| !gone.contains(&e.id));
+                    view.mail.table.rows_changed(&view.mail.keys());
+                    // The whole mailbox is no longer what is selected.
+                    if !gone.is_empty() {
+                        view.mail.everything = false;
+                    }
                     if view
                         .mail
                         .open
@@ -2517,6 +3232,11 @@ impl State {
                 }
             }
         }
+        // The open email left: the reader moves on to its neighbour, as a
+        // row click would open it.
+        if let Some(id) = advance {
+            self.open_email(&tag.account, id);
+        }
         if mine {
             self.form = None;
             self.status = crate::label("saved");
@@ -2530,16 +3250,36 @@ impl State {
     /// whatever became of the account's connection since, so a send that
     /// went (or failed) is always reported; the views are refreshed only
     /// when the connection is still the one that sent.
-    fn sent(&mut self, tag: &Tag, ticket: u64, result: Result<(), jmap::Error>) {
+    ///
+    /// A message that went has its local draft removed, whether or not its
+    /// compose is still open. One that did not keeps its draft, with what
+    /// the try did on the server (`attempt`), so the next Send resumes it
+    /// rather than sending a second copy.
+    fn sent(
+        &mut self,
+        tag: &Tag,
+        ticket: u64,
+        attempt: jmap::SendAttempt,
+        result: Result<jmap::SendReport, jmap::Error>,
+    ) {
         let mine = self.compose.as_ref().is_some_and(|compose| {
             compose.account == tag.account && compose.sending == Some(ticket)
         });
+        let snapshot = self.sends.remove(&ticket);
         match result {
-            Ok(()) => {
+            Ok(report) => {
+                if let Some(draft) = &snapshot {
+                    self.discard_draft(&draft.id);
+                }
                 if mine {
                     self.compose = None;
+                    self.confirm = None;
                 }
-                self.status = crate::label("sent");
+                self.status = match report.unfiled {
+                    Some(error) => crate::label_with("sent-unfiled", &[("error", &error)]),
+                    None if report.earlier => crate::label("sent-earlier"),
+                    None => crate::label("sent"),
+                };
                 let limit = self.settings.mail.page_size;
                 if let Some(view) = self
                     .accounts
@@ -2562,9 +3302,207 @@ impl State {
                     compose.busy = false;
                     compose.sending = None;
                     compose.error = Some(error.clone());
+                    compose.attempt = attempt;
+                    self.store_draft(true);
+                } else if let Some(mut draft) = snapshot
+                    && !self.discarded.contains(&draft.id)
+                {
+                    // Its compose was closed (and kept) while sending.
+                    draft.attempt = attempt;
+                    self.draft_ops.push(DraftOp::Save(Box::new(draft)));
                 }
                 self.status = error;
             }
+        }
+    }
+
+    // Drafts: kept locally as the person types, and on every close path.
+
+    /// A fresh draft id: the time and a counter, lowercase hex.
+    fn new_draft_id(&mut self) -> String {
+        self.drafts_made += 1;
+        let nanos = chrono::Utc::now()
+            .timestamp_nanos_opt()
+            .unwrap_or_default()
+            .unsigned_abs();
+        format!(
+            "{nanos:016x}{:08x}{:04x}",
+            std::process::id(),
+            self.drafts_made
+        )
+    }
+
+    /// Hand the open draft to the store when it holds something worth
+    /// keeping and changed since its last save (`force`: whatever changed).
+    fn store_draft(&mut self, force: bool) {
+        let Some(compose) = self.compose.as_mut() else {
+            return;
+        };
+        if !compose.keepable() || compose.draft_id.is_empty() {
+            return;
+        }
+        if !force && compose.saved == compose.revision {
+            return;
+        }
+        compose.saved = compose.revision;
+        let draft = compose.saved_draft();
+        self.discarded.remove(&draft.id);
+        self.draft_ops.push(DraftOp::Save(Box::new(draft)));
+    }
+
+    /// The shell's debounce fired: save the open draft if it changed.
+    pub fn save_draft(&mut self) {
+        self.store_draft(false);
+    }
+
+    /// The open draft's revision while it has changes not yet saved.
+    pub fn draft_unsaved(&self) -> Option<u64> {
+        self.compose
+            .as_ref()
+            .filter(|c| c.keepable() && !c.draft_id.is_empty() && c.saved != c.revision)
+            .map(|c| c.revision)
+    }
+
+    /// The draft saves and removals decided since the last call, in order.
+    pub fn take_draft_ops(&mut self) -> Vec<DraftOp> {
+        std::mem::take(&mut self.draft_ops)
+    }
+
+    /// Remove draft `id` from the store for good.
+    fn discard_draft(&mut self, id: &str) {
+        if !id.is_empty() {
+            self.discarded.insert(id.to_owned());
+            self.draft_ops.push(DraftOp::Remove(id.to_owned()));
+        }
+    }
+
+    /// Close the compose without asking, keeping its draft: saved, and
+    /// offered again once nothing else is open.
+    fn set_aside_compose(&mut self) {
+        self.store_draft(false);
+        if let Some(compose) = self.compose.take()
+            && compose.keepable()
+            && !compose.draft_id.is_empty()
+            && !self.restore.iter().any(|d| d.id == compose.draft_id)
+        {
+            self.restore.insert(0, compose.saved_draft());
+        }
+        self.confirm = None;
+    }
+
+    /// Cancel or Escape on the compose: one with nothing typed closes; one
+    /// with something typed is saved at once and the person is asked.
+    fn close_compose(&mut self) {
+        match &self.compose {
+            Some(compose) if compose.keepable() => {
+                self.store_draft(false);
+                self.confirm = Some(Confirm::CloseCompose);
+            }
+            Some(_) => self.compose = None,
+            None => {}
+        }
+    }
+
+    /// The answer to the close or quit question.
+    fn confirm_draft(&mut self, choice: DraftChoice) {
+        let Some(asked) = self.confirm.take() else {
+            return;
+        };
+        match choice {
+            DraftChoice::Back => return,
+            DraftChoice::Keep => {
+                self.store_draft(false);
+                if self.compose.take().is_some() {
+                    self.status = crate::label("draft-kept");
+                }
+            }
+            DraftChoice::Discard => {
+                if let Some(compose) = self.compose.take() {
+                    self.discard_draft(&compose.draft_id);
+                    self.status = crate::label("draft-discarded");
+                }
+            }
+        }
+        if asked == Confirm::Quit {
+            self.quit_ok = true;
+            self.exiting = true;
+        }
+    }
+
+    /// Drafts an earlier run kept: offered one at a time.
+    pub fn offer_drafts(&mut self, drafts: Vec<SavedDraft>) {
+        for draft in drafts {
+            if !self.restore.iter().any(|d| d.id == draft.id) {
+                self.restore.push(draft);
+            }
+        }
+    }
+
+    /// The answer to the offer of the first kept draft.
+    fn restore_draft(&mut self, choice: DraftChoice) {
+        if self.compose.is_some() || self.restore.is_empty() {
+            return;
+        }
+        match choice {
+            // Later: every draft stays kept, offered at the next start.
+            DraftChoice::Back => self.restore.clear(),
+            DraftChoice::Discard => {
+                let draft = self.restore.remove(0);
+                self.discard_draft(&draft.id);
+            }
+            DraftChoice::Keep => {
+                let draft = self.restore.remove(0);
+                self.open_saved(draft);
+            }
+        }
+    }
+
+    /// Open a kept draft in the compose dialog, as it was typed. Its
+    /// account, when it is gone, becomes the default one (with its From).
+    fn open_saved(&mut self, saved: SavedDraft) {
+        let (account, from) = match self.account(&saved.account) {
+            Some(_) => (saved.account.clone(), saved.from.clone()),
+            None => match self.compose_account() {
+                Some(id) => {
+                    let from = self
+                        .account(&id)
+                        .map_or(saved.from.clone(), |v| v.entry.email.clone());
+                    (id, from)
+                }
+                None => (saved.account.clone(), saved.from.clone()),
+            },
+        };
+        let draft = Composed {
+            from,
+            subject: saved.subject,
+            body: saved.body,
+            in_reply_to: saved.in_reply_to,
+            ..Composed::default()
+        };
+        let mut compose = ComposeState::new(&account, draft);
+        compose.to_text = saved.to;
+        compose.cc_text = saved.cc;
+        compose.bcc_text = saved.bcc;
+        compose.draft_id = saved.id;
+        compose.restored = true;
+        compose.attempt = saved.attempt;
+        self.compose = Some(compose);
+    }
+
+    /// The window is asked to close: yes at once, unless a draft is open
+    /// with something typed. Then it is saved and the person is asked
+    /// (keeping the draft is the default).
+    pub fn request_quit(&mut self) -> bool {
+        if self.quit_ok {
+            return true;
+        }
+        match &self.compose {
+            Some(compose) if compose.keepable() => {
+                self.store_draft(false);
+                self.confirm = Some(Confirm::Quit);
+                false
+            }
+            _ => true,
         }
     }
 
@@ -2585,87 +3523,629 @@ impl State {
         self.form = Some(form);
     }
 
-    /// Delete the open email: confirm first when the settings ask to.
-    pub fn delete_open(&mut self) {
-        let Some((account, email)) = self.reading() else {
+    /// `mail.delete`: the target to Trash. Two or more always ask first,
+    /// with the count; one asks when the settings say so.
+    pub fn delete_target(&mut self) {
+        self.act(Action::Delete);
+    }
+
+    /// Apply `action` to the current account's target. "Select all N"
+    /// fetches the query's ids first (refused above [`SELECT_ALL_CAP`]);
+    /// one fetch at a time.
+    pub fn act(&mut self, action: Action) {
+        if self.mode != Mode::Mail {
+            return;
+        }
+        let Some(account) = self.selected.clone() else {
             return;
         };
-        let ids = vec![email.id];
-        if self.settings.mail.confirm_delete {
-            let generation = self.generation_of(&account);
-            self.open_form(Form::Delete {
-                account,
+        let Some(view) = self.accounts.iter_mut().find(|v| v.entry.id == account) else {
+            return;
+        };
+        if view.mail.fetching.is_some() {
+            return;
+        }
+        match view.mail.target() {
+            None => {}
+            Some(Target::Everything(count)) => {
+                if count > SELECT_ALL_CAP {
+                    self.status = too_many(count);
+                    return;
+                }
+                let Some(mailbox) = view.mail.selected.clone() else {
+                    return;
+                };
+                view.tickets.ids += 1;
+                let ticket = view.tickets.ids;
+                let sort = email_sort(view.mail.table.sort.as_ref());
+                view.mail.fetching = Some(Fetching {
+                    ticket,
+                    action,
+                    mailbox: mailbox.clone(),
+                    sort,
+                    expected: count,
+                    ids: Vec::new(),
+                });
+                self.work.push(Work::FetchIds {
+                    account,
+                    ticket,
+                    mailbox,
+                    sort,
+                    position: 0,
+                });
+            }
+            Some(Target::Rows(ids)) => self.act_on(&account, ids, action),
+        }
+    }
+
+    /// Escape while "Fetching N…": the fetch stops and nothing changes.
+    pub fn cancel_fetch(&mut self) {
+        let Some(account) = self.selected.clone() else {
+            return;
+        };
+        if let Some(view) = self.account_mut(&account)
+            && view.cancel_fetch()
+        {
+            self.status = crate::label("fetch-cancelled");
+        }
+    }
+
+    /// A page of "Select all N"'s ids arrived: ask for the next, refuse
+    /// once the query is past [`SELECT_ALL_CAP`], or act once all are in.
+    fn ids_arrived(&mut self, tag: &Tag, ticket: u64, result: Result<jmap::IdPage, jmap::Error>) {
+        let Some(view) = self
+            .accounts
+            .iter_mut()
+            .find(|v| v.entry.id == tag.account && v.generation == tag.generation)
+        else {
+            return;
+        };
+        if view.tickets.ids != ticket
+            || view
+                .mail
+                .fetching
+                .as_ref()
+                .is_none_or(|f| f.ticket != ticket)
+        {
+            return;
+        }
+        let page = match result {
+            Ok(page) => page,
+            Err(error) => {
+                view.cancel_fetch();
+                self.status = crate::label_with("fetch-failed", &[("error", &error.to_string())]);
+                return;
+            }
+        };
+        let Some(fetching) = view.mail.fetching.as_mut() else {
+            return;
+        };
+        let more = !page.ids.is_empty();
+        fetching.expected = page.total;
+        for id in page.ids {
+            if !fetching.ids.contains(&id) {
+                fetching.ids.push(id);
+            }
+        }
+        let have = fetching.ids.len() as u64;
+        if page.total > SELECT_ALL_CAP || have > SELECT_ALL_CAP {
+            let count = page.total.max(have);
+            view.cancel_fetch();
+            self.status = too_many(count);
+            return;
+        }
+        if more && have < page.total {
+            let work = Work::FetchIds {
+                account: tag.account.clone(),
+                ticket,
+                mailbox: fetching.mailbox.clone(),
+                sort: fetching.sort,
+                position: have,
+            };
+            self.work.push(work);
+            return;
+        }
+        if let Some(done) = view.mail.fetching.take() {
+            self.act_on(&tag.account, done.ids, done.action);
+        }
+    }
+
+    /// Apply `action` to `account`'s emails `ids`.
+    fn act_on(&mut self, account: &str, ids: Vec<String>, action: Action) {
+        if ids.is_empty() {
+            return;
+        }
+        let Some(view) = self.account(account) else {
+            return;
+        };
+        let generation = view.generation;
+        let shown: Vec<&Email> = view
+            .mail
+            .emails
+            .iter()
+            .filter(|e| ids.contains(&e.id))
+            .collect();
+        let all = |test: fn(&Email) -> bool| !shown.is_empty() && shown.iter().all(|e| test(e));
+        match action {
+            Action::Flag => {
+                let flagged = !all(Email::is_flagged);
+                let change = jmap::EmailChange::Keywords {
+                    read: None,
+                    flagged: Some(flagged),
+                };
+                self.batch(account, generation, BatchKind::Flag, change, ids);
+            }
+            Action::Read => {
+                let read = !all(Email::is_read);
+                let change = jmap::EmailChange::Keywords {
+                    read: Some(read),
+                    flagged: None,
+                };
+                self.batch(account, generation, BatchKind::Read, change, ids);
+            }
+            Action::Delete => {
+                if ids.len() >= 2 || self.settings.mail.confirm_delete {
+                    self.open_form(Form::Delete {
+                        account: account.to_owned(),
+                        generation,
+                        ids,
+                    });
+                } else {
+                    self.trash(account, generation, ids);
+                }
+            }
+            Action::Move => self.open_form(Form::Move {
+                account: account.to_owned(),
                 generation,
                 ids,
-            });
-        } else {
-            self.write_server(
-                account,
-                None,
-                crate::verbs::Write::Delete {
-                    ids,
-                    destroy: false,
-                },
+            }),
+            Action::Junk(junk) => {
+                let Some(mailbox) = junk_target(view, junk) else {
+                    self.status = crate::label(if junk { "no-junk-mailbox" } else { "no-inbox" });
+                    return;
+                };
+                let change = jmap::EmailChange::Move { mailbox };
+                self.batch(account, generation, BatchKind::Junk, change, ids);
+            }
+        }
+    }
+
+    /// `ids` to the account's Trash mailbox, through `generation` only.
+    fn trash(&mut self, account: &str, generation: u64, ids: Vec<String>) {
+        let trash = self
+            .account(account)
+            .and_then(|v| v.mail.by_role("trash"))
+            .map(|m| m.id.clone());
+        let Some(mailbox) = trash else {
+            self.status = crate::label("no-trash-mailbox");
+            return;
+        };
+        let change = jmap::EmailChange::Move { mailbox };
+        self.batch(account, generation, BatchKind::Delete, change, ids);
+    }
+
+    /// Queue one batched action. A keyword change shows at once on the
+    /// rows (and the mailbox's unread count); what each shown row held
+    /// before goes with it, so a failed id is put back.
+    fn batch(
+        &mut self,
+        account: &str,
+        generation: u64,
+        kind: BatchKind,
+        change: jmap::EmailChange,
+        ids: Vec<String>,
+    ) {
+        let Some(view) = self.accounts.iter_mut().find(|v| v.entry.id == account) else {
+            return;
+        };
+        let mut before = Vec::new();
+        if let Some((keyword, on)) = keyword_of(&change) {
+            for email in view.mail.emails.iter().filter(|e| ids.contains(&e.id)) {
+                before.push((email.id.clone(), has_keyword(email, keyword)));
+            }
+            if keyword == "$seen" {
+                let flips = before.iter().filter(|(_, was)| *was != on).count() as u64;
+                view.mail
+                    .shift_unread(if on { -(flips as i64) } else { flips as i64 });
+            }
+            view.set_keyword(&ids, keyword, on);
+        }
+        view.mail.failed.clear();
+        self.work.push(Work::Batch {
+            account: account.to_owned(),
+            generation,
+            batch: Box::new(Batch {
+                kind,
+                change,
+                ids,
+                before,
+            }),
+        });
+    }
+
+    /// A batched action finished. The ids it changed stay changed (a
+    /// delete, move or junk takes them out of the list at once); each
+    /// failed id is put back as it was and named with its reason in the
+    /// status line. A flag or read change keeps the selection, so the
+    /// person can carry on; a delete, move or junk clears it. If the open
+    /// email left, the reader opens the next row, as a single delete did.
+    fn batched(&mut self, tag: &Tag, batch: Batch, outcome: jmap::SetOutcome) {
+        let limit = self.settings.mail.page_size;
+        let Some(view) = self
+            .accounts
+            .iter_mut()
+            .find(|v| v.entry.id == tag.account && v.generation == tag.generation)
+        else {
+            return;
+        };
+        let failed: Vec<&String> = outcome.failed.iter().map(|(id, _)| id).collect();
+        if let Some((keyword, on)) = keyword_of(&batch.change) {
+            let mut put_back = 0i64;
+            for (id, was) in batch.before.iter().filter(|(id, _)| failed.contains(&id)) {
+                view.set_keyword(std::slice::from_ref(id), keyword, *was);
+                if keyword == "$seen" && *was != on {
+                    put_back += 1;
+                }
+            }
+            if keyword == "$seen" {
+                view.mail
+                    .shift_unread(if on { put_back } else { -put_back });
+            }
+        }
+        let mut advance = None;
+        if batch.kind.removes() {
+            let gone = &outcome.done;
+            if let Some(open) = view.mail.open.as_ref().filter(|e| gone.contains(&e.id)) {
+                advance = neighbour(&view.mail.emails, &open.id, gone);
+                view.mail.open = None;
+            }
+            view.mail.emails.retain(|e| !gone.contains(&e.id));
+            view.mail.table.selection.clear();
+            view.mail.table.anchor = None;
+            view.mail.everything = false;
+            view.mail.table.rows_changed(&view.mail.keys());
+            if let Some(mailbox) = view.mail.selected.clone() {
+                view.fetch_emails(mailbox, limit, &mut self.work);
+            }
+        }
+        self.work.push(Work::FetchMailboxes {
+            account: tag.account.clone(),
+        });
+        view.mail.failed = outcome.failed.clone();
+        if !outcome.failed.is_empty() {
+            let reasons = outcome
+                .failed
+                .iter()
+                .map(|(id, why)| format!("{id} ({why})"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            self.status = crate::label_with(
+                "batch-failed",
+                &[
+                    ("failed", &outcome.failed.len().to_string()),
+                    ("count", &batch.ids.len().to_string()),
+                    ("reasons", &reasons),
+                ],
             );
         }
+        if let Some(id) = advance {
+            self.open_email(&tag.account, id);
+        }
     }
 
-    /// Choose where the open email moves to.
-    pub fn move_open(&mut self) {
-        if let Some((account, email)) = self.reading() {
-            let generation = self.generation_of(&account);
-            self.open_form(Form::Move {
-                account,
-                generation,
-                ids: vec![email.id],
+    /// The entry typed in recipient `field` changed: show the recent
+    /// addresses that match at once, and look the contacts up once typing
+    /// pauses ([`SUGGEST_DEBOUNCE`]). Fewer than two characters close the
+    /// list.
+    fn suggest_typed(&mut self, field: ComposeField) {
+        let ticket = self.ticket();
+        let Some(compose) = self.compose.as_ref() else {
+            return;
+        };
+        let text = compose.recipients(field).to_owned();
+        let Some(query) = crate::suggest::query(&text).map(str::to_owned) else {
+            if let Some(compose) = self.compose.as_mut() {
+                compose.suggest = None;
+            }
+            return;
+        };
+        let recent = self
+            .account(&compose.account)
+            .map(|v| v.mail.recent.clone())
+            .unwrap_or_default();
+        let items = crate::suggest::rank(
+            Vec::new(),
+            &recent,
+            &query,
+            &crate::suggest::present(&text),
+            crate::suggest::LIMIT,
+        );
+        if let Some(compose) = self.compose.as_mut() {
+            compose.suggest = Some(Suggest {
+                field,
+                query,
+                ticket,
+                items,
+                cursor: 0,
             });
         }
+        self.queue(Work::SuggestWait { ticket });
     }
 
-    /// Flag or unflag the open email.
-    pub fn flag_open(&mut self) {
+    /// The debounce for suggestion `ticket` passed: look its contacts up,
+    /// if it is still the newest.
+    fn suggest_due(&mut self, ticket: u64) {
+        let Some(compose) = self.compose.as_ref() else {
+            return;
+        };
+        if let Some(suggest) = &compose.suggest
+            && suggest.ticket == ticket
+        {
+            let work = Work::Suggest {
+                account: compose.account.clone(),
+                ticket,
+                text: suggest.query.clone(),
+            };
+            self.queue(work);
+        }
+    }
+
+    /// Take suggestion `index` (or the highlighted one): the typed entry
+    /// becomes it, with a separator for the next.
+    fn suggest_accept(&mut self, index: Option<usize>) {
+        let Some(compose) = self.compose.as_mut() else {
+            return;
+        };
+        let Some(suggest) = compose.suggest.take() else {
+            return;
+        };
+        let Some(item) = suggest.items.get(index.unwrap_or(suggest.cursor)) else {
+            return;
+        };
+        let text = match suggest.field {
+            ComposeField::To => &mut compose.to_text,
+            ComposeField::Cc => &mut compose.cc_text,
+            ComposeField::Bcc => &mut compose.bcc_text,
+            ComposeField::Subject | ComposeField::Body => return,
+        };
+        *text = crate::suggest::accept(text, item);
+        compose.revision += 1;
+    }
+
+    /// `mail.attachments`: show or hide the open email's attachments.
+    pub fn toggle_attachments(&mut self) {
+        let Some(id) = self.selected.clone() else {
+            return;
+        };
+        if let Some(view) = self.account_mut(&id) {
+            view.mail.attachments_open = !view.mail.attachments_open;
+        }
+    }
+
+    /// Show (`true`) or hide the attachments popup.
+    pub fn set_attachments_open(&mut self, open: bool) {
+        let Some(id) = self.selected.clone() else {
+            return;
+        };
+        if let Some(view) = self.account_mut(&id) {
+            view.mail.attachments_open = open;
+        }
+    }
+
+    /// Save the open email's attachment `part` to the downloads directory,
+    /// or (`open`) to a private directory and open it with the desktop's
+    /// default application.
+    pub fn save_attachment(&mut self, part: &str, open: bool) {
         let Some((account, email)) = self.reading() else {
             return;
         };
-        let flagged = !email
-            .keywords
-            .as_ref()
-            .and_then(|k| k.get("$flagged"))
-            .and_then(Value::as_bool)
-            .unwrap_or(false);
-        let ids = vec![email.id];
-        if let Some(view) = self.account_mut(&account) {
-            view.set_keyword(&ids, "$flagged", flagged);
+        match attachment_work(&account, &email, part, open, None, None) {
+            Ok(work) => {
+                let transfer = if open {
+                    Transfer::Opening
+                } else {
+                    Transfer::Saving
+                };
+                if let Some(view) = self.account_mut(&account) {
+                    view.mail.transfers.insert(part.to_owned(), transfer);
+                }
+                self.status = crate::label(if open {
+                    "attachment-opening"
+                } else {
+                    "attachment-saving"
+                });
+                self.queue(work);
+            }
+            Err((_, message)) => self.status = message,
         }
-        let write = crate::verbs::Write::Keywords {
-            ids,
-            read: None,
-            flagged: Some(flagged),
-        };
-        self.write_server(account, None, write);
     }
 
-    /// Mark the open email unread.
-    pub fn mark_open_unread(&mut self) {
-        let Some((account, email)) = self.reading() else {
+    /// `mail.save_attachments`: save every attachment of the open email
+    /// that can be fetched.
+    pub fn save_all_attachments(&mut self) {
+        let Some((_, email)) = self.reading() else {
             return;
         };
-        let ids = vec![email.id];
-        if let Some(view) = self.account_mut(&account) {
-            view.set_keyword(&ids, "$seen", false);
+        for attachment in email.attachments.iter().flatten() {
+            if attachment.downloadable()
+                && let Some(part) = &attachment.part_id
+            {
+                self.save_attachment(part, false);
+            }
         }
-        let write = crate::verbs::Write::Keywords {
-            ids,
-            read: Some(false),
-            flagged: None,
+    }
+
+    /// An attachment save or open finished.
+    pub fn attachment_done(&mut self, tag: &Tag, done: crate::shell::AttachmentDone) {
+        let crate::shell::AttachmentDone {
+            email,
+            part,
+            open,
+            reply,
+            result,
+        } = done;
+        let transfer = match &result {
+            Ok(path) if open => Transfer::Opened(path.clone()),
+            Ok(path) => Transfer::Saved(path.clone()),
+            Err(error) => Transfer::Failed(error.clone()),
         };
-        self.write_server(account, None, write);
+        if let Some(view) = self.accounts.iter_mut().find(|v| v.entry.id == tag.account)
+            && view.mail.open.as_ref().is_some_and(|o| o.id == email)
+        {
+            view.mail.transfers.insert(part, transfer);
+        }
+        match result {
+            Ok(path) => {
+                let key = if open {
+                    "attachment-opened"
+                } else {
+                    "attachment-saved"
+                };
+                self.status = crate::label_with(key, &[("path", &path)]);
+                if let Some(reply) = reply {
+                    self.reply(reply, 0, json!({ "path": path }));
+                }
+            }
+            Err(error) => {
+                self.status = error.clone();
+                if let Some(reply) = reply {
+                    self.refuse(reply, code::UNAVAILABLE, &error);
+                }
+            }
+        }
+    }
+
+    /// `mail.print` (Ctrl+P): the open email as a print page, rendered as
+    /// the reader shows it, opened in the browser.
+    pub fn print_open(&mut self) {
+        if let Some((account, email)) = self.reading() {
+            self.print_shown(&account, &email, None);
+        }
+    }
+
+    /// Print `account`'s `email` as its reader shows it (`reply`: the Bus
+    /// request to answer).
+    pub fn print_shown(&mut self, account: &str, email: &Email, reply: Option<u64>) {
+        let markdown = self.account(account).is_some_and(|v| {
+            crate::reader::shown(&v.mail.reader, email) == crate::reader::Format::Markdown
+        });
+        self.print_email(email, markdown, reply);
+    }
+
+    fn print_email(&mut self, email: &Email, markdown: bool, reply: Option<u64>) {
+        let html = crate::print::page(
+            email,
+            markdown,
+            PRINT_FONT_PT,
+            &crate::print::Palette::light(),
+        );
+        self.status = crate::label("printing");
+        self.queue(Work::Print {
+            reply,
+            name: crate::print::file_name(email),
+            html,
+        });
+    }
+
+    /// A print page was written (`opened`: and handed to the browser).
+    pub fn printed(&mut self, reply: Option<u64>, result: Result<(String, bool), String>) {
+        match result {
+            Ok((path, opened)) => {
+                let key = if opened {
+                    "printed"
+                } else {
+                    "print-no-browser"
+                };
+                self.status = crate::label_with(key, &[("path", &path)]);
+                if let Some(reply) = reply {
+                    self.reply(reply, 0, json!({ "path": path, "opened": opened }));
+                }
+            }
+            Err(error) => {
+                self.status = error.clone();
+                if let Some(reply) = reply {
+                    self.refuse(reply, code::UNAVAILABLE, &error);
+                }
+            }
+        }
+    }
+
+    /// `mail.junk` (J): move the target to the account's Junk mailbox.
+    /// maild trains its spam filter on the move; there is no `$junk`
+    /// keyword.
+    pub fn mark_junk(&mut self) {
+        self.act(Action::Junk(true));
+    }
+
+    /// `mail.not_junk` (Shift+J): move the target out of Junk to the
+    /// inbox; maild trains it as ham.
+    pub fn mark_not_junk(&mut self) {
+        self.act(Action::Junk(false));
+    }
+
+    /// `mail.move`: choose where the target moves to.
+    pub fn move_target(&mut self) {
+        self.act(Action::Move);
+    }
+
+    /// `mail.flag` (S): flag the target, or unflag it when every shown
+    /// target row is flagged.
+    pub fn flag_target(&mut self) {
+        self.act(Action::Flag);
+    }
+
+    /// `mail.mark_unread` (M): mark the target read when any shown target
+    /// row is unread, else unread. The open email is not marked read again:
+    /// only a fresh open does that (`mark_read_on_open`). The rows and the
+    /// mailbox's unread count change at once.
+    pub fn toggle_target_read(&mut self) {
+        self.act(Action::Read);
     }
 
     /// Reply to everyone the open email went to.
     pub fn reply_all_open(&mut self) {
         if let Some(account) = self.selected.clone() {
-            self.open_reply(&account, true);
+            self.open_reply(&account, true, None);
+        }
+    }
+
+    /// Reply to the sender, quoting the original.
+    pub fn reply_open_quoted(&mut self) {
+        self.reply_open_with(false, Some(true));
+    }
+
+    /// Reply to the sender without the original.
+    pub fn reply_open_unquoted(&mut self) {
+        self.reply_open_with(false, Some(false));
+    }
+
+    /// Reply to everyone, quoting the original.
+    pub fn reply_all_open_quoted(&mut self) {
+        self.reply_open_with(true, Some(true));
+    }
+
+    /// Reply to everyone without the original.
+    pub fn reply_all_open_unquoted(&mut self) {
+        self.reply_open_with(true, Some(false));
+    }
+
+    fn reply_open_with(&mut self, all: bool, quote: Option<bool>) {
+        if let Some(account) = self.selected.clone() {
+            self.open_reply(&account, all, quote);
+        }
+    }
+
+    /// Whether a plain Reply quotes the original (`email.mail.quote_on_reply`).
+    pub fn quote_on_reply(&self) -> bool {
+        self.settings.mail.quote_on_reply
+    }
+
+    /// Where the person's text goes in a quoted reply
+    /// (`email.mail.reply_position`).
+    pub fn reply_position(&self) -> crate::quote::Position {
+        match self.settings.mail.reply_position {
+            settings::email::ReplyPosition::Above => crate::quote::Position::Above,
+            settings::email::ReplyPosition::Below => crate::quote::Position::Below,
         }
     }
 
@@ -2748,17 +4228,13 @@ impl State {
         match form {
             Form::Delete { account, ids, .. } => {
                 self.form = None;
-                let write = crate::verbs::Write::Delete {
-                    ids,
-                    destroy: false,
-                };
-                self.write_bound(account, None, generation, write);
+                self.trash(&account, generation, ids);
             }
             Form::Move { account, ids, .. } => {
                 if let Some(mailbox) = choice {
                     self.form = None;
-                    let write = crate::verbs::Write::Move { ids, mailbox };
-                    self.write_bound(account, None, generation, write);
+                    let change = jmap::EmailChange::Move { mailbox };
+                    self.batch(&account, generation, BatchKind::Move, change, ids);
                 }
             }
             Form::Event(f) if !f.busy => {
@@ -2883,7 +4359,22 @@ impl State {
                     "emails": shown(&view.mail.emails),
                     "total": view.mail.total,
                     "open": view.mail.open.as_ref().map(|e| &e.id),
+                    "reader": view.mail.open.as_ref().map(|e| view.mail.reader.info(e)),
+                    "attachments": view.mail.open.as_ref().map(|e| attachments_view(e, Some(&view.mail.transfers))),
+                    "attachments_open": view.mail.attachments_open,
                     "busy": view.mail.busy,
+                    // The list's selection: the shown page's selected ids,
+                    // how many in all, and whether that is every email.
+                    "selection": {
+                        "ids": view.mail.table.selection,
+                        "count": view.mail.selection_count(),
+                        "all": view.mail.everything,
+                    },
+                    // The list's sort and page (0-based), as asked of the server.
+                    "sort": view.mail.sort().column,
+                    "order": view.mail.sort().order.name(),
+                    "page": view.mail.table.page,
+                    "page_size": view.mail.table.page_size,
                 });
                 out["calendar"] = json!({
                     "calendars": view.calendars.calendars,
@@ -2936,10 +4427,14 @@ impl State {
                 "page_size": self.settings.mail.page_size,
                 "mark_read_on_open": self.settings.mail.mark_read_on_open,
                 "confirm_delete": self.settings.mail.confirm_delete,
+                "quote_on_reply": self.settings.mail.quote_on_reply,
+                "reply_position": self.settings.mail.reply_position,
             },
             "accounts": views,
             "tree": self.tree().iter().map(|r| json!({"key": r.node.key(), "depth": r.depth, "label": r.label, "unread": r.unread, "expandable": r.expandable, "expanded": r.expanded, "selected": r.selected})).collect::<Vec<_>>(),
             "compose": compose,
+            "confirm": self.confirm.map(|c| match c { Confirm::CloseCompose => "close_compose", Confirm::Quit => "quit" }),
+            "drafts_offered": self.restore.len(),
             "form": form,
             "dialog": self.ui.dialog.map(|d| match d { Dialog::About => "about", Dialog::Shortcuts => "shortcuts" }),
             "ui": {
@@ -3251,14 +4746,23 @@ impl State {
         if draft.body.is_empty() {
             draft.body = self.signed_body(&account);
         }
-        self.compose = Some(ComposeState::new(&account, draft));
+        // A compose already open is never dropped: its draft is kept and
+        // offered again.
+        if self.compose.is_some() {
+            self.set_aside_compose();
+        }
+        let mut compose = ComposeState::new(&account, draft);
+        compose.draft_id = self.new_draft_id();
+        self.compose = Some(compose);
         true
     }
 
     /// A reply to `account`'s open email (`all`: to everyone it went to).
-    pub fn open_reply(&mut self, account: &str, all: bool) -> bool {
+    /// `quote`: with the original quoted, without it, or (`None`) as the
+    /// settings say.
+    pub fn open_reply(&mut self, account: &str, all: bool, quote: Option<bool>) -> bool {
         match self.account(account).and_then(|v| v.mail.open.clone()) {
-            Some(open) => self.reply_to(account, &open, all),
+            Some(open) => self.reply_to(account, &open, all, quote),
             None => false,
         }
     }
@@ -3308,7 +4812,13 @@ impl State {
 
     /// A compose replying to `email` from `account` (`all`: to everyone it
     /// went to but this account).
-    pub fn reply_to(&mut self, account: &str, open: &Email, all: bool) -> bool {
+    pub fn reply_to(
+        &mut self,
+        account: &str,
+        open: &Email,
+        all: bool,
+        quote: Option<bool>,
+    ) -> bool {
         let me = self
             .account(account)
             .map(|v| v.entry.email.to_ascii_lowercase())
@@ -3340,12 +4850,23 @@ impl State {
             Some(subject) => format!("Re: {subject}"),
             None => crate::label("reply-subject"),
         };
+        let body = if quote.unwrap_or_else(|| self.quote_on_reply()) {
+            crate::quote::reply_body(
+                &quotable(open),
+                &attribution(open),
+                &self.signed_body(account),
+                self.reply_position(),
+            )
+        } else {
+            String::new()
+        };
         self.open_compose(
             Some(account),
             Composed {
                 to,
                 cc,
                 subject,
+                body,
                 in_reply_to: open
                     .message_id
                     .clone()
@@ -3376,6 +4897,7 @@ impl State {
             UiEvent::OpenEmail(account, id) => {
                 self.open_email(&account, id);
             }
+            UiEvent::MailTable(account, event) => self.mail_table(&account, event),
             UiEvent::SelectEvent(account, index) => {
                 if let Some(view) = self.account_mut(&account) {
                     view.calendars.open = Some(index);
@@ -3402,7 +4924,7 @@ impl State {
             }
             UiEvent::Reply => {
                 if let Some(account) = self.selected.clone() {
-                    self.open_reply(&account, false);
+                    self.open_reply(&account, false, None);
                 }
             }
             UiEvent::ComposeAccount(account) => {
@@ -3428,6 +4950,7 @@ impl State {
                     // The new account's From is its current address.
                     compose.stale = None;
                     compose.error = None;
+                    compose.revision += 1;
                 }
             }
             UiEvent::ComposeField(field, value) => {
@@ -3444,9 +4967,37 @@ impl State {
                         ComposeField::Subject => compose.draft.subject = value,
                         ComposeField::Body => compose.draft.body = value,
                     }
+                    compose.revision += 1;
+                    if matches!(
+                        field,
+                        ComposeField::To | ComposeField::Cc | ComposeField::Bcc
+                    ) {
+                        self.suggest_typed(field);
+                    }
                 }
             }
-            UiEvent::CloseCompose => self.compose = None,
+            UiEvent::SuggestMove(step) => {
+                if let Some(suggest) = self.compose.as_mut().and_then(|c| c.suggest.as_mut())
+                    && !suggest.items.is_empty()
+                {
+                    let last = suggest.items.len() - 1;
+                    suggest.cursor = if step < 0 {
+                        suggest.cursor.saturating_sub(1)
+                    } else {
+                        (suggest.cursor + 1).min(last)
+                    };
+                }
+            }
+            UiEvent::SuggestAccept(index) => self.suggest_accept(index),
+            UiEvent::SuggestClose => {
+                if let Some(compose) = self.compose.as_mut() {
+                    compose.suggest = None;
+                }
+            }
+            UiEvent::CloseCompose => self.close_compose(),
+            UiEvent::CancelFetch => self.cancel_fetch(),
+            UiEvent::ConfirmDraft(choice) => self.confirm_draft(choice),
+            UiEvent::RestoreDraft(choice) => self.restore_draft(choice),
             UiEvent::ComposeUseNewFrom => {
                 // Only for the account and connection the address came from.
                 let current = self.compose.as_ref().and_then(|c| {
@@ -3482,6 +5033,9 @@ impl State {
                 self.reconnect(&account);
             }
             UiEvent::OpenPrefs => self.open_prefs(),
+            UiEvent::AttachmentsOpen(open) => self.set_attachments_open(open),
+            UiEvent::SaveAttachment(part) => self.save_attachment(&part, false),
+            UiEvent::OpenAttachment(part) => self.save_attachment(&part, true),
             UiEvent::SplitPlaces(split) => {
                 if (split - self.ui.places).abs() > 0.005 {
                     self.ui.places = split;
@@ -3560,12 +5114,19 @@ impl State {
                 compose.error = None;
                 compose.sending = Some(ticket);
                 let draft = compose.draft.clone();
+                let attempt = compose.attempt.clone();
+                let snapshot = compose.saved_draft();
                 view.tickets.send = ticket;
                 self.work.push(Work::Send {
                     account,
                     ticket,
                     draft,
+                    attempt,
                 });
+                // Kept on disk until the server confirms it went, so a
+                // crash or a lost reply mid-send loses nothing.
+                self.store_draft(true);
+                self.sends.insert(ticket, snapshot);
             }
         }
     }
@@ -3588,12 +5149,15 @@ impl State {
         }
     }
 
-    /// `account`'s Sent mailbox id, for the send recipe.
-    pub fn sent_mailbox_id(&self, account: &str) -> Option<String> {
-        self.account(account)?
-            .mail
-            .by_role("sent")
-            .map(|m| m.id.clone())
+    /// `account`'s Drafts and Sent mailboxes, for the send recipe, or why
+    /// there are none yet (the catalogue key).
+    pub fn send_boxes(&self, account: &str) -> Result<jmap::SendBoxes, &'static str> {
+        let mail = &self.account(account).ok_or("not-connected")?.mail;
+        let id = |role: &str| mail.by_role(role).map(|m| m.id.clone());
+        Ok(jmap::SendBoxes {
+            drafts: id("drafts").ok_or("no-drafts-mailbox")?,
+            sent: id("sent").ok_or("no-sent-mailbox")?,
+        })
     }
 
     // The command registry's entry points (commands.rs).
@@ -3622,9 +5186,12 @@ impl State {
         true
     }
 
-    /// A command asked the window to close.
+    /// A command asked the window to close: it does, unless a draft open
+    /// with something typed needs the person's answer first.
     pub fn quit(&mut self) {
-        self.exiting = true;
+        if self.request_quit() {
+            self.exiting = true;
+        }
     }
 
     /// Open a compose dialog.
@@ -3663,6 +5230,19 @@ impl State {
         self.ui.theme.mode.unwrap_or(self.session_mode)
     }
 
+    /// Show the open email's text body as Markdown or as its source, the
+    /// other way from now (`view.reader.markdown`).
+    pub fn toggle_reader(&mut self) {
+        let Some(id) = self.selected.clone() else {
+            return;
+        };
+        if let Some(view) = self.account_mut(&id)
+            && let Some(open) = &view.mail.open
+        {
+            view.mail.reader.toggle(open);
+        }
+    }
+
     /// The title bar's light/dark toggle: invert the drawn mode.
     pub fn toggle_mode(&mut self) {
         let target = match self.effective_mode() {
@@ -3671,6 +5251,182 @@ impl State {
         };
         self.apply_ui(crate::view::UiEvent::SetMode(target));
     }
+}
+
+/// The text a reply quotes: the text body (a Markdown message's source),
+/// else the HTML body's text.
+fn quotable(email: &Email) -> String {
+    let html_part = email
+        .text_body
+        .as_ref()
+        .and_then(|parts| parts.first())
+        .and_then(|part| part.content_type.as_deref())
+        .is_some_and(|t| t.trim().to_ascii_lowercase().starts_with("text/html"));
+    match email.text_body_value() {
+        Some(text) if html_part => crate::quote::html_text(text),
+        Some(text) => text.to_owned(),
+        None => email
+            .html_body_value()
+            .map(crate::quote::html_text)
+            .unwrap_or_default(),
+    }
+}
+
+/// "On Fri 17 Oct 2026, 09:14, Ann wrote:", in the local time zone.
+fn attribution(email: &Email) -> String {
+    let when = email
+        .date
+        .as_deref()
+        .or(email.received_at.as_deref())
+        .and_then(|d| chrono::DateTime::parse_from_rfc3339(d).ok())
+        .map(|d| {
+            d.with_timezone(&chrono::Local)
+                .format("%a %-d %b %Y, %H:%M")
+                .to_string()
+        })
+        .unwrap_or_default();
+    let who = email
+        .from
+        .as_ref()
+        .and_then(|from| from.first())
+        .map(|a| match a.name.as_deref().map(str::trim) {
+            Some(name) if !name.is_empty() => name.to_owned(),
+            _ => a.email.clone(),
+        })
+        .unwrap_or_default();
+    crate::label_with("reply-attribution", &[("date", &when), ("name", &who)])
+}
+
+/// `email`'s attachments as `email.info` and `email.attachments` list
+/// them (no content), with each one's save or open state.
+pub fn attachments_view(email: &Email, transfers: Option<&BTreeMap<String, Transfer>>) -> Value {
+    email
+        .attachments
+        .iter()
+        .flatten()
+        .enumerate()
+        .map(|(index, a)| {
+            json!({
+                "part": a.part_id,
+                "name": crate::attachments::file_name(a.name.as_deref(), index + 1, a.content_type.as_deref()),
+                "type": a.content_type,
+                "size": a.size,
+                "undecodable": !a.downloadable(),
+                "save_only": crate::attachments::refuses_open(
+                    &crate::attachments::file_name(a.name.as_deref(), index + 1, a.content_type.as_deref()),
+                    a.content_type.as_deref(),
+                ),
+                "transfer": a.part_id.as_ref().and_then(|p| transfers.and_then(|t| t.get(p))),
+            })
+        })
+        .collect()
+}
+
+/// The work that saves (or opens) `email`'s attachment `part` from
+/// `account`, or why it cannot: no such part, nothing to fetch, or an
+/// executable asked to open.
+pub fn attachment_work(
+    account: &str,
+    email: &Email,
+    part: &str,
+    open: bool,
+    dir: Option<String>,
+    reply: Option<u64>,
+) -> Result<Work, (&'static str, String)> {
+    let (index, attachment) = email
+        .attachments
+        .iter()
+        .flatten()
+        .enumerate()
+        .find(|(_, a)| a.part_id.as_deref() == Some(part))
+        .ok_or_else(|| (code::NOT_FOUND, crate::label("no-such-attachment")))?;
+    let blob = attachment
+        .blob_id
+        .clone()
+        .filter(|_| attachment.downloadable())
+        .ok_or_else(|| (code::REFUSED, crate::label("attachment-undecodable")))?;
+    let name = crate::attachments::file_name(
+        attachment.name.as_deref(),
+        index + 1,
+        attachment.content_type.as_deref(),
+    );
+    if open && crate::attachments::refuses_open(&name, attachment.content_type.as_deref()) {
+        return Err((code::REFUSED, crate::label("attachment-save-only")));
+    }
+    if let Some(dir) = &dir
+        && !std::path::Path::new(dir).is_absolute()
+    {
+        return Err((code::INVALID_ARGUMENT, crate::label("dir-not-absolute")));
+    }
+    Ok(Work::Attachment {
+        account: account.to_owned(),
+        email: email.id.clone(),
+        part: part.to_owned(),
+        blob,
+        name,
+        open,
+        dir,
+        reply,
+    })
+}
+
+/// The keyword a keyword change sets or clears, and which.
+fn keyword_of(change: &jmap::EmailChange) -> Option<(&'static str, bool)> {
+    match change {
+        jmap::EmailChange::Keywords {
+            flagged: Some(on), ..
+        } => Some(("$flagged", *on)),
+        jmap::EmailChange::Keywords { read: Some(on), .. } => Some(("$seen", *on)),
+        _ => None,
+    }
+}
+
+/// Whether `email` holds `keyword`.
+fn has_keyword(email: &Email, keyword: &str) -> bool {
+    email
+        .keywords
+        .as_ref()
+        .and_then(|k| k.get(keyword))
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+}
+
+/// The refusal of a "Select all N" past [`SELECT_ALL_CAP`].
+fn too_many(count: u64) -> String {
+    crate::label_with(
+        "too-many-selected",
+        &[
+            ("count", &grouped(count)),
+            ("cap", &grouped(SELECT_ALL_CAP)),
+        ],
+    )
+}
+
+/// The row to open after `open` and the other `gone` rows leave `emails`
+/// (in shown order): the next one that stays, else the previous one.
+pub fn neighbour(emails: &[Email], open: &str, gone: &[String]) -> Option<String> {
+    let at = emails.iter().position(|e| e.id == open)?;
+    let stays = |e: &&Email| !gone.contains(&e.id);
+    emails[at + 1..]
+        .iter()
+        .find(stays)
+        .or_else(|| emails[..at].iter().rev().find(stays))
+        .map(|e| e.id.clone())
+}
+
+/// Where a junk move of `view`'s emails goes: the role=junk mailbox, or
+/// (`junk == false`) the inbox.
+pub fn junk_target(view: &AccountView, junk: bool) -> Option<String> {
+    view.mail
+        .by_role(if junk { "junk" } else { "inbox" })
+        .map(|m| m.id.clone())
+}
+
+/// Whether `view` is showing its Junk mailbox (the open email is in it).
+pub fn in_junk(view: &AccountView) -> bool {
+    view.mail
+        .selected_mailbox()
+        .is_some_and(|m| m.role.as_deref() == Some("junk"))
 }
 
 /// The account a form is for.
@@ -4075,6 +5831,20 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn reply_follows_the_quote_and_position_settings() {
+        let mut state = connected();
+        // The defaults: a reply quotes, with the person's text above it.
+        assert!(state.quote_on_reply());
+        assert_eq!(state.reply_position(), crate::quote::Position::Above);
+        let mut next = state.settings.clone();
+        next.mail.quote_on_reply = false;
+        next.mail.reply_position = settings::email::ReplyPosition::Below;
+        state.set_settings(next);
+        assert!(!state.quote_on_reply());
+        assert_eq!(state.reply_position(), crate::quote::Position::Below);
+    }
+
+    #[test]
     fn reply_prefills_to_subject_and_in_reply_to() {
         let mut state = connected();
         state.account_mut("a").unwrap().mail.open = Some(unread_email("E1"));
@@ -4096,7 +5866,7 @@ pub(crate) mod tests {
         assert_eq!(compose.draft.from, "ann@a.example.invalid");
         assert!(compose.draft.cc.is_empty());
         // Reply all: everyone but me, Cc kept.
-        assert!(state.open_reply("a", true));
+        assert!(state.open_reply("a", true, Some(false)));
         let compose = state.compose.clone().unwrap();
         let to: Vec<&str> = compose.draft.to.iter().map(|a| a.email.as_str()).collect();
         assert_eq!(to, ["bob@example.invalid", "cy@example.invalid"]);
@@ -4205,6 +5975,236 @@ pub(crate) mod tests {
         assert!(!state.compose_sendable());
     }
 
+    // Drafts: nothing typed is lost to Cancel, Escape, a close or a crash.
+
+    use crate::drafts::{DraftStore, MemoryStore};
+
+    /// Carry the state's draft operations out on `store`.
+    fn keep(state: &mut State, store: &mut MemoryStore) {
+        let errors = crate::drafts::apply(store, state.take_draft_ops());
+        assert!(errors.is_empty(), "{errors:?}");
+    }
+
+    /// A compose with a recipient, a subject and a body typed.
+    fn typed(state: &mut State) {
+        state.apply_ui(UiEvent::Compose);
+        for (field, value) in [
+            (ComposeField::To, "bob@example.invalid"),
+            (ComposeField::Subject, "Lunch"),
+            (ComposeField::Body, "Noon at the usual place?"),
+        ] {
+            state.apply_ui(UiEvent::ComposeField(field, value.into()));
+        }
+    }
+
+    #[test]
+    fn cancel_keeps_the_draft() {
+        let mut state = connected();
+        let mut store = MemoryStore::default();
+        typed(&mut state);
+        // Cancel and Escape both report CloseCompose: the person is asked,
+        // and the draft is already on disk.
+        state.apply_ui(UiEvent::CloseCompose);
+        assert_eq!(state.confirm, Some(Confirm::CloseCompose));
+        assert!(state.compose.is_some(), "nothing closes unasked");
+        keep(&mut state, &mut store);
+        let saved = store.list();
+        assert_eq!(saved.len(), 1);
+        assert_eq!(saved[0].body, "Noon at the usual place?");
+        assert_eq!(saved[0].to, "bob@example.invalid");
+        // Keep Editing goes back to the compose.
+        state.apply_ui(UiEvent::ConfirmDraft(DraftChoice::Back));
+        assert!(state.confirm.is_none() && state.compose.is_some());
+        // The default, Keep Draft, closes and keeps it.
+        state.apply_ui(UiEvent::CloseCompose);
+        state.apply_ui(UiEvent::ConfirmDraft(DraftChoice::Keep));
+        keep(&mut state, &mut store);
+        assert!(state.compose.is_none());
+        assert_eq!(store.list().len(), 1, "the draft is kept");
+    }
+
+    #[test]
+    fn a_draft_is_removed_only_when_discarded_or_sent() {
+        let mut state = connected();
+        let mut store = MemoryStore::default();
+        typed(&mut state);
+        state.save_draft();
+        keep(&mut state, &mut store);
+        assert_eq!(store.list().len(), 1);
+        state.apply_ui(UiEvent::CloseCompose);
+        state.apply_ui(UiEvent::ConfirmDraft(DraftChoice::Discard));
+        keep(&mut state, &mut store);
+        assert!(state.compose.is_none());
+        assert!(store.list().is_empty(), "discarded on request");
+        // A send that went removes its draft.
+        state.account_mut("a").unwrap().mail.mailboxes = vec![
+            mailbox("m-drafts", Some("drafts"), 0),
+            mailbox("m-sent", Some("sent"), 0),
+        ];
+        typed(&mut state);
+        state.apply_ui(UiEvent::SendCompose);
+        let (_, ticket) = sent_ticket(&mut state);
+        keep(&mut state, &mut store);
+        assert_eq!(store.list().len(), 1, "kept while sending");
+        done(&mut state, "a", went(ticket));
+        keep(&mut state, &mut store);
+        assert!(store.list().is_empty());
+    }
+
+    #[test]
+    fn an_untouched_compose_closes_without_asking() {
+        let mut state = connected();
+        state.apply_ui(UiEvent::Compose);
+        state.apply_ui(UiEvent::CloseCompose);
+        assert!(state.compose.is_none() && state.confirm.is_none());
+        assert!(state.take_draft_ops().is_empty());
+        state.apply_ui(UiEvent::Compose);
+        assert!(state.request_quit(), "nothing typed: the window closes");
+    }
+
+    #[test]
+    fn close_with_unsaved_changes_asks() {
+        let mut state = connected();
+        let mut store = MemoryStore::default();
+        typed(&mut state);
+        assert!(state.draft_unsaved().is_some());
+        // The window's close button (and file.quit) ask; the draft is saved
+        // before the question shows.
+        assert!(!state.request_quit());
+        state.quit();
+        assert!(!state.exiting);
+        assert_eq!(state.confirm, Some(Confirm::Quit));
+        keep(&mut state, &mut store);
+        assert_eq!(store.list().len(), 1);
+        assert!(state.draft_unsaved().is_none());
+        state.apply_ui(UiEvent::ConfirmDraft(DraftChoice::Back));
+        assert!(!state.exiting && state.compose.is_some());
+        // Keep Draft and Quit: the window closes, the draft stays.
+        assert!(!state.request_quit());
+        state.apply_ui(UiEvent::ConfirmDraft(DraftChoice::Keep));
+        keep(&mut state, &mut store);
+        assert!(state.exiting);
+        assert!(state.request_quit(), "answered: closing goes ahead");
+        assert_eq!(store.list().len(), 1);
+    }
+
+    #[test]
+    fn restore_after_restart() {
+        let mut store = MemoryStore::default();
+        let mut first = connected();
+        typed(&mut first);
+        first.apply_ui(UiEvent::ComposeField(
+            ComposeField::Cc,
+            "cy@example.invalid".into(),
+        ));
+        // An earlier send got as far as creating the server copy.
+        first.compose.as_mut().unwrap().attempt.email_id = Some("E1".into());
+        first.save_draft();
+        keep(&mut first, &mut store);
+        let id = first.compose.as_ref().unwrap().draft_id.clone();
+        drop(first);
+        // A new run: the draft is offered.
+        let mut state = connected();
+        state.offer_drafts(store.list());
+        assert_eq!(state.restore.len(), 1);
+        assert!(state.compose.is_none());
+        state.apply_ui(UiEvent::RestoreDraft(DraftChoice::Keep));
+        let compose = state.compose.clone().expect("restored");
+        assert!(state.restore.is_empty());
+        assert_eq!(compose.draft_id, id);
+        assert!(compose.restored);
+        assert_eq!(compose.to_text, "bob@example.invalid");
+        assert_eq!(compose.cc_text, "cy@example.invalid");
+        assert_eq!(compose.draft.subject, "Lunch");
+        assert_eq!(compose.draft.body, "Noon at the usual place?");
+        assert_eq!(compose.attempt.email_id.as_deref(), Some("E1"));
+        // Closing a restored draft asks too: it holds text.
+        state.apply_ui(UiEvent::CloseCompose);
+        assert_eq!(state.confirm, Some(Confirm::CloseCompose));
+    }
+
+    #[test]
+    fn a_later_offer_keeps_every_draft() {
+        let mut store = MemoryStore::default();
+        let mut first = connected();
+        typed(&mut first);
+        first.save_draft();
+        keep(&mut first, &mut store);
+        let mut state = connected();
+        state.offer_drafts(store.list());
+        state.apply_ui(UiEvent::RestoreDraft(DraftChoice::Back));
+        keep(&mut state, &mut store);
+        assert!(state.restore.is_empty() && state.compose.is_none());
+        assert_eq!(store.list().len(), 1, "Later deletes nothing");
+        state.offer_drafts(store.list());
+        state.apply_ui(UiEvent::RestoreDraft(DraftChoice::Discard));
+        keep(&mut state, &mut store);
+        assert!(store.list().is_empty());
+    }
+
+    #[test]
+    fn a_compose_replaced_or_orphaned_is_kept_and_offered() {
+        let mut state = connected_many(&["a", "b"]);
+        let mut store = MemoryStore::default();
+        typed(&mut state);
+        // A second compose over the first never drops it.
+        assert!(state.open_compose(Some("b"), Composed::default()));
+        keep(&mut state, &mut store);
+        assert_eq!(store.list().len(), 1);
+        assert_eq!(state.restore.len(), 1);
+        assert_eq!(state.restore[0].subject, "Lunch");
+    }
+
+    #[test]
+    fn a_failed_send_keeps_the_draft_and_what_the_server_did() {
+        let mut state = connected();
+        let mut store = MemoryStore::default();
+        typed(&mut state);
+        state.apply_ui(UiEvent::SendCompose);
+        let (_, ticket) = sent_ticket(&mut state);
+        let attempt = jmap::SendAttempt {
+            email_id: Some("E1".into()),
+            ambiguous: true,
+            ..jmap::SendAttempt::default()
+        };
+        done(
+            &mut state,
+            "a",
+            Done::Sent(
+                ticket,
+                attempt.clone(),
+                Err(jmap::Error::Protocol("the reply was lost".into())),
+            ),
+        );
+        keep(&mut state, &mut store);
+        assert_eq!(store.list()[0].attempt, attempt, "kept with the draft");
+        // The retry resumes the same server copy instead of a new one.
+        state.apply_ui(UiEvent::SendCompose);
+        let resumed = state
+            .take_work()
+            .into_iter()
+            .find_map(|w| match w {
+                Work::Send { attempt, .. } => Some(attempt),
+                _ => None,
+            })
+            .expect("a send");
+        assert_eq!(resumed, attempt);
+    }
+
+    /// A send that went.
+    fn went(ticket: u64) -> Done {
+        Done::Sent(
+            ticket,
+            jmap::SendAttempt::default(),
+            Ok(jmap::SendReport::default()),
+        )
+    }
+
+    /// A send that failed, having done nothing on the server.
+    fn failed(ticket: u64, error: jmap::Error) -> Done {
+        Done::Sent(ticket, jmap::SendAttempt::default(), Err(error))
+    }
+
     /// Take the queued work and return the send's account and ticket.
     fn sent_ticket(state: &mut State) -> (String, u64) {
         state
@@ -4234,7 +6234,7 @@ pub(crate) mod tests {
         assert!(state.compose.as_ref().is_some_and(|c| c.busy));
         let (account, ticket) = sent_ticket(&mut state);
         assert_eq!(account, "a");
-        done(&mut state, "a", Done::Sent(ticket, Ok(())));
+        done(&mut state, "a", went(ticket));
         assert!(state.compose.is_none());
         let work = state.take_work();
         assert!(
@@ -4260,10 +6260,7 @@ pub(crate) mod tests {
         done(
             &mut state,
             "a",
-            Done::Sent(
-                ticket,
-                Err(jmap::Error::method("serverFail", Some("no relay"))),
-            ),
+            failed(ticket, jmap::Error::method("serverFail", Some("no relay"))),
         );
         let compose = state.compose.expect("the dialog stays");
         assert!(!compose.busy);
@@ -4280,14 +6277,19 @@ pub(crate) mod tests {
         ));
         state.apply_ui(UiEvent::SendCompose);
         let (_, first) = sent_ticket(&mut state);
-        // Cancelled while sending, then a new draft.
+        let first_draft = state.compose.as_ref().unwrap().draft_id.clone();
+        // Cancelled while sending (the draft kept), then a new draft.
         state.apply_ui(UiEvent::CloseCompose);
+        state.apply_ui(UiEvent::ConfirmDraft(DraftChoice::Keep));
         state.apply_ui(UiEvent::Compose);
         state.apply_ui(UiEvent::ComposeField(ComposeField::Subject, "next".into()));
-        done(&mut state, "a", Done::Sent(first, Ok(())));
+        state.take_draft_ops();
+        done(&mut state, "a", went(first));
         let compose = state.compose.as_ref().expect("the new draft stays");
         assert_eq!(compose.draft.subject, "next");
         assert!(!compose.busy);
+        // The first message went: its kept draft goes.
+        assert_eq!(state.take_draft_ops(), [DraftOp::Remove(first_draft)]);
     }
 
     #[test]
@@ -4301,7 +6303,7 @@ pub(crate) mod tests {
         state.apply_ui(UiEvent::SendCompose);
         let (account, ticket) = sent_ticket(&mut state);
         assert_eq!(account, "a");
-        done(&mut state, "b", Done::Sent(ticket, Ok(())));
+        done(&mut state, "b", went(ticket));
         assert!(
             state.compose.as_ref().is_some_and(|c| c.busy),
             "still sending"
@@ -4909,13 +6911,28 @@ pub(crate) mod tests {
         done(
             &mut state,
             "a",
-            Done::Mailboxes(Ok(vec![mailbox("m-in", Some("inbox"), 1)])),
+            Done::Mailboxes(Ok(vec![
+                mailbox("m-in", Some("inbox"), 1),
+                mailbox("m-trash", Some("trash"), 0),
+            ])),
         );
         state.take_work();
         let view = state.account_mut("a").unwrap();
         view.mail.emails = vec![unread_email("E1"), unread_email("E2")];
         view.mail.open = Some(unread_email("E1"));
         state
+    }
+
+    /// The batched actions queued since the last take.
+    fn batches(state: &mut State) -> Vec<Batch> {
+        state
+            .take_work()
+            .into_iter()
+            .filter_map(|w| match w {
+                Work::Batch { batch, .. } => Some(*batch),
+                _ => None,
+            })
+            .collect()
     }
 
     fn writes(state: &mut State) -> Vec<(Option<u64>, Write)> {
@@ -4927,6 +6944,368 @@ pub(crate) mod tests {
                 _ => None,
             })
             .collect()
+    }
+
+    #[test]
+    fn selecting_never_opens_and_select_all_takes_the_mailbox_total() {
+        use toolkit::datatable::Pick;
+        let mut state = reading();
+        state.account_mut("a").unwrap().mail.total = 2866;
+        // A pick and a range select, and open nothing.
+        state.mail_table(
+            "a",
+            TableEvent::Selected {
+                index: 1,
+                key: "E2".into(),
+                pick: Pick::Only,
+            },
+        );
+        state.mail_table(
+            "a",
+            TableEvent::SelectionChanged {
+                keys: vec!["E1".into(), "E2".into()],
+                focus: Some(0),
+            },
+        );
+        assert!(state.take_work().is_empty(), "no open, no mark-read");
+        let mail = &state.account("a").unwrap().mail;
+        assert_eq!(mail.selection_count(), 2);
+        assert!(!mail.emails[1].is_read());
+        // "Select all N": the mailbox's count, with no query.
+        state.mail_table("a", TableEvent::SelectEverything);
+        assert!(state.take_work().is_empty());
+        let mail = &state.account("a").unwrap().mail;
+        assert!(mail.everything);
+        assert_eq!(mail.selection_count(), 2866);
+        assert_eq!(
+            state.info()["accounts"][0]["mail"]["selection"]["count"],
+            2866
+        );
+        // Activating a selected row opens it and keeps the selection.
+        state.mail_table(
+            "a",
+            TableEvent::Activated {
+                index: 1,
+                key: "E2".into(),
+            },
+        );
+        let mail = &state.account("a").unwrap().mail;
+        assert!(mail.everything && mail.table.selection.len() == 2);
+        assert!(
+            state
+                .take_work()
+                .iter()
+                .any(|w| matches!(w, Work::OpenEmail { id, .. } if id == "E2"))
+        );
+        // Any new pick is a selection of its own again.
+        state.mail_table(
+            "a",
+            TableEvent::Selected {
+                index: 0,
+                key: "E1".into(),
+                pick: Pick::Only,
+            },
+        );
+        let mail = &state.account("a").unwrap().mail;
+        assert!(!mail.everything);
+        assert_eq!(mail.selection_count(), 1);
+        assert_eq!(grouped(2866), "2,866");
+        assert_eq!(grouped(12), "12");
+        assert_eq!(grouped(1_000_000), "1,000,000");
+    }
+
+    /// `ids` as emails, unread.
+    fn emails(ids: &[&str]) -> Vec<Email> {
+        ids.iter().map(|id| unread_email(id)).collect()
+    }
+
+    /// The one page fetch in `work`: its ticket, sort, position and limit.
+    fn fetched(work: &[Work]) -> (u64, jmap::EmailSort, u64, u32) {
+        match work
+            .iter()
+            .filter_map(|w| match w {
+                Work::FetchEmails {
+                    ticket,
+                    sort,
+                    position,
+                    limit,
+                    ..
+                } => Some((*ticket, *sort, *position, *limit)),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .as_slice()
+        {
+            [one] => *one,
+            other => panic!("one page fetch, not {other:?}"),
+        }
+    }
+
+    /// The answer to page fetch `ticket`: `ids`, of `total` in all.
+    fn page_of(state: &mut State, ticket: u64, ids: &[&str], total: u64) {
+        done(
+            state,
+            "a",
+            Done::Page(
+                ticket,
+                Ok(jmap::EmailPage {
+                    emails: emails(ids),
+                    total,
+                }),
+            ),
+        );
+    }
+
+    /// `reading()` with its inbox 236 emails long (its folder counts 999:
+    /// the query's total is the one that counts).
+    fn paged() -> State {
+        let mut state = reading();
+        let view = state.account_mut("a").unwrap();
+        view.mail.total = 236;
+        view.mail.mailboxes[0].total_emails = 999;
+        state
+    }
+
+    const NEWEST: jmap::EmailSort = jmap::EmailSort {
+        by: jmap::SortBy::ReceivedAt,
+        ascending: false,
+    };
+
+    #[test]
+    fn the_pager_moves_forward_and_back_one_page_at_a_time() {
+        let mut state = paged();
+        assert_eq!(state.account("a").unwrap().mail.table.page_size, 100);
+        state.mail_table("a", TableEvent::PageChanged(1));
+        let (ticket, sort, position, limit) = fetched(&state.take_work());
+        assert_eq!((sort, position, limit), (NEWEST, 100, 100));
+        assert!(state.account("a").unwrap().mail.busy);
+        page_of(&mut state, ticket, &["P101", "P102"], 236);
+        let mail = &state.account("a").unwrap().mail;
+        assert_eq!(mail.table.page, 1);
+        assert_eq!(mail.keys(), ["P101", "P102"]);
+        assert_eq!(mail.list_table().range(2), Some((101, 102)));
+        assert!(!mail.busy);
+        // On to the last page, then back one.
+        state.mail_table("a", TableEvent::PageChanged(2));
+        let (ticket, _, position, _) = fetched(&state.take_work());
+        assert_eq!(position, 200);
+        page_of(&mut state, ticket, &["P201"], 236);
+        state.mail_table("a", TableEvent::PageChanged(1));
+        let (_, sort, position, _) = fetched(&state.take_work());
+        assert_eq!((sort, position), (NEWEST, 100));
+        assert_eq!(state.info()["accounts"][0]["mail"]["page"], 1);
+        // A reload keeps the page.
+        state.refresh();
+        let (_, _, position, _) = fetched(&state.take_work());
+        assert_eq!(position, 100);
+        assert_eq!(state.account("a").unwrap().mail.table.page, 1);
+    }
+
+    #[test]
+    fn a_page_past_the_end_falls_back_to_the_last() {
+        let mut state = paged();
+        state.mail_table("a", TableEvent::PageChanged(2));
+        let (ticket, ..) = fetched(&state.take_work());
+        // The mailbox shrank to 150 meanwhile: page 3 of 2 is empty.
+        page_of(&mut state, ticket, &[], 150);
+        let (ticket, _, position, _) = fetched(&state.take_work());
+        assert_eq!(position, 100);
+        assert_eq!(state.account("a").unwrap().mail.table.page, 1);
+        page_of(&mut state, ticket, &["P101"], 150);
+        assert_eq!(state.account("a").unwrap().mail.keys(), ["P101"]);
+    }
+
+    #[test]
+    fn a_new_mailbox_starts_at_its_first_page_in_the_same_sort() {
+        let mut state = paged();
+        let view = state.account_mut("a").unwrap();
+        view.mail.mailboxes.push(mailbox("m-sent", Some("sent"), 0));
+        state.mail_table(
+            "a",
+            TableEvent::SortChanged(Some(Sort::new(COLUMN_FROM, Order::Ascending))),
+        );
+        state.mail_table("a", TableEvent::PageChanged(2));
+        state.take_work();
+        assert!(state.select_mailbox("a", "m-sent".into()));
+        let (_, sort, position, _) = fetched(&state.take_work());
+        assert_eq!(position, 0);
+        assert_eq!(sort, jmap::EmailSort::new(jmap::SortBy::From, true));
+        let mail = &state.account("a").unwrap().mail;
+        assert_eq!(mail.table.page, 0);
+        assert!(mail.refocus.is_none());
+    }
+
+    #[test]
+    fn each_header_sorts_its_column_ascending_first_then_flips() {
+        use toolkit::datatable::Sort as S;
+        let columns = list_columns(80.0);
+        let mut state = paged();
+        // Newest first until a header is clicked: the Date arrow points down.
+        let shown = state.account("a").unwrap().mail.list_table();
+        assert_eq!(shown.sort, Some(S::new(COLUMN_DATE, Order::Descending)));
+        // Date flips to oldest first; Subject and From start ascending.
+        assert_eq!(
+            shown.header_clicked(&columns, COLUMN_DATE, false),
+            Some(TableEvent::SortChanged(Some(S::new(
+                COLUMN_DATE,
+                Order::Ascending
+            ))))
+        );
+        for (column, by) in [
+            (COLUMN_SUBJECT, jmap::SortBy::Subject),
+            (COLUMN_FROM, jmap::SortBy::From),
+            (COLUMN_DATE, jmap::SortBy::ReceivedAt),
+        ] {
+            // From page 2, so each sort is seen to start at the top again.
+            state.mail_table("a", TableEvent::PageChanged(1));
+            state.take_work();
+            for ascending in [true, false] {
+                let shown = state.account("a").unwrap().mail.list_table();
+                let click = shown.header_clicked(&columns, column, false).unwrap();
+                let order = if ascending {
+                    Order::Ascending
+                } else {
+                    Order::Descending
+                };
+                // Date starts out descending, so its first click ascends too.
+                assert_eq!(
+                    click,
+                    TableEvent::SortChanged(Some(S::new(column, order))),
+                    "{column} {ascending}"
+                );
+                state.mail_table("a", click);
+                let (_, sort, position, _) = fetched(&state.take_work());
+                assert_eq!(sort, jmap::EmailSort::new(by, ascending));
+                assert_eq!(position, 0);
+                let mail = &state.account("a").unwrap().mail;
+                assert_eq!(mail.table.page, 0);
+                assert_eq!(state.info()["accounts"][0]["mail"]["sort"], column);
+            }
+        }
+        // Nothing of it reaches settings.
+        assert!(
+            !state
+                .take_work()
+                .iter()
+                .any(|w| matches!(w, Work::Settings { .. }))
+        );
+        assert_eq!(email_sort(None), NEWEST);
+        assert_eq!(
+            email_sort(Some(&S::new("size", Order::Ascending))),
+            NEWEST,
+            "a column the server cannot sort by"
+        );
+    }
+
+    #[test]
+    fn a_sort_change_clears_the_selection_and_keeps_the_keyboard_row_if_shown() {
+        let mut state = paged();
+        // Nothing open: the keyboard row is the table's own.
+        state.account_mut("a").unwrap().mail.open = None;
+        state.mail_table(
+            "a",
+            TableEvent::SelectionChanged {
+                keys: vec!["E1".into(), "E2".into()],
+                focus: Some(1),
+            },
+        );
+        state.mail_table("a", TableEvent::SelectEverything);
+        let subject = || TableEvent::SortChanged(Some(Sort::new(COLUMN_SUBJECT, Order::Ascending)));
+        state.mail_table("a", subject());
+        let mail = &state.account("a").unwrap().mail;
+        assert!(mail.table.selection.is_empty() && !mail.everything);
+        assert_eq!(mail.selection_count(), 0);
+        let (ticket, ..) = fetched(&state.take_work());
+        // E2, the keyboard's row, is on the new page: the row follows it.
+        page_of(&mut state, ticket, &["E9", "E2", "E1"], 236);
+        let mail = &state.account("a").unwrap().mail;
+        assert_eq!(mail.table.focus, Some(1));
+        assert!(mail.table.selection.is_empty());
+        // A page without it: no keyboard row.
+        state.mail_table("a", TableEvent::PageChanged(1));
+        let (ticket, ..) = fetched(&state.take_work());
+        page_of(&mut state, ticket, &["E7", "E8"], 236);
+        assert_eq!(state.account("a").unwrap().mail.table.focus, None);
+    }
+
+    #[test]
+    fn select_all_on_a_later_page_takes_the_query_total() {
+        let mut state = paged();
+        state.mail_table("a", TableEvent::PageChanged(2));
+        let (ticket, ..) = fetched(&state.take_work());
+        page_of(&mut state, ticket, &["P201", "P202"], 236);
+        state.mail_table(
+            "a",
+            TableEvent::SelectionChanged {
+                keys: vec!["P201".into(), "P202".into()],
+                focus: Some(0),
+            },
+        );
+        state.mail_table("a", TableEvent::SelectEverything);
+        let mail = &state.account("a").unwrap().mail;
+        assert!(mail.everything);
+        // The query's 236, not the folder's 999.
+        assert_eq!(mail.selection_count(), 236);
+        assert!(state.take_work().is_empty(), "no query for it");
+        // A reload of the page keeps every email selected.
+        state.refresh();
+        let (ticket, ..) = fetched(&state.take_work());
+        page_of(&mut state, ticket, &["P201", "P202"], 236);
+        let mail = &state.account("a").unwrap().mail;
+        assert!(mail.everything && mail.table.selection.len() == 2);
+    }
+
+    #[test]
+    fn a_refused_sort_falls_back_to_newest_first() {
+        let mut state = paged();
+        state.mail_table(
+            "a",
+            TableEvent::SortChanged(Some(Sort::new(COLUMN_FROM, Order::Descending))),
+        );
+        let (ticket, ..) = fetched(&state.take_work());
+        done(
+            &mut state,
+            "a",
+            Done::Page(
+                ticket,
+                Err(jmap::Error::Method {
+                    error_type: "unsupportedSort".into(),
+                    description: "no".into(),
+                }),
+            ),
+        );
+        let (_, sort, position, _) = fetched(&state.take_work());
+        assert_eq!((sort, position), (NEWEST, 0));
+        assert_eq!(state.status, crate::label("sort-unsupported"));
+        assert_eq!(
+            state.account("a").unwrap().mail.list_table().sort,
+            Some(default_sort())
+        );
+    }
+
+    #[test]
+    fn the_neighbour_is_the_next_row_else_the_previous() {
+        let rows: Vec<Email> = ["A", "B", "C", "D"]
+            .iter()
+            .map(|id| serde_json::from_value(json!({ "id": id })).unwrap())
+            .collect();
+        let gone = |ids: &[&str]| ids.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
+        assert_eq!(neighbour(&rows, "B", &gone(&["B"])).as_deref(), Some("C"));
+        assert_eq!(
+            neighbour(&rows, "B", &gone(&["B", "C"])).as_deref(),
+            Some("D")
+        );
+        assert_eq!(
+            neighbour(&rows, "D", &gone(&["D"])).as_deref(),
+            Some("C"),
+            "the last moves back"
+        );
+        assert_eq!(
+            neighbour(&rows, "D", &gone(&["C", "D"])).as_deref(),
+            Some("B")
+        );
+        assert_eq!(neighbour(&rows[..1], "A", &gone(&["A"])), None);
+        assert_eq!(neighbour(&rows, "Z", &gone(&["Z"])), None);
     }
 
     #[test]
@@ -4949,6 +7328,11 @@ pub(crate) mod tests {
         let work = state.take_work();
         assert!(
             work.iter()
+                .any(|w| matches!(w, Work::OpenEmail { id, .. } if id == "E2")),
+            "the reader moves on to the next row"
+        );
+        assert!(
+            work.iter()
                 .any(|w| matches!(w, Work::FetchMailboxes { .. }))
         );
         assert!(
@@ -4958,6 +7342,45 @@ pub(crate) mod tests {
         let reply = &state.take_replies()[0];
         assert_eq!((reply.id, reply.rc), (5, 0));
         assert_eq!(reply.body["ids"][0], "E1");
+    }
+
+    #[test]
+    fn a_bus_write_with_one_bad_id_answers_and_keeps_that_row() {
+        let mut state = reading();
+        let shown: Vec<String> = state
+            .account("a")
+            .unwrap()
+            .mail
+            .emails
+            .iter()
+            .map(|e| e.id.clone())
+            .collect();
+        assert!(shown.len() >= 2, "{shown:?}");
+        let delete = Write::Delete {
+            ids: shown.clone(),
+            destroy: false,
+        };
+        state.write_server("a".into(), Some(5), delete.clone());
+        let _ = writes(&mut state);
+        let tag = tag(&state, "a");
+        let answer = json!({
+            "ids": shown,
+            "destroyed": false,
+            "done": [shown[0]],
+            "failed": [{"id": shown[1], "reason": "notFound"}],
+        });
+        state.apply(Event::Account(
+            tag,
+            Done::Wrote(Some(5), None, Box::new(delete), Ok(answer)),
+        ));
+        let view = state.account("a").unwrap();
+        let left: Vec<&str> = view.mail.emails.iter().map(|e| e.id.as_str()).collect();
+        assert!(!left.contains(&shown[0].as_str()), "the done id left");
+        assert!(left.contains(&shown[1].as_str()), "the failed id stays");
+        assert!(state.status.contains(&shown[1]), "{}", state.status);
+        let reply = &state.take_replies()[0];
+        assert_eq!((reply.id, reply.rc), (5, 0), "the call does not fail");
+        assert_eq!(reply.body["failed"][0]["id"], shown[1].as_str());
     }
 
     #[test]
@@ -4990,61 +7413,66 @@ pub(crate) mod tests {
     #[test]
     fn delete_confirms_when_the_settings_ask_and_not_otherwise() {
         let mut state = reading();
-        state.delete_open();
+        state.delete_target();
         assert!(matches!(&state.form, Some(Form::Delete { ids, .. }) if ids == &["E1"]));
-        assert!(writes(&mut state).is_empty(), "nothing until confirmed");
+        assert!(batches(&mut state).is_empty(), "nothing until confirmed");
         state.apply_ui(UiEvent::FormSubmit(None));
         assert!(state.form.is_none());
         assert!(matches!(
-            writes(&mut state).as_slice(),
-            [(None, Write::Delete { destroy: false, .. })]
+            batches(&mut state).as_slice(),
+            [Batch { kind: BatchKind::Delete, change: jmap::EmailChange::Move { mailbox }, .. }]
+                if mailbox == "m-trash"
         ));
         let mut next = settings(&["a"]);
         next.mail.confirm_delete = false;
         state.set_settings(next);
         state.take_work();
         state.account_mut("a").unwrap().mail.open = Some(unread_email("E2"));
-        state.delete_open();
+        state.delete_target();
         assert!(state.form.is_none());
-        assert_eq!(writes(&mut state).len(), 1);
+        assert_eq!(batches(&mut state).len(), 1);
     }
 
+    /// The open email is the target here: nothing is selected, so the list
+    /// draws it as the keyboard row (phase 3b; these went as single
+    /// writes before, now as batches of one).
     #[test]
-    fn move_flag_and_mark_unread_act_on_the_open_email() {
+    fn move_flag_and_mark_unread_act_on_the_target() {
         let mut state = reading();
-        state.move_open();
+        state.move_target();
         state.apply_ui(UiEvent::FormSubmit(Some("m-archive".into())));
-        assert!(
-            matches!(writes(&mut state).as_slice(), [(None, Write::Move { mailbox, .. })] if mailbox == "m-archive")
-        );
-        state.flag_open();
+        assert!(matches!(
+            batches(&mut state).as_slice(),
+            [Batch { kind: BatchKind::Move, change: jmap::EmailChange::Move { mailbox }, ids, .. }]
+                if mailbox == "m-archive" && ids == &["E1"]
+        ));
+        state.flag_target();
         let view = state.account("a").unwrap();
         let flagged =
             view.mail.open.as_ref().unwrap().keywords.as_ref().unwrap()["$flagged"].clone();
         assert_eq!(flagged, json!(true), "shown at once");
         assert!(matches!(
-            writes(&mut state).as_slice(),
-            [(
-                None,
-                Write::Keywords {
+            batches(&mut state).as_slice(),
+            [Batch {
+                change: jmap::EmailChange::Keywords {
                     flagged: Some(true),
                     read: None,
-                    ..
-                }
-            )]
+                },
+                ..
+            }]
         ));
         state.account_mut("a").unwrap().mail.emails[0].keywords = Some(json!({"$seen": true}));
-        state.mark_open_unread();
+        state.toggle_target_read();
         assert!(!state.account("a").unwrap().mail.emails[0].is_read());
         assert!(matches!(
-            writes(&mut state).as_slice(),
-            [(
-                None,
-                Write::Keywords {
+            batches(&mut state).as_slice(),
+            [Batch {
+                change: jmap::EmailChange::Keywords {
                     read: Some(false),
                     ..
-                }
-            )]
+                },
+                ..
+            }]
         ));
     }
 
@@ -5116,7 +7544,7 @@ pub(crate) mod tests {
         let tag = tag(&state, "a");
         state.apply(Event::Account(
             tag.clone(),
-            Done::Answered(3, Then::Reply(false), Ok(email.clone())),
+            Done::Answered(3, Then::Reply(false, Some(false)), Ok(email.clone())),
         ));
         let compose = state.compose.clone().expect("a reply");
         assert_eq!(compose.draft.subject, "Re: Hello");
@@ -5409,7 +7837,7 @@ pub(crate) mod tests {
         state.reconnect("a");
         state.apply(Event::Account(
             old.clone(),
-            Done::Sent(ticket, Err(jmap::Error::Protocol("relay down".into()))),
+            failed(ticket, jmap::Error::Protocol("relay down".into())),
         ));
         let compose = state.compose.clone().expect("the dialog stays");
         assert!(!compose.busy && compose.error.is_some());
@@ -5417,7 +7845,7 @@ pub(crate) mod tests {
         state.apply_ui(UiEvent::SendCompose);
         let (_, ticket) = sent_ticket(&mut state);
         state.reconnect("a");
-        state.apply(Event::Account(old, Done::Sent(ticket, Ok(()))));
+        state.apply(Event::Account(old, went(ticket)));
         assert!(state.compose.is_none());
         assert_eq!(state.status, crate::label("sent"));
     }
@@ -5806,7 +8234,7 @@ pub(crate) mod tests {
         state.take_work();
         let second = send(&mut state);
         assert_ne!(first, second);
-        state.apply(Event::Account(old, Done::Sent(first, Ok(()))));
+        state.apply(Event::Account(old, went(first)));
         assert!(
             state.compose.as_ref().is_some_and(|c| c.busy),
             "the old completion leaves the new send pending"
@@ -5818,7 +8246,7 @@ pub(crate) mod tests {
     #[test]
     fn round4_22_a_form_from_an_old_connection_does_not_submit() {
         let mut state = reading();
-        state.delete_open();
+        state.delete_target();
         assert!(matches!(state.form, Some(Form::Delete { .. })));
         let mut next = settings(&["a"]);
         next.accounts[0].url = "https://moved.example.invalid".into();
@@ -5826,7 +8254,7 @@ pub(crate) mod tests {
         state.take_work();
         state.apply_ui(UiEvent::FormSubmit(None));
         assert!(
-            writes(&mut state).is_empty(),
+            batches(&mut state).is_empty(),
             "no delete through the new server"
         );
     }
@@ -5917,7 +8345,7 @@ pub(crate) mod tests {
     #[test]
     fn round4_22_a_login_change_marks_the_open_form() {
         let mut state = reading();
-        state.move_open();
+        state.move_target();
         let mut next = settings(&["a"]);
         next.accounts[0].email = "new@a.example.invalid".into();
         state.set_settings(next);
@@ -5926,15 +8354,17 @@ pub(crate) mod tests {
             Some(crate::label("form-account-changed").as_str())
         );
         state.apply_ui(UiEvent::FormSubmit(Some("m-archive".into())));
-        assert!(writes(&mut state).is_empty());
+        assert!(batches(&mut state).is_empty());
         // A form opened now is bound to the new connection.
         state.apply_ui(UiEvent::FormCancel);
-        state.account_mut("a").unwrap().mail.open = Some(unread_email("E1"));
-        state.move_open();
+        let view = state.account_mut("a").unwrap();
+        view.mail.emails = vec![unread_email("E1")];
+        view.mail.open = Some(unread_email("E1"));
+        state.move_target();
         assert!(state.form_note.is_none());
         state.apply_ui(UiEvent::FormSubmit(Some("m-archive".into())));
         let expect = state.take_work().into_iter().find_map(|w| match w {
-            Work::Write { expect, .. } => expect,
+            Work::Batch { generation, .. } => Some(generation),
             _ => None,
         });
         assert_eq!(expect, Some(tag(&state, "a").generation));
@@ -6173,5 +8603,325 @@ pub(crate) mod tests {
         assert!(state.take_replies().is_empty());
         land(&mut state, &work, Ok(true));
         assert_eq!(state.take_replies()[0].rc, 0);
+    }
+
+    // Phase 3b: message actions act on the list's target, in batches.
+
+    /// The inbox (with a Trash) showing `n` emails E1…En of `total`, E1
+    /// open, nothing selected.
+    fn listing(n: usize, total: u64) -> State {
+        let mut state = reading();
+        let view = state.account_mut("a").unwrap();
+        view.mail.emails = (1..=n).map(|i| unread_email(&format!("E{i}"))).collect();
+        view.mail.total = total;
+        state.take_work();
+        state
+    }
+
+    fn select(state: &mut State, ids: &[&str]) {
+        state.mail_table(
+            "a",
+            TableEvent::SelectionChanged {
+                keys: ids.iter().map(|s| (*s).to_owned()).collect(),
+                focus: Some(0),
+            },
+        );
+    }
+
+    fn target(state: &State) -> Option<Target> {
+        state.account("a").unwrap().mail.target()
+    }
+
+    fn rows(ids: &[&str]) -> Option<Target> {
+        Some(Target::Rows(ids.iter().map(|s| (*s).to_owned()).collect()))
+    }
+
+    #[test]
+    fn target_is_the_selection_else_the_keyboard_row_never_the_open_email() {
+        let mut state = listing(4, 4);
+        // Nothing selected: the open email is drawn as the keyboard row,
+        // so it is the target.
+        assert_eq!(target(&state), rows(&["E1"]));
+        // Two selected: those two, not the open E1.
+        select(&mut state, &["E2", "E3"]);
+        assert_eq!(target(&state), rows(&["E2", "E3"]));
+        // One picked (Ctrl+click) while E1 stays open: that one.
+        select(&mut state, &["E3"]);
+        assert_eq!(target(&state), rows(&["E3"]));
+        // None selected and no email open: the keyboard row.
+        let view = state.account_mut("a").unwrap();
+        view.mail.table.selection.clear();
+        view.mail.open = None;
+        view.mail.table.focus = Some(3);
+        assert_eq!(target(&state), rows(&["E4"]));
+        // Nothing at all: no target, and the actions do nothing.
+        state.account_mut("a").unwrap().mail.table.focus = None;
+        assert_eq!(target(&state), None);
+        state.flag_target();
+        state.delete_target();
+        assert!(batches(&mut state).is_empty() && state.form.is_none());
+    }
+
+    #[test]
+    fn target_line_says_this_email_or_how_many_are_selected() {
+        let mut state = listing(4, 236);
+        let line = |state: &State| state.account("a").unwrap().mail.target_line();
+        assert_eq!(line(&state).as_deref(), Some("Applies to this email"));
+        select(&mut state, &["E1", "E2", "E3"]);
+        assert_eq!(line(&state).as_deref(), Some("Applies to 3 selected"));
+        select(&mut state, &["E1", "E2", "E3", "E4"]);
+        state.mail_table("a", TableEvent::SelectEverything);
+        assert_eq!(line(&state).as_deref(), Some("Applies to 236 selected"));
+    }
+
+    #[test]
+    fn batch_of_n_selected_is_one_work_item_with_every_id() {
+        let mut state = listing(4, 4);
+        select(&mut state, &["E1", "E2", "E3", "E4"]);
+        state.flag_target();
+        let work = state.take_work();
+        assert!(!work.iter().any(|w| matches!(w, Work::Write { .. })));
+        let batches: Vec<&Batch> = work
+            .iter()
+            .filter_map(|w| match w {
+                Work::Batch { batch, .. } => Some(&**batch),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(batches.len(), 1, "one batch, not one write per email");
+        assert_eq!(batches[0].ids, ["E1", "E2", "E3", "E4"]);
+        assert_eq!(
+            batches[0].change,
+            jmap::EmailChange::Keywords {
+                read: None,
+                flagged: Some(true)
+            }
+        );
+        // Every row shows it at once.
+        let mail = &state.account("a").unwrap().mail;
+        assert!(mail.emails.iter().all(Email::is_flagged));
+    }
+
+    #[test]
+    fn batch_partial_failure_keeps_the_failed_ids_with_their_reason() {
+        let mut state = listing(4, 4);
+        select(&mut state, &["E1", "E2", "E3"]);
+        state.flag_target();
+        let batch = batches(&mut state).remove(0);
+        let failed = vec![("E2".to_owned(), "notFound: no such email".to_owned())];
+        done(
+            &mut state,
+            "a",
+            Done::Batched(
+                Box::new(batch),
+                jmap::SetOutcome {
+                    done: vec!["E1".into(), "E3".into()],
+                    failed: failed.clone(),
+                },
+            ),
+        );
+        let mail = &state.account("a").unwrap().mail;
+        let flagged: Vec<bool> = mail.emails.iter().map(Email::is_flagged).collect();
+        assert_eq!(flagged, [true, false, true, false], "E2 put back");
+        assert_eq!(mail.failed, failed);
+        assert!(
+            state.status.contains("E2 (notFound: no such email)"),
+            "{}",
+            state.status
+        );
+        assert_eq!(
+            mail.table.selection,
+            ["E1", "E2", "E3"],
+            "a flag keeps the selection"
+        );
+        // A delete: the done ids leave at once, the failed one stays, and
+        // the selection clears.
+        select(&mut state, &["E3", "E4"]);
+        state.delete_target();
+        state.apply_ui(UiEvent::FormSubmit(None));
+        let batch = batches(&mut state).remove(0);
+        done(
+            &mut state,
+            "a",
+            Done::Batched(
+                Box::new(batch),
+                jmap::SetOutcome {
+                    done: vec!["E3".into()],
+                    failed: vec![("E4".into(), "forbidden".into())],
+                },
+            ),
+        );
+        let mail = &state.account("a").unwrap().mail;
+        assert_eq!(mail.keys(), ["E1", "E2", "E4"]);
+        assert!(mail.table.selection.is_empty(), "a delete clears it");
+        assert!(state.status.contains("E4 (forbidden)"));
+    }
+
+    /// The id fetches queued: (ticket, position).
+    fn id_fetches(work: &[Work]) -> Vec<(u64, u64)> {
+        work.iter()
+            .filter_map(|w| match w {
+                Work::FetchIds {
+                    ticket, position, ..
+                } => Some((*ticket, *position)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn id_page(from: usize, count: usize, total: u64) -> Result<jmap::IdPage, jmap::Error> {
+        Ok(jmap::IdPage {
+            ids: (from..from + count).map(|i| format!("X{i}")).collect(),
+            total,
+        })
+    }
+
+    /// The whole page selected, then "Select all `total`".
+    fn everything(total: u64) -> State {
+        let mut state = listing(4, total);
+        select(&mut state, &["E1", "E2", "E3", "E4"]);
+        state.mail_table("a", TableEvent::SelectEverything);
+        state
+    }
+
+    #[test]
+    fn select_all_fetches_ids_across_pages_then_acts() {
+        let mut state = everything(1200);
+        state.flag_target();
+        let work = state.take_work();
+        let fetches = id_fetches(&work);
+        assert_eq!(fetches.len(), 1);
+        let (ticket, position) = fetches[0];
+        assert_eq!(position, 0);
+        assert!(!work.iter().any(|w| matches!(w, Work::Batch { .. })));
+        assert_eq!(
+            state.account("a").unwrap().mail.target_line().as_deref(),
+            Some("Fetching 1,200…")
+        );
+        done(&mut state, "a", Done::Ids(ticket, id_page(0, 500, 1200)));
+        assert_eq!(id_fetches(&state.take_work()), [(ticket, 500)]);
+        done(&mut state, "a", Done::Ids(ticket, id_page(500, 500, 1200)));
+        assert_eq!(id_fetches(&state.take_work()), [(ticket, 1000)]);
+        done(&mut state, "a", Done::Ids(ticket, id_page(1000, 200, 1200)));
+        let batch = batches(&mut state).remove(0);
+        assert_eq!(batch.ids.len(), 1200, "every id of every page");
+        assert_eq!(batch.ids[0], "X0");
+        assert_eq!(batch.ids[1199], "X1199");
+        let mail = &state.account("a").unwrap().mail;
+        assert!(
+            mail.fetching.is_none() && mail.everything,
+            "still all selected"
+        );
+    }
+
+    #[test]
+    fn select_all_above_the_cap_refuses_and_changes_nothing() {
+        // Known to be over the cap: refused at once.
+        let mut state = everything(SELECT_ALL_CAP + 1);
+        state.flag_target();
+        assert!(state.take_work().is_empty(), "no fetch, no write");
+        assert!(
+            state.status.contains("nothing was changed"),
+            "{}",
+            state.status
+        );
+        let mail = &state.account("a").unwrap().mail;
+        assert!(!mail.emails.iter().any(Email::is_flagged));
+        assert!(mail.everything && mail.fetching.is_none());
+        // Grown past the cap on the server while fetching: refused too.
+        let mut state = everything(4000);
+        state.delete_target();
+        let (ticket, _) = id_fetches(&state.take_work())[0];
+        done(&mut state, "a", Done::Ids(ticket, id_page(0, 500, 5200)));
+        assert!(state.take_work().is_empty());
+        assert!(state.form.is_none(), "no delete asked");
+        assert!(state.status.contains("5,200"), "{}", state.status);
+        assert!(state.account("a").unwrap().mail.fetching.is_none());
+    }
+
+    #[test]
+    fn escape_cancels_a_pending_fetch_and_changes_nothing() {
+        let mut state = everything(900);
+        state.toggle_target_read();
+        let (ticket, _) = id_fetches(&state.take_work())[0];
+        state.apply_ui(UiEvent::CancelFetch);
+        let mail = &state.account("a").unwrap().mail;
+        assert!(mail.fetching.is_none());
+        assert!(mail.everything, "the selection is as it was");
+        assert_eq!(mail.table.selection.len(), 4);
+        // The cancelled fetch's answer is dropped: nothing more is asked
+        // for and nothing is written.
+        done(&mut state, "a", Done::Ids(ticket, id_page(0, 500, 900)));
+        assert!(state.take_work().is_empty());
+        let mail = &state.account("a").unwrap().mail;
+        assert!(!mail.emails.iter().any(Email::is_read), "nothing marked");
+        assert!(state.form.is_none());
+    }
+
+    #[test]
+    fn delete_of_two_or_more_asks_first_with_the_count() {
+        let mut state = listing(4, 4);
+        let mut next = settings(&["a"]);
+        next.mail.confirm_delete = false;
+        state.set_settings(next);
+        state.take_work();
+        // The setting governs a single delete only.
+        select(&mut state, &["E2"]);
+        state.delete_target();
+        assert!(state.form.is_none());
+        assert_eq!(batches(&mut state)[0].ids, ["E2"]);
+        select(&mut state, &["E3", "E4"]);
+        state.delete_target();
+        assert!(
+            matches!(&state.form, Some(Form::Delete { ids, .. }) if ids == &["E3", "E4"]),
+            "two always ask"
+        );
+        assert!(batches(&mut state).is_empty(), "nothing until confirmed");
+        assert_eq!(
+            crate::label_with("delete-body", &[("count", "2")]),
+            "Move to the Trash? Emails: 2"
+        );
+        state.apply_ui(UiEvent::FormSubmit(None));
+        let batch = batches(&mut state).remove(0);
+        assert_eq!(batch.kind, BatchKind::Delete);
+        assert_eq!(batch.ids, ["E3", "E4"]);
+        assert_eq!(
+            batch.change,
+            jmap::EmailChange::Move {
+                mailbox: "m-trash".into()
+            }
+        );
+    }
+
+    #[test]
+    fn deleting_the_open_email_closes_it_and_selects_the_next_row() {
+        let mut state = listing(4, 4);
+        state.account_mut("a").unwrap().mail.open = Some(unread_email("E2"));
+        select(&mut state, &["E2", "E3"]);
+        state.delete_target();
+        state.apply_ui(UiEvent::FormSubmit(None));
+        let batch = batches(&mut state).remove(0);
+        done(
+            &mut state,
+            "a",
+            Done::Batched(
+                Box::new(batch),
+                jmap::SetOutcome {
+                    done: vec!["E2".into(), "E3".into()],
+                    failed: Vec::new(),
+                },
+            ),
+        );
+        let work = state.take_work();
+        assert!(
+            work.iter()
+                .any(|w| matches!(w, Work::OpenEmail { id, .. } if id == "E4")),
+            "the reader moves on to the next row: {work:?}"
+        );
+        let mail = &state.account("a").unwrap().mail;
+        assert!(mail.open.is_none(), "E2 is closed");
+        assert_eq!(mail.keys(), ["E1", "E4"]);
+        assert_eq!(mail.table.selection, ["E4"]);
+        assert_eq!(mail.table.focus, Some(1));
     }
 }

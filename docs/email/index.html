@@ -330,11 +330,35 @@ expand (or go to the parent or first child) and <strong>Enter</strong> selects.<
 <li>
 <p><strong>The centre</strong>: the selected account's mail page (newest first, as many
 as the page size), its calendar's events, or its book's contacts, with
-a server-side filter over name, email and company.</p>
+a server-side filter over name, email and company. The mail page is a
+table of one compact row per email: <strong>Subject</strong> (with flag and
+attachment markers; drag its edge to widen it), <strong>From</strong> and a compact
+<strong>Date</strong> (the time today, the weekday this week, the day and month this
+year, else the full date). Unread rows are bold. Clicking a row opens
+it in the reader; once the list has the keyboard, <strong>↑/↓</strong> move the
+selection and open each email, and <strong>Enter</strong> opens the selected one.</p>
 </li>
 <li>
 <p><strong>The reader</strong>: the open email (plain text first, the HTML source when
-there is no plain text), event or contact.</p>
+there is no plain text), event or contact. A text body written as
+Markdown is rendered: a <code>text/markdown</code> part always, and a
+<code>text/plain</code> one when the toolkit's conservative detector finds
+Markdown in it (a fence, a table, two headings, or two of a heading,
+a list, bold, inline code, a link and a block quote). Quoted replies,
+signatures, forwarded headers, bare URLs and ASCII art never trigger
+it. Rendered mail shows headings, lists and task boxes, code blocks
+that scroll sideways, tables, quotes and links (http, https and mailto
+open in the desktop's browser or mail handler; the address shows on
+hover). Images are never fetched, because remote images in mail track
+their reader: the alt text is a link to the image. Raw HTML is shown as
+text. View › Message › <strong>Render Markdown</strong> (a tick) flips one email
+between the rendering and its text, either way. The choice lasts while
+that email is open.</p>
+<p>The reader opens with a toolbar of what to do with the email: <strong>Reply</strong>
+(its ▾ chooses with or without the quoted original), <strong>Reply All</strong>,
+<strong>Forward</strong> and, apart, <strong>Delete</strong>. The subject comes first, as the
+pane's heading, then From, To and the date. A right-click anywhere in
+the reader opens the <strong>Message</strong> menu.</p>
 </li>
 <li>
 <p><strong>Compose</strong> (To, Cc, Bcc, Subject, body, and From when there are
@@ -348,8 +372,69 @@ RFC 8621 server builds an Email from uploaded MIME with <code>Email/import</code
 so it refuses the send; <code>Email/import</code> is future work.</p>
 </li>
 <li>
-<p><strong>Mail actions</strong>: delete to Trash (confirmed when the settings ask),
-move to a mailbox, flag, and mark unread.</p>
+<p><strong>The Message menu</strong> holds everything that acts on the open email:
+reply (with or without the quote), reply all, forward, star, mark read
+or unread, junk or not junk, move, and delete to Trash (confirmed when
+the settings ask). <strong>Junk</strong> moves the email into the account's Junk
+mailbox and <strong>Not Junk</strong> moves it from Junk back to the inbox; maild
+trains its spam filter on those moves (there is no junk keyword). An
+account without a Junk mailbox shows Junk disabled, saying so. After a
+delete, move or junk the reader opens the next email in the list (the
+previous one when it was the last).
+Labels follow the email (<strong>Star</strong> or <strong>Remove Star</strong>, <strong>Mark as Read</strong> or
+<strong>Mark as Unread</strong>). Marking an open email unread leaves it open and
+unread: only opening an email marks it read.</p>
+</li>
+<li>
+<p><strong>Attachments.</strong> An email with attachments shows a paperclip and its
+count at the end of the reader's toolbar (and Message › Attachments…).
+Its popup lists each one with its type, name and size, and <strong>Save</strong>
+and <strong>Open</strong>; <strong>Save all</strong> saves every one that can be fetched. Saving
+writes into your downloads directory (<code>$XDG_DOWNLOAD_DIR</code>, the
+<code>user-dirs.dirs</code> entry, else <code>~/Downloads</code>) and never replaces a file:
+a taken name becomes <code>name (1).ext</code>. Names from mail are cleaned (no
+paths, <code>..</code>, control characters or leading dots, 200 bytes at most),
+files are written whole and readable only by you, and the status line
+names where each went. <strong>Open</strong> saves into a private directory first
+and hands the file to the desktop's default application; programs and
+scripts (executables, shell scripts, <code>.desktop</code> files and the like)
+are Save only. A part the server could not decode is shown greyed. The
+download runs in the background; nothing is written until the whole
+file has arrived.</p>
+</li>
+<li>
+<p><strong>Printing</strong> (Message › Print…, Ctrl+P) goes through the browser's
+print dialog, which also offers <strong>Save to PDF</strong>: MixOS has no print
+service. The email becomes one self-contained page in a private
+directory (<code>$XDG_RUNTIME_DIR/email-print/</code>, readable only by you), shown
+as the reader shows it: Markdown rendered, else the plain text. Headers
+(From, To, Cc, Date, Subject) come first, in the light theme on white.
+Nothing from the email runs or loads: its HTML is printed as text,
+images are their alt text (a remote image would tell the sender), and a
+strict Content-Security-Policy allows only the page's own style and the
+script that opens the dialog. The page opens in Firefox through the
+session launcher; without one, the status line names the file to open.
+Pages older than a day are removed on the next print.</p>
+</li>
+<li>
+<p><strong>Address completion</strong> in To, Cc and Bcc. After two characters of an
+address the field offers up to eight: the account's contacts (from
+every address book) first, then addresses it has seen (recipients of
+loaded Sent pages, senders of other loaded pages, kept in memory only).
+Only the entry being typed is completed, the one after the last <code>,</code> or
+<code>;</code> outside quotes. <strong>Up</strong>/<strong>Down</strong> move, <strong>Enter</strong> or <strong>Tab</strong> take one
+as <code>Name &lt;address&gt;, </code> (the name quoted when it holds a comma or another
+special character), <strong>Escape</strong> closes the list. Addresses already in the
+field are left out. The contacts are looked up once typing pauses
+(200 ms), and only the newest lookup's answer is shown.</p>
+</li>
+<li>
+<p><strong>Quoted replies.</strong> A reply quotes the original's text body (a Markdown
+email's source; an HTML-only email's text) under an "On …, Ann wrote:"
+line, every line marked <code>&gt; </code> (an already quoted line gains another
+<code>&gt;</code>), with the original's signature cut at its <code>-- </code> line and lines
+never re-wrapped. The person's text and signature go above the quote.
+Plain text only.</p>
 </li>
 <li>
 <p><strong>New Event</strong> and <strong>New Contact</strong> forms. Start and end are RFC 3339
@@ -358,21 +443,26 @@ instants.</p>
 </ul>
 <h2 id="keyboard">Keyboard</h2>
 <table><thead><tr><th>Shortcut</th><th>Action</th></tr></thead><tbody>
-<tr><td>Ctrl+R</td><td>Refresh the account</td></tr>
+<tr><td>Ctrl+T</td><td>Refresh the account (Thunderbird's Get Messages)</td></tr>
 <tr><td>Ctrl+Q</td><td>Quit</td></tr>
 <tr><td>Ctrl+N</td><td>Compose</td></tr>
-<tr><td>Ctrl+Shift+R</td><td>Reply</td></tr>
-<tr><td>Ctrl+Shift+A</td><td>Reply all</td></tr>
+<tr><td>Ctrl+R</td><td>Reply</td></tr>
+<tr><td>Ctrl+Shift+R</td><td>Reply all</td></tr>
 <tr><td>Ctrl+L</td><td>Forward</td></tr>
-<tr><td>Delete</td><td>Delete the open email</td></tr>
+<tr><td>S</td><td>Star or remove the star</td></tr>
+<tr><td>M</td><td>Mark read or unread</td></tr>
+<tr><td>J / Shift+J</td><td>Junk / Not junk</td></tr>
 <tr><td>Ctrl+Shift+M</td><td>Move the open email</td></tr>
-<tr><td>Ctrl+Shift+S</td><td>Flag or unflag</td></tr>
-<tr><td>Ctrl+Shift+U</td><td>Mark unread</td></tr>
+<tr><td>Delete</td><td>Delete the open email</td></tr>
+<tr><td>Ctrl+P</td><td>Print (the browser's print dialog, or save as PDF)</td></tr>
 <tr><td>Ctrl+Shift+E</td><td>New event</td></tr>
 <tr><td>Ctrl+Shift+K</td><td>New contact</td></tr>
 <tr><td>Ctrl+1 / 2 / 3</td><td>Mail / Calendar / Contacts</td></tr>
 <tr><td>Ctrl+PageDown / PageUp</td><td>Next / previous account</td></tr>
 </tbody></table>
+<p>The shortcuts follow Thunderbird's. S, M, J, Shift+J and Delete act only while no
+text field has the keyboard (they type into the search box or a draft
+otherwise). Help › Keyboard Shortcuts shows the chords in force.</p>
 <h2 id="driving-it-over-the-bus">Driving it over the Bus</h2>
 <p>Service <code>email</code>, schema <code>email.v1</code>. <code>HELP</code> lists the verbs, and
 <code>app.describe</code> gives each one with its arguments and <code>read_only</code> flag.
@@ -414,6 +504,11 @@ never waits on them.</p>
 <tr><td><code>email.mailbox.select/create/rename/delete</code></td><td>intent</td><td><code>create</code> answers <code>{id}</code></td></tr>
 <tr><td><code>email.open {id}</code></td><td>intent</td><td>show an email in the reader; answers once loaded</td></tr>
 <tr><td><code>email.mark {ids, read?, flagged?}</code>, <code>email.move {ids, mailbox}</code>, <code>email.delete {ids, destroy?}</code></td><td>intent</td><td>the list and counts refresh after</td></tr>
+<tr><td><code>email.attachments {id}</code></td><td>query</td><td>the email's attachments (part, name, type, size, undecodable, save_only), never their content</td></tr>
+<tr><td><code>email.attachment.save {id, part, dir?}</code></td><td>intent</td><td>save one attachment (into <code>dir</code>, absolute and existing, else the downloads directory) without replacing a file; answers <code>{path}</code></td></tr>
+<tr><td><code>email.contacts.suggest {text, limit?}</code></td><td>query</td><td>address completions for <code>text</code>: contacts first, then addresses the account has seen; at most <code>limit</code> (8)</td></tr>
+<tr><td><code>email.print {id?}</code></td><td>intent</td><td>write the print page (the open email by default) and open it in the browser; answers <code>{path, opened}</code></td></tr>
+<tr><td><code>email.junk {ids, junk}</code></td><td>intent</td><td>move to the Junk mailbox (<code>junk: true</code>) or back to the inbox; maild trains spam or ham on the move; answers <code>{ids, mailbox}</code></td></tr>
 <tr><td><code>email.send {to, cc?, bcc?, subject, body, in_reply_to?}</code></td><td>intent</td><td>send without the dialog</td></tr>
 <tr><td><code>email.compose {…}</code>, <code>email.reply {id, all?}</code>, <code>email.forward {id, to?}</code></td><td>intent</td><td>open the compose dialog, filled in</td></tr>
 <tr><td><code>email.calendar.select</code>, <code>email.event.create/update/delete</code></td><td>intent</td><td><code>create</code> answers <code>{id}</code>; <code>end</code> or an ISO 8601 <code>duration</code></td></tr>
@@ -422,6 +517,10 @@ never waits on them.</p>
 </tbody></table>
 <p>Every command the window runs (menu, shortcut, button or <code>email.execute</code>)
 is published on <code>email.command.executed</code> with how it was reached.</p>
+<p><code>email.info</code> reports how the open email is shown under each account's
+<code>mail.reader</code>: <code>{"format": "markdown" | "plain", "auto": true | false}</code>,
+where <code>auto</code> is false once the person (or <code>email.execute {"id":"view.reader.markdown"}</code>) has flipped it. The command is disabled
+when the open email has no text body.</p>
 <p>From Mix:</p>
 <pre><code>send email email.accounts
 send email email.list body='{"account":"acct-3f9a1c2b4d5e","mailbox":"m-inbox","limit":20}'

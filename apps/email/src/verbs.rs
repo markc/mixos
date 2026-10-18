@@ -242,19 +242,25 @@ pub const VERBS: &[Verb] = &[
         "email.mark",
         false,
         r#"{"account":"optional account id","ids":"email id or list of ids","read":"optional bool","flagged":"optional bool"}"#,
-        "Set or clear read and flagged",
+        "Set or clear read and flagged, one Email/set per 500 ids; answers {ids, done, failed: [{id, reason}], partial} (partial is true when some ids changed and some failed) and is refused only when every id failed",
     ),
     verb(
         "email.move",
         false,
         r#"{"account":"optional account id","ids":"email id or list of ids","mailbox":"mailbox id"}"#,
-        "Move emails to a mailbox",
+        "Move emails to a mailbox, one Email/set per 500 ids; answers {ids, mailbox, done, failed: [{id, reason}], partial} (partial is true when some ids changed and some failed) and is refused only when every id failed",
+    ),
+    verb(
+        "email.junk",
+        false,
+        r#"{"account":"optional account id","ids":"email id or list of ids","junk":"bool: true moves to the Junk mailbox, false back to the inbox"}"#,
+        "Mark emails as junk or not junk by moving them into or out of the Junk mailbox; maild trains its spam filter (spam or ham) on the move",
     ),
     verb(
         "email.delete",
         false,
         r#"{"account":"optional account id","ids":"email id or list of ids","destroy":"optional bool (default false: to Trash)"}"#,
-        "Move emails to Trash, or destroy them",
+        "Move emails to Trash, or destroy them, one Email/set per 500 ids; answers {ids, destroyed, done, failed: [{id, reason}], partial} (partial is true when some ids changed and some failed) and is refused only when every id failed",
     ),
     verb(
         "email.send",
@@ -271,7 +277,7 @@ pub const VERBS: &[Verb] = &[
     verb(
         "email.reply",
         false,
-        r#"{"account":"optional account id","id":"email id","all":"optional bool"}"#,
+        r#"{"account":"optional account id","id":"email id","all":"optional bool","quote":"optional bool (absent: email.compose.quote_on_reply)"}"#,
         "Open the compose dialog replying to an email",
     ),
     verb(
@@ -279,6 +285,30 @@ pub const VERBS: &[Verb] = &[
         false,
         r#"{"account":"optional account id","id":"email id","to":"optional addresses"}"#,
         "Open the compose dialog forwarding an email",
+    ),
+    verb(
+        "email.attachments",
+        true,
+        r#"{"account":"optional account id","id":"email id"}"#,
+        "An email's attachments (part, name, type, size, undecodable, save_only), without their content",
+    ),
+    verb(
+        "email.attachment.save",
+        false,
+        r#"{"account":"optional account id","id":"email id","part":"attachment part id","dir":"optional absolute existing directory (default: the downloads directory)"}"#,
+        "Save one attachment, never replacing a file (a taken name is numbered); answers {path}",
+    ),
+    verb(
+        "email.contacts.suggest",
+        true,
+        r#"{"account":"optional account id","text":"what is typed (at least 2 characters)","limit":"optional count, default 8"}"#,
+        "Address completions for text: the account's contacts first, then addresses it has seen, ranked and deduplicated",
+    ),
+    verb(
+        "email.print",
+        false,
+        r#"{"account":"optional account id","id":"optional email id (default: the open email)"}"#,
+        "Write the email as a self-contained print page and open it in the browser, whose print dialog prints or saves a PDF; answers {path, opened}",
     ),
     verb(
         "email.calendar.select",
@@ -387,17 +417,36 @@ pub enum Query {
     Contact {
         id: String,
     },
+    /// Contacts in any address book matching `text` (address completion).
+    Suggest {
+        text: String,
+    },
 }
+
+/// How many matching contacts a completion fetches: more than it shows,
+/// since one card can hold several addresses and some are deduplicated.
+pub const SUGGEST_FETCH: u32 = 20;
 
 /// What happens with a query's answer besides the reply.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Then {
     /// Answer it.
     Answer,
-    /// Open a compose replying to the email fetched (`true`: to all).
-    Reply(bool),
+    /// Open a compose replying to the email fetched (`true`: to all),
+    /// quoting it or not (`None`: as the settings say).
+    Reply(bool, Option<bool>),
     /// Open a compose forwarding the email fetched, to these addresses.
     Forward(String),
+    /// Print the email fetched (`email.print`).
+    Print,
+    /// Answer with the ranked completions for `text`, at most `limit`
+    /// (`email.contacts.suggest`).
+    Suggest { text: String, limit: usize },
+    /// Answer with the email fetched's attachments (`email.attachments`).
+    Attachments,
+    /// Save the email fetched's attachment `part`, in `dir` or the
+    /// downloads directory (`email.attachment.save`).
+    SaveAttachment { part: String, dir: Option<String> },
 }
 
 /// A change on the account's server.
@@ -468,6 +517,16 @@ impl Write {
         }
     }
 
+    /// The emails a message write names (none for any other write).
+    pub fn ids(&self) -> &[String] {
+        match self {
+            Write::Keywords { ids, .. } | Write::Move { ids, .. } | Write::Delete { ids, .. } => {
+                ids
+            }
+            _ => &[],
+        }
+    }
+
     /// The emails a write takes out of the shown list.
     pub fn removes(&self) -> &[String] {
         match self {
@@ -518,28 +577,34 @@ pub async fn run_query(client: &Client, query: Query) -> Result<Value, jmap::Err
             json!({ "contacts": to_value(client.contacts(&book, &filter).await?) })
         }
         Query::Contact { id } => to_value(client.contact(&id).await?),
+        Query::Suggest { text } => {
+            json!({ "contacts": to_value(client.contacts_search(&text, SUGGEST_FETCH).await?) })
+        }
     })
 }
 
-/// Run `write` on `client` (`sent`: the Sent mailbox, for a send); the
-/// answer's JSON (a created id).
+/// Run `write` on `client` (`sent`: the Drafts and Sent mailboxes, for a
+/// send); the answer's JSON (a created id).
 pub async fn run_write(
     client: &Client,
     write: Write,
-    sent: Option<String>,
+    sent: Option<jmap::SendBoxes>,
 ) -> Result<Value, jmap::Error> {
     Ok(match write {
-        Write::Keywords { ids, read, flagged } => {
-            client.set_keywords(&ids, read, flagged).await?;
-            json!({ "ids": ids })
-        }
-        Write::Move { ids, mailbox } => {
-            client.move_emails(&ids, &mailbox).await?;
-            json!({ "ids": ids, "mailbox": mailbox })
-        }
-        Write::Delete { ids, destroy } => {
-            client.delete_emails(&ids, destroy).await?;
-            json!({ "ids": ids, "destroyed": destroy })
+        Write::Keywords { .. } | Write::Move { .. } | Write::Delete { .. } => {
+            let trash = match write {
+                Write::Delete { destroy: false, .. } => {
+                    let mailboxes = client.mailboxes().await?;
+                    mailboxes
+                        .into_iter()
+                        .find(|m| m.role.as_deref() == Some("trash"))
+                        .map(|m| m.id)
+                }
+                _ => None,
+            };
+            let (ids, change) = batch_change(&write, trash.as_deref())?;
+            let outcome = client.change_emails(ids, &change).await;
+            batch_answer(&write, outcome)?
         }
         Write::CreateMailbox { name, parent } => {
             json!({ "id": client.create_mailbox(&name, parent.as_deref()).await? })
@@ -553,10 +618,15 @@ pub async fn run_write(
             json!({ "id": id })
         }
         Write::Send { draft } => {
-            let sent =
+            let boxes =
                 sent.ok_or_else(|| jmap::Error::Protocol(crate::label("no-sent-mailbox")))?;
-            client.send(&draft, &sent).await?;
-            json!({ "sent": true })
+            // A Bus send is one try: created in Drafts, filed in Sent only
+            // once submitted. Its caller hears whether it went.
+            let (_, result) = client
+                .send(&draft, &boxes, jmap::SendAttempt::default())
+                .await;
+            let report = result?;
+            json!({ "sent": true, "filed": report.unfiled.is_none() })
         }
         Write::CreateEvent { calendar, draft } => {
             json!({ "id": client.create_event(&calendar, &draft).await? })
@@ -581,6 +651,81 @@ pub async fn run_write(
             json!({ "id": id })
         }
     })
+}
+
+/// The batched change a message write makes (`email.mark`, `email.move`,
+/// `email.junk`, `email.delete`) and the ids it names: the same Email/set
+/// path as the window's actions, one request per
+/// [`jmap::MAX_IDS_PER_REQUEST`] ids. `trash` is the account's Trash
+/// mailbox, which a delete that does not destroy needs.
+pub fn batch_change<'a>(
+    write: &'a Write,
+    trash: Option<&str>,
+) -> Result<(&'a [String], jmap::EmailChange), jmap::Error> {
+    let change = match write {
+        Write::Keywords { read, flagged, .. } => jmap::EmailChange::Keywords {
+            read: *read,
+            flagged: *flagged,
+        },
+        Write::Move { mailbox, .. } => jmap::EmailChange::Move {
+            mailbox: mailbox.clone(),
+        },
+        Write::Delete { destroy: true, .. } => jmap::EmailChange::Destroy,
+        Write::Delete { destroy: false, .. } => {
+            let mailbox = trash
+                .ok_or_else(|| jmap::Error::Protocol("no mailbox has the trash role".into()))?;
+            jmap::EmailChange::Move {
+                mailbox: mailbox.to_owned(),
+            }
+        }
+        _ => return Err(jmap::Error::Protocol("not a message write".into())),
+    };
+    Ok((write.ids(), change))
+}
+
+/// A batched message write's answer: the fields the verb always answered
+/// with (`ids` as asked, and `mailbox` or `destroyed`), plus `done` (the
+/// ids changed) and `failed` (`[{id, reason}]`). One bad id never fails
+/// the call; only when every id failed is it refused, as a single-id call
+/// always was (`NOT_FOUND` when every id is unknown to the server).
+pub fn batch_answer(write: &Write, outcome: jmap::SetOutcome) -> Result<Value, jmap::Error> {
+    if outcome.done.is_empty() && !outcome.failed.is_empty() {
+        let reasons = outcome
+            .failed
+            .iter()
+            .map(|(id, why)| format!("{id} ({why})"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let all_gone = outcome
+            .failed
+            .iter()
+            .all(|(_, why)| why.starts_with("notFound"));
+        return Err(if all_gone {
+            jmap::Error::Method {
+                error_type: "notFound".into(),
+                description: reasons,
+            }
+        } else {
+            jmap::Error::Protocol(reasons)
+        });
+    }
+    let failed: Vec<Value> = outcome
+        .failed
+        .iter()
+        .map(|(id, reason)| json!({ "id": id, "reason": reason }))
+        .collect();
+    let mut answer = match write {
+        Write::Keywords { ids, .. } => json!({ "ids": ids }),
+        Write::Move { ids, mailbox } => json!({ "ids": ids, "mailbox": mailbox }),
+        Write::Delete { ids, destroy } => json!({ "ids": ids, "destroyed": destroy }),
+        _ => json!({}),
+    };
+    // A partial result: some ids changed and some did not. JMAP cannot roll
+    // back, so the reply says so instead of refusing the call.
+    answer["partial"] = json!(!outcome.done.is_empty() && !outcome.failed.is_empty());
+    answer["done"] = json!(outcome.done);
+    answer["failed"] = Value::Array(failed);
+    Ok(answer)
 }
 
 /// A server failure's refusal: an id the server does not hold is
@@ -901,8 +1046,15 @@ fn dispatch(
             });
         }
         "email.quit" => {
-            state.reply(id, 0, json!({ "quitting": true }));
+            // A draft open with something typed is saved and the person is
+            // asked first: the caller hears that it waits on them.
             state.quit();
+            let waiting = state.confirm.is_some();
+            state.reply(
+                id,
+                0,
+                json!({ "quitting": !waiting, "confirming": waiting }),
+            );
         }
         "email.execute" => {
             let command = required(args, "id")?;
@@ -1033,6 +1185,22 @@ fn dispatch(
             };
             state.write_server(account, Some(id), write);
         }
+        "email.junk" => {
+            let account = connected(state, args)?;
+            let junk = flag(args, "junk")?.ok_or_else(|| invalid("junk must be true or false"))?;
+            let mailbox = state
+                .account(&account)
+                .and_then(|v| crate::state::junk_target(v, junk))
+                .ok_or_else(|| {
+                    let key = if junk { "no-junk-mailbox" } else { "no-inbox" };
+                    Bad(code::NOT_FOUND, crate::label(key))
+                })?;
+            let write = Write::Move {
+                ids: ids(args)?,
+                mailbox,
+            };
+            state.write_server(account, Some(id), write);
+        }
         "email.delete" => {
             let account = connected(state, args)?;
             let write = Write::Delete {
@@ -1081,11 +1249,69 @@ fn dispatch(
             }
             let email = required(args, "id")?;
             let then = if verb == "email.reply" {
-                Then::Reply(flag(args, "all")?.unwrap_or(false))
+                Then::Reply(flag(args, "all")?.unwrap_or(false), flag(args, "quote")?)
             } else {
                 Then::Forward(list(args, "to")?.unwrap_or_default().join(", "))
             };
             state.query(account, id, Query::Get { id: email }, then);
+        }
+        "email.contacts.suggest" => {
+            let account = connected(state, args)?;
+            let text = required(args, "text")?;
+            let limit = number(args, "limit")?.map_or(crate::suggest::LIMIT, |n| n.clamp(1, 50) as usize);
+            if text.trim().chars().count() < crate::suggest::MIN_CHARS {
+                return Err(invalid("text needs at least 2 characters"));
+            }
+            let query = Query::Suggest {
+                text: text.trim().to_owned(),
+            };
+            state.query(account, id, query, Then::Suggest { text, limit });
+        }
+        "email.attachments" | "email.attachment.save" => {
+            let account = connected(state, args)?;
+            let wanted = required(args, "id")?;
+            let open = state
+                .account(&account)
+                .and_then(|v| v.mail.open.clone())
+                .filter(|open| open.id == wanted);
+            if verb == "email.attachments" {
+                match open {
+                    Some(open) => {
+                        let transfers = state.account(&account).map(|v| v.mail.transfers.clone());
+                        let list = crate::state::attachments_view(&open, transfers.as_ref());
+                        state.reply(id, 0, json!({ "id": open.id, "attachments": list }));
+                    }
+                    None => state.query(account, id, Query::Get { id: wanted }, Then::Attachments),
+                }
+            } else {
+                let part = required(args, "part")?;
+                let dir = text(args, "dir")?;
+                match open {
+                    Some(open) => {
+                        let work = crate::state::attachment_work(&account, &open, &part, false, dir, Some(id))
+                            .map_err(|(code, message)| Bad(code, message))?;
+                        state.queue_work(work);
+                    }
+                    None => state.query(
+                        account,
+                        id,
+                        Query::Get { id: wanted },
+                        Then::SaveAttachment { part, dir },
+                    ),
+                }
+            }
+        }
+        "email.print" => {
+            let account = connected(state, args)?;
+            let open = state.account(&account).and_then(|v| v.mail.open.clone());
+            match (text(args, "id")?, open) {
+                (Some(wanted), Some(open)) if wanted == open.id => {
+                    state.print_shown(&account, &open, Some(id));
+                }
+                (Some(wanted), _) => state.query(account, id, Query::Get { id: wanted }, Then::Print),
+                (None, Some(open)) => state.print_shown(&account, &open, Some(id)),
+                (None, None) => return Err(Bad(code::NOT_FOUND, crate::label("no-open-email"))),
+            }
         }
         "email.calendar.select" => {
             let account = account(state, args)?;
@@ -1655,5 +1881,131 @@ mod tests {
         assert_eq!(server_refusal(&missing).0, code::NOT_FOUND);
         let other = jmap::Error::method("serverFail", Some("down"));
         assert_eq!(server_refusal(&other).0, code::SERVER);
+    }
+
+    /// The write a verb queued.
+    fn queued_write(state: &mut State) -> Write {
+        match state.take_work().as_slice() {
+            [
+                Work::Write {
+                    write,
+                    reply: Some(1),
+                    ..
+                },
+            ] => write.clone(),
+            other => panic!("{other:?}"),
+        }
+    }
+
+    fn many(n: usize) -> Vec<String> {
+        (0..n).map(|i| format!("E{i}")).collect()
+    }
+
+    #[test]
+    fn message_verbs_send_one_email_set_per_500_ids() {
+        let ids = many(1_201);
+        let cases = [
+            ("email.mark", json!({"ids": ids, "flagged": true}), "update"),
+            ("email.move", json!({"ids": ids, "mailbox": "M2"}), "update"),
+            ("email.delete", json!({"ids": ids}), "update"),
+            (
+                "email.delete",
+                json!({"ids": ids, "destroy": true}),
+                "destroy",
+            ),
+        ];
+        for (verb, args, key) in cases {
+            let mut state = connected_many(&["a"]);
+            run(&mut state, verb, args);
+            let write = queued_write(&mut state);
+            let (named, change) = batch_change(&write, Some("M-trash")).unwrap();
+            assert_eq!(named, ids.as_slice(), "{verb}");
+            let calls = jmap::email_set_calls("A1", named, &change);
+            let sizes: Vec<usize> = calls
+                .iter()
+                .map(|c| match &c.1[key] {
+                    Value::Object(map) => map.len(),
+                    Value::Array(list) => list.len(),
+                    other => panic!("{verb}: {other}"),
+                })
+                .collect();
+            assert_eq!(sizes, [500, 500, 201], "{verb} {key}");
+            assert!(calls.iter().all(|c| c.0 == "Email/set"));
+        }
+        // A delete to Trash needs the Trash mailbox; a destroy does not.
+        let delete = Write::Delete {
+            ids: many(1),
+            destroy: false,
+        };
+        assert!(batch_change(&delete, None).is_err());
+        let (_, change) = batch_change(&delete, Some("M-trash")).unwrap();
+        assert_eq!(
+            change,
+            jmap::EmailChange::Move {
+                mailbox: "M-trash".into()
+            }
+        );
+    }
+
+    #[test]
+    fn a_partial_failure_answers_each_id_and_keeps_the_old_fields() {
+        let outcome = jmap::SetOutcome {
+            done: vec!["E0".into(), "E2".into()],
+            failed: vec![("E1".into(), "notFound: no such email".into())],
+        };
+        let write = Write::Move {
+            ids: many(3),
+            mailbox: "M2".into(),
+        };
+        let answer = batch_answer(&write, outcome).expect("one bad id never fails the call");
+        assert_eq!(answer["ids"], json!(["E0", "E1", "E2"]));
+        assert_eq!(answer["mailbox"], "M2");
+        assert_eq!(answer["done"], json!(["E0", "E2"]));
+        assert_eq!(
+            answer["failed"],
+            json!([{"id": "E1", "reason": "notFound: no such email"}])
+        );
+        assert_eq!(answer["partial"], true);
+        let delete = Write::Delete {
+            ids: many(1),
+            destroy: true,
+        };
+        let ok = jmap::SetOutcome {
+            done: many(1),
+            failed: vec![],
+        };
+        let answer = batch_answer(&delete, ok).unwrap();
+        assert_eq!(answer["destroyed"], true);
+        assert_eq!(answer["failed"], json!([]));
+        assert_eq!(answer["partial"], false);
+    }
+
+    #[test]
+    fn only_a_call_where_every_id_failed_is_refused() {
+        let mark = Write::Keywords {
+            ids: many(1),
+            read: Some(true),
+            flagged: None,
+        };
+        let gone = jmap::SetOutcome {
+            done: vec![],
+            failed: vec![("E0".into(), "notFound".into())],
+        };
+        let error = batch_answer(&mark, gone).unwrap_err();
+        assert_eq!(
+            server_refusal(&error).0,
+            code::NOT_FOUND,
+            "as a single id was"
+        );
+        let down = jmap::SetOutcome {
+            done: vec![],
+            failed: vec![
+                ("E0".into(), "notFound".into()),
+                ("E1".into(), "HTTP 502".into()),
+            ],
+        };
+        let error = batch_answer(&mark, down).unwrap_err();
+        assert_eq!(server_refusal(&error).0, code::SERVER);
+        assert!(error.to_string().contains("E1 (HTTP 502)"));
     }
 }

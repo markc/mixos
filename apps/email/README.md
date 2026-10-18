@@ -14,8 +14,24 @@ is [`docs/email/README.md`](../../docs/email/README.md).
   effects runtime, one client per account), `verbs` (the `email` Bus
   port), `commands` (the registry), `writer` (account changes as fenced
   settingsd applies), `secrets` (the passwords file), `config` (window
-  shape, accounts cache, schema-1 migration), `view` (tree, panes,
-  dialogs).
+  shape, accounts cache, schema-1 migration), `drafts` (unsent messages
+  kept locally), `view` (tree, panes, dialogs).
+
+Nothing typed is lost. A compose is saved as a local draft within a
+second of each edit and on every close path, one file per draft in the
+app's state directory (`<state>/drafts/<id>.json`, 0600, written
+atomically); drafts are not settings and never reach settingsd. Cancel,
+Escape or closing the window over a draft with something in it asks
+first, and the default keeps it. A draft is removed only once its message
+is sent or the person discards it; one kept from an earlier run is
+offered at start.
+
+Sending creates the message in Drafts, submits it, and moves it to Sent
+only once the server confirms the submission, so a failed send never
+shows in Sent. A retry reuses the same server copy (its ids are kept with
+the draft); after a lost reply it first asks the server
+(`EmailSubmission/query`) whether the earlier submission landed, and never
+submits twice.
 
 The one architectural exception it owns: the app speaks HTTPS itself from
 its effects runtime (a pure JMAP client's server is whatever account the

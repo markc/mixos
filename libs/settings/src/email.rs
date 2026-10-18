@@ -129,7 +129,28 @@ pub struct MailOptions {
     /// Ask before deleting messages.
     #[serde(skip_serializing_if = "is_true")]
     pub confirm_delete: bool,
+    /// Whether a plain Reply quotes the original message.
+    #[serde(skip_serializing_if = "is_true")]
+    pub quote_on_reply: bool,
+    /// Where the person's own text goes in a quoted reply.
+    #[serde(skip_serializing_if = "is_default_reply_position")]
+    pub reply_position: ReplyPosition,
 }
+
+/// Where the person's text goes in a quoted reply: above the quote (the
+/// default, as a reply reads), or below it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ReplyPosition {
+    #[default]
+    Above,
+    Below,
+}
+
+fn is_default_reply_position(position: &ReplyPosition) -> bool {
+    *position == ReplyPosition::Above
+}
+
 fn is_default_page_size(size: &u32) -> bool {
     *size == 100
 }
@@ -142,6 +163,8 @@ impl Default for MailOptions {
             page_size: 100,
             mark_read_on_open: true,
             confirm_delete: true,
+            quote_on_reply: true,
+            reply_position: ReplyPosition::Above,
         }
     }
 }
@@ -353,7 +376,9 @@ pub fn describe() -> Value {
         "email.default_account": {"type":"string|null", "names":"an id in email.accounts", "default":null, "null":"the first enabled account"},
         "email.mail.page_size": {"type":"integer", "minimum":PAGE_SIZE_MIN, "maximum":PAGE_SIZE_MAX, "default":100},
         "email.mail.mark_read_on_open": {"type":"boolean", "default":true},
-        "email.mail.confirm_delete": {"type":"boolean", "default":true}
+        "email.mail.confirm_delete": {"type":"boolean", "default":true},
+        "email.mail.quote_on_reply": {"type":"boolean", "default":true},
+        "email.mail.reply_position": {"type":"string", "names":["above","below"], "default":"above"}
     })
 }
 
@@ -395,6 +420,14 @@ pub(crate) fn set(
             email.mail.confirm_delete =
                 value.map_or(Ok(defaults.confirm_delete), |v| typed(path, v))?
         }
+        ["mail", "quote_on_reply"] => {
+            email.mail.quote_on_reply =
+                value.map_or(Ok(defaults.quote_on_reply), |v| typed(path, v))?
+        }
+        ["mail", "reply_position"] => {
+            email.mail.reply_position =
+                value.map_or(Ok(defaults.reply_position), |v| typed(path, v))?
+        }
         _ => return Err(error(path, "Unknown field or scope")),
     }
     Ok(())
@@ -435,6 +468,26 @@ mod tests {
                 .contains("email"),
             "omitted at its defaults"
         );
+    }
+
+    #[test]
+    fn compose_options_default_apply_and_refuse() {
+        let base = Desktop::default();
+        assert!(base.email.mail.quote_on_reply);
+        assert_eq!(base.email.mail.reply_position, ReplyPosition::Above);
+        let below = apply("email.mail.reply_position", json!("below")).unwrap();
+        assert_eq!(below.email.mail.reply_position, ReplyPosition::Below);
+        let off = apply("email.mail.quote_on_reply", json!(false)).unwrap();
+        assert!(!off.email.mail.quote_on_reply);
+        // Only a non-default value is written out.
+        assert_eq!(serde_json::to_value(&base.email).unwrap(), json!({}));
+        assert_eq!(
+            serde_json::to_value(&below.email).unwrap()["mail"]["reply_position"],
+            json!("below")
+        );
+        // A position is one of two names; anything else is refused.
+        assert!(apply("email.mail.reply_position", json!("middle")).is_err());
+        assert!(apply("email.mail.quote_on_reply", json!("yes")).is_err());
     }
 
     #[test]

@@ -4,6 +4,7 @@
 //! from this registry; every run is published on `email.command.executed`.
 
 use egui::{Key, KeyboardShortcut, Modifiers};
+use toolkit::command::Scope;
 use toolkit::{Command, Icon, Registry};
 
 use crate::state::{Mode, State};
@@ -52,6 +53,53 @@ fn reading(state: &State) -> bool {
         && state.current().is_some_and(|v| v.mail.open.is_some())
 }
 
+/// The message list has a target for the message actions (the selection,
+/// else the keyboard row), and no "Select all N" fetch is loading.
+fn targeted(state: &State) -> bool {
+    ready(state)
+        && state.mode == Mode::Mail
+        && state
+            .current()
+            .is_some_and(|v| v.mail.fetching.is_none() && v.mail.target().is_some())
+}
+
+/// The open email has a text body the reader can show as Markdown or as
+/// its source.
+fn readable(state: &State) -> bool {
+    reading(state)
+        && state
+            .current()
+            .and_then(|v| v.mail.open.as_ref())
+            .is_some_and(crate::reader::has_text)
+}
+
+/// The target can go to Junk: the mailbox is not Junk, and the account
+/// has a Junk mailbox.
+fn junkable(state: &State) -> bool {
+    targeted(state)
+        && state.current().is_some_and(|v| {
+            !crate::state::in_junk(v) && crate::state::junk_target(v, true).is_some()
+        })
+}
+
+/// The mailbox is Junk and the target can go back to the inbox.
+fn unjunkable(state: &State) -> bool {
+    targeted(state)
+        && state.current().is_some_and(|v| {
+            crate::state::in_junk(v) && crate::state::junk_target(v, false).is_some()
+        })
+}
+
+/// The open email has attachments.
+fn attached(state: &State) -> bool {
+    reading(state)
+        && state
+            .current()
+            .and_then(|v| v.mail.open.as_ref())
+            .and_then(|e| e.attachments.as_ref())
+            .is_some_and(|list| !list.is_empty())
+}
+
 /// More than one account to step through.
 fn several(state: &State) -> bool {
     undialogued(state) && state.accounts.len() > 1
@@ -70,7 +118,9 @@ pub fn registry() -> Registry<State> {
         group: 0,
         label: "refresh",
         menu: Some("file"),
-        shortcut: key(Modifiers::COMMAND, Key::R),
+        // Ctrl+T, Thunderbird's Get Messages: Ctrl+R is Reply, and
+        // function keys are the person's to bind, never a default.
+        shortcut: key(Modifiers::COMMAND, Key::T),
         icon: Some(Icon::RefreshCw),
         enabled: undialogued,
         run: State::refresh,
@@ -108,13 +158,14 @@ pub fn registry() -> Registry<State> {
         enabled: composable,
         run: State::compose,
     })
+    // Message: what can be done to the open email, Thunderbird's keys.
     .add(Command {
         id: "mail.reply",
         submenu: None,
-        group: 1,
+        group: 0,
         label: "reply",
-        menu: Some("mail"),
-        shortcut: key(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::R),
+        menu: Some("message"),
+        shortcut: key(Modifiers::COMMAND, Key::R),
         icon: Some(Icon::Reply),
         enabled: reading,
         run: State::reply_open,
@@ -122,68 +173,167 @@ pub fn registry() -> Registry<State> {
     .add(Command {
         id: "mail.reply_all",
         submenu: None,
-        group: 1,
+        group: 0,
         label: "reply-all",
-        menu: Some("mail"),
-        shortcut: key(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::A),
-        icon: None,
+        menu: Some("message"),
+        shortcut: key(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::R),
+        icon: Some(Icon::ReplyAll),
         enabled: reading,
         run: State::reply_all_open,
     })
     .add(Command {
         id: "mail.forward",
         submenu: None,
-        group: 1,
+        group: 0,
         label: "forward",
-        menu: Some("mail"),
+        menu: Some("message"),
         shortcut: key(Modifiers::COMMAND, Key::L),
-        icon: None,
+        icon: Some(Icon::Forward),
         enabled: reading,
         run: State::forward_open,
     })
     .add(Command {
-        id: "mail.mark_unread",
+        id: "mail.reply_quoted",
         submenu: None,
-        group: 2,
-        label: "mark-unread",
-        menu: Some("mail"),
-        shortcut: key(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::U),
+        group: 1,
+        label: "reply-quoted",
+        menu: Some("message"),
+        shortcut: None,
         icon: None,
         enabled: reading,
-        run: State::mark_open_unread,
+        run: State::reply_open_quoted,
+    })
+    .add(Command {
+        id: "mail.reply_unquoted",
+        submenu: None,
+        group: 1,
+        label: "reply-unquoted",
+        menu: Some("message"),
+        shortcut: None,
+        icon: None,
+        enabled: reading,
+        run: State::reply_open_unquoted,
+    })
+    .add(Command {
+        id: "mail.reply_all_quoted",
+        submenu: None,
+        group: 1,
+        label: "reply-all-quoted",
+        menu: Some("message"),
+        shortcut: None,
+        icon: None,
+        enabled: reading,
+        run: State::reply_all_open_quoted,
+    })
+    .add(Command {
+        id: "mail.reply_all_unquoted",
+        submenu: None,
+        group: 1,
+        label: "reply-all-unquoted",
+        menu: Some("message"),
+        shortcut: None,
+        icon: None,
+        enabled: reading,
+        run: State::reply_all_open_unquoted,
     })
     .add(Command {
         id: "mail.flag",
         submenu: None,
         group: 2,
         label: "flag",
-        menu: Some("mail"),
-        shortcut: key(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::S),
+        menu: Some("message"),
+        shortcut: key(Modifiers::NONE, Key::S),
+        icon: Some(Icon::Star),
+        enabled: targeted,
+        run: State::flag_target,
+    })
+    .add(Command {
+        id: "mail.mark_unread",
+        submenu: None,
+        group: 2,
+        label: "mark-unread",
+        menu: Some("message"),
+        shortcut: key(Modifiers::NONE, Key::M),
+        icon: Some(Icon::MailOpen),
+        enabled: targeted,
+        run: State::toggle_target_read,
+    })
+    .add(Command {
+        id: "mail.junk",
+        submenu: None,
+        group: 3,
+        label: "junk",
+        menu: Some("message"),
+        shortcut: key(Modifiers::NONE, Key::J),
+        icon: Some(Icon::ShieldAlert),
+        enabled: junkable,
+        run: State::mark_junk,
+    })
+    .add(Command {
+        id: "mail.not_junk",
+        submenu: None,
+        group: 3,
+        label: "not-junk",
+        menu: Some("message"),
+        shortcut: key(Modifiers::SHIFT, Key::J),
         icon: None,
-        enabled: reading,
-        run: State::flag_open,
+        enabled: unjunkable,
+        run: State::mark_not_junk,
     })
     .add(Command {
         id: "mail.move",
         submenu: None,
-        group: 3,
+        group: 4,
         label: "move",
-        menu: Some("mail"),
+        menu: Some("message"),
         shortcut: key(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::M),
         icon: Some(Icon::FolderInput),
-        enabled: reading,
-        run: State::move_open,
+        enabled: targeted,
+        run: State::move_target,
     })
     .add(Command {
         id: "mail.delete",
         submenu: None,
-        group: 3,
+        group: 4,
         label: "delete",
-        menu: Some("mail"),
+        menu: Some("message"),
         shortcut: key(Modifiers::NONE, Key::Delete),
         icon: Some(Icon::Trash),
+        enabled: targeted,
+        run: State::delete_target,
+    })
+    .add(Command {
+        id: "mail.print",
+        submenu: None,
+        group: 5,
+        label: "print",
+        menu: Some("message"),
+        shortcut: key(Modifiers::COMMAND, Key::P),
+        icon: Some(Icon::Printer),
         enabled: reading,
-        run: State::delete_open,
+        run: State::print_open,
+    })
+    .add(Command {
+        id: "mail.attachments",
+        submenu: None,
+        group: 5,
+        label: "attachments",
+        menu: Some("message"),
+        shortcut: None,
+        icon: Some(Icon::Paperclip),
+        enabled: attached,
+        run: State::toggle_attachments,
+    })
+    .add(Command {
+        id: "mail.save_attachments",
+        submenu: None,
+        group: 5,
+        label: "save-attachments",
+        menu: Some("message"),
+        shortcut: None,
+        icon: Some(Icon::Download),
+        enabled: attached,
+        run: State::save_all_attachments,
     })
     .add(Command {
         id: "calendar.new_event",
@@ -264,6 +414,21 @@ pub fn registry() -> Registry<State> {
         enabled: several,
         run: |state| state.step_account(false),
     })
+    .add_toggle(
+        Command {
+            id: "view.reader.markdown",
+            submenu: Some("message"),
+            group: 2,
+            label: "reader-markdown",
+            menu: Some("view"),
+            // No chord: Ctrl+U is the text fields' delete-to-line-start.
+            shortcut: None,
+            icon: Some(Icon::FileCode),
+            enabled: readable,
+            run: State::toggle_reader,
+        },
+        markdown_shown,
+    )
     .add(Command {
         id: "help.shortcuts",
         submenu: None,
@@ -298,7 +463,72 @@ pub fn registry() -> Registry<State> {
         enabled: toolkit::command::always,
         run: State::toggle_mode,
     });
+    // Bare keys and Delete belong to a text field while one is typed in.
+    for id in [
+        "mail.flag",
+        "mail.mark_unread",
+        "mail.junk",
+        "mail.not_junk",
+        "mail.delete",
+    ] {
+        r.scope(id, Scope::Browsing);
+    }
+    // Labels that say what the command will do to the target.
+    r.relabel("mail.flag", |state| {
+        if target_all(state, jmap::Email::is_flagged) {
+            "unflag"
+        } else {
+            "flag"
+        }
+    })
+    .relabel("mail.junk", |state| {
+        // Disabled for want of a Junk mailbox: the label says so.
+        if state
+            .current()
+            .is_some_and(|v| crate::state::junk_target(v, true).is_none())
+        {
+            "junk-none"
+        } else {
+            "junk"
+        }
+    })
+    .relabel("mail.mark_unread", |state| {
+        let some_unread = state
+            .current()
+            .is_some_and(|v| v.mail.target_rows().iter().any(|e| !e.is_read()));
+        if some_unread {
+            "mark-read"
+        } else {
+            "mark-unread"
+        }
+    });
     r
+}
+
+/// Whether every shown row of the current account's target passes `test`
+/// (false with none).
+fn target_all(state: &State, test: fn(&jmap::Email) -> bool) -> bool {
+    state.current().is_some_and(|v| {
+        let rows = v.mail.target_rows();
+        !rows.is_empty() && rows.into_iter().all(test)
+    })
+}
+
+/// View › Message › Render Markdown's tick: the open email is shown as
+/// Markdown.
+fn markdown_shown(state: &State) -> bool {
+    state
+        .current()
+        .and_then(|v| Some((v, v.mail.open.as_ref()?)))
+        .is_some_and(|(v, email)| {
+            let reader = &v.mail.reader;
+            let format = if reader.is_for(email) {
+                reader.format()
+            } else {
+                crate::reader::detect(email)
+            };
+            format == crate::reader::Format::Markdown
+        })
 }
 
 /// The window's theme choice, as the Theme menu reads it.

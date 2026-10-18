@@ -366,6 +366,23 @@ and tool bars, icon rail, push and icon buttons, dock panel groups,
 document tabs, value, text and search fields, checkboxes and switches,
 combo boxes, sliders, canvas scrollbars, tooltip wording, and modal
 dialogs).</li>
+<li><code>markdown</code>: Markdown drawn natively. <code>Document::parse(&amp;str)</code> turns
+CommonMark with GFM tables, strikethrough and task lists into plain data
+(pulldown-cmark, parser only), so an app parses once and keeps the
+document in its state. <code>markdown::show(ui, &amp;document)</code> draws it every
+frame from the theme: heading sizes stepped from the <code>Heading</code> style,
+code in the monospace face on the field surface (scrolled sideways,
+never wrapped), quotes after a rule, lists with read-only task boxes,
+striped tables, rules and links. Each text run is one selectable label.
+Links go to <code>Context::open_url</code> only for http, https and mailto
+(<code>markdown::openable</code>), with the address on hover, and <code>show</code> returns
+the link clicked. Images are never fetched (the alt text links to
+them) and raw HTML shows as text. <code>markdown::looks_like_markdown(&amp;str)</code>
+is a conservative test for plain text written as Markdown: one fence,
+table or pair of headings, or two distinct signals among a heading, a
+list, bold or emphasis, inline code, a link and a non-reply quote,
+scanned outside quoted lines and the signature. The email reader uses
+both.</li>
 </ul>
 <h3 id="commands">Commands</h3>
 <ul>

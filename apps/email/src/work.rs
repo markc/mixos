@@ -57,7 +57,8 @@ pub enum Work {
     FetchMailboxes {
         account: String,
     },
-    /// A mailbox's first page. `ticket` comes back with the page, so an
+    /// A page of a mailbox: `limit` emails in `sort` order, starting
+    /// `position` emails in. `ticket` comes back with the page, so an
     /// answer to an older request cannot replace a newer one (also for
     /// `OpenEmail`, `Send`, `FetchEvents` and `FetchContacts`); tickets are
     /// per account.
@@ -65,6 +66,8 @@ pub enum Work {
         account: String,
         ticket: u64,
         mailbox: String,
+        sort: jmap::EmailSort,
+        position: u64,
         limit: u32,
     },
     /// Fetch one email with its bodies; `reply` is the Bus request that
@@ -94,17 +97,37 @@ pub enum Work {
         expect: Option<u64>,
         write: Write,
     },
+    /// A message action on the list's target: one change to every id,
+    /// sent as batched Email/set requests (at most
+    /// [`jmap::MAX_IDS_PER_REQUEST`] ids each) through connection
+    /// `generation` only. The answer reports each id done or failed.
+    Batch {
+        account: String,
+        generation: u64,
+        batch: Box<Batch>,
+    },
+    /// One page (at most 500) of the ids of `mailbox`'s query in `sort`
+    /// order, from `position`, for "Select all N" fetch `ticket`.
+    FetchIds {
+        account: String,
+        ticket: u64,
+        mailbox: String,
+        sort: jmap::EmailSort,
+        position: u64,
+    },
     /// Set or clear `$seen`.
     MarkRead {
         account: String,
         id: String,
         read: bool,
     },
-    /// The send recipe (build, upload, create in Sent, submit).
+    /// The send recipe (build, upload, create in Drafts, submit, file in
+    /// Sent), resumed from what earlier tries of this message did.
     Send {
         account: String,
         ticket: u64,
         draft: Composed,
+        attempt: jmap::SendAttempt,
     },
     FetchCalendars {
         account: String,
@@ -142,6 +165,66 @@ pub enum Work {
     },
     /// Launch Prefs on its Email section.
     OpenPrefs,
+    /// Download attachment `part` (blob `blob`) of `account`'s `email` and
+    /// save it as `name`: in `dir`, else the downloads directory, or
+    /// (`open`) in a private directory, then open it with the desktop's
+    /// default application. `reply`: the Bus request to answer.
+    /// Wait out the completion debounce for compose suggestion `ticket`;
+    /// the shell answers with [`crate::shell::Event::SuggestDue`].
+    SuggestWait {
+        ticket: u64,
+    },
+    /// Fetch `account`'s contacts matching `text` for suggestion `ticket`.
+    Suggest {
+        account: String,
+        ticket: u64,
+        text: String,
+    },
+    Attachment {
+        account: String,
+        email: String,
+        part: String,
+        blob: String,
+        name: String,
+        open: bool,
+        dir: Option<String>,
+        reply: Option<u64>,
+    },
+    /// Write print page `html` as `name` in the private print directory and
+    /// open it in the browser (`reply`: the Bus request to answer).
+    Print {
+        reply: Option<u64>,
+        name: String,
+        html: String,
+    },
+}
+
+/// Which message action a batch is: it decides what the list does after.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BatchKind {
+    Flag,
+    Read,
+    Delete,
+    Move,
+    Junk,
+}
+
+impl BatchKind {
+    /// The emails leave the shown mailbox.
+    pub fn removes(self) -> bool {
+        matches!(self, BatchKind::Delete | BatchKind::Move | BatchKind::Junk)
+    }
+}
+
+/// One batched message action: what, to which ids, and (for a keyword
+/// change) each id's keyword before it, so a failed id is put back.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Batch {
+    pub kind: BatchKind,
+    pub change: jmap::EmailChange,
+    pub ids: Vec<String>,
+    /// For a keyword change: the shown ids' keyword value before it.
+    pub before: Vec<(String, bool)>,
 }
 
 impl Work {
@@ -155,16 +238,22 @@ impl Work {
             | Work::OpenEmail { account, .. }
             | Work::Query { account, .. }
             | Work::Write { account, .. }
+            | Work::Batch { account, .. }
+            | Work::FetchIds { account, .. }
             | Work::MarkRead { account, .. }
             | Work::Send { account, .. }
             | Work::FetchCalendars { account }
             | Work::FetchEvents { account, .. }
             | Work::FetchBooks { account }
-            | Work::FetchContacts { account, .. } => Some(account),
+            | Work::FetchContacts { account, .. }
+            | Work::Attachment { account, .. }
+            | Work::Suggest { account, .. } => Some(account),
             Work::Settings { .. }
             | Work::WriteDeadline { .. }
             | Work::ReadSettings
             | Work::SaveSecrets { .. }
+            | Work::Print { .. }
+            | Work::SuggestWait { .. }
             | Work::OpenPrefs => None,
         }
     }

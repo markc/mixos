@@ -46,6 +46,7 @@ pub mod canvas;
 pub mod chrome;
 pub mod combo;
 pub mod command;
+pub mod datatable;
 pub mod dialog;
 pub mod drive;
 pub mod executed;
@@ -55,6 +56,7 @@ pub mod icons;
 pub mod keymap;
 #[cfg(feature = "layer")]
 pub mod layer;
+pub mod markdown;
 pub mod menu;
 pub mod panel;
 pub mod session_look;

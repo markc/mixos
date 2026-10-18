@@ -2,16 +2,22 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! email's drawing, driven through kittest with no network: the account
 //! tree's rows select their account, mode and folder, its keys move and
-//! collapse, an unread email row opens and marks read, the no-accounts and
+//! collapse, the message list selects (click, Ctrl and Shift clicks,
+//! Ctrl+A, select all, Escape) without opening, its headers sort and its
+//! pager pages through server queries, an unread email row opens
+//! on a double-click or Enter and marks read, the no-accounts and
 //! failed panes offer Email Settings, and offscreen snapshots of the
 //! window. Regenerate the images with `UPDATE_SNAPSHOTS=1` and look at them
 //! before committing.
 use design::{DesignContext, Mode, Scheme};
 use egui_kittest::Harness;
-use egui_kittest::kittest::Queryable;
+use egui_kittest::kittest::{NodeT, Queryable};
+use email::drafts::{DraftOp, SavedDraft};
 use email::secrets::Secrets;
 use email::shell::{Done, Event};
-use email::state::{Mode as Surface, Node, Phase, SessionInfo, State, Tag, UiState};
+use email::state::{
+    ComposeField, Confirm, Mode as Surface, Node, Phase, SessionInfo, State, Tag, UiState,
+};
 use email::view::{UiEvent, view};
 use email::work::Work;
 use email::{commands, label, strings};
@@ -206,8 +212,96 @@ fn harness_with(state: State, theme: &Theme) -> Harness<'static, Window> {
             },
         );
     toolkit::install(&h.ctx, theme);
+    // Friday 2026-10-16 09:30 UTC: the list's dates do not move with the
+    // clock.
+    email::view::mail::pin_clock(&h.ctx, NOW, 0);
     h.run();
     h
+}
+
+/// The pinned clock, in Unix seconds.
+const NOW: i64 = 1_792_143_000;
+
+/// The fixture's inbox page replaced by six emails: a long sender and a
+/// long subject to elide, unread, flagged and attachment markers, and a
+/// date from today, this week, this year and an older year.
+fn long_list() -> State {
+    let mut state = fixture();
+    let email = |id: &str,
+                 from: serde_json::Value,
+                 subject: &str,
+                 at: &str,
+                 keywords: serde_json::Value,
+                 attachment: bool|
+     -> jmap::Email {
+        serde_json::from_value(serde_json::json!({
+            "id": id,
+            "subject": subject,
+            "from": from,
+            "receivedAt": at,
+            "keywords": keywords,
+            "hasAttachment": attachment,
+        }))
+        .unwrap()
+    };
+    let emails = vec![
+        email(
+            "L1",
+            serde_json::json!([{ "name": "Ann Lee", "email": "ann@example.invalid" }]),
+            "Lunch today?",
+            "2026-10-16T08:05:00Z",
+            serde_json::json!({}),
+            false,
+        ),
+        email(
+            "L2",
+            serde_json::json!([{ "name": "Bartholomew Rivera-Montgomery of the Extremely Long Display Name Society", "email": "bart@example.invalid" }]),
+            "Quarterly report: the full numbers, every appendix, the board's comments on each, and a summary of the summary",
+            "2026-10-14T14:02:00Z",
+            serde_json::json!({ "$seen": true, "$flagged": true }),
+            true,
+        ),
+        email(
+            "L3",
+            serde_json::json!([{
+                "email": "cy.no-display-name.but-a-very-long-local-part@subdomain.example.invalid"
+            }]),
+            "Minutes",
+            "2026-10-12T17:45:00Z",
+            serde_json::json!({ "$seen": true }),
+            false,
+        ),
+        email(
+            "L4",
+            serde_json::json!([{ "name": "Dee", "email": "dee@example.invalid" }]),
+            "Re: build cluster",
+            "2026-08-03T09:00:00Z",
+            serde_json::json!({ "$flagged": true }),
+            false,
+        ),
+        email(
+            "L5",
+            serde_json::json!([{ "name": "Eve", "email": "eve@example.invalid" }]),
+            "Photos from the weekend",
+            "2026-01-16T11:00:00Z",
+            serde_json::json!({ "$seen": true }),
+            true,
+        ),
+        email(
+            "L6",
+            serde_json::json!([{ "name": "Gus", "email": "gus@example.invalid" }]),
+            "Old thread",
+            "2025-10-16T10:00:00Z",
+            serde_json::json!({ "$seen": true }),
+            false,
+        ),
+    ];
+    let view = &mut state.accounts[0];
+    view.mail.total = 236;
+    view.mail.emails = emails;
+    view.mail.table.selection = vec!["L3".into()];
+    view.mail.table.focus = Some(2);
+    state
 }
 
 fn harness(state: State) -> Harness<'static, Window> {
@@ -287,11 +381,39 @@ fn the_tree_takes_the_keyboard_after_a_click() {
     assert_eq!(h.state().state.mode, Surface::Calendar);
 }
 
-#[test]
-fn an_unread_email_row_opens_and_marks_read() {
-    let mut h = harness(fixture());
-    h.get_by_label("Bob").click();
+/// Two clicks on the node labelled `label` in one frame: inside the
+/// double-click window whatever the harness's step.
+fn double_click(h: &mut Harness<'static, Window>, label: &str) {
+    let row = h.get_by_label_contains(label).rect().center();
+    h.hover_at(row);
     h.run();
+    let clicks = (0..2).flat_map(|_| {
+        [true, false].map(|pressed| egui::Event::PointerButton {
+            pos: row,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        })
+    });
+    h.input_mut().events.extend(clicks);
+    h.run();
+}
+
+#[test]
+fn an_unread_email_row_opens_on_a_double_click_and_marks_read() {
+    let mut h = harness(fixture());
+    // A row's accessible label is its cells' text: "Lunch, Bob, Tue 01:02".
+    // One click selects it and nothing more.
+    h.get_by_label_contains("Bob").click();
+    h.run();
+    let state = &h.state().state;
+    assert!(!state.account("home").unwrap().mail.emails[0].is_read());
+    assert_eq!(state.account("home").unwrap().mail.table.selection, ["E1"]);
+    assert!(
+        h.state_mut().state.take_work().is_empty(),
+        "a click neither opens nor marks read"
+    );
+    double_click(&mut h, "Bob");
     let state = &h.state().state;
     assert!(
         state.account("home").unwrap().mail.emails[0].is_read(),
@@ -306,6 +428,293 @@ fn an_unread_email_row_opens_and_marks_read() {
         work.iter()
             .any(|w| matches!(w, Work::OpenEmail { id, .. } if id == "E1"))
     );
+    let mail = &h.state().state.account("home").unwrap().mail;
+    assert_eq!(mail.table.selection, ["E1"], "the opened row is selected");
+}
+
+/// The message list's rows, top to bottom, by their accessible labels.
+fn list_rows(h: &Harness<'static, Window>) -> Vec<String> {
+    let mut rows: Vec<(f32, String)> = h
+        .query_all_by_role(egui::accesskit::Role::Row)
+        .map(|n| {
+            (
+                n.rect().top(),
+                n.accesskit_node().label().unwrap_or_default(),
+            )
+        })
+        .collect();
+    rows.sort_by(|a, b| a.0.total_cmp(&b.0));
+    rows.into_iter().map(|(_, label)| label).collect()
+}
+
+#[test]
+fn each_email_is_one_row_of_subject_from_and_a_compact_date() {
+    let h = harness(long_list());
+    assert_eq!(
+        list_rows(&h),
+        [
+            "Lunch today?, Ann Lee, 08:05",
+            "Quarterly report: the full numbers, every appendix, the board's comments on each, and a summary of the summary, Bartholomew Rivera-Montgomery of the Extremely Long Display Name Society, Wed 14:02",
+            "Minutes, cy.no-display-name.but-a-very-long-local-part@subdomain.example.invalid, Mon 17:45",
+            "Re: build cluster, Dee, 3 Aug",
+            "Photos from the weekend, Eve, 16 Jan",
+            "Old thread, Gus, 16/10/2025",
+        ]
+    );
+    // Subject is the first column.
+    let subject = h.get_by_label(&label("column-subject")).rect();
+    let from = h.get_by_label(&label("column-from")).rect();
+    let date = h.get_by_label(&label("column-date")).rect();
+    assert!(subject.left() < from.left() && from.left() < date.left());
+}
+
+#[test]
+fn dates_show_in_the_clock_zone() {
+    // Ten hours east: Bob's 01:02 UTC Tuesday is 11:02 there.
+    let mut h = harness(fixture());
+    email::view::mail::pin_clock(&h.ctx, NOW, 10 * 3600);
+    h.run();
+    assert!(
+        list_rows(&h)[0].ends_with("Tue 11:02"),
+        "{:?}",
+        list_rows(&h)
+    );
+}
+
+fn opened(h: &mut Harness<'static, Window>) -> Vec<String> {
+    h.state_mut()
+        .state
+        .take_work()
+        .into_iter()
+        .filter_map(|w| match w {
+            Work::OpenEmail { id, .. } => Some(id),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn up_and_down_move_the_selection_and_enter_opens() {
+    let mut h = harness(long_list());
+    // A row click takes the keyboard and selects the row, opening nothing.
+    h.get_by_label_contains("Minutes").click();
+    h.run();
+    assert!(opened(&mut h).is_empty());
+    h.key_press(egui::Key::ArrowDown);
+    h.run();
+    let work = h.state_mut().state.take_work();
+    assert!(
+        work.is_empty(),
+        "Down neither opens nor marks read: {work:?}"
+    );
+    let mail = &h.state().state.account("home").unwrap().mail;
+    assert_eq!(mail.table.selection, ["L4"]);
+    assert!(!mail.emails[3].is_read(), "the unread row stays unread");
+    h.key_press(egui::Key::ArrowUp);
+    h.run();
+    h.key_press(egui::Key::ArrowUp);
+    h.run();
+    assert!(opened(&mut h).is_empty(), "nor does Up");
+    let mail = &h.state().state.account("home").unwrap().mail;
+    assert_eq!(mail.table.selection, ["L2"]);
+    assert_eq!(mail.table.focus, Some(1));
+    // Enter opens the keyboard's row.
+    h.key_press(egui::Key::Enter);
+    h.run();
+    assert_eq!(opened(&mut h), ["L2"]);
+}
+
+#[test]
+fn ctrl_and_shift_clicks_ctrl_a_and_escape_select_without_opening() {
+    let mut h = harness(long_list());
+    h.get_by_label_contains("Lunch today").click();
+    h.run();
+    // Shift+click: the range from the row clicked first.
+    h.get_by_label_contains("Re: build cluster")
+        .click_modifiers(egui::Modifiers::SHIFT);
+    h.run();
+    let mail = &h.state().state.account("home").unwrap().mail;
+    assert_eq!(mail.table.selection, ["L1", "L2", "L3", "L4"]);
+    assert!(h.query_by_label("4 selected").is_some());
+    // Ctrl+click takes one out.
+    h.get_by_label_contains("Minutes")
+        .click_modifiers(egui::Modifiers::COMMAND);
+    h.run();
+    let mail = &h.state().state.account("home").unwrap().mail;
+    assert_eq!(mail.table.selection, ["L1", "L2", "L4"]);
+    // Ctrl+A: the whole page, and the offer of the whole mailbox.
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    h.run();
+    let mail = &h.state().state.account("home").unwrap().mail;
+    assert_eq!(mail.table.selection.len(), 6);
+    assert!(h.query_by_label("6 selected").is_some());
+    assert!(opened(&mut h).is_empty(), "selecting opens nothing");
+    // Escape: back to the keyboard's row (the one Ctrl+clicked).
+    h.key_press(egui::Key::Escape);
+    h.run();
+    let mail = &h.state().state.account("home").unwrap().mail;
+    assert_eq!(mail.table.selection, ["L3"]);
+    assert!(h.query_by_label("Select all 236 in folder").is_none());
+    // Ctrl+A again, then "Select all 236 in folder": every email, counted
+    // from the list's total with no query.
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    h.run();
+    h.get_by_label("Select all 236 in folder").click();
+    h.run();
+    let mail = &h.state().state.account("home").unwrap().mail;
+    assert!(mail.everything);
+    assert_eq!(mail.selection_count(), 236);
+    assert!(h.query_by_label("236 selected").is_some());
+    assert!(h.query_by_label("All 236 selected").is_some());
+    assert!(h.state_mut().state.take_work().is_empty());
+    // A plain click is a selection of one again.
+    h.get_by_label_contains("Photos").click();
+    h.run();
+    let mail = &h.state().state.account("home").unwrap().mail;
+    assert!(!mail.everything);
+    assert_eq!(mail.table.selection, ["L5"]);
+    assert!(h.query_by_label("236 selected").is_none());
+}
+
+/// The one page fetch the state queued: its ticket, sort and position.
+fn fetched(h: &mut Harness<'static, Window>) -> (u64, jmap::EmailSort, u64) {
+    let fetches: Vec<(u64, jmap::EmailSort, u64)> = h
+        .state_mut()
+        .state
+        .take_work()
+        .into_iter()
+        .filter_map(|w| match w {
+            Work::FetchEmails {
+                ticket,
+                sort,
+                position,
+                ..
+            } => Some((ticket, sort, position)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(fetches.len(), 1, "{fetches:?}");
+    fetches[0]
+}
+
+/// The header labelled `label`'s sort arrow, as agents read it.
+fn sort_of(h: &Harness<'static, Window>, label: &str) -> Option<egui::accesskit::SortDirection> {
+    h.get_by_label(label).accesskit_node().sort_direction()
+}
+
+#[test]
+fn a_header_click_sorts_on_the_server_ascending_first_then_flips() {
+    use egui::accesskit::SortDirection;
+    use jmap::{EmailSort, SortBy};
+    let mut h = harness(long_list());
+    let (subject, from, date) = (
+        label("column-subject"),
+        label("column-from"),
+        label("column-date"),
+    );
+    // Newest first until a header is clicked.
+    assert_eq!(sort_of(&h, &date), Some(SortDirection::Descending));
+    assert_eq!(sort_of(&h, &subject), None);
+    h.get_by_label(&subject).click();
+    h.run();
+    assert_eq!(
+        fetched(&mut h).1,
+        EmailSort::new(SortBy::Subject, true),
+        "ascending first"
+    );
+    assert_eq!(sort_of(&h, &subject), Some(SortDirection::Ascending));
+    assert_eq!(sort_of(&h, &date), None);
+    let mail = &h.state().state.account("home").unwrap().mail;
+    assert!(mail.table.selection.is_empty(), "the sort clears L3");
+    h.get_by_label(&subject).click();
+    h.run();
+    assert_eq!(fetched(&mut h).1, EmailSort::new(SortBy::Subject, false));
+    assert_eq!(sort_of(&h, &subject), Some(SortDirection::Descending));
+    h.get_by_label(&from).click();
+    h.run();
+    assert_eq!(fetched(&mut h).1, EmailSort::new(SortBy::From, true));
+    h.get_by_label(&date).click();
+    h.run();
+    assert_eq!(fetched(&mut h).1, EmailSort::new(SortBy::ReceivedAt, true));
+    assert_eq!(sort_of(&h, &date), Some(SortDirection::Ascending));
+}
+
+#[test]
+fn the_pager_pages_on_the_server_and_select_all_works_on_any_page() {
+    let mut h = harness(long_list());
+    assert!(h.query_by_label("1–6 of 236").is_some());
+    assert!(
+        h.get_by_label("Previous page")
+            .accesskit_node()
+            .is_disabled()
+    );
+    h.get_by_label("Next page").click();
+    h.run();
+    let (ticket, _, position) = fetched(&mut h);
+    assert_eq!(position, 100);
+    let mail = &h.state().state.account("home").unwrap().mail;
+    assert_eq!(mail.table.page, 1);
+    assert!(mail.table.selection.is_empty(), "the page clears L3");
+    let email = |id: &str, subject: &str| -> jmap::Email {
+        serde_json::from_value(serde_json::json!({
+            "id": id,
+            "subject": subject,
+            "from": [{ "name": "Hal", "email": "hal@example.invalid" }],
+            "receivedAt": "2026-07-01T10:00:00Z",
+            "keywords": { "$seen": true }
+        }))
+        .unwrap()
+    };
+    done(
+        &mut h.state_mut().state,
+        "home",
+        Done::Page(
+            ticket,
+            Ok(EmailPage {
+                emails: vec![email("Q1", "Page two first"), email("Q2", "Page two last")],
+                total: 236,
+            }),
+        ),
+    );
+    h.run();
+    assert!(h.query_by_label("101–102 of 236").is_some());
+    assert_eq!(list_rows(&h).len(), 2);
+    // Ctrl+A and "Select all 236 in folder" on the second page.
+    h.get_by_label_contains("Page two first").click();
+    h.run();
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    h.run();
+    h.get_by_label("Select all 236 in folder").click();
+    h.run();
+    let mail = &h.state().state.account("home").unwrap().mail;
+    assert!(mail.everything);
+    assert_eq!(mail.selection_count(), 236);
+    assert!(h.query_by_label("All 236 selected").is_some());
+    // Last and First, then Previous from the last page.
+    h.get_by_label("Last page").click();
+    h.run();
+    assert_eq!(fetched(&mut h).2, 200);
+    assert!(!h.state().state.account("home").unwrap().mail.everything);
+    h.get_by_label("First page").click();
+    h.run();
+    assert_eq!(fetched(&mut h).2, 0);
+}
+
+#[test]
+fn an_email_opened_elsewhere_shows_selected_and_a_new_mailbox_clears_it() {
+    let mut state = fixture();
+    let first = state.accounts[0].mail.emails[1].clone();
+    state.accounts[0].mail.open = Some(first);
+    let table = state.accounts[0].mail.list_table();
+    assert_eq!(table.selection, ["E2"]);
+    assert_eq!(table.focus, Some(1));
+    state.open_email("home", "E1".into());
+    assert_eq!(state.accounts[0].mail.table.selection, ["E1"]);
+    let mut h = harness(state);
+    h.get_by_label("Sent").click();
+    h.run();
+    let mail = &h.state().state.account("home").unwrap().mail;
+    assert!(mail.table.selection.is_empty() && mail.table.focus.is_none());
 }
 
 #[test]
@@ -367,6 +776,25 @@ fn a_failed_account_retries() {
     );
 }
 
+#[test]
+fn the_status_bar_shows_the_current_accounts_own_connection() {
+    let mut state = fixture();
+    state.select_account("work");
+    let mut h = harness(state);
+    h.run();
+    let failed = format!("Work — {}", label("not-connected"));
+    assert!(h.query_by_label(&failed).is_some(), "{failed}");
+    let wrong = format!("Work — {}", label("connected"));
+    assert!(
+        h.query_by_label_contains(&wrong).is_none(),
+        "another account's connection never shows on this one"
+    );
+    h.state_mut().state.select_account("home");
+    h.run();
+    let ready = format!("Home — {}", label("connected"));
+    assert!(h.query_by_label(&ready).is_some(), "{ready}");
+}
+
 fn snapshot(name: &str, state: State, theme: &Theme) {
     let mut h = harness_with(state, theme);
     h.run();
@@ -388,6 +816,78 @@ fn window_studio_dark() {
         "window_studio_dark",
         fixture(),
         &theme(Scheme::Studio, Mode::Dark),
+    );
+}
+
+#[test]
+fn mail_list_studio_light() {
+    snapshot(
+        "mail_list_studio_light",
+        long_list(),
+        &theme(Scheme::Studio, Mode::Light),
+    );
+}
+
+#[test]
+fn mail_list_studio_dark() {
+    snapshot(
+        "mail_list_studio_dark",
+        long_list(),
+        &theme(Scheme::Studio, Mode::Dark),
+    );
+}
+
+/// `long_list` shown as the second page of 236, sorted by `column` in
+/// `order` (its rows in that order, as the server would send them): the
+/// header's arrow and the pager's "101–106 of 236".
+fn sorted_page(column: &str, order: toolkit::datatable::Order) -> State {
+    let mut state = long_list();
+    let view = &mut state.accounts[0];
+    let text = |e: &jmap::Email| match column {
+        "from" => e.from_display().to_lowercase(),
+        _ => e.subject.clone().unwrap_or_default().to_lowercase(),
+    };
+    view.mail
+        .emails
+        .sort_by(|a, b| order.apply(text(a).cmp(&text(b))));
+    view.mail.table.sort = Some(toolkit::datatable::Sort::new(column, order));
+    view.mail.table.page = 1;
+    view.mail.table.selection.clear();
+    view.mail.table.focus = None;
+    state
+}
+
+/// Page 2 by Subject, A to Z.
+#[test]
+fn mail_list_paged_studio_light() {
+    snapshot(
+        "mail_list_paged_studio_light",
+        sorted_page("subject", toolkit::datatable::Order::Ascending),
+        &theme(Scheme::Studio, Mode::Light),
+    );
+}
+
+/// Page 2 by From, Z to A.
+#[test]
+fn mail_list_paged_studio_dark() {
+    snapshot(
+        "mail_list_paged_studio_dark",
+        sorted_page("from", toolkit::datatable::Order::Descending),
+        &theme(Scheme::Studio, Mode::Dark),
+    );
+}
+
+/// The whole page selected: the bar under the list counts it and offers
+/// the mailbox's 236.
+#[test]
+fn mail_list_selected_pro_light() {
+    let mut state = long_list();
+    let view = &mut state.accounts[0];
+    view.mail.table.selection = view.mail.keys();
+    snapshot(
+        "mail_list_selected_pro_light",
+        state,
+        &theme(Scheme::Pro, Mode::Light),
     );
 }
 
@@ -424,13 +924,130 @@ fn confirm_delete_pro_light() {
     let mut state = fixture();
     let first = state.accounts[0].mail.emails[0].clone();
     state.accounts[0].mail.open = Some(first);
-    state.delete_open();
+    state.delete_target();
     assert!(matches!(
         state.form,
         Some(email::state::Form::Delete { .. })
     ));
     snapshot(
         "confirm_delete_pro_light",
+        state,
+        &theme(Scheme::Pro, Mode::Light),
+    );
+}
+
+/// `long_list` with L1, L2 and L4 selected (Ctrl+click), L3 the keyboard
+/// row and nothing open.
+fn three_selected() -> State {
+    let mut state = long_list();
+    state.accounts[0].mail.table.selection = vec!["L1".into(), "L2".into(), "L4".into()];
+    state
+}
+
+#[test]
+fn the_target_line_names_the_selection_or_this_email() {
+    let h = harness(long_list());
+    assert!(h.query_by_label("Applies to this email").is_some());
+    let h = harness(three_selected());
+    assert!(h.query_by_label("Applies to 3 selected").is_some());
+    assert!(h.query_by_label("Applies to this email").is_none());
+    // Nothing selected, no keyboard row, nothing open: no line.
+    let h = harness(fixture());
+    assert!(h.query_by_label_contains("Applies to").is_none());
+}
+
+#[test]
+fn escape_cancels_a_select_all_fetch_and_changes_nothing() {
+    let mut h = harness(long_list());
+    h.get_by_label_contains("Lunch today").click();
+    h.run();
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    h.run();
+    h.get_by_label("Select all 236 in folder").click();
+    h.run();
+    h.state_mut().state.flag_target();
+    h.run();
+    assert!(h.query_by_label("Fetching 236…").is_some());
+    let fetch = h
+        .state_mut()
+        .state
+        .take_work()
+        .into_iter()
+        .find_map(|w| match w {
+            Work::FetchIds { ticket, .. } => Some(ticket),
+            _ => None,
+        });
+    let ticket = fetch.expect("the ids are fetched first");
+    h.key_press(egui::Key::Escape);
+    h.run();
+    assert!(h.state().seen.contains(&UiEvent::CancelFetch));
+    let mail = &h.state().state.account("home").unwrap().mail;
+    assert!(mail.fetching.is_none());
+    assert!(
+        mail.everything,
+        "Escape went to the fetch, not the selection"
+    );
+    assert_eq!(mail.table.selection.len(), 6);
+    done(
+        &mut h.state_mut().state,
+        "home",
+        Done::Ids(
+            ticket,
+            Ok(jmap::IdPage {
+                ids: vec!["L1".into()],
+                total: 236,
+            }),
+        ),
+    );
+    h.run();
+    assert!(
+        h.state_mut().state.take_work().is_empty(),
+        "nothing written"
+    );
+    assert!(h.query_by_label("Applies to 236 selected").is_some());
+}
+
+/// The target line with three rows selected: "Applies to 3 selected".
+#[test]
+fn target_line_selected_pro_light() {
+    snapshot(
+        "target_line_selected_pro_light",
+        three_selected(),
+        &theme(Scheme::Pro, Mode::Light),
+    );
+}
+
+/// The target line with one row: "Applies to this email".
+#[test]
+fn target_line_this_email_studio_dark() {
+    snapshot(
+        "target_line_this_email_studio_dark",
+        long_list(),
+        &theme(Scheme::Studio, Mode::Dark),
+    );
+}
+
+/// Deleting three selected asks first, with the count, whatever
+/// `confirm_delete` says.
+#[test]
+fn confirm_delete_many_pro_light() {
+    let mut state = three_selected();
+    let mut settings = state.settings.clone();
+    settings.mail.confirm_delete = false;
+    state.set_settings(settings);
+    state.accounts[0].mail.mailboxes.push(jmap::Mailbox {
+        id: "m-trash".into(),
+        name: "Trash".into(),
+        role: Some("trash".into()),
+        ..jmap::Mailbox::default()
+    });
+    state.delete_target();
+    assert!(matches!(
+        &state.form,
+        Some(email::state::Form::Delete { ids, .. }) if ids.len() == 3
+    ));
+    snapshot(
+        "confirm_delete_many_pro_light",
         state,
         &theme(Scheme::Pro, Mode::Light),
     );
@@ -443,4 +1060,100 @@ fn no_accounts_studio_dark() {
         empty(),
         &theme(Scheme::Studio, Mode::Dark),
     );
+}
+
+/// The fixture with a compose open on Home and something typed in it.
+fn typing() -> State {
+    let mut state = fixture();
+    state.apply_ui(UiEvent::Compose);
+    for (field, value) in [
+        (ComposeField::To, "bob@example.invalid"),
+        (ComposeField::Subject, "Lunch on Friday"),
+        (ComposeField::Body, "Noon at the usual place?"),
+    ] {
+        state.apply_ui(UiEvent::ComposeField(field, value.into()));
+    }
+    state
+}
+
+#[test]
+fn escape_on_a_typed_compose_asks_and_keeps_the_draft() {
+    let mut h = harness(typing());
+    h.key_press(egui::Key::Escape);
+    h.run();
+    let state = &h.state().state;
+    assert_eq!(state.confirm, Some(Confirm::CloseCompose));
+    assert!(state.compose.is_some(), "Escape never drops what is typed");
+    // Escape again is Keep Editing: the question goes, the compose stays.
+    h.key_press(egui::Key::Escape);
+    h.run();
+    assert!(h.state().state.confirm.is_none());
+    assert!(h.state().state.compose.is_some());
+    // Cancel asks; Keep Draft, the default, closes and keeps it.
+    h.get_by_label(&label("cancel")).click();
+    h.run();
+    assert_eq!(h.state().state.confirm, Some(Confirm::CloseCompose));
+    h.get_by_label(&label("keep-draft")).click();
+    h.run();
+    let state = &mut h.state_mut().state;
+    assert!(state.compose.is_none() && state.confirm.is_none());
+    let kept = state.take_draft_ops();
+    assert!(
+        kept.iter()
+            .any(|op| matches!(op, DraftOp::Save(d) if d.body == "Noon at the usual place?")),
+        "{kept:?}"
+    );
+    assert!(!kept.iter().any(|op| matches!(op, DraftOp::Remove(_))));
+}
+
+#[test]
+fn confirm_close_draft_studio_dark() {
+    let mut state = typing();
+    state.apply_ui(UiEvent::CloseCompose);
+    assert_eq!(state.confirm, Some(Confirm::CloseCompose));
+    snapshot(
+        "confirm_close_draft_studio_dark",
+        state,
+        &theme(Scheme::Studio, Mode::Dark),
+    );
+}
+
+#[test]
+fn confirm_quit_draft_pro_light() {
+    let mut state = typing();
+    assert!(!state.request_quit());
+    snapshot(
+        "confirm_quit_draft_pro_light",
+        state,
+        &theme(Scheme::Pro, Mode::Light),
+    );
+}
+
+#[test]
+fn restore_draft_studio_dark() {
+    let mut state = fixture();
+    let kept = |id: &str, subject: &str, saved_at: &str| SavedDraft {
+        schema_version: email::drafts::CURRENT_SCHEMA,
+        id: id.into(),
+        account: "home".into(),
+        from: "ann@home.example.invalid".into(),
+        to: "bob@example.invalid, ".into(),
+        subject: subject.into(),
+        body: "Noon at the usual place?".into(),
+        saved_at: saved_at.into(),
+        ..SavedDraft::default()
+    };
+    state.offer_drafts(vec![
+        kept("0b", "Lunch on Friday", "2026-10-17T23:40:00Z"),
+        kept("0a", "Minutes", "2026-10-16T08:00:00Z"),
+    ]);
+    let mut h = harness_with(state, &theme(Scheme::Studio, Mode::Dark));
+    h.run();
+    h.snapshot("restore_draft_studio_dark");
+    h.get_by_label(&label("restore-draft")).click();
+    h.run();
+    let state = &h.state().state;
+    let compose = state.compose.as_ref().expect("restored");
+    assert_eq!(compose.draft.subject, "Lunch on Friday");
+    assert_eq!(state.restore.len(), 1, "the next waits its turn");
 }

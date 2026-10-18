@@ -10,7 +10,8 @@ use egui::{Align, Layout, RichText, Ui};
 use preferences::Engine;
 use preferences::appearance::Availability as Settings;
 use preferences::email::{
-    AccountEntry, Change, Email, Field, Form, PAGE_SIZE_MAX, PAGE_SIZE_MIN, Secret, Service,
+    AccountEntry, Change, Email, Field, Form, PAGE_SIZE_MAX, PAGE_SIZE_MIN, ReplyPosition, Secret,
+    Service,
 };
 use toolkit::toggle::Toggle;
 use toolkit::{Registry, Strings, bars, field, panel};
@@ -351,6 +352,30 @@ fn mail_options(ui: &mut Ui, engine: &Engine, email: &Email, events: &mut Vec<Ui
             {
                 events.push(UiEvent::EmailChange(Change::ConfirmDelete(confirm)));
             }
+            let mut quote = mail.quote_on_reply;
+            if ui
+                .add(Toggle::new(&mut quote, label("email-quote-on-reply")))
+                .changed()
+            {
+                events.push(UiEvent::EmailChange(Change::QuoteOnReply(quote)));
+            }
+            let mut position = mail.reply_position;
+            ui.horizontal(|ui| {
+                ui.label(label("email-reply-position"));
+                let above = ui.radio_value(
+                    &mut position,
+                    ReplyPosition::Above,
+                    label("email-reply-above"),
+                );
+                let below = ui.radio_value(
+                    &mut position,
+                    ReplyPosition::Below,
+                    label("email-reply-below"),
+                );
+                if (above.changed() || below.changed()) && position != mail.reply_position {
+                    events.push(UiEvent::EmailChange(Change::ReplyPosition(position)));
+                }
+            });
         });
     });
 }

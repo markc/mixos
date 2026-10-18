@@ -30,8 +30,14 @@ pub mod session;
 pub use auth::{Account, Token};
 pub use calendar::{Calendar, CalendarEvent, EventDraft, EventPatch, duration_between};
 pub use client::{Call, Client, backref};
-pub use compose::{Composed, build_mime, format_address, parse_addresses};
+pub use compose::{
+    Composed, SendAttempt, SendBoxes, SendReport, build_mime, format_address, parse_addresses,
+};
 pub use contact::{AddressBook, Contact, ContactDraft, ContactPatch};
 pub use error::{Error, Result};
-pub use mail::{BodyPart, Email, EmailAddress, EmailPage, Mailbox};
+pub use mail::{
+    Attachment, BodyPart, Email, EmailAddress, EmailChange, EmailPage, EmailSort, IdPage,
+    MAX_IDS_PER_REQUEST, Mailbox, SetOutcome, SortBy, change_outcome, email_ids_call,
+    email_set_calls, set_outcome,
+};
 pub use session::Session;

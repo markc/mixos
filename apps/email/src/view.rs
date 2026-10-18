@@ -40,6 +40,9 @@ pub enum UiEvent {
     TreeKey(TreeKey),
     /// Open an account's email (also marks it read through the state).
     OpenEmail(String, String),
+    /// The account's message list reported this (a row picked or
+    /// activated, a column dragged).
+    MailTable(String, toolkit::datatable::TableEvent),
     SelectEvent(String, usize),
     SelectContact(String, usize),
     ContactFilter(String, String),
@@ -48,7 +51,13 @@ pub enum UiEvent {
     /// The compose dialog's From account.
     ComposeAccount(String),
     ComposeField(crate::state::ComposeField, String),
+    /// Cancel or Escape on the compose: it closes, or (something typed)
+    /// the person is asked first.
     CloseCompose,
+    /// The answer to the close or quit question over a draft.
+    ConfirmDraft(crate::state::DraftChoice),
+    /// The answer to the offer of a kept draft.
+    RestoreDraft(crate::state::DraftChoice),
     /// Take the account's new address as the stale draft's From.
     ComposeUseNewFrom,
     SendCompose,
@@ -66,6 +75,20 @@ pub enum UiEvent {
     CloseDialog,
     /// The title bar's light/dark toggle: the mode to switch to.
     SetMode(design::Mode),
+    /// Show or hide the open email's attachments popup.
+    AttachmentsOpen(bool),
+    /// Save the open email's attachment (its part id) to the downloads.
+    SaveAttachment(String),
+    /// Open the open email's attachment with the desktop's application.
+    OpenAttachment(String),
+    /// Move the completion highlight up (-1) or down (1).
+    SuggestMove(i32),
+    /// Take a completion: this row, or (`None`) the highlighted one.
+    SuggestAccept(Option<usize>),
+    /// Close the completions.
+    SuggestClose,
+    /// Escape while "Select all N"'s ids load: stop, changing nothing.
+    CancelFetch,
 }
 
 const ICON: f32 = 14.0;
@@ -134,6 +157,8 @@ pub fn view(
         window(ui, state, commands, strings, stroke, &mut events);
     }
     compose::dialog(ui, state, &mut events);
+    compose::confirm(ui, state, &mut events);
+    compose::restore(ui, state, &mut events);
     form::dialog(ui, state, &mut events);
     if let Some(dialog) = state.ui.dialog {
         let title = match dialog {
@@ -161,8 +186,18 @@ pub fn view(
     events
 }
 
-/// The status bar: the current account's connection and name, the last
-/// word, and a note while the accounts are read-only.
+/// The connection word for an account's phase, as the status bar shows it.
+pub fn connection(phase: &Phase) -> String {
+    crate::label(match phase {
+        Phase::Ready => "connected",
+        Phase::Connecting => "connecting",
+        Phase::Failed(_) | Phase::NoPassword | Phase::Disabled => "not-connected",
+    })
+}
+
+/// The status bar: the current account's name and its connection (from
+/// that account's own phase, never another account's news), then the last
+/// operation's word, and a note while the accounts are read-only.
 fn status(ui: &mut egui::Ui, state: &State, stroke: f32) {
     bars::status(ui, |ui| {
         let current = state.current();
@@ -171,7 +206,9 @@ fn status(ui: &mut egui::Ui, state: &State, stroke: f32) {
             _ => (Icon::Unplug, ui.visuals().error_fg_color),
         };
         ui.add(toolkit::icons::image(icon, stroke, ICON, colour));
-        let mut line = current.map(|v| v.entry.name.clone()).unwrap_or_default();
+        let mut line = current
+            .map(|v| format!("{} — {}", v.entry.name, connection(&v.phase)))
+            .unwrap_or_default();
         let mut push = |text: &str| {
             if !line.is_empty() {
                 line.push_str(" — ");
@@ -216,7 +253,9 @@ fn window(
             .resizable(true)
             .default_size(remaining * state.ui.reader)
             .frame(bars::dock_frame(ui.ctx()))
-            .show(ui, |ui| reader(ui, state, view));
+            .show(ui, |ui| {
+                reader(ui, state, view, commands, strings, stroke, events)
+            });
         let split = right.response.rect.width() / remaining.max(1.0);
         if (split - state.ui.reader).abs() > 0.005 {
             events.push(UiEvent::SplitReader(split));
@@ -251,10 +290,18 @@ fn centre(
 }
 
 /// The reader panel: the open email, event or contact.
-fn reader(ui: &mut egui::Ui, state: &State, view: &AccountView) {
+fn reader(
+    ui: &mut egui::Ui,
+    state: &State,
+    view: &AccountView,
+    commands: &Registry<State>,
+    strings: &Strings,
+    stroke: f32,
+    events: &mut Vec<UiEvent>,
+) {
     let title = crate::label("reader");
     panel::group(ui, "reader", &[title.as_str()], |ui, _| match state.mode {
-        Mode::Mail => mail::reader(ui, view),
+        Mode::Mail => mail::reader(ui, state, view, commands, strings, stroke, events),
         Mode::Calendar => calendar::reader(ui, view),
         Mode::Contacts => contacts::reader(ui, view),
     });

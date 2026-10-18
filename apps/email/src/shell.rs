@@ -24,8 +24,9 @@ use toolkit::command::Origin;
 use toolkit::{Registry, Strings, Theme, drive};
 
 use crate::commands;
+use crate::drafts::{DirStore, DraftStore, MemoryStore};
 use crate::secrets::{Secrets, SecretsFile};
-use crate::state::{Mode, SessionInfo, Settled, State, Tag, UiState, code};
+use crate::state::{DRAFT_DEBOUNCE, Mode, SessionInfo, Settled, State, Tag, UiState, code};
 use crate::verbs::{Forward, Then, Write};
 use crate::view::{UiEvent, view};
 use crate::work::{Login, Work};
@@ -49,11 +50,35 @@ pub enum Done {
         Result<Value, jmap::Error>,
     ),
     Marked(Result<(), jmap::Error>),
-    Sent(u64, Result<(), jmap::Error>),
+    /// A batched message action finished: each id done or failed.
+    Batched(Box<crate::work::Batch>, jmap::SetOutcome),
+    /// A page of "Select all N" fetch `ticket`'s ids.
+    Ids(u64, Result<jmap::IdPage, jmap::Error>),
+    /// A send finished: its ticket, what the try did on the server (kept
+    /// for a retry), and the outcome.
+    Sent(
+        u64,
+        jmap::SendAttempt,
+        Result<jmap::SendReport, jmap::Error>,
+    ),
     Calendars(Result<Vec<jmap::Calendar>, jmap::Error>),
     Events(u64, Result<Vec<jmap::CalendarEvent>, jmap::Error>),
     Books(Result<Vec<jmap::AddressBook>, jmap::Error>),
     Contacts(u64, Result<Vec<jmap::Contact>, jmap::Error>),
+    /// An attachment save or open finished (boxed: it carries a path).
+    Attachment(Box<AttachmentDone>),
+    /// Contacts for compose suggestion `ticket`.
+    Suggested(u64, Result<Vec<jmap::Contact>, jmap::Error>),
+}
+
+/// An attachment save or open: which, for whom, and where it landed.
+pub struct AttachmentDone {
+    pub email: String,
+    pub part: String,
+    pub open: bool,
+    pub reply: Option<u64>,
+    /// The saved file's path, or why there is none.
+    pub result: Result<String, String>,
 }
 
 /// What finished off the UI thread. Completions carry their result; the
@@ -80,6 +105,11 @@ pub enum Event {
     Shown(u64, Result<Value, String>),
     /// Open Email Settings finished; an error is for the status line.
     PrefsOpened(Result<(), String>),
+    /// A print page was written: its path and whether the browser took it,
+    /// for Bus request `reply`; or why it could not be written.
+    Printed(Option<u64>, Result<(String, bool), String>),
+    /// Compose suggestion `ticket`'s debounce has passed.
+    SuggestDue(u64),
 }
 
 pub struct Shell {
@@ -126,6 +156,10 @@ pub struct Shell {
     comp: String,
     /// `email.show` requests forwarded to the compositor, not yet answered.
     shows: std::collections::BTreeSet<u64>,
+    /// Where unsent messages are kept (the app's state directory).
+    drafts: Box<dyn DraftStore>,
+    /// When the open draft's unsaved edits are saved, if it has any.
+    draft_due: Option<std::time::Instant>,
 }
 
 /// This host's name: the settingsd instance to try first (settingsd runs
@@ -138,6 +172,118 @@ fn hostname() -> String {
 
 /// Prefs' app id, as `apps.launch` takes it.
 const PREFS_APP_ID: &str = "dev.mixos.prefs";
+
+/// The desktop entry a print page opens in: its print dialog prints or
+/// saves a PDF.
+const BROWSER_APP_ID: &str = "firefox";
+
+/// Print pages older than this are removed on the next print.
+pub const PRINT_KEEP: std::time::Duration = std::time::Duration::from_secs(24 * 60 * 60);
+
+/// Download blob `blob` and save it as `name`: in `dir`, else the
+/// downloads directory (made if missing), or (`open`) in the private open
+/// directory and then handed to the desktop's default application
+/// (`xdg-open`, as Dopus opens files). The disk work is off the async
+/// workers; a window closing mid-download drops it before anything is
+/// written, since the file is only linked into place whole.
+async fn attachment(
+    client: &Client,
+    blob: &str,
+    name: String,
+    open: bool,
+    dir: Option<String>,
+) -> Result<String, String> {
+    let bytes = client
+        .download_blob(blob)
+        .await
+        .map_err(|e| e.to_string())?;
+    let path = tokio::task::spawn_blocking(move || -> Result<PathBuf, String> {
+        let dir = match (open, dir) {
+            (true, _) => crate::attachments::open_dir()?,
+            (false, Some(dir)) => PathBuf::from(dir),
+            (false, None) => {
+                let dir = crate::attachments::downloads()?;
+                std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+                dir
+            }
+        };
+        crate::attachments::save(&dir, &name, &bytes)
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    if open {
+        let mut child = std::process::Command::new("xdg-open")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+        // Reaped off the UI thread, so it never lingers as a zombie.
+        let _ = std::thread::Builder::new()
+            .name("email-xdg-open-reap".into())
+            .spawn(move || drop(child.wait()));
+    }
+    Ok(path.display().to_string())
+}
+
+/// The private print directory, `$XDG_RUNTIME_DIR/email-print`.
+fn print_dir() -> Result<PathBuf, String> {
+    std::env::var_os("XDG_RUNTIME_DIR")
+        .filter(|dir| !dir.is_empty())
+        .map(|dir| PathBuf::from(dir).join("email-print"))
+        .ok_or_else(|| label("no-runtime-dir"))
+}
+
+/// Write print page `html` as `dir/name`: the directory made private
+/// (0700), the page written whole to a temporary file (0600) and renamed
+/// into place, and pages older than [`PRINT_KEEP`] at `now` removed first.
+pub fn write_print(
+    dir: &Path,
+    name: &str,
+    html: &str,
+    now: std::time::SystemTime,
+) -> Result<PathBuf, String> {
+    use std::io::Write as _;
+    use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
+    if name.contains('/') || name.starts_with('.') {
+        return Err(format!("bad print page name {name:?}"));
+    }
+    std::fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(dir)
+        .map_err(|e| e.to_string())?;
+    // A directory that was already there keeps its mode: make it private.
+    std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))
+        .map_err(|e| e.to_string())?;
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let stale = entry
+                .metadata()
+                .and_then(|m| m.modified())
+                .is_ok_and(|modified| {
+                    now.duration_since(modified)
+                        .is_ok_and(|age| age > PRINT_KEEP)
+                });
+            if stale && path.extension().is_some_and(|e| e == "html") {
+                let _ = std::fs::remove_file(path);
+            }
+        }
+    }
+    let path = dir.join(name);
+    let partial = dir.join(format!(".{name}.partial"));
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(&partial)
+        .map_err(|e| e.to_string())?;
+    file.write_all(html.as_bytes())
+        .and_then(|()| file.sync_all())
+        .map_err(|e| e.to_string())?;
+    std::fs::rename(&partial, &path).map_err(|e| e.to_string())?;
+    Ok(path)
+}
 
 /// How long one settings read or write may take.
 const LOOK_BUDGET: std::time::Duration = std::time::Duration::from_secs(30);
@@ -299,7 +445,9 @@ fn closing(event: &Event) -> Closing {
         | Event::Account(..)
         | Event::Settled(..)
         | Event::SecretsSaved(..)
+        | Event::Printed(..)
         | Event::WriteDeadline(_) => Closing::Apply,
+        Event::SuggestDue(_) => Closing::Ignore,
         Event::Delivery(citizen::Delivery::Command { id, .. }) => Closing::Cancel(*id),
         Event::Shown(..) => Closing::Shown,
         Event::Delivery(_) | Event::Look(..) | Event::LookRetry(_) | Event::PrefsOpened(_) => {
@@ -403,8 +551,15 @@ impl Shell {
             let _ = forward.send(Event::Delivery(citizen::Delivery::Disconnected));
             wake.request_repaint();
         });
-        let dir: Option<PathBuf> = config::AppDirs::resolve(APP).map(|dirs| dirs.config());
+        let dirs = config::AppDirs::resolve(APP);
+        let dir: Option<PathBuf> = dirs.as_ref().map(config::AppDirs::config);
         let (state, config, secrets) = start(dir.as_deref());
+        // Drafts live in the state directory, not the config: they are not
+        // settings. Without one they are kept in memory for this run only.
+        let drafts: Box<dyn DraftStore> = match &dirs {
+            Some(dirs) => Box::new(DirStore::new(&dirs.state())),
+            None => Box::new(MemoryStore::default()),
+        };
         let (saver, saver_thread) = match secrets.map(|file| saver(file, tx.clone(), ctx.clone())) {
             Some((saver, thread)) => (Some(saver), thread),
             None => (None, None),
@@ -436,7 +591,12 @@ impl Shell {
             held: std::collections::VecDeque::new(),
             comp: std::env::var("MIXOS_COMP_SERVICE").unwrap_or_else(|_| "comp".into()),
             shows: std::collections::BTreeSet::new(),
+            drafts,
+            draft_due: None,
         };
+        // Drafts an earlier run kept are offered once the window is up.
+        let kept = shell.drafts.list();
+        shell.state.offer_drafts(kept);
         shell.read_look();
         shell.settle();
         Ok(shell)
@@ -485,8 +645,41 @@ impl Shell {
         for reply in self.state.take_replies() {
             self.bus.reply(reply.id, reply.rc, reply.body);
         }
+        self.apply_drafts();
         self.publish_executed();
         self.save_config_if_dirty();
+    }
+
+    /// Carry out the state's draft saves and removals on the store. A
+    /// failure is shown: the draft is still open, and the next save tries
+    /// again.
+    fn apply_drafts(&mut self) {
+        let ops = self.state.take_draft_ops();
+        if ops.is_empty() {
+            return;
+        }
+        for error in crate::drafts::apply(self.drafts.as_mut(), ops) {
+            eprintln!("email: draft: {error}");
+            self.state.status = crate::label_with("draft-save-failed", &[("error", &error)]);
+        }
+    }
+
+    /// Save the open draft's edits within [`DRAFT_DEBOUNCE`] of the first
+    /// unsaved one; a timed repaint wakes the window for it (no polling).
+    fn draft_timer(&mut self) {
+        if self.state.draft_unsaved().is_none() {
+            self.draft_due = None;
+            return;
+        }
+        let now = std::time::Instant::now();
+        let due = *self.draft_due.get_or_insert(now + DRAFT_DEBOUNCE);
+        if now >= due {
+            self.draft_due = None;
+            self.state.save_draft();
+            self.apply_drafts();
+        } else {
+            self.ctx.request_repaint_after(due - now);
+        }
     }
 
     /// Publish the commands run since the last call on
@@ -582,11 +775,13 @@ impl Shell {
                 account,
                 ticket,
                 mailbox,
+                sort,
+                position,
                 limit,
             } => {
                 if let Some((tag, client)) = self.client(&account) {
                     self.spawn(async move {
-                        let page = client.email_page(&mailbox, 0, limit).await;
+                        let page = client.email_page(&mailbox, sort, position, limit).await;
                         Event::Account(tag, Done::Page(ticket, page))
                     });
                 }
@@ -626,7 +821,7 @@ impl Shell {
                 expect,
                 write,
             } => {
-                let sent = self.state.sent_mailbox_id(&account);
+                let sent = self.state.send_boxes(&account).ok();
                 match self.client(&account) {
                     // A form's write through a connection other than the one
                     // it was opened on is refused as stale.
@@ -657,6 +852,75 @@ impl Shell {
                     }
                 }
             }
+            Work::Batch {
+                account,
+                generation,
+                batch,
+            } => {
+                // Not sent at all: every id fails with the reason, so the
+                // list puts back what it showed ahead of the server.
+                let refused = |batch: &crate::work::Batch, why: String| jmap::SetOutcome {
+                    done: Vec::new(),
+                    failed: batch
+                        .ids
+                        .iter()
+                        .map(|id| (id.clone(), why.clone()))
+                        .collect(),
+                };
+                match self.client(&account) {
+                    Some((tag, _)) if tag.generation != generation => {
+                        let outcome = refused(&batch, label("stale-connection"));
+                        self.state
+                            .apply(Event::Account(tag, Done::Batched(batch, outcome)));
+                    }
+                    Some((tag, client)) => {
+                        self.spawn(async move {
+                            let outcome = client.change_emails(&batch.ids, &batch.change).await;
+                            Event::Account(tag, Done::Batched(batch, outcome))
+                        });
+                    }
+                    None => {
+                        let tag = Tag {
+                            account,
+                            generation,
+                        };
+                        let outcome = refused(&batch, label("not-connected"));
+                        self.state
+                            .apply(Event::Account(tag, Done::Batched(batch, outcome)));
+                    }
+                }
+            }
+            Work::FetchIds {
+                account,
+                ticket,
+                mailbox,
+                sort,
+                position,
+            } => {
+                match self.client(&account) {
+                    Some((tag, client)) => {
+                        self.spawn(async move {
+                            let limit = jmap::MAX_IDS_PER_REQUEST as u64;
+                            let page = client.email_ids(&mailbox, sort, position, limit).await;
+                            Event::Account(tag, Done::Ids(ticket, page))
+                        });
+                    }
+                    // Settled at once: "Fetching N…" never waits forever.
+                    None => {
+                        let generation = self
+                            .state
+                            .account(&account)
+                            .map_or(0, crate::state::AccountView::generation);
+                        let tag = Tag {
+                            account,
+                            generation,
+                        };
+                        let error = jmap::Error::Protocol(label("not-connected"));
+                        self.state
+                            .apply(Event::Account(tag, Done::Ids(ticket, Err(error))));
+                    }
+                }
+            }
             Work::MarkRead { account, id, read } => {
                 if let Some((tag, client)) = self.client(&account) {
                     self.spawn(async move {
@@ -668,21 +932,21 @@ impl Shell {
                 account,
                 ticket,
                 draft,
+                attempt,
             } => {
-                // The send recipe needs the Sent mailbox; without the mail
-                // listing yet, there is nothing to file under. Either way
-                // the compose hears back, so it never stays busy.
-                let sent = self.state.sent_mailbox_id(&account);
-                match (self.client(&account), sent) {
-                    (Some((tag, client)), Some(sent)) => {
+                // The send recipe needs the Drafts and Sent mailboxes;
+                // without the mail listing yet, there is nothing to file
+                // under. Either way the compose hears back, so it never
+                // stays busy.
+                let boxes = self.state.send_boxes(&account);
+                match (self.client(&account), boxes) {
+                    (Some((tag, client)), Ok(boxes)) => {
                         self.spawn(async move {
-                            Event::Account(
-                                tag,
-                                Done::Sent(ticket, client.send(&draft, &sent).await),
-                            )
+                            let (attempt, result) = client.send(&draft, &boxes, attempt).await;
+                            Event::Account(tag, Done::Sent(ticket, attempt, result))
                         });
                     }
-                    (found, _) => {
+                    (found, missing) => {
                         let generation = self
                             .state
                             .account(&account)
@@ -691,9 +955,10 @@ impl Shell {
                             account,
                             generation,
                         });
-                        let error = jmap::Error::Protocol(label("no-sent-mailbox"));
+                        let key = missing.err().unwrap_or("not-connected");
+                        let error = jmap::Error::Protocol(label(key));
                         self.state
-                            .apply(Event::Account(tag, Done::Sent(ticket, Err(error))));
+                            .apply(Event::Account(tag, Done::Sent(ticket, attempt, Err(error))));
                     }
                 }
             }
@@ -789,6 +1054,48 @@ impl Shell {
                 }
             }
             Work::OpenPrefs => self.open_prefs(),
+            Work::Print { reply, name, html } => self.print(reply, name, html),
+            Work::SuggestWait { ticket } => self.spawn(async move {
+                tokio::time::sleep(crate::state::SUGGEST_DEBOUNCE).await;
+                Event::SuggestDue(ticket)
+            }),
+            Work::Suggest {
+                account,
+                ticket,
+                text,
+            } => {
+                if let Some((tag, client)) = self.client(&account) {
+                    self.spawn(async move {
+                        let found = client
+                            .contacts_search(&text, crate::verbs::SUGGEST_FETCH)
+                            .await;
+                        Event::Account(tag, Done::Suggested(ticket, found))
+                    });
+                }
+            }
+            Work::Attachment {
+                account,
+                email,
+                part,
+                blob,
+                name,
+                open,
+                dir,
+                reply,
+            } => match self.client(&account) {
+                Some((tag, client)) => self.spawn(async move {
+                    let result = attachment(&client, &blob, name, open, dir).await;
+                    let done = AttachmentDone {
+                        email,
+                        part,
+                        open,
+                        reply,
+                        result,
+                    };
+                    Event::Account(tag, Done::Attachment(Box::new(done)))
+                }),
+                None => self.not_connected(reply),
+            },
         }
     }
 
@@ -819,6 +1126,34 @@ impl Shell {
                 }
             }
             Event::PrefsOpened(Err(label("prefs-silent")))
+        });
+    }
+
+    /// Write a print page off the UI thread and hand it to the browser
+    /// through the session's launcher (`apps.launch`).
+    fn print(&mut self, reply: Option<u64>, name: String, html: String) {
+        let bus = self.bus.clone();
+        self.spawn(async move {
+            let written = tokio::task::spawn_blocking(move || {
+                let dir = print_dir()?;
+                write_print(&dir, &name, &html, std::time::SystemTime::now())
+            })
+            .await;
+            let path = match written {
+                Ok(Ok(path)) => path,
+                Ok(Err(error)) => return Event::Printed(reply, Err(error)),
+                Err(error) => return Event::Printed(reply, Err(error.to_string())),
+            };
+            let uri = format!("file://{}", path.display());
+            let launched = bus
+                .call(
+                    "apps",
+                    "apps.launch",
+                    json!({"id": BROWSER_APP_ID, "uris": [uri]}),
+                )
+                .await;
+            let opened = launched.is_ok_and(|r| r.rc == 0);
+            Event::Printed(reply, Ok((path.display().to_string(), opened)))
         });
     }
 
@@ -1170,13 +1505,28 @@ impl Shell {
         }
         self.pump();
         self.follow_theme();
+        self.draft_timer();
         // Closing waits for the drive layer's accepted work. A close is
         // asked for by the window (the close button) or a command
-        // (file.quit, which sets the state's exiting flag).
-        let closing = ctx.input(|i| i.viewport().close_requested()) || self.state.exiting;
+        // (file.quit, which sets the state's exiting flag). A draft open
+        // with something typed is saved and the person asked first.
+        let asked = ctx.input(|i| i.viewport().close_requested());
+        let mut closing = self.state.exiting;
+        if asked && !closing && !self.exiting {
+            if self.state.request_quit() {
+                closing = true;
+            } else {
+                ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+                self.apply_drafts();
+                ctx.request_repaint();
+            }
+        }
         if closing && !self.exiting {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             self.exiting = true;
+            // Whatever is typed is on disk before anything else closes.
+            self.state.save_draft();
+            self.apply_drafts();
             for answer in drive::finish(&self.ctx) {
                 self.bus.reply(answer.id, answer.rc, answer.body);
             }
@@ -1189,6 +1539,7 @@ impl Shell {
             for reply in self.state.take_replies() {
                 self.bus.reply(reply.id, reply.rc, reply.body);
             }
+            self.apply_drafts();
             self.save_config_if_dirty();
             self.bus.quit();
             self.ctx.send_viewport_cmd(egui::ViewportCommand::Close);
@@ -1200,6 +1551,7 @@ impl Shell {
         let fired = self.commands.shortcuts(ui.ctx(), &self.state);
         let stroke = toolkit::icons::stroke_width(&self.theme);
         let mut events = view(ui, &self.state, &self.commands, &self.strings, stroke);
+        open_links(ui.ctx());
         events.extend(
             fired
                 .into_iter()
@@ -1222,9 +1574,49 @@ impl Shell {
         }
         self.settle();
         // A theme change is installed by the next frame's logic, before any
-        // drawing: never midway through the frame that saw the click.
-        if self.choice() != self.installed {
+        // drawing: never midway through the frame that saw the click. So is
+        // a close the person just confirmed.
+        if self.choice() != self.installed || self.state.exiting {
             ui.ctx().request_repaint();
+        }
+    }
+}
+
+/// Hand the frame's link requests (a Markdown link clicked in the reader)
+/// to the desktop's handler, detached. eframe is built without its own
+/// browser launcher, so the requests are taken out of egui's output here;
+/// only http, https and mailto addresses are opened, as one argument and
+/// never through a shell.
+fn open_links(ctx: &egui::Context) {
+    let urls = ctx.output_mut(|output| {
+        let mut urls = Vec::new();
+        output.commands.retain(|command| match command {
+            egui::OutputCommand::OpenUrl(open) => {
+                urls.push(open.url.clone());
+                false
+            }
+            _ => true,
+        });
+        urls
+    });
+    for url in urls
+        .into_iter()
+        .filter(|url| toolkit::markdown::openable(url))
+    {
+        match std::process::Command::new("xdg-open")
+            .arg(url.trim())
+            .spawn()
+        {
+            Ok(mut child) => {
+                // Reaped off the UI thread, so it never lingers as a zombie.
+                let reaped = std::thread::Builder::new()
+                    .name("email-xdg-open-reap".into())
+                    .spawn(move || drop(child.wait()));
+                if reaped.is_err() {
+                    eprintln!("email: the link opener's reaper did not start");
+                }
+            }
+            Err(error) => eprintln!("email: opening a link: {error}"),
         }
     }
 }
@@ -1439,6 +1831,29 @@ mod tests {
 
     /// Review finding 5 (the migration's part): credentials in the old
     /// account's URL never reach settingsd, and the note never echoes them.
+    #[test]
+    fn a_print_page_is_private_whole_and_old_ones_go() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("email-print");
+        let now = std::time::SystemTime::now();
+        let first = write_print(&dir, "a.html", "<p>a</p>", now).unwrap();
+        assert_eq!(std::fs::read_to_string(&first).unwrap(), "<p>a</p>");
+        let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode(&dir), 0o700);
+        assert_eq!(mode(&first), 0o600);
+        // Printing again replaces the page; nothing partial is left.
+        write_print(&dir, "a.html", "<p>b</p>", now).unwrap();
+        assert_eq!(std::fs::read_to_string(&first).unwrap(), "<p>b</p>");
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
+        // Two days on, the old page goes as a new one is written.
+        let later = now + 2 * PRINT_KEEP;
+        let second = write_print(&dir, "b.html", "<p>c</p>", later).unwrap();
+        assert!(!first.exists() && second.exists());
+        assert!(write_print(&dir, "../x.html", "", now).is_err());
+        assert!(write_print(&dir, ".hidden", "", now).is_err());
+    }
+
     #[test]
     fn round5_23_the_close_drain_drops_nothing_that_waits() {
         let command = Event::Delivery(citizen::Delivery::Command {
