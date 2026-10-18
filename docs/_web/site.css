@@ -572,11 +572,63 @@
         padding: var(--space-8) var(--space-4);
     }
 
-    /* The footer is a single paragraph, and base.css's global p carries a 1rem
-       bottom margin — with symmetric 2rem padding that renders 32px above and 48px
-       below. The padding is the correct scale token; the stray margin is not. */
-    .site-footer p:last-child {
-        margin-bottom: 0;
+    /* Three tiers, quietest last: the product line, a note on what the site
+       covers, then the copyright line under a short accent hairline. White at
+       stepped opacity keeps every tier legible on the photo in both modes.
+       base.css's global p carries a 1rem bottom margin; the tiers set their own
+       spacing, so it is zeroed here (it used to leave 32px above, 48px below). */
+    .site-footer p {
+        margin: 0;
+        overflow-wrap: anywhere;
+    }
+
+    .site-footer .footer-product {
+        font-size: var(--text-base);
+        color: rgb(255 255 255 / 0.92);
+    }
+
+    .footer-product strong {
+        font-family: var(--font-heading);
+        font-weight: 700;
+        letter-spacing: 0.01em;
+        color: #fff;
+        margin-right: var(--space-1);
+    }
+
+    .site-footer .footer-note {
+        margin-top: var(--space-1);
+        font-size: var(--text-sm);
+        color: rgb(255 255 255 / 0.82);
+    }
+
+    .site-footer .footer-legal {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        align-items: baseline;
+        gap: var(--space-1) var(--space-3);
+        width: fit-content;
+        max-width: 100%;
+        margin: var(--space-5) auto 0;
+        padding-top: var(--space-4);
+        border-top: 1px solid color-mix(in oklch, var(--accent) 45%, transparent);
+        font-size: var(--text-xs);
+        letter-spacing: 0.02em;
+        color: rgb(255 255 255 / 0.75);
+    }
+
+    .footer-legal a {
+        font-family: var(--font-mono);
+        color: var(--accent);
+        text-decoration: none;
+        border-bottom: 1px solid transparent;
+        transition: color 0.15s ease, border-color 0.15s ease;
+    }
+
+    .footer-legal a:hover,
+    .footer-legal a:focus-visible {
+        color: var(--accent-hover);
+        border-bottom-color: currentColor;
     }
 
     .hero-bg > * {
@@ -732,6 +784,101 @@
 
     .section-lede strong {
         color: var(--fg-primary);
+    }
+
+    /* A lede that closes a section, under its cards. */
+    .section-lede.section-lede-after {
+        margin: var(--space-8) auto 0;
+    }
+
+    .section-subtitle code {
+        background: var(--bg-tertiary);
+        padding: 0.1em 0.4em;
+        border-radius: var(--radius-sm);
+        font-size: 0.9em;
+    }
+
+    /* Consecutive home sections share --bg-secondary; a hairline marks the seam. */
+    .content-section + .content-section {
+        border-top: 1px solid var(--border);
+    }
+
+    /* ============================================
+       HOME CARDS
+       ============================================ */
+
+    .content-section .card h3 {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+        font-size: var(--text-lg);
+        margin-block-end: var(--space-2);
+        color: var(--fg-primary);
+    }
+
+    .content-section .card h3 [data-lucide] {
+        flex: none;
+        color: var(--accent);
+    }
+
+    .content-section .card p {
+        color: var(--fg-secondary);
+        font-size: var(--text-sm);
+        line-height: 1.65;
+        margin-bottom: 0;
+    }
+
+    .content-section .card code {
+        font-size: 0.9em;
+        background: var(--bg-tertiary);
+        padding: 0.05em 0.35em;
+        border-radius: var(--radius-sm);
+    }
+
+    /* A whole card that is a link: no underline, a lift on hover, and a
+       "Read >" line pinned to the bottom so cards in a row line up. */
+    .repo-card {
+        display: flex;
+        flex-direction: column;
+        color: inherit;
+        text-decoration: none;
+        transition:
+            transform var(--transition-medium),
+            border-color var(--transition-medium),
+            box-shadow var(--transition-medium);
+    }
+
+    .repo-card:hover,
+    .repo-card:focus-visible {
+        text-decoration: none;
+        transform: translateY(-2px);
+        border-color: var(--accent);
+        box-shadow: 0 8px 24px var(--accent-glow);
+    }
+
+    .repo-card .service-icon {
+        font-size: 1.5rem;
+        margin-block-end: var(--space-3);
+    }
+
+    .repo-card p { flex: 1; }
+
+    .repo-go {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--space-1);
+        margin-top: var(--space-4);
+        font-size: var(--text-sm);
+        font-weight: 600;
+        color: var(--accent);
+    }
+
+    .repo-card:hover .repo-go [data-lucide] {
+        transform: translateX(2px);
+    }
+
+    .repo-go [data-lucide] {
+        transition: transform var(--transition-base);
     }
 
     /* ============================================

@@ -14,14 +14,14 @@
     <title>MixOS — an agent-operable computing system</title>
     <link rel="canonical" href="https://mixos.dev/">
     <link rel="alternate" type="text/markdown" href="/llms.txt" title="Site index for LLMs (llms.txt)">
-    <meta name="mixos-build" content="f5aa5deeded4">
+    <meta name="mixos-build" content="a4a836c97878">
     <link rel="preload" href="/_web/fonts/sans.woff2?v=22f05185ef" as="font" type="font/woff2" crossorigin>
     <link rel="stylesheet" href="/_web/fonts.css?v=d8bbe7c76c"><!-- generated: Inter / Quicksand / JetBrains Mono / emoji cut from the asset set -->
     <!-- FOUC prevention: paint theme/scheme synchronously before first paint (dcs.spa convention). -->
     <script>(function(){var s=JSON.parse(localStorage.getItem('base-state')||'{}'),t=s.theme,c=(s.scheme||'mono'),h=document.documentElement;h.className='preload '+(t||(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light'))+(c&&c!=='default'?' scheme-'+c:'')+(s.width==='wide'?' wide':(s.width==='narrow'?' narrow':''));})()</script>
     <link rel="stylesheet" href="/_web/base.css?v=3b777a1623">
-    <link rel="stylesheet" href="/_web/site.css?v=223ce7325f">
-    <link rel="stylesheet" href="/_web/icons.css?v=678efd9f45"><!-- generated: Lucide CSS masks -->
+    <link rel="stylesheet" href="/_web/site.css?v=05b74feda3">
+    <link rel="stylesheet" href="/_web/icons.css?v=a8f852d1ff"><!-- generated: Lucide CSS masks -->
     <!-- Icons are CSS masks keyed on data-lucide (_web/icons.css), so base.js's
          lucide.createIcons() calls only need this no-op stand-in. -->
     <script>window.lucide={createIcons:function(){}};</script>
@@ -208,8 +208,10 @@
                 <div class="panel-title">On this page</div>
                 <div class="panel-content">
                     <nav id="toc-nav">
+                        <a href="#what"><i data-lucide="layers"></i> Desktop and server</a>
+                        <a href="#capabilities"><i data-lucide="network"></i> Built to be driven</a>
                         <a href="#try"><i data-lucide="monitor"></i> Try it beside your desktop</a>
-                        <a href="#docs"><i data-lucide="book-open"></i> Documentation</a>
+                        <a href="#docs"><i data-lucide="book-open"></i> Read more</a>
                     </nav>
                 </div>
             </div>
@@ -239,11 +241,66 @@
             <img class="hero-logo" src="/_web/brand/alien-cyclops.svg" width="512" height="512" alt="Alien Cyclops, the MixOS mascot">
             <h1><span class="shimmer-text">MixOS</span></h1>
             <h2 class="shimmer-text" style="margin-top:-0.1em;margin-bottom:0.6em;font-size:clamp(1.4rem,4vw,2.4rem)">An agent-operable computing system</h2>
-            <p>The manual for MixOS lives here. The documentation arrives with each component.</p>
+            <p>A Linux userland where every app is a service, every service speaks one message bus, and Mix is the shell. Legible, modifiable and reconstructible by design, so people and agents can run the same machine the same way.</p>
             <div class="cta-group">
                 <a href="#try" class="cta-btn primary"><i data-lucide="monitor" class="lucide-icon"></i> Try it beside your desktop</a>
                 <a href="https://mixos.au/" class="cta-btn secondary"><i data-lucide="globe" class="lucide-icon"></i> About MixOS</a>
                 <a href="https://github.com/markc/mixos" class="cta-btn secondary"><svg class="lucide lucide-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg> GitHub</a>
+            </div>
+        </div>
+    </section>
+
+    <section id="what" class="content-section">
+        <div class="section-header">
+            <h2 class="section-title">One system, desktop and server</h2>
+            <p class="section-subtitle">One repository, one Cargo workspace, one system binary. What a machine runs is chosen at install time.</p>
+        </div>
+        <p class="section-lede">MixOS is written in Rust. Desktop, server, command-line and library code live in <a href="https://github.com/markc/mixos">one public repository</a>, and each shipping component declares the <a href="/docs/decisions/2026-10-12-one-repository-install-profiles/">install profiles</a> it belongs to. The shell and every headless daemon ship as <a href="/docs/decisions/2026-10-12-one-system-binary/">one binary, <code>mix</code></a>; each daemon is a symlink that picks its role from the name it was started as.</p>
+        <div class="grid-2">
+            <a class="card repo-card" href="/docs/desktop/">
+                <i data-lucide="monitor" class="service-icon"></i>
+                <h3>Desktop</h3>
+                <p>A Wayland compositor, a terminal with tabs and split panes, a shared-document editor, a twin-pane file manager, a screenshot tool, preferences and a task manager. The apps are built on egui and wgpu.</p>
+                <span class="repo-go">Desktop components <i data-lucide="chevron-right"></i></span>
+            </a>
+            <a class="card repo-card" href="/docs/server/">
+                <i data-lucide="server" class="service-icon"></i>
+                <h3>Server</h3>
+                <p>Headless nodes run the same <code>mix</code> binary. The Bus broker peers nodes into a mesh, and monitord samples each node's CPU, memory, disks, network and processes so its load can be read from anywhere on the mesh. The mail, web, blob and DNS programs have not moved into this tree yet.</p>
+                <span class="repo-go">Server components <i data-lucide="chevron-right"></i></span>
+            </a>
+        </div>
+    </section>
+
+    <section id="capabilities" class="content-section">
+        <div class="section-header">
+            <h2 class="section-title">Built to be driven</h2>
+            <p class="section-subtitle">Anything a person can do in a MixOS app, an agent can do over the Bus.</p>
+        </div>
+        <div class="grid-3">
+            <div class="card">
+                <h3><i data-lucide="network"></i> One Bus</h3>
+                <p>The <a href="/noded/">noded</a> broker handles service registration, discovery, routing, subscriptions and mesh peering between nodes. Every app and daemon is a service on it.</p>
+            </div>
+            <div class="card">
+                <h3><i data-lucide="layers"></i> Engine-first apps</h3>
+                <p>An app's behaviour is a set of named commands. The window, the command line and the Bus <a href="/docs/decisions/2026-10-09-egui-applications/">invoke them the same way</a>.</p>
+            </div>
+            <div class="card">
+                <h3><i data-lucide="mouse-pointer-2"></i> Drive verbs</h3>
+                <p>Every toolkit app also answers the <a href="/docs/drive/">same drive verbs</a>: read the widget tree, click, type, press keys, scroll, move the window and take a screenshot.</p>
+            </div>
+            <div class="card">
+                <h3><i data-lucide="file-terminal"></i> Mix, the shell</h3>
+                <p><a href="/mix/">Mix</a> is the interactive shell and the scripting language. Its manual is built into the binary: <code>mix man TOPIC</code> needs no checkout and no network.</p>
+            </div>
+            <div class="card">
+                <h3><i data-lucide="pencil"></i> Edit together</h3>
+                <p>The <a href="/ced/">editor</a> works over a shared edit service, so people and agents edit one document at once and see each other's carets and changes live.</p>
+            </div>
+            <div class="card">
+                <h3><i data-lucide="settings"></i> Privilege without sudo</h3>
+                <p><a href="/hostd/">hostd</a> makes privileged host changes through closed, typed verbs. Each change is checked, recorded and reversed if it fails.</p>
             </div>
         </div>
     </section>
@@ -268,13 +325,13 @@
                 <p>Kernel virtual terminals, DRM handover, <code>seatd</code> and <code>systemd-nspawn</code> are already on Ubuntu, Fedora, Debian, Arch, openSUSE and Mint. At most you add one package.</p>
             </div>
         </div>
-        <p class="section-lede" style="margin-top:var(--space-6)">Know before you go: it needs <code>sudo</code>, and it is not a sandbox, because the image gets your real input devices and GPU. Intel and AMD graphics come first. <strong>Status:</strong> it runs daily on the developers' machines. The download and the one-command installer are being built.</p>
+        <p class="section-lede section-lede-after">Know before you go: it needs <code>sudo</code>, and it is not a sandbox, because the image gets your real input devices and GPU. Intel and AMD graphics come first. <strong>Status:</strong> it runs daily on the developers' machines. The download and the one-command installer are being built.</p>
     </section>
 
     <section id="docs" class="content-section">
         <div class="section-header">
-            <h2 class="section-title">Documentation</h2>
-            <p class="section-subtitle">The manual grows with each component.</p>
+            <h2 class="section-title">Read more</h2>
+            <p class="section-subtitle">The manual grows with each component. This site describes the current <code>main</code> branch.</p>
         </div>
         <div class="grid-3">
             <a class="card repo-card" href="/docs/try/">
@@ -283,12 +340,44 @@
                 <p>How MixOS runs on its own virtual terminal next to the desktop you already use, and what to know first.</p>
                 <span class="repo-go">Read <i data-lucide="chevron-right"></i></span>
             </a>
+            <a class="card repo-card" href="/docs/drive/">
+                <i data-lucide="network" class="service-icon"></i>
+                <h3>Driving apps over the Bus</h3>
+                <p>How an agent drives a native app through Bus verbs, from the widget tree and injected input to window commands and captures.</p>
+                <span class="repo-go">Read <i data-lucide="chevron-right"></i></span>
+            </a>
+            <a class="card repo-card" href="/docs/components/">
+                <i data-lucide="box" class="service-icon"></i>
+                <h3>Components</h3>
+                <p>Every component, with its kind, install profiles, source and page.</p>
+                <span class="repo-go">Browse <i data-lucide="chevron-right"></i></span>
+            </a>
+            <a class="card repo-card" href="/mix/">
+                <i data-lucide="file-text" class="service-icon"></i>
+                <h3>The Mix language</h3>
+                <p>The reference manual for Mix, one page per topic. The same pages ship inside the binary as <code>mix man</code>.</p>
+                <span class="repo-go">Read <i data-lucide="chevron-right"></i></span>
+            </a>
+            <a class="card repo-card" href="/docs/">
+                <i data-lucide="book-open" class="service-icon"></i>
+                <h3>Docs, decisions and specs</h3>
+                <p>Guides, indexes, the public decision records that govern the tree, and the specifications.</p>
+                <span class="repo-go">Open <i data-lucide="chevron-right"></i></span>
+            </a>
+            <a class="card repo-card" href="https://github.com/markc/mixos">
+                <i data-lucide="globe" class="service-icon"></i>
+                <h3>Source on GitHub</h3>
+                <p>The whole tree, dual-licensed MIT or Apache-2.0. A component enters it only when it builds and passes its tests there.</p>
+                <span class="repo-go">View <i data-lucide="chevron-right"></i></span>
+            </a>
         </div>
-        <p class="section-lede" style="margin-top:var(--space-6)">For agents: <a href="/llms.txt"><code>/llms.txt</code></a> indexes every page, <a href="/llms-full.txt"><code>/llms-full.txt</code></a> is the whole manual in one file, and every page is also published as Markdown.</p>
+        <p class="section-lede section-lede-after">For agents: <a href="/llms.txt"><code>/llms.txt</code></a> indexes every page, <a href="/llms-full.txt"><code>/llms-full.txt</code></a> is the whole manual in one file, and every page is also published as Markdown.</p>
     </section>
 
     <footer class="site-footer">
-        <p><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:1em;height:1em;vertical-align:-0.12em;display:inline" aria-hidden="true"><rect x="2" y="2" width="20" height="20" rx="5"/><path d="M7 16V8l5 4.5L17 8v8"/></svg> MixOS &middot; an agent-operable computing system &middot; this site describes the current <code>main</code> branch &middot; <span id="year"></span> &copy; Mark Constable &lt;<a href="mailto:mc@mixos.dev">mc@mixos.dev</a>&gt;</p>
+        <p class="footer-product"><strong>MixOS</strong> <span class="footer-tagline">an agent-operable computing system</span></p>
+        <p class="footer-note">Dual-licensed MIT or Apache-2.0.</p>
+        <p class="footer-legal"><span>&copy; <span id="year"></span> Mark Constable</span> <a href="mailto:mc@mixos.dev">mc@mixos.dev</a></p>
     </footer>
 
     </div><!-- /#brochure -->
