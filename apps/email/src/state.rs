@@ -2889,7 +2889,11 @@ impl State {
             .timestamp_nanos_opt()
             .unwrap_or_default()
             .unsigned_abs();
-        format!("{nanos:016x}{:08x}{:04x}", std::process::id(), self.drafts_made)
+        format!(
+            "{nanos:016x}{:08x}{:04x}",
+            std::process::id(),
+            self.drafts_made
+        )
     }
 
     /// Hand the open draft to the store when it holds something worth
@@ -5408,7 +5412,10 @@ pub(crate) mod tests {
         let mut store = MemoryStore::default();
         let mut first = connected();
         typed(&mut first);
-        first.apply_ui(UiEvent::ComposeField(ComposeField::Cc, "cy@example.invalid".into()));
+        first.apply_ui(UiEvent::ComposeField(
+            ComposeField::Cc,
+            "cy@example.invalid".into(),
+        ));
         // An earlier send got as far as creating the server copy.
         first.compose.as_mut().unwrap().attempt.email_id = Some("E1".into());
         first.save_draft();

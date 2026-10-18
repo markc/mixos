@@ -894,7 +894,11 @@ mod tests {
         }
     }
 
-    fn try_send(fake: &Fake, message: &Composed, attempt: SendAttempt) -> (SendAttempt, Result<SendReport>) {
+    fn try_send(
+        fake: &Fake,
+        message: &Composed,
+        attempt: SendAttempt,
+    ) -> (SendAttempt, Result<SendReport>) {
         block_on(send(fake, message, &boxes(), attempt))
     }
 
@@ -953,7 +957,11 @@ mod tests {
         assert!(report.earlier, "the earlier try had gone");
         assert!(attempt.submitted);
         assert_eq!(fake.count("EmailSubmission/query"), 1);
-        assert_eq!(fake.count("EmailSubmission/set"), 1, "never submitted twice");
+        assert_eq!(
+            fake.count("EmailSubmission/set"),
+            1,
+            "never submitted twice"
+        );
         assert_eq!(fake.server().submissions.len(), 1);
         assert_eq!(fake.in_box("M-sent"), 1);
     }
@@ -1009,7 +1017,11 @@ mod tests {
         };
         let (attempt, result) = try_send(&fake, &edited, attempt);
         assert!(matches!(result, Err(Error::AlreadySent)));
-        assert_eq!(attempt, SendAttempt::default(), "a later send starts afresh");
+        assert_eq!(
+            attempt,
+            SendAttempt::default(),
+            "a later send starts afresh"
+        );
         assert_eq!(fake.server().submissions.len(), 1);
         assert_eq!(fake.in_box("M-sent"), 1, "what went is filed");
     }

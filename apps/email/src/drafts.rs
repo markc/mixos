@@ -79,7 +79,11 @@ pub fn apply(store: &mut dyn DraftStore, ops: Vec<DraftOp>) -> Vec<String> {
 
 /// A draft id is used as a file name: lowercase hex, bounded.
 pub fn valid_id(id: &str) -> bool {
-    !id.is_empty() && id.len() <= 64 && id.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+    !id.is_empty()
+        && id.len() <= 64
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
 }
 
 /// Newest first, then by id, so the order is stable.
@@ -242,7 +246,10 @@ mod tests {
         std::fs::write(store.dir.join("0c.json"), b"not json").unwrap();
         assert!(store.list().is_empty());
         assert!(store.save(&draft("0c", "2026-10-18T01:00:00Z")).is_err());
-        assert_eq!(std::fs::read(store.dir.join("0c.json")).unwrap(), b"not json");
+        assert_eq!(
+            std::fs::read(store.dir.join("0c.json")).unwrap(),
+            b"not json"
+        );
     }
 
     #[test]
@@ -254,6 +261,10 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let mut store = DirStore::new(root.path());
         assert!(store.save(&draft("../escape", "")).is_err());
-        assert!(MemoryStore::default().save(&draft("../escape", "")).is_err());
+        assert!(
+            MemoryStore::default()
+                .save(&draft("../escape", ""))
+                .is_err()
+        );
     }
 }
