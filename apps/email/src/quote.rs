@@ -62,19 +62,52 @@ pub fn reply_body(
     signature: &str,
     position: Position,
 ) -> String {
+    arrange("", &quote_block(original, attribution), signature, position)
+}
+
+/// The attribution and the quoted `original`, as a reply's body carries
+/// them. Only the attribution when there is nothing to quote.
+pub fn quote_block(original: &str, attribution: &str) -> String {
     let quote = quoted(&unsigned(original));
-    let quote = if quote.is_empty() || original.trim().is_empty() {
+    if quote.is_empty() || original.trim().is_empty() {
         attribution.to_owned()
     } else {
         format!("{attribution}\n{quote}")
-    };
+    }
+}
+
+/// A reply body with the person's `typed` text, `quote` (from
+/// [`quote_block`]) and `signature`, in `position`'s order. With `typed`
+/// empty this is the body a fresh reply opens with.
+pub fn arrange(typed: &str, quote: &str, signature: &str, position: Position) -> String {
     let signature = signature.trim_matches('\n');
     match position {
-        Position::Above if signature.is_empty() => format!("\n\n{quote}\n"),
-        Position::Above => format!("\n\n{signature}\n\n{quote}\n"),
-        Position::Below if signature.is_empty() => format!("{quote}\n\n\n"),
-        Position::Below => format!("{quote}\n\n\n\n{signature}\n"),
+        Position::Above if signature.is_empty() => format!("{typed}\n\n{quote}\n"),
+        Position::Above => format!("{typed}\n\n{signature}\n\n{quote}\n"),
+        Position::Below if signature.is_empty() => format!("{quote}\n\n{typed}\n"),
+        Position::Below => format!("{quote}\n\n{typed}\n\n{signature}\n"),
     }
+}
+
+/// `body` moved to `to`'s order: the `quote` block and `signature` are cut
+/// out of it and laid out again, and the person's text in between stays
+/// as it is. `None` when the quote or the signature is no longer in the
+/// body verbatim, because the person edited it; the caller leaves the
+/// body alone then.
+pub fn moved(body: &str, quote: &str, signature: &str, to: Position) -> Option<String> {
+    if quote.is_empty() || !body.contains(quote) {
+        return None;
+    }
+    let signature = signature.trim_matches('\n');
+    let mut typed = body.replacen(quote, "", 1);
+    if !signature.is_empty() {
+        if !typed.contains(signature) {
+            return None;
+        }
+        typed = typed.replacen(signature, "", 1);
+    }
+    let typed = typed.trim_matches('\n');
+    Some(arrange(typed, quote, signature, to))
 }
 
 /// The text of an HTML body, for quoting a message that has no plain
@@ -193,6 +226,37 @@ mod tests {
         assert_eq!(body, format!("{ATTRIBUTION}\n> Lunch?\n\n\n\n-- \nBob\n"));
         let unsigned_body = reply_body("Lunch?", ATTRIBUTION, "", Position::Below);
         assert_eq!(unsigned_body, format!("{ATTRIBUTION}\n> Lunch?\n\n\n"));
+    }
+
+    #[test]
+    fn moving_the_quote_keeps_what_the_person_typed() {
+        let quote = quote_block("Lunch?", ATTRIBUTION);
+        let above = arrange("Sounds good.", &quote, SIG, Position::Above);
+        let below = moved(&above, &quote, SIG, Position::Below).unwrap();
+        assert_eq!(below, arrange("Sounds good.", &quote, SIG, Position::Below));
+        assert!(below.starts_with(&quote), "the quote now comes first");
+        let back = moved(&below, &quote, SIG, Position::Above).unwrap();
+        assert_eq!(back, above);
+    }
+
+    #[test]
+    fn moving_an_empty_reply_matches_a_fresh_one() {
+        let quote = quote_block("Lunch?", ATTRIBUTION);
+        let fresh = reply_body("Lunch?", ATTRIBUTION, SIG, Position::Above);
+        assert_eq!(moved(&fresh, &quote, SIG, Position::Above).unwrap(), fresh);
+        assert_eq!(
+            moved(&fresh, &quote, SIG, Position::Below).unwrap(),
+            reply_body("Lunch?", ATTRIBUTION, SIG, Position::Below)
+        );
+    }
+
+    #[test]
+    fn an_edited_quote_is_left_for_the_person() {
+        let quote = quote_block("Lunch?", ATTRIBUTION);
+        let body = arrange("", &quote, SIG, Position::Above).replace("> Lunch?", "> Dinner?");
+        assert_eq!(moved(&body, &quote, SIG, Position::Below), None);
+        let unsigned_edit = arrange("", &quote, "", Position::Above).replace("> Lunch?", "> x");
+        assert_eq!(moved(&unsigned_edit, &quote, "", Position::Below), None);
     }
 
     #[test]

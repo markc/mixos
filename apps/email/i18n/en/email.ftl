@@ -27,6 +27,7 @@ sending = Sending…
 send-failed = Not sent: { $error }
 bad-recipient = Check the recipients: { $error }
 compose-title = Compose
+reply-below-quote = Reply below the quote
 to = To
 cc = Cc
 bcc = Bcc

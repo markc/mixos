@@ -483,6 +483,18 @@ pub struct ComposeState {
     /// What earlier sends of this message did on the server: a retry
     /// submits the same message instead of creating a second copy.
     pub attempt: jmap::SendAttempt,
+    /// The quote a reply opened with, so the person can move it to the other
+    /// side of their text. None for a new message or a reply without a quote.
+    pub reply: Option<ReplyQuote>,
+}
+
+/// The quote a reply carries: the attribution and quoted original, the
+/// signature, and which side of the person's text they sit on.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ReplyQuote {
+    pub quote: String,
+    pub signature: String,
+    pub position: crate::quote::Position,
 }
 
 /// A question that must be answered before a draft would close.
@@ -591,6 +603,7 @@ impl ComposeState {
             saved: 0,
             restored: false,
             attempt: jmap::SendAttempt::default(),
+            reply: None,
         }
     }
 }
@@ -4850,17 +4863,18 @@ impl State {
             Some(subject) => format!("Re: {subject}"),
             None => crate::label("reply-subject"),
         };
-        let body = if quote.unwrap_or_else(|| self.quote_on_reply()) {
-            crate::quote::reply_body(
-                &quotable(open),
-                &attribution(open),
-                &self.signed_body(account),
-                self.reply_position(),
-            )
-        } else {
-            String::new()
+        let reply = quote
+            .unwrap_or_else(|| self.quote_on_reply())
+            .then(|| ReplyQuote {
+                quote: crate::quote::quote_block(&quotable(open), &attribution(open)),
+                signature: self.signed_body(account),
+                position: self.reply_position(),
+            });
+        let body = match &reply {
+            Some(r) => crate::quote::arrange("", &r.quote, &r.signature, r.position),
+            None => String::new(),
         };
-        self.open_compose(
+        let opened = self.open_compose(
             Some(account),
             Composed {
                 to,
@@ -4873,7 +4887,11 @@ impl State {
                     .and_then(|ids| ids.into_iter().next()),
                 ..Composed::default()
             },
-        )
+        );
+        if opened && let Some(compose) = &mut self.compose {
+            compose.reply = reply;
+        }
+        opened
     }
 
     /// Apply one frame's interactions.
@@ -4998,6 +5016,33 @@ impl State {
             UiEvent::CancelFetch => self.cancel_fetch(),
             UiEvent::ConfirmDraft(choice) => self.confirm_draft(choice),
             UiEvent::RestoreDraft(choice) => self.restore_draft(choice),
+            UiEvent::ComposeReplyPosition(position) => {
+                let Some(compose) = &mut self.compose else {
+                    return;
+                };
+                if compose.busy {
+                    return;
+                }
+                let Some(reply) = compose.reply.as_mut() else {
+                    return;
+                };
+                if reply.position == position {
+                    return;
+                }
+                // The person's text stays; only the quote and signature move.
+                // An edited quote is left alone, and so is the toggle.
+                let Some(body) = crate::quote::moved(
+                    &compose.draft.body,
+                    &reply.quote,
+                    &reply.signature,
+                    position,
+                ) else {
+                    return;
+                };
+                reply.position = position;
+                compose.draft.body = body;
+                compose.revision += 1;
+            }
             UiEvent::ComposeUseNewFrom => {
                 // Only for the account and connection the address came from.
                 let current = self.compose.as_ref().and_then(|c| {
@@ -5842,6 +5887,43 @@ pub(crate) mod tests {
         state.set_settings(next);
         assert!(!state.quote_on_reply());
         assert_eq!(state.reply_position(), crate::quote::Position::Below);
+    }
+
+    #[test]
+    fn a_reply_moves_its_quote_and_keeps_what_was_typed() {
+        use crate::quote::{Position, arrange};
+        let mut state = connected();
+        state.account_mut("a").unwrap().mail.open = Some(unread_email("E1"));
+        state.apply_ui(UiEvent::Reply);
+        let compose = state.compose.clone().expect("a compose dialog");
+        let reply = compose.reply.clone().expect("a quoted reply");
+        assert_eq!(reply.position, Position::Above);
+        let typed = format!("Thanks!{}", compose.draft.body);
+        state.apply_ui(UiEvent::ComposeField(ComposeField::Body, typed));
+
+        state.apply_ui(UiEvent::ComposeReplyPosition(Position::Below));
+        let compose = state.compose.clone().unwrap();
+        assert_eq!(compose.reply.as_ref().unwrap().position, Position::Below);
+        assert_eq!(
+            compose.draft.body,
+            arrange("Thanks!", &reply.quote, &reply.signature, Position::Below)
+        );
+        assert!(compose.draft.body.starts_with(&reply.quote));
+
+        state.apply_ui(UiEvent::ComposeReplyPosition(Position::Above));
+        let compose = state.compose.clone().unwrap();
+        assert_eq!(
+            compose.draft.body,
+            arrange("Thanks!", &reply.quote, &reply.signature, Position::Above)
+        );
+
+        // An edited quote is left as the person wrote it: the switch does nothing.
+        let edited = compose.draft.body.replace("> ", ">> ");
+        state.apply_ui(UiEvent::ComposeField(ComposeField::Body, edited.clone()));
+        state.apply_ui(UiEvent::ComposeReplyPosition(Position::Below));
+        let compose = state.compose.clone().unwrap();
+        assert_eq!(compose.draft.body, edited);
+        assert_eq!(compose.reply.unwrap().position, Position::Above);
     }
 
     #[test]

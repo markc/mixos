@@ -60,6 +60,8 @@ pub enum UiEvent {
     RestoreDraft(crate::state::DraftChoice),
     /// Take the account's new address as the stale draft's From.
     ComposeUseNewFrom,
+    /// Put a reply's quote above or below the person's text.
+    ComposeReplyPosition(crate::quote::Position),
     SendCompose,
     /// Connect an account again.
     Retry(String),

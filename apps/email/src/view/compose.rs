@@ -12,6 +12,7 @@
 use egui::{TextEdit, Ui};
 use toolkit::dialog::{self, Choice};
 use toolkit::field;
+use toolkit::toggle::Toggle;
 
 use super::UiEvent;
 use crate::state::{ComposeField, ComposeState, Confirm, DraftChoice, State};
@@ -136,8 +137,11 @@ pub fn dialog(ui: &mut Ui, state: &State, events: &mut Vec<UiEvent>) {
         Choice::new(crate::label("cancel"), dialog::Role::Cancel),
     ];
     let send_index = 0; // choices[0] is Send; the cancel closes below.
+    // The body can be resized; egui keeps the size for this id while the
+    // app runs, so the window opens at the size it was last left at.
     let shown = dialog::Dialog::new(id, crate::label("compose-title"))
         .buttons(choices)
+        .resizable(egui::vec2(720.0, 560.0), egui::vec2(480.0, 320.0))
         .show(ui.ctx(), |ui| {
             form(ui, compose, state, events);
         });
@@ -304,6 +308,27 @@ fn form(ui: &mut Ui, compose: &ComposeState, state: &State, events: &mut Vec<UiE
             .hint_text(crate::label("body"));
         if ui.add(editor).changed() {
             events.push(UiEvent::ComposeField(ComposeField::Body, body));
+        }
+        // A reply's quote can sit above or below the person's text. The
+        // switch is off the table once the quote itself was edited.
+        if let Some(reply) = &compose.reply {
+            let movable = crate::quote::moved(
+                &compose.draft.body,
+                &reply.quote,
+                &reply.signature,
+                reply.position,
+            )
+            .is_some();
+            let mut below = reply.position == crate::quote::Position::Below;
+            let switch = Toggle::new(&mut below, crate::label("reply-below-quote"));
+            if ui.add_enabled(movable, switch).changed() {
+                let to = if below {
+                    crate::quote::Position::Below
+                } else {
+                    crate::quote::Position::Above
+                };
+                events.push(UiEvent::ComposeReplyPosition(to));
+            }
         }
     });
     // The account's login changed under this draft: show the new From and
