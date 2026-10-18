@@ -250,17 +250,18 @@ fn identities(ui: &mut Ui, engine: &Engine, width: f32, events: &mut Vec<UiEvent
             events.push(UiEvent::EmailIdentityAdd);
         }
         let remove = toolkit::button::PushButton::secondary(label("email-identity-remove"));
-        if ui
-            .add_enabled(!draft.rows.is_empty(), remove)
-            .clicked()
-        {
+        if ui.add_enabled(!draft.rows.is_empty(), remove).clicked() {
             events.push(UiEvent::EmailIdentityRemove);
         }
     });
     if let Some(row) = draft.rows.get(draft.selected) {
         let mut name = row.name.clone();
         if ui
-            .add(field::text_edit(&mut name, &label("email-identity-name"), width))
+            .add(field::text_edit(
+                &mut name,
+                &label("email-identity-name"),
+                width,
+            ))
             .changed()
         {
             events.push(UiEvent::EmailIdentityEdit(
@@ -270,7 +271,11 @@ fn identities(ui: &mut Ui, engine: &Engine, width: f32, events: &mut Vec<UiEvent
         }
         let mut address = row.address.clone();
         if ui
-            .add(field::text_edit(&mut address, &label("email-identity-address"), width))
+            .add(field::text_edit(
+                &mut address,
+                &label("email-identity-address"),
+                width,
+            ))
             .changed()
         {
             events.push(UiEvent::EmailIdentityEdit(
@@ -280,7 +285,11 @@ fn identities(ui: &mut Ui, engine: &Engine, width: f32, events: &mut Vec<UiEvent
         }
         let mut reply_to = row.reply_to.clone().unwrap_or_default();
         if ui
-            .add(field::text_edit(&mut reply_to, &label("email-identity-reply-to"), width))
+            .add(field::text_edit(
+                &mut reply_to,
+                &label("email-identity-reply-to"),
+                width,
+            ))
             .changed()
         {
             events.push(UiEvent::EmailIdentityEdit(
@@ -310,11 +319,14 @@ fn identities(ui: &mut Ui, engine: &Engine, width: f32, events: &mut Vec<UiEvent
             preferences::email::Refusal::Settings(text) => text.clone(),
             _ => label("email-identity-refused"),
         };
-        ui.add(egui::Label::new(
-            RichText::new(text)
-                .small()
-                .color(ui.visuals().error_fg_color),
-        ).wrap());
+        ui.add(
+            egui::Label::new(
+                RichText::new(text)
+                    .small()
+                    .color(ui.visuals().error_fg_color),
+            )
+            .wrap(),
+        );
     }
     let pending = engine.email.identities.is_some();
     ui.horizontal(|ui| {

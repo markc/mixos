@@ -2044,7 +2044,9 @@ mod tests {
             )
             .unwrap(),
         );
-        let accounts = planned.get("email.accounts").expect("the list is written whole");
+        let accounts = planned
+            .get("email.accounts")
+            .expect("the list is written whole");
         assert_eq!(accounts[0]["identities"][0]["id"], "work");
         let bad = Identity {
             address: "not-an-address".into(),
