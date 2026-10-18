@@ -3560,7 +3560,11 @@ impl State {
             return;
         };
         if view.tickets.ids != ticket
-            || view.mail.fetching.as_ref().is_none_or(|f| f.ticket != ticket)
+            || view
+                .mail
+                .fetching
+                .as_ref()
+                .is_none_or(|f| f.ticket != ticket)
         {
             return;
         }
@@ -3700,7 +3704,8 @@ impl State {
             }
             if keyword == "$seen" {
                 let flips = before.iter().filter(|(_, was)| *was != on).count() as u64;
-                view.mail.shift_unread(if on { -(flips as i64) } else { flips as i64 });
+                view.mail
+                    .shift_unread(if on { -(flips as i64) } else { flips as i64 });
             }
             view.set_keyword(&ids, keyword, on);
         }
@@ -8710,12 +8715,7 @@ pub(crate) mod tests {
         assert_eq!(position, 0);
         assert!(!work.iter().any(|w| matches!(w, Work::Batch { .. })));
         assert_eq!(
-            state
-                .account("a")
-                .unwrap()
-                .mail
-                .target_line()
-                .as_deref(),
+            state.account("a").unwrap().mail.target_line().as_deref(),
             Some("Fetching 1,200…")
         );
         done(&mut state, "a", Done::Ids(ticket, id_page(0, 500, 1200)));
@@ -8728,7 +8728,10 @@ pub(crate) mod tests {
         assert_eq!(batch.ids[0], "X0");
         assert_eq!(batch.ids[1199], "X1199");
         let mail = &state.account("a").unwrap().mail;
-        assert!(mail.fetching.is_none() && mail.everything, "still all selected");
+        assert!(
+            mail.fetching.is_none() && mail.everything,
+            "still all selected"
+        );
     }
 
     #[test]
@@ -8737,7 +8740,11 @@ pub(crate) mod tests {
         let mut state = everything(SELECT_ALL_CAP + 1);
         state.flag_target();
         assert!(state.take_work().is_empty(), "no fetch, no write");
-        assert!(state.status.contains("nothing was changed"), "{}", state.status);
+        assert!(
+            state.status.contains("nothing was changed"),
+            "{}",
+            state.status
+        );
         let mail = &state.account("a").unwrap().mail;
         assert!(!mail.emails.iter().any(Email::is_flagged));
         assert!(mail.everything && mail.fetching.is_none());

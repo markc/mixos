@@ -949,17 +949,25 @@ fn escape_cancels_a_select_all_fetch_and_changes_nothing() {
     h.state_mut().state.flag_target();
     h.run();
     assert!(h.query_by_label("Fetching 236…").is_some());
-    let fetch = h.state_mut().state.take_work().into_iter().find_map(|w| match w {
-        Work::FetchIds { ticket, .. } => Some(ticket),
-        _ => None,
-    });
+    let fetch = h
+        .state_mut()
+        .state
+        .take_work()
+        .into_iter()
+        .find_map(|w| match w {
+            Work::FetchIds { ticket, .. } => Some(ticket),
+            _ => None,
+        });
     let ticket = fetch.expect("the ids are fetched first");
     h.key_press(egui::Key::Escape);
     h.run();
     assert!(h.state().seen.contains(&UiEvent::CancelFetch));
     let mail = &h.state().state.account("home").unwrap().mail;
     assert!(mail.fetching.is_none());
-    assert!(mail.everything, "Escape went to the fetch, not the selection");
+    assert!(
+        mail.everything,
+        "Escape went to the fetch, not the selection"
+    );
     assert_eq!(mail.table.selection.len(), 6);
     done(
         &mut h.state_mut().state,
@@ -973,7 +981,10 @@ fn escape_cancels_a_select_all_fetch_and_changes_nothing() {
         ),
     );
     h.run();
-    assert!(h.state_mut().state.take_work().is_empty(), "nothing written");
+    assert!(
+        h.state_mut().state.take_work().is_empty(),
+        "nothing written"
+    );
     assert!(h.query_by_label("Applies to 236 selected").is_some());
 }
 

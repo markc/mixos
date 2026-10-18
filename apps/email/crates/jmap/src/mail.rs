@@ -387,12 +387,10 @@ impl Client {
         let mut outcome = SetOutcome::default();
         let calls = email_set_calls(self.account_id(), ids, change);
         for (call, chunk) in calls.into_iter().zip(ids.chunks(MAX_IDS_PER_REQUEST)) {
-            let answer = self.call(&[call]).await.and_then(|replies| {
-                replies
-                    .into_iter()
-                    .next()
-                    .ok_or_else(|| empty("Email/set"))
-            });
+            let answer = self
+                .call(&[call])
+                .await
+                .and_then(|replies| replies.into_iter().next().ok_or_else(|| empty("Email/set")));
             match answer {
                 Ok(data) => {
                     let part = set_outcome(&data, chunk);

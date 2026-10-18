@@ -861,7 +861,11 @@ impl Shell {
                 // list puts back what it showed ahead of the server.
                 let refused = |batch: &crate::work::Batch, why: String| jmap::SetOutcome {
                     done: Vec::new(),
-                    failed: batch.ids.iter().map(|id| (id.clone(), why.clone())).collect(),
+                    failed: batch
+                        .ids
+                        .iter()
+                        .map(|id| (id.clone(), why.clone()))
+                        .collect(),
                 };
                 match self.client(&account) {
                     Some((tag, _)) if tag.generation != generation => {
