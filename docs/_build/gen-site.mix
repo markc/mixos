@@ -654,7 +654,7 @@ end
 -- second original. favicon.svg is generated from the transparent mark and
 -- follows the visitor's prefers-color-scheme (black on light, white on dark).
 -- The raster fallbacks are copied byte for byte. The Alien Cyclops mascot is
--- copied to _web/brand/ and drawn by shell.html (top bar) and home.html (hero).
+-- copied to _web/brand/ and drawn by home.html (hero).
 $brand = $repo .. "/share/brand"
 $mark_d = re_find(read_file($brand .. "/logos/mixos-black-transparent.svg"), " d=\"([^\"]+)\"")
 if len($mark_d) != 1 then
