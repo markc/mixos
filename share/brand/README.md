@@ -19,7 +19,8 @@ to Mark Constable's instructions.
 | `logos/alien-cyclops.svg` | Alien Cyclops, the MixOS Desktop mascot and default launcher icon: the one-eyed alien "C", white ring and red eye on transparent, 512 × 512. MIT OR Apache-2.0, © 2026 Mark Constable (SPDX header in the file); `install.mix` pins its sha256 |
 | `favicons/black-on-white/` | opaque square set: black mark on white |
 | `favicons/white-on-black/` | opaque square set: white mark on black |
-| `favicons/cyclops/` | opaque square set: the Alien Cyclops on near-black (`#0d0d10`), used by the website favicon. The site's `favicon.svg` is built from `logos/alien-cyclops.svg` by `docs/_build/gen-site.mix` |
+| `logos/alien-cyclops-favicon.svg` | the favicon form of the mascot: the same geometry, scaled to fill the icon, with a thin black outline under the white ring so the C reads on light browser chrome. Transparent. The website's `favicon.svg` is a copy of it |
+| `favicons/cyclops/` | favicon set for the mascot: transparent PNGs and ICO from `logos/alien-cyclops-favicon.svg`; the apple-touch icon is on white, since iOS draws transparent icons black |
 | `preview.png` | both treatments side by side |
 
 The SVGs are real vector outlines (1024 × 1024 viewBox), not embedded

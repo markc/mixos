@@ -651,17 +651,15 @@ end
 
 -- ---------------------------------------------------------------- brand
 -- share/brand is the one source for MixOS brand art; the site never keeps a
--- second original. The favicon is the Alien Cyclops on an opaque dark square
--- (share/brand/README.md: favicon sets are opaque squares, so the white ring
--- stays visible on light browser chrome). favicon.svg is built here from the
--- mascot's own SVG; the raster fallbacks are copied byte for byte from
--- share/brand/favicons/cyclops/. The mascot is also copied to _web/brand/ and
--- drawn by home.html (hero).
+-- second original. The favicon is the Alien Cyclops, transparent, with a thin
+-- black outline under the white ring so it reads on light and dark browser
+-- chrome: logos/alien-cyclops-favicon.svg, copied to _web/favicon.svg, with its
+-- raster fallbacks in favicons/cyclops/ (byte for byte). The mascot is also
+-- copied to _web/brand/ and drawn by home.html (hero).
 $brand = $repo .. "/share/brand"
-$cyclops_svg = read_file($brand .. "/logos/alien-cyclops.svg")
-$favicon_svg = replace(replace($cyclops_svg, " viewBox=\"0 0 512 512\" width=\"512\" height=\"512\">", " viewBox=\"0 0 512 512\"><rect width=\"512\" height=\"512\" fill=\"#0d0d10\"/><svg x=\"80\" y=\"80\" width=\"352\" height=\"352\" viewBox=\"0 0 512 512\">"), "</svg>", "</svg></svg>")
 $copies = {
   "favicon.ico": $brand .. "/favicons/cyclops/favicon.ico",
+  "_web/favicon.svg": $brand .. "/logos/alien-cyclops-favicon.svg",
   "_web/brand/favicon-32-light.png": $brand .. "/favicons/cyclops/favicon-32x32.png",
   "_web/brand/favicon-32-dark.png": $brand .. "/favicons/cyclops/favicon-32x32.png",
   "_web/brand/apple-touch-icon.png": $brand .. "/favicons/cyclops/apple-touch-icon.png",
@@ -675,9 +673,6 @@ fn asset_ver($rel)
   end
   if $rel == "_web/fonts.css" then
     return substr(hash_sha256($fonts_css), 0, 10)
-  end
-  if $rel == "_web/favicon.svg" then
-    return substr(hash_sha256($favicon_svg), 0, 10)
   end
   if has_key($copies, $rel) then
     return substr(hash_file($copies[$rel], "sha256"), 0, 10)
@@ -1089,7 +1084,6 @@ push($emits, {path: "sitemap.xml", from: "the sitemap", body: join($sm, "\n") ..
 push($emits, {path: "robots.txt", from: "robots.txt", body: "User-agent: *\nAllow: /\n\nSitemap: " .. $SITE .. "/sitemap.xml\n"})
 push($emits, {path: "_web/icons.css", from: "the Lucide icons", body: $icons_css})
 push($emits, {path: "_web/fonts.css", from: "the web fonts", body: $fonts_css})
-push($emits, {path: "_web/favicon.svg", from: "the brand mark", body: $favicon_svg})
 for each $k in sort(keys($licence_files))
   push($emits, {path: $k, from: "a font licence", body: $licence_files[$k]})
 end
