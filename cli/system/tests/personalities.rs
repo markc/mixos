@@ -61,7 +61,7 @@ fn assert_noded_identity(command: &mut Command) {
 
 #[test]
 fn every_personality_reports_its_own_identity() {
-    let dir = links(&["mix", "noded", "monitord"]);
+    let dir = links(&["mix", "noded", "monitord", "maild"]);
 
     let (code, out, err) = run(Command::new(dir.path().join("mix")).arg("--version"));
     assert_eq!(code, 0, "stderr: {err}");
@@ -80,6 +80,12 @@ fn every_personality_reports_its_own_identity() {
     let doc: serde_json::Value = serde_json::from_str(out.trim()).unwrap();
     assert_eq!(doc["component"], "monitord");
     assert_eq!(doc["version"], monitord::COMPONENT_VERSION);
+
+    let (code, out, err) = run(Command::new(dir.path().join("maild")).args(["--version", "--json"]));
+    assert_eq!(code, 0, "stderr: {err}");
+    let doc: serde_json::Value = serde_json::from_str(out.trim()).unwrap();
+    assert_eq!(doc["component"], "maild");
+    assert_eq!(doc["version"], maild::COMPONENT_VERSION);
 }
 
 #[test]
@@ -110,21 +116,22 @@ fn personalities_lists_every_component() {
     let (code, out, _) = run(Command::new(BIN).arg("--personalities"));
     assert_eq!(code, 0);
     let want = format!(
-        "mix {}\nnoded {}\nmonitord {}\n",
+        "mix {}\nnoded {}\nmonitord {}\nmaild {}\n",
         mix_shell::COMPONENT_VERSION,
         noded::COMPONENT_VERSION,
-        monitord::COMPONENT_VERSION
+        monitord::COMPONENT_VERSION,
+        maild::COMPONENT_VERSION
     );
     assert_eq!(out, want);
 }
 
 #[test]
 fn an_unknown_name_exits_2_with_the_list() {
-    let dir = links(&["maild"]);
-    let (code, out, err) = run(&mut Command::new(dir.path().join("maild")));
+    let dir = links(&["unavailable-service"]);
+    let (code, out, err) = run(&mut Command::new(dir.path().join("unavailable-service")));
     assert_eq!(code, 2);
     assert_eq!(out, "");
-    assert!(err.starts_with("maild: not a personality"), "got {err:?}");
+    assert!(err.starts_with("unavailable-service: not a personality"), "got {err:?}");
     assert!(
         err.contains(&format!("noded {}", noded::COMPONENT_VERSION)),
         "got {err:?}"

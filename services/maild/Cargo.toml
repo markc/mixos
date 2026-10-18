@@ -13,7 +13,8 @@ description = "JMAP, SMTP, IMAP and DAV mail service"
 component = "maild"
 kind = "service"
 layer = "core"
-contract = "none"
+contract = "public"
+profiles = ["server"]
 
 [lints.clippy]
 mod_module_files = "deny"

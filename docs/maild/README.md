@@ -58,3 +58,17 @@ Run `cargo test -p mds` on a build worker. The `mem-store` feature exposes
 an in-memory implementation for consumers' tests. `_stress-helper` enables
 the internal `mds-stress-writer` and its Unix SIGKILL recovery test; this
 helper is never installed.
+
+## Running and packaging
+
+The system binary carries maild as a personality: install `maild` as a symlink
+to `mix`. The standalone development binary runs the same library entry point.
+`tools/package.mix` includes that symlink, the template service and sysusers
+declaration, and the vendored parser's licences in the server archive.
+
+`maild@INSTANCE.service` requires `noded@INSTANCE.service` and reads the same
+`/etc/mixos/session/INSTANCE.env` file, including its `MIXOS_NODE_CONFIG` broker
+configuration. It runs as the `maild` account. The unit uses
+`/etc/mixos/maild/config.conf.mix`, creates `StateDirectory=maild`, and sets
+`MIXOS_VAR=/var/lib/maild`; configured TLS material must be readable by maild.
+The unit documentation URL points to this manual.

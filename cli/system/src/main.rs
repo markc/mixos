@@ -19,6 +19,7 @@ const PERSONALITIES: &[(&str, &str)] = &[
     ("mix", mix_shell::COMPONENT_VERSION),
     ("noded", noded::COMPONENT_VERSION),
     ("monitord", monitord::COMPONENT_VERSION),
+    ("maild", maild::COMPONENT_VERSION),
 ];
 
 /// The personality argv[0] names: its basename, without the leading `-` a
@@ -63,6 +64,7 @@ fn main() -> ExitCode {
         "mix" | "exe" => mix_shell::main(),
         "noded" => noded::main(),
         "monitord" => monitord::main(),
+        "maild" => maild::main(),
         own if is_own_file(own) => mix_shell::main(),
         _ => {
             eprintln!(

@@ -25,7 +25,7 @@ if $g.opts.help then
 end
 
 $PACKAGES = {
-  "mixos-server": ["mix", "noded", "editd", "settingsd", "portald"],
+  "mixos-server": ["mix", "noded", "editd", "settingsd", "portald", "maild"],
   "mixos-desktop": ["compd", "ced", "dopus", "prefs", "busviewer", "monitor", "screenshot"]
 }
 -- Desktop entries ship with their app: a packaged binary NAME with an
@@ -64,6 +64,11 @@ for $pkg in sort(keys($PACKAGES))
   $top = $stage .. "/" .. $name
   mkdir($top .. "/bin", {parents: true})
   for $b in $PACKAGES[$pkg]
+    if $b == "maild" then
+      -- maild is carried by the system binary, never a second executable.
+      symlink("mix", $top .. "/bin/maild")
+      continue
+    end
     $src = $bin_dir .. "/" .. $b
     if not is_file($src) then raise("PACKAGE_MISSING", $src .. " is not built") end
     copy($src, $top .. "/bin/" .. $b)
@@ -84,6 +89,19 @@ for $pkg in sort(keys($PACKAGES))
   if $pkg == "mixos-desktop" then
     run_argv_must([$mix, $source .. "/libs/toolkit/scripts/install_licenses.mix",
       "--root", $top .. "/share"], {timeout: 30})
+  end
+  if $pkg == "mixos-server" then
+    mkdir($top .. "/share/maild/units", {parents: true})
+    for $u in ["maild@.service", "sysusers.conf"]
+      copy($source .. "/services/maild/units/" .. $u, $top .. "/share/maild/units/" .. $u)
+      chmod($top .. "/share/maild/units/" .. $u, 0o644)
+    end
+    $licences = $top .. "/share/licenses/maild/mail-parser"
+    mkdir($licences, {parents: true})
+    for $name in ["Apache-2.0.txt", "MIT.txt"]
+      copy($source .. "/vendor/mail-parser/LICENSES/" .. $name, $licences .. "/" .. $name)
+      chmod($licences .. "/" .. $name, 0o644)
+    end
   end
   $tar = $out .. "/" .. $name .. ".tar.gz"
   -- Owner-neutral and sorted, so the archive does not depend on the runner.

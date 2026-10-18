@@ -30,6 +30,7 @@ path = "src/main.rs"
 mix-shell = { path = "../mix-shell" }
 noded = { path = "../../services/noded" }
 monitord = { path = "../../services/monitord" }
+maild = { path = "../../services/maild" }
 mimalloc.workspace = true
 
 # The shell's process-level tests (tests/), which run `mix` as built here.

@@ -41,6 +41,9 @@ pub mod vtoken_secret;
 
 mod command;
 
+/// Component version reported by the system personality dispatcher.
+pub const COMPONENT_VERSION: &str = env!("CARGO_PKG_VERSION");
+
 /// Run the mail service from either the development binary or a system personality.
 pub fn main() -> std::process::ExitCode {
     match command::run() {

@@ -713,7 +713,7 @@ profile: [desktop](desktop.md) and [server](server.md). This page describes the 
 | [expr](../expr/README.md) | lib | none (library) | [`libs/expr`](https://github.com/markc/mixos/tree/main/libs/expr) | The pure expression language of Mix Scenes bindings, which compiles an expression, reports the globals it reads and evaluates it over JSON values under size and time limits. |
 | [hostd](../hostd/README.md) · [changelog](../hostd/changelog.md) | service | unclassified | [`services/hostd`](https://github.com/markc/mixos/tree/main/services/hostd) | How hostd answers questions about the host and carries out privileged host changes through closed, typed verbs behind standing grants, receipts and rollback, so agents never need sudo. |
 | [logging](../logging/README.md) | lib | none (library) | [`libs/logging`](https://github.com/markc/mixos/tree/main/libs/logging) | Shared tracing, sink selection, reload handles and process statistics for MixOS services and the Mix shell. |
-| [maild](../maild/README.md) · [changelog](../maild/changelog.md) | service | unclassified | [`services/maild`](https://github.com/markc/mixos/tree/main/services/maild) | JMAP, SMTP, IMAP and DAV mail service |
+| [maild](../maild/README.md) · [changelog](../maild/changelog.md) | service | server | [`services/maild`](https://github.com/markc/mixos/tree/main/services/maild) | JMAP, SMTP, IMAP and DAV mail service |
 | [mimedb](../mimedb/README.md) | lib | none (library) | [`libs/mimedb`](https://github.com/markc/mixos/tree/main/libs/mimedb) | A library that reads the freedesktop shared-mime-info database and decides a file's type from its name and content the way GLib does, so MixOS names a file's type as the desktop does. |
 | [mix](../mix/README.md) · [changelog](../mix/changelog.md) | lib | none (library) | [`libs/mix`](https://github.com/markc/mixos/tree/main/libs/mix) |  |
 | [mix-shell](../mix-shell/README.md) · [changelog](../mix-shell/changelog.md) | cli | unclassified | [`cli/mix-shell`](https://github.com/markc/mixos/tree/main/cli/mix-shell) | The Mix shell library, holding the interactive line editor, the command classifier, the native-session bootstrap and the Bus citizen runtime that the mix binary runs. |
@@ -824,7 +824,7 @@ checked separately by the layering gate.
 | [x11-wm](https://github.com/markc/mixos/blob/main/services/compd/crates/x11-wm/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
 | [editd](https://github.com/markc/mixos/blob/main/services/editd/Cargo.toml) | editd | service | core | public | 0.2.0 |
 | [hostd](https://github.com/markc/mixos/blob/main/services/hostd/Cargo.toml) | hostd | service | core | public | 0.1.0 |
-| [maild](https://github.com/markc/mixos/blob/main/services/maild/Cargo.toml) | maild | service | core | none | 0.1.1 |
+| [maild](https://github.com/markc/mixos/blob/main/services/maild/Cargo.toml) | maild | service | core | public | 0.1.1 |
 | [maild-auth](https://github.com/markc/mixos/blob/main/services/maild/crates/maild-auth/Cargo.toml) | maild | service | core | none | 0.1.1 |
 | [maild-bayesian](https://github.com/markc/mixos/blob/main/services/maild/crates/maild-bayesian/Cargo.toml) | maild | service | core | none | 0.1.1 |
 | [maild-rules](https://github.com/markc/mixos/blob/main/services/maild/crates/maild-rules/Cargo.toml) | maild | service | core | none | 0.1.1 |
@@ -7469,6 +7469,20 @@ Run `cargo test -p mds` on a build worker. The `mem-store` feature exposes
 an in-memory implementation for consumers' tests. `_stress-helper` enables
 the internal `mds-stress-writer` and its Unix SIGKILL recovery test; this
 helper is never installed.
+
+## Running and packaging
+
+The system binary carries maild as a personality: install `maild` as a symlink
+to `mix`. The standalone development binary runs the same library entry point.
+`tools/package.mix` includes that symlink, the template service and sysusers
+declaration, and the vendored parser's licences in the server archive.
+
+`maild@INSTANCE.service` requires `noded@INSTANCE.service` and reads the same
+`/etc/mixos/session/INSTANCE.env` file, including its `MIXOS_NODE_CONFIG` broker
+configuration. It runs as the `maild` account. The unit uses
+`/etc/mixos/maild/config.conf.mix`, creates `StateDirectory=maild`, and sets
+`MIXOS_VAR=/var/lib/maild`; configured TLS material must be readable by maild.
+The unit documentation URL points to this manual.
 
 ---
 
@@ -31531,9 +31545,16 @@ and recovery directories through the isolated MixOS environment.
 
 ## 0.1.1 — 2026-10-18
 
-- Add the mail service skeleton and private metadata store, including SQLite
-  migrations, blob storage, transactions, notifications and recovery tests.
-- Keep storage operations in the library; no separate operator CLI is shipped.
+- Port the JMAP, SMTP, IMAP, CalDAV and CardDAV daemon and its authentication,
+  rules and Bayesian crates onto the shared MixOS libraries and private mds.
+- Register 43 maild Bus verbs and preserve property-store and storage contracts.
+- Retain mail-parser 0.11.5's 64-level nesting safeguard and its direct tests.
+- Use MixOS config paths, build and fixture variables, delegation envelopes,
+  blob headers, protocol banners and DAV sync-token namespace.
+- Add the system-binary personality, server packaging, maild@.service and the
+  maild sysusers declaration. No separate metadata-store operator CLI is shipped.
+- Preserve all source tests and document the six inherited ignores; add two
+  repository registry consistency checks.
 
 ---
 
@@ -32282,7 +32303,6 @@ yet. They are listed on both this page and the server page until they do.
 - [editd](../editd/README.md) (service): The edit service, which holds shared text buffers that people and agents edit together, with revision checks, per-origin undo, anchors, atomic save, external-change detection and recovery.
 - [email](../email/README.md) (app)
 - [hostd](../hostd/README.md) (service): How hostd answers questions about the host and carries out privileged host changes through closed, typed verbs behind standing grants, receipts and rollback, so agents never need sudo.
-- [maild](../maild/README.md) (service): JMAP, SMTP, IMAP and DAV mail service
 - [mix-shell](../mix-shell/README.md) (cli): The Mix shell library, holding the interactive line editor, the command classifier, the native-session bootstrap and the Bus citizen runtime that the mix binary runs.
 - [noded](../noded/README.md) (service): The MixOS Bus broker, which handles service registration, discovery, routing, subscriptions, authenticated local session grants and mesh peering between nodes.
 - [notifyd](../notifyd/README.md) (service): How notifyd keeps the desk's notifications, shows them as toasts and in the Notifications page, and tells an agent or app which button the human pressed.
@@ -32313,7 +32333,7 @@ On every MixOS system.
 
 ## Server components
 
-None yet.
+- [maild](../maild/README.md) (service): JMAP, SMTP, IMAP and DAV mail service
 
 ## Unclassified
 
@@ -32329,7 +32349,6 @@ yet. They are listed on both this page and the desktop page until they do.
 - [editd](../editd/README.md) (service): The edit service, which holds shared text buffers that people and agents edit together, with revision checks, per-origin undo, anchors, atomic save, external-change detection and recovery.
 - [email](../email/README.md) (app)
 - [hostd](../hostd/README.md) (service): How hostd answers questions about the host and carries out privileged host changes through closed, typed verbs behind standing grants, receipts and rollback, so agents never need sudo.
-- [maild](../maild/README.md) (service): JMAP, SMTP, IMAP and DAV mail service
 - [mix-shell](../mix-shell/README.md) (cli): The Mix shell library, holding the interactive line editor, the command classifier, the native-session bootstrap and the Bus citizen runtime that the mix binary runs.
 - [noded](../noded/README.md) (service): The MixOS Bus broker, which handles service registration, discovery, routing, subscriptions, authenticated local session grants and mesh peering between nodes.
 - [notifyd](../notifyd/README.md) (service): How notifyd keeps the desk's notifications, shows them as toasts and in the Notifications page, and tells an agent or app which button the human pressed.
