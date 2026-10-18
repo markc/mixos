@@ -3,15 +3,15 @@
 
 //! `maild-auth` — SPF / DKIM / DMARC / ARC / iprev primitives.
 //!
-//! Wraps `stalwartlabs/mail-auth` behind a stable Cosmix-shaped trait
+//! Wraps `stalwartlabs/mail-auth` behind a stable mail-service trait
 //! surface. Inbound: `Verifier` runs all five checks at DATA time and
 //! produces a structured `AuthResultsHeader` ready to prepend.
 //! Outbound: `Signer` adds DKIM signatures on submission and ARC seals
 //! on forward.
 //!
-//! See `_doc/2026-04-30-maild-auth-doc.md`,
-//! `_doc/2026-04-30-maild-auth-spec.md` (R4 — frozen public API),
-//! and `_doc/2026-04-30-maild-auth-plan.md` (6-phase plan,
+//! See,
+//! ( — frozen public API),
+//! and  (6-phase plan,
 //! 3.5-day budget).
 //!
 //! Phase 0 ships the trait surface + types + error enum; concrete

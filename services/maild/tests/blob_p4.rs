@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
-//! P4 storage and JMAP regressions. No broker or external service required.
+//! storage and JMAP regressions. No broker or external service required.
 use std::sync::Arc;
 
 use axum::{
@@ -403,8 +403,8 @@ async fn attachment_and_message_exports_are_idempotent_and_retain_bookkeeping() 
     assert_eq!(rc, 0, "{reference}");
     let headers = server.await.unwrap().to_ascii_lowercase();
     assert!(headers.starts_with(&format!("put /blob/{} ", blake3::hash(&[0, 255]).to_hex())));
-    assert!(headers.contains("x-cosmix-owner: maild:1"));
-    assert!(headers.contains("x-cosmix-name: caf%c3%a9.bin"));
+    assert!(headers.contains("x-mixos-owner: maild:1"));
+    assert!(headers.contains("x-mixos-name: caf%c3%a9.bin"));
     assert_eq!(reference["name"], "first-writer");
     assert_eq!(reference["origin"], "alpha");
     assert_eq!(reference["part"], "1.2");
@@ -431,7 +431,7 @@ async fn attachment_and_message_exports_are_idempotent_and_retain_bookkeeping() 
             .await
             .unwrap()
             .to_ascii_lowercase()
-            .contains("x-cosmix-mime: message/rfc822")
+            .contains("x-mixos-mime: message/rfc822")
     );
     assert_eq!(message_ref["blob"], list["blob"]);
     assert!(message_ref.get("part").is_none());

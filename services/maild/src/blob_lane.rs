@@ -232,11 +232,11 @@ impl Lane {
             .http
             .put(format!("http://{bind}/blob/{hash}"))
             .header("Content-Length", size)
-            .header("X-Cosmix-Owner", owner)
-            .header("X-Cosmix-Mime", mime)
+            .header("X-MixOS-Owner", owner)
+            .header("X-MixOS-Mime", mime)
             .body(reqwest::Body::wrap_stream(body));
         if let Some(name) = name.and_then(encoded_name) {
-            request = request.header("X-Cosmix-Name", name);
+            request = request.header("X-MixOS-Name", name);
         }
         // read_timeout starts before request upload in reqwest. A progress
         // watchdog instead bounds body backpressure and the wait for headers,
@@ -621,13 +621,13 @@ mod tests {
             let (head, bytes) = worker.join().unwrap();
             assert_eq!(bytes, b"hello");
             let head = head.to_ascii_lowercase();
-            assert!(head.contains("x-cosmix-owner: maild:7"));
-            assert!(head.contains("x-cosmix-mime: text/plain"));
+            assert!(head.contains("x-mixos-owner: maild:7"));
+            assert!(head.contains("x-mixos-mime: text/plain"));
             assert!(!head.contains("transfer-encoding"));
             if name.len() > 128 {
-                assert!(!head.contains("x-cosmix-name"));
+                assert!(!head.contains("x-mixos-name"));
             } else {
-                assert!(head.contains("x-cosmix-name: caf%c3%a9%25%20file.bin"));
+                assert!(head.contains("x-mixos-name: caf%c3%a9%25%20file.bin"));
             }
         }
     }

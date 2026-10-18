@@ -29,9 +29,9 @@
 //! ([`crate::mailstore::MailStore::subscribe_mailbox`]) and are
 //! translated:
 //!
-//! * `ItemAdded { seq, .. }` — insert `seq` into the snapshot,
+//! * `ItemAdded { seq,.. }` — insert `seq` into the snapshot,
 //!   emit `* <len> EXISTS`.
-//! * `ItemRemoved { seq, .. }` — find `seq`'s 1-based position,
+//! * `ItemRemoved { seq,.. }` — find `seq`'s 1-based position,
 //!   remove, emit `* <position> EXPUNGE`. If the UID is not in our
 //!   snapshot, drop silently — the entry-diff and Lagged-diff
 //!   paths *guarantee* the local snapshot tracks the client's

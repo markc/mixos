@@ -3,7 +3,7 @@
 
 //! IMAP server configuration (Phase 1).
 //!
-//! Mirrors the Phase-1 TOML surface in `_doc/maild/imap.md`. Defaults
+//! Mirrors the Phase-1 TOML surface in. Defaults
 //! match the design-doc baseline; production configs override
 //! selectively (e.g. tighten `pre_auth_timeout_secs` to 30 s once the
 //! real-client matrix is green).

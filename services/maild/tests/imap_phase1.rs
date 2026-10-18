@@ -221,7 +221,7 @@ async fn authenticate_plain_continuation_path_succeeds() -> Result<()> {
 
 #[tokio::test]
 async fn authenticate_login_with_sasl_ir_skips_username_challenge() -> Result<()> {
-    // Regression test for the Codex MAJOR finding: AUTHENTICATE LOGIN
+    // Regression test for the finding: AUTHENTICATE LOGIN
     // with a SASL-IR initial response was previously re-prompting for
     // the username, so a compliant client would send the password
     // bytes when the server expected base64(username). After the fix
@@ -255,7 +255,7 @@ async fn authenticate_login_with_sasl_ir_skips_username_challenge() -> Result<()
 
 #[tokio::test]
 async fn capability_advertises_literal_plus() -> Result<()> {
-    // Phase 4 T14 — `read_command` honours RFC 7888 `LITERAL+`
+    // Phase 4 — `read_command` honours RFC 7888 `LITERAL+`
     // non-synchronizing literals end-to-end, so the codec can
     // advertise the capability. Both the greeting's response code
     // and the untagged `* CAPABILITY` reply carry it.
@@ -273,7 +273,7 @@ async fn capability_advertises_literal_plus() -> Result<()> {
 
 #[tokio::test]
 async fn capability_override_keeps_literal_plus_filters_unsafe_caps() -> Result<()> {
-    // Operator-override path: after T14, `LITERAL+` is legitimate
+    // Operator-override path: after, `LITERAL+` is legitimate
     // and survives the filter. Caps that the codec still cannot
     // honour (`LITERAL-` — RFC 7888 size-capped sibling, not
     // implemented) plus smuggled multi-token entries (`FOO LITERAL+`)

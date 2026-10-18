@@ -8,7 +8,7 @@
 //! shipping any of their wire shapes *before* `ENABLE CONDSTORE` is
 //! advertised would tell a strict client we implicitly support
 //! modseq semantics (RFC 7162 §3.1.2.2) — silently broken sync
-//! follows. Per Codex's T19 scope decision (skip Phase 6 for the
+//! follows. scope decision (skip Phase 6 for the
 //! Thunderbird MVP), these tests pin the no-leakage invariants so
 //! a later partial CONDSTORE implementation cannot ship in
 //! production without breaking this file.
@@ -20,7 +20,7 @@
 //! * STATUS must not return an untagged `HIGHESTMODSEQ` value.
 //! * LIST-EXTENDED `RETURN (STATUS (HIGHESTMODSEQ))` must not leak
 //!   an untagged STATUS line carrying a fabricated modseq.
-//! * `SELECT INBOX (CONDSTORE)` / `(QRESYNC ...)` must reject BAD.
+//! * `SELECT INBOX (CONDSTORE)` / `(QRESYNC...)` must reject BAD.
 //! * `FETCH 1 MODSEQ` (data item) and `UID FETCH 1:* (FLAGS)
 //!   (CHANGEDSINCE 0)` (modifier) must reject BAD; no untagged
 //!   FETCH MODSEQ may appear.
@@ -32,7 +32,7 @@
 //!   and the subsequent FETCH MODSEQ still rejects.
 //! * IDLE must not emit `MODSEQ` on a FlagsChanged event — even
 //!   though we drop FlagsChanged from the wire entirely, a future
-//!   regression that started emitting `* N FETCH (... MODSEQ ...)`
+//!   regression that started emitting `* N FETCH (... MODSEQ...)`
 //!   during IDLE would be a CONDSTORE leak.
 
 use std::sync::Arc;
@@ -257,7 +257,7 @@ async fn status_response_omits_highestmodseq_even_when_requested() -> Result<()>
     let (mut reader, mut w) = login(client).await?;
     // Ask for HIGHESTMODSEQ explicitly. STATUS must either BAD-reject
     // the unsupported item, or silently omit it — but in NO case
-    // emit an untagged `* STATUS ... (... HIGHESTMODSEQ <n> ...)`
+    // emit an untagged `* STATUS... (... HIGHESTMODSEQ <n>...)`
     // line that would fabricate a modseq value to the client.
     w.write_all(b"a02 STATUS INBOX (MESSAGES HIGHESTMODSEQ)\r\n")
         .await?;
@@ -382,7 +382,7 @@ async fn enable_condstore_does_not_unlock_modseq_in_fetch() -> Result<()> {
     let (mut reader, mut w) = login(client).await?;
     w.write_all(b"a02 ENABLE CONDSTORE\r\n").await?;
     // ENABLE is not in the v1 subset. Drain the FULL tagged exchange
-    // (server is free to emit `* ENABLED ...` before the tag) and
+    // (server is free to emit `* ENABLED...` before the tag) and
     // assert no CONDSTORE/QRESYNC/MODSEQ token escaped — an untagged
     // `* ENABLED CONDSTORE` would be a wire-level leak even if the
     // tagged line said OK and SELECT/FETCH below stayed inert.
@@ -417,8 +417,8 @@ async fn enable_condstore_does_not_unlock_modseq_in_fetch() -> Result<()> {
 #[tokio::test]
 async fn greeting_and_login_capability_omit_condstore() -> Result<()> {
     // RFC 9051 §6.2.2 / §6.2.3 — both the greeting `* OK
-    // [CAPABILITY ...]` banner and the tagged `<tag> OK
-    // [CAPABILITY ...]` post-LOGIN response carry the capability
+    // [CAPABILITY...]` banner and the tagged `<tag> OK
+    // [CAPABILITY...]` post-LOGIN response carry the capability
     // list. A regression that added CONDSTORE/QRESYNC to one but
     // not the other would still leak through whichever path a
     // particular client trusts; assert both.
@@ -504,7 +504,7 @@ async fn uid_store_flags_modseq_modifier_rejected() -> Result<()> {
     // attach `.MODSEQ` to flag-attribute names (e.g.
     // `+FLAGS.MODSEQ`). Outside CONDSTORE this must reject without
     // either applying the flag OR emitting a FETCH echo carrying
-    // a fabricated modseq. The `(UNCHANGEDSINCE ...)` test covers
+    // a fabricated modseq. The `(UNCHANGEDSINCE...)` test covers
     // the modifier path; this covers the data-item-suffix path.
     let (_tmp, db, mds, ms) = make_fixture("alice@example.com", "hunter2").await?;
     insert_one_email(&ms, &mds)?;
@@ -650,7 +650,7 @@ async fn idle_flag_change_does_not_emit_modseq() -> Result<()> {
 
     // Drain lines until the EXISTS marker. Anything we see before
     // that must not carry MODSEQ — and the EXISTS line itself must
-    // be a bare `* N EXISTS`, not `* N EXISTS [HIGHESTMODSEQ ...]`.
+    // be a bare `* N EXISTS`, not `* N EXISTS [HIGHESTMODSEQ...]`.
     let mut idle_lines: Vec<String> = Vec::new();
     loop {
         let line = timeout(Duration::from_secs(5), read_line(&mut reader)).await??;

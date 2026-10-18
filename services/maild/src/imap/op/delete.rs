@@ -3,7 +3,7 @@
 
 //! `DELETE` — RFC 9051 §6.3.5.
 //!
-//! Phase 2 T5 v1: resolve the wire mailbox name and call
+//! Phase 2 v1: resolve the wire mailbox name and call
 //! `MailStore::destroy_mailbox` with [`DestroyPolicy::Reject`]. The
 //! locked Phase 2 design refuses to auto-purge messages — STORE and
 //! EXPUNGE ship in Phase 4, so a non-empty mailbox cannot be

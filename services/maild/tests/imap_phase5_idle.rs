@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
-//! End-to-end IMAP IDLE (RFC 2177) tests — Phase 5 T18.
+//! End-to-end IMAP IDLE (RFC 2177) tests — Phase 5.
 //!
 //! Mirrors the harness in `imap_phase4_copy_move_expunge.rs`: in-
 //! process duplex socket, no TLS, fresh sqlite Db + MailStore + Mds
@@ -427,7 +427,7 @@ async fn idle_in_authenticated_state_no_mailbox_emits_no_untagged_events() -> Re
 
 #[tokio::test]
 async fn idle_close_is_terminal_after_one_bad_line() -> Result<()> {
-    // Under the post-T18 semantics, any protocol violation while
+    // Under the post- semantics, any protocol violation while
     // IDLE is "in progress" — non-DONE line, line-too-long, non-
     // UTF8 framing — is terminal. The handler emits tagged BAD,
     // returns `IdleOutcome::Close`, and the session loop returns.

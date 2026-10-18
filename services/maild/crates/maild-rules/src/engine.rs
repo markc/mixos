@@ -67,8 +67,8 @@ pub trait RuleEngine: Send + Sync {
 
 /// Default rule engine. Holds an `RwLock<RuleSet>` so reload can swap
 /// the pack atomically while concurrent classify calls hold a read
-/// lock, and an `RwLock<EngineConfig>` so SPEC 12 Phase 3's substrate-
-/// driven config reload (C3 `after_set` converge-loop) can swap the
+/// lock, and an `RwLock<EngineConfig>` so the props contract Phase 3's substrate-
+/// driven config reload ( `after_set` converge-loop) can swap the
 /// engine's nine globals atomically while in-flight classifications
 /// hold a read snapshot of the prior config.
 pub struct DefaultRuleEngine {
@@ -80,8 +80,7 @@ pub struct DefaultRuleEngine {
     /// always fall through to no-match (the preflight result is empty
     /// and every zone reads as `LookupFailed`). The umbrella wires a
     /// production `HickoryDnsbl` here at construction; tests can wire
-    /// a fake implementing `DnsblLookup`. See
-    /// `_doc/planned/maild-rules-phase2.md` D1 for the rationale.
+    /// a fake implementing `DnsblLookup`.
     dnsbl: Option<Arc<dyn DnsblLookup>>,
     /// Optional per-match callback. Fired exactly once per pack rule
     /// whose matcher returns `true`, plus once for the implicit
@@ -96,7 +95,7 @@ pub struct DefaultRuleEngine {
     ///
     /// The hook fires from `classify` only — `explain` calls
     /// `evaluate` without firing the hook, so a debug `mailctl
-    /// explain` invocation doesn't inflate stats. See `_doc/planned/
+    /// explain` invocation doesn't inflate stats. See `
     /// maild-rules-phase2.md` § "Per-rule counters".
     on_rule_matched: Option<RuleMatchHook>,
 }
@@ -147,7 +146,7 @@ impl DefaultRuleEngine {
     ///
     /// The umbrella installs the per-rule counter increment on
     /// `maild::rule_stats::RuleStats` here; tests install a
-    /// recording fake. See `_doc/planned/maild-rules-phase2.md` §
+    /// recording fake. See  §
     /// "Per-rule counters".
     pub fn set_rule_match_hook(&mut self, hook: Option<RuleMatchHook>) {
         self.on_rule_matched = hook;
@@ -210,7 +209,7 @@ impl DefaultRuleEngine {
     }
 
     /// Whether shadow mode is on. Acquires the config read lock.
-    /// Used by `maild.rules.stats`. (SPEC 12 Phase 3 C2: previously
+    /// Used by `maild.rules.stats`. (the props contract Phase 3 : previously
     /// lock-free; now takes the same read lock as `classify` so a
     /// substrate-driven `set_config` swap is observed atomically.)
     pub async fn shadow_mode(&self) -> bool {
@@ -218,7 +217,7 @@ impl DefaultRuleEngine {
     }
 
     /// Atomic snapshot-clone of the current engine config. Used by
-    /// the C3 converge-loop to compare proposed vs. live before
+    /// the converge-loop to compare proposed vs. live before
     /// deciding to apply, and by tests that need to inspect the
     /// live config without holding a lock.
     pub async fn config_snapshot(&self) -> EngineConfig {
@@ -228,23 +227,23 @@ impl DefaultRuleEngine {
     /// Atomic swap of the engine config. The next `classify` /
     /// `explain` / `shadow_mode` call that begins after this returns
     /// sees the new config; in-flight calls keep their pre-swap
-    /// snapshot. C3's `after_set` converge-loop uses this to apply a
+    /// snapshot. `after_set` converge-loop uses this to apply a
     /// post-commit substrate row to the live engine.
     ///
-    /// **Lifecycle contract (SPEC 12 Phase 3 §C2/C3):** This is a
+    /// **Lifecycle contract:** This is a
     /// total replacement, not a merge — the caller must supply a
     /// fully-formed, **semantically validated** `EngineConfig`.
     /// Validation is the substrate's responsibility: the engine itself
     /// performs no domain checks here, so a caller that passes a
     /// hand-built config (e.g. with `hard_junk_threshold < threshold`
     /// or `body_scan_bytes = 0`) will poison the engine. The intended
-    /// caller is the C3 `after_set` converge-loop, which derives the
+    /// caller is the `after_set` converge-loop, which derives the
     /// `EngineConfig` from a substrate row that has already passed
     /// `validate()` + `record_to_engine_config()`'s defensive bounds.
     ///
     /// Concurrent callers serialize through this method's write lock,
     /// but read-modify-write flows must be serialized **externally**
-    /// (the C3 converge-loop uses `apply_lock: Mutex<()>` for this).
+    /// (the converge-loop uses `apply_lock: Mutex<()>` for this).
     /// Two unsynchronized RMW callers can lose updates: A snapshots,
     /// B snapshots, both mutate different fields, both call
     /// `set_config` — the loser's mutation is overwritten.
@@ -261,7 +260,7 @@ impl DefaultRuleEngine {
     /// `classify` passes `true`; `explain` passes `false` so a debug
     /// `mailctl explain` invocation cannot inflate per-rule stats.
     async fn evaluate(&self, ctx: &RuleContext<'_>, fire_hook: bool) -> (RuleVerdict, Explanation) {
-        // SPEC 12 Phase 3 C2 — snapshot-clone the config at the top so a
+        // the props contract Phase 3 — snapshot-clone the config at the top so a
         // substrate-driven `set_config` swap landing mid-evaluate does
         // not split this call across two configs. The clone is cheap
         // (one Vec<MailAuthHardFailKind> + scalars). Subsequent reads

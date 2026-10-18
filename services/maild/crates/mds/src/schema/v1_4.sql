@@ -1,11 +1,10 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- mds v1.4 schema additions for data.sqlite (per-set metadata).
--- Spec: _doc/planned/mailbox-changes-substrate.md (rev 1, 2026-05-14).
 --
 -- Adds one table: container_change_set — the durable account-wide
 -- container lifecycle stream that powers JMAP Mailbox/changes.
 -- This migration is schema-only: no writers, no readers. Writes are
--- wired in later Phase 1 commits (MCS-P1-B/C/D). The JMAP read path
+-- wired in later Phase 1 commits (the lifecycle handlers). The JMAP read path
 -- continues to use db::changelog until Phase 2 cuts it over and
 -- retires the legacy table.
 
@@ -31,7 +30,7 @@ PRAGMA user_version = 5;
 -- at the schema layer before any writers exist; `'{}'` is *not* a
 -- valid default because none of the documented payloads are
 -- empty-object-equivalent. The shape per kind, from
--- _doc/planned/mailbox-changes-substrate.md §Design — Option B:
+-- §Design — Option B:
 --   CONTAINER_CREATED         {name, parent_id?, full_path}
 --   CONTAINER_RENAMED         {old_name, new_name, old_parent_id?,
 --                              new_parent_id?, old_full_path,

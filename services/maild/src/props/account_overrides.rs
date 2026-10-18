@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
-//! SPEC 12 property-substrate adoption for `maild.account_overrides`.
+//! Property-store namespace for `maild.account_overrides`.
 //!
 //! Per-account overrides for the rules engine: disabled rule ids,
 //! optional threshold override, and allow/block sender globs. Keyed
@@ -24,9 +24,7 @@
 //! cycle is broken by an `Arc<OnceLock<Arc<Runtime>>>` populated after
 //! both namespaces are registered (see `crate::main` startup); the
 //! accounts side holds an `Arc<Runtime>` directly because its
-//! registration happens *after* this module's `register` returns. See
-//! the phase-2 plan doc (`src/_doc/planned/spec12-account-overrides-phase2.md`)
-//! for the full rationale.
+//! registration happens *after* this module's `register` returns.
 
 use std::sync::{Arc, OnceLock};
 
@@ -65,7 +63,7 @@ pub fn namespace_name() -> NamespaceName {
     NamespaceName::new(NAMESPACE).expect("constant namespace name is valid")
 }
 
-/// SPEC 12 §4.3 schema. `email` doubles as the primary-key body field
+/// the props contract schema. `email` doubles as the primary-key body field
 /// per `Cardinality::Collection { primary_key_field: "email" }`; the
 /// runtime enforces `value.email == wire-key` on Replace and on first
 /// create with Patch.
@@ -137,7 +135,7 @@ pub fn schema() -> PropertySchema {
     ])
 }
 
-/// SPEC 12 §7.2 [`AuthPolicy`] — phase-2 grants every property
+/// the props contract [`AuthPolicy`] — phase-2 grants every property
 /// capability to every reachable peer (WireGuard `/24` is the trust
 /// domain, same posture as `maild.accounts`). Phase 3+ narrows to
 /// operator vs service tiers.
@@ -548,7 +546,7 @@ pub struct ResolvedOverrides {
     pub nseq: Option<u64>,
 }
 
-/// C4 explain-path resolver: identical defaulting + error-shape rules
+/// explain-path resolver: identical defaulting + error-shape rules
 /// as the simpler `read_account_overrides_by_email`, with the substrate
 /// `Record.version` + `Snapshot.observed_nseq` returned alongside so
 /// `maild.rules.explain` can render values an operator can correlate
@@ -684,7 +682,7 @@ mod tests {
     async fn before_set_rejects_threshold_above_f32_max() {
         // f64 value finite + non-negative but larger than `f32::MAX`
         // (3.4e38) would narrow to `f32::INFINITY` when the rules
-        // engine reads it. C1's `f.is_finite() && f >= 0.0` passes; the
+        // engine reads it. `f.is_finite() && f >= 0.0` passes; the
         // additional f32-range guard catches it before storage.
         let hooks = AccountOverridesHooks::new(Arc::new(OnceLock::new()));
         let c = ctx_with(value_obj(&[(
@@ -1292,7 +1290,7 @@ mod tests {
     /// check is what catches the next account.create. We synthesise a
     /// storage failure by deleting the overrides namespace's
     /// `__props_meta` row mid-flow, which makes `Runtime::delete`
-    /// fail with `StoreError::Storage("namespace ... not registered")`.
+    /// fail with `StoreError::Storage("namespace... not registered")`.
     #[tokio::test]
     async fn cascade_failure_keeps_account_delete_ok_and_leaves_orphan() {
         use ::props::record::Actor as RecordActor;

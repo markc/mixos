@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- mds v1 schema for blobs.sqlite (box-wide derived index).
--- Verbatim from _doc/2026-04-29-mds-spec.md §Blob-index schema.
+-- Verbatim the blob-index schema.
 
 PRAGMA application_id = 0x62696478;        -- 'bidx'
 PRAGMA user_version   = 1;

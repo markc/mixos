@@ -4,8 +4,8 @@
 //! Per-verb command handlers.
 //!
 //! Phase 1 shipped CAPABILITY, NOOP, LOGOUT, ID, LOGIN, AUTHENTICATE.
-//! Phase 2 T3 added LIST, LSUB, NAMESPACE. Phase 2 T4 added SELECT,
-//! EXAMINE, STATUS, CLOSE, UNSELECT. Phase 2 T5 adds CREATE, DELETE,
+//! Phase 2 added LIST, LSUB, NAMESPACE. Phase 2 added SELECT,
+//! EXAMINE, STATUS, CLOSE, UNSELECT. Phase 2 adds CREATE, DELETE,
 //! RENAME, SUBSCRIBE, UNSUBSCRIBE. Verbs outside this module are
 //! rejected by `session::dispatch` (`BAD command not valid` or
 //! `NO command not allowed in current state`).

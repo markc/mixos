@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
-//! SPEC 12 Phase 3 C2 — `DefaultRuleEngine::set_config` atomic swap.
+//! the props contract Phase 3 — `DefaultRuleEngine::set_config` atomic swap.
 //!
 //! The engine's nine globals now live behind `Arc<RwLock<EngineConfig>>`.
 //! `evaluate` snapshot-clones the config at the top of every call so a
@@ -106,7 +106,7 @@ async fn set_config_swaps_mail_auth_hard_fail_kinds() {
 
 #[tokio::test]
 async fn concurrent_swap_never_produces_split_config_verdict() {
-    // Codex C2 R1/R2 MINOR — the invariant is "no split-config read,"
+    // — the invariant is "no split-config read,"
     // not just "no panic." Construct two configs whose semantic effect
     // on a fixed context is IDENTICAL (both return Continue), but where
     // a hypothetical split read across two fields would produce a

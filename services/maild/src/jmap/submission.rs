@@ -119,7 +119,7 @@ async fn create_submission(
     let sub: SubmissionCreate = serde_json::from_value(obj.clone())?;
     let email_uuid: Uuid = sub.email_id.parse()?;
 
-    // Task 5.4c: full migration onto MailStore. `get_email` is
+    // : full migration onto MailStore. `get_email` is
     // account-scoped — only the submitter's own emails resolve, so
     // the prior `db::blob::id_owned_by_account` gate is subsumed.
     // CAS hashes are content-addressed (any bytes that hash to `h`
@@ -150,7 +150,7 @@ async fn create_submission(
         // delivery requires either header stripping for the
         // To/Cc copy or per-recipient blob generation, neither of
         // which is in this task's scope. `EmailEnvelope.bcc` is
-        // still populated by `build_envelope` (Task 5.4a) so the
+        // still populated by `build_envelope` so the
         // data is available for that follow-up work.
         // Empty strings are filtered out so a missing header
         // doesn't enqueue an empty rcpt.
@@ -270,8 +270,8 @@ async fn create_submission(
         }
     }
 
-    // Queue remote recipients for outbound SMTP. Task 5.4c collapses
-    // the Task 5.4b transitional load+put_blob round-trip: the
+    // Queue remote recipients for outbound SMTP. collapses
+    // the transitional load+put_blob round-trip: the
     // record carries `blob_hash` directly off the substrate row, so
     // we can hand it straight to `enqueue`.
     if !remote_addrs.is_empty() {
@@ -289,7 +289,7 @@ async fn create_submission(
     // errors, missing role, and `move_email` errors (notably
     // `"ambiguous source"` for multi-mailbox emails — legacy
     // `update_mailboxes` would silently overwrite that case; the
-    // multi-mailbox migration moves under Task 18c).
+    // multi-mailbox migration moves under).
     let ms = mailstore.clone();
     let move_outcome = tokio::task::spawn_blocking(move || {
         let sent_id = ms.mailbox_by_role(account_id, MailboxRole::Sent)?;

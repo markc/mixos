@@ -1,6 +1,5 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- mds v1.5 schema additions for data.sqlite (per-set metadata).
--- Spec: _doc/planned/mailbox-changes-substrate.md (MCS Phase 3, 2026-05-14).
 --
 -- Adds per-stream retention floors to set_state. These are the
 -- watermarks `prune_changelog` advances when it deletes the oldest

@@ -1,7 +1,5 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- mds v1.1 schema additions for data.sqlite (per-set metadata).
--- Spec: _doc/2026-05-02-mds-spec-v1_1-amendment.md (rev 4).
--- Plan: _doc/2026-04-29-mds-plan.md §"Phase 8 — v1.1 amendment work".
 --
 -- Additive only — no v1 backfill, no v1 table changes. The v1.1
 -- step bumps user_version to 2 and adds six tables:
@@ -17,7 +15,7 @@ PRAGMA user_version = 2;
 
 -- §2: set-monotonic counter. data.sqlite is per-set so this is
 -- effectively a singleton, but the PK matches the spec's allocator
--- pattern (UPDATE ... WHERE set_id = ? RETURNING).
+-- pattern (UPDATE... WHERE set_id = ? RETURNING).
 CREATE TABLE set_state (
     set_id          TEXT    PRIMARY KEY,
     set_change_seq  INTEGER NOT NULL DEFAULT 0

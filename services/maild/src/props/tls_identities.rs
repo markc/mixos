@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
-//! SPEC 12 property-substrate adoption for `maild.tls_identities`.
+//! Property-store namespace for `maild.tls_identities`.
 //!
 //! Read-only projection of the [`SniCertResolver`] state into the
 //! substrate. One record per `[[tls.identity]]` config entry, keyed
@@ -15,7 +15,7 @@
 //!
 //! Phase 1 of the maild SNI / internal-CA plan does not mint or
 //! rotate certs — that is Phase 3's job, behind the `pki.props.*`
-//! verbs in `cosmix-pki`. This namespace's writes are denied at the
+//! verbs in `pki`. This namespace's writes are denied at the
 //! [`AuthPolicy`] layer (no `props.write` / `props.delete`
 //! capabilities granted). The internal bootstrap call below uses
 //! [`Runtime::set`] / [`Runtime::delete`] directly, which bypasses
@@ -82,7 +82,7 @@ pub fn namespace_name() -> NamespaceName {
     NamespaceName::new(NAMESPACE).expect("constant namespace name is valid")
 }
 
-/// SPEC 12 §4.3 schema. Every field is required on Replace; Patch is
+/// the props contract schema. Every field is required on Replace; Patch is
 /// unreachable because writes are only ever issued by the internal
 /// bootstrap, which always Replaces.
 pub fn schema() -> PropertySchema {
@@ -155,7 +155,7 @@ pub fn schema() -> PropertySchema {
             ty: FieldType::String,
             default: Some(PropValue::String("config".into())),
             secret: false,
-            help: "Provenance hint: \"config\" for TOML-supplied paths; \"cosmix-ca\" reserved for Phase 3"
+            help: "Provenance hint: \"config\" for TOML-supplied paths; \"mixos-ca\" reserved for Phase 3"
                 .into(),
             since: None,
             until: None,
@@ -216,7 +216,7 @@ pub fn schema() -> PropertySchema {
     ])
 }
 
-/// SPEC 12 §7.2 [`AuthPolicy`] — read/describe/audit caps granted to
+/// the props contract [`AuthPolicy`] — read/describe/audit caps granted to
 /// every peer (WG `/24` trust domain). **No write/delete caps** — the
 /// namespace is a projection of resolver state, not an operator
 /// surface. Phase 3's `pki.props.*` is where mint/rotate lives.
@@ -243,7 +243,7 @@ pub struct TlsIdentitiesHooks;
 
 impl TlsIdentitiesHooks {
     fn require_bootstrap_actor(ctx: &HookCtx, op: &str) -> Result<(), HookError> {
-        // `Actor` is a transparent newtype over the SPEC 07 §3.5.1
+        // `Actor` is a transparent newtype over the shared contract
         // wire string — `Actor::service("maild")` renders to the bare
         // service name `maild`, distinct from `operator:<principal>`
         // / `daemon:<svc>` forms. Bootstrap is the only caller that

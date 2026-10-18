@@ -7,7 +7,7 @@
 //! (tokio duplex; no TLS). Each test provisions a fresh sqlite Db +
 //! MailStore + Mds, inserts known messages into INBOX, then drives
 //! the wire to assert FETCH responses match RFC 9051 §6.4.5 / §6.4.8
-//! shape for the T9 metadata atoms (FLAGS, UID, RFC822.SIZE,
+//! shape for the metadata atoms (FLAGS, UID, RFC822.SIZE,
 //! INTERNALDATE).
 
 use std::sync::Arc;
@@ -300,7 +300,7 @@ async fn fetch_not_authenticated_returns_bad() -> Result<()> {
 
 #[tokio::test]
 async fn fetch_rejects_zero_length_partial() -> Result<()> {
-    // T12a: BODY[]<0.0> is rejected — RFC 9051 §9 partial length is
+    // : BODY[]<0.0> is rejected — RFC 9051 §9 partial length is
     // `nz-number` (must be > 0). Other malformed atoms still BAD too.
     let (_tmp, db, mds, ms) = make_fixture("alice@example.com", "hunter2").await?;
     insert_email(&ms, &mds, b"x", "msg1", Flags(0), 1_700_000_000_000)?;
@@ -322,7 +322,7 @@ async fn fetch_rejects_zero_length_partial() -> Result<()> {
 
 #[tokio::test]
 async fn fetch_body_section_returns_section_bytes() -> Result<()> {
-    // T12a: BODY.PEEK[HEADER.FIELDS (Subject From)] returns the
+    // : BODY.PEEK[HEADER.FIELDS (Subject From)] returns the
     // matching headers as an IMAP literal. PEEK suppresses the \Seen
     // side-effect — pinned by `fetch_body_no_peek_sets_seen` below.
     let (_tmp, db, mds, ms) = make_fixture("alice@example.com", "hunter2").await?;
@@ -399,7 +399,7 @@ async fn fetch_body_no_peek_sets_seen() -> Result<()> {
 
 #[tokio::test]
 async fn fetch_rfc822_header_alias_emits_legacy_wire_name() -> Result<()> {
-    // T12a: RFC822.HEADER is the legacy alias for BODY.PEEK[HEADER]
+    // : RFC822.HEADER is the legacy alias for BODY.PEEK[HEADER]
     // and renders with the legacy wire name (no `BODY[]` brackets).
     let (_tmp, db, mds, ms) = make_fixture("alice@example.com", "hunter2").await?;
     let raw = b"Subject: hi\r\n\r\nbody";
@@ -426,7 +426,7 @@ async fn fetch_rfc822_header_alias_emits_legacy_wire_name() -> Result<()> {
 
 #[tokio::test]
 async fn fetch_bodystructure_returns_parsed_structure() -> Result<()> {
-    // T11b — FETCH BODYSTRUCTURE end-to-end. Pins the cross-layer
+    // — FETCH BODYSTRUCTURE end-to-end. Pins the cross-layer
     // wiring; recursive-renderer behaviour is unit-tested in
     // `imap::op::fetch::tests::render_bodystructure_*`.
     let (_tmp, db, mds, ms) = make_fixture("alice@example.com", "hunter2").await?;
@@ -455,7 +455,7 @@ async fn fetch_bodystructure_returns_parsed_structure() -> Result<()> {
 
 #[tokio::test]
 async fn fetch_envelope_returns_parsed_structure() -> Result<()> {
-    // T11a — FETCH ENVELOPE end-to-end. The renderer's behaviour is
+    // — FETCH ENVELOPE end-to-end. The renderer's behaviour is
     // unit-tested in `imap::op::fetch::tests::render_envelope_*`; this
     // test pins the cross-layer wiring (mds blob load → mail_parser →
     // wire emission) and the per-row body load path.
@@ -497,7 +497,7 @@ async fn uid_fetch_unknown_inner_verb_returns_bad() -> Result<()> {
     w.write_all(b"a02 SELECT INBOX\r\n").await?;
     let _ = read_until_tagged(&mut reader, "a02").await?;
 
-    // After T15-T17 every RFC 9051 §6.4.8 UID inner verb
+    // After - every RFC 9051 §6.4.8 UID inner verb
     // (FETCH/STORE/SEARCH/COPY/MOVE/EXPUNGE) is implemented; only an
     // unknown verb name should now produce the "UID inner command not
     // implemented" BAD path.
@@ -529,7 +529,7 @@ async fn fetch_single_atom_no_parens() -> Result<()> {
     Ok(())
 }
 
-// ---------- T13a: SEARCH / UID SEARCH ----------
+// ---------- : SEARCH / UID SEARCH ----------
 
 #[tokio::test]
 async fn search_all_returns_every_msn() -> Result<()> {
@@ -699,7 +699,7 @@ async fn search_deferred_subject_criterion_returns_bad() -> Result<()> {
     w.write_all(b"a02 SELECT INBOX\r\n").await?;
     let _ = read_until_tagged(&mut reader, "a02").await?;
 
-    // T13b: header/body criteria deferred — must be BAD rather than
+    // : header/body criteria deferred — must be BAD rather than
     // silently treated as ALL (state-of-truth divergence trap).
     w.write_all(b"a03 SEARCH SUBJECT hello\r\n").await?;
     let lines = read_until_tagged(&mut reader, "a03").await?;

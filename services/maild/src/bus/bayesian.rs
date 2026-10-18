@@ -2000,7 +2000,7 @@ mod tests {
         .unwrap();
     }
 
-    /// Review MAJOR-2: a user's IMAP move to Junk still queued in the outbox
+    /// Review : a user's IMAP move to Junk still queued in the outbox
     /// must not be replayed over a later operator `train ham`, nor resurrect
     /// a label the operator removed with `untrain`.
     #[tokio::test]
@@ -2058,7 +2058,7 @@ mod tests {
         .unwrap()
     }
 
-    /// Review R1: when the classifier fails, the inline write never
+    /// Review : when the classifier fails, the inline write never
     /// happened, so the queued IMAP correction must survive — cancelling
     /// first would lose it with nothing in its place.
     #[tokio::test]
@@ -2095,7 +2095,7 @@ mod tests {
         );
     }
 
-    /// Review MINOR-7: an unsupported key such as `dry_run` must refuse the
+    /// Review : an unsupported key such as `dry_run` must refuse the
     /// call, not be ignored while the message is trained for real.
     #[tokio::test]
     async fn train_and_untrain_refuse_unknown_keys() {
@@ -2190,7 +2190,7 @@ mod tests {
         // The plan pins this: Label must serialize as "Spam" / "Ham"
         // so the Bus wire matches the spec prose. Default serde
         // unit-variant repr produces those strings — this test
-        // catches a future #[serde(rename_all = ...)] regression.
+        // catches a future #[serde(rename_all =...)] regression.
         let s = serde_json::to_string(&Label::Spam).unwrap();
         assert_eq!(s, "\"Spam\"");
         let h = serde_json::to_string(&Label::Ham).unwrap();

@@ -2,7 +2,7 @@
 //! Public types for the `Mds` trait surface.
 //!
 //! Definitions are taken verbatim from
-//! `_doc/2026-04-29-mds-spec.md` §Types. Per the spec's stability
+//!  §Types. Per the spec's stability
 //! commitment, `Flags`, `ChangeToken`, `Change`, `ContainerEvent`,
 //! `Membership`, and the four `*Report` types are frozen across v1.
 
@@ -51,7 +51,7 @@ pub struct SetChangeToken(pub u64);
 /// sequence is strictly monotonic but may have gaps after retention
 /// sweeps. JMAP `Mailbox/changes` paging is `seq > ?`, gaps don't
 /// matter — see `schema/v1_4.sql` and
-/// `_doc/planned/mailbox-changes-substrate.md` §Design.
+///  §Design.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct ContainerChangeSetToken(pub u64);
 
@@ -326,7 +326,7 @@ pub enum ContainerChangeSetKind {
 /// One row from the account-wide container lifecycle stream
 /// (`container_change_set`). `payload` is the raw JSON string from
 /// the row — per-kind shape is documented in `schema/v1_4.sql` and
-/// `_doc/planned/mailbox-changes-substrate.md` §Design. The
+///  §Design. The
 /// substrate ships writes only in Phase 1; consumers (JMAP read
 /// path) cut over in Phase 2 and parse `payload` at that time.
 #[derive(Debug, Clone, Serialize, Deserialize)]

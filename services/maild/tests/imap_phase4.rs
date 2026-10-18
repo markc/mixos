@@ -416,7 +416,7 @@ async fn store_multi_message_range_touches_all() -> Result<()> {
 async fn store_no_op_when_bits_already_set() -> Result<()> {
     // Idempotency: STORE +FLAGS (\Seen) on a message that already has
     // \Seen still emits the FETCH echo (RFC 9051 §6.4.6 — server SHOULD
-    // emit FETCH on every successful STORE unless .SILENT) but does
+    // emit FETCH on every successful STORE unless.SILENT) but does
     // not double-fire the notifier.
     let (_tmp, db, mds, ms) = make_fixture("alice@example.com", "hunter2").await?;
     let _ = insert_email(
@@ -475,7 +475,7 @@ async fn store_rejects_unknown_flag() -> Result<()> {
 
 #[tokio::test]
 async fn store_isolates_per_mailbox_membership() -> Result<()> {
-    // Per-mailbox isolation invariant (`_doc/maild/imap.md` §5/§6):
+    // Per-mailbox isolation invariant ( §5/§6):
     // \Seen STORE on INBOX must not propagate to the same email's
     // Archive membership.
     let (_tmp, db, mds, ms) = make_fixture("alice@example.com", "hunter2").await?;
@@ -537,7 +537,7 @@ async fn store_isolates_per_mailbox_membership() -> Result<()> {
 }
 
 // ============================================================
-// T14 — APPEND with LITERAL+ (RFC 9051 §6.3.12 / RFC 4315 / RFC 7888)
+// — APPEND with LITERAL+ (RFC 9051 §6.3.12 / RFC 4315 / RFC 7888)
 // ============================================================
 
 /// A minimal RFC 5322 message body suitable for `mail_parser`.
@@ -858,7 +858,7 @@ async fn append_parse_failure_returns_no_parse() -> Result<()> {
 
 #[tokio::test]
 async fn capability_advertises_literal_plus_uidplus_and_move() -> Result<()> {
-    // T14 shipped `LITERAL+` end-to-end. T15-T17 (this phase) ships
+    // shipped `LITERAL+` end-to-end. - (this phase) ships
     // COPY / MOVE / UID EXPUNGE — `UIDPLUS` (RFC 4315) and `MOVE`
     // (RFC 6851) are now advertised in both the greeting and the
     // explicit CAPABILITY response.

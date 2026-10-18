@@ -47,8 +47,8 @@ pub struct SmtpConfig {
     /// See [`crate::config::Config::smtp_outbound_bind`].
     pub outbound_bind: Vec<std::net::IpAddr>,
     pub max_message_size: usize,
-    /// Whether opaque vtoken RCPTs (the C9 single-segment HMAC namespace) are
-    /// accepted at RCPT TO. Set at startup by the C9 pre-flight scan
+    /// Whether opaque vtoken RCPTs (the single-segment HMAC namespace) are
+    /// accepted at RCPT TO. Set at startup by the pre-flight scan
     /// ([`crate::runtime`]): `false` (fail-safe) if any existing account/alias
     /// local-part already collides with the opaque token shape, so an opaque
     /// RCPT can never silently swallow a real mailbox. Segmented vtoken
@@ -162,7 +162,7 @@ pub struct SmtpState {
     /// Phase 3 commit 1 ahead of the receiver / sender consumers in
     /// commits 2–3. Commit 1 only stores the field; the RCPT TO gate
     /// and per-domain HELO/Message-ID lookups land in subsequent
-    /// commits. See `_doc/planned/maild-multi-vhost-phase3.md`.
+    /// commits. See.
     pub domains_runtime: Arc<Runtime>,
     /// Property-substrate runtime for `maild.aliases` (Phase 1 local
     /// aliases). Inbound: recipient lookups resolve through it before
@@ -176,12 +176,12 @@ pub struct SmtpState {
     /// delivers into its content account and injects
     /// `$VTOKEN_{VALID,USER,SERVICE}` into the inbound filter.
     pub vtoken_store: Arc<crate::vtoken::VtokenStore>,
-    /// Validity-blind rate cap on the token-shaped namespace (C7) — sheds a flood
+    /// Validity-blind rate cap on the token-shaped namespace — sheds a flood
     /// before any resolve work, identically for valid + invalid tokens. `Arc` so
     /// every cloned `SmtpState` shares ONE limiter (a per-clone counter would defeat
     /// the global ceiling).
     pub token_rate: Arc<crate::vtoken::TokenRateLimiter>,
-    /// Bounds concurrent fire-and-forget token-dispatch tasks (C8). The accept path
+    /// Bounds concurrent fire-and-forget token-dispatch tasks. The accept path
     /// `try_acquire`s (NEVER awaits before the 250 — that would re-introduce a
     /// load-dependent timing channel) and sheds on overflow, so a slow MDS/filter
     /// stall can't grow an unbounded background-task backlog.

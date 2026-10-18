@@ -3,12 +3,12 @@
 
 //! `CREATE` — RFC 9051 §6.3.4.
 //!
-//! Phase 2 T5 v1: walk the hierarchical name top-down, creating
+//! Phase 2 v1: walk the hierarchical name top-down, creating
 //! missing intermediate segments as we go. The wire grammar is one
 //! mailbox name (atom or quoted-string); segments are split on the
 //! advertised hierarchy delimiter `/`.
 //!
-//! Behaviour locked with Codex (T5 pre-impl consult):
+//! Behaviour locked with
 //! * Every segment is pre-validated **before** the first storage
 //!   mutation — non-empty, printable ASCII (0x20..=0x7e), no `&`
 //!   (RFC 3501 modified-UTF-7 introducer; would render wrong on a
@@ -49,7 +49,7 @@
 //! mailbox list and re-resolve the prefix to pick up the
 //! now-existing id rather than continuing with a stale parent.
 //!
-//! SPECIAL-USE (RFC 6154 §5.1): the optional `(USE (\Drafts ...))`
+//! SPECIAL-USE (RFC 6154 §5.1): the optional `(USE (\Drafts...))`
 //! parameter after the mailbox name designates one SPECIAL-USE
 //! attribute for the *leaf* segment; any intermediate segments
 //! created by the walk get `role = None`. Constraints:
@@ -118,7 +118,7 @@ pub struct UseFlag(pub String);
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Args {
     pub name: String,
-    /// RFC 6154 §5.1 `(USE (\Drafts ...))` arguments. `None` means the
+    /// RFC 6154 §5.1 `(USE (\Drafts...))` arguments. `None` means the
     /// client didn't send a USE clause at all; `Some(vec![])` means
     /// they sent `(USE ())`, which RFC 6154 allows but our handler
     /// treats as "no role" (same as `None`).

@@ -3,7 +3,7 @@
 
 //! `SELECT` / `EXAMINE` — RFC 9051 §6.3.1 / §6.3.2.
 //!
-//! Phase 2 T4 v1: resolve the wire mailbox name through
+//! Phase 2 v1: resolve the wire mailbox name through
 //! [`crate::imap::mailbox_name::resolve`], read the matching
 //! [`MailboxRecord`] off `MailStore::list_mailboxes`, and emit the
 //! mandatory untagged response block:
@@ -14,14 +14,14 @@
 //! * OK [PERMANENTFLAGS (\Answered \Flagged \Deleted \Seen \Draft)] Limited
 //! * OK [UIDVALIDITY <n>] Ok
 //! * OK [UIDNEXT <n>] Predicted next UID
-//! * LIST () "/" "<wire-name>"
+//! * LIST "/" "<wire-name>"
 //! <tag> OK [READ-WRITE|READ-ONLY] SELECT|EXAMINE completed
 //! ```
 //!
 //! Phase 2 omissions, each tied to a capability that is not yet
 //! advertised:
 //! * No `* N RECENT` — IMAP4rev2 removed RECENT (§7.3).
-//! * No `* OK [HIGHESTMODSEQ ...]` — CONDSTORE is not in the v1
+//! * No `* OK [HIGHESTMODSEQ...]` — CONDSTORE is not in the v1
 //!   capability subset; emitting the code without the capability
 //!   would tell a strict client we implicitly support
 //!   `ENABLE CONDSTORE` semantics (RFC 7162 §3.1.2.2).

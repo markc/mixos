@@ -3,7 +3,7 @@
 
 //! Production [`SubscribeGranter`] for maild — bridges
 //! `<svc>.props.watch` / `<svc>.props.audit.watch` to noded's
-//! `noded.props.subscribe_grant` verb (SPEC 12 §15.5, C10b).
+//! `noded.props.subscribe_grant` verb (the props contract,).
 //!
 //! ## Refreshable client handle
 //!
@@ -33,14 +33,14 @@
 //! — a peer retry returns the same subscription_id. The divergence is
 //! a UX wart, not a correctness bug; closing it cleanly requires a
 //! revoke path or a granter-side ack-and-confirm protocol, neither of
-//! which is in scope for C10.
+//! which is in scope for.
 //!
 //! ## No revoke path (yet)
 //!
 //! `grant()` discards the broker's `subscription_id` because the watch
 //! handler doesn't expose a peer-facing revoke verb. Subscriptions
 //! survive until the target peer disconnects (broker drops the entry
-//! on close). A future C11 (or later) can surface a revoke pathway by
+//! on close). A future (or later) can surface a revoke pathway by
 //! threading the id back through `SubscribeGranter` — until then
 //! noded's idempotency on re-grant keeps the registry bounded.
 

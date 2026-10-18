@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
-//! SPEC 12 property-substrate namespace for `maild.retention`.
+//! Property-store namespace for `maild.retention`.
 //!
 //! Singleton-cardinality namespace carrying the global mail-retention
 //! policy: the per-folder age windows (Junk / Trash), the sweep cadence,
@@ -115,7 +115,7 @@ impl RetentionConfig {
     }
 }
 
-/// SPEC 12 §4.3 schema. Defaults mirror [`RetentionConfig::default`].
+/// the props contract schema. Defaults mirror [`RetentionConfig::default`].
 pub fn schema() -> PropertySchema {
     PropertySchema::new(vec![
         FieldSchema {
@@ -190,7 +190,7 @@ pub fn schema() -> PropertySchema {
     ])
 }
 
-/// SPEC 12 §7.2 [`AuthPolicy`] — **operator-tier divergence** (mirrors
+/// the props contract [`AuthPolicy`] — **operator-tier divergence** (mirrors
 /// `webd.listeners`): read / describe / audit go to every WG peer, but
 /// `props.write:maild.retention` — the cap that *arms* automatic mail
 /// deletion (flips a window non-zero or clears `dry_run`) — is granted

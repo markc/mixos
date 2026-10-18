@@ -4,8 +4,8 @@
 //! `peer_ip_in_dnsbl` — matches when the connection's peer IP is
 //! listed in any one of the rule's configured DNSBL zones.
 //!
-//! The matcher is synchronous (per `_doc/planned/maild-rules-phase2.md`
-//! D1); the underlying DNS I/O runs in [`crate::preflight::run`] *before*
+//! The matcher is synchronous (per
+//!); the underlying DNS I/O runs in [`crate::preflight::run`] *before*
 //! the engine's matcher loop, populating a [`DnsblPreflightResult`]
 //! that the sync matcher consults.
 //!

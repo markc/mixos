@@ -30,7 +30,7 @@ use sha2::{Digest, Sha256};
 use crate::db::{self, Db};
 use crate::jmap::AppState;
 
-/// Default token lifetime (D2.3). A login cookie outliving this forces a
+/// Default token lifetime (.3). A login cookie outliving this forces a
 /// re-login; maild remains the revocation authority in between.
 const TOKEN_TTL_DAYS: i64 = 30;
 
@@ -44,7 +44,7 @@ const TOKEN_TTL_SECS_DEFAULT: i64 = TOKEN_TTL_DAYS * 86_400;
 const TOKEN_TTL_SECS_MIN: i64 = 60;
 const TOKEN_TTL_SECS_MAX: i64 = TOKEN_TTL_DAYS * 86_400;
 
-/// Plaintext token entropy in bytes (256 bits — within D2.3's 32–48).
+/// Plaintext token entropy in bytes (256 bits — within.3's 32–48).
 const TOKEN_BYTES: usize = 32;
 
 /// Generate a fresh opaque token: `TOKEN_BYTES` from the OS CSPRNG,

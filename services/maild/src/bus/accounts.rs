@@ -9,7 +9,7 @@
 //! creation of the flat top-level `Posts`/`Pages` content folders for one
 //! account (the vtoken email-to-post destination tree); and
 //! `maild.accounts.revoke_tokens` — revoke every live bearer token for one
-//! account (the operator session-kill primitive). The CLI rewrite (C7
+//! account (the operator session-kill primitive). The CLI rewrite (
 //! follow-up "Bus-only `maild account *`") routes
 //! `maild account seed-mailboxes` here instead of opening MDS
 //! and the SQL DB locally; the same call shape is reachable from any
@@ -17,7 +17,7 @@
 //!
 //! ## Why not `<svc>.props.set` replay?
 //!
-//! Backfill targets include accounts created before SPEC 12 (Phase 6/7
+//! Backfill targets include accounts created before the props contract (Phase 6/7
 //! cutover) whose rows live in the `accounts` SQL table but have no
 //! `__props_records` row. A `<svc>.props.set` against those accounts
 //! would create a fresh substrate record from scratch, requiring the
@@ -308,7 +308,7 @@ async fn handle_seed_content(
 /// ```json
 /// {
 ///   "results": [
-///     {"email": "a@b.c", "id": 1, "created": ["Inbox", "Drafts", ...], "error": null},
+///     {"email": "a@b.c", "id": 1, "created": ["Inbox", "Drafts",...], "error": null},
 ///     {"email": "x@y.z", "id": 2, "created": [],                       "error": "..."}
 ///   ],
 ///   "failed": 0
@@ -389,7 +389,7 @@ async fn handle_seed_mailboxes(
             let after = ms
                 .list_mailboxes(id)
                 .map_err(|e| anyhow::anyhow!("list_mailboxes: {e}"))?;
-            // Report names of mailboxes whose role landed in `after`
+            // Report names of mailboxes whose role `after`
             // but was missing from `before`. Iterating
             // crate::props::accounts::DEFAULT_MAILBOXES rather than
             // `after` keeps the display order stable. `before` is a

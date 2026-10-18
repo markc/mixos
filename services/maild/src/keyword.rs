@@ -55,7 +55,7 @@ pub enum KeywordError {
     /// Longer than [`MAX_KEYWORD_LEN`] bytes (normalised form).
     TooLong,
     /// Contains a control character, space, or an IMAP `atom-special`
-    /// (`( ) { } % * " \ ]`).
+    /// (`() { } % * " \ ]`).
     BadChar(char),
     /// More than [`MAX_KEYWORDS_PER_MESSAGE`] user keywords on one message.
     TooMany,

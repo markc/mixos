@@ -6,9 +6,9 @@
 //! [`TlsSlot`] hot-swap primitives that the SMTP and IMAPS listeners
 //! use to capture a per-connection resolver snapshot at TCP-accept
 //! time (umbrella Phase 5a-commit-1, see
-//! `_doc/planned/maild-multi-vhost-phase5.md`).
+//!).
 //!
-//! The shared resolver implementation lives in `cosmix-lib-daemon` so
+//! The shared resolver implementation lives in `config::tls` so
 //! webd and maild share one code path rather than two divergent
 //! copies. The cache + slot live here (in the maild citizen) because
 //! they are a maild-side listener concern; if a second daemon citizen
@@ -122,7 +122,7 @@ mod tests {
 
     // Compile-time assertion that the public surface the maild
     // callers (`smtp/mod.rs`, `imap/server.rs`, `props/tls_identities
-    // .rs`) rely on is preserved across the lift. If the resolver's
+    //.rs`) rely on is preserved across the lift. If the resolver's
     // `from_config` signature changes upstream this stops compiling,
     // which is the loud signal we want before runtime.
     #[allow(dead_code)]

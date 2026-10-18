@@ -3,7 +3,7 @@
 -- Close maild item-keyed sidecar reap gap on item delete.
 --
 -- `remove_membership_in_tx` (container.rs) drops the `item` row on the
--- last-membership path (`if remaining == 0 { ... DELETE FROM item }`).
+-- last-membership path (`if remaining == 0 {... DELETE FROM item }`).
 -- Three maild item-keyed sidecars were NOT reaped by that delete:
 --
 --   * mail_retrain_outbox / mail_threads — added in v1.1 with a bare

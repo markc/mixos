@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Phase 3 sub-step 3: two-pass GC.
 //!
-//! Tests cover the contract from `_doc/2026-04-29-mds-plan.md`
+//! Tests cover the contract from
 //! § "Two-pass GC contract":
 //!
 //! - empty / no-candidate sweep is a fast no-op,

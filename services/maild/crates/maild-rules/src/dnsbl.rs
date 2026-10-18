@@ -378,7 +378,7 @@ pub struct HickoryResolver {
 #[cfg(feature = "dnsbl")]
 impl HickoryResolver {
     /// Build from `/etc/resolv.conf`. Mirrors the construction path
-    /// used by `maild::smtp::delivery` and `cosmix-webd::mxresolve`
+    /// used by `maild::smtp::delivery` and `webd::mxresolve`
     /// so the workspace shares one hickory builder shape.
     pub fn from_system() -> crate::error::Result<Self> {
         let inner = hickory_resolver::Resolver::builder_tokio()
@@ -450,7 +450,7 @@ impl AsyncDnsResolver for HickoryResolver {
 /// inner `response_code`. Treating those as "not listed" would cache a
 /// transient blip as a peer's permanent verdict.
 ///
-/// Same shape as `cosmix-webd::mxresolve::classify`; we want one
+/// Same shape as `webd::mxresolve::classify`; we want one
 /// workspace-wide reading of "DNS said no, definitely" vs "DNS broke."
 #[cfg(feature = "dnsbl")]
 fn is_genuine_negative(e: &hickory_resolver::ResolveError) -> bool {

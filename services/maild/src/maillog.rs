@@ -47,7 +47,7 @@ const MAX_FIELD: usize = 256;
 
 /// Escape an untrusted string into a single safe syslog field.
 ///
-/// - C0/C1 control chars, `DEL`, CR, LF and TAB become `\xNN`
+/// - / control chars, `DEL`, CR, LF and TAB become `\xNN`
 ///   (this is what kills CRLF log-injection — the attacker cannot
 ///   start a forged log line).
 /// - Unicode bidi/format/zero-width characters that can reorder or
@@ -61,11 +61,11 @@ pub fn sanitize(s: &str) -> String {
             break;
         }
         match ch {
-            // C0 controls (incl. CR/LF/TAB), and DEL.
+            // controls (incl. CR/LF/TAB), and DEL.
             '\u{00}'..='\u{1F}' | '\u{7F}' => {
                 out.push_str(&format!("\\x{:02X}", ch as u32));
             }
-            // C1 controls.
+            // controls.
             '\u{80}'..='\u{9F}'
             // Soft hyphen, line/paragraph separators, BOM/ZWNBSP.
             | '\u{00AD}' | '\u{2028}' | '\u{2029}' | '\u{FEFF}'

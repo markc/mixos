@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-//! MCS-P1-C — lifecycle paths emit `container_change_set` rows.
+//! the lifecycle implementation — lifecycle paths emit `container_change_set` rows.
 //!
-//! Spec: `_doc/planned/mailbox-changes-substrate.md`.
 //!
 //! Each test runs through the typed `SqliteSetTx` accessors (the
 //! mailstore-discipline entry points) and reads back the

@@ -26,8 +26,8 @@
 //!   endpoint exceeds it (`3291:*` matches the last UID even if the
 //!   last UID is < 3291).
 //!
-//! T8 lands the parser + a passive `SequenceMap` resolver. No verb
-//! (FETCH / STORE / COPY / SEARCH) wiring yet — those come in T9+.
+//! lands the parser + a passive `SequenceMap` resolver. No verb
+//! (FETCH / STORE / COPY / SEARCH) wiring yet — those come in +.
 //!
 //! ## Design choices
 //!
@@ -249,7 +249,7 @@ impl SequenceMap {
     /// **Invariants enforced (debug builds):**
     ///
     /// * Each UID is `<= u32::MAX`. RFC 9051 §9 defines wire UIDs as
-    ///   `nz-number` (1..=u32::MAX). Cosmix's storage-side
+    ///   `nz-number` (1..=u32::MAX). MixOS's storage-side
     ///   `MembershipUid::uid` is `u64`, but it's widened from a `u32`
     ///   sequence (see `mailstore::next_seq`), so any larger value
     ///   here would indicate a violated invariant rather than legal

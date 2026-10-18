@@ -79,7 +79,7 @@ pub async fn rebuild_signer_from_substrate(
     for record in &snap.value {
         // Unparseable rows are a hard error: silently skipping them
         // would let a corrupt row with overlapping `domain` slip past
-        // the baseline-conflict check below. SPEC 12 §10 has reconcile
+        // the baseline-conflict check below. the props contract has reconcile
         // semantics for fixing on-disk corruption — startup is not the
         // place to paper over it.
         let v = view(record).with_context(|| {

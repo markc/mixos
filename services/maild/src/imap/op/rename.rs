@@ -3,11 +3,11 @@
 
 //! `RENAME` — RFC 9051 §6.3.6.
 //!
-//! Phase 2 T5 v1: resolve the old wire name, validate every segment
+//! Phase 2 v1: resolve the old wire name, validate every segment
 //! of the new name, look up the destination parent (must already
 //! exist), and call `MailStore::rename_mailbox`.
 //!
-//! Locked Phase 2 decisions (with Codex sign-off):
+//! Locked Phase 2 decisions (with sign-off):
 //! * **INBOX rename is rejected** with `NO [CANNOT] INBOX cannot be
 //!   renamed`. RFC 9051 §6.3.6 actually requires INBOX-rename to
 //!   move messages from INBOX into the new mailbox and leave INBOX

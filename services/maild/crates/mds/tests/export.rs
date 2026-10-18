@@ -217,7 +217,7 @@ fn export_fails_when_referenced_cas_file_is_missing() {
         "no partial archive should remain at {}",
         dest.display()
     );
-    // The .partial sibling should also be cleaned up.
+    // The.partial sibling should also be cleaned up.
     let partial = d.path().join("torn.tar.partial");
     assert!(
         !partial.exists(),

@@ -250,13 +250,13 @@ mod tests {
             timezone: None,
             sort_order: 0,
         };
-        let frag = calendar_collection(3, &cal, "42", "https://cosmix.invalid/ns/sync/42");
+        let frag = calendar_collection(3, &cal, "42", "https://mixos.invalid/ns/sync/42");
         assert!(frag.contains("<D:displayname>Work &amp; Play</D:displayname>"));
         assert!(frag.contains("<CS:getctag>42</CS:getctag>"));
         assert!(frag.contains("<C:calendar/>"));
         assert!(frag.contains("<A:calendar-color>#ff0000</A:calendar-color>"));
         assert!(frag.contains("/dav/calendars/3/cal-uuid/"));
         assert!(frag.contains("<D:sync-collection/>")); // supported-report-set
-        assert!(frag.contains("<D:sync-token>https://cosmix.invalid/ns/sync/42</D:sync-token>"));
+        assert!(frag.contains("<D:sync-token>https://mixos.invalid/ns/sync/42</D:sync-token>"));
     }
 }

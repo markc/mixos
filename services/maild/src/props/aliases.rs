@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
-//! SPEC 12 property-substrate namespace `maild.aliases` — Phase 1
+//! Property-store namespace `maild.aliases` — Phase 1
 //! local-target single-hop email aliases.
 //!
 //! A row maps an **alias address** (the key) to a **target** local
@@ -9,7 +9,7 @@
 //! target's mailbox AND an authenticated account may submit `From:` the
 //! alias (the alias is an identity *of* the target). Both directions go
 //! through the single resolver [`resolve_alias`]; see the plan
-//! `~/.cosmix/_plan/2026-06-09-maild-aliases.md`.
+//!.
 //!
 //! ## Lifecycle
 //!
@@ -63,7 +63,7 @@ pub fn canon(addr: &str) -> String {
     addr.trim().to_ascii_lowercase()
 }
 
-/// SPEC 12 schema. `address` is the primary-key body field (the runtime
+/// the props contract schema. `address` is the primary-key body field (the runtime
 /// enforces `value.address == wire-key`).
 pub fn schema() -> PropertySchema {
     PropertySchema::new(vec![
@@ -100,7 +100,7 @@ pub fn schema() -> PropertySchema {
     ])
 }
 
-/// SPEC 12 [`AuthPolicy`] — grants every property capability to every
+/// the props contract [`AuthPolicy`] — grants every property capability to every
 /// reachable peer, the same WireGuard-`/24`-is-the-trust-domain posture
 /// as `maild.accounts` / `maild.account_overrides`. (A narrower
 /// operator tier is a future hardening, tracked with the sibling
@@ -201,7 +201,7 @@ impl AliasesHooks {
                 "{field} domain must contain a dot"
             )));
         }
-        // Reserve the opaque vtoken namespace (C9): a 6/10-char Crockford-base32
+        // Reserve the opaque vtoken namespace : a 6/10-char Crockford-base32
         // local-part is a capability-token shape, NOT an alias name.
         if crate::vtoken::is_opaque_shaped(local) {
             return Err(HookError::validation(format!(
@@ -617,7 +617,7 @@ mod tests {
     #[test]
     fn validate_email_shape_reserves_opaque_vtoken_namespace() {
         // The opaque vtoken namespace is reserved — an alias address with a
-        // 6/10-char Crockford-base32 local-part is rejected (C9).
+        // 6/10-char Crockford-base32 local-part is rejected.
         assert!(AliasesHooks::validate_email_shape("alias address", "k4m9p2@example.org").is_err());
         assert!(
             AliasesHooks::validate_email_shape("alias address", "k4m9p2x7qe@example.org").is_err()

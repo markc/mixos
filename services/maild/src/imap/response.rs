@@ -5,7 +5,7 @@
 //!
 //! Phase 1 needs only tagged status responses, untagged
 //! `* CAPABILITY` / `* OK` / `* BYE`, and SASL continuations. Per
-//! `_doc/maild/imap.md` §"Error mappings" we map authentication
+//!  §"Error mappings" we map authentication
 //! refusal to `NO [AUTHENTICATIONFAILED]` (the doc's correction over
 //! the historical `BAD`) and never expose internal error text.
 //!
@@ -35,7 +35,7 @@ impl Status {
 }
 
 /// Build a tagged response: `<tag> <STATUS> [<code>] <text>\r\n`.
-/// `code` is the bracketed response-code (e.g. `CAPABILITY ...`,
+/// `code` is the bracketed response-code (e.g. `CAPABILITY...`,
 /// `AUTHENTICATIONFAILED`, `CLIENTBUG`) without surrounding brackets;
 /// pass `None` for none.
 pub fn tagged(tag: &str, status: Status, code: Option<&str>, text: &str) -> String {
@@ -85,7 +85,7 @@ pub fn continuation(challenge_b64: &str) -> String {
 /// `1783857640000`), which overflows u32 and made every strict client
 /// choke: dovecot's imapc parses the code as uint32, fails, and reports
 /// "Opening mailbox failed: UIDVALIDITY not received" (found
-/// 2026-08-25 trying to dsync gw's mailboxes into gco). Thunderbird
+/// a mailbox migration using dsync). Thunderbird
 /// only survived because it is lenient.
 ///
 /// Mapping: values that fit in u32 pass through untouched (unit tests
@@ -118,7 +118,7 @@ mod uidvalidity_tests {
 
     #[test]
     fn epoch_millis_become_seconds() {
-        // The exact value gco served on 2026-08-25.
+        // A representative server response.
         assert_eq!(wire_uidvalidity(1_783_857_640_000), 1_783_857_640);
     }
 

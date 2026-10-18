@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Phase 4: bitrot verification ledger.
 //!
-//! Covers the contract from `_doc/2026-04-29-mds-plan.md`
+//! Covers the contract from
 //! § "Phase 4 — verification ledger":
 //!
 //! - Full-scope sweep over a clean store: every blob recorded with
@@ -256,7 +256,7 @@ fn container_scope_restricts_to_referenced_blobs() {
 
 #[test]
 fn container_scope_does_not_deadlock_against_concurrent_delete_set() {
-    // Regression test for the lock-order inversion Codex caught in
+    // Regression test for the lock-order inversion caught in
     // the first Phase 4 implementation. `delete_set` takes the
     // per-set Mutex then `self.blobs`. The original
     // `verify_blobs(Container)` resolved hashes via a closure run

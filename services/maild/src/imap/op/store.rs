@@ -29,13 +29,13 @@
 //! Per-message writes go through
 //! [`crate::mailstore::MailStore::set_keywords_in_mailbox`], the
 //! per-mailbox sibling of `set_keywords`. This honours IMAP's
-//! non-negotiable invariant (`_doc/maild/imap.md` §5/§6): `\Seen` set
+//! non-negotiable invariant ( §5/§6): `\Seen` set
 //! on the INBOX membership of a multi-mailbox email must NOT propagate
 //! to the Archive membership.
 //!
 //! ## Scope
 //!
-//! Phase 4 T10 ships the five RFC 9051 §2.3.2 system flags
+//! Phase 4 ships the five RFC 9051 §2.3.2 system flags
 //! (`\Seen`, `\Flagged`, `\Answered`, `\Draft`, `\Deleted`). User
 //! keywords (`Tags` in the substrate) are deferred to a later task.
 //! `UNCHANGEDSINCE` (CONDSTORE) is deferred to Phase 6.

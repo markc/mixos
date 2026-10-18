@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
-//! `MailStore` — mail-aware adapter over `cosmix-mds`.
+//! `MailStore` — mail-aware adapter over `mds`.
 //!
 //! v1.1 amendment §"Concrete trait deltas — MailStore" (Phase 8d):
 //! every cross-layer write (MDS mutation + sidecar table row) goes
@@ -9,8 +9,8 @@
 //! atomically. Side-effect publishes (Bayesian retrain, FTS rebuild)
 //! ride on the outbox / projection tables and run out-of-band.
 //!
-//! See `_doc/2026-05-02-cosmix-mds-spec-v1_1-amendment.md` §1, §4b
-//! and `_doc/2026-04-29-cosmix-mds-plan.md` §8d.
+//! See  §1, §4b
+//! and  §8d.
 //!
 //! Phase 8d.2 lands this module as a pure adapter; JMAP/SMTP wiring
 //! arrives in subsequent phases (Phase A "JMAP migration onto MDS"
@@ -213,7 +213,7 @@ impl Default for ListOpts {
 /// keywords, membership-set predicates). Envelope substring filters
 /// (`from`, `to`, `cc`, `subject`) and full-text (`text`, `body`)
 /// require a `mail_envelopes` join (or FTS index) and arrive in
-/// Task 3.6 alongside the JMAP `Email/query` handler. The JMAP layer
+/// alongside the JMAP `Email/query` handler. The JMAP layer
 /// is responsible for translating per-method client args into this
 /// shape and for surfacing `unsupportedFilter` for any condition the
 /// backend does not yet support — `EmailQueryFilter` is intentionally
@@ -284,13 +284,13 @@ pub enum EmailSort {
 /// Storage-layer projection of a mailbox row, ready for JMAP
 /// `Email/get` / `Email/query` slim-fetch flows.
 ///
-/// **Plan deviation note.** The migration plan's Task 1.5 names this
+/// **Plan deviation note.** The migration plan's names this
 /// field `blob_id: BlobId`, but the per-account persisted-alias
 /// `blob_refs` row that minted JMAP `BlobId`s requires (and is the
-/// subject of) Task 1.7's `create_email`. Reads must not write, so
+/// subject of) 's `create_email`. Reads must not write, so
 /// the slim handle returns the underlying [`BlobHash`]; the JMAP
 /// wire layer mints/looks up the `BlobId` alias at serialize time
-/// once Task 1.7 lands. Substituting `BlobHash` here lets Phase 1.5
+/// once lands. Substituting `BlobHash` here lets Phase 1.5
 /// land cleanly without lazy-mint-on-read.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EmailHandle {
@@ -313,8 +313,8 @@ pub struct EmailHandle {
     /// widened to `u64` for the IMAP wire layer (RFC 9051 §2.3.1.1
     /// permits 32-bit UIDs but consumers commonly use 64-bit accumulators
     /// for monotonicity reasoning). Sourced from `membership.seq`; never
-    /// recycles within a mailbox lifetime — see P6 / P7 in
-    /// `_doc/planned/imap-runway.md`.
+    /// recycles within a mailbox lifetime — see / in
+    ///
     pub uid: u64,
     /// IMAP per-message MODSEQ (RFC 7162 CONDSTORE). Sourced from
     /// `membership.change_seq`; bumped on every flag change to this
@@ -324,7 +324,7 @@ pub struct EmailHandle {
     /// `MAX(membership.change_seq)` over surviving rows would be
     /// non-monotonic across EXPUNGE because the row is removed before
     /// the container counter bumps (see
-    /// `_doc/planned/imap-runway.md` §P6).
+    /// §).
     pub mod_seq: u64,
     /// Size of the on-disk RFC 822 representation in bytes. Sourced
     /// from `ItemMeta::size_bytes` — the same CAS-blob length the
@@ -340,7 +340,7 @@ pub struct EmailHandle {
 ///
 /// All methods are synchronous; tokio callers wrap in
 /// `tokio::task::spawn_blocking` per the maild convention. Sync
-/// matches `cosmix-mds::Mds` (which is also sync) and lets the
+/// matches `mds::Mds` (which is also sync) and lets the
 /// adapter chain MDS + sidecar writes inside one rusqlite
 /// `Transaction` without crossing await points.
 pub trait MailStore: Send + Sync {
@@ -558,7 +558,7 @@ pub trait MailStore: Send + Sync {
     /// (which `create_blob_ref` provisions as a non-mailbox temp
     /// landing zone for blob uploads) so JMAP `Mailbox/get` and
     /// `Mailbox/query` never expose it. The filter is by name today;
-    /// `MailStore::create_mailbox` (Task 1.2) is responsible for
+    /// `MailStore::create_mailbox` is responsible for
     /// rejecting that reserved name at the create boundary so a
     /// real mailbox can never collide with the staging container.
     ///
@@ -739,9 +739,9 @@ pub trait MailStore: Send + Sync {
     /// gap — the rename commits to disk but the attrs update sees
     /// `notFound`, leaving the on-disk state changed but the JMAP
     /// response reporting `notUpdated`. Bundling both into one
-    /// `with_set_tx` closure makes the operation indivisible. (Codex
-    /// review of Task 2.4 surfaced this; see `_doc/planned/jmap-mds-
-    /// migration.md` Task 2.4 commit.)
+    /// `with_set_tx` closure makes the operation indivisible. (
+    /// review of surfaced this; see `
+    /// migration.md` commit.)
     ///
     /// Like `rename_mailbox` / `destroy_mailbox` this method does NOT
     /// bootstrap the per-account set on an error path — `SetNotFound`
@@ -851,9 +851,9 @@ pub trait MailStore: Send + Sync {
     ///
     /// Phase A scope cap: envelope filters (`from`/`to`/`cc`/
     /// `subject`) are not in `EmailQueryFilter` yet; they land with
-    /// `Email/query` in Task 3.6 once a `mail_envelopes` join (or FTS
+    /// `Email/query` in once a `mail_envelopes` join (or FTS
     /// projection) replaces this in-memory walk for the columns it
-    /// can serve. This method is the prelim that lets Task 3.6 ship
+    /// can serve. This method is the prelim that lets ship
     /// without re-shaping the storage surface.
     ///
     /// Errors carry a message starting with one of:
@@ -885,7 +885,7 @@ pub trait MailStore: Send + Sync {
     ///
     /// Read-only; no `with_set_tx` scope. Reads the underlying
     /// `item` row (via `Mds::fetch_item_meta`), the per-item envelope
-    /// sidecar (`mail_envelopes` from cosmix-mds v1.2 schema), and the
+    /// sidecar (`mail_envelopes` from mds v1.2 schema), and the
     /// item's memberships (via `Mds::item_memberships`) to assemble the
     /// merged JMAP shape — see [`EmailRecord`] for the per-field
     /// semantics and the rationale for *not* embedding the
@@ -901,7 +901,7 @@ pub trait MailStore: Send + Sync {
     ///     hasn't been provisioned yet). Maps to JMAP `notFound`.
     ///   * `"email envelope missing"` — the item exists but no
     ///     `mail_envelopes` sidecar row was ever written. Phase A
-    ///     transient: items predating Task 1.7's `create_email` write
+    /// transient: items predating 's `create_email` write
     ///     path will hit this; the JMAP layer maps it to a synthetic
     ///     "skeleton" envelope at serialise time once that path lands.
     fn get_email(&self, account: AccountId, id: ItemId) -> Result<EmailRecord>;
@@ -911,7 +911,7 @@ pub trait MailStore: Send + Sync {
     ///
     /// Backs the JMAP `Email/import` idempotency contract (RFC 8621
     /// §4.6 SHOULD, promoted to MUST in
-    /// `_doc/planned/jmap-mds-migration.md` §3.5b): the JMAP layer
+    ///  §3.5b): the JMAP layer
     /// uses this primitive to decide whether to reuse an existing
     /// email id rather than allocate a new one when the same blob is
     /// re-imported into the same mailbox set. `find` rather than
@@ -949,7 +949,7 @@ pub trait MailStore: Send + Sync {
 
     /// Land a raw RFC 5322 message in CAS and return its content hash.
     ///
-    /// Trait-level forwarder for the IMAP APPEND path (Phase 4 T14),
+    /// Trait-level forwarder for the IMAP APPEND path (Phase 4),
     /// which holds an `Arc<dyn MailStore>` and cannot reach the
     /// concrete `mds()` accessor on `SqliteMailStore`. The default
     /// implementation is a thin wrapper around `Mds::put_blob`; impls
@@ -1098,7 +1098,7 @@ pub trait MailStore: Send + Sync {
     ) -> Result<(ItemId, Vec<MembershipUid>)>;
 
     /// Add N≥1 *post-create* memberships to an existing email,
-    /// atomically. Used by JMAP `Email/set update` (Task 3.4) when
+    /// atomically. Used by JMAP `Email/set update` when
     /// `mailboxIds` adds new entries the email did not previously
     /// belong to.
     ///
@@ -1179,7 +1179,7 @@ pub trait MailStore: Send + Sync {
     /// and leaves any other memberships of `id` alone. Required for
     /// the IMAP non-negotiable that `\Seen` set on the INBOX
     /// membership of a multi-mailbox email must NOT propagate to the
-    /// Archive membership (`_doc/maild/imap.md` §Non-negotiable
+    /// Archive membership ( §Non-negotiable
     /// invariants 5/6).
     ///
     /// `keywords` is the new system flag set (`\Seen`, `\Flagged`,
@@ -1280,7 +1280,7 @@ pub trait MailStore: Send + Sync {
     /// last membership goes; the FK `mail_envelopes.item_id ON
     /// DELETE CASCADE` removes the envelope sidecar row in the same
     /// statement. The orphan blob becomes a GC candidate after the
-    /// quiescence window — actual blob unlink is `cosmix-mds`'s
+    /// quiescence window — actual blob unlink is `mds`'s
     /// `gc.rs` problem, not this method's.
     ///
     /// Errors:
@@ -1342,7 +1342,7 @@ pub trait MailStore: Send + Sync {
 
     /// JMAP `Mailbox`-type state token observed *now*. Returns the paired
     /// `"<lifecycle_seq>:<set_change_seq>"` form documented in
-    /// `_doc/planned/mailbox-changes-substrate.md` §"State token":
+    ///  §"State token":
     ///
     ///   * `lifecycle_seq` is
     ///     `max(MAX(container_change_set_seq), set_state.container_change_set_floor)`
@@ -1369,7 +1369,7 @@ pub trait MailStore: Send + Sync {
     /// JMAP `Mailbox/changes` (RFC 8621 §2.6) backed by the
     /// `container_change_set` lifecycle stream paired with the
     /// `set_change` count stream. Returns the per-container
-    /// classification described in `_doc/planned/mailbox-changes-substrate.md`
+    /// classification described in
     /// §Design — Option B.
     ///
     /// `since_state` is the paired token `"<lifecycle>:<set_change>"`
@@ -1451,7 +1451,7 @@ pub trait MailStore: Send + Sync {
     /// Filtering is by `(account_id, thread_id)` against the
     /// `mail_threads` sidecar; rows are joined to `mail_envelopes` for
     /// `date_ts` and to `item` for `received_at` as a deterministic
-    /// fallback. Items predating Task 1.7's `create_email` write path
+    /// fallback. Items predating 's `create_email` write path
     /// will lack a `mail_envelopes` row — those sort by `received_at`
     /// (delivery time, in milliseconds) and after items with envelope
     /// rows whose `date_ts` is in the same window. The fallback exists
@@ -1466,7 +1466,7 @@ pub trait MailStore: Send + Sync {
     /// fallback and the `i.id` tie-break. Since v1.8 it no longer
     /// *filters* any `mail_threads` row: `mail_threads.item_id` now
     /// carries `REFERENCES item(id) ON DELETE CASCADE`
-    /// (`cosmix-mds/src/schema/v1_8.sql`), so dangling rows are reaped
+    /// (`mds/src/schema/v1_8.sql`), so dangling rows are reaped
     /// when the `item` is deleted rather than skipped at read time. The
     /// join therefore doubles as a post-v1.8 debug invariant — a
     /// `debug_assert` in the impl pins "the join drops nothing".
@@ -1498,7 +1498,7 @@ pub trait MailStore: Send + Sync {
     /// IMAP IDLE notifier surface. Returns a
     /// `tokio::sync::broadcast::Receiver<ContainerEvent>` keyed by
     /// `(account, mailbox)`; events fire post-commit only, matching
-    /// the `cosmix-mds::notifier` discipline (`BufferedEvents::
+    /// the `mds::notifier` discipline (`BufferedEvents::
     /// drain_into` is invoked from `with_set_tx` after `tx.commit()`).
     ///
     /// The wrapper validates the mailbox exists *before* subscribing
@@ -1533,7 +1533,7 @@ pub trait MailStore: Send + Sync {
     ) -> Result<broadcast::Receiver<ContainerEvent>>;
 }
 
-/// SQLite-backed `MailStore` over `cosmix-mds::SqliteCasMds`.
+/// SQLite-backed `MailStore` over `mds::SqliteCasMds`.
 pub struct SqliteMailStore {
     mds: Arc<SqliteCasMds>,
 }
@@ -2201,7 +2201,7 @@ fn find_or_new_thread_id_in_tx(
     // invariant ever relaxes — or statistics shift enough that the
     // planner picks `mail_threads(account_id, thread_id)` first — the
     // fallback to a TEMP sort is legal: a re-tuning trigger, not a
-    // correctness regression (see `cosmix-mds/src/schema/v1_7.sql`
+    // correctness regression (see `mds/src/schema/v1_7.sql`
     // for the full rationale).
     let normalized = subject::normalize_subject(subject);
     if !normalized.is_empty() {
@@ -2372,7 +2372,7 @@ impl MailStore for SqliteMailStore {
         // with a reserved or empty name on a brand-new account cannot
         // bootstrap the per-account set as a side effect — the only
         // observable outcome of an invalid call must be the rejection.
-        // (Required by Codex review of Tasks 1.1 / 1.2.)
+        // (Required by of / 1.2.)
         if name == UPLOAD_STAGING_NAME {
             return Err(anyhow!(
                 "reserved name {name:?}: collides with upload-staging container"
@@ -2651,7 +2651,7 @@ impl MailStore for SqliteMailStore {
                 }
             }
             // Final delete. Children-still-present surfaces as
-            // Error::Other("container has child containers; ...") via
+            // Error::Other("container has child containers;...") via
             // the cascade rule; we map it at the trait boundary below.
             tx.delete_container(&id)?;
             Ok(())
@@ -2771,11 +2771,11 @@ impl MailStore for SqliteMailStore {
             // attrs blob to the substrate's typed
             // `update_container_attrs` so the diff + UPDATE +
             // `container_change_set` row all happen atomically
-            // through the single substrate write surface (MCS-P1-D
+            // through the single substrate write surface (the transaction facade
             // cut over the legacy raw UPDATE on this site —
             // bypassing the typed method would silently defeat the
             // JMAP `Mailbox/changes` lifecycle-stream invariant; see
-            // `_doc/planned/mailbox-changes-substrate.md` §"Trait
+            //  §"Trait
             // surface change").
             if attrs_change_requested {
                 let mut attrs: ContainerAttrs =
@@ -2891,7 +2891,7 @@ impl MailStore for SqliteMailStore {
                 my_rights,
                 uid_validity: status.seq_validity,
                 // `container.change_seq` is the IMAP HIGHESTMODSEQ
-                // source. See P6 in `_doc/planned/imap-runway.md` for
+                // source. See in for
                 // why `MAX(membership.change_seq)` is wrong.
                 highest_mod_seq: status.change_seq.0,
                 // `container.next_seq` is the IMAP UIDNEXT source.
@@ -3121,7 +3121,7 @@ impl MailStore for SqliteMailStore {
     ) -> Result<usize> {
         if item_ids.is_empty() {
             // Empty input MUST NOT open a tx — non-negotiable for
-            // the change-stream contract (SPEC: empty fan-out must
+            // the change-stream contract (the contract: empty fan-out must
             // not allocate a set_change row). Mirrors
             // `add_memberships`'s short-circuit for the same reason.
             return Ok(0);
@@ -3144,7 +3144,7 @@ impl MailStore for SqliteMailStore {
                     // Concurrent EXPUNGE in another session: the
                     // membership is already gone. The MDS layer
                     // surfaces this as `Error::Other` with a
-                    // "membership ... not present" string rather
+                    // "membership... not present" string rather
                     // than a typed `MembershipNotFound`, so we
                     // match the prefix. Skip silently — the
                     // caller's wire emission is driven by the
@@ -3329,7 +3329,7 @@ impl MailStore for SqliteMailStore {
                 params.push(Value::Integer(i64::try_from(max).unwrap_or(i64::MAX)));
             }
             // RFC 8621 §4.4.1: at least one membership outside the list.
-            // An empty list makes `NOT IN ()` true for any membership.
+            // An empty list makes `NOT IN` true for any membership.
             if let Some(others) = &filter.in_mailbox_other_than {
                 let marks = vec!["?"; others.len()].join(",");
                 preds.push(format!(
@@ -3643,7 +3643,7 @@ impl MailStore for SqliteMailStore {
         //     happens for staging-container items (SMTP inbound
         //     deposits the body in CAS first, the envelope is
         //     written when the message is filed) or for items
-        //     created before Task 1.7's create_email path landed.
+        // created before 's create_email path landed.
         //     Either way the row is not a JMAP-visible Email and
         //     must not be returned as an idempotency match —
         //     otherwise the import would fail with the same
@@ -4203,12 +4203,12 @@ impl MailStore for SqliteMailStore {
         // Per-mailbox write: `store_membership_keywords` mutates the
         // (item, mailbox) row only — sibling memberships of `id` in
         // other mailboxes are untouched (the load-bearing IMAP STORE
-        // isolation; see P1 in `_doc/planned/imap-runway.md`). It
+        // isolation; see in). It
         // writes `keywords` (system flags) + `tags` (user keywords) on
         // that one row, and — like the flags-only `store_flags` — it
         // disambiguates two failures: `ContainerNotFound` when the
         // named mailbox does not exist (caller typo, deleted between
-        // resolution and STORE) and `Error::Other("membership ... not
+        // resolution and STORE) and `Error::Other("membership... not
         // present")` when the mailbox exists but the (item, mailbox)
         // row does not (item never in this mailbox, or removed by a
         // peer between UID lookup and STORE). The wrapper maps the
@@ -4345,11 +4345,11 @@ impl MailStore for SqliteMailStore {
             //   * `Error::Other("move_item: src and dest must
             //     differ")` — short-circuited by the `*src ==
             //     to_mailbox` no-op check above.
-            //   * `Error::Other("item ... not in source
+            //   * `Error::Other("item... not in source
             //     container")` and `Error::ItemNotFound(...)` — src
             //     and item id both came from `item_memberships` in
             //     the same tx, so they exist.
-            //   * `Error::Other("item ... already in destination
+            //   * `Error::Other("item... already in destination
             //     container")` — would imply the email already had
             //     ≥2 memberships including `to_mailbox`, caught by
             //     the ambiguous-source branch.
@@ -4379,7 +4379,7 @@ impl MailStore for SqliteMailStore {
             // virtual table cannot carry a foreign key (FK constraints
             // are unsupported on `content=''` tables), so we delete
             // by `item_id` in the same `with_set_tx` scope as the
-            // `mail_envelopes` cascade. `_doc/planned/maild-sidecar-
+            // `mail_envelopes` cascade. `
             // reap.md` Option C is the long-term shape for ALL
             // sidecars; here we follow the FTS-must-be-manual carve-
             // out. Tolerates zero affected rows: an item that never
@@ -4412,7 +4412,7 @@ impl MailStore for SqliteMailStore {
     }
 
     fn email_changes(&self, account: AccountId, since_state: u64) -> Result<EmailChangeSet> {
-        // `cosmix-mds::container::changes_since_set` casts the
+        // `mds::container::changes_since_set` casts the
         // token `as i64` at the SQL boundary. A `since_state`
         // above `i64::MAX` would silently wrap to negative and
         // return the full set_change table — fail fast instead.
@@ -4533,7 +4533,7 @@ impl MailStore for SqliteMailStore {
                 // of `touched_order` does not require lowering
                 // `new_state`: the JMAP client just tracks "I have
                 // seen up to seq N" regardless of which events
-                // landed in that range.
+                // that range.
                 let new_state = all_changes
                     .iter()
                     .map(|c| c.set_change_seq.0)
@@ -4620,8 +4620,8 @@ impl MailStore for SqliteMailStore {
             // Pre-shaped message from inside the closure carries
             // the trait-prefix vocabulary already; unwrap the
             // Error::Other variant so the Display form is the bare
-            // `"future since_state: ..."` (or `"stale since_state:
-            // ..."` for the MCS Phase 3-B retention-floor reject) and
+            // `"future since_state:..."` (or `"stale since_state:
+            //..."` for the MCS Phase 3-B retention-floor reject) and
             // the JMAP handler's `starts_with` match fires cleanly.
             Err(mds::Error::Other(s))
                 if s.starts_with("future since_state") || s.starts_with("stale since_state") =>
@@ -5134,7 +5134,7 @@ impl MailStore for SqliteMailStore {
         let result = self.mds.with_set_tx(
             &set,
             |tx| -> std::result::Result<Vec<ItemId>, mds::Error> {
-                // LEFT JOIN `mail_envelopes` so items predating Task 1.7's
+                // LEFT JOIN `mail_envelopes` so items predating 's
                 // create_email (no envelope row) still surface. The
                 // `CASE WHEN e.date_ts IS NULL THEN 1 ELSE 0 END` guard
                 // partitions the result into two ordered buckets — bucket 0

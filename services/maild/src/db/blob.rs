@@ -55,7 +55,7 @@ pub async fn store(
 /// the id and would otherwise let an SMTP worker downstream load the
 /// bytes via the bare-`load` server-internal carveout.
 ///
-/// Phase-6 deletion target: with Task 5.4c the only caller (the
+/// Phase-6 deletion target: with the only caller (the
 /// JMAP submission gate) is gone — `MailStore::get_email` is
 /// account-scoped, and CAS hashes are content-addressed, so there
 /// is no UUID-smuggling vector left to defend against.
@@ -108,7 +108,7 @@ pub async fn id_owned_by_account(
 /// **Migration evolution.** Today every production write path that
 /// produces a CAS hash also writes a `db::blob` row, so this gate
 /// covers all blobs an account could legitimately request. When
-/// Task 3.3a (`_doc/planned/jmap-mds-migration.md`) retires
+/// retires
 /// `db::blob` in favor of mds-side staging aliases (and any future
 /// `MailStore::create_email`-only path that bypasses `db::blob`
 /// entirely), the gate must move to one of:
@@ -119,7 +119,7 @@ pub async fn id_owned_by_account(
 ///     `(account, blob_hash)` — e.g. `EmailRecord.blob_hash` joined
 ///     across the account's containers plus the staging alias set.
 ///
-/// The C5 cold review surfaced this forward-looking gap; resolution
+/// The cold review surfaced this forward-looking gap; resolution
 /// rides with whichever C-step actually moves an upload / import
 /// path off `db::blob`.
 pub async fn hash_owned_by_account(

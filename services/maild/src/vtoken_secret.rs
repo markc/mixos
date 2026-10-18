@@ -15,7 +15,7 @@
 //! still verifies during a rotation window, so a key roll does not invalidate
 //! every row's `token_hmac` primary key at once.
 //!
-//! Prep only (C5) — wired into the opaque-token registry in C6.
+//! Prep only — wired into the opaque-token registry in.
 
 use std::path::Path;
 

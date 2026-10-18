@@ -4,32 +4,32 @@
 //! Capability advertisement.
 //!
 //! The initial subset per the 2026-05-02 plan in
-//! `_doc/maild/imap.md` §"Capability advertisement". Every entry must
+//!  §"Capability advertisement". Every entry must
 //! correspond to behaviour that is implemented and tested before it
 //! is advertised — non-negotiable invariant #11.
 //!
 //! Phase 1 advertised: `IMAP4rev2`, `IMAP4rev1`, `SASL-IR`,
-//! `AUTH=PLAIN`, `AUTH=LOGIN`, `ID`. Phase 2 T3 added the LIST/LSUB/
+//! `AUTH=PLAIN`, `AUTH=LOGIN`, `ID`. Phase 2 added the LIST/LSUB/
 //! NAMESPACE surface and the attributes it relies on: `NAMESPACE`,
 //! `CHILDREN` (\HasChildren / \HasNoChildren), `SPECIAL-USE`
 //! (\Inbox / \Sent / \Trash / \Drafts / \Archive / \Flagged /
-//! \Junk / \All / \Important on LIST rows). Phase 2 T4 adds
+//! \Junk / \All / \Important on LIST rows). Phase 2 adds
 //! `UNSELECT` (RFC 3691) — CLOSE is core IMAP4rev2 and needs no
 //! capability; UNSELECT is a separate extension we now accept.
 //!
-//! Phase 4 T14 lands APPEND with both synchronizing literals (the
+//! Phase 4 lands APPEND with both synchronizing literals (the
 //! core IMAP4rev2 framing) and RFC 7888 `LITERAL+` non-synchronizing
 //! literals — see [`crate::imap::codec::read_command`]. `LITERAL+`
 //! is advertised now that the codec preserves stream sync across
 //! oversize/malformed/refused literal rejections.
 //!
-//! Phase 4 T15–T17 lands COPY / MOVE / UID EXPUNGE end-to-end and
+//! Phase 4 – lands COPY / MOVE / UID EXPUNGE end-to-end and
 //! re-enables `UIDPLUS` (RFC 4315) + `MOVE` (RFC 6851) in
-//! [`INITIAL`]. COPY emits `[COPYUID ...]`, MOVE emits the
+//! [`INITIAL`]. COPY emits `[COPYUID...]`, MOVE emits the
 //! RFC 6851 untagged COPYUID + EXPUNGE response, and UID EXPUNGE
 //! filters by the supplied UID set as RFC 4315 §2.1 requires.
 //!
-//! Phase 5 T18 lands `IDLE` (RFC 2177): the dispatcher subscribes
+//! Phase 5 lands `IDLE` (RFC 2177): the dispatcher subscribes
 //! to the selected mailbox's notifier channel and emits untagged
 //! `EXISTS` / `EXPUNGE` updates until the client sends `DONE`.
 //! Advertised once the dispatch arm is wired (see
@@ -41,7 +41,7 @@
 
 /// Currently-advertised capability strings. Order is the wire order
 /// emitted in the untagged `* CAPABILITY` response and the
-/// `[CAPABILITY ...]` response code following `LOGIN` / `AUTHENTICATE`.
+/// `[CAPABILITY...]` response code following `LOGIN` / `AUTHENTICATE`.
 pub const INITIAL: &[&str] = &[
     "IMAP4rev2",
     "IMAP4rev1",
@@ -72,7 +72,7 @@ pub fn render(caps: &[&str]) -> String {
 /// 7888 size-capped sibling of `LITERAL+`) are filtered out
 /// regardless of what the operator wrote. `LITERAL+` is no longer
 /// filtered now that [`crate::imap::codec::read_command`] honours
-/// non-synchronizing literals end-to-end (Phase 4 T14). Other
+/// non-synchronizing literals end-to-end (Phase 4). Other
 /// unimplemented capabilities (e.g. `IDLE`) are *not* filtered:
 /// their worst-case behaviour is a clean
 /// `BAD command not implemented`, which is acceptable for the
@@ -128,7 +128,7 @@ mod tests {
 
     #[test]
     fn render_owned_keeps_literal_plus_override() {
-        // Phase 4 T14: LITERAL+ is implemented end-to-end; operator
+        // Phase 4 : LITERAL+ is implemented end-to-end; operator
         // overrides may now include it without being silently dropped.
         let caps = vec![
             "IMAP4rev2".to_string(),
@@ -153,7 +153,7 @@ mod tests {
 
     #[test]
     fn render_owned_keeps_uidplus_now_that_copy_move_expunge_landed() {
-        // Phase 4 T15–T17 shipped COPY / MOVE / UID EXPUNGE; UIDPLUS
+        // Phase 4 – shipped COPY / MOVE / UID EXPUNGE; UIDPLUS
         // is no longer filtered and is advertised in [`INITIAL`] as
         // well. APPENDUID was already emitted on every successful
         // APPEND; the capability now matches the underlying surface.

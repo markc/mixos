@@ -8,7 +8,7 @@
 //! `db::calendar` (JSCalendar, RFC 8984), addressbooks/contacts in
 //! `db::contact` (JSContact, RFC 9553); auth reuses `auth::basic`; sync
 //! state reuses `db::changelog`. Plan + rationale:
-//! `_plan/2026-06-09-maild-dav-server.md`.
+//!.
 //!
 //! ## Milestones
 //! * **M1 (this commit)** — discovery: OPTIONS, `.well-known` redirects,
@@ -211,7 +211,7 @@ pub(super) fn bad_request() -> Response {
 /// Opaque prefix for DAV sync-tokens (RFC 6578). The token is this prefix
 /// plus the changelog state integer; clients store it verbatim and echo
 /// it back. A URI form maximises client compatibility.
-pub(super) const SYNC_TOKEN_PREFIX: &str = "https://cosmix.invalid/ns/sync/";
+pub(super) const SYNC_TOKEN_PREFIX: &str = "https://mixos.invalid/ns/sync/";
 
 /// Render a changelog state as a DAV sync-token.
 pub(super) fn sync_token_string(state: &str) -> String {

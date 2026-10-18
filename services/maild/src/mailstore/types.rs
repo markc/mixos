@@ -5,7 +5,7 @@
 //!
 //! These shapes are the adapter's externally-visible row types
 //! consumed by the JMAP / SMTP layers. They are intentionally narrower
-//! than `cosmix-mds`'s native types — only the fields a mail-protocol
+//! than `mds`'s native types — only the fields a mail-protocol
 //! handler needs are surfaced — so callers cannot reach into MDS
 //! internals and so the trait surface remains stable when MDS internal
 //! types evolve.
@@ -13,8 +13,8 @@
 use mds::{BlobHash, ContainerAttrs, ContainerId, Flags, ItemId, Tags};
 
 /// JMAP thread identifier (RFC 8621 §4.2). String-typed because the
-/// `mail_threads.thread_id` column is `TEXT NOT NULL` (cosmix-mds v1.1
-/// schema, see `cosmix-mds/src/schema/v1_1.sql` §6) and the value is
+/// `mail_threads.thread_id` column is `TEXT NOT NULL` (mds v1.1
+/// schema, see `mds/src/schema/v1_1.sql` §6) and the value is
 /// minted upstream — historically as a `Uuid` string by
 /// `maild::db::thread::find_or_create`, but the storage layer
 /// is opaque to the format. Threads stay in MailStore per the v1.1
@@ -82,8 +82,7 @@ pub struct EmailChangeSet {
 ///
 /// `new_state` is the paired state token `"<lifecycle_seq>:<set_change_seq>"`
 /// the JMAP layer surfaces; clients persist it verbatim for their
-/// next call. See `_doc/planned/mailbox-changes-substrate.md`
-/// §"State token" for the pagination phasing — truncated pages
+/// next call. During pagination, truncated pages
 /// advance only the lifecycle component, final pages advance both
 /// and synthesise count-derived `updated` entries from the
 /// `set_change` window.
@@ -258,7 +257,7 @@ impl MailboxRole {
 }
 
 /// JMAP `Mailbox.myRights` (RFC 8621 §2.0). Per-account ACL mask the
-/// JMAP client uses to gate UI affordances. Cosmix is a personal
+/// JMAP client uses to gate UI affordances. MixOS is a personal
 /// substrate today (single-tenant accounts, no shared mailboxes), so
 /// the canonical projection is [`MailboxRights::full`]; the struct
 /// exists to (a) keep the JMAP wire shape honest and (b) leave room
@@ -303,12 +302,12 @@ impl Default for MailboxRights {
 /// One row of `MailStore::list_mailboxes`.
 ///
 /// `total_emails` / `unread_emails` come from `Mds::container_status`,
-/// which already maintains running counts inside MDS (see SPEC 08 §3
+/// which already maintains running counts inside MDS (see the shared contract
 /// "ContainerStatus is a precomputed projection"). They are surfaced
 /// as `u64` to match the underlying type — narrowing to JMAP's
 /// `UnsignedInt` (53-bit per RFC 8621 §2) is the response-shape
 /// layer's job, not the storage adapter's. Silently saturating in
-/// the adapter would lie about corrupted state; per Codex review
+/// the adapter would lie about corrupted state;
 /// 019dffa6.
 ///
 /// `role` / `sort_order` / `is_subscribed` / `my_rights` are the
@@ -350,16 +349,14 @@ pub struct MailboxRecord {
     /// from `container.seq_validity` — allocated once at container
     /// creation, never mutated except via the explicit "rebuild" path.
     /// Stable for the life of the mailbox; a UIDVALIDITY change is
-    /// the IMAP signal to a client that it must full-resync. See
-    /// `_doc/planned/imap-runway.md` §P6.
+    /// the IMAP signal to a client that it must full-resync.
     pub uid_validity: u64,
     /// IMAP HIGHESTMODSEQ for this mailbox (RFC 7162 CONDSTORE).
     /// Sourced from `container.change_seq` — a per-container counter
     /// bumped on every membership add / remove / flag change.
     /// **Not** `MAX(membership.change_seq)`: per-membership max is
     /// non-monotonic across EXPUNGE because rows are deleted before
-    /// the container counter bumps. See `_doc/planned/imap-runway.md`
-    /// §P6 for the regression this guards against.
+    /// the container counter bumps.
     pub highest_mod_seq: u64,
     /// IMAP UIDNEXT for this mailbox (RFC 9051 §7.3.2). Sourced from
     /// `container.next_seq` — the seq the next inserted membership
@@ -367,7 +364,7 @@ pub struct MailboxRecord {
     /// the mailbox; never reused after EXPUNGE. Widened from MDS's
     /// `Seq(u32)` to `u64` to match the rest of the IMAP-shaped
     /// surface on this record. Required by the SELECT/EXAMINE/STATUS
-    /// handlers in IMAP Phase 2 (`_doc/maild/imap.md` §"Phase 2").
+    /// handlers in IMAP Phase 2 ( §"Phase 2").
     pub uid_next: u64,
 }
 
@@ -434,9 +431,9 @@ impl RetentionSweepReport {
 
 /// JMAP `Email/get` envelope projection.
 ///
-/// One row per item in `mail_envelopes` (cosmix-mds v1.2 + v1.3
-/// columns, see `cosmix-mds/src/schema/v1_2.sql` §A and
-/// `cosmix-mds/src/schema/v1_3.sql`). The fields are RFC 5322 header
+/// One row per item in `mail_envelopes` (mds v1.2 + v1.3
+/// columns, see `mds/src/schema/v1_2.sql` §A and
+/// `mds/src/schema/v1_3.sql`). The fields are RFC 5322 header
 /// values frozen at delivery time — they are not re-derived from
 /// `item.blob_hash` on read.
 ///
@@ -465,9 +462,9 @@ pub struct EmailEnvelope {
 
 /// Full JMAP `Email/get` row returned by `MailStore::get_email`.
 ///
-/// **Plan deviation note.** The migration plan's Task 1.6 spec
+/// **Plan deviation note.** The migration plan's spec
 /// describes `EmailRecord = EmailHandle + envelope metadata + body
-/// blob hash`. `EmailHandle` (Task 1.5) is per-membership (carries a
+/// blob hash`. `EmailHandle` is per-membership (carries a
 /// container `seq` and the keywords for one specific membership);
 /// `get_email` does not take a container, so embedding `EmailHandle`
 /// directly would require picking an arbitrary membership and would
@@ -479,8 +476,8 @@ pub struct EmailEnvelope {
 /// merged JMAP shape: `keywords` is the OR of every membership's
 /// flags, and `mailbox_ids` enumerates every container the item
 /// belongs to (driving JMAP `mailboxIds`). The `blob_hash` is the
-/// underlying CAS hash; per the same Task 1.5 deviation, the
-/// per-account `BlobId` alias is minted by Task 1.7's `create_email`
+/// underlying CAS hash; per the same deviation, the
+/// per-account `BlobId` alias is minted by 's `create_email`
 /// and looked up at JMAP serialise time, not here.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EmailRecord {

@@ -324,7 +324,7 @@ async fn multi_zone_rule_matches_on_any_listed_zone() {
 
 #[tokio::test]
 async fn disabled_dnsbl_rule_does_not_call_lookup() {
-    // Per Codex round 1 (commit 2b) MAJOR: a rule disabled by the
+    // round 1 (commit 2b) : a rule disabled by the
     // account override must not trigger DNS lookups for its zones —
     // the rule cannot match anyway, and issuing the lookup would
     // waste a DNS round-trip and leak the peer IP to a third-party
@@ -376,7 +376,7 @@ async fn disabled_dnsbl_rule_does_not_call_lookup() {
 
 #[tokio::test]
 async fn mail_auth_hard_fail_short_circuits_before_dnsbl_lookup() {
-    // Per Codex round 1 (commit 2b) MAJOR: a verdict already decided
+    // round 1 (commit 2b) : a verdict already decided
     // by mail-auth hard-fail must not pay DNSBL resolver-latency cost
     // and must not leak the peer IP to a third-party DNSBL for a
     // verdict the engine is about to discard.
@@ -476,7 +476,7 @@ async fn engine_without_dnsbl_lookup_does_not_match_dnsbl_rules() {
     // every zone reads as LookupFailed, peer_ip_in_dnsbl never matches.
     let (engine, _) =
         DefaultRuleEngine::with_pack_str(EngineConfig::default(), dnsbl_only_pack()).unwrap();
-    // No .with_dnsbl(...) — dnsbl field stays None.
+    // No.with_dnsbl(...) — dnsbl field stays None.
 
     let verify = clean_auth();
     let account = AccountId::new("test");

@@ -109,7 +109,7 @@ pub trait AccountConnection: Send + Sync {
     }
 
     /// Labels written at or after `ts`. Rebuild uses this short read to replay
-    /// corrections that landed in the live corpus while its shadow corpus was
+    /// corrections that the live corpus while its shadow corpus was
     /// being trained.
     async fn labels_since(&self, _ts: i64) -> Result<Vec<(String, Label)>> {
         Err(Error::Storage(
@@ -985,7 +985,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&base);
     }
 
-    /// Review MINOR-8: the legacy `db.sqlite` branch is read in place (not
+    /// Review : the legacy `db.sqlite` branch is read in place (not
     /// promoted), and a database with no `labels` table reports zero label
     /// counters instead of failing.
     #[tokio::test]

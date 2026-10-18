@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
-//! Mailbox-name encoder / decoder for IMAP Phase 2 (T3).
+//! Mailbox-name encoder / decoder for IMAP Phase 2.
 //!
 //! Bridges the gap between [`crate::mailstore::MailboxRecord`] —
 //! flat `name` + `parent: Option<ContainerId>` graph — and the
@@ -10,10 +10,10 @@
 //! Pure module: no I/O, no MailStore reference, no `tokio`. Takes
 //! `&[MailboxRecord]` slices and returns owned `String` /
 //! structured rows. The wire handlers (`op/list.rs`, `op/lsub.rs`,
-//! `op/select.rs` in T4) own the I/O; this module owns the naming
+//! `op/select.rs` in) own the I/O; this module owns the naming
 //! rules so they can be tested in isolation.
 //!
-//! # Design (locked Phase 2 T3a)
+//! # Design (locked Phase 2)
 //!
 //! * **Hierarchy delimiter**: `/`. Advertised in NAMESPACE.
 //! * **INBOX**: the container whose `role == Some(MailboxRole::Inbox)`
@@ -35,7 +35,7 @@
 //!   parent-id-count pass attaches `\HasChildren` / `\HasNoChildren`
 //!   per row.
 //!
-//! No CREATE/RENAME validation lives here yet — that is T5's job.
+//! No CREATE/RENAME validation lives here yet — that is job.
 
 use std::collections::HashMap;
 
@@ -71,7 +71,7 @@ pub struct EncodedMailbox {
 
 /// One mailbox row that cannot be represented over IMAP in v1.
 /// Wire handlers should `tracing::warn!` on these and either omit
-/// (LIST / LSUB) or reject (SELECT / STATUS — T4).
+/// (LIST / LSUB) or reject (SELECT / STATUS —).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OmittedMailbox {
     pub id: ContainerId,
@@ -92,7 +92,7 @@ pub enum OmissionReason {
     /// encoder yet, emitting `R&D` literally would render as the
     /// IMAP4rev1 modified-UTF-7 sequence `R<encoded>D` on a strict
     /// `rev1` client. The Phase 2 stance is to omit; users rename or
-    /// wait for UTF8=ACCEPT (T6+) to round-trip arbitrary names.
+    /// wait for UTF8=ACCEPT (+) to round-trip arbitrary names.
     NameContainsCharsetReserved,
     /// `parent` chain points outside the record set or forms a
     /// cycle. `list_mailboxes` is expected not to surface either
@@ -308,7 +308,7 @@ fn is_ascii_printable(s: &str) -> bool {
 pub enum ResolveResult {
     Found(ContainerId),
     /// No record matched. Wire handler should emit
-    /// `NO [NONEXISTENT] ...`.
+    /// `NO [NONEXISTENT]...`.
     NotFound,
     /// A record matched on stored name but could not be encoded
     /// (non-ASCII, contains delimiter, …). Wire handler should

@@ -6,7 +6,7 @@
 //! allocator pattern depends on. This integration test opens the
 //! same per-set `data.sqlite` from N independent `Connection`s, each
 //! racing `BEGIN IMMEDIATE` → `UPDATE set_state SET set_change_seq =
-//! set_change_seq + 1 ... RETURNING` → `INSERT INTO set_change` →
+//! set_change_seq + 1... RETURNING` → `INSERT INTO set_change` →
 //! `COMMIT` for M iterations.
 //!
 //! What this test would catch:

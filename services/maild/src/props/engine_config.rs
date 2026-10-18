@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
-//! SPEC 12 property-substrate adoption for `maild.engine_config`.
+//! Property-store namespace for `maild.engine_config`.
 //!
 //! Singleton-cardinality namespace carrying the rules engine's
 //! twelve globals: nine v0.1.0 fields (threshold, hard_junk_threshold,
@@ -9,14 +9,14 @@
 //! header_line_byte_cap, budget_ms, mail_auth_hard_fail_kinds) plus
 //! three v0.2.0 DNSBL fields (dnsbl_query_timeout_ms,
 //! dnsbl_negative_ttl_secs, dnsbl_resolver_addresses) added by the
-//! maild-rules Phase 2 amendment. Phase 3 C1 shipped the namespace,
-//! schema, and validation hooks; C3 wires `after_set` into the running
+//! maild-rules Phase 2 amendment. Phase 3 shipped the namespace,
+//! schema, and validation hooks; wires `after_set` into the running
 //! `DefaultRuleEngine` via an `Arc<OnceLock<Arc<DefaultRuleEngine>>>`
-//! populated by `main`; C4 added bootstrap-from-substrate.
+//! populated by `main`; added bootstrap-from-substrate.
 //!
 //! ## Schema evolution (v0.2.0 DNSBL amendment)
 //!
-//! The amendment follows SPEC 12 §12: every new field carries
+//! The amendment follows the props contract: every new field carries
 //! `since: Some(SchemaVersion::new(0, 2, 0))` and a default that
 //! mirrors `EngineConfig::default()`. Existing v0.1.0 rows on disk
 //! stay literally 9-field; only a Replace carrying the full 12-field
@@ -29,8 +29,8 @@
 //! path ([`record_to_engine_config`]) supplies the defaults at engine
 //! read time so the engine always sees a full 12-field config
 //! regardless of the on-disk shape. `<svc>.props.get` returns the
-//! literal on-disk shape (SPEC 12 §10 audit-digest reproducibility
-//! requires this — see `cosmix-lib-props-store/src/bus/mutation.rs::project_fields`).
+//! literal on-disk shape (the props contract audit-digest reproducibility
+//! requires this — see `libs/props/src/bus/mutation.rs::project_fields`).
 //! Validation fills amendment defaults before per-field checks so a
 //! Patch from a legacy operator script that touches only v0.1.0
 //! fields does not regress on DNSBL bounds checks (the absent
@@ -53,7 +53,7 @@
 //!
 //! ## Source of truth
 //!
-//! After Phase 3 lands C4, the substrate row IS the engine config. The
+//! After Phase 3 lands, the substrate row IS the engine config. The
 //! TOML `Config` struct is intentionally NOT extended with these
 //! fields; adding a TOML layer would create a dual-source problem we
 //! already decided against for `account_overrides`.
@@ -137,7 +137,7 @@ fn parse_mail_auth_kind(s: &str) -> Option<MailAuthHardFailKind> {
     }
 }
 
-#[allow(dead_code)] // consumed by engine_config_to_value (test-only in C1; live in C3+).
+#[allow(dead_code)] // consumed by engine_config_to_value (test-only in ; live in +).
 fn mail_auth_kind_to_string(k: &MailAuthHardFailKind) -> &'static str {
     match k {
         MailAuthHardFailKind::SpfFailDmarcReject => "SpfFailDmarcReject",
@@ -147,17 +147,17 @@ fn mail_auth_kind_to_string(k: &MailAuthHardFailKind) -> &'static str {
 }
 
 /// Build a substrate-shape `PropValue::Object` carrying the defaults
-/// row. The C4 bootstrap path writes this when the substrate row is
+/// row. The bootstrap path writes this when the substrate row is
 /// absent on first boot.
-#[allow(dead_code)] // consumed by C4 bootstrap path; tests exercise it now.
+#[allow(dead_code)] // consumed by bootstrap path; tests exercise it now.
 pub fn defaults_value() -> PropValue {
     engine_config_to_value(&EngineConfig::default())
 }
 
 /// Serialise an `EngineConfig` into the substrate-shape value the
-/// schema expects. Used by C4 bootstrap and any future operator-facing
+/// schema expects. Used by bootstrap and any future operator-facing
 /// "read defaults" path.
-#[allow(dead_code)] // consumed by defaults_value + C4 bootstrap; tests exercise it now.
+#[allow(dead_code)] // consumed by defaults_value + bootstrap; tests exercise it now.
 pub fn engine_config_to_value(cfg: &EngineConfig) -> PropValue {
     let mut m = BTreeMap::new();
     m.insert(
@@ -213,7 +213,7 @@ pub fn engine_config_to_value(cfg: &EngineConfig) -> PropValue {
     PropValue::Object(m)
 }
 
-/// SPEC 12 §4.3 schema. Defaults mirror `EngineConfig::default()` so a
+/// the props contract schema. Defaults mirror `EngineConfig::default()` so a
 /// Patch over the bootstrap row that omits a field produces the same
 /// effective value the engine boots with.
 pub fn schema() -> PropertySchema {
@@ -324,7 +324,7 @@ pub fn schema() -> PropertySchema {
         // v0.2.0 DNSBL amendment — maild-rules Phase 2. Each carries a
         // `since` marker and a default mirroring `EngineConfig::default()`
         // so pre-amendment rows on disk read as the engine-domain defaults
-        // (SPEC 12 §12) until an operator Replace upgrades them.
+        // (the props contract) until an operator Replace upgrades them.
         FieldSchema {
             name: "dnsbl_query_timeout_ms".into(),
             ty: FieldType::U64,
@@ -363,7 +363,7 @@ pub fn schema() -> PropertySchema {
     ])
 }
 
-/// SPEC 12 §7.2 [`AuthPolicy`] — phase-3 grants every property
+/// the props contract [`AuthPolicy`] — phase-3 grants every property
 /// capability to every reachable peer (WireGuard `/24` trust domain,
 /// same posture as Phase 1/2). Phase N+ narrows.
 pub fn auth_policy() -> AuthPolicy {
@@ -393,7 +393,7 @@ pub fn spec(hooks: Hooks) -> NamespaceSpec {
             table: "__props_values".into(),
         },
     );
-    // SPEC 12 §12 — the per-namespace schema version. `describe` projects
+    // the props contract — the per-namespace schema version. `describe` projects
     // this into `schema_version` so clients can decide which amendment
     // a stored row belongs to. The v0.2.0 DNSBL amendment is the first
     // schema bump for this namespace; pre-amendment rows on disk still
@@ -401,7 +401,7 @@ pub fn spec(hooks: Hooks) -> NamespaceSpec {
     // but the namespace as a whole advertises v0.2.0 once amended.
     s.since_version = DNSBL_AMENDMENT_VERSION;
     s.lifecycle = NamespaceLifecycle::Simple;
-    // SPEC 12 §4.4 — `require_version: true` closes the hook/commit
+    // the props contract — `require_version: true` closes the hook/commit
     // TOCTOU window for cross-field invariants like `hard_junk_threshold
     // >= threshold`. `before_set` validates against a snapshot of the
     // prior row taken before `commit_set` re-merges in-tx; without CAS,
@@ -410,7 +410,7 @@ pub fn spec(hooks: Hooks) -> NamespaceSpec {
     // hook would have rejected. With `require_version=true`, every
     // `props.set` carries `if_version`, and a racing writer surfaces as
     // an explicit version conflict on the loser's commit rather than a
-    // silent invariant violation. The C4 bootstrap writes the default
+    // silent invariant violation. The bootstrap writes the default
     // row with `expected_version = Version::zero()` for create-if-absent.
     // `delete_mode` stays at the default `SoftDelete`; `HardDelete` is
     // incompatible with `require_version=true` (§5.4) and deletes are
@@ -423,10 +423,10 @@ pub fn spec(hooks: Hooks) -> NamespaceSpec {
 
 /// Hook handler for the `engine_config` namespace.
 ///
-/// **C1:** `before_set` performs full effective-value validation
+/// `before_set` performs full effective-value validation
 /// branching on `ctx.merge`; `before_delete` rejects every delete.
 ///
-/// **C3 (this commit):** `after_set` reads the just-committed row back
+/// `after_set` reads the just-committed row back
 /// from the substrate, re-validates via [`record_to_engine_config`]
 /// (defensive — guards against a corrupted row that snuck past the
 /// hook), and atomically swaps the live engine's config via
@@ -435,17 +435,17 @@ pub fn spec(hooks: Hooks) -> NamespaceSpec {
 /// Concurrency: hooks are serialized through `apply_lock` so two
 /// parallel writers' `after_set` invocations cannot interleave their
 /// read-then-apply sequences. Combined with the substrate's
-/// `require_version=true` commit serialization (SPEC 12 §4.4), each
+/// `require_version=true` commit serialization (the props contract), each
 /// `after_set` reads the *current* row at lock-acquisition time;
 /// whichever hook holds the lock last leaves the engine matching the
 /// latest committed row.
 ///
 /// Lifecycle: Simple — an `Err` returned here becomes a `warning` on
-/// the props.set response per SPEC 12 §6.5 (the row is durable
+/// the props.set response per the props contract (the row is durable
 /// regardless). That means a transient engine-side failure during
 /// after_set does NOT roll back the substrate write, and the next
 /// successful write — or a deliberate Replace of the current row —
-/// will re-attempt the engine swap. C3 only ever returns `Err` for a
+/// will re-attempt the engine swap. only ever returns `Err` for a
 /// substrate read or row-validation failure; the engine swap itself
 /// is infallible.
 pub struct EngineConfigHooks {
@@ -483,7 +483,7 @@ impl EngineConfigHooks {
     ///   caller doing a `replace` of a partial body.
     /// - `Some(MergeMode::Patch)` with `ctx.old = Some(prior)`: shallow
     ///   merge `prior` with `new`, matching `sqlite::merge_patch` at
-    ///   `crates/cosmix-lib-props-store/src/sqlite.rs:416`. The merged value
+    ///   `libs/props/src/sqlite.rs:416`. The merged value
     ///   is then passed through [`fill_amendment_defaults`] so a Patch
     ///   over a pre-amendment v0.1.0 row sees the v0.2.0 DNSBL defaults
     ///   filled in before per-field validation runs (else a Patch from
@@ -494,7 +494,7 @@ impl EngineConfigHooks {
     /// - `Some(MergeMode::Patch)` with `ctx.old = None`: rejected at
     ///   the caller; this function is never reached on that branch.
     /// - `None`: only on delete hooks; not reachable from `before_set`
-    ///   after C0.
+    /// after.
     fn effective_value(ctx: &HookCtx) -> Result<PropValue, HookError> {
         let merge = ctx.merge.ok_or_else(|| {
             HookError::hook(
@@ -579,7 +579,7 @@ impl EngineConfigHooks {
 
         // url_extraction_cap, header_line_cap, and budget_ms also need
         // to fit in u32 — caps above already enforce <= u32::MAX so
-        // the engine narrow at C4-read time is safe.
+        // the engine narrow at -read time is safe.
 
         let kinds = obj.get("mail_auth_hard_fail_kinds").ok_or_else(|| {
             HookError::validation(format!(
@@ -673,7 +673,7 @@ impl HookHandler for EngineConfigHooks {
                 // windows hit this branch:
                 //   (a) Tests that exercise the substrate-side hook
                 //       chain without an engine attached.
-                //   (b) C4 bootstrap, between `register` and the
+                // (b) bootstrap, between `register` and the
                 //       `OnceLock::set` call in `main`. The defaults
                 //       write that fires this hook then applies on
                 //       the *next* well-formed write; the engine
@@ -728,7 +728,7 @@ fn merge_patch_object(old: &PropValue, new: PropValue) -> PropValue {
 }
 
 /// Fill the v0.2.0 DNSBL amendment defaults into a merged-Patch object
-/// when the underlying prior row predates the amendment. SPEC 12 §12
+/// when the underlying prior row predates the amendment. the props contract
 /// says a missing amendment-added field reads as its default; this
 /// helper makes that explicit on the validation path so the per-field
 /// checks downstream see a complete object.
@@ -827,7 +827,7 @@ fn check_u64_bounded(
 }
 
 /// Wire the `maild.engine_config` namespace into the substrate. Phase 3
-/// C3 takes the engine `OnceLock` so `after_set` can reach the live
+/// takes the engine `OnceLock` so `after_set` can reach the live
 /// engine; `main` fills the lock after constructing the engine. The
 /// lock may be empty at registration time and during the brief window
 /// before `OnceLock::set` — `after_set` is a no-op until the lock is
@@ -849,7 +849,7 @@ pub fn register(
     Ok(runtime)
 }
 
-/// SPEC 12 Phase 3 C4 — startup-time read of the substrate row. Returns
+/// the props contract Phase 3 — startup-time read of the substrate row. Returns
 /// the initial [`EngineConfig`] the engine should boot with plus a flag
 /// indicating whether `main` still needs to materialise a defaults row
 /// (true on a fresh install, false when a row already exists).
@@ -874,7 +874,7 @@ pub async fn bootstrap_from_store(store: &Arc<SqliteStore>) -> Result<(EngineCon
 }
 
 /// Read an `EngineConfig` back out of a substrate record value. Used by
-/// the C3 converge-loop and the C4 bootstrap. Defensive against a
+/// the converge-loop and the bootstrap. Defensive against a
 /// hand-edited or corrupted row — every field is re-validated against
 /// the engine's domain (finite + bounded) so a bad row surfaces as an
 /// `Err` rather than feeding `+inf` / negatives into the engine.
@@ -966,7 +966,7 @@ pub fn record_to_engine_config(value: &PropValue) -> Result<EngineConfig> {
         kinds.push(kind);
     }
 
-    // v0.2.0 DNSBL amendment — read-default semantics (SPEC 12 §12).
+    // v0.2.0 DNSBL amendment — read-default semantics (the props contract).
     // A pre-amendment row writes these fields absent; we fill from
     // `EngineConfig::default()` so the engine sees the v0.2.0 contract
     // regardless of whether the operator has yet issued a Replace to
@@ -1047,7 +1047,7 @@ fn read_f32_bounded(obj: &BTreeMap<String, PropValue>, field: &str, max: f32) ->
 }
 
 /// Read a U64 field with read-default fallback for amendment-added
-/// fields (SPEC 12 §12). A pre-amendment row that omits the field
+/// fields (the props contract). A pre-amendment row that omits the field
 /// reads as `default`; a present value is bounds-checked the same as
 /// `read_u64_bounded`. Used for the v0.2.0 DNSBL knobs so a sparse
 /// pre-amendment row continues to boot.
@@ -1067,7 +1067,7 @@ fn read_u64_bounded_or(
 /// Read a list-of-strings field and parse each entry as a SocketAddr
 /// (`ip:port`). Empty / missing list returns `Vec::new()` — the
 /// "missing" branch is the read-default for the v0.2.0 amendment
-/// (SPEC 12 §12). A present-but-malformed entry is a typed corruption
+/// (the props contract). A present-but-malformed entry is a typed corruption
 /// error: `validate()` rejects this on the write path, so the read
 /// helper only catches hand-edits / pre-validator rows.
 fn read_socket_addr_list(
@@ -1520,7 +1520,7 @@ mod tests {
         );
     }
 
-    // Test 2 (defaults bootstrap) is exercised at integration level in C4
+    // Test 2 (defaults bootstrap) is exercised at integration level in
     // (the bootstrap path is in main.rs); the unit-level "schema round-trip"
     // test above covers the value-shape half.
 
@@ -1616,7 +1616,7 @@ mod tests {
 
     #[test]
     fn spec_carries_amendment_since_version() {
-        // SPEC 12 §12 — the namespace's `since_version` advertises the
+        // the props contract — the namespace's `since_version` advertises the
         // current schema version. When the DNSBL amendment lands the
         // namespace transitions from 0.1.0 → 0.2.0; clients reading the
         // `describe` projection see `schema_version: "0.2.0"` and know
@@ -1627,8 +1627,8 @@ mod tests {
 
     #[test]
     fn spec_requires_version() {
-        // SPEC 12 §4.4 — closes the hook/commit TOCTOU. Every
-        // `props.set engine_config` must carry `if_version`. C4
+        // the props contract — closes the hook/commit TOCTOU. Every
+        // `props.set engine_config` must carry `if_version`.
         // bootstrap supplies `Version::zero()` for create-if-absent.
         let s = spec(Hooks::noop());
         assert!(
@@ -1637,11 +1637,11 @@ mod tests {
         );
     }
 
-    // ── record_to_engine_config defensive read-side tests (MAJOR #2) ──
+    // ── record_to_engine_config defensive read-side tests ( #2) ──
     // These rows would have been rejected by `before_set`'s validators,
     // but if a hand-edit, reconcile, or pre-cap migration leaves a bad
     // row in the substrate, the reader must surface a typed error so
-    // C3/C4 do not feed a poisoned config into the engine.
+    // Config readers do not feed a poisoned config into the engine.
 
     #[test]
     fn record_read_rejects_nonfinite_threshold() {
@@ -1797,7 +1797,7 @@ mod tests {
         );
     }
 
-    // ── C3 integration: after_set → engine.set_config wiring ──────
+    // ── integration: after_set → engine.set_config wiring ──────
 
     use maild_rules::DefaultRuleEngine;
     use ::props::runtime::SetOpts;
@@ -1954,7 +1954,7 @@ mod tests {
 
     /// Test 12b: a hook firing without a wired engine returns Ok (the
     /// no-op branch). Exercises the OnceLock-empty window — relevant
-    /// to C4 bootstrap, where the substrate row may be written before
+    /// to bootstrap, where the substrate row may be written before
     /// the engine handle is filled in.
     #[tokio::test]
     async fn after_set_is_noop_when_engine_lock_empty() {
@@ -1980,7 +1980,7 @@ mod tests {
         );
     }
 
-    // ── C4 bootstrap: bootstrap_from_store ────────────────────────
+    // ── bootstrap: bootstrap_from_store ────────────────────────
 
     /// Test 13: fresh install — no row yet. Returns
     /// `(EngineConfig::default(), true)` so `main` materialises the

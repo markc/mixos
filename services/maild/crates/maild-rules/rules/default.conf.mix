@@ -1,13 +1,12 @@
 -- maild-rules default rule pack — v1.1.
 --
--- Spec: `_doc/2026-04-30-maild-rules-spec.md`. Curated for the
 -- rules stage standalone gate ("no false-HardJunk on curated ham").
 -- All weights are small positive integers, except the campaign
 -- fingerprints, which are deliberately weighted to hard-junk alone; the
 -- `EngineConfig` defaults (threshold=5.0, hard_junk_threshold=15.0) are
 -- calibrated against the soft rules' worst-case multi-match score.
 --
--- Operator overrides should live in `/etc/cosmix/maild-rules.conf.mix`,
+-- Operator overrides should live in `/etc/mixos/maild-rules.conf.mix`,
 -- not here — this file is the v1 baseline shipped with the crate.
 --
 -- Strict-data `.conf.mix` (parse_data): map entries inside `{ }` use

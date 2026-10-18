@@ -3,12 +3,12 @@
 
 //! `STATUS` — RFC 9051 §6.3.11.
 //!
-//! Phase 2 T4 v1: resolve the wire mailbox name through
+//! Phase 2 v1: resolve the wire mailbox name through
 //! [`crate::imap::mailbox_name::resolve`], read the matching
 //! [`MailboxRecord`] off `MailStore::list_mailboxes`, and emit
 //!
 //! ```text
-//! * STATUS "<wire-name>" (<item value> <item value> ...)
+//! * STATUS "<wire-name>" (<item value> <item value>...)
 //! <tag> OK STATUS completed
 //! ```
 //!
@@ -93,7 +93,7 @@ impl StatusItem {
     }
 }
 
-/// Parse `STATUS <mailbox> (<item> ...)`. The parenthesised item
+/// Parse `STATUS <mailbox> (<item>...)`. The parenthesised item
 /// list MUST be non-empty (RFC 9051 §6.3.11) and contain at least
 /// one supported atom.
 pub fn parse_args(args: &str) -> Result<Args, String> {

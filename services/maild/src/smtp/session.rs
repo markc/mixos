@@ -32,10 +32,10 @@ use crate::tls::SniCertResolver;
 /// `config.hostname`.
 pub(super) type TlsPair = (Arc<SniCertResolver>, Arc<ServerConfig>);
 
-/// Smaller `max_message_size` for the token-shaped namespace (C8). A
+/// Smaller `max_message_size` for the token-shaped namespace. A
 /// post-by-email / command-by-email body is small; a token-namespace message over
 /// this is accept-and-dropped (250, never 451/552) uniformly by SHAPE — not a
-/// validity oracle. Bounds the accept-everything surface alongside the C7 rate cap.
+/// validity oracle. Bounds the accept-everything surface alongside the rate cap.
 const TOKEN_NAMESPACE_MAX_BYTES: usize = 256 * 1024;
 
 /// SMTP session state.
@@ -233,7 +233,7 @@ pub async fn handle(
     // `Session::new` via `pre_tls_hostname`).
     write_line(
         &mut writer,
-        &format!("220 {} ESMTP cosmix-jmap", session.negotiated_hostname),
+        &format!("220 {} ESMTP maild", session.negotiated_hostname),
     )
     .await?;
 
@@ -304,7 +304,7 @@ pub async fn handle_tls(
 
     write_line(
         &mut writer,
-        &format!("220 {} ESMTP cosmix-jmap", session.negotiated_hostname),
+        &format!("220 {} ESMTP maild", session.negotiated_hostname),
     )
     .await?;
 
@@ -385,14 +385,14 @@ where
                     },
                     _ => super::inbound::IngressAuth::ExternalUnverified,
                 };
-                // C8: fire-and-forget for an ALL-token-shaped message closes the
+                // : fire-and-forget for an ALL-token-shaped message closes the
                 // timing oracle. We write 250 IMMEDIATELY — no resolve/delivery
                 // work and NO permit await before it (either re-introduces a
                 // load-dependent timing channel) — then dispatch on a bounded,
                 // SHED-on-overflow background task. The token namespace never
                 // returns 451/552 from delivery; an oversize message is 250+dropped.
                 // (Mixed/normal recipients keep the synchronous path below.)
-                // Flag-aware: when the C9 pre-flight disabled opaque acceptance,
+                // Flag-aware: when the pre-flight disabled opaque acceptance,
                 // an opaque-shaped recipient is a NORMAL mailbox and must take the
                 // synchronous path (not fire-and-forget accept-drop), so a real
                 // mailbox of the opaque shape is delivered, never silently dropped.
@@ -885,7 +885,7 @@ async fn authenticate(
 fn dummy_bcrypt_hash() -> &'static str {
     static DUMMY: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     DUMMY.get_or_init(|| {
-        bcrypt::hash("cosmix-timing-equalizer", bcrypt::DEFAULT_COST)
+        bcrypt::hash("mixos-timing-equalizer", bcrypt::DEFAULT_COST)
             .unwrap_or_else(|_| String::new())
     })
 }
@@ -992,7 +992,7 @@ async fn decide_rcpt_to(
         None => return RcptDecision::PermanentReject("550 5.1.3 Bad recipient address"),
     };
 
-    // Opaque vtoken acceptance (C9). Gated on the startup pre-flight flag so an
+    // Opaque vtoken acceptance. Gated on the startup pre-flight flag so an
     // opaque-shaped RCPT can never swallow a real mailbox of the same shape; the
     // local-part is the shape unit (`is_opaque_shaped` ignores the domain).
     let opaque_rcpt_ok = opaque_rcpt_enabled
@@ -1593,7 +1593,7 @@ mod tests {
 
     #[tokio::test]
     async fn rcpt_opaque_shaped_accepted_when_enabled() {
-        // C9: an opaque-token-shaped recipient (single segment, no `-`, len 6/10
+        // : an opaque-token-shaped recipient (single segment, no `-`, len 6/10
         // over the Crockford alphabet) on an authoritative domain is accepted at
         // RCPT — opaquely, validated after DATA — ONLY when the pre-flight flag
         // enabled opaque acceptance. No account of that local-part exists, so
@@ -1616,7 +1616,7 @@ mod tests {
 
     #[tokio::test]
     async fn rcpt_opaque_shaped_rejected_when_disabled() {
-        // C9 fail-safe: with opaque acceptance disabled (a pre-flight collision
+        // fail-safe: with opaque acceptance disabled (a pre-flight collision
         // or a namespace read error), the SAME opaque-shaped recipient is
         // rejected as unknown — it can never silently swallow a real mailbox of
         // the same shape.

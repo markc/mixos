@@ -83,7 +83,7 @@ pub(crate) fn load_pack_str(conf_mix_text: &str) -> Result<(RuleSet, Vec<(RuleId
     Ok(compile_pack(pack))
 }
 
-/// Read a `.conf.mix` rule pack from disk and compile it. C11 removed
+/// Read a `.conf.mix` rule pack from disk and compile it. removed
 /// the legacy `.toml` operator-override fallback.
 pub(crate) fn load_pack_file(path: &Path) -> Result<(RuleSet, Vec<(RuleId, String)>)> {
     let text = std::fs::read_to_string(path).map_err(|e| Error::PackIo(e.to_string()))?;

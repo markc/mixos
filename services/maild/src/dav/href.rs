@@ -7,7 +7,7 @@
 //! **stringified numeric JMAP account id** (`auth::authenticate`
 //! returns `Option<i32>` and JMAP uses `account_id.to_string()` as its
 //! `acct`), so the binding check downstream is integer equality — see
-//! `_plan/2026-06-09-maild-dav-server.md` §4.
+//!  §4.
 
 /// A parsed DAV resource path.
 #[derive(Debug, Clone, PartialEq, Eq)]

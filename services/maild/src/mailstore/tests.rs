@@ -3,7 +3,7 @@
 
 //! Phase 8d.4 — MailStore + expiry-worker integration tests.
 //!
-//! Acceptance bar (per `_doc/2026-04-29-cosmix-mds-plan.md` §8d):
+//! Acceptance bar (per  §8d):
 //!
 //!   * A `move_message` across the `\Junk` boundary commits both the
 //!     MDS move and the `mail_retrain_outbox` row in one tx — both
@@ -300,7 +300,7 @@ fn move_message_rolls_back_outbox_when_move_fails() {
 
 #[test]
 fn copy_message_fails_when_src_membership_missing_after_snapshot() {
-    // T15 regression — RFC 9051 §6.4.7 source-specific inheritance
+    // regression — RFC 9051 §6.4.7 source-specific inheritance
     // must not silently fall back to empty flags when a TOCTOU race
     // drops `src`'s membership between IMAP snapshot and the copy tx.
     //
@@ -364,7 +364,7 @@ fn copy_message_fails_when_src_membership_missing_after_snapshot() {
 
 #[test]
 fn move_message_returned_uids_match_list_emails_in_mailbox() {
-    // P7 UIDPLUS / COPYUID regression: the (src_uid, dest_uid)
+    // UIDPLUS / COPYUID regression: the (src_uid, dest_uid)
     // returned from `move_message` must mirror the per-membership
     // (seq.0, container.seq_validity) as projected by
     // `list_emails_in_mailbox` — src_uid against the pre-move dump,
@@ -509,7 +509,7 @@ fn move_message_returned_uids_match_list_emails_in_mailbox() {
 
 #[test]
 fn copy_message_returned_uid_matches_list_emails_in_mailbox() {
-    // P7 UIDPLUS / COPYUID regression — sibling of
+    // UIDPLUS / COPYUID regression — sibling of
     // `move_message_returned_uids_match_list_emails_in_mailbox` for
     // the COPY path. The returned dest `MembershipUid` must mirror
     // the per-membership (seq.0, container.seq_validity) projected
@@ -860,9 +860,9 @@ fn ensure_account_set_is_idempotent() {
     assert_eq!(s1, account_id_to_setid(TEST_ACCOUNT));
 }
 
-// -------------------- AppState wiring (Task 0.3) --------------------
+// -------------------- AppState wiring --------------------
 
-/// Phase A Task 0.3 — `AppState` carries a
+/// Phase A — `AppState` carries a
 /// `mailstore: Arc<SqliteMailStore>` field reachable through the
 /// shared application state every JMAP / SMTP handler receives.
 ///
@@ -883,7 +883,7 @@ fn mailstore_mds_accessor_preserves_arc_identity() {
     assert!(Arc::ptr_eq(mailstore.mds(), &mds));
 }
 
-// -------------------- list_mailboxes (Task 1.1) ----------------------
+// -------------------- list_mailboxes ----------------------
 
 /// Empty account (no set provisioned yet) returns an empty list, not
 /// an error. JMAP `Mailbox/get` on a brand-new account should hand back
@@ -955,7 +955,7 @@ fn list_mailboxes_returns_user_containers_with_counts_and_filters_staging() {
     assert_eq!(by_name["Inbox"].my_rights, MailboxRights::full());
 }
 
-// -------------------- Task 2.0 (JMAP MailboxRecord fields) --------------------
+// -------------------- (JMAP MailboxRecord fields) --------------------
 
 #[test]
 fn list_mailboxes_maps_special_use_to_jmap_role() {
@@ -1113,7 +1113,7 @@ fn list_mailboxes_subscribed_passthrough_from_attrs() {
     assert!(!by_id[&id_unsub].is_subscribed);
 }
 
-// -------------------- create_mailbox (Task 1.2) ----------------------
+// -------------------- create_mailbox ----------------------
 
 fn default_attrs() -> ContainerAttrs {
     ContainerAttrs {
@@ -1172,7 +1172,7 @@ fn create_mailbox_with_missing_parent_fails() {
     );
 }
 
-/// Reserved-name rule (BLOCKER per Codex review of Task 1.1):
+/// Reserved-name rule (BLOCKER of):
 /// `__upload_staging__` collides with `create_blob_ref`'s per-account
 /// staging container; accepting it would silently hide the mailbox
 /// from `list_mailboxes`.
@@ -1231,7 +1231,7 @@ fn create_mailbox_rejects_duplicate_sibling_name() {
     );
 }
 
-// -------------------- rename_mailbox (Task 1.3) ----------------------
+// -------------------- rename_mailbox ----------------------
 
 /// Plain rename — same parent, new name. The row reflects the new
 /// name on the next `list_mailboxes`.
@@ -1460,8 +1460,8 @@ fn rename_mailbox_reparent_subtree_keeps_children_intact() {
 
 /// Source-id wins over parent-id when both are bogus and equal —
 /// ambiguity must classify as the source missing, not the parent
-/// missing. Regression for the disambiguation MAJOR (Codex review of
-/// Task 1.3, round 1).
+/// missing. Regression for the disambiguation ( of
+///, round 1).
 #[test]
 fn rename_mailbox_with_bogus_id_equal_to_bogus_parent_classifies_as_source_missing() {
     let (_d, _mds, store) = open_mailstore();
@@ -1485,7 +1485,7 @@ fn rename_mailbox_with_bogus_id_equal_to_bogus_parent_classifies_as_source_missi
 /// per-account MDS set. The error must surface as `mailbox not
 /// found`, and `list_mailboxes` (which maps `SetNotFound` to empty)
 /// must continue to return empty afterwards. Regression for the
-/// no-side-effect MAJOR (Codex review of Task 1.3, round 1).
+/// no-side-effect ( of, round 1).
 #[test]
 fn rename_mailbox_on_unprovisioned_account_does_not_bootstrap_set() {
     const FRESH_ACCOUNT: AccountId = 42;
@@ -1530,7 +1530,7 @@ fn rename_mailbox_reparent_under_self_fails() {
     );
 }
 
-// -------------------- update_mailbox (Task 2.4) ---------------------
+// -------------------- update_mailbox ---------------------
 
 /// Patching `sort_order` and `is_subscribed` round-trips through
 /// `list_mailboxes` (which decodes the same `attrs` blob).
@@ -1721,7 +1721,7 @@ fn update_mailbox_on_unprovisioned_account_does_not_bootstrap_set() {
     );
 }
 
-// -------------------- destroy_mailbox (Task 1.4) ---------------------
+// -------------------- destroy_mailbox ---------------------
 
 fn inbox_attrs() -> ContainerAttrs {
     ContainerAttrs {
@@ -2110,7 +2110,7 @@ fn destroy_mailbox_after_clearing_role_succeeds() {
     );
 }
 
-// --- Task 1.5: list_emails_in_mailbox ---------------------------------
+// --- : list_emails_in_mailbox ---------------------------------
 
 /// Force `item.received_at` for a specific item id so sort-by-time
 /// tests aren't subject to `now_ms()` clock granularity (multiple
@@ -2434,8 +2434,8 @@ fn list_emails_carries_blob_hash_and_keywords_through() {
 // -------------------- get_email --------------------
 
 /// Insert a `mail_envelopes` row directly. `MailStore::create_email`
-/// (Task 1.7) is the production write path; this helper drives the
-/// envelope sidecar from a test until that lands so Task 1.6's reads
+/// is the production write path; this helper drives the
+/// envelope sidecar from a test until that lands so 's reads
 /// can be exercised end-to-end against the v1.2 schema.
 fn insert_envelope(mds: &SqliteCasMds, set: &SetId, item: &ItemId, env: &EmailEnvelope) {
     let to_json = serde_json::to_string(&env.to).unwrap();
@@ -2568,7 +2568,7 @@ fn get_email_unprovisioned_account_errors_with_email_not_found() {
 
 #[test]
 fn get_email_item_without_envelope_row_errors_with_envelope_missing() {
-    // Phase A transient: items that pre-date Task 1.7's `create_email`
+    // Phase A transient: items that pre-date 's `create_email`
     // write path lack a `mail_envelopes` row. Surfacing a distinct
     // sentinel ("email envelope missing") lets the JMAP layer
     // synthesise a skeleton envelope at serialise time once that path
@@ -2971,7 +2971,7 @@ fn create_email_twice_for_same_blob_yields_distinct_item_ids() {
 
 #[test]
 fn create_email_returned_uid_matches_list_emails_in_mailbox() {
-    // P7 UIDPLUS / APPENDUID regression: the (uid, uid_validity)
+    // UIDPLUS / APPENDUID regression: the (uid, uid_validity)
     // returned from `create_email` must equal the same row's per-
     // membership (seq.0, container.seq_validity) as projected by
     // `list_emails_in_mailbox`. If a future refactor splits the
@@ -3026,7 +3026,7 @@ fn create_email_returned_uid_matches_list_emails_in_mailbox() {
 }
 
 // -------------------- create_email_with_memberships --------------------
-// Task 3.3 substrate (Option A hybrid). The multi-mailbox JMAP
+// substrate (Option A hybrid). The multi-mailbox JMAP
 // `Email/set create` / `Email/import` path: one with_set_tx, one
 // aggregate Bus `mds.item.added`, IMAP-shaped (uid, uid_validity)
 // returned per dest.
@@ -3254,7 +3254,7 @@ fn create_email_with_memberships_unprovisioned_account_errors() {
 }
 
 // -------------------- add_memberships --------------------
-// Post-create membership additions for Task 3.4 `Email/set update`
+// Post-create membership additions for `Email/set update`
 // expanding `mailboxIds`.
 
 #[test]
@@ -3456,7 +3456,7 @@ fn add_memberships_unprovisioned_account_errors_with_email_not_found() {
     assert!(msg.starts_with("email not found"), "got: {msg}");
 }
 
-// ---- Task 1.8: set_keywords ----
+// ---- : set_keywords ----
 
 #[test]
 fn set_keywords_set_seen_is_visible_via_get_email() {
@@ -3483,7 +3483,7 @@ fn set_keywords_set_seen_is_visible_via_get_email() {
     assert_eq!(before.keywords, Flags(0));
 
     // \Seen = bit 0 in this codebase's Flags layout (see
-    // `Flags::SEEN` in cosmix-mds/src/types.rs; matches existing
+    // `Flags::SEEN` in mds/src/types.rs; matches existing
     // tests in this file that use Flags(0b0001) for the seen bit).
     store
         .set_keywords(TEST_ACCOUNT, id, Flags(0b0001), Tags::new())
@@ -3603,7 +3603,7 @@ fn set_keywords_unprovisioned_account_errors_with_mailbox_not_found() {
     assert!(msg.starts_with("mailbox not found"), "got: {msg}");
 }
 
-// ---- Task 1.9: move_email ----
+// ---- : move_email ----
 
 #[test]
 fn move_email_between_mailboxes_reflected_in_list() {
@@ -3826,7 +3826,7 @@ fn move_email_unprovisioned_account_errors_with_mailbox_not_found() {
     assert!(msg.starts_with("mailbox not found"), "got: {msg}");
 }
 
-// ---- Task 1.10: delete_email ----
+// ---- : delete_email ----
 
 fn envelope_row_exists(mds: &SqliteCasMds, set: &SetId, id: &ItemId) -> bool {
     let item_id_s = id.0.to_string();
@@ -4495,7 +4495,7 @@ fn fts_match_isolated_between_items() {
     assert_eq!(count_mail_search_match(&mds, &set, &idb, "uniquetokena"), 0);
 }
 
-// ---- Task 1.11 — email_changes ----
+// ---- — email_changes ----
 
 #[test]
 fn email_changes_no_events_returns_empty_at_since_state() {
@@ -4814,7 +4814,7 @@ fn email_changes_filters_out_staging_container_uploads() {
     assert!(cs.new_state > 0);
 }
 
-// ---- email_state (Task 18) ----
+// ---- email_state ----
 
 #[test]
 fn email_state_unprovisioned_account_returns_zero() {
@@ -5221,7 +5221,7 @@ fn mailbox_changes_idempotent_zero_token_under_no_events() {
     assert!(cs.created.is_empty() && cs.updated.is_empty() && cs.destroyed.is_empty());
 }
 
-// ---- list_thread (Task 1.12) -----------------------------------------------
+// ---- list_thread -----------------------------------------------
 
 /// Insert a `mail_threads` row directly. The Phase 1 MailStore surface
 /// does not (yet) own thread membership — `db::thread::find_or_create`
@@ -5431,7 +5431,7 @@ fn list_thread_no_dangling_rows_after_v1_8_cascade() {
 
 #[test]
 fn list_thread_falls_back_to_received_at_for_items_without_envelopes() {
-    // Items predating Task 1.7's create_email path lack a
+    // Items predating 's create_email path lack a
     // mail_envelopes row; they must still appear in the result so
     // the read path doesn't silently drop pre-Phase-A messages.
     // They sort *after* envelope-bearing rows (by `received_at` ms),
@@ -5550,7 +5550,7 @@ fn list_thread_breaks_ties_on_item_id_for_determinism() {
     assert_eq!(out, expected);
 }
 
-// -------------------- Task 4.1: list_threads --------------------
+// -------------------- : list_threads --------------------
 
 #[test]
 fn list_threads_returns_distinct_thread_ids_present_in_mail_threads() {
@@ -5700,7 +5700,7 @@ fn list_threads_unprovisioned_account_returns_empty_vec() {
     assert!(out.is_empty());
 }
 
-// -------------------- Task 4.1a: mail_threads write on create --------------------
+// -------------------- : mail_threads write on create --------------------
 
 /// `create_email` populates `mail_threads` so the freshly-minted item
 /// is reachable through `Thread/get`. Without an in-reply-to match a
@@ -6241,7 +6241,7 @@ fn rebuild_search_index_recovers_from_corrupted_baseline() {
     assert_eq!(count_mail_search_rows_for_item(&mds, &set, &id), 1);
 }
 
-/// Regression pin for the round-1 MAJOR fix: rebuild must wipe rows
+/// Regression pin for the round-1 fix: rebuild must wipe rows
 /// whose UNINDEXED `account_id` column is corrupt (does not match
 /// the account being rebuilt). The earlier
 /// `DELETE FROM mail_search WHERE account_id = ?1` predicate trusted
@@ -6367,7 +6367,7 @@ fn rebuild_search_index_wipes_rows_with_wrong_account_id() {
 /// failure in `RebuildReport.blob_load_failures`. Matches the gate-2
 /// create_email policy: a missing blob doesn't lose the item from
 /// header/subject search, but body search of course can't recall
-/// content that isn't there. Per Codex round-1 finding on the gate-3
+/// content that isn't there. round-1 finding on the gate-3
 /// implementation — without this test the failure-count branch
 /// (`blob_load_failures += 1`, empty `raw_body` substitute) is
 /// untested.
@@ -7155,7 +7155,7 @@ fn create_email_subject_fallback_tie_break_uses_item_id_when_message_id_null() {
         .unwrap();
     }
 
-    // Determine which item_id is greater — the ORDER BY ... item_id
+    // Determine which item_id is greater — the ORDER BY... item_id
     // DESC LIMIT 1 must pick the row owning that one.
     let a_str = item_a.0.to_string();
     let b_str = item_b.0.to_string();
@@ -7234,7 +7234,7 @@ fn create_email_subject_fallback_tie_break_uses_item_id_when_message_id_null() {
     );
 }
 
-// -------------------- Task 3.0: query_emails --------------------
+// -------------------- : query_emails --------------------
 
 /// `inMailbox: <X>` returns only items with membership in X, and the
 /// `before` / `after` window narrows the result to a half-open range
@@ -7404,7 +7404,7 @@ fn query_emails_has_keyword_uses_union_across_memberships() {
     // direct UPDATE on that one membership.
     mds.with_set_tx(&set, |tx| {
         // Add an Archive membership for id_seen_via_archive with
-        // flags=1 (\Seen). The cosmix-mds public API only exposes
+        // flags=1 (\Seen). The mds public API only exposes
         // add_item for the initial create, so use the direct INSERT.
         tx.tx()
             .execute(
@@ -7968,21 +7968,21 @@ fn query_emails_in_mailbox_other_than_semantics() {
 // IMAP-readiness contract stubs.
 //
 // These tests describe substrate properties the IMAP module
-// (`maild::imap`, see `_doc/maild/imap.md` R2) requires from
+// (`maild::imap`, see) requires from
 // `MailStore`. They are **#[ignore]'d panics** today, matching the shape
 // of the JMAP `email_set_contract_*` stubs in `jmap/email.rs::tests`.
 //
 // Each one is bound to a prerequisite in
-// `_doc/planned/imap-runway.md` (P1 / P5 / P6 / P7). When the
+// ( / / /). When the
 // corresponding trait extension lands, the test body is replaced with
 // a real assertion against `SqliteMailStore` and the `#[ignore]` is
 // removed.
 //
-// IMAP non-negotiables involved here are listed in `_doc/maild/imap.md`
+// IMAP non-negotiables involved here are listed in
 // §Non-negotiable invariants (1, 2, 4, 5, 6, 8).
 // ---------------------------------------------------------------------
 
-/// P1 (`imap-runway.md`) — per-mailbox flag isolation. IMAP
+/// (`imap-runway.md`) — per-mailbox flag isolation. IMAP
 /// non-negotiable invariant 5/6: flags are per `(message,
 /// mailbox)`; `\Seen` in INBOX must not propagate to Archive.
 ///
@@ -8277,7 +8277,7 @@ fn create_email_threads_initial_tags() {
     assert_eq!(store.get_email(TEST_ACCOUNT, id2).unwrap().tags, want);
 }
 
-/// P6 (`imap-runway.md`) — MODSEQ monotonicity per mailbox. IMAP
+/// (`imap-runway.md`) — MODSEQ monotonicity per mailbox. IMAP
 /// non-negotiable invariant 4: `MODSEQ` is per-mailbox and never
 /// decreases. CONDSTORE depends on this for `HIGHESTMODSEQ` /
 /// `STORE UNCHANGEDSINCE` semantics.
@@ -8288,7 +8288,7 @@ fn create_email_threads_initial_tags() {
 /// - Per-mailbox `HIGHESTMODSEQ` sources from `container.change_seq`,
 ///   bumped on every membership add / remove / flag change.
 ///   Sourcing it from `MAX(membership.change_seq)` is wrong:
-///   `cosmix-mds::container::remove_membership_inner` deletes the
+///   `mds::container::remove_membership_inner` deletes the
 ///   membership row before bumping the container counter, so the
 ///   per-membership max over surviving rows can *decrease* across
 ///   EXPUNGE — non-monotonic, violates RFC 7162.
@@ -8352,7 +8352,7 @@ fn imap_contract_modseq_monotonicity_per_mailbox() {
 
     // Op 4: remove the second item (EXPUNGE shape) — the
     // per-membership max drops, but the per-container counter must
-    // strictly increase. This is the load-bearing test for P6's
+    // strictly increase. This is the load-bearing test for
     // "sourcing HIGHESTMODSEQ from `MAX(membership.change_seq)` is
     // explicitly excluded" rule.
     mds.remove_membership(&set, &id_b, &inbox).unwrap();
@@ -8400,7 +8400,7 @@ fn imap_contract_modseq_monotonicity_per_mailbox() {
     );
 }
 
-/// P6 (`imap-runway.md`) — UIDVALIDITY stable across mailbox
+/// (`imap-runway.md`) — UIDVALIDITY stable across mailbox
 /// lifecycle. IMAP non-negotiable invariants 1, 10:
 /// UIDVALIDITY is stable for the life of a mailbox/container;
 /// message immutables (RFC822.SIZE, INTERNALDATE, ENVELOPE,
@@ -8449,16 +8449,16 @@ fn imap_contract_uidvalidity_stable_across_lifecycle() {
     );
 }
 
-/// P6 + P7 (`imap-runway.md`) — UID stability + monotonicity per
+/// + (`imap-runway.md`) — UID stability + monotonicity per
 /// mailbox. IMAP non-negotiable invariant 2: UID values are
 /// per-mailbox, monotonically increasing, never reused.
 ///
-/// The invariant itself is a P6 substrate concern (the
-/// `membership.seq` primitive must never recycle); P7 surfaces
+/// The invariant itself is a substrate concern (the
+/// `membership.seq` primitive must never recycle); surfaces
 /// the freshly-allocated UID through `MailStore` return values
 /// for UIDPLUS / APPENDUID / COPYUID. This stub can be unignored
-/// once P6 lands (UIDs become readable on `EmailHandle`); the
-/// assertion sharpens further once P7 lands and the new UID is
+/// once lands (UIDs become readable on `EmailHandle`); the
+/// assertion sharpens further once lands and the new UID is
 /// available directly from the create/move return value.
 #[test]
 fn imap_contract_uid_monotonic_no_reuse() {
@@ -8539,15 +8539,15 @@ fn imap_contract_uid_next_monotonic_and_surfaced() {
     );
 }
 
-/// P5 (`imap-runway.md`) — IDLE notifier surface. IMAP
+/// (`imap-runway.md`) — IDLE notifier surface. IMAP
 /// non-negotiable invariant 8: IDLE publishes only after the
 /// storage transaction commits. The mds notifier already fires
 /// post-commit by construction (`BufferedEvents::drain_into` is
 /// invoked from `with_set_tx` after `tx.commit()`; see
-/// `cosmix-mds::store::with_set_tx`).
+/// `mds::store::with_set_tx`).
 ///
 /// The contract this test guards: `MailStore::subscribe_mailbox(
-/// account, mailbox)` must surface the underlying `cosmix-mds`
+/// account, mailbox)` must surface the underlying `mds`
 /// per-`(SetId, ContainerId)` `broadcast::Receiver<ContainerEvent>`
 /// without leaking `SetId` to the IMAP layer; events fire
 /// post-commit only, with delivery latency <100 ms in the
@@ -8960,7 +8960,7 @@ mod retrain_drain {
         out
     }
 
-    // B1 — the interleave Codex flagged. In→Junk, Junk→In, In→Junk
+    // B1 — the interleave flagged. In→Junk, Junk→In, In→Junk
     // before any drain. `OR IGNORE` would drop the 2nd In→Junk and
     // the corpus would wrongly end Ham; `OR REPLACE` + rowid-order
     // drain must converge to Spam (the message ends in Junk).
@@ -9008,7 +9008,7 @@ mod retrain_drain {
         assert_eq!(count_outbox(&mds, &set), 0, "rows drained");
     }
 
-    // Review R3: exercise the drain's skip branch. A row claimed by the
+    // Review : exercise the drain's skip branch. A row claimed by the
     // drain, then superseded by an inline label before the drain applies
     // it, must be skipped (and recorded as such), not replayed over the
     // newer label.
@@ -9207,7 +9207,7 @@ mod retrain_drain {
         let junk = mk_container(&mds, &set, "Junk", Some("\\Junk"));
         let item = add_item_in(&mds, &set, inbox, b"guard-msg");
 
-        // Initial In→Junk → row (g,junk)@R1.
+        // Initial In→Junk → row (g,junk)@.
         store
             .move_message(TEST_ACCOUNT, item, inbox, junk, Flags(0), "g")
             .unwrap();
@@ -9215,8 +9215,8 @@ mod retrain_drain {
         assert_eq!(claimed.len(), 1);
         let r1 = claimed[0].rowid;
 
-        // "While R1 is in flight": a re-drag (out then in). The
-        // In→Junk replaces (g,junk) via OR REPLACE → R1 deleted, a
+        // "While is in flight": a re-drag (out then in). The
+        // In→Junk replaces (g,junk) via OR REPLACE → deleted, a
         // fresh rowid minted; a (g,ham) row is also enqueued.
         store
             .move_message(TEST_ACCOUNT, item, junk, inbox, Flags(0), "g")
@@ -9252,14 +9252,14 @@ mod retrain_drain {
         assert_eq!(count_outbox(&mds, &set), 0);
     }
 
-    // Codex MAJOR regression: a transient failure on an earlier row
+    // regression: a transient failure on an earlier row
     // must not let a later same-stamp opposite-label row be applied
-    // first. Sequence for stamp "t": R1(junk) then R2(ham); the
+    // first. Sequence for stamp "t": (junk) then (ham); the
     // message ends in Inbox so the corpus must end Ham. The flaky
-    // backend fails the *first* `record_label` call (R1's junk).
-    // Without the Retry-halt, tick 1 would apply R2(ham) and tick 2
-    // would replay R1(junk) on top → wrong final Spam. With the
-    // halt, R2 is deferred until R1 succeeds in order → Ham.
+    // backend fails the *first* `record_label` call ( junk).
+    // Without the Retry-halt, tick 1 would apply (ham) and tick 2
+    // would replay (junk) on top → wrong final Spam. With the
+    // halt, is deferred until succeeds in order → Ham.
     struct FlakyConn {
         inner: Arc<SqliteAccountConnection>,
         fail_next: std::sync::atomic::AtomicBool,
@@ -9333,7 +9333,7 @@ mod retrain_drain {
         let junk = mk_container(&mds, &set, "Junk", Some("\\Junk"));
         let item = add_item_in(&mds, &set, inbox, b"order-msg");
 
-        // R1: In→Junk (junk).  R2: Junk→In (ham).  Ends in Inbox.
+        // : In→Junk (junk). : Junk→In (ham). Ends in Inbox.
         store
             .move_message(TEST_ACCOUNT, item, inbox, junk, Flags(0), "t")
             .unwrap();
@@ -9355,15 +9355,15 @@ mod retrain_drain {
         let cls = Arc::new(DefaultClassifier::new(cfg, backend));
         let worker = RetrainOutboxWorker::new(Arc::clone(&mds), Arc::clone(&cls));
 
-        // Tick 1: R1's record_label fails → Retry, batch halts before
-        // R2. Nothing applied; both rows still pending.
+        // Tick 1: record_label fails → Retry, batch halts before
+        //. Nothing applied; both rows still pending.
         assert_eq!(worker.drain_once().await.unwrap(), 0);
         assert_eq!(corpus_counts(&cls).await, (0, 0));
         let (attempts, _) = outbox_attempts_for(&mds, &set, "t", "junk").expect("R1 still pending");
         assert_eq!(attempts, 1, "R1 retried once, R2 untouched");
         assert_eq!(count_outbox(&mds, &set), 2, "neither row drained yet");
 
-        // Tick 2: R1 succeeds then R2 succeeds, in rowid order →
+        // Tick 2: succeeds then succeeds, in rowid order →
         // junk then ham reversal → final Ham (message is in Inbox).
         worker.drain_once().await.unwrap();
         assert_eq!(

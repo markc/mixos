@@ -3,7 +3,7 @@
 
 //! `SUBSCRIBE` / `UNSUBSCRIBE` — RFC 9051 §6.3.7 / §6.3.8.
 //!
-//! Phase 2 T5 v1: resolve the wire mailbox name and call
+//! Phase 2 v1: resolve the wire mailbox name and call
 //! `MailStore::update_mailbox` with `is_subscribed = Some(true|false)`.
 //! All other patch fields are `None`, so the update is a single-row
 //! attribute toggle.

@@ -5,7 +5,7 @@
 //! step before the synchronous rule matcher loop runs.
 //!
 //! The rule engine's matcher trait is intentionally synchronous and
-//! CPU-only (D1 in `_doc/planned/maild-rules-phase2.md`). Pushing
+//! CPU-only ( in). Pushing
 //! `async fn matches` across 12 unrelated matcher kinds would force
 //! every consumer to await regardless of whether they perform I/O.
 //! Instead, for the one matcher kind that needs DNS (`peer_ip_in_dnsbl`),

@@ -47,7 +47,7 @@ pub trait Verifier: Send + Sync {
         message: &[u8],
     ) -> Result<VerifyResult>;
 
-    /// Pre-DATA SPF check; lets cosmix-smtp reject obvious abuse at
+    /// Pre-DATA SPF check; lets maild::smtp reject obvious abuse at
     /// MAIL FROM time without buffering the body. Empty
     /// `envelope_from` falls back to the HELO identity per RFC 7208
     /// §2.4 and is reported as `SpfCheck::Helo`.

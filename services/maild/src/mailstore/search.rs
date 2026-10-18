@@ -4,7 +4,7 @@
 //! mail_search FTS5 projection — Phase 8e gate 2.
 //!
 //! The `mail_search` virtual table is a contentless FTS5 sidecar
-//! (`_doc/mds/overview.md` §5) populated synchronously by every
+//! ( §5) populated synchronously by every
 //! `MailStore` mutation that touches an email row, inside the same
 //! `SqliteCasMds::with_set_tx` that produced the `item` / `mail_envelopes`
 //! / `mail_threads` rows. This module is the pure-function projection
@@ -23,7 +23,7 @@
 //!     body_text,         -- inline plain-text only in v1.1
 //!     normalized_addrs,
 //!     content=''
-//! );
+//!);
 //! ```
 //!
 //! `headers` is synthesised from the structured envelope (NOT lifted
@@ -31,7 +31,7 @@
 //! parser version skew and unaffected by header-section quoting
 //! quirks. `body_text` is the concatenated top-level `text/plain`
 //! parts from `mail_parser`; HTML-only and attachment text are out of
-//! scope for v1.1 (`_doc/mds/overview.md` line 672 + 1326). If parsing
+//! scope for v1.1 ( line 672 + 1326). If parsing
 //! the raw bytes fails the body column is empty — the envelope-derived
 //! columns still index, so a malformed body never sinks the row.
 //!
@@ -58,7 +58,7 @@
 //!
 //! - HTML→text body extraction (v1.2+).
 //! - Attachment extraction (PDF/Office text) — explicitly v2+ per
-//!   `_doc/mds/overview.md` §5.
+//!    §5.
 
 use super::types::EmailEnvelope;
 

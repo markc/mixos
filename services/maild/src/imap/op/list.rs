@@ -3,7 +3,7 @@
 
 //! `LIST` — RFC 9051 §6.3.9.
 //!
-//! Phase 2 T3 v1: walk the per-account MailboxRecord set,
+//! Phase 2 v1: walk the per-account MailboxRecord set,
 //! encode names via [`crate::imap::mailbox_name`], filter by the
 //! requested pattern, emit one `* LIST (attrs) "/" "wire-name"`
 //! response per match plus a final tagged OK.
@@ -19,7 +19,7 @@
 //!   (non-ASCII, contain `/`, broken parent chain) are omitted from
 //!   the result with a `tracing::warn!`; SELECT / STATUS on those
 //!   names emits `NO [SERVERBUG] mailbox name not representable
-//!   over IMAP` (T4).
+//! over IMAP`.
 //!
 //! Argument grammar this handler accepts:
 //! ```text

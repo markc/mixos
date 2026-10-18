@@ -6,12 +6,12 @@
 //! `NotAuthenticated` → `Authenticated` → `Selected(SelectedMailbox)`
 //! → back to `Authenticated` (CLOSE/UNSELECT) or `Logout` (from any).
 //!
-//! Phase 2 (T2) populates `Selected` with [`SelectedMailbox`] — the
+//! Phase 2 populates `Selected` with [`SelectedMailbox`] — the
 //! per-connection snapshot of the chosen mailbox's IMAP-visible
 //! identity (UIDVALIDITY / UIDNEXT / EXISTS / HIGHESTMODSEQ / r-o
-//! flag). T2 lands the *type shape*; the SELECT/EXAMINE/UNSELECT/
+//! flag). lands the *type shape*; the SELECT/EXAMINE/UNSELECT/
 //! CLOSE handlers that actually transition into and out of the
-//! variant land in T4 alongside SELECT semantics. This split keeps
+//! variant land in alongside SELECT semantics. This split keeps
 //! the enum churn separate from the protocol-behavior diff so each
 //! review boundary is honest about what is being asserted.
 //!

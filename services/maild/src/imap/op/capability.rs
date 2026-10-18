@@ -8,7 +8,7 @@ use crate::imap::config::ImapConfig;
 use crate::imap::response::{Status, tagged, untagged_capability};
 
 /// Returns the two response lines to emit: the untagged
-/// `* CAPABILITY ...` line followed by the tagged `OK CAPABILITY
+/// `* CAPABILITY...` line followed by the tagged `OK CAPABILITY
 /// completed` line, concatenated.
 pub fn handle(tag: &str, cfg: &ImapConfig) -> String {
     let body = match cfg.advertise_capabilities.as_ref() {

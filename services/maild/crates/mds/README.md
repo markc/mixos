@@ -110,7 +110,7 @@ keep the wall-clock floor sane while local pressure-testing can
 crank it.
 
 The crash-recovery stress test is the proof point that the
-systemd-restart path is safe (SPEC 08 §8.6.2 step 1) —
+systemd-restart path is safe —
 `SqliteCasMds::open` completes WAL recovery without panic
 regardless of where SIGKILL landed in the `add_item` loop, and
 `rebuild_index()` returns clean per-container invariants

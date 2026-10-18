@@ -49,7 +49,7 @@ enum Command {
         #[command(subcommand)]
         action: QueueAction,
     },
-    /// Per-domain SPEC 12 namespace (Phase 2)
+    /// Per-domain the props contract namespace (Phase 2)
     Domain {
         #[command(subcommand)]
         action: DomainAction,
@@ -441,7 +441,7 @@ enum AccountAction {
     /// Enable or disable email-2FA for an account. Sets
     /// `maild.accounts.mfa_enabled` via a `props.set` Patch, so the password
     /// and every other field are preserved (only the flag changes). webd reads
-    /// this at login to decide whether to require an emailed second factor (P3).
+    /// this at login to decide whether to require an emailed second factor.
     Mfa {
         /// Account email
         email: String,
@@ -477,7 +477,7 @@ enum AccountAction {
     },
 }
 
-/// Per-account rules-engine overrides — Phase 2 C3.
+/// Per-account rules-engine overrides — Phase 2.
 ///
 /// All three subcommands are Bus-only clients of the running maild
 /// daemon's `maild.account_overrides` namespace. The CLI never touches
@@ -701,7 +701,7 @@ async fn run_account_cli(action: AccountAction) -> Result<()> {
             // failing `after_set` is NOT surfaced as `rc >= 10` — the
             // substrate keeps the row durable and projects
             // `{"lifecycle":"failed","reason":"…"}` with rc=0
-            // (`cosmix-lib-props-store/src/runtime.rs` Saga branch). The CLI
+            // (`libs/props/src/runtime.rs` Saga branch). The CLI
             // must inspect the body to distinguish a healthy create
             // from a half-provisioned one; reporting success on a
             // failed `after_set` would leave operators with an
@@ -1159,7 +1159,7 @@ async fn run_account_overrides_cli(action: AccountOverridesAction) -> Result<()>
             force,
         } => {
             // Build the JSON body from supplied flags only. On Replace
-            // (the CLI default — see SPEC 12 §5.3) omitted fields take
+            // (the CLI default — see the props contract) omitted fields take
             // schema defaults (empty lists, null threshold). On Patch
             // (`--merge`) omitted fields preserve the prior value.
             let mut body = serde_json::Map::new();
@@ -1199,8 +1199,7 @@ async fn run_account_overrides_cli(action: AccountOverridesAction) -> Result<()>
             let mut headers = BTreeMap::new();
             headers.insert("namespace".to_string(), NAMESPACE.to_string());
             headers.insert("key".to_string(), email.clone());
-            // Plan: CLI default is full replacement (`merge: false`)
-            // even though the SPEC 12 wire default is patch. Sending
+            // even though the props contract wire default is patch. Sending
             // the header explicitly removes the ambiguity for ops
             // scripts reading the Bus audit log.
             headers.insert(
@@ -1220,7 +1219,7 @@ async fn run_account_overrides_cli(action: AccountOverridesAction) -> Result<()>
                     .await?;
                 if get_rc == 0 {
                     // `version` MUST be present + parseable on a `rc=0`
-                    // get response (SPEC 12 §8.3 wire envelope). If it
+                    // get response (the props contract wire envelope). If it
                     // isn't, the substrate is on a wire we don't
                     // understand — fail loudly rather than silently
                     // dropping the if_version round-trip, which would
@@ -1977,7 +1976,7 @@ async fn run_engine_config_cli(action: EngineConfigAction) -> Result<()> {
     match action {
         EngineConfigAction::Show => {
             // Singleton namespace: omit the `key` header. Bus-side
-            // `build_record_key` (`crates/cosmix-lib-props-store/src/bus/
+            // `build_record_key` (`libs/props/src/bus/
             // mutation.rs`) accepts either an absent or empty-string
             // key for Singleton cardinality; a non-empty key would
             // be rejected with `singleton namespace: key header must
@@ -2127,11 +2126,11 @@ fn account_selector(account: &str) -> serde_json::Value {
 ///    rules-reload and tls-reload pass `""`. Callers pass `""`
 ///    for no-body verbs; the `NodedClient` omits the Bus body
 ///    field entirely in that case (see
-///    `cosmix-lib-client/src/native.rs` `call_with_headers_raw`),
+///    `libs/bus/src/native_client/native.rs` `call_with_headers_raw`),
 ///    which the daemon's arg resolver treats the same as `Null`.
 /// 3. No custom headers.
-/// 4. Pre-SPEC-12 error envelope `{"error": "..."}` on `rc != 0`
-///    (not the SPEC 12 `{"error_code", "message"}` envelope). The
+/// 4. Pre-the props contract error envelope `{"error": "..."}` on `rc != 0`
+/// (not the props contract `{"error_code", "message"}` envelope). The
 ///    renderer falls back `error` → `message` → raw body so a
 ///    future envelope migration is forward-compatible.
 ///
@@ -2213,7 +2212,7 @@ async fn async_main() -> Result<()> {
     let cli = Cli::parse();
 
     // Tracing: daemon (`serve`) gets the rolling file appender that
-    // wants a writable `$HOME/.local/log/cosmix`; one-shot CLI
+    // wants a writable `$HOME/.local/log/mixos`; one-shot CLI
     // subcommands (`account`, `migrate`, `queue`) write only to
     // stderr. This is what lets `markc` run `maild account
     // list` without `sudo` or a `HOME=…` override — the file
@@ -2244,7 +2243,7 @@ async fn async_main() -> Result<()> {
 
     // Config search order (first match wins):
     //   1. `--config <path>` from the command line
-    //   2. `/etc/cosmix/maild/config.conf.mix` — the system-wide config
+    //   2. `/etc/mixos/maild/config.conf.mix` — the system-wide config
     //      the systemd unit reads. Putting this *ahead* of the XDG user
     //      path means a non-root caller (e.g. `markc` running
     //      `maild account list`) resolves to the daemon's actual
@@ -2252,7 +2251,7 @@ async fn async_main() -> Result<()> {
     //      falls through; permission-denied / IO error / parse error all
     //      hard-fail with a clear message so a typo or wrong perms can't
     //      silently re-route the caller to a different DB.
-    //   3. XDG user path (`$HOME/.config/cosmix/jmap.conf.mix`) — per-user
+    //   3. XDG user path (`$HOME/.config/mixos/jmap.conf.mix`) — per-user
     //      / dev installs.
     //   4. node-config-derived defaults (mesh-aware config).
     //   5. compile-time defaults.
@@ -2380,7 +2379,7 @@ async fn async_main() -> Result<()> {
             // structured reload-report body (merged identities +
             // per-identity errors if any). The helper applies
             // cleanly: empty body, no custom headers, JSON
-            // pretty-print, `{"error": ...}` failure envelope.
+            // pretty-print, `{"error":...}` failure envelope.
             // Verb-level semantics (resolver swap is
             // fail-loud-and-keep; substrate projection can be
             // partially stale on storage failure) are
@@ -2432,7 +2431,7 @@ async fn async_main() -> Result<()> {
                 tracing::info!(addr = %addr, "SMTPS submission bound");
             }
             let listener = tokio::net::TcpListener::bind(&cfg.listen).await?;
-            tracing::info!(addr = %cfg.listen, "cosmix-jmap JMAP listening");
+            tracing::info!(addr = %cfg.listen, "maild JMAP listening");
 
             // Use TLS if cert/key configured
             if let (Some(cert_path), Some(key_path)) = (&cfg.tls_cert, &cfg.tls_key) {
@@ -2957,7 +2956,7 @@ mod cli_parser_tests {
         // What this test pins is that the parser passes the value
         // through verbatim so the daemon sees exactly what the
         // operator typed; that keeps the daemon's error message
-        // (`account_id must be a non-negative integer, got ...`)
+        // (`account_id must be a non-negative integer, got...`)
         // truthful instead of mangled.
         let cli = parse(&["maild", "bayesian", "stats", "not-a-number"])
             .expect("bayesian stats must accept the value at parse time");

@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
-//! JMAP→MDS Phase 7 end-to-end smoke test (plan Task 7.1–7.3).
+//! JMAP→MDS Phase 7 end-to-end smoke test (plan –7.3).
 //!
 //! Stands up an in-process maild via `maild::runtime::build_runtime`
 //! against an ephemeral tempdir + random localhost ports, creates the
 //! `e2e@e2e.test` account through the substrate so the production
 //! `after_set` hook seeds the default mailboxes, then walks the 8-step
-//! smoke flow from `_doc/planned/jmap-mds-migration.md` Task 7.1
+//! smoke flow from
 //! (SMTP DATA → Email/query → Email/get → Email/set seen →
 //! Email/changes → Mailbox/get → Email/set destroy → Email/get notFound).
 //!
-//! Codex pre-impl consult additions baked in:
+//! pre-impl consult additions baked in:
 //! - SMTP DATA → JMAP visibility is asserted via bounded poll (2s/25ms,
 //!   timeout-as-failure), not a fixed `sleep`. The `250` reply already
 //!   means `with_set_tx` committed; the poll asserts that the JMAP
@@ -107,7 +107,7 @@ async fn jmap_mds_e2e_smoke() -> Result<()> {
     )
     .await?;
 
-    // (2) Bounded poll of Email/query inMailbox:Inbox. Codex: 250
+    // (2) Bounded poll of Email/query inMailbox:Inbox. 250
     // means the commit is durable, so this should resolve on the
     // first iteration in the steady-state — the poll loop is the
     // SLA (250 → visible within 2s) being asserted, not a workaround
@@ -282,7 +282,7 @@ async fn jmap_mds_e2e_smoke() -> Result<()> {
         "Email/get notFound missing id {email_id}: {post_destroy_get}",
     );
 
-    // Codex addition: Email/changes after destroy must show the id in
+    // Email/changes after destroy must show the id in
     // `destroyed`. Email/get → notFound proves lookup, but does not
     // prove the change stream observed the deletion.
     let changes_after_destroy = jmap_call(
@@ -304,7 +304,7 @@ async fn jmap_mds_e2e_smoke() -> Result<()> {
         "Email/changes destroyed did not contain id {email_id}: {changes_after_destroy}",
     );
 
-    // Codex addition: Mailbox/get post-destroy must show totalEmails:0
+    // Mailbox/get post-destroy must show totalEmails:0
     // AND unreadEmails:0. A destroy that fails to decrement totals is
     // a real failure mode worth catching.
     let mbox_after = jmap_call(
@@ -582,7 +582,7 @@ async fn mail_send_raw(
 
     expect_smtp_code(&mut rd, b"220").await?;
     wr.write_all(b"EHLO e2e.test\r\n").await?;
-    // EHLO replies are multi-line (250-...\r\n then a final 250 ...\r\n).
+    // EHLO replies are multi-line (250-...\r\n then a final 250...\r\n).
     consume_smtp_multiline(&mut rd, b"250").await?;
     wr.write_all(format!("MAIL FROM:<{from}>\r\n").as_bytes())
         .await?;

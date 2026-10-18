@@ -352,7 +352,7 @@ fn invariant_10_flags_isolate_per_container() {
 fn unread_delta_only_consults_seen_bit() {
     // Regression: the unread counter must read `Flags::SEEN` only,
     // ignoring `\Flagged` / `\Answered` / `\Draft` / `\Deleted` bits.
-    // Allocating those bits (T10) is non-breaking for unread accounting
+    // Allocating those bits is non-breaking for unread accounting
     // exactly because of this invariant — guard it explicitly so a
     // future "flag-as-byte-truthy" regression in the SQL projection
     // fails here rather than silently in production.

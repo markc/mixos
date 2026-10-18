@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- mds v1 schema for data.sqlite (per-set metadata).
--- Verbatim from _doc/2026-04-29-mds-spec.md §Account/container schema.
+-- Verbatim the account/container schema.
 
 PRAGMA application_id = 0x636D6473;        -- 'cmds'
 PRAGMA user_version   = 1;

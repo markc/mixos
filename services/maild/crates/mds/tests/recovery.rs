@@ -55,7 +55,7 @@ fn check_set_invariants(root: &Path, set_uuid: &uuid::Uuid) {
         .join("data.sqlite");
     if !db_path.exists() {
         // The child died before create_set committed. Acceptable —
-        // means SIGKILL landed in the open()/create_set() window
+        // means SIGKILL the open()/create_set() window
         // and there's nothing to verify.
         return;
     }

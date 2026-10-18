@@ -597,8 +597,8 @@ impl Session {
                         // (UID with an unimplemented inner verb).
                         // RFC 9051 §6.4.8 — UID is followed by
                         // FETCH / COPY / MOVE / SEARCH / STORE /
-                        // EXPUNGE. T9 shipped FETCH; T10 added STORE;
-                        // T13 added SEARCH; T15-T17 add COPY / MOVE /
+                        // EXPUNGE. shipped FETCH; added STORE;
+                        // added SEARCH; - add COPY / MOVE /
                         // EXPUNGE.
                         enum Action {
                             Fetch(op::fetch::FetchMode, String),
@@ -1116,7 +1116,7 @@ impl Session {
         // greeting an unauthenticated peer — or an authenticated one
         // issuing `CAPABILITY {N+}` etc. — could otherwise push
         // `max_literal_bytes` (default 64 MiB) into RAM before any
-        // account-scoped cap applies. The only verb in T14 that legally
+        // account-scoped cap applies. The only verb in that legally
         // takes a literal is APPEND; later phases (AUTHENTICATE
         // continuation, SEARCH, STORE flags via literal8) extend this
         // allow-list as those surfaces land. Refused literals leave the
@@ -1415,7 +1415,7 @@ impl Session {
             }
             Mechanism::OAuthBearer => {
                 // Provider integration not landed — clear NO, not BAD
-                // (per `_doc/maild/imap.md` SASL note: authentication
+                // (per  SASL note: authentication
                 // refusal is NO, not BAD).
                 self.auth_failures += 1;
                 if parsed.initial_response.is_none() {

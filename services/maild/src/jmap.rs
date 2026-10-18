@@ -44,9 +44,9 @@ pub struct AppState {
     pub base_url: String,
     pub classifier: Arc<maild_bayesian::DefaultClassifier>,
     pub state_tx: tokio::sync::broadcast::Sender<StateChange>,
-    /// MailStore adapter over `cosmix-mds`. Wired in Phase A
-    /// (Task 0.3 of the JMAP→MDS migration plan); `Mailbox/get`
-    /// (Task 2.1) is the first JMAP reader to consume it. Subsequent
+    /// MailStore adapter over `mds`. Wired in Phase A
+    /// ( of the JMAP→MDS migration plan); `Mailbox/get`
+    /// is the first JMAP reader to consume it. Subsequent
     /// Phase 2 / 3 / 4 tasks migrate the remaining mail-domain
     /// methods (`Mailbox/changes`, `Mailbox/set`, `Email/*`,
     /// `Thread/*`) onto the same adapter.
@@ -54,8 +54,7 @@ pub struct AppState {
     /// Property-substrate runtime for `maild.domains`. Plumbed in
     /// Phase 3 commit 1 ahead of the `Identity/get` consumer that
     /// lands in commit 3. Commit 1 only stores the field; today's
-    /// `Identity/get` continues to ignore it. See
-    /// `_doc/planned/maild-multi-vhost-phase3.md`.
+    /// `Identity/get` continues to ignore it.
     pub domains_runtime: Arc<::props::Runtime>,
     /// Property-substrate runtime for `maild.aliases`. Used by
     /// `EmailSubmission/set` to resolve a local alias recipient before
@@ -193,7 +192,7 @@ pub async fn api(
                 //
                 // Phase 6 (JMAP→MDS migration): the `Email` state-token
                 // domain migrated to `MailStore::email_state` in Phase 3
-                // (Tasks 3.3–3.5b) — `Email/set` and `Email/import` no
+                // (–3.5b) — `Email/set` and `Email/import` no
                 // longer advance the legacy `db::changelog` "Email"
                 // channel, so reading `current_state(_, "Email")` here
                 // would yield a frozen value and EventSource clients
@@ -201,7 +200,7 @@ pub async fn api(
                 // `changed[Email]` field of the SSE event would repeat
                 // the pre-mutation state). All other types
                 // (Mailbox / EmailSubmission / VacationResponse /
-                // Identity / Calendar / Contact / ...) still flow
+                // Identity / Calendar / Contact /...) still flow
                 // through `db::changelog` until their own migration
                 // tasks land.
                 if method.ends_with("/set") || method.ends_with("/import") {
@@ -237,7 +236,7 @@ pub async fn api(
                 //
                 // Handlers can opt into typed JMAP errors (e.g.
                 // `cannotCalculateChanges`, `invalidArguments`) by
-                // returning `Err(JmapMethodError { ... }.into())`;
+                // returning `Err(JmapMethodError {... }.into())`;
                 // the downcast below preserves their `error_type`
                 // verbatim. Anything else falls through to the
                 // catch-all `serverFail`.
@@ -335,11 +334,11 @@ async fn dispatch(
         // RFC 8620 §3.6.1: an unknown method MUST be reported via the
         // `["error", {type:"unknownMethod"}, callId]` triple — emitting
         // `Ok(JmapError-shaped JSON)` (the previous implementation)
-        // routes the payload into the `MethodResponse(method, ...)`
+        // routes the payload into the `MethodResponse(method,...)`
         // success-triple position, which clients decode as the
         // method's success type. The `Err(JmapMethodError)` path
         // routes through the `Err` arm in `api()` (see `mod.rs:163+`)
-        // which produces the correct `["error", ...]` triple via
+        // which produces the correct `["error",...]` triple via
         // downcast. Do not regress this when adding new typed errors.
         _ => Err(JmapMethodError {
             error_type: "unknownMethod".into(),
@@ -577,7 +576,7 @@ async fn hash_owned_by_account(
 
 /// POST /jmap/upload/{account_id} — Upload a blob.
 ///
-/// Migrated to MailStore CAS in Task 3.3a:
+/// Migrated to MailStore CAS in :
 ///   1. `mds.put_blob(&body)` writes the bytes content-addressed,
 ///      returning a `BlobHash`. Idempotent on hash.
 ///   2. `mailstore.create_blob_ref` mints a JMAP `BlobId` alias

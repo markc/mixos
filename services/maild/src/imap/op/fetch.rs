@@ -4,15 +4,15 @@
 //! `FETCH` / `UID FETCH` — RFC 9051 §6.4.5 / §6.4.8.
 //!
 //! Phase 3 scope so far: metadata atoms (`FLAGS`, `UID`,
-//! `RFC822.SIZE`, `INTERNALDATE`) shipped in T2; body atoms
-//! `ENVELOPE` (T11a) and `BODYSTRUCTURE` (T11b) shipped via a
+//! `RFC822.SIZE`, `INTERNALDATE`) shipped in ; body atoms
+//! `ENVELOPE` and `BODYSTRUCTURE` shipped via a
 //! `MailStore::read_blob` + `mail_parser` round trip; `BODY[*]` /
 //! `BODY.PEEK[*]` with top-level `section-msgtext` (empty / HEADER /
 //! HEADER.FIELDS\[.NOT\] / TEXT), optional `<offset.length>` partial,
 //! and `RFC822` / `RFC822.HEADER` / `RFC822.TEXT` legacy aliases
-//! shipped in T12a — including the `\Seen` side-effect for non-PEEK
+//! shipped in — including the `\Seen` side-effect for non-PEEK
 //! body atoms (RFC 9051 §6.4.5). Still deferred: part-by-part
-//! addressing (`BODY[1.2.MIME]`, T12b); the `FAST` / `ALL` / `FULL`
+//! addressing (`BODY[1.2.MIME]`,); the `FAST` / `ALL` / `FULL`
 //! macros (depend on body atoms); and `MODSEQ` (gated on `ENABLE
 //! CONDSTORE`, Phase 6).
 //!
@@ -21,7 +21,7 @@
 //! For each resolved message:
 //!
 //! ```text
-//! * <msn> FETCH (<atom1> <value1> <atom2> <value2> ...)\r\n
+//! * <msn> FETCH (<atom1> <value1> <atom2> <value2>...)\r\n
 //! ```
 //!
 //! followed by a single tagged response (`<tag> OK FETCH completed`).
@@ -45,7 +45,7 @@
 //! materialise the FLAGS / UID / SIZE / INTERNALDATE values.
 //!
 //! Building the SequenceMap per-FETCH (rather than at SELECT time
-//! and caching on `SelectedMailbox`) keeps T9 small and avoids the
+//! and caching on `SelectedMailbox`) keeps small and avoids the
 //! cache-coherence question — Phase 5 IDLE replaces this with a
 //! snapshot refreshed on notifier deltas. The list call is the
 //! same one JMAP `Email/query` issues, so the cost is the existing
@@ -62,7 +62,7 @@ use crate::mailstore::{EmailHandle, ListOpts, MailStore, SortKey};
 
 type AccountId = i32;
 
-/// FETCH data items supported in T9. Order in the wire response
+/// FETCH data items supported in. Order in the wire response
 /// follows the order the client requested.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FetchAtom {
@@ -85,10 +85,10 @@ pub enum FetchAtom {
     /// per the §7.5.2 `body-ext-1part` / `body-ext-mpart` grammar.
     BodyStructure,
     /// `BODY[<section>]<<partial>>` or `BODY.PEEK[<section>]<<partial>>`
-    /// — RFC 9051 §6.4.5 section addressing. T12a scope: top-level
+    /// — RFC 9051 §6.4.5 section addressing. scope: top-level
     /// `section-msgtext` (empty / HEADER / HEADER.FIELDS / HEADER.FIELDS.NOT
     /// / TEXT) plus optional `<offset.length>` partial. Part-by-part
-    /// addressing (`BODY[1.2.MIME]`) deferred to T12b.
+    /// addressing (`BODY[1.2.MIME]`) deferred to.
     Body {
         section: BodySection,
         partial: Option<BodyPartial>,
@@ -100,7 +100,7 @@ pub enum FetchAtom {
     },
 }
 
-/// Top-level body-section shapes accepted by T12a. RFC 9051 §6.4.5
+/// Top-level body-section shapes accepted by. RFC 9051 §6.4.5
 /// `section-spec`:
 ///
 /// ```text
@@ -109,7 +109,7 @@ pub enum FetchAtom {
 /// ```
 ///
 /// `BODY[]` (empty section) is the whole message. Part-addressed
-/// sections (`section-part`) defer to T12b.
+/// sections (`section-part`) defer to.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BodySection {
     /// `BODY[]` — entire RFC 5322 message including headers.
@@ -117,11 +117,11 @@ pub enum BodySection {
     /// `BODY[HEADER]` — header block including the terminating
     /// blank-line CRLF.
     Header,
-    /// `BODY[HEADER.FIELDS (Name1 Name2 ...)]` — only the listed
+    /// `BODY[HEADER.FIELDS (Name1 Name2...)]` — only the listed
     /// header fields (preserved in message order) plus a trailing
     /// blank-line CRLF.
     HeaderFields(Vec<String>),
-    /// `BODY[HEADER.FIELDS.NOT (Name1 Name2 ...)]` — every header
+    /// `BODY[HEADER.FIELDS.NOT (Name1 Name2...)]` — every header
     /// *except* the listed ones, plus the trailing blank-line CRLF.
     HeaderFieldsNot(Vec<String>),
     /// `BODY[TEXT]` — body-text only (everything after the
@@ -381,7 +381,7 @@ fn split_at_first_paren(s: &str) -> Option<(&str, &str)> {
     Some((&s[..idx], &s[idx..]))
 }
 
-/// Parse `(Name1 Name2 ...)`. Returns the names verbatim.
+/// Parse `(Name1 Name2...)`. Returns the names verbatim.
 fn parse_header_field_list(s: &str) -> Result<Vec<String>, String> {
     let s = s.trim();
     let s = s
@@ -495,7 +495,7 @@ pub fn parse_args(args: &str, mode: FetchMode) -> Result<FetchRequest, String> {
 ///
 /// The tokenizer respects `[...]`, `(...)`, and `<...>` nesting so that
 /// whitespace inside a body atom's section / header-list / partial
-/// does not split the token. Body-atom syntax shipped in T12a.
+/// does not split the token. Body-atom syntax shipped in.
 fn parse_atom_list(s: &str) -> Result<Vec<String>, String> {
     if let Some(rest) = s.strip_prefix('(') {
         let close = rest
@@ -580,7 +580,7 @@ fn tokenize_atoms(s: &str) -> Result<Vec<String>, String> {
 /// Execute FETCH / UID FETCH for a selected mailbox.
 ///
 /// Caller has already validated `Selected(_)` state and resolved the
-/// selected container. T9 does not refresh `EXISTS` / `UIDVALIDITY`
+/// selected container. does not refresh `EXISTS` / `UIDVALIDITY`
 /// from `MailboxRecord` here — those are stamped at SELECT time onto
 /// `SelectedMailbox`; Phase 5 IDLE wires the refresh path.
 pub async fn handle(
@@ -650,7 +650,7 @@ pub async fn handle(
             .expect("resolver returned ItemId absent from snapshot");
         // Per-row blob load when any requested atom needs it.
         // Phase 5 IDLE may add a per-mailbox cache, but the per-FETCH
-        // path keeps T11a small. A miss / panic logs and emits NIL
+        // path keeps small. A miss / panic logs and emits NIL
         // for the body-derived atoms rather than aborting the whole
         // response — partial FETCH is wire-legal (RFC 9051 §6.4.5
         // does not require a row per requested message) but
@@ -960,7 +960,7 @@ const ENVELOPE_ALL_NIL: &str = "(NIL NIL NIL NIL NIL NIL NIL NIL NIL NIL)";
 /// references separated by SP), `message-id` is a single string
 /// including the angle brackets.
 ///
-/// **Known T11a limitation — group addresses.** RFC 9051 §7.5.2
+/// **Known limitation — group addresses.** RFC 9051 §7.5.2
 /// represents group addresses (`To: undisclosed-recipients:;`) using
 /// a group-start address (`(NIL NIL "groupname" NIL)`) and a
 /// group-end address (`(NIL NIL NIL NIL)`) bracketing the group
@@ -989,7 +989,7 @@ fn render_envelope(message: &mail_parser::Message<'_>) -> String {
 
     // `in-reply-to` projects as a single string. mail_parser exposes
     // `in_reply_to()` as a `MessageIds` reference iterator; we
-    // re-serialise into `<id1> <id2> ...` form (matching the legacy
+    // re-serialise into `<id1> <id2>...` form (matching the legacy
     // RFC 3501 examples). Empty → NIL.
     let in_reply_to_raw = message.header_raw("In-Reply-To").map(str::trim);
     let in_reply_to = in_reply_to_raw.filter(|s| !s.is_empty());
@@ -1141,7 +1141,7 @@ fn render_part(out: &mut String, msg: &mail_parser::Message<'_>, idx: usize, raw
             out.push(' ');
             out.push_str(&octets_of(part).to_string());
             out.push(' ');
-            // body-type-msg = ... SP envelope SP body SP body-fld-lines
+            // body-type-msg =... SP envelope SP body SP body-fld-lines
             //
             // The embedded `Message` has its own `raw_message` buffer
             // (mail_parser 0.11 stores nested messages with local
@@ -1217,7 +1217,7 @@ fn render_one_part_header(
 /// non-multipart body: `SP body-fld-md5 SP body-fld-dsp SP
 /// body-fld-lang SP body-fld-loc`. `body-fld-md5` is `NIL` —
 /// `mail_parser` does not surface a Content-MD5 header and the
-/// substrate has no canonical place to compute one yet (T11b
+/// substrate has no canonical place to compute one yet (
 /// scope cap).
 fn render_ext_1part(out: &mut String, part: &mail_parser::MessagePart<'_>) {
     use mail_parser::MimeHeaders;
@@ -1357,7 +1357,7 @@ fn render_body_section(
 
 /// Extract the raw bytes for a `BODY[<section>]` request from the
 /// top-level (root) part of the message. Part-by-part addressing is
-/// T12b scope; T12a only handles message-level section atoms.
+/// scope; only handles message-level section atoms.
 fn body_section_bytes<'a>(
     section: &BodySection,
     msg: &'a mail_parser::Message<'_>,
@@ -1479,7 +1479,7 @@ fn render_internaldate(received_at_ms: i64) -> String {
         .unwrap_or_else(|| Utc.timestamp_opt(0, 0).unwrap());
     // `%e` is space-padded day (matches `(SP DIGIT) / 2DIGIT`);
     // `%b` is the English abbreviated month name (RFC 9051 lists
-    // `Jan` `Feb` ... `Dec` verbatim).
+    // `Jan` `Feb`... `Dec` verbatim).
     format!("\"{}\"", dt.format("%e-%b-%Y %H:%M:%S +0000"))
 }
 
@@ -1576,7 +1576,7 @@ mod tests {
 
     #[test]
     fn parse_args_accepts_rfc822_aliases() {
-        // T12a: RFC822 / RFC822.HEADER / RFC822.TEXT are accepted as
+        // : RFC822 / RFC822.HEADER / RFC822.TEXT are accepted as
         // BODY[*] aliases per RFC 9051 §6.4.5 (retained from RFC 3501
         // for client compatibility).
         let r = parse_args("1 RFC822", FetchMode::Msn).unwrap();
@@ -1610,7 +1610,7 @@ mod tests {
 
     #[test]
     fn parse_args_accepts_body_atom_shapes() {
-        // T12a: BODY[] / BODY[HEADER] / BODY.PEEK[HEADER.FIELDS (...)]
+        // : BODY[] / BODY[HEADER] / BODY.PEEK[HEADER.FIELDS (...)]
         // with optional <offset.length> partial.
         let r = parse_args("1 BODY[]", FetchMode::Msn).unwrap();
         assert!(matches!(
@@ -2070,7 +2070,7 @@ mod tests {
         );
     }
 
-    // ---- render_body_section (T12a) ----
+    // ---- render_body_section ----
 
     fn body_section_str(out: &[u8]) -> String {
         // Test helper: assertions use ASCII fixtures so the literal

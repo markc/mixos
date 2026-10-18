@@ -1,6 +1,5 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- mds v1.3 schema additions for data.sqlite (per-set metadata).
--- Plan: src/_doc/planned/jmap-mds-migration.md Phase 5 Task 5.4a.
 --
 -- Additive only — extends `mail_envelopes` (v1.2 §A) with three
 -- recipient-list columns so JMAP `Email/get` and `EmailSubmission/set`

@@ -1,6 +1,5 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- mds v1.7 schema migration for data.sqlite (per-set metadata).
--- Spec: maild Phase 8e gate 4 (Subject-normalization fallback for
 -- mail_threads thread_id resolution, per JMAP §4.1.5 + RFC 5256 §2.1).
 --
 -- Adds an RFC 5256 §2.1 "base subject" column to mail_envelopes plus
@@ -24,7 +23,7 @@
 -- Normalization rules (maild::mailstore::subject) match RFC
 -- 5256 §2.1 verbatim — collapse whitespace, recursively strip
 -- subj-leader (blob* refwd ws*), strip subj-trailer (WSP / "(fwd)"),
--- strip [fwd: ... ] wrapper, lowercase. The schema does NOT pin the
+-- strip [fwd:... ] wrapper, lowercase. The schema does NOT pin the
 -- normalization algorithm; the column stores whatever maild writes.
 -- If the normalization spec changes, a maild-side rebuild rewrites
 -- the column in place — no schema migration needed.

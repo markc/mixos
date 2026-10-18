@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
-//! T20 — Thunderbird MVP end-to-end smoke.
+//! — Thunderbird MVP end-to-end smoke.
 //!
 //! Stands up the *real* maild binary surface end-to-end:
 //!
@@ -182,7 +182,7 @@ async fn imap_smtp_thunderbird_e2e_smoke() -> Result<()> {
             anyhow!("authenticated submission must enqueue an smtp_queue row; got {entries:?}")
         })?;
 
-    // Queue-row content check (Codex T20 round-1 MINOR): the row must
+    // Queue-row content check ( round-1): the row must
     // reference a CAS blob, and the blob bytes must carry the Subject
     // and Message-ID the submission DATA flushed. This protects
     // against a future regression where the queue INSERT succeeds but
@@ -541,7 +541,7 @@ async fn imap_smoke(
     let (rd, mut wr) = split(stream);
     let mut rd = BufReader::new(rd);
 
-    // Greeting: `* OK [CAPABILITY ...] maild IMAP ready`
+    // Greeting: `* OK [CAPABILITY...] maild IMAP ready`
     let greeting = read_imap_line(&mut rd).await?;
     assert!(
         greeting.starts_with("* OK"),
@@ -659,7 +659,7 @@ async fn imap_smoke(
     // message-list summary. Subject/from must be visible in this
     // response by themselves; checking them after the literal BODY[]
     // payload was returned would let the verbatim RFC822 body satisfy
-    // the substring (Codex T20 round-1 MAJOR).
+    // the substring ( round-1).
     let env_tag = format!("a{tag_n:02}");
     tag_n += 1;
     imap_send(
@@ -775,7 +775,7 @@ async fn imap_send(wr: &mut WriteHalf<TlsStream<TcpStream>>, line: &str) -> Resu
 /// either a single round-trip or a tight in-process broadcast hop; a
 /// 5-second cap is two orders of magnitude over the expected p99 and
 /// turns a regression-induced deadlock into a fast, command-tagged
-/// failure instead of a CI watchdog kill (Codex T20 round-1 MINOR).
+/// failure instead of a CI watchdog kill ( round-1).
 const WIRE_READ_TIMEOUT: Duration = Duration::from_secs(5);
 
 async fn read_imap_line<R: AsyncRead + Unpin>(rd: &mut BufReader<R>) -> Result<String> {

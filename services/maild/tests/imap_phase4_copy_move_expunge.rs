@@ -749,7 +749,7 @@ async fn copy_from_selected_junk_to_inbox_enqueues_retrain() -> Result<()> {
 
 #[tokio::test]
 async fn copy_inherits_flags_from_src_not_sibling() -> Result<()> {
-    // MAJOR 1 regression: `add_membership_in_tx` picked
+    // 1 regression: `add_membership_in_tx` picked
     // `ORDER BY container_id LIMIT 1`, which under IMAP's
     // per-mailbox flag model could pick a sibling whose flags do not
     // match the source. With `add_membership_from`, the dest row

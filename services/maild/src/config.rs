@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
-//! Configuration for cosmix-jmap.
+//! Configuration for maild.
 
 use anyhow::Result;
 use serde::Deserialize;
@@ -70,12 +70,12 @@ pub struct Config {
     /// Accepts a single string or an array of strings. None to disable.
     pub smtp_smtps: Option<ListenSpec>,
     /// Local source address(es) to bind for OUTBOUND SMTP delivery
-    /// connections, e.g. `["2403:580a:5e99::100"]`. At most one entry
+    /// connections, e.g. `["2001:db8::25"]`. At most one entry
     /// per family applies: dialling an IPv6 MX binds the v6 entry (if
     /// any), an IPv4 MX the v4 entry. Empty (default) = kernel source
     /// selection. Use when the SPF-aligned address is not what the
-    /// default route would pick (gco: v6 default egress is the eth0
-    /// EUI-64, but the MX AAAA / SPF address is eth1's ::100).
+    /// default route would pick, such as a host with separate public
+    /// and internal interfaces.
     #[serde(default)]
     pub smtp_outbound_bind: Vec<String>,
     /// Maximum message size in bytes
@@ -91,8 +91,7 @@ pub struct Config {
     /// Each `[[dkim.domain]]` row maps to a
     /// `maild_auth::DkimSignerConfig`; `MailAuthSigner` is
     /// built from these at startup. When empty, the legacy single-
-    /// key path runs verbatim. See
-    /// `_doc/planned/maild-multi-vhost-phase1.md`.
+    /// key path runs verbatim.
     #[serde(default)]
     pub dkim: DkimSubsection,
     /// Path to TLS certificate (PEM). Legacy single-identity shape.
@@ -106,7 +105,6 @@ pub struct Config {
     /// Multi-identity TLS (SNI-routed). When `tls.identity` is non-
     /// empty, the resolver consumes it directly and the legacy
     /// `tls_cert` / `tls_key` pair is ignored. See
-    /// `_doc/planned/maild-sni-internal-ca.md` and
     /// `resolve_tls_identities()`.
     /// Bus sender names (`cmd.from`) permitted to **write** the
     /// `maild.retention` config namespace — i.e. to arm/disarm automatic
@@ -137,7 +135,7 @@ pub struct Config {
 
     /// Bus peers (`cmd.from`) permitted to make DELEGATED `maild.vtoken.*`
     /// calls — i.e. webd, relaying a logged-in vhost-admin actor via the
-    /// `$cosmix_delegation` envelope (vtoken C2). DISTINCT from
+    /// `$mixos_delegation` envelope. DISTINCT from
     /// `vtoken_operators`: an operator is a trusted CLI acting globally; a
     /// delegated peer is a front-door whose authority is bounded to the
     /// envelope's actor and that actor's own domain. **Empty (the default) ⇒
@@ -153,7 +151,7 @@ pub struct Config {
     /// `maild.domains.tls_identity_name = "<name>"` rows to PEM paths
     /// at `<tls_key_root>/<name>.cert.pem` +
     /// `<tls_key_root>/<name>.key.pem`. Unset = default
-    /// (`/var/lib/cosmix/maild/tls`). `[[tls.identity]]` config rows
+    /// (`/var/lib/mixos/maild/tls`). `[[tls.identity]]` config rows
     /// ignore this and read their `cert` / `key` paths directly.
     pub tls_key_root: Option<PathBuf>,
 
@@ -206,8 +204,7 @@ pub struct Config {
     /// Exists to be measured, not to be switched on: it is the lever for the
     /// thin-corpus false-positive class, and it carries its own risk (a
     /// spam-heavy mailbox could start scoring novel HAM vocabulary as spam).
-    /// Shadow-evaluate on mrn first. See
-    /// `~/.cmctl/_doc/2026-07-14-bayes-base-rate-prior.md`.
+    /// Evaluate in shadow mode against a representative corpus first.
     pub spam_base_rate_prior: Option<bool>,
     /// Shrinkage toward 0.5, in pseudo-messages. Default 20.
     pub spam_base_rate_pseudocount: Option<f32>,
@@ -253,7 +250,7 @@ pub struct DkimSubsection {
     /// Filesystem root for substrate-managed signer PEMs. The Phase 4
     /// verbs (`maild.dkim.{generate,rotate,retire}`) write keys here
     /// as `<key_root>/<domain>/<selector>.pem`. Unset = default
-    /// (`/var/lib/cosmix/maild/dkim`). Operator-managed
+    /// (`/var/lib/mixos/maild/dkim`). Operator-managed
     /// `[[dkim.domain]]` rows ignore this and read their `key_path`
     /// directly.
     pub key_root: Option<PathBuf>,
@@ -442,7 +439,7 @@ impl From<&::config::node::NodeConfig> for Config {
             // The `NodeConfig` schema doesn't carry a retention operator
             // allowlist yet; default to empty (no remote arming) — the
             // safe posture. A mesh node arms retention by adding the
-            // field once NodeConfig grows it (retention P2).
+            // field once NodeConfig grows it.
             retention_operators: Vec::new(),
             bayesian_rebuild_operators: Vec::new(),
             vtoken_operators: Vec::new(),
@@ -549,12 +546,12 @@ impl Config {
         Ok(Some(config))
     }
 
-    /// XDG user config path: `~/.config/cosmix/jmap.conf.mix`.
+    /// XDG user config path: `~/.config/mixos/jmap.conf.mix`.
     pub fn config_path() -> PathBuf {
         ::config::path(::config::Dir::Etc).join("jmap.conf.mix")
     }
 
-    /// System-wide config path: `/etc/cosmix/maild/config.conf.mix`.
+    /// System-wide config path: `/etc/mixos/maild/config.conf.mix`.
     ///
     /// This is the location the systemd unit reads from on a real
     /// deployment. Searched ahead of the XDG user path so a non-root
@@ -572,7 +569,7 @@ impl Config {
     }
 
     /// Effective cadence (seconds) for the persistent rule-stats
-    /// flush task. Defaults to 60s per `_doc/planned/maild-rules-phase2.md`
+    /// flush task. Defaults to 60s
     /// (≤60s of counter increments lost on a clean process restart;
     /// see `rule_stats_store` module docstring for the host/power-loss
     /// case, which is unbounded by design). Zero is rejected at
@@ -607,7 +604,7 @@ impl Config {
     /// without going through `load` must validate themselves before
     /// trusting the returned vec.
     ///
-    /// Precedence (per `_doc/planned/maild-sni-internal-ca.md`):
+    /// Precedence (per):
     ///
     /// 1. If `tls.identity` is non-empty, return it verbatim — the
     ///    operator has opted in to multi-identity TLS and the
@@ -849,8 +846,8 @@ mod tests {
             hostname: "alpha.example.org"
             tls: {
               identity: [
-                { server_name: "alpha.example.org", cert: "/etc/cosmix/maild/tls/lan.crt", key: "/etc/cosmix/maild/tls/lan.key", default: true, no_sni_fallback: true },
-                { server_name: "alpha.bus.example.org", cert: "/etc/cosmix/maild/tls/wg.crt", key: "/etc/cosmix/maild/tls/wg.key" }
+                { server_name: "alpha.example.org", cert: "/etc/mixos/maild/tls/lan.crt", key: "/etc/mixos/maild/tls/lan.key", default: true, no_sni_fallback: true },
+                { server_name: "alpha.bus.example.org", cert: "/etc/mixos/maild/tls/wg.crt", key: "/etc/mixos/maild/tls/wg.key" }
               ]
             }
         "#;
@@ -863,7 +860,7 @@ mod tests {
 
     #[test]
     fn config_numeric_fields_exact_safe_integers() {
-        // Exercises the C1 exact-safe f64→int path on maild's numeric
+        // Exercises the exact-safe f64→int path on maild's numeric
         // config fields (Mix has no integer variant; these arrive as
         // Number(f64)). A whole-number value within the 2^53 lossless
         // range hydrates the Option<usize>/<u64> fields correctly.
@@ -901,7 +898,7 @@ mod tests {
     #[test]
     fn config_listen_spec_untagged_both_arms() {
         // ListenSpec is `#[serde(untagged)]` — string or list. Both arms
-        // must parse via the C1 deserialize_any path.
+        // must parse via the deserialize_any path.
         let single = "smtp_inbound: \"192.0.2.4:25\"\n";
         let cfg: Config = ::config::from_conf_mix_str(single).expect("single");
         assert_eq!(

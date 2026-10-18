@@ -2,7 +2,7 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
 //! Integration test for the per-rule match-hook plumbing (commit 3 of
-//! `_doc/planned/maild-rules-phase2.md`).
+//!).
 //!
 //! Asserts the spec invariants:
 //!
@@ -228,7 +228,7 @@ async fn no_hook_installed_is_zero_cost() {
     // binary and for crates that don't want counters.
     let (engine, _) =
         DefaultRuleEngine::with_pack_str(EngineConfig::default(), pack_two_rules()).unwrap();
-    // No .with_rule_match_hook(...).
+    // No.with_rule_match_hook(...).
 
     let verify = clean_auth();
     let account = AccountId::new("test");

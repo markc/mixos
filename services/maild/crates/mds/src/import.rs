@@ -95,7 +95,7 @@ const MAX_MANIFEST_BYTES: usize = 64 * 1024;
 /// accepted; ones above it are forward-incompat and rejected.
 ///
 /// The Phase 5 export/import contract treats older tarballs as
-/// permanent — see `_doc/2026-04-29-mds-plan.md` §"Phase 5".
+/// permanent — see  §"Phase 5".
 /// Acceptance of an older `schema_version` relies on
 /// `apply_data_migrations` running after the staged file is renamed
 /// into place: that call upgrades the per-set DB in-place to

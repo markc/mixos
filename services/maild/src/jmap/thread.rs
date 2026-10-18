@@ -14,9 +14,9 @@ use crate::mailstore::{MailStore, SqliteMailStore, ThreadId};
 
 /// Thread/get — returns thread objects with emailIds.
 ///
-/// **Phase 4 / Task 4.2 status (current).** Data path runs on
+/// **Phase 4 / status (current).** Data path runs on
 /// `MailStore::list_thread{,s}` reading the `mail_threads` sidecar
-/// (Task 4.1a populates it from JMAP create paths). Member ordering
+/// ( populates it from JMAP create paths). Member ordering
 /// is now `mail_envelopes.date_ts` ASC (RFC 5322 origination per RFC
 /// 8621 §4.2), not `received_at` (delivery time) as the legacy
 /// `db::thread::get_by_ids` did — see the `MailStore::list_thread`
@@ -27,7 +27,7 @@ use crate::mailstore::{MailStore, SqliteMailStore, ThreadId};
 ///
 /// **State token still flows through the legacy `"Thread"` changelog
 /// channel.** This is deliberate — `Thread/changes` continues to read
-/// `db::changelog::changes_since(... "Thread" ...)`, and the legacy
+/// `db::changelog::changes_since(... "Thread"...)`, and the legacy
 /// channel has never had a write-side bridge (legacy `db::email::create`
 /// recorded as `"Email"`, not `"Thread"`), so `Thread/changes` returns
 /// empty and `Thread/get.state` stays at `0` forever. Pinning both
@@ -38,7 +38,7 @@ use crate::mailstore::{MailStore, SqliteMailStore, ThreadId};
 /// recorded). A future task can add MailStore-side write bridging or
 /// migrate both surfaces to `email_state` once `Thread/changes` gets
 /// a real implementation; that work is deliberately deferred so
-/// Task 4.2 stays a data-path-only migration.
+/// stays a data-path-only migration.
 ///
 /// **Migration window for SMTP-delivered mail.** Phase 5 has not
 /// migrated `smtp/inbound.rs` yet, so SMTP-delivered emails land in
@@ -94,7 +94,7 @@ pub async fn get(
 
     // Resolve the request's thread-id list. Explicit `ids` are taken
     // verbatim — `mail_threads.thread_id` is `TEXT` and the format is
-    // opaque (cosmix-mds v1.1 schema §6), so a non-UUID string is not
+    // opaque (mds v1.1 schema §6), so a non-UUID string is not
     // structurally invalid; it just won't match any rows. RFC 8620
     // §5.1 requires unknown ids surface in `notFound`, populated below.
     //
@@ -143,7 +143,7 @@ pub async fn get(
     })
     .await??;
 
-    // Deferred-by-design (Task 4.2): Thread state-token domain stays
+    // Deferred-by-design: Thread state-token domain stays
     // on db::changelog for cross-method consistency with
     // Thread/changes; both surfaces will migrate together when a
     // MailStore-backed thread-projection stream lands.
@@ -170,7 +170,7 @@ pub async fn get(
 /// channel, or migrate both `Thread/get.state` and
 /// `Thread/changes.sinceState` onto a fresh MailStore-backed surface
 /// (e.g. `email_state` plus a thread-projection stream). Both
-/// options are deliberately out of scope for Task 4.2.
+/// options are deliberately out of scope for.
 pub async fn changes(
     db: &Db,
     account_id: i32,
@@ -188,7 +188,7 @@ pub async fn changes(
         .and_then(|v| v.as_i64())
         .unwrap_or(500);
 
-    // Deferred-by-design (Task 4.2): see Thread/get for rationale.
+    // Deferred-by-design: see Thread/get for rationale.
     let result =
         db::changelog::changes_since(&db.conn, account_id, "Thread", since_state, max).await?;
 

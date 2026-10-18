@@ -17,7 +17,7 @@
 //!    so a regression in `pick_for_sni` surfaces as a byte-equal
 //!    mismatch.
 //!
-//! 2. **P3 RCPT TO gate** — plain SMTP inbound (port-25 equivalent)
+//! 2. ** RCPT TO gate** — plain SMTP inbound (port-25 equivalent)
 //!    accepts `RCPT TO:<alice@alpha.test>` (substrate row +
 //!    account-row both exist), and rejects
 //!    `RCPT TO:<foo@nowhere.test>` with `550 5.1.2 No such domain

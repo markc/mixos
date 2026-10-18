@@ -371,7 +371,7 @@ async fn process_queue(state: &SmtpState, resolver: &TokioResolver) -> Result<us
     let mut delivered = 0;
 
     for entry in entries {
-        // Task 5.4b: load via CAS (`mds.get_blob`) when `blob_hash` is
+        // : load via CAS (`mds.get_blob`) when `blob_hash` is
         // populated; fall back to the legacy `db::blob::load` path for
         // pre-migration in-flight rows that still carry only `blob_id`.
         // After Phase 6 retires `db::blob`, the fallback arm goes away
@@ -1091,7 +1091,7 @@ async fn read_response<R: tokio::io::AsyncRead + Unpin>(reader: &mut R) -> Resul
 
         if line.ends_with('\n') {
             result.push_str(&line);
-            // Multi-line: "250-..." continues, "250 ..." is final
+            // Multi-line: "250-..." continues, "250..." is final
             if line.len() >= 4 && line.as_bytes()[3] == b' ' {
                 break;
             }
@@ -1225,7 +1225,7 @@ mod dkim_dispatch_tests {
     //!  - bucket C: fall-through (no domain match, no parseable From)
     //!
     //! Tests build a `SmtpConfig` (no DB / no SMTP listeners) and call
-    //! `dkim_sign(&cfg, ...)` directly — the function only touches
+    //! `dkim_sign(&cfg,...)` directly — the function only touches
     //! `cfg`, which is why commit 2 of the carving doc lifted the
     //! `&SmtpState` argument up to `&SmtpConfig`.
 
@@ -1459,7 +1459,7 @@ mod effective_host_tests {
     //! directly against a `MemoryStore`-backed runtime — no full
     //! `SmtpState` fixture required.
     //!
-    //! The chain under test (per `_doc/planned/maild-multi-vhost-phase3.md`):
+    //! The chain under test (per):
     //!
     //!   1. kind-specific field (`helo_identity` / `message_id_host`)
     //!   2. `primary_hostname`

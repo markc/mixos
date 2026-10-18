@@ -290,7 +290,7 @@ async fn handle_explain(
         .unwrap_or_default();
     let account = AccountId::new(account_id_str.clone());
 
-    // C4 — substrate-resolved overrides. The wire `account_id` is a
+    // — substrate-resolved overrides. The wire `account_id` is a
     // stringified integer per the maild.accounts PK convention; parse
     // back to i32 to feed `db::account::get_by_id`. If account_id is
     // absent, unparseable, or the lookup misses, fall through to
@@ -515,7 +515,7 @@ mod tests {
         Arc::new(e)
     }
 
-    /// C4 test fixture. Returns:
+    /// test fixture. Returns:
     /// - `overrides_runtime`: a real `Runtime` over a `MemoryStore`.
     ///   Tests that don't insert a row see the "absent → defaults"
     ///   branch in `resolve_account_overrides_by_email`.
@@ -768,7 +768,7 @@ mod tests {
         assert!(v["threshold"].as_f64().is_some());
         // Default config + temperror auth + minimal message → Continue.
         assert_eq!(v["verdict"].as_str().unwrap(), "Continue");
-        // C4: no maild.accounts row for id=7 in the fixture, so the
+        // : no maild.accounts row for id=7 in the fixture, so the
         // resolver took the defaulting branch with a note. Metadata
         // fields are surfaced even on the defaulting branch.
         assert_eq!(v["overrides_resolved"], serde_json::Value::Bool(false));
@@ -865,7 +865,7 @@ mod tests {
 
     #[tokio::test]
     async fn explain_without_account_id_uses_engine_defaults_without_db_lookup() {
-        // C4: omitting `account_id` skips the substrate lookup entirely
+        // : omitting `account_id` skips the substrate lookup entirely
         // — the note reflects "no account_id supplied", not a DB miss.
         let e = engine();
         let (orx, db, _tmp) = explain_fixtures();
@@ -901,7 +901,7 @@ mod tests {
 
     #[tokio::test]
     async fn explain_surfaces_substrate_metadata_for_real_account() {
-        // C4: when both the account row AND a substrate override row
+        // : when both the account row AND a substrate override row
         // exist, the response carries the row's version + observed
         // nseq so an operator can correlate the verdict to an audit
         // entry. Uses a real account inserted into the fixture DB and
@@ -969,14 +969,14 @@ mod tests {
         );
         assert!(v["overrides_version"].as_u64().is_some());
         assert!(v["overrides_nseq"].as_u64().is_some());
-        // C4 also surfaces the threshold from the override (not the
+        // also surfaces the threshold from the override (not the
         // engine default) into the explain's `threshold` field.
         assert_eq!(v["threshold"].as_f64().unwrap(), 7.5);
     }
 
     #[tokio::test]
     async fn explain_account_present_without_override_row_notes_the_branch() {
-        // C4 diagnostic-surface contract: when the account row exists
+        // diagnostic-surface contract: when the account row exists
         // but no maild.account_overrides row has been written, the
         // resolver returns schema defaults and `version=None`. The
         // response must still mark `overrides_resolved=true` (the

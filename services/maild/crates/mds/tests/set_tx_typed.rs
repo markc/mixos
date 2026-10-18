@@ -423,7 +423,7 @@ fn settx_remove_last_membership_cascades_to_item_and_blob_ref() {
 }
 
 // ---------------------------------------------------------------------
-// add_membership / container_seq_validity — Phase 8d.2 / Task 3.3 prereq.
+// add_membership / container_seq_validity — Phase 8d.2 / prereq.
 // `add_membership` is the **post-create** path: an item already exists
 // with ≥1 membership, and a new placement is being added (e.g. JMAP
 // `Email/set update` adding a mailbox to `mailboxIds`). It emits Bus
@@ -710,7 +710,7 @@ fn container_seq_validity_in_tx_unknown_container_errors() {
 }
 
 // ---------------------------------------------------------------------
-// add_item_with_memberships — Phase 8d.2 / Task 3.3 substrate.
+// add_item_with_memberships — Phase 8d.2 / substrate.
 // Bus shape: ONE aggregate `MdsEvent::ItemAdded` with parallel
 // container_ids[]/change_seqs[] arrays, mirroring public `add_item`
 // (NOT one ItemAdded + N ItemCopied — the multi-mailbox JMAP create
@@ -774,7 +774,7 @@ fn add_item_with_memberships_emits_one_aggregate_bus_itemadded() {
     assert_eq!(blob_refs, 1);
 
     // The next item-keyed Bus event must be the aggregate ItemAdded
-    // — NOT an ItemCopied. Codex caught the prior shape (single
+    // — NOT an ItemCopied. caught the prior shape (single
     // ItemAdded for staging container + 2 ItemCopied for the rest)
     // as a downstream-misclassification hazard.
     let ev = drain_bus_until_first_item_event(&mut rx, item);
@@ -876,7 +876,7 @@ fn add_item_with_memberships_rejects_unknown_container() {
 
 #[test]
 fn add_item_with_memberships_prevalidates_before_writing() {
-    // Codex review (round 2) MAJOR: if prevalidation is missing, the
+    // if prevalidation is missing, the
     // helper inserts the item row + blob_ref before iterating
     // memberships and discovering an unknown container. A caller that
     // catches the Err inside `with_set_tx` and returns Ok would commit
@@ -922,7 +922,7 @@ fn add_item_with_memberships_prevalidates_before_writing() {
 
 #[test]
 fn add_item_with_memberships_rejects_duplicate_container() {
-    // Codex review (round 2): prevalidation must also catch duplicate
+    // prevalidation must also catch duplicate
     // containers in the slice before any write — the underlying
     // UNIQUE(item_id, container_id) would surface as a SQL constraint
     // post-insert, which a caller catching that Err inside with_set_tx
@@ -954,7 +954,7 @@ fn add_item_with_memberships_rejects_duplicate_container() {
 
 #[test]
 fn add_membership_bus_sink_rollback_does_not_leak() {
-    // Codex review (round 1): the no-ghost notifier test covers the
+    // the no-ghost notifier test covers the
     // notifier path but not the Bus sink path, which is a distinct
     // observer surface. Pin the Bus-sink rollback invariant explicitly
     // so a future eager-emit regression in `add_membership_in_tx`

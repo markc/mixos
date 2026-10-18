@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
-//! SPEC 12 property-substrate adoption for `maild.domains`.
+//! Property-store namespace for `maild.domains`.
 //!
 //! Collection-cardinality namespace owning the authoritative per-vhost
 //! row. Phase 2 (this commit) ships the schema, validation, and
@@ -25,7 +25,7 @@
 //! `Collection { primary_key_field: "domain" }` — key is the FQDN,
 //! lowercased. The substrate runtime enforces
 //! `value.domain == key.key` on Replace and on Patch-creates before
-//! the hook ever runs (`crates/cosmix-lib-props-store/src/runtime.rs`
+//! the hook ever runs (`libs/props/src/runtime.rs`
 //! `validate_primary_key`).
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -107,9 +107,7 @@ pub fn dmarc_policy_variants() -> Vec<String> {
 }
 
 /// `cert_source.kind` enum variants. `"manual"` = operator-deployed PEM
-/// (current behaviour). `"webd"` = bridge-promoted from a webd vhost
-/// per `_doc/planned/maild-webd-cert-bridge.md`. Path β-1 lands the
-/// shape; the bridge code (β-2/β-3) is the consumer.
+/// (current behaviour). `"webd"` = bridge-promoted from a webd vhost.
 pub fn cert_source_kind_variants() -> Vec<String> {
     vec!["manual".into(), "webd".into()]
 }
@@ -335,7 +333,7 @@ pub fn schema() -> PropertySchema {
             default: Some(PropValue::Null),
             secret: false,
             help: "Issuer-of-PEM binding. Null = manual operator deployment \
-                   (current behaviour). See _doc/planned/maild-webd-cert-bridge.md."
+                   (current behaviour)."
                 .into(),
             since: None,
             until: None,
@@ -378,9 +376,9 @@ pub fn schema() -> PropertySchema {
     ])
 }
 
-/// SPEC 12 §7.2 [`AuthPolicy`] — Phase 2 grants every property
+/// the props contract [`AuthPolicy`] — Phase 2 grants every property
 /// capability to every reachable peer (WireGuard `/24` trust domain,
-/// same posture as Phase 1/2/3 of the prior SPEC 12 carvings).
+/// same posture as Phase 1/2/3 of the prior props contract carvings).
 ///
 /// **Hardening obligation — Phases 3/4/5 MUST narrow this before
 /// their consumers go live.** Phase 2 rows are inert (no consumer
@@ -402,7 +400,7 @@ pub fn schema() -> PropertySchema {
 /// `maild domain set` CLI path — so an `Actor::operator(...)` hook
 /// gate would reject the only working write path with no replacement
 /// primitive yet in place (the operator-form distinction over Bus is
-/// the subject of `src/_doc/planned/cosmix-cross-mesh-authz.md`).
+/// not yet available).
 ///
 /// Threat model under this gap: a WG-trusted peer can plant
 /// `tls_identity_name = "<name>"` on a domain row, and after the next
@@ -422,7 +420,7 @@ pub fn schema() -> PropertySchema {
 /// both depend on a substrate primitive that does not exist yet:
 ///
 ///   * Field-level: blocked on the operator-actor distinction over
-///     Bus (`src/_doc/planned/cosmix-cross-mesh-authz.md`).
+///     Bus.
 ///   * Verb-level: `maild-auth` carries no access-control
 ///     vocabulary (it is mail authentication — SPF, DKIM, DMARC, ARC,
 ///     iprev), and the sibling Bus verbs (`maild.dkim.*`,
@@ -662,7 +660,7 @@ pub fn validate_tls_identity_name(s: &str) -> Result<(), String> {
 /// `cert_source` value shape — Null or
 /// `{kind: "manual" | "webd", vhost_fqdn: Null | String}`.
 ///
-/// The carve in `_doc/planned/maild-webd-cert-bridge.md` constrains:
+/// The certificate-source contract requires:
 ///
 /// - `kind = "manual"`: `vhost_fqdn` MUST be absent or Null. Equivalent
 ///   to the row-level Null cert_source — explicit form for operators
@@ -890,7 +888,7 @@ fn validate_shape(key: &str, value: &PropValue) -> Result<(), HookError> {
     // field to the schema; legacy rows committed before β-1 do not carry
     // it, and a Patch over such a prior row merges to a body without
     // `cert_source` even when the operator did not touch it. Per Path α
-    // (`_doc/planned/maild-webd-cert-bridge.md`), absent ≡ kind=manual is
+    //, absent ≡ kind=manual is
     // the substrate behaviour. `defaults_value` still emits explicit
     // Null so fresh rows persist the field for legibility.
     if let Some(value) = obj.get("cert_source") {
@@ -2067,7 +2065,7 @@ mod tests {
     }
 
     /// cert_source omitted entirely is treated as Null (kind=manual).
-    /// Path α (`_doc/planned/maild-webd-cert-bridge.md`) says absent ≡
+    /// Path α says absent ≡
     /// manual; pre-β-1 persisted rows do not carry the key and must
     /// continue to validate so a future Patch over them does not get
     /// stuck on substrate shape it predates. `defaults_value` still
@@ -2084,15 +2082,15 @@ mod tests {
             .expect("absent cert_source should validate as kind=manual");
     }
 
-    /// MAJOR-2 (β-1 codex round 3): the substrate's audit-event
+    /// the substrate's audit-event
     /// projection (`RecordEvent.fields_changed`) MUST surface
     /// `cert_source` when a write transitions it. The dispatcher
     /// projects this directly onto the `<svc>.props.records.changed`
-    /// and `<svc>.props.audit` topics (SPEC 12 §5.5/§10), so a missing
+    /// and `<svc>.props.audit` topics (the props contract§10), so a missing
     /// entry would silently break downstream subscribers (the bridge
     /// included). Exercises Runtime + MemoryStore — the SqliteStore's
     /// `fields_changed` projection uses the same
-    /// `changed_top_level_fields` diff (`crates/cosmix-lib-props-store/src/sqlite.rs`).
+    /// `changed_top_level_fields` diff (`libs/props/src/sqlite.rs`).
     #[tokio::test]
     async fn audit_event_fields_changed_includes_cert_source() {
         use ::props::memory::MemoryStore;

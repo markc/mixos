@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Phase 3 sub-step 3: create/delete lifecycle race.
 //!
-//! Codex review (cold pass on 249d465) flagged that even after the
+//! flagged that even after the
 //! stale-handle fix, `delete_set` removed the cache entry *before*
 //! the blobs sweep + rmdir. A concurrent `create_set` with the same
 //! `SetId` could land between the cache remove and the rmdir, which

@@ -3,11 +3,11 @@
 
 //! `SEARCH` / `UID SEARCH` — RFC 9051 §6.4.4 / §6.4.8.
 //!
-//! Scans the selected mailbox and emits `* SEARCH <msn|uid> ...` for
+//! Scans the selected mailbox and emits `* SEARCH <msn|uid>...` for
 //! every message that satisfies the criteria expression. `UID SEARCH`
 //! returns UIDs; bare `SEARCH` returns message sequence numbers.
 //!
-//! ## T13a scope
+//! ## scope
 //!
 //! Criteria implemented in this task:
 //!
@@ -33,13 +33,13 @@
 //! - `SMALLER <n>`, `LARGER <n>` — compares `size_bytes` to the literal.
 //! - `UID <seq-set>` — restrict to UIDs in the given set.
 //! - Bare `<seq-set>` — restrict to MSNs in the given set.
-//! - `NOT <key>`, `OR <key1> <key2>`, `(<key1> <key2> ...)` —
+//! - `NOT <key>`, `OR <key1> <key2>`, `(<key1> <key2>...)` —
 //!   the standard combinators.
 //!
 //! Multiple top-level keys are AND-combined (RFC 9051 §6.4.4
 //! "combining multiple search-keys with implicit AND").
 //!
-//! ## T13b scope (deferred)
+//! ## scope (deferred)
 //!
 //! Header / date / body-text criteria — `FROM`, `TO`, `CC`, `BCC`,
 //! `SUBJECT`, `HEADER name astring`, `BEFORE`, `ON`, `SINCE`,
@@ -53,8 +53,8 @@
 //! ## Substrate primitive
 //!
 //! `list_emails_in_mailbox` returns the full snapshot — `EmailHandle`
-//! carries `uid`, `keywords`, `size_bytes`, `received_at`. T13a needs
-//! no blob load. T13b (date / header / body) will add a per-row blob
+//! carries `uid`, `keywords`, `size_bytes`, `received_at`. needs
+//! no blob load. (date / header / body) will add a per-row blob
 //! fetch path mirroring `op::fetch`.
 //!
 //! ## Response shape
@@ -423,7 +423,7 @@ pub async fn handle(
     };
 
     // SortKey::Seq returns ascending-by-seq, which equals
-    // ascending-by-UID for cosmix mailstore membership (Seq is the
+    // ascending-by-UID for mixos mailstore membership (Seq is the
     // u32 width of UID). Defensive sort + dedup here keeps MSN
     // assignment correct even if the storage backend ever returns
     // unsorted rows; matches the invariants the `SequenceMap`

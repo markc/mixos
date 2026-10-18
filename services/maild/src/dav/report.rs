@@ -1116,7 +1116,7 @@ mod tests {
     #[test]
     fn parses_sync_collection_token() {
         let body = br#"<D:sync-collection xmlns:D="DAV:">
-              <D:sync-token>https://cosmix.invalid/ns/sync/7</D:sync-token>
+              <D:sync-token>https://mixos.invalid/ns/sync/7</D:sync-token>
               <D:sync-level>1</D:sync-level>
               <D:prop><D:getetag/></D:prop>
             </D:sync-collection>"#;
@@ -1124,7 +1124,7 @@ mod tests {
         assert_eq!(p.kind, Kind::SyncCollection);
         assert_eq!(
             p.sync_token.as_deref(),
-            Some("https://cosmix.invalid/ns/sync/7")
+            Some("https://mixos.invalid/ns/sync/7")
         );
         assert!(!p.malformed);
     }

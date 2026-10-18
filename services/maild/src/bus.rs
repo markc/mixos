@@ -7,13 +7,13 @@
 //! Phase 2: `maild.rules.*` actions (reload, stats, explain) — see
 //! `rules` submodule.
 //! Phases 3+: `maild.bayesian.*` actions and the `maild.verdict` topic
-//! per `_doc/2026-05-01-maild-bus-plan.md`.
+//! per.
 //!
 //! Broker registration is non-blocking and retrying: if the broker is
 //! unreachable at startup — or drops the connection mid-life — maild
 //! keeps serving SMTP, IMAP, and JMAP while the Bus surface reconnects
-//! with exponential backoff. The shape mirrors `cosmix-webd::bus` and
-//! `cosmix-dnsd::bus` so initial connect races and later broker restarts
+//! with exponential backoff. The shape mirrors `webd::bus` and
+//! `dnsd::bus` so initial connect races and later broker restarts
 //! do not leave maild permanently invisible to Bus until process restart.
 
 pub mod accounts;
@@ -103,8 +103,7 @@ pub(super) fn try_resolve_args(cmd: &IncomingCommand) -> Result<serde_json::Valu
 /// validation errors so the wire contract stays uniform.
 const RC_UNKNOWN_ACTION: u8 = 10;
 
-/// Bus service name — SPEC-10 R6: the daemon name minus `cosmix-`
-/// (`maild` → `maild`).
+/// Registered Bus service name.
 const BUS_SERVICE: &str = "maild";
 
 const INITIAL_BACKOFF: Duration = Duration::from_secs(1);
@@ -190,7 +189,7 @@ pub async fn run(
             // reconnects and only needs to be spawned once.
             verdict::spawn_publisher_task(broker_handle.clone(), verdict_tx.subscribe());
 
-            // SPEC 12 §5.5 / §10 — publisher half of the live fan-out.
+            // the props contract — publisher half of the live fan-out.
             // One dispatcher per registered property runtime; the
             // publisher is shared via `Arc` and reads the broker
             // handle on every publish. Spawning happens BEFORE the
@@ -202,10 +201,10 @@ pub async fn run(
             // store a permit and wake it the next iteration.
             //
             // End-to-end "join live" is reachable through the watch
-            // verbs: `<svc>.props.watch` / `.audit.watch` (C4/C5)
+            // verbs: `<svc>.props.watch` / `.audit.watch`
             // authorize the broker subscription first via the
-            // `SubscribeGranter` (C10c) bound to the
-            // `NodedSubscribeGranter` (C10d) wired in `run` above,
+            // `SubscribeGranter` bound to the
+            // `NodedSubscribeGranter` wired in `run` above,
             // then snapshot the post-grant cursor and return the
             // bounded replay tail. The grant-then-observed order is
             // load-bearing: any event with `nseq > observed` is on
@@ -832,7 +831,7 @@ async fn dispatch_attachment(
 ///
 /// PeerIdentity carries the registered sender as `service_name` so the
 /// substrate's auth policy and the broker-side reservation gate
-/// (SPEC 12 §15.5, landed in C6) see the same identity. Unix peer
+/// (the props contract, landed in) see the same identity. Unix peer
 /// credentials and WireGuard fields stay `None` here — those land
 /// when noded exposes its peer-identity surface to clients.
 async fn dispatch_props(router: &PropsRouter, suffix: &str, cmd: &IncomingCommand) -> (u8, String) {
@@ -925,7 +924,7 @@ mod tests {
     fn unknown_action_rc_is_in_error_range() {
         // NodedClient::call only surfaces rc >= 10 as an error. If the
         // unknown-action fallback ever drops below that threshold,
-        // callers will silently see Ok({"error": ...}) instead of an
+        // callers will silently see Ok({"error":...}) instead of an
         // error and typos in action names will go undetected. This test
         // exists precisely to fail if someone edits RC_UNKNOWN_ACTION
         // below the threshold; the constant assertion is intentional.

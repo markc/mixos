@@ -1,6 +1,5 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- mds v1.2 schema additions for data.sqlite (per-set metadata).
--- Plan: src/_doc/planned/jmap-mds-migration.md Phase 1 Tasks 1.6 / 1.7.
 --
 -- Additive only — no v1 / v1.1 table changes. The v1.2 step bumps
 -- user_version to 3 and adds one MailStore-owned sidecar:
@@ -16,7 +15,7 @@
 PRAGMA user_version = 3;
 
 -- §A: per-item envelope sidecar. Populated on `MailStore::create_email`
--- (Phase 1 Task 1.7) and read by `MailStore::get_email` (Task 1.6).
+-- (Phase 1) and read by `MailStore::get_email`.
 --
 -- Field choice tracks JMAP `Email/get` baseline (RFC 8621 §4.1.x):
 --   from_addr  — RFC 5322 `From` header (raw addr-spec; no parsing)

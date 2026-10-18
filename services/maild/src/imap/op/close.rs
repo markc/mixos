@@ -3,7 +3,7 @@
 
 //! `CLOSE` (RFC 9051 §6.4.2) / `UNSELECT` (RFC 3691 §2).
 //!
-//! Phase 2 T4: both verbs transition `Selected(_)` → `Authenticated`
+//! Phase 2 : both verbs transition `Selected(_)` → `Authenticated`
 //! and emit a tagged OK. They have identical semantics in Phase 2
 //! because the `\Deleted` purge that distinguishes CLOSE from
 //! UNSELECT requires STORE — which doesn't ship until Phase 4.

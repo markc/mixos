@@ -32,7 +32,7 @@ pub struct ClassifierConfig {
     /// unused by the bayesian stage.
     pub body_scan_bytes: usize,
     /// Log-odds adjustment applied per unit of `rules_score`. v1
-    /// default 0.0 (off); tuned against the mrn corpus in Phase 8.
+    /// default 0.0 (off); tuned against a representative corpus.
     pub rules_score_bias_k: f32,
     /// Wall-clock budget per `classify` call. Default 25. Reserved, currently
     /// unused by the bayesian stage.
@@ -57,8 +57,8 @@ pub struct ClassifierConfig {
     // (`spam_msgs / (spam_msgs + ham_msgs)`), shrunk toward 0.5 by
     // `base_rate_pseudocount` and clamped to `[base_rate_min, base_rate_max]`.
     //
-    // Off by default and shadow-evaluated on mrn before it goes anywhere near a
-    // real mailbox. See `~/.cmctl/_doc/2026-07-14-bayes-base-rate-prior.md` for the
+    // Off by default and shadow-evaluated against a representative corpus before it goes anywhere near a
+    // real mailbox. See  for the
     // rationale, the failure mode it is meant to attack (thin-corpus false
     // positives), and the failure mode it could CAUSE (a spam-heavy mailbox
     // scoring novel ham vocabulary as spam).

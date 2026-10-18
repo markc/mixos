@@ -148,7 +148,7 @@ impl Db {
                 .lock()
                 .map_err(|e| anyhow::anyhow!("lock error: {e}"))?;
             conn.execute_batch(SCHEMA)?;
-            // Task 5.4b: smtp_queue.blob_hash column for CAS BlobHash
+            // : smtp_queue.blob_hash column for CAS BlobHash
             // (hex-encoded). Pre-existing deploys have only blob_id;
             // ALTER TABLE ADD COLUMN with a duplicate-column tolerance
             // brings them current without a separate migration tool.
@@ -160,7 +160,7 @@ impl Db {
             {
                 return Err(e.into());
             }
-            // P3 (email-2FA): per-account opt-in second-factor flag. Pre-existing
+            // (email-2FA): per-account opt-in second-factor flag. Pre-existing
             // accounts tables lack the column, so the COALESCE(mfa_enabled, 0)
             // SELECTs in props/accounts.rs would fail without it; an additive
             // ALTER with duplicate-column tolerance (mirrors blob_hash above)
@@ -324,7 +324,7 @@ CREATE INDEX IF NOT EXISTS idx_changelog_account_type ON changelog (account_id, 
 -- retained for in-flight pre-Task-5.4b entries that drain through
 -- `db::blob::load`. Phase 6 deletes both `blobs` and this column once
 -- legacy callers are gone.
--- `blob_hash` (Task 5.4b): hex-encoded `mds::BlobHash` into the
+-- `blob_hash`: hex-encoded `mds::BlobHash` into the
 -- shared CAS; new entries write only this. Reader (`smtp/delivery.rs`)
 -- prefers `blob_hash` and falls back to `blob_id` for legacy rows.
 CREATE TABLE IF NOT EXISTS smtp_queue (

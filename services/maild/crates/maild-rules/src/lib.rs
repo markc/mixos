@@ -10,9 +10,9 @@
 //! deliver), `HardJunk` (skip Bayesian, junk), `Continue` (pass to
 //! Bayesian with `score` and `matched_rules` as contextual features).
 //!
-//! See `_doc/2026-04-30-maild-rules-doc.md`,
-//! `_doc/2026-04-30-maild-rules-spec.md` (frozen public API),
-//! and `_doc/2026-04-30-maild-rules-plan.md` (8-phase plan,
+//! See,
+//!  (frozen public API),
+//! and  (8-phase plan,
 //! 3.5-day budget).
 //!
 //! Phase 2 commit 2b status: 13 active rule kinds — `peer_ip_in_dnsbl`

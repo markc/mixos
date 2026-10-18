@@ -2,7 +2,7 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
 //! `maild.vtoken.*` Bus verbs — the vtoken registry's operator control surface
-//! (plan `_plan/2026-06-21-vtoken-dispatch-implementation.md` Stage C). Replaces
+//! Replaces
 //! the hand-SQL seeding: an operator can `add` / `list` / `rotate` / `disable` /
 //! `lookup` tokens over Bus, and the Mix `vtoken` CLI re-points here.
 //!
@@ -33,7 +33,7 @@ pub struct VtokenBusState {
     /// Operator allowlist (`cmd.from`) for the global CLI path (no envelope).
     pub operators: Arc<Vec<String>>,
     /// Delegated-peer allowlist (`cmd.from`) for the webd front-door path
-    /// (a `$cosmix_delegation` envelope present). DISTINCT from `operators`.
+    /// (a `$mixos_delegation` envelope present). DISTINCT from `operators`.
     pub delegated_peers: Arc<Vec<String>>,
     /// Main maild DB connection — the delegated path validates the actor and
     /// target accounts exist (`db::account::get_by_email`).
@@ -44,14 +44,14 @@ pub struct VtokenBusState {
 /// PRESENCE selects the delegated path; the operator (CLI) path's body never
 /// has it. maild reads the envelope ONLY from here — any same-named key inside
 /// `args` is plain user data, ignored for auth.
-const DELEGATION_KEY: &str = "$cosmix_delegation";
+const DELEGATION_KEY: &str = "$mixos_delegation";
 /// The only delegation envelope version this maild understands.
 const ENVELOPE_VERSION: i64 = 1;
 
 /// Dispatch a `maild.vtoken.*` command. Returns `(rc, body_json)`.
 ///
 /// Two mutually-exclusive auth paths, selected by the body:
-/// - body has a top-level `$cosmix_delegation` → the DELEGATED path (webd
+/// - body has a top-level `$mixos_delegation` → the DELEGATED path (webd
 ///   relaying a vhost-admin actor); it NEVER falls back to operator auth.
 /// - otherwise → the OPERATOR path (the trusted CLI), gated on `vtoken_operators`.
 pub async fn dispatch(action: &str, cmd: &IncomingCommand, state: &VtokenBusState) -> (u8, String) {
@@ -75,7 +75,7 @@ pub async fn dispatch(action: &str, cmd: &IncomingCommand, state: &VtokenBusStat
         return (
             RC_ERROR,
             err_body(
-                "auth_denied: a delegated peer must present a $cosmix_delegation envelope; the operator path is not available to it",
+                "auth_denied: a delegated peer must present a $mixos_delegation envelope; the operator path is not available to it",
             ),
         );
     }
@@ -86,7 +86,7 @@ pub async fn dispatch(action: &str, cmd: &IncomingCommand, state: &VtokenBusStat
         );
     }
     match action {
-        // Opaque (C9) verbs — the sender-locked single-segment namespace.
+        // Opaque verbs — the sender-locked single-segment namespace.
         "mint_opaque" => handle_mint_opaque(cmd, state).await,
         "list_opaque" => handle_list_opaque(state).await,
         "lookup_opaque" => handle_lookup_opaque(cmd, state).await,
@@ -98,7 +98,7 @@ pub async fn dispatch(action: &str, cmd: &IncomingCommand, state: &VtokenBusStat
     }
 }
 
-// ─── Opaque (C9) operator handlers ───────────────────────────────────────────
+// ─── Opaque operator handlers ───────────────────────────────────────────
 
 /// `maild.vtoken.mint_opaque` — mint an OPAQUE, sender-locked, single-segment
 /// token. Args: `account`, `real_email`, `verification_strength`
@@ -246,17 +246,17 @@ async fn handle_disable_opaque(cmd: &IncomingCommand, state: &VtokenBusState) ->
     }
 }
 
-// ─── Delegated path (vtoken C2) ──────────────────────────────────────────────
+// ─── Delegated path ──────────────────────────────────────────────
 //
-// webd relays a logged-in vhost-admin actor via the `$cosmix_delegation`
+// webd relays a logged-in vhost-admin actor via the `$mixos_delegation`
 // envelope. webd is the policy decision point (admin RBAC + CSRF + a per-route
 // exact-verb grant, all enforced in webd before the call); maild binds the
 // actor to the target so a confused/compromised webd path can't manage tokens
 // outside the actor's own domain. maild grows NO role model. Design:
-// `~/.cosmix/_plan/2026-06-21-vtoken-c2-delegated-bus-design.md`.
+//
 
 /// The trusted fields webd injects (parsed only from the top-level
-/// `$cosmix_delegation`). The Mix handler cannot write these — webd builds the
+/// `$mixos_delegation`). The Mix handler cannot write these — webd builds the
 /// envelope from request state.
 struct Delegation {
     actor: String,
@@ -266,7 +266,7 @@ struct Delegation {
 }
 
 /// Detect a delegated call: `Some((envelope, args))` iff the body is a JSON
-/// object with a top-level `$cosmix_delegation` key. The inner `args` object
+/// object with a top-level `$mixos_delegation` key. The inner `args` object
 /// (the verb's own arguments) is returned separately — envelope and args are
 /// NEVER merged, so a key like `actor` inside `args` is plain user data. A body
 /// that is empty / not JSON / an object without the key → `None` (operator
@@ -294,7 +294,7 @@ fn detect_delegation(cmd: &IncomingCommand) -> Option<(Value, Value)> {
 fn parse_envelope(env: &Value) -> Result<Delegation, String> {
     let obj = env
         .as_object()
-        .ok_or("$cosmix_delegation must be a JSON object")?;
+        .ok_or("$mixos_delegation must be a JSON object")?;
     match obj.get("version").and_then(Value::as_i64) {
         Some(v) if v == ENVELOPE_VERSION => {}
         Some(v) => return Err(format!("unsupported delegation envelope version {v}")),
@@ -375,7 +375,7 @@ fn check_domain_bind(actor: &str, target_account: &str, vhost: &str) -> Result<(
     Ok(())
 }
 
-/// One audit line per delegated call outcome (Codex C2 §7).
+/// One audit line per delegated call outcome ( §7).
 fn audit_delegated(peer: &str, env: &Delegation, verb: &str, target: &str, rc: u8) {
     tracing::info!(
         peer = peer,
@@ -449,7 +449,7 @@ async fn dispatch_delegated(
     // (4-7) Per-verb: resolve the target, bind it to the actor's domain, act,
     // audit. list is domain-scoped; mutating verbs bind on the token's account.
     match action {
-        // Opaque (C9) verbs — domain-bound on the token's content account.
+        // Opaque verbs — domain-bound on the token's content account.
         "mint_opaque" => delegated_mint_opaque(peer, &env, args, state).await,
         "list_opaque" => delegated_list_opaque(peer, &env, state).await,
         "lookup_opaque" => delegated_lookup_opaque(peer, &env, args, state).await,
@@ -461,7 +461,7 @@ async fn dispatch_delegated(
     }
 }
 
-// ─── Opaque (C9) delegated handlers ──────────────────────────────────────────
+// ─── Opaque delegated handlers ──────────────────────────────────────────
 
 /// `mint_opaque` (delegated) — MINT a sender-locked opaque token for
 /// `args.account` (always active; the explicit/replace path stays operator-only).
@@ -770,7 +770,7 @@ mod tests {
         }
     }
 
-    // ── Delegated path (C2) ──────────────────────────────────────────────
+    // ── Delegated path ──────────────────────────────────────────────
 
     fn good_env(actor: &str, vhost: &str) -> Value {
         serde_json::json!({
@@ -780,7 +780,7 @@ mod tests {
     }
 
     fn deleg_cmd(from: &str, envelope: Value, args: Value) -> IncomingCommand {
-        let body = serde_json::json!({ "$cosmix_delegation": envelope, "args": args });
+        let body = serde_json::json!({ "$mixos_delegation": envelope, "args": args });
         IncomingCommand {
             generation: 0,
             from: from.to_string(),
@@ -815,7 +815,7 @@ mod tests {
         let (rc, out) = dispatch("list_opaque", &cmd("webd", Value::Null), &st).await;
         assert_eq!(rc, RC_ERROR);
         assert!(
-            out.contains("must present a $cosmix_delegation envelope"),
+            out.contains("must present a $mixos_delegation envelope"),
             "{out}"
         );
         let (st2, _t2) = state_full(&["vtoken-cli"], &["webd"], &["admin@example.org"]).await;
@@ -933,7 +933,7 @@ mod tests {
         assert!(out.contains("auth_denied"), "{out}");
     }
 
-    // ── Opaque (C9) verbs ────────────────────────────────────────────────
+    // ── Opaque verbs ────────────────────────────────────────────────
 
     #[tokio::test]
     async fn operator_mint_opaque_roundtrip_list_lookup_disable() {

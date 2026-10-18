@@ -45,7 +45,7 @@ fn attrs_for(role: Option<&str>, subscribed: bool) -> ContainerAttrs {
 /// Reconnect-test fixture: build a per-test sqlite Db + MailStore,
 /// provision the fixture mailbox tree on `account_id=1`, and return
 /// the inner `Arc<SqliteCasMds>` so callers that need to drive
-/// `put_blob` + `create_email` between IMAP sessions (T7) have a
+/// `put_blob` + `create_email` between IMAP sessions have a
 /// direct handle.
 async fn make_db_with_tree_and_mds(
     email: &str,
@@ -426,7 +426,7 @@ async fn lsub_returns_only_subscribed_rows() -> Result<()> {
     assert!(names.contains(&"Sent"), "{names:?}");
     assert!(!names.contains(&"Folder1/Sub"), "{names:?}");
     assert!(!names.contains(&"Trash"), "{names:?}");
-    // Every row must be `* LSUB ...`, not `* LIST ...`.
+    // Every row must be `* LSUB...`, not `* LIST...`.
     for line in &untagged {
         assert!(line.starts_with("* LSUB "), "{line}");
     }
@@ -446,7 +446,7 @@ async fn lsub_requires_authentication() -> Result<()> {
     Ok(())
 }
 
-// ---------- T4: SELECT / EXAMINE / STATUS / CLOSE / UNSELECT ----------
+// ---------- : SELECT / EXAMINE / STATUS / CLOSE / UNSELECT ----------
 
 #[tokio::test]
 async fn select_inbox_emits_full_response_block() -> Result<()> {
@@ -748,7 +748,7 @@ async fn status_requires_authentication() -> Result<()> {
 
 #[tokio::test]
 async fn select_rejects_glued_condstore_paren_atom() -> Result<()> {
-    // Codex MAJOR-1 from T4 cold review: `SELECT INBOX(CONDSTORE)`
+    // -1 from cold review: `SELECT INBOX(CONDSTORE)`
     // without a space must NOT slip through the space-only tokenizer
     // as a single atom and produce NO [NONEXISTENT]. The atom path
     // must reject `(` / `)` / atom-specials and BAD it.
@@ -776,7 +776,7 @@ async fn status_rejects_glued_paren_atom() -> Result<()> {
 
 #[tokio::test]
 async fn close_rejects_trailing_arguments() -> Result<()> {
-    // Codex MINOR-1: CLOSE/UNSELECT take no arguments. A trailing
+    // -1: CLOSE/UNSELECT take no arguments. A trailing
     // token must BAD; do not silently ignore it.
     let (_tmp, db, ms) = make_db_with_tree("alice@example.com", "hunter2").await?;
     let (client, _join) = spawn_session(db, ms, ImapConfig::default()).await;
@@ -818,7 +818,7 @@ async fn capability_advertises_unselect() -> Result<()> {
 }
 
 // =====================================================================
-// T5 — CREATE / DELETE / RENAME / SUBSCRIBE / UNSUBSCRIBE
+// — CREATE / DELETE / RENAME / SUBSCRIBE / UNSUBSCRIBE
 // =====================================================================
 
 #[tokio::test]
@@ -1097,7 +1097,7 @@ async fn rename_with_missing_parent_returns_nonexistent_parent() -> Result<()> {
     let (_tmp, db, ms) = make_db_with_tree("alice@example.com", "hunter2").await?;
     let (client, _join) = spawn_session(db, ms.clone(), ImapConfig::default()).await;
     let (mut reader, mut w) = login(client).await?;
-    // Codex-locked: RENAME does NOT auto-create missing parents.
+    // -locked: RENAME does NOT auto-create missing parents.
     w.write_all(b"a02 RENAME Folder1 NewParent/Moved\r\n")
         .await?;
     let resp = read_line(&mut reader).await?;
@@ -1212,7 +1212,7 @@ async fn subscribe_requires_authentication() -> Result<()> {
 }
 
 // =====================================================================
-// T6 — CREATE with SPECIAL-USE (RFC 6154 §5.1)
+// — CREATE with SPECIAL-USE (RFC 6154 §5.1)
 // =====================================================================
 
 #[tokio::test]
@@ -1428,8 +1428,8 @@ async fn create_with_non_use_parameter_returns_bad() -> Result<()> {
     Ok(())
 }
 
-/// Parse the `<n>` out of `* OK [UIDVALIDITY <n>] ...` /
-/// `* OK [UIDNEXT <n>] ...` lines in a SELECT response block.
+/// Parse the `<n>` out of `* OK [UIDVALIDITY <n>]...` /
+/// `* OK [UIDNEXT <n>]...` lines in a SELECT response block.
 /// Anchored to the start-of-line `* OK [<code> ` prefix so a future
 /// response-code text that happens to contain the literal `[UIDNEXT…`
 /// substring can't fool the parser.

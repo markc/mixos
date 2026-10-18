@@ -1,6 +1,5 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- mds v1.6 schema migration for data.sqlite (per-set metadata).
--- Spec: _doc/planned/maild-sidecar-reap.md + maild Phase 8e gate 2
 -- (synchronous mail_search projection writes inside with_set_tx).
 --
 -- DROPs and re-creates the v1.1 `mail_search` FTS5 virtual table so

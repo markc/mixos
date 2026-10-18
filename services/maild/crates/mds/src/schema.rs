@@ -40,9 +40,9 @@ const BLOBS_V1_SQL: &str = include_str!("schema/blobs_v1.sql");
 /// History:
 ///   v2 — v1.1 amendment (set_state, set_change, blob_refs,
 ///        mail_retrain_outbox, mail_threads, mail_search).
-///   v3 — v1.2 (mail_envelopes; JMAP→MDS migration Phase 1 Task 1.6/1.7).
+/// v3 — v1.2 (mail_envelopes; JMAP→MDS migration Phase 1 /1.7).
 ///   v4 — v1.3 (mail_envelopes.cc/bcc/reply_to; JMAP→MDS migration
-///        Phase 5 Task 5.4a — closes substrate gap C6 for envelope
+/// Phase 5 — closes substrate gap for envelope
 ///        recipient lists used by EmailSubmission auto-detect).
 ///   v5 — v1.4 (container_change_set; mailbox-changes-substrate Phase 1
 ///        — writes only, JMAP read path cuts over in Phase 2).
@@ -95,7 +95,7 @@ pub fn apply_data_migrations(conn: &mut Connection) -> Result<()> {
 /// connection — currently `store::open_set_db` and `import::finalize`.
 ///
 /// The `set_change_seq` allocator (`UPDATE set_state SET
-/// set_change_seq = set_change_seq + 1 ... RETURNING`) also performs
+/// set_change_seq = set_change_seq + 1... RETURNING`) also performs
 /// `INSERT OR IGNORE` defensively so a missed open path self-heals
 /// on first mutation; this helper is the normal hot path that keeps
 /// the row materialised at open time.

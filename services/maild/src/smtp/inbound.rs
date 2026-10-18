@@ -270,7 +270,7 @@ pub async fn deliver(
         },
     };
     for rcpt in rcpt_to {
-        // C7: validity-blind rate cap on the token-shaped namespace — shed
+        // : validity-blind rate cap on the token-shaped namespace — shed
         // (silent-drop) BEFORE any resolve/HMAC work so an attacker can't force
         // unbounded per-message work, and WITHOUT leaking validity (the same
         // per-source + global limit applies to valid + invalid token-shaped
@@ -483,7 +483,7 @@ pub async fn deliver(
     // accepted. The alternatives are worse:
     //
     //   - Fail-fast (return Err on first local failure) reopens the
-    //     round-2 double-delivery MAJOR — the remote queue write at
+    // round-2 double-delivery — the remote queue write at
     //     line ~225 has already committed, so a 451 would prompt the
     //     sender to retry and we'd re-enqueue the remote rows and
     //     re-commit already-landed peer locals.
@@ -492,9 +492,9 @@ pub async fn deliver(
     //     is out of scope for the Phase 7 silent-drop fix.
     //
     // Logging-and-continue matches the local-delivery branch in
-    // `jmap/submission.rs` (Phase 4 Task 4.4), which made the same
+    // `jmap/submission.rs` (Phase 4), which made the same
     // tradeoff for the same reason. Disposition recorded in the
-    // Phase 7 commit and Codex round-5 review.
+    // Phase 7 commit and round-5 review.
     for (rcpt, account, vtoken_ctx) in &local_recipients {
         let rcpt = rcpt.as_str();
 
@@ -577,7 +577,7 @@ pub async fn deliver(
         let inbound_filter_target = filter_target.clone();
         let inbound_spam_is_spam = spam_verdict.as_deref() == Some("SPAM");
         // Returns `(mailbox_id, landed_in_named_target)` — the bool is true ONLY
-        // when the message landed in exactly the mailbox the filter named (not a
+        // when the message exactly the mailbox the filter named (not a
         // fallback). The content marker (below) requires it, so a filter that
         // named `Posts` but fell back to Inbox (Posts missing) never marks the
         // message — closing the "marked-but-misrouted, then moved into Posts"
@@ -623,7 +623,7 @@ pub async fn deliver(
 
         // Build envelope from the parsed message — same shape Email/set
         // create writes (Phase 3) and the local-recipient delivery
-        // branch in submission.rs writes (Phase 4 Task 4.4). `cc` is
+        // branch in submission.rs writes (Phase 4). `cc` is
         // not carried in `EmailEnvelope` (substrate gap deferred); the
         // raw RFC 5322 Cc: header is preserved in the blob bytes and
         // re-parsed by clients on read.
@@ -848,7 +848,7 @@ pub async fn deliver(
                 message_id_host,
             );
 
-            // Queue the auto-reply for outbound delivery. Task 5.4b:
+            // Queue the auto-reply for outbound delivery. :
             // bytes go straight into the shared CAS via
             // `mds.put_blob` (idempotent on hash); the legacy
             // `db::blob::store` write is replaced and the resulting
@@ -929,7 +929,7 @@ fn render_header_from(message: &mail_parser::Message<'_>) -> String {
 /// multi-`From` spoofing gap). Display names, comments, and groups are unwrapped
 /// by the parser; case / IDN folding by [`crate::vtoken::canonical_addr`].
 ///
-/// Used by the vtoken sender-lock (C4) to derive the external-path sender
+/// Used by the vtoken sender-lock to derive the external-path sender
 /// identity (the local-auth path uses the session-authenticated submitter).
 fn canonical_single_from(message: &mail_parser::Message<'_>) -> Option<String> {
     let mut addrs: Vec<String> = Vec::new();
@@ -973,7 +973,7 @@ fn dmarc_aligned_pass(verify_result: &VerifyResult) -> bool {
 ///   aligned (relaxed: equal to or a subdomain of that org domain).
 ///   Without that check an attacker could DMARC-pass their own From
 ///   domain while forging a victim MAIL FROM and still farm backscatter
-///   (Codex review catch).
+/// ( catch).
 ///
 /// A forged MAIL FROM fails both arms. Senders with no SPF and no DMARC
 /// get no auto-reply — the RFC 3834 trade: silence over backscatter.
@@ -1056,7 +1056,7 @@ async fn run_inbound_filter(
             );
 
             // Self-protection knobs (mirrors the webd embed in
-            // cosmix-webd/src/mix_handler.rs). The filter is operator-
+            // webd/src/mix_handler.rs). The filter is operator-
             // authored/trusted, but it runs on the mail-delivery hot path
             // with attacker-influenced inputs (FROM/SUBJECT), so a buggy
             // or pathological filter must not be able to wedge a blocking
@@ -1078,7 +1078,7 @@ async fn run_inbound_filter(
             // allow Pure + FsRead and deny FsWrite/Network/Process/Env
             // (and the shell syntax they gate). Bus is not in the allowlist
             // and no Bus handler is installed, so send/emit are denied by
-            // class (cosmix-lib-mix ≥ 0.89.0) — a catchable
+            // class (mix ≥ 0.89.0) — a catchable
             // CAPABILITY_DENIED, not the pre-0.89 silent no-op.
             eval.set_capability_policy(std::rc::Rc::new(mix::CategoryAllowList::new(&[
                 mix::CapabilityClass::FsRead,
@@ -1176,10 +1176,10 @@ async fn classify_inbound(
     // Stringify the existing i32 account id to match the bayesian
     // backend's per-account on-disk layout (`<base>/<id>/...`).
     let account_id = AccountId::new(account.id.to_string());
-    // SPEC 12 Phase 2 — resolve per-account overrides from the
+    // the props contract Phase 2 — resolve per-account overrides from the
     // property substrate. Absence / tombstone returns
     // `AccountOverrides::default()` inside the helper (preserves the
-    // pre-C2 behaviour); any other storage error is logged and the
+    // pre- behaviour); any other storage error is logged and the
     // delivery path falls back to defaults so a substrate hiccup
     // never blocks inbound mail.
     let overrides = crate::props::account_overrides::read_account_overrides_by_email(

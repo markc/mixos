@@ -70,7 +70,7 @@ fn record_to_jmap(r: &MailboxRecord) -> serde_json::Value {
 /// Reads the mailbox list from `MailStore::list_mailboxes` and the
 /// JMAP `state` token from `MailStore::mailbox_state` — the paired
 /// `"<lifecycle_seq>:<set_change_seq>"` form documented in
-/// `_doc/planned/mailbox-changes-substrate.md` §"State token". Phase 2
+///  §"State token". Phase 2
 /// (MCS) closed the legacy `db::changelog` Mailbox bridge here.
 pub async fn get(
     _db: &Db,
@@ -185,7 +185,7 @@ pub async fn query(
 /// the [`MailStore`] surface, whose substrate impl emits the
 /// `container_change_set` lifecycle rows that `Mailbox/changes` reads
 /// back. The MCS Phase 2 cutover removed the parallel
-/// `db::changelog::record(..., "Mailbox", ...)` writes — the substrate
+/// `db::changelog::record(..., "Mailbox",...)` writes — the substrate
 /// row IS the change-stream entry now.
 pub async fn set(
     _db: &Db,
@@ -578,7 +578,7 @@ pub async fn set(
             // Single combined call: rename/reparent + attrs go in one
             // `with_set_tx` so a concurrent destroy can't land between
             // a rename commit and an attrs commit (Sonnet review of
-            // Task 2.4 — see `MailStore::update_mailbox` doc).
+            // — see `MailStore::update_mailbox` doc).
             let parent_arg: Option<Option<ContainerId>> = if new_parent_set {
                 Some(new_parent)
             } else {
@@ -689,7 +689,7 @@ pub async fn set(
             // `not_destroyed` using the JSON literal as the key —
             // mirrors the malformed-UUID arm so the client learns
             // that every requested id was processed exactly once
-            // (Sonnet review of Task 2.5: silent `continue` here was
+            // (Sonnet review of : silent `continue` here was
             // inconsistent with the malformed-UUID branch right
             // below).
             let id_str = match id_val.as_str() {
@@ -813,7 +813,7 @@ fn set_error_invalid_properties(prop: &str, why: &str) -> SetError {
 ///   * `"mailbox parent not found"` → `invalidProperties` (`parentId`)
 ///   * `"mailbox already exists"` → `invalidProperties` (`name`)
 ///   * `"mailbox special-use already in use"` →
-///     `invalidProperties` (`role`) — the storage barrier (T6) catches
+/// `invalidProperties` (`role`) — the storage barrier catches
 ///     concurrent-peer wins that the pre-create snapshot scan missed.
 ///   * anything else → `serverFail` (with the error string preserved
 ///     in `description` for operator triage).
@@ -934,7 +934,7 @@ fn set_error_for_destroy(err: &anyhow::Error) -> SetError {
 /// Mailbox/changes — RFC 8621 §2.6.
 ///
 /// Backed by `MailStore::mailbox_changes` against the MCS Phase 2
-/// substrate (`_doc/planned/mailbox-changes-substrate.md`): the
+/// substrate: the
 /// `container_change_set` lifecycle stream paired with the
 /// `set_change` count stream. `sinceState` is the
 /// `"<lifecycle_seq>:<set_change_seq>"` token previously returned

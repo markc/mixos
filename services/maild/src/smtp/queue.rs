@@ -3,7 +3,7 @@
 
 //! Outbound SMTP queue — SQLite-backed message queue.
 //!
-//! Task 5.4b: queue rows now carry `blob_hash` (hex-encoded
+//! : queue rows now carry `blob_hash` (hex-encoded
 //! `mds::BlobHash`) into the shared CAS. Pre-Task-5.4b rows
 //! still carry the legacy `blob_id` UUID; the delivery worker prefers
 //! `blob_hash` and falls back to `blob_id` so in-flight entries keep
@@ -24,7 +24,7 @@ pub struct QueueEntry {
     /// Legacy per-account UUID. `Some` only for pre-Task-5.4b rows
     /// that still need `db::blob::load` to fetch bytes.
     pub blob_id: Option<Uuid>,
-    /// CAS hash. `Some` for all Task 5.4b+ rows; the delivery worker
+    /// CAS hash. `Some` for all + rows; the delivery worker
     /// uses this in preference to `blob_id`.
     pub blob_hash: Option<BlobHash>,
     pub attempts: i32,

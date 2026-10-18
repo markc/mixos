@@ -4,7 +4,7 @@
 //! Phase 1a covers container-set + container lifecycle. Item / blob
 //! / change-notification / GC / verify methods still return
 //! `unimplemented!()` and land in subsequent phases per
-//! `_doc/2026-04-29-mds-plan.md`.
+//!.
 //!
 //! # Write-lock order
 //!
@@ -319,7 +319,7 @@ pub trait Mds: Send + Sync {
     /// `mds.changelog.pruned` Bus event on success (no-op included),
     /// post-commit, with the new floor.
     ///
-    /// See `_doc/planned/mailbox-changes-substrate.md` MCS Phase 3.
+    /// See  MCS Phase 3.
     fn prune_changelog(
         &self,
         set: &SetId,
@@ -801,11 +801,11 @@ impl<'a> SqliteSetTx<'a> {
     /// This is the **single substrate write surface** for container
     /// attrs mutation. maild's `MailStore::update_mailbox` was
     /// previously a raw `UPDATE container SET attrs = ?` via the
-    /// `tx()` escape hatch; MCS-P1-D cuts it over to this method so
+    /// `tx()` escape hatch; the transaction facade cuts it over to this method so
     /// the `container_change_set` invariant ("every container
     /// mutation produces a row") holds end-to-end. See the
     /// trait-boundary discipline note in
-    /// `_doc/planned/mailbox-changes-substrate.md`
+    ///
     /// §"Trait surface change".
     ///
     /// See [`container::update_container_attrs_in_tx`] for the full
@@ -920,7 +920,7 @@ impl<'a> SqliteSetTx<'a> {
     /// Caller-supplied `flags` is the fallback only when no other
     /// membership currently exists.
     ///
-    /// Used by maild's `MailStore::add_memberships` to apply Task 3.4
+    /// Used by maild's `MailStore::add_memberships` to apply
     /// "added mailbox" deltas in JMAP `Email/set update`. For
     /// brand-new items use [`Self::add_item_with_memberships`]
     /// instead — that path emits an aggregate `ItemAdded` Bus event
@@ -931,8 +931,8 @@ impl<'a> SqliteSetTx<'a> {
     /// (notifier on dest) + `ItemCopied` (Bus) events for post-commit
     /// replay; on rollback both are dropped. See
     /// [`container::add_membership_in_tx`] for the full error contract:
-    /// `ItemNotFound`, `ContainerNotFound`, and a `"item ... already in
-    /// container ..."` `Error::Other` on duplicate.
+    /// `ItemNotFound`, `ContainerNotFound`, and a `"item... already in
+    /// container..."` `Error::Other` on duplicate.
     pub fn add_membership(
         &mut self,
         item_id: &ItemId,
@@ -957,7 +957,7 @@ impl<'a> SqliteSetTx<'a> {
     /// inheritance rather than `ORDER BY container_id LIMIT 1`.
     ///
     /// **Source membership is required**: if `(item_id, src)` has no
-    /// row this returns an `"item ... not in source container ..."`
+    /// row this returns an `"item... not in source container..."`
     /// error rather than falling back to an empty-flags membership.
     /// The IMAP dispatch always names the selected source mailbox; a
     /// concurrent EXPUNGE/MOVE that drops `src`'s membership between
@@ -1070,7 +1070,7 @@ impl<'a> SqliteSetTx<'a> {
     /// `store_item_flags` is the JMAP fan-out path; this primitive is
     /// its inverse — it MUST NOT walk siblings or RFC 8621 §4.4.6's
     /// JMAP-keywords-are-union contract breaks. See
-    /// `_doc/planned/imap-runway.md` §P1 for the architectural
+    /// § for the architectural
     /// rationale.
     ///
     /// `Error::Other("membership (item, container) not present")` if
@@ -1394,7 +1394,7 @@ impl Mds for SqliteCasMds {
     // The legacy public `Mds` container CRUD methods route through
     // `with_set_tx` so they pick up the typed SetTx instrumentation
     // (notifier channel drop, Bus event buffering, and the
-    // `container_change_set` lifecycle row from MCS-P1-C). Direct-
+    // `container_change_set` lifecycle row from the lifecycle implementation). Direct-
     // connection variants used to live in `container.rs` but became
     // a permanent hole the moment Phase 1 wired the lifecycle stream:
     // any non-maild caller of the trait would silently bypass the

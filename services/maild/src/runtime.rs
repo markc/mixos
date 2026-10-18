@@ -5,7 +5,7 @@
 //!
 //! `build_runtime(cfg, opts)` performs the long startup sequence that
 //! used to live inline in `main.rs::Command::Serve`: open the SQLite
-//! and MDS stores, register the SPEC 12 property namespaces, bootstrap
+//! and MDS stores, register property namespaces, bootstrap
 //! the rule-engine config from substrate, build the inbound DATA
 //! pipeline, and assemble the axum router. Bin and integration tests
 //! share the same entry point so the e2e fixture cannot drift from
@@ -124,7 +124,7 @@ pub struct BuiltMaild {
     /// the broker hit the same state. Cheap to clone (every field is
     /// already `Arc`-shaped).
     tls_state: bus::tls::TlsReloadState,
-    /// SPEC 12 `maild.log` substrate runtime. The serve path passes
+    /// the props contract `maild.log` substrate runtime. The serve path passes
     /// this to `logging::props::attach` so an operator's
     /// `props.set maild.log { level: "debug" }` swaps the live filter.
     log_runtime: logging::props::LogNamespace,
@@ -152,7 +152,7 @@ impl BuiltMaild {
             .clone()
     }
 
-    /// SPEC 12 `maild.log` substrate runtime. The serve path passes
+    /// the props contract `maild.log` substrate runtime. The serve path passes
     /// this to `logging::props::attach` so a live filter swap
     /// follows `props.set maild.log { level: "debug" }`.
     pub fn log_runtime(&self) -> logging::props::LogNamespace {
@@ -167,7 +167,7 @@ impl BuiltMaild {
     }
 }
 
-/// C9 opaque-vtoken namespace pre-flight (see the call site in
+/// opaque-vtoken namespace pre-flight (see the call site in
 /// [`build_runtime`]). Scans every existing `maild.accounts` and `maild.aliases`
 /// row for a local-part that is opaque-token-shaped
 /// ([`crate::vtoken::is_opaque_shaped`]). Returns `true` only when none collide,
@@ -203,7 +203,7 @@ async fn preflight_opaque_namespace_clear(
                 tracing::warn!(
                     namespace = label,
                     error = %e,
-                    "C9 opaque pre-flight: namespace list failed; disabling opaque vtoken RCPT \
+                    "opaque namespace pre-flight: namespace list failed; disabling opaque vtoken RCPT \
                      (fail-safe)"
                 );
                 return false;
@@ -211,12 +211,12 @@ async fn preflight_opaque_namespace_clear(
         }
     }
     if collisions.is_empty() {
-        tracing::info!("C9 opaque pre-flight: clean; opaque vtoken RCPT acceptance enabled");
+        tracing::info!("opaque namespace pre-flight: clean; opaque vtoken RCPT acceptance enabled");
         true
     } else {
         tracing::warn!(
             ?collisions,
-            "C9 opaque pre-flight: existing account/alias local-parts collide with the opaque \
+            "opaque namespace pre-flight: existing account/alias local-parts collide with the opaque \
              vtoken shape; DISABLING opaque vtoken RCPT acceptance (fail-safe). Rename/remove \
              the listed addresses and restart to enable."
         );
@@ -260,7 +260,7 @@ pub async fn build_runtime(cfg: &Config, opts: RuntimeOpts) -> Result<BuiltMaild
     };
     let mail_auth = Arc::new(maild_auth::MailAuthVerifier::new(resolver, auth_cfg));
 
-    // SPEC 12 Phase 3 C4 — engine handle is wired to the substrate
+    // the props contract Phase 3 — engine handle is wired to the substrate
     // row at startup. The handle is constructed empty so the
     // substrate registration below can take it; the engine is built
     // AFTER the substrate row is read so boot config reflects
@@ -336,7 +336,7 @@ pub async fn build_runtime(cfg: &Config, opts: RuntimeOpts) -> Result<BuiltMaild
         bayes_backend,
     ));
 
-    // MailStore over cosmix-mds.
+    // MailStore over mds.
     let mds = Arc::new(mds::SqliteCasMds::open(&cfg.mds_dir)?);
     let mailstore = Arc::new(mailstore::SqliteMailStore::new(mds.clone()));
     tracing::info!(mds_dir = %cfg.mds_dir, "MailStore opened");
@@ -359,7 +359,7 @@ pub async fn build_runtime(cfg: &Config, opts: RuntimeOpts) -> Result<BuiltMaild
         bus::verdict::CHANNEL_CAPACITY,
     );
 
-    // SPEC 12 property substrate. Second rusqlite connection on the
+    // the props contract property substrate. Second rusqlite connection on the
     // same database file; PRAGMAs keep the two connections
     // serialised at the SQLite layer.
     let props_conn = {
@@ -380,7 +380,7 @@ pub async fn build_runtime(cfg: &Config, opts: RuntimeOpts) -> Result<BuiltMaild
             .map_err(|e| anyhow::anyhow!("open property store: {e}"))?,
     );
     let mut props_router = ::props::bus::mutation::PropsRouter::new("maild");
-    // SPEC 12 Phase 2 register order: account_overrides first, accounts
+    // the props contract Phase 2 register order: account_overrides first, accounts
     // second, then populate the OnceLock so account_overrides::before_set
     // can resolve the accounts runtime.
     let accounts_runtime_lock = std::sync::Arc::new(std::sync::OnceLock::new());
@@ -407,10 +407,10 @@ pub async fn build_runtime(cfg: &Config, opts: RuntimeOpts) -> Result<BuiltMaild
         .map_err(|_| {
             anyhow::anyhow!("accounts_runtime_lock already populated (double-register?)")
         })?;
-    // SPEC 12 Phase 3 C3/C4 — `maild.engine_config` singleton.
+    // the props contract Phase 3 — `maild.engine_config` singleton.
     let engine_config_runtime =
         props::engine_config::register(&mut props_router, &props_store, engine_lock.clone())?;
-    // SPEC 12 — `maild.retention` singleton (the in-process retention
+    // the props contract — `maild.retention` singleton (the in-process retention
     // worker's config surface). Ships fully inert (0-day windows,
     // dry_run:true) so registering it changes no behaviour; the worker
     // that consumes it lands in retention Phase 1. No bootstrap-write:
@@ -546,7 +546,7 @@ pub async fn build_runtime(cfg: &Config, opts: RuntimeOpts) -> Result<BuiltMaild
     // Phase 2; consumers (RCPT TO gate, HELO selection, DKIM signer,
     // TLS resolver) plumb in over Phases 3–5.
     let domains_runtime = props::domains::register(&mut props_router, &props_store)?;
-    // SPEC 12 `maild.aliases` (Phase 1 local-target aliases). Reads
+    // the props contract `maild.aliases` (Phase 1 local-target aliases). Reads
     // accounts for the key-not-account / target-is-account guards. The
     // `aliases_runtime_lock` created above is populated here so accounts'
     // reciprocal collision check (account ∉ alias keys) can read it.
@@ -565,14 +565,14 @@ pub async fn build_runtime(cfg: &Config, opts: RuntimeOpts) -> Result<BuiltMaild
     {
         tracing::warn!(error = %e, "maild.aliases reconciliation diagnostic failed");
     }
-    // C9 opaque-vtoken pre-flight: an opaque RCPT (single-segment HMAC namespace)
+    // opaque-vtoken pre-flight: an opaque RCPT (single-segment HMAC namespace)
     // is only accepted if NO existing account/alias local-part already collides
     // with the opaque token shape — otherwise an opaque RCPT could silently
     // swallow a real mailbox. Fail-safe: any collision (or a read error)
     // disables opaque acceptance for this run; segmented vtokens are unaffected.
     let opaque_rcpt_enabled =
         preflight_opaque_namespace_clear(&accounts_runtime, &aliases_runtime).await;
-    // SPEC 12 reserved `maild.log` namespace — live `EnvFilter` swap
+    // the props contract reserved `maild.log` namespace — live `EnvFilter` swap
     // driven by `<svc>.props.set maild.log { level: "debug" }`. The
     // returned runtime is held in `BuiltMaild`; main's serve path calls
     // `logging::props::attach` once the tokio runtime + the
@@ -597,7 +597,7 @@ pub async fn build_runtime(cfg: &Config, opts: RuntimeOpts) -> Result<BuiltMaild
             );
         }
     }
-    // SPEC 12 §15.5 / C10d — install the production SubscribeGranter
+    // the props contract — install the production SubscribeGranter
     // BEFORE the router is sealed behind Arc.
     let subscribe_granter = Arc::new(bus::subscribe_granter::NodedSubscribeGranter::new(
         bus::subscribe_granter::new_broker_handle(),

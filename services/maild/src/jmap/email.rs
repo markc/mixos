@@ -43,28 +43,28 @@ use crate::mailstore::{
 /// `db::email::create` allocates ids via `Uuid::new_v4()`
 /// (`db/email.rs:235`), while mds `MailStore::create_email`
 /// allocates via `Uuid::now_v7()`
-/// (`cosmix-mds/src/container.rs:2248`). The two id spaces are
+/// (`mds/src/container.rs:2248`). The two id spaces are
 /// disjoint; no row is ever looked up by the wrong id.
 ///
 /// The proper fix is substrate-shaping work: extend
 /// `mail_envelopes` to carry the missing fields and add a reverse
 /// `thread_for_email` MailStore method. That work is tracked as
-/// C6 in `_journal/2026-05-08-codex-replay-sonnet-provisional.md`
+/// in
 /// (Email-side substrate task). Until then this projection
 /// preserves the wire keys so JMAP clients do not see fields
 /// silently disappear; the values fill in once the substrate
 /// catches up.
 ///
 /// `keywords` collapses [`Flags`] into the JMAP keyword map. Bits
-/// allocated by `cosmix-mds` (see [`Flags`] doc-comment in
-/// `cosmix-mds/src/types.rs`) — `\Seen`, `\Flagged`, `\Answered`,
+/// allocated by `mds` (see [`Flags`] doc-comment in
+/// `mds/src/types.rs`) — `\Seen`, `\Flagged`, `\Answered`,
 /// `\Draft` — project as `$seen`, `$flagged`, `$answered`, `$draft`.
 /// `\Deleted` has no JMAP counterpart (RFC 8621 routes deletion
 /// through `Email/set destroy`, not a keyword toggle) and is
 /// dropped. RFC 8621 §4.1.4 keywords without a substrate bit
 /// (`$forwarded`, `$junk`, `$notjunk`, `$phishing`) require
-/// additional bit allocations in `cosmix-mds` plus per-membership
-/// `Tags` projection — tracked as C6 alongside the envelope-field
+/// additional bit allocations in `mds` plus per-membership
+/// `Tags` projection — tracked as alongside the envelope-field
 /// substrate work.
 ///
 /// `blobId` is the CAS hash hex — stable across accounts and the
@@ -129,7 +129,7 @@ fn record_to_jmap(r: &EmailRecord) -> serde_json::Value {
     serde_json::json!({
         "id": r.id.0.to_string(),
         "blobId": mds::blob::hex(&r.blob_hash),
-        // Substrate-pending (C6) — see fn doc.
+        // Substrate-pending — see fn doc.
         "threadId": serde_json::Value::Null,
         "size": r.size_bytes,
         "receivedAt": received_at,
@@ -137,21 +137,21 @@ fn record_to_jmap(r: &EmailRecord) -> serde_json::Value {
         "keywords": flags_and_tags_to_keywords(r.keywords, &r.tags),
         "subject": r.envelope.subject,
         "messageId": message_id,
-        // Substrate-pending (C6).
+        // Substrate-pending.
         "inReplyTo": serde_json::Value::Null,
         // `from` / `to` / `cc` / `bcc` / `replyTo` are projected as
         // bare strings / arrays of bare addr-spec strings — the RFC
         // 8621 §4.1.2 `[EmailAddress]` object form (with separate
-        // `name` / `email` fields) remains substrate-pending C6.
+        // `name` / `email` fields) remains substrate-pending.
         // The recipient lists themselves are now substrate-backed
-        // (cosmix-mds v1.3 schema).
+        // (mds v1.3 schema).
         "from": r.envelope.from,
         "to": to_value,
         "cc": cc_value,
         "bcc": bcc_value,
         "replyTo": reply_to_value,
         "date": date,
-        // Substrate-pending (C6).
+        // Substrate-pending.
         "preview": serde_json::Value::Null,
         // Email/get replaces this after successful bounded MIME inspection.
         // Unreadable and over-limit messages retain an unknown value.
@@ -216,7 +216,7 @@ fn apply_email_properties(
 /// Map an MDS [`Flags`] bitmap onto a JMAP keyword object.
 ///
 /// Allocated bits (see [`Flags`] doc-comment in
-/// `cosmix-mds/src/types.rs`):
+/// `mds/src/types.rs`):
 ///   * bit 0 `\Seen`     → `$seen`
 ///   * bit 1 `\Flagged`  → `$flagged`
 ///   * bit 2 `\Answered` → `$answered`
@@ -463,7 +463,7 @@ pub async fn get(
     // a TOCTOU where the state advances past a write whose effects
     // are not reflected in `list`.
     //
-    // Phase 3 Task 3.7: state is now read from `MailStore::email_state`
+    // Phase 3 : state is now read from `MailStore::email_state`
     // (per-set `set_change_seq` head) rather than the legacy
     // `db::changelog::current_state(_, "Email")` row, since the
     // `Email`-type changelog stops being written once `Email/set`
@@ -683,7 +683,7 @@ fn add_body_parts(
 /// `FilterOperator` (`AND`/`OR`/`NOT`) all surface a method-level
 /// `unsupportedFilter` per RFC 8621 §4.4.2 — better than the legacy
 /// handler's silent shape-mismatch swallow (`serde_json::from_value(...)
-/// .ok()` collapsed any malformed condition to `None`, hiding client bugs).
+///.ok()` collapsed any malformed condition to `None`, hiding client bugs).
 ///
 /// Sort accepts a single comparator on `receivedAt`, `subject` (RFC
 /// 5256 base subject — prefix-stripped, lowercased), or `from` (bare
@@ -714,7 +714,7 @@ pub async fn query(
     // Fetching after the read would create the inverse TOCTOU where
     // `state` reflects a write whose ids did not appear.
     //
-    // Phase 3 Task 3.7: state derives from `MailStore::email_state`
+    // Phase 3 : state derives from `MailStore::email_state`
     // (per-set `set_change_seq` head); the legacy
     // `db::changelog::current_state(_, "Email")` row stops being
     // written once `Email/set` and `Email/import` migrate to MDS.
@@ -797,7 +797,7 @@ pub async fn query(
                 // `invalidArguments`, not `serverFail` — the client passed
                 // an `inMailbox` id that does not exist in the account's
                 // mailbox set (RFC 8621 §4.4.2). `query_emails` returns
-                // this case as a bare `anyhow!("mailbox not found: ...")`
+                // this case as a bare `anyhow!("mailbox not found:...")`
                 // (`mailstore/mod.rs:1530`); we re-raise it as a typed
                 // method error so the dispatcher emits the correct error
                 // triple. The classification by message-prefix mirrors the
@@ -958,7 +958,7 @@ fn parse_query_filter(filter: Option<&serde_json::Value>) -> Result<EmailQueryFi
     // Reject unknown / unsupported condition keys up front so the client
     // sees a single decisive error instead of a partial filter that
     // silently dropped half the predicates. `text` (whole-message FTS) is
-    // backed by the `mail_search` projection; the remaining cosmix-mds
+    // backed by the `mail_search` projection; the remaining mds
     // surface (`mail_envelopes` for per-field envelope substring, the
     // `attachments` projection, thread-keyword aggregates) is not yet
     // wired — until it lands, refusing those is better than guessing.
@@ -1249,14 +1249,14 @@ fn parse_keyword_filter(v: &serde_json::Value, field: &str) -> Result<KeywordFil
     }
 }
 
-/// Email/set (RFC 8621 §4.6) — Migrated to the cosmix-mds-backed
-/// MailStore as part of Tasks 3.3 / 3.4 / 3.5 of the JMAP→MDS
+/// Email/set (RFC 8621 §4.6) — Migrated to the mds-backed
+/// MailStore as part of / 3.4 / 3.5 of the JMAP→MDS
 /// migration plan.
 ///
 /// **Reduced-atomic landing (option 1b).** Multi-mailbox replacement
 /// in the `update` branch is gated behind
 /// [`MailStore::set_mailboxes`], which is not yet implemented. Until
-/// the follow-up Task 18c lands that primitive, an `update` patch
+/// the follow-up lands that primitive, an `update` patch
 /// whose `mailboxIds` would result in more than one mailbox (or that
 /// changes membership for an email currently in more than one
 /// mailbox) surfaces as `invalidArguments` with the description
@@ -1718,7 +1718,7 @@ pub async fn set(
             // delta) against the account's mailbox snapshot so a
             // phantom destination is rejected *before* the keywords
             // mutation runs in Phase 3 (closes the "keywords commits,
-            // move fails on bad dest" leak Codex flagged). Concurrent
+            // move fails on bad dest" leak flagged). Concurrent
             // mailbox deletion between this snapshot and the move
             // remains a residual race window.
             if patch_failed.is_none()
@@ -1823,7 +1823,7 @@ pub async fn set(
             // Residual non-atomicity (race between the two writes
             // below, or between Phase 2 and Phase 3) is acknowledged
             // as an option 1b limitation — see `MailStore::patch_email`
-            // tracking in Task 18c.
+            // tracking in.
             if patch_failed.is_none()
                 && let Some((flags, tags)) = new_keywords.clone()
             {
@@ -2164,13 +2164,13 @@ fn canonical_retrain_stamp(item_id: ItemId) -> String {
     item_id.0.to_string()
 }
 
-/// Create an email item via the cosmix-mds-backed MailStore. Used by
+/// Create an email item via the mds-backed MailStore. Used by
 /// `Email/set { create }` and `Email/import`.
 ///
 /// Expected JMAP shape (RFC 8621 §4.5 / §4.6):
 ///
 /// - `blobId` (required) — a UUID returned by `/jmap/upload`. Post
-///   Task 3.3a, the upload mints a `MailStore::BlobId` alias (a
+///, the upload mints a `MailStore::BlobId` alias (a
 ///   per-account `blob_refs` row tied to a temp item in
 ///   `__upload_staging__`), and this lookup resolves it via
 ///   `MailStore::resolve_blob_ref` → `BlobHash`. Pre-migration
@@ -2351,7 +2351,7 @@ async fn create_from_blob(
         // mailbox memberships as requested, return its id rather
         // than allocating a new one. Backs the JMAP `Email/import`
         // idempotency contract — see
-        // `_doc/planned/jmap-mds-migration.md` §3.5b. The check is
+        //  §3.5b. The check is
         // gated on the `idempotent` flag so regular `Email/set
         // create` keeps RFC-/legacy-default semantics where two
         // `create` entries for the same blob produce two distinct
@@ -2411,7 +2411,7 @@ async fn create_from_blob(
 
 /// Email/import (RFC 8621 §4.6) — import raw RFC 5322 messages.
 ///
-/// Migrated to the MailStore in Task 3.5b. State tokens derive from
+/// Migrated to the MailStore in. State tokens derive from
 /// [`MailStore::email_state`]; the legacy SQLite `changelog` table is
 /// no longer consulted for the `Email` type. Per-entry success
 /// tracking (`created` vs `notCreated`) honours JMAP §5.5 partial
@@ -2437,15 +2437,13 @@ pub async fn import(
             // `Email/import` IS idempotent on (account, blob_hash,
             // mailbox-set): re-importing the same blob into the same
             // mailbox set returns the existing email id rather than
-            // allocating a new one. See
-            // `_doc/planned/jmap-mds-migration.md` §3.5b — the
-            // migration plan promotes RFC 8621 §4.6's SHOULD to MUST
+            // allocating a new one. Maild promotes RFC 8621 §4.6's SHOULD to MUST
             // for the same-blob-same-mailbox case.
             match create_from_blob(_db, mailstore, account_id, entry, true).await {
                 Ok(item_id) => {
                     // RFC 8621 §4.6: the import response carries the
                     // imported email's id, blobId, threadId, and size.
-                    // `threadId` is substrate-pending (C6) and projects
+                    // `threadId` is substrate-pending and projects
                     // as null; `size` is read back via MailStore for an
                     // accurate post-write value.
                     let ms = mailstore.clone();
@@ -2503,7 +2501,7 @@ pub(super) fn type_name_of_json(v: &serde_json::Value) -> &'static str {
 
 /// Email/changes — RFC 8621 §4.1.5.
 ///
-/// Sources deltas from the cosmix-mds `set_change` stream via
+/// Sources deltas from the mds `set_change` stream via
 /// [`MailStore::email_changes`] rather than the legacy SQLite
 /// `changelog` table. The MailStore primitive returns the *full*
 /// delta since `sinceState`; this handler is the protocol-layer
@@ -2686,7 +2684,7 @@ mod tests {
 
     use crate::mailstore::{EmailEnvelope, EmailRecord};
 
-    /// Review MINOR-8: a JMAP move across Junk must train through the
+    /// Review : a JMAP move across Junk must train through the
     /// logged, superseding inline path — not call the classifier directly.
     #[tokio::test]
     async fn retrain_for_move_trains_through_the_logged_inline_path() {
@@ -2736,7 +2734,7 @@ mod tests {
         let stats = classifier.peek_stats(&AccountId::new("7")).await.unwrap();
         assert_eq!(stats.labelled_spam, 1);
 
-        // Review R2: event order is not lock order. A JMAP move that began
+        // Review : event order is not lock order. A JMAP move that began
         // BEFORE an IMAP move of the same message was queued must not
         // cancel that newer row: it survives, drains after the JMAP label,
         // and the user's later IMAP action decides the final label.
@@ -2999,11 +2997,11 @@ mod tests {
 
     #[test]
     fn record_to_jmap_substrate_pending_fields_project_as_null_or_false() {
-        // C5 contract (post-Task 5.4a): `cc`, `bcc`, `replyTo` are now
-        // substrate-backed (cosmix-mds v1.3 schema) and project as
+        // contract (post-): `cc`, `bcc`, `replyTo` are now
+        // substrate-backed (mds v1.3 schema) and project as
         // arrays — empty when the source had no Cc/Bcc/Reply-To
         // header. The keys that remain null/false are the ones still
-        // pending C6 substrate work: threadId, inReplyTo, preview,
+        // pending substrate work: threadId, inReplyTo, preview,
         // hasAttachment, spamScore, spamVerdict.
         let v = record_to_jmap(&sample_record());
         let obj = v.as_object().unwrap();
@@ -3018,11 +3016,11 @@ mod tests {
 
     #[test]
     fn record_to_jmap_from_to_project_as_bare_strings_pre_substrate() {
-        // C5 contract: pre-C6, `from` / `to` / `cc` / `bcc` /
+        // contract: pre-, `from` / `to` / `cc` / `bcc` /
         // `replyTo` carry the bare-string / string-array shape from
         // `EmailEnvelope`, NOT the RFC 8621 §4.1.2 `[EmailAddress]`
         // object form. Documenting the currently-shipped shape so a
-        // future C6 migration that changes it is a deliberate wire
+        // future migration that changes it is a deliberate wire
         // break, not an accident.
         let v = record_to_jmap(&sample_record());
         let obj = v.as_object().unwrap();
@@ -3385,11 +3383,11 @@ mod tests {
     }
 
     // ---------------------------------------------------------------
-    // Pre-staged contract tests for Tasks 3.3 / 3.4 / 3.5 / 3.5b.
+    // Pre-staged contract tests for / 3.4 / 3.5 / 3.5b.
     //
     // These are `#[ignore]`'d stubs that document the JMAP semantics
     // the MailStore-backed Email/set rewrite must honour. They exist
-    // so the Codex-reviewed substrate work can convert each into a
+    // so the substrate work can convert each into a
     // real failing test before implementation, then green it.
     //
     // Run them explicitly with:
@@ -3400,7 +3398,7 @@ mod tests {
     // just in comments.
     // ---------------------------------------------------------------
 
-    /// Task 3.3 — `Email/set { create }` must accept multiple mailbox
+    /// — `Email/set { create }` must accept multiple mailbox
     /// memberships in a single call. JMAP `mailboxIds` is
     /// `Id[Boolean]` (RFC 8621 §4.1.1) — a set of containers the
     /// email belongs to, not a primary + extras. The current
@@ -3421,7 +3419,7 @@ mod tests {
         );
     }
 
-    /// Task 3.3 — empty `mailboxIds: {}` must surface
+    /// — empty `mailboxIds: {}` must surface
     /// `invalidProperties` per RFC 8621 §4.6 (an Email with zero
     /// mailbox memberships is ill-formed under the JMAP data
     /// model). The legacy SQL path silently accepted it.
@@ -3435,7 +3433,7 @@ mod tests {
         );
     }
 
-    /// Task 3.4 — partial success: one failing update among many
+    /// — partial success: one failing update among many
     /// must not abort the whole batch. RFC 8620 §5.3 mandates
     /// per-id success tracking via `updated` vs `notUpdated`. The
     /// current handler short-circuits on the first error, dropping
@@ -3450,7 +3448,7 @@ mod tests {
         );
     }
 
-    /// Task 3.5 — destroy ordering. RFC 8620 §5.3 specifies that
+    /// — destroy ordering. RFC 8620 §5.3 specifies that
     /// within a single `/set` call the server processes
     /// `create → update → destroy`, and that destroy uses the
     /// post-update mailbox memberships. A tx that destroys
@@ -3468,7 +3466,7 @@ mod tests {
         );
     }
 
-    /// Task 3.5b — `Email/import` is distinct from `Email/set
+    /// — `Email/import` is distinct from `Email/set
     /// create`: it takes a `blobId` + `receivedAt` + `mailboxIds` +
     /// `keywords` and ingests an RFC 5322 blob already in
     /// staging. Unlike create, import is the path mailing-list
@@ -3488,7 +3486,7 @@ mod tests {
         );
     }
 
-    /// T10 — Multi-mailbox keyword updates must reject with
+    /// — Multi-mailbox keyword updates must reject with
     /// `invalidPatch` rather than silently fan-out IMAP-only flags
     /// (e.g. `\Deleted`) across every membership. `MailStore::
     /// set_keywords` writes union state to every membership and

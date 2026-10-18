@@ -14,7 +14,7 @@
 //! ever-matched rule contributes one row to `rule_hits`. Migrations
 //! are idempotent so reopening an existing DB at startup is a no-op.
 //!
-//! Lifecycle (per `_doc/planned/maild-rules-phase2.md` § Persistence):
+//! Lifecycle (per  § Persistence):
 //!
 //! - **Startup**: `RuleStatsStore::open` → `load_snapshot` →
 //!   [`RuleStats::from_snapshot`]. Absent file = clean start.
@@ -56,7 +56,7 @@ use tokio::sync::Mutex;
 use crate::rule_stats::{RuleStats, RuleStatsSnapshot};
 
 /// Current on-disk schema version. Bump only via additive
-/// migrations; SPEC: rules counters are not training data, so a
+/// migrations; the contract: rules counters are not training data, so a
 /// destructive forced re-init is acceptable if we ever need it.
 const CURRENT_SCHEMA_VERSION: i64 = 1;
 

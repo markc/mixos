@@ -257,7 +257,7 @@ mod tests {
 
     #[tokio::test]
     async fn is_valid_state_rejects_sibling_object_type_token() {
-        // The load-bearing test for C3 MAJOR 1. Legacy changelog
+        // The load-bearing test for 1. Legacy changelog
         // ids are global ROWIDs interleaved across object types.
         // Fixture interleaves so a sibling token actually exhibits
         // the skip shape: Mailbox at id 1, Email at id 2, Mailbox

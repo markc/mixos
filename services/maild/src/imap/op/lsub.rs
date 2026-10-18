@@ -8,7 +8,7 @@
 //! set, and emitted with the `LSUB` response keyword instead of
 //! `LIST`. The v1 capability subset advertises subscription state
 //! exclusively via LSUB — LIST-EXTENDED is not in the subset, so
-//! the alternative `LIST ... RETURN (SUBSCRIBED)` path is not yet
+//! the alternative `LIST... RETURN (SUBSCRIBED)` path is not yet
 //! a wire option.
 //!
 //! Argument grammar is identical to LIST; we reuse

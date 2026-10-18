@@ -4,8 +4,6 @@
 //! vtoken registry — the maild-owned store + per-message resolver for
 //! opaque (`<token>@<domain>`) sender-locked addresses.
 //!
-//! Plan: `~/.cosmix/_plan/2026-06-21-vtoken-dispatch-implementation.md`
-//! (Stage A) + `~/.cmctl/_doc/2026-06-21-email-gateway-vtoken.md` (the scheme).
 //!
 //! **The hot path is Rust, the dispatch policy is Mix.** maild looks the
 //! token up here (one indexed SQLite read), validates the sender-lock, and
@@ -28,8 +26,8 @@ use tokio::sync::Mutex;
 use crate::vtoken_secret::VtokenSecret;
 
 /// On-disk schema version. v4 drops the now-defunct segmented tables
-/// (`vtoken_registry`, `vtoken_failctl`). C9c re-minted all live tokens as
-/// opaque tokens before this migration runs (C10), so dropping them is safe.
+/// (`vtoken_registry`, `vtoken_failctl`). Migration preparation re-minted all live tokens as
+/// opaque tokens before this migration runs, so dropping them is safe.
 const CURRENT_SCHEMA_VERSION: i64 = 4;
 
 /// Bound on a service NAME (the value in the `service` column; the filter
@@ -118,7 +116,7 @@ fn opaque_len_for(verification_strength: &str) -> usize {
 /// Whether a recipient local-part is OPAQUE-token-shaped: a single segment (no
 /// `-`), an opaque length (6 or 10), every byte in [`OPAQUE_ALPHABET`]. A cheap
 /// SHAPE pre-filter — a match triggers the HMAC lookup; it does NOT assert the
-/// token exists. (The reserved-namespace + uniform-accept behaviour is C8; for C6
+/// token exists. (The reserved-namespace + uniform-accept behaviour is ; for
 /// a shape match that misses the registry falls through to normal delivery, so a
 /// real mailbox of this shape is not swallowed.) Disjoint from the old segmented
 /// parser, which required a `-`.
@@ -139,12 +137,12 @@ fn gen_opaque(len: usize) -> String {
 }
 
 /// Whether a recipient is in the ACTIVE token namespace for THIS server config —
-/// an opaque vtoken only when opaque acceptance is enabled (the C9 pre-flight
+/// an opaque vtoken only when opaque acceptance is enabled (the pre-flight
 /// flag). When opaque is disabled (a pre-flight account/alias shape collision, or
 /// a read error) an opaque-shaped recipient is a NORMAL mailbox — normal rate
 /// handling, normal synchronous delivery, normal routing — so a real mailbox of
 /// the opaque shape is never funnelled into the token namespace and silently
-/// dropped. Used for the C7 rate cap and the C8 fire-and-forget gate; the resolve
+/// dropped. Used for the rate cap and the fire-and-forget gate; the resolve
 /// path applies the same flag via [`VtokenStore::resolve_gated`].
 pub fn is_active_token_shaped(rcpt: &str, opaque_enabled: bool) -> bool {
     opaque_enabled
@@ -153,12 +151,12 @@ pub fn is_active_token_shaped(rcpt: &str, opaque_enabled: bool) -> bool {
             .is_some_and(|(local, _)| is_opaque_shaped(local))
 }
 
-/// A validity-BLIND throughput cap on the token-shaped namespace (C7). Bounds the
+/// A validity-BLIND throughput cap on the token-shaped namespace. Bounds the
 /// accept-everything funnel so an attacker can't force unbounded per-message
 /// resolve/HMAC work, WITHOUT leaking validity — the SAME per-source and global
 /// limits apply to valid and invalid token-shaped recipients identically. A
 /// fixed-window counter per source IP plus a global ceiling. (The full pre-DATA
-/// shed valve + per-namespace max_message_size are C8's concern; this bounds the
+/// shed valve + per-namespace max_message_size are separate concerns; this bounds the
 /// per-recipient resolve work in the meantime.)
 pub struct TokenRateLimiter {
     state: std::sync::Mutex<RateWindow>,
@@ -189,7 +187,7 @@ impl TokenRateLimiter {
 
     /// Generous defaults: 60 token-shaped RCPTs per source IP per minute, 600
     /// globally — ample for legitimate low-volume email-to-X, a hard brake on a
-    /// flood. (Hardcoded for C7; promote to config when an operator needs to tune.)
+    /// flood. (Hardcoded defaults; promote to config when an operator needs to tune.)
     pub fn with_defaults() -> Self {
         Self::new(60, 600, std::time::Duration::from_secs(60))
     }
@@ -401,7 +399,7 @@ pub fn is_content_folder_name(name: &str) -> bool {
 pub struct VtokenStore {
     pub(crate) conn: Mutex<Connection>,
     path: PathBuf,
-    /// HMAC key for opaque-token lookup (C6). Loaded at open, in Rust, before any
+    /// HMAC key for opaque-token lookup. Loaded at open, in Rust, before any
     /// embedded Mix evaluator — never in Mix scope.
     secret: VtokenSecret,
 }
@@ -423,7 +421,7 @@ impl VtokenStore {
                 let mut conn = Connection::open(&path_for_blocking)
                     .with_context(|| format!("open {}", path_for_blocking.display()))?;
                 init_schema(&mut conn)?;
-                // The opaque-token HMAC key (C6) — created here, in Rust, before any
+                // The opaque-token HMAC key — created here, in Rust, before any
                 // embedded Mix evaluator exists, so the secret never enters Mix scope.
                 let secret = VtokenSecret::load_or_create(&secret_path)?;
                 Ok((conn, secret))
@@ -440,13 +438,13 @@ impl VtokenStore {
     /// Resolve a recipient address into an outcome. The hot-path entry point
     /// used by inbound delivery. Opaque acceptance ENABLED — for tests and any
     /// caller that does not gate the opaque namespace. Production inbound
-    /// delivery calls [`resolve_gated`](Self::resolve_gated) with the C9
+    /// delivery calls [`resolve_gated`](Self::resolve_gated) with the
     /// pre-flight flag (`SmtpConfig::opaque_rcpt_enabled`).
     pub async fn resolve(&self, rcpt: &str, proof: &SenderProof) -> Result<VtokenOutcome> {
         self.resolve_gated(rcpt, proof, true).await
     }
 
-    /// Resolve a recipient, gating the OPAQUE namespace on the C9 pre-flight
+    /// Resolve a recipient, gating the OPAQUE namespace on the pre-flight
     /// flag. When `opaque_enabled` is false an opaque-shaped recipient is treated
     /// as a normal mailbox (`NotAVtoken`), so a real mailbox that collides with
     /// the opaque token shape is delivered normally and never resolved against
@@ -467,10 +465,10 @@ impl VtokenStore {
         Ok(VtokenOutcome::NotAVtoken)
     }
 
-    /// Resolve an opaque-shaped local-part (C6). A shape match that MISSES the
-    /// registry falls through to normal delivery (`NotAVtoken`) — C6 must not
+    /// Resolve an opaque-shaped local-part. A shape match that MISSES the
+    /// registry falls through to normal delivery (`NotAVtoken`) — must not
     /// swallow a real mailbox of the same shape (the reserved-namespace
-    /// silent-drop is C8). A HIT OWNS the local-part: inactive or a sender-lock
+    /// silent-drop is). A HIT OWNS the local-part: inactive or a sender-lock
     /// failure resolves `Invalid` (silent), never `NotAVtoken`.
     async fn resolve_opaque(
         &self,
@@ -484,7 +482,7 @@ impl VtokenStore {
         };
         let candidates = self.secret.candidate_hashes(&domain_c, token);
         let Some(row) = self.lookup_opaque(&candidates).await? else {
-            return Ok(VtokenOutcome::NotAVtoken); // miss → normal delivery (C6)
+            return Ok(VtokenOutcome::NotAVtoken); // miss → normal delivery
         };
         if !row.active {
             return Ok(VtokenOutcome::Invalid);
@@ -505,7 +503,7 @@ impl VtokenStore {
         Ok(VtokenOutcome::Valid(VtokenContext {
             // user_id carries the token_hmac (the DB key) for opaque tokens — a
             // stable, non-secret id, fine for $VTOKEN_USER; a dedicated token_id
-            // label is a future refinement (Codex MINOR).
+            // label is a future refinement.
             user_id: row.token_hmac,
             account: row.account,
             service: Some(row.service),
@@ -546,7 +544,7 @@ impl VtokenStore {
         Ok(None)
     }
 
-    /// All opaque token rows (the management browse surface, C9b). No secret to
+    /// All opaque token rows (the management browse surface,). No secret to
     /// redact — the plaintext token is never stored, only its HMAC. Ordered by
     /// `token_hmac` for a stable listing.
     pub async fn list_opaque(&self) -> Result<Vec<OpaqueRow>> {
@@ -579,7 +577,7 @@ impl VtokenStore {
     }
 
     /// Look up one opaque token by its `token_hmac` row id (the management
-    /// lookup, C9b). Unlike [`lookup_opaque`] this takes the stored HMAC
+    /// lookup,). Unlike [`lookup_opaque`] this takes the stored HMAC
     /// directly (from a prior list/mint), not candidate hashes of a plaintext.
     pub async fn lookup_opaque_by_hmac(&self, token_hmac: &str) -> Result<Option<OpaqueRow>> {
         self.lookup_opaque(std::slice::from_ref(&token_hmac.to_string()))
@@ -779,8 +777,8 @@ fn init_schema(conn: &mut Connection) -> Result<()> {
 }
 
 /// Migrate any v1/v2/v3 database to v4 by dropping the now-defunct segmented
-/// tables (`vtoken_registry`, `vtoken_failctl`). Safe because C9c re-minted
-/// all live tokens as opaque tokens before this migration runs (C10). Wrapped
+/// tables (`vtoken_registry`, `vtoken_failctl`). Safe because the migration preparation re-minted
+/// all live tokens as opaque tokens before this migration runs. Wrapped
 /// in a transaction so an interrupted migration rolls back whole.
 fn migrate_to_v4(conn: &mut Connection) -> Result<()> {
     let tx = conn.transaction().context("begin vtoken v*→v4 migration")?;
@@ -847,7 +845,7 @@ mod tests {
 
     #[tokio::test]
     async fn resolve_gated_disabled_treats_opaque_as_normal_mailbox() {
-        // C9 fail-safe at the resolve layer: a VALID opaque token resolves Valid
+        // fail-safe at the resolve layer: a VALID opaque token resolves Valid
         // with opaque_enabled=true, but NotAVtoken with opaque_enabled=false — so
         // a disabled run (a pre-flight collision) delivers an opaque-shaped
         // recipient as a normal mailbox instead of resolving it against the
@@ -998,7 +996,7 @@ mod tests {
         );
 
         // An unregistered opaque-shaped address → miss → NotAVtoken (normal
-        // delivery; C6 must not swallow a real mailbox of this shape).
+        // delivery; must not swallow a real mailbox of this shape).
         assert_eq!(
             store
                 .resolve("bbbbbbbbbb@example.org", &SenderProof::unverified())

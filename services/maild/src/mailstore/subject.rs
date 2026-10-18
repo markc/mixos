@@ -5,7 +5,7 @@
 //!
 //! Used as the threading-key fallback after In-Reply-To / References
 //! resolution misses (JMAP §4.1.5, Phase 8e gate 4). The output is
-//! stored in `mail_envelopes.normalized_subject` (cosmix-mds v1.7)
+//! stored in `mail_envelopes.normalized_subject` (mds v1.7)
 //! and looked up via the `mail_envelopes_normsubj_idx` index when
 //! resolving the `mail_threads.thread_id` for a freshly-created
 //! email.
@@ -32,7 +32,7 @@
 //! 4. If a `subj-blob` prefix remains and removing it leaves
 //!    non-empty, strip it.
 //! 5. Repeat steps 3+4 until no match.
-//! 6. If the result is wrapped in `[fwd: ... ]`, strip the wrapper
+//! 6. If the result is wrapped in `[fwd:... ]`, strip the wrapper
 //!    and restart from step 2.
 //! 7. The remaining text is the base subject; this implementation
 //!    lowercases it for case-insensitive equality matching at lookup.
@@ -112,7 +112,7 @@ fn collapse_whitespace(s: &str) -> String {
 ///
 /// "(fwd)" matching is ASCII-case-insensitive — every other RFC 5256
 /// §2.1 literal in this module already treats case as folded (refwd
-/// tokens, [fwd: ... ] wrapper), and real-world MUAs emit the trailer
+/// tokens, [fwd:... ] wrapper), and real-world MUAs emit the trailer
 /// in mixed case (e.g. "(FWD)"). Treating it case-sensitively would
 /// leave non-empty residue that the fallback's empty-subject skip
 /// can no longer guard against.
@@ -239,7 +239,7 @@ fn is_blobchar(b: u8) -> bool {
     matches!(b, 0x01..=0x5A | 0x5C | 0x5E..=0x7F)
 }
 
-/// Strip a `"[fwd: ... ]"` wrapper if present. Returns the inner
+/// Strip a `"[fwd:... ]"` wrapper if present. Returns the inner
 /// text on success.
 ///
 /// An empty / whitespace-only inner — e.g. `"[fwd:]"` or `"[fwd:  ]"`
@@ -328,7 +328,7 @@ mod tests {
 
     #[test]
     fn strips_fwd_wrapper() {
-        // Step 6 — the [fwd: ... ] form Outlook still emits.
+        // Step 6 — the [fwd:... ] form Outlook still emits.
         assert_eq!(normalize_subject("[fwd: Hello]"), "hello");
         assert_eq!(normalize_subject("[fwd: Re: Hello]"), "hello");
         assert_eq!(normalize_subject("[FWD: Hello]"), "hello");
@@ -395,7 +395,7 @@ mod tests {
 
     #[test]
     fn empty_fwd_wrapper_normalizes_to_empty() {
-        // MAJOR finding (Codex round 1): "[fwd:]" must NOT leak the
+        // finding ( round 1): "[fwd:]" must NOT leak the
         // literal "[fwd:]" through to the index — callers depend on
         // the empty-result skip to avoid false subject-clustering of
         // every empty-wrapper email into one thread.
@@ -408,7 +408,7 @@ mod tests {
 
     #[test]
     fn fwd_trailer_is_case_insensitive() {
-        // MAJOR finding (Codex round 1): the (fwd) trailer must match
+        // finding ( round 1): the (fwd) trailer must match
         // case-insensitively, like every other RFC 5256 §2.1 literal
         // in this module — otherwise "(FWD)" leaves non-empty residue
         // that bypasses the empty-subject skip.
@@ -423,7 +423,7 @@ mod tests {
 
     #[test]
     fn non_ascii_bracket_prefix_is_not_a_blob() {
-        // MAJOR finding (Codex round 1): RFC 5256 §2.1 BLOBCHAR is
+        // finding ( round 1): RFC 5256 §2.1 BLOBCHAR is
         // ASCII-only (%x01-5A / %x5C / %x5E-7F). A non-ASCII
         // bracketed prefix must NOT be stripped — otherwise distinct
         // subjects like "[日本語] Hello" and "[中文] Hello" would

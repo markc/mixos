@@ -5,7 +5,7 @@
 //!
 //! Phase 1 verbs (CAPABILITY, NOOP, LOGOUT, ID, LOGIN, AUTHENTICATE)
 //! never include IMAP literals on the wire, so a strict CRLF line
-//! reader was sufficient for them. Phase 4 (APPEND, T14) introduces
+//! reader was sufficient for them. Phase 4 (APPEND,) introduces
 //! a single trailing literal at the end of a command — handled here
 //! by [`read_command`], which:
 //!
@@ -17,7 +17,7 @@
 //!   continuation per RFC 9051 §6.3.12;
 //! * reads exactly `N` bytes of body via `read_exact`;
 //! * reads the trailing CRLF that terminates the command (which must
-//!   be empty for T14's "literal is the final argument" scope —
+//! be empty for "literal is the final argument" scope —
 //!   embedded mid-command literals are not supported until the full
 //!   imap-codec swap lands).
 //!
@@ -172,7 +172,7 @@ pub fn parse_line(line: &[u8]) -> Result<Line> {
 /// A complete IMAP command frame: the command line (with any trailing
 /// literal marker stripped) plus the literal body, if present.
 ///
-/// Phase 4 T14 scope: exactly one literal, anchored at the end of the
+/// Phase 4 scope: exactly one literal, anchored at the end of the
 /// command. Embedded mid-command literals (e.g. `LOGIN {n}\r\n...{n}\r\n...`)
 /// would require re-entering the literal protocol for every fragment;
 /// they remain unsupported until the imap-codec/imap-next swap.
@@ -288,7 +288,7 @@ struct LiteralMarker {
 ///   account-scoped cap applies. The session gates on
 ///   `state.is_authenticated()`.
 /// - Verbs that don't accept literal arguments — APPEND is the only
-///   T14 verb that does; everything else is rejected by dispatch
+/// verb that does; everything else is rejected by dispatch
 ///   anyway, so consuming the body wastes bandwidth + RAM.
 ///
 /// On refusal we refuse the literal at the codec layer: sync → no
@@ -430,7 +430,7 @@ where
         return Err(ReadCommandError::Io(e));
     }
 
-    // After the literal body, the command continues. T14 only supports
+    // After the literal body, the command continues. only supports
     // the "literal is the final argument" shape — the trailing line
     // must be empty (just CRLF). Anything else is treated as malformed
     // for now; a future imap-codec swap accepts mid-command literals.
@@ -861,7 +861,7 @@ mod tests {
     #[tokio::test]
     async fn read_command_data_after_literal_body_rejected() {
         // Mid-command literal: APPEND with literal followed by another
-        // argument. T14 only supports the "literal is final" shape.
+        // argument. only supports the "literal is final" shape.
         let input: &[u8] = b"a011 LOGIN {5+}\r\nalice hunter2\r\n";
         let mut reader = BufReader::new(input);
         let mut writer: Vec<u8> = Vec::new();

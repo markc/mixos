@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
-//! Public types — frozen R4 surface per spec §Public API.
+//! Public types — frozen surface per spec §Public API.
 //!
-//! `Domain` is a borrowed-from-future `cosmix-lib-mail-types` shape;
+//! `Domain` is a borrowed-from-future `mail-types` shape;
 //! until that crate exists we define it here and re-export. Consumers
 //! should always import from `maild_auth::types`.
 
 use std::net::IpAddr;
 use std::time::Duration;
 
-// ---- Domain newtype (placeholder until cosmix-lib-mail-types lands) ----
+// ---- Domain newtype (placeholder until mail-types lands) ----
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Domain(pub String);

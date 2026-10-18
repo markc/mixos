@@ -127,7 +127,7 @@ fn attrs_from_json(s: &str) -> Result<ContainerAttrs> {
 }
 
 // The legacy non-tx public `create_container` / `rename_container` /
-// `delete_container` helpers were removed in MCS-P1-C. The trait
+// `delete_container` helpers were removed in the lifecycle implementation. The trait
 // methods on `SqliteCasMds` now route through `with_set_tx`, which
 // inherits the `container_change_set` lifecycle row written by the
 // `_in_tx` variants below. Keeping a parallel non-tx surface would
@@ -660,10 +660,10 @@ fn encode_tags_for_membership(tags: &Tags) -> Result<Option<String>> {
 /// to *all* current memberships in one transaction (spec §3 line 335);
 /// per-membership commits would let pagination interleave a partial
 /// update and silently desync `Email/changes` consumers. The
-/// flags-only JMAP fan-out is [`store_item_flags_in_tx`] (Task 1.8;
+/// flags-only JMAP fan-out is [`store_item_flags_in_tx`] (;
 /// rewrites `flags`, leaves `tags` alone); the older flags+tags
 /// fan-out is [`store_item_keywords`] and is retained for callers
-/// that wrote per-membership Tags before Task 1.8 split them out.
+/// that wrote per-membership Tags before split them out.
 /// This function remains for direct IMAP STORE on a single
 /// (item, mailbox) pair.
 /// Flags + tags pair stored on a single membership row.
@@ -913,7 +913,7 @@ pub fn store_item_keywords(
 /// item with no current memberships returns `Ok(vec![])` and writes
 /// nothing.
 ///
-/// **Why flags-only.** `MailStore::set_keywords` (Phase 1 Task 1.8) is
+/// **Why flags-only.** `MailStore::set_keywords` (Phase 1) is
 /// the JMAP `Email/set keywords` migration entry point; for the
 /// initial maild surface we only model system flags, leaving
 /// user-defined keyword Tags for a follow-on. The peer
@@ -1022,7 +1022,7 @@ pub fn store_item_flags_in_tx(
 /// **Per-mailbox isolation.** This is the substrate primitive behind
 /// the IMAP non-negotiable invariant that `\Seen` set on the INBOX
 /// membership of a multi-mailbox email must NOT propagate to the
-/// Archive membership (`_doc/maild/imap.md` §Non-negotiable
+/// Archive membership ( §Non-negotiable
 /// invariants 5/6). The peer `store_item_flags_in_tx` is the JMAP
 /// shape that explicitly fans out to every membership; this
 /// primitive is its inverse and must NOT walk siblings.
@@ -1795,7 +1795,7 @@ fn allocate_set_change(
 }
 
 // Wired into the lifecycle paths (create/rename/delete) below and
-// `update_container_attrs` in MCS-P1-D.
+// `update_container_attrs` in the transaction facade.
 fn container_change_set_kind_to_sql(k: ContainerChangeSetKind) -> &'static str {
     match k {
         ContainerChangeSetKind::Created => "CONTAINER_CREATED",
@@ -1842,7 +1842,7 @@ fn container_change_set_kind_from_sql(s: &str) -> Result<ContainerChangeSetKind>
 /// The schema constrains `payload TEXT NOT NULL`, which only rejects
 /// SQL `NULL`; an empty string `""` is technically accepted at the
 /// SQL layer. Callers are expected to always pass a JSON object
-/// (the small per-kind payload builders in MCS-P1-C/D are the
+/// (the small per-kind payload builders in the lifecycle handlers are the
 /// single validation point for this); a bare `""` here would
 /// surface only at the Phase-2 read-side JSON decode.
 /// Walk `id`'s parent chain inside the caller's tx and render the
@@ -1855,7 +1855,7 @@ fn container_change_set_kind_from_sql(s: &str) -> Result<ContainerChangeSetKind>
 /// snapshot reflects the path *as it was* when the event happened;
 /// ancestor renames after the fact must not corrupt a replayed
 /// IMAP NOTIFY `MailboxName` event (RFC 5465 §4.1.3).
-/// See `_doc/planned/mailbox-changes-substrate.md` §Design.
+/// See  §Design.
 ///
 /// Errors:
 /// - `Error::ContainerNotFound(id)` if the root container row is
@@ -2542,7 +2542,7 @@ pub fn delete_container_in_tx(
 /// know which extra-key to compare. Maild's `MailStore` writes
 /// through the same key (`mailstore/mod.rs`'s `JMAP_SORT_ORDER_KEY`);
 /// the two must agree. A future commit may extract this to a single
-/// shared `pub const` re-exported from `mds`; for MCS-P1 the
+/// shared `pub const` re-exported from `mds`; for MCS- the
 /// duplication is acceptable and well-documented.
 const JMAP_SORT_ORDER_EXTRA_KEY: &str = "jmap_sort_order";
 
@@ -2569,7 +2569,7 @@ fn jmap_sort_order_from_extra(extra: &serde_json::Value) -> u32 {
 /// This is the **only** substrate write surface for container-attrs
 /// mutation. The legacy raw `UPDATE container SET attrs = ?`
 /// previously executed from maild's `MailStore::update_mailbox`
-/// bypassed this discipline; MCS-P1-D cuts that escape hatch over
+/// bypassed this discipline; the transaction facade cuts that escape hatch over
 /// to call this function so the lifecycle stream guarantee
 /// ("every container mutation produces a row") holds end-to-end.
 ///
@@ -2595,7 +2595,7 @@ fn jmap_sort_order_from_extra(extra: &serde_json::Value) -> u32 {
 /// (`CONTAINER_EXTRA_CHANGED` or similar) can land additively if a
 /// non-JMAP consumer ever needs to mutate extras in isolation.
 ///
-/// Payload shape per `_doc/planned/mailbox-changes-substrate.md`:
+/// Payload shape per :
 /// `{changed_props, old_values, new_values}`. Each `*_values` is
 /// scoped to the changed keys only — a consumer that sees
 /// `changed_props == ["role"]` will find only `role` in
@@ -2605,7 +2605,7 @@ fn jmap_sort_order_from_extra(extra: &serde_json::Value) -> u32 {
 /// `events` / `set` are accepted for signature symmetry with the
 /// sibling `*_container_in_tx` helpers (and so a future
 /// `MdsEvent::ContainerAttrsChanged` Bus buffered-event can slot in
-/// without churning every caller); MCS-P1-D does not push any Bus
+/// without churning every caller); the transaction facade does not push any Bus
 /// event yet — the lifecycle row alone satisfies the spec's
 /// "every mutation produces a row" guarantee.
 ///
@@ -2921,7 +2921,7 @@ pub fn add_item_with_memberships_in_tx(
 
     // ONE aggregate Bus event for the whole creation, parallel arrays
     // matching public `add_item`. Downstream Bus consumers reconstruct
-    // "new item landed in these mailboxes" from this single event.
+    // "new item these mailboxes" from this single event.
     let container_ids: Vec<ContainerId> = placements.iter().map(|p| p.container).collect();
     let change_seqs: Vec<ChangeToken> = placements.iter().map(|p| p.change_seq).collect();
     events.push_sink(MdsEvent::ItemAdded(ItemAdded {
@@ -3031,9 +3031,9 @@ pub fn add_membership_in_tx(
 /// dispatch always passes the selected source mailbox; an absent
 /// `src` membership at this point is a substantive failure.
 ///
-/// Errors: `ItemNotFound`, `ContainerNotFound` (dest), `"item ...
-/// already in container ..."` on duplicate dest membership,
-/// `"item ... not in source container ..."` when `(item_id, src)`
+/// Errors: `ItemNotFound`, `ContainerNotFound` (dest), `"item...
+/// already in container..."` on duplicate dest membership,
+/// `"item... not in source container..."` when `(item_id, src)`
 /// has no membership row. Buffers the same `ItemAdded` notifier +
 /// `ItemCopied` Bus events for post-commit replay.
 pub fn add_membership_from_in_tx(
@@ -3430,7 +3430,7 @@ mod container_change_set_tests {
     /// Rollback of the outer transaction must drop the row — the
     /// allocator inherits the caller's tx, so a failed write
     /// upstream cannot leave a phantom lifecycle row behind. This
-    /// pins the contract that lets MCS-P1-C wire the helper inside
+    /// pins the contract that lets the lifecycle implementation wire the helper inside
     /// `with_set_tx` without a separate rollback story.
     #[test]
     fn allocate_rolls_back_with_outer_tx() {

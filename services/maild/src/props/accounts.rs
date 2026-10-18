@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
-//! SPEC 12 property-substrate adoption for `maild.accounts`.
+//! Property-store namespace for `maild.accounts`.
 //!
 //! Wires the existing `accounts` SQL table (see [`crate::db`]) into a
 //! Saga-lifecycle property namespace served by `maild.props.*`. The
@@ -30,10 +30,10 @@
 //!
 //! ## Auth policy (Phase 1)
 //!
-//! Permissive per SPEC 09: any peer reaching the dispatcher receives
+//! Permissive per the mesh trust model: any peer reaching the dispatcher receives
 //! the four `props.{read,write,describe,audit}:maild.accounts`
 //! capabilities. The WireGuard `/24` is the trust domain; broker-side
-//! reservation (SPEC 12 §15.5, landed in C6) gates the records.changed
+//! reservation (the props contract, landed in) gates the records.changed
 //! and audit topics so a peer cannot bypass the verbs to spoof events.
 //! Phase 2+ will narrow this to operator vs service capability tiers.
 
@@ -81,7 +81,7 @@ pub fn namespace_name() -> NamespaceName {
     NamespaceName::new(NAMESPACE).expect("constant namespace name is valid")
 }
 
-/// SPEC 12 §4.3 schema for the `accounts` namespace. Mirrors the
+/// the props contract schema for the `accounts` namespace. Mirrors the
 /// columns of `db::SCHEMA`'s accounts table; `id` is intentionally
 /// absent (the substrate uses `email` as the wire `key:` per the
 /// namespace's `Cardinality::Collection { primary_key_field: "email" }`).
@@ -101,7 +101,7 @@ pub fn schema() -> PropertySchema {
             name: "password".into(),
             ty: FieldType::String,
             default: None,
-            // SPEC 12 §4.3 secret-field marker. records.changed
+            // the props contract secret-field marker. records.changed
             // payload is `pointer` per default (see [`spec`] below),
             // so the secret value is never broadcast inline; audit
             // rows redact this field's bytes when computing the
@@ -243,7 +243,7 @@ impl SqliteTableMapping for AccountsMapping {
                 Box::<dyn std::error::Error + Send + Sync>::from(msg),
             )
         })?;
-        // SPEC 12 §4.4 — same record under collection primary key
+        // the props contract — same record under collection primary key
         // `email` is upserted. Existing `id` is preserved by SQLite's
         // ON CONFLICT update (we do not touch the id column). New
         // rows allocate a fresh AUTOINCREMENT id.
@@ -283,7 +283,7 @@ impl SqliteTableMapping for AccountsMapping {
         // addressbooks / submissions / vacation_responses) drops
         // SQL-side per-account state. MDS-side per-account
         // containers are NOT dropped here — that is a `purge_account_set`
-        // surface deferred per the C7 plan ("after_delete best-effort
+        // surface deferred per the plan ("after_delete best-effort
         // MDS purge hook (deferred if it expands scope)").
         conn.execute("DELETE FROM accounts WHERE email = ?1", params![key])?;
         // Basic-credential cache invalidation happens POST-commit in
@@ -344,7 +344,7 @@ fn value_to_account_fields(key: &str, value: &PropValue) -> Result<AccountFields
         None => return Err("accounts.email is required".into()),
     };
     if email != key {
-        // The runtime's `validate_primary_key` (SPEC 12 §6.2) already
+        // The runtime's `validate_primary_key` (the props contract) already
         // pins this for create/replace; a Patch may omit `email` from
         // the body, in which case the merged value's `email` MUST
         // equal the wire key. Re-check at the mapping boundary so a
@@ -382,7 +382,7 @@ fn value_to_account_fields(key: &str, value: &PropValue) -> Result<AccountFields
         Some(PropValue::Null) | None => 0.5,
         Some(_) => return Err("accounts.spam_threshold must be a number".into()),
     };
-    // Email-2FA opt-in (P3). Default false: an account (or a Patch body that
+    // Email-2FA opt-in. Default false: an account (or a Patch body that
     // omits the field) is non-2FA unless explicitly enabled — fail-safe, so a
     // partial write can never silently turn the second factor OFF for an
     // already-enrolled account only when the field is genuinely absent; a
@@ -403,7 +403,7 @@ fn value_to_account_fields(key: &str, value: &PropValue) -> Result<AccountFields
     })
 }
 
-/// SPEC 12 §6.5 hook handler for the `accounts` namespace.
+/// the props contract hook handler for the `accounts` namespace.
 ///
 /// `before_set`: validates the email shape (cheap, no IO). The
 /// substrate's primary-key check (`validate_primary_key`) runs first
@@ -486,7 +486,7 @@ impl AccountsHooks {
         if !domain.contains('.') {
             return Err(HookError::validation("email domain must contain a dot"));
         }
-        // Reserve the opaque vtoken namespace (C9): a 6/10-char Crockford-base32
+        // Reserve the opaque vtoken namespace : a 6/10-char Crockford-base32
         // local-part is a capability-token shape, NOT a mailbox name — otherwise a
         // real mailbox could later collide with the reserved opaque namespace and
         // be routed through the size-capped async token path.
@@ -603,7 +603,7 @@ impl HookHandler for AccountsHooks {
                 // Phase 1 `Actor` API has no Daemon { source } variant;
                 // attribute via `service("maild")` plus the cascade
                 // origin in `cause` so the audit stream shows the
-                // hop. See SPEC 12 §5.5 / §10.
+                // hop. See the props contract
                 actor: RecordActor::service("maild").expect("valid actor"),
                 cause: Some("maild.accounts.after_delete:cascade".into()),
                 ts_ms: 0,
@@ -696,8 +696,7 @@ impl HookHandler for AccountsHooks {
 /// `after_set` invocations on the same account email. The underlying
 /// method lists first, then `create_set`s if missing — two parallel
 /// callers can both see "missing" and the loser sees
-/// `mds::Error::SetAlreadyExists` from `cosmix-mds`. Per SPEC
-/// 12 §6.5 the runtime does NOT serialise per-key, so this race is
+/// `mds::Error::SetAlreadyExists` from `mds`. Per the runtime contract the runtime does NOT serialise per-key, so this race is
 /// real and must be absorbed here.
 fn ensure_account_set_idempotent(mailstore: &SqliteMailStore, account_id: i32) -> Result<()> {
     match mailstore.ensure_account_set(account_id) {
@@ -729,7 +728,7 @@ fn ensure_account_set_idempotent(mailstore: &SqliteMailStore, account_id: i32) -
 /// async code). Behaviour matches the CLI seed: skip existing roles,
 /// reject root-level name collisions without role.
 ///
-/// **Concurrency note.** SPEC 12 §6.5 / `runtime.rs` documents that the
+/// **Concurrency note.** the props contract / `runtime.rs` documents that the
 /// runtime does NOT serialise `set → after_set → complete` per key — two
 /// concurrent `props.set` calls against the same email both reach this
 /// path. To stay idempotent under that race we (a) re-list after a
@@ -769,7 +768,7 @@ pub(crate) fn seed_default_mailboxes_idempotent(
                     //   `(parent, name)` race.
                     // * "mailbox special-use already in use" — peer
                     //   won the SPECIAL-USE uniqueness barrier in
-                    //   `MailStore::create_mailbox` (added with T6
+                    // `MailStore::create_mailbox` (added with
                     //   storage atomicity). Either way the intended
                     //   role is now present; re-read and verify.
                     m.starts_with("mailbox already exists")
@@ -845,9 +844,9 @@ fn seed_default_personal_collections(conn: &Arc<Mutex<Connection>>, account_id: 
     Ok(())
 }
 
-/// SPEC 12 §7.2 [`AuthPolicy`] for `maild.accounts`. Phase 1 grants
+/// the props contract [`AuthPolicy`] for `maild.accounts`. Phase 1 grants
 /// every property capability to every reachable peer; the
-/// WireGuard `/24` trust domain (SPEC 09) is what bounds reachability.
+/// WireGuard `/24` trust domain (the mesh trust model) is what bounds reachability.
 /// Phase 2+ will narrow this to operator / service tiers.
 pub fn auth_policy() -> AuthPolicy {
     fn resolve(_peer: &PeerIdentity) -> CapabilitySet {
@@ -1247,7 +1246,7 @@ mod tests {
         assert_eq!(mboxes2.len(), 6, "replay must not duplicate mailboxes");
     }
 
-    /// C8 — Saga failure path. SPEC 12 §6.5 requires that an
+    /// — Saga failure path. the props contract requires that an
     /// `after_set` `Err` transitions the row to `Lifecycle::Failed
     /// { reason }` with the substrate's sanitised reason string, while
     /// the SQL record itself stays durable for operator inspection.
@@ -1346,7 +1345,7 @@ mod tests {
         // (2) records.changed contract: both the Set event and the
         //     Complete event are durable in __props_events (this is
         //     the substrate side of the §5.5 records.changed body —
-        //     the live fan-out publisher is deferred from C7).
+        // the live fan-out publisher is deferred from).
         assert!(outcome.set_event.nseq > ::props::record::Nseq::zero());
         assert!(complete.nseq > outcome.set_event.nseq);
 
@@ -1367,7 +1366,7 @@ mod tests {
     #[test]
     fn validate_email_shape_reserves_opaque_vtoken_namespace() {
         // A 6/10-char Crockford-base32 local-part is the reserved opaque vtoken
-        // shape — rejected as an account email (C9 namespace reservation).
+        // shape — rejected as an account email ( namespace reservation).
         assert!(AccountsHooks::validate_email_shape("k4m9p2@example.org").is_err());
         assert!(AccountsHooks::validate_email_shape("k4m9p2x7qe@example.org").is_err());
         // Normal mailbox names (containing i/l/o/u, or the wrong length) pass.
