@@ -82,3 +82,7 @@ Website interface icons are generated from the pinned, unmodified Lucide SVG
 sources. The distributed SVG copies change stroke-width from 2 to 1.5 and add
 a generated-by comment. CSS masks paint those copies in the current colour; the
 Lucide ISC and Feather-derived MIT notices ship in docs/_web/icons/LICENSE-Lucide.txt.
+
+mds storage source and tests (services/maild/crates/mds) were ported from
+cosmix/src/crates/cosmix-mds, revision 516cd2656e6ecb0d4f96f17a0bf611994717e259.
+Copyright Mark Constable; MIT OR Apache-2.0.

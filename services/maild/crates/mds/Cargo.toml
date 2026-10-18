@@ -1,0 +1,56 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+[package]
+name = "mds"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+autobins = false
+description = "Per-container-set SQLite metadata and content-addressable blob storage"
+
+[package.metadata.mixos]
+component = "maild"
+kind = "service"
+layer = "core"
+contract = "none"
+
+[lints.clippy]
+mod_module_files = "deny"
+
+[lib]
+name = "mds"
+path = "src/lib.rs"
+
+[[bin]]
+name = "mds-stress-writer"
+path = "src/bin/stress_writer.rs"
+required-features = ["_stress-helper"]
+test = false
+doc = false
+
+[features]
+default = ["core"]
+core = []
+mem-store = []
+# Internal crash-recovery helper; never enable by default or install.
+_stress-helper = []
+
+[dependencies]
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+thiserror.workspace = true
+rusqlite.workspace = true
+blake3.workspace = true
+parking_lot = { version = "0.12", features = ["arc_lock"] }
+tracing.workspace = true
+tar = "0.4"
+chrono.workspace = true
+libc.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+proptest = "1"
