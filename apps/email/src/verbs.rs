@@ -1976,9 +1976,9 @@ mod tests {
         let null = json!({"identities": null});
         assert!(matches!(identities(&null, "identities"), Ok(None)));
         let text = json!({"identities": "work"});
-        assert!(matches!(identities(&text, "identities"), Err(_)));
+        assert!(identities(&text, "identities").is_err());
         let no_address = json!({"identities": [{"id": "work"}]});
-        assert!(matches!(identities(&no_address, "identities"), Err(_)));
+        assert!(identities(&no_address, "identities").is_err());
     }
 
     #[test]
