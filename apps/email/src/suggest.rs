@@ -125,19 +125,31 @@ pub fn matches(suggestion: &Suggestion, query: &str) -> bool {
 }
 
 /// Where `query` sits in `text` (bytes), case-insensitively, for the
-/// highlight.
+/// highlight. Both are lower-cased a character at a time; lower-casing
+/// changes byte lengths outside ASCII (`ẞ` is 3 bytes, `ß` 2; `İ` becomes
+/// two characters), so the match found in the folded text is mapped back
+/// through each folded byte's source character. The range always lies on
+/// `text`'s character boundaries: a match that starts or ends inside one
+/// character's folding covers that whole character.
 pub fn highlight(text: &str, query: &str) -> Option<std::ops::Range<usize>> {
-    if query.is_empty() {
+    let needle: String = query.chars().flat_map(char::to_lowercase).collect();
+    if needle.is_empty() {
         return None;
     }
-    let lower = text.to_lowercase();
-    // Lower-casing can change byte lengths outside ASCII: only highlight
-    // when it did not.
-    if lower.len() != text.len() {
-        return None;
+    let mut folded = String::with_capacity(text.len());
+    // For each byte of `folded`, its source character's range in `text`.
+    let mut source: Vec<(usize, usize)> = Vec::with_capacity(text.len());
+    for (at, c) in text.char_indices() {
+        let span = (at, at + c.len_utf8());
+        for lower in c.to_lowercase() {
+            folded.push(lower);
+        }
+        source.resize(folded.len(), span);
     }
-    let at = lower.find(&query.to_lowercase())?;
-    Some(at..at + query.len())
+    let found = folded.find(&needle)?;
+    let start = source.get(found)?.0;
+    let end = source.get(found + needle.len() - 1)?.1;
+    Some(start..end)
 }
 
 /// The list to show for `query`: `contacts` (already the server's matches)
@@ -285,6 +297,41 @@ mod tests {
     fn the_match_is_highlighted() {
         assert_eq!(highlight("Ann Example", "exa"), Some(4..7));
         assert_eq!(highlight("Ann", "zz"), None);
+    }
+
+    #[test]
+    fn case_folding_that_changes_lengths_never_panics_or_splits_a_character() {
+        // The reported crash: the query's byte length after matching its
+        // lower case ran past the end of the text.
+        assert_eq!(highlight("aß", "Aẞ"), Some(0..3));
+        // A capital that folds shorter: the whole capital is highlighted.
+        assert_eq!(highlight("Aẞc", "ßc"), Some(1..5));
+        // Turkish dotted capital I folds to i and a combining dot.
+        assert_eq!(highlight("İstanbul", "i"), Some(0..2));
+        assert_eq!(highlight("İstanbul", "st"), Some(2..4));
+        assert_eq!(highlight("istanbul", "İ"), None);
+        // The Kelvin sign (3 bytes) folds to k (1 byte).
+        assert_eq!(highlight("\u{212A}elvin", "ke"), Some(0..4));
+        let pairs = [
+            ("aß", "Aẞ"),
+            ("ẞ", "ß"),
+            ("ß", "ẞ"),
+            ("Straße", "STRAẞE"),
+            ("STRASSE", "straße"),
+            ("İİİ", "i̇i"),
+            ("ıI", "i"),
+            ("ΌΣΟΣ", "σοσ"),
+            ("ǅemal", "ǆ"),
+            ("Ångström Å", "å"),
+            ("Ⅻ", "ⅻ"),
+            ("ﬀ", "FF"),
+        ];
+        for (text, query) in pairs {
+            if let Some(range) = highlight(text, query) {
+                assert!(range.start < range.end && range.end <= text.len(), "{text} {query}");
+                assert!(text.get(range).is_some(), "{text} {query}: on char boundaries");
+            }
+        }
     }
 
     #[test]
