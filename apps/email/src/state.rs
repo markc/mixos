@@ -2258,7 +2258,8 @@ impl State {
                                 &crate::suggest::present(text),
                                 crate::suggest::LIMIT,
                             );
-                            suggest.cursor = suggest.cursor.min(suggest.items.len().saturating_sub(1));
+                            suggest.cursor =
+                                suggest.cursor.min(suggest.items.len().saturating_sub(1));
                         }
                     }
                 }
@@ -2549,7 +2550,10 @@ impl State {
                 .account(&tag.account)
                 .map(|v| v.mail.recent.clone())
                 .unwrap_or_default();
-            let found: Vec<_> = contacts.iter().flat_map(crate::suggest::from_contact).collect();
+            let found: Vec<_> = contacts
+                .iter()
+                .flat_map(crate::suggest::from_contact)
+                .collect();
             let ranked = crate::suggest::rank(found, &recent, text.trim(), &[], *limit);
             return self.reply(reply, 0, json!({ "suggestions": ranked }));
         }
@@ -2591,9 +2595,10 @@ impl State {
             return self.refuse(reply, code::BUSY, &crate::label("compose-open"));
         }
         let opened = match then {
-            Then::Print | Then::Attachments | Then::SaveAttachment { .. } | Then::Suggest { .. } => {
-                false
-            }
+            Then::Print
+            | Then::Attachments
+            | Then::SaveAttachment { .. }
+            | Then::Suggest { .. } => false,
             Then::Reply(all, quote) => self.reply_to(account, &email, all, quote),
             Then::Forward(to) => self.forward(account, &email, &to),
             Then::Answer => false,
@@ -3989,7 +3994,10 @@ impl State {
                         ComposeField::Subject => compose.draft.subject = value,
                         ComposeField::Body => compose.draft.body = value,
                     }
-                    if matches!(field, ComposeField::To | ComposeField::Cc | ComposeField::Bcc) {
+                    if matches!(
+                        field,
+                        ComposeField::To | ComposeField::Cc | ComposeField::Bcc
+                    ) {
                         self.suggest_typed(field);
                     }
                 }

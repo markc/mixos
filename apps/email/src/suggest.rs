@@ -72,7 +72,9 @@ pub fn query(text: &str) -> Option<&str> {
 /// `name` as RFC 5322 needs it in a display name: quoted (with `"` and
 /// `\` escaped) when it holds a special character, as is otherwise.
 pub fn display_name(name: &str) -> String {
-    const SPECIALS: &[char] = &['(', ')', '<', '>', '[', ']', ':', ';', '@', '\\', ',', '.', '"'];
+    const SPECIALS: &[char] = &[
+        '(', ')', '<', '>', '[', ']', ':', ';', '@', '\\', ',', '.', '"',
+    ];
     if name.contains(SPECIALS) {
         let escaped = name.replace('\\', "\\\\").replace('"', "\\\"");
         format!("\"{escaped}\"")
@@ -260,7 +262,10 @@ mod tests {
         let present = vec!["ann@work.invalid".to_owned()];
         let ranked = rank(contacts, &recent, "ann", &present, LIMIT);
         let emails: Vec<&str> = ranked.iter().map(|s| s.email.as_str()).collect();
-        assert_eq!(emails, ["ann@x.invalid", "annabel@y.invalid", "anne@z.invalid"]);
+        assert_eq!(
+            emails,
+            ["ann@x.invalid", "annabel@y.invalid", "anne@z.invalid"]
+        );
         assert_eq!(ranked[0].source, Source::Contact);
         let many: Vec<Suggestion> = (0..20)
             .map(|n| s("Ann", &format!("ann{n}@x.invalid"), Source::Recent))

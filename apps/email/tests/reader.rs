@@ -683,7 +683,13 @@ fn composing(typed: &str) -> (State, u64) {
         email::state::ComposeField::To,
         typed.into(),
     ));
-    let ticket = state.compose.as_ref().unwrap().suggest.as_ref().map_or(0, |s| s.ticket);
+    let ticket = state
+        .compose
+        .as_ref()
+        .unwrap()
+        .suggest
+        .as_ref()
+        .map_or(0, |s| s.ticket);
     (state, ticket)
 }
 
@@ -702,11 +708,27 @@ fn typing_suggests_recent_at_once_then_contacts_after_the_pause() {
     let home = tag(&state, "home");
     state.apply(Event::Account(
         home.clone(),
-        Done::Suggested(ticket, Ok(vec![card("Ann Example", &["ann@x.invalid", "ann@work.invalid"])])),
+        Done::Suggested(
+            ticket,
+            Ok(vec![card(
+                "Ann Example",
+                &["ann@x.invalid", "ann@work.invalid"],
+            )]),
+        ),
     ));
-    let items = state.compose.as_ref().unwrap().suggest.clone().unwrap().items;
+    let items = state
+        .compose
+        .as_ref()
+        .unwrap()
+        .suggest
+        .clone()
+        .unwrap()
+        .items;
     let emails: Vec<&str> = items.iter().map(|s| s.email.as_str()).collect();
-    assert_eq!(emails, ["ann@x.invalid", "ann@work.invalid", "annabel@y.invalid"]);
+    assert_eq!(
+        emails,
+        ["ann@x.invalid", "ann@work.invalid", "annabel@y.invalid"]
+    );
     // Typing on makes the old answer late: it is dropped.
     state.apply_ui(UiEvent::ComposeField(
         email::state::ComposeField::To,
@@ -716,12 +738,22 @@ fn typing_suggests_recent_at_once_then_contacts_after_the_pause() {
         home,
         Done::Suggested(ticket, Ok(vec![card("Ann Example", &["ann@x.invalid"])])),
     ));
-    let items = state.compose.as_ref().unwrap().suggest.clone().unwrap().items;
+    let items = state
+        .compose
+        .as_ref()
+        .unwrap()
+        .suggest
+        .clone()
+        .unwrap()
+        .items;
     assert_eq!(items.len(), 1, "only the newest lookup applies");
     // Taking one replaces only the typed entry.
     state.apply_ui(UiEvent::SuggestAccept(Some(0)));
     let compose = state.compose.as_ref().unwrap();
-    assert_eq!(compose.to_text, "cy@example.invalid, Annabel Lee <annabel@y.invalid>, ");
+    assert_eq!(
+        compose.to_text,
+        "cy@example.invalid, Annabel Lee <annabel@y.invalid>, "
+    );
     assert!(compose.suggest.is_none());
     // A single character shows nothing and looks nothing up.
     state.take_work();
