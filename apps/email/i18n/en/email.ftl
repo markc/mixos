@@ -41,6 +41,9 @@ phone-line = Phone: { $value }
 company-line = Company: { $value }
 address-book-line = Address book: { $value }
 count-of = { $shown } of { $total }
+# Under the message list once its whole page is selected, then once taken.
+select-all-in-folder = Select all { $count } in folder
+all-selected = All { $count } selected
 column-subject = Subject
 column-from = From
 column-date = Date

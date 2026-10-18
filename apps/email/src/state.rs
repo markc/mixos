@@ -132,12 +132,28 @@ pub struct MailState {
     /// The message list's table: its selection, keyboard row and dragged
     /// widths. The list is one page, newest first, as the server sends it.
     pub table: TableState,
+    /// "Select all N" was taken: every email of the selected mailbox
+    /// (`total` of them) is selected, not only the shown page.
+    pub everything: bool,
 }
 
 /// The message list's column ids.
 pub const COLUMN_SUBJECT: &str = "subject";
 pub const COLUMN_FROM: &str = "from";
 pub const COLUMN_DATE: &str = "date";
+
+/// `n` with its thousands grouped: 2866 is "2,866".
+pub fn grouped(n: u64) -> String {
+    let digits = n.to_string();
+    let mut out = String::new();
+    for (i, digit) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(digit);
+    }
+    out
+}
 
 /// The message list's columns, Subject first: Subject (a resizable 55%),
 /// From (the rest) and Date (`date_width` points, right-aligned). None
@@ -216,6 +232,16 @@ impl MailState {
     /// The shown rows' keys (email ids), in list order.
     pub fn keys(&self) -> Vec<String> {
         self.emails.iter().map(|e| e.id.clone()).collect()
+    }
+
+    /// How many emails are selected: the mailbox's total once "Select all
+    /// N" was taken, else the shown page's selected rows.
+    pub fn selection_count(&self) -> u64 {
+        if self.everything {
+            self.total.max(self.table.selection.len() as u64)
+        } else {
+            self.table.selection.len() as u64
+        }
     }
 
     /// The list's table as it is drawn: an email opened some other way
@@ -501,6 +527,7 @@ impl AccountView {
             widths: std::mem::take(&mut self.mail.table.widths),
             ..TableState::default()
         };
+        self.mail.everything = false;
         // An open still in flight belongs to the old mailbox.
         self.tickets.open += 1;
         self.mail.busy = true;
@@ -2304,6 +2331,10 @@ impl State {
                         view.mail.emails = page.emails;
                         view.mail.total = page.total;
                         view.mail.table.rows_changed(&view.mail.keys());
+                        // Every email still selected: the new page shows so.
+                        if view.mail.everything {
+                            view.mail.table.selection = view.mail.keys();
+                        }
                     }
                     Done::Page(_, Err(error)) => {
                         view.mail.busy = false;
@@ -2577,34 +2608,54 @@ impl State {
                 read: true,
             });
         }
-        // The list selects the row it opened.
+        // The list's keyboard row is the row it opened; a row outside the
+        // selection becomes the selection, one inside it keeps it.
         let index = view.mail.emails.iter().position(|e| e.id == id);
-        view.mail.table.selection = vec![id.clone()];
+        if !view.mail.table.is_selected(&id) {
+            view.mail.table.selection = vec![id.clone()];
+            view.mail.everything = false;
+        }
         view.mail.table.focus = index;
         view.open_email(id, None, &mut self.work);
         true
     }
 
-    /// The message list reported `event` on `account`'s view: a row picked
-    /// (a click, Up or Down) or activated (a double-click, Enter) opens
-    /// its email; a dragged width is remembered. One row at a time: the
-    /// list is single-selection.
+    /// The message list reported `event` on `account`'s view. Selecting
+    /// only selects: a click picks one row, Ctrl+click toggles one,
+    /// Shift+click and Shift with an arrow take a range, Ctrl+A the page,
+    /// Escape collapses to the keyboard's row, and Up and Down move the
+    /// keyboard's row and the selection. None of them opens or marks read:
+    /// opening is Enter or a double-click (activation). "Select all N"
+    /// selects every email of the mailbox; a dragged width is remembered.
     pub fn mail_table(&mut self, account: &str, event: TableEvent) {
         let Some(view) = self.accounts.iter_mut().find(|v| v.entry.id == account) else {
             return;
         };
         match &event {
-            TableEvent::Selected { key, .. } | TableEvent::Activated { key, .. } => {
+            TableEvent::Activated { key, .. } => {
                 let opened = view.mail.open.as_ref().is_some_and(|e| e.id == *key);
-                view.mail.table.apply(&event, SelectionMode::Single);
+                if !view.mail.table.is_selected(key) {
+                    view.mail.everything = false;
+                }
+                view.mail.table.apply(&event, SelectionMode::Multi);
                 if !opened {
                     self.open_email(account, key.clone());
                 }
             }
-            TableEvent::ColumnResized { .. } => {
-                view.mail.table.apply(&event, SelectionMode::Single);
+            TableEvent::Selected { .. } | TableEvent::SelectionChanged { .. } => {
+                view.mail.table.apply(&event, SelectionMode::Multi);
+                view.mail.everything = false;
             }
-            // No sort, pager, menu, drag or multi-selection in this list.
+            // Offered only once the whole page is selected: the count is
+            // the mailbox's total, which the list already has.
+            TableEvent::SelectEverything => {
+                view.mail.table.selection = view.mail.keys();
+                view.mail.everything = true;
+            }
+            TableEvent::ColumnResized { .. } => {
+                view.mail.table.apply(&event, SelectionMode::Multi);
+            }
+            // No sort, pager, menu or drag in this list yet.
             _ => {}
         }
     }
@@ -2850,6 +2901,10 @@ impl State {
                     }
                     view.mail.emails.retain(|e| !gone.contains(&e.id));
                     view.mail.table.rows_changed(&view.mail.keys());
+                    // The whole mailbox is no longer what is selected.
+                    if !gone.is_empty() {
+                        view.mail.everything = false;
+                    }
                     if view
                         .mail
                         .open
@@ -3810,6 +3865,13 @@ impl State {
                     "attachments": view.mail.open.as_ref().map(|e| attachments_view(e, Some(&view.mail.transfers))),
                     "attachments_open": view.mail.attachments_open,
                     "busy": view.mail.busy,
+                    // The list's selection: the shown page's selected ids,
+                    // how many in all, and whether that is every email.
+                    "selection": {
+                        "ids": view.mail.table.selection,
+                        "count": view.mail.selection_count(),
+                        "all": view.mail.everything,
+                    },
                 });
                 out["calendar"] = json!({
                     "calendars": view.calendars.calendars,
@@ -6331,6 +6393,71 @@ pub(crate) mod tests {
                 _ => None,
             })
             .collect()
+    }
+
+    #[test]
+    fn selecting_never_opens_and_select_all_takes_the_mailbox_total() {
+        use toolkit::datatable::Pick;
+        let mut state = reading();
+        state.account_mut("a").unwrap().mail.total = 2866;
+        // A pick and a range select, and open nothing.
+        state.mail_table(
+            "a",
+            TableEvent::Selected {
+                index: 1,
+                key: "E2".into(),
+                pick: Pick::Only,
+            },
+        );
+        state.mail_table(
+            "a",
+            TableEvent::SelectionChanged {
+                keys: vec!["E1".into(), "E2".into()],
+                focus: Some(0),
+            },
+        );
+        assert!(state.take_work().is_empty(), "no open, no mark-read");
+        let mail = &state.account("a").unwrap().mail;
+        assert_eq!(mail.selection_count(), 2);
+        assert!(!mail.emails[1].is_read());
+        // "Select all N": the mailbox's count, with no query.
+        state.mail_table("a", TableEvent::SelectEverything);
+        assert!(state.take_work().is_empty());
+        let mail = &state.account("a").unwrap().mail;
+        assert!(mail.everything);
+        assert_eq!(mail.selection_count(), 2866);
+        assert_eq!(state.info()["accounts"][0]["mail"]["selection"]["count"], 2866);
+        // Activating a selected row opens it and keeps the selection.
+        state.mail_table(
+            "a",
+            TableEvent::Activated {
+                index: 1,
+                key: "E2".into(),
+            },
+        );
+        let mail = &state.account("a").unwrap().mail;
+        assert!(mail.everything && mail.table.selection.len() == 2);
+        assert!(
+            state
+                .take_work()
+                .iter()
+                .any(|w| matches!(w, Work::OpenEmail { id, .. } if id == "E2"))
+        );
+        // Any new pick is a selection of its own again.
+        state.mail_table(
+            "a",
+            TableEvent::Selected {
+                index: 0,
+                key: "E1".into(),
+                pick: Pick::Only,
+            },
+        );
+        let mail = &state.account("a").unwrap().mail;
+        assert!(!mail.everything);
+        assert_eq!(mail.selection_count(), 1);
+        assert_eq!(grouped(2866), "2,866");
+        assert_eq!(grouped(12), "12");
+        assert_eq!(grouped(1_000_000), "1,000,000");
     }
 
     #[test]

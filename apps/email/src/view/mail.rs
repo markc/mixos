@@ -10,21 +10,23 @@ use egui::{RichText, ScrollArea, Ui};
 use jmap::Email;
 use toolkit::button::{IconButton, Link};
 use toolkit::command::{Origin, label_text};
-use toolkit::datatable::{Cell, DataTable, RowStyle, Rows};
+use toolkit::datatable::{Cell, DataTable, Everything, RowStyle, Rows, SelectionMode, Total};
 use toolkit::markdown::{self, Document};
 use toolkit::{Icon, Registry, Strings, icons, panel};
 
 use super::UiEvent;
 use crate::reader::{self, Format};
-use crate::state::{AccountView, COLUMN_FROM, COLUMN_SUBJECT, State, Transfer, list_columns};
+use crate::state::{
+    AccountView, COLUMN_FROM, COLUMN_SUBJECT, State, Transfer, grouped, list_columns,
+};
 
 /// The message list's target id: its drive label and focus target.
 pub const LIST: &str = "emails";
 
 /// The centre pane's email list: the selected mailbox's page in a data
 /// table, one compact row per email (Subject, From, Date), newest first.
-/// A click or Up and Down pick a row and open it; Enter opens the
-/// keyboard's row.
+/// A click, Ctrl+click, Shift+click, Ctrl+A or Up and Down select rows
+/// without opening them; Enter or a double-click opens the keyboard's row.
 pub fn list(
     ui: &mut Ui,
     _state: &State,
@@ -61,10 +63,25 @@ pub fn list(
             now: clock(ui.ctx()),
         };
         let empty = if view.mail.busy { "loading" } else { "empty" };
+        // Under the rows while several are selected: how many, and, with
+        // the whole page selected, "Select all N in folder" (N the
+        // mailbox's total), then that they all are.
+        let total = grouped(view.mail.total);
+        let everything = Everything {
+            link: crate::label_with("select-all-in-folder", &[("count", &total)]),
+            done: view
+                .mail
+                .everything
+                .then(|| crate::label_with("all-selected", &[("count", &total)])),
+        };
         // One page, as the server sent it: no pager, no header sort.
         let fired = DataTable::new(LIST, &columns, &table)
             .strings(strings)
             .pager(false)
+            .selection(SelectionMode::Multi)
+            .total(Total::Known(view.mail.total))
+            .select_everything(everything)
+            .selected_count(view.mail.everything.then(|| view.mail.selection_count()))
             .empty_text(crate::label(empty))
             .show(ui, &rows);
         for event in fired {

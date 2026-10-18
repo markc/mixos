@@ -2,7 +2,9 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! email's drawing, driven through kittest with no network: the account
 //! tree's rows select their account, mode and folder, its keys move and
-//! collapse, an unread email row opens and marks read, the no-accounts and
+//! collapse, the message list selects (click, Ctrl and Shift clicks,
+//! Ctrl+A, select all, Escape) without opening, an unread email row opens
+//! on a double-click or Enter and marks read, the no-accounts and
 //! failed panes offer Email Settings, and offscreen snapshots of the
 //! window. Regenerate the images with `UPDATE_SNAPSHOTS=1` and look at them
 //! before committing.
@@ -378,12 +380,39 @@ fn the_tree_takes_the_keyboard_after_a_click() {
     assert_eq!(h.state().state.mode, Surface::Calendar);
 }
 
+/// Two clicks on the node labelled `label`, inside the double-click window.
+fn double_click(h: &mut Harness<'static, Window>, label: &str) {
+    let row = h.get_by_label_contains(label).rect().center();
+    h.hover_at(row);
+    for _ in 0..2 {
+        for pressed in [true, false] {
+            h.event(egui::Event::PointerButton {
+                pos: row,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: egui::Modifiers::NONE,
+            });
+            h.step();
+        }
+    }
+    h.run();
+}
+
 #[test]
-fn an_unread_email_row_opens_and_marks_read() {
+fn an_unread_email_row_opens_on_a_double_click_and_marks_read() {
     let mut h = harness(fixture());
     // A row's accessible label is its cells' text: "Lunch, Bob, Tue 01:02".
+    // One click selects it and nothing more.
     h.get_by_label_contains("Bob").click();
     h.run();
+    let state = &h.state().state;
+    assert!(!state.account("home").unwrap().mail.emails[0].is_read());
+    assert_eq!(state.account("home").unwrap().mail.table.selection, ["E1"]);
+    assert!(
+        h.state_mut().state.take_work().is_empty(),
+        "a click neither opens nor marks read"
+    );
+    double_click(&mut h, "Bob");
     let state = &h.state().state;
     assert!(
         state.account("home").unwrap().mail.emails[0].is_read(),
@@ -466,30 +495,81 @@ fn opened(h: &mut Harness<'static, Window>) -> Vec<String> {
 #[test]
 fn up_and_down_move_the_selection_and_enter_opens() {
     let mut h = harness(long_list());
-    // A row click takes the keyboard and opens the row.
+    // A row click takes the keyboard and selects the row, opening nothing.
     h.get_by_label_contains("Minutes").click();
     h.run();
-    assert_eq!(opened(&mut h), ["L3"]);
+    assert!(opened(&mut h).is_empty());
     h.key_press(egui::Key::ArrowDown);
     h.run();
-    assert_eq!(opened(&mut h), ["L4"], "Down opens the next email");
+    let work = h.state_mut().state.take_work();
+    assert!(work.is_empty(), "Down neither opens nor marks read: {work:?}");
+    let mail = &h.state().state.account("home").unwrap().mail;
+    assert_eq!(mail.table.selection, ["L4"]);
+    assert!(!mail.emails[3].is_read(), "the unread row stays unread");
     h.key_press(egui::Key::ArrowUp);
     h.run();
     h.key_press(egui::Key::ArrowUp);
     h.run();
-    assert_eq!(opened(&mut h), ["L3", "L2"], "Up opens the one before");
+    assert!(opened(&mut h).is_empty(), "nor does Up");
     let mail = &h.state().state.account("home").unwrap().mail;
     assert_eq!(mail.table.selection, ["L2"]);
     assert_eq!(mail.table.focus, Some(1));
-    // Enter opens the keyboard's row (it has not loaded yet, so again).
+    // Enter opens the keyboard's row.
     h.key_press(egui::Key::Enter);
     h.run();
     assert_eq!(opened(&mut h), ["L2"]);
-    // One row at a time: Ctrl+A selects nothing more.
+}
+
+#[test]
+fn ctrl_and_shift_clicks_ctrl_a_and_escape_select_without_opening() {
+    let mut h = harness(long_list());
+    h.get_by_label_contains("Lunch today").click();
+    h.run();
+    // Shift+click: the range from the row clicked first.
+    h.get_by_label_contains("Re: build cluster")
+        .click_modifiers(egui::Modifiers::SHIFT);
+    h.run();
+    let mail = &h.state().state.account("home").unwrap().mail;
+    assert_eq!(mail.table.selection, ["L1", "L2", "L3", "L4"]);
+    assert!(h.query_by_label("4 selected").is_some());
+    // Ctrl+click takes one out.
+    h.get_by_label_contains("Minutes")
+        .click_modifiers(egui::Modifiers::COMMAND);
+    h.run();
+    let mail = &h.state().state.account("home").unwrap().mail;
+    assert_eq!(mail.table.selection, ["L1", "L2", "L4"]);
+    // Ctrl+A: the whole page, and the offer of the whole mailbox.
     h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
     h.run();
     let mail = &h.state().state.account("home").unwrap().mail;
-    assert_eq!(mail.table.selection, ["L2"]);
+    assert_eq!(mail.table.selection.len(), 6);
+    assert!(h.query_by_label("6 selected").is_some());
+    assert!(opened(&mut h).is_empty(), "selecting opens nothing");
+    // Escape: back to the keyboard's row (the one Ctrl+clicked).
+    h.key_press(egui::Key::Escape);
+    h.run();
+    let mail = &h.state().state.account("home").unwrap().mail;
+    assert_eq!(mail.table.selection, ["L3"]);
+    assert!(h.query_by_label("Select all 236 in folder").is_none());
+    // Ctrl+A again, then "Select all 236 in folder": every email, counted
+    // from the list's total with no query.
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    h.run();
+    h.get_by_label("Select all 236 in folder").click();
+    h.run();
+    let mail = &h.state().state.account("home").unwrap().mail;
+    assert!(mail.everything);
+    assert_eq!(mail.selection_count(), 236);
+    assert!(h.query_by_label("236 selected").is_some());
+    assert!(h.query_by_label("All 236 selected").is_some());
+    assert!(h.state_mut().state.take_work().is_empty());
+    // A plain click is a selection of one again.
+    h.get_by_label_contains("Photos").click();
+    h.run();
+    let mail = &h.state().state.account("home").unwrap().mail;
+    assert!(!mail.everything);
+    assert_eq!(mail.table.selection, ["L5"]);
+    assert!(h.query_by_label("236 selected").is_none());
 }
 
 #[test]
@@ -607,6 +687,20 @@ fn mail_list_studio_dark() {
         "mail_list_studio_dark",
         long_list(),
         &theme(Scheme::Studio, Mode::Dark),
+    );
+}
+
+/// The whole page selected: the bar under the list counts it and offers
+/// the mailbox's 236.
+#[test]
+fn mail_list_selected_pro_light() {
+    let mut state = long_list();
+    let view = &mut state.accounts[0];
+    view.mail.table.selection = view.mail.keys();
+    snapshot(
+        "mail_list_selected_pro_light",
+        state,
+        &theme(Scheme::Pro, Mode::Light),
     );
 }
 
