@@ -8,15 +8,12 @@
 //! live-reload handle (`LogReloadHandle`), and the full stats recorder
 //! / JSONL sink subsystem.
 //!
-//! This is the **pure-core half**, living in the bus repo. The
-//! cos-coupled SPEC-12 property surface (`register_log_namespace`,
-//! `LogHandle::attach_props`, the stats namespace registration) moved
-//! out of this crate to a cos extension crate; the future watcher
-//! drives live filter swaps through the public `LogReloadHandle`.
+//! The core works without the Bus. A property watcher can drive live
+//! filter swaps through the public `LogReloadHandle`.
 //!
 //! Two optional features layer on the core:
 //! - `bus-handlers` — the `<svc>.stats.snapshot` Bus verb handler
-//!   (`stats::handle_snapshot_bus`); pulls `mixos-lib-client` (in bus).
+//!   (`stats::handle_snapshot_bus`); uses `bus::native_client`.
 //! - `prometheus` — the per-daemon `/metrics` endpoint.
 //!
 //! # Hard rules

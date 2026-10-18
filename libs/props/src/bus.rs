@@ -1,15 +1,10 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
-//! Bus wiring for the SPEC 07 §2 read surface.
+//! Bus wiring for the property read surface.
 //!
-//! `<svc>.props.{get,list,describe}` against a [`PropTree`]. The
-//! sibling SPEC 12 §5–§8 mutation router (`mutation::PropsRouter`)
-//! lives in `Cosmix property-store` (cos repo); that crate's
-//! `bus.rs` is a thin shim re-exporting `dispatch_props` /
-//! `build_response` / `PropsResponse` from here and declaring its
-//! own `pub mod mutation;` so `props::bus::mutation::PropsRouter`
-//! resolves end-to-end for cos-side consumers.
+//! `<svc>.props.{get,list,describe}` against a [`PropTree`]. Namespace
+//! mutation routing is provided separately by the `router` feature.
 
 use crate::path::PropPath;
 use crate::tree::PropTree;

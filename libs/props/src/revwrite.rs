@@ -4,9 +4,8 @@
 //! Opt-in, in-memory, revisioned write store — the generic control-write
 //! facility (Q8).
 //!
-//! This is **not** the heavyweight persistent SPEC-12 mutation store
-//! (`Cosmix property-store`, cos repo): no on-disk backend, no audit HMAC,
-//! no namespace schema. It is a lightweight in-memory ledger a daemon opts
+//! This lightweight ledger has no on-disk backend, audit HMAC or namespace
+//! schema. A daemon opts
 //! into to accept *revisioned* control writes against its property paths and
 //! publish coalesced `props.changed` events. Read-only `PropTree` consumers
 //! and `bus::dispatch_props` are untouched — a daemon holds a

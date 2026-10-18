@@ -20,9 +20,24 @@ mod_module_files = "deny"
 [features]
 default = []
 bus = ["dep:bus", "dep:chrono"]
+store = ["dep:anyhow", "dep:chrono", "dep:hmac", "dep:sha2", "dep:hex", "dep:rand", "dep:tokio"]
+sqlite = ["store", "dep:rusqlite"]
+router = ["bus", "store", "dep:tracing", "tokio/rt", "tokio/macros"]
 
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
 bus = { workspace = true, optional = true, default-features = false }
 chrono = { workspace = true, optional = true }
+anyhow = { workspace = true, optional = true }
+hmac = { workspace = true, optional = true }
+sha2 = { workspace = true, optional = true }
+hex = { workspace = true, optional = true }
+rand = { workspace = true, optional = true }
+rusqlite = { workspace = true, optional = true }
+tracing = { workspace = true, optional = true }
+# The store needs Notify only; the router adds runtime support.
+tokio = { version = "=1.53.1", default-features = false, features = ["sync"], optional = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt"] }

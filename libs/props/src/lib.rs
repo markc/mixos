@@ -1,19 +1,18 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
-//! Pure-type core of the SPEC 07 property surface.
+//! Property read surface, revisions and optional namespace storage.
 //!
 //! This crate carries `PropPath`, `PropValue`, `PropTree`,
 //! `PropDescribe`, `redact`, `diff` — the read-side types every
-//! `<svc>.props.*` consumer needs without taking on the substrate
-//! machinery (NamespaceSpec, hooks, runtime, storage backends, audit
-//! HMAC, SPEC 12 mutation router) that lives in the sibling
-//! `Cosmix property-store` crate (cos repo).
+//! `<svc>.props.*` consumer needs. The `store` feature supports namespace
+//! schemas, records, lifecycle, capabilities, hooks, audit HMAC and the
+//! in-memory runtime. `sqlite` enables persistent storage; `router` adds
+//! Bus mutation routing and event dispatch.
 //!
 //! The default feature set ships only the pure-type surface. Enable
 //! the opt-in `bus` feature to pull `bus` + `chrono` and
-//! gain the `bus::dispatch_props` (SPEC 07 §2 read wire) and
-//! `publish::*` (SPEC 07 §3/§4 wire builders) modules.
+//! gain the `bus::dispatch_props` read wire and `publish::*` wire builders.
 //!
 //! `revwrite` adds an **opt-in** lightweight in-memory revisioned write
 //! store (Q8) — a global monotonic revision, per-path canonical

@@ -31,6 +31,7 @@ ed25519-dalek = { version = "2", features = ["std", "rand_core"] }
 curve25519-dalek = "4.1"
 futures-util = "=0.3.34"
 hex = "0.4"
+hmac = "0.12"
 libc = { version = "=0.2.189" }
 mimalloc = { version = "0.1", default-features = false }
 metrics = "0.24"

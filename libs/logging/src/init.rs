@@ -4,7 +4,7 @@
 //!
 //! Resolves the pre-Bus precedence ladder for the bootstrap
 //! subscriber: env (`RUST_LOG`) > CLI (`LogOpts`) > defaults. A
-//! later runtime "props rung" (the cos extension crate's watcher)
+//! later runtime "props rung" (a property watcher)
 //! layers on top by swapping the live filter through the
 //! [`crate::LogReloadHandle`] this crate exposes.
 
@@ -22,7 +22,7 @@ use crate::stats::{JsonlSink, StatsRecorderBuilder};
 
 // Core copies of the plan §4.3 numeric bounds. Held literally here
 // (not imported) because the canonical substrate exports live in the
-// cos extension crate's property schema (source-of-truth), while
+// property namespace schema (source-of-truth), while
 // `init::install_stats_recorder` here needs the same numeric bound
 // check. Drift is unlikely (plan-defined invariants), but if the
 // substrate floor/ceiling ever moves these constants must move with
@@ -57,7 +57,7 @@ pub fn default_log_dir() -> std::path::PathBuf {
 /// Precedence (highest wins): `RUST_LOG` env > `LogOpts.log_filter`
 /// layered over `LogOpts.log_level` or `LogDefaults.level`. A runtime
 /// rung layers on top via [`LogHandle::reload_handle`]: a consumer
-/// (the cos extension watcher, or a Bus filter verb) swaps the live
+/// (a property watcher, or a Bus filter verb) swaps the live
 /// filter through the returned [`crate::LogReloadHandle`].
 ///
 /// # Stats install ordering (plan §3543-3559)
@@ -196,7 +196,7 @@ pub fn init(
     let journald_on = opts.log_journald.unwrap_or(defaults.journald);
 
     // Wrap the filter in `reload::Layer` so a `LogReloadHandle` can
-    // swap it at runtime (e.g. the future cos props watcher, or a Bus
+    // swap it at runtime (e.g. a property watcher, or a Bus
     // filter verb) without restarting the binary. This is core now.
     let (filter_layer, reload_handle) = {
         let (layer, handle) = tracing_subscriber::reload::Layer::new(filter);

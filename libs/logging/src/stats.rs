@@ -23,9 +23,8 @@
 //!   projection backs the `<svc>.stats.snapshot` Bus verb.
 //! - **Bus verb handler (`feature = "bus-handlers"`):** the
 //!   `<svc>.stats.snapshot` Bus handler (`handle_snapshot_bus`),
-//!   parsing the wire frame via `mixos-lib-client`'s
-//!   `IncomingCommand`. The cos-coupled property-namespace registration
-//!   moved out of this crate to a cos extension crate.
+//!   parsing the wire frame via `bus::native_client`'s
+//!   `IncomingCommand`. Property namespace registration is separate from snapshot handling.
 //! - **Prometheus child (`feature = "prometheus"`):** the
 //!   redaction-first `PrometheusChild` wrapper that pre-checks the
 //!   cardinality cap before forwarding to the upstream exporter.
