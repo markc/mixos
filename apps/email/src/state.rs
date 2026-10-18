@@ -6173,7 +6173,11 @@ pub(crate) mod tests {
         let mut state = connected();
         state.open_identities("a");
         let rows = state.identity_editor.as_ref().unwrap().rows.clone();
-        assert_eq!(rows.len(), 1, "an account with none shows its default sender");
+        assert_eq!(
+            rows.len(),
+            1,
+            "an account with none shows its default sender"
+        );
         state.identity_add();
         state.identity_edit(IdentityField::Name, "Ann Work".into());
         state.identity_edit(IdentityField::Address, "ann@work.example.invalid".into());
@@ -6184,7 +6188,10 @@ pub(crate) mod tests {
         state.open_identities("a");
         state.identity_add();
         assert!(!state.identity_save(), "an empty address is refused");
-        let open = state.identity_editor.as_ref().expect("the dialog stays open");
+        let open = state
+            .identity_editor
+            .as_ref()
+            .expect("the dialog stays open");
         let error = open.error.as_deref().unwrap();
         assert!(error.contains("identities["), "{error}");
         state.identity_remove();

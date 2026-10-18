@@ -72,7 +72,14 @@ fn form(ui: &mut Ui, editor: &IdentityEditor, events: &mut Vec<UiEvent>) {
     });
     ui.add_space(8.0);
     if let Some(row) = editor.rows.get(editor.selected) {
-        text(ui, "identity-name", IdentityField::Name, &row.name, width, events);
+        text(
+            ui,
+            "identity-name",
+            IdentityField::Name,
+            &row.name,
+            width,
+            events,
+        );
         text(
             ui,
             "identity-address",
