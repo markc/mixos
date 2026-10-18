@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
-//! SPEC 12 property substrate adoption for maild.
+//! Shared property-store namespaces for maild.
 //!
 //! Each managed namespace gets its own submodule with a
 //! `NamespaceSpec` + `SqliteTableMapping` + hooks. The Serve path
