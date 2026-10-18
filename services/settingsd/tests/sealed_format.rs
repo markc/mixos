@@ -42,7 +42,10 @@ fn fixed_snapshot() -> Snapshot {
 #[test]
 fn effective_and_snapshot_bytes_match_the_pinned_format() {
     let snapshot = fixed_snapshot();
-    assert_eq!(digest(&snapshot.effective).unwrap(), EFFECTIVE_DIGEST_PINNED);
+    assert_eq!(
+        digest(&snapshot.effective).unwrap(),
+        EFFECTIVE_DIGEST_PINNED
+    );
     assert_eq!(digest(&snapshot).unwrap(), SNAPSHOT_DIGEST_PINNED);
     assert_eq!(
         serde_json::to_string(&snapshot).unwrap().len(),
