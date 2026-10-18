@@ -591,7 +591,7 @@ async fn connect_with_backoff(
     loop {
         match ::bus::client_helpers::connect_default_with_provenance(
             BUS_SERVICE,
-            prov.clone(),
+            Some(prov.clone()),
         )
         .await
         {

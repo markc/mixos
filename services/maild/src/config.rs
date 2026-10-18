@@ -409,7 +409,7 @@ fn default_rules_state_dir() -> PathBuf {
 
 impl From<&::config::node::NodeConfig> for Config {
     fn from(nc: &::config::node::NodeConfig) -> Self {
-        let m = &nc.maild;
+        let m = nc.maild.clone().unwrap_or_default();
         Self {
             listen: nc.jmap_listen(),
             base_url: nc.jmap_upstream(),
