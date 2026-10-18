@@ -245,3 +245,8 @@ mod tests {
         assert_eq!(r.rc, 10);
     }
 }
+
+#[cfg(feature = "router")]
+pub mod mutation;
+#[cfg(feature = "router")]
+pub use mutation::PropsRouter;

@@ -101,3 +101,12 @@ pub use store::{
 
 #[cfg(feature = "sqlite")]
 pub use sqlite::{JsonValuesMapping, SqliteStore, SqliteTableMapping};
+
+#[cfg(feature = "router")]
+pub mod subscribe_granter;
+#[cfg(feature = "router")]
+pub mod dispatcher;
+#[cfg(feature = "router")]
+pub use bus::mutation::PropsRouter;
+#[cfg(feature = "router")]
+pub use subscribe_granter::SubscribeGranter;
