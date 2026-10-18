@@ -278,27 +278,27 @@
             <p class="section-subtitle">Anything a person can do in a MixOS app, an agent can do over the Bus.</p>
         </div>
         <div class="grid-3">
-            <div class="card">
+            <div class="card repo-card">
                 <h3><i data-lucide="network"></i> One Bus</h3>
                 <p>The <a href="/noded/">noded</a> broker handles service registration, discovery, routing, subscriptions and mesh peering between nodes. Every app and daemon is a service on it.</p>
             </div>
-            <div class="card">
+            <div class="card repo-card">
                 <h3><i data-lucide="layers"></i> Engine-first apps</h3>
                 <p>An app's behaviour is a set of named commands. The window, the command line and the Bus <a href="/docs/decisions/2026-10-09-egui-applications/">invoke them the same way</a>.</p>
             </div>
-            <div class="card">
+            <div class="card repo-card">
                 <h3><i data-lucide="mouse-pointer-2"></i> Drive verbs</h3>
                 <p>Every toolkit app also answers the <a href="/docs/drive/">same drive verbs</a>: read the widget tree, click, type, press keys, scroll, move the window and take a screenshot.</p>
             </div>
-            <div class="card">
+            <div class="card repo-card">
                 <h3><i data-lucide="file-terminal"></i> Mix, the shell</h3>
                 <p><a href="/mix/">Mix</a> is the interactive shell and the scripting language. Its manual is built into the binary: <code>mix man TOPIC</code> needs no checkout and no network.</p>
             </div>
-            <div class="card">
+            <div class="card repo-card">
                 <h3><i data-lucide="pencil"></i> Edit together</h3>
                 <p>The <a href="/ced/">editor</a> works over a shared edit service, so people and agents edit one document at once and see each other's carets and changes live.</p>
             </div>
-            <div class="card">
+            <div class="card repo-card">
                 <h3><i data-lucide="settings"></i> Privilege without sudo</h3>
                 <p><a href="/hostd/">hostd</a> makes privileged host changes through closed, typed verbs. Each change is checked, recorded and reversed if it fails.</p>
             </div>
@@ -312,15 +312,15 @@
         </div>
         <p class="section-lede">MixOS arrives as a small signed image that runs as a <code>systemd-nspawn</code> machine with <strong>its own virtual terminal</strong>. Both desktops keep running, and MixOS drives the <strong>real GPU, keyboard, mouse and speakers</strong>. There is no hypervisor, virtual GPU or remote display in the way.</p>
         <div class="grid-3">
-            <div class="card">
+            <div class="card repo-card">
                 <h3><i data-lucide="zap"></i> Native, not emulated</h3>
                 <p>VirtualBox, virt-manager, Incus and Proxmox show a guest desktop in a window through emulated hardware. A VT gives MixOS the whole machine, so what you try is what you get.</p>
             </div>
-            <div class="card">
+            <div class="card repo-card">
                 <h3><i data-lucide="layers"></i> Beside, not instead</h3>
                 <p>Nothing replaces your desktop and nothing is repartitioned. One command adds MixOS on its own VT, and one command removes it again.</p>
             </div>
-            <div class="card">
+            <div class="card repo-card">
                 <h3><i data-lucide="box"></i> Parts you already have</h3>
                 <p>Kernel virtual terminals, DRM handover, <code>seatd</code> and <code>systemd-nspawn</code> are already on Ubuntu, Fedora, Debian, Arch, openSUSE and Mint. At most you add one package.</p>
             </div>
