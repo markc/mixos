@@ -651,24 +651,20 @@ end
 
 -- ---------------------------------------------------------------- brand
 -- share/brand is the one source for MixOS brand art; the site never keeps a
--- second original. favicon.svg is generated from the transparent mark and
--- follows the visitor's prefers-color-scheme (black on light, white on dark).
--- The raster fallbacks are copied byte for byte. The Alien Cyclops mascot is
--- copied to _web/brand/ and drawn by home.html (hero).
+-- second original. The favicon is the Alien Cyclops on an opaque dark square
+-- (share/brand/README.md: favicon sets are opaque squares, so the white ring
+-- stays visible on light browser chrome). favicon.svg is built here from the
+-- mascot's own SVG; the raster fallbacks are copied byte for byte from
+-- share/brand/favicons/cyclops/. The mascot is also copied to _web/brand/ and
+-- drawn by home.html (hero).
 $brand = $repo .. "/share/brand"
-$mark_d = re_find(read_file($brand .. "/logos/mixos-black-transparent.svg"), " d=\"([^\"]+)\"")
-if len($mark_d) != 1 then
-  raise("SITE_BRAND", "expected exactly one path in the MixOS mark")
-end
-$mark_path = $mark_d[0]["groups"][0]
-$favicon_svg = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 1024 1024\">\n" ..
-  "<style>path{fill:#000}@media (prefers-color-scheme:dark){path{fill:#fff}}</style>\n" ..
-  "<path fill-rule=\"evenodd\" d=\"" .. $mark_path .. "\"/>\n</svg>\n"
+$cyclops_svg = read_file($brand .. "/logos/alien-cyclops.svg")
+$favicon_svg = replace(replace($cyclops_svg, " viewBox=\"0 0 512 512\" width=\"512\" height=\"512\">", " viewBox=\"0 0 512 512\"><rect width=\"512\" height=\"512\" fill=\"#0d0d10\"/><svg x=\"80\" y=\"80\" width=\"352\" height=\"352\" viewBox=\"0 0 512 512\">"), "</svg>", "</svg></svg>")
 $copies = {
-  "favicon.ico": $brand .. "/favicons/black-on-white/favicon.ico",
-  "_web/brand/favicon-32-light.png": $brand .. "/favicons/black-on-white/favicon-32x32.png",
-  "_web/brand/favicon-32-dark.png": $brand .. "/favicons/white-on-black/favicon-32x32.png",
-  "_web/brand/apple-touch-icon.png": $brand .. "/favicons/black-on-white/apple-touch-icon.png",
+  "favicon.ico": $brand .. "/favicons/cyclops/favicon.ico",
+  "_web/brand/favicon-32-light.png": $brand .. "/favicons/cyclops/favicon-32x32.png",
+  "_web/brand/favicon-32-dark.png": $brand .. "/favicons/cyclops/favicon-32x32.png",
+  "_web/brand/apple-touch-icon.png": $brand .. "/favicons/cyclops/apple-touch-icon.png",
   "_web/brand/alien-cyclops.svg": $brand .. "/logos/alien-cyclops.svg"
 }
 

@@ -64,7 +64,7 @@ $icons = {
 }
 $INDEX_DIRS = ["scalable/apps", "symbolic/apps"]
 -- The mascot is pinned: a changed file must change this hash on purpose.
-$PINNED = {"logos/alien-cyclops.svg": "1bccb2791c607d0a9bf3c72532b1d5dd5162b97a67cd2da2a1becd94a0fd2d13"}
+$PINNED = {"logos/alien-cyclops.svg": "4326b3305bd13ae4412e43840ea0f76de16996db73931544dc541dd7cfc0dff4"}
 $hicolor_src = read_file($brand .. "/hicolor-index.theme")
 $mixos_src = read_file($brand .. "/../icons/index.theme")
 check_index("hicolor-index.theme", $hicolor_src, $INDEX_DIRS)
