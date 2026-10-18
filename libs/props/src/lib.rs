@@ -31,11 +31,15 @@ pub mod tree;
 pub mod value;
 
 #[cfg(feature = "store")]
+pub mod audit;
+#[cfg(feature = "store")]
 pub mod capability;
 #[cfg(feature = "store")]
 pub mod hooks;
 #[cfg(feature = "store")]
 pub mod lifecycle;
+#[cfg(feature = "store")]
+pub mod memory;
 #[cfg(feature = "store")]
 pub mod namespace;
 #[cfg(feature = "store")]
@@ -60,6 +64,8 @@ pub use tree::PropTree;
 pub use value::PropValue;
 
 #[cfg(feature = "store")]
+pub use audit::{AuditKey, canonical_serialise, compute_digest, tombstone_value};
+#[cfg(feature = "store")]
 pub use capability::{AuthDecision, Capability, CapabilityError, CapabilitySet};
 #[cfg(feature = "store")]
 pub use hooks::{
@@ -67,6 +73,8 @@ pub use hooks::{
 };
 #[cfg(feature = "store")]
 pub use lifecycle::{LIFECYCLE_FIELD, Lifecycle};
+#[cfg(feature = "store")]
+pub use memory::MemoryStore;
 #[cfg(feature = "store")]
 pub use namespace::{
     AuthPolicy, Cardinality, ConformanceLevel, DeleteMode, ExternalEditPolicy, FieldSchema,
