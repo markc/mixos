@@ -53,6 +53,16 @@ fn reading(state: &State) -> bool {
         && state.current().is_some_and(|v| v.mail.open.is_some())
 }
 
+/// The message list has a target for the message actions (the selection,
+/// else the keyboard row), and no "Select all N" fetch is loading.
+fn targeted(state: &State) -> bool {
+    ready(state)
+        && state.mode == Mode::Mail
+        && state
+            .current()
+            .is_some_and(|v| v.mail.fetching.is_none() && v.mail.target().is_some())
+}
+
 /// The open email has a text body the reader can show as Markdown or as
 /// its source.
 fn readable(state: &State) -> bool {
@@ -63,18 +73,18 @@ fn readable(state: &State) -> bool {
             .is_some_and(crate::reader::has_text)
 }
 
-/// The open email can go to Junk: it is not there, and the account has a
-/// Junk mailbox.
+/// The target can go to Junk: the mailbox is not Junk, and the account
+/// has a Junk mailbox.
 fn junkable(state: &State) -> bool {
-    reading(state)
+    targeted(state)
         && state.current().is_some_and(|v| {
             !crate::state::in_junk(v) && crate::state::junk_target(v, true).is_some()
         })
 }
 
-/// The open email is in Junk and can go back to the inbox.
+/// The mailbox is Junk and the target can go back to the inbox.
 fn unjunkable(state: &State) -> bool {
-    reading(state)
+    targeted(state)
         && state.current().is_some_and(|v| {
             crate::state::in_junk(v) && crate::state::junk_target(v, false).is_some()
         })
@@ -234,8 +244,8 @@ pub fn registry() -> Registry<State> {
         menu: Some("message"),
         shortcut: key(Modifiers::NONE, Key::S),
         icon: Some(Icon::Star),
-        enabled: reading,
-        run: State::flag_open,
+        enabled: targeted,
+        run: State::flag_target,
     })
     .add(Command {
         id: "mail.mark_unread",
@@ -245,8 +255,8 @@ pub fn registry() -> Registry<State> {
         menu: Some("message"),
         shortcut: key(Modifiers::NONE, Key::M),
         icon: Some(Icon::MailOpen),
-        enabled: reading,
-        run: State::toggle_open_read,
+        enabled: targeted,
+        run: State::toggle_target_read,
     })
     .add(Command {
         id: "mail.junk",
@@ -257,7 +267,7 @@ pub fn registry() -> Registry<State> {
         shortcut: key(Modifiers::NONE, Key::J),
         icon: Some(Icon::ShieldAlert),
         enabled: junkable,
-        run: State::junk_open,
+        run: State::mark_junk,
     })
     .add(Command {
         id: "mail.not_junk",
@@ -268,7 +278,7 @@ pub fn registry() -> Registry<State> {
         shortcut: key(Modifiers::SHIFT, Key::J),
         icon: None,
         enabled: unjunkable,
-        run: State::not_junk_open,
+        run: State::mark_not_junk,
     })
     .add(Command {
         id: "mail.move",
@@ -278,8 +288,8 @@ pub fn registry() -> Registry<State> {
         menu: Some("message"),
         shortcut: key(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::M),
         icon: Some(Icon::FolderInput),
-        enabled: reading,
-        run: State::move_open,
+        enabled: targeted,
+        run: State::move_target,
     })
     .add(Command {
         id: "mail.delete",
@@ -289,8 +299,8 @@ pub fn registry() -> Registry<State> {
         menu: Some("message"),
         shortcut: key(Modifiers::NONE, Key::Delete),
         icon: Some(Icon::Trash),
-        enabled: reading,
-        run: State::delete_open,
+        enabled: targeted,
+        run: State::delete_target,
     })
     .add(Command {
         id: "mail.print",
@@ -463,9 +473,9 @@ pub fn registry() -> Registry<State> {
     ] {
         r.scope(id, Scope::Browsing);
     }
-    // Labels that say what the command will do to the open email.
+    // Labels that say what the command will do to the target.
     r.relabel("mail.flag", |state| {
-        if open_has(state, "$flagged") {
+        if target_all(state, jmap::Email::is_flagged) {
             "unflag"
         } else {
             "flag"
@@ -483,11 +493,10 @@ pub fn registry() -> Registry<State> {
         }
     })
     .relabel("mail.mark_unread", |state| {
-        if state
+        let some_unread = state
             .current()
-            .and_then(|v| v.mail.open.as_ref())
-            .is_some_and(|e| !e.is_read())
-        {
+            .is_some_and(|v| v.mail.target_rows().iter().any(|e| !e.is_read()));
+        if some_unread {
             "mark-read"
         } else {
             "mark-unread"
@@ -496,15 +505,13 @@ pub fn registry() -> Registry<State> {
     r
 }
 
-/// Whether the current account's open email has `keyword`.
-fn open_has(state: &State, keyword: &str) -> bool {
-    state
-        .current()
-        .and_then(|v| v.mail.open.as_ref())
-        .and_then(|e| e.keywords.as_ref())
-        .and_then(|k| k.get(keyword))
-        .and_then(serde_json::Value::as_bool)
-        .unwrap_or(false)
+/// Whether every shown row of the current account's target passes `test`
+/// (false with none).
+fn target_all(state: &State, test: fn(&jmap::Email) -> bool) -> bool {
+    state.current().is_some_and(|v| {
+        let rows = v.mail.target_rows();
+        !rows.is_empty() && rows.into_iter().all(test)
+    })
 }
 
 /// View › Message › Render Markdown's tick: the open email is shown as

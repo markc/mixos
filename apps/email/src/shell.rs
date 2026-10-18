@@ -50,6 +50,10 @@ pub enum Done {
         Result<Value, jmap::Error>,
     ),
     Marked(Result<(), jmap::Error>),
+    /// A batched message action finished: each id done or failed.
+    Batched(Box<crate::work::Batch>, jmap::SetOutcome),
+    /// A page of "Select all N" fetch `ticket`'s ids.
+    Ids(u64, Result<jmap::IdPage, jmap::Error>),
     /// A send finished: its ticket, what the try did on the server (kept
     /// for a retry), and the outcome.
     Sent(
@@ -845,6 +849,71 @@ impl Shell {
                         };
                         let error = jmap::Error::Protocol(label("not-connected"));
                         self.state.wrote(&tag, reply, form, write, Err(error));
+                    }
+                }
+            }
+            Work::Batch {
+                account,
+                generation,
+                batch,
+            } => {
+                // Not sent at all: every id fails with the reason, so the
+                // list puts back what it showed ahead of the server.
+                let refused = |batch: &crate::work::Batch, why: String| jmap::SetOutcome {
+                    done: Vec::new(),
+                    failed: batch.ids.iter().map(|id| (id.clone(), why.clone())).collect(),
+                };
+                match self.client(&account) {
+                    Some((tag, _)) if tag.generation != generation => {
+                        let outcome = refused(&batch, label("stale-connection"));
+                        self.state
+                            .apply(Event::Account(tag, Done::Batched(batch, outcome)));
+                    }
+                    Some((tag, client)) => {
+                        self.spawn(async move {
+                            let outcome = client.change_emails(&batch.ids, &batch.change).await;
+                            Event::Account(tag, Done::Batched(batch, outcome))
+                        });
+                    }
+                    None => {
+                        let tag = Tag {
+                            account,
+                            generation,
+                        };
+                        let outcome = refused(&batch, label("not-connected"));
+                        self.state
+                            .apply(Event::Account(tag, Done::Batched(batch, outcome)));
+                    }
+                }
+            }
+            Work::FetchIds {
+                account,
+                ticket,
+                mailbox,
+                sort,
+                position,
+            } => {
+                match self.client(&account) {
+                    Some((tag, client)) => {
+                        self.spawn(async move {
+                            let limit = jmap::MAX_IDS_PER_REQUEST as u64;
+                            let page = client.email_ids(&mailbox, sort, position, limit).await;
+                            Event::Account(tag, Done::Ids(ticket, page))
+                        });
+                    }
+                    // Settled at once: "Fetching N…" never waits forever.
+                    None => {
+                        let generation = self
+                            .state
+                            .account(&account)
+                            .map_or(0, crate::state::AccountView::generation);
+                        let tag = Tag {
+                            account,
+                            generation,
+                        };
+                        let error = jmap::Error::Protocol(label("not-connected"));
+                        self.state
+                            .apply(Event::Account(tag, Done::Ids(ticket, Err(error))));
                     }
                 }
             }

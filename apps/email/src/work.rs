@@ -97,6 +97,24 @@ pub enum Work {
         expect: Option<u64>,
         write: Write,
     },
+    /// A message action on the list's target: one change to every id,
+    /// sent as batched Email/set requests (at most
+    /// [`jmap::MAX_IDS_PER_REQUEST`] ids each) through connection
+    /// `generation` only. The answer reports each id done or failed.
+    Batch {
+        account: String,
+        generation: u64,
+        batch: Box<Batch>,
+    },
+    /// One page (at most 500) of the ids of `mailbox`'s query in `sort`
+    /// order, from `position`, for "Select all N" fetch `ticket`.
+    FetchIds {
+        account: String,
+        ticket: u64,
+        mailbox: String,
+        sort: jmap::EmailSort,
+        position: u64,
+    },
     /// Set or clear `$seen`.
     MarkRead {
         account: String,
@@ -181,6 +199,34 @@ pub enum Work {
     },
 }
 
+/// Which message action a batch is: it decides what the list does after.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BatchKind {
+    Flag,
+    Read,
+    Delete,
+    Move,
+    Junk,
+}
+
+impl BatchKind {
+    /// The emails leave the shown mailbox.
+    pub fn removes(self) -> bool {
+        matches!(self, BatchKind::Delete | BatchKind::Move | BatchKind::Junk)
+    }
+}
+
+/// One batched message action: what, to which ids, and (for a keyword
+/// change) each id's keyword before it, so a failed id is put back.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Batch {
+    pub kind: BatchKind,
+    pub change: jmap::EmailChange,
+    pub ids: Vec<String>,
+    /// For a keyword change: the shown ids' keyword value before it.
+    pub before: Vec<(String, bool)>,
+}
+
 impl Work {
     /// The account this work is for, when it is an account's.
     pub fn account(&self) -> Option<&str> {
@@ -192,6 +238,8 @@ impl Work {
             | Work::OpenEmail { account, .. }
             | Work::Query { account, .. }
             | Work::Write { account, .. }
+            | Work::Batch { account, .. }
+            | Work::FetchIds { account, .. }
             | Work::MarkRead { account, .. }
             | Work::Send { account, .. }
             | Work::FetchCalendars { account }

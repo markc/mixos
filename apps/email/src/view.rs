@@ -87,6 +87,8 @@ pub enum UiEvent {
     SuggestAccept(Option<usize>),
     /// Close the completions.
     SuggestClose,
+    /// Escape while "Select all N"'s ids load: stop, changing nothing.
+    CancelFetch,
 }
 
 const ICON: f32 = 14.0;

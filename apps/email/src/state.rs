@@ -31,7 +31,7 @@ use toolkit::datatable::{
 
 use crate::drafts::{DraftOp, SavedDraft};
 use crate::secrets::Secrets;
-use crate::work::{Login, Work};
+use crate::work::{Batch, BatchKind, Login, Work};
 use crate::writer::{self, Change, Refusal};
 
 /// Which surface the centre pane shows.
@@ -142,6 +142,52 @@ pub struct MailState {
     /// The keyboard row's email while a new sort or page loads: the row
     /// stays on it if the new page still holds it.
     pub refocus: Option<String>,
+    /// A "Select all N" action waiting on the query's ids.
+    pub fetching: Option<Fetching>,
+    /// The ids the last batch could not change, each with the reason.
+    pub failed: Vec<(String, String)>,
+}
+
+/// A message action on the list's target (`mail.flag`, `mail.mark_unread`,
+/// `mail.delete`, `mail.move`, `mail.junk`, `mail.not_junk`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Action {
+    /// Flag every target, or unflag them when every shown one is flagged.
+    Flag,
+    /// Mark every target read, or unread when every shown one is read.
+    Read,
+    /// To Trash: asks first for two or more, else as the settings say.
+    Delete,
+    /// Choose a mailbox, then move.
+    Move,
+    /// To Junk (`true`) or out of it to the inbox.
+    Junk(bool),
+}
+
+/// What a message action applies to.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Target {
+    /// "Select all N": every email of the mailbox's query, `N` of them;
+    /// their ids are fetched before acting.
+    Everything(u64),
+    /// These shown rows, in list order.
+    Rows(Vec<String>),
+}
+
+/// The most emails "Select all N" acts on: above it, nothing is done.
+pub const SELECT_ALL_CAP: u64 = 5000;
+
+/// A "Select all N" id fetch in flight, in pages of
+/// [`jmap::MAX_IDS_PER_REQUEST`].
+#[derive(Clone, Debug, PartialEq)]
+pub struct Fetching {
+    pub ticket: u64,
+    pub action: Action,
+    pub mailbox: String,
+    pub sort: jmap::EmailSort,
+    /// The query's count: the list's total, then the server's.
+    pub expected: u64,
+    pub ids: Vec<String>,
 }
 
 /// The message list's column ids.
@@ -298,6 +344,59 @@ impl MailState {
         table
     }
 
+    /// What a message action applies to: the selection when there is one
+    /// (two or more rows, or one picked by Ctrl+click), else the keyboard
+    /// row. The open email is the target only when it is the keyboard
+    /// row as the list draws it (an email opened from elsewhere with
+    /// nothing selected).
+    pub fn target(&self) -> Option<Target> {
+        if self.everything {
+            return Some(Target::Everything(self.selection_count()));
+        }
+        let table = self.list_table();
+        let selected: Vec<String> = self
+            .emails
+            .iter()
+            .filter(|e| table.selection.contains(&e.id))
+            .map(|e| e.id.clone())
+            .collect();
+        if !selected.is_empty() {
+            return Some(Target::Rows(selected));
+        }
+        table
+            .focus
+            .and_then(|at| self.emails.get(at))
+            .map(|e| Target::Rows(vec![e.id.clone()]))
+    }
+
+    /// The shown rows of the target (the whole page for "Select all N").
+    pub fn target_rows(&self) -> Vec<&Email> {
+        match self.target() {
+            None => Vec::new(),
+            Some(Target::Everything(_)) => self.emails.iter().collect(),
+            Some(Target::Rows(ids)) => self.emails.iter().filter(|e| ids.contains(&e.id)).collect(),
+        }
+    }
+
+    /// The line beside the actions naming their target: "Applies to 6
+    /// selected", "Applies to this email", or "Fetching N…" while
+    /// "Select all N"'s ids load. None when there is no target.
+    pub fn target_line(&self) -> Option<String> {
+        if let Some(fetching) = &self.fetching {
+            let count = grouped(fetching.expected);
+            return Some(crate::label_with("fetching-ids", &[("count", &count)]));
+        }
+        let count = match self.target()? {
+            Target::Everything(n) => n,
+            Target::Rows(ids) => ids.len() as u64,
+        };
+        Some(if count == 1 {
+            crate::label("applies-this")
+        } else {
+            crate::label_with("applies-selected", &[("count", &grouped(count))])
+        })
+    }
+
     /// The selected mailbox, when it is still in the list.
     pub fn selected_mailbox(&self) -> Option<&Mailbox> {
         self.selected
@@ -310,6 +409,19 @@ impl MailState {
         self.mailboxes
             .iter()
             .find(|m| m.role.as_deref() == Some(role))
+    }
+
+    /// Change the selected mailbox's unread count by `delta`, ahead of the
+    /// server's word.
+    fn shift_unread(&mut self, delta: i64) {
+        let selected = self.selected.clone();
+        if let Some(mailbox) = self
+            .mailboxes
+            .iter_mut()
+            .find(|m| Some(&m.id) == selected.as_ref())
+        {
+            mailbox.unread_emails = mailbox.unread_emails.saturating_add_signed(delta);
+        }
     }
 
     /// Every mailbox's unread count, summed.
@@ -496,6 +608,9 @@ struct Tickets {
     events: u64,
     contacts: u64,
     send: u64,
+    /// The latest "Select all N" id fetch: a cancelled or replaced one's
+    /// pages are dropped.
+    ids: u64,
 }
 
 /// One settings account and everything the window holds for it.
@@ -549,6 +664,7 @@ impl AccountView {
         };
         self.tickets.open += 1;
         self.tickets.open_mailbox = None;
+        self.tickets.ids += 1;
     }
 
     fn work(&self) -> String {
@@ -572,6 +688,7 @@ impl AccountView {
         };
         self.mail.everything = false;
         self.mail.refocus = None;
+        self.cancel_fetch();
         // An open still in flight belongs to the old mailbox.
         self.tickets.open += 1;
         self.mail.busy = true;
@@ -611,8 +728,20 @@ impl AccountView {
         self.mail.table.selection.clear();
         self.mail.table.anchor = None;
         self.mail.everything = false;
+        self.cancel_fetch();
         self.mail.busy = true;
         self.fetch_emails(mailbox, limit, work);
+    }
+
+    /// Drop a "Select all N" id fetch in flight; its pages are ignored.
+    /// True when there was one.
+    fn cancel_fetch(&mut self) -> bool {
+        if self.mail.fetching.take().is_some() {
+            self.tickets.ids += 1;
+            true
+        } else {
+            false
+        }
     }
 
     /// A page of the list arrived. The keyboard row stays on its email if
@@ -2362,6 +2491,12 @@ impl State {
             Event::Account(tag, Done::Wrote(reply, form, write, result)) => {
                 self.wrote(&tag, reply, form, *write, result);
             }
+            Event::Account(tag, Done::Batched(batch, outcome)) => {
+                self.batched(&tag, *batch, outcome);
+            }
+            Event::Account(tag, Done::Ids(ticket, result)) => {
+                self.ids_arrived(&tag, ticket, result);
+            }
             // A send is settled by its own ticket even when the account has
             // reconnected since: the person must hear whether it went.
             Event::Account(tag, Done::Sent(ticket, attempt, result)) => {
@@ -2516,7 +2651,11 @@ impl State {
                     | Done::Calendars(Err(error))
                     | Done::Books(Err(error)) => self.status = error.to_string(),
                     // Answered above, before the generation check.
-                    Done::Answered(..) | Done::Wrote(..) | Done::Attachment(..) => {}
+                    Done::Answered(..)
+                    | Done::Wrote(..)
+                    | Done::Batched(..)
+                    | Done::Ids(..)
+                    | Done::Attachment(..) => {}
                     Done::Suggested(ticket, found) => {
                         let contacts = found.unwrap_or_default();
                         let recent = view.mail.recent.clone();
@@ -2746,18 +2885,23 @@ impl State {
                 let opened = view.mail.open.as_ref().is_some_and(|e| e.id == *key);
                 if !view.mail.table.is_selected(key) {
                     view.mail.everything = false;
+                    view.cancel_fetch();
                 }
                 view.mail.table.apply(&event, SelectionMode::Multi);
                 if !opened {
                     self.open_email(account, key.clone());
                 }
             }
+            // A new selection drops a "Select all N" fetch still loading:
+            // it was for the old one.
             TableEvent::Selected { .. } | TableEvent::SelectionChanged { .. } => {
+                view.cancel_fetch();
                 view.mail.table.apply(&event, SelectionMode::Multi);
                 view.mail.everything = false;
             }
             // Offered only once the whole page is selected: the count is
-            // the mailbox's total, which the list already has.
+            // the mailbox's total, which the list already has (its ids are
+            // fetched only when an action needs them).
             TableEvent::SelectEverything => {
                 view.mail.table.selection = view.mail.keys();
                 view.mail.everything = true;
@@ -3338,28 +3482,308 @@ impl State {
         self.form = Some(form);
     }
 
-    /// Delete the open email: confirm first when the settings ask to.
-    pub fn delete_open(&mut self) {
-        let Some((account, email)) = self.reading() else {
+    /// `mail.delete`: the target to Trash. Two or more always ask first,
+    /// with the count; one asks when the settings say so.
+    pub fn delete_target(&mut self) {
+        self.act(Action::Delete);
+    }
+
+    /// Apply `action` to the current account's target. "Select all N"
+    /// fetches the query's ids first (refused above [`SELECT_ALL_CAP`]);
+    /// one fetch at a time.
+    pub fn act(&mut self, action: Action) {
+        if self.mode != Mode::Mail {
+            return;
+        }
+        let Some(account) = self.selected.clone() else {
             return;
         };
-        let ids = vec![email.id];
-        if self.settings.mail.confirm_delete {
-            let generation = self.generation_of(&account);
-            self.open_form(Form::Delete {
-                account,
+        let Some(view) = self.accounts.iter_mut().find(|v| v.entry.id == account) else {
+            return;
+        };
+        if view.mail.fetching.is_some() {
+            return;
+        }
+        match view.mail.target() {
+            None => {}
+            Some(Target::Everything(count)) => {
+                if count > SELECT_ALL_CAP {
+                    self.status = too_many(count);
+                    return;
+                }
+                let Some(mailbox) = view.mail.selected.clone() else {
+                    return;
+                };
+                view.tickets.ids += 1;
+                let ticket = view.tickets.ids;
+                let sort = email_sort(view.mail.table.sort.as_ref());
+                view.mail.fetching = Some(Fetching {
+                    ticket,
+                    action,
+                    mailbox: mailbox.clone(),
+                    sort,
+                    expected: count,
+                    ids: Vec::new(),
+                });
+                self.work.push(Work::FetchIds {
+                    account,
+                    ticket,
+                    mailbox,
+                    sort,
+                    position: 0,
+                });
+            }
+            Some(Target::Rows(ids)) => self.act_on(&account, ids, action),
+        }
+    }
+
+    /// Escape while "Fetching N…": the fetch stops and nothing changes.
+    pub fn cancel_fetch(&mut self) {
+        let Some(account) = self.selected.clone() else {
+            return;
+        };
+        if let Some(view) = self.account_mut(&account)
+            && view.cancel_fetch()
+        {
+            self.status = crate::label("fetch-cancelled");
+        }
+    }
+
+    /// A page of "Select all N"'s ids arrived: ask for the next, refuse
+    /// once the query is past [`SELECT_ALL_CAP`], or act once all are in.
+    fn ids_arrived(&mut self, tag: &Tag, ticket: u64, result: Result<jmap::IdPage, jmap::Error>) {
+        let Some(view) = self
+            .accounts
+            .iter_mut()
+            .find(|v| v.entry.id == tag.account && v.generation == tag.generation)
+        else {
+            return;
+        };
+        if view.tickets.ids != ticket
+            || view.mail.fetching.as_ref().is_none_or(|f| f.ticket != ticket)
+        {
+            return;
+        }
+        let page = match result {
+            Ok(page) => page,
+            Err(error) => {
+                view.cancel_fetch();
+                self.status = crate::label_with("fetch-failed", &[("error", &error.to_string())]);
+                return;
+            }
+        };
+        let Some(fetching) = view.mail.fetching.as_mut() else {
+            return;
+        };
+        let more = !page.ids.is_empty();
+        fetching.expected = page.total;
+        for id in page.ids {
+            if !fetching.ids.contains(&id) {
+                fetching.ids.push(id);
+            }
+        }
+        let have = fetching.ids.len() as u64;
+        if page.total > SELECT_ALL_CAP || have > SELECT_ALL_CAP {
+            let count = page.total.max(have);
+            view.cancel_fetch();
+            self.status = too_many(count);
+            return;
+        }
+        if more && have < page.total {
+            let work = Work::FetchIds {
+                account: tag.account.clone(),
+                ticket,
+                mailbox: fetching.mailbox.clone(),
+                sort: fetching.sort,
+                position: have,
+            };
+            self.work.push(work);
+            return;
+        }
+        if let Some(done) = view.mail.fetching.take() {
+            self.act_on(&tag.account, done.ids, done.action);
+        }
+    }
+
+    /// Apply `action` to `account`'s emails `ids`.
+    fn act_on(&mut self, account: &str, ids: Vec<String>, action: Action) {
+        if ids.is_empty() {
+            return;
+        }
+        let Some(view) = self.account(account) else {
+            return;
+        };
+        let generation = view.generation;
+        let shown: Vec<&Email> = view
+            .mail
+            .emails
+            .iter()
+            .filter(|e| ids.contains(&e.id))
+            .collect();
+        let all = |test: fn(&Email) -> bool| !shown.is_empty() && shown.iter().all(|e| test(e));
+        match action {
+            Action::Flag => {
+                let flagged = !all(Email::is_flagged);
+                let change = jmap::EmailChange::Keywords {
+                    read: None,
+                    flagged: Some(flagged),
+                };
+                self.batch(account, generation, BatchKind::Flag, change, ids);
+            }
+            Action::Read => {
+                let read = !all(Email::is_read);
+                let change = jmap::EmailChange::Keywords {
+                    read: Some(read),
+                    flagged: None,
+                };
+                self.batch(account, generation, BatchKind::Read, change, ids);
+            }
+            Action::Delete => {
+                if ids.len() >= 2 || self.settings.mail.confirm_delete {
+                    self.open_form(Form::Delete {
+                        account: account.to_owned(),
+                        generation,
+                        ids,
+                    });
+                } else {
+                    self.trash(account, generation, ids);
+                }
+            }
+            Action::Move => self.open_form(Form::Move {
+                account: account.to_owned(),
                 generation,
                 ids,
-            });
-        } else {
-            self.write_server(
-                account,
-                None,
-                crate::verbs::Write::Delete {
-                    ids,
-                    destroy: false,
-                },
+            }),
+            Action::Junk(junk) => {
+                let Some(mailbox) = junk_target(view, junk) else {
+                    self.status = crate::label(if junk { "no-junk-mailbox" } else { "no-inbox" });
+                    return;
+                };
+                let change = jmap::EmailChange::Move { mailbox };
+                self.batch(account, generation, BatchKind::Junk, change, ids);
+            }
+        }
+    }
+
+    /// `ids` to the account's Trash mailbox, through `generation` only.
+    fn trash(&mut self, account: &str, generation: u64, ids: Vec<String>) {
+        let trash = self
+            .account(account)
+            .and_then(|v| v.mail.by_role("trash"))
+            .map(|m| m.id.clone());
+        let Some(mailbox) = trash else {
+            self.status = crate::label("no-trash-mailbox");
+            return;
+        };
+        let change = jmap::EmailChange::Move { mailbox };
+        self.batch(account, generation, BatchKind::Delete, change, ids);
+    }
+
+    /// Queue one batched action. A keyword change shows at once on the
+    /// rows (and the mailbox's unread count); what each shown row held
+    /// before goes with it, so a failed id is put back.
+    fn batch(
+        &mut self,
+        account: &str,
+        generation: u64,
+        kind: BatchKind,
+        change: jmap::EmailChange,
+        ids: Vec<String>,
+    ) {
+        let Some(view) = self.accounts.iter_mut().find(|v| v.entry.id == account) else {
+            return;
+        };
+        let mut before = Vec::new();
+        if let Some((keyword, on)) = keyword_of(&change) {
+            for email in view.mail.emails.iter().filter(|e| ids.contains(&e.id)) {
+                before.push((email.id.clone(), has_keyword(email, keyword)));
+            }
+            if keyword == "$seen" {
+                let flips = before.iter().filter(|(_, was)| *was != on).count() as u64;
+                view.mail.shift_unread(if on { -(flips as i64) } else { flips as i64 });
+            }
+            view.set_keyword(&ids, keyword, on);
+        }
+        view.mail.failed.clear();
+        self.work.push(Work::Batch {
+            account: account.to_owned(),
+            generation,
+            batch: Box::new(Batch {
+                kind,
+                change,
+                ids,
+                before,
+            }),
+        });
+    }
+
+    /// A batched action finished. The ids it changed stay changed (a
+    /// delete, move or junk takes them out of the list at once); each
+    /// failed id is put back as it was and named with its reason in the
+    /// status line. A flag or read change keeps the selection, so the
+    /// person can carry on; a delete, move or junk clears it. If the open
+    /// email left, the reader opens the next row, as a single delete did.
+    fn batched(&mut self, tag: &Tag, batch: Batch, outcome: jmap::SetOutcome) {
+        let limit = self.settings.mail.page_size;
+        let Some(view) = self
+            .accounts
+            .iter_mut()
+            .find(|v| v.entry.id == tag.account && v.generation == tag.generation)
+        else {
+            return;
+        };
+        let failed: Vec<&String> = outcome.failed.iter().map(|(id, _)| id).collect();
+        if let Some((keyword, on)) = keyword_of(&batch.change) {
+            let mut put_back = 0i64;
+            for (id, was) in batch.before.iter().filter(|(id, _)| failed.contains(&id)) {
+                view.set_keyword(std::slice::from_ref(id), keyword, *was);
+                if keyword == "$seen" && *was != on {
+                    put_back += 1;
+                }
+            }
+            if keyword == "$seen" {
+                view.mail
+                    .shift_unread(if on { put_back } else { -put_back });
+            }
+        }
+        let mut advance = None;
+        if batch.kind.removes() {
+            let gone = &outcome.done;
+            if let Some(open) = view.mail.open.as_ref().filter(|e| gone.contains(&e.id)) {
+                advance = neighbour(&view.mail.emails, &open.id, gone);
+                view.mail.open = None;
+            }
+            view.mail.emails.retain(|e| !gone.contains(&e.id));
+            view.mail.table.selection.clear();
+            view.mail.table.anchor = None;
+            view.mail.everything = false;
+            view.mail.table.rows_changed(&view.mail.keys());
+            if let Some(mailbox) = view.mail.selected.clone() {
+                view.fetch_emails(mailbox, limit, &mut self.work);
+            }
+        }
+        self.work.push(Work::FetchMailboxes {
+            account: tag.account.clone(),
+        });
+        view.mail.failed = outcome.failed.clone();
+        if !outcome.failed.is_empty() {
+            let reasons = outcome
+                .failed
+                .iter()
+                .map(|(id, why)| format!("{id} ({why})"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            self.status = crate::label_with(
+                "batch-failed",
+                &[
+                    ("failed", &outcome.failed.len().to_string()),
+                    ("count", &batch.ids.len().to_string()),
+                    ("reasons", &reasons),
+                ],
             );
+        }
+        if let Some(id) = advance {
+            self.open_email(&tag.account, id);
         }
     }
 
@@ -3600,118 +4024,36 @@ impl State {
         }
     }
 
-    /// `mail.junk` (J): move the open email to the account's Junk mailbox.
+    /// `mail.junk` (J): move the target to the account's Junk mailbox.
     /// maild trains its spam filter on the move; there is no `$junk`
     /// keyword.
-    pub fn junk_open(&mut self) {
-        self.junk_move(true);
+    pub fn mark_junk(&mut self) {
+        self.act(Action::Junk(true));
     }
 
-    /// `mail.not_junk` (Shift+J): move the open email out of Junk to the
+    /// `mail.not_junk` (Shift+J): move the target out of Junk to the
     /// inbox; maild trains it as ham.
-    pub fn not_junk_open(&mut self) {
-        self.junk_move(false);
+    pub fn mark_not_junk(&mut self) {
+        self.act(Action::Junk(false));
     }
 
-    fn junk_move(&mut self, junk: bool) {
-        let Some((account, email)) = self.reading() else {
-            return;
-        };
-        let Some(mailbox) = self.account(&account).and_then(|v| junk_target(v, junk)) else {
-            self.status = crate::label(if junk { "no-junk-mailbox" } else { "no-inbox" });
-            return;
-        };
-        let write = crate::verbs::Write::Move {
-            ids: vec![email.id],
-            mailbox,
-        };
-        self.write_server(account, None, write);
+    /// `mail.move`: choose where the target moves to.
+    pub fn move_target(&mut self) {
+        self.act(Action::Move);
     }
 
-    /// Choose where the open email moves to.
-    pub fn move_open(&mut self) {
-        if let Some((account, email)) = self.reading() {
-            let generation = self.generation_of(&account);
-            self.open_form(Form::Move {
-                account,
-                generation,
-                ids: vec![email.id],
-            });
-        }
+    /// `mail.flag` (S): flag the target, or unflag it when every shown
+    /// target row is flagged.
+    pub fn flag_target(&mut self) {
+        self.act(Action::Flag);
     }
 
-    /// Flag or unflag the open email.
-    pub fn flag_open(&mut self) {
-        let Some((account, email)) = self.reading() else {
-            return;
-        };
-        let flagged = !email
-            .keywords
-            .as_ref()
-            .and_then(|k| k.get("$flagged"))
-            .and_then(Value::as_bool)
-            .unwrap_or(false);
-        let ids = vec![email.id];
-        if let Some(view) = self.account_mut(&account) {
-            view.set_keyword(&ids, "$flagged", flagged);
-        }
-        let write = crate::verbs::Write::Keywords {
-            ids,
-            read: None,
-            flagged: Some(flagged),
-        };
-        self.write_server(account, None, write);
-    }
-
-    /// Mark the open email unread.
-    pub fn mark_open_unread(&mut self) {
-        let Some((account, email)) = self.reading() else {
-            return;
-        };
-        let ids = vec![email.id];
-        if let Some(view) = self.account_mut(&account) {
-            view.set_keyword(&ids, "$seen", false);
-        }
-        let write = crate::verbs::Write::Keywords {
-            ids,
-            read: Some(false),
-            flagged: None,
-        };
-        self.write_server(account, None, write);
-    }
-
-    /// `mail.mark_unread` (M): mark the open email read when it is unread,
-    /// else unread. It stays open either way and is not marked read again:
-    /// only a fresh open does that (`mark_read_on_open`). The list row and
-    /// the mailbox's unread count change at once.
-    pub fn toggle_open_read(&mut self) {
-        let Some((account, email)) = self.reading() else {
-            return;
-        };
-        let read = !email.is_read();
-        let ids = vec![email.id];
-        if let Some(view) = self.account_mut(&account) {
-            view.set_keyword(&ids, "$seen", read);
-            let selected = view.mail.selected.clone();
-            if let Some(mailbox) = view
-                .mail
-                .mailboxes
-                .iter_mut()
-                .find(|m| Some(&m.id) == selected.as_ref())
-            {
-                mailbox.unread_emails = if read {
-                    mailbox.unread_emails.saturating_sub(1)
-                } else {
-                    mailbox.unread_emails + 1
-                };
-            }
-        }
-        let write = crate::verbs::Write::Keywords {
-            ids,
-            read: Some(read),
-            flagged: None,
-        };
-        self.write_server(account, None, write);
+    /// `mail.mark_unread` (M): mark the target read when any shown target
+    /// row is unread, else unread. The open email is not marked read again:
+    /// only a fresh open does that (`mark_read_on_open`). The rows and the
+    /// mailbox's unread count change at once.
+    pub fn toggle_target_read(&mut self) {
+        self.act(Action::Read);
     }
 
     /// Reply to everyone the open email went to.
@@ -3840,17 +4182,13 @@ impl State {
         match form {
             Form::Delete { account, ids, .. } => {
                 self.form = None;
-                let write = crate::verbs::Write::Delete {
-                    ids,
-                    destroy: false,
-                };
-                self.write_bound(account, None, generation, write);
+                self.trash(&account, generation, ids);
             }
             Form::Move { account, ids, .. } => {
                 if let Some(mailbox) = choice {
                     self.form = None;
-                    let write = crate::verbs::Write::Move { ids, mailbox };
-                    self.write_bound(account, None, generation, write);
+                    let change = jmap::EmailChange::Move { mailbox };
+                    self.batch(&account, generation, BatchKind::Move, change, ids);
                 }
             }
             Form::Event(f) if !f.busy => {
@@ -4611,6 +4949,7 @@ impl State {
                 }
             }
             UiEvent::CloseCompose => self.close_compose(),
+            UiEvent::CancelFetch => self.cancel_fetch(),
             UiEvent::ConfirmDraft(choice) => self.confirm_draft(choice),
             UiEvent::RestoreDraft(choice) => self.restore_draft(choice),
             UiEvent::ComposeUseNewFrom => {
@@ -4983,6 +5322,38 @@ pub fn attachment_work(
         dir,
         reply,
     })
+}
+
+/// The keyword a keyword change sets or clears, and which.
+fn keyword_of(change: &jmap::EmailChange) -> Option<(&'static str, bool)> {
+    match change {
+        jmap::EmailChange::Keywords {
+            flagged: Some(on), ..
+        } => Some(("$flagged", *on)),
+        jmap::EmailChange::Keywords { read: Some(on), .. } => Some(("$seen", *on)),
+        _ => None,
+    }
+}
+
+/// Whether `email` holds `keyword`.
+fn has_keyword(email: &Email, keyword: &str) -> bool {
+    email
+        .keywords
+        .as_ref()
+        .and_then(|k| k.get(keyword))
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+}
+
+/// The refusal of a "Select all N" past [`SELECT_ALL_CAP`].
+fn too_many(count: u64) -> String {
+    crate::label_with(
+        "too-many-selected",
+        &[
+            ("count", &grouped(count)),
+            ("cap", &grouped(SELECT_ALL_CAP)),
+        ],
+    )
 }
 
 /// The row to open after `open` and the other `gone` rows leave `emails`
@@ -6494,13 +6865,28 @@ pub(crate) mod tests {
         done(
             &mut state,
             "a",
-            Done::Mailboxes(Ok(vec![mailbox("m-in", Some("inbox"), 1)])),
+            Done::Mailboxes(Ok(vec![
+                mailbox("m-in", Some("inbox"), 1),
+                mailbox("m-trash", Some("trash"), 0),
+            ])),
         );
         state.take_work();
         let view = state.account_mut("a").unwrap();
         view.mail.emails = vec![unread_email("E1"), unread_email("E2")];
         view.mail.open = Some(unread_email("E1"));
         state
+    }
+
+    /// The batched actions queued since the last take.
+    fn batches(state: &mut State) -> Vec<Batch> {
+        state
+            .take_work()
+            .into_iter()
+            .filter_map(|w| match w {
+                Work::Batch { batch, .. } => Some(*batch),
+                _ => None,
+            })
+            .collect()
     }
 
     fn writes(state: &mut State) -> Vec<(Option<u64>, Write)> {
@@ -6942,61 +7328,66 @@ pub(crate) mod tests {
     #[test]
     fn delete_confirms_when_the_settings_ask_and_not_otherwise() {
         let mut state = reading();
-        state.delete_open();
+        state.delete_target();
         assert!(matches!(&state.form, Some(Form::Delete { ids, .. }) if ids == &["E1"]));
-        assert!(writes(&mut state).is_empty(), "nothing until confirmed");
+        assert!(batches(&mut state).is_empty(), "nothing until confirmed");
         state.apply_ui(UiEvent::FormSubmit(None));
         assert!(state.form.is_none());
         assert!(matches!(
-            writes(&mut state).as_slice(),
-            [(None, Write::Delete { destroy: false, .. })]
+            batches(&mut state).as_slice(),
+            [Batch { kind: BatchKind::Delete, change: jmap::EmailChange::Move { mailbox }, .. }]
+                if mailbox == "m-trash"
         ));
         let mut next = settings(&["a"]);
         next.mail.confirm_delete = false;
         state.set_settings(next);
         state.take_work();
         state.account_mut("a").unwrap().mail.open = Some(unread_email("E2"));
-        state.delete_open();
+        state.delete_target();
         assert!(state.form.is_none());
-        assert_eq!(writes(&mut state).len(), 1);
+        assert_eq!(batches(&mut state).len(), 1);
     }
 
+    /// The open email is the target here: nothing is selected, so the list
+    /// draws it as the keyboard row (phase 3b; these went as single
+    /// writes before, now as batches of one).
     #[test]
-    fn move_flag_and_mark_unread_act_on_the_open_email() {
+    fn move_flag_and_mark_unread_act_on_the_target() {
         let mut state = reading();
-        state.move_open();
+        state.move_target();
         state.apply_ui(UiEvent::FormSubmit(Some("m-archive".into())));
-        assert!(
-            matches!(writes(&mut state).as_slice(), [(None, Write::Move { mailbox, .. })] if mailbox == "m-archive")
-        );
-        state.flag_open();
+        assert!(matches!(
+            batches(&mut state).as_slice(),
+            [Batch { kind: BatchKind::Move, change: jmap::EmailChange::Move { mailbox }, ids, .. }]
+                if mailbox == "m-archive" && ids == &["E1"]
+        ));
+        state.flag_target();
         let view = state.account("a").unwrap();
         let flagged =
             view.mail.open.as_ref().unwrap().keywords.as_ref().unwrap()["$flagged"].clone();
         assert_eq!(flagged, json!(true), "shown at once");
         assert!(matches!(
-            writes(&mut state).as_slice(),
-            [(
-                None,
-                Write::Keywords {
+            batches(&mut state).as_slice(),
+            [Batch {
+                change: jmap::EmailChange::Keywords {
                     flagged: Some(true),
                     read: None,
-                    ..
-                }
-            )]
+                },
+                ..
+            }]
         ));
         state.account_mut("a").unwrap().mail.emails[0].keywords = Some(json!({"$seen": true}));
-        state.mark_open_unread();
+        state.toggle_target_read();
         assert!(!state.account("a").unwrap().mail.emails[0].is_read());
         assert!(matches!(
-            writes(&mut state).as_slice(),
-            [(
-                None,
-                Write::Keywords {
+            batches(&mut state).as_slice(),
+            [Batch {
+                change: jmap::EmailChange::Keywords {
                     read: Some(false),
                     ..
-                }
-            )]
+                },
+                ..
+            }]
         ));
     }
 
@@ -7770,7 +8161,7 @@ pub(crate) mod tests {
     #[test]
     fn round4_22_a_form_from_an_old_connection_does_not_submit() {
         let mut state = reading();
-        state.delete_open();
+        state.delete_target();
         assert!(matches!(state.form, Some(Form::Delete { .. })));
         let mut next = settings(&["a"]);
         next.accounts[0].url = "https://moved.example.invalid".into();
@@ -7778,7 +8169,7 @@ pub(crate) mod tests {
         state.take_work();
         state.apply_ui(UiEvent::FormSubmit(None));
         assert!(
-            writes(&mut state).is_empty(),
+            batches(&mut state).is_empty(),
             "no delete through the new server"
         );
     }
@@ -7869,7 +8260,7 @@ pub(crate) mod tests {
     #[test]
     fn round4_22_a_login_change_marks_the_open_form() {
         let mut state = reading();
-        state.move_open();
+        state.move_target();
         let mut next = settings(&["a"]);
         next.accounts[0].email = "new@a.example.invalid".into();
         state.set_settings(next);
@@ -7878,15 +8269,17 @@ pub(crate) mod tests {
             Some(crate::label("form-account-changed").as_str())
         );
         state.apply_ui(UiEvent::FormSubmit(Some("m-archive".into())));
-        assert!(writes(&mut state).is_empty());
+        assert!(batches(&mut state).is_empty());
         // A form opened now is bound to the new connection.
         state.apply_ui(UiEvent::FormCancel);
-        state.account_mut("a").unwrap().mail.open = Some(unread_email("E1"));
-        state.move_open();
+        let view = state.account_mut("a").unwrap();
+        view.mail.emails = vec![unread_email("E1")];
+        view.mail.open = Some(unread_email("E1"));
+        state.move_target();
         assert!(state.form_note.is_none());
         state.apply_ui(UiEvent::FormSubmit(Some("m-archive".into())));
         let expect = state.take_work().into_iter().find_map(|w| match w {
-            Work::Write { expect, .. } => expect,
+            Work::Batch { generation, .. } => Some(generation),
             _ => None,
         });
         assert_eq!(expect, Some(tag(&state, "a").generation));
@@ -8125,5 +8518,323 @@ pub(crate) mod tests {
         assert!(state.take_replies().is_empty());
         land(&mut state, &work, Ok(true));
         assert_eq!(state.take_replies()[0].rc, 0);
+    }
+
+    // Phase 3b: message actions act on the list's target, in batches.
+
+    /// The inbox (with a Trash) showing `n` emails E1…En of `total`, E1
+    /// open, nothing selected.
+    fn listing(n: usize, total: u64) -> State {
+        let mut state = reading();
+        let view = state.account_mut("a").unwrap();
+        view.mail.emails = (1..=n).map(|i| unread_email(&format!("E{i}"))).collect();
+        view.mail.total = total;
+        state.take_work();
+        state
+    }
+
+    fn select(state: &mut State, ids: &[&str]) {
+        state.mail_table(
+            "a",
+            TableEvent::SelectionChanged {
+                keys: ids.iter().map(|s| (*s).to_owned()).collect(),
+                focus: Some(0),
+            },
+        );
+    }
+
+    fn target(state: &State) -> Option<Target> {
+        state.account("a").unwrap().mail.target()
+    }
+
+    fn rows(ids: &[&str]) -> Option<Target> {
+        Some(Target::Rows(ids.iter().map(|s| (*s).to_owned()).collect()))
+    }
+
+    #[test]
+    fn target_is_the_selection_else_the_keyboard_row_never_the_open_email() {
+        let mut state = listing(4, 4);
+        // Nothing selected: the open email is drawn as the keyboard row,
+        // so it is the target.
+        assert_eq!(target(&state), rows(&["E1"]));
+        // Two selected: those two, not the open E1.
+        select(&mut state, &["E2", "E3"]);
+        assert_eq!(target(&state), rows(&["E2", "E3"]));
+        // One picked (Ctrl+click) while E1 stays open: that one.
+        select(&mut state, &["E3"]);
+        assert_eq!(target(&state), rows(&["E3"]));
+        // None selected and no email open: the keyboard row.
+        let view = state.account_mut("a").unwrap();
+        view.mail.table.selection.clear();
+        view.mail.open = None;
+        view.mail.table.focus = Some(3);
+        assert_eq!(target(&state), rows(&["E4"]));
+        // Nothing at all: no target, and the actions do nothing.
+        state.account_mut("a").unwrap().mail.table.focus = None;
+        assert_eq!(target(&state), None);
+        state.flag_target();
+        state.delete_target();
+        assert!(batches(&mut state).is_empty() && state.form.is_none());
+    }
+
+    #[test]
+    fn target_line_says_this_email_or_how_many_are_selected() {
+        let mut state = listing(4, 236);
+        let line = |state: &State| state.account("a").unwrap().mail.target_line();
+        assert_eq!(line(&state).as_deref(), Some("Applies to this email"));
+        select(&mut state, &["E1", "E2", "E3"]);
+        assert_eq!(line(&state).as_deref(), Some("Applies to 3 selected"));
+        select(&mut state, &["E1", "E2", "E3", "E4"]);
+        state.mail_table("a", TableEvent::SelectEverything);
+        assert_eq!(line(&state).as_deref(), Some("Applies to 236 selected"));
+    }
+
+    #[test]
+    fn batch_of_n_selected_is_one_work_item_with_every_id() {
+        let mut state = listing(4, 4);
+        select(&mut state, &["E1", "E2", "E3", "E4"]);
+        state.flag_target();
+        let work = state.take_work();
+        assert!(!work.iter().any(|w| matches!(w, Work::Write { .. })));
+        let batches: Vec<&Batch> = work
+            .iter()
+            .filter_map(|w| match w {
+                Work::Batch { batch, .. } => Some(&**batch),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(batches.len(), 1, "one batch, not one write per email");
+        assert_eq!(batches[0].ids, ["E1", "E2", "E3", "E4"]);
+        assert_eq!(
+            batches[0].change,
+            jmap::EmailChange::Keywords {
+                read: None,
+                flagged: Some(true)
+            }
+        );
+        // Every row shows it at once.
+        let mail = &state.account("a").unwrap().mail;
+        assert!(mail.emails.iter().all(Email::is_flagged));
+    }
+
+    #[test]
+    fn batch_partial_failure_keeps_the_failed_ids_with_their_reason() {
+        let mut state = listing(4, 4);
+        select(&mut state, &["E1", "E2", "E3"]);
+        state.flag_target();
+        let batch = batches(&mut state).remove(0);
+        let failed = vec![("E2".to_owned(), "notFound: no such email".to_owned())];
+        done(
+            &mut state,
+            "a",
+            Done::Batched(
+                Box::new(batch),
+                jmap::SetOutcome {
+                    done: vec!["E1".into(), "E3".into()],
+                    failed: failed.clone(),
+                },
+            ),
+        );
+        let mail = &state.account("a").unwrap().mail;
+        let flagged: Vec<bool> = mail.emails.iter().map(Email::is_flagged).collect();
+        assert_eq!(flagged, [true, false, true, false], "E2 put back");
+        assert_eq!(mail.failed, failed);
+        assert!(
+            state.status.contains("E2 (notFound: no such email)"),
+            "{}",
+            state.status
+        );
+        assert_eq!(
+            mail.table.selection,
+            ["E1", "E2", "E3"],
+            "a flag keeps the selection"
+        );
+        // A delete: the done ids leave at once, the failed one stays, and
+        // the selection clears.
+        select(&mut state, &["E3", "E4"]);
+        state.delete_target();
+        state.apply_ui(UiEvent::FormSubmit(None));
+        let batch = batches(&mut state).remove(0);
+        done(
+            &mut state,
+            "a",
+            Done::Batched(
+                Box::new(batch),
+                jmap::SetOutcome {
+                    done: vec!["E3".into()],
+                    failed: vec![("E4".into(), "forbidden".into())],
+                },
+            ),
+        );
+        let mail = &state.account("a").unwrap().mail;
+        assert_eq!(mail.keys(), ["E1", "E2", "E4"]);
+        assert!(mail.table.selection.is_empty(), "a delete clears it");
+        assert!(state.status.contains("E4 (forbidden)"));
+    }
+
+    /// The id fetches queued: (ticket, position).
+    fn id_fetches(work: &[Work]) -> Vec<(u64, u64)> {
+        work.iter()
+            .filter_map(|w| match w {
+                Work::FetchIds {
+                    ticket, position, ..
+                } => Some((*ticket, *position)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn id_page(from: usize, count: usize, total: u64) -> Result<jmap::IdPage, jmap::Error> {
+        Ok(jmap::IdPage {
+            ids: (from..from + count).map(|i| format!("X{i}")).collect(),
+            total,
+        })
+    }
+
+    /// The whole page selected, then "Select all `total`".
+    fn everything(total: u64) -> State {
+        let mut state = listing(4, total);
+        select(&mut state, &["E1", "E2", "E3", "E4"]);
+        state.mail_table("a", TableEvent::SelectEverything);
+        state
+    }
+
+    #[test]
+    fn select_all_fetches_ids_across_pages_then_acts() {
+        let mut state = everything(1200);
+        state.flag_target();
+        let work = state.take_work();
+        let fetches = id_fetches(&work);
+        assert_eq!(fetches.len(), 1);
+        let (ticket, position) = fetches[0];
+        assert_eq!(position, 0);
+        assert!(!work.iter().any(|w| matches!(w, Work::Batch { .. })));
+        assert_eq!(
+            state
+                .account("a")
+                .unwrap()
+                .mail
+                .target_line()
+                .as_deref(),
+            Some("Fetching 1,200…")
+        );
+        done(&mut state, "a", Done::Ids(ticket, id_page(0, 500, 1200)));
+        assert_eq!(id_fetches(&state.take_work()), [(ticket, 500)]);
+        done(&mut state, "a", Done::Ids(ticket, id_page(500, 500, 1200)));
+        assert_eq!(id_fetches(&state.take_work()), [(ticket, 1000)]);
+        done(&mut state, "a", Done::Ids(ticket, id_page(1000, 200, 1200)));
+        let batch = batches(&mut state).remove(0);
+        assert_eq!(batch.ids.len(), 1200, "every id of every page");
+        assert_eq!(batch.ids[0], "X0");
+        assert_eq!(batch.ids[1199], "X1199");
+        let mail = &state.account("a").unwrap().mail;
+        assert!(mail.fetching.is_none() && mail.everything, "still all selected");
+    }
+
+    #[test]
+    fn select_all_above_the_cap_refuses_and_changes_nothing() {
+        // Known to be over the cap: refused at once.
+        let mut state = everything(SELECT_ALL_CAP + 1);
+        state.flag_target();
+        assert!(state.take_work().is_empty(), "no fetch, no write");
+        assert!(state.status.contains("nothing was changed"), "{}", state.status);
+        let mail = &state.account("a").unwrap().mail;
+        assert!(!mail.emails.iter().any(Email::is_flagged));
+        assert!(mail.everything && mail.fetching.is_none());
+        // Grown past the cap on the server while fetching: refused too.
+        let mut state = everything(4000);
+        state.delete_target();
+        let (ticket, _) = id_fetches(&state.take_work())[0];
+        done(&mut state, "a", Done::Ids(ticket, id_page(0, 500, 5200)));
+        assert!(state.take_work().is_empty());
+        assert!(state.form.is_none(), "no delete asked");
+        assert!(state.status.contains("5,200"), "{}", state.status);
+        assert!(state.account("a").unwrap().mail.fetching.is_none());
+    }
+
+    #[test]
+    fn escape_cancels_a_pending_fetch_and_changes_nothing() {
+        let mut state = everything(900);
+        state.toggle_target_read();
+        let (ticket, _) = id_fetches(&state.take_work())[0];
+        state.apply_ui(UiEvent::CancelFetch);
+        let mail = &state.account("a").unwrap().mail;
+        assert!(mail.fetching.is_none());
+        assert!(mail.everything, "the selection is as it was");
+        assert_eq!(mail.table.selection.len(), 4);
+        // The cancelled fetch's answer is dropped: nothing more is asked
+        // for and nothing is written.
+        done(&mut state, "a", Done::Ids(ticket, id_page(0, 500, 900)));
+        assert!(state.take_work().is_empty());
+        let mail = &state.account("a").unwrap().mail;
+        assert!(!mail.emails.iter().any(Email::is_read), "nothing marked");
+        assert!(state.form.is_none());
+    }
+
+    #[test]
+    fn delete_of_two_or_more_asks_first_with_the_count() {
+        let mut state = listing(4, 4);
+        let mut next = settings(&["a"]);
+        next.mail.confirm_delete = false;
+        state.set_settings(next);
+        state.take_work();
+        // The setting governs a single delete only.
+        select(&mut state, &["E2"]);
+        state.delete_target();
+        assert!(state.form.is_none());
+        assert_eq!(batches(&mut state)[0].ids, ["E2"]);
+        select(&mut state, &["E3", "E4"]);
+        state.delete_target();
+        assert!(
+            matches!(&state.form, Some(Form::Delete { ids, .. }) if ids == &["E3", "E4"]),
+            "two always ask"
+        );
+        assert!(batches(&mut state).is_empty(), "nothing until confirmed");
+        assert_eq!(
+            crate::label_with("delete-body", &[("count", "2")]),
+            "Move to the Trash? Emails: 2"
+        );
+        state.apply_ui(UiEvent::FormSubmit(None));
+        let batch = batches(&mut state).remove(0);
+        assert_eq!(batch.kind, BatchKind::Delete);
+        assert_eq!(batch.ids, ["E3", "E4"]);
+        assert_eq!(
+            batch.change,
+            jmap::EmailChange::Move {
+                mailbox: "m-trash".into()
+            }
+        );
+    }
+
+    #[test]
+    fn deleting_the_open_email_closes_it_and_selects_the_next_row() {
+        let mut state = listing(4, 4);
+        state.account_mut("a").unwrap().mail.open = Some(unread_email("E2"));
+        select(&mut state, &["E2", "E3"]);
+        state.delete_target();
+        state.apply_ui(UiEvent::FormSubmit(None));
+        let batch = batches(&mut state).remove(0);
+        done(
+            &mut state,
+            "a",
+            Done::Batched(
+                Box::new(batch),
+                jmap::SetOutcome {
+                    done: vec!["E2".into(), "E3".into()],
+                    failed: Vec::new(),
+                },
+            ),
+        );
+        let work = state.take_work();
+        assert!(
+            work.iter()
+                .any(|w| matches!(w, Work::OpenEmail { id, .. } if id == "E4")),
+            "the reader moves on to the next row: {work:?}"
+        );
+        let mail = &state.account("a").unwrap().mail;
+        assert!(mail.open.is_none(), "E2 is closed");
+        assert_eq!(mail.keys(), ["E1", "E4"]);
+        assert_eq!(mail.table.selection, ["E4"]);
+        assert_eq!(mail.table.focus, Some(1));
     }
 }

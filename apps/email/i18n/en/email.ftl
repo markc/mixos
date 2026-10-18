@@ -44,6 +44,17 @@ count-of = { $shown } of { $total }
 # Under the message list once its whole page is selected, then once taken.
 select-all-in-folder = Select all { $count } in folder
 all-selected = All { $count } selected
+# Beside the reader's actions: what Delete, Flag, Mark and Move apply to.
+applies-this = Applies to this email
+applies-selected = Applies to { $count } selected
+# "Select all N" fetches the folder's ids before an action.
+fetching-ids = Fetching { $count }…
+fetch-cancelled = Cancelled: nothing was changed.
+fetch-failed = Could not list the folder's emails: { $error }
+too-many-selected = { $count } emails is more than { $cap } at once; nothing was changed.
+# A batched action: some emails were not changed (each id and why).
+batch-failed = { $failed } of { $count } not changed: { $reasons }
+no-trash-mailbox = This account has no Trash folder
 column-subject = Subject
 column-from = From
 column-date = Date

@@ -905,13 +905,119 @@ fn confirm_delete_pro_light() {
     let mut state = fixture();
     let first = state.accounts[0].mail.emails[0].clone();
     state.accounts[0].mail.open = Some(first);
-    state.delete_open();
+    state.delete_target();
     assert!(matches!(
         state.form,
         Some(email::state::Form::Delete { .. })
     ));
     snapshot(
         "confirm_delete_pro_light",
+        state,
+        &theme(Scheme::Pro, Mode::Light),
+    );
+}
+
+/// `long_list` with L1, L2 and L4 selected (Ctrl+click), L3 the keyboard
+/// row and nothing open.
+fn three_selected() -> State {
+    let mut state = long_list();
+    state.accounts[0].mail.table.selection = vec!["L1".into(), "L2".into(), "L4".into()];
+    state
+}
+
+#[test]
+fn the_target_line_names_the_selection_or_this_email() {
+    let h = harness(long_list());
+    assert!(h.query_by_label("Applies to this email").is_some());
+    let h = harness(three_selected());
+    assert!(h.query_by_label("Applies to 3 selected").is_some());
+    assert!(h.query_by_label("Applies to this email").is_none());
+    // Nothing selected, no keyboard row, nothing open: no line.
+    let h = harness(fixture());
+    assert!(h.query_by_label_contains("Applies to").is_none());
+}
+
+#[test]
+fn escape_cancels_a_select_all_fetch_and_changes_nothing() {
+    let mut h = harness(long_list());
+    h.get_by_label_contains("Lunch today").click();
+    h.run();
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    h.run();
+    h.get_by_label("Select all 236 in folder").click();
+    h.run();
+    h.state_mut().state.flag_target();
+    h.run();
+    assert!(h.query_by_label("Fetching 236…").is_some());
+    let fetch = h.state_mut().state.take_work().into_iter().find_map(|w| match w {
+        Work::FetchIds { ticket, .. } => Some(ticket),
+        _ => None,
+    });
+    let ticket = fetch.expect("the ids are fetched first");
+    h.key_press(egui::Key::Escape);
+    h.run();
+    assert!(h.state().seen.contains(&UiEvent::CancelFetch));
+    let mail = &h.state().state.account("home").unwrap().mail;
+    assert!(mail.fetching.is_none());
+    assert!(mail.everything, "Escape went to the fetch, not the selection");
+    assert_eq!(mail.table.selection.len(), 6);
+    done(
+        &mut h.state_mut().state,
+        "home",
+        Done::Ids(
+            ticket,
+            Ok(jmap::IdPage {
+                ids: vec!["L1".into()],
+                total: 236,
+            }),
+        ),
+    );
+    h.run();
+    assert!(h.state_mut().state.take_work().is_empty(), "nothing written");
+    assert!(h.query_by_label("Applies to 236 selected").is_some());
+}
+
+/// The target line with three rows selected: "Applies to 3 selected".
+#[test]
+fn target_line_selected_pro_light() {
+    snapshot(
+        "target_line_selected_pro_light",
+        three_selected(),
+        &theme(Scheme::Pro, Mode::Light),
+    );
+}
+
+/// The target line with one row: "Applies to this email".
+#[test]
+fn target_line_this_email_studio_dark() {
+    snapshot(
+        "target_line_this_email_studio_dark",
+        long_list(),
+        &theme(Scheme::Studio, Mode::Dark),
+    );
+}
+
+/// Deleting three selected asks first, with the count, whatever
+/// `confirm_delete` says.
+#[test]
+fn confirm_delete_many_pro_light() {
+    let mut state = three_selected();
+    let mut settings = state.settings.clone();
+    settings.mail.confirm_delete = false;
+    state.set_settings(settings);
+    state.accounts[0].mail.mailboxes.push(jmap::Mailbox {
+        id: "m-trash".into(),
+        name: "Trash".into(),
+        role: Some("trash".into()),
+        ..jmap::Mailbox::default()
+    });
+    state.delete_target();
+    assert!(matches!(
+        &state.form,
+        Some(email::state::Form::Delete { ids, .. }) if ids.len() == 3
+    ));
+    snapshot(
+        "confirm_delete_many_pro_light",
         state,
         &theme(Scheme::Pro, Mode::Light),
     );

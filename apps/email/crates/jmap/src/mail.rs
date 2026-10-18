@@ -268,7 +268,178 @@ impl EmailSort {
     }
 }
 
+/// The most ids one Email/set or one Email/query page names. maild
+/// advertises `maxObjectsInSet` 500 but does not enforce it, so the client
+/// keeps to it itself: a larger batch goes as successive requests.
+pub const MAX_IDS_PER_REQUEST: usize = 500;
+
+/// One change applied to every email of a batch.
+#[derive(Clone, Debug, PartialEq)]
+pub enum EmailChange {
+    /// Set (`Some(true)`), clear (`Some(false)`) or leave (`None`) `$seen`
+    /// and `$flagged`.
+    Keywords {
+        read: Option<bool>,
+        flagged: Option<bool>,
+    },
+    /// Into exactly this mailbox (a delete is a move to Trash).
+    Move { mailbox: String },
+}
+
+impl EmailChange {
+    fn patch(&self) -> Value {
+        match self {
+            EmailChange::Keywords { read, flagged } => keyword_patch(*read, *flagged),
+            EmailChange::Move { mailbox } => json!({ "mailboxIds": { mailbox: true } }),
+        }
+    }
+}
+
+/// What a batched Email/set did to each id it named: the ids it changed,
+/// and each id it did not with the reason.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct SetOutcome {
+    pub done: Vec<String>,
+    pub failed: Vec<(String, String)>,
+}
+
+/// The Email/set calls for `change` on `ids`: one call per
+/// [`MAX_IDS_PER_REQUEST`] ids, each sent as its own request.
+pub fn email_set_calls(account_id: &str, ids: &[String], change: &EmailChange) -> Vec<Call> {
+    let patch = change.patch();
+    ids.chunks(MAX_IDS_PER_REQUEST)
+        .map(|chunk| {
+            Call(
+                "Email/set".into(),
+                email_update_args(account_id, chunk, &patch),
+                "s0".into(),
+            )
+        })
+        .collect()
+}
+
+/// Read one Email/set reply for `ids`: an id under `notUpdated` failed with
+/// its type and description; every other id is done (RFC 8620 §5.3 omits
+/// a no-op update from `updated`, so absence there is not a failure).
+pub fn set_outcome(data: &Value, ids: &[String]) -> SetOutcome {
+    let mut outcome = SetOutcome::default();
+    for id in ids {
+        match Client::set_error(data, "notUpdated", id) {
+            Some(error) => outcome.failed.push((id.clone(), reason(&error))),
+            None => outcome.done.push(id.clone()),
+        }
+    }
+    outcome
+}
+
+/// A failure as a person reads it: the type, and the description when
+/// there is one.
+fn reason(error: &Error) -> String {
+    match error {
+        Error::Method {
+            error_type,
+            description,
+        } if description.is_empty() => error_type.clone(),
+        Error::Method {
+            error_type,
+            description,
+        } => format!("{error_type}: {description}"),
+        other => other.to_string(),
+    }
+}
+
+/// The Email/query call listing ids only (no Email/get), `limit` of them
+/// from `position` in `sort` order, with the total.
+pub fn email_ids_call(
+    account_id: &str,
+    mailbox: &str,
+    sort: EmailSort,
+    position: u64,
+    limit: u64,
+) -> Call {
+    Call(
+        "Email/query".into(),
+        json!({
+            "accountId": account_id,
+            "filter": email_filter(Some(mailbox), None),
+            "sort": sort.comparators(),
+            "position": position,
+            "limit": limit.clamp(1, MAX_IDS_PER_REQUEST as u64),
+            "calculateTotal": true,
+        }),
+        "q0".into(),
+    )
+}
+
+/// A page of a query's ids, and the query's whole count.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct IdPage {
+    pub ids: Vec<String>,
+    pub total: u64,
+}
+
 impl Client {
+    /// Apply `change` to every id: one Email/set per
+    /// [`MAX_IDS_PER_REQUEST`] ids, sent one after another. Each id comes
+    /// back done or failed with its reason; a request that fails as a
+    /// whole fails its own ids with that error and the next still goes.
+    pub async fn change_emails(&self, ids: &[String], change: &EmailChange) -> SetOutcome {
+        let mut outcome = SetOutcome::default();
+        let calls = email_set_calls(self.account_id(), ids, change);
+        for (call, chunk) in calls.into_iter().zip(ids.chunks(MAX_IDS_PER_REQUEST)) {
+            let answer = self.call(&[call]).await.and_then(|replies| {
+                replies
+                    .into_iter()
+                    .next()
+                    .ok_or_else(|| empty("Email/set"))
+            });
+            match answer {
+                Ok(data) => {
+                    let part = set_outcome(&data, chunk);
+                    outcome.done.extend(part.done);
+                    outcome.failed.extend(part.failed);
+                }
+                Err(error) => {
+                    let why = reason(&error);
+                    outcome
+                        .failed
+                        .extend(chunk.iter().map(|id| (id.clone(), why.clone())));
+                }
+            }
+        }
+        outcome
+    }
+
+    /// One page of a mailbox's ids in `sort` order (at most
+    /// [`MAX_IDS_PER_REQUEST`]), with the query's total.
+    pub async fn email_ids(
+        &self,
+        mailbox: &str,
+        sort: EmailSort,
+        position: u64,
+        limit: u64,
+    ) -> Result<IdPage> {
+        let call = email_ids_call(self.account_id(), mailbox, sort, position, limit);
+        let reply = self
+            .call(&[call])
+            .await?
+            .into_iter()
+            .next()
+            .ok_or_else(|| empty("Email/query"))?;
+        let total = reply.get("total").and_then(Value::as_u64).unwrap_or(0);
+        let ids = reply
+            .get("ids")
+            .and_then(Value::as_array)
+            .map(|ids| {
+                ids.iter()
+                    .filter_map(Value::as_str)
+                    .map(str::to_owned)
+                    .collect()
+            })
+            .unwrap_or_default();
+        Ok(IdPage { ids, total })
+    }
+
     /// Every mailbox on the account, role-sorted by the server.
     pub async fn mailboxes(&self) -> Result<Vec<Mailbox>> {
         let replies = self
@@ -848,6 +1019,110 @@ mod tests {
         assert_eq!(
             email_update_args("A1", &ids, &patch),
             json!({ "accountId": "A1", "update": { "E1": { "mailboxIds": { "M9": true } } } })
+        );
+    }
+
+    fn ids(n: usize) -> Vec<String> {
+        (0..n).map(|i| format!("E{i}")).collect()
+    }
+
+    #[test]
+    fn batch_flag_is_one_email_set_request_for_n_ids() {
+        let ids = ids(6);
+        let change = EmailChange::Keywords {
+            read: None,
+            flagged: Some(true),
+        };
+        let calls = email_set_calls("A1", &ids, &change);
+        assert_eq!(calls.len(), 1, "one request for six ids");
+        let body = crate::client::request_body(&["urn:ietf:params:jmap:mail".into()], &calls);
+        let update: serde_json::Map<String, Value> = ids
+            .iter()
+            .map(|id| (id.clone(), json!({ "keywords/$flagged": true })))
+            .collect();
+        assert_eq!(
+            body,
+            json!({
+                "using": ["urn:ietf:params:jmap:mail"],
+                "methodCalls": [["Email/set", { "accountId": "A1", "update": update }, "s0"]]
+            })
+        );
+    }
+
+    #[test]
+    fn batch_delete_is_one_email_set_moving_n_ids_to_trash() {
+        let ids = ids(3);
+        let change = EmailChange::Move {
+            mailbox: "M-trash".into(),
+        };
+        let calls = email_set_calls("A1", &ids, &change);
+        let body = crate::client::request_body(&["urn:ietf:params:jmap:mail".into()], &calls);
+        assert_eq!(
+            body["methodCalls"],
+            json!([["Email/set", {
+                "accountId": "A1",
+                "update": {
+                    "E0": { "mailboxIds": { "M-trash": true } },
+                    "E1": { "mailboxIds": { "M-trash": true } },
+                    "E2": { "mailboxIds": { "M-trash": true } }
+                }
+            }, "s0"]])
+        );
+    }
+
+    #[test]
+    fn batch_of_more_than_500_ids_splits_into_requests_of_500() {
+        let ids = ids(1_201);
+        let change = EmailChange::Keywords {
+            read: Some(true),
+            flagged: None,
+        };
+        let calls = email_set_calls("A1", &ids, &change);
+        let sizes: Vec<usize> = calls
+            .iter()
+            .map(|c| c.1["update"].as_object().unwrap().len())
+            .collect();
+        assert_eq!(sizes, [500, 500, 201]);
+        assert!(calls[1].1["update"].get("E500").is_some());
+        assert!(email_set_calls("A1", &ids[..500], &change).len() == 1);
+    }
+
+    #[test]
+    fn batch_partial_failure_reports_each_failed_id_with_its_reason() {
+        let ids = ids(4);
+        let reply = json!({
+            "updated": { "E0": null, "E3": null },
+            "notUpdated": {
+                "E1": { "type": "notFound", "description": "no such email" },
+                "E2": { "type": "forbidden" }
+            }
+        });
+        assert_eq!(
+            set_outcome(&reply, &ids),
+            SetOutcome {
+                done: vec!["E0".into(), "E3".into()],
+                failed: vec![
+                    ("E1".into(), "notFound: no such email".into()),
+                    ("E2".into(), "forbidden".into()),
+                ],
+            }
+        );
+    }
+
+    #[test]
+    fn an_id_page_query_asks_for_ids_only_at_most_500() {
+        let call = email_ids_call("A1", "M1", EmailSort::default(), 500, 9_000);
+        assert_eq!(call.0, "Email/query");
+        assert_eq!(
+            call.1,
+            json!({
+                "accountId": "A1",
+                "filter": { "inMailbox": "M1" },
+                "sort": [{ "property": "receivedAt", "isAscending": false }],
+                "position": 500,
+                "limit": 500,
+                "calculateTotal": true
+            })
         );
     }
 

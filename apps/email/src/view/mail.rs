@@ -30,13 +30,22 @@ pub const LIST: &str = "emails";
 /// without opening them; Enter or a double-click opens the keyboard's row.
 pub fn list(
     ui: &mut Ui,
-    _state: &State,
+    state: &State,
     view: &AccountView,
     _commands: &Registry<State>,
     strings: &Strings,
     _stroke: f32,
     events: &mut Vec<UiEvent>,
 ) {
+    // Escape while "Select all N"'s ids load stops the fetch, before the
+    // table can take it to collapse the selection.
+    if view.mail.fetching.is_some()
+        && state.compose.is_none()
+        && state.form.is_none()
+        && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
+    {
+        events.push(UiEvent::CancelFetch);
+    }
     // Reply, Reply All and Forward live on the open email: the reader's
     // toolbar and the Message menu.
     let title = view
@@ -308,6 +317,11 @@ fn toolbar(
         link(ui, events, "mail.forward", Icon::Forward);
         toolkit::bars::divider(ui, DIVIDER);
         link(ui, events, "mail.delete", Icon::Trash);
+        // What Delete, Flag, Mark and Move apply to: the list's selection
+        // or keyboard row, which need not be the email shown here.
+        if let Some(line) = view.mail.target_line() {
+            ui.label(RichText::new(line).weak());
+        }
         // The paperclip and its count, only when there are attachments.
         let attached = view
             .mail

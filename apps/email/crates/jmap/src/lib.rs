@@ -35,5 +35,9 @@ pub use compose::{
 };
 pub use contact::{AddressBook, Contact, ContactDraft, ContactPatch};
 pub use error::{Error, Result};
-pub use mail::{Attachment, BodyPart, Email, EmailAddress, EmailPage, EmailSort, Mailbox, SortBy};
+pub use mail::{
+    Attachment, BodyPart, Email, EmailAddress, EmailChange, EmailPage, EmailSort, IdPage,
+    MAX_IDS_PER_REQUEST, Mailbox, SetOutcome, SortBy, email_ids_call, email_set_calls,
+    set_outcome,
+};
 pub use session::Session;

@@ -371,17 +371,32 @@ fn the_toolbar_buttons_are_their_commands() {
     );
 }
 
+/// Reply, Reply All and Forward need an open email; Delete needs a target
+/// in the list (phase 3b: it acts on the selection, not the open email).
 #[test]
 fn with_no_email_open_the_toolbar_is_disabled() {
-    let mut state = opened("text/plain", PLAIN);
-    state.accounts[0].mail.open = None;
-    let h = harness(state, &theme(Scheme::Pro, Mode::Light));
-    for key in ["reply", "reply-all", "forward", "delete"] {
-        use egui_kittest::kittest::NodeT;
+    use egui_kittest::kittest::NodeT;
+    let closed = || {
+        let mut state = opened("text/plain", PLAIN);
+        state.accounts[0].mail.open = None;
+        state
+    };
+    let h = harness(closed(), &theme(Scheme::Pro, Mode::Light));
+    for key in ["reply", "reply-all", "forward"] {
         let text = label(key);
         let node = h.get_by_label(&text);
         assert!(node.accesskit_node().is_disabled(), "{key}");
     }
+    let delete = label("delete");
+    assert!(
+        !h.get_by_label(&delete).accesskit_node().is_disabled(),
+        "E1 is still selected in the list"
+    );
+    let mut state = closed();
+    state.accounts[0].mail.table.selection.clear();
+    state.accounts[0].mail.table.focus = None;
+    let h = harness(state, &theme(Scheme::Pro, Mode::Light));
+    assert!(h.get_by_label(&delete).accesskit_node().is_disabled());
 }
 
 #[test]
@@ -513,10 +528,10 @@ fn bare_key_and_delete_shortcuts_are_browsing_only() {
     assert_eq!(registry.scope_of("mail.reply"), Scope::Anywhere);
 }
 
-/// The Write the state queued last.
-fn last_write(state: &mut State) -> Option<email::verbs::Write> {
+/// The batched action the state queued last: its ids and change.
+fn last_batch(state: &mut State) -> Option<(Vec<String>, jmap::EmailChange)> {
     state.take_work().into_iter().rev().find_map(|w| match w {
-        Work::Write { write, .. } => Some(write),
+        Work::Batch { batch, .. } => Some((batch.ids, batch.change)),
         _ => None,
     })
 }
@@ -555,8 +570,8 @@ fn junk_moves_to_the_junk_mailbox_and_not_junk_back_to_the_inbox() {
         .execute("mail.junk", &mut state, Origin::Bus)
         .unwrap();
     assert!(matches!(
-        last_write(&mut state),
-        Some(email::verbs::Write::Move { ids, mailbox }) if ids == ["E1"] && mailbox == "m-junk"
+        last_batch(&mut state),
+        Some((ids, jmap::EmailChange::Move { mailbox })) if ids == ["E1"] && mailbox == "m-junk"
     ));
     // Reading the Junk mailbox: J is off, Shift+J moves back to the inbox.
     state.accounts[0].mail.selected = Some("m-junk".into());
@@ -569,8 +584,8 @@ fn junk_moves_to_the_junk_mailbox_and_not_junk_back_to_the_inbox() {
         .execute("mail.not_junk", &mut state, Origin::Bus)
         .unwrap();
     assert!(matches!(
-        last_write(&mut state),
-        Some(email::verbs::Write::Move { mailbox, .. }) if mailbox == "m-in"
+        last_batch(&mut state),
+        Some((_, jmap::EmailChange::Move { mailbox })) if mailbox == "m-in"
     ));
 }
 
