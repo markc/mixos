@@ -553,7 +553,6 @@
        pairs them. The hand-authored mono rule this replaces moved only --accent,
        which left a 98%-L label on a 90%-L button at 1.49:1. */
     .hero-bg,
-    .bg-image-section,
     .site-footer {
         --accent:       var(--accent-on-image);
         --accent-hover: var(--accent-on-image-hover);
@@ -570,6 +569,21 @@
         color: #fff;
         text-align: center;
         padding: var(--space-8) var(--space-4);
+        /* One solid dark band, in both modes, holding the agents line and the
+           copyright block; the photo stops above it. */
+        background: #0e1014;
+    }
+
+    .site-footer .footer-agents {
+        margin-block-end: var(--space-6);
+        padding-block-end: var(--space-6);
+        border-block-end: 1px solid rgb(255 255 255 / 0.12);
+        font-size: var(--text-sm);
+        color: rgb(255 255 255 / 0.82);
+    }
+
+    .site-footer .footer-agents code {
+        color: #fff;
     }
 
     /* Three tiers, quietest last: the product line, a note on what the site
@@ -713,9 +727,8 @@
         position: relative;
         min-height: 30vh;
         padding: var(--space-16) var(--space-4);
-        display: flex;
-        align-items: center;
-        justify-content: center;
+        background: transparent;
+        display: block;
     }
 
     /* No dark scrim: with the content column capped (main max-width), these image
@@ -729,8 +742,12 @@
     }
 
     .bg-image-section .section-title,
-    .bg-image-section .section-subtitle { color: #fff; }
+    .bg-image-section .section-subtitle,
+    .bg-image-section .section-lede { color: #fff; }
 
+    /* Image sections keep the page accent: the cards on them are light in light
+       mode, so their links need the dark accent, and the photo itself only carries
+       white text. */
     .bg-image-section .section-tag { color: var(--accent); }
 
     .bg-image-section .section-header { margin-block-end: 0; }
