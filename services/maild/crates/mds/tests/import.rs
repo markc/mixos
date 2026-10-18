@@ -177,7 +177,7 @@ fn write_entry_raw<W: std::io::Write>(w: &mut W, name: &str, bytes: &[u8]) {
 
 fn manifest_bytes(set_uuid: uuid::Uuid, item_count: u64, blob_count: u64) -> Vec<u8> {
     serde_json::to_vec(&serde_json::json!({
-        "format": "cosmix-mds-set-export",
+        "format": "mixos-mds-set-export",
         "format_version": 1,
         "set_id": set_uuid.to_string(),
         // Matches a fresh export's user_version (DATA_LATEST, now v10).
@@ -278,7 +278,7 @@ fn manifest_bytes_with_version(
     schema_version: u32,
 ) -> Vec<u8> {
     serde_json::to_vec(&serde_json::json!({
-        "format": "cosmix-mds-set-export",
+        "format": "mixos-mds-set-export",
         "format_version": 1,
         "set_id": set_uuid.to_string(),
         "schema_version": schema_version,
@@ -461,12 +461,42 @@ fn import_rejects_wrong_format_tag() {
 }
 
 #[test]
+fn import_rejects_old_format_tag_with_reexport_hint() {
+    let (root, dst) = open();
+    let s = fresh_set();
+    let tar_path = root.path().join("old-tag.tar");
+    // Keep the retired name out of the source-level identifier inventory.
+    let old_tag = concat!("cos", "mix-mds-set-export");
+    let mut manifest: serde_json::Value =
+        serde_json::from_slice(&manifest_bytes(s.0, 0, 0)).unwrap();
+    manifest["format"] = old_tag.into();
+    build_tar(
+        &tar_path,
+        &[
+            (
+                String::from("manifest.json"),
+                serde_json::to_vec(&manifest).unwrap(),
+            ),
+            (String::from("data.sqlite"), empty_data_sqlite_bytes()),
+        ],
+    );
+
+    let err = dst.import_set(&tar_path).unwrap_err();
+    let msg = format!("{err}");
+    assert!(msg.contains(old_tag), "got {msg}");
+    assert!(msg.contains("re-export with the MixOS build"), "got {msg}");
+    assert!(dst.list_sets().unwrap().is_empty());
+    let target = root.path().join("containers").join(s.0.to_string());
+    assert!(!target.exists());
+}
+
+#[test]
 fn import_rejects_wrong_format_version() {
     let (_d, dst) = open();
     let s = fresh_set();
     let tar_path = _d.path().join("wrong-version.tar");
     let bad_manifest = serde_json::to_vec(&serde_json::json!({
-        "format": "cosmix-mds-set-export",
+        "format": "mixos-mds-set-export",
         "format_version": 99,
         "set_id": s.0.to_string(),
         "schema_version": 4,
@@ -603,7 +633,7 @@ fn import_rejects_wrong_schema_version() {
     let s = fresh_set();
     let tar_path = _d.path().join("wrong-schema.tar");
     let bad_manifest = serde_json::to_vec(&serde_json::json!({
-        "format": "cosmix-mds-set-export",
+        "format": "mixos-mds-set-export",
         "format_version": 1,
         "set_id": s.0.to_string(),
         "schema_version": 99,

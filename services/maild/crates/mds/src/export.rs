@@ -26,7 +26,7 @@
 //!
 //! ```json
 //! {
-//!   "format": "cosmix-mds-set-export",
+//!   "format": "mixos-mds-set-export",
 //!   "format_version": 1,
 //!   "set_id": "<uuid>",
 //!   "schema_version": 1,
@@ -83,7 +83,7 @@ use std::time::Instant;
 /// Importers MUST verify this string matches before trusting any
 /// other field — it's how we distinguish a v1 MDS export from
 /// some other tarball that happened to land at this path.
-pub const FORMAT_TAG: &str = "cosmix-mds-set-export";
+pub const FORMAT_TAG: &str = "mixos-mds-set-export";
 
 /// Wire format version of the export envelope (the manifest +
 /// archive layout). Bumped if the layout, manifest fields, or the

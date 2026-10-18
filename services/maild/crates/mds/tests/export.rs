@@ -91,7 +91,7 @@ fn export_writes_manifest_data_and_referenced_blobs() {
     // Manifest fields.
     let manifest_bytes = &entries[0].1;
     let v: serde_json::Value = serde_json::from_slice(manifest_bytes).unwrap();
-    assert_eq!(v["format"], "cosmix-mds-set-export");
+    assert_eq!(v["format"], "mixos-mds-set-export");
     assert_eq!(v["format_version"], 1);
     assert_eq!(v["set_id"], s.0.to_string());
     // Fresh DB exports at the latest schema (DATA_LATEST, now v10 after

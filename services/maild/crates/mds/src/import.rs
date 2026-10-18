@@ -28,12 +28,13 @@
 //!    mismatch from a hostile exporter.
 //!
 //! 3. **Manifest/data consistency.** `manifest.set_id` must round-trip
-//!    as a UUID; `manifest.format == "cosmix-mds-set-export"` and
+//!    as a UUID; `manifest.format == "mixos-mds-set-export"` and
 //!    `format_version == 1`; `manifest.schema_version` must be ≤ the
 //!    importing site's `CURRENT_SCHEMA_VERSION` (older tarballs are
-//!    migrated forward after staging). After staging, we
-//!    verify `item_count`
-//!    matches the manifest and every distinct `item.blob_hash` is
+//!    migrated forward after staging). Archives with an obsolete format
+//!    identifier are rejected and must be re-exported with the MixOS build.
+//!    After staging, we verify `item_count` matches the manifest and
+//!    every distinct `item.blob_hash` is
 //!    present in CAS now.
 //!
 //! 4. **`blobs.sqlite` re-derivation for this set, in the same
@@ -525,7 +526,7 @@ fn attach_blobs_db(conn: &Connection, blobs_path: &Path) -> Result<()> {
 fn validate_manifest(m: &Manifest) -> Result<()> {
     if m.format != FORMAT_TAG {
         return Err(Error::Other(format!(
-            "import: manifest.format {:?} is not {FORMAT_TAG:?}",
+            "import: manifest.format {:?} is not {FORMAT_TAG:?}; re-export with the MixOS build",
             m.format
         )));
     }
