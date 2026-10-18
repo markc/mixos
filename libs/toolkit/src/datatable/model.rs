@@ -998,7 +998,10 @@ mod tests {
         let down = state.extend(TableKey::Down, &rows, 10).unwrap();
         state.apply(&down, SelectionMode::Multi);
         assert_eq!(state.selection, ["k1"]);
-        state.apply(&state.extend(TableKey::End, &rows, 10).unwrap(), SelectionMode::Multi);
+        state.apply(
+            &state.extend(TableKey::End, &rows, 10).unwrap(),
+            SelectionMode::Multi,
+        );
         assert_eq!(state.selection.len(), 5);
         // Escape: back to the keyboard's row alone.
         let one = state.collapse(&rows).unwrap();

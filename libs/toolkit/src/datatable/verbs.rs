@@ -212,7 +212,11 @@ pub fn request(verb: &str, args: &Value, table: &Table) -> Result<Request, Refus
             Some(Value::Bool(true)) => state.select_all(table.keys).into_iter().collect(),
             // Every row of the whole set, as the footer's link.
             Some(Value::String(_)) => vec![TableEvent::SelectEverything],
-            _ => return Err(invalid("all must be true (the page) or a scope name (every row)")),
+            _ => {
+                return Err(invalid(
+                    "all must be true (the page) or a scope name (every row)",
+                ));
+            }
         },
         "table.select" => {
             let rows = match args.get("rows") {
