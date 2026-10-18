@@ -45,6 +45,8 @@ pub mod namespace;
 #[cfg(feature = "store")]
 pub mod record;
 #[cfg(feature = "store")]
+pub mod runtime;
+#[cfg(feature = "store")]
 pub mod store;
 
 #[cfg(feature = "bus")]
@@ -87,6 +89,8 @@ pub use record::{
     Actor, ActorError, AuditEpoch, AuditRow, EventKind, FieldPathSegment, Nseq, Record,
     RecordEvent, RecordKey, Version,
 };
+#[cfg(feature = "store")]
+pub use runtime::{DeleteOpts, Runtime, RuntimeError, SetOpts, SetOutcome};
 #[cfg(feature = "store")]
 pub use store::{
     CompleteCommit, DeleteCommit, MergeMode, PropertyStore, ReconcileCommit, SetCommit, Snapshot,
