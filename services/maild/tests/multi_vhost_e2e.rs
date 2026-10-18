@@ -495,6 +495,7 @@ fn make_multi_vhost_config(
         tls: TlsConfig {
             identity: identities,
             strict_sni: false,
+            ..TlsConfig::default()
         },
         tls_key_root: Some(tls_root.to_path_buf()),
         imap_imaps: Some(ListenSpec::Single("127.0.0.1:0".into())),

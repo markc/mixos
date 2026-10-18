@@ -4,7 +4,7 @@
 //! Standing guard for the spamlite engine pin.
 //!
 //! maild consumes the engine as a git dependency pinned by `rev` in this
-//! crate's Cargo.toml. Two silent failure modes exist:
+//! workspace's Cargo.toml. Two silent failure modes exist:
 //!
 //! 1. an ambient `[patch."https://github.com/markc/spamlite"]` (user-level
 //!    or checkout-level) makes EVERY build — including a CI or foreman build —
@@ -36,7 +36,10 @@ fn pinned_rev(manifest: &str) -> String {
 #[test]
 fn resolved_spamlite_is_the_git_pin_not_a_patch() {
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let manifest = std::fs::read_to_string(manifest_dir.join("Cargo.toml")).unwrap();
+    // The dependency is inherited from the workspace; verify the declaration
+    // that actually owns its pin as well as Cargo's resolved source below.
+    let manifest =
+        std::fs::read_to_string(manifest_dir.join("../../../../Cargo.toml")).unwrap();
     let rev = pinned_rev(&manifest);
     assert!(
         rev.len() >= 7 && rev.chars().all(|c| c.is_ascii_hexdigit()),

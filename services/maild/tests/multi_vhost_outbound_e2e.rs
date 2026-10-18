@@ -586,6 +586,7 @@ fn make_outbound_config(root: &std::path::Path, dkim_domains: Vec<DkimDomainConf
         tls: TlsConfig {
             identity: vec![],
             strict_sni: false,
+            ..TlsConfig::default()
         },
         retention_operators: Vec::new(),
         bayesian_rebuild_operators: Vec::new(),
