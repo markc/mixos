@@ -2063,6 +2063,45 @@ mod tests {
     }
 
     #[test]
+    fn the_identity_editor_saves_a_valid_list_and_keeps_a_refused_one() {
+        let mut e = read();
+        e.select_email_account("a");
+        // Work has no identities of its own, so the editor shows its default.
+        assert_eq!(e.identity_draft().rows.len(), 1);
+
+        // A new identity with a name and address is saved as one change.
+        e.identity_add();
+        e.identity_edit(IdentityField::Name, "Ann Work".into());
+        e.identity_edit(IdentityField::Address, "ann@work.example.org".into());
+        e.identity_save();
+        assert!(e.email.identities.is_none(), "a sent list clears the draft");
+        let calls = settings_calls(&mut e);
+        assert_eq!(calls.len(), 1, "{calls:?}");
+        let (ticket, verb, body) = calls[0].clone();
+        assert_eq!(verb, "settings.apply");
+        let sent = body["changes"]["email.accounts"][0]["identities"]
+            .as_array()
+            .expect("the account's identity list");
+        assert_eq!(sent.len(), 2);
+        assert_eq!(sent[1]["address"], "ann@work.example.org");
+        e.settled(ticket, reply(0, json!({"status":"changed","receipt":{}})));
+
+        // Settings reads back the list; the editor shows it, not a draft.
+        let mut after = two();
+        after.accounts[0].identities = serde_json::from_value(sent.clone().into()).unwrap();
+        settle_read(&mut e, "8", json!(after));
+        assert_eq!(e.identity_draft().rows.len(), 2);
+
+        // A row with no address is refused by the settings rules: nothing is
+        // sent, and the draft stays open with the reason.
+        e.identity_add();
+        e.identity_save();
+        assert!(settings_calls(&mut e).is_empty(), "a refused list sends nothing");
+        let draft = e.email.identities.as_ref().expect("the draft stays open");
+        assert!(matches!(draft.error, Some(Refusal::Settings(_))));
+    }
+
+    #[test]
     fn the_identities_op_takes_a_list_over_the_bus() {
         let args = json!({"op": "identities", "id": "a", "identities": [
             {"id": "work", "name": "Ann", "address": "ann@work.example.org"}
