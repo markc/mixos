@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Mail service storage foundation">
+    <meta name="description" content="JMAP, SMTP, IMAP and DAV mail service">
     <!-- Favicons from share/brand: the SVG follows the visitor's light/dark preference. -->
     <link rel="icon" href="/favicon.ico?v=400d5816f3" sizes="any">
     <link rel="icon" type="image/svg+xml" href="/_web/favicon.svg?v=4eb2d64677">
@@ -208,7 +208,8 @@
                 <div class="panel-title">On this page</div>
                 <div class="panel-content">
                     <nav id="toc-nav">
-                        <div class="toc-empty">No sections on this page</div>
+                        <a href="#properties">Properties</a>
+                        <a href="#storage">Storage</a>
                     </nav>
                 </div>
             </div>
@@ -234,8 +235,23 @@
     <div id="doc-view" class="content-section">
         <article id="content-doc" class="prose" data-pagefind-body>
 <h1 id="maild">maild</h1>
-<p>The mail service currently provides its storage foundation in the private
-<code>mds</code> crate. No daemon binary or Bus verbs are available in this phase.</p>
+<p>Maild serves JMAP, SMTP, IMAP, CalDAV and CardDAV. Its library builds the
+same runtime for the daemon and integration tests. Private crates provide
+mail authentication, rules, Bayesian classification and metadata storage.</p>
+<h2 id="properties">Properties</h2>
+<p>Maild uses the shared <code>props</code> library with its <code>store</code>, <code>sqlite</code> and <code>router</code>
+features. A <code>SqliteStore</code> named <code>maild</code> and a <code>PropsRouter</code> with service name
+<code>maild</code> own the <code>account_overrides</code>, <code>accounts</code>, <code>aliases</code>, <code>domains</code>,
+<code>engine_config</code>, <code>retention</code>, <code>tls_identities</code> and <code>log</code> namespaces. The
+namespace modules register their schemas, SQLite mappings and hooks during
+<code>build_runtime</code>; the logging library registers <code>log</code> through
+<code>logging::props::register</code>.</p>
+<p>The router handles <code>maild.props.*</code> requests. Durable changes publish on
+<code>maild.props.records.changed</code> and <code>maild.props.audit</code>; replay and audit
+semantics, capability strings, error tokens and the five <code>__props_*</code>
+SQLite table names follow the shared props contract unchanged. Account,
+alias and domain hooks reconcile the mail store after committed changes.</p>
+<h2 id="storage">Storage</h2>
 <p><code>Mds</code> is the storage interface. <code>SqliteCasMds</code> stores per-set metadata in
 SQLite, shares a content-addressable blob store, and emits notifications
 after transactions commit. The library supports verification, garbage

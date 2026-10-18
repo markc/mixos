@@ -713,7 +713,7 @@ profile: [desktop](desktop.md) and [server](server.md). This page describes the 
 | [expr](../expr/README.md) | lib | none (library) | [`libs/expr`](https://github.com/markc/mixos/tree/main/libs/expr) | The pure expression language of Mix Scenes bindings, which compiles an expression, reports the globals it reads and evaluates it over JSON values under size and time limits. |
 | [hostd](../hostd/README.md) · [changelog](../hostd/changelog.md) | service | unclassified | [`services/hostd`](https://github.com/markc/mixos/tree/main/services/hostd) | How hostd answers questions about the host and carries out privileged host changes through closed, typed verbs behind standing grants, receipts and rollback, so agents never need sudo. |
 | [logging](../logging/README.md) | lib | none (library) | [`libs/logging`](https://github.com/markc/mixos/tree/main/libs/logging) | Shared tracing, sink selection, reload handles and process statistics for MixOS services and the Mix shell. |
-| [maild](../maild/README.md) · [changelog](../maild/changelog.md) | service | unclassified | [`services/maild`](https://github.com/markc/mixos/tree/main/services/maild) | Mail service storage foundation |
+| [maild](../maild/README.md) · [changelog](../maild/changelog.md) | service | unclassified | [`services/maild`](https://github.com/markc/mixos/tree/main/services/maild) | JMAP, SMTP, IMAP and DAV mail service |
 | [mimedb](../mimedb/README.md) | lib | none (library) | [`libs/mimedb`](https://github.com/markc/mixos/tree/main/libs/mimedb) | A library that reads the freedesktop shared-mime-info database and decides a file's type from its name and content the way GLib does, so MixOS names a file's type as the desktop does. |
 | [mix](../mix/README.md) · [changelog](../mix/changelog.md) | lib | none (library) | [`libs/mix`](https://github.com/markc/mixos/tree/main/libs/mix) |  |
 | [mix-shell](../mix-shell/README.md) · [changelog](../mix-shell/changelog.md) | cli | unclassified | [`cli/mix-shell`](https://github.com/markc/mixos/tree/main/cli/mix-shell) | The Mix shell library, holding the interactive line editor, the command classifier, the native-session bootstrap and the Bus citizen runtime that the mix binary runs. |
@@ -7416,8 +7416,27 @@ The source is [`libs/logging`](https://github.com/markc/mixos/tree/main/libs/log
 
 # maild
 
-The mail service currently provides its storage foundation in the private
-`mds` crate. No daemon binary or Bus verbs are available in this phase.
+Maild serves JMAP, SMTP, IMAP, CalDAV and CardDAV. Its library builds the
+same runtime for the daemon and integration tests. Private crates provide
+mail authentication, rules, Bayesian classification and metadata storage.
+
+## Properties
+
+Maild uses the shared `props` library with its `store`, `sqlite` and `router`
+features. A `SqliteStore` named `maild` and a `PropsRouter` with service name
+`maild` own the `account_overrides`, `accounts`, `aliases`, `domains`,
+`engine_config`, `retention`, `tls_identities` and `log` namespaces. The
+namespace modules register their schemas, SQLite mappings and hooks during
+`build_runtime`; the logging library registers `log` through
+`logging::props::register`.
+
+The router handles `maild.props.*` requests. Durable changes publish on
+`maild.props.records.changed` and `maild.props.audit`; replay and audit
+semantics, capability strings, error tokens and the five `__props_*`
+SQLite table names follow the shared props contract unchanged. Account,
+alias and domain hooks reconcile the mail store after committed changes.
+
+## Storage
 
 `Mds` is the storage interface. `SqliteCasMds` stores per-set metadata in
 SQLite, shares a content-addressable blob store, and emits notifications
@@ -32245,7 +32264,7 @@ yet. They are listed on both this page and the server page until they do.
 - [editd](../editd/README.md) (service): The edit service, which holds shared text buffers that people and agents edit together, with revision checks, per-origin undo, anchors, atomic save, external-change detection and recovery.
 - [email](../email/README.md) (app)
 - [hostd](../hostd/README.md) (service): How hostd answers questions about the host and carries out privileged host changes through closed, typed verbs behind standing grants, receipts and rollback, so agents never need sudo.
-- [maild](../maild/README.md) (service): Mail service storage foundation
+- [maild](../maild/README.md) (service): JMAP, SMTP, IMAP and DAV mail service
 - [mix-shell](../mix-shell/README.md) (cli): The Mix shell library, holding the interactive line editor, the command classifier, the native-session bootstrap and the Bus citizen runtime that the mix binary runs.
 - [noded](../noded/README.md) (service): The MixOS Bus broker, which handles service registration, discovery, routing, subscriptions, authenticated local session grants and mesh peering between nodes.
 - [notifyd](../notifyd/README.md) (service): How notifyd keeps the desk's notifications, shows them as toasts and in the Notifications page, and tells an agent or app which button the human pressed.
@@ -32292,7 +32311,7 @@ yet. They are listed on both this page and the desktop page until they do.
 - [editd](../editd/README.md) (service): The edit service, which holds shared text buffers that people and agents edit together, with revision checks, per-origin undo, anchors, atomic save, external-change detection and recovery.
 - [email](../email/README.md) (app)
 - [hostd](../hostd/README.md) (service): How hostd answers questions about the host and carries out privileged host changes through closed, typed verbs behind standing grants, receipts and rollback, so agents never need sudo.
-- [maild](../maild/README.md) (service): Mail service storage foundation
+- [maild](../maild/README.md) (service): JMAP, SMTP, IMAP and DAV mail service
 - [mix-shell](../mix-shell/README.md) (cli): The Mix shell library, holding the interactive line editor, the command classifier, the native-session bootstrap and the Bus citizen runtime that the mix binary runs.
 - [noded](../noded/README.md) (service): The MixOS Bus broker, which handles service registration, discovery, routing, subscriptions, authenticated local session grants and mesh peering between nodes.
 - [notifyd](../notifyd/README.md) (service): How notifyd keeps the desk's notifications, shows them as toasts and in the Notifications page, and tells an agent or app which button the human pressed.
