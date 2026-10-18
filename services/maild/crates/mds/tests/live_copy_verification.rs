@@ -81,10 +81,10 @@ fn verify(root: &Path, before: &Snapshot) -> TestResult {
             path.join("data.sqlite"),
             OpenFlags::SQLITE_OPEN_READ_ONLY,
         )?;
-        assert!(connection.is_readonly(rusqlite::DatabaseName::Main)?);
-        let envelopes: u64 =
+        assert!(connection.is_readonly(rusqlite::MAIN_DB)?);
+        let envelopes: usize =
             connection.query_row("SELECT count(*) FROM mail_envelopes", [], |r| r.get(0))?;
-        let item_count: u64 =
+        let item_count: usize =
             connection.query_row("SELECT count(*) FROM item", [], |r| r.get(0))?;
         let ids = connection
             .prepare("SELECT id FROM item ORDER BY id")?
@@ -94,26 +94,26 @@ fn verify(root: &Path, before: &Snapshot) -> TestResult {
         for id in &ids {
             container::fetch_item_meta(&connection, &ItemId(uuid::Uuid::parse_str(id)?))?;
         }
-        assert_eq!(ids.len() as u64, item_count);
+        assert_eq!(ids.len(), item_count);
         let containers = container::list_containers(&connection)?;
-        let sql_containers: u64 =
+        let sql_containers: usize =
             connection.query_row("SELECT count(*) FROM container", [], |r| r.get(0))?;
-        assert_eq!(containers.len() as u64, sql_containers);
+        assert_eq!(containers.len(), sql_containers);
         let mut listed = BTreeSet::new();
         let mut memberships = BTreeMap::new();
         let mut membership_total = 0;
         let mut samples = BTreeMap::new();
         for info in containers {
             let items = container::list_items(&connection, &info.id, SeqRange::All)?;
-            let expected: u64 = connection.query_row(
+            let expected: usize = connection.query_row(
                 "SELECT count(*) FROM membership WHERE container_id = ?1",
                 [info.id.0.to_string()],
                 |r| r.get(0),
             )?;
-            assert_eq!(items.len() as u64, expected, "{set}/{}", info.id.0);
+            assert_eq!(items.len(), expected, "{set}/{}", info.id.0);
             assert_eq!(
                 container::container_status(&connection, &info.id)?.exists,
-                expected,
+                expected as u64,
                 "cached exists count for {set}/{}",
                 info.id.0
             );
@@ -129,7 +129,7 @@ fn verify(root: &Path, before: &Snapshot) -> TestResult {
                 }
             }
         }
-        let sql_memberships: u64 =
+        let sql_memberships: usize =
             connection.query_row("SELECT count(*) FROM membership", [], |r| r.get(0))?;
         assert_eq!(membership_total, sql_memberships);
         assert!(listed.is_subset(&ids));
@@ -142,7 +142,11 @@ fn verify(root: &Path, before: &Snapshot) -> TestResult {
             let blobs_root = root.join("blobs");
             let path = blob::blob_path(&blobs_root, &meta.blob_hash);
             let hash = hash_reader(blob::open(&blobs_root, &meta.blob_hash)?)?;
-            assert_eq!(hash.as_bytes(), &meta.blob_hash, "blob hash for {set}/{id}");
+            assert_eq!(
+                hash.as_bytes(),
+                &meta.blob_hash.0,
+                "blob hash for {set}/{id}"
+            );
             assert_eq!(
                 path.file_name().and_then(|name| name.to_str()),
                 Some(hash.to_hex().as_str()),
