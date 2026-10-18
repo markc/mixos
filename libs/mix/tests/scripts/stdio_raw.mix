@@ -5,7 +5,7 @@
 -- absence of a trailing newline and to the absence of a separator between
 -- arguments — the two properties the family exists for. Those are asserted
 -- over raw bytes in tests/raw_stdout.rs, and end-to-end through the real
--- binary's fd 0/fd 1 in crates/cosmix-mix/tests/stdio_filter.rs. What is
+-- binary's fd 0/fd 1 in cli/system/tests/stdio_filter.rs. What is
 -- checked HERE is the argument contract and the error codes.
 
 -- Several writes accumulate into ONE line, because nothing is appended
@@ -55,7 +55,7 @@ print(length($codes) .. " " .. $codes[0] .. " " .. $codes[1])
 -- read-to-EOF would hang the suite waiting for the developer to press
 -- Ctrl-D. Its argument validation is checked below without touching the
 -- stream; everything that needs actual bytes is in
--- crates/cosmix-mix/tests/stdio_filter.rs, which supplies a real pipe.
+-- cli/system/tests/stdio_filter.rs, which supplies a real pipe.
 try
   read_stdin_bytes("lots")
 catch $msg, $err

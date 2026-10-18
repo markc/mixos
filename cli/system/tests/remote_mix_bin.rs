@@ -78,7 +78,7 @@ fn ssh_mix(opts: &str) -> String {
 }
 
 #[test]
-fn ssh_mix_defaults_to_opt_cosmix() {
+fn ssh_mix_defaults_to_opt_mixos() {
     let bed = Bed::new();
     let (out, err, ok) = bed.run(&ssh_mix(""), None);
     assert!(ok, "stdout={out} stderr={err}");
@@ -89,10 +89,10 @@ fn ssh_mix_defaults_to_opt_cosmix() {
 #[test]
 fn ssh_mix_honours_the_mix_bin_option() {
     let bed = Bed::new();
-    let (out, err, ok) = bed.run(&ssh_mix(r#", {mix_bin: "/opt/cosmix/bin/mix"}"#), None);
+    let (out, err, ok) = bed.run(&ssh_mix(r#", {mix_bin: "/usr/local/bin/mix"}"#), None);
     assert!(ok, "stdout={out} stderr={err}");
     assert_eq!(out.trim(), "true 2", "stderr={err}");
-    assert_eq!(bed.remote(), "/opt/cosmix/bin/mix -");
+    assert_eq!(bed.remote(), "/usr/local/bin/mix -");
 }
 
 #[test]
@@ -108,11 +108,11 @@ fn ssh_mix_honours_mix_remote_bin_from_the_environment() {
 fn the_option_beats_the_environment() {
     let bed = Bed::new();
     let (out, err, ok) = bed.run(
-        &ssh_mix(r#", {mix_bin: "/opt/cosmix/bin/mix", strict_arity: true}"#),
+        &ssh_mix(r#", {mix_bin: "/usr/local/bin/mix", strict_arity: true}"#),
         Some("/usr/bin/mix"),
     );
     assert!(ok, "stdout={out} stderr={err}");
-    assert_eq!(bed.remote(), "/opt/cosmix/bin/mix --strict-arity -");
+    assert_eq!(bed.remote(), "/usr/local/bin/mix --strict-arity -");
 }
 
 #[test]
@@ -141,14 +141,14 @@ fn a_bad_value_raises_locally_and_never_reaches_ssh() {
 fn ssh_mix_many_inherits_the_option() {
     let bed = Bed::new();
     let (out, err, ok) = bed.run(
-        r#"$r = ssh_mix_many(["alpha"], "print(3)", {mix_bin: "/opt/cosmix/bin/mix"})
+        r#"$r = ssh_mix_many(["alpha"], "print(3)", {mix_bin: "/usr/local/bin/mix"})
 print($r.alpha.ok .. " " .. trim($r.alpha.stdout))
 "#,
         None,
     );
     assert!(ok, "stdout={out} stderr={err}");
     assert_eq!(out.trim(), "true 3", "stderr={err}");
-    assert_eq!(bed.remote(), "/opt/cosmix/bin/mix -");
+    assert_eq!(bed.remote(), "/usr/local/bin/mix -");
 }
 
 #[test]
@@ -158,11 +158,11 @@ fn ssh_run_env_driver_uses_the_resolved_binary() {
         r#"$r = ssh_run("alpha", "echo $K", {env: {K: "v"}})
 print($r.ok .. " " .. trim($r.stdout))
 "#,
-        Some("/opt/cosmix/bin/mix"),
+        Some("/usr/local/bin/mix"),
     );
     assert!(ok, "stdout={out} stderr={err}");
     assert_eq!(out.trim(), "true v", "stderr={err}");
-    assert_eq!(bed.remote(), "/opt/cosmix/bin/mix -");
+    assert_eq!(bed.remote(), "/usr/local/bin/mix -");
 }
 
 #[test]
@@ -171,12 +171,12 @@ fn ssh_exec_takes_mix_bin_and_the_old_remote_mix_name() {
         let bed = Bed::new();
         let (out, err, ok) = bed.run(
             &format!(
-                "$r = ssh_exec(\"alpha\", [\"/bin/echo\", \"hi\"], {{{key}: \"/opt/cosmix/bin/mix\"}})\nprint($r.ok .. \" \" .. trim($r.stdout))\n"
+                "$r = ssh_exec(\"alpha\", [\"/bin/echo\", \"hi\"], {{{key}: \"/usr/local/bin/mix\"}})\nprint($r.ok .. \" \" .. trim($r.stdout))\n"
             ),
             None,
         );
         assert!(ok, "{key}: stdout={out} stderr={err}");
         assert_eq!(out.trim(), "true hi", "{key}: stderr={err}");
-        assert_eq!(bed.remote(), "/opt/cosmix/bin/mix -", "{key}");
+        assert_eq!(bed.remote(), "/usr/local/bin/mix -", "{key}");
     }
 }

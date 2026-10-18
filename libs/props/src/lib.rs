@@ -8,7 +8,7 @@
 //! `<svc>.props.*` consumer needs without taking on the substrate
 //! machinery (NamespaceSpec, hooks, runtime, storage backends, audit
 //! HMAC, SPEC 12 mutation router) that lives in the sibling
-//! `Cosmix property-store` crate (cos repo).
+//! the retired cosmix property-store crate (not in this tree).
 //!
 //! The default feature set ships only the pure-type surface. Enable
 //! the opt-in `bus` feature to pull `bus` + `chrono` and

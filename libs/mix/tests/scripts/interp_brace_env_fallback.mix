@@ -1,11 +1,11 @@
 -- interp_brace_env_fallback.mix — Phase A contract: ${X} falls back to
 -- process env after scope miss, and ERRORS when neither scope nor env
 -- have it (unless a `?? default` is given). Covers the uppercase
--- env-var-shaped case in-process via `cargo test -p cosmix-lib-mix`.
+-- env-var-shaped case in-process via `cargo test -p mix`.
 --
 -- The lowercase-head half of the contract ("all heads, not just
 -- uppercase") is pinned out-of-process by
--- crates/cosmix-mix/tests/env_fallback_lc.rs, which subprocesses the
+-- cli/system/tests/env_fallback_lc.rs, which subprocesses the
 -- mix binary with a probe env var set on the child. The subprocess
 -- shape is mandatory there: in-process `set_var` from a tokio test
 -- would race with concurrent `getenv` from sibling tests under Rust

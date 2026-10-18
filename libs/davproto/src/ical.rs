@@ -71,7 +71,7 @@ pub fn event_to_ics(
 
     let mut cal = Calendar::new();
     cal.push(event);
-    cal.name("Cosmix");
+    cal.name("MixOS");
     cal.done().to_string()
 }
 

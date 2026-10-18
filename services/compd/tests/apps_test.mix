@@ -23,11 +23,11 @@ try
   fixture("data/applications/hidden.desktop", "[Desktop Entry]\n" ..
     "Type=Application\nName=Hidden App\nExec=hidden-run\nHidden=true\n")
   fixture("data/applications/only-mixos.desktop", "[Desktop Entry]\n" ..
-    "Type=Application\nName=Only Cosmix\nExec=oc-run\nOnlyShowIn=MIXOS;Other;\n")
+    "Type=Application\nName=Only MixOS\nExec=oc-run\nOnlyShowIn=MIXOS;Other;\n")
   fixture("data/applications/only-other.desktop", "[Desktop Entry]\n" ..
     "Type=Application\nName=Only Other\nExec=oo-run\nOnlyShowIn=GNOME;\n")
   fixture("data/applications/not-mixos.desktop", "[Desktop Entry]\n" ..
-    "Type=Application\nName=Not Cosmix\nExec=nc-run\nNotShowIn=MIXOS;\n")
+    "Type=Application\nName=Not MixOS\nExec=nc-run\nNotShowIn=MIXOS;\n")
   fixture("data/applications/tryexec-miss.desktop", "[Desktop Entry]\n" ..
     "Type=Application\nName=TryExec Miss\nExec=te-run\nTryExec=definitely-not-a-real-binary-xyz\n")
   fixture("data/applications/quoted.desktop", "[Desktop Entry]\n" ..
