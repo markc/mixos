@@ -42,6 +42,12 @@ pub struct SavedDraft {
     pub subject: String,
     pub body: String,
     pub in_reply_to: Option<String>,
+    /// The sender identity it was typed under, and that identity's display
+    /// name and Reply-To, so a restored draft sends as it was. Empty for a
+    /// draft kept before identities existed.
+    pub identity: String,
+    pub from_name: String,
+    pub reply_to: Option<String>,
     /// When it was last saved (RFC 3339, UTC).
     pub saved_at: String,
     /// What earlier sends of it did on the server, so a send after a

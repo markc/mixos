@@ -43,6 +43,9 @@ const BELOW_RULE: f32 = 8.0;
 /// top. The cause is not determined (§5.4); this matches it.
 const CENTRE_DROP: f32 = 1.75;
 
+/// The most of the window a resizable dialog's body may fill.
+const RESIZE_MAX_SHARE: f32 = 0.9;
+
 /// The default width range (§3.21).
 pub const WIDTH: Rangef = Rangef {
     min: 380.0,
@@ -128,6 +131,10 @@ pub struct Dialog {
     id: Id,
     title: String,
     width: Rangef,
+    /// The body's size when the person may resize it: (default, minimum).
+    /// The size is kept by egui for the id, so it is remembered while the
+    /// app runs. None keeps the fixed width range.
+    resize: Option<(Vec2, Vec2)>,
     choices: Vec<Choice>,
 }
 
@@ -137,6 +144,7 @@ impl Dialog {
             id: id.into(),
             title: title.into(),
             width: WIDTH,
+            resize: None,
             choices: Vec::new(),
         }
     }
@@ -144,6 +152,13 @@ impl Dialog {
     /// A wider range, for complex dialogs (600) or a new-document one (800).
     pub fn width(mut self, width: Rangef) -> Self {
         self.width = width;
+        self
+    }
+
+    /// The body can be resized from its bottom-right corner, starting at
+    /// `default` and never below `min`. Replaces the fixed width range.
+    pub fn resizable(mut self, default: Vec2, min: Vec2) -> Self {
+        self.resize = Some((default, min));
         self
     }
 
@@ -163,6 +178,7 @@ impl Dialog {
             id,
             title,
             width,
+            resize,
             choices,
         } = self;
         let mut place: Placement = ctx.data(|d| d.get_temp(id)).unwrap_or_default();
@@ -194,8 +210,10 @@ impl Dialog {
                     node.set_modal();
                     node.set_label(name);
                 });
-                ui.set_min_width(width.min);
-                ui.set_max_width(width.max);
+                if resize.is_none() {
+                    ui.set_min_width(width.min);
+                    ui.set_max_width(width.max);
+                }
                 let font = crate::fonts::bound(ui.ctx(), crate::fonts::heading(TITLE_SIZE));
                 let ink = Chrome::of(ui.ctx()).palette.text;
                 let title = ui
@@ -210,7 +228,20 @@ impl Dialog {
                 ui.add_space(ABOVE_RULE);
                 bars::hairline(ui);
                 ui.add_space(BELOW_RULE - ui.spacing().item_spacing.y);
-                let inner = body(ui);
+                let inner = match resize {
+                    Some((default, min)) => {
+                        // The body keeps the size the person left it at, up to
+                        // most of the window; the buttons stay below it.
+                        let max = ui.ctx().content_rect().size() * RESIZE_MAX_SHARE;
+                        egui::Resize::default()
+                            .id_salt(id.with("size"))
+                            .default_size(default)
+                            .min_size(min)
+                            .max_size(max)
+                            .show(ui, body)
+                    }
+                    None => body(ui),
+                };
                 if !choices.is_empty() {
                     ui.add_space(ABOVE_BUTTONS);
                     chosen = button_row(ui, &choices, os);

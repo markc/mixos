@@ -38,6 +38,11 @@ pub struct Composed {
     /// The message being replied to, as `Email.messageId` gives it
     /// (bracketed). Sent as `In-Reply-To`/`References`.
     pub in_reply_to: Option<String>,
+    /// The display name in From, when the sender identity has one. Empty:
+    /// the From is the address alone, as before identities.
+    pub from_name: String,
+    /// The Reply-To address, when the sender identity sets one.
+    pub reply_to: Option<String>,
 }
 
 /// Parse a recipient field: entries separated by `,` or `;` outside quotes
@@ -183,7 +188,14 @@ fn build_mime_with_id(composed: &Composed, message_id: &str) -> Vec<u8> {
             mime.push_str("\r\n");
         }
     };
-    header(&mut mime, "From", &clean(&composed.from));
+    let from = format_address(&EmailAddress {
+        name: Some(composed.from_name.clone()).filter(|name| !name.is_empty()),
+        email: composed.from.clone(),
+    });
+    header(&mut mime, "From", &clean(&from));
+    if let Some(reply_to) = &composed.reply_to {
+        header(&mut mime, "Reply-To", &clean(reply_to));
+    }
     header(&mut mime, "To", &address_list(&composed.to));
     header(&mut mime, "Cc", &address_list(&composed.cc));
     // No Bcc header: the bytes go to every recipient. Bcc recipients travel
@@ -330,6 +342,8 @@ fn fingerprint(composed: &Composed) -> String {
         }
     };
     feed(&composed.from);
+    feed(&composed.from_name);
+    feed(composed.reply_to.as_deref().unwrap_or(""));
     for list in [&composed.to, &composed.cc, &composed.bcc] {
         feed(&list.len().to_string());
         for address in list {
@@ -619,7 +633,32 @@ mod tests {
             subject: "Lunch".into(),
             body: "Noon?".into(),
             in_reply_to: Some("<m1@example.invalid>".into()),
+            from_name: String::new(),
+            reply_to: None,
         }
+    }
+
+    #[test]
+    fn an_identity_sends_its_name_and_reply_to() {
+        let identity = Composed {
+            from: "ann@work.example.invalid".into(),
+            from_name: "Ann, Work".into(),
+            reply_to: Some("help@work.example.invalid".into()),
+            ..composed()
+        };
+        let mime = String::from_utf8(build_mime(&identity)).unwrap();
+        assert!(
+            mime.contains("From: \"Ann, Work\" <ann@work.example.invalid>\r\n"),
+            "{mime}"
+        );
+        assert!(
+            mime.contains("Reply-To: help@work.example.invalid\r\n"),
+            "{mime}"
+        );
+        // Without a name or reply-to, the headers read as they did before.
+        let plain = String::from_utf8(build_mime(&composed())).unwrap();
+        assert!(!plain.contains("\r\nReply-To:"), "{plain}");
+        assert!(!plain.contains("From: \""), "{plain}");
     }
 
     #[test]

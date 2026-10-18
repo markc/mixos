@@ -16,6 +16,7 @@ pub mod calendar;
 pub mod compose;
 pub mod contacts;
 pub mod form;
+pub mod identities;
 pub mod mail;
 pub mod tree;
 
@@ -60,6 +61,22 @@ pub enum UiEvent {
     RestoreDraft(crate::state::DraftChoice),
     /// Take the account's new address as the stale draft's From.
     ComposeUseNewFrom,
+    /// Put a reply's quote above or below the person's text.
+    ComposeReplyPosition(crate::quote::Position),
+    /// Send the open draft as one of an account's identities (the From list).
+    ComposeIdentity {
+        account: String,
+        identity: String,
+    },
+    /// The identities dialog: open for an account, pick, edit, add, remove,
+    /// save or close.
+    OpenIdentities(String),
+    IdentityEdit(crate::state::IdentityField, String),
+    IdentitySelect(usize),
+    IdentityAdd,
+    IdentityRemove,
+    IdentitySave,
+    CloseIdentities,
     SendCompose,
     /// Connect an account again.
     Retry(String),
@@ -158,6 +175,7 @@ pub fn view(
     }
     compose::dialog(ui, state, &mut events);
     compose::confirm(ui, state, &mut events);
+    identities::dialog(ui, state, &mut events);
     compose::restore(ui, state, &mut events);
     form::dialog(ui, state, &mut events);
     if let Some(dialog) = state.ui.dialog {

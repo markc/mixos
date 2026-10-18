@@ -91,6 +91,7 @@ fn opened(kind: &str, body: &str) -> State {
         ca_path: None,
         enabled: true,
         signature: String::new(),
+        identities: Vec::new(),
     };
     let settings = EmailSettings {
         accounts: vec![entry],
@@ -802,6 +803,24 @@ fn compose_suggestions_studio_dark() {
         .memory_mut(|m| m.request_focus(egui::Id::new("compose-recipients").with("to")));
     h.run();
     h.snapshot("compose_suggestions_studio_dark");
+}
+
+#[test]
+fn identities_dialog_studio_dark() {
+    let (mut state, _) = composing("an");
+    state.apply_ui(UiEvent::OpenIdentities("home".into()));
+    state.apply_ui(UiEvent::IdentityAdd);
+    state.apply_ui(UiEvent::IdentityEdit(
+        email::state::IdentityField::Name,
+        "Ann Work".into(),
+    ));
+    state.apply_ui(UiEvent::IdentityEdit(
+        email::state::IdentityField::Address,
+        "ann@work.invalid".into(),
+    ));
+    let mut h = window(state, &theme(Scheme::Studio, Mode::Dark));
+    h.run();
+    h.snapshot("identities_dialog_studio_dark");
 }
 
 fn snapshot(name: &str, state: State, theme: &Theme) {

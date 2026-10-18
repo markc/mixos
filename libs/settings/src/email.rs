@@ -27,6 +27,7 @@ pub const URL_MAX_BYTES: usize = 2048;
 pub const ADDRESS_MAX_BYTES: usize = 254;
 pub const CA_PATH_MAX_BYTES: usize = 4096;
 pub const SIGNATURE_MAX_CHARS: usize = 4096;
+pub const IDENTITIES_MAX: usize = 16;
 pub const PAGE_SIZE_MIN: u32 = 10;
 pub const PAGE_SIZE_MAX: u32 = 500;
 
@@ -108,7 +109,53 @@ pub struct AccountEntry {
     /// Plain text appended to new drafts; at most [`SIGNATURE_MAX_CHARS`].
     #[serde(default)]
     pub signature: String,
+    /// Sender identities beyond the account's own (see
+    /// [`AccountEntry::senders`]). Left out of the saved form while empty, so
+    /// an account without them keeps its saved bytes.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub identities: Vec<Identity>,
 }
+
+impl AccountEntry {
+    /// The identities this account sends as. With none of its own, the
+    /// account sends as itself: its name, its address and its signature,
+    /// under the id [`DEFAULT_IDENTITY_ID`].
+    pub fn senders(&self) -> Vec<Identity> {
+        if self.identities.is_empty() {
+            return vec![Identity {
+                id: DEFAULT_IDENTITY_ID.to_owned(),
+                name: self.name.clone(),
+                address: self.email.clone(),
+                signature: self.signature.clone(),
+                reply_to: None,
+            }];
+        }
+        self.identities.clone()
+    }
+}
+
+/// One sender identity of an account: a display name and address, its own
+/// signature, and an optional reply-to address.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Identity {
+    /// Unique within its account: 1–64 of `a-z`, `0-9`, `-`.
+    pub id: String,
+    /// The display name in From: a plain label, as an account's name.
+    pub name: String,
+    /// The From address. The account's login (or a server alias) must answer
+    /// to it when the message is sent.
+    pub address: String,
+    /// Plain text appended to drafts from this identity.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub signature: String,
+    /// The Reply-To address for messages sent from this identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reply_to: Option<String>,
+}
+
+/// The id of an account's own identity when it has no identities of its own.
+pub const DEFAULT_IDENTITY_ID: &str = "default";
 
 fn enabled_default() -> bool {
     true
@@ -319,6 +366,41 @@ pub fn validate(email: &Email) -> Result<(), Diagnostic> {
                 format!("At most {SIGNATURE_MAX_CHARS} characters of plain text"),
             ));
         }
+        if account.identities.len() > IDENTITIES_MAX {
+            return Err(error(
+                &path("identities"),
+                format!("At most {IDENTITIES_MAX} identities"),
+            ));
+        }
+        for (j, identity) in account.identities.iter().enumerate() {
+            let at = |field: &str| format!("email.accounts[{index}].identities[{j}].{field}");
+            if !valid_id(&identity.id) {
+                return Err(error(
+                    &at("id"),
+                    "Use 1–64 lowercase ASCII letters, digits or dash",
+                ));
+            }
+            if account.identities[..j].iter().any(|i| i.id == identity.id) {
+                return Err(error(&at("id"), "Duplicate identity id"));
+            }
+            if !valid_name(&identity.name) {
+                return Err(error(&at("name"), "Name must be a plain label"));
+            }
+            if !valid_address(&identity.address) {
+                return Err(error(&at("address"), "Expected one address with one @"));
+            }
+            if !valid_signature(&identity.signature) {
+                return Err(error(
+                    &at("signature"),
+                    format!("At most {SIGNATURE_MAX_CHARS} characters of plain text"),
+                ));
+            }
+            if let Some(reply_to) = &identity.reply_to
+                && !valid_address(reply_to)
+            {
+                return Err(error(&at("reply_to"), "Expected one address with one @"));
+            }
+        }
     }
     if let Some(id) = &email.default_account
         && email.account(id).is_none()
@@ -371,7 +453,15 @@ pub fn describe() -> Value {
                 "email": {"type":"string", "max_bytes":ADDRESS_MAX_BYTES, "one":"@"},
                 "ca_path": {"type":"string|null", "absolute":true, "max_bytes":CA_PATH_MAX_BYTES, "default":null, "null":"the system roots"},
                 "enabled": {"type":"boolean", "default":true},
-                "signature": {"type":"string", "max_chars":SIGNATURE_MAX_CHARS, "default":""}
+                "signature": {"type":"string", "max_chars":SIGNATURE_MAX_CHARS, "default":""},
+                "identities": {"type":"list", "of":"identity", "max_items":IDENTITIES_MAX, "default":[], "empty":"the account sends as itself",
+                    "identity": {
+                        "id": {"type":"string", "pattern":"[a-z0-9-]{1,64}", "unique_in_account":true},
+                        "name": {"type":"string", "max_bytes":NAME_MAX_BYTES},
+                        "address": {"type":"string", "max_bytes":ADDRESS_MAX_BYTES, "one":"@"},
+                        "signature": {"type":"string", "max_chars":SIGNATURE_MAX_CHARS, "default":""},
+                        "reply_to": {"type":"string|null", "max_bytes":ADDRESS_MAX_BYTES, "one":"@", "default":null}
+                    }, "unknown_keys":"refused"}
             }, "unknown_keys":"refused"},
         "email.default_account": {"type":"string|null", "names":"an id in email.accounts", "default":null, "null":"the first enabled account"},
         "email.mail.page_size": {"type":"integer", "minimum":PAGE_SIZE_MIN, "maximum":PAGE_SIZE_MAX, "default":100},
@@ -900,5 +990,84 @@ mod tests {
         value.as_object_mut().unwrap().remove("email");
         let older: Summary = serde_json::from_value(value).unwrap();
         assert!(from_summary(&older).is_default());
+    }
+
+    #[test]
+    fn an_account_without_identities_keeps_its_saved_form() {
+        let entry: AccountEntry = serde_json::from_value(account("acct-1")).unwrap();
+        assert!(entry.identities.is_empty());
+        let saved = serde_json::to_value(&entry).unwrap();
+        assert!(saved.get("identities").is_none(), "{saved}");
+        let senders = entry.senders();
+        assert_eq!(senders.len(), 1);
+        assert_eq!(senders[0].id, DEFAULT_IDENTITY_ID);
+        assert_eq!(senders[0].address, entry.email);
+        assert_eq!(senders[0].name, entry.name);
+        assert_eq!(senders[0].reply_to, None);
+    }
+
+    #[test]
+    fn identities_round_trip_and_the_account_sends_as_them() {
+        let mut value = account("acct-1");
+        value["identities"] = json!([
+            {"id": "work", "name": "Ann Work", "address": "ann@work.example.invalid",
+             "signature": "Ann, Work", "reply_to": "help@work.example.invalid"},
+            {"id": "home", "name": "Ann", "address": "ann@home.example.invalid"}
+        ]);
+        let entry: AccountEntry = serde_json::from_value(value).unwrap();
+        let saved = serde_json::to_value(&entry).unwrap();
+        let again: AccountEntry = serde_json::from_value(saved.clone()).unwrap();
+        assert_eq!(again, entry);
+        assert!(saved.get("identities").is_some());
+        let senders = entry.senders();
+        assert_eq!(senders.len(), 2);
+        assert_eq!(
+            senders[0].reply_to.as_deref(),
+            Some("help@work.example.invalid")
+        );
+        assert_eq!(senders[1].reply_to, None);
+        assert!(
+            validate(&Email {
+                accounts: vec![entry],
+                ..Email::default()
+            })
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn bad_identities_are_refused_with_their_path() {
+        let refused = |identities: Value| {
+            let mut value = account("acct-1");
+            value["identities"] = identities;
+            let entry: AccountEntry = serde_json::from_value(value).unwrap();
+            format!(
+                "{:?}",
+                validate(&Email {
+                    accounts: vec![entry],
+                    ..Email::default()
+                })
+                .unwrap_err()
+            )
+        };
+        let one = |id: &str, address: &str| json!({"id": id, "name": "Ann", "address": address});
+        let duplicate = refused(json!([
+            one("work", "a@x.example.invalid"),
+            one("work", "b@x.example.invalid")
+        ]));
+        assert!(duplicate.contains("identities[1].id"), "{duplicate}");
+        let bad_address = refused(json!([one("work", "not-an-address")]));
+        assert!(
+            bad_address.contains("identities[0].address"),
+            "{bad_address}"
+        );
+        let bad_reply = refused(
+            json!([{"id": "work", "name": "Ann", "address": "a@x.example.invalid", "reply_to": "no"}]),
+        );
+        assert!(bad_reply.contains("identities[0].reply_to"), "{bad_reply}");
+        let too_many: Vec<Value> = (0..=IDENTITIES_MAX)
+            .map(|i| one(&format!("i{i}"), "a@x.example.invalid"))
+            .collect();
+        assert!(refused(Value::Array(too_many)).contains("identities"));
     }
 }

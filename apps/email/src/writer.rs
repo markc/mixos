@@ -46,6 +46,9 @@ pub struct AccountPatch {
     pub ca_path: Option<Option<String>>,
     pub enabled: Option<bool>,
     pub signature: Option<String>,
+    /// The whole list of sender identities; an empty list makes the account
+    /// send as itself.
+    pub identities: Option<Vec<settings::email::Identity>>,
 }
 
 impl AccountPatch {
@@ -68,6 +71,9 @@ impl AccountPatch {
         }
         if let Some(signature) = &self.signature {
             entry.signature = signature.clone();
+        }
+        if let Some(identities) = &self.identities {
+            entry.identities = identities.clone();
         }
     }
 }
@@ -218,6 +224,7 @@ mod tests {
             ca_path: None,
             enabled: true,
             signature: String::new(),
+            identities: Vec::new(),
         }
     }
 

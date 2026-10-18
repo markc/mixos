@@ -461,6 +461,28 @@ pub enum Change {
     QuoteOnReply(bool),
     /// Where the person's text goes in a quoted reply.
     ReplyPosition(settings::email::ReplyPosition),
+    /// The whole identity list of one account; an empty list makes it send
+    /// as itself.
+    Identities(String, Vec<settings::email::Identity>),
+}
+
+/// One text field of an identity.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum IdentityField {
+    Name,
+    Address,
+    Signature,
+    ReplyTo,
+}
+
+/// The identity list being edited for one account, before it is saved.
+#[derive(Clone, Debug, PartialEq)]
+pub struct IdentityDraft {
+    pub account: String,
+    pub rows: Vec<settings::email::Identity>,
+    pub selected: usize,
+    /// Why the last save was refused.
+    pub error: Option<Refusal>,
 }
 
 /// Why a change was not sent.
@@ -552,6 +574,7 @@ pub fn plan(
                 ca_path: None,
                 enabled: true,
                 signature: String::new(),
+                identities: Vec::new(),
             };
             let account = patch.over(blank).map_err(Refusal::Fields)?;
             next.accounts.push(account);
@@ -601,6 +624,10 @@ pub fn plan(
         Change::ConfirmDelete(on) => next.mail.confirm_delete = *on,
         Change::QuoteOnReply(on) => next.mail.quote_on_reply = *on,
         Change::ReplyPosition(position) => next.mail.reply_position = *position,
+        Change::Identities(id, identities) => {
+            let at = index(id)?;
+            next.accounts[at].identities = identities.clone();
+        }
     }
     settings::email::validate(&next).map_err(|d| Refusal::Settings(redact_text(&d.message)))?;
     let changes = edit_between(email, &next);
@@ -724,6 +751,8 @@ pub struct EmailEditor {
     removed: Option<(String, String)>,
     /// Forgets waiting for the action in progress to end.
     forgets: Vec<(String, String)>,
+    /// The identity list being edited, for the selected account.
+    pub identities: Option<IdentityDraft>,
 }
 
 /// The `has_password` per account in an `email.accounts` answer: a list of
@@ -946,6 +975,129 @@ impl Engine {
             self.ui.email_account = None;
             self.email.form = Some(Form::blank());
             self.email.password = Secret::default();
+        }
+    }
+
+    /// The identity list the editor shows for the selected account: the
+    /// draft when it is for that account, else the account's senders as saved.
+    pub fn identity_draft(&self) -> IdentityDraft {
+        let account = self.ui.email_account.clone().unwrap_or_default();
+        match &self.email.identities {
+            Some(draft) if draft.account == account => draft.clone(),
+            _ => IdentityDraft {
+                account,
+                rows: self
+                    .email_account()
+                    .map(|a| a.senders())
+                    .unwrap_or_default(),
+                selected: 0,
+                error: None,
+            },
+        }
+    }
+
+    /// The draft for the selected account, started from its saved senders
+    /// when there is none yet.
+    fn identity_draft_mut(&mut self) -> Option<&mut IdentityDraft> {
+        let account = self.ui.email_account.clone()?;
+        let stale = self
+            .email
+            .identities
+            .as_ref()
+            .is_none_or(|draft| draft.account != account);
+        if stale {
+            let rows = self.email_account()?.senders();
+            self.email.identities = Some(IdentityDraft {
+                account,
+                rows,
+                selected: 0,
+                error: None,
+            });
+        }
+        self.email.identities.as_mut()
+    }
+
+    /// One text field of the selected identity, as typed.
+    pub fn identity_edit(&mut self, field: IdentityField, value: String) {
+        let Some(draft) = self.identity_draft_mut() else {
+            return;
+        };
+        if let Some(row) = draft.rows.get_mut(draft.selected) {
+            match field {
+                IdentityField::Name => row.name = value,
+                IdentityField::Address => row.address = value,
+                IdentityField::Signature => row.signature = value,
+                IdentityField::ReplyTo => row.reply_to = Some(value).filter(|v| !v.is_empty()),
+            }
+            draft.error = None;
+        }
+    }
+
+    /// Select identity `index` of the draft.
+    pub fn identity_select(&mut self, index: usize) {
+        if let Some(draft) = self.identity_draft_mut()
+            && index < draft.rows.len()
+        {
+            draft.selected = index;
+        }
+    }
+
+    /// Add an identity with a fresh id, and select it.
+    pub fn identity_add(&mut self) {
+        let Some(draft) = self.identity_draft_mut() else {
+            return;
+        };
+        let mut n = draft.rows.len() + 1;
+        let id = loop {
+            let candidate = format!("identity-{n}");
+            if !draft.rows.iter().any(|r| r.id == candidate) {
+                break candidate;
+            }
+            n += 1;
+        };
+        draft.rows.push(settings::email::Identity {
+            id,
+            name: String::new(),
+            address: String::new(),
+            signature: String::new(),
+            reply_to: None,
+        });
+        draft.selected = draft.rows.len() - 1;
+        draft.error = None;
+    }
+
+    /// Remove the selected identity of the draft.
+    pub fn identity_remove(&mut self) {
+        let Some(draft) = self.identity_draft_mut() else {
+            return;
+        };
+        if draft.rows.is_empty() {
+            return;
+        }
+        draft.rows.remove(draft.selected);
+        draft.selected = draft.selected.min(draft.rows.len().saturating_sub(1));
+        draft.error = None;
+    }
+
+    /// Throw the identity draft away.
+    pub fn identity_revert(&mut self) {
+        self.email.identities = None;
+    }
+
+    /// Send the draft as the account's identity list. Settings decides; a
+    /// refused list keeps the draft with the reason. A saved list clears it.
+    pub fn identity_save(&mut self) {
+        let Some(draft) = self.email.identities.clone() else {
+            return;
+        };
+        let change = Change::Identities(draft.account.clone(), draft.rows.clone());
+        match self.change_email(change) {
+            Ok(_) | Err(Refusal::Unchanged) => self.email.identities = None,
+            Err(refusal) => {
+                if let Some(draft) = &mut self.email.identities {
+                    draft.error = Some(refusal);
+                }
+            }
         }
     }
 
@@ -1852,12 +2004,18 @@ pub fn email_change(args: &Value) -> Result<Change, String> {
             Some(Value::String(id)) => Ok(Change::Default(Some(id.clone()))),
             Some(_) => Err("id must be an account id or null".into()),
         },
+        Some("identities") => {
+            let list = args.get("identities").ok_or("identities must be a list")?;
+            let identities: Vec<settings::email::Identity> = serde_json::from_value(list.clone())
+                .map_err(|e| format!("identities: {e}"))?;
+            Ok(Change::Identities(id()?, identities))
+        }
         Some("enable") => match args.get("enabled") {
             Some(Value::Bool(on)) => Ok(Change::Enable(id()?, *on)),
             _ => Err("enabled must be true or false".into()),
         },
         _ => Err(
-            "op must be add, update, remove, move, default or enable (or give path and value)"
+            "op must be add, update, remove, move, default, enable or identities (or give path and value)"
                 .into(),
         ),
     }
@@ -1868,6 +2026,98 @@ mod tests {
     use super::*;
     use crate::engine::Effect;
 
+    #[test]
+    fn identities_are_planned_as_the_whole_list_and_checked() {
+        use settings::email::Identity;
+        let work = Identity {
+            id: "work".into(),
+            name: "Ann Work".into(),
+            address: "ann@work.example.org".into(),
+            signature: String::new(),
+            reply_to: None,
+        };
+        let planned = applied(
+            plan(
+                &two(),
+                &Change::Identities("a".into(), vec![work.clone()]),
+                mint,
+            )
+            .unwrap(),
+        );
+        let accounts = planned
+            .get("email.accounts")
+            .expect("the list is written whole");
+        assert_eq!(accounts[0]["identities"][0]["id"], "work");
+        let bad = Identity {
+            address: "not-an-address".into(),
+            ..work
+        };
+        assert!(matches!(
+            plan(&two(), &Change::Identities("a".into(), vec![bad]), mint),
+            Err(Refusal::Settings(_))
+        ));
+        assert!(matches!(
+            plan(&two(), &Change::Identities("zz".into(), vec![]), mint),
+            Err(Refusal::Key(_))
+        ));
+    }
+
+    #[test]
+    fn the_identity_editor_saves_a_valid_list_and_keeps_a_refused_one() {
+        let mut e = read();
+        e.select_email_account("a");
+        // Work has no identities of its own, so the editor shows its default.
+        assert_eq!(e.identity_draft().rows.len(), 1);
+
+        // A new identity with a name and address is saved as one change.
+        e.identity_add();
+        e.identity_edit(IdentityField::Name, "Ann Work".into());
+        e.identity_edit(IdentityField::Address, "ann@work.example.org".into());
+        e.identity_save();
+        assert!(e.email.identities.is_none(), "a sent list clears the draft");
+        let calls = settings_calls(&mut e);
+        assert_eq!(calls.len(), 1, "{calls:?}");
+        let (ticket, verb, body) = calls[0].clone();
+        assert_eq!(verb, "settings.apply");
+        let sent = body["changes"]["email.accounts"][0]["identities"]
+            .as_array()
+            .expect("the account's identity list");
+        assert_eq!(sent.len(), 2);
+        assert_eq!(sent[1]["address"], "ann@work.example.org");
+        e.settled(ticket, reply(0, json!({"status":"changed","receipt":{}})));
+
+        // Settings reads back the list; the editor shows it, not a draft.
+        let mut after = two();
+        after.accounts[0].identities = serde_json::from_value(sent.clone().into()).unwrap();
+        settle_read(&mut e, "8", json!(after));
+        assert_eq!(e.identity_draft().rows.len(), 2);
+
+        // A row with no address is refused by the settings rules: nothing is
+        // sent, and the draft stays open with the reason.
+        e.identity_add();
+        e.identity_save();
+        assert!(
+            settings_calls(&mut e).is_empty(),
+            "a refused list sends nothing"
+        );
+        let draft = e.email.identities.as_ref().expect("the draft stays open");
+        assert!(matches!(draft.error, Some(Refusal::Settings(_))));
+    }
+
+    #[test]
+    fn the_identities_op_takes_a_list_over_the_bus() {
+        let args = json!({"op": "identities", "id": "a", "identities": [
+            {"id": "work", "name": "Ann", "address": "ann@work.example.org"}
+        ]});
+        let Ok(Change::Identities(id, rows)) = email_change(&args) else {
+            panic!("the op parses");
+        };
+        assert_eq!(id, "a");
+        assert_eq!(rows[0].id, "work");
+        let text = json!({"op": "identities", "id": "a", "identities": "work"});
+        assert!(email_change(&text).is_err());
+    }
+
     fn account(id: &str, name: &str) -> AccountEntry {
         AccountEntry {
             id: id.into(),
@@ -1877,6 +2127,7 @@ mod tests {
             ca_path: None,
             enabled: true,
             signature: String::new(),
+            identities: Vec::new(),
         }
     }
 

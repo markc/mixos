@@ -360,6 +360,7 @@ mod tests {
             ca_path: None,
             enabled: true,
             signature: String::new(),
+            identities: Vec::new(),
         }
     }
 
