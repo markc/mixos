@@ -48,6 +48,8 @@ pub mod record;
 pub mod runtime;
 #[cfg(feature = "store")]
 pub mod store;
+#[cfg(feature = "sqlite")]
+pub mod sqlite;
 
 #[cfg(feature = "bus")]
 pub mod bus;
@@ -96,3 +98,6 @@ pub use store::{
     CompleteCommit, DeleteCommit, MergeMode, PropertyStore, ReconcileCommit, SetCommit, Snapshot,
     StoreError, StoreFuture, StoreResult,
 };
+
+#[cfg(feature = "sqlite")]
+pub use sqlite::{JsonValuesMapping, SqliteStore, SqliteTableMapping};
