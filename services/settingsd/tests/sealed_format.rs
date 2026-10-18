@@ -1,19 +1,25 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The sealed format is untouched by the in-memory accent sidecar. The digests
-//! below were taken from the tree before the sidecar existed (27efdba, probed on
-//! the CBC worker for the default desktop). A change to `Snapshot` or `Effective`
-//! that alters their serialised bytes changes these digests and fails here.
+//! below pin the serialised bytes of the default desktop's `Snapshot` and
+//! `Effective`. A change to `Snapshot` or `Effective` that alters those bytes
+//! changes these digests and fails here, so a re-pin must be deliberate.
+//!
+//! Re-pinned 2026-10-18: the default design gained the token
+//! `icon.stroke_width` (1.5, commit 93dfa3fa, "design: author a 1.5 Lucide
+//! stroke baseline"). That token is part of the default effective map, so the
+//! pinned bytes moved. The store format is unchanged; only the default design
+//! changed.
 use settings::*;
 
-/// `settings::digest` of the default desktop's effective map, pre-sidecar.
-const EFFECTIVE_DIGEST_BEFORE_SIDECAR: &str =
-    "4c25711ceab88f6d50bf60c5df943a6f8c5001189927987bb504dc0c809b4ab2";
-/// `settings::digest` of the fixed default-desktop `Snapshot`, pre-sidecar.
-const SNAPSHOT_DIGEST_BEFORE_SIDECAR: &str =
-    "88d1ace5ea6370d37120cf8450ad10b288f68532dd695b0d1a0be4cb69a498c7";
-/// Serialised byte length of that `Snapshot`, pre-sidecar.
-const SNAPSHOT_JSON_LEN_BEFORE_SIDECAR: usize = 529_312;
+/// `settings::digest` of the default desktop's effective map.
+const EFFECTIVE_DIGEST_PINNED: &str =
+    "9c04e43bcff473f26c41ebc3f8a3286e0322ca67139f5d5e1a032cf768a48a29";
+/// `settings::digest` of the fixed default-desktop `Snapshot`.
+const SNAPSHOT_DIGEST_PINNED: &str =
+    "21c07dbaa05f3ecafec3ce0ee276f87e4292869513df4a9b81b787d5a9b632f5";
+/// Serialised byte length of that `Snapshot`.
+const SNAPSHOT_JSON_LEN_PINNED: usize = 529_634;
 
 fn fixed_snapshot() -> Snapshot {
     let desktop = Desktop::default();
@@ -34,16 +40,13 @@ fn fixed_snapshot() -> Snapshot {
 }
 
 #[test]
-fn effective_and_snapshot_bytes_match_the_pre_sidecar_format() {
+fn effective_and_snapshot_bytes_match_the_pinned_format() {
     let snapshot = fixed_snapshot();
-    assert_eq!(
-        digest(&snapshot.effective).unwrap(),
-        EFFECTIVE_DIGEST_BEFORE_SIDECAR
-    );
-    assert_eq!(digest(&snapshot).unwrap(), SNAPSHOT_DIGEST_BEFORE_SIDECAR);
+    assert_eq!(digest(&snapshot.effective).unwrap(), EFFECTIVE_DIGEST_PINNED);
+    assert_eq!(digest(&snapshot).unwrap(), SNAPSHOT_DIGEST_PINNED);
     assert_eq!(
         serde_json::to_string(&snapshot).unwrap().len(),
-        SNAPSHOT_JSON_LEN_BEFORE_SIDECAR
+        SNAPSHOT_JSON_LEN_PINNED
     );
 }
 
