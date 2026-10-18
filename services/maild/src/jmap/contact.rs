@@ -4,7 +4,7 @@
 //! JMAP AddressBook + Contact methods (JSContact, RFC 9553).
 
 use anyhow::Result;
-use mixos_davproto::vcard;
+use davproto::vcard;
 use uuid::Uuid;
 
 use super::types::*;
@@ -283,7 +283,7 @@ pub async fn contact_set(
 
     if let Some(create) = args.get("create").and_then(|v| v.as_object()) {
         for (client_id, obj) in create {
-            mixos_davproto::validate_raw_keys(obj)?;
+            davproto::validate_raw_keys(obj)?;
             let addressbook_id = obj
                 .get("addressBookId")
                 .and_then(|v| v.as_str())
@@ -362,7 +362,7 @@ pub async fn contact_set(
 
     if let Some(update) = args.get("update").and_then(|v| v.as_object()) {
         for (id_str, patch) in update {
-            mixos_davproto::validate_raw_keys(patch)?;
+            davproto::validate_raw_keys(patch)?;
             let Ok(id) = id_str.parse::<Uuid>() else {
                 continue;
             };

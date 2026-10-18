@@ -14,7 +14,7 @@
 
 use std::sync::Arc;
 
-use mixos_davproto::{etag, ical, vcard};
+use davproto::{etag, ical, vcard};
 
 use chrono::{DateTime, Utc};
 use quick_xml::events::Event;

@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use mixos_davproto::{etag, ical, vcard};
+use davproto::{etag, ical, vcard};
 
 use axum::body::Body;
 use axum::http::{StatusCode, header};

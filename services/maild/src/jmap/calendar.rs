@@ -4,7 +4,7 @@
 //! JMAP Calendar + CalendarEvent methods (JSCalendar, RFC 8984).
 
 use anyhow::Result;
-use mixos_davproto::ical;
+use davproto::ical;
 use uuid::Uuid;
 
 use super::types::*;
@@ -269,7 +269,7 @@ pub async fn event_set(
 
     if let Some(create) = args.get("create").and_then(|v| v.as_object()) {
         for (client_id, obj) in create {
-            mixos_davproto::validate_raw_keys(obj)?;
+            davproto::validate_raw_keys(obj)?;
             let calendar_id = obj
                 .get("calendarId")
                 .and_then(|v| v.as_str())
@@ -323,7 +323,7 @@ pub async fn event_set(
 
     if let Some(update) = args.get("update").and_then(|v| v.as_object()) {
         for (id_str, patch) in update {
-            mixos_davproto::validate_raw_keys(patch)?;
+            davproto::validate_raw_keys(patch)?;
             let Ok(id) = id_str.parse::<Uuid>() else {
                 continue;
             };
