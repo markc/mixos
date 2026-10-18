@@ -3173,7 +3173,8 @@ impl State {
                         .map(|list| {
                             list.iter()
                                 .map(|f| {
-                                    let field = |k: &str| f[k].as_str().unwrap_or_default().to_owned();
+                                    let field =
+                                        |k: &str| f[k].as_str().unwrap_or_default().to_owned();
                                     (field("id"), field("reason"))
                                 })
                                 .collect()
@@ -7346,7 +7347,14 @@ pub(crate) mod tests {
     #[test]
     fn a_bus_write_with_one_bad_id_answers_and_keeps_that_row() {
         let mut state = reading();
-        let shown: Vec<String> = state.account("a").unwrap().mail.emails.iter().map(|e| e.id.clone()).collect();
+        let shown: Vec<String> = state
+            .account("a")
+            .unwrap()
+            .mail
+            .emails
+            .iter()
+            .map(|e| e.id.clone())
+            .collect();
         assert!(shown.len() >= 2, "{shown:?}");
         let delete = Write::Delete {
             ids: shown.clone(),

@@ -328,8 +328,14 @@ mod tests {
         ];
         for (text, query) in pairs {
             if let Some(range) = highlight(text, query) {
-                assert!(range.start < range.end && range.end <= text.len(), "{text} {query}");
-                assert!(text.get(range).is_some(), "{text} {query}: on char boundaries");
+                assert!(
+                    range.start < range.end && range.end <= text.len(),
+                    "{text} {query}"
+                );
+                assert!(
+                    text.get(range).is_some(),
+                    "{text} {query}: on char boundaries"
+                );
             }
         }
     }

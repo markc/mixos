@@ -315,7 +315,13 @@ pub struct SetOutcome {
 /// [`MAX_IDS_PER_REQUEST`] ids, each sent as its own request.
 pub fn email_set_calls(account_id: &str, ids: &[String], change: &EmailChange) -> Vec<Call> {
     ids.chunks(MAX_IDS_PER_REQUEST)
-        .map(|chunk| Call("Email/set".into(), change.args(account_id, chunk), "s0".into()))
+        .map(|chunk| {
+            Call(
+                "Email/set".into(),
+                change.args(account_id, chunk),
+                "s0".into(),
+            )
+        })
         .collect()
 }
 
@@ -1144,7 +1150,10 @@ mod tests {
             .collect();
         assert_eq!(sizes, [500, 500, 1]);
         assert_eq!(calls[0].0, "Email/set");
-        assert!(calls[0].1.get("update").is_none(), "a destroy, never a move");
+        assert!(
+            calls[0].1.get("update").is_none(),
+            "a destroy, never a move"
+        );
         assert_eq!(calls[2].1["destroy"], json!(["E1000"]));
     }
 
@@ -1160,7 +1169,9 @@ mod tests {
         assert_eq!(outcome.failed[0], ("E1".into(), "notFound".into()));
         assert_eq!(outcome.failed[1].0, "E2", "not confirmed is not done");
         // An update reads notUpdated only, as before.
-        let change = EmailChange::Move { mailbox: "M".into() };
+        let change = EmailChange::Move {
+            mailbox: "M".into(),
+        };
         assert_eq!(change_outcome(&json!({}), &ids, &change).done.len(), 3);
     }
 

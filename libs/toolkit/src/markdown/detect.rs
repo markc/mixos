@@ -265,10 +265,12 @@ fn inline_code(line: &str) -> bool {
 /// character, so over a line's `](` pairs it is read once in all.
 fn web_target(rest: &str) -> bool {
     let rest = rest.trim_start().as_bytes();
-    [&b"http://"[..], b"https://", b"mailto:"].iter().any(|scheme| {
-        rest.get(..scheme.len())
-            .is_some_and(|head| head.eq_ignore_ascii_case(scheme))
-    })
+    [&b"http://"[..], b"https://", b"mailto:"]
+        .iter()
+        .any(|scheme| {
+            rest.get(..scheme.len())
+                .is_some_and(|head| head.eq_ignore_ascii_case(scheme))
+        })
 }
 
 /// `[text](http…)` or `(mailto:…)`, or a `[label]: http…` definition. One
@@ -489,7 +491,10 @@ Looks fine to me. The file is my_notes_final.txt in the share.
             ("bracket then many ](", format!("[{}", fill("](HTTPX"))),
             ("many ]( with spaces", format!("[{}", fill("](    x"))),
             ("unicode before ](", format!("[{}", fill("é](ÄÖ"))),
-            ("long lead, many quotes", format!("{lead}\n{}", fill(">a\n"))),
+            (
+                "long lead, many quotes",
+                format!("{lead}\n{}", fill(">a\n")),
+            ),
             ("open emphasis", fill(" _a")),
             ("open strong", fill("**a ")),
             ("open code", fill("`a ")),

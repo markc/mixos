@@ -696,7 +696,10 @@ pub fn batch_answer(write: &Write, outcome: jmap::SetOutcome) -> Result<Value, j
             .map(|(id, why)| format!("{id} ({why})"))
             .collect::<Vec<_>>()
             .join(", ");
-        let all_gone = outcome.failed.iter().all(|(_, why)| why.starts_with("notFound"));
+        let all_gone = outcome
+            .failed
+            .iter()
+            .all(|(_, why)| why.starts_with("notFound"));
         return Err(if all_gone {
             jmap::Error::Method {
                 error_type: "notFound".into(),
@@ -1880,7 +1883,13 @@ mod tests {
     /// The write a verb queued.
     fn queued_write(state: &mut State) -> Write {
         match state.take_work().as_slice() {
-            [Work::Write { write, reply: Some(1), .. }] => write.clone(),
+            [
+                Work::Write {
+                    write,
+                    reply: Some(1),
+                    ..
+                },
+            ] => write.clone(),
             other => panic!("{other:?}"),
         }
     }
@@ -1896,7 +1905,11 @@ mod tests {
             ("email.mark", json!({"ids": ids, "flagged": true}), "update"),
             ("email.move", json!({"ids": ids, "mailbox": "M2"}), "update"),
             ("email.delete", json!({"ids": ids}), "update"),
-            ("email.delete", json!({"ids": ids, "destroy": true}), "destroy"),
+            (
+                "email.delete",
+                json!({"ids": ids, "destroy": true}),
+                "destroy",
+            ),
         ];
         for (verb, args, key) in cases {
             let mut state = connected_many(&["a"]);
@@ -1923,9 +1936,12 @@ mod tests {
         };
         assert!(batch_change(&delete, None).is_err());
         let (_, change) = batch_change(&delete, Some("M-trash")).unwrap();
-        assert_eq!(change, jmap::EmailChange::Move {
-            mailbox: "M-trash".into()
-        });
+        assert_eq!(
+            change,
+            jmap::EmailChange::Move {
+                mailbox: "M-trash".into()
+            }
+        );
     }
 
     #[test]
@@ -1971,10 +1987,17 @@ mod tests {
             failed: vec![("E0".into(), "notFound".into())],
         };
         let error = batch_answer(&mark, gone).unwrap_err();
-        assert_eq!(server_refusal(&error).0, code::NOT_FOUND, "as a single id was");
+        assert_eq!(
+            server_refusal(&error).0,
+            code::NOT_FOUND,
+            "as a single id was"
+        );
         let down = jmap::SetOutcome {
             done: vec![],
-            failed: vec![("E0".into(), "notFound".into()), ("E1".into(), "HTTP 502".into())],
+            failed: vec![
+                ("E0".into(), "notFound".into()),
+                ("E1".into(), "HTTP 502".into()),
+            ],
         };
         let error = batch_answer(&mark, down).unwrap_err();
         assert_eq!(server_refusal(&error).0, code::SERVER);

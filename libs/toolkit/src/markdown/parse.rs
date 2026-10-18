@@ -217,8 +217,10 @@ impl Reader<'_> {
             let Some(event) = self.events.next() else {
                 break;
             };
-            if matches!(event, Event::Start(_) | Event::Rule | Event::Html(_) | Event::DisplayMath(_))
-                && !self.admit(1, 0)
+            if matches!(
+                event,
+                Event::Start(_) | Event::Rule | Event::Html(_) | Event::DisplayMath(_)
+            ) && !self.admit(1, 0)
             {
                 // The block that would have been made is in the plain text.
                 self.overflow("");
@@ -676,7 +678,9 @@ mod tests {
                 Block::List { items, .. } => items.iter().for_each(|i| all_text(&i.blocks, out)),
                 Block::Code { text, .. } | Block::Html(text) => out.push_str(text),
                 Block::Table { head, rows, .. } => {
-                    head.iter().chain(rows.iter().flatten()).for_each(|c| out.push_str(&c.text()));
+                    head.iter()
+                        .chain(rows.iter().flatten())
+                        .for_each(|c| out.push_str(&c.text()));
                 }
                 Block::Rule => {}
             }
@@ -765,21 +769,29 @@ mod tests {
         assert!(inline.spans.len() >= 30_000, "{}", inline.spans.len());
         let first = inline.spans[0].link.clone().expect("linked");
         assert!(
-            inline
-                .spans
-                .iter()
-                .all(|s| s.link.as_ref().is_some_and(|l| Arc::ptr_eq(&l.url, &first.url))),
+            inline.spans.iter().all(|s| s
+                .link
+                .as_ref()
+                .is_some_and(|l| Arc::ptr_eq(&l.url, &first.url))),
             "one shared address"
         );
         let (nodes, bytes) = weight(&doc.blocks, &mut Vec::new());
-        assert!(nodes <= MAX_NODES && bytes <= MAX_BYTES, "{nodes} nodes, {bytes} bytes");
+        assert!(
+            nodes <= MAX_NODES && bytes <= MAX_BYTES,
+            "{nodes} nodes, {bytes} bytes"
+        );
         assert!(bytes < url.len() + words.len(), "the address is held once");
-        eprintln!("4 MiB link, {} spans: parsed in {elapsed:?}", inline.spans.len());
+        eprintln!(
+            "4 MiB link, {} spans: parsed in {elapsed:?}",
+            inline.spans.len()
+        );
     }
 
     #[test]
     fn past_the_node_budget_the_rest_is_plain_text() {
-        let source: String = (0..MAX_NODES + 5_000).map(|i| format!("w{i}\n\n")).collect();
+        let source: String = (0..MAX_NODES + 5_000)
+            .map(|i| format!("w{i}\n\n"))
+            .collect();
         let doc = parse(&source);
         let (nodes, _) = weight(&doc.blocks, &mut Vec::new());
         assert!(nodes <= MAX_NODES + 2, "{nodes}");
@@ -787,7 +799,10 @@ mod tests {
             panic!("no fallback");
         };
         let rest = rest.text();
-        assert!(rest.ends_with(&format!("w{}", MAX_NODES + 4_999)), "nothing is lost");
+        assert!(
+            rest.ends_with(&format!("w{}", MAX_NODES + 4_999)),
+            "nothing is lost"
+        );
         assert!(rest.contains('\n'), "one line per paragraph");
     }
 
