@@ -46,7 +46,7 @@ fn form(ui: &mut Ui, editor: &IdentityEditor, events: &mut Vec<UiEvent>) {
                 format!("{} <{}>", row.name, row.address)
             };
             let selected = index == editor.selected;
-            if ui.selectable_label(selected, label).clicked() {
+            if toolkit::selectable(ui, selected, label).clicked() {
                 events.push(UiEvent::IdentitySelect(index));
             }
         }
