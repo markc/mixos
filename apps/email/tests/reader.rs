@@ -36,13 +36,13 @@ Here is where the **build cluster** move stands.
 ## Running it
 
 ```sh
-mix cbc-build.mix --worker cbc3 -- cargo test -p email
+mix cbc-build.mix --worker build-b -- cargo test -p email
 ```
 
-| worker | load | jobs |
-|--------|-----:|-----:|
-| cbc2   | 0.4  | 2    |
-| cbc3   | 1.2  | 5    |
+| worker  | load | jobs |
+|---------|-----:|-----:|
+| build-a | 0.4  | 2    |
+| build-b | 1.2  | 5    |
 
 > The lock serialises jobs per checkout, so a second caller waits.
 
@@ -255,7 +255,7 @@ fn a_markdown_written_body_renders_as_markdown() {
         "What changed",
         "Running it",
         "worker",
-        "cbc3",
+        "build-b",
         "fixtures stay small",
     ] {
         assert!(h.query_by_label(text).is_some(), "{text}");
@@ -637,7 +637,7 @@ fn reader_attachments_studio_dark() {
     state.accounts[0].mail.attachments_open = true;
     state.accounts[0].mail.transfers.insert(
         "2".into(),
-        email::state::Transfer::Saved("/home/ann/Downloads/plan.pdf".into()),
+        email::state::Transfer::Saved("/home/user/Downloads/plan.pdf".into()),
     );
     let mut h = harness(state, &theme(Scheme::Studio, Mode::Dark));
     h.run();

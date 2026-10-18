@@ -343,10 +343,10 @@ You are receiving this because you were mentioned.
     const TABLE: &str = "\
 Here are the numbers:
 
-| host | load |
-|------|------|
-| cbc2 | 0.4  |
-| cbc3 | 1.2  |
+| host    | load |
+|---------|------|
+| build-a | 0.4  |
+| build-b | 1.2  |
 ";
 
     const PLAIN_REPLY: &str = "\

@@ -380,16 +380,16 @@ mod tests {
 
     #[test]
     fn the_download_dir_follows_xdg() {
-        let home = Path::new("/home/ann");
+        let home = Path::new("/home/user");
         assert_eq!(
             download_dir(None, None, home),
-            PathBuf::from("/home/ann/Downloads")
+            PathBuf::from("/home/user/Downloads")
         );
         let dirs =
             "# comment\nXDG_DESKTOP_DIR=\"$HOME/Desktop\"\nXDG_DOWNLOAD_DIR=\"$HOME/Fetched\"\n";
         assert_eq!(
             download_dir(None, Some(dirs), home),
-            PathBuf::from("/home/ann/Fetched")
+            PathBuf::from("/home/user/Fetched")
         );
         assert_eq!(
             download_dir(Some("/data/dl"), Some(dirs), home),
@@ -398,7 +398,7 @@ mod tests {
         // A relative value is not a directory to trust.
         assert_eq!(
             download_dir(Some("dl"), None, home),
-            PathBuf::from("/home/ann/Downloads")
+            PathBuf::from("/home/user/Downloads")
         );
     }
 }
