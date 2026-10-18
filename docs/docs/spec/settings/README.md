@@ -327,6 +327,8 @@ resolved design.
 | `email.mail.page_size` | integer 10–500 | 100 |
 | `email.mail.mark_read_on_open` | boolean | true |
 | `email.mail.confirm_delete` | boolean | true |
+| `email.mail.quote_on_reply` | boolean: whether a plain Reply quotes the original | true |
+| `email.mail.reply_position` | `"above"` or `"below"`: where the reply text goes in a quoted reply | `"above"` |
 
 Each account is a record of exactly these keys:
 

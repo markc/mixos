@@ -5859,6 +5859,8 @@ resolved design.
 | `email.mail.page_size` | integer 10–500 | 100 |
 | `email.mail.mark_read_on_open` | boolean | true |
 | `email.mail.confirm_delete` | boolean | true |
+| `email.mail.quote_on_reply` | boolean: whether a plain Reply quotes the original | true |
+| `email.mail.reply_position` | `"above"` or `"below"`: where the reply text goes in a quoted reply | `"above"` |
 
 Each account is a record of exactly these keys:
 
@@ -31544,6 +31546,13 @@ Use strict MixOS configuration and owned shutdown signalling.
 # settings contract changes
 
 > Mirrored from [`libs/settings/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/libs/settings/CHANGELOG.md), where releases update it. The component's page is [settings](README.md). This page describes the current `main` branch of MixOS.
+
+## Unreleased
+
+Additive, store format unchanged: the mail options `email.mail.quote_on_reply`
+(boolean, default true) and `email.mail.reply_position` (`"above"` or `"below"`,
+default `"above"`), which the email app's Reply now reads instead of fixed
+values. Omitted at their defaults, so existing profiles are unchanged.
 
 ## 0.8.0
 

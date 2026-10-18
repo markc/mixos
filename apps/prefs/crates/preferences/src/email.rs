@@ -26,7 +26,8 @@ use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
 pub use settings::email::{
-    AccountEntry, Email, MailOptions, PAGE_SIZE_MAX, PAGE_SIZE_MIN, mint_account_id,
+    AccountEntry, Email, MailOptions, PAGE_SIZE_MAX, PAGE_SIZE_MIN, ReplyPosition,
+    mint_account_id,
 };
 
 /// The email app's Bus service.
@@ -457,6 +458,10 @@ pub enum Change {
     PageSize(u32),
     MarkReadOnOpen(bool),
     ConfirmDelete(bool),
+    /// Whether a plain Reply quotes the original message.
+    QuoteOnReply(bool),
+    /// Where the person's text goes in a quoted reply.
+    ReplyPosition(settings::email::ReplyPosition),
 }
 
 /// Why a change was not sent.
@@ -509,6 +514,15 @@ fn edit_between(old: &Email, new: &Email) -> BTreeMap<String, Value> {
     }
     if a.confirm_delete != b.confirm_delete {
         changes.insert("email.mail.confirm_delete".into(), json!(b.confirm_delete));
+    }
+    if a.quote_on_reply != b.quote_on_reply {
+        changes.insert("email.mail.quote_on_reply".into(), json!(b.quote_on_reply));
+    }
+    if a.reply_position != b.reply_position {
+        changes.insert(
+            "email.mail.reply_position".into(),
+            json!(b.reply_position),
+        );
     }
     changes
 }
@@ -589,6 +603,8 @@ pub fn plan(
         }
         Change::MarkReadOnOpen(on) => next.mail.mark_read_on_open = *on,
         Change::ConfirmDelete(on) => next.mail.confirm_delete = *on,
+        Change::QuoteOnReply(on) => next.mail.quote_on_reply = *on,
+        Change::ReplyPosition(position) => next.mail.reply_position = *position,
     }
     settings::email::validate(&next).map_err(|d| Refusal::Settings(redact_text(&d.message)))?;
     let changes = edit_between(email, &next);
@@ -1683,7 +1699,7 @@ impl Engine {
             "read":email.is_some(),
             "accounts":accounts,
             "default_account":email.and_then(|e| e.default_account.clone()),
-            "mail":mail.map(|m| json!({"page_size":m.page_size,"mark_read_on_open":m.mark_read_on_open,"confirm_delete":m.confirm_delete})),
+            "mail":mail.map(|m| json!({"page_size":m.page_size,"mark_read_on_open":m.mark_read_on_open,"confirm_delete":m.confirm_delete,"quote_on_reply":m.quote_on_reply,"reply_position":m.reply_position})),
             "email_service":self.email.service,
             "selected":self.ui.email_account,
             "form":self.email.form,
@@ -1808,7 +1824,16 @@ pub fn email_change(args: &Value) -> Result<Change, String> {
                 .as_bool()
                 .map(Change::ConfirmDelete)
                 .ok_or_else(|| "confirm_delete must be true or false".into()),
-            _ => Err("path must be email.mail.page_size, email.mail.mark_read_on_open or email.mail.confirm_delete".into()),
+            Some("email.mail.quote_on_reply") => value
+                .as_bool()
+                .map(Change::QuoteOnReply)
+                .ok_or_else(|| "quote_on_reply must be true or false".into()),
+            Some("email.mail.reply_position") => match value.as_str() {
+                Some("above") => Ok(Change::ReplyPosition(settings::email::ReplyPosition::Above)),
+                Some("below") => Ok(Change::ReplyPosition(settings::email::ReplyPosition::Below)),
+                _ => Err("reply_position must be \"above\" or \"below\"".into()),
+            },
+            _ => Err("path must be email.mail.page_size, email.mail.mark_read_on_open, email.mail.confirm_delete, email.mail.quote_on_reply or email.mail.reply_position".into()),
         };
     }
     match args.get("op").and_then(Value::as_str) {
@@ -1965,6 +1990,20 @@ mod tests {
     }
 
     #[test]
+    fn compose_paths_parse_and_refuse_bad_values() {
+        assert!(matches!(
+            email_change(&json!({"path": "email.mail.quote_on_reply", "value": false})),
+            Ok(Change::QuoteOnReply(false))
+        ));
+        assert!(matches!(
+            email_change(&json!({"path": "email.mail.reply_position", "value": "below"})),
+            Ok(Change::ReplyPosition(ReplyPosition::Below))
+        ));
+        assert!(email_change(&json!({"path": "email.mail.reply_position", "value": "middle"})).is_err());
+        assert!(email_change(&json!({"path": "email.mail.quote_on_reply", "value": "yes"})).is_err());
+    }
+
+    #[test]
     fn mail_options_send_their_own_path() {
         let email = two();
         let cases = [
@@ -1978,6 +2017,16 @@ mod tests {
                 Change::ConfirmDelete(false),
                 "email.mail.confirm_delete",
                 json!(false),
+            ),
+            (
+                Change::QuoteOnReply(false),
+                "email.mail.quote_on_reply",
+                json!(false),
+            ),
+            (
+                Change::ReplyPosition(ReplyPosition::Below),
+                "email.mail.reply_position",
+                json!("below"),
             ),
         ];
         for (change, path, value) in cases {

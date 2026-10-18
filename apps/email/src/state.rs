@@ -3185,16 +3185,18 @@ impl State {
         }
     }
 
-    /// Whether a plain Reply quotes the original (`email.compose.quote_on_reply`).
+    /// Whether a plain Reply quotes the original (`email.mail.quote_on_reply`).
     pub fn quote_on_reply(&self) -> bool {
-        // The compose settings land with the email.compose group; until
-        // then a reply quotes, above the person's text.
-        true
+        self.settings.mail.quote_on_reply
     }
 
-    /// Where the person's text goes in a quoted reply.
+    /// Where the person's text goes in a quoted reply
+    /// (`email.mail.reply_position`).
     pub fn reply_position(&self) -> crate::quote::Position {
-        crate::quote::Position::Above
+        match self.settings.mail.reply_position {
+            settings::email::ReplyPosition::Above => crate::quote::Position::Above,
+            settings::email::ReplyPosition::Below => crate::quote::Position::Below,
+        }
     }
 
     /// Forward the open email.
@@ -3467,6 +3469,8 @@ impl State {
                 "page_size": self.settings.mail.page_size,
                 "mark_read_on_open": self.settings.mail.mark_read_on_open,
                 "confirm_delete": self.settings.mail.confirm_delete,
+                "quote_on_reply": self.settings.mail.quote_on_reply,
+                "reply_position": self.settings.mail.reply_position,
             },
             "accounts": views,
             "tree": self.tree().iter().map(|r| json!({"key": r.node.key(), "depth": r.depth, "label": r.label, "unread": r.unread, "expandable": r.expandable, "expanded": r.expanded, "selected": r.selected})).collect::<Vec<_>>(),
@@ -4806,6 +4810,20 @@ pub(crate) mod tests {
                 .iter()
                 .any(|w| matches!(w, Work::FetchEmails { limit: 25, .. }))
         );
+    }
+
+    #[test]
+    fn reply_follows_the_quote_and_position_settings() {
+        let mut state = connected();
+        // The defaults: a reply quotes, with the person's text above it.
+        assert!(state.quote_on_reply());
+        assert_eq!(state.reply_position(), crate::quote::Position::Above);
+        let mut next = state.settings.clone();
+        next.mail.quote_on_reply = false;
+        next.mail.reply_position = settings::email::ReplyPosition::Below;
+        state.set_settings(next);
+        assert!(!state.quote_on_reply());
+        assert_eq!(state.reply_position(), crate::quote::Position::Below);
     }
 
     #[test]

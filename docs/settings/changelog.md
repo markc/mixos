@@ -8,6 +8,13 @@ generated: by docs/_build/gen-site.mix from libs/settings/CHANGELOG.md; do not e
 
 > Mirrored from [`libs/settings/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/libs/settings/CHANGELOG.md), where releases update it. The component's page is [settings](README.md). This page describes the current `main` branch of MixOS.
 
+## Unreleased
+
+Additive, store format unchanged: the mail options `email.mail.quote_on_reply`
+(boolean, default true) and `email.mail.reply_position` (`"above"` or `"below"`,
+default `"above"`), which the email app's Reply now reads instead of fixed
+values. Omitted at their defaults, so existing profiles are unchanged.
+
 ## 0.8.0
 
 Additive, store format unchanged (3):
