@@ -1967,17 +1967,18 @@ mod tests {
         let args = json!({"identities": [
             {"id": "work", "name": "Ann", "address": "ann@work.example.invalid", "reply_to": null}
         ]});
-        let read = identities(&args, "identities").unwrap().unwrap();
+        let Ok(Some(read)) = identities(&args, "identities") else {
+            panic!("a list of identities reads");
+        };
         assert_eq!(read[0].id, "work");
         assert_eq!(read[0].reply_to, None);
-        assert!(identities(&json!({}), "identities").unwrap().is_none());
-        assert!(
-            identities(&json!({"identities": null}), "identities")
-                .unwrap()
-                .is_none()
-        );
-        assert!(identities(&json!({"identities": "work"}), "identities").is_err());
-        assert!(identities(&json!({"identities": [{"id": "work"}]}), "identities").is_err());
+        assert!(matches!(identities(&json!({}), "identities"), Ok(None)));
+        let null = json!({"identities": null});
+        assert!(matches!(identities(&null, "identities"), Ok(None)));
+        let text = json!({"identities": "work"});
+        assert!(matches!(identities(&text, "identities"), Err(_)));
+        let no_address = json!({"identities": [{"id": "work"}]});
+        assert!(matches!(identities(&no_address, "identities"), Err(_)));
     }
 
     #[test]
