@@ -92,6 +92,7 @@ icons! {
     FileType => "file-type",
     FileVideoCamera => "file-video-camera",
     Film => "film",
+    Flag => "flag",
     Folder => "folder",
     FolderInput => "folder-input",
     FolderOpen => "folder-open",
