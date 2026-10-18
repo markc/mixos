@@ -242,13 +242,13 @@ pub const VERBS: &[Verb] = &[
         "email.mark",
         false,
         r#"{"account":"optional account id","ids":"email id or list of ids","read":"optional bool","flagged":"optional bool"}"#,
-        "Set or clear read and flagged",
+        "Set or clear read and flagged, one Email/set per 500 ids; answers {ids, done, failed: [{id, reason}]} and is refused only when every id failed",
     ),
     verb(
         "email.move",
         false,
         r#"{"account":"optional account id","ids":"email id or list of ids","mailbox":"mailbox id"}"#,
-        "Move emails to a mailbox",
+        "Move emails to a mailbox, one Email/set per 500 ids; answers {ids, mailbox, done, failed: [{id, reason}]} and is refused only when every id failed",
     ),
     verb(
         "email.junk",
@@ -260,7 +260,7 @@ pub const VERBS: &[Verb] = &[
         "email.delete",
         false,
         r#"{"account":"optional account id","ids":"email id or list of ids","destroy":"optional bool (default false: to Trash)"}"#,
-        "Move emails to Trash, or destroy them",
+        "Move emails to Trash, or destroy them, one Email/set per 500 ids; answers {ids, destroyed, done, failed: [{id, reason}]} and is refused only when every id failed",
     ),
     verb(
         "email.send",
@@ -517,6 +517,16 @@ impl Write {
         }
     }
 
+    /// The emails a message write names (none for any other write).
+    pub fn ids(&self) -> &[String] {
+        match self {
+            Write::Keywords { ids, .. } | Write::Move { ids, .. } | Write::Delete { ids, .. } => {
+                ids
+            }
+            _ => &[],
+        }
+    }
+
     /// The emails a write takes out of the shown list.
     pub fn removes(&self) -> &[String] {
         match self {
@@ -581,17 +591,20 @@ pub async fn run_write(
     sent: Option<jmap::SendBoxes>,
 ) -> Result<Value, jmap::Error> {
     Ok(match write {
-        Write::Keywords { ids, read, flagged } => {
-            client.set_keywords(&ids, read, flagged).await?;
-            json!({ "ids": ids })
-        }
-        Write::Move { ids, mailbox } => {
-            client.move_emails(&ids, &mailbox).await?;
-            json!({ "ids": ids, "mailbox": mailbox })
-        }
-        Write::Delete { ids, destroy } => {
-            client.delete_emails(&ids, destroy).await?;
-            json!({ "ids": ids, "destroyed": destroy })
+        Write::Keywords { .. } | Write::Move { .. } | Write::Delete { .. } => {
+            let trash = match write {
+                Write::Delete { destroy: false, .. } => {
+                    let mailboxes = client.mailboxes().await?;
+                    mailboxes
+                        .into_iter()
+                        .find(|m| m.role.as_deref() == Some("trash"))
+                        .map(|m| m.id)
+                }
+                _ => None,
+            };
+            let (ids, change) = batch_change(&write, trash.as_deref())?;
+            let outcome = client.change_emails(ids, &change).await;
+            batch_answer(&write, outcome)?
         }
         Write::CreateMailbox { name, parent } => {
             json!({ "id": client.create_mailbox(&name, parent.as_deref()).await? })
@@ -638,6 +651,75 @@ pub async fn run_write(
             json!({ "id": id })
         }
     })
+}
+
+/// The batched change a message write makes (`email.mark`, `email.move`,
+/// `email.junk`, `email.delete`) and the ids it names: the same Email/set
+/// path as the window's actions, one request per
+/// [`jmap::MAX_IDS_PER_REQUEST`] ids. `trash` is the account's Trash
+/// mailbox, which a delete that does not destroy needs.
+pub fn batch_change<'a>(
+    write: &'a Write,
+    trash: Option<&str>,
+) -> Result<(&'a [String], jmap::EmailChange), jmap::Error> {
+    let change = match write {
+        Write::Keywords { read, flagged, .. } => jmap::EmailChange::Keywords {
+            read: *read,
+            flagged: *flagged,
+        },
+        Write::Move { mailbox, .. } => jmap::EmailChange::Move {
+            mailbox: mailbox.clone(),
+        },
+        Write::Delete { destroy: true, .. } => jmap::EmailChange::Destroy,
+        Write::Delete { destroy: false, .. } => {
+            let mailbox = trash
+                .ok_or_else(|| jmap::Error::Protocol("no mailbox has the trash role".into()))?;
+            jmap::EmailChange::Move {
+                mailbox: mailbox.to_owned(),
+            }
+        }
+        _ => return Err(jmap::Error::Protocol("not a message write".into())),
+    };
+    Ok((write.ids(), change))
+}
+
+/// A batched message write's answer: the fields the verb always answered
+/// with (`ids` as asked, and `mailbox` or `destroyed`), plus `done` (the
+/// ids changed) and `failed` (`[{id, reason}]`). One bad id never fails
+/// the call; only when every id failed is it refused, as a single-id call
+/// always was (`NOT_FOUND` when every id is unknown to the server).
+pub fn batch_answer(write: &Write, outcome: jmap::SetOutcome) -> Result<Value, jmap::Error> {
+    if outcome.done.is_empty() && !outcome.failed.is_empty() {
+        let reasons = outcome
+            .failed
+            .iter()
+            .map(|(id, why)| format!("{id} ({why})"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let all_gone = outcome.failed.iter().all(|(_, why)| why.starts_with("notFound"));
+        return Err(if all_gone {
+            jmap::Error::Method {
+                error_type: "notFound".into(),
+                description: reasons,
+            }
+        } else {
+            jmap::Error::Protocol(reasons)
+        });
+    }
+    let failed: Vec<Value> = outcome
+        .failed
+        .iter()
+        .map(|(id, reason)| json!({ "id": id, "reason": reason }))
+        .collect();
+    let mut answer = match write {
+        Write::Keywords { ids, .. } => json!({ "ids": ids }),
+        Write::Move { ids, mailbox } => json!({ "ids": ids, "mailbox": mailbox }),
+        Write::Delete { ids, destroy } => json!({ "ids": ids, "destroyed": destroy }),
+        _ => json!({}),
+    };
+    answer["done"] = json!(outcome.done);
+    answer["failed"] = Value::Array(failed);
+    Ok(answer)
 }
 
 /// A server failure's refusal: an id the server does not hold is
@@ -1793,5 +1875,109 @@ mod tests {
         assert_eq!(server_refusal(&missing).0, code::NOT_FOUND);
         let other = jmap::Error::method("serverFail", Some("down"));
         assert_eq!(server_refusal(&other).0, code::SERVER);
+    }
+
+    /// The write a verb queued.
+    fn queued_write(state: &mut State) -> Write {
+        match state.take_work().as_slice() {
+            [Work::Write { write, reply: Some(1), .. }] => write.clone(),
+            other => panic!("{other:?}"),
+        }
+    }
+
+    fn many(n: usize) -> Vec<String> {
+        (0..n).map(|i| format!("E{i}")).collect()
+    }
+
+    #[test]
+    fn message_verbs_send_one_email_set_per_500_ids() {
+        let ids = many(1_201);
+        let cases = [
+            ("email.mark", json!({"ids": ids, "flagged": true}), "update"),
+            ("email.move", json!({"ids": ids, "mailbox": "M2"}), "update"),
+            ("email.delete", json!({"ids": ids}), "update"),
+            ("email.delete", json!({"ids": ids, "destroy": true}), "destroy"),
+        ];
+        for (verb, args, key) in cases {
+            let mut state = connected_many(&["a"]);
+            run(&mut state, verb, args);
+            let write = queued_write(&mut state);
+            let (named, change) = batch_change(&write, Some("M-trash")).unwrap();
+            assert_eq!(named, ids.as_slice(), "{verb}");
+            let calls = jmap::email_set_calls("A1", named, &change);
+            let sizes: Vec<usize> = calls
+                .iter()
+                .map(|c| match &c.1[key] {
+                    Value::Object(map) => map.len(),
+                    Value::Array(list) => list.len(),
+                    other => panic!("{verb}: {other}"),
+                })
+                .collect();
+            assert_eq!(sizes, [500, 500, 201], "{verb} {key}");
+            assert!(calls.iter().all(|c| c.0 == "Email/set"));
+        }
+        // A delete to Trash needs the Trash mailbox; a destroy does not.
+        let delete = Write::Delete {
+            ids: many(1),
+            destroy: false,
+        };
+        assert!(batch_change(&delete, None).is_err());
+        let (_, change) = batch_change(&delete, Some("M-trash")).unwrap();
+        assert_eq!(change, jmap::EmailChange::Move {
+            mailbox: "M-trash".into()
+        });
+    }
+
+    #[test]
+    fn a_partial_failure_answers_each_id_and_keeps_the_old_fields() {
+        let outcome = jmap::SetOutcome {
+            done: vec!["E0".into(), "E2".into()],
+            failed: vec![("E1".into(), "notFound: no such email".into())],
+        };
+        let write = Write::Move {
+            ids: many(3),
+            mailbox: "M2".into(),
+        };
+        let answer = batch_answer(&write, outcome).expect("one bad id never fails the call");
+        assert_eq!(answer["ids"], json!(["E0", "E1", "E2"]));
+        assert_eq!(answer["mailbox"], "M2");
+        assert_eq!(answer["done"], json!(["E0", "E2"]));
+        assert_eq!(
+            answer["failed"],
+            json!([{"id": "E1", "reason": "notFound: no such email"}])
+        );
+        let delete = Write::Delete {
+            ids: many(1),
+            destroy: true,
+        };
+        let ok = jmap::SetOutcome {
+            done: many(1),
+            failed: vec![],
+        };
+        let answer = batch_answer(&delete, ok).unwrap();
+        assert_eq!(answer["destroyed"], true);
+        assert_eq!(answer["failed"], json!([]));
+    }
+
+    #[test]
+    fn only_a_call_where_every_id_failed_is_refused() {
+        let mark = Write::Keywords {
+            ids: many(1),
+            read: Some(true),
+            flagged: None,
+        };
+        let gone = jmap::SetOutcome {
+            done: vec![],
+            failed: vec![("E0".into(), "notFound".into())],
+        };
+        let error = batch_answer(&mark, gone).unwrap_err();
+        assert_eq!(server_refusal(&error).0, code::NOT_FOUND, "as a single id was");
+        let down = jmap::SetOutcome {
+            done: vec![],
+            failed: vec![("E0".into(), "notFound".into()), ("E1".into(), "HTTP 502".into())],
+        };
+        let error = batch_answer(&mark, down).unwrap_err();
+        assert_eq!(server_refusal(&error).0, code::SERVER);
+        assert!(error.to_string().contains("E1 (HTTP 502)"));
     }
 }

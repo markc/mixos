@@ -3153,7 +3153,46 @@ impl State {
         {
             match write.touches() {
                 Mode::Mail => {
-                    let gone = write.removes();
+                    // A batched write names the ids it changed: an id that
+                    // failed stays in the list.
+                    let done: Option<Vec<&str>> = value
+                        .get("done")
+                        .and_then(Value::as_array)
+                        .map(|list| list.iter().filter_map(Value::as_str).collect());
+                    let gone: Vec<String> = write
+                        .removes()
+                        .iter()
+                        .filter(|id| done.as_ref().is_none_or(|d| d.contains(&id.as_str())))
+                        .cloned()
+                        .collect();
+                    let gone = gone.as_slice();
+                    let failed: Vec<(String, String)> = value
+                        .get("failed")
+                        .and_then(Value::as_array)
+                        .map(|list| {
+                            list.iter()
+                                .map(|f| {
+                                    let field = |k: &str| f[k].as_str().unwrap_or_default().to_owned();
+                                    (field("id"), field("reason"))
+                                })
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    if !failed.is_empty() {
+                        let reasons = failed
+                            .iter()
+                            .map(|(id, why)| format!("{id} ({why})"))
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        self.status = crate::label_with(
+                            "batch-failed",
+                            &[
+                                ("failed", &failed.len().to_string()),
+                                ("count", &write.ids().len().to_string()),
+                                ("reasons", &reasons),
+                            ],
+                        );
+                    }
                     if let Some(open) = view.mail.open.as_ref().filter(|e| gone.contains(&e.id)) {
                         advance = neighbour(&view.mail.emails, &open.id, gone);
                     }
@@ -7301,6 +7340,38 @@ pub(crate) mod tests {
         let reply = &state.take_replies()[0];
         assert_eq!((reply.id, reply.rc), (5, 0));
         assert_eq!(reply.body["ids"][0], "E1");
+    }
+
+    #[test]
+    fn a_bus_write_with_one_bad_id_answers_and_keeps_that_row() {
+        let mut state = reading();
+        let shown: Vec<String> = state.account("a").unwrap().mail.emails.iter().map(|e| e.id.clone()).collect();
+        assert!(shown.len() >= 2, "{shown:?}");
+        let delete = Write::Delete {
+            ids: shown.clone(),
+            destroy: false,
+        };
+        state.write_server("a".into(), Some(5), delete.clone());
+        let _ = writes(&mut state);
+        let tag = tag(&state, "a");
+        let answer = json!({
+            "ids": shown,
+            "destroyed": false,
+            "done": [shown[0]],
+            "failed": [{"id": shown[1], "reason": "notFound"}],
+        });
+        state.apply(Event::Account(
+            tag,
+            Done::Wrote(Some(5), None, Box::new(delete), Ok(answer)),
+        ));
+        let view = state.account("a").unwrap();
+        let left: Vec<&str> = view.mail.emails.iter().map(|e| e.id.as_str()).collect();
+        assert!(!left.contains(&shown[0].as_str()), "the done id left");
+        assert!(left.contains(&shown[1].as_str()), "the failed id stays");
+        assert!(state.status.contains(&shown[1]), "{}", state.status);
+        let reply = &state.take_replies()[0];
+        assert_eq!((reply.id, reply.rc), (5, 0), "the call does not fail");
+        assert_eq!(reply.body["failed"][0]["id"], shown[1].as_str());
     }
 
     #[test]

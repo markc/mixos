@@ -284,13 +284,21 @@ pub enum EmailChange {
     },
     /// Into exactly this mailbox (a delete is a move to Trash).
     Move { mailbox: String },
+    /// Destroyed for good (`Email/set` `destroy`, not a move to Trash).
+    Destroy,
 }
 
 impl EmailChange {
-    fn patch(&self) -> Value {
+    /// The Email/set arguments applying this change to `ids`.
+    fn args(&self, account_id: &str, ids: &[String]) -> Value {
         match self {
-            EmailChange::Keywords { read, flagged } => keyword_patch(*read, *flagged),
-            EmailChange::Move { mailbox } => json!({ "mailboxIds": { mailbox: true } }),
+            EmailChange::Keywords { read, flagged } => {
+                email_update_args(account_id, ids, &keyword_patch(*read, *flagged))
+            }
+            EmailChange::Move { mailbox } => {
+                email_update_args(account_id, ids, &json!({ "mailboxIds": { mailbox: true } }))
+            }
+            EmailChange::Destroy => json!({ "accountId": account_id, "destroy": ids }),
         }
     }
 }
@@ -306,15 +314,8 @@ pub struct SetOutcome {
 /// The Email/set calls for `change` on `ids`: one call per
 /// [`MAX_IDS_PER_REQUEST`] ids, each sent as its own request.
 pub fn email_set_calls(account_id: &str, ids: &[String], change: &EmailChange) -> Vec<Call> {
-    let patch = change.patch();
     ids.chunks(MAX_IDS_PER_REQUEST)
-        .map(|chunk| {
-            Call(
-                "Email/set".into(),
-                email_update_args(account_id, chunk, &patch),
-                "s0".into(),
-            )
-        })
+        .map(|chunk| Call("Email/set".into(), change.args(account_id, chunk), "s0".into()))
         .collect()
 }
 
@@ -327,6 +328,32 @@ pub fn set_outcome(data: &Value, ids: &[String]) -> SetOutcome {
         match Client::set_error(data, "notUpdated", id) {
             Some(error) => outcome.failed.push((id.clone(), reason(&error))),
             None => outcome.done.push(id.clone()),
+        }
+    }
+    outcome
+}
+
+/// Read one Email/set reply for `ids` under `change`: an update as
+/// [`set_outcome`]; a destroy fails an id under `notDestroyed`, and an id
+/// the reply does not list as `destroyed` (maild confirms every destroy).
+pub fn change_outcome(data: &Value, ids: &[String], change: &EmailChange) -> SetOutcome {
+    if *change != EmailChange::Destroy {
+        return set_outcome(data, ids);
+    }
+    let destroyed = |id: &str| {
+        data.get("destroyed")
+            .and_then(Value::as_array)
+            .is_some_and(|list| list.iter().any(|entry| entry.as_str() == Some(id)))
+    };
+    let mut outcome = SetOutcome::default();
+    for id in ids {
+        match Client::set_error(data, "notDestroyed", id) {
+            Some(error) => outcome.failed.push((id.clone(), reason(&error))),
+            None if destroyed(id) => outcome.done.push(id.clone()),
+            None => outcome.failed.push((
+                id.clone(),
+                format!("serverFail: server did not confirm {id:?} as destroyed"),
+            )),
         }
     }
     outcome
@@ -393,7 +420,7 @@ impl Client {
                 .and_then(|replies| replies.into_iter().next().ok_or_else(|| empty("Email/set")));
             match answer {
                 Ok(data) => {
-                    let part = set_outcome(&data, chunk);
+                    let part = change_outcome(&data, chunk, change);
                     outcome.done.extend(part.done);
                     outcome.failed.extend(part.failed);
                 }
@@ -1105,6 +1132,36 @@ mod tests {
                 ],
             }
         );
+    }
+
+    #[test]
+    fn batch_destroy_is_one_email_set_destroy_per_500_ids() {
+        let ids = ids(1_001);
+        let calls = email_set_calls("A1", &ids, &EmailChange::Destroy);
+        let sizes: Vec<usize> = calls
+            .iter()
+            .map(|c| c.1["destroy"].as_array().unwrap().len())
+            .collect();
+        assert_eq!(sizes, [500, 500, 1]);
+        assert_eq!(calls[0].0, "Email/set");
+        assert!(calls[0].1.get("update").is_none(), "a destroy, never a move");
+        assert_eq!(calls[2].1["destroy"], json!(["E1000"]));
+    }
+
+    #[test]
+    fn batch_destroy_reports_refused_and_unconfirmed_ids() {
+        let ids = ids(3);
+        let reply = json!({
+            "destroyed": ["E0"],
+            "notDestroyed": { "E1": { "type": "notFound" } }
+        });
+        let outcome = change_outcome(&reply, &ids, &EmailChange::Destroy);
+        assert_eq!(outcome.done, ["E0"]);
+        assert_eq!(outcome.failed[0], ("E1".into(), "notFound".into()));
+        assert_eq!(outcome.failed[1].0, "E2", "not confirmed is not done");
+        // An update reads notUpdated only, as before.
+        let change = EmailChange::Move { mailbox: "M".into() };
+        assert_eq!(change_outcome(&json!({}), &ids, &change).done.len(), 3);
     }
 
     #[test]
