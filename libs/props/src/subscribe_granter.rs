@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
+//! Contract: `docs/docs/spec/props/README.md#watch-and-topics`.
+
 //! Watch-mediated subscriber bridge trait.
 //!
 //! The owning service's `<svc>.props.watch` and

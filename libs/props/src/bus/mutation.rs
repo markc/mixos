@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
+//! Contract: `docs/docs/spec/props/README.md#verbs`.
+
 //! Structured property mutation verbs.
 //!
 //! [`PropsRouter`] owns a per-service set of [`Runtime`] coordinators
@@ -740,22 +742,15 @@ impl PropsRouter {
                 // mark at watch-install time — never the caller's
                 // `since_nseq`, even when the caller passes
                 // `since_nseq >= observed` (the marker still reports
-                // `observed`, never above). `audit.watch` () is
+                // `observed`, never above). `audit.watch` is
                 // unamended and omits the marker.
                 //
                 // On current single-response Bus transport the "reply
-                // stream" of is realised as this envelope: replay
+                // stream" is realised as this envelope: replay
                 // in `events`, then the `caught_up` field, then live
                 // events on the granted `<svc>.props.records.changed`
-                // subscription. Adapters realising the logical
-                // [`crate::WatchStream`] equivalent (e.g. the
-                // cross-mesh authz subscriber's production `WgdClient`)
-                // walk `events`, emit `CaughtUp`, then drop any live
-                // record with `nseq <= caught_up.nseq` to honour the
-                // "live event ≤ N reaches subscriber before the
-                // marker" guarantee — the broker subscription is live
-                // *before* the cursor is snapshotted, so a live event
-                // may have already been forwarded.
+                // subscription. Clients process replay and the marker, then
+                // discard live events through the caught-up cursor.
                 let mut body = json!({
                     "namespace": ns,
                     "observed_nseq": observed.0,
@@ -949,7 +944,7 @@ fn parse_set_body(body: &str) -> Result<PropValue, PropsResponse> {
 
 /// derive the actor variant from the peer identity.
 /// Service peers register a `service_name`; the broker is the source of
-/// truth for that field per Human operators carry `unix_uid` and
+/// truth for that field. Human operators carry `unix_uid` and
 /// are surfaced as `operator:uid-<n>` until a signed principal
 /// arrives. Anonymous peers (neither service nor unix) fall back to the
 /// owning service token — this is benign because the
@@ -1107,7 +1102,7 @@ fn project_fields(value: &PropValue, schema: &PropertySchema, with_secrets: bool
     out
 }
 
-/// Project the records.changed wire body () from a stored
+/// Project the records.changed wire body from a stored
 /// [`RecordEvent`]. Used by the `watch` verb's replay slice and
 /// by the live fan-out publisher in [`crate::dispatcher`] so the
 /// replay shape and the live-publish shape are byte-identical at the
@@ -1120,9 +1115,9 @@ fn project_fields(value: &PropValue, schema: &PropertySchema, with_secrets: bool
 /// - `verb` is derived from `kind` + service (already in the row, but
 ///   we re-derive here so replay matches the live shape even when the
 ///   row's `verb` is the storage column written at commit time).
-/// - `ts` (renamed from the row's `at` field per → mapping).
+/// - `ts` (renamed from the row's `at` field).
 /// - `lifecycle` flat-projects `{state,reason?}` and is emitted only
-///   on `Completed` events from Saga namespaces ().
+///   on `Completed` events from Saga namespaces.
 /// - `secret_fields_changed_count` is emitted only when non-zero.
 /// - `audit_digest` is intentionally absent — the records.changed
 ///   topic is gated on `props.read`, separately from the
@@ -1146,9 +1141,8 @@ pub(crate) fn project_records_changed(
     });
     if let Json::Object(map) = &mut body {
         // `fields_changed` is non-secret names only; the
-        // storage row already filters secret names out, but redact
-        // defensively here in case the row was written by an older
-        // backend.
+        // storage row retains names verbatim, so this projection is
+        // the boundary that removes secret field names.
         let visible: Vec<Json> = event
             .fields_changed
             .iter()
@@ -1185,19 +1179,18 @@ pub(crate) fn project_records_changed(
 
 /// flat audit-row projection. Distinct from
 /// [`project_records_changed`] in three ways:
-///  - timestamp field is `at`, not `ts` ();
+///  - timestamp field is `at`, not `ts`;
 ///  - `audit_digest` is present (it is the whole point of the audit
-///    stream — );
-///  - the `kind`/`verb`/`fields_changed` columns are present, but
+///    stream);
+///  - the `verb`/`fields_changed` columns are present, but `kind`,
 ///    `secret_fields_changed_count`, `lifecycle`, and `cause` are
 ///    NOT — audit rows are intentionally lean and reproducible from
-///    a `<svc>.props.get` snapshot ().
+///    a `<svc>.props.get` snapshot.
 ///
 /// `fields_changed` is filtered against the namespace schema so secret
 /// field names never appear in the audit stream — the storage backend
 /// stores names verbatim (it has no schema handle), and the spec
-/// names this projection as the boundary that redacts them (
-/// "secret field names MUST NOT appear in audit rows").
+/// names this projection as the boundary that redacts them.
 ///
 /// Visibility: `pub(crate)` so the live fan-out publisher in
 /// [`crate::dispatcher`] can reuse the same projection helper as the
@@ -1383,10 +1376,8 @@ fn store_error_to_response(e: StoreError) -> PropsResponse {
     }
 }
 
-// `unavailable` is the dispatcher's responsibility (router doesn't see
-// "service shutting down" — that's a broker concern). The token is in
-// the vocabulary so daemons can surface it through `err_with` if they
-// need to, but the property substrate itself never emits it.
+// Shared vocabulary helper for unavailable service responses. Watch also
+// returns this token when the owning service has not installed a granter.
 #[allow(dead_code)]
 fn unavailable() -> PropsResponse {
     err(ErrorCode::Unavailable, "service unavailable")
@@ -2271,7 +2262,7 @@ mod tests {
     // replay→live boundary. Body shape is fixed by
     //   { "event_type": "caught_up", "namespace": "<ns>", "nseq": <N> }
     // where `N` is the server-observed namespace high-water mark at
-    // watch-install time. `audit.watch` () is unamended.
+    // watch-install time. `audit.watch` omits the marker.
 
     fn assert_caught_up(body: &serde_json::Value, ns: &str, nseq: u64) {
         let m = body

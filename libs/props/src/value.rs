@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
-//! Property values per SPEC 07 §2.4 + SPEC 12 §4.3 type set.
+//! Property values for read trees and structured service namespaces.
 //!
 //! The numeric split (`Int`/`UInt`/`Float`) preserves the i64/u64/f64
-//! distinctions SPEC 12 §4.3 declares as separate field types, which
-//! the §10 HMAC canonicalisation relies on for round-trip identity —
+//! distinctions declared by namespace field types, which
+//! audit canonicalisation relies on for round-trip identity —
 //! folding everything into `f64` would lose precision on large
 //! integers (timestamps, IDs) and break audit verification.
 //!
@@ -19,13 +19,10 @@
 //! ints above `i64::MAX` (UInt), and fractional/exponential numbers
 //! (Float).
 //!
-//! This is acceptable because SPEC 12 §10 HMAC canonicalisation
-//! does **not** go through JSON — `canonical_serialise(record)` is
-//! defined per backend (SQLite emits typed column tuples; Toml /
-//! MixData emit fields in schema order). The schema-typed boundary
-//! is the source of truth for i64/u64 signedness; callers that need
-//! to preserve UInt-ness across JSON re-hydration consult the
-//! namespace schema and normalise accordingly.
+//! Audit canonicalisation uses deterministic sorted-key JSON and collapses
+//! small signed/unsigned values to the same decimal bytes. Callers needing
+//! signedness across JSON rehydration consult the namespace schema.
+//! See `docs/docs/spec/props/README.md#storage`.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
@@ -39,13 +36,13 @@ use std::collections::BTreeMap;
 pub enum PropValue {
     Null,
     Bool(bool),
-    /// Signed 64-bit integer. Maps to SPEC 12 §4.3 `i64`.
+    /// Signed 64-bit integer. Maps to the namespace type `i64`.
     Int(i64),
-    /// Unsigned 64-bit integer. Maps to SPEC 12 §4.3 `u64`. Carried
+    /// Unsigned 64-bit integer. Maps to the namespace type `u64`. Carried
     /// separately from `Int` so the canonical serialisation can
     /// emit values above `i64::MAX` without overflow.
     UInt(u64),
-    /// 64-bit float. Maps to SPEC 12 §4.3 `f64`.
+    /// 64-bit float. Maps to the namespace type `f64`.
     Float(f64),
     String(String),
     List(Vec<PropValue>),
@@ -167,7 +164,7 @@ mod tests {
 
     #[test]
     fn large_integers_preserved_exactly() {
-        // SPEC 12 §4.3 + §10 — i64/u64 must round-trip without
+        // Audit canonicalisation: i64/u64 must round-trip without
         // precision loss for HMAC canonicalisation.
         let big_i: i64 = i64::MAX;
         let big_u: u64 = u64::MAX;
@@ -183,9 +180,9 @@ mod tests {
     fn json_signedness_collapse_pinned() {
         // JSON has no syntactic int/uint distinction. PropValue::UInt(42)
         // serialises identically to PropValue::Int(42) and re-parses as
-        // Int(42). This is intrinsic to JSON; SPEC 12 §10
-        // canonicalisation is backend-typed, not JSON, so this does not
-        // affect HMAC verification. Pinning the behaviour here so any
+        // Int(42). This is intrinsic to JSON; the audit contract
+        // canonicalisation emits the same decimal bytes for both, so
+        // this does not affect HMAC verification. Pin the behaviour so any
         // future change is intentional.
         let s = serde_json::to_string(&PropValue::UInt(42)).unwrap();
         assert_eq!(s, "42");

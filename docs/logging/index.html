@@ -208,7 +208,7 @@
                 <div class="panel-title">On this page</div>
                 <div class="panel-content">
                     <nav id="toc-nav">
-                        <div class="toc-empty">No sections on this page</div>
+                        <a href="#property-controlled-logging">Property-controlled logging</a>
                     </nav>
                 </div>
             </div>
@@ -236,12 +236,29 @@
 <h1 id="logging">logging</h1>
 <p>Shared tracing, sink selection, reload handles and process statistics for
 MixOS services and the Mix shell. The default build has no Bus or HTTP
-listener; <code>bus-handlers</code> and <code>prometheus</code> are explicit features. Log files
+listener; <code>bus-handlers</code>, <code>prometheus</code> and <code>props</code> are explicit features. Log files
 use the directory rule in <a href="/config/">config</a>, including isolated
 session roots.</p>
-<p>Transplanted from <code>cosmix-lib-log</code> at cosmix
-<code>e0297242305f3a3c3de09f1ca01e8faa771768da</code>. Production callers are Mix and
+<p>Transplant provenance: commit
+<code>e0297242305f3a3c3de09f1ca01e8faa771768da</code>, MIT OR Apache-2.0. Production callers are Mix and
 <a href="/noded/">noded</a>.</p>
+<h2 id="property-controlled-logging">Property-controlled logging</h2>
+<p>Enable <code>props</code> to register the <code>&lt;svc&gt;.log</code> singleton against the service's
+<a href="/props/">property store</a>. Call
+<code>logging::props::register(&amp;mut router, &amp;store)</code> to obtain <code>LogNamespace</code>,
+then await <code>logging::props::attach(&amp;handle, namespace)</code> on the service's
+Tokio runtime. Registration and read failures return <code>LogError::Props</code>.</p>
+<p>Accepted <code>level</code> and <code>filter</code> writes update the live <code>EnvFilter</code>.
+<code>level=none</code> installs <code>off</code> while preserving the subscriber for later
+changes. Hooks reject malformed filters, unknown enum variants and deletes.
+The watcher uses a namespace-private <code>Notify</code>, so it does not compete with
+the property dispatcher. It lives until the Tokio runtime shuts down.</p>
+<p><code>format</code> remains stored introspection data and does not rebuild sinks.
+<code>applied_at</code>, <code>applied_by</code> and <code>source</code> remain mutable metadata; the watcher
+does not write them back. The current log policy grants every reachable
+peer the namespace's capabilities, including write access that can silence
+logging. Services needing narrower access must supply their policy.
+See the <a href="/docs/spec/props/#logging">contract</a> for the frozen schema.</p>
 <p>The source is <a href="https://github.com/markc/mixos/tree/main/libs/logging"><code>libs/logging</code></a>.</p>
         </article>
         <p class="doc-source"><a href="/logging/README.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>

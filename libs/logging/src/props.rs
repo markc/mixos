@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
+//! Contract: `docs/docs/spec/props/README.md#logging`.
+
 //! Opt-in `<svc>.log` namespace and live filter watcher.
 //!
 //! Call [`register`] with the service router and SQLite store, then

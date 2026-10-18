@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Shared property read types, revision handling and optional Bus publication builders for noded, Mix and editd.">
+    <meta name="description" content="Property read types, revisions, namespace storage and native Bus routing for MixOS services.">
     <!-- Favicons from share/brand: the SVG follows the visitor's light/dark preference. -->
     <link rel="icon" href="/favicon.ico?v=400d5816f3" sizes="any">
     <link rel="icon" type="image/svg+xml" href="/_web/favicon.svg?v=4eb2d64677">
@@ -234,14 +234,28 @@
     <div id="doc-view" class="content-section">
         <article id="content-doc" class="prose" data-pagefind-body>
 <h1 id="props">props</h1>
-<p>Shared property read types, revision handling and optional ABP publication
-builders. <a href="/noded/">noded</a> and subsequent Mix and
-<a href="/editd/">editd</a> consumers share this surface without a database
-or a second control transport.</p>
-<p>The default feature set contains pure types and in-memory revisions. The
-<code>bus</code> feature adds read dispatch and publication envelopes.</p>
-<p>Transplanted from <code>cosmix-lib-props-core</code> at
-<code>e0297242305f3a3c3de09f1ca01e8faa771768da</code>, under MIT OR Apache-2.0.</p>
+<p>Shared property read types, revisions and optional namespace storage.
+<a href="/noded/">noded</a>, Mix and <a href="/editd/">editd</a> use the read
+surface. Services can add durable domain records through the same library
+and native Bus. <a href="/logging/">logging</a>'s opt-in bridge uses the
+SQLite store and router for its <code>log</code> namespace; the substrate also supplies
+the storage and routing API needed by the forthcoming mail service port.</p>
+<table><thead><tr><th>Feature</th><th>Adds</th></tr></thead><tbody>
+<tr><td>default (empty)</td><td>Pure read types, redaction, diff and in-memory revision writes</td></tr>
+<tr><td><code>bus</code></td><td>Read dispatch and native publication envelopes</td></tr>
+<tr><td><code>store</code></td><td>Namespace schemas, capabilities, hooks, lifecycle, audit HMAC, <code>PropertyStore</code>, <code>MemoryStore</code> and <code>Runtime</code></td></tr>
+<tr><td><code>sqlite</code></td><td><code>store</code> plus <code>SqliteStore</code>, <code>SqliteTableMapping</code> and <code>JsonValuesMapping</code></td></tr>
+<tr><td><code>router</code></td><td><code>bus</code> and <code>store</code> plus <code>PropsRouter</code>, <code>SubscribeGranter</code> and per-namespace event dispatch</td></tr>
+</tbody></table>
+<p>Choose <code>sqlite</code> and <code>router</code> together for durable service namespaces.
+Services supply their own domain-table mapping, authorisation policy,
+subscription granter and publisher. The library opens no second transport.
+The <a href="/docs/spec/props/">property contract</a> defines the wire
+surface, error vocabulary and persisted table ownership; the
+<a href="/docs/decisions/2026-10-18-property-store-in-props/">ownership decision</a>
+explains the boundary with desktop settings.</p>
+<p>Read-surface transplant provenance: commit
+<code>e0297242305f3a3c3de09f1ca01e8faa771768da</code>, MIT OR Apache-2.0.</p>
 <p>The source is <a href="https://github.com/markc/mixos/tree/main/libs/props"><code>libs/props</code></a>.</p>
         </article>
         <p class="doc-source"><a href="/props/README.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
+//! Contract: `docs/docs/spec/props/README.md#watch-and-topics`.
+
 //! **publisher half** of the live fan-out for
 //! `<svc>.props.records.changed` and `<svc>.props.audit`.
 //!
@@ -609,7 +611,7 @@ mod tests {
     }
 
     #[test]
-    fn topic_names_match_spec_15_5_reservation_form() {
+    fn topic_names_match_reserved_form() {
         // Broker reservation matches by suffix .props.records.changed /
         // .props.audit (noded::props_reservation). Pin the topic
         // strings here so a stray rename can't desynchronise the

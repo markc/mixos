@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
+//! Contract: `docs/docs/spec/props/README.md#storage`.
+
 //! SQLite-backed `PropertyStore` for the `SqliteTable` backend.
 //!
 //! **Atomicity contract.** Every mutation runs inside a single
@@ -327,7 +329,7 @@ impl SqliteStore {
         // distinguished from a same-key-new-incarnation record.
         if matches!(spec.delete_mode, DeleteMode::HardDelete) && spec.require_version {
             return Err(StoreError::validation(format!(
-                "namespace {:?}: HardDelete is incompatible with require_version=true (§5.4)",
+                "namespace {:?}: HardDelete is incompatible with require_version=true",
                 spec.name.as_str()
             )));
         }
@@ -846,7 +848,7 @@ impl PropertyStore for SqliteStore {
                 && m.contains_key(LIFECYCLE_FIELD)
             {
                 return Err(StoreError::validation(format!(
-                    "field {LIFECYCLE_FIELD:?} is substrate-reserved (§6.5)"
+                    "field {LIFECYCLE_FIELD:?} is substrate-reserved"
                 )));
             }
 
