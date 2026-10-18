@@ -269,8 +269,8 @@ impl Actor {
             Ok(())
         };
         let (first, rest) = s
-           .split_once(':')
-           .map_or((s.as_str(), None), |(a, b)| (a, Some(b)));
+            .split_once(':')
+            .map_or((s.as_str(), None), |(a, b)| (a, Some(b)));
         token(first)?;
         if let Some(rest) = rest {
             if rest.is_empty() {
@@ -549,8 +549,8 @@ mod tests {
 
     fn ts() -> DateTime<Utc> {
         DateTime::parse_from_rfc3339("2026-05-11T12:00:00Z")
-           .unwrap()
-           .with_timezone(&Utc)
+            .unwrap()
+            .with_timezone(&Utc)
     }
 
     #[test]
@@ -643,7 +643,7 @@ mod tests {
             (Actor::reconciliation(), "daemon:reconciliation"),
             (
                 Actor::from_token("runtime:11111111-2222-3333-4444-555555555555:7")
-                   .expect("valid actor"),
+                    .expect("valid actor"),
                 "runtime:11111111-2222-3333-4444-555555555555:7",
             ),
         ];
@@ -738,9 +738,9 @@ mod tests {
             let error_text = error.to_string();
             assert!(
                 serde_json::from_value::<Actor>(serde_json::json!(s))
-                   .unwrap_err()
-                   .to_string()
-                   .contains(&error_text),
+                    .unwrap_err()
+                    .to_string()
+                    .contains(&error_text),
                 "input {s:?}"
             );
         }
@@ -763,7 +763,7 @@ mod tests {
             assert_eq!(audit.actor.as_str(), s);
             assert_eq!(
                 serde_json::from_value::<RecordEvent>(serde_json::to_value(&event).unwrap())
-                   .unwrap(),
+                    .unwrap(),
                 event
             );
             assert_eq!(

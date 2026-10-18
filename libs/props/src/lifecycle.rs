@@ -51,7 +51,7 @@ impl Lifecycle {
 
     /// Convenience: is this a terminal failure.
     pub fn is_failed(&self) -> bool {
-        matches!(self, Self::Failed {.. })
+        matches!(self, Self::Failed { .. })
     }
 
     /// Storage-state helper: the flat string
@@ -66,7 +66,7 @@ impl Lifecycle {
         match self {
             Self::Provisioning => "provisioning",
             Self::Active => "active",
-            Self::Failed {.. } => "failed",
+            Self::Failed { .. } => "failed",
         }
     }
 
@@ -126,7 +126,7 @@ mod tests {
         let j = serde_json::to_value(Lifecycle::Failed {
             reason: "mds seed failed: lock timeout".into(),
         })
-       .unwrap();
+        .unwrap();
         assert_eq!(j["state"], "failed");
         assert_eq!(j["reason"], "mds seed failed: lock timeout");
     }
@@ -139,7 +139,7 @@ mod tests {
             Lifecycle::Failed {
                 reason: "boom".into()
             }
-           .as_state_str(),
+            .as_state_str(),
             "failed"
         );
 
@@ -149,7 +149,7 @@ mod tests {
             Lifecycle::Failed {
                 reason: "boom".into()
             }
-           .reason(),
+            .reason(),
             Some("boom")
         );
     }

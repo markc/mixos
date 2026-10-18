@@ -263,7 +263,7 @@ mod tests {
         let mut c = ctx();
         c.new = Some(PropValue::from(""));
         let err = h.0.before_set(&c).await.unwrap_err();
-        assert!(matches!(err, HookError::Validation {.. }));
+        assert!(matches!(err, HookError::Validation { .. }));
         assert!(err.message().contains("blank"));
     }
 

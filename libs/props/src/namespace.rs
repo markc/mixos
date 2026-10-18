@@ -152,11 +152,11 @@ pub enum Cardinality {
 
 impl Cardinality {
     pub fn is_singleton(&self) -> bool {
-        matches!(self, Self::Singleton {.. })
+        matches!(self, Self::Singleton { .. })
     }
 
     pub fn is_collection(&self) -> bool {
-        matches!(self, Self::Collection {.. })
+        matches!(self, Self::Collection { .. })
     }
 }
 
@@ -359,7 +359,7 @@ impl std::str::FromStr for SchemaVersion {
         }
         let parse = |p: &str| -> Result<u32, SchemaVersionParseError> {
             p.parse()
-               .map_err(|_| SchemaVersionParseError::InvalidComponent(p.to_string()))
+                .map_err(|_| SchemaVersionParseError::InvalidComponent(p.to_string()))
         };
         Ok(Self::new(
             parse(parts[0])?,
@@ -502,11 +502,11 @@ impl FieldType {
             Self::Path => "path",
             Self::Email => "email",
             Self::Url => "url",
-            Self::Enum {.. }
-            | Self::List {.. }
-            | Self::Map {.. }
-            | Self::Struct {.. }
-            | Self::Option {.. } => return None,
+            Self::Enum { .. }
+            | Self::List { .. }
+            | Self::Map { .. }
+            | Self::Struct { .. }
+            | Self::Option { .. } => return None,
         })
     }
 
@@ -660,9 +660,9 @@ impl PropertySchema {
     /// to redact field-value bytes.
     pub fn secret_field_names(&self) -> impl Iterator<Item = &str> {
         self.fields
-           .iter()
-           .filter(|f| f.secret)
-           .map(|f| f.name.as_str())
+            .iter()
+            .filter(|f| f.secret)
+            .map(|f| f.name.as_str())
     }
 }
 
@@ -705,9 +705,9 @@ impl Validator {
 impl fmt::Debug for Validator {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Validator")
-           .field("name", &self.name)
-           .field("validator_secret", &self.validator_secret)
-           .finish_non_exhaustive()
+            .field("name", &self.name)
+            .field("validator_secret", &self.validator_secret)
+            .finish_non_exhaustive()
     }
 }
 
@@ -726,16 +726,16 @@ pub struct NamespaceSpec {
     /// `<service>.<name>` when needed for capabilities and audit verbs.
     pub name: NamespaceName,
 
-    /// Record schema. 
+    /// Record schema.
     pub schema: PropertySchema,
 
     pub cardinality: Cardinality,
     pub storage: StorageBackendKind,
 
-    /// Maps peer identity → capability set. 
+    /// Maps peer identity → capability set.
     pub auth: AuthPolicy,
 
-    /// Side-effectful hooks fired around storage commits. 
+    /// Side-effectful hooks fired around storage commits.
     pub hooks: Hooks,
 
     /// Pure validators.  Run before `before_set`.

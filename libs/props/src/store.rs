@@ -347,7 +347,7 @@ mod tests {
                 expected: Version(1),
                 current: Version(2)
             }
-           .to_string(),
+            .to_string(),
             "version_mismatch: expected Version(1), current Version(2)"
         );
         assert_eq!(
@@ -367,7 +367,7 @@ mod tests {
                 since_nseq: Nseq(5),
                 oldest_nseq: Nseq(100)
             }
-           .to_string(),
+            .to_string(),
             "replay_window_exceeded: since_nseq=Nseq(5), oldest_nseq=Nseq(100)"
         );
     }

@@ -165,9 +165,9 @@ mod tests {
         );
         assert!(
             serde_json::from_value::<Capability>(serde_json::json!(""))
-               .unwrap_err()
-               .to_string()
-               .contains("capability is empty")
+                .unwrap_err()
+                .to_string()
+                .contains("capability is empty")
         );
         for wire in [
             serde_json::json!([""]),
@@ -177,8 +177,8 @@ mod tests {
         }
         assert!(
             serde_json::from_value::<CapabilitySet>(serde_json::json!([]))
-               .unwrap()
-               .is_empty()
+                .unwrap()
+                .is_empty()
         );
     }
 
@@ -241,8 +241,8 @@ mod tests {
             Capability::new("props.write:demod.accounts").expect("non-empty capability"),
             Capability::new("props.read:demod.accounts").expect("non-empty capability"),
         ]
-       .into_iter()
-       .collect();
+        .into_iter()
+        .collect();
         let j = serde_json::to_value(&set).unwrap();
         let arr = j.as_array().unwrap();
         // BTreeSet → lexicographic sort: read < write.
