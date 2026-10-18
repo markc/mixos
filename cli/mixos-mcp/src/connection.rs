@@ -12,7 +12,7 @@ pub(crate) enum Client {
         connection: Arc<VerifiedConnection>,
         drain: Mutex<Option<tokio::task::AbortHandle>>,
     },
-    Tcp(NodedClient),
+    Tcp(Box<NodedClient>),
 }
 
 impl std::ops::Deref for Client {
@@ -144,7 +144,7 @@ impl BrokerConnection {
             } else {
                 NodedClient::connect_with_provenance(&self.name, &url, Some(provenance))
                     .await
-                    .map(Client::Tcp)
+                    .map(|client| Client::Tcp(Box::new(client)))
                     .map_err(|e| e.to_string())
             }
         };

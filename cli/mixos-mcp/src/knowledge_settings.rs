@@ -17,10 +17,8 @@ use serde::{Deserialize, Serialize};
 /// Used by the knowledge base to map workspace paths to domain keys.
 /// Entries are checked longest-prefix-first.
 ///
-/// ```toml
-/// [domains.map]
-/// "~/Projects/mixos" = "mixos"
-
+/// ```text
+/// map: { "~/Projects/mixos": "mixos" }
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
