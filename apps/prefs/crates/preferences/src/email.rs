@@ -2096,7 +2096,10 @@ mod tests {
         // sent, and the draft stays open with the reason.
         e.identity_add();
         e.identity_save();
-        assert!(settings_calls(&mut e).is_empty(), "a refused list sends nothing");
+        assert!(
+            settings_calls(&mut e).is_empty(),
+            "a refused list sends nothing"
+        );
         let draft = e.email.identities.as_ref().expect("the draft stays open");
         assert!(matches!(draft.error, Some(Refusal::Settings(_))));
     }
