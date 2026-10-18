@@ -62,6 +62,11 @@ pub enum UiEvent {
     ComposeUseNewFrom,
     /// Put a reply's quote above or below the person's text.
     ComposeReplyPosition(crate::quote::Position),
+    /// Send the open draft as one of an account's identities (the From list).
+    ComposeIdentity {
+        account: String,
+        identity: String,
+    },
     SendCompose,
     /// Connect an account again.
     Retry(String),

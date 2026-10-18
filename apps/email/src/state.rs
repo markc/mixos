@@ -486,6 +486,8 @@ pub struct ComposeState {
     /// The quote a reply opened with, so the person can move it to the other
     /// side of their text. None for a new message or a reply without a quote.
     pub reply: Option<ReplyQuote>,
+    /// The sender identity (its id within `account`) the draft is from.
+    pub identity: String,
 }
 
 /// The quote a reply carries: the attribution and quoted original, the
@@ -495,6 +497,29 @@ pub struct ReplyQuote {
     pub quote: String,
     pub signature: String,
     pub position: crate::quote::Position,
+}
+
+/// A body's signature block: the signature after the standard `-- `
+/// separator, or nothing when there is no signature.
+pub fn signature_block(signature: &str) -> String {
+    let signature = signature.trim_end();
+    if signature.is_empty() {
+        String::new()
+    } else {
+        format!("\n\n-- \n{signature}\n")
+    }
+}
+
+/// The display name and Reply-To a sender identity gives a draft. An
+/// account with no identities of its own keeps the bare address in From, as
+/// it did before identities, so its name is left out.
+fn from_fields(explicit: bool, sender: &settings::email::Identity) -> (String, Option<String>) {
+    let name = if explicit {
+        sender.name.clone()
+    } else {
+        String::new()
+    };
+    (name, sender.reply_to.clone())
 }
 
 /// A question that must be answered before a draft would close.
@@ -564,6 +589,9 @@ impl ComposeState {
             subject: self.draft.subject.clone(),
             body: self.draft.body.clone(),
             in_reply_to: self.draft.in_reply_to.clone(),
+            identity: self.identity.clone(),
+            from_name: self.draft.from_name.clone(),
+            reply_to: self.draft.reply_to.clone(),
             saved_at: chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
             attempt: self.attempt.clone(),
         }
@@ -604,6 +632,7 @@ impl ComposeState {
             restored: false,
             attempt: jmap::SendAttempt::default(),
             reply: None,
+            identity: String::new(),
         }
     }
 }
@@ -3473,26 +3502,43 @@ impl State {
     /// Open a kept draft in the compose dialog, as it was typed. Its
     /// account, when it is gone, becomes the default one (with its From).
     fn open_saved(&mut self, saved: SavedDraft) {
-        let (account, from) = match self.account(&saved.account) {
-            Some(_) => (saved.account.clone(), saved.from.clone()),
+        // A draft whose account is gone is sent from that account's current
+        // default instead, so it keeps no identity of its own.
+        let (account, from, from_name, reply_to, identity) = match self.account(&saved.account) {
+            Some(_) => (
+                saved.account.clone(),
+                saved.from.clone(),
+                saved.from_name.clone(),
+                saved.reply_to.clone(),
+                saved.identity.clone(),
+            ),
             None => match self.compose_account() {
                 Some(id) => {
                     let from = self
                         .account(&id)
                         .map_or(saved.from.clone(), |v| v.entry.email.clone());
-                    (id, from)
+                    (id, from, String::new(), None, String::new())
                 }
-                None => (saved.account.clone(), saved.from.clone()),
+                None => (
+                    saved.account.clone(),
+                    saved.from.clone(),
+                    saved.from_name.clone(),
+                    saved.reply_to.clone(),
+                    saved.identity.clone(),
+                ),
             },
         };
         let draft = Composed {
             from,
+            from_name,
+            reply_to,
             subject: saved.subject,
             body: saved.body,
             in_reply_to: saved.in_reply_to,
             ..Composed::default()
         };
         let mut compose = ComposeState::new(&account, draft);
+        compose.identity = identity;
         compose.to_text = saved.to;
         compose.cc_text = saved.cc;
         compose.bcc_text = saved.bcc;
@@ -4737,9 +4783,65 @@ impl State {
     /// A new draft's body: empty, with the account's signature after the
     /// standard `-- ` separator when it has one.
     fn signed_body(&self, account: &str) -> String {
-        match self.account(account).map(|v| v.entry.signature.trim_end()) {
-            Some(signature) if !signature.is_empty() => format!("\n\n-- \n{signature}\n"),
-            _ => String::new(),
+        let signature = self
+            .senders(account)
+            .first()
+            .map(|sender| sender.signature.clone())
+            .unwrap_or_default();
+        signature_block(&signature)
+    }
+
+    /// The sender identities `account` sends as, default first.
+    pub fn senders(&self, account: &str) -> Vec<settings::email::Identity> {
+        self.account(account)
+            .map(|v| v.entry.senders())
+            .unwrap_or_default()
+    }
+
+    /// Send the open draft as `identity` of `account` (the account's default
+    /// when `None`). A signature the person left untouched follows the new
+    /// identity; an edited one stays as it is.
+    fn choose_sender(&mut self, account: String, identity: Option<String>) {
+        let Some(compose) = &self.compose else {
+            return;
+        };
+        if compose.busy {
+            return;
+        }
+        let senders = self.senders(&account);
+        let explicit = self
+            .account(&account)
+            .is_some_and(|v| !v.entry.identities.is_empty());
+        let Some(sender) = identity
+            .as_deref()
+            .map_or(senders.first(), |id| senders.iter().find(|s| s.id == id))
+            .cloned()
+        else {
+            return;
+        };
+        let previous = self
+            .senders(&compose.account)
+            .into_iter()
+            .find(|s| s.id == compose.identity)
+            .or_else(|| self.senders(&compose.account).into_iter().next())
+            .map(|s| s.signature)
+            .unwrap_or_default();
+        let old = signature_block(&previous);
+        let new = signature_block(&sender.signature);
+        let (from_name, reply_to) = from_fields(explicit, &sender);
+        if let Some(compose) = &mut self.compose {
+            if compose.draft.body == old {
+                compose.draft.body = new;
+            }
+            compose.account = account;
+            compose.identity = sender.id;
+            compose.draft.from = sender.address;
+            compose.draft.from_name = from_name;
+            compose.draft.reply_to = reply_to;
+            // The new identity's From is its current address.
+            compose.stale = None;
+            compose.error = None;
+            compose.revision += 1;
         }
     }
 
@@ -4755,7 +4857,16 @@ impl State {
         let Some(view) = self.account(&account) else {
             return false;
         };
-        draft.from = view.entry.email.clone();
+        // The draft sends as the account's first identity; the person picks
+        // another in the From list.
+        let explicit = !view.entry.identities.is_empty();
+        let senders = self.senders(&account);
+        let Some(sender) = senders.first() else {
+            return false;
+        };
+        draft.from = sender.address.clone();
+        (draft.from_name, draft.reply_to) = from_fields(explicit, sender);
+        let identity = sender.id.clone();
         if draft.body.is_empty() {
             draft.body = self.signed_body(&account);
         }
@@ -4766,6 +4877,7 @@ impl State {
         }
         let mut compose = ComposeState::new(&account, draft);
         compose.draft_id = self.new_draft_id();
+        compose.identity = identity;
         self.compose = Some(compose);
         true
     }
@@ -4946,30 +5058,17 @@ impl State {
                 }
             }
             UiEvent::ComposeAccount(account) => {
-                let signed = |state: &State, id: &str| state.signed_body(id);
-                let Some(compose) = &self.compose else {
-                    return;
-                };
-                if compose.busy || compose.account == account {
+                if self
+                    .compose
+                    .as_ref()
+                    .is_none_or(|c| c.account == account)
+                {
                     return;
                 }
-                let Some(email) = self.account(&account).map(|v| v.entry.email.clone()) else {
-                    return;
-                };
-                // An untouched signature follows the account.
-                let old = signed(self, &compose.account);
-                let new = signed(self, &account);
-                if let Some(compose) = &mut self.compose {
-                    if compose.draft.body == old {
-                        compose.draft.body = new;
-                    }
-                    compose.account = account;
-                    compose.draft.from = email;
-                    // The new account's From is its current address.
-                    compose.stale = None;
-                    compose.error = None;
-                    compose.revision += 1;
-                }
+                self.choose_sender(account, None);
+            }
+            UiEvent::ComposeIdentity { account, identity } => {
+                self.choose_sender(account, Some(identity));
             }
             UiEvent::ComposeField(field, value) => {
                 // While a send is in flight the dialog shows what was sent:

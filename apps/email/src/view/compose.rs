@@ -267,23 +267,39 @@ fn form(ui: &mut Ui, compose: &ComposeState, state: &State, events: &mut Vec<UiE
     // While a send is in flight every field is read-only: the dialog shows
     // exactly what is being sent.
     ui.add_enabled_ui(!compose.busy, |ui| {
-        // From: the accounts that can send, when there is a choice.
-        let senders: Vec<_> = state.accounts.iter().filter(|v| v.entry.enabled).collect();
+        // From: every identity of the accounts that can send, when there is a
+        // choice. The draft's own identity is the one shown.
+        let senders: Vec<(String, settings::email::Identity)> = state
+            .accounts
+            .iter()
+            .filter(|v| v.entry.enabled)
+            .flat_map(|v| {
+                v.entry
+                    .senders()
+                    .into_iter()
+                    .map(|identity| (v.entry.id.clone(), identity))
+            })
+            .collect();
         if senders.len() > 1 {
             let names: Vec<String> = senders
                 .iter()
-                .map(|v| format!("{} <{}>", v.entry.name, v.entry.email))
+                .map(|(_, i)| format!("{} <{}>", i.name, i.address))
                 .collect();
             let mut at = senders
                 .iter()
-                .position(|v| v.entry.id == compose.account)
+                .position(|(account, i)| *account == compose.account && i.id == compose.identity)
+                .or_else(|| senders.iter().position(|(account, _)| *account == compose.account))
                 .unwrap_or(0);
             ui.horizontal(|ui| {
                 ui.label(crate::label("from"));
                 if toolkit::combo::show(ui, "compose-from", &mut at, &names, Some(width * 0.8))
                     .changed()
                 {
-                    events.push(UiEvent::ComposeAccount(senders[at].entry.id.clone()));
+                    let (account, identity) = &senders[at];
+                    events.push(UiEvent::ComposeIdentity {
+                        account: account.clone(),
+                        identity: identity.id.clone(),
+                    });
                 }
             });
         }
