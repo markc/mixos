@@ -508,8 +508,17 @@ impl TableState {
     /// The page's rows are now `keys` (a new page, a refresh, a removal):
     /// selected keys no longer shown are dropped, and the focus follows the
     /// first selected row, else stays where it was within the new length.
+    /// A focus still on a selected row, or on the anchor (the row just
+    /// Ctrl+clicked out of the selection), stays: the rows are where they
+    /// were.
     pub fn rows_changed(&mut self, keys: &[String]) {
         self.selection.retain(|key| keys.contains(key));
+        if let Some(at) = self.focus
+            && let Some(key) = keys.get(at)
+            && (self.is_selected(key) || self.anchor.as_ref() == Some(key))
+        {
+            return;
+        }
         let selected = self
             .selection
             .first()
@@ -875,6 +884,24 @@ mod tests {
         );
         state.focus = None;
         assert!(state.key(TableKey::Enter, &rows, 10).is_empty());
+    }
+
+    #[test]
+    fn unchanged_rows_keep_the_keyboard_row_of_a_multi_selection() {
+        // The keyboard on a selected row that is not the first: it stays.
+        let mut state = TableState {
+            selection: vec!["k1".into(), "k2".into(), "k3".into()],
+            focus: Some(3),
+            ..TableState::default()
+        };
+        state.rows_changed(&keys(5));
+        assert_eq!(state.focus, Some(3));
+        // On the row just Ctrl+clicked out (the anchor): it stays too.
+        state.selection = vec!["k1".into(), "k3".into()];
+        state.focus = Some(2);
+        state.anchor = Some("k2".into());
+        state.rows_changed(&keys(5));
+        assert_eq!(state.focus, Some(2));
     }
 
     #[test]

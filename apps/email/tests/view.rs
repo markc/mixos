@@ -380,21 +380,21 @@ fn the_tree_takes_the_keyboard_after_a_click() {
     assert_eq!(h.state().state.mode, Surface::Calendar);
 }
 
-/// Two clicks on the node labelled `label`, inside the double-click window.
+/// Two clicks on the node labelled `label` in one frame: inside the
+/// double-click window whatever the harness's step.
 fn double_click(h: &mut Harness<'static, Window>, label: &str) {
     let row = h.get_by_label_contains(label).rect().center();
     h.hover_at(row);
-    for _ in 0..2 {
-        for pressed in [true, false] {
-            h.event(egui::Event::PointerButton {
-                pos: row,
-                button: egui::PointerButton::Primary,
-                pressed,
-                modifiers: egui::Modifiers::NONE,
-            });
-            h.step();
-        }
-    }
+    h.run();
+    let clicks = (0..2).flat_map(|_| {
+        [true, false].map(|pressed| egui::Event::PointerButton {
+            pos: row,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        })
+    });
+    h.input_mut().events.extend(clicks);
     h.run();
 }
 
