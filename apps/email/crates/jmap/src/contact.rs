@@ -3,7 +3,7 @@
 //! Contacts, on maild's shape: `AddressBook` and `Contact` with the
 //! indexed `fullName`/`email`/`company`/`phone` columns at the top level
 //! and the full JSContact card nested under `data`. `phone` is derived by
-//! the server at read time; `cosmix:rawVCard` inside `data` (a verbatim
+//! the server at read time; `mixos:rawVCard` inside `data` (a verbatim
 //! vCard from a CardDAV write) is ignored.
 
 use serde::{Deserialize, Serialize};

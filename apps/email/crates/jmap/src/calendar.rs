@@ -4,7 +4,7 @@
 //! `Event`), with the indexed `title`/`start`/`end`/`updated` columns at
 //! the top level and the full JSCalendar object nested under `data`. The
 //! list renders from the indexed columns; detail reads into `data` as
-//! needed. A `cosmix:rawICalendar` key inside `data` (verbatim iCal from a
+//! needed. A `mixos:rawICalendar` key inside `data` (verbatim iCal from a
 //! CalDAV write) is ignored: the JMAP object is the truth.
 
 use serde::{Deserialize, Serialize};
