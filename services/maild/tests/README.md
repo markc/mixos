@@ -37,3 +37,9 @@ The `parser_nesting` suite directly exercises the vendored mail-parser 0.11.5
 without maild's MIME preflight. It must pass all three cases on a 2 MiB stack,
 including parse and drop of 100,000 nested messages. Do not remove the patch or
 these tests when updating dependencies.
+
+After building the system binary on the worker, run
+`/opt/mixos/bin/mix services/maild/tests/package_test.mix target/debug/mix`.
+This builds throwaway package archives, extracts the server archive, executes
+the packaged `maild` symlink and checks its identity, units and parser licences.
+Other binary entries are fixtures; the gate makes no desktop-package claim.

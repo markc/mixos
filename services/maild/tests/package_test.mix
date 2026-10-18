@@ -1,0 +1,47 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Run on a build worker after building the system binary. The other package
+-- entries are fixtures; only the packaged maild personality is executed.
+$root = dirname(dirname(dirname(dirname(realpath($0)))))
+if len(args()) != 1 then raise("USAGE", "package_test.mix PATH_TO_BUILT_SYSTEM_BINARY") end
+$binary = realpath(args()[0])
+if $binary == nil then raise("MISSING_BINARY", args()[0]) end
+$mix_bin = realpath("/proc/self/exe")
+$version = toml_parse(read_file($root .. "/Cargo.toml")).workspace.package.version
+$case_dir = $root .. "/target/mixos/maild-package-" .. uuid()
+mkdir($case_dir .. "/bin", {parents:true})
+try
+  copy($binary, $case_dir .. "/bin/mix")
+  for $name in ["noded", "editd", "settingsd", "portald", "compd", "ced", "dopus", "prefs", "busviewer", "monitor", "screenshot"]
+    copy("/usr/bin/true", $case_dir .. "/bin/" .. $name)
+  end
+  run_argv_must([$mix_bin, $root .. "/tools/package.mix", "--release", $version,
+    "--bin-dir", $case_dir .. "/bin", "--out", $case_dir .. "/out"], {timeout:600})
+  $top_name = "mixos-server-" .. $version .. "-linux-" .. platform().arch
+  mkdir($case_dir .. "/extracted")
+  run_argv_must(["tar", "-xzf", $case_dir .. "/out/" .. $top_name .. ".tar.gz",
+    "-C", $case_dir .. "/extracted"], {timeout:600})
+  $top = $case_dir .. "/extracted/" .. $top_name
+  if (not stat($top .. "/bin/maild", {follow_symlinks:false}).is_symlink or
+      read_link($top .. "/bin/maild") != "mix") then
+    raise("PACKAGE_PERSONALITY", "maild must be a relative symlink to mix")
+  end
+  $identity = json_parse(run_argv_must([$top .. "/bin/maild", "--version", "--json"]))
+  if $identity.component != "maild" or $identity.version != $version then
+    raise("PACKAGE_IDENTITY", "packaged maild dispatched to the wrong component")
+  end
+  for $name in ["maild@.service", "sysusers.conf"]
+    if (hash_file($root .. "/services/maild/units/" .. $name, "sha256") !=
+        hash_file($top .. "/share/maild/units/" .. $name, "sha256")) then
+      raise("PACKAGE_UNIT", $name .. " differs from its component source")
+    end
+  end
+  for $name in ["Apache-2.0.txt", "MIT.txt"]
+    if (hash_file($root .. "/vendor/mail-parser/LICENSES/" .. $name, "sha256") !=
+        hash_file($top .. "/share/licenses/maild/mail-parser/" .. $name, "sha256")) then
+      raise("PACKAGE_LICENCE", $name .. " differs from upstream")
+    end
+  end
+  print("maild package: native personality, unit, sysusers and parser licences passed")
+finally
+  remove_dir($case_dir)
+end

@@ -8161,6 +8161,7 @@ dependencies = [
  "bus",
  "ed25519-dalek",
  "libc",
+ "maild",
  "mimalloc",
  "mix",
  "mix-shell",
