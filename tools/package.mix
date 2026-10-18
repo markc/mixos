@@ -98,9 +98,9 @@ for $pkg in sort(keys($PACKAGES))
     end
     $licences = $top .. "/share/licenses/maild/mail-parser"
     mkdir($licences, {parents: true})
-    for $name in ["Apache-2.0.txt", "MIT.txt"]
-      copy($source .. "/vendor/mail-parser/LICENSES/" .. $name, $licences .. "/" .. $name)
-      chmod($licences .. "/" .. $name, 0o644)
+    for $licence_name in ["Apache-2.0.txt", "MIT.txt"]
+      copy($source .. "/vendor/mail-parser/LICENSES/" .. $licence_name, $licences .. "/" .. $licence_name)
+      chmod($licences .. "/" .. $licence_name, 0o644)
     end
   end
   $tar = $out .. "/" .. $name .. ".tar.gz"
