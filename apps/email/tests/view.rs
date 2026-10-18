@@ -8,7 +8,7 @@
 //! before committing.
 use design::{DesignContext, Mode, Scheme};
 use egui_kittest::Harness;
-use egui_kittest::kittest::Queryable;
+use egui_kittest::kittest::{NodeT, Queryable};
 use email::drafts::{DraftOp, SavedDraft};
 use email::secrets::Secrets;
 use email::shell::{Done, Event};
