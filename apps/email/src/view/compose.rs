@@ -307,6 +307,15 @@ fn form(ui: &mut Ui, compose: &ComposeState, state: &State, events: &mut Vec<UiE
                 }
             });
         }
+        // The identities of the draft's account, for changing them in place.
+        if ui
+            .add(toolkit::button::PushButton::secondary(crate::label(
+                "identities-open",
+            )))
+            .clicked()
+        {
+            events.push(UiEvent::OpenIdentities(compose.account.clone()));
+        }
         for (label, field) in [
             ("to", ComposeField::To),
             ("cc", ComposeField::Cc),

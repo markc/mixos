@@ -499,6 +499,27 @@ pub struct ReplyQuote {
     pub position: crate::quote::Position,
 }
 
+/// The identities dialog: one account's identities, edited before they are
+/// saved. `rows` starts as the account's senders, so an account with none of
+/// its own shows its default identity to change.
+#[derive(Clone, Debug, PartialEq)]
+pub struct IdentityEditor {
+    pub account: String,
+    pub rows: Vec<settings::email::Identity>,
+    pub selected: usize,
+    /// Why the last save was refused, as the settings validation names it.
+    pub error: Option<String>,
+}
+
+/// The text fields of an identity.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum IdentityField {
+    Name,
+    Address,
+    Signature,
+    ReplyTo,
+}
+
 /// A body's signature block: the signature after the standard `-- `
 /// separator, or nothing when there is no signature.
 pub fn signature_block(signature: &str) -> String {
@@ -1363,6 +1384,8 @@ pub struct State {
     /// The migration completed: the shell rewrites the config as schema 2.
     migrated: bool,
     pub compose: Option<ComposeState>,
+    /// The identities dialog, while open.
+    pub identity_editor: Option<IdentityEditor>,
     /// A question over the compose before a draft closes.
     pub confirm: Option<Confirm>,
     /// Drafts kept from earlier (an earlier run, or a compose set aside),
@@ -1436,6 +1459,7 @@ impl State {
             migration: None,
             migrated: false,
             compose: None,
+            identity_editor: None,
             confirm: None,
             restore: Vec::new(),
             draft_ops: Vec::new(),
@@ -4377,6 +4401,7 @@ impl State {
                         "ca_path": entry.ca_path,
                         "enabled": entry.enabled,
                         "signature": entry.signature,
+                        "identities": entry.identities,
                         "default": default.as_deref() == Some(entry.id.as_str()),
                         "has_password": self.secrets.has(&entry.id),
                         "state": view.phase.name(),
@@ -4798,6 +4823,114 @@ impl State {
             .unwrap_or_default()
     }
 
+    /// Open the identities dialog for `account`.
+    pub fn open_identities(&mut self, account: &str) {
+        let Some(view) = self.account(account) else {
+            return;
+        };
+        self.identity_editor = Some(IdentityEditor {
+            account: account.to_owned(),
+            rows: view.entry.senders(),
+            selected: 0,
+            error: None,
+        });
+    }
+
+    /// Set one text field of the selected identity.
+    pub fn identity_edit(&mut self, field: IdentityField, value: String) {
+        let Some(editor) = &mut self.identity_editor else {
+            return;
+        };
+        let Some(row) = editor.rows.get_mut(editor.selected) else {
+            return;
+        };
+        match field {
+            IdentityField::Name => row.name = value,
+            IdentityField::Address => row.address = value,
+            IdentityField::Signature => row.signature = value,
+            IdentityField::ReplyTo => row.reply_to = Some(value).filter(|v| !v.is_empty()),
+        }
+        editor.error = None;
+    }
+
+    /// Select identity `index` for editing.
+    pub fn identity_select(&mut self, index: usize) {
+        if let Some(editor) = &mut self.identity_editor
+            && index < editor.rows.len()
+        {
+            editor.selected = index;
+        }
+    }
+
+    /// Add an identity with a fresh id, and select it.
+    pub fn identity_add(&mut self) {
+        let Some(editor) = &mut self.identity_editor else {
+            return;
+        };
+        let mut n = editor.rows.len() + 1;
+        let id = loop {
+            let candidate = format!("identity-{n}");
+            if !editor.rows.iter().any(|r| r.id == candidate) {
+                break candidate;
+            }
+            n += 1;
+        };
+        editor.rows.push(settings::email::Identity {
+            id,
+            name: String::new(),
+            address: String::new(),
+            signature: String::new(),
+            reply_to: None,
+        });
+        editor.selected = editor.rows.len() - 1;
+        editor.error = None;
+    }
+
+    /// Remove the selected identity.
+    pub fn identity_remove(&mut self) {
+        let Some(editor) = &mut self.identity_editor else {
+            return;
+        };
+        if editor.rows.is_empty() {
+            return;
+        }
+        editor.rows.remove(editor.selected);
+        editor.selected = editor.selected.min(editor.rows.len().saturating_sub(1));
+        editor.error = None;
+    }
+
+    /// Save the dialog's identities for its account. The settings rules
+    /// decide: a refused list stays open with the reason. Returns whether it
+    /// was saved.
+    pub fn identity_save(&mut self) -> bool {
+        let Some(editor) = self.identity_editor.clone() else {
+            return false;
+        };
+        let Some(view) = self.account(&editor.account) else {
+            return false;
+        };
+        let mut entry = view.entry.clone();
+        entry.identities = editor.rows;
+        let mut next = self.settings.clone();
+        if let Some(slot) = next.accounts.iter_mut().find(|a| a.id == entry.id) {
+            *slot = entry.clone();
+        }
+        if let Err(diagnostic) = settings::email::validate(&next) {
+            if let Some(open) = &mut self.identity_editor {
+                open.error = Some(format!("{}: {}", diagnostic.path, diagnostic.message));
+            }
+            return false;
+        }
+        self.change_accounts(Change::Upsert(entry), None, None);
+        self.identity_editor = None;
+        true
+    }
+
+    /// Close the identities dialog, discarding its unsaved rows.
+    pub fn close_identities(&mut self) {
+        self.identity_editor = None;
+    }
+
     /// Send the open draft as `identity` of `account` (the account's default
     /// when `None`). A signature the person left untouched follows the new
     /// identity; an edited one stays as it is.
@@ -5066,6 +5199,15 @@ impl State {
             UiEvent::ComposeIdentity { account, identity } => {
                 self.choose_sender(account, Some(identity));
             }
+            UiEvent::OpenIdentities(account) => self.open_identities(&account),
+            UiEvent::IdentityEdit(field, value) => self.identity_edit(field, value),
+            UiEvent::IdentitySelect(index) => self.identity_select(index),
+            UiEvent::IdentityAdd => self.identity_add(),
+            UiEvent::IdentityRemove => self.identity_remove(),
+            UiEvent::IdentitySave => {
+                self.identity_save();
+            }
+            UiEvent::CloseIdentities => self.close_identities(),
             UiEvent::ComposeField(field, value) => {
                 // While a send is in flight the dialog shows what was sent:
                 // edits wait for its answer (the view disables the fields).
@@ -6024,6 +6166,32 @@ pub(crate) mod tests {
         let compose = state.compose.clone().unwrap();
         assert_eq!(compose.draft.body, edited);
         assert_eq!(compose.reply.unwrap().position, Position::Above);
+    }
+
+    #[test]
+    fn the_identities_dialog_saves_a_valid_list_and_keeps_a_refused_one_open() {
+        let mut state = connected();
+        state.open_identities("a");
+        let rows = state.identity_editor.as_ref().unwrap().rows.clone();
+        assert_eq!(rows.len(), 1, "an account with none shows its default sender");
+        state.identity_add();
+        state.identity_edit(IdentityField::Name, "Ann Work".into());
+        state.identity_edit(IdentityField::Address, "ann@work.example.invalid".into());
+        state.identity_edit(IdentityField::ReplyTo, "help@work.example.invalid".into());
+        assert!(state.identity_save(), "a valid list saves");
+        assert!(state.identity_editor.is_none(), "and the dialog closes");
+
+        state.open_identities("a");
+        state.identity_add();
+        assert!(!state.identity_save(), "an empty address is refused");
+        let open = state.identity_editor.as_ref().expect("the dialog stays open");
+        let error = open.error.as_deref().unwrap();
+        assert!(error.contains("identities["), "{error}");
+        state.identity_remove();
+        state.identity_remove();
+        assert!(state.identity_editor.as_ref().unwrap().rows.is_empty());
+        state.close_identities();
+        assert!(state.identity_editor.is_none());
     }
 
     #[test]
