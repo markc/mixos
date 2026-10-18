@@ -586,8 +586,18 @@
 
     .hero-bg h1 {
         color: #fff;
-        font-size: clamp(2.5rem, 2rem + 5vw, 5rem);
-        line-height: 1.1;
+        font-size: clamp(3.5rem, 2.5rem + 9vw, 8rem);
+        font-weight: 800;
+        line-height: 1;
+        margin-block-end: var(--space-4);
+    }
+
+    /* Hero mascot: a quarter of the hero's content width, full colour (no tint). */
+    .hero-logo {
+        display: block;
+        width: 25%;
+        height: auto;
+        margin-inline: auto;
         margin-block-end: var(--space-4);
     }
 
@@ -602,21 +612,6 @@
         text-align: center;
         max-width: var(--container-lg);
         animation: fade-in-up 1s var(--ease-out);
-    }
-
-    /* Hero badge */
-    .hero-badge {
-        display: inline-flex;
-        align-items: center;
-        gap: var(--space-2);
-        background: rgb(255 255 255 / 0.1);
-        border: 1px solid rgb(255 255 255 / 0.2);
-        padding: var(--space-2) var(--space-5);
-        border-radius: var(--radius-full);
-        font-size: var(--text-xs);
-        color: #fff;
-        margin-block-end: var(--space-8);
-        backdrop-filter: blur(10px);
     }
 
     /* Gradient text - uses accent color */

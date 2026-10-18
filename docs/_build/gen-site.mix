@@ -668,7 +668,8 @@ $copies = {
   "favicon.ico": $brand .. "/favicons/black-on-white/favicon.ico",
   "_web/brand/favicon-32-light.png": $brand .. "/favicons/black-on-white/favicon-32x32.png",
   "_web/brand/favicon-32-dark.png": $brand .. "/favicons/white-on-black/favicon-32x32.png",
-  "_web/brand/apple-touch-icon.png": $brand .. "/favicons/black-on-white/apple-touch-icon.png"
+  "_web/brand/apple-touch-icon.png": $brand .. "/favicons/black-on-white/apple-touch-icon.png",
+  "_web/brand/alien-cyclops.svg": $brand .. "/logos/alien-cyclops.svg"
 }
 $home_src = replace($home_src, "{{brand:mark}}", $mark_path)
 $shell_src = replace($shell_src, "{{brand:mark}}", $mark_path)

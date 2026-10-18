@@ -14,14 +14,14 @@
     <title>Owned interactive editor (preview) — MixOS</title>
     <link rel="canonical" href="https://mixos.dev/mix/owned-editor/">
     <link rel="alternate" type="text/markdown" href="/mix/owned-editor.md" title="Markdown source">
-    <meta name="mixos-build" content="8e7fe8e72201">
+    <meta name="mixos-build" content="2ac5d256cf8f">
     <link rel="preload" href="/_web/fonts/sans.woff2?v=22f05185ef" as="font" type="font/woff2" crossorigin>
     <link rel="stylesheet" href="/_web/fonts.css?v=d8bbe7c76c"><!-- generated: Inter / Quicksand / JetBrains Mono / emoji cut from the asset set -->
     <!-- FOUC prevention: paint theme/scheme synchronously before first paint (dcs.spa convention). -->
     <script>(function(){var s=JSON.parse(localStorage.getItem('base-state')||'{}'),t=s.theme,c=(s.scheme||'mono'),h=document.documentElement;h.className='preload '+(t||(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light'))+(c&&c!=='default'?' scheme-'+c:'')+(s.width==='wide'?' wide':(s.width==='narrow'?' narrow':''));})()</script>
     <link rel="stylesheet" href="/_web/base.css?v=3b777a1623">
-    <link rel="stylesheet" href="/_web/site.css?v=cc5e468d34">
-    <link rel="stylesheet" href="/_web/icons.css?v=ad5709f591"><!-- generated: Lucide CSS masks -->
+    <link rel="stylesheet" href="/_web/site.css?v=223ce7325f">
+    <link rel="stylesheet" href="/_web/icons.css?v=678efd9f45"><!-- generated: Lucide CSS masks -->
     <!-- Icons are CSS masks keyed on data-lucide (_web/icons.css), so base.js's
          lucide.createIcons() calls only need this no-op stand-in. -->
     <script>window.lucide={createIcons:function(){}};</script>
@@ -33,15 +33,6 @@
             border: 1px solid rgb(255 255 255 / 0.22);
         }
         html { overflow-x: clip; }
-
-        /* Hero logo mark: sits inline with the shimmer wordmark and carries the
-           same animated accent gradient (a data-lucide currentColor stroke can't
-           inherit a background-clip:text gradient, so the hero icon is inlined). */
-        .hero-bg h1 {
-            display: flex; align-items: center; justify-content: center;
-            gap: 0.16em;
-        }
-        .logo-mark { width: 0.9em; height: 0.9em; flex: none; }
 
         /* Repo cards: each is a whole-card link into a section manual. */
         .repo-card {

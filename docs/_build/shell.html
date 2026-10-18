@@ -30,15 +30,6 @@
         }
         html { overflow-x: clip; }
 
-        /* Hero logo mark: sits inline with the shimmer wordmark and carries the
-           same animated accent gradient (a data-lucide currentColor stroke can't
-           inherit a background-clip:text gradient, so the hero icon is inlined). */
-        .hero-bg h1 {
-            display: flex; align-items: center; justify-content: center;
-            gap: 0.16em;
-        }
-        .logo-mark { width: 0.9em; height: 0.9em; flex: none; }
-
         /* Repo cards: each is a whole-card link into a section manual. */
         .repo-card {
             display: flex; flex-direction: column; gap: var(--space-3);
