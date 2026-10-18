@@ -657,7 +657,7 @@ mod tests {
         );
         // Without a name or reply-to, the headers read as they did before.
         let plain = String::from_utf8(build_mime(&composed())).unwrap();
-        assert!(!plain.contains("Reply-To:"), "{plain}");
+        assert!(!plain.contains("\r\nReply-To:"), "{plain}");
         assert!(!plain.contains("From: \""), "{plain}");
     }
 
