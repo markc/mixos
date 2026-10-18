@@ -33,9 +33,7 @@
 #[path = "support/load_guard.rs"]
 mod load_guard;
 
-use mds::{
-    BlobHash, ContainerAttrs, ContainerId, Flags, Mds, Membership, SetId, SqliteCasMds,
-};
+use mds::{BlobHash, ContainerAttrs, ContainerId, Flags, Mds, Membership, SetId, SqliteCasMds};
 use rusqlite::Connection;
 use std::collections::HashMap;
 use std::path::PathBuf;

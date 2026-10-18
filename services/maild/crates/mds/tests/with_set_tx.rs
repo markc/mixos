@@ -237,8 +237,5 @@ fn with_set_tx_returns_set_not_found_for_unknown_set() {
     let err = mds
         .with_set_tx(&bogus, |_h| Ok(()))
         .expect_err("unknown set must fail");
-    assert!(
-        matches!(err, mds::Error::SetNotFound(_)),
-        "got {err:?}"
-    );
+    assert!(matches!(err, mds::Error::SetNotFound(_)), "got {err:?}");
 }

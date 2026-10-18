@@ -22,9 +22,7 @@
 //!   resolves Container hashes via per-set Mutexes *before* taking
 //!   `self.blobs`, matching `delete_set`'s set→blobs order.
 
-use mds::{
-    BlobHash, ContainerAttrs, Flags, Mds, Membership, SetId, SqliteCasMds, VerifyScope,
-};
+use mds::{BlobHash, ContainerAttrs, Flags, Mds, Membership, SetId, SqliteCasMds, VerifyScope};
 use rusqlite::{Connection, params};
 use std::path::Path;
 use std::time::{Duration, SystemTime};
@@ -78,12 +76,7 @@ fn verify_row(c: &Connection, h: &BlobHash) -> Option<(i64, i64)> {
     .ok()
 }
 
-fn add_one(
-    mds: &SqliteCasMds,
-    set: &SetId,
-    container: mds::ContainerId,
-    body: &[u8],
-) -> BlobHash {
+fn add_one(mds: &SqliteCasMds, set: &SetId, container: mds::ContainerId, body: &[u8]) -> BlobHash {
     let blob = mds.put_blob(body).unwrap();
     mds.add_item(
         set,

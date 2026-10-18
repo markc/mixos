@@ -80,9 +80,7 @@ fn round_trip_export_then_import_yields_queryable_set() {
     let containers = dst.list_containers(&s).unwrap();
     assert_eq!(containers.len(), 1);
     let inbox = containers[0].id;
-    let items = dst
-        .list_items(&s, &inbox, mds::SeqRange::All)
-        .unwrap();
+    let items = dst.list_items(&s, &inbox, mds::SeqRange::All).unwrap();
     assert_eq!(items.len(), 1);
     assert_eq!(items[0].meta.blob_hash.0, expected_hash);
 

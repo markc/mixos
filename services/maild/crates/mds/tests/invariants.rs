@@ -30,9 +30,7 @@
 //! The `PROPTEST_CASES` env var overrides the per-test `cases` setting
 //! at runtime.
 
-use mds::{
-    ContainerAttrs, ContainerId, Flags, Mds, Membership, SeqRange, SetId, SqliteCasMds,
-};
+use mds::{ContainerAttrs, ContainerId, Flags, Mds, Membership, SeqRange, SetId, SqliteCasMds};
 use proptest::collection::vec as prop_vec;
 use proptest::prelude::*;
 use std::collections::{BTreeSet, HashMap, HashSet};

@@ -7,9 +7,7 @@
 //! contract: counts roll up across sets, dedup_ratio reflects shared
 //! blobs, and the public types are populated as documented.
 
-use mds::{
-    BlobHash, ContainerAttrs, ContainerId, Flags, Mds, Membership, SetId, SqliteCasMds,
-};
+use mds::{BlobHash, ContainerAttrs, ContainerId, Flags, Mds, Membership, SetId, SqliteCasMds};
 use tempfile::TempDir;
 
 fn open() -> (TempDir, SqliteCasMds) {

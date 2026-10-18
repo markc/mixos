@@ -232,10 +232,7 @@ fn export_unknown_set_returns_set_not_found() {
     let bogus = fresh_set();
     let dest = d.path().join("nope.tar");
     let err = mds.export_set(&bogus, &dest).unwrap_err();
-    assert!(
-        matches!(err, mds::Error::SetNotFound(_)),
-        "got {err:?}"
-    );
+    assert!(matches!(err, mds::Error::SetNotFound(_)), "got {err:?}");
     assert!(!dest.exists());
 }
 
