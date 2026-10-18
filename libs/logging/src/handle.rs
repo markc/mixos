@@ -17,6 +17,11 @@ use thiserror::Error;
 /// here.
 #[derive(Debug, Error)]
 pub enum LogError {
+    /// Property namespace registration or storage failed.
+    #[cfg(feature = "props")]
+    #[error("log properties failed: {0}")]
+    Props(String),
+
     /// `EnvFilter` directive failed to parse.
     #[error("invalid log filter directive: {0}")]
     InvalidFilter(String),

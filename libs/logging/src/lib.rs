@@ -11,10 +11,11 @@
 //! The core works without the Bus. A property watcher can drive live
 //! filter swaps through the public `LogReloadHandle`.
 //!
-//! Two optional features layer on the core:
+//! Three optional features layer on the core:
 //! - `bus-handlers` — the `<svc>.stats.snapshot` Bus verb handler
 //!   (`stats::handle_snapshot_bus`); uses `bus::native_client`.
 //! - `prometheus` — the per-daemon `/metrics` endpoint.
+//! - `props` — a durable `<svc>.log` namespace and live filter watcher.
 //!
 //! # Hard rules
 //!
@@ -36,3 +37,6 @@ pub use defaults::{LogDefaults, RotationMode};
 pub use handle::{LogError, LogHandle, LogReloadHandle};
 pub use init::{default_log_dir, init};
 pub use opts::{LogFormat, LogLevel, LogOpts, OnOff, StatsOpts, TriState};
+
+#[cfg(feature = "props")]
+pub mod props;

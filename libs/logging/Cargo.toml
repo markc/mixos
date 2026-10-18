@@ -18,6 +18,8 @@ default = []
 # Exposes the `<svc>.stats.snapshot` Bus verb handler
 # (`stats::handle_snapshot_bus`), using `bus::native_client::IncomingCommand`.
 bus-handlers = ["dep:bus"]
+# Durable log namespace and live filter watcher.
+props = ["dep:props", "props/sqlite", "props/router", "dep:tokio", "tokio/sync"]
 # Per-daemon Prometheus `/metrics` endpoint. Dependency-pure
 # (`metrics-exporter-prometheus` + the 0.20 `metrics-util` alias +
 # `tokio` for the HTTP listener). Independent of the property store.
@@ -28,6 +30,7 @@ prometheus = [
 ]
 
 [dependencies]
+props = { workspace = true, optional = true, features = ["sqlite", "router"] }
 config.workspace = true
 tracing.workspace = true
 # `reload` is unconditionally enabled — the live-reloadable filter is
@@ -70,16 +73,18 @@ rustc-hash = { workspace = true }
 
 # `handle_snapshot_bus` takes the Bus client's `IncomingCommand` wire frame.
 bus = { workspace = true, features = ["client"], optional = true }
-# `tokio` is prometheus-only now — the `/metrics` listener spawns its
+# The property watcher and the Prometheus listener spawn upkeep tasks.
+# The `/metrics` listener spawns its
 # upkeep task and serves over a WG-only HTTP listener. `rt`/`sync`/
 # `macros` cover the spawn + Notify; `rt-multi-thread` for the
 # listener future.
 tokio = { version = "1", default-features = false, features = ["rt", "rt-multi-thread", "sync", "macros"], optional = true }
 
 [dev-dependencies]
-# init/opts tests run on the pure core (no async runtime needed); the
-# prometheus listener path is exercised through the optional normal dep.
+# Property tests exercise a real in-memory SQLite store and async hooks.
 tempfile = "3"
+rusqlite.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "time"] }
 
 [package.metadata.mixos]
 component = "logging"
