@@ -351,7 +351,9 @@ impl<'a> DataTable<'a> {
         self
     }
 
-    /// Show the pager footer (the default).
+    /// Show the pager footer (the default). Without it, a bar under the
+    /// rows still counts a selection of several and offers the whole set
+    /// ([`DataTable::select_everything`]).
     pub fn pager(mut self, pager: bool) -> Self {
         self.pager = pager;
         self
@@ -400,21 +402,29 @@ impl<'a> DataTable<'a> {
             if back.clicked() {
                 back.request_focus();
             }
-            let footer = if self.pager { height } else { 0.0 };
+            // Without the pager, a bar of its own still says how many are
+            // selected (and offers the whole set) while several are.
+            let noted = !self.pager && self.selected_count() >= 2;
+            let footer = if self.pager || noted { height } else { 0.0 };
             let body = (ui.available_height() - footer - height).max(height);
             let visible = (body / height).floor().max(1.0) as usize;
             let mut scroll_to = None;
             if focused {
+                let multi = self.selection == SelectionMode::Multi;
+                // Escape stays with the table while it has a selection of
+                // several to collapse (egui would otherwise take it to drop
+                // the focus); with one row or none it lets the keyboard go.
+                let escape = multi && self.state.selection.len() >= 2;
                 ui.memory_mut(|m| {
                     m.set_focus_lock_filter(
                         focus,
                         EventFilter {
                             vertical_arrows: true,
+                            escape,
                             ..EventFilter::default()
                         },
                     )
                 });
-                let multi = self.selection == SelectionMode::Multi;
                 for (key, press) in KEYS {
                     if ui.input_mut(|i| i.consume_key(Modifiers::NONE, key)) {
                         for event in self.state.key(press, &keys, visible) {
@@ -461,6 +471,8 @@ impl<'a> DataTable<'a> {
             self.drag_preview(ui);
             if self.pager {
                 self.footer(ui, rows.len(), height, &mut events);
+            } else if noted {
+                self.note_bar(ui, rows.len(), height, &mut events);
             }
         });
         events
@@ -738,7 +750,7 @@ impl<'a> DataTable<'a> {
     /// selects every row ([`TableEvent::SelectEverything`]), or the app's
     /// word that it has.
     fn selection_note(&self, ui: &mut Ui, shown: usize, events: &mut Vec<TableEvent>) {
-        let count = self.selected.unwrap_or(self.state.selection.len() as u64);
+        let count = self.selected_count();
         if count < 2 {
             return;
         }
@@ -761,6 +773,23 @@ impl<'a> DataTable<'a> {
             }
             None => {}
         }
+    }
+
+    /// How many rows are selected: the app's count of the whole set, else
+    /// the page's.
+    fn selected_count(&self) -> u64 {
+        self.selected.unwrap_or(self.state.selection.len() as u64)
+    }
+
+    /// With the pager off: the selection note alone, in a bar of the
+    /// footer's height.
+    fn note_bar(&self, ui: &mut Ui, shown: usize, height: f32, events: &mut Vec<TableEvent>) {
+        let size = vec2(ui.available_width(), height);
+        ui.allocate_ui_with_layout(size, Layout::left_to_right(egui::Align::Center), |ui| {
+            ui.spacing_mut().item_spacing.x = ui.spacing().item_spacing.x / 2.0;
+            ui.add_space(ui.spacing().item_spacing.x);
+            self.selection_note(ui, shown, events);
+        });
     }
 
     fn footer(&self, ui: &mut Ui, shown: usize, height: f32, events: &mut Vec<TableEvent>) {
