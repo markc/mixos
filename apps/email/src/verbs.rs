@@ -242,13 +242,13 @@ pub const VERBS: &[Verb] = &[
         "email.mark",
         false,
         r#"{"account":"optional account id","ids":"email id or list of ids","read":"optional bool","flagged":"optional bool"}"#,
-        "Set or clear read and flagged, one Email/set per 500 ids; answers {ids, done, failed: [{id, reason}]} and is refused only when every id failed",
+        "Set or clear read and flagged, one Email/set per 500 ids; answers {ids, done, failed: [{id, reason}], partial} (partial is true when some ids changed and some failed) and is refused only when every id failed",
     ),
     verb(
         "email.move",
         false,
         r#"{"account":"optional account id","ids":"email id or list of ids","mailbox":"mailbox id"}"#,
-        "Move emails to a mailbox, one Email/set per 500 ids; answers {ids, mailbox, done, failed: [{id, reason}]} and is refused only when every id failed",
+        "Move emails to a mailbox, one Email/set per 500 ids; answers {ids, mailbox, done, failed: [{id, reason}], partial} (partial is true when some ids changed and some failed) and is refused only when every id failed",
     ),
     verb(
         "email.junk",
@@ -260,7 +260,7 @@ pub const VERBS: &[Verb] = &[
         "email.delete",
         false,
         r#"{"account":"optional account id","ids":"email id or list of ids","destroy":"optional bool (default false: to Trash)"}"#,
-        "Move emails to Trash, or destroy them, one Email/set per 500 ids; answers {ids, destroyed, done, failed: [{id, reason}]} and is refused only when every id failed",
+        "Move emails to Trash, or destroy them, one Email/set per 500 ids; answers {ids, destroyed, done, failed: [{id, reason}], partial} (partial is true when some ids changed and some failed) and is refused only when every id failed",
     ),
     verb(
         "email.send",
@@ -720,6 +720,9 @@ pub fn batch_answer(write: &Write, outcome: jmap::SetOutcome) -> Result<Value, j
         Write::Delete { ids, destroy } => json!({ "ids": ids, "destroyed": destroy }),
         _ => json!({}),
     };
+    // A partial result: some ids changed and some did not. JMAP cannot roll
+    // back, so the reply says so instead of refusing the call.
+    answer["partial"] = json!(!outcome.done.is_empty() && !outcome.failed.is_empty());
     answer["done"] = json!(outcome.done);
     answer["failed"] = Value::Array(failed);
     Ok(answer)
@@ -1962,6 +1965,7 @@ mod tests {
             answer["failed"],
             json!([{"id": "E1", "reason": "notFound: no such email"}])
         );
+        assert_eq!(answer["partial"], true);
         let delete = Write::Delete {
             ids: many(1),
             destroy: true,
@@ -1973,6 +1977,7 @@ mod tests {
         let answer = batch_answer(&delete, ok).unwrap();
         assert_eq!(answer["destroyed"], true);
         assert_eq!(answer["failed"], json!([]));
+        assert_eq!(answer["partial"], false);
     }
 
     #[test]
