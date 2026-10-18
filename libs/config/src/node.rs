@@ -45,26 +45,40 @@ impl NodeConfig {
     /// JMAP listen address, derived from the node IP unless explicitly set.
     pub fn jmap_listen(&self) -> String {
         self.jmap_listen.clone().unwrap_or_else(|| {
-            format!("{}:{}", self.wg_ip, self.maild.as_ref().map_or(8443, |m| m.jmap_port))
+            format!(
+                "{}:{}",
+                self.wg_ip,
+                self.maild.as_ref().map_or(8443, |m| m.jmap_port)
+            )
         })
     }
 
     /// JMAP reverse-proxy upstream URL.
     pub fn jmap_upstream(&self) -> String {
-        self.jmap_upstream.clone().unwrap_or_else(|| format!("https://{}", self.jmap_listen()))
+        self.jmap_upstream
+            .clone()
+            .unwrap_or_else(|| format!("https://{}", self.jmap_listen()))
     }
 
     /// Inbound SMTP listen address.
     pub fn smtp_inbound_listen(&self) -> String {
         self.smtp_inbound_listen.clone().unwrap_or_else(|| {
-            format!("{}:{}", self.wg_ip, self.maild.as_ref().map_or(25, |m| m.smtp_port))
+            format!(
+                "{}:{}",
+                self.wg_ip,
+                self.maild.as_ref().map_or(25, |m| m.smtp_port)
+            )
         })
     }
 
     /// Implicit-TLS SMTP listen address.
     pub fn smtps_listen(&self) -> String {
         self.smtps_listen.clone().unwrap_or_else(|| {
-            format!("{}:{}", self.wg_ip, self.maild.as_ref().map_or(465, |m| m.smtps_port))
+            format!(
+                "{}:{}",
+                self.wg_ip,
+                self.maild.as_ref().map_or(465, |m| m.smtps_port)
+            )
         })
     }
 }

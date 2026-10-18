@@ -270,6 +270,20 @@ mod tests {
     }
 
     #[test]
+    fn empty_resolver_exposes_no_identity_even_in_strict_mode() {
+        for strict in [false, true] {
+            let resolver = SniCertResolver::from_config(&[], strict).unwrap();
+            assert!(resolver.is_empty());
+            assert_eq!(resolver.len(), 0);
+            assert!(resolver.identities().is_empty());
+            assert!(resolver.default_identity().is_none());
+            assert!(resolver.pick_for_sni(None).is_none());
+            assert!(resolver.pick_for_sni(Some("mail.example.org")).is_none());
+            assert_eq!(resolver.strict_sni(), strict);
+        }
+    }
+
+    #[test]
     fn pick_identity_sni_exact_match_wins() {
         let by_name = map_of(&[("mail.example.org", 0), ("mail.example.net", 1)]);
         assert_eq!(
@@ -370,7 +384,10 @@ mod tests {
         let r = SniCertResolver::from_config(&cfg, false).expect("build");
         assert_eq!(r.len(), 1);
         assert!(r.pick_for_sni(Some("mail.example.org")).is_some());
-        assert_eq!(r.pick_for_sni(Some("mail.example.org")).unwrap().name, "mail.example.org");
+        assert_eq!(
+            r.pick_for_sni(Some("mail.example.org")).unwrap().name,
+            "mail.example.org"
+        );
     }
 
     #[test]
@@ -428,7 +445,14 @@ mod tests {
         ];
         let r = SniCertResolver::from_config(&cfg, false).expect("build");
         // SNI miss → default (mail.example.org)
-        assert_eq!(r.pick_for_sni(Some("nope")).unwrap().name, "mail.example.org");
+        assert_eq!(
+            r.pick_for_sni(Some("nope")).unwrap().name,
+            "mail.example.org"
+        );
+        assert_eq!(r.default_identity().unwrap().name, "mail.example.org");
+        assert_eq!(r.identities().len(), 2);
+        assert!(!r.is_empty());
+        assert!(!r.strict_sni());
         // No SNI → no_sni_fallback (mail.example.net), not default
         assert_eq!(r.pick_for_sni(None).unwrap().name, "mail.example.net");
     }

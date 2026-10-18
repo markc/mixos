@@ -9,7 +9,10 @@ pub use sni::{SniCertResolver, TlsIdentity, pick_identity};
 /// Load a PEM chain and private key into a server acceptor without client auth.
 /// Installs the ring provider on first call. Matches the single-identity loader
 /// used by existing services, including its PEM filtering behaviour.
-pub fn load_tls_config(cert_path: &str, key_path: &str) -> anyhow::Result<tokio_rustls::TlsAcceptor> {
+pub fn load_tls_config(
+    cert_path: &str,
+    key_path: &str,
+) -> anyhow::Result<tokio_rustls::TlsAcceptor> {
     use std::sync::Arc;
 
     let _ = rustls::crypto::ring::default_provider().install_default();
@@ -40,15 +43,26 @@ mod tests {
         let key = dir.join("key.pem");
         std::fs::write(&cert, pair.cert.pem()).unwrap();
         std::fs::write(&key, pair.key_pair.serialize_pem()).unwrap();
-        (cert.to_str().unwrap().into(), key.to_str().unwrap().into(), pair.cert.der().clone())
+        (
+            cert.to_str().unwrap().into(),
+            key.to_str().unwrap().into(),
+            pair.cert.der().clone(),
+        )
     }
 
-    fn client(cert: rustls::pki_types::CertificateDer<'static>, name: &str, sni: bool) -> rustls::ClientConnection {
+    fn client(
+        cert: rustls::pki_types::CertificateDer<'static>,
+        name: &str,
+        sni: bool,
+    ) -> rustls::ClientConnection {
         let mut roots = rustls::RootCertStore::empty();
         roots.add(cert).unwrap();
-        let mut config = rustls::ClientConfig::builder().with_root_certificates(roots).with_no_client_auth();
+        let mut config = rustls::ClientConfig::builder()
+            .with_root_certificates(roots)
+            .with_no_client_auth();
         config.enable_sni = sni;
-        rustls::ClientConnection::new(Arc::new(config), name.to_owned().try_into().unwrap()).unwrap()
+        rustls::ClientConnection::new(Arc::new(config), name.to_owned().try_into().unwrap())
+            .unwrap()
     }
 
     #[test]
@@ -97,8 +111,11 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let (cert, key, der) = pair(dir.path());
         let identity = crate::node::TlsIdentityConfig {
-            server_name: "Mail.Example.Org".into(), cert, key,
-            default: true, no_sni_fallback: true,
+            server_name: "Mail.Example.Org".into(),
+            cert,
+            key,
+            default: true,
+            no_sni_fallback: true,
         };
         for (strict, name, sni, accepted) in [
             (false, "unknown.example.org", true, true),
@@ -107,16 +124,26 @@ mod tests {
             (true, "unknown.example.org", true, false),
             (true, "mail.example.org", false, false),
         ] {
-            let resolver = SniCertResolver::from_config(std::slice::from_ref(&identity), strict).unwrap();
+            let resolver =
+                SniCertResolver::from_config(std::slice::from_ref(&identity), strict).unwrap();
             assert_eq!(resolver.strict_sni(), strict);
-            assert_eq!(resolver.default_identity().unwrap().name, "mail.example.org");
-            let config = rustls::ServerConfig::builder().with_no_client_auth().with_cert_resolver(Arc::new(resolver));
+            assert_eq!(
+                resolver.default_identity().unwrap().name,
+                "mail.example.org"
+            );
+            let config = rustls::ServerConfig::builder()
+                .with_no_client_auth()
+                .with_cert_resolver(Arc::new(resolver));
             let mut server = rustls::ServerConnection::new(Arc::new(config)).unwrap();
             let mut client = client(der.clone(), name, sni);
             let mut wire = Vec::new();
             client.write_tls(&mut wire).unwrap();
             server.read_tls(&mut Cursor::new(wire)).unwrap();
-            assert_eq!(server.process_new_packets().is_ok(), accepted, "strict={strict}, name={name}, sni={sni}");
+            assert_eq!(
+                server.process_new_packets().is_ok(),
+                accepted,
+                "strict={strict}, name={name}, sni={sni}"
+            );
         }
     }
 }
