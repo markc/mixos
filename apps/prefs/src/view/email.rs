@@ -10,8 +10,8 @@ use egui::{Align, Layout, RichText, Ui};
 use preferences::Engine;
 use preferences::appearance::Availability as Settings;
 use preferences::email::{
-    AccountEntry, Change, Email, Field, Form, PAGE_SIZE_MAX, PAGE_SIZE_MIN, ReplyPosition,
-    Secret, Service,
+    AccountEntry, Change, Email, Field, Form, PAGE_SIZE_MAX, PAGE_SIZE_MIN, ReplyPosition, Secret,
+    Service,
 };
 use toolkit::toggle::Toggle;
 use toolkit::{Registry, Strings, bars, field, panel};

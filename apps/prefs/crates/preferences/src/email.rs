@@ -26,8 +26,7 @@ use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
 pub use settings::email::{
-    AccountEntry, Email, MailOptions, PAGE_SIZE_MAX, PAGE_SIZE_MIN, ReplyPosition,
-    mint_account_id,
+    AccountEntry, Email, MailOptions, PAGE_SIZE_MAX, PAGE_SIZE_MIN, ReplyPosition, mint_account_id,
 };
 
 /// The email app's Bus service.
@@ -519,10 +518,7 @@ fn edit_between(old: &Email, new: &Email) -> BTreeMap<String, Value> {
         changes.insert("email.mail.quote_on_reply".into(), json!(b.quote_on_reply));
     }
     if a.reply_position != b.reply_position {
-        changes.insert(
-            "email.mail.reply_position".into(),
-            json!(b.reply_position),
-        );
+        changes.insert("email.mail.reply_position".into(), json!(b.reply_position));
     }
     changes
 }
@@ -1999,8 +1995,12 @@ mod tests {
             email_change(&json!({"path": "email.mail.reply_position", "value": "below"})),
             Ok(Change::ReplyPosition(ReplyPosition::Below))
         ));
-        assert!(email_change(&json!({"path": "email.mail.reply_position", "value": "middle"})).is_err());
-        assert!(email_change(&json!({"path": "email.mail.quote_on_reply", "value": "yes"})).is_err());
+        assert!(
+            email_change(&json!({"path": "email.mail.reply_position", "value": "middle"})).is_err()
+        );
+        assert!(
+            email_change(&json!({"path": "email.mail.quote_on_reply", "value": "yes"})).is_err()
+        );
     }
 
     #[test]
