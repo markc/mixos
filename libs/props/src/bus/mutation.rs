@@ -45,6 +45,7 @@ use bus::wire::BusMessage;
 use serde::Serialize;
 use serde_json::{Value as Json, json};
 
+use crate::bus::PropsResponse;
 use crate::capability::{Capability, CapabilitySet};
 use crate::dispatcher::{audit_topic, records_changed_topic};
 use crate::lifecycle::Lifecycle;
@@ -56,7 +57,6 @@ use crate::record::{Actor, EventKind, Nseq, Record, RecordEvent, RecordKey, Vers
 use crate::runtime::{DeleteOpts, Runtime, RuntimeError, SetOpts, SetOutcome};
 use crate::store::{MergeMode, StoreError};
 use crate::subscribe_granter::SubscribeGranter;
-use crate::bus::PropsResponse;
 use crate::value::PropValue;
 
 /// wire `error_code` token vocabulary. Closed in v0.1; new variants
@@ -2268,7 +2268,7 @@ mod tests {
     //
     // The watch reply embeds a single `caught_up` control marker so a
     // list-then-watch consumer can close its readiness gate on the
-    // replay→live boundary. Body shape is fixed by 
+    // replay→live boundary. Body shape is fixed by
     //   { "event_type": "caught_up", "namespace": "<ns>", "nseq": <N> }
     // where `N` is the server-observed namespace high-water mark at
     // watch-install time. `audit.watch` () is unamended.

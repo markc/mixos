@@ -4130,6 +4130,8 @@ dependencies = [
  "metrics-exporter-prometheus",
  "metrics-util 0.18.0",
  "metrics-util 0.20.4",
+ "props",
+ "rusqlite",
  "rustc-hash 2.1.3",
  "serde",
  "serde_json",

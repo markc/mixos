@@ -80,10 +80,7 @@ async fn re_registering_is_a_conflict() {
 async fn set_with_valid_payload_succeeds() {
     let store = build_store("demod");
     let mut router = PropsRouter::new("demod");
-    let runtime = register(&mut router, &store)
-        .unwrap()
-        .runtime()
-        .clone();
+    let runtime = register(&mut router, &store).unwrap().runtime().clone();
 
     let value = body(&[
         ("level", "debug"),
@@ -103,10 +100,7 @@ async fn set_with_valid_payload_succeeds() {
 async fn set_with_malformed_filter_is_rejected() {
     let store = build_store("demod");
     let mut router = PropsRouter::new("demod");
-    let runtime = register(&mut router, &store)
-        .unwrap()
-        .runtime()
-        .clone();
+    let runtime = register(&mut router, &store).unwrap().runtime().clone();
 
     let value = body(&[
         ("level", "info"),
@@ -131,10 +125,7 @@ async fn set_with_malformed_filter_is_rejected() {
 async fn set_with_unknown_level_is_rejected() {
     let store = build_store("demod");
     let mut router = PropsRouter::new("demod");
-    let runtime = register(&mut router, &store)
-        .unwrap()
-        .runtime()
-        .clone();
+    let runtime = register(&mut router, &store).unwrap().runtime().clone();
 
     let value = body(&[
         ("level", "verbose"),
@@ -159,10 +150,7 @@ async fn set_with_unknown_level_is_rejected() {
 async fn delete_is_refused() {
     let store = build_store("demod");
     let mut router = PropsRouter::new("demod");
-    let runtime = register(&mut router, &store)
-        .unwrap()
-        .runtime()
-        .clone();
+    let runtime = register(&mut router, &store).unwrap().runtime().clone();
 
     // Materialise the row first so delete has something to address.
     runtime

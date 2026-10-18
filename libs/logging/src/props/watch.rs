@@ -121,7 +121,9 @@ async fn read_filter(runtime: &Runtime) -> Result<Option<EnvFilter>, LogError> {
     match runtime.store().get(&key).await {
         Ok(snap) => Ok(extract_filter(&snap.value.value)),
         Err(StoreError::NotFound) => Ok(None),
-        Err(e) => Err(LogError::Props(format!("log namespace watcher read failed: {e}"))),
+        Err(e) => Err(LogError::Props(format!(
+            "log namespace watcher read failed: {e}"
+        ))),
     }
 }
 
@@ -194,10 +196,7 @@ mod tests {
 
     #[test]
     fn compose_directive_level_and_filter() {
-        assert_eq!(
-            compose_directive("info", "demod=debug"),
-            "info,demod=debug"
-        );
+        assert_eq!(compose_directive("info", "demod=debug"), "info,demod=debug");
         assert_eq!(
             compose_directive("none", "logging=info"),
             "off,logging=info"
@@ -208,10 +207,7 @@ mod tests {
     fn extract_filter_handles_well_formed_object() {
         let mut obj = BTreeMap::new();
         obj.insert("level".into(), PropValue::String("info".into()));
-        obj.insert(
-            "filter".into(),
-            PropValue::String("logging=debug".into()),
-        );
+        obj.insert("filter".into(), PropValue::String("logging=debug".into()));
         let v = PropValue::Object(obj);
         assert!(extract_filter(&v).is_some());
     }
@@ -239,10 +235,7 @@ mod tests {
         // Symmetric to the prior case: a PATCH of just
         // `{filter:"logging=debug"}` falls back to level=info.
         let mut obj = BTreeMap::new();
-        obj.insert(
-            "filter".into(),
-            PropValue::String("logging=debug".into()),
-        );
+        obj.insert("filter".into(), PropValue::String("logging=debug".into()));
         let v = PropValue::Object(obj);
         assert!(extract_filter(&v).is_some());
     }

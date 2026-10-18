@@ -46,10 +46,10 @@ pub mod namespace;
 pub mod record;
 #[cfg(feature = "store")]
 pub mod runtime;
-#[cfg(feature = "store")]
-pub mod store;
 #[cfg(feature = "sqlite")]
 pub mod sqlite;
+#[cfg(feature = "store")]
+pub mod store;
 
 #[cfg(feature = "bus")]
 pub mod bus;
@@ -103,13 +103,15 @@ pub use store::{
 pub use sqlite::{JsonValuesMapping, SqliteStore, SqliteTableMapping};
 
 #[cfg(feature = "router")]
-pub mod subscribe_granter;
-#[cfg(feature = "router")]
 pub mod dispatcher;
+#[cfg(feature = "router")]
+pub mod subscribe_granter;
 #[cfg(feature = "router")]
 pub use bus::mutation::PropsRouter;
 #[cfg(feature = "router")]
 pub use subscribe_granter::SubscribeGranter;
 
 #[cfg(feature = "router")]
-pub use dispatcher::{DispatchPublisher, DispatcherHandle, audit_topic, records_changed_topic, spawn_dispatcher};
+pub use dispatcher::{
+    DispatchPublisher, DispatcherHandle, audit_topic, records_changed_topic, spawn_dispatcher,
+};

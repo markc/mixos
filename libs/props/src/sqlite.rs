@@ -1486,9 +1486,11 @@ mod tests {
         let mut stmt = inner.conn.prepare(
             "SELECT name, sql FROM sqlite_master WHERE type = 'table' AND name GLOB '__props_*' ORDER BY name",
         ).unwrap();
-        let actual: Vec<(String, String)> = stmt.query_map([], |row| {
-            Ok((row.get(0)?, row.get(1)?))
-        }).unwrap().collect::<rusqlite::Result<_>>().unwrap();
+        let actual: Vec<(String, String)> = stmt
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
         // Frozen persisted DDL. Keep these literals independent of bootstrap.
         let expected = [
             ("__props_audit_keys", "CREATE TABLE __props_audit_keys (namespace TEXT PRIMARY KEY, key_bytes BLOB NOT NULL)"),
