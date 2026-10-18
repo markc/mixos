@@ -175,7 +175,7 @@ pub const VERBS: &[Verb] = &[
     verb(
         "email.account.set",
         false,
-        r#"{"id":"optional account id (absent: a new account)","name":"string","url":"https://… JMAP base","email":"login address","password":"optional string, kept only in the app's secrets file","ca_path":"optional absolute PEM path or null","enabled":"optional bool","signature":"optional plain text"}"#,
+        r#"{"id":"optional account id (absent: a new account)","name":"string","url":"https://… JMAP base","email":"login address","password":"optional string, kept only in the app's secrets file","ca_path":"optional absolute PEM path or null","enabled":"optional bool","signature":"optional plain text","identities":"optional list of {id, name, address, signature, reply_to}; replaces the account's identities, [] for none"}"#,
         "Create or update an account in settingsd; answers {id} once settingsd accepts",
     ),
     verb(
@@ -773,6 +773,17 @@ fn flag(args: &Value, key: &str) -> Checked<Option<bool>> {
         None | Some(Value::Null) => Ok(None),
         Some(Value::Bool(b)) => Ok(Some(*b)),
         Some(_) => Err(invalid(format!("{key} must be true or false"))),
+    }
+}
+
+/// A list of sender identities (`{id, name, address, signature, reply_to}`
+/// objects), or None when absent. The settings validation checks the values.
+fn identities(args: &Value, key: &str) -> Checked<Option<Vec<settings::email::Identity>>> {
+    match args.get(key) {
+        None | Some(Value::Null) => Ok(None),
+        Some(value) => serde_json::from_value(value.clone())
+            .map(Some)
+            .map_err(|e| invalid(format!("{key}: {e}"))),
     }
 }
 
@@ -1442,6 +1453,7 @@ fn account_set(state: &mut State, id: u64, args: &Value) -> Checked<()> {
         ca_path,
         enabled: flag(args, "enabled")?,
         signature: text(args, "signature")?,
+        identities: identities(args, "identities")?,
     };
     let password = text(args, "password")?.filter(|p| !p.is_empty());
     if password.is_some()
@@ -1948,6 +1960,20 @@ mod tests {
                 mailbox: "M-trash".into()
             }
         );
+    }
+
+    #[test]
+    fn account_set_reads_identities_as_a_list_and_refuses_anything_else() {
+        let args = json!({"identities": [
+            {"id": "work", "name": "Ann", "address": "ann@work.example.invalid", "reply_to": null}
+        ]});
+        let read = identities(&args, "identities").unwrap().unwrap();
+        assert_eq!(read[0].id, "work");
+        assert_eq!(read[0].reply_to, None);
+        assert!(identities(&json!({}), "identities").unwrap().is_none());
+        assert!(identities(&json!({"identities": null}), "identities").unwrap().is_none());
+        assert!(identities(&json!({"identities": "work"}), "identities").is_err());
+        assert!(identities(&json!({"identities": [{"id": "work"}]}), "identities").is_err());
     }
 
     #[test]
