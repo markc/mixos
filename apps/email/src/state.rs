@@ -5058,11 +5058,7 @@ impl State {
                 }
             }
             UiEvent::ComposeAccount(account) => {
-                if self
-                    .compose
-                    .as_ref()
-                    .is_none_or(|c| c.account == account)
-                {
+                if self.compose.as_ref().is_none_or(|c| c.account == account) {
                     return;
                 }
                 self.choose_sender(account, None);

@@ -1021,13 +1021,18 @@ mod tests {
         assert!(saved.get("identities").is_some());
         let senders = entry.senders();
         assert_eq!(senders.len(), 2);
-        assert_eq!(senders[0].reply_to.as_deref(), Some("help@work.example.invalid"));
+        assert_eq!(
+            senders[0].reply_to.as_deref(),
+            Some("help@work.example.invalid")
+        );
         assert_eq!(senders[1].reply_to, None);
-        assert!(validate(&Email {
-            accounts: vec![entry],
-            ..Email::default()
-        })
-        .is_ok());
+        assert!(
+            validate(&Email {
+                accounts: vec![entry],
+                ..Email::default()
+            })
+            .is_ok()
+        );
     }
 
     #[test]
@@ -1046,11 +1051,19 @@ mod tests {
             )
         };
         let one = |id: &str, address: &str| json!({"id": id, "name": "Ann", "address": address});
-        let duplicate = refused(json!([one("work", "a@x.example.invalid"), one("work", "b@x.example.invalid")]));
+        let duplicate = refused(json!([
+            one("work", "a@x.example.invalid"),
+            one("work", "b@x.example.invalid")
+        ]));
         assert!(duplicate.contains("identities[1].id"), "{duplicate}");
         let bad_address = refused(json!([one("work", "not-an-address")]));
-        assert!(bad_address.contains("identities[0].address"), "{bad_address}");
-        let bad_reply = refused(json!([{"id": "work", "name": "Ann", "address": "a@x.example.invalid", "reply_to": "no"}]));
+        assert!(
+            bad_address.contains("identities[0].address"),
+            "{bad_address}"
+        );
+        let bad_reply = refused(
+            json!([{"id": "work", "name": "Ann", "address": "a@x.example.invalid", "reply_to": "no"}]),
+        );
         assert!(bad_reply.contains("identities[0].reply_to"), "{bad_reply}");
         let too_many: Vec<Value> = (0..=IDENTITIES_MAX)
             .map(|i| one(&format!("i{i}"), "a@x.example.invalid"))

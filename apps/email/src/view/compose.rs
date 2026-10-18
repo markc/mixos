@@ -288,7 +288,11 @@ fn form(ui: &mut Ui, compose: &ComposeState, state: &State, events: &mut Vec<UiE
             let mut at = senders
                 .iter()
                 .position(|(account, i)| *account == compose.account && i.id == compose.identity)
-                .or_else(|| senders.iter().position(|(account, _)| *account == compose.account))
+                .or_else(|| {
+                    senders
+                        .iter()
+                        .position(|(account, _)| *account == compose.account)
+                })
                 .unwrap_or(0);
             ui.horizontal(|ui| {
                 ui.label(crate::label("from"));
