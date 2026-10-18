@@ -633,6 +633,8 @@ mod tests {
             subject: "Lunch".into(),
             body: "Noon?".into(),
             in_reply_to: Some("<m1@example.invalid>".into()),
+            from_name: String::new(),
+            reply_to: None,
         }
     }
 
