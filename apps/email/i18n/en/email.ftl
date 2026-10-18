@@ -47,6 +47,8 @@ all-selected = All { $count } selected
 column-subject = Subject
 column-from = From
 column-date = Date
+# The server refused the column sort the person chose.
+sort-unsupported = The server cannot sort by that column; the list is newest first again.
 # The message list's compact dates (chrono patterns): today, the six days
 # before, earlier this year, older.
 date-today = %H:%M

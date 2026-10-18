@@ -3,7 +3,8 @@
 //! email's drawing, driven through kittest with no network: the account
 //! tree's rows select their account, mode and folder, its keys move and
 //! collapse, the message list selects (click, Ctrl and Shift clicks,
-//! Ctrl+A, select all, Escape) without opening, an unread email row opens
+//! Ctrl+A, select all, Escape) without opening, its headers sort and its
+//! pager pages through server queries, an unread email row opens
 //! on a double-click or Enter and marks read, the no-accounts and
 //! failed panes offer Email Settings, and offscreen snapshots of the
 //! window. Regenerate the images with `UPDATE_SNAPSHOTS=1` and look at them
@@ -575,6 +576,130 @@ fn ctrl_and_shift_clicks_ctrl_a_and_escape_select_without_opening() {
     assert!(h.query_by_label("236 selected").is_none());
 }
 
+/// The one page fetch the state queued: its ticket, sort and position.
+fn fetched(h: &mut Harness<'static, Window>) -> (u64, jmap::EmailSort, u64) {
+    let fetches: Vec<(u64, jmap::EmailSort, u64)> = h
+        .state_mut()
+        .state
+        .take_work()
+        .into_iter()
+        .filter_map(|w| match w {
+            Work::FetchEmails {
+                ticket,
+                sort,
+                position,
+                ..
+            } => Some((ticket, sort, position)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(fetches.len(), 1, "{fetches:?}");
+    fetches[0]
+}
+
+/// The header labelled `label`'s sort arrow, as agents read it.
+fn sort_of(h: &Harness<'static, Window>, label: &str) -> Option<egui::accesskit::SortDirection> {
+    h.get_by_label(label).accesskit_node().sort_direction()
+}
+
+#[test]
+fn a_header_click_sorts_on_the_server_ascending_first_then_flips() {
+    use egui::accesskit::SortDirection;
+    use jmap::{EmailSort, SortBy};
+    let mut h = harness(long_list());
+    let (subject, from, date) = (
+        label("column-subject"),
+        label("column-from"),
+        label("column-date"),
+    );
+    // Newest first until a header is clicked.
+    assert_eq!(sort_of(&h, &date), Some(SortDirection::Descending));
+    assert_eq!(sort_of(&h, &subject), None);
+    h.get_by_label(&subject).click();
+    h.run();
+    assert_eq!(
+        fetched(&mut h).1,
+        EmailSort::new(SortBy::Subject, true),
+        "ascending first"
+    );
+    assert_eq!(sort_of(&h, &subject), Some(SortDirection::Ascending));
+    assert_eq!(sort_of(&h, &date), None);
+    let mail = &h.state().state.account("home").unwrap().mail;
+    assert!(mail.table.selection.is_empty(), "the sort clears L3");
+    h.get_by_label(&subject).click();
+    h.run();
+    assert_eq!(fetched(&mut h).1, EmailSort::new(SortBy::Subject, false));
+    assert_eq!(sort_of(&h, &subject), Some(SortDirection::Descending));
+    h.get_by_label(&from).click();
+    h.run();
+    assert_eq!(fetched(&mut h).1, EmailSort::new(SortBy::From, true));
+    h.get_by_label(&date).click();
+    h.run();
+    assert_eq!(fetched(&mut h).1, EmailSort::new(SortBy::ReceivedAt, true));
+    assert_eq!(sort_of(&h, &date), Some(SortDirection::Ascending));
+}
+
+#[test]
+fn the_pager_pages_on_the_server_and_select_all_works_on_any_page() {
+    let mut h = harness(long_list());
+    assert!(h.query_by_label("1–6 of 236").is_some());
+    assert!(
+        h.get_by_label("Previous page")
+            .accesskit_node()
+            .is_disabled()
+    );
+    h.get_by_label("Next page").click();
+    h.run();
+    let (ticket, _, position) = fetched(&mut h);
+    assert_eq!(position, 100);
+    let mail = &h.state().state.account("home").unwrap().mail;
+    assert_eq!(mail.table.page, 1);
+    assert!(mail.table.selection.is_empty(), "the page clears L3");
+    let email = |id: &str, subject: &str| -> jmap::Email {
+        serde_json::from_value(serde_json::json!({
+            "id": id,
+            "subject": subject,
+            "from": [{ "name": "Hal", "email": "hal@example.invalid" }],
+            "receivedAt": "2026-07-01T10:00:00Z",
+            "keywords": { "$seen": true }
+        }))
+        .unwrap()
+    };
+    done(
+        &mut h.state_mut().state,
+        "home",
+        Done::Page(
+            ticket,
+            Ok(EmailPage {
+                emails: vec![email("Q1", "Page two first"), email("Q2", "Page two last")],
+                total: 236,
+            }),
+        ),
+    );
+    h.run();
+    assert!(h.query_by_label("101–102 of 236").is_some());
+    assert_eq!(list_rows(&h).len(), 2);
+    // Ctrl+A and "Select all 236 in folder" on the second page.
+    h.get_by_label_contains("Page two first").click();
+    h.run();
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    h.run();
+    h.get_by_label("Select all 236 in folder").click();
+    h.run();
+    let mail = &h.state().state.account("home").unwrap().mail;
+    assert!(mail.everything);
+    assert_eq!(mail.selection_count(), 236);
+    assert!(h.query_by_label("All 236 selected").is_some());
+    // Last and First, then Previous from the last page.
+    h.get_by_label("Last page").click();
+    h.run();
+    assert_eq!(fetched(&mut h).2, 200);
+    assert!(!h.state().state.account("home").unwrap().mail.everything);
+    h.get_by_label("First page").click();
+    h.run();
+    assert_eq!(fetched(&mut h).2, 0);
+}
+
 #[test]
 fn an_email_opened_elsewhere_shows_selected_and_a_new_mailbox_clears_it() {
     let mut state = fixture();
@@ -689,6 +814,38 @@ fn mail_list_studio_dark() {
     snapshot(
         "mail_list_studio_dark",
         long_list(),
+        &theme(Scheme::Studio, Mode::Dark),
+    );
+}
+
+/// `long_list` shown as the second page of 236, sorted by `column` in
+/// `order`: the header's arrow and the pager's "101–106 of 236".
+fn sorted_page(column: &str, order: toolkit::datatable::Order) -> State {
+    let mut state = long_list();
+    let view = &mut state.accounts[0];
+    view.mail.table.sort = Some(toolkit::datatable::Sort::new(column, order));
+    view.mail.table.page = 1;
+    view.mail.table.selection.clear();
+    view.mail.table.focus = None;
+    state
+}
+
+/// Page 2 by Subject, A to Z.
+#[test]
+fn mail_list_paged_studio_light() {
+    snapshot(
+        "mail_list_paged_studio_light",
+        sorted_page("subject", toolkit::datatable::Order::Ascending),
+        &theme(Scheme::Studio, Mode::Light),
+    );
+}
+
+/// Page 2 by From, Z to A.
+#[test]
+fn mail_list_paged_studio_dark() {
+    snapshot(
+        "mail_list_paged_studio_dark",
+        sorted_page("from", toolkit::datatable::Order::Descending),
         &theme(Scheme::Studio, Mode::Dark),
     );
 }

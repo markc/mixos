@@ -771,11 +771,13 @@ impl Shell {
                 account,
                 ticket,
                 mailbox,
+                sort,
+                position,
                 limit,
             } => {
                 if let Some((tag, client)) = self.client(&account) {
                     self.spawn(async move {
-                        let page = client.email_page(&mailbox, 0, limit).await;
+                        let page = client.email_page(&mailbox, sort, position, limit).await;
                         Event::Account(tag, Done::Page(ticket, page))
                     });
                 }

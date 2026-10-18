@@ -24,7 +24,8 @@ use crate::state::{
 pub const LIST: &str = "emails";
 
 /// The centre pane's email list: the selected mailbox's page in a data
-/// table, one compact row per email (Subject, From, Date), newest first.
+/// table, one compact row per email (Subject, From, Date), newest first
+/// until a header picks another sort, with the pager under it.
 /// A click, Ctrl+click, Shift+click, Ctrl+A or Up and Down select rows
 /// without opening them; Enter or a double-click opens the keyboard's row.
 pub fn list(
@@ -63,9 +64,10 @@ pub fn list(
             now: clock(ui.ctx()),
         };
         let empty = if view.mail.busy { "loading" } else { "empty" };
-        // Under the rows while several are selected: how many, and, with
-        // the whole page selected, "Select all N in folder" (N the
-        // mailbox's total), then that they all are.
+        // The pager under the rows: "101–200 of 2866", First, Previous,
+        // Next and Last. After the range while several are selected: how
+        // many, and, with the whole page selected, "Select all N in
+        // folder" (N the query's total), then that they all are.
         let total = grouped(view.mail.total);
         let everything = Everything {
             link: crate::label_with("select-all-in-folder", &[("count", &total)]),
@@ -74,10 +76,10 @@ pub fn list(
                 .everything
                 .then(|| crate::label_with("all-selected", &[("count", &total)])),
         };
-        // One page, as the server sent it: no pager, no header sort.
+        // One page of the server's query: a header click or the pager asks
+        // the server for another (the state answers the events).
         let fired = DataTable::new(LIST, &columns, &table)
             .strings(strings)
-            .pager(false)
             .selection(SelectionMode::Multi)
             .total(Total::Known(view.mail.total))
             .select_everything(everything)

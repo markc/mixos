@@ -218,12 +218,54 @@ impl Email {
 }
 
 /// A mailbox listing page: the ids' emails and the full match count behind
-/// them. `position` counts from the newest under the default sort.
+/// them. `position` counts from the first email under the query's sort.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct EmailPage {
     pub emails: Vec<Email>,
     /// The whole mailbox's match count, not just this page's.
     pub total: u64,
+}
+
+/// The property an email list is ordered by: the RFC 8621 sort properties
+/// the client asks for. maild accepts exactly these three (one comparator,
+/// no collation); `size` is standard but maild refuses it, so it is not
+/// offered.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum SortBy {
+    #[default]
+    ReceivedAt,
+    Subject,
+    From,
+}
+
+impl SortBy {
+    /// The JMAP property name.
+    pub fn property(self) -> &'static str {
+        match self {
+            SortBy::ReceivedAt => "receivedAt",
+            SortBy::Subject => "subject",
+            SortBy::From => "from",
+        }
+    }
+}
+
+/// An Email/query sort: one property, one direction. The default is the
+/// server's own, newest first.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct EmailSort {
+    pub by: SortBy,
+    pub ascending: bool,
+}
+
+impl EmailSort {
+    pub fn new(by: SortBy, ascending: bool) -> Self {
+        Self { by, ascending }
+    }
+
+    /// The `sort` argument: a single comparator, no collation.
+    fn comparators(self) -> Value {
+        json!([{ "property": self.by.property(), "isAscending": self.ascending }])
+    }
 }
 
 impl Client {
@@ -240,27 +282,23 @@ impl Client {
         Ok(parse_get::<Mailbox>(data)?.0)
     }
 
-    /// One page of a mailbox's email, newest first, with the full count.
-    /// A thin wrapper over [`Client::email_query`] with no text filter.
+    /// One page of a mailbox's email in `sort` order, starting `position`
+    /// emails in, with the full count. A thin wrapper over
+    /// [`Client::email_query_sorted`] with no text filter.
     pub async fn email_page(
         &self,
         mailbox_id: &str,
-        position: u32,
+        sort: EmailSort,
+        position: u64,
         limit: u32,
     ) -> Result<EmailPage> {
-        self.email_query(
-            Some(mailbox_id),
-            None,
-            u64::from(position),
-            u64::from(limit),
-        )
-        .await
+        self.email_query_sorted(Some(mailbox_id), None, sort, position, u64::from(limit))
+            .await
     }
 
     /// One page of the email matching an optional mailbox and an optional
     /// full-text query, newest first, with the full match count. `None` for
-    /// both lists the whole account. One round trip: `Email/query` chains
-    /// into `Email/get` through a ResultReference.
+    /// both lists the whole account.
     pub async fn email_query(
         &self,
         mailbox: Option<&str>,
@@ -268,9 +306,24 @@ impl Client {
         position: u64,
         limit: u64,
     ) -> Result<EmailPage> {
+        self.email_query_sorted(mailbox, text, EmailSort::default(), position, limit)
+            .await
+    }
+
+    /// [`Client::email_query`] in `sort` order. One round trip:
+    /// `Email/query` chains into `Email/get` through a ResultReference.
+    pub async fn email_query_sorted(
+        &self,
+        mailbox: Option<&str>,
+        text: Option<&str>,
+        sort: EmailSort,
+        position: u64,
+        limit: u64,
+    ) -> Result<EmailPage> {
         let calls = email_query_calls(
             self.account_id(),
             email_filter(mailbox, text),
+            sort,
             position,
             limit,
         );
@@ -480,14 +533,20 @@ fn email_filter(mailbox: Option<&str>, text: Option<&str>) -> Value {
 
 /// The Email/query and Email/get pair behind [`Client::email_query`]: one
 /// round trip, the get chained to the query's ids.
-fn email_query_calls(account_id: &str, filter: Value, position: u64, limit: u64) -> Vec<Call> {
+fn email_query_calls(
+    account_id: &str,
+    filter: Value,
+    sort: EmailSort,
+    position: u64,
+    limit: u64,
+) -> Vec<Call> {
     vec![
         Call(
             "Email/query".into(),
             json!({
                 "accountId": account_id,
                 "filter": filter,
-                "sort": [{ "property": "receivedAt", "isAscending": false }],
+                "sort": sort.comparators(),
                 "position": position,
                 "limit": limit.clamp(1, 500),
                 "calculateTotal": true,
@@ -669,7 +728,13 @@ mod tests {
 
     #[test]
     fn the_query_pair_is_one_request_with_the_filter_applied() {
-        let calls = email_query_calls("A1", email_filter(Some("M1"), Some("  invoice ")), 20, 500);
+        let calls = email_query_calls(
+            "A1",
+            email_filter(Some("M1"), Some("  invoice ")),
+            EmailSort::default(),
+            20,
+            500,
+        );
         assert_eq!(
             crate::client::request_body(&["urn:ietf:params:jmap:mail".into()], &calls),
             json!({
@@ -696,13 +761,53 @@ mod tests {
 
     #[test]
     fn no_mailbox_and_no_text_matches_the_whole_account_at_a_clamped_limit() {
-        let calls = email_query_calls("A1", email_filter(None, Some("   ")), 0, 0);
+        let sort = EmailSort::default();
+        let calls = email_query_calls("A1", email_filter(None, Some("   ")), sort, 0, 0);
         let body = serde_json::to_value(&calls).unwrap();
         assert_eq!(body[0][1]["filter"], json!({}));
         assert_eq!(body[0][1]["limit"], json!(1));
-        let calls = email_query_calls("A1", email_filter(None, None), 0, 9_000);
+        let calls = email_query_calls("A1", email_filter(None, None), sort, 0, 9_000);
         let body = serde_json::to_value(&calls).unwrap();
         assert_eq!(body[0][1]["limit"], json!(500));
+    }
+
+    #[test]
+    fn each_sort_is_one_comparator_at_the_page_position() {
+        // A mailbox page: subject, from and receivedAt, both ways, at the
+        // page's position; never a collation or a second comparator.
+        for (by, property) in [
+            (SortBy::Subject, "subject"),
+            (SortBy::From, "from"),
+            (SortBy::ReceivedAt, "receivedAt"),
+        ] {
+            for ascending in [true, false] {
+                let calls = email_query_calls(
+                    "A1",
+                    email_filter(Some("M1"), None),
+                    EmailSort::new(by, ascending),
+                    200,
+                    100,
+                );
+                let body =
+                    crate::client::request_body(&["urn:ietf:params:jmap:mail".into()], &calls);
+                assert_eq!(
+                    body["methodCalls"][0],
+                    json!(["Email/query", {
+                        "accountId": "A1",
+                        "filter": { "inMailbox": "M1" },
+                        "sort": [{ "property": property, "isAscending": ascending }],
+                        "position": 200,
+                        "limit": 100,
+                        "calculateTotal": true
+                    }, "q0"])
+                );
+            }
+        }
+        // The default is the server's own: newest first.
+        assert_eq!(
+            EmailSort::default(),
+            EmailSort::new(SortBy::ReceivedAt, false)
+        );
     }
 
     #[test]
