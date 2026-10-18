@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! A synthetic `InputBackend` that lets touch reuse the whole pointer pipeline.
 //!
 //! Touchscreen parity (for now) mirrors the trackpad by driving the pointer: the

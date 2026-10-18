@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! GbmDevice from fd.
 //!
 //! Architecture note: GBM is the GL-path allocator. The vulkan path bypasses

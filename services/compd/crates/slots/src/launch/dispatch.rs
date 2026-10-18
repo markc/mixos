@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The off-thread launch worker. Mirrors the sampler: a std mpsc carries
 //! requests to a dedicated thread; each `LaunchOutcome` is posted back to the
 //! calloop loop via a calloop channel `Sender`, so the general `Executed`

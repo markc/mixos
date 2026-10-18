@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Process-global default background-shader selection, seeded once from the user
 //! preference at startup. Lives behind an `RwLock` (not the `Meta` mutex) so the
 //! per-world read path is cheap and a settings reload can reseed it.

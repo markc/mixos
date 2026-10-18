@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 // Developer logging: bring error!/warn!/info!/trace!/abort! into scope.
 
 // Buffer-time table sync: diffs a collection slot's records against a per-table

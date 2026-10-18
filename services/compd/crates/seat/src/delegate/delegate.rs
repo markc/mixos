@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 use smithay::backend::input::{InputBackend, InputEvent};
 use world::state::Loop;
 

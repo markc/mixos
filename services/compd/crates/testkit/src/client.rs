@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! [`TestClient`]: an in-process `wayland-client` connection.
 //!
 //! Never blocks: [`TestClient::read`] reads only what is already on the socket,

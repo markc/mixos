@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 use crate::state::fractional_base;
 use crate::state::fractional_base::{Published, emit_to_surfaces};
 use smithay::reexports::wayland_server::Resource;

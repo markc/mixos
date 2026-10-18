@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 use crate::pointer::input::constraint::apply_pointer_constraint;
 use crate::pointer::input::extent;
 use crate::pointer::input::native_motion;

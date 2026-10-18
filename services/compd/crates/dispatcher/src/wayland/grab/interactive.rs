@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The interactive move/resize grab (xdg `move` / `resize`).
 //!
 //! World-free like every handler here: the grab only reports where the pointer

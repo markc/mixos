@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 use crate::state::deferred::deferred::Deferred;
 /// Every redraw names its reason; re-exported so the
 /// crates above reach it through the wrappers' own crate.

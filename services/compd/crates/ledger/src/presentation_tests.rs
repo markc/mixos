@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 // The fake feedback names `()` as its output type and frames carry plain
 // kind bits. The two RefusedContent tests are at the end.
 

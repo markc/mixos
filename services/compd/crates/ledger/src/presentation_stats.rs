@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 // serde is always on; `SeatKind` comes from surfaces; this crate does no
 // logging of its own (the once-only flags are kept and readable, so the
 // engine can log them).

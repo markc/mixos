@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Loader-side wiring for the launch executor: `install` builds the Executor, stores it
 //! as driver data, registers its calloop sources (the outcome receiver and the reaper),
 //! and names the destination every detached spawn in the process sends its child's exit

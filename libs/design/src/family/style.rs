@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The style family: how application chrome is shaped, as one closed set of
 //! typed tokens. The chrome family says which colours the chrome is; a style
 //! says which forms it takes (tab strips or cards, checkboxes or switches,

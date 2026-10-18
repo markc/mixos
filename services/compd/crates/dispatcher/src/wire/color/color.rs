@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 use smithay::reexports::wayland_protocols::wp::color_management::v1::server::{
     wp_color_manager_v1::{Feature, Primaries, RenderIntent, TransferFunction, WpColorManagerV1},
     wp_image_description_v1::WpImageDescriptionV1,

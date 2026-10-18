@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! No input, Wayland traffic, vblank or watchdog is available to help these
 //! requests. Timeouts only bound test failure; the loop must wake on its source.
 

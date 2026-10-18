@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Touchpad swipe / pinch arms of the main seat delegate.
 //!
 //! Split out of `delegate.main` so that stays a flat router: these arms carry real

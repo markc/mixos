@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 use crate::display::output::backend::Backend;
 use crate::display::output::output;
 use smithay::backend::input::{InputBackend, InputEvent};

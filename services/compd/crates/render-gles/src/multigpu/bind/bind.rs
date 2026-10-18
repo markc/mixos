@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The gles implementation of the contract's display-bind + import
 //! capabilities: legacy wl_drm bind (GLES-only, no Vulkan counterpart),
 //! dmabuf format negotiation, client dmabuf import/validation, early import.

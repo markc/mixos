@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Hot corners on the compd host.
 //!
 //! [`Corners`] is the engine-free half: policy's detector and press

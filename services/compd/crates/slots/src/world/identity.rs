@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 // TEMPORARY — this should move up: the built-in worlds belong to the world
 // manager, and only the persist loader's need to name them without depending back
 // on it keeps the constants down here for now.

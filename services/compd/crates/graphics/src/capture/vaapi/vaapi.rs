@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! VAAPI hardware H.264 encoder (in-process libav / rusty_ffmpeg).
 //!
 //! Zero-copy: the capture entry **dmabuf** is wrapped as a persistent

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 use crate::wire::color::color::{
     ImageDescData, ParamsState, SurfaceColor, send_ready, store_surface_color, wenum,
 };

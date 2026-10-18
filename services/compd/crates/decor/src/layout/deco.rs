@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The decoration model: one `DecoTheme` fully describes how compd lays out
 //! and draws a window's server-side chrome.
 //!

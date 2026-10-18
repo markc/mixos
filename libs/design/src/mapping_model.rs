@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 use crate::colour_model::{FocusRingProvenance, LinearRgba, ResolvedPair};
 use crate::recipe::DerivationRecipe;
 use crate::{ButtonPart, ButtonSize, ButtonVariant, InteractionState};

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The native (KMS/DRM) backend: device selection, display and renderer
 //! assembly, the per-output render loop with its watchdogs, and the
 //! session, input and vblank wiring into the event loop.

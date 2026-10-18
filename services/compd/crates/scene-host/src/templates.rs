@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! List row templates, instantiated once per accepted revision.
 //!
 //! Ingress runs it as a preflight before a revision commits, so a document

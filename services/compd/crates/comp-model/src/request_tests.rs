@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 // The region, agent-control and agent-seat argument parsers, the engine-free
 // request tests, and the classify, error_code and key-order tests at the end.
 // The long-admission test reads `LongOp::admission_timeout` directly.

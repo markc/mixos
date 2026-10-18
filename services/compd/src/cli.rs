@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Command line: backend selection plus the flags the desktop gates pass.
 //!
 //! The desktop gates launch the compositor as

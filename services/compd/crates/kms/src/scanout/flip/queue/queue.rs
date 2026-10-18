@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! queue_frame pacing with the crash-first error policy.
 //!
 //! Policy (decided, replacing the original's carried "This is temporary"

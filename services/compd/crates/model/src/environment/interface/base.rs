@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! UI triple buffering: the ring the UI and bevy surfaces publish through.
 //!
 //! Both subsystems already render on their own `wgpu::Device`, but into a SINGLE

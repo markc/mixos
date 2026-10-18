@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Pen hit-testing — the SAME `surface_under_filtered` the pointer/touch paths use,
 //! so canvas-vs-client classification stays consistent across all input types.
 

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The Mix Scenes surfaces compd draws itself, as comp.props shows them.
 //! Quoin's panels and dialog are layer surfaces, so `surfaces.*`, `stack`
 //! and `focus.keyboard` carry them; compd's scene host draws its own

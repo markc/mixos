@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The unified executor: self-spawn for a reliable PID, then apply the
 //! configured backend. Backend- and dispatch-agnostic — runs either inline on
 //! the calloop thread or on the launch worker.

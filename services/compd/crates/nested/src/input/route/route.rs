@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Winit event dispatch -> compositor lifecycle. The Focus(false) modifier
 //! hack now routes through the shared `seat::modifier::clear` entry
 //! (the same problem exists on native TTY switch).

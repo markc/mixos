@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! scenegraph: the renderer-agnostic scene model. `node` is the draw currency
 //! (`DrawNode`, lowered to a render element in one place), `scene` the element
 //! types the backends composite, `display` the output and backend records,

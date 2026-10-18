@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Geometry for the viewport tree: turn a `Viewport` tree + an output rect into
 //! the physical rect of every leaf slot (one render region per leaf) and the
 //! separator bars between adjacent split slots.

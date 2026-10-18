@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Post-determined GPU dmabuf formats, per device kind, for the developer tool's
 //! "GPU formats" panel. Each publisher records the format+modifier ACTUALLY in use
 //! the moment it's finalized (e.g. `bo.modifier()` after allocation); the stats

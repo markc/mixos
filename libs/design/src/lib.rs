@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The MixOS design-token system: the closed family schemas, the resolved
 //! design model, and the compiler that turns a strict-data design source into
 //! a resolved design for one scheme, mode and contrast.

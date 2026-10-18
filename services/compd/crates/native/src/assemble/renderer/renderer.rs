@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Renderer-side assembly: allocator/exporter -> GpuManager -> render formats
 //! (Law-7 modifier filter when gated) -> hosted DrmOutputManager -> pipe
 //! bring-up over the mode fallback chain -> gpu binding + contract.

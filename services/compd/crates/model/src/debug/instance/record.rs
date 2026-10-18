@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! compositor.developer structured logging — **frontend** (tracing-free).
 //!
 //! Callsites use the level macros (`error!`/`warn!`/`info!`/`trace!`) plus `abort!`

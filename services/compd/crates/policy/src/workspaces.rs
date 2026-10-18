@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 // The primitives mutate the model (this state plus surfaces's workspace
 // stamps) and return the engine's side effects as an `Effect` list instead
 // of performing them. Override-redirect children are found by the

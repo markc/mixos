@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 use std::os::unix::raw::dev_t;
 
 use crate::display::backend::backend::Backend;

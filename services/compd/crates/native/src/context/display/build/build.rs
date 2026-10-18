@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Build a `NativeDrmOutput` for an arbitrary connected connector at runtime,
 //! REUSING the existing smithay `Output`, for the live monitor switch. The active
 //! output keeps its own CRTC (passed as `busy`) so a revert is a clean swap-back

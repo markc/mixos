@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! ext-session-lock-v1 (integration batch C).
 //!
 //! What the protocol must decide on the spot is decided here, in the

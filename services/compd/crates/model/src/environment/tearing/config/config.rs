@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The two policy sections and the live global.
 //!
 //! This crate, `tearing.select` and `tearing.rate` are the persisted SHAPE of the

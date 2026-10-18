@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Content sources: compositor-owned content measured like a window.
 //!
 //! compd's sources are its own UI surfaces (the Mix Scenes host registers

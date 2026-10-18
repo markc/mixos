@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Video encoding via an ffmpeg subprocess.
 //!
 //! We pipe raw BGRA frames to `ffmpeg`'s stdin and let it mux to mp4 (codec

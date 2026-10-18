@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Call-site-agnostic control of **media playback transport** (play / pause /
 //! next / …) for whatever application is currently playing — Spotify, a
 //! browser, mpv, a music player, etc. — via the freedesktop **MPRIS2** D-Bus

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The wgpu context compositor-owned UI renders through: wgpu's **GL backend**
 //! over the compositor's OWN EGL context.
 //!

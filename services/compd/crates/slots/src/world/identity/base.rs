@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 use uuid::Uuid;
 
 /// Fixed identities for the static worlds, stable across restarts so their saved

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Surface lifecycle events for the comp surface registry.
 //!
 //! The registry (`surfaces::Registry<SurfaceHandle>`) lives on the host

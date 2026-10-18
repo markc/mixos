@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `xdg_toplevel_drag_v1` — drag a toplevel along with a drag-and-drop.
 //!
 //! This is what browsers bind to detach a tab into its own window: the client

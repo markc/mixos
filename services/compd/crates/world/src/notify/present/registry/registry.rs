@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The presenter's storage: its own UI registry, the message on screen, and
 //! one pill per output showing it.
 //!

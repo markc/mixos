@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Typed GPU preference: ranking + exclusion. A self-contained value type
 //! (no configuration system). Population mechanism is out of scope; `get()`
 //! returns the default (empty) preference.

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The native `comp` Bus service.
 //!
 //! comp-service owns the transport: a worker thread ("compd-port") with its own

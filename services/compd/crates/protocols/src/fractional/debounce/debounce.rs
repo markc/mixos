@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 use crate::fractional::config::{DebounceCycle, FractionalScaleConfig};
 use std::time::Instant;
 

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Snapshot diffing — the hotplug comparison seam. Real bodies (the math is
 //! cheap); the *reaction* belongs to `native.plugin`/`native.device`.
 

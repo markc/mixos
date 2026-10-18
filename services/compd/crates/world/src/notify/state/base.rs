@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The notification queue: the kernel-hosted `NotifySystem`'s slot, and the
 //! channel that feeds it.
 //!

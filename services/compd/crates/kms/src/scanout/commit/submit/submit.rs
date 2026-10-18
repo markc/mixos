@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! A real implementation with working mechanism bodies, compiled under the
 //! `native-scanout` cargo feature and exercised by the assembly self-test
 //! (TEST_ONLY atomic commits, kernel-validated on the real device).

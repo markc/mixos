@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `SceneDispatch` — the per-renderer dispatch seam that keeps scene elements
 //! renderer-agnostic while letting each renderer supply its own implementation.
 //!

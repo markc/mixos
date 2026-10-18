@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 // The effect vocabulary the policy decisions return. Each variant names a
 // step the engine performs; the doc says which.
 

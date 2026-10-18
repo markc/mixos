@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! New-window placement inside the usable area: a new toplevel is placed
 //! inside the usable output rectangle, so a panel's exclusive zone never
 //! covers a window that opens.

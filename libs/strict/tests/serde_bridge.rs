@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The serde bridge: typed structs in and out of strict data.
 
 use std::collections::BTreeMap;

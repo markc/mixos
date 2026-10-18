@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Edge-swipe recognizer. A 2-finger swipe that BEGINS at a screen edge is
 //! swallowed by the compositor — it never reaches the camera or a client — and
 //! dispatched as a directional `(edge, angle)` event. The recognizer is general;

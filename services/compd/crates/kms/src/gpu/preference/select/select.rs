@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Preference-driven primary selection with a fallback chain.
 //! Consumes ranked plain values (Law 3): exclusion first, then preference
 //! order, then the provided default heuristic result, then first survivor.

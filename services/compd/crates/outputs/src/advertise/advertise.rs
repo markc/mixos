@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The `zwp_linux_dmabuf_v1` advertisement — what this compositor tells clients
 //! it can import.
 //!

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Touch session state machine. Routes every touch event by the session's role,
 //! decided at the first finger down:
 //!   * finger on a client surface  → forward to `wl_touch` (native multi-touch),

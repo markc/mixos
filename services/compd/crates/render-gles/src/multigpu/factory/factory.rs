@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! GpuManager<GbmGlesBackend> construction + node addition. Owns the gles
 //! multi-GPU type aliases (the only place the generic signatures are spelled
 //! out on the gles side).

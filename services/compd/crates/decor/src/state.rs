@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Per-window chrome state, and the one rule that keeps chrome idle: its
 //! elements change (a new commit, so damage, so a repaint) ONLY when this state
 //! changes. Nothing here ticks.

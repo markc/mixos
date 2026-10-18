@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! testkit-screenshot: a minimal wlr-screencopy client, for compd's pixel gates.
 //!
 //!   testkit-screenshot OUT.ppm [--region X,Y,W,H] [--with-damage] [--cursor]

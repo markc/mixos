@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `UiSurface`: one GL texture the compositor's renderer owns, wrapped as a
 //! `wgpu::Texture` UI renders into.
 //!

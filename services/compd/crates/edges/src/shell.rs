@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Four-panel shell aggregation and clockwise corner mapping.
 //!
 //! This model deliberately consumes semantic [`CornerEvent`] values rather

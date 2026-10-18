@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Opt-in (Law 7): next-presentation-time estimation, VRR-agnostic (VRR
 //! control left the project; the clock treats the refresh interval as fixed).
 //! DOUBLE-GATED: the `timing-predict` cargo feature +

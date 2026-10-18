@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Process-wide slots: the `define_channel!`, `define_buffer!`,
 //! `define_storage!` and `define_document!` macros, persisted worlds and
 //! documents, input routing, child-process launch and systemd readiness.

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 use crate::host::space::base::{SPACE, SpaceHost};
 use protocols::space::state::SpaceState;
 use slots::storage::slot::base::Storage;

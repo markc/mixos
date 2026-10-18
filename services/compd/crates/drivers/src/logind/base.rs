@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! logind (systemd-login1) client for system power actions the lid policy needs.
 //! Owns a blocking D-Bus system connection; lives in `Orchestrator.kernel`
 //! storage by token so the kernel request-drain can reach it (kernel → rim dep

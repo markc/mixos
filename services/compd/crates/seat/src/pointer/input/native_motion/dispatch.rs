@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 use dispatcher::state::state::Dispatch;
 use protocols::window::find::find;
 use smithay::input::pointer::{MotionEvent, PointerHandle, RelativeMotionEvent};

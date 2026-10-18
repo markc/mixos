@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `spawn()` / `status()` / `output()` — every spawn goes through one of them.
 //!
 //! [`resolve`] is what these add over `Command`'s own methods: a launch plan naming a

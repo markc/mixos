@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Where the pointer is, what it is holding, and when it last changed.
 //!
 //! This lives in the SEAT because that is what it is: one pointer, per seat,

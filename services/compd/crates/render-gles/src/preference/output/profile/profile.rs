@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Typed per-monitor preference keyed by EDID identity. Populated from the live
 //! preferences document (`preferences.json`) via [`get`]; the kernel keeps its own
 //! self-contained value type so the hardware path never depends on the on-disk serde

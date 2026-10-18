@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The ONLY place `(fourcc, modifier)` sets are combined.
 //!
 //! Everything here was previously spread across five call sites that did not agree

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Native XWayland: the X server and the X11 window manager that drives it.
 //!
 //! Two connections, two event sources (see smithay's `xwayland` module). The

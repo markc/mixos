@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Per-window **expected size** — the size the COMPOSITOR has decided for a window and
 //! enforces. The policy is that windows never resize themselves: the compositor decides the
 //! size at map and on resize/tile, and any client content of a different size is letterboxed

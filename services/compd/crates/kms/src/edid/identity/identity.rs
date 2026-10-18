@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Stable monitor identity for preferences + PhysicalProperties
 //! (replacing the hardcoded "Native"/"Monitor"/"Unknown").
 

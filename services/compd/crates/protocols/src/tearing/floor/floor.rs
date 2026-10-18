@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The user's exclusivity floor, projected into the runtime.
 //!
 //! `Config::floor` is a `Rate`, and resolving a `Rate::Multiplier` needs the

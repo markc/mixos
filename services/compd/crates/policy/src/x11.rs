@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! X11 window policy as pure logic.
 //!
 //! - [`decoration_mode`]: a managed X11 toplevel wears the compositor's

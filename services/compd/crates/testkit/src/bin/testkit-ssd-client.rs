@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! testkit-ssd-client: a minimal xdg toplevel that asks for server-side
 //! decorations, for compd's chrome pixel gate.
 //!

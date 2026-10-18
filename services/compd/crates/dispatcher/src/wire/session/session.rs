@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Session management — durable per-toplevel identity.
 //!
 //! Hand-rolled like `color_impls` / `tablet_impls`: smithay has no module for

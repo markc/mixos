@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Internal capture entry — owns the dmabuf and texture resources.
 
 use std::sync::Arc;

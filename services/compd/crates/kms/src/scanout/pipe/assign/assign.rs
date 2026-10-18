@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Connector <-> pipe mapping. 1:1 today; the multi-head seam.
 
 use smithay::reexports::drm::control::{connector, crtc};

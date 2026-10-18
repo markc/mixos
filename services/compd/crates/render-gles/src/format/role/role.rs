@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! What a capability set is an answer TO.
 //!
 //! A bare `FormatSet` does not say which question it answers, and the tree had

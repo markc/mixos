@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 use crate::state::state::DispatchWire;
 use protocols::popup::state::PopupState;
 use smithay::desktop::PopupManager;

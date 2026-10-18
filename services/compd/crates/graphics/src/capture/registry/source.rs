@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! What to capture: a full output framebuffer, or a sub-region of one.
 
 use smithay::utils::{Physical, Rectangle};

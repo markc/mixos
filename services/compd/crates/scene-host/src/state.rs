@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Shared Quoin state: <var>/quoin.state.mix, v3 connector keys.
 //! v1 pinned=true migrates to docked; v1/v2's `default` is claimed once.
 //! Invalid/unreadable state disables writing rather than destroying it.

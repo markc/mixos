@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Writing a [`Value`] back out as strict-data text.
 //!
 //! Two layouts share one escaping rule. The compact form is a single line

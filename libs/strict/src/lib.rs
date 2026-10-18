@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Strict data: the MixOS configuration and data format.
 //!
 //! A `*.conf.mix` or `*.data.mix` file is a JSON-shaped tree written with

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! One-shot Bus file captures, serviced on the compositor's render thread.
 
 use crate::{Readback, Source, source_row, start_readback};

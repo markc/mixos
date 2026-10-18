@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Tokens of the binding language.
 //!
 //! The token set is Mix's expression surface: the same number spellings,

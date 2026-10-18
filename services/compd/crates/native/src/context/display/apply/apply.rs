@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Drains the rim-issued `DisplayRequest` (set by the lid policy) and performs
 //! the kernel-side effect: logind suspend, DPMS power, or active-output switch.
 //! Called from the libinput loop source so it runs regardless of render/DPMS

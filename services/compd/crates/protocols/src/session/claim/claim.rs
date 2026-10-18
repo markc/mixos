@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Bootstrap correlation: which session id do we mint for the client that a
 //! placeholder just launched?
 //!

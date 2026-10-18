@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Runtime parse/format of a `KeyCombo` to/from a human string like
 //! `"Super+Shift+K"` (used by keybinding.json + the settings Keys tab).
 //! Names match the `Key` enum variant (Debug) names exactly.

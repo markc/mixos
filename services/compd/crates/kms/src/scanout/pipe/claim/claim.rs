@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Pipe (CRTC) claim policy: current-encoder walk, then a `possible_crtcs`-routable
 //! CRTC, then crtcs[0].
 //! (Ex wire.rs `new()` step 6, the CRTC half.)

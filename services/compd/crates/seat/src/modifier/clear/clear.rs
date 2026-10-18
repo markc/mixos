@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Clear held key state on a focus/session boundary.
 //!
 //! Extracted from the winit backend's `Focus(false)` handler. The same problem

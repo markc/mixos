@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! testkit-layer-client: a minimal wlr-layer-shell client, for compd's panel-holder
 //! gates.
 //!

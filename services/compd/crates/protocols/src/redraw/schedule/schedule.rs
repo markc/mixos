@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Per-pipe redraw scheduling: what each output has been asked to render, what
 //! it has rendered, and whether a flip of its own is in flight.
 //!

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Off-thread NVENC encoding.
 //!
 //! The NVENC path reads back BGRA frames from the GPU on the render thread, but

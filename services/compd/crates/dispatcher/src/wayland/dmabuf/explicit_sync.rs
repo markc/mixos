@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Explicit-sync health (integration F6).
 //!
 //! The explicit-sync path latches faulted for good on any failure that

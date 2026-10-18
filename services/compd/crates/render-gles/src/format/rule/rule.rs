@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The rules every format decision obeys, stated once.
 //!
 //! Modifier classification and ranking (moved verbatim from the former

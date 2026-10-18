@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 use crate::window::interface::record::window::LoopWindow;
 use dispatcher::wayland::xdg::activation::dispatch::wire::ActivationDetails;
 use dispatcher::wire::trait_::wire_trait::ActivationOrigin;

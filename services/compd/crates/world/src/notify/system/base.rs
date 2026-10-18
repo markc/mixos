@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `NotifySystem` — the notification pill as a KERNEL system.
 //!
 //! Hosted by `WorldManager::kernel`, not by any world: it ticks every frame

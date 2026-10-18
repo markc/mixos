@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! testkit-dnd-source: a minimal xdg toplevel that starts a Wayland
 //! drag-and-drop on a left press, for compd's real-client checklist.
 //!

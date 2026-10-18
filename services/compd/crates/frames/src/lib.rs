@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! frames: the per-frame path shared by the backends. `draw` plans a frame as
 //! an ordered list of passes with tap points and presents it (frame callbacks,
 //! presentation feedback, the software cursor); `scene` assembles the render

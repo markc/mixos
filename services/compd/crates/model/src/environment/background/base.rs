@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Background triple buffering: the off-thread background worker's settings.
 //!
 //! The shader renders on its own thread and `VkDevice` into three rotating

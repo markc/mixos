@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Raw-DRM CONNECTOR PROPERTY pass: `Colorspace`, `HDR_OUTPUT_METADATA` and
 //! `max bpc`. smithay's `DrmCompositor` owns the per-frame page-flip commit but
 //! exposes none of these, so we set them ourselves; they are sticky atomic state

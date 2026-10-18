@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Enumerate every CONNECTED connector on the driven DRM device into the
 //! primitive `OutputsSnapshot` the settings Display panel reads — so the UI can
 //! offer a preferred-monitor picker and list each monitor's advertised modes,

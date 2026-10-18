@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Device -> Connector -> Pipe -> Output relationships, collection-shaped
 //! from day one (single-device today is an instance count, not a shape),
 //! plus the per-device connector snapshot the hotplug diff compares against.

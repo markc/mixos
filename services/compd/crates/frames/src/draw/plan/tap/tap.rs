@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Tap identity + subscription registry.
 //!
 //! A tap is a named point between frame passes where the rendered state may be

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! testkit-presentation-probe: a minimal SHM client for the public
 //! `wp_presentation` contract.
 //!

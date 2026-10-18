@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 // The feedback ledger, the content-source ledger, the renderer report types
 // and the frame_trace discard codes, over engine-neutral types:
 // `PresentedFrame` is generic over the engine's output type, `Refresh` and

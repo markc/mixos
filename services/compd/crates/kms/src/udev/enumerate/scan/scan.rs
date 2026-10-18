@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! UdevBackend device-list snapshot. Detection only — never reaction.
 //! Failure policy: no udev means no devices means no compositor — panic.
 

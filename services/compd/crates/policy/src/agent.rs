@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 // Every Smithay query (grabs, bound devices, focus, popup provenance,
 // mapped trees) is a field of a facts struct the engine fills in; the
 // sequence run is a state machine the engine drives (timers, the event-loop

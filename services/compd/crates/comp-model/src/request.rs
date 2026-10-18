@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 // The request types (without the transport's oneshot-carrying `Port*Request`
 // structs), the argument parsers and the dispatcher's routing order, lifted
 // into [`classify`]. `SeatKind` comes from surfaces; the region cleanup

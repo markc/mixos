@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `compd.truth`: compd's own view, for the Bus-truth
 //! comparator. Read straight from `CompState` and the engine, deliberately
 //! NOT through [`crate::project`], so a projection bug cannot agree with

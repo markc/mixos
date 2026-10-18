@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Free-CRTC claim: pick a CRTC the connector can drive that is NOT already in
 //! use by another pipe. Used to bring up a second output during a live monitor
 //! switch (the active output keeps its CRTC for a clean revert). Sibling of

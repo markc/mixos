@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Opt-in (Law 7, DOUBLE-GATED by the `mode-synthesize` cargo feature and
 //! `SafetyEnable::mode_synthesize`): compute modes the monitor does not
 //! advertise — CVT-RB timing generation, xorg-style modeline parsing, and

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `xdg_wm_dialog_v1` — the only way a client can say "this toplevel is a
 //! dialog", and specifically a *modal* one.
 //!

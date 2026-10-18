@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 // The camera no longer has its own world-storage slot: it lives on a viewport
 // `Slot` (see `crate::viewport::state`). The rim reaches the focused
 // camera via the `VIEWPORTS` slot's active-slot accessors.

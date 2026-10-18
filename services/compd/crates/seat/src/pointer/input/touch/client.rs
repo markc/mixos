@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `wl_touch` forwarding. When the first finger of a sequence lands on a client
 //! surface (window or layer), the whole sequence is delivered to that client as
 //! native multi-touch via smithay's `TouchHandle`. Compositor UI (UI) and empty

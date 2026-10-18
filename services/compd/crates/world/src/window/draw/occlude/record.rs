@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The occlusion props, reported from the renderer's draw-time cull.
 //!
 //! compd reports what its renderer actually did, not a separate

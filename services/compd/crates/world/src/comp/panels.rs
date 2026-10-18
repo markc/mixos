@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Quoin's panel holders on the compd host.
 //!
 //! policy `panel` is the per-edge state machine; this is what the host

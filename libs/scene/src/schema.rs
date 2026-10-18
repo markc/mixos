@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The widget families and their ports: names, types, defaults, enum
 //! values and minimums, plus the value checks every port goes through.
 

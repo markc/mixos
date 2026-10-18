@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! frame_submitted pop + presented() with the compositor's Kind flags.
 
 use crate::scanout::surface::output::output::NativeDrmOutput;

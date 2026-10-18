@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The delegation host (Law 6): owns smithay's DrmOutputManager / DrmOutput
 //! behind our typing. Sibling crates define their interfaces as if the pipe
 //! were ours; the hosted objects carry the mechanism, and the (deferred)

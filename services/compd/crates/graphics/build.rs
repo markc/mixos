@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Generate libav (ffmpeg 8.x) bindings against the system headers and link the
 //! ffmpeg dev libraries. Hand-rolled (not ffmpeg-next / rusty_ffmpeg) because
 //! ffmpeg 8.1 is newer than those crates support, and we need full struct field

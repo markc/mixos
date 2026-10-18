@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Optimized post-capture re-encode via an ffmpeg subprocess.
 //!
 //! The live capture writes a near-lossless hardware-encoded temp (huge, instant,

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `wp_tearing_control_v1` — the client-side pacer tag.
 //!
 //! The protocol carries NO synchronization of its own; `set_presentation_hint`

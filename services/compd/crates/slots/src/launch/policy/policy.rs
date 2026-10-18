@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The launch toggles. All compile-time `const`, so the branches not selected drop out
 //! of the build entirely.
 

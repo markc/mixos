@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Output-mode driver channel between the rim (settings window, holds `&mut Loop`)
 //! and the kernel (owns the live `NativeDrmOutput` inside its calloop sources).
 //! The rim cannot touch the DRM output directly, so — like the lid driver — it

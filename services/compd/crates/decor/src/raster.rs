@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The chrome's pixels, rasterised on the CPU into premultiplied images: the
 //! titlebar band (rounded top corners, fill, divider, border, the caption
 //! buttons and their glyphs, the title) and the shadow's 9-slice tile.

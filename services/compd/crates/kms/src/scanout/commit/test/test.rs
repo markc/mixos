@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! TEST_ONLY validation with a mode fallback chain — the home of the
 //! try-modes-in-order pseudocode carried in the original wire.rs comments.
 //! Seam: under delegation the validating commit happens inside use_mode /

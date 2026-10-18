@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Fit-to-bounds (letterbox) computation — shared by the window render path
 //! (`window.draw.frame::scene`) and the input hit-test path (`surface.interface.base::hit`)
 //! so both agree on how a window whose committed content differs from its recognized bounds

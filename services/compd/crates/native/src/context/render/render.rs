@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The per-pipe render context (moved from udev.draw/draw.context). Owns OUR
 //! names for the hosted pipe objects via `scanout.surface/surface.output`,
 //! the tap subscriptions the frame executor consults (Law 5: taps fire only

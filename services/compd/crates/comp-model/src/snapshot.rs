@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 // The projections from the engine's state (`snapshot`, `read_snapshot`,
 // `project_*`) stay with the engine. The full-tree cache is a std `OnceLock`,
 // so the read verbs are synchronous: the transport runs them off the

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 /// Per-seat touchpad swipe accumulator. A libinput swipe spans Begin→Update*→End
 /// events across separate input dispatches, so the running delta + finger count
 /// live here (one field on the Orchestrator). World-agnostic by design: it holds

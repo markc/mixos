@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Real interactive move/resize grabs: a client
 //! names the button serial it was given in `xdg_toplevel.move` / `.resize`,
 //! the grab starts on the primary seat and reports the pointer's travel;

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 use slots::channel::router::base::ChannelRouter;
 use slots::channel::token::base::{Channel, ChannelTx};
 use std::any::Any;

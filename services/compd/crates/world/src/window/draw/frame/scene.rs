@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Per-window scene assembly.
 //!
 //! We do **not** use smithay's `Window::render_elements()` for the toplevel. We render the

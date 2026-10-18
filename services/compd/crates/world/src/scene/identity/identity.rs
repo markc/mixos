@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Stable element identity for elements rebuilt every frame.
 //!
 //! smithay keys `OutputDamageTracker`'s per-element history on [`Id`]. A fresh

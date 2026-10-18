@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Shared anti-aliasing / graphics config for the world anti-aliasing.
 //!
 //! One serde struct ([`GraphicsAaConfig`]) persisted in `preferences.json` and

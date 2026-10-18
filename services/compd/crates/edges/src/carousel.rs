@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Name-addressed page registry for one edge panel carousel.
 //!
 //! A carousel holds one edge's ordered sub-panel names. Order comes from the

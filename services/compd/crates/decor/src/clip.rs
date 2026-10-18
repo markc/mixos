@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The client corner clip (phase 2): a decorated window's content drawn through
 //! a texture program that cuts it to the frame's rounded rectangle, so the
 //! window is rounded all the way round, not only along the titlebar.

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The seat's side of the chrome: hover, press and release, kept per
 //! compositor thread. The pointer handlers call in here with what the hit test
 //! found ([`crate::window::hit`]) and act on what comes back: a redraw, a

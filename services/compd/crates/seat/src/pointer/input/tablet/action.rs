@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Executes a resolved [`PenAction`] for a pad/stylus button **edge**. Continuous
 //! controls (the dial) resolve their own action at the source; here we act only on a
 //! discrete press/release. `Passthrough` is handled by the caller (it forwards the

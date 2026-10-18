@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The output-presence lifecycle event, fired exactly once per real output
 //! transition by the kernel hotplug path (`display.reconcile::reconcile` →
 //! `wire.plugin`). Event-driven ONLY — never polled per-frame or on a timer.

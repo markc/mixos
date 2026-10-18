@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `DrawNode` — the owned, renderer-agnostic draw currency. Scene contributors
 //! (and, increasingly, systems' `draw()`) describe WHAT to draw and at WHICH
 //! `Layer`; the single `lower()` seam turns a node into the renderer's

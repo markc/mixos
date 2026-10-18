@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The runtime glue tying the capture session to the compositor: spawning the
 //! overlay UIs, driving transitions, projecting the capture region each frame,
 //! and the video keep-alive.

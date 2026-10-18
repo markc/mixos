@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Single-finger pointer emulation for the auxiliary compositor screens — the lock
 //! screen and the world picker. These have their own pointer handler sets (not the
 //! main desktop's), so touch there just drives *those* handlers: down = move + press,

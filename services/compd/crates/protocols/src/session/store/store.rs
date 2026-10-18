@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! What the compositor remembers for session management.
 //!
 //! The protocol makes the compositor the store: a client hands back an opaque

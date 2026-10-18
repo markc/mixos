@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The DrmDeviceNotifier as a loop source + DrmEvent decoding: error vs
 //! vblank-with-metadata. What a vblank MEANS (timing interpretation) belongs
 //! to `backend.scanout/scanout.timing` — this crate only decodes.

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The per-client compositor state smithay hands back on every commit.
 //!
 //! Split out from the commit path because it answers a question about the CLIENT

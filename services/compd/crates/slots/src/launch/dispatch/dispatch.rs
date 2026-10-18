@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `LaunchWorker`: the handle held in the executor for off-thread launches.
 
 use std::panic::{AssertUnwindSafe, catch_unwind};

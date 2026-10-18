@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Server-side chrome on the pointer path (decor step 4): hover on
 //! motion, press and release on the primary button, and the intents those
 //! produce, turned into exactly the SurfaceEvents a client's own requests make:

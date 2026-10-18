@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The native backend entry: assembles display + renderer, hooks syncobj,
 //! initializes the compositor lifecycle, and registers all loop sources.
 //! (Ex wire.rs `wire()` + `start()`, recomposed. WAYLAND_DISPLAY is now set

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 use smithay::desktop::{Space, Window};
 use smithay::output::{Output, Scale};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The renderer contract. One renderer among peers (gles today, vulkan
 //! arriving) implements this; hosts select through it. There is NO fallback
 //! between renderers: a selected renderer that cannot run panics at assembly.

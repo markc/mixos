@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! End-to-end document store: sync a collection to disk, rehydrate it filtered by
 //! partition, then edit / dismiss / move records and confirm the table tracks each.
 //! Drives a unique `$XDG_STATE_HOME` so the on-disk table is isolated.

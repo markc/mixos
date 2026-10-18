@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `command()` / `install()` — attach the between-fork-and-exec hook to a
 //! `Command`. EVERY process the compositor spawns goes through one of them.
 

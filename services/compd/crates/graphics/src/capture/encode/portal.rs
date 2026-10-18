@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! XDG Desktop Portal `FileChooser.SaveFile` — the "Save As" dialog.
 //!
 //! Blocking; intended to run on a background thread (it waits for the user to

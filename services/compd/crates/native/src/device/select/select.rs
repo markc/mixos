@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Decides what runs: preferences (ranking AND exclusion) + gpu topology.
 //! Initial selection is exercised by `assemble.display`; hotplug-time the
 //! decision is Register vs Ignore (multi-GPU activation left the project's

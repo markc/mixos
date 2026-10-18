@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! What the negotiation decided, and what it cost — the observability half.
 //!
 //! Absorbs the former `bridge.negotiate/negotiate.report`. Both facts it records

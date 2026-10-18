@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The XWayland half of the protocol state, held by `Dispatch`.
 //!
 //! Two connections make XWayland work (see smithay's `xwayland` module): the

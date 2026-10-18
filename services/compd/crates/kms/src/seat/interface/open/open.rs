@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The one sanctioned session fd open/close path. OFlags policy lives here
 //! and nowhere else. Returns a plain owned fd (Law 1).
 //! Failure policy: failing to open the selected device is not self-recovering

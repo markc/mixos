@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Libinput context construction + seat assignment, generic over smithay's
 //! `Session` trait — this crate never names libseat (Law 1).
 //! Failure policy: a native compositor without input cannot run — panic

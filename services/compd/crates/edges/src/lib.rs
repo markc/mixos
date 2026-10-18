@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The desktop shell's edge model.
 //!
 //! One output has four edges. Each edge carries a panel with a persistent

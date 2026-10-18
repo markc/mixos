@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The resolved accent colour, as a renderer draws it: one accessor for every
 //! consumer (the toolkit's selection and accent fills, a desktop portal's
 //! accent colour), so they cannot drift apart.

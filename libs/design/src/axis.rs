@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Closed axes of the table key space.
 //!
 //! A family table is indexed by the product of several closed enums, so each

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! comp-model: the `comp.*` Bus wire as data, with no transport.
 //!
 //! The `comp.*` wire is frozen, including `{id, generation}` numeric window

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The camera pinned to identity.
 //!
 //! The projection puts the camera's position at the centre of the pane it

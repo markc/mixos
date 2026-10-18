@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The chrome family: the exact colours of application chrome (title bars,
 //! menus, tabs, panels, controls) as one closed set of roles, each naming a
 //! colour primitive.

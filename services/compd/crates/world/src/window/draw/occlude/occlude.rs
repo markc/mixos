@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Occlusion culling for the content band.
 //!
 //! The band already draws front-to-back (the DrawOrder authority hands out

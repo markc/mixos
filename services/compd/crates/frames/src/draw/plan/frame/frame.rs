@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Frame planning: Status -> ordered list of passes with tap points.
 //!
 //! This crate owns the knowledge that used to be duplicated as a

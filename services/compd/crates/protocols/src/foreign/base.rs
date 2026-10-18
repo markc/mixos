@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Foreign-toplevel-management state — BOTH the wlr manager protocol
 //! (`zwlr_foreign_toplevel_manager_v1`, hand-rolled) and the modern ext list
 //! protocol (`ext_foreign_toplevel_list_v1`, driven through smithay's handler).

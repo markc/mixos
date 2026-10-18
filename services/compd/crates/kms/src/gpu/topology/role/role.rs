@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Render / scanout / offload role assignment per node.
 //! Single-node era: the primary is RenderAndScanout. The decision seam exists
 //! so multi-GPU lands here, not in a renderer.

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Conversion to and from `serde_json::Value`, for consumers that work on
 //! JSON trees.
 

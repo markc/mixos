@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Window identity — who a window BELONGS to, and what it calls itself.
 //!
 //! The dangerous half is [`credentials`]. Every X11 window's `wl_surface` belongs

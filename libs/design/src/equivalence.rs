@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The design spec §1.4's frozen v0↔v1 equivalence relation.
 
 use std::collections::BTreeSet;

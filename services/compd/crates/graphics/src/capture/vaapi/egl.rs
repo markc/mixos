@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Minimal EGL FFI, loaded from `libEGL.so.1` at runtime.
 //!
 //! Just enough to: open a headless **device-platform** display (NVIDIA's EGL has

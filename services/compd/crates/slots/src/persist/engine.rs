@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 // Developer logging: bring error!/warn!/info!/trace!/abort! into scope.
 
 // The persistence engine. `sync` is called at the buffer() mutation boundary for

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Hide-on-touch / restore-on-pointer for the single shared seat cursor. Seat-pointer
 //! policy, so it lives in the pointer chain rather than on the state root — the
 //! Orchestrator keeps only the `saved_cursor` value (see `pointer.snapshot`).

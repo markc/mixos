@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The per-surface tag deciding whether a window owns the redraw cadence — read by
 //! BOTH policy sections. The watchdog's composite liveness lives next door in
 //! `tearing.liveness`.

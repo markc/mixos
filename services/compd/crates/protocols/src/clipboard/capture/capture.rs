@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The clipboard's single persisted slot.
 //!
 //! A wayland selection is a live `wl_data_source` owned by the copying client and there

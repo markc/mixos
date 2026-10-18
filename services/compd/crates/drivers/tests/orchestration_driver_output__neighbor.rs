@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Edge-crossing lookup for the cursor-teleport layout (orthographic projection).
 use drivers::output::base::{Edge, Placement, TeleportLayout};
 

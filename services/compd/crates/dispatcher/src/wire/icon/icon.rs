@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `xdg_toplevel_icon_v1` — the client-declared toplevel icon.
 //!
 //! A client either names an icon from the XDG icon stock or hands over pixel

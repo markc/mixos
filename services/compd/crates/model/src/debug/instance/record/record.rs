@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 pub use crate::debug::instance::channel::{
     SENDER, START, abort, fatal, install_sender, push, runtime_enabled, set_enabled_mask,
     set_start, since_start,

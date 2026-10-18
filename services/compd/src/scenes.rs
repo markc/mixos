@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The Mix Scenes host (scene-host) on compd's loop.
 //!
 //! Opt-in (decision S2): started only when the `scene_host` preference is

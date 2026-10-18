@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 use crate::debug::instance::level::{Level, Record};
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU8, Ordering};

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Display-side assembly: session -> enumeration -> selection -> device open
 //! -> gbm -> connector -> pipe -> mode (+ fallback chain, + gated synthesis)
 //! -> EDID identity -> Output. (Ex wire.rs `new()` steps 1-7, recomposed.)

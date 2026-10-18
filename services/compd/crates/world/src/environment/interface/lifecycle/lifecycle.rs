@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Publishing the session environment. [`announce_session`] is the once-at-startup set,
 //! [`push_session_env`] the incremental one for values only known later (`DISPLAY`, once
 //! the compositor's own Xwayland reports its number); both go through [`publish`].

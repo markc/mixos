@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 use crate::state::Loop;
 use smithay::backend::renderer::{ImportAll, ImportMem, Texture};
 use smithay::utils::{Logical, Physical, Point, Size};

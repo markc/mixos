@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Multi-finger touch session state (Orchestrator `inner.touch`); contacts held in
 //! physical pixels so gesture deltas match the trackpad's libinput units.
 use slots::input::event::base::Modality;

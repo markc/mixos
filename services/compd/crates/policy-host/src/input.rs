@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `comp.input.*` single verbs.
 //!
 //! - HUMAN seat: an injected event goes through the engine's own pointer and keyboard

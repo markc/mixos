@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `execute()` — the one place a child is actually spawned.
 
 use crate::launch::scope::scope::adopt_into_scope;

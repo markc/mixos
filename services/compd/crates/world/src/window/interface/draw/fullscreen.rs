@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 use crate::camera::transform::translate::slot;
 use crate::state::Loop;
 use crate::window::interface::record::data::WindowFullscreen;

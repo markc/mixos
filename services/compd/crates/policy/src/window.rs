@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 // Each decision resolves its `{id, generation}` target through
 // surfaces, reads the window facts the engine keeps (configure state,
 // size limits, visibility, geometry, outputs) from small structs, mutates

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 use crate::pointer::input::native_press;
 use smithay::backend::input::{ButtonState, Event, InputBackend, PointerButtonEvent};
 use smithay::input::pointer::ButtonEvent;

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The pointer grab that carries a toplevel along with a drag-and-drop.
 //!
 //! smithay's [`DnDGrab`] does the whole DnD protocol but exposes no per-motion

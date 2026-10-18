@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 // The SurfaceRecord identity subset, next_surface_id / next_role_generation,
 // role_change_generation, toplevel_root_for_surface, WindowTargetError and
 // resolve_window_target, the windows.* / focus.window / workspaces.list

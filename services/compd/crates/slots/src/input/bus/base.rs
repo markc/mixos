@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 use crate::input::layer::base::InputLayer;
 
 /// Registration-order input routing with priority layers. The bus only owns

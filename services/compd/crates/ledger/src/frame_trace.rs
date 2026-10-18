@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 // The record line format and the COMPD_FRAME_TRACE* environment names are
 // fixed so the existing trace readers keep working; the `component=comp`
 // field is the trace's component name, not the binary's.

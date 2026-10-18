@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Activate ordering protocol (TTY switch back / session resume), including
 //! the resume watchdog as an internal module.
 //!

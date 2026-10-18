@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 /// Input priority layer. Higher layers receive input first, regardless of
 /// registration order; within a layer, registration order wins ("first
 /// registered takes input first").

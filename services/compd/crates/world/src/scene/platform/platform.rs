@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `Platform` — the live-smithay hatch handed to systems via `SystemCx.platform`
 //! (`Option<&mut dyn Any>`). Because `dyn Any: 'static`, the hatch cannot carry a
 //! borrowing struct directly; `Platform` therefore stores raw pointers and is

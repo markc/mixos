@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `xwayland.enabled`: the persisted startup switch.
 //!
 //! Startup-read: compd decides once whether to start Xwayland

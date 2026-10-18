@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Shared libav helpers for the encoders (VAAPI + NVENC): error formatting,
 //! the `AVERROR` macros bindgen can't emit, the C shim for bindgen-opaque
 //! `AVFormatContext` fields, and a small mp4 `Muxer` both encoders reuse.

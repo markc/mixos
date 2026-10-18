@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! A window's chrome as scene elements: the rasterised titlebar band, the
 //! border strips below it, and the 9-slice shadow behind everything.
 //!

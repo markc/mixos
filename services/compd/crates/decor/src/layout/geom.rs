@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Minimal geometry and colour types for the chrome engine.
 //!
 //! All values are logical pixels; the rasteriser multiplies by the output

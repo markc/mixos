@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! One aggregate UI span per output frame, including screen and world UIs.
 use std::cell::RefCell;
 use std::collections::BTreeSet;

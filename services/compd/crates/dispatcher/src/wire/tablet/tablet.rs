@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! External `zwp_tablet_manager_v2` protocol state (tablet-only path).
 //!
 //! Smithay implements the tablet *tool* protocol but hides its seat instances

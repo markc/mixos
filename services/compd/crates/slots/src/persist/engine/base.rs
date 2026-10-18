@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 use crate::persist::entry::base::{PersistEntry, SnapshotOutcome};
 use crate::persist::envelope::base as envelope;
 use crate::persist::path::base as path;

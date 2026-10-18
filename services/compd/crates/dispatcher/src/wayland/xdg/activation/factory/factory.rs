@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 use crate::state::state::DispatchWire;
 use protocols::xdg::activation::state::Activation;
 use smithay::reexports::wayland_protocols::xdg::activation::v1::server::xdg_activation_v1;

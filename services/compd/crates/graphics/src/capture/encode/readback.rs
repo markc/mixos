@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! GPU→CPU readback of a captured wgpu texture (Bgra8Unorm) into a
 //! [`Frame`].
 //!

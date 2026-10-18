@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 // The engine is reached through the `CompEngine` trait; the props-watch
 // baseline and the pointer lease are the engine's (it owns the diff and the
 // pointer), and this layer keeps the ordering, fencing, batching and reply

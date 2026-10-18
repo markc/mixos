@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The scene documents this crate's tests pin. They are exported so a
 //! host's tests can share them instead of carrying their own copies; the
 //! files live in `tests/fixtures/`.

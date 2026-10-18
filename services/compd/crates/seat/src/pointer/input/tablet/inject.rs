@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Synthetic input injection into the focused client, for pen/pad action bindings:
 //! keyboard combos (bound buttons) and a modifier + mouse-wheel scroll (the dial
 //! remap for apps without tablet-v2, e.g. `Alt`+Wheel for brush size). Built on the

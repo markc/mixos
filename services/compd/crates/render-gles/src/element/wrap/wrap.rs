@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Wraps any RenderElement<GlesRenderer> so it can be drawn through a
 //! MultiRenderer whose primary backend is GlesRenderer. (Moved verbatim from
 //! draw.scene/element_wrap.rs; the renderer alias now comes from

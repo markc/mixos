@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Hotplug reconciliation: converge the driven outputs to the connected set.
 //! `reconcile` (called from the udev hotplug route + at startup) adds a pipe per
 //! newly-connected monitor (`add_output`), drops pipes whose connector vanished,

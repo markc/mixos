@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The publish ring: N buffers, one published, one drawn into, the rest absorbing
 //! frames whose GPU work has not finished yet.
 //!

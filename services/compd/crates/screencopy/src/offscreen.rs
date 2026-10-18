@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Explicit file captures and paused plain copies without a presentation surface.
 
 use crate::{Readback, Source, file};

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Mix Scenes: the renderer-neutral document core.
 //!
 //! A scene is a `---` envelope of headers (`scene`, `name`, `citizen` and

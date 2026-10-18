@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! DrmDevice (+ notifier) from an externally-opened fd. How the fd was opened
 //! (libseat) is not this crate's business (Law 1).
 //! Failure policy: the selected device must open — panic (original unwrap).

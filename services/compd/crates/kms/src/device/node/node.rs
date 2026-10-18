@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! DrmNode typing; render <-> primary node resolution.
 //! (Ex wire.rs `new()` step 2, the node-mapping half.)
 

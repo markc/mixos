@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `Storage`'s thread-safe sibling: token-addressed kernel data that producers on
 //! their own threads can read.
 //!

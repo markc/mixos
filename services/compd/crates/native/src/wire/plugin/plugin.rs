@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Device plug/unplug wiring: registers the retained udev watcher and routes
 //! typed events to the host's reaction (`native.plugin/plugin.route`).
 //! NEW capability of the restructure: previously the UdevBackend was dropped

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Quoin's `conf.mix` page order, `panels.{left,bottom,right,top}` (N2b):
 //! read when the host starts, rewritten by `shell.panel.order`.
 //!

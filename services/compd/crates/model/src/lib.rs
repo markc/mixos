@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Shared data model: debug macros, settings and preferences, structured
 //! logging, selection provenance and the statistics registry.
 

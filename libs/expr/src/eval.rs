@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Evaluation of a compiled tree over JSON globals.
 //!
 //! Values borrowed from the globals are passed along as `Cow::Borrowed`,

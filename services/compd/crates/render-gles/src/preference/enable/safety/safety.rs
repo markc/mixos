@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Typed enablement values for the Law-7 safety-net crates: the second half of
 //! the double gate (cargo feature + this value). All off by default — disabled
 //! means structurally absent from the hot path.

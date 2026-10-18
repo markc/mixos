@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 use crate::persist::document::entry::base::DocumentEntry;
 use crate::persist::entry::base::PersistEntry;
 use crate::storage::slot::base::Storage;

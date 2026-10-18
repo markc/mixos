@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Logical geometry and the four-edge vocabulary of the shell.
 //!
 //! Panel thickness seeding uses percentages of the output only to choose the

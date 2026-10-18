@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Opt-in (Law 7): re-time vblanks that buggy drivers deliver far earlier
 //! than the refresh interval (observed as `passed < refresh / 2`).
 //! DOUBLE-GATED: the `timing-throttle` cargo feature +

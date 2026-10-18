@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Backend selection, the capture settings accessors, and the running-encode
 //! handle. Re-exported at the crate root.
 use crate::capture::vaapi::{Codec, EncoderThread, NvencCudaEncoder, VaapiEncoder};

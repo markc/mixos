@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Resource handles -> connector infos; connected-state read.
 //! Failure policy: a device that cannot enumerate resources cannot drive a
 //! display — panic (original unwrapped both calls).

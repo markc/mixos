@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! What the clipboard persistence layer captures, in what order, and how much of it.
 //!
 //! Capturing is eager — a dead client cannot be read, so the bytes must be pulled while

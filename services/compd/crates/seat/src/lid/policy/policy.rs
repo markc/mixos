@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 use drivers::lid::base::{
     DISPLAY_REQUEST_MUT, DISPLAY_SNAPSHOT, DisplayRequest, DisplaySnapshot, LID_POSITION,
     LID_POSITION_MUT, LidPosition,

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The X display number, as a process global.
 //!
 //! `DISPLAY` is the one piece of session environment the compositor does not know at startup:

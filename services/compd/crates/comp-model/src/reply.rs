@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 // The bodies are built with `json!` (serde_json without `preserve_order`:
 // keys sort), so the bytes are stable.
 

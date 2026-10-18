@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 use std::time::Instant;
 
 /// Log levels, most → least severe. The discriminant doubles as the mask bit index.

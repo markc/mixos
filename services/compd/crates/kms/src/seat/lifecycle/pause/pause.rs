@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Pause ordering protocol (TTY switch away / session pause).
 //!
 //! Order is the protocol: pause the display path FIRST (stop touching DRM fds

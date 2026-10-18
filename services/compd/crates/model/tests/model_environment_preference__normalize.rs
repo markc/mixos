@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `outputs_default_mode` refresh normalization: implausibly-small refresh values
 //! (e.g. a hand-edited `60` meaning 60 Hz, or nonsense) marshal up to 30 Hz; a
 //! plausible value is left untouched; absence is a no-op.

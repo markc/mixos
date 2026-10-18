@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 // Generic over the engine's client id `C` and configure serial `S`;
 // `apply_panel_request` takes the parsed request's fields, so the policy
 // needs no Bus types; `panel_claim` takes the client facts the engine reads

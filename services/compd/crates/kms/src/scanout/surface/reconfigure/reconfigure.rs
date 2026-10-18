@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Mode/transform/scale changes on a RUNNING pipe. Real delegation: smithay
 //! master exposes `use_mode` on the locked manager. This is the mechanism
 //! `native.device/device.interface` routes mode changes through.

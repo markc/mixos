@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! World/screen space and camera transform.
 //!
 //! Each `UiItem` has an `UiSpace`:

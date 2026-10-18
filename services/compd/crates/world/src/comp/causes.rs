@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The `props.changed` cause per source.
 //!
 //! Whatever changes compd state notes a cause against the props subtree it

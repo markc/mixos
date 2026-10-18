@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Screen-extent policy: what a push past the output's physical bounds does.
 //!
 //! The pointer paths ask here what reaching an extent MEANS. Two modes, selected by

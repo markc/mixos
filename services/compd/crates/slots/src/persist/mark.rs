@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 // The transaction/commit registry: rim or system code wraps a persisted mutation
 // with `transact` (or calls `mark_world`), flagging a world for an end-of-frame
 // commit. `immediate` commits at the next frame-end; otherwise the commit is

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The compositor's dispatch layer: the calloop event-loop data (`Wire`), the
 //! concrete `Dispatch` state that hosts every smithay handler impl, the Wayland
 //! global factories, and the X11 window-manager hooks.

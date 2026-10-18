@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 use crate::capture::session::message::CaptureMessage;
 
 // The screen-capture panel is the one UI producer of surface messages.

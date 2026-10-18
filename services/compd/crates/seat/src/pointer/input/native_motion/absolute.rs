@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 use crate::pointer::input::native_motion::dispatch;
 use smithay::backend::input::{Axis, AxisSource, Event, InputBackend, PointerAxisEvent};
 use smithay::input::pointer::{AxisFrame, MotionEvent, PointerHandle};

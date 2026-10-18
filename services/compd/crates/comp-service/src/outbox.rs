@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 // `offer_next` folds the event-sequence counter and the watermark store into
 // the producer, so the engine's observation code needs no Bus state of its
 // own.

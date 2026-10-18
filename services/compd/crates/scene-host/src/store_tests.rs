@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 // The store's tests: its own page registry and dialog seat, plus contract
 // tests against the scene crate's canonical fixtures.
 

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Minimal `dlopen`/`dlsym` wrapper.
 //!
 //! `libcuda` and `libEGL` are loaded at RUNTIME (not link-time) so the

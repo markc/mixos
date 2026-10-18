@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `zwp_tablet_tool_v2` stylus (barrel) buttons.
 //!
 //! Resolution order: an explicit user binding (Settings → Pen) wins; else, in

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Pen absolute-position → world resolution. Tablet tool events are
 //! `AbsolutePositionEvent`s (like `PointerMotionAbsolute`), so this mirrors
 //! `motion::absolute`'s physical→world step verbatim: never hand-roll output

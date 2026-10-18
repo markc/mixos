@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Internal (eDP/LVDS/DSI) vs external classification, plus the
 //! panel-orientation connector property -> Transform (feeds
 //! `drm.output/output.physical`).

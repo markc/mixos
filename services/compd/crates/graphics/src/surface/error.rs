@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Error types for the runtime layer.
 //!
 //! Every fallible operation in this crate funnels through one of these.

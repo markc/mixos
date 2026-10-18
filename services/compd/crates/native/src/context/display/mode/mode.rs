@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Live output-mode changes from the settings window with a user-confirmed fault
 //! gate: a provisional apply the user must KEEP within a timeout or it
 //! auto-reverts. Driven via OUTPUT_MODE_REQUEST (the rim can't reach the DRM

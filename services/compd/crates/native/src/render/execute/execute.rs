@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The frame executor: runs the compositor-issued FramePlan against the
 //! hosted pipe. (Ex draw.scene/scene.rs `scene()`, now plan-driven — the pass
 //! presence/ordering comes from `frames::draw::plan::frame`, not from a

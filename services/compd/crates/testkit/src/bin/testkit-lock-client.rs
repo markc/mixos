@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! testkit-lock-client: a minimal ext-session-lock-v1 client, for compd's session
 //! lock gate.
 //!

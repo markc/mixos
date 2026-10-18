@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 // The trace event it emits uses the frame_trace record format.
 
 //! Why compd drew a frame. Every redraw request names a [`RedrawReason`];

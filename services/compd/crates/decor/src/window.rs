@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Which windows get chrome, and how much room it takes.
 //!
 //! The installed theme is per compositor thread, like every other piece of

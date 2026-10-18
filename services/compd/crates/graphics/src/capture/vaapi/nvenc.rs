@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! NVIDIA NVENC H.264 encoder (libav `h264_nvenc`).
 //!
 //! NVIDIA GPUs have no VAAPI *encode* support, so the zero-copy dmabuf→VAAPI

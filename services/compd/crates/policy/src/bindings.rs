@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Compositor key bindings: the filter that decides whether a key belongs to
 //! the compositor or to the focused client: matcher, tables and listing.
 //!

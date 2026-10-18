@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 /// The MixOS colour schemes: six hues, and three chrome schemes whose
 /// light and dark modes step the brightness (`pro`: Pro and Pro Medium Gray;
 /// `studio`: Studio and Studio Light; `classic`: Classic in both). The

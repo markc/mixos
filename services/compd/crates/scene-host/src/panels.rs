@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The panel model (`edges::ShellModel`), one per
 //! output, so an edge shows ONE page at a time with Quoin's modes, thickness
 //! and motion.

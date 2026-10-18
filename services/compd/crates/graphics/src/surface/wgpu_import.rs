@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Wrap a GL texture the compositor's renderer owns as a `wgpu::Texture`.
 //!
 //! With wgpu on the GL backend over the

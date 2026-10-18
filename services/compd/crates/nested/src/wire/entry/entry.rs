@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The winit backend entry. (Ex winit wire.rs `wire()` + `start()`.
 //! WAYLAND_DISPLAY is now set by the loader after socket creation.)
 

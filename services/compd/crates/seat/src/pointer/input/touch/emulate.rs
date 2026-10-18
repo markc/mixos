@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Pointer-emulation primitives. A single finger on the desktop / compositor UI
 //! drives the pointer through the very same entry points a mouse uses (so canvas
 //! grab, window focus, viewport and overview all behave identically). The session

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Frame callbacks while compd cannot present: the session is paused (its VT is
 //! in the background), the panel is powered down, or no output is live.
 //!

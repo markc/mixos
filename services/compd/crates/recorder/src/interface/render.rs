@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Per-element (offscreen) capture: render the captured windows DIRECTLY into
 //! the capture dmabuf with the composing renderer, positioned capture-local —
 //! so windows that are panned off-screen are still captured, and the capture

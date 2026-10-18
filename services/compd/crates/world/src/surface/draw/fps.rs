@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! FPS overlay: a small, solid-black, top-right SCREEN-space UI surface
 //! showing the current composited-frame rate.
 //!

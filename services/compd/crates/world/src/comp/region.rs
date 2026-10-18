@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `comp.region.select`, the modal part.
 //!
 //! While a selection runs, the HUMAN seat belongs to it: every button and key

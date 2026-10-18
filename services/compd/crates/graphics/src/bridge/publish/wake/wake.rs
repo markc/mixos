@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The off-thread publish → compositor wake handshake.
 //!
 //! Cross-thread wake for EVERY off-thread producer — the background shader

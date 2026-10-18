@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Start-of-gesture attenuation for two-finger touchpad scroll.
 //!
 //! Lives beside the other trackpad-gesture policy (`gesture.state`) rather than on

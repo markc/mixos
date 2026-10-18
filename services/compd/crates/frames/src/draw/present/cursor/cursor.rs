@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Frame callbacks for the surfaces the COMPOSITOR draws itself.
 //!
 //! Separate from `present.callbacks` because the question is different. That crate sends

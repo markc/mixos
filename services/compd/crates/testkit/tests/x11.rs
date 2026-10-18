@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! X11's side of the workspace policy, offline: an `X11Surface` over a dead
 //! connection (no Xwayland). Every
 //! property write fails, and the surface's own mirror is what compd's

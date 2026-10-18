@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! VBlank timestamp interpretation + refresh math. Pure value work over
 //! caller-supplied inputs (Law 1: no loop types).
 

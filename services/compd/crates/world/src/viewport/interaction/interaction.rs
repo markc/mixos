@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Viewport pointer interactions: separator-bar resize drags and floating-pane
 //! move/resize drags. Pure functions over the per-output view state ([`OutputViews`])
 //! — the pointer input systems (`seat.pointer.input`) call these; the drag STATE lives

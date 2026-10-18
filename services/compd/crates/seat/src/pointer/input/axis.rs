@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 use crate::pointer::input::native_axis;
 use smithay::backend::input::{AxisSource, InputBackend, PointerAxisEvent as _};
 use world::state::Loop;

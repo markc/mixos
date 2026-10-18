@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! How a binding's expression is compiled and evaluated.
 //!
 //! A port value of the form `= expression` is a binding. The scene core

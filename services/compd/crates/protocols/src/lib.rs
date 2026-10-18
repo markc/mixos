@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Protocol-level state and logic shared by the dispatch layer: per-surface and
 //! per-window records, grabs, redraw scheduling, seat and session state, and the
 //! X11 window model, written against smithay without depending on the world.

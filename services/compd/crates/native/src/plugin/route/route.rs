@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Reacts to typed device events: delegate (classify) -> select -> bookkeep,
 //! with the crash-first policy on events the compositor cannot survive.
 //! Detection lives in backend.udev; this is the host-side reaction.

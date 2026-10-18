@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Live user **preferences** — the inline-reloaded counterpart to the read-once
 //! `environment.config` (settings.json). Stored in
 //! `~/.config/compd/preferences.json` (same dir). Loaded fresh ([`load`])

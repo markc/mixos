@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Agent-first frame capture: no input-authority or active-VT gate.
 
 use comp_model::capture::CaptureFrameSpec;

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The hardware video encoders when compd is built WITHOUT `capture-ffmpeg`.
 //!
 //! compd (Q-K / D11): the libav link is opt-in. Without the feature, graphics links

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 // Every spawn goes through the hygiene wrapper — see `process.child`.
 use crate::library::process::child::hygiene::hygiene;
 use crate::library::process::child::spawn::spawn as child_spawn;

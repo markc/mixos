@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! CPU-priority boost for the compositor (settings.json `priority`): under
 //! all-core load (e.g. Steam's shader compile) wakeup latency makes commits
 //! miss vblank. `"realtime"` (the DEFAULT) = SCHED_RR; `"auto"` = nice (direct,

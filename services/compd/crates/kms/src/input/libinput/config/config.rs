@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Per-device settings applied on device-added. Designated home (seam):
 //! enables touchpad tap-to-click. libinput synthesizes pointer buttons from
 //! taps using its default button map (LRM): 1-finger tap -> BTN_LEFT (click),

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 // The set-request gate, panel request refusals, publisher loss, the property
 // reducer, the topic wire and corner validation, rfc3339, the gap message and
 // the topic bodies. `wire()` is a TopicMessage (`get` on headers); the

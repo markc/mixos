@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! X11 initial placement on compd: the host half of
 //! `policy::x11::initial_geometry`.
 //!

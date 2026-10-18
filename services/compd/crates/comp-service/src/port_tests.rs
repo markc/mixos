@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 // The FakeClient harness and the tests of the worker, ingress, admission,
 // dispatcher, responders, reply loop, publisher and shutdown. The pure parser
 // tests live in comp-model. The command channel is `command_channel` with a

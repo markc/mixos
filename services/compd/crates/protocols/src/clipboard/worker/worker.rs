@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The clipboard transfer worker: one long-lived thread that owns every in-flight pipe,
 //! in both directions — reads that capture a copy, writes that serve a paste.
 //!

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! A real implementation with working mechanism bodies, compiled under the
 //! `native-scanout` cargo feature. While the hosted DrmOutputManager remains
 //! the live presentation path, the assembly-time self-test exercises this

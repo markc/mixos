@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 use model::environment::keybinding::base::{KeyBindings, KeyRow};
 use slots::library::input::keyboard::format::format;
 use slots::library::input::keyboard::keyboard::combo::KeyCombo;

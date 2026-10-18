@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Minimal CUDA driver-API FFI, loaded from `libcuda.so.1` at runtime.
 //!
 //! Hand-declared (no CUDA toolkit / `cuda.h` required — the driver library ships

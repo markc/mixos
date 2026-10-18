@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Plane policy -> FrameFlags: the single source of the flags every render
 //! hands the hosted compositor (which performs the actual plane assignment
 //! under delegation). `plane.direct` is the on/off policy surface over this.

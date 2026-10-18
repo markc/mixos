@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The `comp.*` catalogue: 39 verbs in three families and 13 topics.
 
 pub use crate::observation::{

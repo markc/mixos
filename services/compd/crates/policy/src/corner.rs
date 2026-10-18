@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 // The hot-corner detector and corner press ownership. `Corner` and
 // `CornerConfig` live in comp-model (they are on the wire); the press map
 // is a value the engine owns, fed the facts the engine reads (lock, engaged

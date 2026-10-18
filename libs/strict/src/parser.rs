@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Recursive-descent parser for data literals.
 //!
 //! A document is one of: an implicit top-level map body (`key: value`

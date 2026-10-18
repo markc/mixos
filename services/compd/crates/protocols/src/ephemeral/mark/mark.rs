@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! "The user did not place this window and will not come back to it."
 //!
 //! Two kinds of toplevel qualify: one a client marked modal through

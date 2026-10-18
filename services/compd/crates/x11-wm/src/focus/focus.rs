@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Which X11 window a `wl_surface` backs — the one question the keyboard-focus path
 //! asks and cannot answer from a `Window`.
 //!

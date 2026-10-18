@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The harness drives a pointer button through the server's primary seat and
 //! the client receives it with a serial it can hand to `xdg_toplevel.move` /
 //! `.resize` (the harness half; the real-grab tests build on this).

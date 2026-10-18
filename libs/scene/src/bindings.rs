@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Bindings: ports whose value is `= expression`, compiled once per
 //! document, evaluated against the model at load and on each model patch,
 //! and against each row inside a list template.

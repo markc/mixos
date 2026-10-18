@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Opt-in (Law 7): estimated-vblank pacing of frame callbacks when a frame
 //! produced empty damage and nothing was committed — prevents clients from
 //! busy-looping on frame callbacks. DOUBLE-GATED: the `flip-estimate` cargo

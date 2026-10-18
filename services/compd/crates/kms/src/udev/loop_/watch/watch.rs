@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The long-lived udev watcher as a loop source. Previously the UdevBackend
 //! was created for a single device-path lookup and dropped; it is now
 //! retained so Added/Changed/Removed events flow (the hotplug detection

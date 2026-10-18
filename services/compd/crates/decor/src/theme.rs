@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The chrome theme: the `layout` style preset for the SHAPE, the design
 //! tokens for every COLOUR, the corner radius (mixos style) and the title font.
 //!

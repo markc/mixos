@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 // The `Document` trait + the `define_document!` macro. A collection slot opts into the
 // filesystem table store by implementing `Document` (projecting its records) and
 // invoking `define_document!`. Re-exports the entry types + serde_json so an owning

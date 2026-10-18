@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! graphics: GPU plumbing beneath the renderers. `surface` runs wgpu on its GL
 //! backend over the compositor's own EGL context so UI draws into textures
 //! the GLES renderer composites; `capture` is the screen-capture engine (the

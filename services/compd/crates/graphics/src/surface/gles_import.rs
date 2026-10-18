@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Import a Smithay `Dmabuf` as a `GlesTexture`.
 //!
 //! Straightforward wrapper over `GlesRenderer::import_dmabuf`. The renderer

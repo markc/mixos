@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! render-gles: the GLES renderer's own concerns. EGL contexts, multi-GPU
 //! renderer construction, element wrapping, colour handling, the dmabuf
 //! format vocabulary and negotiation (`format`), and GPU/output preferences.

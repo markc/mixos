@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Renderer-neutral, reversible panel motion.
 //!
 //! The reference motion is constant-speed. A renderer may later choose a

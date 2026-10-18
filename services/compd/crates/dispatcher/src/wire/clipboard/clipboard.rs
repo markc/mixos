@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Event-loop side of clipboard persistence.
 //!
 //! `Dispatch` records what it wants (see the `SelectionHandler` impl in

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! "Do not ask the driver the same question twice."
 //!
 //! Every ring in this family re-checks its buffers on a hot path: the worker

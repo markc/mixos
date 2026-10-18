@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Keyboard layout (xkb) for the seat — the single home for the mapping from the
 //! persisted `KeyboardLayout` preference to smithay's `XkbConfig`, plus loading the
 //! preference and applying a config to a live keyboard.

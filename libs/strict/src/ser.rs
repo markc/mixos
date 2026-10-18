@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Serde `Serializer` that builds a [`Value`], plus [`to_string`] for
 //! writing a typed config struct back to disk.
 //!

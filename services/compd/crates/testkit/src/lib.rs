@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! testkit: compd's headless test harness.
 //!
 //! Runs compd's real protocol engine with no GPU, no backend and no socket:

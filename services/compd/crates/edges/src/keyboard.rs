@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Keyboard access to the shell: output targeting, the focus cycle through
 //! persistent panels, and the directive a host turns into layer-shell
 //! keyboard interactivity.

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The commit-time redraw gate: which surfaces may drive the frame cadence.
 //!
 //! `Exclusivity` (a user setting) resolves per frame into a `Gate` (what the

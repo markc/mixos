@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Mode listing + the diagnostics dump (ex wire.rs mode logging).
 
 use smithay::reexports::drm::control::{Mode as DrmMode, connector};

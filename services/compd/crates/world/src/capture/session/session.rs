@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The capture phase state machine and the state stored on the compositor.
 
 use std::collections::HashSet;

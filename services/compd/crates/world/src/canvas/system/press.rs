@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Pointer PRESS, migrated from the rim (`canvas.input/input.pointer/press.rs`
 //! + `window.input/input.pointer/window.rs`) into `CanvasSystem::input`.
 //!

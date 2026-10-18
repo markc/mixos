@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `zwp_tablet_tool_v2` axis events (motion + pressure/distance/tilt/rotation/
 //! slider/wheel). Changed axes are queued and flushed on the next motion (protocol
 //! requirement); motion + axes forward to the tablet-aware surface under the pen.

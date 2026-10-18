@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Mode selection policy (ex wire.rs): area -> refresh -> PREFERRED,
 //! lexicographic. Consumes preference values when a profile requests an
 //! advertised mode; otherwise unchanged default policy.

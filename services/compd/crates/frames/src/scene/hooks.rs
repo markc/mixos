@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 use dispatcher::state::state::RedrawReason;
 use slots::world::frame::base::FramePlan;
 use smithay::backend::renderer::gles::GlesRenderer;

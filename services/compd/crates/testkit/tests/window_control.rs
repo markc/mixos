@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Window control on compd's real engine: the
 //! client's own maximise / minimise requests reach the host's queue, the
 //! minimise LIFO picks the restore rule's candidate, and a destroyed window

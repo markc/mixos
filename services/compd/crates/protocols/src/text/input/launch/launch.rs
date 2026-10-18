@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The compositor-owned input method: the compositor launches exactly one IME process and grants the
 //! input-method / virtual-keyboard globals ONLY to that process group, keyed by the spawned pid
 //! PINNED BY ITS START-TIME (not `/proc/<pid>/exe`, which fails across namespaces, nor a spoofable

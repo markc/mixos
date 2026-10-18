@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 // `ObservationRecord::wire` returns a transport-free [`TopicMessage`]
 // (headers + body) rather than a `BusMessage`; the header map is a BTreeMap
 // exactly like BusMessage's, so header order is the same. `rfc3339_millis` is

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! world: the compositor engine's state and behaviour on top of smithay — the
 //! windows, surfaces, seats, camera and canvas, viewports and launch flow, the
 //! comp policy state ([`comp`]), and the per-frame pump that drives them.

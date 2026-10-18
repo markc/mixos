@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Bus-injected HUMAN input (`comp.input.*` on the human seat).
 //!
 //! An injected human event is delivered exactly as a device event, so it

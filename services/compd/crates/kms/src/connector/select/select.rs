@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Which connector to drive. Policy: honor the highest-priority monitor preference
 //! whose monitor is currently connected — `profiles` are in priority order, so the
 //! FIRST profile is the default output. With no profiles, no profile identities, or

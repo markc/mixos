@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `windows.s<id>.band`: a window
 //! demoted to the `bottom` band draws, and is hit, behind every normal
 //! window, and focusing or raising it restacks it only within that band.

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Global-space output placement. Backends produce outputs; the compositor places
 //! them. Because the compositor renders each monitor through its own camera (not one extended
 //! coordinate space), these global positions are bookkeeping only — they must merely

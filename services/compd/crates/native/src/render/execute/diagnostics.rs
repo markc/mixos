@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Opt-in KMS evidence: COMPD_KMS_DIAG_DIR, three frames per activation/output.
 
 use scenegraph::scene::element::element::SceneElement;

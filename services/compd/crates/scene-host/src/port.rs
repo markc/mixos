@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The scene host's own Bus registration.
 //!
 //! A second Bus client beside the comp port, because the contract's

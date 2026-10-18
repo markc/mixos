@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 // The bounded command channel from the port worker to the engine: a std
 // bounded channel plus a waker the engine supplies (a calloop `Ping`, an
 // eventfd write, a condvar), so every send wakes the engine's loop. The

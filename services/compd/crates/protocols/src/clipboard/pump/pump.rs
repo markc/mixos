@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! One in-progress read of a clipboard flavor out of the client that owns it.
 
 use std::os::fd::OwnedFd;

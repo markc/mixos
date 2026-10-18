@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! World ↔ surface-local for ANY surface of a window — the root or one of its
 //! subsurfaces — through the SAME fit the renderer and the hit test apply.
 //!

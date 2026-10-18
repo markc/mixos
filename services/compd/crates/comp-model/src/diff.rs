@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 // The snapshot and occlusion types are this crate's; the prop helpers and
 // `queue_prop_change` are `crate::observation`'s; `collect_snapshot_diff` is
 // public (the engine runs it).

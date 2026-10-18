@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Correlate a libinput touch device to the DRM output it belongs to, so a touch
 //! lands on its OWN display. Strongest signal first (à la GNOME `MetaInputMapper`);
 //! `None` → caller discards rather than route to the wrong monitor:

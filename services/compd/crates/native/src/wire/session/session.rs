@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Session pause/resume wiring: registers the seat notifier source and maps
 //! its events through the seat lifecycle protocols onto the hosted pipe.
 //! (Ex wire.rs `start()` session closure — the only crate besides the other

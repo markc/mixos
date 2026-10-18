@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Exercises the filesystem document-store: put/get/list/partition/delete and the
 //! three reconcile behaviours (dangling-symlink prune, corrupt quarantine, orphan
 //! removal). Uses a unique temp directory; no external crates.

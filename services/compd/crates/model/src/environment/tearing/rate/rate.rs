@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Composite-rate ceiling and the per-section flip modes. UI strings live in
 //! `configurator.settings/settings.surface/surface.tearlabel`.
 

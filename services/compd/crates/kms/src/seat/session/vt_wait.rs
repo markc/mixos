@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Wait, as an event, for this process's VT to become the active one before
 //! the seat is opened (see `factory`).
 //!

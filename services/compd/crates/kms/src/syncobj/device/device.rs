@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Kernel syncobj mechanics on a device: create/import/destroy + the
 //! eventfd-support probe the wire previously called inline.
 //! Protocol policy (linux-drm-syncobj-v1) stays compositor-side and consumes

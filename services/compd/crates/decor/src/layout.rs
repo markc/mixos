@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The decoration engine: chrome styles, the decoration model, layout and
 //! hit-testing. Pure data and maths: it renders nothing and reads no files.
 //!

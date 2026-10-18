@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Smithay Output + PhysicalProperties from connector info / EDID identity /
 //! connector.kind orientation. (Ex wire.rs `new()` step 7.)
 //! P1 default: with no readable EDID, properties match the original

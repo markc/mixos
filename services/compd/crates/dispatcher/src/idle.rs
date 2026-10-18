@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! ext-idle-notify-v1.
 //!
 //! smithay's `IdleNotifierState` keeps the notifications, one list per

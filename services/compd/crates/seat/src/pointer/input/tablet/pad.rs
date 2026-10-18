@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Pad-button routing, called from the native libinput pad handler (the pad
 //! `SpecialEvent` is non-generic, so it lives in the kernel closure). Resolves the
 //! user's per-button binding: an unbound button (`Passthrough`) forwards the native

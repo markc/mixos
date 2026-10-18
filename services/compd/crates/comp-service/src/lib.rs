@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! comp-service: compd's native Bus transport for the `comp` service, the
 //! `comp.*` Bus surface served from inside compd.
 //!

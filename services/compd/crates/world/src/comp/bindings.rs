@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Compositor key bindings on compd's human keyboard.
 //!
 //! The filter ([`policy::bindings`]) runs in seat's keyboard path,

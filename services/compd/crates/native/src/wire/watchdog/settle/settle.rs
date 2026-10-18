@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The post-activation settle deadline: "first flip proven", per pipe.
 //!
 //! The safeguard exists because a pipe that has never flipped gets no per-CRTC

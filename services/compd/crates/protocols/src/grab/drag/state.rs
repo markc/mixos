@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 // No logging here on purpose: this runs per pointer motion for the whole
 // duration of a drag, so a record per event would be pure noise. The protocol
 // side (`dispatch.wire/wire.drag`) logs the state changes instead.

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Viewport tree: a root `Viewport` of `Slot`s (+ `floating` panes); each slot owns a `Camera`.
 use crate::camera::state::state::Camera;
 use slots::storage::token::base::{Token, TokenMut};

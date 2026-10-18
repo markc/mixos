@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 use crate::state::state::{Dispatch, DispatchWire};
 use smithay::desktop::{
     LayerSurface as SmithayLayerSurface, WindowSurfaceType, layer_map_for_output,

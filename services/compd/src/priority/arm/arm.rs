@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Late-phase scheduling, called once startup threading is complete (right
 //! before the IME launch): arms `SCHED_RESET_ON_FORK` so tasks created from
 //! here on — forked children AND late threads — start at default scheduling

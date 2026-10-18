@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Shell-agnostic window operations — how to SAY something to a window.
 //!
 //! A `smithay::desktop::Window` is either an xdg toplevel or an X11 (XWayland)

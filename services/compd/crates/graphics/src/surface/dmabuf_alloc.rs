@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! DRM render node → gbm BO → Dmabuf.
 //!
 //! This is the bottom of the import stack. `allocate_dmabuf` returns an

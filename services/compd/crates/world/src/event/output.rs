@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The output-presence lifecycle event. Orchestration is its sole sender; world
 //! systems self-subscribe via `builder.receive(&OUTPUT_CHANGED, …)` and react
 //! however they like (e.g. capture stops when the display goes away). Mirrors

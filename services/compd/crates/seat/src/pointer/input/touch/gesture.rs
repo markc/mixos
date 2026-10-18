@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Multi-finger gesture engine. Synthesizes the trackpad's gestures from the raw
 //! touch contacts and drives the *existing* handlers, so touch and touchpad share
 //! one code path: 2 fingers → pinch-zoom + pan, 3 → directional swipe, 4 → fit.

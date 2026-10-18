@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Create the foreign-toplevel state. `enabled` (the `protocol_foreign` preference,
 //! a startup snapshot) decides whether either global is advertised at all: when
 //! disabled, neither the wlr manager nor the ext list is offered in the registry.

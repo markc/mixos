@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Rewrite a resolved launch so it runs INSIDE the container the window came
 //! from, instead of on the host.
 //!

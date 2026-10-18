@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Workspaces on compd's real engine: windows are
 //! stamped on the current workspace when they map, hidden off it, and the
 //! commit counter the Bus-truth comparator uses as its frame-callback oracle

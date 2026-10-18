@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 use crate::pointer::input::touch;
 use smithay::backend::input::{
     AbsolutePositionEvent, ButtonState, InputBackend, InputEvent, KeyboardKeyEvent,

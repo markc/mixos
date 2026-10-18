@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The pointer slot's behaviour, which is mostly about what it does NOT do.
 //!
 //! ONE test function: the slot is a set of process globals shared by every test

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 pub use crate::fractional::config::{DebounceCycle, FractionalScaleConfig};
 use crate::fractional::debounce::run_tick;
 use smithay::wayland::fractional_scale::FractionalScaleManagerState;

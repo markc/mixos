@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Dotted property paths per SPEC 07 §2.2.
 
 use serde::{Deserialize, Serialize};

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The canonical authored source of a document. A resolved tree is never
 //! serialised here: that would lose expressions, omitted defaults and
 //! template definitions.

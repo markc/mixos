@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Layer-shell contribution as renderer-agnostic draw nodes (goal B): we carry
 //! each layer's `wl_surface` + physical placement; the backend builds the
 //! `WaylandSurfaceRenderElement`s at lowering time. No renderer here.

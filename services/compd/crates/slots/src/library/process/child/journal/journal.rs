@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Where a launched application's output goes: the journal, not our log.
 //!
 //! Inheriting the compositor's stdio is descriptor inheritance, fixed at `exec` and

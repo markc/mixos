@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Process-global diagnostics registry (Statistics tab data source) — façade.
 //!
 //! The implementation lives in the sibling crates (`registry.hdr` — live HDR encode

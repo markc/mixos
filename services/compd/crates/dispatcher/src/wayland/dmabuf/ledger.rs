@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Observed linux-dmabuf import outcomes, served under `dmabuf.*`.
 //!
 //! What the advertised format table claims and what an import actually did

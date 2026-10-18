@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Composite liveness per output — what the exclusive-pacing watchdog reads.
 //!
 //! Split out of `tearing.pacer` because it is a different kind of state: that is

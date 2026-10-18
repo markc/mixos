@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 // A table in the filesystem-as-database: records are UUID-named folders holding
 // `record.json` (an `Envelope`) under a primary `id/` index, with secondary
 // indexes as symlinks under partition folders. `Store` is the table handle:

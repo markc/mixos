@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Pointer presses on chrome, turned into the intents a client's own requests
 //! would produce:
 //!

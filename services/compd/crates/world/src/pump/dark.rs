@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Control-plane pump for when the compositor is DARK (no output → the per-frame
 //! draw pipeline halts). The kernel arms a loop-handle timer that calls [`dark::pump`]
 //! so the IMPORTANT renderer-free control-plane still advances: deliver queued

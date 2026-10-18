@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Zero-copy NVENC encoder: capture **dmabuf** → EGLImage → CUDA → `*_nvenc`.
 //!
 //! Unlike [`crate::capture::vaapi::nvenc`] (which reads the frame back to system memory and

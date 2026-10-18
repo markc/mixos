@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Per-frame resolution: which section governs, and what it decides.
 
 use model::environment::tearing::config::config::{Config, Pacing, Tearing};

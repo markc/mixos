@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Make the system cursor follow the pen AND let the pen drive the canvas.
 //!
 //! Like the mouse's absolute-motion path (`motion::absolute`), we offer the motion to

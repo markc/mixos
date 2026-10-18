@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! EDID blob read + minimal parse. Designated home; a full parser
 //! (libdisplay-info bindings vs edid-rs) is decided at population time —
 //! the minimal parse below covers identity extraction without new deps.

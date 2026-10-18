@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Who a policy section applies to, and who may drive the redraw loop.
 //!
 //! Both resolve GLOBALLY per frame against the visible set (as `space` tracks it

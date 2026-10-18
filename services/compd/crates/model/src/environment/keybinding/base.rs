@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Keyboard-shortcut overrides, persisted to `~/.config/compd/keybinding.json`. A sparse array: only shortcuts the user re-bound appear;
 //! everything else uses its built-in default. Stored as `Key combo` STRINGS
 //! (e.g. "Super+Period") — the overlay parses them via `keyboard.format`, so this

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 // Tests. Each pins one workspace rule over the registry; `on_workspace`
 // stands in for the engine's `layout.visible` (the engine's recompute
 // derives one from the other).

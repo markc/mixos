@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 use smithay::input::SeatHandler;
 use smithay::reexports::wayland_server::{Dispatch, DisplayHandle, GlobalDispatch};
 use smithay::wayland::GlobalData;

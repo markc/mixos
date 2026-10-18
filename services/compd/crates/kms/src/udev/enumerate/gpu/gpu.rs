@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Default GPU heuristics: smithay's primary_gpu / all_gpus fallback.
 //! Preference-free by design — preference-aware selection lives in
 //! `backend.gpu/gpu.preference/preference.select`.

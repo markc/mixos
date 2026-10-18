@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Presentation-feedback collection, frame callbacks, and post-frame
 //! housekeeping. Replaces the `refresh()` blocks duplicated in both backends.
 

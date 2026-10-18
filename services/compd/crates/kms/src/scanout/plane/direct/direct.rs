@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Direct-scanout policy surface: the toggle the frame executor consults.
 //! Delegates the flag construction to `plane.assign` (single source).
 //!

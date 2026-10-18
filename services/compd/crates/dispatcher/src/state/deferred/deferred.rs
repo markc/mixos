@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! One ordered queue for the deferred effects a protocol handler records.
 //!
 //! Every smithay handler in `dispatch.state` runs WORLD-FREE — it can see the surface

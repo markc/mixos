@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 use crate::channel::token::base::Channel;
 use crate::input::bus::base::InputBus;
 use crate::input::event::base::{InputEvent, InputFlow};

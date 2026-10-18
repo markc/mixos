@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The comp control verbs compd answers, and the executor for the policy
 //! effects they return.
 //!

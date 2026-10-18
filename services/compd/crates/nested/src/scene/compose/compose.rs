@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The winit frame path. Pass presence comes from the frame plan,
 //! callbacks/housekeeping from `frames::draw::present::callbacks`; nothing is
 //! duplicated between backends.

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Fullscreen fills an output.
 //!
 //! With the camera pinned to identity world coordinates are output-logical,

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! X11's side of the workspace and minimise policy.
 //!
 //! - The root `_NET_NUMBER_OF_DESKTOPS` / `_NET_CURRENT_DESKTOP` are the

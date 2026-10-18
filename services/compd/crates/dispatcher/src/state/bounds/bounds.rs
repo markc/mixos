@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 use smithay::input::SeatHandler;
 use smithay::reexports::wayland_protocols::wp::cursor_shape::v1::server::wp_cursor_shape_manager_v1::WpCursorShapeManagerV1 as CursorShape;
 use smithay::reexports::wayland_protocols::wp::fractional_scale::v1::server::{wp_fractional_scale_manager_v1 as frac_mgr, wp_fractional_scale_v1 as frac_v1};

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 // Requests parse through comp-model's PanelRequest and are applied as a
 // PanelOp; holders are PanelHolders<u32, u32> (client, serial);
 // `panel_claim` is the pure decision.

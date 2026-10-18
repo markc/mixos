@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! End-to-end kernel behavior: read-only lifecycle storage with buffer-only
 //! mutation, owner-announced events with listener fan-out, input priority
 //! order, and the enable/disable lifecycle.

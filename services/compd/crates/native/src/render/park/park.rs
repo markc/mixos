@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The "may park" predicate: the eligibility list and its 30 s settlement cap.
 //!
 //! With `PREEMPTIVE_DEFAULT = Engaged` an empty frame parks the loop: no flip,

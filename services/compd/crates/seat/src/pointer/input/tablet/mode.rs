@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Which pen tool is active: the Hand/Select predicates the tablet handlers
 //! branch on. Re-exported from `tablet` so call sites are unchanged.
 use world::seat::gesture::touch::touch::TouchMode;

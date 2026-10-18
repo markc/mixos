@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Touch coordinate helpers: normalized fraction → physical screen point → world
 //! point, using the same projection the pointer's absolute-motion path uses.
 use smithay::utils::{Logical, Physical, Point};

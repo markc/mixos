@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The CRTC's current vblank sequence (MSC), asked of the kernel directly.
 //!
 //! The normal source is the page-flip completion event's `frame` field, which arrives

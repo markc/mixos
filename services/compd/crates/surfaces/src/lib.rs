@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! surfaces: compd's all-role surface registry.
 //!
 //! Every `wl_surface` that takes a role gets one [`SurfaceRecord`]: a numeric

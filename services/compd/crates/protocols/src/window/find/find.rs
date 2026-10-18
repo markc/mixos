@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Finding the window behind a `wl_surface`.
 //!
 //! One expression, previously inlined thirteen times and wrapped by three separate

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Hit-testing for surfaces under the cursor (or under a bbox).
 //!
 //! Priority order, topmost first:

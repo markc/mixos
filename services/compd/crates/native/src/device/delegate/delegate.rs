@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Classifies incoming devices and routes them to the owning stack. Today's
 //! udev watch only carries the DRM subsystem, so everything classifies as a
 //! display/GPU device; the seam exists for the day the watch widens.

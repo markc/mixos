@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! WHICH DEVICE can do WHAT with WHICH `(fourcc, modifier)` pairs.
 //!
 //! Kernel bootstrap data, filled in during startup as each device is built.

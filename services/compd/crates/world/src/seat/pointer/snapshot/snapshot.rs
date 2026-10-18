@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The saved cursor state a touch sequence displaces.
 //!
 //! Split from the restore behaviour (`pointer.restore`) so the state root can hold

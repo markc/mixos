@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Per-edge panel state machine and logical-pixel thickness storage.
 //!
 //! Ordinary hide and Escape are intentional no-ops while pinned or docked. Corner and

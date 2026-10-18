@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Call-site-agnostic control of the **default audio sink** (output) via the
 //! PulseAudio client API. On Fedora / most modern distros this is served
 //! transparently by PipeWire's `pipewire-pulse`, so the same code drives both.

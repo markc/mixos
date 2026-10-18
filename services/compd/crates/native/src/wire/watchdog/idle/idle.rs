@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The stall rescue: a one-shot deadline tied to outstanding work, per pipe.
 //!
 //! A repeating timer that forces a full-damage redraw whenever no flip has

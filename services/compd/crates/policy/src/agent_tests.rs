@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 // Tests. Each test pins one rule engine-free. The harness halves (real
 // devices, keymaps, popups, timers) stay with the engine.
 

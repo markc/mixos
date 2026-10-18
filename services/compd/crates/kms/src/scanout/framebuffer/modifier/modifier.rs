@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Opt-in (Law 7) legacy-hardware support: modifier filtering for hardware
 //! classes whose high-bandwidth compression modifiers fail under load.
 //! DOUBLE-GATED: the `modifier-fallback` cargo feature compiles this body in,

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `StartTransientUnit` against `org.freedesktop.systemd1` (user bus), and the
 //! per-session slice that makes those scopes collectable again.
 

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Things the compositor has RETIRED, for producers that key buffers by them.
 //!
 //! A mailbox rather than a direct call because the retirement is noticed in one

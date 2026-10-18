@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 use crate::state::Loop;
 use dispatcher::state::state::Dispatch;
 use slots::storage::slot::base::Storage;

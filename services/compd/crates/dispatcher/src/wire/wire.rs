@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 // Wire<S>: the calloop event-loop data.  One per compositor session.
 //
 // The Wayland dispatch type `D` is NOT `Wire<S>` anymore — it is the concrete,

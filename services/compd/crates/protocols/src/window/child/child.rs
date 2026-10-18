@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Where a CHILD window goes, expressed the only way that crosses the X boundary.
 //!
 //! An X11 client positions its own menus, tooltips and dialogs by choosing a place in X

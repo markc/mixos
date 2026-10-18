@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Agent frame capture arguments and reply, shared by transport and render hosts.
 
 use crate::reply::ControlReply;

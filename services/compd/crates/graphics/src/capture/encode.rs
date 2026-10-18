@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Capture encoding: GPU→CPU readback, PNG image save, mp4 video encode (via
 //! an ffmpeg subprocess), default save paths, and the XDG portal "Save As"
 //! file dialog.

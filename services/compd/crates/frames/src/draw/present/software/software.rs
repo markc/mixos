@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Presentation feedback for a backend with NO hardware page-flip — the nested
 //! (winit) path. The native counterpart lives in `present.callbacks`
 //! (`hw_flip_kind`) and is driven by the kernel's vblank event; nested there is no

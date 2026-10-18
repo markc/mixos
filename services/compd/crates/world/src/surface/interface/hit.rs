@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Hit-testing — the `&Loop` rim entry points + the bbox (selection) API.
 //!
 //! The Loop-FREE core (`HitCx`, `surface_under_filtered_cx`, the per-drawable hit
