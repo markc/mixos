@@ -209,8 +209,96 @@ fn harness_with(state: State, theme: &Theme) -> Harness<'static, Window> {
             },
         );
     toolkit::install(&h.ctx, theme);
+    // Friday 2026-10-16 09:30 UTC: the list's dates do not move with the
+    // clock.
+    email::view::mail::pin_clock(&h.ctx, NOW, 0);
     h.run();
     h
+}
+
+/// The pinned clock, in Unix seconds.
+const NOW: i64 = 1_792_143_000;
+
+/// The fixture's inbox page replaced by six emails: a long sender and a
+/// long subject to elide, unread, flagged and attachment markers, and a
+/// date from today, this week, this year and an older year.
+fn long_list() -> State {
+    let mut state = fixture();
+    let email = |id: &str,
+                 from: serde_json::Value,
+                 subject: &str,
+                 at: &str,
+                 keywords: serde_json::Value,
+                 attachment: bool|
+     -> jmap::Email {
+        serde_json::from_value(serde_json::json!({
+            "id": id,
+            "subject": subject,
+            "from": from,
+            "receivedAt": at,
+            "keywords": keywords,
+            "hasAttachment": attachment,
+        }))
+        .unwrap()
+    };
+    let emails = vec![
+        email(
+            "L1",
+            serde_json::json!([{ "name": "Ann Lee", "email": "ann@example.invalid" }]),
+            "Lunch today?",
+            "2026-10-16T08:05:00Z",
+            serde_json::json!({}),
+            false,
+        ),
+        email(
+            "L2",
+            serde_json::json!([{ "name": "Bartholomew Rivera-Montgomery of the Extremely Long Display Name Society", "email": "bart@example.invalid" }]),
+            "Quarterly report: the full numbers, every appendix, the board's comments on each, and a summary of the summary",
+            "2026-10-14T14:02:00Z",
+            serde_json::json!({ "$seen": true, "$flagged": true }),
+            true,
+        ),
+        email(
+            "L3",
+            serde_json::json!([{
+                "email": "cy.no-display-name.but-a-very-long-local-part@subdomain.example.invalid"
+            }]),
+            "Minutes",
+            "2026-10-12T17:45:00Z",
+            serde_json::json!({ "$seen": true }),
+            false,
+        ),
+        email(
+            "L4",
+            serde_json::json!([{ "name": "Dee", "email": "dee@example.invalid" }]),
+            "Re: build cluster",
+            "2026-08-03T09:00:00Z",
+            serde_json::json!({ "$flagged": true }),
+            false,
+        ),
+        email(
+            "L5",
+            serde_json::json!([{ "name": "Eve", "email": "eve@example.invalid" }]),
+            "Photos from the weekend",
+            "2026-01-16T11:00:00Z",
+            serde_json::json!({ "$seen": true }),
+            true,
+        ),
+        email(
+            "L6",
+            serde_json::json!([{ "name": "Gus", "email": "gus@example.invalid" }]),
+            "Old thread",
+            "2025-10-16T10:00:00Z",
+            serde_json::json!({ "$seen": true }),
+            false,
+        ),
+    ];
+    let view = &mut state.accounts[0];
+    view.mail.total = 236;
+    view.mail.emails = emails;
+    view.mail.table.selection = vec!["L3".into()];
+    view.mail.table.focus = Some(2);
+    state
 }
 
 fn harness(state: State) -> Harness<'static, Window> {
@@ -293,7 +381,8 @@ fn the_tree_takes_the_keyboard_after_a_click() {
 #[test]
 fn an_unread_email_row_opens_and_marks_read() {
     let mut h = harness(fixture());
-    h.get_by_label("Bob").click();
+    // A row's accessible label is its cells' text: "Lunch, Bob, Tue 01:02".
+    h.get_by_label_contains("Bob").click();
     h.run();
     let state = &h.state().state;
     assert!(
@@ -309,6 +398,115 @@ fn an_unread_email_row_opens_and_marks_read() {
         work.iter()
             .any(|w| matches!(w, Work::OpenEmail { id, .. } if id == "E1"))
     );
+    let mail = &h.state().state.account("home").unwrap().mail;
+    assert_eq!(mail.table.selection, ["E1"], "the opened row is selected");
+}
+
+/// The message list's rows, top to bottom, by their accessible labels.
+fn list_rows(h: &Harness<'static, Window>) -> Vec<String> {
+    let mut rows: Vec<(f32, String)> = h
+        .query_all_by_role(egui::accesskit::Role::Row)
+        .map(|n| {
+            (
+                n.rect().top(),
+                n.accesskit_node().label().unwrap_or_default(),
+            )
+        })
+        .collect();
+    rows.sort_by(|a, b| a.0.total_cmp(&b.0));
+    rows.into_iter().map(|(_, label)| label).collect()
+}
+
+#[test]
+fn each_email_is_one_row_of_subject_from_and_a_compact_date() {
+    let h = harness(long_list());
+    assert_eq!(
+        list_rows(&h),
+        [
+            "Lunch today?, Ann Lee, 08:05",
+            "Quarterly report: the full numbers, every appendix, the board's comments on each, and a summary of the summary, Bartholomew Rivera-Montgomery of the Extremely Long Display Name Society, Wed 14:02",
+            "Minutes, cy.no-display-name.but-a-very-long-local-part@subdomain.example.invalid, Mon 17:45",
+            "Re: build cluster, Dee, 3 Aug",
+            "Photos from the weekend, Eve, 16 Jan",
+            "Old thread, Gus, 16/10/2025",
+        ]
+    );
+    // Subject is the first column.
+    let subject = h.get_by_label(&label("column-subject")).rect();
+    let from = h.get_by_label(&label("column-from")).rect();
+    let date = h.get_by_label(&label("column-date")).rect();
+    assert!(subject.left() < from.left() && from.left() < date.left());
+}
+
+#[test]
+fn dates_show_in_the_clock_zone() {
+    // Ten hours east: Bob's 01:02 UTC Tuesday is 11:02 there.
+    let mut h = harness(fixture());
+    email::view::mail::pin_clock(&h.ctx, NOW, 10 * 3600);
+    h.run();
+    assert!(
+        list_rows(&h)[0].ends_with("Tue 11:02"),
+        "{:?}",
+        list_rows(&h)
+    );
+}
+
+fn opened(h: &mut Harness<'static, Window>) -> Vec<String> {
+    h.state_mut()
+        .state
+        .take_work()
+        .into_iter()
+        .filter_map(|w| match w {
+            Work::OpenEmail { id, .. } => Some(id),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn up_and_down_move_the_selection_and_enter_opens() {
+    let mut h = harness(long_list());
+    // A row click takes the keyboard and opens the row.
+    h.get_by_label_contains("Minutes").click();
+    h.run();
+    assert_eq!(opened(&mut h), ["L3"]);
+    h.key_press(egui::Key::ArrowDown);
+    h.run();
+    assert_eq!(opened(&mut h), ["L4"], "Down opens the next email");
+    h.key_press(egui::Key::ArrowUp);
+    h.run();
+    h.key_press(egui::Key::ArrowUp);
+    h.run();
+    assert_eq!(opened(&mut h), ["L3", "L2"], "Up opens the one before");
+    let mail = &h.state().state.account("home").unwrap().mail;
+    assert_eq!(mail.table.selection, ["L2"]);
+    assert_eq!(mail.table.focus, Some(1));
+    // Enter opens the keyboard's row (it has not loaded yet, so again).
+    h.key_press(egui::Key::Enter);
+    h.run();
+    assert_eq!(opened(&mut h), ["L2"]);
+    // One row at a time: Ctrl+A selects nothing more.
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    h.run();
+    let mail = &h.state().state.account("home").unwrap().mail;
+    assert_eq!(mail.table.selection, ["L2"]);
+}
+
+#[test]
+fn an_email_opened_elsewhere_shows_selected_and_a_new_mailbox_clears_it() {
+    let mut state = fixture();
+    let first = state.accounts[0].mail.emails[1].clone();
+    state.accounts[0].mail.open = Some(first);
+    let table = state.accounts[0].mail.list_table();
+    assert_eq!(table.selection, ["E2"]);
+    assert_eq!(table.focus, Some(1));
+    state.open_email("home", "E1".into());
+    assert_eq!(state.accounts[0].mail.table.selection, ["E1"]);
+    let mut h = harness(state);
+    h.get_by_label("Sent").click();
+    h.run();
+    let mail = &h.state().state.account("home").unwrap().mail;
+    assert!(mail.table.selection.is_empty() && mail.table.focus.is_none());
 }
 
 #[test]
@@ -390,6 +588,24 @@ fn window_studio_dark() {
     snapshot(
         "window_studio_dark",
         fixture(),
+        &theme(Scheme::Studio, Mode::Dark),
+    );
+}
+
+#[test]
+fn mail_list_studio_light() {
+    snapshot(
+        "mail_list_studio_light",
+        long_list(),
+        &theme(Scheme::Studio, Mode::Light),
+    );
+}
+
+#[test]
+fn mail_list_studio_dark() {
+    snapshot(
+        "mail_list_studio_dark",
+        long_list(),
         &theme(Scheme::Studio, Mode::Dark),
     );
 }

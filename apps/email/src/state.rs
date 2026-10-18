@@ -25,6 +25,7 @@ use jmap::{AddressBook, Calendar, CalendarEvent, Composed, Contact, Email, Email
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use settings::email::{AccountEntry, Email as EmailSettings};
+use toolkit::datatable::{Align, Column, SelectionMode, TableEvent, TableState, Width};
 
 use crate::drafts::{DraftOp, SavedDraft};
 use crate::secrets::Secrets;
@@ -128,6 +129,34 @@ pub struct MailState {
     /// Addresses this account has seen: Sent pages' recipients and other
     /// pages' senders, for completion. In memory only.
     pub recent: Vec<crate::suggest::Suggestion>,
+    /// The message list's table: its selection, keyboard row and dragged
+    /// widths. The list is one page, newest first, as the server sends it.
+    pub table: TableState,
+}
+
+/// The message list's column ids.
+pub const COLUMN_SUBJECT: &str = "subject";
+pub const COLUMN_FROM: &str = "from";
+pub const COLUMN_DATE: &str = "date";
+
+/// The message list's columns, Subject first: Subject (a resizable 55%),
+/// From (the rest) and Date (`date_width` points, right-aligned). None
+/// sorts from its header: the list is the server's newest-first page.
+///
+/// Only Subject is resizable: egui_extras' resize handle of a column that
+/// follows the remainder is pinned (the remainder absorbs the drag), so the
+/// remainder sits between the one resizable column and the fixed one.
+pub fn list_columns(date_width: f32) -> Vec<Column> {
+    vec![
+        Column::new(COLUMN_SUBJECT, "column-subject").width(Width::Share {
+            share: 0.55,
+            min: 120.0,
+        }),
+        Column::new(COLUMN_FROM, "column-from").width(Width::Remainder { min: 80.0 }),
+        Column::new(COLUMN_DATE, "column-date")
+            .width(Width::Fixed(date_width))
+            .align(Align::End),
+    ]
 }
 
 /// The most recent addresses remembered per account.
@@ -184,6 +213,24 @@ pub enum Transfer {
 }
 
 impl MailState {
+    /// The shown rows' keys (email ids), in list order.
+    pub fn keys(&self) -> Vec<String> {
+        self.emails.iter().map(|e| e.id.clone()).collect()
+    }
+
+    /// The list's table as it is drawn: an email opened some other way
+    /// (the Bus, a delete's advance) shows as selected.
+    pub fn list_table(&self) -> TableState {
+        let mut table = self.table.clone();
+        if let Some(open) = &self.open
+            && table.selection.is_empty()
+        {
+            table.selection = vec![open.id.clone()];
+            table.focus = self.emails.iter().position(|e| e.id == open.id);
+        }
+        table
+    }
+
     /// The selected mailbox, when it is still in the list.
     pub fn selected_mailbox(&self) -> Option<&Mailbox> {
         self.selected
@@ -449,6 +496,11 @@ impl AccountView {
         // under the new selection while its page loads.
         self.mail.emails.clear();
         self.mail.total = 0;
+        // Nothing selected in the new list; the dragged widths stay.
+        self.mail.table = TableState {
+            widths: std::mem::take(&mut self.mail.table.widths),
+            ..TableState::default()
+        };
         // An open still in flight belongs to the old mailbox.
         self.tickets.open += 1;
         self.mail.busy = true;
@@ -2251,6 +2303,7 @@ impl State {
                         view.mail.busy = false;
                         view.mail.emails = page.emails;
                         view.mail.total = page.total;
+                        view.mail.table.rows_changed(&view.mail.keys());
                     }
                     Done::Page(_, Err(error)) => {
                         view.mail.busy = false;
@@ -2524,8 +2577,36 @@ impl State {
                 read: true,
             });
         }
+        // The list selects the row it opened.
+        let index = view.mail.emails.iter().position(|e| e.id == id);
+        view.mail.table.selection = vec![id.clone()];
+        view.mail.table.focus = index;
         view.open_email(id, None, &mut self.work);
         true
+    }
+
+    /// The message list reported `event` on `account`'s view: a row picked
+    /// (a click, Up or Down) or activated (a double-click, Enter) opens
+    /// its email; a dragged width is remembered. One row at a time: the
+    /// list is single-selection.
+    pub fn mail_table(&mut self, account: &str, event: TableEvent) {
+        let Some(view) = self.accounts.iter_mut().find(|v| v.entry.id == account) else {
+            return;
+        };
+        match &event {
+            TableEvent::Selected { key, .. } | TableEvent::Activated { key, .. } => {
+                let opened = view.mail.open.as_ref().is_some_and(|e| e.id == *key);
+                view.mail.table.apply(&event, SelectionMode::Single);
+                if !opened {
+                    self.open_email(account, key.clone());
+                }
+            }
+            TableEvent::ColumnResized { .. } => {
+                view.mail.table.apply(&event, SelectionMode::Single);
+            }
+            // No sort, pager, menu, drag or multi-selection in this list.
+            _ => {}
+        }
     }
 
     /// `email.open`: show `account`'s email `id` in the reader, whether or
@@ -2768,6 +2849,7 @@ impl State {
                         advance = neighbour(&view.mail.emails, &open.id, gone);
                     }
                     view.mail.emails.retain(|e| !gone.contains(&e.id));
+                    view.mail.table.rows_changed(&view.mail.keys());
                     if view
                         .mail
                         .open
@@ -4250,6 +4332,7 @@ impl State {
             UiEvent::OpenEmail(account, id) => {
                 self.open_email(&account, id);
             }
+            UiEvent::MailTable(account, event) => self.mail_table(&account, event),
             UiEvent::SelectEvent(account, index) => {
                 if let Some(view) = self.account_mut(&account) {
                     view.calendars.open = Some(index);

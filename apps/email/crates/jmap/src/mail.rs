@@ -206,6 +206,15 @@ impl Email {
             .and_then(Value::as_bool)
             .unwrap_or(false)
     }
+
+    /// Whether the `$flagged` keyword is set.
+    pub fn is_flagged(&self) -> bool {
+        self.keywords
+            .as_ref()
+            .and_then(|k| k.get("$flagged"))
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    }
 }
 
 /// A mailbox listing page: the ids' emails and the full match count behind

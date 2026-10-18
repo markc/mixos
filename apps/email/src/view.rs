@@ -40,6 +40,9 @@ pub enum UiEvent {
     TreeKey(TreeKey),
     /// Open an account's email (also marks it read through the state).
     OpenEmail(String, String),
+    /// The account's message list reported this (a row picked or
+    /// activated, a column dragged).
+    MailTable(String, toolkit::datatable::TableEvent),
     SelectEvent(String, usize),
     SelectContact(String, usize),
     ContactFilter(String, String),

@@ -237,6 +237,9 @@ fn window(state: State, theme: &Theme) -> Harness<'static, (State, Vec<UiEvent>)
             (state, Vec::new()),
         );
     toolkit::install(&h.ctx, theme);
+    // Friday 2026-10-16 09:30 UTC: the list's dates do not move with the
+    // clock.
+    email::view::mail::pin_clock(&h.ctx, 1_792_143_000, 0);
     h.run();
     h
 }

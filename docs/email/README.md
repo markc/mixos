@@ -107,7 +107,13 @@ A malformed file loads defaults and is never overwritten.
   expand (or go to the parent or first child) and **Enter** selects.
 - **The centre**: the selected account's mail page (newest first, as many
   as the page size), its calendar's events, or its book's contacts, with
-  a server-side filter over name, email and company.
+  a server-side filter over name, email and company. The mail page is a
+  table of one compact row per email: **Subject** (with flag and
+  attachment markers; drag its edge to widen it), **From** and a compact
+  **Date** (the time today, the weekday this week, the day and month this
+  year, else the full date). Unread rows are bold. Clicking a row opens
+  it in the reader; once the list has the keyboard, **↑/↓** move the
+  selection and open each email, and **Enter** opens the selected one.
 - **The reader**: the open email (plain text first, the HTML source when
   there is no plain text), event or contact. A text body written as
   Markdown is rendered: a `text/markdown` part always, and a

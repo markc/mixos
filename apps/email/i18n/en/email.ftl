@@ -41,6 +41,15 @@ phone-line = Phone: { $value }
 company-line = Company: { $value }
 address-book-line = Address book: { $value }
 count-of = { $shown } of { $total }
+column-subject = Subject
+column-from = From
+column-date = Date
+# The message list's compact dates (chrono patterns): today, the six days
+# before, earlier this year, older.
+date-today = %H:%M
+date-week = %a %H:%M
+date-year = %-d %b
+date-older = %d/%m/%Y
 reply-subject = Re:
 select-email = Select an email to read it.
 select-event = Select an event to see its details.
