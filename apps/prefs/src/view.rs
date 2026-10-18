@@ -63,6 +63,14 @@ pub enum UiEvent {
     EmailSelect(String),
     /// A field of the account form as typed.
     EmailField(preferences::email::Field, String),
+    /// The identity list of the selected account: a field as typed, a row
+    /// picked, added or removed, the list saved or reverted.
+    EmailIdentityEdit(preferences::email::IdentityField, String),
+    EmailIdentitySelect(usize),
+    EmailIdentityAdd,
+    EmailIdentityRemove,
+    EmailIdentitySave,
+    EmailIdentityRevert,
     /// The password field as typed (never shown, never stored).
     EmailPassword(preferences::email::Secret),
     /// A change that applies at once: enable, a mail option.

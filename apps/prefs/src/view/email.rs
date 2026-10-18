@@ -222,7 +222,111 @@ fn account(
     if let Some(saved) = saved {
         bars::hairline(ui);
         password(ui, engine, commands, strings, saved, width, events);
+        identities(ui, engine, width, events);
     }
+}
+
+/// The account's identity list: its rows, the selected identity's fields,
+/// and Add, Remove, Save and Revert. Save sends the whole list.
+fn identities(ui: &mut Ui, engine: &Engine, width: f32, events: &mut Vec<UiEvent>) {
+    let draft = engine.identity_draft();
+    bars::hairline(ui);
+    panel::section_label(ui, &label("email-identities"));
+    ui.horizontal_wrapped(|ui| {
+        for (index, row) in draft.rows.iter().enumerate() {
+            let text = if row.name.is_empty() {
+                row.id.clone()
+            } else {
+                format!("{} <{}>", row.name, row.address)
+            };
+            if toolkit::selectable(ui, index == draft.selected, text).clicked() {
+                events.push(UiEvent::EmailIdentitySelect(index));
+            }
+        }
+    });
+    ui.horizontal(|ui| {
+        let add = toolkit::button::PushButton::secondary(label("email-identity-add"));
+        if ui.add(add).clicked() {
+            events.push(UiEvent::EmailIdentityAdd);
+        }
+        let remove = toolkit::button::PushButton::secondary(label("email-identity-remove"));
+        if ui
+            .add_enabled(!draft.rows.is_empty(), remove)
+            .clicked()
+        {
+            events.push(UiEvent::EmailIdentityRemove);
+        }
+    });
+    if let Some(row) = draft.rows.get(draft.selected) {
+        let mut name = row.name.clone();
+        if ui
+            .add(field::text_edit(&mut name, &label("email-identity-name"), width))
+            .changed()
+        {
+            events.push(UiEvent::EmailIdentityEdit(
+                preferences::email::IdentityField::Name,
+                name,
+            ));
+        }
+        let mut address = row.address.clone();
+        if ui
+            .add(field::text_edit(&mut address, &label("email-identity-address"), width))
+            .changed()
+        {
+            events.push(UiEvent::EmailIdentityEdit(
+                preferences::email::IdentityField::Address,
+                address,
+            ));
+        }
+        let mut reply_to = row.reply_to.clone().unwrap_or_default();
+        if ui
+            .add(field::text_edit(&mut reply_to, &label("email-identity-reply-to"), width))
+            .changed()
+        {
+            events.push(UiEvent::EmailIdentityEdit(
+                preferences::email::IdentityField::ReplyTo,
+                reply_to,
+            ));
+        }
+        let mut signature = row.signature.clone();
+        if ui
+            .add(
+                egui::TextEdit::multiline(&mut signature)
+                    .hint_text(label("email-identity-signature"))
+                    .desired_rows(SIGNATURE_ROWS)
+                    .desired_width(width),
+            )
+            .changed()
+        {
+            events.push(UiEvent::EmailIdentityEdit(
+                preferences::email::IdentityField::Signature,
+                signature,
+            ));
+        }
+    }
+    if let Some(error) = &draft.error {
+        let text = match error {
+            preferences::email::Refusal::Key(key) => label(key),
+            preferences::email::Refusal::Settings(text) => text.clone(),
+            _ => label("email-identity-refused"),
+        };
+        ui.add(egui::Label::new(
+            RichText::new(text)
+                .small()
+                .color(ui.visuals().error_fg_color),
+        ).wrap());
+    }
+    let pending = engine.email.identities.is_some();
+    ui.horizontal(|ui| {
+        let save = toolkit::button::PushButton::primary(label("email-identity-save"));
+        if ui.add_enabled(pending, save).clicked() {
+            events.push(UiEvent::EmailIdentitySave);
+        }
+        let revert = toolkit::button::PushButton::secondary(label("email-identity-revert"));
+        if ui.add_enabled(pending, revert).clicked() {
+            events.push(UiEvent::EmailIdentityRevert);
+        }
+    });
 }
 
 /// The write-only password field, whether one is set, and Connect now.

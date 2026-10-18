@@ -82,6 +82,12 @@ pub fn apply_ui(engine: &mut Engine, commands: &Registry<Engine>, events: Vec<Ui
             UiEvent::ConfirmEmail => engine.confirm_email(),
             UiEvent::EmailSelect(id) => engine.select_email_account(&id),
             UiEvent::EmailField(field, text) => engine.edit_email_field(field, text),
+            UiEvent::EmailIdentityEdit(field, text) => engine.identity_edit(field, text),
+            UiEvent::EmailIdentitySelect(index) => engine.identity_select(index),
+            UiEvent::EmailIdentityAdd => engine.identity_add(),
+            UiEvent::EmailIdentityRemove => engine.identity_remove(),
+            UiEvent::EmailIdentitySave => engine.identity_save(),
+            UiEvent::EmailIdentityRevert => engine.identity_revert(),
             UiEvent::EmailPassword(password) => engine.edit_email_password(password),
             UiEvent::EmailChange(change) => {
                 let _ = engine.change_email(change);
