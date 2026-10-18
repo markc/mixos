@@ -253,8 +253,9 @@ pub async fn check_graduation(
         return Ok(false);
     }
 
-    let skills_cfg = config::store::load_service::<crate::knowledge_settings::SkillsSettings>("skills")
-        .unwrap_or_default();
+    let skills_cfg =
+        config::store::load_service::<crate::knowledge_settings::SkillsSettings>("skills")
+            .unwrap_or_default();
     let threshold_conf = skills_cfg.graduation_confidence as f32;
     let threshold_uses = skills_cfg.graduation_min_uses;
     let threshold_successes = skills_cfg.graduation_min_successes;

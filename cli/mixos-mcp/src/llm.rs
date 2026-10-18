@@ -14,8 +14,8 @@
 //! let response = client.complete("You are helpful.", "What is 2+2?").await?;
 //! ```
 
-use anyhow::{Context, Result};
 use crate::knowledge_settings::{LlmBackendConfig, LlmSettings};
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
 // --- Multi-turn chat types (for agent loops) ---
@@ -216,10 +216,9 @@ impl LlmClient {
     pub fn from_config(backend_name: Option<&str>) -> Result<Self> {
         let llm = config::store::load_service::<LlmSettings>("llm").unwrap_or_default();
         let name = backend_name.unwrap_or(&llm.default);
-        let cfg = llm
-            .backends
-            .get(name)
-            .with_context(|| format!("LLM backend '{name}' not found in llm.conf.mix [backends]"))?;
+        let cfg = llm.backends.get(name).with_context(|| {
+            format!("LLM backend '{name}' not found in llm.conf.mix [backends]")
+        })?;
         Self::from_backend_config(cfg)
     }
 
@@ -782,7 +781,10 @@ async fn claude_cli_complete(
     user: &str,
 ) -> Result<String> {
     let mut cmd = tokio::process::Command::new(binary);
-    cmd.kill_on_drop(true).arg("-p").arg("--output-format").arg("text");
+    cmd.kill_on_drop(true)
+        .arg("-p")
+        .arg("--output-format")
+        .arg("text");
     if !system.is_empty() {
         cmd.arg("--system-prompt").arg(system);
     }
@@ -818,7 +820,8 @@ async fn bus_complete(port: &str, command: &str, system: &str, user: &str) -> Re
     let args = serde_json::json!({ "prompt": prompt });
     let broker = crate::connection::BrokerConnection::new();
     let client = broker.get().await.map_err(anyhow::Error::msg)?;
-    let resp = client.call(port, command, args)
+    let resp = client
+        .call(port, command, args)
         .await
         .context("calling claud Bus port")?;
 

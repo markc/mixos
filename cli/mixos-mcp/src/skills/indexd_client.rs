@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
+use super::SkillDocument;
 use anyhow::{Context, Result};
 use serde::Deserialize;
-use super::SkillDocument;
 
 pub struct IndexdClient {
     client: std::sync::Arc<crate::connection::Client>,
@@ -13,7 +13,12 @@ impl IndexdClient {
     pub async fn from_config() -> Result<Self> {
         let broker = crate::connection::BrokerConnection::new();
         let client = broker.get().await.map_err(anyhow::Error::msg)?;
-        if !client.list_services().await?.iter().any(|name| name == "indexd") {
+        if !client
+            .list_services()
+            .await?
+            .iter()
+            .any(|name| name == "indexd")
+        {
             anyhow::bail!("native indexd service is not registered on the MixOS Bus");
         }
         Ok(Self { client })
@@ -22,7 +27,10 @@ impl IndexdClient {
     async fn request<T: for<'de> Deserialize<'de>>(&mut self, json: &str) -> Result<T> {
         let request: serde_json::Value = serde_json::from_str(json)?;
         let action = request["action"].as_str().context("missing index action")?;
-        let response = self.client.call("indexd", &format!("indexd.{action}"), request).await?;
+        let response = self
+            .client
+            .call("indexd", &format!("indexd.{action}"), request)
+            .await?;
         if let Some(error) = response.get("error").and_then(serde_json::Value::as_str) {
             anyhow::bail!("indexd error: {error}");
         }

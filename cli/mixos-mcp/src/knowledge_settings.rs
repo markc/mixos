@@ -21,7 +21,6 @@ use serde::{Deserialize, Serialize};
 /// [domains.map]
 /// "~/Projects/mixos" = "mixos"
 
-
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -31,11 +30,7 @@ pub struct DomainsSettings {
 
 impl Default for DomainsSettings {
     fn default() -> Self {
-        let map = BTreeMap::from([
-            ("~/Projects/mixos".into(), "mixos".into()),
-            
-            
-        ]);
+        let map = BTreeMap::from([("~/Projects/mixos".into(), "mixos".into())]);
         Self { map }
     }
 }
@@ -235,4 +230,3 @@ impl Default for KnowledgeSettings {
         }
     }
 }
-

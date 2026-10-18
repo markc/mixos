@@ -49,19 +49,31 @@ fn broker_account(name: &str) -> Result<BrokerAccount, String> {
     let mut result = std::ptr::null_mut();
     // SAFETY: the entry and backing buffer remain live until uid/gid are copied.
     let rc = unsafe {
-        libc::getpwnam_r(name.as_ptr(), entry.as_mut_ptr(), buffer.as_mut_ptr().cast(), buffer.len(), &mut result)
+        libc::getpwnam_r(
+            name.as_ptr(),
+            entry.as_mut_ptr(),
+            buffer.as_mut_ptr().cast(),
+            buffer.len(),
+            &mut result,
+        )
     };
     if rc != 0 || result.is_null() {
         return Err("configured broker account is unavailable".into());
     }
     // SAFETY: getpwnam_r succeeded and returned a non-null result.
     let entry = unsafe { entry.assume_init() };
-    Ok(BrokerAccount { uid: entry.pw_uid, gid: entry.pw_gid })
+    Ok(BrokerAccount {
+        uid: entry.pw_uid,
+        gid: entry.pw_gid,
+    })
 }
 
 impl BrokerConnection {
     pub(crate) fn new() -> Self {
-        let nonce = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos();
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
         Self {
             client: Mutex::new(None),
             connecting: tokio::sync::Mutex::new(()),
@@ -71,8 +83,12 @@ impl BrokerConnection {
     }
 
     fn live_client(&self) -> Option<Arc<Client>> {
-        self.client.lock().unwrap_or_else(|e| e.into_inner()).as_ref()
-            .filter(|client| client.is_connected()).cloned()
+        self.client
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+            .filter(|client| client.is_connected())
+            .cloned()
     }
 
     pub(crate) fn is_connected(&self) -> bool {
@@ -80,11 +96,17 @@ impl BrokerConnection {
     }
 
     pub(crate) async fn get(&self) -> Result<Arc<Client>, String> {
-        if let Some(client) = self.live_client() { return Ok(client); }
+        if let Some(client) = self.live_client() {
+            return Ok(client);
+        }
         let _connecting = self.connecting.lock().await;
-        if let Some(client) = self.live_client() { return Ok(client); }
+        if let Some(client) = self.live_client() {
+            return Ok(client);
+        }
         let previous = self.client.lock().unwrap_or_else(|e| e.into_inner()).take();
-        if let Some(previous) = previous { previous.close().await; }
+        if let Some(previous) = previous {
+            previous.close().await;
+        }
         let build = buildinfo::build_info!();
         let provenance = bus::RegisterProvenance {
             binary: Some("mixos-mcp".into()),
@@ -102,23 +124,35 @@ impl BrokerConnection {
             let account = std::env::var("MIXOS_BROKER_ACCOUNT").ok();
             if socket.is_some() || account.is_some() {
                 let account = broker_account(account.as_deref().unwrap_or("noded"))?;
-                let mut options = bus::client_helpers::unix_connect_options(account).map_err(|e| e.to_string())?;
+                let mut options = bus::client_helpers::unix_connect_options(account)
+                    .map_err(|e| e.to_string())?;
                 options.endpoint = socket.map(Into::into);
                 options.require_native_session = true;
                 options.incoming_capacity = Some(64);
-                match NodedClient::connect_unix(&self.name, &url, &options, Some(provenance)).await.map_err(|e| e.to_string())? {
+                match NodedClient::connect_unix(&self.name, &url, &options, Some(provenance))
+                    .await
+                    .map_err(|e| e.to_string())?
+                {
                     UnixConnectOutcome::VerifiedUnix(connection) => Ok(Client::Unix {
-                        connection: Arc::new(connection), drain: Mutex::new(None),
+                        connection: Arc::new(connection),
+                        drain: Mutex::new(None),
                     }),
-                    UnixConnectOutcome::UnverifiedTcp { .. } => Err("native Unix connection required".into()),
+                    UnixConnectOutcome::UnverifiedTcp { .. } => {
+                        Err("native Unix connection required".into())
+                    }
                 }
             } else {
-                NodedClient::connect_with_provenance(&self.name, &url, Some(provenance)).await
-                    .map(Client::Tcp).map_err(|e| e.to_string())
+                NodedClient::connect_with_provenance(&self.name, &url, Some(provenance))
+                    .await
+                    .map(Client::Tcp)
+                    .map_err(|e| e.to_string())
             }
         };
-        let client = tokio::time::timeout(std::time::Duration::from_secs(5), connect).await
-            .map_err(|_| "broker connection/registration deadline elapsed; nothing was sent".to_string())?
+        let client = tokio::time::timeout(std::time::Duration::from_secs(5), connect)
+            .await
+            .map_err(|_| {
+                "broker connection/registration deadline elapsed; nothing was sent".to_string()
+            })?
             .map_err(|e| format!("broker connect failed: {e}; nothing was sent"))?;
         let client = Arc::new(client);
         match client.as_ref() {
@@ -126,8 +160,15 @@ impl BrokerConnection {
                 let receiver = Arc::clone(connection);
                 let task = tokio::spawn(async move {
                     while let Some(delivery) = receiver.recv_shared().await {
-                        let _ = tokio::time::timeout(std::time::Duration::from_secs(1),
-                            receiver.client().respond(delivery.command(), 10, "MCP bridge has no application command port")).await;
+                        let _ = tokio::time::timeout(
+                            std::time::Duration::from_secs(1),
+                            receiver.client().respond(
+                                delivery.command(),
+                                10,
+                                "MCP bridge has no application command port",
+                            ),
+                        )
+                        .await;
                     }
                 });
                 *drain.lock().unwrap_or_else(|e| e.into_inner()) = Some(task.abort_handle());
@@ -137,9 +178,18 @@ impl BrokerConnection {
                     let weak = Arc::downgrade(&client);
                     tokio::spawn(async move {
                         while let Some(command) = incoming.recv().await {
-                            let Some(owner) = weak.upgrade() else { break; };
-                            let _ = tokio::time::timeout(std::time::Duration::from_secs(1),
-                                owner.respond(&command, 10, "MCP bridge has no application command port")).await;
+                            let Some(owner) = weak.upgrade() else {
+                                break;
+                            };
+                            let _ = tokio::time::timeout(
+                                std::time::Duration::from_secs(1),
+                                owner.respond(
+                                    &command,
+                                    10,
+                                    "MCP bridge has no application command port",
+                                ),
+                            )
+                            .await;
                         }
                     });
                 }

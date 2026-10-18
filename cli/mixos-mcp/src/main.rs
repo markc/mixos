@@ -18,11 +18,11 @@ use rmcp::handler::server::wrapper::Parameters;
 use rmcp::{ServerHandler, ServiceExt, tool, tool_router};
 use serde::Deserialize;
 mod connection;
-mod skills;
-mod llm;
 mod knowledge_settings;
+mod llm;
 mod mix_worker;
 mod native_tools;
+mod skills;
 mod tool_output;
 
 struct MixosMcp {
@@ -238,11 +238,7 @@ impl mix::evaluator::BusHandler for McpBusHandler {
         command: &'a str,
         args: &'a mix::value::Value,
     ) -> std::pin::Pin<
-        Box<
-            dyn std::future::Future<
-                    Output = mix::error::MixResult<(i32, mix::value::Value)>,
-                > + 'a,
-        >,
+        Box<dyn std::future::Future<Output = mix::error::MixResult<(i32, mix::value::Value)>> + 'a>,
     > {
         Box::pin(async move {
             // Fallible since mix 0.21.1 (non-finite numbers have no
@@ -253,9 +249,7 @@ impl mix::evaluator::BusHandler for McpBusHandler {
                 Err(e) => {
                     return Ok((
                         10,
-                        mix::value::Value::String(format!(
-                            "send args not JSON-encodable: {e}"
-                        )),
+                        mix::value::Value::String(format!("send args not JSON-encodable: {e}")),
                     ));
                 }
             };
@@ -264,14 +258,14 @@ impl mix::evaluator::BusHandler for McpBusHandler {
             // status (→ `$rc = rc`) and a success carries its rc (0 or a
             // warning 5) — the Mix rc-band contract (was every Err → rc=10,
             // conflating transport with application error).
-            let noded =
-                self.noded
-                    .get()
-                    .await
-                    .map_err(|e| mix::error::MixError::RuntimeError {
-                        span: None,
-                        msg: format!("mcp send broker unavailable: {e}"),
-                    })?;
+            let noded = self
+                .noded
+                .get()
+                .await
+                .map_err(|e| mix::error::MixError::RuntimeError {
+                    span: None,
+                    msg: format!("mcp send broker unavailable: {e}"),
+                })?;
             match noded.call_typed(target, command, json_args).await {
                 Ok(bus::native_client::PortReply::Ok { rc, value }) => {
                     Ok((i32::from(rc), mix::json::json_to_mix(value)))
@@ -292,26 +286,24 @@ impl mix::evaluator::BusHandler for McpBusHandler {
         target: &'a str,
         command: &'a str,
         args: &'a mix::value::Value,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = mix::error::MixResult<()>> + 'a>>
-    {
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = mix::error::MixResult<()>> + 'a>> {
         Box::pin(async move {
             // emit is fire-and-forget but has an error channel — a
             // non-JSON-encodable payload (non-finite number) raises rather
             // than emitting a mangled event.
-            let json_args = mix::json::mix_to_json(args).map_err(|e| {
-                mix::error::MixError::RuntimeError {
+            let json_args =
+                mix::json::mix_to_json(args).map_err(|e| mix::error::MixError::RuntimeError {
                     span: None,
                     msg: format!("emit args not JSON-encodable: {e}"),
-                }
-            })?;
-            let noded =
-                self.noded
-                    .get()
-                    .await
-                    .map_err(|e| mix::error::MixError::RuntimeError {
-                        span: None,
-                        msg: format!("mcp emit broker unavailable: {e}"),
-                    })?;
+                })?;
+            let noded = self
+                .noded
+                .get()
+                .await
+                .map_err(|e| mix::error::MixError::RuntimeError {
+                    span: None,
+                    msg: format!("mcp emit broker unavailable: {e}"),
+                })?;
             noded.send(target, command, json_args).await.map_err(|e| {
                 mix::error::MixError::RuntimeError {
                     span: None,
@@ -1296,8 +1288,10 @@ impl MixosMcp {
         };
 
         // Load knowledge settings for trust weighting + journal decay
-        let k = config::store::load_service::<crate::knowledge_settings::KnowledgeSettings>("knowledge")
-            .unwrap_or_default();
+        let k = config::store::load_service::<crate::knowledge_settings::KnowledgeSettings>(
+            "knowledge",
+        )
+        .unwrap_or_default();
 
         let mut result = serde_json::json!({
             "domain": domain.as_deref().unwrap_or("all"),
@@ -2403,10 +2397,8 @@ async fn run_mix_script(script: &str, cwd: Option<&str>) -> Result<(String, Stri
     // Create evaluator
     let stdout = mix_worker::CaptureBuffer::default();
     let stderr = mix_worker::CaptureBuffer::default();
-    let mut eval = mix::evaluator::Evaluator::with_output(
-        Box::new(stdout.clone()),
-        Box::new(stderr.clone()),
-    );
+    let mut eval =
+        mix::evaluator::Evaluator::with_output(Box::new(stdout.clone()), Box::new(stderr.clone()));
 
     // Native connection is lazy even inside the worker. Pure local scripts
     // need no broker; the first send/emit/port_exists acquires an owned client.
@@ -3374,14 +3366,27 @@ mod tests {
     async fn probe_bounds_a_wedged_frontend_and_survives_cancellation() {
         use super::*;
         let broker = test_broker::Broker::start();
-        let wedged = bus::native_client::NodedClient::connect("fixture-wedged", &broker.url).await.unwrap();
+        let wedged = bus::native_client::NodedClient::connect("fixture-wedged", &broker.url)
+            .await
+            .unwrap();
         let _unanswered = wedged.incoming_async().await.unwrap();
-        let client = bus::native_client::NodedClient::connect_anonymous(&broker.url).await.unwrap();
+        let client = bus::native_client::NodedClient::connect_anonymous(&broker.url)
+            .await
+            .unwrap();
         let started = std::time::Instant::now();
         let probe = client.call("fixture-wedged", "INFO", serde_json::Value::Null);
-        assert!(tokio::time::timeout(TERM_PROBE_TIMEOUT, probe).await.is_err());
+        assert!(
+            tokio::time::timeout(TERM_PROBE_TIMEOUT, probe)
+                .await
+                .is_err()
+        );
         assert!(started.elapsed() < std::time::Duration::from_secs(10));
-        assert!(client.call("noded", "noded.ping", serde_json::Value::Null).await.is_ok());
+        assert!(
+            client
+                .call("noded", "noded.ping", serde_json::Value::Null)
+                .await
+                .is_ok()
+        );
         wedged.close().await;
         client.close().await;
     }
@@ -3406,8 +3411,7 @@ mod tests {
             "the error must name the frontends in TERM_SERVICES order: {absent}"
         );
         assert!(
-            absent.contains("not registered")
-                || absent.contains("no MixOS terminal is registered")
+            absent.contains("not registered") || absent.contains("no MixOS terminal is registered")
         );
 
         let wedged_one = term_unresponsive(&["bterm"]);
