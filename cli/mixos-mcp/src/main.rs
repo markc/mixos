@@ -3369,126 +3369,21 @@ mod tests {
         assert!(registered_term_services(&names(&["terminal", "bterm-2"])).is_empty());
     }
 
-    /// The two properties `term_service`'s probe loop depends on, against a
-    /// REAL broker. Neither is provable from a pure test, and both are the
-    /// reason the loop is written as a probe rather than a retry.
-    ///
-    /// 1. A wedged service costs `TERM_PROBE_TIMEOUT`, not the client's 60s
-    ///    transport timeout — so a stuck `term` cannot hide a healthy
-    ///    `bterm` behind it.
-    /// 2. Cancelling that probe leaves the connection usable, so the NEXT
-    ///    candidate can actually be tried. If cancellation poisoned the
-    ///    client the fallback would be decorative.
-    ///
-    /// `#[ignore]`d, like the other broker-dependent fixtures in this tree:
-    /// it needs `noded` and spawns a Mix citizen that wedges its own
-    /// event pump. Run it with
-    /// `cargo test -p mixos-mcp -- --ignored --exact
-    ///  tests::probe_bounds_a_wedged_frontend_and_survives_cancellation`.
-    #[test]
-    #[ignore = "needs a live noded broker and /opt/mixos/bin/mix"]
-    fn probe_bounds_a_wedged_frontend_and_survives_cancellation() {
+    /// A timed-out read-only probe must leave the native client usable.
+    #[tokio::test]
+    async fn probe_bounds_a_wedged_frontend_and_survives_cancellation() {
         use super::*;
-        use std::io::Write;
-
-        let dir = std::env::temp_dir().join(format!("mcp-probe-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let script = dir.join("wedger.mix");
-        let mut f = std::fs::File::create(&script).unwrap();
-        // The handler blocks the serve runtime's pump, so the name stays
-        // registered while INFO stops being answered — exactly the state a
-        // registration-only resolver cannot see.
-        f.write_all(
-            b"on wedge.hang desc \"block the pump\"\n  sleep(30)\n  reply(\"done\")\nend\n",
-        )
-        .unwrap();
-        drop(f);
-
-        // Unique per run: the name is a GLOBAL Bus registration, so a fixed
-        // one would collide with a concurrent run (or a leaked citizen from a
-        // previous one) and the probe would be measuring the wrong process.
-        let service = format!("mcpprobe{}", std::process::id());
-
-        // Cleanup by RAII, not by trailing statements. Every assert below the
-        // spawn — including the ones INSIDE `block_on`, which panic straight
-        // out of it — would otherwise skip the kill and leave a `mix --serve`
-        // citizen registered on the developer's broker, wedged for 30s, under
-        // a name the next run then probes.
-        struct Reap(std::process::Child, std::path::PathBuf);
-        impl Drop for Reap {
-            fn drop(&mut self) {
-                let _ = self.0.kill();
-                let _ = self.0.wait();
-                let _ = std::fs::remove_dir_all(&self.1);
-            }
-        }
-        let _reap = Reap(
-            std::process::Command::new("/opt/mixos/bin/mix")
-                .args(["--serve", script.to_str().unwrap(), "--name", &service])
-                .spawn()
-                .expect("spawn wedger citizen"),
-            dir.clone(),
-        );
-
-        let outcome = tokio::runtime::Runtime::new().unwrap().block_on(async {
-            let client = bus::client_helpers::connect_anonymous_default()
-                .await
-                .expect("broker");
-            // Wait for it to register and answer.
-            let mut healthy = false;
-            for _ in 0..40 {
-                if client
-                    .call(&service, "INFO", serde_json::Value::Null)
-                    .await
-                    .is_ok()
-                {
-                    healthy = true;
-                    break;
-                }
-                tokio::time::sleep(std::time::Duration::from_millis(250)).await;
-            }
-            // Returned, not asserted: a panic here would unwind through
-            // `block_on` and the three real assertions below would never run,
-            // reporting a setup failure as if it were a finding.
-            if !healthy {
-                return None;
-            }
-
-            // Wedge it, then probe.
-            let _ = client
-                .send(&service, "wedge.hang", serde_json::Value::Null)
-                .await;
-            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-
-            let start = std::time::Instant::now();
-            let probe = client.call(&service, "INFO", serde_json::Value::Null);
-            let wedged = tokio::time::timeout(TERM_PROBE_TIMEOUT, probe).await;
-            let elapsed = start.elapsed();
-
-            // The connection must still work for the NEXT candidate.
-            let after = client
-                .call("noded", "noded.ping", serde_json::Value::Null)
-                .await;
-            Some((wedged.is_err(), elapsed, after.is_ok()))
-        });
-
-        let (timed_out, elapsed, connection_usable) =
-            outcome.expect("citizen never answered INFO — setup failed, nothing was proven");
-        assert!(
-            timed_out,
-            "our bound did not fire first after {elapsed:?}: either the citizen was not \
-             actually wedged (so the fixture proved nothing) or the client's own 60s \
-             transport timeout won the race, which is the hang this probe exists to prevent"
-        );
-        assert!(
-            elapsed < std::time::Duration::from_secs(10),
-            "probe took {elapsed:?} — it is not bounded by TERM_PROBE_TIMEOUT, \
-             so a wedged frontend still hides a healthy one"
-        );
-        assert!(
-            connection_usable,
-            "cancelling the probe poisoned the client; the fallback candidate could never be tried"
-        );
+        let broker = test_broker::Broker::start();
+        let wedged = bus::native_client::NodedClient::connect("fixture-wedged", &broker.url).await.unwrap();
+        let _unanswered = wedged.incoming_async().await.unwrap();
+        let client = bus::native_client::NodedClient::connect_anonymous(&broker.url).await.unwrap();
+        let started = std::time::Instant::now();
+        let probe = client.call("fixture-wedged", "INFO", serde_json::Value::Null);
+        assert!(tokio::time::timeout(TERM_PROBE_TIMEOUT, probe).await.is_err());
+        assert!(started.elapsed() < std::time::Duration::from_secs(10));
+        assert!(client.call("noded", "noded.ping", serde_json::Value::Null).await.is_ok());
+        wedged.close().await;
+        client.close().await;
     }
 
     /// "Nothing is running" and "something is running and wedged" must not

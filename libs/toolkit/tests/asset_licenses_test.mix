@@ -49,12 +49,14 @@ try
   -- legal-notice distribution, without claiming to build or run an app.
   $bins = $tmp .. "/bin"
   mkdir($bins)
-  for $name in ["mix","noded","editd","settingsd","portald","compd","ced","dopus","prefs","busviewer","screenshot"]
+  for $name in ["mix","mixos-mcp","noded","editd","settingsd","portald","compd","ced","dopus","prefs","busviewer","monitor","screenshot"]
     write_file($bins .. "/" .. $name,"fixture: " .. $name .. "\n")
   end
   $out = $tmp .. "/release"
   $r = run_argv(["/opt/mixos/bin/mix",$repo .. "/tools/package.mix","--release","99.0.0","--arch","x86_64","--bin-dir",$bins,"--out",$out],{timeout:60})
   check($r.ok,"native release packaging succeeds")
+  $server_archive = $out .. "/mixos-server-99.0.0-linux-x86_64.tar.gz"
+  check(run_argv_must(["tar","-xOf",$server_archive,"mixos-server-99.0.0-linux-x86_64/bin/mixos-mcp"]) == "fixture: mixos-mcp\n","server archive carries mixos-mcp")
   $archive = $out .. "/mixos-desktop-99.0.0-linux-x86_64.tar.gz"
   $prefix = "mixos-desktop-99.0.0-linux-x86_64/share/licenses/toolkit/"
   for $file in $manifest.files
