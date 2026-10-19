@@ -401,36 +401,31 @@ fn double_click(h: &mut Harness<'static, Window>, label: &str) {
 }
 
 #[test]
-fn an_unread_email_row_opens_on_a_double_click_and_marks_read() {
+fn a_single_click_opens_and_marks_read_and_a_double_click_does_not_reopen() {
     let mut h = harness(fixture());
     // A row's accessible label is its cells' text: "Lunch, Bob, Tue 01:02".
-    // One click selects it and nothing more.
+    // One click selects the row and opens it.
     h.get_by_label_contains("Bob").click();
     h.run();
-    let state = &h.state().state;
-    assert!(!state.account("home").unwrap().mail.emails[0].is_read());
-    assert_eq!(state.account("home").unwrap().mail.table.selection, ["E1"]);
-    assert!(
-        h.state_mut().state.take_work().is_empty(),
-        "a click neither opens nor marks read"
-    );
-    double_click(&mut h, "Bob");
-    let state = &h.state().state;
-    assert!(
-        state.account("home").unwrap().mail.emails[0].is_read(),
-        "the row marks read at once"
-    );
     let work = h.state_mut().state.take_work();
-    assert!(
-        work.iter()
-            .any(|w| matches!(w, Work::MarkRead { id, read: true, .. } if id == "E1"))
-    );
     assert!(
         work.iter()
             .any(|w| matches!(w, Work::OpenEmail { id, .. } if id == "E1"))
     );
+    assert!(
+        work.iter()
+            .any(|w| matches!(w, Work::MarkRead { id, read: true, .. } if id == "E1"))
+    );
     let mail = &h.state().state.account("home").unwrap().mail;
+    assert!(mail.emails[0].is_read(), "the opened row marks read at once");
     assert_eq!(mail.table.selection, ["E1"], "the opened row is selected");
+    // A double-click on the row that is already open does not open it again.
+    double_click(&mut h, "Bob");
+    let again = h.state_mut().state.take_work();
+    assert!(
+        again.iter().all(|w| !matches!(w, Work::OpenEmail { .. })),
+        "already open: {again:?}"
+    );
 }
 
 /// The message list's rows, top to bottom, by their accessible labels.
@@ -497,10 +492,10 @@ fn opened(h: &mut Harness<'static, Window>) -> Vec<String> {
 #[test]
 fn up_and_down_move_the_selection_and_enter_opens() {
     let mut h = harness(long_list());
-    // A row click takes the keyboard and selects the row, opening nothing.
+    // A row click takes the keyboard, selects the row and opens it.
     h.get_by_label_contains("Minutes").click();
     h.run();
-    assert!(opened(&mut h).is_empty());
+    assert_eq!(opened(&mut h), ["L3"]);
     h.key_press(egui::Key::ArrowDown);
     h.run();
     let work = h.state_mut().state.take_work();
@@ -528,8 +523,10 @@ fn up_and_down_move_the_selection_and_enter_opens() {
 #[test]
 fn ctrl_and_shift_clicks_ctrl_a_and_escape_select_without_opening() {
     let mut h = harness(long_list());
+    // A plain click opens its row; the selection gestures below do not.
     h.get_by_label_contains("Lunch today").click();
     h.run();
+    assert_eq!(opened(&mut h), ["L1"]);
     // Shift+click: the range from the row clicked first.
     h.get_by_label_contains("Re: build cluster")
         .click_modifiers(egui::Modifiers::SHIFT);
