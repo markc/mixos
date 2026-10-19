@@ -878,6 +878,8 @@ fn reader_panel_menu_studio_dark() {
     );
     h.get_by_label("Panel menu").click();
     h.run();
+    // The menu opens on the frame after its button's click.
+    h.run();
     h.snapshot("reader_panel_menu_studio_dark");
 }
 
