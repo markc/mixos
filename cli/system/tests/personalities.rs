@@ -116,11 +116,13 @@ fn personalities_lists_every_component() {
     let (code, out, _) = run(Command::new(BIN).arg("--personalities"));
     assert_eq!(code, 0);
     let want = format!(
-        "mix {}\nnoded {}\nmonitord {}\nmaild {}\n",
+        "mix {}\nnoded {}\nmonitord {}\nmaild {}\nwebd {}\ndnsd {}\n",
         mix_shell::COMPONENT_VERSION,
         noded::COMPONENT_VERSION,
         monitord::COMPONENT_VERSION,
-        maild::COMPONENT_VERSION
+        maild::COMPONENT_VERSION,
+        webd::COMPONENT_VERSION,
+        dnsd::COMPONENT_VERSION
     );
     assert_eq!(out, want);
 }
