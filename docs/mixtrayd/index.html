@@ -208,6 +208,7 @@
                 <div class="panel-title">On this page</div>
                 <div class="panel-content">
                     <nav id="toc-nav">
+                        <a href="#control">Control</a>
                         <a href="#use">Use</a>
                         <a href="#not-yet">Not yet</a>
                     </nav>
@@ -247,9 +248,18 @@ registers on the noded Bus as <code>mixtrayd</code> and answers one verb,
 <p>Each tab carries its own <code>error</code> field, so one failing source does not blank
 the others. The daemon polls nothing: it reads its sources when a snapshot is
 asked for, and the popup asks only when it opens.</p>
+<h2 id="control">Control</h2>
+<p>The COS tab can start, stop and restart a unit through the <code>mixtrayd.control</code>
+verb. A system unit goes through hostd's <code>unit.control</code> verb: hostd is root,
+and its grant <code>mixtray-units</code> names the only units this daemon may act on, so
+no sudo or polkit prompt is involved. The daemon refuses <code>hostd.service</code> and
+its own unit, and it marks each unit it can control in the snapshot.</p>
+<p>Every control action is recorded as a hostd receipt, and <code>hostd.undo</code> refuses
+it, since a restart has no undo.</p>
 <h2 id="use">Use</h2>
-<pre><code>mixtrayd serve       # the daemon (the default)
-mixtrayd snapshot    # print one snapshot from the running daemon
+<pre><code>mixtrayd serve                   # the daemon (the default)
+mixtrayd snapshot                # print one snapshot from the running daemon
+mixtrayd control UNIT ACTION     # start, stop or restart one controllable unit
 mixtrayd --version
 </code></pre>
 <h2 id="not-yet">Not yet</h2>
@@ -257,6 +267,8 @@ mixtrayd --version
 <li>MIX scripts, runs and trash are cosmix hub features with no MixOS source
 yet, so the MIX tab reports only the binary.</li>
 <li>SSH keys and trash are not listed.</li>
+<li>The popup does not yet refresh while it is open; it updates on open, after
+an action, and on Refresh.</li>
 </ul>
         </article>
         <p class="doc-source"><a href="/mixtrayd/README.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
