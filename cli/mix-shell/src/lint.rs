@@ -629,6 +629,12 @@ fn report_json(
     summary: &LintSummary,
 ) -> serde_json::Value {
     serde_json::json!({
+        // 2 (0.63.0): severity domain gains "note"; summary gains
+        // `notes`. `handlers` is an additive field under the same version:
+        // always present, empty when a file declares no `on` handler. Its
+        // in-tree consumer is the --source check in tools/verb_registry.mix
+        // (tools/lib/verb_registry_source.mix), which checks every field it
+        // relies on. Existing fields are unchanged.
         // 3: parsed function declarations for embedding-context consumers.
         // Every existing field keeps its schema-2 meaning.
         "schema_version": 3,

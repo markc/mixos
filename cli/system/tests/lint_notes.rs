@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `Severity::Note` + the MIX-D3xxx advisory namespace (0.63.0,
-//! `schema_version: 3`) — CLI-level pins, because the stakes are
+//! `schema_version: 2`) — CLI-level pins, because the stakes are
 //! CLI-level: `--deny-warnings` is a live fleet deploy gate
 //! (deploy_shared.mix runs it over every shared-manifest source), so a
 //! note that counted as a warning would stop fleet deploys the day the
