@@ -471,6 +471,8 @@
     {name:"webd.props.set", owner:"webd", version:"1.0.0", status:"accepted", class:"intent"},
     {name:"webd.props.delete", owner:"webd", version:"1.0.0", status:"accepted", class:"intent"},
     {name:"webd.routes.list", owner:"webd", version:"1.0.0", status:"accepted", class:"query"},
+    {name:"dnsd.zone.snapshot", owner:"dnsd", version:"0.3.4", status:"accepted", class:"query"},
+    {name:"dnsd.stats", owner:"dnsd", version:"0.3.4", status:"accepted", class:"query"},
     {name:"webd.stats", owner:"webd", version:"1.0.0", status:"accepted", class:"query"},
     {name:"webd.tls.status", owner:"webd", version:"1.0.0", status:"accepted", class:"query"},
     {name:"webd.autoconfig.served_domains", owner:"webd", version:"1.0.0", status:"accepted", class:"query"},

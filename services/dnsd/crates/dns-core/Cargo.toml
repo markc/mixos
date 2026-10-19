@@ -1,0 +1,35 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+# Copyright 2026 Mark Constable <mc@mixos.dev>
+[package]
+name = "dns-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "Private authoritative DNS model, parser, codec, resolver and serve loops for dnsd"
+
+[package.metadata.mixos]
+component = "dnsd"
+kind = "service"
+layer = "core"
+contract = "none"
+
+[lints.clippy]
+mod_module_files = "deny"
+
+[features]
+default = []
+
+[dependencies]
+hickory-proto = { version = "0.25", default-features = false }
+mix.workspace = true
+indexmap = "2"
+tokio = { workspace = true, features = ["net", "rt", "macros", "io-util", "sync", "time"] }
+arc-swap.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["net", "rt", "rt-multi-thread", "macros", "io-util", "sync", "time"] }
+tempfile.workspace = true
