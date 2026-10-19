@@ -4,7 +4,6 @@
 //! Web service configuration, listeners and ACME issuance settings.
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use crate::node::NodeConfig;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
