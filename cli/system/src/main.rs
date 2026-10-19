@@ -17,9 +17,16 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 /// Every personality this binary carries, with its component's version.
 const PERSONALITIES: &[(&str, &str)] = &[
     ("mix", mix_shell::COMPONENT_VERSION),
+    #[cfg(feature = "noded")]
     ("noded", noded::COMPONENT_VERSION),
+    #[cfg(feature = "monitord")]
     ("monitord", monitord::COMPONENT_VERSION),
+    #[cfg(feature = "maild")]
     ("maild", maild::COMPONENT_VERSION),
+    #[cfg(feature = "webd")]
+    ("webd", webd::COMPONENT_VERSION),
+    #[cfg(feature = "dnsd")]
+    ("dnsd", dnsd::COMPONENT_VERSION),
 ];
 
 /// The personality argv[0] names: its basename, without the leading `-` a
@@ -62,9 +69,16 @@ fn main() -> ExitCode {
     match name.as_str() {
         // `exe`: a `/proc/self/exe` re-exec that did not set argv[0].
         "mix" | "exe" => mix_shell::main(),
+        #[cfg(feature = "noded")]
         "noded" => noded::main(),
+        #[cfg(feature = "monitord")]
         "monitord" => monitord::main(),
+        #[cfg(feature = "maild")]
         "maild" => maild::main(),
+        #[cfg(feature = "webd")]
+        "webd" => webd::main(),
+        #[cfg(feature = "dnsd")]
+        "dnsd" => dnsd::main(),
         own if is_own_file(own) => mix_shell::main(),
         _ => {
             eprintln!(

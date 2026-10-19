@@ -20,6 +20,10 @@ profiles = ["server"]
 [lints.clippy]
 mod_module_files = "deny"
 
+# Preserve the former binary's test surface; module prose was not doctested.
+[lib]
+doctest = false
+
 [[bin]]
 name = "webd"
 path = "src/main.rs"
