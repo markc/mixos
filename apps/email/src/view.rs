@@ -400,13 +400,45 @@ fn reader(
     // The panel's three dots open the reader's options: the mail reader's
     // content settings. Other modes have none yet.
     if state.mode == Mode::Mail {
-        egui::Popup::menu(&group.menu).show(|ui| {
-            let mut light = state.reader_light;
-            let item =
-                toolkit::toggle::Checkbox::new(&mut light, crate::label("reader-light-content"));
-            if ui.add(item).changed() {
-                events.push(UiEvent::SetReaderLight(light));
-            }
-        });
+        reader_menu(ui, state, &group.menu, events);
     }
+}
+
+/// The reader's options menu, open from the panel's three dots: a click on
+/// them opens or closes it, and a click anywhere else closes it.
+fn reader_menu(
+    ui: &mut egui::Ui,
+    state: &State,
+    button: &egui::Response,
+    events: &mut Vec<UiEvent>,
+) {
+    let id = egui::Id::new("reader-menu-open");
+    let mut open = ui.ctx().data(|d| d.get_temp::<bool>(id)).unwrap_or(false);
+    if button.clicked() {
+        open = !open;
+    }
+    if open {
+        let area = egui::Area::new(id.with("area"))
+            .order(egui::Order::Foreground)
+            .fixed_pos(button.rect.left_bottom())
+            .show(ui.ctx(), |ui| {
+                egui::Frame::popup(ui.style()).show(ui, |ui| {
+                    let mut light = state.reader_light;
+                    let item = toolkit::toggle::Checkbox::new(
+                        &mut light,
+                        crate::label("reader-light-content"),
+                    );
+                    if ui.add(item).changed() {
+                        events.push(UiEvent::SetReaderLight(light));
+                    }
+                });
+            });
+        let pressed = ui.input(|i| i.pointer.primary_pressed());
+        let at = ui.input(|i| i.pointer.interact_pos());
+        let inside = at.is_some_and(|p| area.response.rect.contains(p) || button.rect.contains(p));
+        if pressed && !inside {
+            open = false;
+        }
+    }
+    ui.ctx().data_mut(|d| d.insert_temp(id, open));
 }
