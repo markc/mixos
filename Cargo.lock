@@ -2050,6 +2050,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "dns-core"
+version = "0.1.1"
+dependencies = [
+ "arc-swap",
+ "hickory-proto 0.25.2",
+ "indexmap",
+ "mix",
+ "tempfile",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "dnsd"
+version = "0.3.4"
+dependencies = [
+ "buildinfo",
+ "bus",
+ "config",
+ "dns-core",
+ "hickory-proto 0.25.2",
+ "logging",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "drm"
 version = "0.14.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
