@@ -581,7 +581,9 @@ fn set(desktop: &mut Desktop, path: &str, value: Option<Value>) -> Result<(), Di
                     crate::terminal::set(&mut desktop.terminal, path, field, value)?
                 }
                 ["email", field @ ..] => crate::email::set(&mut desktop.email, path, field, value)?,
-                ["ced", field @ ..] => crate::content::set_ced(&mut desktop.ced, path, field, value)?,
+                ["ced", field @ ..] => {
+                    crate::content::set_ced(&mut desktop.ced, path, field, value)?
+                }
                 _ => return Err(error(path, "Unknown field or scope")),
             }
         }

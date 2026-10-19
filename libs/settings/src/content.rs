@@ -255,10 +255,25 @@ mod tests {
     fn the_editor_takes_only_the_monospace_face() {
         let mut ced = Ced::default();
         assert!(validate_ced(&ced).is_ok(), "the default is the mono face");
-        set_ced(&mut ced, "ced", &["editor", "font", "family"], Some(json!("JetBrains Mono"))).unwrap();
+        set_ced(
+            &mut ced,
+            "ced",
+            &["editor", "font", "family"],
+            Some(json!("JetBrains Mono")),
+        )
+        .unwrap();
         assert!(validate_ced(&ced).is_ok());
-        set_ced(&mut ced, "ced", &["editor", "font", "family"], Some(json!("Inter"))).unwrap();
-        assert_eq!(validate_ced(&ced).unwrap_err().path, "ced.editor.font.family");
+        set_ced(
+            &mut ced,
+            "ced",
+            &["editor", "font", "family"],
+            Some(json!("Inter")),
+        )
+        .unwrap();
+        assert_eq!(
+            validate_ced(&ced).unwrap_err().path,
+            "ced.editor.font.family"
+        );
     }
 
     #[test]
