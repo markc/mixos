@@ -28,6 +28,7 @@ send-failed = Not sent: { $error }
 bad-recipient = Check the recipients: { $error }
 compose-title = Compose
 reply-below-quote = Reply below the quote
+reader-light-content = Light content
 identities-open = Identities…
 identities-title = Identities
 identity-add = Add

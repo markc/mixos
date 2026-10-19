@@ -44,6 +44,8 @@ pub enum UiEvent {
     TreeKey(TreeKey),
     /// The pane that has the keyboard now: Tab moved it, or a click did.
     PaneFocused(crate::state::Pane),
+    /// The reader's message body in light, while the window is dark.
+    SetReaderLight(bool),
     /// Open an account's email (also marks it read through the state).
     OpenEmail(String, String),
     /// The account's message list reported this (a row picked or

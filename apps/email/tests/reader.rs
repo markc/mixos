@@ -859,6 +859,26 @@ fn reader_plain_ocean_light() {
 }
 
 #[test]
+fn reader_light_content_studio_dark() {
+    // The window is dark; only the message body is light, and the header
+    // and toolbar keep the window's dark look.
+    let mut state = opened("text/plain", PLAIN);
+    state.reader_light = true;
+    let mut h = harness(state, &theme(Scheme::Studio, Mode::Dark));
+    h.run();
+    h.snapshot("reader_light_content_studio_dark");
+}
+
+#[test]
+fn light_content_is_only_the_body_and_the_window_stays_dark() {
+    let mut state = opened("text/plain", PLAIN);
+    state.apply_ui(UiEvent::SetReaderLight(true));
+    assert!(state.reader_light);
+    state.apply_ui(UiEvent::SetReaderLight(false));
+    assert!(!state.reader_light);
+}
+
+#[test]
 fn reader_reply_options_studio_dark() {
     let mut h = harness(
         opened("text/plain", PLAIN),
