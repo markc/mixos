@@ -882,7 +882,7 @@ struct NodeState {
     /// runtime state, shared across runtimes via the `Arc`. See [`login_throttle`].
     login_throttle: Arc<login_throttle::ThrottleMap>,
     /// P3 — email-2FA in-flight second factors, keyed by an opaque pending-id
-    /// (the HttpOnly `loggingin_pending` cookie). Holds the live maild bearer
+    /// (the HttpOnly `mixos_login_pending` cookie). Holds the live maild bearer
     /// and the emitted code's hash until the second factor passes. Ephemeral
     /// runtime state, shared across runtimes via the `Arc`. See [`login_pending`].
     login_pending: Arc<login_pending::PendingMap>,
