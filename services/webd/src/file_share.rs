@@ -180,8 +180,7 @@ impl Roots {
         for (account, path) in &config.roots {
             let safe_key = match account.split_once('|') {
                 Some((primary, email)) => {
-                    daemon::http_host::parse_request_host(primary)
-                        .is_some_and(|p| p == primary)
+                    daemon::http_host::parse_request_host(primary).is_some_and(|p| p == primary)
                         && valid_account(email)
                 }
                 None => valid_account(account),
@@ -208,10 +207,7 @@ impl Roots {
     }
 
     #[cfg(test)]
-    pub fn get(
-        &self,
-        account: &str,
-    ) -> Option<&std::sync::Arc<files::rooted_read::ReadRoot>> {
+    pub fn get(&self, account: &str) -> Option<&std::sync::Arc<files::rooted_read::ReadRoot>> {
         self.0.get(account).map(|(_, root)| root)
     }
 

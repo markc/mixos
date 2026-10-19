@@ -33,9 +33,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use daemon::listen::{Cidr, GuardPolicy, IpAcl, ListenerSetControl, RateLimit};
-use props::{
-    Actor, MergeMode, PropValue, RecordKey, Runtime, SetOpts, Version, WriteOrigin,
-};
+use props::{Actor, MergeMode, PropValue, RecordKey, Runtime, SetOpts, Version, WriteOrigin};
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 use tokio::sync::mpsc;

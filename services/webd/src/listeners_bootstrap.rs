@@ -36,9 +36,7 @@ use std::collections::BTreeMap;
 
 use anyhow::{Context, Result};
 use config::node::ResolvedWebdListener;
-use props::{
-    Actor, MergeMode, PropValue, RecordKey, Runtime, SetOpts, Version, WriteOrigin,
-};
+use props::{Actor, MergeMode, PropValue, RecordKey, Runtime, SetOpts, Version, WriteOrigin};
 use std::sync::Arc;
 
 use crate::listeners_namespace::namespace_name;

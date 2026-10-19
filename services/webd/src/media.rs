@@ -426,10 +426,9 @@ async fn media_ref_admitted(
     let bytes = tokio::task::spawn_blocking(move || {
         use std::io::Read;
         let (_guard, _admission) = (read_guard, read_admission);
-        let root = files::rooted_read::ReadRoot::open(
-            &root.canonicalize().map_err(|_| "not_found")?,
-        )
-        .map_err(|_| "not_found")?;
+        let root =
+            files::rooted_read::ReadRoot::open(&root.canonicalize().map_err(|_| "not_found")?)
+                .map_err(|_| "not_found")?;
         let file = root.open_regular(&relative).map_err(|_| "not_found")?;
         if file.metadata().map_err(|_| "not_found")?.len() > MAX_IMAGE_BYTES as u64 {
             return Err("too_large: media exceeds 10 MiB".to_string());

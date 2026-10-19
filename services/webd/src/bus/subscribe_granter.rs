@@ -37,8 +37,8 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use arc_swap::ArcSwapOption;
 use ::bus::native_client::NodedClient;
+use arc_swap::ArcSwapOption;
 use props::subscribe_granter::SubscribeGranter;
 
 /// Shared, refreshable broker handle. Cloned (cheap — it's an

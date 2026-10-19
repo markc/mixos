@@ -793,13 +793,13 @@ fn project_row(row: &VhostRow, acme_status: &str, with_secrets: bool) -> JsonVal
 mod tests {
     use super::*;
     use crate::acme_provisioner::FqdnLockMap;
+    use crate::tls_status::{AcmeStatusSnapshot, AcmeVhostStateSnapshot, TlsStatusSnapshot};
     use crate::vhosts_namespace::{
         ListenerConfigSource, listener_add_error, listener_remove_error,
         register_vhosts_namespace_with_listener_config,
     };
-    use config::node::{NodeConfig, WebdListenerConfig};
-    use crate::tls_status::{AcmeStatusSnapshot, AcmeVhostStateSnapshot, TlsStatusSnapshot};
     use arc_swap::ArcSwap;
+    use config::node::{NodeConfig, WebdListenerConfig};
     use props::sqlite::SqliteStore;
     use props::{AuthPolicy, PropsRouter};
     use rusqlite::Connection;
@@ -1770,7 +1770,12 @@ mod tests {
         assert!(listener_add_error(Some(&ok), h).is_none());
         // Named by none: the crash-loop case.
         let none = cfg_with(
-            vec![listener("pub", "192.0.2.1:443", true, &["other.example.org"])],
+            vec![listener(
+                "pub",
+                "192.0.2.1:443",
+                true,
+                &["other.example.org"],
+            )],
             &[],
         );
         let msg = listener_add_error(Some(&none), h).expect("unnamed host refused");
@@ -1896,8 +1901,9 @@ mod tests {
         let rows = crate::vhosts_namespace::snapshot_rows(node.vhosts_runtime.as_ref().unwrap())
             .await
             .expect("snapshot");
-        let dir = crate::vhost_directory::from_namespace_rows(&rows, &HashMap::new(), &HashSet::new())
-            .expect("directory");
+        let dir =
+            crate::vhost_directory::from_namespace_rows(&rows, &HashMap::new(), &HashSet::new())
+                .expect("directory");
         assert!(dir.by_host.contains_key(host), "host routed after restart");
         let all_hosts: Vec<String> = dir.by_host.keys().cloned().collect();
         let dropped = crate::vhost_directory::routing_dropped_hosts(&rows, &dir);
@@ -1962,15 +1968,17 @@ mod tests {
         let cfg = cfg_with(vec![listener("pub", "192.0.2.1:443", true, &[])], &[]);
         let node = build_node_with_listener_config(&["props.write:webd.vhosts"], cfg.clone()).await;
         let mut add = add_cmd(host);
-        add.headers.insert("enabled".to_string(), "false".to_string());
+        add.headers
+            .insert("enabled".to_string(), "false".to_string());
         let (rc, body) = vhost_add(&node, &add).await;
         assert_eq!(rc, 0, "disabled add admitted; body={body}");
 
         let rows = crate::vhosts_namespace::snapshot_rows(node.vhosts_runtime.as_ref().unwrap())
             .await
             .expect("snapshot");
-        let dir = crate::vhost_directory::from_namespace_rows(&rows, &HashMap::new(), &HashSet::new())
-            .expect("directory");
+        let dir =
+            crate::vhost_directory::from_namespace_rows(&rows, &HashMap::new(), &HashSet::new())
+                .expect("directory");
         let all_hosts: Vec<String> = dir.by_host.keys().cloned().collect();
         let dropped = crate::vhost_directory::routing_dropped_hosts(&rows, &dir);
         cfg.synthesize_listeners(&all_hosts, &dropped)
@@ -2000,7 +2008,11 @@ mod tests {
 
         let set = props_cmd(
             "webd.props.set",
-            &[("namespace", "vhosts"), ("key", "any.example.org"), ("if_version", "0")],
+            &[
+                ("namespace", "vhosts"),
+                ("key", "any.example.org"),
+                ("if_version", "0"),
+            ],
             r#"{"fqdn":"any.example.org","www_dir":"/srv/x","enabled":true,
                 "acme_provider":"letsencrypt_staging","acme_challenge":"http01",
                 "acme_contact_email":"ops@example.com"}"#,
@@ -2038,7 +2050,11 @@ mod tests {
         // Unnamed host through props.set: refused, nothing written.
         let set = props_cmd(
             "webd.props.set",
-            &[("namespace", "vhosts"), ("key", unnamed), ("if_version", "0")],
+            &[
+                ("namespace", "vhosts"),
+                ("key", unnamed),
+                ("if_version", "0"),
+            ],
             &row(unnamed),
         );
         let (rc, body) =
@@ -2100,7 +2116,10 @@ mod tests {
         body.insert("fqdn".to_string(), PropValue::String(host.into()));
         body.insert("www_dir".to_string(), PropValue::String("/srv/x".into()));
         body.insert("enabled".to_string(), PropValue::Bool(true));
-        body.insert("source".to_string(), PropValue::String("bus_runtime".into()));
+        body.insert(
+            "source".to_string(),
+            PropValue::String("bus_runtime".into()),
+        );
         for (k, v) in [
             ("acme_provider", "letsencrypt_staging"),
             ("acme_challenge", "http01"),
@@ -2159,7 +2178,10 @@ mod tests {
     #[tokio::test(flavor = "current_thread")]
     async fn vhost_remove_allowed_when_config_still_defines_the_host() {
         let host = "kept.example.org";
-        let cfg = cfg_with(vec![listener("pub", "192.0.2.1:443", true, &[host])], &[host]);
+        let cfg = cfg_with(
+            vec![listener("pub", "192.0.2.1:443", true, &[host])],
+            &[host],
+        );
         let node = build_node_with_listener_config(&["props.write:webd.vhosts"], cfg).await;
         let (rc, body) = vhost_add(&node, &add_cmd(host)).await;
         assert_eq!(rc, 0, "seed add; body={body}");

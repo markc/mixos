@@ -5945,17 +5945,13 @@ fn resolve_node_state(inputs: ResolveInputs<'_>) -> Result<ResolvedNodeState> {
                 )
             })?;
             let expected_refs: Vec<&str> = legacy_names.iter().map(String::as_str).collect();
-            daemon::tls::le_validator::validate_le_chain(
-                &chain_pem,
-                &expected_refs,
-                inputs.now,
-            )
-            .with_context(|| {
-                format!(
-                    "legacy [webd] tls_cert: validate_le_chain failed for {}",
-                    cert_path.display()
-                )
-            })?;
+            daemon::tls::le_validator::validate_le_chain(&chain_pem, &expected_refs, inputs.now)
+                .with_context(|| {
+                    format!(
+                        "legacy [webd] tls_cert: validate_le_chain failed for {}",
+                        cert_path.display()
+                    )
+                })?;
         }
 
         // Open the legacy SQLite unconditionally — preserves the
@@ -7074,9 +7070,7 @@ async fn async_main() -> Result<()> {
             daemon::selfcert::write_self_signed(&fqdn, &cert, &key)?;
         }
         Command::Init { db_path } => {
-            let db_path = db_path.unwrap_or_else(|| {
-                config::path(config::Dir::Var).join("web.db")
-            });
+            let db_path = db_path.unwrap_or_else(|| config::path(config::Dir::Var).join("web.db"));
             if let Some(parent) = db_path.parent() {
                 std::fs::create_dir_all(parent)?;
             }
@@ -7477,9 +7471,7 @@ async fn async_main() -> Result<()> {
             // listener without taking the accept loop down.
             let mut acme_provisioner_opt: Option<acme_provisioner::AcmeProvisioner> = None;
             if !acme_plans.is_empty() {
-                let acme_dir = config::path(config::Dir::Var)
-                    .join("webd")
-                    .join("acme");
+                let acme_dir = config::path(config::Dir::Var).join("webd").join("acme");
                 std::fs::create_dir_all(&acme_dir)
                     .with_context(|| format!("creating ACME state root {}", acme_dir.display()))?;
                 let mut provisioner = acme_provisioner::AcmeProvisioner::new(
@@ -7641,9 +7633,8 @@ async fn async_main() -> Result<()> {
             // returned runtime is handed to `logging::props::attach`
             // once serving begins (the watcher spawns a task on the live
             // tokio runtime).
-            let log_runtime =
-                logging::props::register(&mut props_router_inner, &props_store)
-                    .context("registering webd.log substrate namespace")?;
+            let log_runtime = logging::props::register(&mut props_router_inner, &props_store)
+                .context("registering webd.log substrate namespace")?;
 
             // C3d — materialise the `[[webd.vhost]]` config block into
             // the `webd.vhosts` substrate namespace. Runs *after*
@@ -7762,9 +7753,7 @@ async fn async_main() -> Result<()> {
             // (no `if !acme_plans.is_empty()` gate) and the helper
             // short-circuits when no on-disk state exists.
             {
-                let acme_dir = config::path(config::Dir::Var)
-                    .join("webd")
-                    .join("acme");
+                let acme_dir = config::path(config::Dir::Var).join("webd").join("acme");
                 let known_fqdns: std::collections::HashSet<String> = vhosts_namespace_rows
                     .iter()
                     .map(|r| r.fqdn.clone())
@@ -8736,10 +8725,7 @@ mod vhost_tests {
 
     /// Skeleton `ResolveInputs` with the legacy slot empty. Tests
     /// fill in `webd` and (optionally) the legacy slot per scenario.
-    fn base_inputs<'a>(
-        webd: &'a config::node::WebdConfig,
-        td: &TempDir,
-    ) -> ResolveInputs<'a> {
+    fn base_inputs<'a>(webd: &'a config::node::WebdConfig, td: &TempDir) -> ResolveInputs<'a> {
         ResolveInputs {
             webd,
             legacy_tls_cert: None,

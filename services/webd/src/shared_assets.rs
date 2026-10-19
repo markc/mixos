@@ -11,11 +11,11 @@ use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::{Context, Result, bail};
+use assets::AssetSet;
 use axum::body::Body;
 use axum::extract::{Extension, Path as RoutePath, Request};
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
-use assets::AssetSet;
 use sha2::{Digest, Sha256};
 use tower::ServiceExt;
 use tower_http::services::ServeFile;
@@ -94,9 +94,7 @@ impl Registry {
                 continue;
             };
             // Staging directories, locks and aliases cannot be published.
-            if !assets::valid_set_id(&set_id)
-                || set_id == "current"
-                || !entry.file_type()?.is_dir()
+            if !assets::valid_set_id(&set_id) || set_id == "current" || !entry.file_type()?.is_dir()
             {
                 continue;
             }

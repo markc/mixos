@@ -5,12 +5,12 @@
 
 use std::{future::Future, sync::Arc, time::Duration};
 
+use ::bus::PortReply;
+use ::bus::native_client::NodedClient;
 use axum::{
     body::{Body, Bytes},
     http::{HeaderMap, HeaderValue, Method, StatusCode, header},
 };
-use ::bus::PortReply;
-use ::bus::native_client::NodedClient;
 use reqwest::{Client, Response};
 use serde_json::{Value, json};
 use tokio::{

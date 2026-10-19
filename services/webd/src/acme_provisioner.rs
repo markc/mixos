@@ -1291,8 +1291,7 @@ impl AcmeProvisioner {
                             default: false,
                             no_sni_fallback: false,
                         };
-                        if meta.not_after_unix - now_unix_secs < RENEWAL_WINDOW.as_secs() as i64
-                        {
+                        if meta.not_after_unix - now_unix_secs < RENEWAL_WINDOW.as_secs() as i64 {
                             info!(
                                 fqdn = %plan.fqdn,
                                 not_after_unix = meta.not_after_unix,
@@ -2942,16 +2941,15 @@ impl AcmeProvisioner {
                 .or_else(|| self.listener_strict_sni.get(lid.as_str()).copied())
                 .or_else(|| handle.current().map(|(r, _)| r.strict_sni()))
                 .unwrap_or(false);
-            let resolver =
-                SniCertResolver::from_config(&bucket, strict_sni).map_err(|e| {
-                    warn!(
-                        listener = %lid,
-                        error = %e,
-                        identity_count = bucket.len(),
-                        "ACME resolver rebuild failed — keeping prior snapshot"
-                    );
-                    PublishError::Build(e)
-                })?;
+            let resolver = SniCertResolver::from_config(&bucket, strict_sni).map_err(|e| {
+                warn!(
+                    listener = %lid,
+                    error = %e,
+                    identity_count = bucket.len(),
+                    "ACME resolver rebuild failed — keeping prior snapshot"
+                );
+                PublishError::Build(e)
+            })?;
             built.push((handle, Arc::new(resolver)));
         }
         for (handle, resolver) in built {
@@ -5611,9 +5609,12 @@ mod tests {
         let mut p = _new_acme_provisioner(tmp.path().to_path_buf());
         p.set_chain_validator(_accept_any_chain);
         _stage_fake_live(tmp.path(), "runtime.example");
-        p.apply_vhost_row("runtime.example", _runtime_row_claiming_cert("runtime.example"))
-            .await
-            .expect("apply Ok");
+        p.apply_vhost_row(
+            "runtime.example",
+            _runtime_row_claiming_cert("runtime.example"),
+        )
+        .await
+        .expect("apply Ok");
         let ident = p
             .acme_identities
             .get("runtime.example")
@@ -5645,7 +5646,9 @@ mod tests {
             .expect("apply Ok");
         assert!(!p.acme_identities.contains_key("lost.example"));
         assert_eq!(
-            p.vhost_state.get("lost.example").map(|s| s.last_error_count),
+            p.vhost_state
+                .get("lost.example")
+                .map(|s| s.last_error_count),
             Some(1),
             "issuance must be attempted (and fails hermetically: no ToS)"
         );
@@ -5667,9 +5670,12 @@ mod tests {
             b"{not json",
         )
         .unwrap();
-        p.apply_vhost_row("corrupt.example", _runtime_row_claiming_cert("corrupt.example"))
-            .await
-            .expect("apply Ok");
+        p.apply_vhost_row(
+            "corrupt.example",
+            _runtime_row_claiming_cert("corrupt.example"),
+        )
+        .await
+        .expect("apply Ok");
         assert!(!p.acme_identities.contains_key("corrupt.example"));
         assert_eq!(
             p.vhost_state
@@ -5804,7 +5810,10 @@ mod tests {
             .unwrap();
         let (r, _) = handle.current().expect("serving");
         let reload_view = live_strict_sni(&lrt).await.unwrap();
-        assert!(r.strict_sni(), "republish used the live row, not the boot map");
+        assert!(
+            r.strict_sni(),
+            "republish used the live row, not the boot map"
+        );
         assert_eq!(Some(&r.strict_sni()), reload_view.get("pub"), "paths agree");
 
         // Runtime flip → the next republish picks it up.
@@ -5841,7 +5850,9 @@ mod tests {
         p.tick_once().await;
         assert!(!p.acme_identities.contains_key("wiped.example"));
         assert_eq!(
-            p.vhost_state.get("wiped.example").map(|s| s.last_error_count),
+            p.vhost_state
+                .get("wiped.example")
+                .map(|s| s.last_error_count),
             Some(1),
             "issuance attempted (fails hermetically: no ToS)"
         );
@@ -5893,7 +5904,9 @@ mod tests {
         _stage_real_live(tmp.path(), "rt.example");
 
         // Startup: the config-derived partition gave "rt" no handle.
-        let rows = crate::vhosts_namespace::snapshot_rows(&runtime).await.unwrap();
+        let rows = crate::vhosts_namespace::snapshot_rows(&runtime)
+            .await
+            .unwrap();
         let dir = from_namespace_rows(&rows, &HashMap::new(), &HashSet::new()).unwrap();
         let listeners = vec![_listener("rt", &["rt.example"])];
         let needing =
@@ -5921,13 +5934,21 @@ mod tests {
         assert_eq!(adopted.adopted, 1);
 
         let (bind_tls, mode, pending) = crate::listener_bind_tls(Some(&handle));
-        assert!(matches!(mode, TlsMode::Terminate), "binds TLS after adoption");
+        assert!(
+            matches!(mode, TlsMode::Terminate),
+            "binds TLS after adoption"
+        );
         assert!(!pending, "adopted: serving, no longer pending");
         assert!(bind_tls.is_some());
         let (resolver, _cfg) = handle.current().expect("usable resolver");
-        assert!(resolver.strict_sni(), "strict SNI preserved through republish");
+        assert!(
+            resolver.strict_sni(),
+            "strict SNI preserved through republish"
+        );
         assert_eq!(
-            resolver.pick_for_sni(Some("rt.example")).map(|i| i.name.as_str()),
+            resolver
+                .pick_for_sni(Some("rt.example"))
+                .map(|i| i.name.as_str()),
             Some("rt.example"),
             "the handshake for the runtime vhost gets its own cert"
         );
@@ -5975,10 +5996,14 @@ mod tests {
         p.apply_vhost_row("run.example", _runtime_row_claiming_cert("run.example"))
             .await
             .unwrap();
-        let (s, _) = strict_handle.current().expect("strict listener still serving");
+        let (s, _) = strict_handle
+            .current()
+            .expect("strict listener still serving");
         assert!(s.strict_sni(), "strict listener must stay strict");
         assert!(s.pick_for_sni(Some("cfg.example")).is_some());
-        let (l, _) = lenient_handle.current().expect("lenient listener now serving");
+        let (l, _) = lenient_handle
+            .current()
+            .expect("lenient listener now serving");
         assert!(!l.strict_sni());
         assert!(l.pick_for_sni(Some("run.example")).is_some());
     }

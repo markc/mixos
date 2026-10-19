@@ -1272,11 +1272,7 @@ pub fn register_vhosts_namespace(
     router: &mut PropsRouter,
     store: &Arc<SqliteStore>,
 ) -> Result<(Arc<Runtime>, mpsc::Receiver<NamespaceEvent>)> {
-    register_vhosts_namespace_with_listener_config(
-        router,
-        store,
-        ListenerConfigSource::Fixed(None),
-    )
+    register_vhosts_namespace_with_listener_config(router, store, ListenerConfigSource::Fixed(None))
 }
 
 /// As [`register_vhosts_namespace`], with the restart-time listener
@@ -1457,7 +1453,10 @@ mod tests {
     /// after_delete sites in this module bind the receiver explicitly.
     fn hooks_with_channel() -> (VhostsNamespaceHooks, mpsc::Receiver<NamespaceEvent>) {
         let (tx, rx) = mpsc::channel(PROVISIONER_EVENT_CHANNEL_CAPACITY);
-        (VhostsNamespaceHooks::new(tx, ListenerConfigSource::Fixed(None)), rx)
+        (
+            VhostsNamespaceHooks::new(tx, ListenerConfigSource::Fixed(None)),
+            rx,
+        )
     }
 
     #[test]

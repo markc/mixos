@@ -278,8 +278,7 @@ pub async fn run(node: Arc<NodeState>) {
                 props_publisher::NodedPropsPublisher::new(node.broker_handle.clone()),
             );
             for runtime in node.props_router.iter_runtimes() {
-                match props::spawn_dispatcher(runtime.clone(), Arc::clone(&publisher)).await
-                {
+                match props::spawn_dispatcher(runtime.clone(), Arc::clone(&publisher)).await {
                     Ok(_detached) => {
                         tracing::info!(
                             namespace = %runtime.spec().name.as_str(),
