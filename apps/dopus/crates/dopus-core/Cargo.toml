@@ -19,7 +19,7 @@ mod_module_files = "deny"
 
 [dependencies]
 config.workspace = true
-files = { path = "../files" }
+files.workspace = true
 thumbs.workspace = true
 chrono = { workspace = true, features = ["clock"] }
 serde.workspace = true

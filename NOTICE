@@ -103,3 +103,7 @@ are unchanged public certificates from Internet Security Research Group:
 letsencrypt-stg-root-x1.der, letsencrypt-stg-root-x2.der,
 letsencrypt-stg-root-ye.der, letsencrypt-stg-root-yr.der. Source and capture
 date are retained in tls/le_staging_roots.rs.
+
+Files core and rooted reads (libs/files) transplanted from
+cosmix/src/crates/cosmix-lib-files at
+044aec63a5f8d0fa4ad4246f802c487f17dfdfa9, Mark Constable, MIT OR Apache-2.0.

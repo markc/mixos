@@ -110,6 +110,7 @@ davproto = { path = "libs/davproto" }
 bus = { path = "libs/bus", default-features = false }
 config = { path = "libs/config" }
 daemon = { path = "libs/daemon" }
+files = { path = "libs/files" }
 design = { path = "libs/design" }
 edit = { path = "libs/edit" }
 editor = { path = "libs/editor" }

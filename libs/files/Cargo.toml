@@ -6,11 +6,11 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 publish = false
-description = "DOpus headless atomic filesystem operations and file corpus support"
+description = "Shared rooted reads, atomic filesystem operations and file corpus support"
 
 [package.metadata.mixos]
-component = "dopus"
-kind = "app"
+component = "files"
+kind = "lib"
 layer = "core"
 contract = "none"
 
