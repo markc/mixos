@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+# mixtrayd: the MixOS tray's data service, run in the user's session. It
+# registers on the noded Bus and answers the mixtray popup. It polls nothing:
+# systemd and the Bus are read only when the popup asks for a snapshot.
+[Unit]
+Description=MixOS tray data service (mixtrayd)
+Documentation=https://mixos.dev/
+After=noded.service
+Wants=noded.service
+
+[Service]
+Type=simple
+ExecStart=/opt/mixos/bin/mixtrayd serve
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=default.target
