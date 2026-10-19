@@ -782,7 +782,8 @@ mod tests {
                 "net.wifi.connect",
                 "net.wg.apply",
                 "desk.restart",
-                "desk.stop"
+                "desk.stop",
+                "unit.control"
             ]
         );
         let read_only: Vec<bool> = verbs.iter().map(|v| v.read_only).collect();
@@ -790,7 +791,7 @@ mod tests {
             read_only,
             [
                 true, true, true, true, true, false, false, false, false, false, false, false,
-                false, false
+                false, false, false
             ]
         );
     }
