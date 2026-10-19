@@ -523,6 +523,30 @@ fn up_and_down_move_the_selection_and_enter_opens() {
 }
 
 #[test]
+fn tab_moves_between_the_three_panes_and_the_arrows_follow() {
+    use email::state::Pane;
+    let mut h = harness(long_list());
+    h.get_by_label_contains("Minutes").click();
+    h.run();
+    assert_eq!(h.state().state.pane, Pane::List);
+    // Tab goes list, reader, tree, list: the order the panes sit in.
+    h.key_press(egui::Key::Tab);
+    h.run();
+    assert_eq!(h.state().state.pane, Pane::Reader);
+    h.key_press(egui::Key::Tab);
+    h.run();
+    assert_eq!(h.state().state.pane, Pane::Tree);
+    h.key_press(egui::Key::Tab);
+    h.run();
+    assert_eq!(h.state().state.pane, Pane::List);
+    // Back in the list, Down moves through it again.
+    h.key_press(egui::Key::ArrowDown);
+    h.run();
+    let mail = &h.state().state.account("home").unwrap().mail;
+    assert_eq!(mail.table.selection, ["L4"]);
+}
+
+#[test]
 fn left_and_right_do_nothing_in_the_list_and_up_and_down_still_move() {
     let mut h = harness(long_list());
     h.get_by_label_contains("Minutes").click();

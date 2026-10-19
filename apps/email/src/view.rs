@@ -25,7 +25,10 @@ use toolkit::dialog::{self, Choice};
 use toolkit::titlebar::{self, Control};
 use toolkit::{Icon, Registry, Strings, bars, panel};
 
-use crate::state::{AccountView, Dialog, Mode, Node, Phase, Source, State, TreeKey};
+use crate::state::{AccountView, Dialog, Mode, Node, Pane, Phase, Source, State, TreeKey};
+use crate::view::mail::LIST;
+use egui::{Key, Modifiers};
+use toolkit::datatable;
 
 /// One interaction from this frame.
 #[derive(Clone, Debug, PartialEq)]
@@ -39,6 +42,8 @@ pub enum UiEvent {
     Expand(Node, bool),
     /// A key press while the tree has the keyboard.
     TreeKey(TreeKey),
+    /// The pane that has the keyboard now: Tab moved it, or a click did.
+    PaneFocused(crate::state::Pane),
     /// Open an account's email (also marks it read through the state).
     OpenEmail(String, String),
     /// The account's message list reported this (a row picked or
@@ -245,6 +250,51 @@ fn status(ui: &mut egui::Ui, state: &State, stroke: f32) {
     });
 }
 
+/// Tab and Shift+Tab move the keyboard between the panes, in order: the tree,
+/// the list, then the reader. A click on a pane moves the state to it too.
+/// Tab is taken only while no text field or dialog has the keyboard.
+fn keyboard_panes(ui: &egui::Ui, state: &State, reader: bool, events: &mut Vec<UiEvent>) {
+    let ctx = ui.ctx();
+    let mut panes = vec![Pane::Tree, Pane::List];
+    if reader {
+        panes.push(Pane::Reader);
+    }
+    let on_pane = tree::is_focused(ctx) || datatable::is_focused(ctx, LIST) || mail::reader_focused(ctx);
+    let nothing = ctx.memory(|m| m.focused()).is_none();
+    let dialog = state.compose.is_some() || state.identity_editor.is_some();
+    if (on_pane || nothing) && !dialog {
+        let back = ui.input_mut(|i| i.consume_key(Modifiers::SHIFT, Key::Tab));
+        let forward = !back && ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Tab));
+        if back || forward {
+            let at = panes.iter().position(|p| *p == state.pane).unwrap_or(0);
+            let next = if forward {
+                panes[(at + 1) % panes.len()]
+            } else {
+                panes[(at + panes.len() - 1) % panes.len()]
+            };
+            match next {
+                Pane::Tree => tree::focus(ctx),
+                Pane::List => datatable::focus(ctx, LIST),
+                Pane::Reader => mail::focus_reader(ctx),
+            }
+            events.push(UiEvent::PaneFocused(next));
+            return;
+        }
+    }
+    let now = [
+        (tree::is_focused(ctx), Pane::Tree),
+        (datatable::is_focused(ctx, LIST), Pane::List),
+        (reader && mail::reader_focused(ctx), Pane::Reader),
+    ]
+    .into_iter()
+    .find_map(|(on, pane)| on.then_some(pane));
+    if let Some(now) = now
+        && now != state.pane
+    {
+        events.push(UiEvent::PaneFocused(now));
+    }
+}
+
 /// The window with accounts: the tree, the centre pane, the reader.
 fn window(
     ui: &mut egui::Ui,
@@ -255,6 +305,8 @@ fn window(
     events: &mut Vec<UiEvent>,
 ) {
     let total = ui.available_width();
+    let reader = state.current().is_some_and(|v| v.phase == Phase::Ready);
+    keyboard_panes(ui, state, reader, events);
     let left = egui::Panel::left("places")
         .resizable(true)
         .default_size(total * state.ui.places)

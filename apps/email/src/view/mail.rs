@@ -6,7 +6,7 @@
 use std::fmt::Write as _;
 
 use chrono::{DateTime, Datelike, FixedOffset, Local, TimeZone};
-use egui::{RichText, ScrollArea, Ui};
+use egui::{EventFilter, Id, Key, Modifiers, RichText, ScrollArea, Sense, Ui};
 use jmap::Email;
 use toolkit::button::{IconButton, Link};
 use toolkit::command::{Origin, label_text};
@@ -254,10 +254,31 @@ pub fn reader(
     events: &mut Vec<UiEvent>,
 ) {
     let area = ui.max_rect();
+    // Registered first, so the reader's own widgets win a click; a click on
+    // the pane itself hands it the keyboard.
+    let id = reader_id();
+    let back = ui.interact(area, id, Sense::click());
+    if back.clicked() {
+        back.request_focus();
+    }
+    let focused = ui.memory(|m| m.has_focus(id));
+    if focused {
+        // Up and Down scroll the message; Left and Right do nothing here.
+        ui.memory_mut(|m| {
+            m.set_focus_lock_filter(
+                id,
+                EventFilter {
+                    vertical_arrows: true,
+                    horizontal_arrows: true,
+                    ..EventFilter::default()
+                },
+            )
+        });
+    }
     toolbar(ui, state, view, commands, strings, stroke, events);
     toolkit::bars::hairline(ui);
     if let Some(email) = &view.mail.open {
-        message(ui, view, email);
+        message(ui, view, email, focused);
     } else {
         ui.weak(crate::label("select-email"));
     }
@@ -318,9 +339,11 @@ fn toolbar(
         link(ui, events, "mail.forward", Icon::Forward);
         toolkit::bars::divider(ui, DIVIDER);
         link(ui, events, "mail.delete", Icon::Trash);
-        // What Delete, Flag, Mark and Move apply to: the list's selection
-        // or keyboard row, which need not be the email shown here.
-        if let Some(line) = view.mail.target_line() {
+        // What Delete, Flag, Mark and Move apply to, when it is several
+        // messages from the list: the open email alone needs no note.
+        if view.mail.selection_count() > 1
+            && let Some(line) = view.mail.target_line()
+        {
             ui.label(RichText::new(line).weak());
         }
         // The paperclip and its count, only when there are attachments.
@@ -491,9 +514,62 @@ fn attachments_popup(
     }
 }
 
+/// The reader's focus target. Tab reaches it; while it has the keyboard, Up
+/// and Down scroll the message a line and Page Up and Page Down a page.
+pub fn reader_id() -> Id {
+    Id::new("email.reader")
+}
+
+/// Give the reader the keyboard.
+pub fn focus_reader(ctx: &egui::Context) {
+    ctx.memory_mut(|m| m.request_focus(reader_id()));
+}
+
+/// Whether the reader has the keyboard.
+pub fn reader_focused(ctx: &egui::Context) -> bool {
+    ctx.memory(|m| m.has_focus(reader_id()))
+}
+
+/// The message body's scroll area, by its salt.
+const BODY_SCROLL: &str = "reader-body";
+/// One line of the body, in points, for an arrow key.
+const LINE: f32 = 48.0;
+
+/// Scroll the body with the keys, before its scroll area draws, when the
+/// reader has the keyboard. The area keeps its offset under its own id.
+fn scroll_with_keys(ui: &mut Ui, focused: bool) {
+    if !focused {
+        return;
+    }
+    let body = ui.make_persistent_id(BODY_SCROLL);
+    let page = ui.available_height() * 0.9;
+    let step = ui.input_mut(|i| {
+        let mut step = 0.0;
+        if i.consume_key(Modifiers::NONE, Key::ArrowDown) {
+            step += LINE;
+        }
+        if i.consume_key(Modifiers::NONE, Key::ArrowUp) {
+            step -= LINE;
+        }
+        if i.consume_key(Modifiers::NONE, Key::PageDown) {
+            step += page;
+        }
+        if i.consume_key(Modifiers::NONE, Key::PageUp) {
+            step -= page;
+        }
+        step
+    });
+    if step != 0.0
+        && let Some(mut scroll) = egui::scroll_area::State::load(ui.ctx(), body)
+    {
+        scroll.offset.y = (scroll.offset.y + step).max(0.0);
+        scroll.store(ui.ctx(), body);
+    }
+}
+
 /// The open email: subject first and largest, then From, To and the date,
 /// then the body.
-fn message(ui: &mut Ui, view: &AccountView, email: &Email) {
+fn message(ui: &mut Ui, view: &AccountView, email: &Email, focused: bool) {
     let reader = &view.mail.reader;
     // The cache is the open email's once it has loaded; until then (or for
     // an email put in place without opening), detect afresh.
@@ -527,7 +603,11 @@ fn message(ui: &mut Ui, view: &AccountView, email: &Email) {
     }
     ui.label(RichText::new(email.date_short()).weak());
     toolkit::bars::hairline(ui);
-    ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
+    scroll_with_keys(ui, focused);
+    ScrollArea::vertical()
+        .id_salt(BODY_SCROLL)
+        .auto_shrink(false)
+        .show(ui, |ui| {
         match email.text_body_value() {
             Some(body) if format == Format::Markdown => {
                 let parsed;

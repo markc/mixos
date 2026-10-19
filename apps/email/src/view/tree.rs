@@ -27,6 +27,16 @@ fn tree_id() -> Id {
     Id::new("account-tree")
 }
 
+/// Give the tree the keyboard.
+pub fn focus(ctx: &egui::Context) {
+    ctx.memory_mut(|m| m.request_focus(tree_id()));
+}
+
+/// Whether the tree has the keyboard.
+pub fn is_focused(ctx: &egui::Context) -> bool {
+    ctx.memory(|m| m.has_focus(tree_id()))
+}
+
 /// The tree panel.
 pub fn show(ui: &mut Ui, state: &State, stroke: f32, events: &mut Vec<UiEvent>) {
     let id = tree_id();

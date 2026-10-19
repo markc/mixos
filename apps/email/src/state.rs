@@ -499,6 +499,15 @@ pub struct ReplyQuote {
     pub position: crate::quote::Position,
 }
 
+/// The three panes of the window, in Tab order: the account tree, the message
+/// list, the reader.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Pane {
+    Tree,
+    List,
+    Reader,
+}
+
 /// The identities dialog: one account's identities, edited before they are
 /// saved. `rows` starts as the account's senders, so an account with none of
 /// its own shows its default identity to change.
@@ -1390,6 +1399,8 @@ pub struct State {
     pub compose: Option<ComposeState>,
     /// The identities dialog, while open.
     pub identity_editor: Option<IdentityEditor>,
+    /// The pane that has the keyboard: Tab moves it, and the arrow keys act on it.
+    pub pane: Pane,
     /// A question over the compose before a draft closes.
     pub confirm: Option<Confirm>,
     /// Drafts kept from earlier (an earlier run, or a compose set aside),
@@ -1464,6 +1475,7 @@ impl State {
             migrated: false,
             compose: None,
             identity_editor: None,
+            pane: Pane::List,
             confirm: None,
             restore: Vec::new(),
             draft_ops: Vec::new(),
@@ -5217,6 +5229,7 @@ impl State {
             UiEvent::ComposeIdentity { account, identity } => {
                 self.choose_sender(account, Some(identity));
             }
+            UiEvent::PaneFocused(pane) => self.pane = pane,
             UiEvent::OpenIdentities(account) => self.open_identities(&account),
             UiEvent::IdentityEdit(field, value) => self.identity_edit(field, value),
             UiEvent::IdentitySelect(index) => self.identity_select(index),
