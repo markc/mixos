@@ -1,0 +1,46 @@
+---
+title: mesh-sign — changelog
+description: Release notes of the mesh-sign component, mirrored from cli/mesh-sign/CHANGELOG.md.
+generated: by docs/_build/gen-site.mix from cli/mesh-sign/CHANGELOG.md; do not edit
+---
+
+# Changelog
+
+> Mirrored from [`cli/mesh-sign/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/cli/mesh-sign/CHANGELOG.md), where releases update it. The component's page is [mesh-sign](README.md). This page describes the current `main` branch of MixOS.
+
+## Unreleased — ported into MixOS
+
+- Moved from cosmix into MixOS as `cli/mesh-sign` (package and binary
+  `mesh-sign`). Behaviour is unchanged.
+- The verify report keeps its `cosmix-mesh-sign.verify.v1` format string: it
+  is a frozen wire constant.
+- Reads the authored inventory with `mix::parse_data_file` (the MixOS
+  equivalent of `cosmix_config::load_mix_data`).
+- The shared canonicaliser and verifier come from `services/noded/crates/mesh-trust`.
+- `wg-gen` and `wg-pubkey` use only the key part of the WireGuard code
+  (X25519, standard base64, clamping), on `curve25519-dalek`. The rest of
+  cosmix-lib-wg is not ported.
+
+## 0.7.3 — 2026-08-16
+
+- Refuse signing when an active Bus member carries a `noded_port` outside the
+  shared strict JSON-integer `1..=65535` contract.
+- Include each resolved ActiveBus `noded_port` in `verify --json` routing-view
+  output, including the default 4200 for inventories that omit it.
+
+## 0.7.2 — 2026-08-16
+
+- Refuse inventories whose member names are not valid SPEC 01 §4.1 Bus labels
+  before signing, using the shared fleet-wide label grammar.
+
+## 0.7.1 — 2026-08-15
+
+- Add `sign --recovery-generation <N>` to stamp the current recovery floor on
+  a normal payload without setting `recovery:true`.
+- Refuse recovery-generation values beyond Mix's exact-integer range and make
+  `--recovery-generation` mutually exclusive with `--recovery`.
+- Report both effective and payload-carried recovery generations in JSON and
+  human output, and warn that `--recovery` cannot check fleet epoch history.
+- Warn when normal signing emits a legacy generation-silent payload, and note
+  on human verification that such a payload was checked only against the
+  command's synthetic generation-zero state.

@@ -716,6 +716,7 @@ profile: [desktop](desktop.md) and [server](server.md). This page describes the 
 | [hostd](../hostd/README.md) · [changelog](../hostd/changelog.md) | service | unclassified | [`services/hostd`](https://github.com/markc/mixos/tree/main/services/hostd) | How hostd answers questions about the host and carries out privileged host changes through closed, typed verbs behind standing grants, receipts and rollback, so agents never need sudo. |
 | [logging](../logging/README.md) | lib | none (library) | [`libs/logging`](https://github.com/markc/mixos/tree/main/libs/logging) | Shared tracing, sink selection, reload handles and process statistics for MixOS services and the Mix shell. |
 | [maild](../maild/README.md) · [changelog](../maild/changelog.md) | service | server | [`services/maild`](https://github.com/markc/mixos/tree/main/services/maild) | JMAP, SMTP, IMAP and DAV mail service |
+| [mesh-sign](../mesh-sign/README.md) · [changelog](../mesh-sign/changelog.md) | cli | unclassified | [`cli/mesh-sign`](https://github.com/markc/mixos/tree/main/cli/mesh-sign) | Signs and verifies the mesh inventory, the trust root of a MixOS mesh. |
 | [mimedb](../mimedb/README.md) | lib | none (library) | [`libs/mimedb`](https://github.com/markc/mixos/tree/main/libs/mimedb) | A library that reads the freedesktop shared-mime-info database and decides a file's type from its name and content the way GLib does, so MixOS names a file's type as the desktop does. |
 | [mix](../mix/README.md) · [changelog](../mix/changelog.md) | lib | none (library) | [`libs/mix`](https://github.com/markc/mixos/tree/main/libs/mix) |  |
 | [mix-shell](../mix-shell/README.md) · [changelog](../mix-shell/changelog.md) | cli | unclassified | [`cli/mix-shell`](https://github.com/markc/mixos/tree/main/cli/mix-shell) | The Mix shell library, holding the interactive line editor, the command classifier, the native-session bootstrap and the Bus citizen runtime that the mix binary runs. |
@@ -770,6 +771,7 @@ checked separately by the layering gate.
 | [term-core](https://github.com/markc/mixos/blob/main/apps/term/crates/term-core/Cargo.toml) | term | app | core | none | 0.1.1 |
 | [term-render](https://github.com/markc/mixos/blob/main/apps/term/crates/term-render/Cargo.toml) | term | app | desktop | none | 0.1.1 |
 | [tray](https://github.com/markc/mixos/blob/main/apps/tray/Cargo.toml) | tray | app | desktop | none | 0.1.1 |
+| [mesh-sign](https://github.com/markc/mixos/blob/main/cli/mesh-sign/Cargo.toml) | mesh-sign | cli | core | none | 0.1.1 |
 | [mix-shell](https://github.com/markc/mixos/blob/main/cli/mix-shell/Cargo.toml) | mix-shell | cli | mix | public | 0.116.0 |
 | [mixos-mcp](https://github.com/markc/mixos/blob/main/cli/mixos-mcp/Cargo.toml) | mixos-mcp | cli | core | none | 0.1.1 |
 | [system](https://github.com/markc/mixos/blob/main/cli/system/Cargo.toml) | system | cli | core | none | 0.1.1 |
@@ -7576,6 +7578,50 @@ configuration. It runs as the `maild` account. The unit uses
 `/etc/mixos/maild/config.conf.mix`, creates `StateDirectory=maild`, and sets
 `MIXOS_VAR=/var/lib/maild`; configured TLS material must be readable by maild.
 The unit documentation URL points to this manual.
+
+---
+
+<!-- page: https://mixos.dev/mesh-sign/ (source: https://mixos.dev/mesh-sign/README.md) -->
+
+# mesh-sign
+
+`mesh-sign` turns the authored `inventory.mix` into the signed trust root,
+`inventory.signed`, and checks a signed inventory against the genesis public
+key. The signing and verifying code is the same code the mesh daemon `noded`
+uses, so the two cannot disagree about the bytes a signature covers.
+
+Install the binary at `/opt/mixos/bin/mesh-sign`.
+
+## Subcommands
+
+| Command | What it does |
+|---|---|
+| `genesis` | Create the genesis Ed25519 key and store its signing half in the secrets database. It refuses to overwrite an existing key unless `--force` is given. |
+| `sign INVENTORY --out PATH` | Sign an authored inventory and verify the result before reporting success. `--valid-days` sets an advisory horizon. `--recovery N` and `--recovery-generation N` set the recovery fields and are mutually exclusive. |
+| `verify SIGNED` | Check a signed inventory against the genesis key. It takes `--genesis-pub PATH` or `--genesis-pub-base64 B64`, or else reads the key from the secrets database. `--expected-mesh NAME` pins the mesh name, and `--against-authored PATH` checks the signed payload against an authored file. `--json` prints one versioned JSON object. |
+| `pubkey` | Print the genesis public key, which is provisioned to each node as `/opt/mixos/etc/noded/genesis.pub`. |
+| `d2-gen NODE` / `d2-pubkey NODE` | Create or print a node's admission key. |
+| `wg-gen --private-file PATH` | Create a node-local WireGuard key in a new mode-0600 file and print only the public key. |
+| `wg-pubkey --private-file PATH` | Print the public key of an existing protected node key. |
+
+Global options: `--secrets-db PATH` (default `~/.ns/_etc/secrets/secrets.db`)
+and `--mesh NAME` (default `bus`). `mesh-sign --version` prints the build
+provenance.
+
+## Verify report
+
+`verify --json` prints an object whose `format` is `cosmix-mesh-sign.verify.v1`.
+That string is a frozen wire constant. It keeps its original spelling so that
+existing consumers still match it.
+
+## Testing
+
+Build and test on a cbc worker, not on the desk:
+
+    mix ~/.mix/_bin/cbc-build.mix --worker cbc2 --repo mixos --commit <sha> -- cargo test -p mesh-sign --locked
+
+The integration suite (`cli/mesh-sign/tests/verify_cli.rs`) runs the binary
+against generated keys and inventories in a temporary directory.
 
 ---
 
@@ -31827,6 +31873,51 @@ and recovery directories through the isolated MixOS environment.
 
 ---
 
+<!-- page: https://mixos.dev/mesh-sign/changelog/ (source: https://mixos.dev/mesh-sign/changelog.md) -->
+
+# Changelog
+
+> Mirrored from [`cli/mesh-sign/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/cli/mesh-sign/CHANGELOG.md), where releases update it. The component's page is [mesh-sign](README.md). This page describes the current `main` branch of MixOS.
+
+## Unreleased — ported into MixOS
+
+- Moved from cosmix into MixOS as `cli/mesh-sign` (package and binary
+  `mesh-sign`). Behaviour is unchanged.
+- The verify report keeps its `cosmix-mesh-sign.verify.v1` format string: it
+  is a frozen wire constant.
+- Reads the authored inventory with `mix::parse_data_file` (the MixOS
+  equivalent of `cosmix_config::load_mix_data`).
+- The shared canonicaliser and verifier come from `services/noded/crates/mesh-trust`.
+- `wg-gen` and `wg-pubkey` use only the key part of the WireGuard code
+  (X25519, standard base64, clamping), on `curve25519-dalek`. The rest of
+  cosmix-lib-wg is not ported.
+
+## 0.7.3 — 2026-08-16
+
+- Refuse signing when an active Bus member carries a `noded_port` outside the
+  shared strict JSON-integer `1..=65535` contract.
+- Include each resolved ActiveBus `noded_port` in `verify --json` routing-view
+  output, including the default 4200 for inventories that omit it.
+
+## 0.7.2 — 2026-08-16
+
+- Refuse inventories whose member names are not valid SPEC 01 §4.1 Bus labels
+  before signing, using the shared fleet-wide label grammar.
+
+## 0.7.1 — 2026-08-15
+
+- Add `sign --recovery-generation <N>` to stamp the current recovery floor on
+  a normal payload without setting `recovery:true`.
+- Refuse recovery-generation values beyond Mix's exact-integer range and make
+  `--recovery-generation` mutually exclusive with `--recovery`.
+- Report both effective and payload-carried recovery generations in JSON and
+  human output, and warn that `--recovery` cannot check fleet epoch history.
+- Warn when normal signing emits a legacy generation-silent payload, and note
+  on human verification that such a payload was checked only against the
+  command's synthetic generation-zero state.
+
+---
+
 <!-- page: https://mixos.dev/mix/changelog/ (source: https://mixos.dev/mix/changelog.md) -->
 
 # Changelog
@@ -32577,6 +32668,7 @@ yet. They are listed on both this page and the server page until they do.
 - [editd](../editd/README.md) (service): The edit service, which holds shared text buffers that people and agents edit together, with revision checks, per-origin undo, anchors, atomic save, external-change detection and recovery.
 - [email](../email/README.md) (app)
 - [hostd](../hostd/README.md) (service): How hostd answers questions about the host and carries out privileged host changes through closed, typed verbs behind standing grants, receipts and rollback, so agents never need sudo.
+- [mesh-sign](../mesh-sign/README.md) (cli): Signs and verifies the mesh inventory, the trust root of a MixOS mesh.
 - [mix-shell](../mix-shell/README.md) (cli): The Mix shell library, holding the interactive line editor, the command classifier, the native-session bootstrap and the Bus citizen runtime that the mix binary runs.
 - [noded](../noded/README.md) (service): The MixOS Bus broker, which handles service registration, discovery, routing, subscriptions, authenticated local session grants and mesh peering between nodes.
 - [notifyd](../notifyd/README.md) (service): How notifyd keeps the desk's notifications, shows them as toasts and in the Notifications page, and tells an agent or app which button the human pressed.
@@ -32626,6 +32718,7 @@ yet. They are listed on both this page and the desktop page until they do.
 - [editd](../editd/README.md) (service): The edit service, which holds shared text buffers that people and agents edit together, with revision checks, per-origin undo, anchors, atomic save, external-change detection and recovery.
 - [email](../email/README.md) (app)
 - [hostd](../hostd/README.md) (service): How hostd answers questions about the host and carries out privileged host changes through closed, typed verbs behind standing grants, receipts and rollback, so agents never need sudo.
+- [mesh-sign](../mesh-sign/README.md) (cli): Signs and verifies the mesh inventory, the trust root of a MixOS mesh.
 - [mix-shell](../mix-shell/README.md) (cli): The Mix shell library, holding the interactive line editor, the command classifier, the native-session bootstrap and the Bus citizen runtime that the mix binary runs.
 - [noded](../noded/README.md) (service): The MixOS Bus broker, which handles service registration, discovery, routing, subscriptions, authenticated local session grants and mesh peering between nodes.
 - [notifyd](../notifyd/README.md) (service): How notifyd keeps the desk's notifications, shows them as toasts and in the Notifications page, and tells an agent or app which button the human pressed.

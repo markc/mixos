@@ -70,6 +70,7 @@
   <url><loc>https://mixos.dev/hostd/</loc></url>
   <url><loc>https://mixos.dev/logging/</loc></url>
   <url><loc>https://mixos.dev/maild/</loc></url>
+  <url><loc>https://mixos.dev/mesh-sign/</loc></url>
   <url><loc>https://mixos.dev/mimedb/</loc></url>
   <url><loc>https://mixos.dev/mix-shell/</loc></url>
   <url><loc>https://mixos.dev/mix/buffer/</loc></url>
@@ -141,6 +142,7 @@
   <url><loc>https://mixos.dev/editd/changelog/</loc></url>
   <url><loc>https://mixos.dev/hostd/changelog/</loc></url>
   <url><loc>https://mixos.dev/maild/changelog/</loc></url>
+  <url><loc>https://mixos.dev/mesh-sign/changelog/</loc></url>
   <url><loc>https://mixos.dev/mix/changelog/</loc></url>
   <url><loc>https://mixos.dev/mix-shell/changelog/</loc></url>
   <url><loc>https://mixos.dev/monitord/changelog/</loc></url>

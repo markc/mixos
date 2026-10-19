@@ -1,0 +1,39 @@
+[package]
+name = "mesh-sign"
+description = "Signs and verifies the mesh inventory (the SPEC 13 trust root)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[package.metadata.mixos]
+component = "mesh-sign"
+kind = "cli"
+layer = "core"
+contract = "none"
+
+[lints.clippy]
+mod_module_files = "deny"
+
+[dependencies]
+anyhow.workspace = true
+base64.workspace = true
+buildinfo.workspace = true
+chrono.workspace = true
+clap.workspace = true
+curve25519-dalek.workspace = true
+ed25519-dalek.workspace = true
+libc.workspace = true
+mix.workspace = true
+rand.workspace = true
+rusqlite.workspace = true
+serde_json.workspace = true
+# The one canonicaliser and verifier, shared with noded so the signer and the
+# verifier cannot disagree on the signed bytes (SPEC 13 §6). It lives under
+# services/noded until its promotion to libs/ is decided (AGENTS.md §2.2).
+mesh-trust = { path = "../../services/noded/crates/mesh-trust" }
+
+[build-dependencies]
+buildinfo.workspace = true
