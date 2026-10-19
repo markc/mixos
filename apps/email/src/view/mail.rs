@@ -610,32 +610,32 @@ fn message(ui: &mut Ui, view: &AccountView, email: &Email, focused: bool) {
         .id_salt(BODY_SCROLL)
         .auto_shrink(false)
         .show(ui, |ui| {
-        match email.text_body_value() {
-            Some(body) if format == Format::Markdown => {
-                let parsed;
-                let document = match reader.document(email) {
-                    Some(document) => document,
-                    None => {
-                        parsed = Document::parse(body);
-                        &parsed
+            match email.text_body_value() {
+                Some(body) if format == Format::Markdown => {
+                    let parsed;
+                    let document = match reader.document(email) {
+                        Some(document) => document,
+                        None => {
+                            parsed = Document::parse(body);
+                            &parsed
+                        }
+                    };
+                    markdown::show(ui, document);
+                }
+                Some(body) => {
+                    ui.add(egui::Label::new(body).wrap());
+                }
+                None => match email.html_body_value() {
+                    // No HTML rendering in this slice: the source, escaped by
+                    // the label, with a note.
+                    Some(html) => {
+                        ui.weak(crate::label("html-source"));
+                        ui.add(egui::Label::new(egui::RichText::new(html).monospace()).wrap());
                     }
-                };
-                markdown::show(ui, document);
+                    None => {
+                        ui.weak(crate::label("no-body"));
+                    }
+                },
             }
-            Some(body) => {
-                ui.add(egui::Label::new(body).wrap());
-            }
-            None => match email.html_body_value() {
-                // No HTML rendering in this slice: the source, escaped by
-                // the label, with a note.
-                Some(html) => {
-                    ui.weak(crate::label("html-source"));
-                    ui.add(egui::Label::new(egui::RichText::new(html).monospace()).wrap());
-                }
-                None => {
-                    ui.weak(crate::label("no-body"));
-                }
-            },
-        }
-    });
+        });
 }

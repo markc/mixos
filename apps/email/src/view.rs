@@ -276,7 +276,8 @@ fn keyboard_panes(ui: &egui::Ui, state: &State, reader: bool, events: &mut Vec<U
     if reader {
         panes.push(Pane::Reader);
     }
-    let on_pane = tree::is_focused(ctx) || datatable::is_focused(ctx, LIST) || mail::reader_focused(ctx);
+    let on_pane =
+        tree::is_focused(ctx) || datatable::is_focused(ctx, LIST) || mail::reader_focused(ctx);
     let nothing = ctx.memory(|m| m.focused()).is_none();
     let dialog = state.compose.is_some() || state.identity_editor.is_some();
     if (on_pane || nothing) && !dialog {
