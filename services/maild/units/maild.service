@@ -1,0 +1,57 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+# Plain per-host maild: one mail service per host, beside the plain
+# noded.service. Hosts that run per-session brokers use maild@.service.
+# Data paths (database, blobs, mds, spam) come from the maild config.
+[Unit]
+Description=MixOS mail service
+Documentation=https://mixos.dev/maild/
+After=network-online.target noded.service
+Wants=network-online.target noded.service
+
+[Service]
+Type=simple
+User=maild
+Group=maild
+Environment=MIXOS_ETC=/etc/mixos
+Environment=MIXOS_VAR=/var/lib/mixos
+Environment=HOME=%S/mixos/maild
+Environment=RUST_LOG=maild=info
+StateDirectory=mixos/maild
+StateDirectoryMode=0750
+RuntimeDirectory=maild
+RuntimeDirectoryMode=0750
+WorkingDirectory=%S/mixos/maild
+ExecStart=/opt/mixos/bin/maild -c /etc/mixos/maild/config.conf.mix serve
+Restart=on-failure
+RestartSec=5s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=maild
+LogRateLimitIntervalSec=30s
+LogRateLimitBurst=10000
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectProc=invisible
+ProcSubset=pid
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target
