@@ -876,11 +876,13 @@ fn reader_panel_menu_studio_dark() {
         opened("text/plain", PLAIN),
         &theme(Scheme::Studio, Mode::Dark),
     );
+    let buttons = h.query_all_by_label("Panel menu").count();
     h.get_by_label("Panel menu").click();
     h.run();
-    // A popup is sized on the frame after it first shows.
     h.run();
     h.run();
+    let item = h.query_by_label_contains("Light content").is_some();
+    assert!(item, "the menu opens on the dots; {buttons} button(s) found");
     h.snapshot("reader_panel_menu_studio_dark");
 }
 
