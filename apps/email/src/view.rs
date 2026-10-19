@@ -305,8 +305,8 @@ fn window(
     events: &mut Vec<UiEvent>,
 ) {
     let total = ui.available_width();
-    let reader = state.current().is_some_and(|v| v.phase == Phase::Ready);
-    keyboard_panes(ui, state, reader, events);
+    let reader_shown = state.current().is_some_and(|v| v.phase == Phase::Ready);
+    keyboard_panes(ui, state, reader_shown, events);
     let left = egui::Panel::left("places")
         .resizable(true)
         .default_size(total * state.ui.places)
