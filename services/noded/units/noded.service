@@ -1,0 +1,29 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+# Plain per-host noded: one node per host, run as the markc user.
+# Host-local values come from EnvironmentFile (LISTEN, NODE). It is written
+# per host and is never in the repo.
+[Unit]
+Description=MixOS per-node Bus broker (noded)
+Documentation=https://mixos.dev/noded/
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=markc
+Group=markc
+EnvironmentFile=/etc/mixos/noded/service.env
+# A non-root user resolves etc and var under its home unless these are set.
+# Point them at the MixOS trust root and state.
+Environment=MIXOS_ETC=/etc/mixos
+Environment=MIXOS_VAR=/var/lib/mixos
+RuntimeDirectory=mixos/noded
+RuntimeDirectoryMode=0755
+StateDirectory=mixos/noded
+StateDirectoryMode=0750
+ExecStart=/opt/mixos/bin/noded serve --listen ${LISTEN} --node ${NODE} --mesh-config /etc/mixos/noded/config.conf.mix --no-monitor --no-log
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target
