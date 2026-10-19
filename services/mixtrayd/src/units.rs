@@ -14,7 +14,7 @@ const NO_SUCH_UNIT: &str = "org.freedesktop.systemd1.NoSuchUnit";
 
 /// The units the COS tab lists: (unit, which manager runs it).
 pub const WATCHED: &[(&str, Manager)] = &[
-    ("noded.service", Manager::User),
+    ("noded.service", Manager::System),
     ("hostd.service", Manager::System),
     ("monitord.service", Manager::System),
     ("webd.service", Manager::System),

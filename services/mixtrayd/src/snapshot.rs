@@ -37,11 +37,22 @@ async fn tab_bus(client: &NodedClient) -> Value {
         Err(error) => tab["error"] = json!(error.to_string()),
     }
     match peers {
-        Ok(value) => tab["peers"] = value,
+        // noded wraps the peers in an authority record; the list is its routing view.
+        Ok(value) => tab["peers"] = peer_list(value),
         // Peers are optional detail; a noded without the verb still shows services.
         Err(error) => tab["peers_error"] = json!(error.to_string()),
     }
     tab
+}
+
+/// The peer list from `noded.peers`: its `routing_view` when the reply is the
+/// authority record, otherwise the reply itself when it is already a list.
+pub fn peer_list(value: Value) -> Value {
+    match value.get("routing_view") {
+        Some(view @ Value::Array(_)) => view.clone(),
+        _ if value.is_array() => value,
+        _ => json!([]),
+    }
 }
 
 /// MIX: the installed mix binary and its version. Scripts, runs and trash are
@@ -130,5 +141,20 @@ host alpha
     #[test]
     fn ssh_hosts_of_an_empty_config_is_empty() {
         assert!(ssh_hosts("").is_empty());
+    }
+
+    #[test]
+    fn peer_list_takes_the_routing_view_of_an_authority_record() {
+        let reply = json!({
+            "authority": {"epoch": 21},
+            "routing_view": [{"name": "alpha"}, {"name": "beta"}],
+        });
+        assert_eq!(peer_list(reply), json!([{"name": "alpha"}, {"name": "beta"}]));
+    }
+
+    #[test]
+    fn peer_list_passes_a_bare_list_through_and_drops_anything_else() {
+        assert_eq!(peer_list(json!([{"name": "x"}])), json!([{"name": "x"}]));
+        assert_eq!(peer_list(json!({"unexpected": true})), json!([]));
     }
 }
