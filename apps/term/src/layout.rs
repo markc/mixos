@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Where every pane goes, as plain arithmetic.
 //!
 //! The pane tree is the core's (`term_core::panes`), and its split ratios

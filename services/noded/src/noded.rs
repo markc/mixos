@@ -4645,7 +4645,7 @@ async fn handle_noded_command(
         // a third-party peer to a per-namespace slice of its
         // `<svc>.props.records.changed` or `<svc>.props.audit` topic.
         // The lower-level `topic.subscribe` is reservation-gated and
-        // rejects every peer; the watch verbs in `Cosmix property-store`
+        // rejects every peer; the watch verbs in `props`
         // call this verb after their own capability re-check so the
         // live-fan-out wire becomes reachable from
         // `<svc>.props.watch` / `<svc>.props.audit.watch`.

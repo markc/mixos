@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `term`: the Terminal window, registered on the Bus as `term`. With
 //! `--headless`, the same tab set and `term.*` verbs with no window.
 

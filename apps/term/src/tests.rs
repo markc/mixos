@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The window's state on a real PTY-backed tab set, with no window and no
 //! Bus: keys, the input method, the pointer, the wheel, zoom, wakes and the
 //! chords, each against the bytes a pane's PTY would receive.

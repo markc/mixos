@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `tar_list` / `tar_unpack` / `tar_pack` tests — the round-trip contract
 //! plus the ADVERSARIAL set: every archive here that escapes, lies or bombs
 //! must be refused by name, and the refusal is the assertion. Malicious

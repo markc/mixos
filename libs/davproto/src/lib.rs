@@ -1,5 +1,5 @@
-// SPDX-FileCopyrightText: 2026 Mark Constable <mc@mixos.dev>
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 
 //! CalDAV/CardDAV protocol codecs, shared by the maild DAV server and a
 //! future DAV client.

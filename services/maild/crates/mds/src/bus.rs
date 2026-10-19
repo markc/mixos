@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Storage event taxonomy and post-commit in-process broadcast channel.
 //! Consumers wire receivers to their native Bus publisher.
 

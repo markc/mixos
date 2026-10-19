@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The Wayland clipboard and primary selection, on a worker thread of their
 //! own (the design follows smithay-clipboard, MIT).
 //!

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! A pane narrower than its smallest grid (two columns) clips its grid at
 //! its own border: no pixel of it lands in the neighbouring pane.
 

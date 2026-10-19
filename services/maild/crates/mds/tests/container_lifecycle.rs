@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Phase 1a: container-lifecycle integration tests.
 //!
 //! Every test runs against a real on-disk SqliteCasMds rooted in a

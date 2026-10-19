@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Phase 6: Bus event surface — smoke test.
 //!
 //! Drives every spec-defined event type through `SqliteCasMds` and

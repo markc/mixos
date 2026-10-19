@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The window offscreen, through real egui-wgpu with the GPU grid: two tabs,
 //! the second split side by side, each pane a VT fixture so the image is
 //! the same every run. Regenerate with `UPDATE_SNAPSHOTS=1` and look at the

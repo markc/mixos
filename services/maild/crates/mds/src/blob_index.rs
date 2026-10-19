@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `blobs.sqlite` operations: refcount, refcount_pending, blob_verify.
 //! Box-wide derived index, rebuildable from data.sqlite + CAS per
 //! spec §Invariants 8.

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The GPU grid against the CPU painter, through real egui-wgpu.
 //!
 //! Each case paints one screen both ways at a device scale: `Raster::render`

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Composition belongs to a pane, including while its preedit is empty.
 //!
 //! egui reports an input method as preedit and commit events only. When the

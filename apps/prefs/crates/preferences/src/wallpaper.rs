@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 
 //! The wallpaper editor: a pure model of the backdrop wallpaper config that
 //! the prefs view edits. It plans Bus calls and folds their replies back in.

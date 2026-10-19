@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! CPU cost of the GPU grid on the 2026-10-07 renderer workloads: a
 //! 2250x1250 physical grid at scale 2.5, 20 warm-up and 200 measured frames
 //! each. `prepare` is the renderer's whole CPU side per frame (snapshot to

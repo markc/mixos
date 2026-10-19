@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Per-set export to a tar archive.
 //!
 //! Phase 5.7 deliverable backing `mds export <SET_UUID>

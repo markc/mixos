@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! MCS Phase 3 — `prune_changelog` + `changelog_floor` semantics.
 //!
 //! Pins the durable-retention contract relied on by

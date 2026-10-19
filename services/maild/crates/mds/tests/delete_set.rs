@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Phase 3 sub-step 2: `delete_set` distinct-hash tally.
 //!
 //! `DeleteReport.blob_count_unreffed` is the count of *distinct

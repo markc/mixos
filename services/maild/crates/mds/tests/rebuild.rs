@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Integration tests for `Mds::rebuild_index`.
 //!
 //! Phase 5 ships the library impl alongside the `mds

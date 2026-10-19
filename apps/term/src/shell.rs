@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The running window: wakes from the core, the keyboard, pointer and
 //! input method into the [`App`], the window's Bus verbs, the session look,
 //! and the effects the window owns (clipboard, closing). Nothing polls: the

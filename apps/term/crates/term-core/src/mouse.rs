@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 // Mouse encoding and mode gates ported from rio librio (932c1a7).
 // MIT License
 // Copyright (c) 2022-present Raphael Amorim

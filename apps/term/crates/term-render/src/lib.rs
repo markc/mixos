@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Term's grid on the GPU.
 //!
 //! The CPU raster in `term-core` stays the authority on what a glyph looks

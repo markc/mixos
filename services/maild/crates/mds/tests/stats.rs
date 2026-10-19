@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Integration tests for `Mds::stats` and `Mds::stats_per_set`.
 //!
 //! Phase 5 commits the library impl alongside the `mds stats`

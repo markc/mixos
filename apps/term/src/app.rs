@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The window's state around the core's tab set: what is on screen, how
 //! each pane is sized, the keyboard, pointer, input method and clipboard
 //! gestures, and the font.

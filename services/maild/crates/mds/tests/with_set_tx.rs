@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Phase 8b — `SqliteCasMds::with_set_tx` + `SqliteSetTx<'a>` as
 //! the cross-layer atomicity primitive.
 //!

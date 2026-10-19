@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Acceptance exercises production noded, Term's allocated route and actual
 //! VerifiedConnection deliveries, plus a principal/scope admission matrix.
 use super::*;

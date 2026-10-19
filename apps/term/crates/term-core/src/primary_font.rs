@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Validated terminal face discovery. Fallback routing stays in unicode_raster.
 #[cfg(test)]
 use design::TypographyGeneric;

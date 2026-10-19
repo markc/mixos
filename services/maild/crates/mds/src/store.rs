@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `Mds` trait and the `SqliteCasMds` concrete implementation.
 //!
 //! Phase 1a covers container-set + container lifecycle. Item / blob

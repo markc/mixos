@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Phase 8a — file-backed allocator concurrency for the v1.1
 //! `set_state.set_change_seq` counter.
 //!

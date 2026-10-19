@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Internal test helper used by `tests/recovery.rs`.
 //!
 //! Opens an MDS root, creates one set + INBOX, and hammers

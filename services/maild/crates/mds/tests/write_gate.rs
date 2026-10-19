@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Fair in-process writer-queue coverage.
 //!
 //! Each writer owns a different set connection, so the per-set

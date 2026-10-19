@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Import a per-set tar archive produced by `Mds::export_set`.
 //!
 //! Phase 5.8 deliverable backing `mds import <TARBALL_PATH>`.

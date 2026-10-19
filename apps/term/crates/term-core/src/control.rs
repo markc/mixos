@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Recipient-owned BROKER-023 policy. Transport stamps enter only through
 //! VerifiedCommand; request bodies never construct an actor.
 use crate::tabs::{Cleanup, TabSet};

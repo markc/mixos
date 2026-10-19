@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Typed calls to a local Bus port over a Unix socket.
 use anyhow::Result;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Runtime font sizing: foot's `font-increase` / `font-decrease` /
 //! `font-reset`, as state a frontend owns and a raster is rebuilt from.
 //!

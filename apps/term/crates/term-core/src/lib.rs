@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Renderer-free core of MixOS Term.
 //!
 //! Everything a terminal frontend needs except the window: PTY and VT grid

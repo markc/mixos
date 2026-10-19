@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Rebuild `blobs.sqlite` from per-set `data.sqlite` + CAS.
 //!
 //! Phase 5 deliverable backing the `mds rebuild-index`

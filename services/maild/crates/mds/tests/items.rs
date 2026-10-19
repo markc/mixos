@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Phase 1b: item/membership/blob integration + invariants.
 
 use mds::{ContainerAttrs, Flags, Mds, Membership, SetId, SqliteCasMds};

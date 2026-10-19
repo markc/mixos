@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Terminal: MixOS's tabbed terminal, with split panes, drawn on the GPU.
 //!
 //! The behaviour is the `term-core` engine (PTYs, the VT grid, tabs and

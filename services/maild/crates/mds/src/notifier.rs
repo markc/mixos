@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! In-process change-notification fanout.
 //!
 //! Per spec §subscribe: a `tokio::sync::broadcast` channel keyed by

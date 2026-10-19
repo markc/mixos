@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Phase 7a — crash-recovery stress + spec §Invariants 8
 //! (`rebuild_index_round_trip`).
 //!

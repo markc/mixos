@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The window's drawing: the toolkit title bar with the menus, the tab
 //! strip, a notice line when a paste was refused, and the panes, each a
 //! whole-pixel border (the focus ring when the tab is split) around its

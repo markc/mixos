@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Metadata store: per-container-set SQLite metadata and content-addressable blobs.
 //! See the `Mds` trait for the storage contract and the crate README for operation.
 

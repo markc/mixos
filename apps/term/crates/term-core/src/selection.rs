@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Human selection and paste. The Bus control lane deliberately does not use
 //! this encoder: its synthetic-key restrictions remain in `encode_text`.
 

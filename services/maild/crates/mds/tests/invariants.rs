@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Property tests for spec §Invariants 1–7 and 9–12.
 //!
 //! The plan's Phase 1b exit clause is:

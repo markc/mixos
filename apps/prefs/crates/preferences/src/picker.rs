@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Prefs' image browser state; directory I/O belongs to the shell.
 use crate::{Effect, Engine};
 use serde::Serialize;

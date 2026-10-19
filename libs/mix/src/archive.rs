@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `archive` feature — `tar_list` / `tar_unpack` / `tar_pack` builtins.
 //!
 //! Archives are read and written in-language so that a signed manifest can

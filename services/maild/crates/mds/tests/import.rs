@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Integration tests for `Mds::import_set`.
 //!
 //! Round-trip via `export_set` covers the happy path (the produced

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Carry the wallpaper editor's calls through Prefs' effect queue.
 use crate::wallpaper::{Call, Kind};
 use crate::{Effect, Engine};

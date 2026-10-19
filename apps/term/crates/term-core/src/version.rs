@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The `--version` contract, shared by every terminal frontend.
 //!
 //! **Mark's contract (2026-09-21): `--version` does nothing except report the

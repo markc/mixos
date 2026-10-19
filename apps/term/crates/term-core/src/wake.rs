@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! "Something changed" signal for a frontend's event loop.
 //!
 //! The core already reports change through a [`Wake`] callback (PTY output,

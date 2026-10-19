@@ -877,7 +877,7 @@ impl NodedClient {
         if rc >= 10 {
             // Error-message precedence:
             //   1. body's structured `message` field (SPEC 12 §9 —
-            //      `err_with` in `Cosmix property-store/src/bus/mutation.rs`)
+            //      `err_with` in `props/src/bus/mutation.rs`)
             //   2. body's `error` field (other services' convention)
             //   3. response `error` header (noded.props.subscribe_grant
             //      and other header-only responders return errors here

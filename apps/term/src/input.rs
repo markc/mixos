@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Key presses, text and wheel travel into terminal actions and PTY keys.
 //!
 //! Pure functions over egui's input types, so the mapping is testable

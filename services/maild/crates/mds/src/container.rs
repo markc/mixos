@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Per-set `data.sqlite` operations: container CRUD + status reads.
 //!
 //! Item / membership / change-log writes land in Phase 1b. This file

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! p0i-01: production Term prepare/fd mapping/Machine path to a real Mix proof.
 //! See tests/README.md for the explicit current-HEAD release binary prerequisite.
 use super::*;

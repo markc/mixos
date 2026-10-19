@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Shared load guard for timing-sensitive integration tests.
 
 /// Skip timing assertions when one-minute load per available CPU reaches this value.

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 use super::tests::{raster_with, screen};
 use super::*;
 use crate::{clusters::ClusterInterner, config::Cursor, terminal::Terminal};

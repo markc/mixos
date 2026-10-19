@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Frontend-neutral ownership of the native-session control lane.
 use crate::{config, control::Control, native_session::Supervisor, tabs};
 use std::sync::{Arc, Mutex};

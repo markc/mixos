@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Phase 2: subscribe / publish wake-up tests.
 //!
 //! Per spec §subscribe the v1 contract is "wakes, doesn't deadlock"

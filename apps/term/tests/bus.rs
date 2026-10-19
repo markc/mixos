@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The window's own Bus verbs over a real broker (libs/test-broker): the
 //! lane registers `term`, serves its terminal verbs itself and hands the
 //! window `app.describe`, `term.commands`, `term.execute` and the drive verbs,

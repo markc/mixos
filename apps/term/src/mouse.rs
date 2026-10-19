@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Pointer gestures over the panes: selection (drag, double and triple
 //! click), mouse reporting to the program in a pane, middle-click paste of
 //! the primary selection, and the wheel. Selection itself lives in

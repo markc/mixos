@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Phase 3 sub-step 1: cross-DB refcount + blob_ref bookkeeping.
 //!
 //! Verifies that `add_item` and `remove_membership` keep

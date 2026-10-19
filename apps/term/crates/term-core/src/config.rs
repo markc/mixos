@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The settings a pane starts with. The frontend fills them from the
 //! desktop profile's `terminal.*` preferences (settingsd), and from these
 //! defaults while there is none.

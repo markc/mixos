@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Term's commands: one per action, so the menus, the keyboard, the
 //! toolkit's Bus drive and `term.execute` all reach the same path, and each
 //! run is published on `term.command.executed`.

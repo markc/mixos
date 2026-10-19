@@ -1,5 +1,5 @@
-// SPDX-FileCopyrightText: 2026 Mark Constable <mc@mixos.dev>
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 
 //! Strong content-hash ETags.
 //!

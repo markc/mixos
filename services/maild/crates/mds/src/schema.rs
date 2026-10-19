@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Schema migration runner.
 //!
 //! Applies versioned `vN.sql` files to a SQLite connection in order,

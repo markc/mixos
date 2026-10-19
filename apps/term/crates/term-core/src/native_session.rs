@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Term-owned identity actor and verified recipient lane. Protected controls
 //! share its attachment, ordered lifecycle stream and reconnect lifetime.
 use crate::session_fd::{LaunchFd, fresh_key};

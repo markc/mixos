@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Content-addressable blob storage.
 //!
 //! Atomic CAS write protocol per spec §Invariants 6:

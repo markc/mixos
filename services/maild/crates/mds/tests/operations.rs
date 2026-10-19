@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Storage checks formerly exercised through the operator CLI. Argument parsing,
 //! environment root selection, exit codes and output formatting belonged to that
 //! removed binary; these tests call the unchanged library contract directly.

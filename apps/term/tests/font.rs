@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! A weight-only settings change replaces the raster and its cached glyphs.
 
 use std::sync::atomic::AtomicBool;

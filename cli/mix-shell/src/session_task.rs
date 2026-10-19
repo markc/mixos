@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Isolated supervised tasks (P4) — the second §5.2 execution mode.
 //!
 //! An interactive evaluation runs INSIDE the shell: it sees the shell's

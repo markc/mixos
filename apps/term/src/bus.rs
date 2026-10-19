@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The window's side of the `term` Bus name.
 //!
 //! term-core's lane owns the connection and serves the terminal's own

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The window's side of the clipboard and primary selection.
 //!
 //! egui writes the clipboard but knows no primary selection, and a

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Bounded image-directory I/O, run off the window thread.
 use preferences::picker::{Entry, Listing, MAX_ENTRIES};
 use std::path::{Path, PathBuf};
