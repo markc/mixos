@@ -149,9 +149,7 @@ pub(crate) fn set(
                 .filter(|v| !v.is_null())
                 .map_or(Ok(Content::default()), |v| typed(path, v))?
         }
-        ["padding"] => {
-            content.padding = value.map_or(Ok(defaults.padding), |v| whole(path, v))?
-        }
+        ["padding"] => content.padding = value.map_or(Ok(defaults.padding), |v| whole(path, v))?,
         ["font", "family"] => {
             content.font.family = typed(path, value.unwrap_or(Value::Null))?;
         }
@@ -188,7 +186,13 @@ mod tests {
     #[test]
     fn a_bundled_family_and_a_padding_validate() {
         let mut content = Content::default();
-        set(&mut content, "email.reader", &["font", "family"], Some(json!("JetBrains Mono"))).unwrap();
+        set(
+            &mut content,
+            "email.reader",
+            &["font", "family"],
+            Some(json!("JetBrains Mono")),
+        )
+        .unwrap();
         set(&mut content, "email.reader", &["padding"], Some(json!(16))).unwrap();
         assert!(validate(&content, "email.reader").is_ok());
     }
@@ -196,7 +200,13 @@ mod tests {
     #[test]
     fn an_unbundled_family_is_refused() {
         let mut content = Content::default();
-        set(&mut content, "email.reader", &["font", "family"], Some(json!("Comic Sans"))).unwrap();
+        set(
+            &mut content,
+            "email.reader",
+            &["font", "family"],
+            Some(json!("Comic Sans")),
+        )
+        .unwrap();
         let error = validate(&content, "email.reader").unwrap_err();
         assert_eq!(error.path, "email.reader.font.family");
     }
@@ -214,7 +224,13 @@ mod tests {
     #[test]
     fn size_must_be_in_range() {
         let mut content = Content::default();
-        set(&mut content, "email.reader", &["font", "size"], Some(json!(4.0))).unwrap();
+        set(
+            &mut content,
+            "email.reader",
+            &["font", "size"],
+            Some(json!(4.0)),
+        )
+        .unwrap();
         assert_eq!(
             validate(&content, "email.reader").unwrap_err().path,
             "email.reader.font.size"
