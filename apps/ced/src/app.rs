@@ -34,6 +34,7 @@ use documents::controller::{Controller, Effect, Prompt, RecoveredRow, Tab};
 use documents::editor::{EditorMsg, LayoutReport};
 use documents::verbs::{Refusal, code};
 use editor::{View, Wrap};
+use settings::content::{Content, default_font_size};
 use editor_model::mirror::Phase;
 use editor_model::types::{Intent, Invoker, Level, Notice, TabId};
 use serde::Serialize;
@@ -190,6 +191,9 @@ pub struct App {
     pub noted: Vec<(String, Origin)>,
     /// Whether the last window action answered with a refusal.
     refused: bool,
+    /// The editor's saved style ([`settings::content`]): its padding, size
+    /// and light mode. The shell sets it from settingsd.
+    pub editor_style: Content,
 }
 
 impl App {
@@ -212,7 +216,25 @@ impl App {
             focus_find: false,
             noted: Vec::new(),
             refused: false,
+            editor_style: Content::default(),
         }
+    }
+
+    /// The editor's base size in pixels. The profile's size counts once it
+    /// names one; until then the config file's, else the default.
+    pub fn editor_base_px(&self) -> u16 {
+        let size = self.editor_style.font.size;
+        if size == default_font_size() {
+            return self.config.font_px.unwrap_or(DEFAULT_FONT_PX);
+        }
+        (size.round() as u16).clamp(FONT_PX_MIN, FONT_PX_MAX)
+    }
+
+    /// Take the editor's style from settingsd. The size starts again from
+    /// it, so a zoom made before does not outlive the profile's size.
+    pub fn set_editor_style(&mut self, style: Content) {
+        self.editor_style = style;
+        self.ui.font_px = self.editor_base_px();
     }
 
     fn ui_from(config: &Config, problems: bool, output: bool, find: Option<FindBar>) -> UiState {
@@ -456,7 +478,7 @@ impl App {
                 self.ui.font_px = match action {
                     ViewZoomIn => (self.ui.font_px + 1).min(FONT_PX_MAX),
                     ViewZoomOut => self.ui.font_px.saturating_sub(1).max(FONT_PX_MIN),
-                    _ => self.config.font_px.unwrap_or(DEFAULT_FONT_PX),
+                    _ => self.editor_base_px(),
                 };
                 self.done(token, Ok(json!({ "font_px": self.ui.font_px })))
             }

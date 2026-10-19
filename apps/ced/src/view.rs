@@ -390,9 +390,15 @@ fn document(
         diagnostics: tab.diagnostics.items(),
     };
     let editable = app.dialog.is_none();
+    // The editor takes its own saved padding and light mode; the rest of the
+    // window keeps the global look.
     let out = ui
         .add_enabled_ui(editable, |ui| {
-            editor::show(ui, ("ced.editor", tab.id), &doc, palette, &view)
+            let mut out = None;
+            toolkit::content::surface(ui, &app.editor_style, |ui| {
+                out = Some(editor::show(ui, ("ced.editor", tab.id), &doc, palette, &view));
+            });
+            out.expect("the surface draws its body")
         })
         .inner;
     let shown = (out.response.id, out.held);

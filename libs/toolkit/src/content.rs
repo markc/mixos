@@ -20,14 +20,20 @@ pub fn surface(ui: &mut Ui, content: &Content, add: impl FnOnce(&mut Ui)) {
     }
 }
 
-fn light(ui: &mut Ui, content: &Content, add: impl FnOnce(&mut Ui)) {
+/// The light theme a light surface draws with, for code that colours its own
+/// text (the editor's palette).
+pub fn light_theme() -> &'static Theme {
     static LIGHT: OnceLock<Theme> = OnceLock::new();
-    let theme = LIGHT.get_or_init(|| {
+    LIGHT.get_or_init(|| {
         Theme::for_context(design::DesignContext {
             mode: design::Mode::Light,
             ..design::DesignContext::default()
         })
-    });
+    })
+}
+
+fn light(ui: &mut Ui, content: &Content, add: impl FnOnce(&mut Ui)) {
+    let theme = light_theme();
     let ctx = ui.ctx().clone();
     let previous = Chrome::of(&ctx);
     chrome::install(&ctx, &Chrome::for_theme(theme));

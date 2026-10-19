@@ -551,10 +551,13 @@ impl Shell {
                 appearance,
                 custom_source,
                 keymaps,
+                ced,
                 ..
             }) => {
                 self.set_look((!custom_source).then_some(*appearance));
                 self.set_keymap(keymaps.get(APP).cloned().unwrap_or_default());
+                self.app.set_editor_style(ced.editor.clone());
+                self.palette = self.editor_palette();
             }
             // settingsd gone: the look falls back to the theme file, but the
             // person's bindings stay in force until a profile changes them.
@@ -576,11 +579,21 @@ impl Shell {
         }
     }
 
+    /// The editor's colours: the light theme when the editor's saved style
+    /// says light, else the window's theme.
+    fn editor_palette(&self) -> editor::Palette {
+        if self.app.editor_style.light {
+            editor::Palette::from_theme(toolkit::content::light_theme())
+        } else {
+            editor::Palette::from_theme(&self.theme)
+        }
+    }
+
     fn follow_theme(&mut self) {
         if self.installed != Some(self.app.theme) {
             self.theme = self.base.with_choice(&self.app.theme);
             toolkit::install(&self.ctx, &self.theme);
-            self.palette = editor::Palette::from_theme(&self.theme);
+            self.palette = self.editor_palette();
             self.installed = Some(self.app.theme);
             self.ctx.request_repaint();
         }
