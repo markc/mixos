@@ -37,8 +37,9 @@ $_NAME = "^[a-z][a-z0-9-]{1,30}$"
 -- The broker's session-name shape (<t|c><id>-<22 base32>).
 $_SESSION = "^[tc][a-z0-9]{1,7}-[a-z2-7]{22}$"
 -- The native lint schema that carries parsed handler metadata.
-$_LINT_SCHEMA = 2
+$_LINT_SCHEMA = 3
 $_NO_HANDLERS = "native Mix lacks parsed handler metadata; rebuild current Mix"
+$embed = require("verb_registry_embed.mix")
 
 -- The native mix binary for the lint calls: MIXOS_TEST_MIX if set, else the
 -- installed one.
@@ -167,11 +168,11 @@ end
 -- The file is never run. A file that does not lint fails with its exit status
 -- alone, so no source text reaches the report; output that was truncated, or
 -- that is not the lint document, is never read as one.
-fn _lint($path)
+fn _lint($path, $flags)
   $r = nil
   $err = ""
   try
-    $r = run_argv([mix_bin(), "lint", "--json", $path], {timeout: 60})
+    $r = run_argv(concat([mix_bin(), "lint", "--json"], $flags, [$path]), {timeout: 60})
   catch $m
     $err = $m
   end
@@ -258,6 +259,12 @@ fn check_source($root, $families)
   $problems = []
   $listing = source_files($root)
   if not $listing.ok then return {problems: [$listing.error], declared: 0, files: 0} end
+  $flags = {}
+  try
+    $flags = $embed.prepare(mix_bin(), $embed.scopes($root, $listing.files))
+  catch $m
+    return {problems: ["webd embedding context: " .. $m], declared: 0, files: 0}
+  end
   $instances = {}
   $by_suffix = {}
   for each $f in $families
@@ -272,7 +279,7 @@ fn check_source($root, $families)
   $files = 0
   for each $f in $listing.files
     $files = $files + 1
-    $lint = _lint($f.path)
+    $lint = _lint($f.path, get_or($flags, $f.path, []))
     if not $lint.ok then
       push($problems, $f.rel .. ": " .. $lint.error)
     else
@@ -302,6 +309,30 @@ fn check_source($root, $families)
     end
   end
   return {problems: $problems, declared: $declared, files: $files}
+end
+
+-- The webd-only entry point uses the SAME collector, context validation and
+-- lint invocation as check_source, without requiring unrelated Bus families.
+fn check_vhosts($root)
+  $listing = source_files($root)
+  if not $listing.ok then return {problems: [$listing.error], files: 0} end
+  $flags = {}
+  try
+    $flags = $embed.prepare(mix_bin(), $embed.scopes($root, $listing.files))
+  catch $m
+    return {problems: ["webd embedding context: " .. $m], files: 0}
+  end
+  $problems = []
+  $files = 0
+  for $f in $listing.files
+    if starts_with($f.rel, "services/webd/vhosts/") then
+      $files = $files + 1
+      $lint = _lint($f.path, get_or($flags, $f.path, []))
+      if not $lint.ok then push($problems, $f.rel .. ": " .. $lint.error) end
+    end
+  end
+  if $files == 0 then push($problems, "webd vhosts source tree has no checked files") end
+  return {problems: $problems, files: $files}
 end
 
 -- The instance configs in dir: each *.conf.mix file's stem is a bridged

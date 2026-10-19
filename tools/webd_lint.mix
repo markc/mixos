@@ -1,0 +1,16 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- version: 0.1.0
+-- Focused entry point for the verb registry's webd source checks.
+$src = require("lib/verb_registry_source.mix")
+$root = dirname(dirname(realpath($0)))
+if len(args()) != 0 then
+  eprint("usage: mix tools/webd_lint.mix")
+  exit(2)
+end
+$report = $src.check_vhosts($root)
+for $problem in $report.problems
+  print("webd_lint: " .. $problem)
+end
+print("webd_lint: " .. to_string($report.files) .. " files, " .. to_string(len($report.problems)) .. " errors")
+if len($report.problems) != 0 then exit(1) end

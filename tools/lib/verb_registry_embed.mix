@@ -1,0 +1,173 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- Declared webd embedding scopes. Never execute a fragment or a context file.
+-- Function names come ONLY from native lint's parsed declarations (schema 3).
+-- Context files may themselves need an embedding scope, so metadata extraction
+-- accepts semantic errors; the source gate still lints EVERY file with its own
+-- scope and refuses any error. No diagnostic is filtered or demoted.
+
+fn _fail($message)
+  raise("EMBED_CONTEXT", $message)
+end
+
+fn _fields($value, $fields)
+  if type($value) != "map" then _fail("expected a map") end
+  for $key in keys($value)
+    if not contains($fields, $key) then _fail("unknown field " .. $key) end
+  end
+  for $key in $fields
+    if not has_key($value, $key) then _fail("missing field " .. $key) end
+  end
+end
+
+fn _relative($path)
+  if type($path) != "string" or not re_match($path, "^[a-zA-Z0-9_-]+(/[a-zA-Z0-9_.-]+)*$") then
+    _fail("invalid relative path")
+  end
+  for $part in split($path, "/")
+    if $part == "." or $part == ".." then _fail("path traversal refused") end
+  end
+end
+
+fn _source($path, $known)
+  -- A leaf filename can contain dots, unlike a directory's first segment.
+  if type($path) != "string" or starts_with($path, "/") or contains(split($path, "/"), "..") then
+    _fail("invalid source path")
+  end
+  if not has_key($known, $path) then _fail("source missing from checked tree: " .. $path) end
+end
+
+-- Returns each checked vhost file's context paths and globals. Missing, stale,
+-- duplicate or malformed declarations fail closed. A standalone declaration is
+-- an explicit exception to inherited contexts, never an exception to lint.
+fn scopes($root, $files)
+  $base = $root .. "/services/webd/vhosts"
+  $known = {}
+  for $f in $files
+    if starts_with($f.rel, "services/webd/vhosts/") then
+      $known[strip_prefix($f.rel, "services/webd/vhosts/")] = $f.path
+    end
+  end
+  if len(keys($known)) == 0 then return {} end
+  $config = $base .. "/embed.conf.mix"
+  $info = stat($config, {follow_symlinks: false})
+  if $info.is_symlink or not $info.is_file then _fail("embed.conf.mix must be a regular file") end
+  $cfg = load_data($config)
+  _fields($cfg, ["schema", "globals", "directories", "fragments", "standalone"])
+  if type($cfg.schema) != "number" or $cfg.schema != 1 then _fail("embed schema must be 1") end
+  for $key in ["globals", "directories", "fragments", "standalone"]
+    if type($cfg[$key]) != "list" then _fail($key .. " must be a list") end
+  end
+  $globals = []
+  for $name in $cfg.globals
+    if type($name) != "string" or not re_match($name, "^[A-Za-z_][A-Za-z0-9_]*$") or contains($globals, $name) then
+      _fail("invalid or duplicate global")
+    end
+    push($globals, $name)
+  end
+  $standalone = {}
+  for $path in $cfg.standalone
+    _source($path, $known)
+    if has_key($standalone, $path) then _fail("duplicate standalone " .. $path) end
+    $standalone[$path] = true
+  end
+  $out = {}
+  $seen = {}
+  for $kind in ["directories", "fragments"]
+    for $entry in $cfg[$kind]
+      _fields($entry, ["path", "context"])
+      $path = $entry.path
+      if $kind == "directories" then _relative($path) else _source($path, $known) end
+      $id = $kind .. ":" .. $path
+      if has_key($seen, $id) then _fail("duplicate declaration " .. $path) end
+      $seen[$id] = true
+      if $kind == "fragments" and has_key($standalone, $path) then _fail("standalone has fragment context: " .. $path) end
+      if type($entry.context) != "list" or len($entry.context) == 0 then _fail("context must be a nonempty list: " .. $path) end
+      $contexts = []
+      for $context in $entry.context
+        _source($context, $known)
+        if contains($contexts, $context) then _fail("duplicate context: " .. $context) end
+        push($contexts, $context)
+      end
+      $matched = false
+      for $file in keys($known)
+        if ($kind == "fragments" and $file == $path) or ($kind == "directories" and starts_with($file, $path .. "/")) then
+          $matched = true
+          if not has_key($standalone, $file) then
+            $scope = get_or($out, $known[$file], {context: [], globals: $globals})
+            for $context in $contexts
+              if not contains($scope.context, $known[$context]) then
+                $scope.context = push($scope.context, $known[$context])
+              end
+            end
+            $out[$known[$file]] = $scope
+          end
+        end
+      end
+      if not $matched then _fail("directory has no checked source: " .. $path) end
+    end
+  end
+  for $file in keys($known)
+    if has_key($standalone, $file) then
+      $out[$known[$file]] = {context: [], globals: []}
+    elif not has_key($out, $known[$file]) then
+      -- Even a file with its own include needs a declaration: includes are
+      -- runtime loads, not evidence of the surrounding request scope.
+      _fail("fragment has no declared context or standalone declaration: " .. $file)
+    end
+  end
+  return $out
+end
+
+fn function_names($mix, $path)
+  $r = run_argv([$mix, "lint", "--json", $path], {timeout: 60})
+  if $r.stdout_truncated or $r.stderr_truncated or ($r.exit_code != 0 and $r.exit_code != 1) then
+    _fail("context lint did not finish: " .. $path)
+  end
+  $doc = json_parse($r.stdout)
+  if type($doc) != "map" or get_or($doc, "schema_version", nil) != 3 or get_or($doc, "tool", nil) != "mix lint" then
+    _fail("native Mix lacks schema 3 function metadata; rebuild current Mix")
+  end
+  if not deep_eq(get_or($doc, "files", nil), [$path]) then _fail("context lint file attribution failed") end
+  if type(get_or($doc, "functions", nil)) != "list" then _fail("context lint lacks functions list") end
+  if type(get_or($doc, "diagnostics", nil)) != "list" then _fail("context lint lacks diagnostics") end
+  for $d in $doc.diagnostics
+    if starts_with($d.code, "MIX-E100") then _fail("context source does not parse: " .. $path) end
+  end
+  $names = []
+  for $f in $doc.functions
+    _fields($f, ["name", "file", "line"])
+    if type($f.name) != "string" or not re_match($f.name, "^[A-Za-z_][A-Za-z0-9_]*$") or $f.file != $path or type($f.line) != "number" or not re_match(to_string($f.line), "^[1-9][0-9]*$") then
+      _fail("invalid function metadata: " .. $path)
+    end
+    if not contains($names, $f.name) then push($names, $f.name) end
+  end
+  return $names
+end
+
+-- Build argv flags from declarations, caching metadata per source file.
+fn prepare($mix, $scopes)
+  $cache = {}
+  $out = {}
+  for $path in keys($scopes)
+    $scope = $scopes[$path]
+    $flags = []
+    $names = []
+    for $context in $scope.context
+      if not has_key($cache, $context) then $cache[$context] = function_names($mix, $context) end
+      for $name in $cache[$context]
+        if not contains($names, $name) then
+          push($names, $name)
+          push($flags, "--allow-function")
+          push($flags, $name)
+        end
+      end
+    end
+    for $name in $scope.globals
+      push($flags, "--allow-global")
+      push($flags, $name)
+    end
+    $out[$path] = $flags
+  end
+  return $out
+end

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! `Severity::Note` + the MIX-D3xxx advisory namespace (0.63.0,
-//! `schema_version: 2`) — CLI-level pins, because the stakes are
+//! `schema_version: 3`) — CLI-level pins, because the stakes are
 //! CLI-level: `--deny-warnings` is a live fleet deploy gate
 //! (deploy_shared.mix runs it over every shared-manifest source), so a
 //! note that counted as a warning would stop fleet deploys the day the
@@ -74,7 +74,7 @@ fn json_schema_v2_carries_notes() {
     let (code, out) = lint(&["--json", path.to_str().unwrap()]);
     assert_eq!(code, 0, "{out}");
     let v: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
-    assert_eq!(v["schema_version"], 2);
+    assert_eq!(v["schema_version"], 3);
     assert_eq!(v["summary"]["notes"], 2, "{out}");
     assert_eq!(v["summary"]["warnings"], 0, "notes are not warnings: {out}");
     assert!(

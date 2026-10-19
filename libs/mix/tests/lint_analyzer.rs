@@ -27,6 +27,36 @@ fn codes(src: &str) -> Vec<String> {
 }
 
 #[test]
+fn functions_list_comes_from_local_ast_with_attribution_and_duplicates() {
+    let src = "-- fn comment() end\n\
+        $quoted = 'fn quoted() end'\n\
+        $remote = <<REMOTE\nfn remote() end\nREMOTE\n\
+        fn outer()\n  fn inner() = 1\nend\n\
+        $lambda = fn()\n  fn inside_lambda() = 2\nend\n\
+        fn outer() = 3\n";
+    let stmts = Parser::new(Lexer::new(src).tokenize().unwrap(), src)
+        .parse_program()
+        .unwrap();
+    let a = analyze(&stmts, Some("context.mix"), &AnalyzerConfig::default());
+    let functions: Vec<_> = a
+        .functions
+        .iter()
+        .map(|f| (f.name.as_str(), f.file.as_deref(), f.line))
+        .collect();
+    assert_eq!(
+        functions,
+        vec![
+            ("outer", Some("context.mix"), 6),
+            ("inner", Some("context.mix"), 7),
+            ("inside_lambda", Some("context.mix"), 10),
+            ("outer", Some("context.mix"), 12),
+        ]
+    );
+    assert!(a.diagnostics.iter().any(|d| d.code == "MIX-E1302"));
+    assert!(analyze(&[], None, &AnalyzerConfig::default()).functions.is_empty());
+}
+
+#[test]
 fn streaming_http_contracts_include_filesystem_capabilities() {
     for (name, cap) in [("http_put_file", "fs-read"), ("http_get_file", "fs-write")] {
         let src =
