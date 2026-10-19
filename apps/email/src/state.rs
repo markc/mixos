@@ -2934,11 +2934,11 @@ impl State {
     }
 
     /// The message list reported `event` on `account`'s view. Selecting
-    /// only selects: a click picks one row, Ctrl+click toggles one,
+    /// a plain click picks one row and opens it; Ctrl+click toggles one,
     /// Shift+click and Shift with an arrow take a range, Ctrl+A the page,
     /// Escape collapses to the keyboard's row, and Up and Down move the
-    /// keyboard's row and the selection. None of them opens or marks read:
-    /// opening is Enter or a double-click (activation). "Select all N"
+    /// keyboard's row and the selection. Only a plain click opens among the
+    /// selection gestures; Enter and a double-click also open (activation). "Select all N"
     /// selects every email of the mailbox's query; a dragged width is
     /// remembered. A header click or a pager button asks the server for
     /// that sort or page and clears the selection.
@@ -2959,9 +2959,21 @@ impl State {
                     self.open_email(account, key.clone());
                 }
             }
-            // A new selection drops a "Select all N" fetch still loading:
-            // it was for the old one.
-            TableEvent::Selected { .. } | TableEvent::SelectionChanged { .. } => {
+            // A plain click opens its row, as other mail programs do; Ctrl+click
+            // and Shift+click only select. A new selection drops a "Select all N"
+            // fetch still loading: it was for the old one.
+            TableEvent::Selected { key, pick, .. } => {
+                let key = key.clone();
+                let plain = matches!(pick, toolkit::datatable::Pick::Only);
+                let opened = view.mail.open.as_ref().is_some_and(|e| e.id == key);
+                view.cancel_fetch();
+                view.mail.table.apply(&event, SelectionMode::Multi);
+                view.mail.everything = false;
+                if plain && !opened {
+                    self.open_email(account, key);
+                }
+            }
+            TableEvent::SelectionChanged { .. } => {
                 view.cancel_fetch();
                 view.mail.table.apply(&event, SelectionMode::Multi);
                 view.mail.everything = false;
@@ -7305,17 +7317,17 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn selecting_never_opens_and_select_all_takes_the_mailbox_total() {
+    fn a_plain_click_opens_and_ctrl_or_range_selects_only() {
         use toolkit::datatable::Pick;
         let mut state = reading();
         state.account_mut("a").unwrap().mail.total = 2866;
-        // A pick and a range select, and open nothing.
+        // A Ctrl+click and a range select, and open nothing.
         state.mail_table(
             "a",
             TableEvent::Selected {
                 index: 1,
                 key: "E2".into(),
-                pick: Pick::Only,
+                pick: Pick::Toggle,
             },
         );
         state.mail_table(
@@ -7355,7 +7367,7 @@ pub(crate) mod tests {
                 .iter()
                 .any(|w| matches!(w, Work::OpenEmail { id, .. } if id == "E2"))
         );
-        // Any new pick is a selection of its own again.
+        // A plain click is a selection of its own again, and opens its row.
         state.mail_table(
             "a",
             TableEvent::Selected {
@@ -7367,6 +7379,12 @@ pub(crate) mod tests {
         let mail = &state.account("a").unwrap().mail;
         assert!(!mail.everything);
         assert_eq!(mail.selection_count(), 1);
+        assert!(
+            state
+                .take_work()
+                .iter()
+                .any(|w| matches!(w, Work::OpenEmail { id, .. } if id == "E1"))
+        );
         assert_eq!(grouped(2866), "2,866");
         assert_eq!(grouped(12), "12");
         assert_eq!(grouped(1_000_000), "1,000,000");

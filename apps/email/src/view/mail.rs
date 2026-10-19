@@ -26,8 +26,9 @@ pub const LIST: &str = "emails";
 /// The centre pane's email list: the selected mailbox's page in a data
 /// table, one compact row per email (Subject, From, Date), newest first
 /// until a header picks another sort, with the pager under it.
-/// A click, Ctrl+click, Shift+click, Ctrl+A or Up and Down select rows
-/// without opening them; Enter or a double-click opens the keyboard's row.
+/// A click opens its row; Ctrl+click, Shift+click, Ctrl+A or Up and Down
+/// select rows without opening them. Enter or a double-click also opens the
+/// keyboard's row.
 pub fn list(
     ui: &mut Ui,
     state: &State,
