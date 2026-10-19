@@ -19,5 +19,5 @@ and convergence tests. This library supplies the revision CAS,
 transactions, single-authority OT, per-origin undo, anchors and search API
 above it.
 
-Source: frozen cosmix revision `e0297242305f3a3c3de09f1ca01e8faa771768da`.
+Source provenance is recorded in the repository's `NOTICE`.
 The source is [`libs/edit`](https://github.com/markc/mixos/tree/main/libs/edit).

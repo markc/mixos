@@ -208,7 +208,7 @@
                 <div class="panel-title">On this page</div>
                 <div class="panel-content">
                     <nav id="toc-nav">
-                        <div class="toc-empty">No sections on this page</div>
+                        <a href="#source-gate-limitation">Source gate limitation</a>
                     </nav>
                 </div>
             </div>
@@ -257,6 +257,19 @@ a single writer, counts/hashes and native HTTP/TLS/CMS acceptance checks,
 plus a rehearsed rollback preserving writes. This source transplant
 performs no deployment or data migration.</p>
 <p>Source: <a href="https://github.com/markc/mixos/tree/main/services/webd">services/webd</a>.</p>
+<h2 id="source-gate-limitation">Source gate limitation</h2>
+<p>The Rust suite passes, including the service's registry comparison. The
+repository-wide verb source gate currently treats embedded HTTP template
+fragments as standalone programs. It reports undefined prelude functions
+and request globals. With those symbols declared to the native linter,
+<code>vhosts/apps/sw.mix:182,193,220,294</code> and
+<code>vhosts/widgets/treeview.mix:200</code> still report arity errors: these templates
+intentionally rely on nil-padded optional trailing arguments. The source
+comments document that contract. The templates and gate are retained;
+the source entry gate has not passed. A context-aware lint integration is
+required before declaring the complete transplant entry bar satisfied.</p>
+<p>No deployment, live ACME issuance or production-data rollback rehearsal
+has been performed by this source port.</p>
         </article>
         <p class="doc-source"><a href="/webd/README.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
     </div>

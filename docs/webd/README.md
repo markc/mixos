@@ -33,3 +33,19 @@ plus a rehearsed rollback preserving writes. This source transplant
 performs no deployment or data migration.
 
 Source: [services/webd](https://github.com/markc/mixos/tree/main/services/webd).
+
+## Source gate limitation
+
+The Rust suite passes, including the service's registry comparison. The
+repository-wide verb source gate currently treats embedded HTTP template
+fragments as standalone programs. It reports undefined prelude functions
+and request globals. With those symbols declared to the native linter,
+`vhosts/apps/sw.mix:182,193,220,294` and
+`vhosts/widgets/treeview.mix:200` still report arity errors: these templates
+intentionally rely on nil-padded optional trailing arguments. The source
+comments document that contract. The templates and gate are retained;
+the source entry gate has not passed. A context-aware lint integration is
+required before declaring the complete transplant entry bar satisfied.
+
+No deployment, live ACME issuance or production-data rollback rehearsal
+has been performed by this source port.
