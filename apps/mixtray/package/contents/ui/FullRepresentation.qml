@@ -12,8 +12,13 @@ Item {
     required property var snap
     required property string snapError
     required property bool loading
+    required property bool acting
+    required property string actionMessage
+    required property string actionError
 
     signal refreshRequested()
+    signal controlRequested(string unit, string action)
+    signal logsRequested(string unit)
 
     Layout.minimumWidth: Kirigami.Units.gridUnit * 20
     Layout.minimumHeight: Kirigami.Units.gridUnit * 20
@@ -50,7 +55,7 @@ Item {
             }
 
             PlasmaComponents3.BusyIndicator {
-                running: root.loading
+                running: root.loading || root.acting
                 visible: running
                 Layout.preferredWidth: Kirigami.Units.iconSizes.smallMedium
                 Layout.preferredHeight: Kirigami.Units.iconSizes.smallMedium
@@ -75,6 +80,20 @@ Item {
             text: root.snapError
         }
 
+        Kirigami.InlineMessage {
+            Layout.fillWidth: true
+            visible: root.actionError.length > 0
+            type: Kirigami.MessageType.Error
+            text: root.actionError
+        }
+
+        Kirigami.InlineMessage {
+            Layout.fillWidth: true
+            visible: root.actionMessage.length > 0
+            type: Kirigami.MessageType.Positive
+            text: root.actionMessage
+        }
+
         StackLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
@@ -82,6 +101,9 @@ Item {
 
             CosTab {
                 snap: root.snap
+                acting: root.acting
+                onControlRequested: (unit, action) => root.controlRequested(unit, action)
+                onLogsRequested: unit => root.logsRequested(unit)
             }
 
             BusTab {

@@ -6,17 +6,23 @@ import org.kde.plasma.core as PlasmaCore
 import org.kde.plasma.plasmoid
 import org.kde.plasma.plasma5support as P5Support
 
-// The popup asks mixtrayd for one snapshot each time it opens, and again on
-// Refresh. Nothing runs in the background, so a closed popup costs nothing.
+// The popup asks mixtrayd for one snapshot each time it opens, and again after
+// every control action and on Refresh. Nothing runs in the background, so a
+// closed popup costs nothing.
 PlasmoidItem {
     id: root
 
-    readonly property string snapshotCommand: "/opt/mixos/bin/mixtrayd snapshot"
+    readonly property string mixtrayd: "/opt/mixos/bin/mixtrayd"
 
     // The last snapshot, or {} before the first one arrives.
     property var snap: ({})
     property string snapError: ""
     property bool loading: false
+
+    // The last control action: its outcome, shown above the tabs.
+    property bool acting: false
+    property string actionMessage: ""
+    property string actionError: ""
 
     readonly property bool snapReady: Object.keys(root.snap).length > 0
 
@@ -25,7 +31,21 @@ PlasmoidItem {
             return;
         }
         root.loading = true;
-        exec.connectSource(root.snapshotCommand);
+        exec.connectSource(root.mixtrayd + " snapshot");
+    }
+
+    function control(unit: string, action: string): void {
+        if (root.acting) {
+            return;
+        }
+        root.acting = true;
+        root.actionMessage = "";
+        root.actionError = "";
+        ctl.connectSource(root.mixtrayd + " control " + unit + " " + action);
+    }
+
+    function openLogs(unit: string): void {
+        logs.connectSource("konsole -e journalctl -u " + unit + " -n 200 -f");
     }
 
     function unitCount(): string {
@@ -60,6 +80,38 @@ PlasmoidItem {
         }
     }
 
+    P5Support.DataSource {
+        id: ctl
+
+        engine: "executable"
+        connectedSources: []
+
+        onNewData: (source, data) => {
+            ctl.disconnectSource(source);
+            root.acting = false;
+            if (data["exit code"] === 0) {
+                root.actionMessage = "Done";
+            } else {
+                // mixtrayd prints its refusal or hostd's reason on stderr.
+                const text = (data.stderr || data.stdout || "").trim();
+                root.actionError = text.length > 0 ? text : "The action failed";
+            }
+            root.refresh();
+        }
+    }
+
+    // journalctl follows the log until its Konsole window is closed.
+    P5Support.DataSource {
+        id: logs
+
+        engine: "executable"
+        connectedSources: []
+
+        onNewData: (source, data) => {
+            logs.disconnectSource(source);
+        }
+    }
+
     Plasmoid.backgroundHints: PlasmaCore.Types.DefaultBackground
     Plasmoid.icon: "dev.mixos.tray"
     Plasmoid.status: PlasmaCore.Types.ActiveStatus
@@ -76,7 +128,12 @@ PlasmoidItem {
         snap: root.snap
         snapError: root.snapError
         loading: root.loading
+        acting: root.acting
+        actionMessage: root.actionMessage
+        actionError: root.actionError
         onRefreshRequested: root.refresh()
+        onControlRequested: (unit, action) => root.control(unit, action)
+        onLogsRequested: unit => root.openLogs(unit)
     }
 
     onExpandedChanged: {

@@ -42,6 +42,22 @@ pub struct Unit {
     pub manager: &'static str,
     /// systemd's `ActiveState`, or `not installed` or `unavailable`.
     pub state: String,
+    /// Whether the COS tab offers start, stop and restart for this unit.
+    pub controllable: bool,
+}
+
+/// Units the popup never controls: hostd is the one that grants control, and
+/// stopping the popup's own data service would leave the popup with nothing.
+const NEVER_CONTROLLED: &[&str] = &["hostd.service", "mixtrayd.service"];
+
+/// Whether a request may act on `name`: a system unit in the COS list that is
+/// not hostd or this daemon. hostd's grant is the final say; this keeps the
+/// popup from asking for anything the grant would refuse anyway.
+pub fn is_controllable(name: &str) -> bool {
+    WATCHED
+        .iter()
+        .any(|&(unit, manager)| unit == name && manager == Manager::System)
+        && !NEVER_CONTROLLED.contains(&name)
 }
 
 /// Queries every watched unit once, opening each bus at most once.
@@ -67,6 +83,7 @@ pub fn probe_all() -> Vec<Unit> {
                 name,
                 manager: manager.label(),
                 state,
+                controllable: is_controllable(name),
             }
         })
         .collect()
