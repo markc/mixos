@@ -1964,6 +1964,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "dns-core"
+version = "0.1.1"
+dependencies = [
+ "arc-swap",
+ "hickory-proto 0.25.2",
+ "indexmap",
+ "mix",
+ "tempfile",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "dnsd"
+version = "0.3.4"
+dependencies = [
+ "buildinfo",
+ "bus",
+ "config",
+ "dns-core",
+ "hickory-proto 0.25.2",
+ "logging",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "document-features"
 version = "0.2.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2047,36 +2077,6 @@ dependencies = [
  "slots",
  "smithay",
  "zbus",
-]
-
-[[package]]
-name = "dns-core"
-version = "0.1.1"
-dependencies = [
- "arc-swap",
- "hickory-proto 0.25.2",
- "indexmap",
- "mix",
- "tempfile",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "dnsd"
-version = "0.3.4"
-dependencies = [
- "buildinfo",
- "bus",
- "config",
- "dns-core",
- "hickory-proto 0.25.2",
- "logging",
- "serde_json",
- "tempfile",
- "tokio",
- "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
@@ -5213,6 +5213,7 @@ version = "0.1.1"
 dependencies = [
  "anyhow",
  "bus",
+ "futures",
  "serde",
  "serde_json",
  "tokio",
