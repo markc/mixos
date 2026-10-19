@@ -1318,6 +1318,7 @@ dependencies = [
  "tempfile",
  "tokio-rustls",
  "tracing",
+ "thiserror 2.0.20",
 ]
 
 [[package]]

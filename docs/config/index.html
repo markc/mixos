@@ -211,6 +211,7 @@
                         <a href="#node-configuration-and-tls">Node configuration and TLS</a>
                         <a href="#application-directories">Application directories</a>
                         <a href="#atomic-directories">Atomic directories</a>
+                        <a href="#web-configuration-and-acme-policy">Web configuration and ACME policy</a>
                     </nav>
                 </div>
             </div>
@@ -295,6 +296,18 @@ environment.</p>
 missing components with mode 0700. It validates the entire absolute path
 before creation, refuses parent traversal and leaves existing permissions
 unchanged.</p>
+<h2 id="web-configuration-and-acme-policy">Web configuration and ACME policy</h2>
+<p><code>node::WebdConfig</code> adds the web listener, vhost, share roots, auxiliary
+DB and ACME settings to <code>NodeConfig</code>. <code>web_listen()</code> derives the legacy
+listen address; <code>synthesize_listeners()</code> validates explicit binds and
+host ownership, retaining the fail-soft disabled-host path. Unknown web
+settings survive typed node round trips.</p>
+<p><code>resolve_webd_acme()</code> checks per-vhost issuance choices, HTTP-01 readiness
+and the node-level Let's Encrypt production Subscriber Agreement. Only
+the policy resolver can mint an <code>AcmeTosAcceptance</code> proof.</p>
+<p>Node loading, directory resolution and TLS/SNI use the existing config
+implementations. Client discovery and connect helpers already live in
+<code>bus::client_helpers</code>; config remains independent of the Bus client.</p>
         </article>
         <p class="doc-source"><a href="/config/README.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
     </div>

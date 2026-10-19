@@ -29,6 +29,7 @@ anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
+thiserror.workspace = true
 # One `getuid(2)` call: root resolves the system directories, everyone
 # else the XDG ones.
 libc = "=0.2.189"

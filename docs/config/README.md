@@ -74,3 +74,19 @@ environment.
 missing components with mode 0700. It validates the entire absolute path
 before creation, refuses parent traversal and leaves existing permissions
 unchanged.
+
+## Web configuration and ACME policy
+
+`node::WebdConfig` adds the web listener, vhost, share roots, auxiliary
+DB and ACME settings to `NodeConfig`. `web_listen()` derives the legacy
+listen address; `synthesize_listeners()` validates explicit binds and
+host ownership, retaining the fail-soft disabled-host path. Unknown web
+settings survive typed node round trips.
+
+`resolve_webd_acme()` checks per-vhost issuance choices, HTTP-01 readiness
+and the node-level Let's Encrypt production Subscriber Agreement. Only
+the policy resolver can mint an `AcmeTosAcceptance` proof.
+
+Node loading, directory resolution and TLS/SNI use the existing config
+implementations. Client discovery and connect helpers already live in
+`bus::client_helpers`; config remains independent of the Bus client.
