@@ -3937,6 +3937,16 @@ before it joins `server`.
 Status: accepted 2026-10-12. Amends [the source layout](2026-10-04-source-layout.md)
 (AGENTS.md §2.3, §3.4, §6 and §9).
 
+> **Correction (2026-10-19): the fleet build target is glibc, not musl.** The
+> "Fleet builds are static" item below does not describe current practice. cbc
+> builds against the workers' glibc, and the shipped `mix` and `webd` binaries
+> link dynamically against glibc. The governing plan
+> (`_plan/2026-10-02-mixos-transplant-plan.md`, §3.0 "Build target for mesh
+> nodes") allows static or musl only where a node's glibc is too old. Every
+> node in use is new enough, so no musl build is planned. Treat the static
+> musl item and the matching sentence in "Why" as superseded until this
+> decision is amended.
+
 ## The decision
 
 - **One binary, `mix`, carries the shell and every headless daemon.** It is
