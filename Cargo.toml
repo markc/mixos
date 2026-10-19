@@ -109,6 +109,7 @@ buildinfo = { path = "libs/buildinfo" }
 davproto = { path = "libs/davproto" }
 bus = { path = "libs/bus", default-features = false }
 config = { path = "libs/config" }
+daemon = { path = "libs/daemon" }
 design = { path = "libs/design" }
 edit = { path = "libs/edit" }
 editor = { path = "libs/editor" }

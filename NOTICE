@@ -94,3 +94,12 @@ Copyright Mark Constable; MIT OR Apache-2.0.
 Web configuration and ACME policy (libs/config) transplanted from
 cosmix/src/crates/cosmix-lib-config at
 044aec63a5f8d0fa4ad4246f802c487f17dfdfa9, Mark Constable, MIT OR Apache-2.0.
+
+Daemon infrastructure (libs/daemon) transplanted from
+cosmix/src/crates/cosmix-lib-daemon at
+044aec63a5f8d0fa4ad4246f802c487f17dfdfa9, Mark Constable, MIT OR Apache-2.0.
+The four LE staging root certificates in libs/daemon/src/tls/staging_roots/
+are unchanged public certificates from Internet Security Research Group:
+letsencrypt-stg-root-x1.der, letsencrypt-stg-root-x2.der,
+letsencrypt-stg-root-ye.der, letsencrypt-stg-root-yr.der. Source and capture
+date are retained in tls/le_staging_roots.rs.
