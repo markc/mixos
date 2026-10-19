@@ -22,7 +22,7 @@ use icalendar::{
 pub const RAW_ICAL_KEY: &str = "mixos:rawICalendar";
 
 /// Retired wire key, used only to reject data that needs migration.
-pub const RETIRED_ICAL_KEY: &str = "cosmix:rawICalendar";
+pub const RETIRED_ICAL_KEY: &str = "mixos:rawICalendar";
 
 /// Read the verbatim representation, rejecting retired keys before any fallback.
 pub fn raw_ical(data: &serde_json::Value) -> anyhow::Result<Option<&str>> {

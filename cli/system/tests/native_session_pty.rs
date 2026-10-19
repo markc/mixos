@@ -270,7 +270,7 @@ impl Child {
         // spawned FROM the enrolled shell must see neither seed fd nor marker.
         std::fs::write(
             home.path().join(".mixrc"),
-            "print(\"RC_MARKER=[\" .. env(\"COSMIX_SESSION_FD\") .. \"]\")\n",
+            "print(\"RC_MARKER=[\" .. env(\"MIXOS_SESSION_FD\") .. \"]\")\n",
         )
         .unwrap();
         let mut entry = std::mem::MaybeUninit::<libc::passwd>::uninit();
@@ -470,7 +470,7 @@ fn mix_child_bootstrap_proves_end_to_end() {
         let context = child.context();
         let context = serde_json::to_string(&context).unwrap();
         for forbidden in [
-            "COSMIX_SESSION_FD",
+            "MIXOS_SESSION_FD",
             "native_session",
             "session_seed",
             "SigningKey",
@@ -485,12 +485,12 @@ fn mix_child_bootstrap_proves_end_to_end() {
         let descriptors = std::fs::read_dir(format!("/proc/{}/fd", child.pid())).unwrap();
         assert!(!descriptors.filter_map(Result::ok).any(|entry| {
             std::fs::read_link(entry.path())
-                .is_ok_and(|target| target.to_string_lossy().contains("memfd:cosmix-session"))
+                .is_ok_and(|target| target.to_string_lossy().contains("memfd:mixos-session"))
         }));
         let helper = child.home.path().join("descendant.mix");
         std::fs::write(
             &helper,
-            "print(\"DESCENDANT=[\" .. env(\"COSMIX_SESSION_FD\") .. \"]\")\n",
+            "print(\"DESCENDANT=[\" .. env(\"MIXOS_SESSION_FD\") .. \"]\")\n",
         )
         .unwrap();
         child.send(&format!(
@@ -742,7 +742,7 @@ fn enrolled_exec_restart_revokes_and_replacement_stays_unbound() {
         assert!(
             !serde_json::to_string(&child.context())
                 .unwrap()
-                .contains("COSMIX_SESSION_FD")
+                .contains("MIXOS_SESSION_FD")
         );
         child.exit();
         parent.revoke_and_verify(&broker).await;
@@ -781,7 +781,7 @@ fn bootstrap_source_boundary_and_builtin_inventory_exclude_seed_state() {
         .unwrap();
     assert!(output.status.success());
     let builtins = String::from_utf8(output.stdout).unwrap();
-    for forbidden in ["COSMIX_SESSION_FD", "native_session", "session_seed"] {
+    for forbidden in ["MIXOS_SESSION_FD", "native_session", "session_seed"] {
         assert!(!builtins.contains(forbidden));
     }
 }

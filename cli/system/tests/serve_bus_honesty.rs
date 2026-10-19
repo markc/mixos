@@ -107,7 +107,7 @@ impl Citizen {
             .env("MIXOS_ETC", &dir.0)
             .env("HONEST_TRACE", dir.0.join("trace"))
             .env("MIX_STATS", "off")
-            .env_remove("COSMIX_SESSION_FD")
+            .env_remove("MIXOS_SESSION_FD")
             .stdin(Stdio::null())
             .stdout(Stdio::from(stdout))
             .stderr(Stdio::from(stderr));

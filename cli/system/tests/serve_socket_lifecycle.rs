@@ -76,7 +76,7 @@ impl Citizen {
         .env("REL_TRACE", dir.0.join("trace"))
         .env("REL_STATE", dir.0.join("state"))
         .env("MIX_STATS", "off")
-        .env_remove("COSMIX_SESSION_FD")
+        .env_remove("MIXOS_SESSION_FD")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::from(stderr));

@@ -58,7 +58,7 @@ fn flags_ssh_must_when_available() {
 #[test]
 fn flags_deeply_nested_real_world_escape_shape() {
     assert_flagged(
-        r#"$r = ssh_run("alpha", "print(run(\"/opt/cosmix/bin/mix -c 'print(which(\\\"sh\\\"))'\"))")"#,
+        r#"$r = ssh_run("alpha", "print(run(\"/opt/mixos/bin/mix -c 'print(which(\\\"sh\\\"))'\"))")"#,
     );
 }
 

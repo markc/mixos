@@ -8,7 +8,7 @@ use std::io::{self, Seek, Write};
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
 use zeroize::Zeroizing;
 
-pub const MARKER: &str = "COSMIX_SESSION_FD";
+pub const MARKER: &str = "MIXOS_SESSION_FD";
 
 fn inherited_fd(value: &str) -> Option<RawFd> {
     value.parse::<RawFd>().ok().filter(|fd| *fd >= 3)
@@ -99,7 +99,7 @@ impl LaunchFd {
         // SAFETY: static NUL-terminated name, supported Linux flags.
         let raw = unsafe {
             libc::memfd_create(
-                c"cosmix-session".as_ptr(),
+                c"mixos-session".as_ptr(),
                 libc::MFD_CLOEXEC | libc::MFD_ALLOW_SEALING,
             )
         };
@@ -226,7 +226,7 @@ mod tests {
                 let target = std::fs::read_link(entry.path()).ok()?;
                 target
                     .to_string_lossy()
-                    .contains("memfd:cosmix-session")
+                    .contains("memfd:mixos-session")
                     .then(|| entry.file_name().to_str().unwrap().parse().unwrap())
             })
             .collect();

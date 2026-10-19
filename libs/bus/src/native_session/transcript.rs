@@ -75,7 +75,7 @@ pub fn encode_proof(p: &ProofTranscript) -> Result<Vec<u8>, WireError> {
     {
         return Err(WireError("invalid proof scope"));
     }
-    let mut out = b"cosmix.native-session.proof\0\0\x01".to_vec();
+    let mut out = b"mixos.native-session.proof\0\0\x01".to_vec();
     out.push(if enrol { 1 } else { 2 });
     out.extend_from_slice(&p.broker_epoch.0);
     out.extend_from_slice(&p.connection_id.0);
@@ -106,7 +106,7 @@ pub fn encode_allocate(
     public_key: HexBytes<32>,
     policy: Policy,
 ) -> Vec<u8> {
-    let mut out = b"cosmix.native-session.allocate\0\0\x01".to_vec();
+    let mut out = b"mixos.native-session.allocate\0\0\x01".to_vec();
     out.extend_from_slice(&epoch.0);
     out.extend_from_slice(&connection.0);
     out.extend_from_slice(&public_key.0);

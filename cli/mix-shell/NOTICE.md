@@ -16,7 +16,7 @@ read; the paths below are relative to the repository root.
 - `docs/mix/cli.md` — MIT OR Apache-2.0.
 - `docs/mix/collections.md` — MIT OR Apache-2.0.
 - `docs/mix/control-flow.md` — MIT OR Apache-2.0.
-- `docs/mix/cosmix-lib-mix/README.md` — MIT OR Apache-2.0.
+- `docs/mix/lib/README.md` — MIT OR Apache-2.0.
 - `docs/mix/data.md` — MIT OR Apache-2.0.
 - `docs/mix/datastar.md` — MIT OR Apache-2.0.
 - `docs/mix/datetime.md` — MIT OR Apache-2.0.

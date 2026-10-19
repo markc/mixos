@@ -13,7 +13,7 @@ fn command(home: &std::path::Path) -> Command {
     cmd.env("HOME", home)
         .env("MIX_STATS", "off")
         .env("MIX_SIGTERM_BACKSTOP_SECS", "1")
-        .env_remove("COSMIX_SESSION_FD")
+        .env_remove("MIXOS_SESSION_FD")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());

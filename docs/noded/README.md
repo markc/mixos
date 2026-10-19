@@ -49,7 +49,7 @@ configured build worker.
 ## Provenance
 
 This source was transplanted from the noded, mesh and mesh-trust
-components of Cosmix at `e0297242305f3a3c3de09f1ca01e8faa771768da`.
+components of MixOS at `e0297242305f3a3c3de09f1ca01e8faa771768da`.
 Cryptographic domain bytes remain unchanged. Version 0.18.3 adds the
 structured registration-rejection body (additive only; see the
 [changelog](https://github.com/markc/mixos/blob/main/services/noded/CHANGELOG.md));

@@ -169,7 +169,7 @@ It must not depend on host packages or host desktop/session resources.
 Rollback includes compatible binary, consumer scripts and document/state copies.
 Restoring only the previous binary after a filename migration is insufficient.
 Candidate reload failure must preserve the accepted evaluator and managed children.
-Frozen Cosmix nodes keep their old spellings until separately migrated; no broad
+Frozen MixOS nodes keep their old spellings until separately migrated; no broad
 fleet deploy or production restart follows merely from accepting this spec.
 
 ## 7. Required acceptance matrix

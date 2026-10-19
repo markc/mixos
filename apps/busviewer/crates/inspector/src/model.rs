@@ -2,7 +2,7 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The renderer-independent protocol model: services, verbs, peers and the
 //! body and reply bounds. Transplanted from `apps/busviewer/src/model.rs`
-//! (markc/mixos-iced), itself adapted from Cosmix BusViewer
+//! (markc/mixos-iced), itself adapted from MixOS BusViewer
 //! 70e6c9233a02577099e9c14500aebf44856530e1; the truncation marker is now a
 //! parameter, so the engine needs no string catalogue.
 use serde::{Deserialize, Serialize};

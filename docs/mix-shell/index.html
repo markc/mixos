@@ -251,13 +251,13 @@ is at <a href="/mix/">/mix/</a>.</p>
 <code>cli/system/tests</code> and run that binary (<code>cargo test -p system</code>); the unit
 tests and library-only tests stay here.</p>
 <h2 id="session-and-manuals">Session and manuals</h2>
-<p>The bootstrap retains the frozen <code>COSMIX_SESSION_FD</code> marker, sealed memfd
+<p>The bootstrap retains the frozen <code>MIXOS_SESSION_FD</code> marker, sealed memfd
 name and native-session transcripts. Ordinary shells initialise no grant
 owner. Bundled manuals are available offline and use the same directory
 rule as the session's other installed resources. Explicit remote manual
 selection remains available.</p>
 <h2 id="provenance">Provenance</h2>
-<p>Transplanted from <code>src/crates/cosmix-mix</code> at cosmix
+<p>Transplanted from <code>src/crates/mix</code> at mixos
 <code>e0297242305f3a3c3de09f1ca01e8faa771768da</code>, with the complete regression
 corpus. The native integration fixture compiles noded's production modules
 and Term's production sealed-FD implementation, rather than simulating

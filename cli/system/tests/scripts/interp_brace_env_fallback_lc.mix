@@ -4,7 +4,7 @@
 -- the "all heads" rule isn't only audit-policy.
 --
 -- This script is driven out-of-process by
--- crates/cosmix-mix/tests/env_fallback_lc.rs, which spawns the `mix`
+-- libs/mix/tests/env_fallback_lc.rs, which spawns the `mix`
 -- binary with `mix_interp_lowercase_probe=lowercase_ok` set on the
 -- child's env. The subprocess shape is mandatory: setting the env var
 -- in-process from a tokio integration test would race with concurrent

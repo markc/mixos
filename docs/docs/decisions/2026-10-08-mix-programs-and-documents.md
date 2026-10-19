@@ -53,7 +53,7 @@ a prerequisite or excuse to add another parser now.
    not make current binaries recognise or enforce the new extension.
 6. Install upgraded readers before switching files/writers. Preserve user data,
    expose conflicts between old/new files, and retain a tested binary-plus-data
-   rollback. Frozen Cosmix deployments are not silently upgraded or renamed.
+   rollback. Frozen MixOS deployments are not silently upgraded or renamed.
    No frozen ABP bytes or cross-node transport contracts change.
 
 Canonical examples are `behaviour.mix`, `report_selection.mix`, `settings.mx`,

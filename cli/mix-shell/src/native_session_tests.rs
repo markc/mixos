@@ -23,7 +23,7 @@ fn descriptor() -> serde_json::Value {
 fn memfd(descriptor: serde_json::Value, version: u8, seals: i32, extra: bool) -> File {
     let raw = unsafe {
         libc::memfd_create(
-            c"cosmix-session-test".as_ptr(),
+            c"mixos-session-test".as_ptr(),
             libc::MFD_CLOEXEC | libc::MFD_ALLOW_SEALING,
         )
     };

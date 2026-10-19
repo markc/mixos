@@ -244,7 +244,7 @@ fn script_version_query_is_cold() {
     let p = write(d.path(), "deploy.mix", VERSIONED);
     let control = mix()
         .args(["--no-prelude", "-c", "print(1)"])
-        .env("COSMIX_SESSION_FD", "99999")
+        .env("MIXOS_SESSION_FD", "99999")
         .output()
         .unwrap();
     assert!(
@@ -253,7 +253,7 @@ fn script_version_query_is_cold() {
     );
     let o = mix()
         .args([p.to_str().unwrap(), "--version"])
-        .env("COSMIX_SESSION_FD", "99999")
+        .env("MIXOS_SESSION_FD", "99999")
         .output()
         .unwrap();
     assert_eq!(

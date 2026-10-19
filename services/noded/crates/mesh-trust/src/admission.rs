@@ -23,7 +23,7 @@
 //! ratify")
 //!
 //! ```text
-//! "cosmix-d2-admit-v1" ‖ mesh_fqdn ‖ claimed_source_node ‖
+//! "mixos-d2-admit-v1" ‖ mesh_fqdn ‖ claimed_source_node ‖
 //!     verifying_broker_node ‖ inventory_epoch ‖ session_id ‖
 //!     server_nonce ‖ client_ephemeral ‖ channel_binding_hash
 //! ```
@@ -75,7 +75,7 @@ use crate::sig::{SigError, sign_ed25519, verify_ed25519};
 
 /// Domain-separation tag for the D2 admission signature (§9a). A bump here is
 /// a `schema_version` change, never an in-payload choice.
-pub const ADMIT_DOMAIN_V1: &str = "cosmix-d2-admit-v1";
+pub const ADMIT_DOMAIN_V1: &str = "mixos-d2-admit-v1";
 /// The credential `kind` that authorises D2 admission (§6.1).
 pub const D2_CRED_KIND: &str = "d2";
 /// The credential `kind` that carries the D0 WireGuard transport key (§6.1) —

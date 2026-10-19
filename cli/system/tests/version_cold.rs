@@ -10,7 +10,7 @@
 //! time the version was printed.
 //!
 //! The instrument is the native-session lane's own diagnostic: given a
-//! malformed `COSMIX_SESSION_FD`, a mix that starts the lane writes
+//! malformed `MIXOS_SESSION_FD`, a mix that starts the lane writes
 //! `mix native-session FAILED at …` to stderr. A version query must stay
 //! silent on the same input — and `control_proves_the_probe_can_fail` runs
 //! that same input through `-c` to show the probe is live, per the
@@ -20,7 +20,7 @@
 
 use std::process::{Command, Output};
 
-const MARKER: &str = "COSMIX_SESSION_FD";
+const MARKER: &str = "MIXOS_SESSION_FD";
 
 /// A value that is not a usable inherited descriptor, so the lane — if it
 /// starts at all — must complain.

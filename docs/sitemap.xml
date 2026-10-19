@@ -77,7 +77,6 @@
   <url><loc>https://mixos.dev/mix/cli/</loc></url>
   <url><loc>https://mixos.dev/mix/collections/</loc></url>
   <url><loc>https://mixos.dev/mix/control-flow/</loc></url>
-  <url><loc>https://mixos.dev/mix/cosmix-lib-mix/</loc></url>
   <url><loc>https://mixos.dev/mix/data/</loc></url>
   <url><loc>https://mixos.dev/mix/datastar/</loc></url>
   <url><loc>https://mixos.dev/mix/datetime/</loc></url>
@@ -91,6 +90,7 @@
   <url><loc>https://mixos.dev/mix/io/</loc></url>
   <url><loc>https://mixos.dev/mix/job-control/</loc></url>
   <url><loc>https://mixos.dev/mix/keywords/</loc></url>
+  <url><loc>https://mixos.dev/mix/lib/</loc></url>
   <url><loc>https://mixos.dev/mix/lint/</loc></url>
   <url><loc>https://mixos.dev/mix/math/</loc></url>
   <url><loc>https://mixos.dev/mix/mix-bench/</loc></url>

@@ -24,7 +24,7 @@ use std::os::unix::fs::{FileExt, MetadataExt};
 use std::time::{Duration, Instant};
 use zeroize::Zeroizing;
 
-const MARKER: &str = "COSMIX_SESSION_FD";
+const MARKER: &str = "MIXOS_SESSION_FD";
 const SEALS: i32 = libc::F_SEAL_SHRINK | libc::F_SEAL_GROW | libc::F_SEAL_WRITE | libc::F_SEAL_SEAL;
 const RPC: Duration = Duration::from_secs(2);
 // BROKER-020: renew every 5s, lease expires 15s after the last renewal.
@@ -109,7 +109,7 @@ fn quarantine_failed_bootstrap() {
                     && target
                         .to_string_lossy()
                         .trim_start_matches('/')
-                        .starts_with("memfd:cosmix-session"))
+                        .starts_with("memfd:mixos-session"))
                 .then_some(fd)
             })
             .collect();

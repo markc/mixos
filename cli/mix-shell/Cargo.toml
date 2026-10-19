@@ -23,7 +23,7 @@ doctest = false
 # `bus::MixBusHandler`, not at build time.
 
 [dependencies]
-# cosmix-lib-mix is a sibling crate within the mix repo — relative
+# mix is a sibling crate within the mix repo — relative
 # path stays one level up.
 mix = { workspace = true, features = ["json", "regex", "toml", "datetime", "url", "crypto", "http", "sqlite", "tokio-sleep", "dkim", "serde", "markdown", "datastar", "xml", "yaml", "ws", "mime", "archive"] }
 # Explicit Rust dependency names, shared by the legacy Bus runtime and native
@@ -33,20 +33,20 @@ config.workspace = true
 buildinfo.workspace = true
 # SPEC 07 §2 read surface so a Mix citizen's
 # `<svc>.props.{get,list,describe}` is byte-consistent with cos-side
-# daemons. The substrate-shaped `cosmix-lib-props-store` (storage,
+# daemons. The substrate-shaped `props` (storage,
 # audit, SPEC 12 mutation router) lives in cos and is NOT pulled
-# here. The `bus` feature on cosmix-lib-props-core pulls
-# cosmix-lib-bus + chrono (for SPEC 07 §3/§4 wire builders).
+# here. The `bus` feature on props pulls
+# bus + chrono (for SPEC 07 §3/§4 wire builders).
 props = { workspace = true, features = ["bus"] }
 # Shared logging core (bus). `mix --serve` initialises journald-primary
-# logging through `cosmix_log::init` (the serve preset). Pure core only
-# — no `cosmix-lib-props-store`, so no live SPEC-12 `<svc>.log` swap;
+# logging through `logging::init` (the serve preset). Pure core only
+# — no `props`, so no live SPEC-12 `<svc>.log` swap;
 # RUST_LOG + restart is the serve control surface.
 logging.workspace = true
 # Node-config + shutdown-signal helpers are inlined locally
-# (`src/cosmix_paths.rs`, `src/main.rs`, `src/node_config.rs`)
-# rather than depending on cos-side `cosmix-lib-config` /
-# `cosmix-lib-daemon` — mix has no cos dependency.
+# (`src/mix_paths.rs`, `src/main.rs`, `src/node_config.rs`)
+# rather than depending on cos-side `config` /
+# `daemon` — mix has no cos dependency.
 rustyline = "15"
 unicode-segmentation = "1"
 unicode-width = "0.2"
@@ -60,8 +60,8 @@ serde_json = "1"
 glob = "0.3"
 indexmap = "2"
 tracing = "0.1"
-# `mix man` resolves the canonical manual from cosmix.dev. This matches
-# cosmix-lib-mix's existing ureq 2 dependency, so Cargo unifies the HTTP/TLS
+# `mix man` resolves the canonical manual from mixos.dev. This matches
+# mix's existing ureq 2 dependency, so Cargo unifies the HTTP/TLS
 # stack rather than adding another client.
 ureq = "2"
 # RFC3339 `lifecycle.started_at` (SPEC 18 WS4), matching the indexd
@@ -80,7 +80,7 @@ structured-zstd = "0.0.58"
 [dev-dependencies]
 # Property-based testing for the shell-dispatch tokenizer (P0 of the mix
 # tokenizer fuzz/property corpus — see _doc/planned/mix-tokenizer-fuzz-corpus.md
-# in the cosmix hub). Test-only; never linked into the shipped binary.
+# in the mixos hub). Test-only; never linked into the shipped binary.
 proptest = "1"
 tempfile = "3"
 test-broker = { path = "../../libs/test-broker" }

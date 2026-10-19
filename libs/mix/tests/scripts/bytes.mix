@@ -12,7 +12,7 @@ print(bytes_len($b))
 print(bytes_to_string($b))
 
 -- High-bit bytes survive a round-trip through write_file/read_file_bytes.
-$path = "/tmp/cosmix-mix-bytes-script.bin"
+$path = "/tmp/mix-bytes-script.bin"
 $payload = string_to_bytes("ABC")
 write_file($path, $payload)
 $got = read_file_bytes($path)

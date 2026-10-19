@@ -8,14 +8,14 @@ use std::os::fd::{AsRawFd, FromRawFd};
 use std::os::unix::process::CommandExt;
 use std::process::Command;
 
-const MARKER: &str = "COSMIX_SESSION_FD";
+const MARKER: &str = "MIXOS_SESSION_FD";
 fn command() -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_mix"));
     command
         .args([
             "--no-prelude",
             "-c",
-            "print(\"USER_SOURCE=[\" .. env(\"COSMIX_SESSION_FD\") .. \"]\")",
+            "print(\"USER_SOURCE=[\" .. env(\"MIXOS_SESSION_FD\") .. \"]\")",
         ])
         .env_remove(MARKER)
         .env("MIX_STATS", "off");

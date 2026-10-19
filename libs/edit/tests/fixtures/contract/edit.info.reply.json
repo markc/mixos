@@ -1,5 +1,5 @@
 {
-  "binary": "cosmix-editd",
+  "binary": "editd",
   "buffers": 2,
   "build_time": "2026-09-26T00:00:00Z",
   "dirty": 1,
@@ -18,7 +18,7 @@
   "publisher_loss": 0,
   "recovery": {
     "degraded": false,
-    "dir": "/home/user/.local/state/cosmix/edit/recovery",
+    "dir": "/home/user/.local/state/mixos/edit/recovery",
     "enabled": true,
     "failures": 0,
     "ok": true,

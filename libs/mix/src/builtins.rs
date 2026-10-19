@@ -29938,13 +29938,13 @@ mod ssh_helpers_tests {
             Value::String("print(1)".into()),
             m(&[
                 ("strict_arity", Value::Bool(true)),
-                ("mix_bin", Value::String("/opt/cosmix/bin/mix".into())),
+                ("mix_bin", Value::String("/opt/mixos/bin/mix".into())),
             ]),
         ])
         .expect("plan");
         assert_eq!(
             call4.argv.last().unwrap(),
-            "/opt/cosmix/bin/mix --strict-arity -"
+            "/opt/mixos/bin/mix --strict-arity -"
         );
     }
 
@@ -29954,13 +29954,13 @@ mod ssh_helpers_tests {
         assert_eq!(r("t", None, None).unwrap(), REMOTE_MIX_DEFAULT);
         assert_eq!(REMOTE_MIX_DEFAULT, "/opt/mixos/bin/mix");
         assert_eq!(
-            r("t", None, Some("/opt/cosmix/bin/mix")).unwrap(),
-            "/opt/cosmix/bin/mix"
+            r("t", None, Some("/opt/mixos/bin/mix")).unwrap(),
+            "/opt/mixos/bin/mix"
         );
         // An empty env value is unset, not an error.
         assert_eq!(r("t", None, Some("")).unwrap(), REMOTE_MIX_DEFAULT);
         assert_eq!(
-            r("t", Some("/usr/bin/mix"), Some("/opt/cosmix/bin/mix")).unwrap(),
+            r("t", Some("/usr/bin/mix"), Some("/opt/mixos/bin/mix")).unwrap(),
             "/usr/bin/mix"
         );
         // The opt wins even over a BAD env value, which is then never read.
@@ -29971,7 +29971,7 @@ mod ssh_helpers_tests {
     fn remote_mix_bin_rejects_values_unsafe_in_a_remote_command_string() {
         use super::resolve_remote_mix_bin as r;
         for good in [
-            "/opt/cosmix/bin/mix",
+            "/opt/mixos/bin/mix",
             "/usr/bin/mix",
             "mix",
             "mix-0.116",
@@ -30032,11 +30032,11 @@ mod ssh_helpers_tests {
             Value::String("true".into()),
             m(&[
                 ("env", m(&[("K", Value::String("v".into()))])),
-                ("mix_bin", Value::String("/opt/cosmix/bin/mix".into())),
+                ("mix_bin", Value::String("/opt/mixos/bin/mix".into())),
             ]),
         ])
         .expect("plan");
-        assert_eq!(call.argv.last().unwrap(), "/opt/cosmix/bin/mix -");
+        assert_eq!(call.argv.last().unwrap(), "/opt/mixos/bin/mix -");
         let e = super::plan_ssh_run(vec![
             Value::String("h".into()),
             Value::String("true".into()),
