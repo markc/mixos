@@ -307,11 +307,10 @@ pub fn reader(
         toolbar(ui, view, stroke, events);
         toolkit::bars::hairline(ui);
     }
-    // Only the message body can be light (the panel's menu sets it); the
-    // header and the rest of the window keep the global mode.
-    let light = state.reader_light && state.effective_mode() == design::Mode::Dark;
+    // Only the message body takes the reader's own style (its padding, font
+    // and light mode, from the profile); the header keeps the window's look.
     if let Some(email) = &view.mail.open {
-        message(ui, view, email, focused, light);
+        message(ui, view, email, focused, &state.settings.reader);
     } else {
         ui.weak(crate::label("select-email"));
     }
@@ -622,7 +621,13 @@ fn scroll_with_keys(ui: &mut Ui, focused: bool) {
 
 /// The open email: subject first and largest, then From, To and the date,
 /// then the body.
-fn message(ui: &mut Ui, view: &AccountView, email: &Email, focused: bool, light: bool) {
+fn message(
+    ui: &mut Ui,
+    view: &AccountView,
+    email: &Email,
+    focused: bool,
+    content: &settings::content::Content,
+) {
     let reader = &view.mail.reader;
     // The cache is the open email's once it has loaded; until then (or for
     // an email put in place without opening), detect afresh.
@@ -673,7 +678,7 @@ fn message(ui: &mut Ui, view: &AccountView, email: &Email, focused: bool, light:
         },
     );
     toolkit::bars::hairline(ui);
-    light_content(ui, light, |ui| {
+    toolkit::content::surface(ui, content, |ui| {
         // The keys and the area share this ui, so they share the scroll state.
         scroll_with_keys(ui, focused);
         ScrollArea::vertical()
@@ -711,27 +716,3 @@ fn message(ui: &mut Ui, view: &AccountView, email: &Email, focused: bool, light:
     });
 }
 
-/// Draw `add` with the light content theme when `light`: the body's own
-/// colours, then the window's chrome again. Only the body changes.
-fn light_content(ui: &mut Ui, light: bool, add: impl FnOnce(&mut Ui)) {
-    if !light {
-        return add(ui);
-    }
-    static LIGHT: std::sync::OnceLock<toolkit::Theme> = std::sync::OnceLock::new();
-    let theme = LIGHT.get_or_init(|| {
-        toolkit::Theme::for_context(design::DesignContext {
-            mode: design::Mode::Light,
-            ..design::DesignContext::default()
-        })
-    });
-    let ctx = ui.ctx().clone();
-    let previous = toolkit::chrome::Chrome::of(&ctx);
-    toolkit::chrome::install(&ctx, &toolkit::chrome::Chrome::for_theme(theme));
-    let style = toolkit::style::style(theme);
-    let fill = style.visuals.panel_fill;
-    egui::Frame::new().fill(fill).show(ui, |ui| {
-        ui.set_style(style);
-        add(ui);
-    });
-    toolkit::chrome::install(&ctx, &previous);
-}

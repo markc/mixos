@@ -1401,8 +1401,6 @@ pub struct State {
     pub identity_editor: Option<IdentityEditor>,
     /// The pane that has the keyboard: Tab moves it, and the arrow keys act on it.
     pub pane: Pane,
-    /// The reader's message body in light, while the window is dark.
-    pub reader_light: bool,
     /// A question over the compose before a draft closes.
     pub confirm: Option<Confirm>,
     /// Drafts kept from earlier (an earlier run, or a compose set aside),
@@ -1478,7 +1476,6 @@ impl State {
             compose: None,
             identity_editor: None,
             pane: Pane::List,
-            reader_light: false,
             confirm: None,
             restore: Vec::new(),
             draft_ops: Vec::new(),
@@ -5233,7 +5230,20 @@ impl State {
                 self.choose_sender(account, Some(identity));
             }
             UiEvent::PaneFocused(pane) => self.pane = pane,
-            UiEvent::SetReaderLight(on) => self.reader_light = on,
+            UiEvent::SetReaderLight(on) => {
+                // Saved in the profile: the reader's own style, not a session flag.
+                let content = settings::content::Content {
+                    light: on,
+                    ..self.settings.reader.clone()
+                };
+                self.write(
+                    writer::Change::Surface(writer::Surface::Reader, content),
+                    None,
+                    None,
+                    false,
+                    None,
+                );
+            }
             UiEvent::OpenIdentities(account) => self.open_identities(&account),
             UiEvent::IdentityEdit(field, value) => self.identity_edit(field, value),
             UiEvent::IdentitySelect(index) => self.identity_select(index),

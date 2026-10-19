@@ -15,6 +15,7 @@
 //! fresh read.
 
 use serde_json::{Map, Value, json};
+use settings::content::Content;
 use settings::email::{AccountEntry, Email};
 
 /// One change to the accounts.
@@ -34,6 +35,16 @@ pub enum Change {
     /// and address (then that one is it), and made the default when there
     /// is none.
     Migrate(AccountEntry),
+    /// The style of one prose surface (the reader's body or the composer),
+    /// saved in the profile. Names no account.
+    Surface(Surface, Content),
+}
+
+/// A prose surface of the app that keeps its own style in the profile.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Surface {
+    Reader,
+    Composer,
 }
 
 /// The fields of an account an update names; `None` leaves a field as the
@@ -85,6 +96,7 @@ impl Change {
             Change::Upsert(entry) | Change::Migrate(entry) => Some(&entry.id),
             Change::Remove(id) | Change::Update(id, _) => Some(id),
             Change::Default(id) => id.as_deref(),
+            Change::Surface(..) => None,
         }
     }
 }
@@ -157,6 +169,10 @@ pub fn apply(email: &Email, change: &Change) -> Result<(Email, Option<String>), 
             }
             about = Some(id);
         }
+        Change::Surface(surface, content) => match surface {
+            Surface::Reader => next.reader = content.clone(),
+            Surface::Composer => next.composer = content.clone(),
+        },
     }
     settings::email::validate(&next).map_err(|d| Refusal::Invalid {
         path: d.path.clone(),
@@ -190,6 +206,12 @@ pub fn changes(old: &Email, new: &Email) -> Value {
             "email.mail.confirm_delete".into(),
             json!(new.mail.confirm_delete),
         );
+    }
+    if old.reader != new.reader {
+        out.insert("email.reader".into(), json!(new.reader));
+    }
+    if old.composer != new.composer {
+        out.insert("email.composer".into(), json!(new.composer));
     }
     Value::Object(out)
 }

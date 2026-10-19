@@ -52,6 +52,12 @@ pub struct Email {
     pub default_account: Option<String>,
     #[serde(skip_serializing_if = "is_default")]
     pub mail: MailOptions,
+    /// The reader's message body ([`crate::content`]), omitted at its defaults.
+    #[serde(skip_serializing_if = "crate::content::Content::is_default")]
+    pub reader: crate::content::Content,
+    /// The composer's text ([`crate::content`]), omitted at its defaults.
+    #[serde(skip_serializing_if = "crate::content::Content::is_default")]
+    pub composer: crate::content::Content,
 }
 
 impl Email {
@@ -326,6 +332,8 @@ pub fn valid_signature(signature: &str) -> bool {
 /// Check every account and option. A diagnostic about one account names it
 /// by position: `email.accounts[2].url`.
 pub fn validate(email: &Email) -> Result<(), Diagnostic> {
+    crate::content::validate(&email.reader, "email.reader")?;
+    crate::content::validate(&email.composer, "email.composer")?;
     if email.accounts.len() > ACCOUNTS_MAX {
         return Err(error(
             "email.accounts",
@@ -443,7 +451,7 @@ pub fn mint_account_id_from(existing: &[AccountEntry], mut seed: u64) -> String 
 
 /// The `describe()` entries, one per field.
 pub fn describe() -> Value {
-    serde_json::json!({
+    let mut entries = serde_json::json!({
         "email": {"type":"email", "null":"every email setting back to its default", "secrets":"none: passwords never enter settingsd"},
         "email.accounts": {"type":"list", "of":"account", "max_items":ACCOUNTS_MAX, "default":[], "applies":"the whole list at once, in tree order",
             "account": {
@@ -469,7 +477,15 @@ pub fn describe() -> Value {
         "email.mail.confirm_delete": {"type":"boolean", "default":true},
         "email.mail.quote_on_reply": {"type":"boolean", "default":true},
         "email.mail.reply_position": {"type":"string", "names":["above","below"], "default":"above"}
-    })
+    });
+    if let Some(map) = entries.as_object_mut() {
+        for surface in ["email.reader", "email.composer"] {
+            if let Value::Object(surface_entries) = crate::content::describe(surface) {
+                map.extend(surface_entries);
+            }
+        }
+    }
+    entries
 }
 
 fn typed<T: serde::de::DeserializeOwned>(path: &str, value: Value) -> Result<T, Diagnostic> {
@@ -517,6 +533,12 @@ pub(crate) fn set(
         ["mail", "reply_position"] => {
             email.mail.reply_position =
                 value.map_or(Ok(defaults.reply_position), |v| typed(path, v))?
+        }
+        ["reader", rest @ ..] => {
+            crate::content::set(&mut email.reader, "email.reader", rest, value)?
+        }
+        ["composer", rest @ ..] => {
+            crate::content::set(&mut email.composer, "email.composer", rest, value)?
         }
         _ => return Err(error(path, "Unknown field or scope")),
     }

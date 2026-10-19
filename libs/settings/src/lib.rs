@@ -7,6 +7,7 @@ pub mod cache;
 pub mod compact;
 pub use compact::{COMPACT_TOPIC_PREFIX, compact_topic};
 pub mod consumer;
+pub mod content;
 pub mod domains;
 pub mod email;
 pub mod fallback;

@@ -860,19 +860,31 @@ fn reader_light_content_studio_dark() {
     // The window is dark; only the message body is light, and the header
     // and toolbar keep the window's dark look.
     let mut state = opened("text/plain", PLAIN);
-    state.reader_light = true;
+    state.settings.reader.light = true;
     let mut h = harness(state, &theme(Scheme::Studio, Mode::Dark));
     h.run();
     h.snapshot("reader_light_content_studio_dark");
 }
 
 #[test]
-fn light_content_is_only_the_body_and_the_window_stays_dark() {
-    let mut state = opened("text/plain", PLAIN);
-    state.apply_ui(UiEvent::SetReaderLight(true));
-    assert!(state.reader_light);
-    state.apply_ui(UiEvent::SetReaderLight(false));
-    assert!(!state.reader_light);
+fn reader_light_is_saved_as_the_reader_style() {
+    // The toggle is a profile change: the writer turns the reader's style
+    // into the one `email.reader` write, and nothing else moves.
+    let before = settings::email::Email::default();
+    let light = settings::content::Content {
+        light: true,
+        ..before.reader.clone()
+    };
+    let (next, _) = email::writer::apply(
+        &before,
+        &email::writer::Change::Surface(email::writer::Surface::Reader, light),
+    )
+    .expect("the reader style is always writable");
+    assert!(next.reader.light);
+    assert_eq!(next.composer, before.composer);
+    let changed = email::writer::changes(&before, &next);
+    assert_eq!(changed["email.reader"]["light"], true);
+    assert_eq!(changed.as_object().map(|m| m.len()), Some(1));
 }
 
 #[test]

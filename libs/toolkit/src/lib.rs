@@ -44,6 +44,7 @@ pub mod bars;
 pub mod button;
 pub mod canvas;
 pub mod chrome;
+pub mod content;
 pub mod combo;
 pub mod command;
 pub mod datatable;

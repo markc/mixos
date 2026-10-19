@@ -424,7 +424,7 @@ pub fn reader_menu(
             .fixed_pos(button.rect.left_bottom())
             .show(ui.ctx(), |ui| {
                 egui::Frame::popup(ui.style()).show(ui, |ui| {
-                    let mut light = state.reader_light;
+                    let mut light = state.settings.reader.light;
                     let item = toolkit::toggle::Checkbox::new(
                         &mut light,
                         crate::label("reader-light-content"),

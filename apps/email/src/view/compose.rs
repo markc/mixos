@@ -331,11 +331,16 @@ fn form(ui: &mut Ui, compose: &ComposeState, state: &State, events: &mut Vec<UiE
             events,
         );
         let mut body = compose.draft.body.clone();
-        let editor = TextEdit::multiline(&mut body)
-            .desired_rows(8)
-            .desired_width(f32::INFINITY)
-            .hint_text(crate::label("body"));
-        if ui.add(editor).changed() {
+        let mut edited = false;
+        // The text takes the composer's own padding, font and size.
+        toolkit::content::surface(ui, &state.settings.composer, |ui| {
+            let editor = TextEdit::multiline(&mut body)
+                .desired_rows(8)
+                .desired_width(f32::INFINITY)
+                .hint_text(crate::label("body"));
+            edited = ui.add(editor).changed();
+        });
+        if edited {
             events.push(UiEvent::ComposeField(ComposeField::Body, body));
         }
         // A reply's quote can sit above or below the person's text. The
