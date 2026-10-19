@@ -301,8 +301,12 @@ pub fn reader(
             )
         });
     }
-    toolbar(ui, view, stroke, events);
-    toolkit::bars::hairline(ui);
+    // The row is only there when it has something to say; an empty row would
+    // still take its height above the subject.
+    if toolbar_shown(view) {
+        toolbar(ui, view, stroke, events);
+        toolkit::bars::hairline(ui);
+    }
     // Only the message body can be light (the panel's menu sets it); the
     // header and the rest of the window keep the global mode.
     let light = state.reader_light && state.effective_mode() == design::Mode::Dark;
@@ -373,6 +377,19 @@ pub fn actions(
 
 /// The row under the header: the target line when several messages are
 /// selected, and the attachments when the message has any.
+/// Whether the toolbar row has anything in it: the target line for several
+/// selected messages, or the open email's attachments.
+fn toolbar_shown(view: &AccountView) -> bool {
+    let several = view.mail.selection_count() > 1 && view.mail.target_line().is_some();
+    let attached = view
+        .mail
+        .open
+        .as_ref()
+        .and_then(|e| e.attachments.as_ref())
+        .is_some_and(|list| !list.is_empty());
+    several || attached
+}
+
 fn toolbar(ui: &mut Ui, view: &AccountView, stroke: f32, events: &mut Vec<UiEvent>) {
     ui.horizontal(|ui| {
         // What Delete, Flag, Mark and Move apply to, when it is several
