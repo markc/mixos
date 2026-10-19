@@ -40,8 +40,14 @@ fn schema_three_functions_are_attributed_without_execution() {
             serde_json::json!([{"name": "esc", "file": source, "line": 1}])
         );
         for key in [
-            "tool", "mix_version", "files", "strict_data_files", "diagnostics",
-            "capabilities", "handlers", "summary",
+            "tool",
+            "mix_version",
+            "files",
+            "strict_data_files",
+            "diagnostics",
+            "capabilities",
+            "handlers",
+            "summary",
         ] {
             assert!(report.get(key).is_some(), "missing existing key {key}");
         }

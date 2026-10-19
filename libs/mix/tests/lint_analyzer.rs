@@ -53,7 +53,11 @@ fn functions_list_comes_from_local_ast_with_attribution_and_duplicates() {
         ]
     );
     assert!(a.diagnostics.iter().any(|d| d.code == "MIX-E1302"));
-    assert!(analyze(&[], None, &AnalyzerConfig::default()).functions.is_empty());
+    assert!(
+        analyze(&[], None, &AnalyzerConfig::default())
+            .functions
+            .is_empty()
+    );
 }
 
 #[test]
