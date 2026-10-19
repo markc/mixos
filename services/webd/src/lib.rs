@@ -4494,12 +4494,40 @@ async fn serve_static(
 // ---------------------------------------------------------------------------
 
 /// Path to the per-node session sealing key. Overridable via
-/// `MIXOS_WEBD_SESSION_KEY_PATH` (dev/test); defaults to the canonical
-/// `/var/lib/mixos/webd/session.key` (D2.6).
+/// `MIXOS_WEBD_SESSION_KEY_PATH` (dev/test); otherwise it lives under the
+/// var directory (`$MIXOS_VAR`, default `/var/lib/mixos`) as `webd/session.key`
+/// (D2.6).
 fn session_key_path() -> PathBuf {
     std::env::var_os("MIXOS_WEBD_SESSION_KEY_PATH")
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("/var/lib/mixos/webd/session.key"))
+        .unwrap_or_else(|| session_key_path_in(&config::path(config::Dir::Var)))
+}
+
+/// The default session key location under a given var directory.
+fn session_key_path_in(var_dir: &StdPath) -> PathBuf {
+    var_dir.join("webd").join("session.key")
+}
+
+#[cfg(test)]
+mod session_key_path_tests {
+    use super::*;
+
+    #[test]
+    fn default_key_lives_under_the_var_directory() {
+        let var = StdPath::new("/tmp/measure-var");
+        assert_eq!(
+            session_key_path_in(var),
+            PathBuf::from("/tmp/measure-var/webd/session.key")
+        );
+    }
+
+    #[test]
+    fn the_stock_var_directory_gives_the_canonical_path() {
+        assert_eq!(
+            session_key_path_in(StdPath::new("/var/lib/mixos")),
+            PathBuf::from("/var/lib/mixos/webd/session.key")
+        );
+    }
 }
 
 /// `Set-Cookie` for the sealed session (HttpOnly — JS can't read it).
