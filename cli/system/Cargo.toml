@@ -24,13 +24,27 @@ mod_module_files = "deny"
 name = "mix"
 path = "src/main.rs"
 
+[[bin]]
+name = "mix-standalone"
+path = "src/standalone.rs"
+
+[features]
+default = ["maild", "noded", "monitord", "webd", "dnsd"]
+maild = ["dep:maild"]
+noded = ["dep:noded"]
+monitord = ["dep:monitord"]
+webd = ["dep:webd"]
+dnsd = ["dep:dnsd"]
+
 # One entry per personality. Each component's program is its own library's
 # `main`; this package adds only the dispatcher and the global allocator.
 [dependencies]
 mix-shell = { path = "../mix-shell" }
-noded = { path = "../../services/noded" }
-monitord = { path = "../../services/monitord" }
-maild = { path = "../../services/maild" }
+noded = { path = "../../services/noded", optional = true }
+monitord = { path = "../../services/monitord", optional = true }
+maild = { path = "../../services/maild", optional = true }
+webd = { path = "../../services/webd", optional = true }
+dnsd = { path = "../../services/dnsd", optional = true }
 mimalloc.workspace = true
 
 # The shell's process-level tests (tests/), which run `mix` as built here.

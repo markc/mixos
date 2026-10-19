@@ -19,6 +19,10 @@ profiles = ["server"]
 [lints.clippy]
 mod_module_files = "deny"
 
+[[bin]]
+name = "maild"
+path = "src/main.rs"
+
 [dependencies]
 mds = { path = "crates/mds" }
 maild-auth = { path = "crates/maild-auth" }

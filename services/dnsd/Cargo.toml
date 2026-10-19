@@ -20,6 +20,10 @@ profiles = ["server"]
 [lints.clippy]
 mod_module_files = "deny"
 
+# Preserve the former binary's test surface; module prose was not doctested.
+[lib]
+doctest = false
+
 [[bin]]
 name = "dnsd"
 path = "src/main.rs"
@@ -32,6 +36,7 @@ mixos = ["dep:config", "dep:bus", "dep:buildinfo", "dep:logging", "dep:serde_jso
 
 [dependencies]
 dns-core = { path = "crates/dns-core" }
+mimalloc.workspace = true
 tokio = { workspace = true, features = ["net", "rt-multi-thread", "macros", "signal", "sync"] }
 tracing.workspace = true
 tracing-subscriber.workspace = true
