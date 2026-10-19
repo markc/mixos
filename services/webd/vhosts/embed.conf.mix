@@ -22,7 +22,7 @@ fragments: [
   {path: "apps/stripe.mix", context: ["apps/biz.mix"]},
   {path: "apps/shop.mix", context: ["apps/biz.mix"]},
   {path: "apps/sw.mix", context: ["apps/biz.mix"]},
-  {path: "lib/resource_engine.mix", context: ["apps/biz.mix", "widgets/forms.mix", "widgets/datatable.mix", "widgets/modals.mix"]},
+  {path: "lib/resource_engine.mix", context: ["apps/biz.mix", "widgets/forms.mix", "widgets/datatable.mix", "widgets/admin_resource.mix", "widgets/modals.mix"]},
   {path: "widgets/admin_resource.mix", context: ["widgets/datatable.mix", "widgets/modals.mix"]},
   {path: "widgets/detail.mix", context: ["widgets/forms.mix"]},
   {path: "widgets/forms.mix", context: ["widgets/modals.mix"]},
