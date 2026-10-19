@@ -5178,6 +5178,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "mixtrayd"
+version = "0.1.1"
+dependencies = [
+ "anyhow",
+ "bus",
+ "serde",
+ "serde_json",
+ "tokio",
+ "zbus",
+]
+
+[[package]]
 name = "model"
 version = "0.1.1"
 dependencies = [
