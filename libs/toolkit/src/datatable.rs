@@ -247,6 +247,7 @@ pub struct DataTable<'a> {
     selection: SelectionMode,
     page_sizes: &'a [u32],
     pager: bool,
+    keeps_tab: bool,
     striped: bool,
     empty: Option<String>,
     context: Option<ContextMenu<'a>>,
@@ -282,6 +283,7 @@ impl<'a> DataTable<'a> {
             selection: SelectionMode::Single,
             page_sizes: &[],
             pager: true,
+            keeps_tab: false,
             striped: false,
             empty: None,
             context: None,
@@ -359,6 +361,13 @@ impl<'a> DataTable<'a> {
         self
     }
 
+    /// Tab stays with the app while the table has the keyboard: the app moves
+    /// the focus between its panes itself. Off, Tab leaves the table as usual.
+    pub fn keeps_tab(mut self, keeps: bool) -> Self {
+        self.keeps_tab = keeps;
+        self
+    }
+
     /// Stripe alternate rows in the card colour.
     pub fn striped(mut self, striped: bool) -> Self {
         self.striped = striped;
@@ -422,6 +431,7 @@ impl<'a> DataTable<'a> {
                         // nothing here, rather than moving the focus away
                         // and leaving Up and Down with another widget.
                         EventFilter {
+                            tab: self.keeps_tab,
                             vertical_arrows: true,
                             horizontal_arrows: true,
                             escape,

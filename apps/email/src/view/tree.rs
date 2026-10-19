@@ -47,6 +47,7 @@ pub fn show(ui: &mut Ui, state: &State, stroke: f32, events: &mut Vec<UiEvent>) 
             m.set_focus_lock_filter(
                 id,
                 EventFilter {
+                    tab: true,
                     horizontal_arrows: true,
                     vertical_arrows: true,
                     ..EventFilter::default()

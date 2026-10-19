@@ -89,6 +89,7 @@ pub fn list(
         // One page of the server's query: a header click or the pager asks
         // the server for another (the state answers the events).
         let fired = DataTable::new(LIST, &columns, &table)
+            .keeps_tab(true)
             .strings(strings)
             .selection(SelectionMode::Multi)
             .total(Total::Known(view.mail.total))
@@ -268,6 +269,7 @@ pub fn reader(
             m.set_focus_lock_filter(
                 id,
                 EventFilter {
+                    tab: true,
                     vertical_arrows: true,
                     horizontal_arrows: true,
                     ..EventFilter::default()

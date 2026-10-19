@@ -989,8 +989,9 @@ fn three_selected() -> State {
 
 #[test]
 fn the_target_line_names_the_selection_or_this_email() {
+    // One email open is no note: the reader's actions obviously apply to it.
     let h = harness(long_list());
-    assert!(h.query_by_label("Applies to this email").is_some());
+    assert!(h.query_by_label("Applies to this email").is_none());
     let h = harness(three_selected());
     assert!(h.query_by_label("Applies to 3 selected").is_some());
     assert!(h.query_by_label("Applies to this email").is_none());

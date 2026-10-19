@@ -250,6 +250,23 @@ fn status(ui: &mut egui::Ui, state: &State, stroke: f32) {
     });
 }
 
+/// A pane's frame. The pane that has the keyboard wears the focus ring the
+/// term app draws: the card border a quarter of the way to the accent.
+fn pane_frame(ctx: &egui::Context, active: bool) -> egui::Frame {
+    let frame = bars::dock_frame(ctx);
+    if !active {
+        return frame;
+    }
+    let palette = &toolkit::chrome::Chrome::of(ctx).palette;
+    let ring = palette
+        .card_border
+        .lerp_to_gamma(palette.accent, FOCUS_RING);
+    frame.stroke(egui::Stroke::new(1.0, ring))
+}
+
+/// The focus ring's share of the accent, as the term app's default.
+const FOCUS_RING: f32 = 0.25;
+
 /// Tab and Shift+Tab move the keyboard between the panes, in order: the tree,
 /// the list, then the reader. A click on a pane moves the state to it too.
 /// Tab is taken only while no text field or dialog has the keyboard.
@@ -310,7 +327,7 @@ fn window(
     let left = egui::Panel::left("places")
         .resizable(true)
         .default_size(total * state.ui.places)
-        .frame(bars::dock_frame(ui.ctx()))
+        .frame(pane_frame(ui.ctx(), state.pane == Pane::Tree))
         .show(ui, |ui| tree::show(ui, state, stroke, events));
     let split = left.response.rect.width() / total.max(1.0);
     if (split - state.ui.places).abs() > 0.005 {
@@ -322,7 +339,7 @@ fn window(
         let right = egui::Panel::right("reader")
             .resizable(true)
             .default_size(remaining * state.ui.reader)
-            .frame(bars::dock_frame(ui.ctx()))
+            .frame(pane_frame(ui.ctx(), state.pane == Pane::Reader))
             .show(ui, |ui| {
                 reader(ui, state, view, commands, strings, stroke, events)
             });
@@ -332,7 +349,7 @@ fn window(
         }
     }
     egui::CentralPanel::default()
-        .frame(bars::dock_frame(ui.ctx()))
+        .frame(pane_frame(ui.ctx(), state.pane == Pane::List))
         .show(ui, |ui| match state.current() {
             Some(view) if view.phase == Phase::Ready => {
                 centre(ui, state, view, commands, strings, stroke, events)
