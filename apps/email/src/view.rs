@@ -402,7 +402,8 @@ fn reader(
     if state.mode == Mode::Mail {
         egui::Popup::menu(&group.menu).show(|ui| {
             let mut light = state.reader_light;
-            let item = toolkit::toggle::Checkbox::new(&mut light, crate::label("reader-light-content"));
+            let item =
+                toolkit::toggle::Checkbox::new(&mut light, crate::label("reader-light-content"));
             if ui.add(item).changed() {
                 events.push(UiEvent::SetReaderLight(light));
             }
