@@ -414,7 +414,6 @@ fn reader_menu(
 ) {
     let id = egui::Id::new("reader-menu-open");
     let mut open = ui.ctx().data(|d| d.get_temp::<bool>(id)).unwrap_or(false);
-    eprintln!("DEBUG hovered={} down_on={} pos={:?} rect={:?}", button.hovered(), button.is_pointer_button_down_on(), ui.input(|i| i.pointer.interact_pos()), button.rect);
     if button.clicked() {
         open = !open;
     }

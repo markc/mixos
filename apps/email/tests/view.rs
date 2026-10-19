@@ -529,9 +529,11 @@ fn reader_panel_menu_opens_on_the_dots_and_holds_light_content() {
         h.query_by_label_contains("Light content").is_none(),
         "closed at first"
     );
-    // Each pane has its dots; the reader is the rightmost.
-    let dots = h.get_all_by_label("Panel menu");
-    dots.last().expect("the reader's dots").click();
+    // Each pane has its dots; the reader's are the rightmost.
+    h.query_all_by_label("Panel menu")
+        .max_by(|a, b| a.rect().left().total_cmp(&b.rect().left()))
+        .expect("the reader's dots")
+        .click();
     h.run();
     h.run();
     h.run();
