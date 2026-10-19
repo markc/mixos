@@ -12,7 +12,9 @@ pub use settings::content::{
     Content, FAMILIES, FONT_SIZE_MAX, FONT_SIZE_MIN, MONO_FAMILY, PADDINGS,
 };
 /// The session's interface size range, in logical pixels.
-pub use settings::model::{FONT_SIZE_MAX as INTERFACE_SIZE_MAX, FONT_SIZE_MIN as INTERFACE_SIZE_MIN};
+pub use settings::model::{
+    FONT_SIZE_MAX as INTERFACE_SIZE_MAX, FONT_SIZE_MIN as INTERFACE_SIZE_MIN,
+};
 
 /// A prose surface whose style the profile keeps.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
