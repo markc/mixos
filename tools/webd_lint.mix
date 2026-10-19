@@ -2,6 +2,8 @@
 -- Copyright 2026 Mark Constable <mc@mixos.dev>
 -- version: 0.1.0
 -- Focused entry point for the verb registry's webd source checks.
+-- Merge note: installing this branch's CBC-built mix must land with the merge.
+-- The gate requires lint schema 3 and fails closed on the older schema 2 binary.
 $src = require("lib/verb_registry_source.mix")
 $root = dirname(dirname(realpath($0)))
 if len(args()) != 0 then
