@@ -1,0 +1,85 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- Regression tests for the real source gate, on an owned throwaway tree.
+$src = require("../tools/lib/verb_registry_source.mix")
+$embed = require("../tools/lib/verb_registry_embed.mix")
+$mix = $src.mix_bin()
+$tmp = "/tmp/webd-lint-test-" .. uuid()
+$base = $tmp .. "/services/webd/vhosts"
+mkdir($base .. "/lib", {parents: true})
+mkdir($base .. "/apps", {parents: true})
+write_file($base .. "/lib/lib.mix", "fn esc($x) = $x\n")
+$config = {
+  schema: 1,
+  globals: ["SITE", "BODY"],
+  directories: [{path: "apps", context: ["lib/lib.mix"]}],
+  fragments: [],
+  standalone: ["lib/lib.mix"]
+}
+
+fn check($condition, $label)
+  if not $condition then raise("TEST_FAILED", $label) end
+  print("ok: " .. $label)
+end
+
+fn config_write($cfg)
+  write_file($base .. "/embed.conf.mix", data_encode($cfg))
+end
+
+fn lint_fragment($source)
+  write_file($base .. "/apps/page.mix", $source)
+  return $src.check_vhosts($tmp)
+end
+
+try
+  config_write($config)
+  $r = lint_fragment("print(esc($SITE) .. $BODY)\n")
+  check(len($r.problems) == 0 and $r.files == 2, "declared functions and globals pass; both files checked")
+
+  $r = lint_fragment("print(esc($SITE)); definitely_undefined()\n")
+  check(len($r.problems) == 1 and contains($r.problems[0], "does not lint (exit 1)"), "undefined function still fails the source gate")
+  print($r.problems[0])
+
+  $r = lint_fragment("print(esc($SITEE))\n")
+  check(len($r.problems) == 1, "misspelt request global still fails")
+
+  $r = lint_fragment("fn local_fn($x) = $x\nprint(local_fn())\n")
+  check(len($r.problems) == 1, "local function arity remains fatal")
+
+  $r = lint_fragment("fn implicit_nil($x)\n  $x * 2\nend\n$result = implicit_nil(1)\n")
+  check(len($r.problems) == 0, "ordinary warning policy unchanged")
+  $listing = $src.source_files($tmp)
+  $flags = $embed.prepare($mix, $embed.scopes($tmp, $listing.files))
+  $path = $base .. "/apps/page.mix"
+  $native = run_argv(concat([$mix, "lint", "--json", "--deny-warnings"], $flags[$path], [$path]))
+  $doc = json_parse($native.stdout)
+  check($native.exit_code == 1 and $doc.summary.warnings == 1 and $doc.diagnostics[0].code == "MIX-W2302", "W2302 remains a warning and --deny-warnings rejects it")
+
+  $cfg = $config
+  $cfg.directories = []
+  config_write($cfg)
+  $r = lint_fragment("print(1)\n")
+  check(len($r.problems) == 1 and contains($r.problems[0], "no declared context"), "uncovered fragment is an error")
+
+  $cfg.standalone = push($cfg.standalone, "apps/page.mix")
+  config_write($cfg)
+  $r = lint_fragment("print(1)\n")
+  check(len($r.problems) == 0 and $r.files == 2, "explicit standalone still undergoes lint")
+  $r = lint_fragment("definitely_undefined()\n")
+  check(len($r.problems) == 1, "standalone is never a lint exemption")
+
+  $cfg = $config
+  $cfg.fragments = [{path: "apps/page.mix", context: ["lib/missing.mix"]}]
+  config_write($cfg)
+  $r = lint_fragment("print(1)\n")
+  check(len($r.problems) == 1 and contains($r.problems[0], "source missing"), "missing context source fails closed")
+
+  $cfg = $config
+  $cfg.typo = []
+  config_write($cfg)
+  $r = lint_fragment("print(1)\n")
+  check(len($r.problems) == 1 and contains($r.problems[0], "unknown field"), "unknown config field fails closed")
+finally
+  run_argv_must(["rm", "-r", "--", $tmp])
+end
+print("webd_lint_test: all checks passed")
