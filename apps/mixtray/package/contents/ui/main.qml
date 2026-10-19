@@ -7,8 +7,10 @@ import org.kde.plasma.plasmoid
 import org.kde.plasma.plasma5support as P5Support
 
 // The popup asks mixtrayd for one snapshot each time it opens, and again after
-// every control action and on Refresh. Nothing runs in the background, so a
-// closed popup costs nothing.
+// every control action and on Refresh. While it is open, it also keeps one
+// `mixtrayd wait` running: that call returns as soon as systemd reports a
+// change to a COS unit, and the popup starts the next one. A closed popup
+// starts no new wait, so it costs nothing.
 PlasmoidItem {
     id: root
 
@@ -32,6 +34,18 @@ PlasmoidItem {
         }
         root.loading = true;
         exec.connectSource(root.mixtrayd + " snapshot");
+    }
+
+    // Keep one wait running while the popup is open, from the revision the
+    // current snapshot was read at.
+    function follow(): void {
+        if (!root.expanded || root.snap.rev === undefined) {
+            return;
+        }
+        if (watcher.connectedSources.length > 0) {
+            return;
+        }
+        watcher.connectSource(root.mixtrayd + " wait " + root.snap.rev);
     }
 
     function control(unit: string, action: string): void {
@@ -76,7 +90,33 @@ PlasmoidItem {
                 root.snapError = "";
             } catch (e) {
                 root.snapError = "mixtrayd returned unreadable output";
+                return;
             }
+            root.follow();
+        }
+    }
+
+    // `mixtrayd wait` answers with a fresh snapshot once a COS unit changes,
+    // or when the daemon's wait limit passes; either way the popup starts the
+    // next wait. A failed wait stops following until the popup opens again,
+    // so a missing daemon never turns into a busy loop.
+    P5Support.DataSource {
+        id: watcher
+
+        engine: "executable"
+        connectedSources: []
+
+        onNewData: (source, data) => {
+            watcher.disconnectSource(source);
+            if (data["exit code"] !== 0) {
+                return;
+            }
+            try {
+                root.snap = JSON.parse(data.stdout);
+            } catch (e) {
+                return;
+            }
+            root.follow();
         }
     }
 

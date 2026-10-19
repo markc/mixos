@@ -29607,7 +29607,17 @@ registers on the noded Bus as `mixtrayd` and answers one verb,
 
 Each tab carries its own `error` field, so one failing source does not blank
 the others. The daemon polls nothing: it reads its sources when a snapshot is
-asked for, and the popup asks only when it opens.
+asked for.
+
+## Live updates
+
+The daemon subscribes to systemd's unit signals on the system and user buses
+and keeps a revision that moves whenever a COS unit changes. Every snapshot
+carries the revision it was read at. `mixtrayd.wait` takes a revision and
+answers with a new snapshot as soon as the revision moves past it, or after
+45 seconds, inside the Bus client's 60-second call limit. While the popup is
+open it keeps one wait running and starts the next as each one returns, so a
+unit's state changes on screen as systemd reports it.
 
 ## Control
 
@@ -29625,17 +29635,16 @@ it, since a restart has no undo.
 ```
 mixtrayd serve                   # the daemon (the default)
 mixtrayd snapshot                # print one snapshot from the running daemon
+mixtrayd wait REVISION           # print the next snapshot once a COS unit changes
 mixtrayd control UNIT ACTION     # start, stop or restart one controllable unit
 mixtrayd --version
 ```
 
 ## Not yet
 
-- MIX scripts, runs and trash are cosmix hub features with no MixOS source
-  yet, so the MIX tab reports only the binary.
+- MIX scripts, runs and trash have no MixOS source yet, so the MIX tab
+  reports only the binary.
 - SSH keys and trash are not listed.
-- The popup does not yet refresh while it is open; it updates on open, after
-  an action, and on Refresh.
 
 ---
 
