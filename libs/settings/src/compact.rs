@@ -84,6 +84,8 @@ pub struct CompactEffective {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub font_weight: Option<u16>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub font_size: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mono_family: Option<String>,
     pub ui: CommonUi,
     /// The digest of this context's projection.
@@ -112,6 +114,7 @@ pub fn encode(snapshot: &Snapshot) -> Result<CompactSnapshot, serde_json::Error>
                 icon_stroke: e.icon_stroke,
                 font_family: e.font_family.clone(),
                 font_weight: e.font_weight,
+                font_size: e.font_size,
                 mono_family: e.mono_family.clone(),
                 ui: e.ui.clone(),
                 design: digest,
@@ -157,6 +160,7 @@ impl CompactSnapshot {
                     icon_stroke: e.icon_stroke,
                     font_family: e.font_family,
                     font_weight: e.font_weight,
+                    font_size: e.font_size,
                     mono_family: e.mono_family,
                     ui: e.ui,
                     design: design.clone(),

@@ -427,6 +427,7 @@ pub fn resolve_with_embedded_and_accents(
                 icon_stroke: appearance.icon_stroke,
                 font_family: appearance.font_family,
                 font_weight: appearance.font_weight,
+                font_size: appearance.font_size,
                 mono_family: appearance.mono_family,
                 ui,
                 design: projection,

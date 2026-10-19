@@ -89,10 +89,33 @@ fn pair(colours: &ResolvedColours, name: &str) -> Option<(Color32, Color32)> {
 /// pair widgets is built on egui's default for the theme's mode by
 /// [`pair_style`].
 pub fn style(theme: &Theme) -> Style {
-    if theme.style().widgets == design::family::style::Widgets::Chrome {
-        return crate::chrome::style(theme);
+    let mut style = if theme.style().widgets == design::family::style::Widgets::Chrome {
+        crate::chrome::style(theme)
+    } else {
+        pair_style(theme)
+    };
+    apply_interface_size(&mut style, theme);
+    style
+}
+
+/// Scale the interface's text to the session's font size, when it names one.
+/// Every style but the monospace one moves by the same ratio, so the headings
+/// keep their place above the body. The design's own size changes nothing.
+fn apply_interface_size(style: &mut Style, theme: &Theme) {
+    let Some(size) = theme.overlay().size else {
+        return;
+    };
+    let typography = theme.typography();
+    let design = design::active_typography(Some(typography), TypographyRole::Ui).font_size as f32;
+    let ratio = size / design;
+    if (ratio - 1.0).abs() < f32::EPSILON {
+        return;
     }
-    pair_style(theme)
+    for (text, font) in style.text_styles.iter_mut() {
+        if *text != TextStyle::Monospace {
+            font.size *= ratio;
+        }
+    }
 }
 
 /// The pair-based style of the table above, for any scheme. The chrome

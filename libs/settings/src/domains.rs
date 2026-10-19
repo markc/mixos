@@ -103,6 +103,7 @@ fn view(effective: &Effective) -> &DesignReadProjection {
         icon_stroke: _,
         font_family: _,
         font_weight: _,
+        font_size: _,
         mono_family: _,
         ui,
         design,
@@ -134,6 +135,7 @@ fn compare(old: &Effective, new: &Effective) -> ChangePlan {
     // The session font choices change the faces the text is drawn with.
     let fonts = old.font_family != new.font_family
         || old.font_weight != new.font_weight
+        || old.font_size != new.font_size
         || old.mono_family != new.mono_family;
     let resources = fonts
         || !a

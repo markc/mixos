@@ -160,9 +160,101 @@ impl Engine {
     }
 }
 
+/// One change to the session's interface font (the Fonts section).
+#[derive(Clone, Debug, PartialEq)]
+pub enum InterfaceEdit {
+    /// `None` is the scheme's own weight.
+    Weight(Option<u16>),
+    /// `None` is the design's own UI size.
+    Size(Option<f64>),
+}
+
+impl InterfaceEdit {
+    /// The edit that sets this field in the session appearance.
+    pub fn edit(&self) -> TextEdit {
+        let (path, value) = match self {
+            InterfaceEdit::Weight(weight) => ("appearance.font_weight", json!(weight)),
+            InterfaceEdit::Size(size) => ("appearance.font_size", json!(size)),
+        };
+        TextEdit {
+            path: path.to_owned(),
+            value,
+        }
+    }
+
+    /// Why settingsd would refuse this value, as a label key; `None` when it
+    /// is sendable.
+    pub fn refusal(&self) -> Option<&'static str> {
+        match self {
+            InterfaceEdit::Weight(Some(weight))
+                if !(100..=900).contains(weight) || weight % 100 != 0 =>
+            {
+                Some("font-weight-refused")
+            }
+            InterfaceEdit::Size(Some(size))
+                if !(settings::model::FONT_SIZE_MIN..=settings::model::FONT_SIZE_MAX)
+                    .contains(size) =>
+            {
+                Some("interface-size-refused")
+            }
+            _ => None,
+        }
+    }
+}
+
+impl Engine {
+    /// The Fonts section takes edits: the session's font read, a fence to
+    /// send with, and no dialog, no quit under way.
+    pub fn can_edit_interface_font(&self) -> bool {
+        self.look.interface_font.is_some()
+            && self.look.terminal_ready()
+            && self.connected
+            && self.ui.dialog.is_none()
+            && !self.quitting
+    }
+
+    /// Apply one interface font change at once. A value settingsd would
+    /// refuse is not sent; the status says why.
+    pub fn edit_interface_font(&mut self, edit: InterfaceEdit) {
+        if let Some(refusal) = edit.refusal() {
+            self.status = self.label(refusal, &[]);
+            self.failed = true;
+            return;
+        }
+        if self.can_edit_interface_font() {
+            self.send_text(edit.edit());
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn interface_font_edits_name_the_appearance_fields() {
+        assert_eq!(
+            InterfaceEdit::Weight(Some(500)).edit(),
+            TextEdit {
+                path: "appearance.font_weight".into(),
+                value: json!(500)
+            }
+        );
+        assert_eq!(
+            InterfaceEdit::Size(None).edit().value,
+            Value::Null,
+            "None is the design's size"
+        );
+        assert_eq!(
+            InterfaceEdit::Weight(Some(450)).refusal(),
+            Some("font-weight-refused")
+        );
+        assert_eq!(
+            InterfaceEdit::Size(Some(30.0)).refusal(),
+            Some("interface-size-refused")
+        );
+        assert_eq!(InterfaceEdit::Size(Some(12.5)).refusal(), None);
+    }
 
     #[test]
     fn each_control_sends_its_own_full_path() {

@@ -92,6 +92,8 @@ pub struct Overlay {
     pub family: Option<String>,
     /// The interface weight (100 to 900 in steps of 100).
     pub weight: Option<u16>,
+    /// The interface text size in logical pixels, or `None` for the design's.
+    pub size: Option<f32>,
     /// The monospace family, or `None` for the bundled JetBrains Mono.
     pub mono: Option<String>,
 }
@@ -114,10 +116,18 @@ impl Overlay {
                 .filter(|n| !n.trim().is_empty())
                 .map(str::to_owned)
         };
+        let size = appearance
+            .font_size
+            .filter(|s| {
+                s.is_finite()
+                    && (settings::model::FONT_SIZE_MIN..=settings::model::FONT_SIZE_MAX).contains(s)
+            })
+            .map(|s| s as f32);
         Self {
             stroke: stroke.map(|s| s as f32),
             family: family(&appearance.font_family),
             weight,
+            size,
             mono: family(&appearance.mono_family),
         }
     }

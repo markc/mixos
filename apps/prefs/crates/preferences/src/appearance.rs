@@ -44,6 +44,15 @@ pub fn topic() -> String {
     settings::summary_topic(PROFILE)
 }
 
+/// The session's interface font weight and size, as settingsd stores them.
+#[derive(Clone, Debug, PartialEq)]
+pub struct InterfaceFont {
+    /// `None` is the scheme's own weight.
+    pub weight: Option<u16>,
+    /// `None` is the design's own UI size.
+    pub size: Option<f64>,
+}
+
 /// One appearance, as the panel shows and edits it.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Look {
@@ -321,6 +330,9 @@ pub struct Appearance {
     /// The Ced app's settings as settingsd holds them, from the same read;
     /// the Text section shows these.
     pub ced: Option<settings::content::Ced>,
+    /// The session's interface font weight and size as settingsd holds them,
+    /// from the same read; the Fonts section shows these.
+    pub interface_font: Option<InterfaceFont>,
     /// The profile names a design package of its own (`appearance.source`):
     /// the window keeps the session theme rather than the embedded design.
     pub custom_source: bool,
@@ -377,6 +389,7 @@ impl Default for Appearance {
             terminal: None,
             email: None,
             ced: None,
+            interface_font: None,
             custom_source: false,
             keymaps: Default::default(),
             fence: None,
@@ -1025,6 +1038,10 @@ impl Engine {
                     self.look.current = Some(look);
                     self.look.terminal = Some(summary.terminal);
                     self.look.ced = Some(summary.ced);
+                    self.look.interface_font = Some(InterfaceFont {
+                        weight: summary.appearance.font_weight,
+                        size: summary.appearance.font_size,
+                    });
                     self.email_read(summary.email);
                     self.look.custom_source = summary.custom_source;
                     // A recovering settingsd may not show a write it has

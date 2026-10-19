@@ -15,6 +15,7 @@ use crate::{label, label_with};
 use design::{CaptionSide, Contrast, Decorations, Mode, Scheme, Style};
 use egui::{Align, Color32, Layout, RichText, ScrollArea, Ui};
 use preferences::appearance::{Availability as Settings, Axis};
+use preferences::text::InterfaceEdit;
 use preferences::terminal::{
     BORDER_WIDTH_MAX, BORDER_WIDTH_MIN, CursorShape, FONT_SIZE_MAX, FONT_SIZE_MIN, FocusRing,
     PADDINGS, SCROLL_SPEED_MAX, SCROLL_SPEED_MIN, SCROLLBACK_MAX, Setting, Terminal,
@@ -53,6 +54,8 @@ pub enum UiEvent {
     Terminal(Setting),
     /// An edit in the Text section: one prose surface's style.
     Text(preferences::text::Setting),
+    /// An edit in the Fonts section: the session's interface weight or size.
+    Interface(preferences::text::InterfaceEdit),
     WallpaperTarget(Option<String>),
     WallpaperKind(preferences::wallpaper::Kind),
     WallpaperColour(String),
@@ -177,7 +180,7 @@ pub fn view(
                         Section::Wallpapers => {
                             wallpaper::controls(ui, engine, commands, strings, &mut events)
                         }
-                        Section::Fonts => fonts(ui),
+                        Section::Fonts => fonts(ui, engine, &mut events),
                         Section::Email => {
                             email::section(ui, engine, commands, strings, &mut events)
                         }
@@ -322,7 +325,7 @@ fn section_title(engine: &Engine, section: Section) -> String {
 }
 
 /// Preview the actual face stacks installed on this rendering context.
-fn fonts(ui: &mut Ui) {
+fn fonts(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
     let title = label("section-fonts");
     panel::group(ui, "fonts", &[title.as_str()], |ui, _| {
         let faces = ui.ctx().fonts(|fonts| {
@@ -354,11 +357,57 @@ fn fonts(ui: &mut Ui) {
                 }
             });
         bars::hairline(ui);
+        interface_font_controls(ui, engine, events);
+        bars::hairline(ui);
         ui.heading(label("fonts-preview"));
         ui.label(label("fonts-sample"));
         ui.monospace(label("fonts-mono-sample"));
-        bars::hairline(ui);
-        ui.add(egui::Label::new(RichText::new(label("fonts-note")).weak()).wrap());
+    });
+}
+
+/// The session's interface weight and size. Each applies as it is made; the
+/// values are settingsd's, as its last read gave them.
+fn interface_font_controls(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
+    let Some(font) = engine.look.interface_font.clone() else {
+        ui.label(RichText::new(label("look-reading")).weak());
+        return;
+    };
+    ui.add_enabled_ui(engine.can_edit_interface_font(), |ui| {
+        panel::section_label(ui, &label("fonts-weight"));
+        let weights = [
+            (None, label("fonts-weight-design")),
+            (Some(300), label("fonts-weight-light")),
+            (Some(400), label("fonts-weight-regular")),
+            (Some(500), label("fonts-weight-medium")),
+            (Some(600), label("fonts-weight-semibold")),
+        ];
+        if let Some(weight) = choices(ui, font.weight, &weights) {
+            events.push(UiEvent::Interface(InterfaceEdit::Weight(weight)));
+        }
+
+        panel::section_label(ui, &label("fonts-size"));
+        let design = design::default_typography(design::TypographyRole::Ui).font_size;
+        let mut design_size = font.size.is_none();
+        if ui
+            .add(Toggle::new(&mut design_size, label("fonts-size-design")))
+            .changed()
+        {
+            let size = (!design_size).then_some(design);
+            events.push(UiEvent::Interface(InterfaceEdit::Size(size)));
+        }
+        if let Some(size) = font.size {
+            let spec = Numeric {
+                key: "fonts-size",
+                title: label("fonts-size"),
+                unit: "px",
+                places: 1,
+                slider: true,
+            };
+            let range = settings::model::FONT_SIZE_MIN..=settings::model::FONT_SIZE_MAX;
+            if let Some(value) = number(ui, spec, size, range) {
+                events.push(UiEvent::Interface(InterfaceEdit::Size(Some(value))));
+            }
+        }
     });
 }
 

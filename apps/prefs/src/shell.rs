@@ -73,6 +73,7 @@ pub fn apply_ui(engine: &mut Engine, commands: &Registry<Engine>, events: Vec<Ui
             UiEvent::Look(look) => engine.edit_look(look),
             UiEvent::Terminal(setting) => engine.edit_terminal(setting),
             UiEvent::Text(setting) => engine.edit_text(setting),
+            UiEvent::Interface(edit) => engine.edit_interface_font(edit),
             UiEvent::WallpaperTarget(target) => engine.wallpaper_target(target),
             UiEvent::WallpaperKind(kind) => engine.wallpaper_kind(kind),
             UiEvent::WallpaperColour(colour) => engine.wallpaper_colour(colour),
