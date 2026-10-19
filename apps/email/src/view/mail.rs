@@ -258,8 +258,10 @@ pub fn reader(
     // Registered first, so the reader's own widgets win a click; a click on
     // the pane itself hands it the keyboard.
     let id = reader_id();
-    let back = ui.interact(area, id, Sense::click());
-    if back.clicked() {
+    // Focusable but not clickable, so the header's dots keep their clicks; a
+    // press in the pane hands it the keyboard.
+    let back = ui.interact(area, id, Sense::focusable_noninteractive());
+    if ui.input(|i| i.pointer.primary_pressed()) && ui.rect_contains_pointer(area) {
         back.request_focus();
     }
     let focused = ui.memory(|m| m.has_focus(id));

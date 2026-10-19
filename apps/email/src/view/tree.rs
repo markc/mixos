@@ -68,8 +68,11 @@ pub fn show(ui: &mut Ui, state: &State, stroke: f32, events: &mut Vec<UiEvent>) 
     }
     // The panel itself takes focus, under the rows (registered first, so a
     // row's click wins and hands the focus here).
-    let back = ui.interact(ui.available_rect_before_wrap(), id, Sense::click());
-    if back.clicked() {
+    // Focusable but not clickable, so the header's dots keep their clicks; a
+    // press on the panel hands it the keyboard.
+    let area = ui.available_rect_before_wrap();
+    let back = ui.interact(area, id, Sense::focusable_noninteractive());
+    if ui.input(|i| i.pointer.primary_pressed()) && ui.rect_contains_pointer(area) {
         back.request_focus();
     }
     let rows = state.tree();
