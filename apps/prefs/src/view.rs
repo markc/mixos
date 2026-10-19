@@ -403,7 +403,7 @@ fn interface_font_controls(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEven
                 places: 1,
                 slider: true,
             };
-            let range = settings::model::FONT_SIZE_MIN..=settings::model::FONT_SIZE_MAX;
+            let range = preferences::text::INTERFACE_SIZE_MIN..=preferences::text::INTERFACE_SIZE_MAX;
             if let Some(value) = number(ui, spec, size, range) {
                 events.push(UiEvent::Interface(InterfaceEdit::Size(Some(value))));
             }

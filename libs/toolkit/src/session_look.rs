@@ -70,6 +70,7 @@ mod tests {
             icon_stroke: None,
             font_family: None,
             font_weight: None,
+            font_size: None,
             mono_family: None,
             source: None,
         };
@@ -80,6 +81,18 @@ mod tests {
         assert_eq!(theme.contrast(), Contrast::High);
         assert_eq!(theme.decorations(), Decorations::Server);
         assert_eq!(theme.captions(), CaptionSide::Left);
+    }
+
+    #[test]
+    fn a_font_size_reaches_the_overlay_only_in_range() {
+        use crate::theme::Overlay;
+        let sized = |size: f64| Appearance {
+            font_size: Some(size),
+            ..Appearance::default()
+        };
+        assert_eq!(Overlay::from_appearance(&sized(14.0)).size, Some(14.0));
+        assert_eq!(Overlay::from_appearance(&sized(30.0)).size, None);
+        assert_eq!(Overlay::from_appearance(&Appearance::default()).size, None);
     }
 
     #[test]
