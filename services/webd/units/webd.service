@@ -1,0 +1,41 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+[Unit]
+Description=MixOS web service
+Documentation=https://mixos.dev/webd/
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=webd
+Group=webd
+Environment=MIXOS_ETC=/etc/mixos
+Environment=MIXOS_VAR=%S/mixos
+Environment=HOME=%S/mixos/webd
+StateDirectory=mixos/webd
+StateDirectoryMode=0750
+RuntimeDirectory=mixos/webd
+RuntimeDirectoryMode=0750
+WorkingDirectory=%S/mixos/webd
+ExecStart=/opt/mixos/bin/webd serve --db-path %S/mixos/webd/web.db
+Restart=on-failure
+RestartSec=5s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=webd
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target
