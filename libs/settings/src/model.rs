@@ -87,6 +87,10 @@ pub struct Appearance {
     /// A CSS weight, 100 to 900 in steps of 100, or None for the scheme's own.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub font_weight: Option<u16>,
+    /// The interface text size in logical pixels, [`FONT_SIZE_MIN`] to
+    /// [`FONT_SIZE_MAX`], or None for the design's own UI size.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub font_size: Option<f64>,
     /// A monospace family name, or None for the bundled JetBrains Mono.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mono_family: Option<String>,
@@ -110,11 +114,16 @@ impl Default for Appearance {
             icon_stroke: None,
             font_family: None,
             font_weight: None,
+            font_size: None,
             mono_family: None,
             source: None,
         }
     }
 }
+
+/// The interface text size range, in logical pixels.
+pub const FONT_SIZE_MIN: f64 = 9.0;
+pub const FONT_SIZE_MAX: f64 = 18.0;
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct CommonUi {
@@ -377,6 +386,8 @@ pub struct Effective {
     pub font_family: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub font_weight: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub font_size: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mono_family: Option<String>,
     pub ui: CommonUi,

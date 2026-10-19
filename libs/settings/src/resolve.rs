@@ -53,6 +53,7 @@ fn describe_base() -> Value {
             "appearance.icon_stroke": {"type":"number|null", "minimum":1.0, "maximum":3.0, "step":0.25, "null":"the design's own icon.stroke_width token"},
             "appearance.font_family": {"type":"string|null", "max_bytes":128, "null":"Inter"},
             "appearance.font_weight": {"type":"integer|null", "minimum":100, "maximum":900, "step":100, "null":"the scheme's own weight"},
+            "appearance.font_size": {"type":"number|null", "minimum":crate::model::FONT_SIZE_MIN, "maximum":crate::model::FONT_SIZE_MAX, "unit":"px", "null":"the design's own UI size"},
             "appearance.mono_family": {"type":"string|null", "max_bytes":128, "null":"JetBrains Mono"},
             "appearance.contrast": {"type":"string", "enum":["normal","high"]},
             "appearance.source": {"type":"string|null", "max_bytes":MAX_SOURCE_BYTES},
@@ -289,6 +290,19 @@ pub fn resolve_with_embedded_and_accents(
             return Err(error(
                 "appearance.font_weight",
                 "Font weight must be 100 to 900 in steps of 100",
+            ));
+        }
+        if let Some(size) = desktop.appearance.font_size
+            && (!size.is_finite()
+                || !(crate::model::FONT_SIZE_MIN..=crate::model::FONT_SIZE_MAX).contains(&size))
+        {
+            return Err(error(
+                "appearance.font_size",
+                format!(
+                    "Font size must be {}..{} pixels",
+                    crate::model::FONT_SIZE_MIN,
+                    crate::model::FONT_SIZE_MAX
+                ),
             ));
         }
         for (path, family) in [
