@@ -417,7 +417,10 @@ fn a_single_click_opens_and_marks_read_and_a_double_click_does_not_reopen() {
             .any(|w| matches!(w, Work::MarkRead { id, read: true, .. } if id == "E1"))
     );
     let mail = &h.state().state.account("home").unwrap().mail;
-    assert!(mail.emails[0].is_read(), "the opened row marks read at once");
+    assert!(
+        mail.emails[0].is_read(),
+        "the opened row marks read at once"
+    );
     assert_eq!(mail.table.selection, ["E1"], "the opened row is selected");
     // A double-click on the row that is already open does not open it again.
     double_click(&mut h, "Bob");
