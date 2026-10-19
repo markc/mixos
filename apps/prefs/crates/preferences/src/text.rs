@@ -105,7 +105,9 @@ impl Setting {
             Setting::Padding(_, padding) if !PADDINGS.contains(padding) => {
                 Some("text-padding-refused")
             }
-            Setting::Family(surface, Some(family)) if !surface.families().contains(&family.as_str()) => {
+            Setting::Family(surface, Some(family))
+                if !surface.families().contains(&family.as_str()) =>
+            {
                 Some("text-family-refused")
             }
             Setting::Size(_, size) if !(FONT_SIZE_MIN..=FONT_SIZE_MAX).contains(size) => {

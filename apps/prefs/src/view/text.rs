@@ -18,7 +18,9 @@ pub(super) fn section(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
             ui.vertical(|ui| {
                 ui.set_width(ui.available_width());
                 for surface in Surface::ALL {
-                    ui.push_id(surface.path(), |ui| surface_card(ui, engine, surface, events));
+                    ui.push_id(surface.path(), |ui| {
+                        surface_card(ui, engine, surface, events)
+                    });
                 }
             });
         });

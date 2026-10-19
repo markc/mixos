@@ -396,7 +396,13 @@ fn document(
         .add_enabled_ui(editable, |ui| {
             let mut out = None;
             toolkit::content::surface(ui, &app.editor_style, |ui| {
-                out = Some(editor::show(ui, ("ced.editor", tab.id), &doc, palette, &view));
+                out = Some(editor::show(
+                    ui,
+                    ("ced.editor", tab.id),
+                    &doc,
+                    palette,
+                    &view,
+                ));
             });
             out.expect("the surface draws its body")
         })

@@ -34,11 +34,11 @@ use documents::controller::{Controller, Effect, Prompt, RecoveredRow, Tab};
 use documents::editor::{EditorMsg, LayoutReport};
 use documents::verbs::{Refusal, code};
 use editor::{View, Wrap};
-use settings::content::{Content, default_font_size};
 use editor_model::mirror::Phase;
 use editor_model::types::{Intent, Invoker, Level, Notice, TabId};
 use serde::Serialize;
 use serde_json::{Value, json};
+use settings::content::{Content, default_font_size};
 use toolkit::command::Origin;
 
 /// The Mono size when nothing sets it, in points.
