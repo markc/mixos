@@ -45,12 +45,14 @@ async fn tab_bus(client: &NodedClient) -> Value {
     tab
 }
 
-/// The peer list from `noded.peers`: its `routing_view` when the reply is the
-/// authority record, otherwise the reply itself when it is already a list.
+/// The peer list from `noded.peers`. The reply holds an `authority` record
+/// whose `routing_view` is the list; a bare list passes through unchanged.
 pub fn peer_list(value: Value) -> Value {
-    match value.get("routing_view") {
+    if value.is_array() {
+        return value;
+    }
+    match value.pointer("/authority/routing_view") {
         Some(view @ Value::Array(_)) => view.clone(),
-        _ if value.is_array() => value,
         _ => json!([]),
     }
 }
@@ -146,8 +148,10 @@ host alpha
     #[test]
     fn peer_list_takes_the_routing_view_of_an_authority_record() {
         let reply = json!({
-            "authority": {"epoch": 21},
-            "routing_view": [{"name": "alpha"}, {"name": "beta"}],
+            "authority": {
+                "epoch": 21,
+                "routing_view": [{"name": "alpha"}, {"name": "beta"}],
+            },
         });
         assert_eq!(peer_list(reply), json!([{"name": "alpha"}, {"name": "beta"}]));
     }
