@@ -274,7 +274,10 @@ fn pro_group<R>(
         }
     }
     if tabs.is_empty() {
-        let rect = Rect::from_min_size(strip.left_top(), vec2(menu_rect.left() - strip.left(), STRIP));
+        let rect = Rect::from_min_size(
+            strip.left_top(),
+            vec2(menu_rect.left() - strip.left(), STRIP),
+        );
         ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| actions(ui));
     }
     let menu = ui.interact(menu_rect, id.with("menu"), Sense::click());
