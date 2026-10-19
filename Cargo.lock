@@ -4870,6 +4870,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "mesh-sign"
+version = "0.1.1"
+dependencies = [
+ "anyhow",
+ "base64 0.22.1",
+ "buildinfo",
+ "chrono",
+ "clap",
+ "curve25519-dalek",
+ "ed25519-dalek",
+ "libc",
+ "mesh-trust",
+ "mix",
+ "rand 0.8.8",
+ "rusqlite",
+ "serde_json",
+]
+
+[[package]]
 name = "mesh-trust"
 version = "0.1.1"
 dependencies = [
