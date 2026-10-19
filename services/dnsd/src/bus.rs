@@ -312,7 +312,12 @@ mod tests {
             .filter(|line| line.contains("owner:\"dnsd\""))
             .map(|line| {
                 assert!(line.contains("class:\"query\""));
-                line.split("name:\"").nth(1).unwrap().split('"').next().unwrap()
+                line.split("name:\"")
+                    .nth(1)
+                    .unwrap()
+                    .split('"')
+                    .next()
+                    .unwrap()
             })
             .collect();
         let mut described: Vec<String> = verb_manifest()

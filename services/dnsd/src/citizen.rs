@@ -325,15 +325,16 @@ mod tests {
         // for exactly that reason. This guards the in-code invariant,
         // not a literal, so it is not circular.
         assert_eq!(DAEMON_GID, DAEMON_UID, "SPEC-10 §2.2: GID == UID");
-        let group = conf.lines().map(|l| l.split_whitespace().collect::<Vec<_>>())
+        let group = conf
+            .lines()
+            .map(|l| l.split_whitespace().collect::<Vec<_>>())
             .find(|f| f.first() == Some(&"g") && f.get(1) == Some(&DAEMON_NAME))
             .expect("sysusers fragment must carry the dnsd group row");
         assert_eq!(group[2].parse::<u32>().unwrap(), DAEMON_GID);
 
         // The renamed account, daemon and Bus service share one identity.
         assert_eq!(
-            DAEMON_NAME,
-            BUS_SERVICE,
+            DAEMON_NAME, BUS_SERVICE,
             "Bus service name must match the daemon identity"
         );
     }
