@@ -860,7 +860,10 @@ mod tests {
                 raw.read_to_end(&mut reply),
             )
             .await;
-            assert!(!reply.starts_with(b"HTTP"), "no plaintext answer: {reply:?}");
+            assert!(
+                !reply.starts_with(b"HTTP"),
+                "no plaintext answer: {reply:?}"
+            );
 
             // Issue: swap a real identity into the SAME handle.
             let tmp = tempfile::tempdir().unwrap();

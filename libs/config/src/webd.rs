@@ -4,7 +4,6 @@
 //! Web service configuration, listeners and ACME issuance settings.
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use crate::node::NodeConfig;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -122,7 +121,7 @@ pub struct WebdConfig {
     /// a WG-only internal listener and a public external listener on
     /// the same daemon — the kernel never completes a handshake for
     /// an internal vhost off the mesh. See
-    /// [`NodeConfig::synthesize_listeners`] for the resolution +
+    /// [`crate::node::NodeConfig::synthesize_listeners`] for the resolution +
     /// validation rules.
     #[serde(default)]
     pub listener: Vec<WebdListenerConfig>,
@@ -233,7 +232,7 @@ impl Default for WebdListenerConfig {
 }
 
 /// A resolved webd listener — the output of
-/// [`NodeConfig::synthesize_listeners`]. Carries the bind address and
+/// [`crate::node::NodeConfig::synthesize_listeners`]. Carries the bind address and
 /// the (validated, complete) set of vhost hosts it serves. webd turns
 /// each of these into a `daemon::listen::ListenerSpec` plus a
 /// scoped `ListenerTls`.

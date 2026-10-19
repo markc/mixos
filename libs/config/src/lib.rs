@@ -47,4 +47,7 @@ pub use strict::{
 
 pub mod acme_policy;
 mod webd;
-pub use acme_policy::{AcmeResolveError, AcmeTosAcceptance, AcmeTosGateError, AcmeVhostPlan, ResolvedWebdAcme, resolve_webd_acme};
+pub use acme_policy::{
+    AcmeResolveError, AcmeTosAcceptance, AcmeTosGateError, AcmeVhostPlan, ResolvedWebdAcme,
+    resolve_webd_acme,
+};

@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Typed node and broker configuration over strict data.
+pub use crate::webd::*;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
-pub use crate::webd::*;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
@@ -593,7 +593,6 @@ impl NodeConfig {
     }
 }
 
-
 #[cfg(test)]
 mod transplanted_tests {
     #[test]
@@ -744,7 +743,10 @@ mod transplanted_tests {
         "#;
         let nc: NodeConfig = crate::from_conf_mix_str(src).expect("parse");
         assert_eq!(nc.maild.as_ref().unwrap().tls.identity.len(), 2);
-        assert_eq!(nc.maild.as_ref().unwrap().tls.identity[0].server_name, "alpha.example.org");
+        assert_eq!(
+            nc.maild.as_ref().unwrap().tls.identity[0].server_name,
+            "alpha.example.org"
+        );
         assert!(nc.maild.as_ref().unwrap().tls.identity[0].default);
         assert!(nc.maild.as_ref().unwrap().tls.identity[0].no_sni_fallback);
         assert_eq!(
