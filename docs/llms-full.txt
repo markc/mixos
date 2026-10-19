@@ -705,6 +705,7 @@ profile: [desktop](desktop.md) and [server](server.md). This page describes the 
 | [daemon](../daemon/README.md) | lib | none (library) | [`libs/daemon`](https://github.com/markc/mixos/tree/main/libs/daemon) | Shared HTTP host parsing, listener guards, TLS and ACME provisioning. |
 | [davproto](../davproto/README.md) | lib | none (library) | [`libs/davproto`](https://github.com/markc/mixos/tree/main/libs/davproto) | CalDAV and CardDAV codecs that convert between JSCalendar or JSContact and iCalendar or vCard, with strong ETags, and no transport or storage. |
 | [design](../design/README.md) | lib | none (library) | [`libs/design`](https://github.com/markc/mixos/tree/main/libs/design) | The MixOS design-token system, which compiles a strict-data theme source into resolved colours, metrics, typography and button tables for one scheme, mode and contrast. |
+| [dnsd](../dnsd/README.md) | service | server | [`services/dnsd`](https://github.com/markc/mixos/tree/main/services/dnsd) |  |
 | [dopus](../dopus/README.md) | app | unclassified | [`apps/dopus`](https://github.com/markc/mixos/tree/main/apps/dopus) | MixOS's twin-pane file manager — two folder trees side by side, Places and Properties sidebars, drag and drop between panes, menus and keys for every action, and a Bus surface for agents that reads… |
 | [edit](../edit/README.md) | lib | none (library) | [`libs/edit`](https://github.com/markc/mixos/tree/main/libs/edit) | Shared headless text buffers used by editd and Ced, with revision checks, transactions, operational transforms, per-origin undo, anchors and search. |
 | [editd](../editd/README.md) · [changelog](../editd/changelog.md) | service | unclassified | [`services/editd`](https://github.com/markc/mixos/tree/main/services/editd) | The edit service, which holds shared text buffers that people and agents edit together, with revision checks, per-origin undo, anchors, atomic save, external-change detection and recovery. |
@@ -833,6 +834,8 @@ checked separately by the layering gate.
 | [ui](https://github.com/markc/mixos/blob/main/services/compd/crates/ui/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
 | [world](https://github.com/markc/mixos/blob/main/services/compd/crates/world/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
 | [x11-wm](https://github.com/markc/mixos/blob/main/services/compd/crates/x11-wm/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
+| [dnsd](https://github.com/markc/mixos/blob/main/services/dnsd/Cargo.toml) | dnsd | service | core | public | 0.3.4 |
+| [dns-core](https://github.com/markc/mixos/blob/main/services/dnsd/crates/dns-core/Cargo.toml) | dnsd | service | core | none | 0.1.1 |
 | [editd](https://github.com/markc/mixos/blob/main/services/editd/Cargo.toml) | editd | service | core | public | 0.2.0 |
 | [hostd](https://github.com/markc/mixos/blob/main/services/hostd/Cargo.toml) | hostd | service | core | public | 0.1.0 |
 | [maild](https://github.com/markc/mixos/blob/main/services/maild/Cargo.toml) | maild | service | core | public | 0.1.1 |
@@ -2413,6 +2416,68 @@ dependencies are [strict](../strict/README.md) (the source format) and
 Build and test with `cargo test -p design`.
 
 The source is [`libs/design`](https://github.com/markc/mixos/tree/main/libs/design).
+
+---
+
+<!-- page: https://mixos.dev/dnsd/ (source: https://mixos.dev/dnsd/README.md) -->
+
+# dnsd — authoritative mesh DNS
+
+`dnsd` answers authoritative DNS queries over UDP and TCP for the zones in
+an explicit strict-data `zones.mix` file. It refuses names outside its
+authority and does not recurse. The private `dns-core` crate owns the zone
+model, parsing, snapshots, persistence, resolver and wire codec.
+
+```text
+/opt/mixos/bin/dnsd --zones /opt/mixos/etc/dnsd/zones.mix --state /var/lib/mixos/dnsd/state --listen 127.0.0.1:5353
+```
+
+All three arguments are required. Repeat `--listen` to bind more than one
+address. Wildcard binds are refused. The default `mixos` feature reads
+`node.conf.mix` using `config` (including `MIXOS_ETC` and
+`MIXOS_NODE_CONFIG`) and accepts the configured WireGuard IP or loopback.
+If node configuration is absent or invalid, non-loopback binds require
+`--allow-non-loopback-listen`, with a warning. The standalone build
+(`--no-default-features`) always uses this explicit-flag posture.
+The citizen retries unavailable bind addresses for up to 30 seconds.
+
+The example zone schema is in
+`services/dnsd/tests/fixtures/zones.mix`. Operators supply their own zones;
+the fixture is test data. `SIGHUP` reloads the file, preserving the last
+good snapshot on failure. Persisted serial floors retain their existing
+v1 format, so a binary rollback can read state written by this port.
+
+The `dnsd` Bus service exposes two read-only queries:
+
+| Verb | Reply |
+|---|---|
+| `dnsd.zone.snapshot` | Serial-excluded configuration hash (decimal string), sorted zone names and count |
+| `dnsd.stats` | Response counters by DNS rcode |
+
+DNS serving continues while the broker is unavailable. Registration
+retries with bounded exponential backoff. Mutation verbs are rejected.
+
+`services/dnsd/units/dnsd.service` runs `/opt/mixos/bin/dnsd` as `dnsd`,
+with UID and GID 506, `CAP_NET_BIND_SERVICE` and the original hardening.
+Its config root is `MIXOS_ETC=/opt/mixos/etc`, with `dnsd/zones.mix` and
+`dnsd/service.env` (`LISTEN=192.0.2.10:53`). Its state root is
+`MIXOS_VAR=/var/lib/mixos`, with `dnsd/state`. The unit sets those roots
+explicitly; changing the roots also requires overriding its argument and
+environment-file paths. Node identity comes from
+`/opt/mixos/etc/node.conf.mix`. The sysusers and tmpfiles fragments are
+owned by the component. Installing these files does not activate DNS.
+
+```text
+cargo test --locked -p dnsd
+cargo test --locked -p dns-core
+cargo test --locked -p dnsd --no-default-features
+cargo build --release --locked -p dnsd
+```
+
+Run Rust commands on the configured build worker. The integration prober
+starts a temporary loopback daemon, drives real UDP and TCP queries and
+retains the source load guard for timing assertions. `--version --json`
+reports the package, version, build commit and timestamp.
 
 ---
 
@@ -32753,6 +32818,7 @@ On every MixOS system.
 
 ## Server components
 
+- [dnsd](../dnsd/README.md) (service)
 - [maild](../maild/README.md) (service): JMAP, SMTP, IMAP and DAV mail service
 - [webd](../webd/README.md) (service): Virtual hosts, CMS routes, embedded Mix handlers and ACME for the MixOS web service.
 

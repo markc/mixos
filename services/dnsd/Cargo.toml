@@ -1,0 +1,50 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+# Copyright 2026 Mark Constable <mc@mixos.dev>
+[package]
+name = "dnsd"
+version = "0.3.4"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "Authoritative WireGuard mesh DNS service"
+
+[package.metadata.mixos]
+component = "dnsd"
+kind = "service"
+layer = "core"
+contract = "public"
+profiles = ["server"]
+
+[lints.clippy]
+mod_module_files = "deny"
+
+[[bin]]
+name = "dnsd"
+path = "src/main.rs"
+
+[features]
+# The default citizen includes node identity, logging and the read-only Bus.
+# Without defaults, the same DNS core serves explicit standalone listeners.
+default = ["mixos"]
+mixos = ["dep:config", "dep:bus", "dep:buildinfo", "dep:logging", "dep:serde_json", "dep:hickory-proto", "tokio/time"]
+
+[dependencies]
+dns-core = { path = "crates/dns-core" }
+tokio = { workspace = true, features = ["net", "rt-multi-thread", "macros", "signal", "sync"] }
+tracing.workspace = true
+tracing-subscriber.workspace = true
+config = { workspace = true, optional = true }
+bus = { workspace = true, features = ["native"], optional = true }
+buildinfo = { workspace = true, optional = true }
+logging = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
+hickory-proto = { version = "0.25", default-features = false, optional = true }
+
+[dev-dependencies]
+hickory-proto = { version = "0.25", default-features = false }
+tempfile.workspace = true
+
+[build-dependencies]
+buildinfo.workspace = true
