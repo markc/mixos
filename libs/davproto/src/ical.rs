@@ -22,7 +22,9 @@ use icalendar::{
 pub const RAW_ICAL_KEY: &str = "mixos:rawICalendar";
 
 /// Retired wire key, used only to reject data that needs migration.
-pub const RETIRED_ICAL_KEY: &str = "mixos:rawICalendar";
+// Legacy key name, kept verbatim: stored objects written under it are refused
+// rather than read. Renaming it would make old data look current.
+pub const RETIRED_ICAL_KEY: &str = "cosmix:rawICalendar";
 
 /// Read the verbatim representation, rejecting retired keys before any fallback.
 pub fn raw_ical(data: &serde_json::Value) -> anyhow::Result<Option<&str>> {

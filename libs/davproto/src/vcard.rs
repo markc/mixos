@@ -16,7 +16,9 @@
 pub const RAW_VCARD_KEY: &str = "mixos:rawVCard";
 
 /// Retired wire key, used only to reject data that needs migration.
-pub const RETIRED_VCARD_KEY: &str = "mixos:rawVCard";
+// Legacy key name, kept verbatim: stored objects written under it are refused
+// rather than read. Renaming it would make old data look current.
+pub const RETIRED_VCARD_KEY: &str = "cosmix:rawVCard";
 
 /// Read the verbatim representation, rejecting retired keys before any fallback.
 pub fn raw_vcard(data: &serde_json::Value) -> anyhow::Result<Option<&str>> {
