@@ -92,7 +92,7 @@ for $pkg in sort(keys($PACKAGES))
   end
   if $pkg == "mixos-server" then
     mkdir($top .. "/share/maild/units", {parents: true})
-    for $u in ["maild@.service", "sysusers.conf"]
+    for $u in ["maild@.service", "maild.service", "sysusers.conf"]
       copy($source .. "/services/maild/units/" .. $u, $top .. "/share/maild/units/" .. $u)
       chmod($top .. "/share/maild/units/" .. $u, 0o644)
     end
