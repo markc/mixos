@@ -614,16 +614,20 @@ fn message(ui: &mut Ui, view: &AccountView, email: &Email, focused: bool, light:
     } else {
         reader::detect(email)
     };
-    ui.add(
-        egui::Label::new(RichText::new(email.subject.as_deref().unwrap_or("")).heading()).wrap(),
+    // Subject with the date right-aligned on its row.
+    egui::Sides::new().wrap().show(
+        ui,
+        |ui| {
+            ui.add(
+                egui::Label::new(RichText::new(email.subject.as_deref().unwrap_or("")).heading())
+                    .wrap(),
+            );
+        },
+        |ui| {
+            ui.label(RichText::new(email.date_short()).weak());
+        },
     );
-    ui.label(
-        RichText::new(crate::label_with(
-            "from-line",
-            &[("from", &email.from_display())],
-        ))
-        .weak(),
-    );
+    // From with the recipients right-aligned on its row.
     let to = email
         .to
         .as_ref()
@@ -634,10 +638,23 @@ fn message(ui: &mut Ui, view: &AccountView, email: &Email, focused: bool, light:
                 .join(", ")
         })
         .unwrap_or_default();
-    if !to.is_empty() {
-        ui.label(RichText::new(crate::label_with("to-line", &[("to", &to)])).weak());
-    }
-    ui.label(RichText::new(email.date_short()).weak());
+    egui::Sides::new().wrap().show(
+        ui,
+        |ui| {
+            ui.label(
+                RichText::new(crate::label_with(
+                    "from-line",
+                    &[("from", &email.from_display())],
+                ))
+                .weak(),
+            );
+        },
+        |ui| {
+            if !to.is_empty() {
+                ui.label(RichText::new(crate::label_with("to-line", &[("to", &to)])).weak());
+            }
+        },
+    );
     toolkit::bars::hairline(ui);
     light_content(ui, light, |ui| {
         // The keys and the area share this ui, so they share the scroll state.
