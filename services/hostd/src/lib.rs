@@ -5,6 +5,7 @@
 pub mod bus_loop;
 pub mod caller;
 pub mod desk;
+pub mod unit;
 pub mod frame;
 pub mod freeze;
 pub mod info;

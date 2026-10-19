@@ -1,0 +1,186 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
+//! Unit control: start, stop or restart one system unit on this host. The
+//! unit and the action come from the caller's grant: `units` and `actions`
+//! limits. A grant names exactly the units its holder may control, so policy
+//! decides what a caller can touch, and a request can never reach past it.
+//!
+//! hostd runs `systemctl ACTION UNIT` itself, so a caller needs no polkit
+//! rule and no sudo. The verb never touches hostd's own units: a restart of
+//! hostd from its own callers would cut the grant that asked for it.
+use crate::{
+    caller::Origin,
+    receipt::{Outcome, Receipt},
+};
+use serde::Deserialize;
+use serde_json::{Value, json};
+use std::{path::Path, time::Duration};
+
+pub const VERB: &str = "unit.control";
+/// The grant limit that names the units a caller may control.
+pub const LIMIT_UNITS: &str = "units";
+/// The grant limit that names the actions a caller may take.
+pub const LIMIT_ACTIONS: &str = "actions";
+const SYSTEMCTL: &str = "systemctl";
+/// `systemctl` waits for the job, so this is the longest a unit may take to
+/// start or stop before the caller is told it timed out.
+const BUDGET: Duration = Duration::from_secs(60);
+/// Units hostd never controls, whatever a grant says.
+const REFUSED: &[&str] = &["hostd.service", "hostd.socket"];
+pub const ACTIONS: &[&str] = &["start", "stop", "restart"];
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Request {
+    pub unit: String,
+    pub action: String,
+}
+
+/// A `.service` unit name: a stem of letters, digits and `-_.@:`, so a name
+/// can never carry a slash, a space or a path.
+pub fn valid_unit(name: &str) -> bool {
+    let Some(stem) = name.strip_suffix(".service") else {
+        return false;
+    };
+    !stem.is_empty()
+        && stem.len() <= 120
+        && stem
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | '@' | ':'))
+}
+
+pub fn valid_action(action: &str) -> bool {
+    ACTIONS.contains(&action)
+}
+
+/// Run `action` on `unit`, then record it. The caller has passed the grant
+/// gate with `units` and `actions` set to these same values. A unit action
+/// has no undo, so its receipt is never undoable: `hostd.undo` refuses it.
+pub async fn act(
+    state: &Path,
+    unit: &str,
+    action: &str,
+    grant: &str,
+    origin: &Origin,
+) -> Result<Value, Value> {
+    act_with(SYSTEMCTL, state, unit, action, grant, origin).await
+}
+
+/// `act`, with the program that runs the action named: tests pass a
+/// stand-in for `systemctl`.
+async fn act_with(
+    systemctl: &str,
+    state: &Path,
+    unit: &str,
+    action: &str,
+    grant: &str,
+    origin: &Origin,
+) -> Result<Value, Value> {
+    if REFUSED.contains(&unit) {
+        return Err(json!({"status":"refused","verb":VERB,"unit":unit,
+            "message":"hostd does not control its own units"}));
+    }
+    let run = tokio::time::timeout(
+        BUDGET,
+        tokio::process::Command::new(systemctl)
+            .args([action, unit])
+            .output(),
+    )
+    .await
+    .map_err(|_| json!({"status":"timeout","verb":VERB,"unit":unit,"action":action}))?
+    .map_err(|e| json!({"status":"internal","verb":VERB,"message":e.to_string()}))?;
+    if !run.status.success() {
+        let message = String::from_utf8_lossy(&run.stderr).trim().to_owned();
+        tracing::warn!(target: "hostd::audit", verb = VERB, unit, action, %message, "unit action failed");
+        return Err(json!({"status":"unit_failed","verb":VERB,"unit":unit,
+            "action":action,"message":message}));
+    }
+    let mut receipt = Receipt::new(VERB, grant, origin, json!({"unit": unit, "action": action}));
+    receipt.outcome = Outcome::Applied;
+    receipt
+        .save(state)
+        .map_err(|e| json!({"status":"internal","verb":VERB,"message":format!("{e:#}")}))?;
+    tracing::info!(target: "hostd::audit", verb = VERB, unit, action, receipt = %receipt.id, "unit action done");
+    Ok(json!({"unit": unit, "action": action, "receipt": receipt.id}))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::caller::Caller;
+
+    fn origin() -> Origin {
+        Origin::Local(Caller {
+            uid: 1002,
+            gid: 1002,
+            pid: Some(1),
+            cgroup: Some("/user.slice/user-1002.slice/user@1002.service/app.slice/mixtrayd.service".into()),
+            verified: true,
+            host_ns: false,
+        })
+    }
+
+    fn fixture() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::create_dir_all(dir.path().join("state")).expect("state dir");
+        dir
+    }
+
+    #[test]
+    fn unit_names_are_plain_service_names() {
+        assert!(valid_unit("noded.service"));
+        assert!(valid_unit("monitord.service"));
+        assert!(valid_unit("getty@tty1.service"));
+        assert!(!valid_unit("noded"));
+        assert!(!valid_unit(".service"));
+        assert!(!valid_unit("../noded.service"));
+        assert!(!valid_unit("a b.service"));
+        assert!(!valid_unit("noded.socket"));
+        assert!(!valid_unit(&format!("{}.service", "a".repeat(121))));
+    }
+
+    #[test]
+    fn only_start_stop_and_restart_are_actions() {
+        assert!(valid_action("start"));
+        assert!(valid_action("stop"));
+        assert!(valid_action("restart"));
+        assert!(!valid_action("kill"));
+        assert!(!valid_action("daemon-reload"));
+    }
+
+    #[tokio::test]
+    async fn hostd_never_controls_its_own_units() {
+        let dir = fixture();
+        let state = dir.path().join("state");
+        let err = act_with("true", &state, "hostd.service", "restart", "g", &origin())
+            .await
+            .expect_err("refused");
+        assert_eq!(err["status"], "refused");
+    }
+
+    #[tokio::test]
+    async fn a_unit_action_is_recorded_and_never_undoable() {
+        let dir = fixture();
+        let state = dir.path().join("state");
+        let out = act_with("true", &state, "noded.service", "restart", "g", &origin())
+            .await
+            .expect("done");
+        assert_eq!(out["unit"], "noded.service");
+        assert_eq!(out["action"], "restart");
+        let receipt = Receipt::load(&state, out["receipt"].as_str().unwrap()).expect("saved");
+        assert_eq!(receipt.verb, VERB);
+        assert_eq!(receipt.outcome, Outcome::Applied);
+        assert_eq!(receipt.summary["unit"], "noded.service");
+    }
+
+    #[tokio::test]
+    async fn a_unit_that_fails_is_refused_without_a_receipt() {
+        let dir = fixture();
+        let state = dir.path().join("state");
+        let err = act_with("false", &state, "webd.service", "start", "g", &origin())
+            .await
+            .expect_err("failed");
+        assert_eq!(err["status"], "unit_failed");
+        assert!(std::fs::read_dir(&state).expect("state").next().is_none());
+    }
+}

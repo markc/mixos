@@ -7,7 +7,7 @@ use crate::{
     desk, freeze, info, link, net,
     policy::{self, Policy, RateLimiter},
     receipt::{self, Outcome, Receipt},
-    txn, wg, wifi,
+    txn, unit, wg, wifi,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -98,6 +98,11 @@ pub const VERBS: &[Verb] = &[
     Verb {
         name: "desk.stop",
         summary: "Power off the desk machine this session's grant names; the host stays up",
+        tier: Tier::Write,
+    },
+    Verb {
+        name: "unit.control",
+        summary: "Start, stop or restart one system unit the caller's grant names; hostd never controls its own units",
         tier: Tier::Write,
     },
 ];
@@ -288,6 +293,35 @@ async fn serve(
                 vec![(desk::LIMIT.to_owned(), desk)],
                 move |host, origin, grant| async move {
                     desk::act(&host.root, &host.state, &verb, &run_desk, &grant, &origin).await
+                },
+            )
+            .await
+        }
+        unit::VERB => {
+            let request: unit::Request = decode(body)?;
+            if !unit::valid_unit(&request.unit) {
+                return Err(
+                    json!({"status":"bad_request","message":"unit must be a .service name of letters, digits and -_.@:"}),
+                );
+            }
+            if !unit::valid_action(&request.action) {
+                return Err(
+                    json!({"status":"bad_request","message":"action must be start, stop or restart"}),
+                );
+            }
+            let limits = vec![
+                (unit::LIMIT_UNITS.to_owned(), request.unit.clone()),
+                (unit::LIMIT_ACTIONS.to_owned(), request.action.clone()),
+            ];
+            let (run_unit, run_action) = (request.unit, request.action);
+            write(
+                host,
+                origin,
+                peer,
+                name,
+                limits,
+                move |host, origin, grant| async move {
+                    unit::act(&host.state, &run_unit, &run_action, &grant, &origin).await
                 },
             )
             .await
@@ -748,7 +782,8 @@ mod tests {
                 "net.wifi.connect",
                 "net.wg.apply",
                 "desk.restart",
-                "desk.stop"
+                "desk.stop",
+                "unit.control"
             ]
         );
         let read_only: Vec<bool> = verbs.iter().map(|v| v.read_only).collect();
@@ -756,7 +791,7 @@ mod tests {
             read_only,
             [
                 true, true, true, true, true, false, false, false, false, false, false, false,
-                false, false
+                false, false, false
             ]
         );
     }
