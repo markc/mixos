@@ -499,28 +499,24 @@ fn up_and_down_move_the_selection_and_enter_opens() {
     h.get_by_label_contains("Minutes").click();
     h.run();
     assert_eq!(opened(&mut h), ["L3"]);
+    // Down moves the keyboard's row and opens it, as a click does.
     h.key_press(egui::Key::ArrowDown);
     h.run();
-    let work = h.state_mut().state.take_work();
-    assert!(
-        work.is_empty(),
-        "Down neither opens nor marks read: {work:?}"
-    );
+    assert_eq!(opened(&mut h), ["L4"]);
     let mail = &h.state().state.account("home").unwrap().mail;
     assert_eq!(mail.table.selection, ["L4"]);
-    assert!(!mail.emails[3].is_read(), "the unread row stays unread");
     h.key_press(egui::Key::ArrowUp);
     h.run();
     h.key_press(egui::Key::ArrowUp);
     h.run();
-    assert!(opened(&mut h).is_empty(), "nor does Up");
+    assert_eq!(opened(&mut h), ["L3", "L2"], "each row Up reaches opens");
     let mail = &h.state().state.account("home").unwrap().mail;
     assert_eq!(mail.table.selection, ["L2"]);
     assert_eq!(mail.table.focus, Some(1));
-    // Enter opens the keyboard's row.
+    // Enter on the row already open does not open it again.
     h.key_press(egui::Key::Enter);
     h.run();
-    assert_eq!(opened(&mut h), ["L2"]);
+    assert!(opened(&mut h).is_empty(), "the open row is not asked for twice");
 }
 
 #[test]

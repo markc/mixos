@@ -668,6 +668,9 @@ struct Tickets {
     /// The mailbox the latest open was issued under: its answer is dropped
     /// when the selection has changed since.
     open_mailbox: Option<String>,
+    /// The email the latest open asked for, until a different one is asked
+    /// for. A double-click's second half must not ask for it again.
+    open_requested: Option<String>,
     events: u64,
     contacts: u64,
     send: u64,
@@ -845,6 +848,7 @@ impl AccountView {
     fn open_email(&mut self, id: String, reply: Option<u64>, work: &mut Vec<Work>) {
         self.tickets.open += 1;
         self.tickets.open_mailbox = self.mail.selected.clone();
+        self.tickets.open_requested = Some(id.clone());
         work.push(Work::OpenEmail {
             account: self.work(),
             ticket: self.tickets.open,
@@ -2949,7 +2953,8 @@ impl State {
         };
         match &event {
             TableEvent::Activated { key, .. } => {
-                let opened = view.mail.open.as_ref().is_some_and(|e| e.id == *key);
+                let opened = view.mail.open.as_ref().is_some_and(|e| e.id == *key)
+                    || view.tickets.open_requested.as_deref() == Some(key.as_str());
                 if !view.mail.table.is_selected(key) {
                     view.mail.everything = false;
                     view.cancel_fetch();
@@ -2965,7 +2970,8 @@ impl State {
             TableEvent::Selected { key, pick, .. } => {
                 let key = key.clone();
                 let plain = matches!(pick, toolkit::datatable::Pick::Only);
-                let opened = view.mail.open.as_ref().is_some_and(|e| e.id == key);
+                let opened = view.mail.open.as_ref().is_some_and(|e| e.id == key)
+                    || view.tickets.open_requested.as_deref() == Some(key.as_str());
                 view.cancel_fetch();
                 view.mail.table.apply(&event, SelectionMode::Multi);
                 view.mail.everything = false;
@@ -7367,7 +7373,8 @@ pub(crate) mod tests {
                 .iter()
                 .any(|w| matches!(w, Work::OpenEmail { id, .. } if id == "E2"))
         );
-        // A plain click is a selection of its own again, and opens its row.
+        // A plain click is a selection of its own again. E1 is the open email
+        // already, so the click does not ask for it again.
         state.mail_table(
             "a",
             TableEvent::Selected {
@@ -7383,7 +7390,7 @@ pub(crate) mod tests {
             state
                 .take_work()
                 .iter()
-                .any(|w| matches!(w, Work::OpenEmail { id, .. } if id == "E1"))
+                .all(|w| !matches!(w, Work::OpenEmail { .. }))
         );
         assert_eq!(grouped(2866), "2,866");
         assert_eq!(grouped(12), "12");
