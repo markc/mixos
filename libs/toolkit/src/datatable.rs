@@ -435,7 +435,6 @@ impl<'a> DataTable<'a> {
                             vertical_arrows: true,
                             horizontal_arrows: true,
                             escape,
-                            ..EventFilter::default()
                         },
                     )
                 });
