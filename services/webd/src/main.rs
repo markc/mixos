@@ -10953,8 +10953,8 @@ mod session_login_tests {
         let mut cmd_headers = std::collections::BTreeMap::new();
         cmd_headers.insert("email".to_string(), EMAIL.to_string());
         let cmd = ::bus::native_client::IncomingCommand {
-: 0,
-: String::new(),
+            generation: 0,
+            from: String::new(),
             command: "webd.session.revoke".into(),
             id: None,
             args: serde_json::Value::Null,

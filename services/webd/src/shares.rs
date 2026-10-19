@@ -1491,8 +1491,8 @@ pub(crate) mod tests {
     async fn bus_is_mesh_open_and_revoke_is_account_scoped() {
         let (_tmp, node, vhost) = fixture().await;
         let mut cmd = ::bus::native_client::IncomingCommand {
-: 0,
-: "any-mesh-peer".into(),
+            generation: 0,
+            from: "any-mesh-peer".into(),
             command: "webd.share.create".into(),
             id: None,
             args: json!({"vhost":"pim.example", "account":"user@example.test", "rel_path":"file"}),

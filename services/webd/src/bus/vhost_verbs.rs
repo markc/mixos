@@ -812,8 +812,8 @@ mod tests {
             hdrs.insert((*k).to_string(), (*v).to_string());
         }
         IncomingCommand {
-: 0,
-: String::new(),
+            generation: 0,
+            from: String::new(),
             command: verb.to_string(),
             id: None,
             args: serde_json::Value::Null,
@@ -828,8 +828,8 @@ mod tests {
     /// `args`, not only headers.
     fn cmd_with_args(verb: &str, args: JsonValue) -> IncomingCommand {
         IncomingCommand {
-: 0,
-: String::new(),
+            generation: 0,
+            from: String::new(),
             command: verb.to_string(),
             id: None,
             args,
