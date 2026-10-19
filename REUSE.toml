@@ -141,3 +141,9 @@ path = ["docs/_web/icons/*.svg", "docs/_web/icons/LICENSE-Lucide.txt"]
 precedence = "override"
 SPDX-FileCopyrightText = "2026 Lucide Icons and Contributors; Cole Bemis (Feather-derived icons)"
 SPDX-License-Identifier = "ISC AND MIT"
+
+[[annotations]]
+path = ["services/webd/vhosts/assets/lucide.min.js", "services/webd/vhosts/assets/LICENSE-lucide.txt"]
+precedence = "override"
+SPDX-FileCopyrightText = "Lucide Contributors; Cole Bemis (Feather-derived icons)"
+SPDX-License-Identifier = "ISC AND MIT"

@@ -679,7 +679,8 @@ mod tests {
 
     fn cmd(command: &str) -> IncomingCommand {
         IncomingCommand {
-            from: String::new(),
+: 0,
+: String::new(),
             command: command.to_string(),
             id: None,
             args: serde_json::Value::Null,

@@ -101,7 +101,7 @@ impl Registry {
             if registry.sets.len() >= MAX_PUBLISHED_SETS {
                 bail!("at most {MAX_PUBLISHED_SETS} published asset sets may be served");
             }
-            let set = AssetSet::open_published(root, &set_id)
+            let set = AssetSet::open(root, &set_id)
                 .with_context(|| format!("opening shared asset set {set_id}"))?;
             let mut files = HashMap::new();
             for file in &set.manifest().files {

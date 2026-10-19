@@ -113,3 +113,11 @@ transplanted from cosmix/src/crates/webd at
 044aec63a5f8d0fa4ad4246f802c487f17dfdfa9, Mark Constable, MIT OR Apache-2.0.
 Original assets retained: vhosts/assets/site.js, favicon.svg, favicon.ico
 and dcs-wordmark.svg; the source attribution applies to each.
+
+Web assets (services/webd/vhosts/assets), file-by-file clearance:
+app.css, base.css, base.js, site.css, site.js, favicon.svg, favicon.ico,
+dcs-wordmark.svg: Mark Constable, MIT OR Apache-2.0 (original header
+attribution retained where present).
+lucide.min.js: lucide 1.17.0, Lucide Contributors, ISC, with the
+Feather-derived icons also Cole Bemis, MIT. Its upstream @license
+header is retained; the complete notices ship as LICENSE-lucide.txt.

@@ -33,7 +33,7 @@ logging = { workspace = true, features = ["props"] }
 bus = { workspace = true, features = ["native"] }
 buildinfo.workspace = true
 props = { workspace = true, features = ["sqlite", "router"] }
-mix = { workspace = true, features = ["json", "crypto", "url", "markdown", "datetime", "datastar", "xml", "http"] }
+mix = { workspace = true, features = ["serde", "json", "crypto", "url", "markdown", "datetime", "datastar", "xml", "http"] }
 axum.workspace = true
 # `http_body::Body::size_hint` — lets the public-response cache skip buffering a
 # body whose upper bound exceeds its collect ceiling (serve uncached rather than
@@ -63,7 +63,7 @@ rusqlite = { workspace = true, features = ["bundled", "hooks"] }
 sha2 = { workspace = true }
 clap.workspace = true
 mimalloc.workspace = true
-reqwest.workspace = true
+reqwest = { workspace = true, features = ["stream"] }
 tokio-rustls.workspace = true
 rustls.workspace = true
 rustls-pemfile = "2"
