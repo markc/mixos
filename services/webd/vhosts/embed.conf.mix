@@ -1,0 +1,33 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+# Copyright 2026 Mark Constable <mc@mixos.dev>
+# Strict data for tools/lib/verb_registry_embed.mix. Paths are relative to here.
+# The generated route stub loads site.conf.mix ($SITE), lib/lib.mix, then
+# apps/h_<handler>.mix (routes.mix). Helpers and widgets share that scope.
+# Directory contexts are inherited; fragment contexts add dependencies supplied
+# by their embedding page. These are source paths, never lists of function names.
+schema: 1
+
+# services/webd/src/mix_handler.rs: eval.set_global supplies the request values.
+# SITE is supplied by the stub's site.conf.mix, not the Rust request injector.
+globals: ["SITE", "METHOD", "PATH", "QUERY", "HOST", "BODY", "HEADERS", "SESSION", "CSRF", "SIGNALS"]
+
+directories: [
+  {path: "apps", context: ["lib/lib.mix"]},
+  {path: "widgets", context: ["lib/lib.mix"]},
+  {path: "lib", context: ["lib/lib.mix"]}
+]
+
+fragments: [
+  {path: "apps/paypal.mix", context: ["apps/biz.mix"]},
+  {path: "apps/stripe.mix", context: ["apps/biz.mix"]},
+  {path: "apps/shop.mix", context: ["apps/biz.mix"]},
+  {path: "apps/sw.mix", context: ["apps/biz.mix"]},
+  {path: "lib/resource_engine.mix", context: ["apps/biz.mix", "widgets/forms.mix", "widgets/datatable.mix", "widgets/admin_resource.mix", "widgets/modals.mix"]},
+  {path: "widgets/admin_resource.mix", context: ["widgets/datatable.mix", "widgets/modals.mix"]},
+  {path: "widgets/detail.mix", context: ["widgets/forms.mix"]},
+  {path: "widgets/forms.mix", context: ["widgets/modals.mix"]},
+  {path: "widgets/modals.mix", context: ["widgets/forms.mix"]}
+]
+
+# Data-only registries have no embedding scope; they still undergo native lint.
+standalone: ["routes.mix", "apps/tools_registry.mix", "lib/foundation_registry.mix"]

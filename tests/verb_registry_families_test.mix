@@ -181,14 +181,14 @@ fn concrete_app()
 end
 
 -- Lint answers for the fake binary. FILE stands for the file it is given.
-$PAY_OK = '{"schema_version":2,"tool":"mix lint","files":["FILE"],"handlers":[{"command":"@.call","file":"FILE","line":2}],"diagnostics":[],"summary":{"errors":0,"warnings":0}}'
+$PAY_OK = '{"schema_version":3,"tool":"mix lint","files":["FILE"],"handlers":[{"command":"@.call","file":"FILE","line":2}],"diagnostics":[],"summary":{"errors":0,"warnings":0}}'
 $PAY_BAD_LINE = replace($PAY_OK, "\"line\":2", "\"line\":0")
 $PAY_EMPTY_CMD = replace($PAY_OK, "\"command\":\"@.call\"", "\"command\":\"\"")
 $PAY_ERRORS = replace($PAY_OK, "\"errors\":0", "\"errors\":1")
 $PAY_WRONG_FILE = replace($PAY_OK, "\"files\":[\"FILE\"]", "\"files\":[\"/elsewhere/other.mix\"]")
-$PAY_OLD_SCHEMA = replace($PAY_OK, "\"schema_version\":2", "\"schema_version\":1")
+$PAY_OLD_SCHEMA = replace($PAY_OK, "\"schema_version\":3", "\"schema_version\":1")
 $PAY_NO_HANDLERS = '{"schema_version":1,"tool":"mix lint","files":["FILE"],"diagnostics":[],"summary":{"errors":0,"warnings":0}}'
-$PAY_TRUNCATED = '{"schema_version":2,"tool":"mix lint","files":["FILE"],"handlers":[{"command":"@.call"'
+$PAY_TRUNCATED = '{"schema_version":3,"tool":"mix lint","files":["FILE"],"handlers":[{"command":"@.call"'
 
 -- A fake native lint: a Mix script under its own shebang. It prints payload
 -- with FILE replaced by the file it is given (its last argument) and exits
@@ -360,7 +360,7 @@ try
   -- each other answer must fail with its reason in the report.
   fake_case("good", $PAY_OK, 0, true, "")
   fake_case("no-handlers", $PAY_NO_HANDLERS, 0, false, "native Mix lacks parsed handler metadata; rebuild current Mix")
-  fake_case("old-schema", $PAY_OLD_SCHEMA, 0, false, "lint schema_version is not 2")
+  fake_case("old-schema", $PAY_OLD_SCHEMA, 0, false, "lint schema_version is not 3")
   fake_case("truncated", $PAY_TRUNCATED, 0, false, "lint output is not a JSON object")
   fake_case("nonzero-exit", $PAY_OK, 3, false, "does not lint (exit 3)")
   fake_case("wrong-file", $PAY_WRONG_FILE, 0, false, "file attribution")

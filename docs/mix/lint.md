@@ -201,13 +201,13 @@ cannot ship without its explanation.
 
 ## Machine output
 
-`--json` (D3 schema, `schema_version: 2` since 0.63.0 — the severity
-domain gained `"note"` and `summary` gained `notes`; no in-tree consumer
-parsed v1, inventoried 2026-09-03):
+`--json` uses D3 schema 3: parsed `functions` metadata is added to schema 2.
+Every existing key keeps its meaning, including `"note"` severity and
+`summary.notes` introduced in schema 2:
 
 ```json
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "tool": "mix lint",
   "mix_version": "0.63.0",
   "files": ["worker.mix"],
@@ -220,6 +220,7 @@ parsed v1, inventoried 2026-09-03):
   }],
   "capabilities": ["fs-read", "network", "process"],
   "handlers": [],
+  "functions": [],
   "summary": {"errors": 1, "warnings": 0, "notes": 0, "denied_warnings": false}
 }
 ```
@@ -235,7 +236,7 @@ exercise — data, not warnings.
 `strict_data_files` lists inputs validated by the strict-data fallback rather
 than by the script analyzer.
 
-`handlers` (additive, still `schema_version` 2) lists each `on <command>`
+`handlers` (introduced in schema 2) lists each `on <command>`
 declaration the parser built, across every input file, in source order:
 `{"command": "ping.one", "file": "ping.mix", "line": 2}`. `file` is the path as
 given, or `"-"` for stdin. The field is always present: it is
@@ -249,6 +250,15 @@ reachable. Text inside comments, quoted strings and heredocs is never a
 declaration. Bodies of `ssh_mix` remote programs are not included either,
 because they are literal payloads, not local source. Lint never executes the
 file to collect them.
+
+`functions` lists named `fn`/`function` definitions as
+`{"name": "esc", "file": "lib.mix", "line": 4}`. It uses the same AST walker
+and file attribution as `handlers`, keeps nested and duplicate declarations,
+and excludes comments, strings, heredocs and remote programs. It is always
+present, including an empty list for strict data or a parse failure. Like
+handler metadata, it records declarations rather than proving reachability.
+Embedders can derive external function names from declared context files;
+`services/webd/vhosts/embed.conf.mix` is the webd source gate's declaration.
 
 ## Remote bodies — lint sees inside `ssh_mix` (0.69.0)
 

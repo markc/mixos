@@ -74,7 +74,7 @@ fn json_schema_v2_carries_notes() {
     let (code, out) = lint(&["--json", path.to_str().unwrap()]);
     assert_eq!(code, 0, "{out}");
     let v: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
-    assert_eq!(v["schema_version"], 2);
+    assert_eq!(v["schema_version"], 3);
     assert_eq!(v["summary"]["notes"], 2, "{out}");
     assert_eq!(v["summary"]["warnings"], 0, "notes are not warnings: {out}");
     assert!(

@@ -266,6 +266,10 @@
 <h2 id="unreleased">Unreleased</h2>
 <h3 id="added">Added</h3>
 <ul>
+<li><code>analyzer::Analysis.functions</code> reports named function declarations with
+<code>name</code>, <code>file</code> and <code>line</code>, including nested and duplicate definitions but
+excluding quoted and remote source. <code>mix lint --json</code> and <code>--data</code> expose
+this list in schema 3; every existing key and diagnostic retains its meaning.</li>
 <li>Add the <code>archive</code> feature with the <code>tar_list</code>, <code>tar_unpack</code> and <code>tar_pack</code>
 builtins. Archives use zstd (default), gzip or no codec. <code>tar_unpack</code>
 validates every member, extracts into a staging directory and renames it

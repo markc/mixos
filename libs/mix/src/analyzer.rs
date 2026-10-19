@@ -146,6 +146,15 @@ pub struct HandlerDeclaration {
     pub line: usize,
 }
 
+/// A named function definition in this file's AST. Structural evidence only;
+/// nested and duplicate declarations are kept, but literal remote code is not.
+#[derive(Debug, Clone)]
+pub struct FunctionDeclaration {
+    pub name: String,
+    pub file: Option<String>,
+    pub line: usize,
+}
+
 /// The result of one file's analysis.
 #[derive(Debug, Clone, Default)]
 pub struct Analysis {
@@ -157,6 +166,8 @@ pub struct Analysis {
     /// Every `on` declaration in the file, in walker order, duplicates kept.
     /// Filled by [`analyze`] only; remote `ssh_mix` bodies are not included.
     pub handlers: Vec<HandlerDeclaration>,
+    /// Named definitions in walker order, from the local AST only.
+    pub functions: Vec<FunctionDeclaration>,
 }
 
 /// Runtime-injected variable names a lint must treat as declared.
@@ -513,6 +524,13 @@ pub fn analyze(stmts: &[Stmt], file: Option<&str>, cfg: &AnalyzerConfig) -> Anal
         if let StmtKind::On { command, .. } = &stmt.kind {
             analysis.handlers.push(HandlerDeclaration {
                 command: command.clone(),
+                file: file.map(str::to_owned),
+                line: stmt.line,
+            });
+        }
+        if let StmtKind::FunctionDef { name, .. } = &stmt.kind {
+            analysis.functions.push(FunctionDeclaration {
+                name: name.clone(),
                 file: file.map(str::to_owned),
                 line: stmt.line,
             });

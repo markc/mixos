@@ -4,6 +4,10 @@
 
 ### Added
 
+- `analyzer::Analysis.functions` reports named function declarations with
+  `name`, `file` and `line`, including nested and duplicate definitions but
+  excluding quoted and remote source. `mix lint --json` and `--data` expose
+  this list in schema 3; every existing key and diagnostic retains its meaning.
 - Add the `archive` feature with the `tar_list`, `tar_unpack` and `tar_pack`
   builtins. Archives use zstd (default), gzip or no codec. `tar_unpack`
   validates every member, extracts into a staging directory and renames it
