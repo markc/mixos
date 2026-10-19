@@ -34,11 +34,13 @@ fn schema_three_functions_are_attributed_without_execution() {
         } else {
             mix::from_value(&mix::parse_data(&text).unwrap()).unwrap()
         };
-        assert_eq!(report["schema_version"], 3);
-        assert_eq!(
-            report["functions"],
-            serde_json::json!([{"name": "esc", "file": source, "line": 1}])
-        );
+        // Strict data has one numeric type (f64), unlike JSON's integer type.
+        assert_eq!(report["schema_version"].as_f64(), Some(3.0));
+        let functions = report["functions"].as_array().unwrap();
+        assert_eq!(functions.len(), 1);
+        assert_eq!(functions[0]["name"], "esc");
+        assert_eq!(functions[0]["file"], source.to_str().unwrap());
+        assert_eq!(functions[0]["line"].as_f64(), Some(1.0));
         for key in [
             "tool",
             "mix_version",
