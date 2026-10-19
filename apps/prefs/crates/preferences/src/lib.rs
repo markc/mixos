@@ -15,6 +15,7 @@ pub mod model;
 pub mod navigation;
 pub mod picker;
 pub mod terminal;
+pub mod text;
 pub mod wallpaper;
 
 pub use appearance::Look;

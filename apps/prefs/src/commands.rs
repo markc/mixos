@@ -94,6 +94,11 @@ pub fn registry() -> Registry<Engine> {
             (|e: &mut Engine| e.set_section(Section::Terminal)) as fn(&mut Engine),
         ),
         (
+            Section::Text,
+            Icon::Type,
+            (|e: &mut Engine| e.set_section(Section::Text)) as fn(&mut Engine),
+        ),
+        (
             Section::Desktop,
             Icon::Monitor,
             (|e: &mut Engine| e.set_section(Section::Desktop)) as fn(&mut Engine),

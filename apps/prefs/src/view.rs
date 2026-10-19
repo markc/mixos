@@ -33,6 +33,7 @@ use toolkit::titlebar::{self, Control};
 use toolkit::toggle::Toggle;
 use toolkit::{Icon, Registry, Strings, bars, icons, panel, tooltip};
 mod email;
+mod text;
 mod wallpaper;
 
 /// One interaction from this frame.
@@ -50,6 +51,8 @@ pub enum UiEvent {
     Look(Look),
     /// An edit in the Terminal group: one `terminal.*` field.
     Terminal(Setting),
+    /// An edit in the Text section: one prose surface's style.
+    Text(preferences::text::Setting),
     WallpaperTarget(Option<String>),
     WallpaperKind(preferences::wallpaper::Kind),
     WallpaperColour(String),
@@ -170,6 +173,7 @@ pub fn view(
                     .show(ui, |ui| match section {
                         Section::Themes => appearance(ui, engine, commands, strings, &mut events),
                         Section::Terminal => terminal(ui, engine, commands, strings, &mut events),
+                        Section::Text => text::section(ui, engine, &mut events),
                         Section::Wallpapers => {
                             wallpaper::controls(ui, engine, commands, strings, &mut events)
                         }

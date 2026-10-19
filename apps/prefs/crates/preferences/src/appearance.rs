@@ -280,6 +280,8 @@ pub(crate) enum Call {
     Terminal(String, Edit),
     /// One email change (App Settings → Email), under its operation id.
     Email(String, EmailEdit),
+    /// One text-style change (the Text section), under its operation id.
+    Text(String, crate::text::TextEdit),
 }
 
 impl Call {
@@ -289,9 +291,9 @@ impl Call {
             Call::Apply(_) => "settings.apply",
             Call::Receipt(_) => "settings.status",
             Call::Terminal(_, Edit::Reset) | Call::Email(_, EmailEdit::Reset) => "settings.reset",
-            Call::Terminal(_, Edit::Set(..)) | Call::Email(_, EmailEdit::Apply(_)) => {
-                "settings.apply"
-            }
+            Call::Terminal(_, Edit::Set(..))
+            | Call::Email(_, EmailEdit::Apply(_))
+            | Call::Text(..) => "settings.apply",
         }
     }
 }
@@ -316,6 +318,9 @@ pub struct Appearance {
     /// The email app's settings as settingsd holds them, from the same read;
     /// the Email section shows these, never a copy.
     pub email: Option<settings::email::Email>,
+    /// The Ced app's settings as settingsd holds them, from the same read;
+    /// the Text section shows these.
+    pub ced: Option<settings::content::Ced>,
     /// The profile names a design package of its own (`appearance.source`):
     /// the window keeps the session theme rather than the embedded design.
     pub custom_source: bool,
@@ -371,6 +376,7 @@ impl Default for Appearance {
             current: None,
             terminal: None,
             email: None,
+            ced: None,
             custom_source: false,
             keymaps: Default::default(),
             fence: None,
@@ -699,6 +705,19 @@ impl Engine {
             }
             // Every path of one change in one fenced batch: settingsd checks
             // the group as it leaves them all, never a state between.
+            Call::Text(operation, edit) => {
+                let (incarnation, revision) = self.look.fence.clone().expect("a fenced apply");
+                serde_json::to_value(ApplyRequest {
+                    binding: self.look.binding.clone(),
+                    expected_incarnation: incarnation,
+                    expected_revision: revision,
+                    operation_id: operation.clone(),
+                    changes: BTreeMap::from([(edit.path.clone(), edit.value.clone())]),
+                    reset: Vec::new(),
+                    request_digest: None,
+                })
+                .expect("an apply request serialises")
+            }
             Call::Email(operation, edit) => {
                 let (incarnation, revision) = self.look.fence.clone().expect("a fenced apply");
                 let (changes, reset) = match edit {
@@ -981,6 +1000,7 @@ impl Engine {
                 Call::Apply(submitted) => self.apply_answered(submitted, answer),
                 Call::Receipt(submitted) => self.receipt_answered(submitted, answer),
                 Call::Terminal(..) => self.terminal_answered(answer),
+                Call::Text(..) => self.text_answered(answer),
                 Call::Email(..) => self.email_answered(answer),
             }
         }
@@ -1004,6 +1024,7 @@ impl Engine {
                     self.look.fence = Some((summary.incarnation, summary.revision));
                     self.look.current = Some(look);
                     self.look.terminal = Some(summary.terminal);
+                    self.look.ced = Some(summary.ced);
                     self.email_read(summary.email);
                     self.look.custom_source = summary.custom_source;
                     // A recovering settingsd may not show a write it has
@@ -1150,6 +1171,33 @@ impl Engine {
     /// A terminal edit settled. Whatever the answer, the session is read
     /// again before the next apply: the read shows whether the edit landed
     /// (a lost reply is no verdict), and it gives the fence for the next.
+    /// A text-style apply's answer: the same fenced path as the Terminal
+    /// group, with its own words.
+    fn text_answered(&mut self, answer: Answer) {
+        match answer {
+            Answer::Ok(_) => {
+                self.status = self.label("applied-text", &[]);
+                self.failed = false;
+            }
+            Answer::Refused(value) if value["status"] == "conflict" => {
+                self.status = self.label("text-conflict", &[]);
+                self.failed = true;
+            }
+            Answer::Refused(value) => {
+                let message = refusal(&value);
+                self.status = self.label("text-failed", &[("message", message.as_str())]);
+                self.failed = true;
+            }
+            Answer::NotSent(message) | Answer::Lost(message) => {
+                self.status = self.label("text-failed", &[("message", message.as_str())]);
+                self.failed = true;
+            }
+            Answer::Missing => return,
+        }
+        self.look.syncing = true;
+        self.look.reread = true;
+    }
+
     fn terminal_answered(&mut self, answer: Answer) {
         match answer {
             Answer::Ok(_) => {
