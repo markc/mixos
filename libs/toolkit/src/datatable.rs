@@ -418,8 +418,12 @@ impl<'a> DataTable<'a> {
                 ui.memory_mut(|m| {
                     m.set_focus_lock_filter(
                         focus,
+                        // The arrows stay with the table: Left and Right do
+                        // nothing here, rather than moving the focus away
+                        // and leaving Up and Down with another widget.
                         EventFilter {
                             vertical_arrows: true,
+                            horizontal_arrows: true,
                             escape,
                             ..EventFilter::default()
                         },

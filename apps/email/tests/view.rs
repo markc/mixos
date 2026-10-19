@@ -523,6 +523,25 @@ fn up_and_down_move_the_selection_and_enter_opens() {
 }
 
 #[test]
+fn left_and_right_do_nothing_in_the_list_and_up_and_down_still_move() {
+    let mut h = harness(long_list());
+    h.get_by_label_contains("Minutes").click();
+    h.run();
+    // Left and Right neither move the focus away nor change the selection.
+    h.key_press(egui::Key::ArrowRight);
+    h.run();
+    h.key_press(egui::Key::ArrowLeft);
+    h.run();
+    let mail = &h.state().state.account("home").unwrap().mail;
+    assert_eq!(mail.table.selection, ["L3"]);
+    // Down still moves through the list.
+    h.key_press(egui::Key::ArrowDown);
+    h.run();
+    let mail = &h.state().state.account("home").unwrap().mail;
+    assert_eq!(mail.table.selection, ["L4"]);
+}
+
+#[test]
 fn ctrl_and_shift_clicks_ctrl_a_and_escape_select_without_opening() {
     let mut h = harness(long_list());
     // A plain click opens its row; the selection gestures below do not.
