@@ -516,7 +516,10 @@ fn up_and_down_move_the_selection_and_enter_opens() {
     // Enter on the row already open does not open it again.
     h.key_press(egui::Key::Enter);
     h.run();
-    assert!(opened(&mut h).is_empty(), "the open row is not asked for twice");
+    assert!(
+        opened(&mut h).is_empty(),
+        "the open row is not asked for twice"
+    );
 }
 
 #[test]
