@@ -640,6 +640,7 @@ mod tests {
                 confirm_delete: false,
                 ..Default::default()
             },
+            ..Default::default()
         };
         let text = serde_json::to_string(&changed).unwrap();
         assert_eq!(
