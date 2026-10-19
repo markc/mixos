@@ -20,7 +20,7 @@ On every MixOS system.
 
 ## Server components
 
-- [dnsd](../dnsd/README.md) (service)
+- [dnsd](../dnsd/README.md) (service): authoritative mesh DNS for the zones in zones.mix
 - [maild](../maild/README.md) (service): JMAP, SMTP, IMAP and DAV mail service
 - [webd](../webd/README.md) (service): Virtual hosts, CMS routes, embedded Mix handlers and ACME for the MixOS web service.
 

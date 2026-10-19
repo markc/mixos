@@ -1,3 +1,8 @@
+---
+title: dnsd
+description: authoritative mesh DNS for the zones in zones.mix
+---
+
 # dnsd — authoritative mesh DNS
 
 `dnsd` answers authoritative DNS queries over UDP and TCP for the zones in
