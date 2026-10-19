@@ -279,22 +279,10 @@ pub fn reader(
     }
     toolbar(ui, state, view, commands, strings, stroke, events);
     toolkit::bars::hairline(ui);
-    // Only the message body can be light: the toggle sits above it, and the
+    // Only the message body can be light (the panel's menu sets it); the
     // header and the rest of the window keep the global mode.
     let light = state.reader_light && state.effective_mode() == design::Mode::Dark;
     if let Some(email) = &view.mail.open {
-        ui.horizontal(|ui| {
-            let mut on = state.reader_light;
-            if ui
-                .add(toolkit::toggle::Toggle::new(
-                    &mut on,
-                    crate::label("reader-light-content"),
-                ))
-                .changed()
-            {
-                events.push(UiEvent::SetReaderLight(on));
-            }
-        });
         message(ui, view, email, focused, light);
     } else {
         ui.weak(crate::label("select-email"));

@@ -392,9 +392,20 @@ fn reader(
     events: &mut Vec<UiEvent>,
 ) {
     let title = crate::label("reader");
-    panel::group(ui, "reader", &[title.as_str()], |ui, _| match state.mode {
+    let group = panel::group(ui, "reader", &[title.as_str()], |ui, _| match state.mode {
         Mode::Mail => mail::reader(ui, state, view, commands, strings, stroke, events),
         Mode::Calendar => calendar::reader(ui, view),
         Mode::Contacts => contacts::reader(ui, view),
     });
+    // The panel's three dots open the reader's options: the mail reader's
+    // content settings. Other modes have none yet.
+    if state.mode == Mode::Mail {
+        egui::Popup::menu(&group.menu).show(|ui| {
+            let mut light = state.reader_light;
+            let item = toolkit::toggle::Checkbox::new(&mut light, crate::label("reader-light-content"));
+            if ui.add(item).changed() {
+                events.push(UiEvent::SetReaderLight(light));
+            }
+        });
+    }
 }
