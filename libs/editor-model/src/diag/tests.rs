@@ -20,7 +20,7 @@ fn tag(view_gen: u64) -> ResultTag {
 }
 
 fn report(diags: &str) -> String {
-    format!(r#"{{"schema_version":2,"tool":"mix lint","diagnostics":[{diags}]}}"#)
+    format!(r#"{{"schema_version":3,"tool":"mix lint","functions":[],"diagnostics":[{diags}]}}"#)
 }
 
 fn delta(edits: Vec<Edit>) -> ViewDelta {
@@ -61,6 +61,26 @@ fn positions_come_from_line_and_column() {
 }
 
 #[test]
+fn schema_three_function_metadata_preserves_diagnostics() {
+    let mut d = Diagnostics::default();
+    let json = r#"{"schema_version":3,"functions":[{"name":"example","file":"-","line":1}],"diagnostics":[{"code":"E1","severity":"error","line":2,"column":3,"message":"m"}]}"#;
+    d.accept(&tag(0), tag(0), TEXT, json, &[]).unwrap();
+    assert_eq!(d.items().len(), 1);
+    assert_eq!(d.items()[0].code, "E1");
+    assert_eq!(&TEXT[d.items()[0].range.clone()], "$bad_name");
+}
+
+#[test]
+fn schema_two_from_older_binaries_still_preserves_diagnostics() {
+    let mut d = Diagnostics::default();
+    let json = r#"{"schema_version":2,"diagnostics":[{"code":"N1","severity":"note","line":2,"column":3,"message":"m"}]}"#;
+    d.accept(&tag(0), tag(0), TEXT, json, &[]).unwrap();
+    assert_eq!(d.items().len(), 1);
+    assert_eq!(d.items()[0].severity, Severity::Note);
+    assert_eq!(&TEXT[d.items()[0].range.clone()], "$bad_name");
+}
+
+#[test]
 fn schema_and_tag_are_checked() {
     let mut d = Diagnostics::default();
     assert_eq!(
@@ -72,6 +92,16 @@ fn schema_and_tag_are_checked() {
             &[]
         ),
         Err(DiagError::UnsupportedSchema(1))
+    );
+    assert_eq!(
+        d.accept(
+            &tag(0),
+            tag(0),
+            TEXT,
+            r#"{"schema_version":4,"functions":[],"diagnostics":[]}"#,
+            &[]
+        ),
+        Err(DiagError::UnsupportedSchema(4))
     );
     assert!(matches!(
         d.accept(&tag(0), tag(0), TEXT, "not json", &[]),

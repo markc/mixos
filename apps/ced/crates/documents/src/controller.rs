@@ -3908,7 +3908,7 @@ mod tests {
         live(&mut c);
         let tab = c.active.unwrap();
         let (tag, _, _) = c.lint_capture(tab, 5).unwrap();
-        let report = r#"{"schema_version":2,"diagnostics":[{"code":"E1","severity":"warning","file":"-","line":1,"column":7,"message":"m","hint":null}]}"#;
+        let report = r#"{"schema_version":3,"functions":[],"diagnostics":[{"code":"E1","severity":"warning","file":"-","line":1,"column":7,"message":"m","hint":null}]}"#;
         c.on_lint(tab, tag, Ok(report.into()));
         diags(&mut c, Some(sha("hello world\n")), &[1]);
         assert_eq!(problems(&mut c), [("lint".into(), 1, 7), scenes(1, 1)]);
@@ -3922,7 +3922,7 @@ mod tests {
         c.on_lint(
             tab,
             tag,
-            Ok(r#"{"schema_version":2,"diagnostics":[]}"#.into()),
+            Ok(r#"{"schema_version":3,"functions":[],"diagnostics":[]}"#.into()),
         );
         assert_eq!(problems(&mut c), [scenes(1, 1)]);
         let (rc, v) = response(&c.on_bus_command(cmd("ced.problems", json!({"tab": 99}))));

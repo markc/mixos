@@ -9,10 +9,11 @@
 //! touches another's; [`Diagnostics::items`] is the union, the lint set first.
 //!
 //! Contracts:
-//! - Input is `mix lint --json -` output (`schema_version` 2:
+//! - Input is `mix lint --json -` output (`schema_version` 2 or 3:
 //!   `{diagnostics:[{file, line, column, code, severity: error|warning|note,
-//!   message, hint}]}`) run on CAPTURED bytes at a tagged gen; any other
-//!   schema_version is refused.
+//!   message, hint}]}`) run on CAPTURED bytes at a tagged gen. Schema 3 adds
+//!   `functions: [{name, file, line}]`; diagnostic fields keep their meaning.
+//!   Any other schema_version is refused.
 //! - Results for another epoch, buffer, language or `cfg` are dropped.
 //! - Covered-range invalidation: a diagnostic covers its whole source line at
 //!   the tagged gen; if any delta since touched that range it is DROPPED, not
@@ -116,7 +117,7 @@ impl Diagnostics {
         check_tag(current, &tag)?;
         let report: Report =
             serde_json::from_str(lint_json).map_err(|e| DiagError::BadJson(e.to_string()))?;
-        if report.schema_version != 2 {
+        if !matches!(report.schema_version, 2 | 3) {
             return Err(DiagError::UnsupportedSchema(report.schema_version));
         }
         let items: Vec<DiagItem> = report
