@@ -245,6 +245,28 @@ const DIVIDER: f32 = 16.0;
 /// subject, headers and body. A text body is shown as Markdown when it is
 /// (or the person asked for it, View › Message), else as the plain text it
 /// is. A right-click anywhere in it opens the Message menu.
+/// The mail reader as a whole panel: its header carries the actions and the
+/// panel menu (the three dots), and its body is the message.
+pub fn panel(
+    ui: &mut Ui,
+    state: &State,
+    view: &AccountView,
+    commands: &Registry<State>,
+    strings: &Strings,
+    stroke: f32,
+    events: &mut Vec<UiEvent>,
+) {
+    let mut header = Vec::new();
+    let group = toolkit::panel::group_with_actions(
+        ui,
+        "reader",
+        |ui| actions(ui, state, commands, strings, &mut header),
+        |ui, _| reader(ui, state, view, commands, strings, stroke, events),
+    );
+    events.extend(header);
+    crate::view::reader_menu(ui, state, &group.menu, events);
+}
+
 pub fn reader(
     ui: &mut Ui,
     state: &State,
@@ -279,7 +301,7 @@ pub fn reader(
             )
         });
     }
-    toolbar(ui, state, view, commands, strings, stroke, events);
+    toolbar(ui, view, stroke, events);
     toolkit::bars::hairline(ui);
     // Only the message body can be light (the panel's menu sets it); the
     // header and the rest of the window keep the global mode.
@@ -297,13 +319,13 @@ pub fn reader(
 
 /// Reply (with its quoting menu), Reply All, Forward, then Delete apart.
 /// Each is its registry command: same label, enablement and shortcut.
-fn toolbar(
+/// The reader's actions, which sit in its panel header beside the dots:
+/// reply (with its options), reply all, forward and delete.
+pub fn actions(
     ui: &mut Ui,
     state: &State,
-    view: &AccountView,
     commands: &Registry<State>,
     strings: &Strings,
-    stroke: f32,
     events: &mut Vec<UiEvent>,
 ) {
     ui.horizontal(|ui| {
@@ -346,6 +368,13 @@ fn toolbar(
         link(ui, events, "mail.forward", Icon::Forward);
         toolkit::bars::divider(ui, DIVIDER);
         link(ui, events, "mail.delete", Icon::Trash);
+    });
+}
+
+/// The row under the header: the target line when several messages are
+/// selected, and the attachments when the message has any.
+fn toolbar(ui: &mut Ui, view: &AccountView, stroke: f32, events: &mut Vec<UiEvent>) {
+    ui.horizontal(|ui| {
         // What Delete, Flag, Mark and Move apply to, when it is several
         // messages from the list: the open email alone needs no note.
         if view.mail.selection_count() > 1

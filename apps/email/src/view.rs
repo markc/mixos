@@ -391,22 +391,23 @@ fn reader(
     stroke: f32,
     events: &mut Vec<UiEvent>,
 ) {
+    // The mail reader is its own panel: its header holds the actions and the
+    // panel menu. The other modes have a single-tab panel.
+    if state.mode == Mode::Mail {
+        mail::panel(ui, state, view, commands, strings, stroke, events);
+        return;
+    }
     let title = crate::label("reader");
-    let group = panel::group(ui, "reader", &[title.as_str()], |ui, _| match state.mode {
-        Mode::Mail => mail::reader(ui, state, view, commands, strings, stroke, events),
+    panel::group(ui, "reader", &[title.as_str()], |ui, _| match state.mode {
         Mode::Calendar => calendar::reader(ui, view),
         Mode::Contacts => contacts::reader(ui, view),
+        Mode::Mail => {}
     });
-    // The panel's three dots open the reader's options: the mail reader's
-    // content settings. Other modes have none yet.
-    if state.mode == Mode::Mail {
-        reader_menu(ui, state, &group.menu, events);
-    }
 }
 
 /// The reader's options menu, open from the panel's three dots: a click on
 /// them opens or closes it, and a click anywhere else closes it.
-fn reader_menu(
+pub fn reader_menu(
     ui: &mut egui::Ui,
     state: &State,
     button: &egui::Response,

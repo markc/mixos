@@ -192,18 +192,15 @@ fn harness(state: State, theme: &Theme) -> Harness<'static, (State, Vec<UiEvent>
                 egui::CentralPanel::default()
                     .frame(toolkit::bars::dock_frame(ui.ctx()))
                     .show(ui, |ui| {
-                        let title = label("reader");
-                        toolkit::panel::group(ui, "reader", &[title.as_str()], |ui, _| {
-                            email::view::mail::reader(
-                                ui,
-                                state,
-                                state.current().unwrap(),
-                                &registry,
-                                &strings,
-                                2.0,
-                                &mut events,
-                            );
-                        });
+                        email::view::mail::panel(
+                            ui,
+                            state,
+                            state.current().unwrap(),
+                            &registry,
+                            &strings,
+                            2.0,
+                            &mut events,
+                        );
                     });
                 seen.extend(events);
             },

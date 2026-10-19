@@ -115,8 +115,36 @@ pub fn group<R>(
     state.selected = state.selected.min(tabs.len().saturating_sub(1));
     let chrome = Chrome::of(ui.ctx());
     let out = match chrome.style.panel_groups {
-        PanelGroups::TabStrip => pro_group(ui, id, &chrome, tabs, &mut state, body),
-        PanelGroups::Cards => card_group(ui, id, &chrome, tabs, &mut state, body),
+        PanelGroups::TabStrip => pro_group(ui, id, &chrome, tabs, &mut state, &mut |_| {}, body),
+        PanelGroups::Cards => card_group(ui, id, &chrome, tabs, &mut state, &mut |_| {}, body),
+    };
+    ui.data_mut(|d| d.insert_temp(id, state));
+    GroupResponse { state, ..out }
+}
+
+/// A dock group with no tabs: `actions` draws in the header, on the left of
+/// the panel menu (the three dots), and `body` is the group's content. The
+/// header's actions replace the tab labels for panels that have one thing to
+/// show.
+pub fn group_with_actions<R>(
+    ui: &mut Ui,
+    id_salt: impl egui::AsIdSalt,
+    actions: impl FnOnce(&mut Ui),
+    body: impl FnOnce(&mut Ui, usize) -> R,
+) -> GroupResponse<R> {
+    let id = ui.make_persistent_id(id_salt);
+    let mut state: GroupState = ui.data(|d| d.get_temp(id)).unwrap_or_default();
+    state.selected = 0;
+    let chrome = Chrome::of(ui.ctx());
+    let mut actions = Some(actions);
+    let mut run = |ui: &mut Ui| {
+        if let Some(actions) = actions.take() {
+            actions(ui);
+        }
+    };
+    let out = match chrome.style.panel_groups {
+        PanelGroups::TabStrip => pro_group(ui, id, &chrome, &[], &mut state, &mut run, body),
+        PanelGroups::Cards => card_group(ui, id, &chrome, &[], &mut state, &mut run, body),
     };
     ui.data_mut(|d| d.insert_temp(id, state));
     GroupResponse { state, ..out }
@@ -161,6 +189,7 @@ fn pro_group<R>(
     chrome: &Chrome,
     tabs: &[&str],
     state: &mut GroupState,
+    actions: &mut dyn FnMut(&mut Ui),
     body: impl FnOnce(&mut Ui, usize) -> R,
 ) -> GroupResponse<R> {
     let p = &chrome.palette;
@@ -244,6 +273,10 @@ fn pro_group<R>(
             state.selected = index;
         }
     }
+    if tabs.is_empty() {
+        let rect = Rect::from_min_size(strip.left_top(), vec2(menu_rect.left() - strip.left(), STRIP));
+        ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| actions(ui));
+    }
     let menu = ui.interact(menu_rect, id.with("menu"), Sense::click());
     menu.widget_info(|| {
         WidgetInfo::labeled(
@@ -296,6 +329,7 @@ fn card_group<R>(
     chrome: &Chrome,
     tabs: &[&str],
     state: &mut GroupState,
+    actions: &mut dyn FnMut(&mut Ui),
     body: impl FnOnce(&mut Ui, usize) -> R,
 ) -> GroupResponse<R> {
     let p = chrome.palette;
@@ -368,6 +402,10 @@ fn card_group<R>(
             if let Some(index) = tabs::chevron(ui, id.with("overflow"), rect, &hidden) {
                 state.selected = index;
             }
+        }
+        if tabs.is_empty() {
+            let rect = Rect::from_min_size(header.left_top(), vec2(room, HEADER));
+            ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| actions(ui));
         }
         let ellipsis = Rect::from_min_size(
             pos2(
