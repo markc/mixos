@@ -870,23 +870,6 @@ fn reader_light_content_studio_dark() {
 }
 
 #[test]
-fn reader_panel_menu_studio_dark() {
-    // The reader's three dots open its menu, which holds Light content.
-    let mut h = harness(
-        opened("text/plain", PLAIN),
-        &theme(Scheme::Studio, Mode::Dark),
-    );
-    let buttons = h.query_all_by_label("Panel menu").count();
-    h.get_by_label("Panel menu").click();
-    h.run();
-    h.run();
-    h.run();
-    let item = h.query_by_label_contains("Light content").is_some();
-    assert!(item, "the menu opens on the dots; {buttons} button(s) found");
-    h.snapshot("reader_panel_menu_studio_dark");
-}
-
-#[test]
 fn light_content_is_only_the_body_and_the_window_stays_dark() {
     let mut state = opened("text/plain", PLAIN);
     state.apply_ui(UiEvent::SetReaderLight(true));

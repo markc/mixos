@@ -523,6 +523,18 @@ fn up_and_down_move_the_selection_and_enter_opens() {
 }
 
 #[test]
+fn reader_panel_menu_opens_on_the_dots_and_holds_light_content() {
+    let mut h = harness_with(fixture(), &theme(Scheme::Studio, Mode::Dark));
+    assert!(h.query_by_label_contains("Light content").is_none(), "closed at first");
+    h.get_by_label("Panel menu").click();
+    h.run();
+    h.run();
+    h.run();
+    assert!(h.query_by_label_contains("Light content").is_some(), "open after the dots");
+    h.snapshot("reader_panel_menu_studio_dark");
+}
+
+#[test]
 fn tab_moves_between_the_three_panes_and_the_arrows_follow() {
     use email::state::Pane;
     let mut h = harness(long_list());
