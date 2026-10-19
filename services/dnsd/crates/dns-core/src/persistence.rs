@@ -155,6 +155,8 @@ impl Persistence for InMemoryPersistence {
 /// Mandatory leading format-version tag. The *rest* of the format is
 /// unpinned (P2/residual-2); this single line is P1 so P2 can
 /// detect/migrate rather than reverse-engineer or silently discard.
+// Frozen v1 persistence marker: retain the original bytes for rollback.
+// Escapes keep the retired brand out of source identifiers and prose.
 const STATE_VERSION_LINE: &str = "\x63\x6f\x73\x6d\x69\x78-dnsd-state v1";
 
 /// Outcome of opening a state file at boot.

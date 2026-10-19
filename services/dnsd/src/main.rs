@@ -258,14 +258,14 @@ fn standalone_version_request() -> Option<String> {
 
 async fn async_main() -> ExitCode {
     // Logging. The standalone (`--no-default-features`) arm is the P1
-    // source VERBATIM — stderr-only, no family dep
-    // (goal-(c): the isolated-node server pulls ZERO mixos crates;
+    // source VERBATIM — stderr-only, no citizen service dependencies
+    // (the isolated-node server uses only the private DNS core;
     // journald/the controlling terminal captures stderr). The citizen
     // uses the shared `logging::init(...)` core (journald-primary,
     // stats off). The returned `LogHandle` MUST outlive the process
     // (drop = final flush), so it is bound for the whole of `main` (it
     // drops at each early `return`, which still flushes). The identity
-    // argument is the **hyphenated package name `dnsd`** —
+    // argument is the package name `dnsd` —
     // `logging` derives the default EnvFilter target by replacing
     // `-` with `_` (→ `dnsd`), so `RUST_LOG=dnsd=info`
     // still matches (the RUST_LOG/target-name trap recorded as
