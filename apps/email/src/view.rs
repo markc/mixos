@@ -253,15 +253,17 @@ fn status(ui: &mut egui::Ui, state: &State, stroke: f32) {
 /// A pane's frame. The pane that has the keyboard wears the focus ring the
 /// term app draws: the card border a quarter of the way to the accent.
 fn pane_frame(ctx: &egui::Context, active: bool) -> egui::Frame {
-    let frame = bars::dock_frame(ctx);
-    if !active {
-        return frame;
-    }
-    let palette = &toolkit::chrome::Chrome::of(ctx).palette;
-    let ring = palette
-        .card_border
-        .lerp_to_gamma(palette.accent, FOCUS_RING);
-    frame.stroke(egui::Stroke::new(1.0, ring))
+    // Every pane has the same 1 pt border, transparent when it is not the
+    // active one, so the ring appearing never moves the layout.
+    let ring = if active {
+        let palette = &toolkit::chrome::Chrome::of(ctx).palette;
+        palette
+            .card_border
+            .lerp_to_gamma(palette.accent, FOCUS_RING)
+    } else {
+        egui::Color32::TRANSPARENT
+    };
+    bars::dock_frame(ctx).stroke(egui::Stroke::new(1.0, ring))
 }
 
 /// The focus ring's share of the accent, as the term app's default.
@@ -276,11 +278,11 @@ fn keyboard_panes(ui: &egui::Ui, state: &State, reader: bool, events: &mut Vec<U
     if reader {
         panes.push(Pane::Reader);
     }
-    let on_pane =
-        tree::is_focused(ctx) || datatable::is_focused(ctx, LIST) || mail::reader_focused(ctx);
-    let nothing = ctx.memory(|m| m.focused()).is_none();
+    // Tab is the panes' whenever no text field or dialog is typing: the
+    // window takes the keyboard from the mouse hovering over it, so no click
+    // is needed first.
     let dialog = state.compose.is_some() || state.identity_editor.is_some();
-    if (on_pane || nothing) && !dialog {
+    if !ctx.text_edit_focused() && !dialog {
         let back = ui.input_mut(|i| i.consume_key(Modifiers::SHIFT, Key::Tab));
         let forward = !back && ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Tab));
         if back || forward {
