@@ -1986,6 +1986,7 @@ dependencies = [
  "dns-core",
  "hickory-proto 0.25.2",
  "logging",
+ "mimalloc",
  "serde_json",
  "tempfile",
  "tokio",
@@ -8624,6 +8625,7 @@ version = "0.1.1"
 dependencies = [
  "buildinfo",
  "bus",
+ "dnsd",
  "ed25519-dalek",
  "libc",
  "maild",
@@ -8644,6 +8646,7 @@ dependencies = [
  "tungstenite 0.26.2",
  "unicode-segmentation",
  "unicode-width",
+ "webd",
 ]
 
 [[package]]
