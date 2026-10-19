@@ -426,6 +426,7 @@
     {name:"net.wg.apply", owner:"hostd", version:"0.1.0", status:"draft", class:"intent"},
     {name:"desk.restart", owner:"hostd", version:"0.1.0", status:"draft", class:"intent"},
     {name:"desk.stop", owner:"hostd", version:"0.1.0", status:"draft", class:"intent"},
+    {name:"unit.control", owner:"hostd", version:"0.1.0", status:"draft", class:"intent"},
     {name:"monitord.status", owner:"monitord", version:"0.1.0", status:"draft", class:"query"},
     {name:"monitord.snapshot", owner:"monitord", version:"0.1.0", status:"draft", class:"query"},
     {name:"monitord.processes", owner:"monitord", version:"0.1.0", status:"draft", class:"query"},
