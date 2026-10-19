@@ -93,6 +93,20 @@ fn terminal_weights_studio_dark() {
 }
 
 #[test]
+fn text_section_studio_dark() {
+    let mut e = appearance_engine();
+    e.set_section(Section::Text);
+    e.look.email = Some(Default::default());
+    e.look.ced = Some(Default::default());
+    draw_at_size(
+        chrome(Scheme::Studio, Mode::Dark),
+        "text_section_studio_dark",
+        e,
+        egui::vec2(980.0, 960.0),
+    );
+}
+
+#[test]
 fn creative_studio_dark() {
     let mut e = Engine::new(label_with);
     answer(
