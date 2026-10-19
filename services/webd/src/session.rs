@@ -64,7 +64,7 @@ pub const CSRF_COOKIE: &str = "mixos_csrf";
 /// ONLY an opaque random id keyed into webd's server-side pending-login map
 /// (P3). The map row holds the live maild bearer + the emailed code's hash;
 /// the bearer never reaches the browser until the second factor passes.
-pub const LOGIN_PENDING_COOKIE: &str = "loggingin_pending";
+pub const LOGIN_PENDING_COOKIE: &str = "mixos_login_pending";
 
 /// Session lifetime — mirrors maild's 30-day token TTL. maild is the
 /// real expiry authority; this bounds the cookie so it never long

@@ -1,38 +1,70 @@
 # SPDX-License-Identifier: MIT OR Apache-2.0
+# Copyright 2026 Mark Constable <mc@mixos.dev>
 [Unit]
 Description=MixOS web service
 Documentation=https://mixos.dev/webd/
-After=network-online.target
-Wants=network-online.target
+After=network-online.target noded.service
+Wants=network-online.target noded.service
 
 [Service]
 Type=simple
 User=webd
 Group=webd
-Environment=MIXOS_ETC=/etc/mixos
-Environment=MIXOS_VAR=%S/mixos
-Environment=HOME=%S/mixos/webd
 StateDirectory=mixos/webd
 StateDirectoryMode=0750
 RuntimeDirectory=mixos/webd
 RuntimeDirectoryMode=0750
+ConfigurationDirectory=mixos/webd
+ConfigurationDirectoryMode=0755
 WorkingDirectory=%S/mixos/webd
+# Per-vhost content and mutable state live under /srv/<domain>/ (docroot,
+# cms.db, uploads). ProtectSystem=strict makes everything outside the state
+# directory read-only, so webd must be granted write access to /srv or every
+# per-vhost cms.db write fails with "readonly database".
+ReadWritePaths=/srv
+# The database is pinned under the state directory. The default resolves to a
+# root-owned parent that webd cannot write.
 ExecStart=/opt/mixos/bin/webd serve --db-path %S/mixos/webd/web.db
 Restart=on-failure
 RestartSec=5s
+Environment=RUST_LOG=webd=info
+Environment=HOME=%S/mixos/webd
+# Node config is pinned so that listen address, TLS paths, the JMAP upstream
+# and the noded URL come from the per-host config, not from fallbacks.
+Environment=MIXOS_ETC=/etc/mixos
+# Journald is the sink. Stray stdout and stderr also go there, and the rate
+# limit stops a crash loop from flooding the journal.
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=webd
+LogRateLimitIntervalSec=30s
+LogRateLimitBurst=10000
+
+# Webd binds the privileged HTTPS port (443). CAP_NET_BIND_SERVICE keeps the
+# unit non-root. TLS keys are shared through the mixos-tls group, so the
+# private key must be root:mixos-tls 0640 and both tls_cert and tls_key must
+# be set in the node config. Without both, webd falls back to cleartext HTTP.
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
 PrivateDevices=yes
+
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
 ProtectKernelTunables=yes
 ProtectKernelModules=yes
 ProtectKernelLogs=yes
 ProtectControlGroups=yes
+ProtectProc=invisible
+ProcSubset=pid
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 UMask=0027
