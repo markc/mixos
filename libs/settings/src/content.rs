@@ -172,6 +172,60 @@ fn whole(path: &str, value: Value) -> Result<u32, Diagnostic> {
         .ok_or_else(|| error(path, "Expected an integral u32 number"))
 }
 
+/// The Ced app's settings: its editor's style.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Ced {
+    /// The editor's style (`ced.editor`), omitted at its defaults.
+    #[serde(skip_serializing_if = "Content::is_default")]
+    pub editor: Content,
+}
+
+impl Ced {
+    pub fn is_default(&self) -> bool {
+        is_default(self)
+    }
+}
+
+/// The path of the Ced editor's style, for its field names and errors.
+pub const CED_EDITOR: &str = "ced.editor";
+
+/// Check the Ced group: its editor's style. The editor lays text on a
+/// monospace grid, so its family is the bundled monospace face or the default
+/// (which is that face too).
+pub fn validate_ced(ced: &Ced) -> Result<(), Diagnostic> {
+    validate(&ced.editor, CED_EDITOR)?;
+    if matches!(ced.editor.font.family.as_deref(), Some(family) if family != MONO_FAMILY) {
+        return Err(error(
+            "ced.editor.font.family",
+            "The editor needs the monospace font, JetBrains Mono",
+        ));
+    }
+    Ok(())
+}
+
+/// The bundled monospace family, which the editor always draws with.
+pub const MONO_FAMILY: &str = "JetBrains Mono";
+
+/// Set (Some) or reset (None) one Ced field. `field` is the path after `ced`.
+pub(crate) fn set_ced(
+    ced: &mut Ced,
+    path: &str,
+    field: &[&str],
+    value: Option<Value>,
+) -> Result<(), Diagnostic> {
+    match field {
+        [] => {
+            *ced = value
+                .filter(|v| !v.is_null())
+                .map_or(Ok(Ced::default()), |v| typed(path, v))?
+        }
+        ["editor", rest @ ..] => set(&mut ced.editor, CED_EDITOR, rest, value)?,
+        _ => return Err(error(path, "Unknown field or scope")),
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -195,6 +249,16 @@ mod tests {
         .unwrap();
         set(&mut content, "email.reader", &["padding"], Some(json!(16))).unwrap();
         assert!(validate(&content, "email.reader").is_ok());
+    }
+
+    #[test]
+    fn the_editor_takes_only_the_monospace_face() {
+        let mut ced = Ced::default();
+        assert!(validate_ced(&ced).is_ok(), "the default is the mono face");
+        set_ced(&mut ced, "ced", &["editor", "font", "family"], Some(json!("JetBrains Mono"))).unwrap();
+        assert!(validate_ced(&ced).is_ok());
+        set_ced(&mut ced, "ced", &["editor", "font", "family"], Some(json!("Inter"))).unwrap();
+        assert_eq!(validate_ced(&ced).unwrap_err().path, "ced.editor.font.family");
     }
 
     #[test]

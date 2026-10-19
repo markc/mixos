@@ -199,6 +199,10 @@ pub struct Desktop {
     /// secret. Omitted at its defaults, as `terminal` is.
     #[serde(skip_serializing_if = "crate::email::Email::is_default")]
     pub email: crate::email::Email,
+    /// The Ced app's editor style ([`crate::content`]). Omitted at its
+    /// default, as `email` is.
+    #[serde(skip_serializing_if = "crate::content::Ced::is_default")]
+    pub ced: crate::content::Ced,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -281,6 +285,9 @@ pub struct Summary {
     /// The email app's accounts and options; omitted at their defaults.
     #[serde(default, skip_serializing_if = "crate::email::Email::is_default")]
     pub email: crate::email::Email,
+    /// The Ced app's editor style; omitted at its default.
+    #[serde(default, skip_serializing_if = "crate::content::Ced::is_default")]
+    pub ced: crate::content::Ced,
 }
 
 /// The summary schema; independent of the snapshot's [`crate::SCHEMA`].
@@ -302,6 +309,7 @@ impl Summary {
             keymaps: snapshot.desktop.keymaps.clone(),
             terminal: snapshot.desktop.terminal.clone(),
             email: snapshot.desktop.email.clone(),
+            ced: snapshot.desktop.ced.clone(),
         }
     }
 }

@@ -10,7 +10,12 @@ pub const APPS: &[&str] = &["ced", "dopus", "term", "cap", "busviewer", "scene-e
 pub fn describe() -> Value {
     let mut described = describe_base();
     if let Some(fields) = described["fields"].as_object_mut() {
-        for group in [crate::terminal::describe(), crate::email::describe()] {
+        let groups = [
+            crate::terminal::describe(),
+            crate::email::describe(),
+            crate::content::describe(crate::content::CED_EDITOR),
+        ];
+        for group in groups {
             if let Value::Object(group) = group {
                 fields.extend(group);
             }
@@ -255,6 +260,7 @@ pub fn resolve_with_embedded_and_accents(
         crate::keymap::validate(&desktop.keymaps, key)?;
         crate::terminal::validate(&desktop.terminal)?;
         crate::email::validate(&desktop.email)?;
+        crate::content::validate_ced(&desktop.ced)?;
         if design::Decorations::from_name(&desktop.appearance.decorations).is_none() {
             return Err(error("appearance.decorations", "Unknown decorations"));
         }
@@ -575,6 +581,7 @@ fn set(desktop: &mut Desktop, path: &str, value: Option<Value>) -> Result<(), Di
                     crate::terminal::set(&mut desktop.terminal, path, field, value)?
                 }
                 ["email", field @ ..] => crate::email::set(&mut desktop.email, path, field, value)?,
+                ["ced", field @ ..] => crate::content::set_ced(&mut desktop.ced, path, field, value)?,
                 _ => return Err(error(path, "Unknown field or scope")),
             }
         }

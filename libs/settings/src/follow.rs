@@ -57,6 +57,9 @@ pub enum Followed {
         /// The email app's accounts and options ([`crate::email`]);
         /// defaults when the summary omits them.
         email: Box<crate::email::Email>,
+        /// The Ced app's editor style ([`crate::content`]); defaults when the
+        /// summary omits it.
+        ced: Box<crate::content::Ced>,
     },
     /// The same revision as before: nothing to do.
     Unchanged,
@@ -306,6 +309,7 @@ impl Follower {
             keymaps: summary.keymaps,
             terminal: Box::new(summary.terminal),
             email: Box::new(summary.email),
+            ced: Box::new(summary.ced),
         }
     }
 }
