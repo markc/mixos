@@ -197,7 +197,7 @@ function tv_subtree($map, $parent_key, $cfg, $visited)
       if $kidhtml != "" then
         $h = $h .. tv_branch($tree, $id, $href, $nicon, $text, $vis, $count, $kidhtml)
       else
-        $h = $h .. tv_leaf($href, $nicon, $text, $vis, $count)
+        $h = $h .. tv_leaf($href, $nicon, $text, $vis, $count, nil)
       end
     end
   end

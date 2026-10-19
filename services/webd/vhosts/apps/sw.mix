@@ -179,7 +179,7 @@ end
 -- envelope encoding all at once. Returns { ok, balance, error }.
 function sw_balance()
   if not sw_enabled(false) then return { ok: false, balance: "", error: "sw disabled" } end
-  $r = sw_call("balanceQuery", {})
+  $r = sw_call("balanceQuery", {}, nil)
   if not $r["ok"] then return { ok: false, balance: "", error: $r["error"] } end
   $bal = ""
   if $r["body"]["balance"] != nil then $bal = "" .. $r["body"]["balance"] end
@@ -190,7 +190,7 @@ end
 -- { ok, status, expiry (YYYY-MM-DD), nameservers (list), error }.
 function sw_domain_info($domain)
   if not sw_enabled(false) then return { ok: false, error: "sw disabled" } end
-  $r = sw_call("domainInfo", { domainName: lower("" .. $domain) })
+  $r = sw_call("domainInfo", { domainName: lower("" .. $domain) }, nil)
   if not $r["ok"] then return { ok: false, error: $r["error"] } end
   $b = $r["body"]
   $expiry = ""
@@ -217,7 +217,7 @@ end
 -- $cmd is create|renew|transfer. Returns { ok, available, premium, price, error }.
 function sw_check_domain($domain, $cmd)
   if not sw_enabled(false) then return { ok: false, error: "sw disabled" } end
-  $r = sw_call("checkDomain", { domainName: lower("" .. $domain), command: "" .. $cmd })
+  $r = sw_call("checkDomain", { domainName: lower("" .. $domain), command: "" .. $cmd }, nil)
   if not $r["ok"] then return { ok: false, error: $r["error"] } end
   $b = $r["body"]
   $avail = starts_with("" .. $b["status"], "AVAILABLE")
@@ -291,6 +291,6 @@ end
 -- Returns { ok, error }.
 function sw_renew_domain($domain, $years)
   if not sw_enabled(true) then return { ok: false, error: "sw not in live mode" } end
-  $r = sw_call("renewDomain", { domainName: lower("" .. $domain), years: "" .. $years })
+  $r = sw_call("renewDomain", { domainName: lower("" .. $domain), years: "" .. $years }, nil)
   return { ok: $r["ok"], error: $r["error"] }
 end
