@@ -1,0 +1,65 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+# Copyright 2026 Mark Constable <mc@mixos.dev>
+[Unit]
+Description=MixOS authoritative WireGuard mesh DNS service
+Documentation=https://mixos.dev/dnsd/
+After=network-online.target noded.service
+Wants=network-online.target noded.service
+# Broker availability never gates DNS. The daemon retries unavailable WG
+# bind addresses itself, independent of the host network manager.
+
+[Service]
+Type=simple
+User=dnsd
+Group=dnsd
+StateDirectory=mixos/dnsd
+StateDirectoryMode=0750
+RuntimeDirectory=mixos/dnsd
+RuntimeDirectoryMode=0750
+WorkingDirectory=%S/mixos/dnsd
+EnvironmentFile=/opt/mixos/etc/dnsd/service.env
+Environment=MIXOS_ETC=/opt/mixos/etc
+Environment=MIXOS_VAR=/var/lib/mixos
+Environment=MIXOS_NODE_CONFIG=/opt/mixos/etc/node.conf.mix
+Environment=RUST_LOG=dnsd=info
+Environment=HOME=%S/mixos/dnsd
+ExecStart=/opt/mixos/bin/dnsd --zones /opt/mixos/etc/dnsd/zones.mix --state %S/mixos/dnsd/state --listen ${LISTEN}
+Restart=on-failure
+RestartSec=5s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=dnsd
+LogRateLimitIntervalSec=30s
+LogRateLimitBurst=10000
+
+# Original hardening; port 53 requires CAP_NET_BIND_SERVICE.
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+
+# §5.2 mandatory hardening (Level 2)
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectProc=invisible
+ProcSubset=pid
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+UMask=0027
+
+PrivateDevices=yes
+
+[Install]
+WantedBy=multi-user.target
