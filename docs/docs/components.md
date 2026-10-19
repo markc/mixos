@@ -43,6 +43,7 @@ profile: [desktop](desktop.md) and [server](server.md). This page describes the 
 | [mix](../mix/README.md) · [changelog](../mix/changelog.md) | lib | none (library) | [`libs/mix`](https://github.com/markc/mixos/tree/main/libs/mix) |  |
 | [mix-shell](../mix-shell/README.md) · [changelog](../mix-shell/changelog.md) | cli | unclassified | [`cli/mix-shell`](https://github.com/markc/mixos/tree/main/cli/mix-shell) | The Mix shell library, holding the interactive line editor, the command classifier, the native-session bootstrap and the Bus citizen runtime that the mix binary runs. |
 | [mixos-mcp](../mixos-mcp/README.md) | cli | base | [`cli/mixos-mcp`](https://github.com/markc/mixos/tree/main/cli/mixos-mcp) | MCP stdio access to the native MixOS Bus. |
+| [mixtrayd](../mixtrayd/README.md) | service | unclassified | [`services/mixtrayd`](https://github.com/markc/mixos/tree/main/services/mixtrayd) |  |
 | [monitor](../monitor/README.md) | app | desktop | [`apps/monitor`](https://github.com/markc/mixos/tree/main/apps/monitor) | Monitor is the MixOS task manager, showing the processes and performance that monitord reports for this node or any node on the mesh, with End task and Kill for this node's processes. |
 | [monitord](../monitord/README.md) · [changelog](../monitord/changelog.md) | service | base | [`services/monitord`](https://github.com/markc/mixos/tree/main/services/monitord) | How monitord samples a host's CPU, memory, disks, network and processes, keeps history in memory and SQLite, and answers read verbs on the Bus, so any node's load can be read from anywhere on the… |
 | [noded](../noded/README.md) · [changelog](../noded/changelog.md) | service | unclassified | [`services/noded`](https://github.com/markc/mixos/tree/main/services/noded) | The MixOS Bus broker, which handles service registration, discovery, routing, subscriptions, authenticated local session grants and mesh peering between nodes. |
@@ -161,6 +162,7 @@ checked separately by the layering gate.
 | [maild-bayesian](https://github.com/markc/mixos/blob/main/services/maild/crates/maild-bayesian/Cargo.toml) | maild | service | core | none | 0.1.1 |
 | [maild-rules](https://github.com/markc/mixos/blob/main/services/maild/crates/maild-rules/Cargo.toml) | maild | service | core | none | 0.1.1 |
 | [mds](https://github.com/markc/mixos/blob/main/services/maild/crates/mds/Cargo.toml) | maild | service | core | none | 0.1.1 |
+| [mixtrayd](https://github.com/markc/mixos/blob/main/services/mixtrayd/Cargo.toml) | mixtrayd | service | desktop | public | 0.1.1 |
 | [monitord](https://github.com/markc/mixos/blob/main/services/monitord/Cargo.toml) | monitord | service | core | public | 0.1.0 |
 | [noded](https://github.com/markc/mixos/blob/main/services/noded/Cargo.toml) | noded | service | core | public | 0.18.3 |
 | [mesh-trust](https://github.com/markc/mixos/blob/main/services/noded/crates/mesh-trust/Cargo.toml) | noded | service | core | none | 0.1.1 |
