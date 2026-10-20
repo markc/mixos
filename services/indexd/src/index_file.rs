@@ -692,3 +692,4 @@ mod tests {
         assert!(is_date_shaped("2026-06-aa")); // digit year + delimiters
         assert!(!is_valid_ymd("2026-06-aa"));
 }
+}
