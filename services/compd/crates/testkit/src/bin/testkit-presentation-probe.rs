@@ -399,8 +399,10 @@ fn run_rate(
     let elapsed = instant.elapsed().as_secs_f64();
     // A missing feedback is a measured miss, not an unbounded wait or a
     // process failure. Drain for at most two seconds after the timed run.
-    let _ = dispatch_until(queue, probe, Instant::now() + Duration::from_secs(2),
-        |p| p.feedback.iter().all(|slot| slot.outcome.is_some()), "rate feedback drain");
+    if let Err(error) = dispatch_until(queue, probe, Instant::now() + Duration::from_secs(2),
+        |p| p.feedback.iter().all(|slot| slot.outcome.is_some()), "rate feedback drain")
+        && error != "rate feedback drain did not complete in time"
+    { return Err(error); }
     if probe.closed || probe.failure.is_some() { return Err("rate feedback connection failed".into()); }
     let missed = probe.feedback.iter().enumerate().filter(|(commit, slot)|
         missed(slot.outcome, scheduled(start, *commit, rate), interval)).count();

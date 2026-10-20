@@ -36,7 +36,7 @@ enum Command {
         #[arg(long, default_value = "prompt")]
         screencast_consent: portald::screencast::consent::Policy,
         /// Frame-rate ceiling offered to ScreenCast consumers (1..=120).
-        #[arg(long, default_value = "30")]
+        #[arg(long, default_value = "30", allow_hyphen_values = true)]
         screencast_max_framerate: portald::screencast::MaxFramerate,
     },
 }
