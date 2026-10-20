@@ -282,6 +282,10 @@ have <code>field</code>, <code>op</code> (<code>eq</code>, <code>gt</code>, <cod
 <p>Delete filters use the same predicate shape, for example
 <code>{"filter":[{"field":"path","op":"eq","value":"/srv/project/a.md"}]}</code>.
 Predicates are ANDed; when IDs are also supplied they restrict the matching set.
+DELETE accepts only <code>eq</code>, with a non-empty string, number or boolean value.
+Each predicate also requires the matching JSON type (integers and reals share
+the numeric type); null, arrays and objects are refused. Search retains all
+operators listed above.
 Deletion updates the durable vectors and in-memory index in one operation.</p>
 <h2 id="cli-and-bridge">CLI and bridge</h2>
 <p><code>indexd -c /etc/mixos/indexd/config.conf.mix call indexd.stats</code> opens the

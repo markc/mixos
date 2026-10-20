@@ -57,6 +57,10 @@ have `field`, `op` (`eq`, `gt`, `lt`, `gte`, `lte`, `contains`) and `value`.
 Delete filters use the same predicate shape, for example
 `{"filter":[{"field":"path","op":"eq","value":"/srv/project/a.md"}]}`.
 Predicates are ANDed; when IDs are also supplied they restrict the matching set.
+DELETE accepts only `eq`, with a non-empty string, number or boolean value.
+Each predicate also requires the matching JSON type (integers and reals share
+the numeric type); null, arrays and objects are refused. Search retains all
+operators listed above.
 Deletion updates the durable vectors and in-memory index in one operation.
 
 ## CLI and bridge

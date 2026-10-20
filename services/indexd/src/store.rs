@@ -68,15 +68,21 @@ pub(crate) fn append_metadata_filters(
     for filter in filters {
         if for_delete {
             anyhow::ensure!(
-                !matches!(filter.op, FilterOp::Contains),
-                "delete metadata filters do not allow contains"
+                matches!(filter.op, FilterOp::Eq),
+                "delete metadata filters only allow op eq"
             );
             anyhow::ensure!(
                 matches!(
                     filter.value,
-                    serde_json::Value::String(_) | serde_json::Value::Number(_)
-                ) || (matches!(filter.op, FilterOp::Eq) && filter.value.is_boolean()),
-                "delete metadata filter requires a non-null string or number (or boolean for eq)"
+                    serde_json::Value::String(_)
+                        | serde_json::Value::Number(_)
+                        | serde_json::Value::Bool(_)
+                ),
+                "delete metadata filter requires a non-null string, number or boolean"
+            );
+            anyhow::ensure!(
+                filter.value.as_str() != Some(""),
+                "delete metadata filter requires a non-empty string"
             );
         }
         let idx = params.len() + 1;
@@ -93,6 +99,17 @@ pub(crate) fn append_metadata_filters(
             idx + 1
         ));
         params.push(Box::new(format!("$.{}", filter.field)));
+        if for_delete {
+            // json_extract has no affinity: guard the JSON type so SQLite's
+            // cross-type comparisons cannot broaden a destructive predicate.
+            let types = match &filter.value {
+                serde_json::Value::String(_) => "= 'text'",
+                serde_json::Value::Number(_) => "IN ('integer','real')",
+                serde_json::Value::Bool(_) => "IN ('true','false')",
+                _ => unreachable!("delete value validated above"),
+            };
+            sql.push_str(&format!(" AND json_type(c.metadata, ?{idx}) {types}"));
+        }
         if matches!(filter.op, FilterOp::Contains) {
             let value = filter.value.as_str().filter(|s| !s.is_empty());
             let value = value.ok_or_else(|| {
@@ -1093,7 +1110,7 @@ mod tests {
     }
 
     #[test]
-    fn delete_refuses_contains_and_invalid_comparison_values() {
+    fn delete_refuses_non_equality_ops_and_invalid_values() {
         let db = test_vector_db();
         let missing_value = serde_json::json!({"filter":[{"field":"path","op":"eq"}]});
         assert!(serde_json::from_value::<DeleteRequest>(missing_value).is_err());
@@ -1104,7 +1121,12 @@ mod tests {
             )
             .unwrap();
         for raw in [
+            serde_json::json!({"field":"path","op":"gt","value":0}),
+            serde_json::json!({"field":"path","op":"lt","value":0}),
+            serde_json::json!({"field":"path","op":"gte","value":0}),
+            serde_json::json!({"field":"path","op":"lte","value":0}),
             serde_json::json!({"field":"path","op":"contains","value":"a"}),
+            serde_json::json!({"field":"path","op":"eq","value":""}),
             serde_json::json!({"field":"path","op":"eq","value":null}),
             serde_json::json!({"field":"path","op":"eq","value":[]}),
             serde_json::json!({"field":"path","op":"eq","value":{}}),
@@ -1115,6 +1137,54 @@ mod tests {
             assert!(error.contains("delete metadata filter"), "{error}");
             assert_eq!(db.stats("").unwrap().total_vectors, 1);
         }
+    }
+
+    #[test]
+    fn delete_equality_requires_matching_json_type() {
+        let db = test_vector_db();
+        let values = [
+            serde_json::json!("x"),
+            serde_json::json!(0),
+            serde_json::json!(0.0),
+            serde_json::json!(false),
+            serde_json::json!(true),
+            serde_json::Value::Null,
+        ];
+        let texts: Vec<String> = (0..values.len()).map(|i| format!("chunk {i}")).collect();
+        let metadata: Vec<String> = values
+            .iter()
+            .map(|value| serde_json::json!({"path":value}).to_string())
+            .collect();
+        let StoreAttempt::Committed { ids, .. } = db
+            .store_revalidated(
+                &vec![Some(vec![1.0; EMBEDDING_DIM]); values.len()],
+                &vec![None; values.len()],
+                &texts,
+                "doc",
+                &metadata,
+            )
+            .unwrap()
+        else {
+            panic!("unexpected race")
+        };
+        for (subset, value, expected) in [
+            (vec![ids[0]], serde_json::json!(0), 0),
+            (ids[1..].to_vec(), serde_json::json!("x"), 0),
+            (vec![ids[3]], serde_json::json!(0), 0),
+            (vec![ids[1]], serde_json::json!(false), 0),
+            (vec![], serde_json::json!("x"), 1),
+            (vec![], serde_json::json!(0), 2),
+            (vec![], serde_json::json!(false), 1),
+            (vec![], serde_json::json!(true), 1),
+        ] {
+            let filter = serde_json::from_value(serde_json::json!({
+                "field":"path", "op":"eq", "value":value
+            }))
+            .unwrap();
+            assert_eq!(db.delete_filtered(&subset, &[filter]).unwrap(), expected);
+        }
+        assert_eq!(db.stats("").unwrap().total_vectors, 1);
+        assert_eq!(db.search_index.read().unwrap().len(), 1);
     }
 
     #[test]
@@ -1220,7 +1290,7 @@ mod tests {
         assert!(db.delete_filtered(&[], &[]).is_err());
         let filters: Vec<MetadataFilter> = serde_json::from_value(serde_json::json!([
             {"field":"path","op":"eq","value":"/srv/a"},
-            {"field":"rank","op":"gte","value":2}
+            {"field":"rank","op":"eq","value":2}
         ]))
         .unwrap();
         assert_eq!(db.delete_filtered(&[ids[0], ids[1]], &filters).unwrap(), 1);
