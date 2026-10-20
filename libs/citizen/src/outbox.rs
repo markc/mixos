@@ -230,7 +230,7 @@ mod tests {
     use serde_json::json;
 
     fn event(seq: u64) -> Value {
-        json!({"v": 1, "seq": seq, "id": "x", "dropped": 0})
+        json!({"v": 2, "seq": seq, "id": "x", "params": {"n": 4}, "result": [1, 2], "dropped": 0})
     }
 
     #[test]
@@ -238,6 +238,9 @@ mod tests {
         let outbox = Outbox::new(2);
         outbox.push("t", [event(2), event(3), event(4)], 1); // 1 lost before, 2 pushed out
         let (_, first) = outbox.next().unwrap();
+        assert_eq!(first["v"], 2);
+        assert_eq!(first["params"], json!({"n": 4}));
+        assert_eq!(first["result"], json!([1, 2]));
         assert_eq!(
             (first["seq"].as_u64(), first["dropped"].as_u64()),
             (Some(3), Some(2))

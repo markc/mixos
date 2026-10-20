@@ -8,8 +8,8 @@ pub mod keymap;
 pub mod strings;
 
 pub use executed::{Executed, Journal, Origin};
-use schemars::Schema;
-use serde::Serialize;
+use schemars::{JsonSchema, Schema};
+use serde::{Deserialize, Serialize};
 #[doc(hidden)]
 pub use serde_json;
 use serde_json::Value;
@@ -17,6 +17,15 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt;
 pub use strings::Strings;
+
+/// Body of `<app>.execute`; handlers own deserialization of `params`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ExecuteRequest {
+    pub id: String,
+    #[serde(default)]
+    pub params: Option<Value>,
+}
 
 /// Label lookup, including any catalogue fallback supplied by a UI adapter.
 pub trait Labels {
@@ -110,6 +119,10 @@ macro_rules! nullary {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Error {
     Unknown(String),
+    Denied {
+        id: &'static str,
+        reason: &'static str,
+    },
     Disabled {
         id: &'static str,
         reason: &'static str,
@@ -125,6 +138,7 @@ impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Unknown(id) => write!(f, "unknown command {id:?}"),
+            Self::Denied { id, reason } => write!(f, "command {id:?} is denied: {reason}"),
             Self::Disabled { id, reason } => write!(f, "command {id:?} is disabled: {reason}"),
             Self::BadParams { id, msg } => write!(f, "bad parameters for command {id:?}: {msg}"),
             Self::Failed(msg) => f.write_str(msg),
@@ -397,7 +411,7 @@ impl<S> Registry<S> {
                 origin,
                 params: &params,
             })
-            .map_err(|reason| Error::Disabled { id: c.id, reason })?;
+            .map_err(|reason| Error::Denied { id: c.id, reason })?;
         }
         self.enabled(id, state)
             .map_err(|reason| Error::Disabled { id: c.id, reason })?;
@@ -422,7 +436,10 @@ impl<S> Registry<S> {
             None => (c.run)(state, &params)?,
         };
         if c.class.journal() {
-            self.journal.borrow_mut().record(c.id, origin);
+            let params = if c.params.is_none() { Value::Null } else { params };
+            self.journal
+                .borrow_mut()
+                .record(c.id, origin, params, result.clone());
         }
         Ok(result)
     }
@@ -430,7 +447,9 @@ impl<S> Registry<S> {
     /// Record an accepted action outside dispatch; known queries are skipped.
     pub fn note(&self, id: &str, origin: Origin) {
         if self.get(id).is_none_or(|c| c.class.journal()) {
-            self.journal.borrow_mut().record(id, origin);
+            self.journal
+                .borrow_mut()
+                .record(id, origin, Value::Null, Value::Null);
         }
     }
     pub fn take_executed(&self) -> (Vec<Executed>, u64) {

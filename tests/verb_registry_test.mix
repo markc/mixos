@@ -30,7 +30,8 @@ $a = "    {name:\"demo.ping\", owner:\"demo\", version:\"0.1.0\", status:\"accep
 $b = "    {name:\"demo.open\", owner:\"demo\", version:\"0.1.0\", status:\"accepted\", class:\"intent\"}"
 
 fn registry($body, $schema)
-  return "-- test\n{\n  schema: " .. to_string($schema) .. ",\n  verbs: [\n" .. $body .. "\n  ]\n}\n"
+  $tail = if $schema >= 3 then "],\n  families: [\n  ]" else "]" end
+  return "-- test\n{\n  schema: " .. to_string($schema) .. ",\n  verbs: [\n" .. $body .. "\n  " .. $tail .. "\n}\n"
 end
 
 fn expect($name, $text, $pass)
@@ -58,6 +59,38 @@ expect("unknown class", registry("    {name:\"demo.ping\", owner:\"demo\", versi
 expect("duplicate", registry($a .. ",\n" .. $a, 2), false)
 expect("schema 1", registry($a .. ",\n" .. $b, 1), false)
 expect("missing comma", registry($a .. "\n" .. $b, 2), false)
+
+$a4 = replace($a, '"}', '", schema:"command::ExecuteRequest"}')
+$b4 = replace($b, '"}', '", schema:"none"}')
+expect("schema 4 good", registry($a4 .. ",\n" .. $b4, 4), true)
+expect("schema 4 missing schema", registry($a .. ",\n" .. $b4, 4), false)
+expect("schema 3 with schema", registry($a4, 3), false)
+expect("schema 2 with schema", registry($a4, 2), false)
+for $bad in ["Pending", "foo", "crate:Type"]
+  expect("bad schema " .. $bad, registry(replace($b4, 'schema:"none"', 'schema:"' .. $bad .. '"'), 4), false)
+end
+
+$family = '    {pattern:"<app>.execute", owner:"demo", members:"instances", version:"0.1.0", status:"accepted", class:"intent", schema:"command::ExecuteRequest"}'
+$with_family = replace(registry($b4, 4), "families: [\n", "families: [\n" .. $family .. "\n")
+expect("schema 4 family", $with_family, true)
+expect("schema 4 family missing schema", replace($with_family, ', schema:"command::ExecuteRequest"', ""), false)
+expect("schema 3 family with schema", replace($with_family, "schema: 4", "schema: 3"), false)
+expect("schema 4 family bad schema", replace($with_family, 'schema:"command::ExecuteRequest"', 'schema:"foo"'), false)
+
+fn expect_today($name, $text, $today, $pass, $needle)
+  $file = $tmp .. "/" .. $name .. ".conf.mix"
+  write_file($file, $text)
+  $r = run_argv(["/opt/mixos/bin/mix", $tool, $file, "--today", $today], {timeout: 30, stderr: "stdout"})
+  $ok = ($r.exit_code == 0) == $pass and ($needle == "" or contains($r.stdout, $needle))
+  check($name, $ok)
+  if not $ok then print($r.stdout) end
+end
+$pending = registry(replace($b4, 'schema:"none"', 'schema:"pending"'), 4)
+expect_today("pending at cutoff", $pending, "2026-11-30", true, "")
+expect_today("pending expired names verb", $pending, "2026-12-01", false, "demo.open: pending schema expired")
+$pending_family = replace($with_family, 'schema:"command::ExecuteRequest"', 'schema:"pending"')
+expect_today("pending family at cutoff", $pending_family, "2026-11-30", true, "")
+expect_today("pending family expired names family", $pending_family, "2026-12-01", false, "<app>.execute: pending schema expired")
 
 remove_dir($tmp)
 $failed = 0

@@ -9,6 +9,8 @@ Status: accepted 2026-10-09.
 
 ## The decision
 
+Commands take parameters and return results; see [the amendment](2026-10-20-commands-take-parameters.md).
+
 - **The UI toolkit is egui/eframe on wgpu, from crates.io.** MixOS vendors no UI
   toolkit and tracks egui's current release deliberately.
 - **Engine first.** An application's behaviour lives in pure-data engine

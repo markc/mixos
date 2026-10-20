@@ -498,6 +498,10 @@ every request it has accepted gets an answer:</p>
 </li>
 </ul>
 <h2 id="busviewer-the-worked-example">BusViewer: the worked example</h2>
+<p>Native <code>&lt;app&gt;.commands</code> responses report <code>shortcut</code> and <code>more</code> using stored
+keymap chords, with modifiers in Ctrl, Alt, Shift order. Key names follow the
+keymaps grammar (<code>ArrowLeft</code> or <code>Left</code>, <code>=</code>, <code>-</code>, <code>/</code>), so reported chords can
+be used in keymap overrides without translating display labels.</p>
 <p>BusViewer browses the services and verbs on a node and calls one verb with
 a JSON body. Everything in its window is also a Bus verb.</p>
 <h3 id="reading">Reading</h3>

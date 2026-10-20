@@ -6,18 +6,18 @@ use std::collections::{BTreeMap, BTreeSet};
 pub type Overrides = BTreeMap<String, Vec<String>>;
 type Bound = (Option<String>, Vec<String>);
 
-/// Store modifier prefixes in Ctrl, Shift, Alt order, preserving the key grammar.
+/// Store modifier prefixes in Ctrl, Alt, Shift order, preserving the key grammar.
 fn canonical_chord(text: &str) -> String {
     let parts: Vec<_> = text.split('+').collect();
     let (key, modifiers) = parts.split_last().expect("split always has a part");
     if modifiers
         .iter()
-        .any(|m| !["Ctrl", "Shift", "Alt"].contains(m))
+        .any(|m| !["Ctrl", "Alt", "Shift"].contains(m))
     {
         return text.to_owned();
     }
     let mut out = String::new();
-    for modifier in ["Ctrl", "Shift", "Alt"] {
+    for modifier in ["Ctrl", "Alt", "Shift"] {
         if modifiers.contains(&modifier) {
             out.push_str(modifier);
             out.push('+');

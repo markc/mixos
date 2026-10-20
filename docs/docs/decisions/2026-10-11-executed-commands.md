@@ -10,6 +10,8 @@ Status: accepted 2026-10-11. Amends [egui applications](2026-10-09-egui-applicat
 
 ## The decision
 
+Amended 2026-10-20 by [commands take parameters and return results](2026-10-20-commands-take-parameters.md). The body is v2; v1 events are no longer emitted.
+
 - **Every application publishes each command it runs.**
   - The topic is `<app>.command.executed`, where `<app>` is the
     application's Bus service name.
@@ -24,12 +26,14 @@ Status: accepted 2026-10-11. Amends [egui applications](2026-10-09-egui-applicat
 
   ```text
   {
-    v: 1,
+    v: 2,
     run: "5f0c…",           -- this process: a UUID drawn once at start
     seq: 812,                -- per run, from 1, assigned in execution order
     at_ms: 1760160000123,    -- integer ms since the Unix epoch, at handler return
     id: "file.open",         -- the command's stable id
     origin: "menu",          -- menu | shortcut | palette | ui | bus | macro
+    params: null,            -- accepted body, null for a nullary run or note()
+    result: null,            -- returned value; note() records null
     dropped: 0               -- events this run lost since the last one published
   }
   ```
@@ -66,18 +70,20 @@ Status: accepted 2026-10-11. Amends [egui applications](2026-10-09-egui-applicat
     a registry command);
   - `macro`: the shared macro runner. This value is reserved until
     applications have a Macros menu.
-- **No arguments.** Registry commands take none. A command whose effect
-  depends on a choice made later, such as a path picked in a dialog, is
-  recorded here only as having run. Replay needs those choices, and the
-  [recording spec](2026-10-11-rec-and-play.md) defines how applications
-  publish them before `rec` is built.
+- **Parameters and result:** the event carries the accepted params and the
+  returned result, or a digest above a bound. Each field is measured using
+  compact JSON (`serde_json::to_vec`); a value above 4096 bytes becomes
+  `{ bytes, sha256 }`, with a lowercase SHA-256 digest of those bytes. The
+  accepted params are preserved verbatim; the registry cannot reserialise
+  defaults applied inside a handler. Nullary params and both `note()` fields
+  are null.
 - **Publishing never blocks the application.**
   - Events go through a bounded queue on the application's existing effect
     path.
   - The topic is not retained.
   - Events still queued when the application exits are lost, and nothing
     counts them: the next run starts afresh.
-- **It will be implemented once.** The toolkit's command registry will take
+- **It will be implemented once.** The UI-free command registry (`libs/command`) will take
   the origin at dispatch and record each run. The shared Bus connection (the
   `citizen` library, or an application's own connection until it moves to
   `citizen`) will publish the records. An application will not write its own

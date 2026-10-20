@@ -237,12 +237,12 @@
 <h1 id="command">Command</h1>
 <p><code>command</code> is the shared, UI-free registry for application engines. It owns
 <code>Command&lt;S&gt;</code>, <code>Registry&lt;S&gt;</code>, <code>Described</code>, <code>Error</code>, <code>Scope</code>, <code>Origin</code>,
-<code>Executed</code>, <code>Journal</code> and Fluent <code>Strings</code>. Its public contract starts at 0.1.0.
+<code>Executed</code>, <code>Journal</code> and Fluent <code>Strings</code>. Its public contract is 0.2.0.
 There are no egui or windowing dependencies.</p>
 <p><code>Registry::execute(id, state, params, origin)</code> looks up the command, calls
 the optional <code>authorize</code> hook, checks enablement, refuses parameters on
 nullary commands, then runs the handler and returns its JSON result.
-Refusals are <code>Unknown</code>, <code>Disabled { id, reason }</code>, <code>BadParams { id, msg }</code>
+Refusals are <code>Unknown</code>, <code>Denied { id, reason }</code>, <code>Disabled { id, reason }</code>, <code>BadParams { id, msg }</code>
 or <code>Failed</code>. Only successful handlers are journaled. Queries skip the journal;
 intent, input and system commands are recorded.</p>
 <p>Handlers with parameters declare <code>ParamSpec { type_name, schema }</code>, derive
@@ -267,9 +267,23 @@ existing application tables need no edits. It re-exports the moved data types.
 New engine-owned tables use <code>toolkit::command::EngineAdapter::new(registry)</code>:
 it caches parsed shortcuts and resolved icons and dispatches typed parameters
 through the original registry.</p>
-<p>Executed events remain <strong>v1</strong>, with exactly the existing body: v, run, seq,
-at_ms, id, origin and dropped. <code>note</code> and <code>take_executed</code> remain available
-through toolkit for citizen's publisher.</p>
+<p>Executed events are <strong>v2</strong>: v, run, seq, at_ms, id, origin, params, result,
+then dropped. The accepted params are preserved verbatim, including null;
+nullary runs store null params and <code>note()</code> stores null for both fields.
+The result is the handler's returned value. Each field above 4096 compact
+JSON bytes is replaced with <code>{ bytes, sha256 }</code>, the byte count and lowercase
+SHA-256 of <code>serde_json::to_vec</code> output. <code>executed::bounded</code> and
+<code>executed::EXECUTED_RESULT_BYTES</code> expose that policy. <code>note</code> and <code>take_executed</code>
+remain available through toolkit for citizen's publisher, which updates dropped.</p>
+<p><code>ExecuteRequest { id, params }</code> is the body type referenced by every
+<code>&lt;app&gt;.execute</code> row in verb registry schema 4. It derives serde and JsonSchema,
+refuses unknown fields, and defaults omitted or null params to None. Existing
+apps retain their current parsers during migration.</p>
+<p>Authorisation refusal returns Denied before checking enablement, parameters
+or running the handler. Toolkit maps it to legacy <code>CommandError::Denied</code>.
+Both adapters report stored <code>shortcut</code> and <code>more</code> strings in the keymaps
+grammar, in Ctrl, Alt, Shift order. Keys preserve the stored spelling, such as
+<code>ArrowLeft</code> or <code>Left</code>, <code>=</code>, <code>-</code> and <code>/</code>.</p>
 <p>The application layering table (<code>apps/layers.conf.mix</code>) prevents engine
 dependency paths from reaching GUI crates, including through another workspace
 library. Unit and integration tests cover dispatch, schema reporting, journals

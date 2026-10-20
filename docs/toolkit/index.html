@@ -255,10 +255,10 @@ routes every action through one command registry.</p>
 <p>The UI-free registry and Fluent <code>Strings</code> now live in
 <a href="/command/"><code>command</code></a>. Toolkit keeps the egui adapter and its
 existing nullary command API, with the moved data types re-exported.
-Core <code>describe()</code> emits stored chord grammar (<code>Ctrl+=</code>, <code>ArrowLeft</code>), while
-the toolkit wrapper keeps egui NAMES spelling for today's consumers; plan
-step 2 switches <code>&lt;app&gt;.commands</code> to core spelling as part of the
-describe/schema contract change.</p>
+Core and toolkit <code>describe()</code> emit stored chords in the keymaps grammar
+(<code>Ctrl+=</code>, <code>ArrowLeft</code>, or short forms), ordered Ctrl, Alt, Shift. Executed
+events use the command 0.2.0 v2 body with bounded params and result, and the
+legacy wrapper maps authorisation refusals to <code>CommandError::Denied</code>.</p>
 <p>It gives each app:</p>
 <ul>
 <li>the resolved <a href="/design/">design</a> as an egui style, plus the

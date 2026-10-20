@@ -149,6 +149,11 @@ fn executed_commands_are_published_with_their_origin() {
     rig.h.get_by_label("About Prefs").click();
     rig.h.run_steps(3);
     let bodies = published(&rig);
+    for body in &bodies {
+        assert_eq!(body["v"], 2);
+        assert_eq!(body.get("params"), Some(&serde_json::Value::Null));
+        assert_eq!(body.get("result"), Some(&serde_json::Value::Null));
+    }
     let got: Vec<(&str, &str)> = bodies
         .iter()
         .map(|b| (b["id"].as_str().unwrap(), b["origin"].as_str().unwrap()))
