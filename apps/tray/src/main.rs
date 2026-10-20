@@ -38,7 +38,7 @@ impl Tray for MixosTray {
     }
 
     fn icon_name(&self) -> String {
-        "applications-engineering".into()
+        "dev.mixos.tray".into()
     }
 
     fn tool_tip(&self) -> ToolTip {
