@@ -25,15 +25,13 @@ config.workspace = true
 design.workspace = true
 egui.workspace = true
 egui_extras.workspace = true
-fluent-bundle.workspace = true
+command.workspace = true
 # thumbnail: decodes the shared thumbnail cache's PNGs (never a user's file).
 image.workspace = true
 png.workspace = true
 # markdown: CommonMark + GFM parsing into the toolkit's own document.
 pulldown-cmark.workspace = true
 serde.workspace = true
-# executed: a run identity per process.
-uuid.workspace = true
 serde_json.workspace = true
 # The settings contract's data types only (no features: no Bus): session_look.
 settings.workspace = true

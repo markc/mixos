@@ -23,6 +23,8 @@ One line per component with a page: kind, then install profiles. The
 - [busviewer](https://mixos.dev/busviewer/README.md): app; profiles: unclassified. BusViewer is the MixOS desktop app that lists the services and verbs on this node's Bus, shows each verb's description and the mesh peers, and calls one verb once with a JSON body.
 - [ced](https://mixos.dev/ced/README.md): app; profiles: unclassified. The MixOS Editor, a desktop text editor over the edit Bus service, where people and agents edit the same document at once and see each other's carets, selections and changes live.
 - [citizen](https://mixos.dev/citizen/README.md): lib; profiles: none (library). An app's supervised native Bus connection, shared by the MixOS apps for registration, calls, replies, single-instance launch and window restore.
+- [command](https://mixos.dev/command/README.md): lib; profiles: none (library). UI-free command registry, typed dispatch and executed journal.
+  - [command — changelog](https://mixos.dev/command/changelog.md): Release notes of the command component, mirrored from libs/command/CHANGELOG.md.
 - [compd](https://mixos.dev/compd/README.md): service; profiles: unclassified. The MixOS Wayland compositor, which owns scanout, rendering, input and capture, and serves the comp Bus service with its workspaces, verbs, topics and props tree.
   - [compd — changelog](https://mixos.dev/compd/changelog.md): Release notes of the compd component, mirrored from services/compd/CHANGELOG.md.
 - [config](https://mixos.dev/config/README.md): lib; profiles: none (library). Where MixOS keeps its files and how a conf.mix file is read, with one directory rule for every component and descriptor-safe atomic file helpers.

@@ -252,6 +252,9 @@ the shell layer of the
 An app keeps its behaviour in a headless engine and its UI state in one
 serialisable struct. The toolkit draws the window around that state and
 routes every action through one command registry.</p>
+<p>The UI-free registry and Fluent <code>Strings</code> now live in
+<a href="/command/"><code>command</code></a>. Toolkit keeps the egui adapter and its
+existing nullary command API, with the moved data types re-exported.</p>
 <p>It gives each app:</p>
 <ul>
 <li>the resolved <a href="/design/">design</a> as an egui style, plus the

@@ -10,11 +10,11 @@
 //! (`settings::keymap`); [`crate::Registry::rebind`] applies them.
 
 use egui::{Key, KeyboardShortcut, Modifiers};
-use std::collections::BTreeMap;
+pub use ::command::keymap::Overrides;
 
 /// One app's bindings as the profile stores them: action id to chords; an
 /// empty list unbinds.
-pub type Overrides = BTreeMap<String, Vec<String>>;
+
 
 /// The shortcut `text` names, or `None` when it is not a chord egui has.
 pub fn parse_chord(text: &str) -> Option<KeyboardShortcut> {

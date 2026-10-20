@@ -13,6 +13,10 @@ An app keeps its behaviour in a headless engine and its UI state in one
 serialisable struct. The toolkit draws the window around that state and
 routes every action through one command registry.
 
+The UI-free registry and Fluent `Strings` now live in
+[`command`](../command/README.md). Toolkit keeps the egui adapter and its
+existing nullary command API, with the moved data types re-exported.
+
 It gives each app:
 
 - the resolved [design](../design/README.md) as an egui style, plus the

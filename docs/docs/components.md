@@ -23,6 +23,7 @@ profile: [desktop](desktop.md) and [server](server.md). This page describes the 
 | [busviewer](../busviewer/README.md) | app | unclassified | [`apps/busviewer`](https://github.com/markc/mixos/tree/main/apps/busviewer) | BusViewer is the MixOS desktop app that lists the services and verbs on this node's Bus, shows each verb's description and the mesh peers, and calls one verb once with a JSON body. |
 | [ced](../ced/README.md) | app | unclassified | [`apps/ced`](https://github.com/markc/mixos/tree/main/apps/ced) | The MixOS Editor, a desktop text editor over the edit Bus service, where people and agents edit the same document at once and see each other's carets, selections and changes live. |
 | [citizen](../citizen/README.md) | lib | none (library) | [`libs/citizen`](https://github.com/markc/mixos/tree/main/libs/citizen) | An app's supervised native Bus connection, shared by the MixOS apps for registration, calls, replies, single-instance launch and window restore. |
+| [command](../command/README.md) · [changelog](../command/changelog.md) | lib | none (library) | [`libs/command`](https://github.com/markc/mixos/tree/main/libs/command) | UI-free command registry, typed dispatch and executed journal. |
 | [compd](../compd/README.md) · [changelog](../compd/changelog.md) | service | unclassified | [`services/compd`](https://github.com/markc/mixos/tree/main/services/compd) | The MixOS Wayland compositor, which owns scanout, rendering, input and capture, and serves the comp Bus service with its workspaces, verbs, topics and props tree. |
 | [config](../config/README.md) | lib | none (library) | [`libs/config`](https://github.com/markc/mixos/tree/main/libs/config) | Where MixOS keeps its files and how a conf.mix file is read, with one directory rule for every component and descriptor-safe atomic file helpers. |
 | [daemon](../daemon/README.md) | lib | none (library) | [`libs/daemon`](https://github.com/markc/mixos/tree/main/libs/daemon) | Shared HTTP host parsing, listener guards, TLS and ACME provisioning. |
@@ -107,6 +108,7 @@ checked separately by the layering gate.
 | [buildinfo](https://github.com/markc/mixos/blob/main/libs/buildinfo/Cargo.toml) | buildinfo | lib | core | none | 0.1.1 |
 | [bus](https://github.com/markc/mixos/blob/main/libs/bus/Cargo.toml) | bus | lib | core | none | 0.1.1 |
 | [citizen](https://github.com/markc/mixos/blob/main/libs/citizen/Cargo.toml) | citizen | lib | core | none | 0.1.1 |
+| [command](https://github.com/markc/mixos/blob/main/libs/command/Cargo.toml) | command | lib | core | public | 0.1.0 |
 | [config](https://github.com/markc/mixos/blob/main/libs/config/Cargo.toml) | config | lib | core | none | 0.1.1 |
 | [daemon](https://github.com/markc/mixos/blob/main/libs/daemon/Cargo.toml) | daemon | lib | core | none | 0.1.1 |
 | [davproto](https://github.com/markc/mixos/blob/main/libs/davproto/Cargo.toml) | davproto | lib | core | none | 0.1.1 |

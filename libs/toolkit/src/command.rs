@@ -16,8 +16,8 @@ use crate::icons::Icon;
 use crate::menu::{self, Entry, Menu, Row};
 use crate::strings::Strings;
 use egui::{KeyboardShortcut, ModifierNames};
-use serde::Serialize;
-use std::collections::{BTreeSet, HashMap};
+pub use ::command::{Call, Class, Described, Error, ParamSpec, Place, Scope};
+use std::collections::HashMap;
 use std::fmt;
 
 /// The message `key` from the app's catalogue, else from the toolkit's own
@@ -31,7 +31,12 @@ pub fn label_text(strings: &Strings, key: &str) -> String {
     }
 }
 
-/// One action.
+struct ToolkitLabels<'a>(&'a Strings);
+impl ::command::Labels for ToolkitLabels<'_> {
+    fn label(&self, key: &str) -> String { label_text(self.0, key) }
+}
+
+/// One legacy nullary action. New engine tables use `command::Command`.
 pub struct Command<S> {
     /// Stable dotted id, e.g. `bus.refresh`. Never reused once published.
     pub id: &'static str,
@@ -77,66 +82,15 @@ impl fmt::Display for CommandError {
 
 impl std::error::Error for CommandError {}
 
-/// A command as the Bus and the palette describe it.
-#[derive(Clone, Debug, PartialEq, Serialize)]
-pub struct Described {
-    pub id: &'static str,
-    pub label: String,
-    pub menu: Option<String>,
-    pub shortcut: Option<String>,
-    /// Further chords that run it too, outside the menus.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub more: Vec<String>,
-    pub enabled: bool,
-    /// A choice command's tick; `None` for an ordinary command.
-    pub checked: Option<bool>,
-}
-
-/// Where a command's shortcut may fire.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum Scope {
-    /// Wherever the keyboard is.
-    #[default]
-    Anywhere,
-    /// Only while no text field has the keyboard: for bare keys and editing
-    /// keys (S, M, Delete) that a field typing them must keep.
-    Browsing,
-}
-
-/// Runs a choice command: a closure, so it can carry its choice.
-type ChoiceRun<S> = Box<dyn Fn(&mut S)>;
-
-/// A command's label key for the current state.
-type Relabel<S> = Box<dyn Fn(&S) -> &'static str>;
-
-/// A command's chords: its own shortcut and the further ones.
-type Bound = (Option<KeyboardShortcut>, Vec<KeyboardShortcut>);
-
-/// Whether a choice command is the current choice.
-type ChoiceChecked<S> = Box<dyn Fn(&S) -> bool>;
-
 /// The application's commands, in menu order.
 pub struct Registry<S> {
     commands: Vec<Command<S>>,
     /// Fluent key of the menu that opens with a search field (§3.5).
     search_menu: Option<&'static str>,
-    /// Choice commands ([`Registry::add_choice`]): their runs and ticks,
-    /// by command id. Their [`Command`] entries carry everything else.
-    choice_runs: HashMap<&'static str, ChoiceRun<S>>,
-    choice_checks: HashMap<&'static str, ChoiceChecked<S>>,
-    /// Each command's chords after its own `shortcut`: they run it too,
-    /// outside the menus.
+    /// The UI-free registry owns dispatch, choices, labels and binding policy.
+    core: ::command::Registry<S>,
+    /// Parsed accelerator cache, refreshed only when bindings change.
     extras: HashMap<&'static str, Vec<KeyboardShortcut>>,
-    /// Commands whose shortcuts fire only in a [`Scope`] narrower than
-    /// anywhere.
-    scopes: HashMap<&'static str, Scope>,
-    /// Commands whose label follows the state ([`Registry::relabel`]).
-    labels: HashMap<&'static str, Relabel<S>>,
-    /// Every command's chords as built, kept by the first
-    /// [`Registry::rebind`] so each later one starts from them.
-    defaults: Option<HashMap<&'static str, Bound>>,
-    /// The runs waiting to be published on `<app>.command.executed`.
-    journal: std::cell::RefCell<crate::executed::Journal>,
 }
 
 impl<S> Default for Registry<S> {
@@ -144,26 +98,10 @@ impl<S> Default for Registry<S> {
         Self {
             commands: Vec::new(),
             search_menu: None,
-            choice_runs: HashMap::new(),
-            choice_checks: HashMap::new(),
+            core: ::command::Registry::new(),
             extras: HashMap::new(),
-            scopes: HashMap::new(),
-            labels: HashMap::new(),
-            defaults: None,
-            journal: std::cell::RefCell::new(crate::executed::Journal::default()),
         }
     }
-}
-
-/// Where a choice command sits and what it shows: a [`Command`]'s fields
-/// less its `run` and `enabled` (a choice can always be chosen).
-#[derive(Clone, Copy, Debug)]
-pub struct Place {
-    pub id: &'static str,
-    pub label: &'static str,
-    pub menu: Option<&'static str>,
-    pub submenu: Option<&'static str>,
-    pub group: u8,
 }
 
 /// A choice command's own run does nothing: the registry runs its closure.
@@ -192,6 +130,13 @@ impl<S> Registry<S> {
                 command.id
             );
         }
+        self.core.add_nullary(::command::Command {
+            id: command.id, label: command.label, menu: command.menu,
+            submenu: command.submenu, group: command.group, shortcut: None,
+            icon: command.icon.map(Icon::name), enabled: ::command::always,
+            run: |_, _| Ok(serde_json::Value::Null), params: None, class: Class::Intent,
+        }, command.enabled, command.run);
+        self.core.set_shortcut(command.id, command.shortcut.map(|s| crate::keymap::chord_text(&s)));
         self.commands.push(command);
         self
     }
@@ -227,8 +172,8 @@ impl<S> Registry<S> {
             enabled: always,
             run: choose,
         });
-        self.choice_runs.insert(id, Box::new(run));
-        self.choice_checks.insert(id, Box::new(checked));
+        // Replace the temporary nullary entry with its choice closure in core.
+        self.core.set_choice(id, run, checked);
         self
     }
 
@@ -245,7 +190,7 @@ impl<S> Registry<S> {
     ) -> &mut Self {
         let id = command.id;
         self.add(command);
-        self.choice_checks.insert(id, Box::new(checked));
+        self.core.check(id, checked);
         self
     }
 
@@ -254,17 +199,13 @@ impl<S> Registry<S> {
     /// # Panics
     /// When there is no command `id`.
     pub fn scope(&mut self, id: &str, scope: Scope) -> &mut Self {
-        let id = self
-            .get(id)
-            .unwrap_or_else(|| panic!("no command {id:?}"))
-            .id;
-        self.scopes.insert(id, scope);
+        self.core.scope(id, scope);
         self
     }
 
     /// Where command `id`'s shortcuts fire.
     pub fn scope_of(&self, id: &str) -> Scope {
-        self.scopes.get(id).copied().unwrap_or_default()
+        self.core.scope_of(id)
     }
 
     /// Give command `id` a label that follows the state ("Mark as Read"
@@ -274,27 +215,18 @@ impl<S> Registry<S> {
     /// # Panics
     /// When there is no command `id`.
     pub fn relabel(&mut self, id: &str, label: impl Fn(&S) -> &'static str + 'static) -> &mut Self {
-        let id = self
-            .get(id)
-            .unwrap_or_else(|| panic!("no command {id:?}"))
-            .id;
-        self.labels.insert(id, Box::new(label));
+        self.core.relabel(id, label);
         self
     }
 
     /// Command `id`'s label key in `state`.
     pub fn label_of(&self, id: &str, state: &S) -> Option<&'static str> {
-        let command = self.get(id)?;
-        Some(
-            self.labels
-                .get(id)
-                .map_or(command.label, |label| label(state)),
-        )
+        self.core.label_of(id, state)
     }
 
     /// Whether command `id` is a choice, and if so whether it is ticked.
     pub fn checked(&self, id: &str, state: &S) -> Option<bool> {
-        self.choice_checks.get(id).map(|checked| checked(state))
+        self.core.checked(id, state)
     }
 
     /// Open the menu `menu` (a Fluent menu key, usually Help) with a field
@@ -334,11 +266,8 @@ impl<S> Registry<S> {
             .get(id)
             .unwrap_or_else(|| panic!("no command {id:?}"))
             .id;
-        for shortcut in shortcuts {
-            if !self.taken(shortcut) {
-                self.extras.entry(id).or_default().push(shortcut);
-            }
-        }
+        self.core.add_shortcuts(id, shortcuts.into_iter().map(|s| crate::keymap::chord_text(&s)));
+        self.refresh_shortcuts();
         self
     }
 
@@ -391,101 +320,35 @@ impl<S> Registry<S> {
     ///
     /// Returns a note for each thing skipped, for the app's log.
     pub fn rebind(&mut self, overrides: &crate::keymap::Overrides) -> Vec<String> {
-        if self.defaults.is_none() {
-            let built = self
-                .commands
-                .iter()
-                .map(|c| {
-                    let more = self.extras.get(c.id).cloned().unwrap_or_default();
-                    (c.id, (c.shortcut, more))
-                })
-                .collect();
-            self.defaults = Some(built);
-        }
-        let defaults = self.defaults.clone().unwrap_or_default();
-        let mut notes = Vec::new();
-        let mut chosen: Vec<(&'static str, Bound)> = Vec::new();
-        let mut claimed = BTreeSet::new();
-        for (action, chords) in overrides {
-            let Some(id) = self.get(action).map(|c| c.id) else {
-                notes.push(format!("{action}: no such command"));
-                continue;
-            };
-            // Parse first: a list with no key the app knows (a typo) keeps
-            // the defaults; only an empty list unbinds.
-            let mut parsed: Vec<KeyboardShortcut> = Vec::new();
-            for text in chords {
-                match crate::keymap::parse_chord(text) {
-                    None => notes.push(format!("{action}: {text:?} is not a key")),
-                    Some(s) if parsed.contains(&s) => {
-                        notes.push(format!("{action}: {text:?} is listed twice"));
-                    }
-                    Some(s) => parsed.push(s),
-                }
-            }
-            if !chords.is_empty() && parsed.is_empty() {
-                notes.push(format!(
-                    "{action}: no key it names is known; the defaults stay"
-                ));
-                continue;
-            }
-            let mut list = Vec::new();
-            for s in parsed {
-                if claimed.insert(crate::keymap::chord_text(&s)) {
-                    list.push(s);
-                } else {
-                    let text = crate::keymap::chord_text(&s);
-                    notes.push(format!("{action}: {text:?} is bound to another command"));
-                }
-            }
-            let mut list = list.into_iter();
-            chosen.push((id, (list.next(), list.collect())));
-        }
-        let listed: BTreeSet<&str> = chosen.iter().map(|(id, _)| *id).collect();
-        let free = |s: &KeyboardShortcut| !claimed.contains(&crate::keymap::chord_text(s));
-        // A default that lost its accelerator promotes its next chord.
-        let mut bound: HashMap<&'static str, Bound> = defaults
-            .into_iter()
-            .filter(|(id, _)| !listed.contains(id))
-            .map(|(id, (own, mut more))| {
-                more.retain(free);
-                let own = match own {
-                    Some(s) if free(&s) => Some(s),
-                    Some(_) if !more.is_empty() => Some(more.remove(0)),
-                    _ => None,
-                };
-                (id, (own, more))
-            })
-            .collect();
-        bound.extend(chosen);
-        self.extras.clear();
-        for command in &mut self.commands {
-            let (own, more) = bound.remove(command.id).unwrap_or_default();
-            command.shortcut = own;
-            if !more.is_empty() {
-                self.extras.insert(command.id, more);
-            }
-        }
+        let notes = self.core.rebind(overrides, |text| {
+            crate::keymap::parse_chord(text).map(|s| crate::keymap::chord_text(&s))
+        });
+        self.refresh_shortcuts();
         notes
     }
 
+    fn refresh_shortcuts(&mut self) {
+        self.extras.clear();
+        for c in &mut self.commands {
+            let mut chords = self.core.shortcuts_of(c.id).into_iter().filter_map(|s| crate::keymap::parse_chord(&s));
+            c.shortcut = chords.next();
+            let more: Vec<_> = chords.collect();
+            if !more.is_empty() { self.extras.insert(c.id, more); }
+        }
+    }
     /// Run the command `id` against `state`: the one dispatch path for the
     /// UI, the command line and the Bus. `origin` says how it was reached;
     /// an accepted run is recorded for `<app>.command.executed` once the
     /// handler returns, and a refused one is not.
     pub fn execute(&self, id: &str, state: &mut S, origin: Origin) -> Result<(), CommandError> {
-        let command = self
-            .get(id)
-            .ok_or_else(|| CommandError::Unknown(id.to_owned()))?;
-        if !(command.enabled)(state) {
-            return Err(CommandError::Disabled(command.id));
-        }
-        match self.choice_runs.get(command.id) {
-            Some(run) => run(state),
-            None => (command.run)(state),
-        }
-        self.journal.borrow_mut().record(command.id, origin);
-        Ok(())
+        self.core.execute(id, state, serde_json::Value::Null, origin)
+            .map(|_| ())
+            .map_err(|err| match err {
+                Error::Unknown(id) => CommandError::Unknown(id),
+                Error::Disabled { id, .. } => CommandError::Disabled(id),
+                // This adapter only registers infallible nullary intents.
+                Error::BadParams { .. } | Error::Failed(_) => unreachable!("nullary adapter: {err}"),
+            })
     }
 
     /// Record a run of `id` that the application performed itself instead
@@ -493,36 +356,27 @@ impl<S> Registry<S> {
     /// state, an action the editor or the Bus ran), so it is published like
     /// any other. Record only an accepted run, once.
     pub fn note(&self, id: &str, origin: Origin) {
-        self.journal.borrow_mut().record(id, origin);
+        self.core.note(id, origin);
     }
 
     /// The runs recorded since the last call, oldest first, and how many
     /// were dropped before them, for the application's Bus connection to
     /// publish ([`crate::executed`]).
     pub fn take_executed(&self) -> (Vec<Executed>, u64) {
-        self.journal.borrow_mut().take()
+        self.core.take_executed()
     }
 
     /// Every command with its current enablement, for `<app>.commands`.
     pub fn describe(&self, state: &S, strings: &Strings) -> Vec<Described> {
-        self.commands
-            .iter()
-            .map(|c| Described {
-                id: c.id,
-                label: label_text(strings, self.label_of(c.id, state).unwrap_or(c.label)),
-                menu: c.menu.map(|m| label_text(strings, m)),
-                shortcut: c.shortcut.map(|s| s.format(&ModifierNames::NAMES, false)),
-                more: self
-                    .extras
-                    .get(c.id)
-                    .into_iter()
-                    .flatten()
-                    .map(|s| s.format(&ModifierNames::NAMES, false))
-                    .collect(),
-                enabled: (c.enabled)(state),
-                checked: self.checked(c.id, state),
-            })
-            .collect()
+        let mut rows = self.core.describe(state, &ToolkitLabels(strings));
+        // Keep the established egui ModifierNames::NAMES wire spelling,
+        // including symbols for arrows, byte for byte.
+        for row in &mut rows {
+            let mut chords = self.shortcuts_of(row.id).into_iter();
+            row.shortcut = chords.next().map(|s| s.format(&ModifierNames::NAMES, false));
+            row.more = chords.map(|s| s.format(&ModifierNames::NAMES, false)).collect();
+        }
+        rows
     }
 
     /// Ids of the enabled commands whose shortcut was pressed this frame, in
@@ -547,7 +401,7 @@ impl<S> Registry<S> {
                 .retain(|event| match self.hit(event, held, clipboard) {
                     // A browsing chord is the text field's while one types.
                     Some(command) if typing && self.scope_of(command.id) == Scope::Browsing => true,
-                    Some(command) if (command.enabled)(state) => {
+                    Some(command) if self.core.enabled(command.id, state).is_ok() => {
                         fired.push(command.id);
                         false
                     }
@@ -562,7 +416,7 @@ impl<S> Registry<S> {
     /// input around the shortcuts asks this.
     pub fn takes(&self, event: &egui::Event, state: &S) -> bool {
         self.hit(event, egui::Modifiers::NONE, false)
-            .is_some_and(|c| (c.enabled)(state))
+            .is_some_and(|c| self.core.enabled(c.id, state).is_ok())
     }
 
     /// The command whose shortcut `event` presses, modifiers exactly.
@@ -726,7 +580,7 @@ impl<S> Registry<S> {
         let row = |c: &Command<S>| {
             let shortcut = c.shortcut.map(|s| ctx.format_shortcut(&s));
             let label = label_text(strings, self.label_of(c.id, state).unwrap_or(c.label));
-            let enabled = (c.enabled)(state);
+            let enabled = self.core.enabled(c.id, state).is_ok();
             Entry::Row(match self.checked(c.id, state) {
                 Some(checked) => Row::choice(c.id, label, shortcut, enabled, checked),
                 None => Row::command(c.id, label, shortcut, enabled),
@@ -786,7 +640,7 @@ impl<S> Registry<S> {
         self.commands
             .iter()
             .filter(|c| {
-                (c.enabled)(state)
+                self.core.enabled(c.id, state).is_ok()
                     && label_text(strings, self.label_of(c.id, state).unwrap_or(c.label))
                         .to_lowercase()
                         .contains(&query)
