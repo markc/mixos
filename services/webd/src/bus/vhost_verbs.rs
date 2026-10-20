@@ -1860,6 +1860,19 @@ mod tests {
             cfg.synthesize_listeners(&[h.to_string()], &HashSet::new())
                 .is_err()
         );
+        let duplicate_id = cfg_with(
+            vec![
+                listener("same", "192.0.2.1:443", true, &[h]),
+                listener("same", "198.51.100.1:443", true, &[h]),
+            ],
+            &[],
+        );
+        assert!(listener_add_error(Some(&duplicate_id), h).is_some());
+        assert!(
+            duplicate_id
+                .synthesize_listeners(&[h.to_string()], &HashSet::new())
+                .is_err()
+        );
     }
 
     #[test]

@@ -795,11 +795,10 @@ pub fn listener_add_error(cfg: Option<&NodeConfig>, fqdn: &str) -> Option<String
     }
     let naming = listeners_naming(cfg, fqdn);
     // Check every listener, including ones after the first two matches.
-    if let Some(l) = cfg
-        .webd
-        .listener
+    let mut seen = std::collections::HashSet::new();
+    if let Some(l) = naming
         .iter()
-        .find(|l| l.vhosts.iter().filter(|h| *h == fqdn).count() > 1)
+        .find(|l| !seen.insert(l.id.as_str()))
     {
         return Some(format!(
             "vhost {fqdn:?} is listed twice in listener {:?}'s `vhosts` in \
