@@ -9,7 +9,8 @@ import org.kde.plasma.plasma5support as P5Support
 // The popup asks mixtrayd for one snapshot each time it opens, and again after
 // every control action and on Refresh. While it is open, it also keeps one
 // `mixtrayd wait` running: that call returns as soon as systemd reports a
-// change to a COS unit, and the popup starts the next one. A closed popup
+// change to a COS unit, a file under ~/.ssh changes or an SSH probe moves on,
+// and the popup starts the next one. A closed popup
 // starts no new wait, so it costs nothing.
 PlasmoidItem {
     id: root
@@ -58,8 +59,34 @@ PlasmoidItem {
         ctl.connectSource(root.mixtrayd + " control " + unit + " " + action);
     }
 
+    // The executable engine runs each source through sh, so every word that
+    // came from a snapshot or a form is single-quoted.
+    function shq(word: string): string {
+        return "'" + String(word).replace(/'/g, "'\\''") + "'";
+    }
+
+    // One `mixtrayd ssh` action. A probe reports nothing here: its progress
+    // and result arrive through the wait like any other change.
+    function sshAction(words: var): void {
+        if (root.acting) {
+            return;
+        }
+        root.acting = words[0] !== "probe";
+        root.actionMessage = "";
+        root.actionError = "";
+        sshCtl.connectSource(root.mixtrayd + " ssh " + words.map(w => root.shq(w)).join(" "));
+    }
+
     function openLogs(unit: string): void {
-        logs.connectSource("konsole -e journalctl -u " + unit + " -n 200 -f");
+        launch.connectSource("konsole -e journalctl -u " + root.shq(unit) + " -n 200 -f");
+    }
+
+    function connectHost(id: string): void {
+        launch.connectSource("konsole -e ssh " + root.shq(id));
+    }
+
+    function editHost(path: string): void {
+        launch.connectSource("xdg-open " + root.shq(path));
     }
 
     function unitCount(): string {
@@ -140,15 +167,35 @@ PlasmoidItem {
         }
     }
 
-    // journalctl follows the log until its Konsole window is closed.
     P5Support.DataSource {
-        id: logs
+        id: sshCtl
 
         engine: "executable"
         connectedSources: []
 
         onNewData: (source, data) => {
-            logs.disconnectSource(source);
+            sshCtl.disconnectSource(source);
+            root.acting = false;
+            if (data["exit code"] !== 0) {
+                const text = (data.stderr || data.stdout || "").trim();
+                root.actionError = text.length > 0 ? text : "The SSH action failed";
+            } else if (!source.includes(" ssh 'probe'")) {
+                root.actionMessage = "Done";
+            }
+            root.refresh();
+        }
+    }
+
+    // Konsole windows (logs, ssh sessions) and the editor: the source ends
+    // when the launched program does, and nothing is read from it.
+    P5Support.DataSource {
+        id: launch
+
+        engine: "executable"
+        connectedSources: []
+
+        onNewData: (source, data) => {
+            launch.disconnectSource(source);
         }
     }
 
@@ -174,6 +221,9 @@ PlasmoidItem {
         onRefreshRequested: root.refresh()
         onControlRequested: (unit, action) => root.control(unit, action)
         onLogsRequested: unit => root.openLogs(unit)
+        onSshRequested: words => root.sshAction(words)
+        onConnectRequested: id => root.connectHost(id)
+        onEditRequested: path => root.editHost(path)
     }
 
     onExpandedChanged: {
