@@ -331,7 +331,8 @@ package, identity in <code>component.mx</code>. The source is
 <tr><td><code>tests/releases_test.mix</code></td><td>offline: validation, verification, install, rollback, links</td></tr>
 <tr><td><code>tests/releasesd_test.mix</code></td><td>every verb over a private broker and a stand-in API</td></tr>
 </tbody></table>
-<p>Run the tests from the checkout root. They need <code>bsdtar</code>; the Bus test
+<p>Run the tests from the checkout root. The offline test needs <code>bsdtar</code> for
+two hostile fixtures (the service itself unpacks with Mix's <code>tar_unpack</code>); the Bus test
 needs a <code>noded</code>, by default <code>/opt/mixos/bin/noded</code>, or <code>--noded &lt;path&gt;</code>:</p>
 <pre><code class="language-sh">mix services/releasesd/tests/releases_test.mix
 mix services/releasesd/tests/releasesd_test.mix

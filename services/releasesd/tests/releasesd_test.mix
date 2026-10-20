@@ -6,7 +6,7 @@
 -- itself as a serve citizen. Every verb is driven with `send`, including the
 -- refusals: a tampered digest, a bad body, an unknown app and a path tag.
 -- Run from the checkout root: mix services/releasesd/tests/releasesd_test.mix [--noded PATH]
--- Needs bsdtar and a noded binary (default /opt/mixos/bin/noded).
+-- Needs a noded binary (default /opt/mixos/bin/noded).
 
 $pb = require("../../../tests/lib/private_bus.mix")
 $here = dirname(realpath($0))
@@ -54,7 +54,7 @@ fn make_tarball($dir, $version)
   mkdir($p .. "/share/applications", {parents: true})
   write_file($p .. "/share/applications/dev.example.demo.desktop", "[Desktop Entry]\nType=Application\nName=Demo\nExec=demo %F\n")
   $name = "demo-" .. $version .. "-linux-" .. platform().arch .. ".tar.gz"
-  run_argv_must(["bsdtar", "-czf", $dir .. "/" .. $name, "-C", $tmp .. "/src-" .. $version, $top])
+  $_ = tar_pack($tmp .. "/src-" .. $version, $dir .. "/" .. $name, {codec: "gzip"})
   return $name
 end
 
