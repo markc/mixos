@@ -5,11 +5,13 @@ $first = 0
 $second = 0
 subscribe("comp-headless.surface.mapped")
 subscribe("comp-rec.surface.mapped")
-on comp-headless.surface.mapped
-  $first = $first + 1
-end
-on comp-rec.surface.mapped
-  $second = $second + 1
+-- compd's command is the suffix; the broker preserves the full topic header.
+on surface.mapped
+  if $event.headers.topic == "comp-headless.surface.mapped" then
+    $first = $first + 1
+  elif $event.headers.topic == "comp-rec.surface.mapped" then
+    $second = $second + 1
+  end
 end
 on observer.count
   reply(0, json_encode({first: $first, second: $second}))
