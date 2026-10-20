@@ -975,10 +975,15 @@ impl Engine {
                                     continue;
                                 }
                                 if guard.model.is_some() {
+                                    let Ok(unload_permit) = guard.inference_gate.clone().try_acquire_owned() else {
+                                        idle_remaining = 1;
+                                        continue;
+                                    };
                                     info!("model idle for {timeout}s, unloading to free memory");
                                     let model = guard.model.take();
                                     drop(guard);
                                     let _ = tokio::task::spawn_blocking(move || {
+                                    let _permit = unload_permit;
                                     drop(model);
                                     // SAFETY: zero requests release of unused allocator pages.
                                     unsafe { libc::malloc_trim(0); }

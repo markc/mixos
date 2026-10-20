@@ -588,8 +588,7 @@ pub(crate) async fn ensure_model(
     drop(guard);
     let svc = state.config.service.clone();
     // The worker retains the permit even if the requesting future is cancelled.
-    let loaded = tokio::task::spawn_blocking(move || {
-        let _lease = lease;
+    let (loaded, _load_lease) = tokio::task::spawn_blocking(move || {
         metrics::RSS_BEFORE_LOAD_BYTES.store(rss_bytes(), Ordering::Relaxed);
         let model = EmbedModel::load(
             dtype,
@@ -598,7 +597,9 @@ pub(crate) async fn ensure_model(
             svc.max_forward_tokens,
         );
         metrics::RSS_AFTER_LOAD_BYTES.store(rss_bytes(), Ordering::Relaxed);
-        model
+        // Keep the model ahead of the lease in the returned value so a
+        // cancelled JoinHandle drops its weights before releasing admission.
+        (model, lease)
     })
     .await
     .context("model loader worker failed")?;
