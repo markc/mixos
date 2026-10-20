@@ -69,6 +69,8 @@ try
   end
   check($ready, "headless startup failed: " .. read_file($tmp .. "/app.log"))
   ok("screenshot.open", {path:$tmp .. "/image.png"})
+  $refused = call("screenshot.execute", {id:"edit.undo", unknown:true})
+  check($refused.rc == 10 and $refused.body.error_code == "ARGUMENT", "unknown execute field refused")
   $params = {kind:"arrow", points:[{x:0,y:0},{x:1,y:1}], colour:[255,0,0,255], width:2}
   $added = ok("screenshot.execute", {id:"edit.annotate", params:$params})
   $id = $added.result.id
@@ -92,10 +94,24 @@ try
   end
   check(deep_eq($rows[0].params, $params) and $rows[0].result.id == $id, "accepted params and returned id")
   check($rows[2].params == nil, "undo has null parameters")
+  $alias = ok("screenshot.annotate", $params)
+  check($alias.id != nil and len($alias.objects) == 2, "alias returns document info and id")
+  for $i = 1 to 50
+    $rows = filter(map(filter(lines(read_file($events)), fn($l) = $l != ""), fn($l) = json_parse($l)), fn($r) = $r.probe == nil)
+    if len($rows) == 4 then break end
+    sleep(0.1)
+  end
+  check(len($rows) == 4, "alias publishes one event; refusal publishes none")
+  check($rows[3].id == "edit.annotate" and $rows[3].v == 2 and $rows[3].origin == "bus", "alias uses registry")
+  check(deep_eq($rows[3].params, $params) and deep_eq($rows[3].result, $alias), "alias event params and result")
+  print("ALIAS " .. json_encode($alias))
+  print("REFUSED " .. json_encode($refused))
+  print("EXECUTED " .. json_encode($rows[3]))
   print("PASS screenshot headless edit path")
 finally
   for $pid in [$app_pid, $watch_pid]
     if $pid != nil and process_alive($pid) then kill($pid, 15) end
   end
   if $bus != nil then $private.stop($bus) end
+  remove_dir($tmp)
 end

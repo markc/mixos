@@ -255,6 +255,16 @@ pub fn settle(
                                 json!({"error_code":"HEADLESS","message":crate::label("no-window")}),
                             )
                         }
+                        Err(Error::Disabled {
+                            reason: "nothing to undo" | "nothing to redo",
+                            ..
+                        }) if alias => (
+                            0,
+                            app.document
+                                .as_ref()
+                                .expect("history enablement requires a document")
+                                .info(),
+                        ),
                         Err(Error::Disabled { reason, .. }) if alias => (
                             10,
                             json!({"error_code": match reason {
@@ -269,7 +279,7 @@ pub fn settle(
                             (10, json!({"error_code":"ARGUMENT", "message":msg}))
                         }
                         Err(Error::Failed(msg)) => {
-                            (10, json!({"error_code":"FAILED", "message":msg}))
+                            (10, json!({"error_code":if alias { "ARGUMENT" } else { "FAILED" }, "message":msg}))
                         }
                     };
                     out.push(Effect::Reply { id, rc, body });

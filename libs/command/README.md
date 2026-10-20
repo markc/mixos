@@ -37,3 +37,12 @@ the state, checkpoint and both stacks untouched. New edits clear redo.
 edit, undo, redo or `mark_saved()` ends the coalescing group. `current()`,
 `can_undo()`, `can_redo()`, `depth()` and `labels()` expose state without mutation.
 `mark_saved()` records a checkpoint; `dirty()` compares document values.
+
+## Follow-ups
+
+Screenshot's `restyle` still changes ink and width on the selection directly,
+without journaling a document edit. An `edit.restyle {id, colour, width}`
+command belongs in plan step 5/6.
+
+The annotation command table classifies document errors by message text.
+Replace that classification with a typed document error.

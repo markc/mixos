@@ -5,6 +5,12 @@
 
 - Add bounded transactional `History<D>` snapshots, explicit coalescing,
   undo/redo labels and saved checkpoints for application engines.
+- Count retained redo snapshots as well as undo in the history byte budget.
+- Route Screenshot document edits through parameterised commands. The
+  `screenshot.execute` body rejects unknown fields (`deny_unknown_fields`).
+- Rename Screenshot's nullary Delete selection command from `edit.delete`
+  to `edit.delete_selected`; keymap overrides naming the old command must
+  move to `edit.delete_selected`. `edit.delete {id}` now deletes one object.
 
 ## 0.2.0 — 2026-10-21
 

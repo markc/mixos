@@ -39,7 +39,8 @@ async fn next_on(
     tokio::time::timeout(Duration::from_secs(10), async {
         loop {
             match incoming.recv().await {
-                Some(BoundedIncomingEvent::Command(cmd)) if cmd.topic() == Some(topic) => {
+                Some(BoundedIncomingEvent::Command(cmd)) if cmd.topic().is_some() => {
+                    assert_eq!(cmd.topic(), Some(topic), "unexpected event: {}", cmd.body);
                     return serde_json::from_str(&cmd.body).unwrap();
                 }
                 Some(_) => {}
@@ -206,13 +207,20 @@ async fn agent_capture_annotate_save_recent_export_cancel_and_quit() {
         .await
         .unwrap_err();
     assert!(refused.contains("UNSAVED"), "{refused}");
-    call(
+    let crop = json!({"x":10,"y":10,"width":80,"height":60});
+    let cropped = call(
         &client,
         "screenshot.crop",
-        json!({"crop":{"x":10,"y":10,"width":80,"height":60}}),
+        json!({"crop":crop}),
     )
     .await
     .unwrap();
+    let run = next_on(&mut incoming, &format!("{SERVICE}.command.executed")).await;
+    assert_eq!(run["v"], 2);
+    assert_eq!(run["id"], "edit.crop");
+    assert_eq!(run["origin"], "bus");
+    assert_eq!(run["params"], json!({"crop":crop}));
+    assert_eq!(run["result"], cropped);
 
     assert_eq!(
         std::fs::read(&source).unwrap(),
@@ -225,6 +233,9 @@ async fn agent_capture_annotate_save_recent_export_cancel_and_quit() {
     assert!(path.starts_with(&shots), "{path:?}");
     let name = path.file_name().unwrap().to_string_lossy().into_owned();
     assert!(annotation::library::is_shot_name(&name), "{name}");
+    let run = next_on(&mut incoming, &format!("{SERVICE}.command.executed")).await;
+    assert_eq!(run["id"], "file.save");
+    assert_eq!(run["origin"], "bus");
     let heard = next_on(&mut incoming, &format!("{SERVICE}.saved")).await;
     assert_eq!(heard["path"], json!(path));
     assert_eq!(heard["annotated"], true);
@@ -252,6 +263,8 @@ async fn agent_capture_annotate_save_recent_export_cancel_and_quit() {
     call(&client, "screenshot.export", json!({"path": export}))
         .await
         .unwrap();
+    let heard = next_on(&mut incoming, &format!("{SERVICE}.saved")).await;
+    assert_eq!(heard["path"], json!(export));
     let exported = std::fs::read(&export).unwrap();
     assert!(
         call(&client, "screenshot.export", json!({"path": export}))

@@ -213,6 +213,7 @@
                         <a href="#saving">Saving</a>
                         <a href="#handing-a-shot-to-an-agent">Handing a shot to an agent</a>
                         <a href="#for-agents">For agents</a>
+                        <a href="#parameterised-document-edits" class="toc-h3">Parameterised document edits</a>
                         <a href="#from-the-command-line">From the command line</a>
                         <a href="#source-and-tests">Source and tests</a>
                         <a href="#notes">Notes</a>
@@ -359,15 +360,16 @@ first.</p>
 <tr><td><code>screenshot.take</code></td><td><code>mode</code>, <code>window</code>, <code>comp</code></td><td>as Print Screen: starts at once, or brings the window forward and asks about unsaved work at once; refused (<code>COMPOSITOR</code>) when <code>comp</code> names another compositor</td></tr>
 <tr><td><code>screenshot.cancel</code></td><td></td><td>cancels a capture during its delay</td></tr>
 <tr><td><code>screenshot.open</code></td><td><code>path</code></td><td>opens an image; refused while unsaved annotations exist</td></tr>
-<tr><td><code>screenshot.annotate</code></td><td><code>kind</code>, <code>points</code>, <code>colour</code>, <code>width</code>, and <code>text</code>, <code>size</code>, <code>number</code> for text and markers</td><td>the new annotation's id</td></tr>
-<tr><td><code>screenshot.move</code>, <code>screenshot.delete</code></td><td><code>id</code> (and <code>dx</code>, <code>dy</code>)</td><td>the document</td></tr>
-<tr><td><code>screenshot.crop</code></td><td><code>crop</code> <code>{x, y, width, height}</code>, or null</td><td>the document</td></tr>
-<tr><td><code>screenshot.undo</code>, <code>screenshot.redo</code></td><td></td><td>the document</td></tr>
+<tr><td><code>screenshot.annotate</code> (deprecated)</td><td><code>kind</code>, <code>points</code>, <code>colour</code>, <code>width</code>, and <code>text</code>, <code>size</code>, <code>number</code> for text and markers</td><td>the document plus the new annotation's <code>id</code></td></tr>
+<tr><td><code>screenshot.move</code>, <code>screenshot.delete</code> (deprecated)</td><td><code>id</code> (and <code>dx</code>, <code>dy</code>)</td><td>the document</td></tr>
+<tr><td><code>screenshot.crop</code> (deprecated)</td><td><code>crop</code> <code>{x, y, width, height}</code>, or null</td><td>the document</td></tr>
+<tr><td><code>screenshot.undo</code>, <code>screenshot.redo</code> (deprecated)</td><td></td><td>the document, including when history is empty</td></tr>
 <tr><td><code>screenshot.save</code></td><td></td><td>saves into the screenshots folder as <code>YYYYMMDD_HHMMSS.png</code> (<code>_2</code>, <code>_3</code>… when taken); publishes <code>screenshot.saved</code></td></tr>
 <tr><td><code>screenshot.export</code></td><td><code>path</code></td><td>Save As to a new file</td></tr>
 <tr><td><code>screenshot.recent</code></td><td><code>limit</code> (1–100)</td><td>the newest saved shots</td></tr>
 <tr><td><code>screenshot.select</code></td><td><code>tool</code>, <code>mode</code>, <code>window</code>, <code>output</code></td><td>the UI state</td></tr>
-<tr><td><code>screenshot.commands</code>, <code>screenshot.execute</code></td><td><code>id</code></td><td>every command, or runs one as its menu item would</td></tr>
+<tr><td><code>screenshot.commands</code></td><td></td><td>every command with parameter schemas, labels, shortcuts and enablement</td></tr>
+<tr><td><code>screenshot.execute</code></td><td><code>id</code>, optional <code>params</code></td><td>runs a command; answers <code>{executed, result, status, dialog, job}</code></td></tr>
 <tr><td><code>screenshot.theme</code></td><td><code>scheme</code>, <code>mode</code></td><td>this window's look</td></tr>
 <tr><td><code>screenshot.show</code>, <code>screenshot.quit</code></td><td></td><td>brings the window forward; closes it (refused with unsaved work)</td></tr>
 </tbody></table>
@@ -378,12 +380,41 @@ you can write (never over an existing file). An agent
 is refused rather than allowed to discard a person's unsaved annotations
 (<code>UNSAVED</code>), and is refused while a dialog is open (<code>DIALOG</code>) or another job
 runs (<code>BUSY</code>).</p>
+<h3 id="parameterised-document-edits">Parameterised document edits</h3>
+<p>The headless <code>annotation</code> engine owns <code>edit.annotate</code> (the Shape body),
+<code>edit.move {id, dx, dy}</code>, <code>edit.delete {id}</code>, <code>edit.crop {crop}</code> (null resets),
+and nullary <code>edit.undo</code> / <code>edit.redo</code>. Dispatch through
+<code>screenshot.execute {id, params}</code>; its reply includes the command's <code>result</code>
+alongside status, dialog and job. Annotate returns document info plus the
+new object's <code>id</code>; the other edits return document info. Unknown fields in
+the execute body are refused with <code>ARGUMENT</code>.</p>
+<p>Pointer strokes, text, number markers, completed object drags, crops, menus,
+shortcuts and Bus calls all reach the same <code>command::Registry::execute</code>.
+A drag commits on release, making one undo step and one executed event.
+Delete selection is the nullary shell command <code>edit.delete_selected</code>; it
+dispatches <code>edit.delete</code> with the selected id. Keymap overrides that named
+the old nullary <code>edit.delete</code> must move to <code>edit.delete_selected</code>.
+Uncrop dispatches <code>edit.crop</code>. The shell's dialog/job checks compose with
+the engine's enablement.</p>
+<p>The six <code>screenshot.annotate</code>, <code>screenshot.move</code>, <code>screenshot.delete</code>,
+<code>screenshot.crop</code>, <code>screenshot.undo</code> and <code>screenshot.redo</code> verbs remain
+deprecated aliases of execute and preserve their old reply bodies and
+argument error codes at document limits. Alias undo/redo with empty history
+return the document without executing or publishing an event; the command
+and <code>screenshot.execute</code> remain disabled. Undo/redo use the shared
+<code>command::History</code>; its byte budget counts undo and redo snapshots. Raster
+workers receive a fresh history without old edits.</p>
 <p>The window is drivable like every MixOS app, including its menus: see
 <a href="/docs/drive/">driving an app</a> (<code>screenshot.ui.*</code>, <code>screenshot.window</code>). The
 verbs are registered in <code>docs/docs/spec/bus/verbs.conf.mix</code>. Each command run
 from a menu, a key, the toolbar or <code>screenshot.execute</code> is published on
-<code>screenshot.command.executed</code>
-(<a href="/docs/decisions/2026-10-11-executed-commands/">executed commands</a>).</p>
+<code>screenshot.command.executed</code> v2 with accepted <code>params</code> and returned <code>result</code>,
+including successful edits reached by hand or through the deprecated aliases
+(<a href="/docs/decisions/2026-10-11-executed-commands/">executed commands</a>).
+Edit › Delete and Edit › Uncrop each publish two executed events: first the
+inner <code>edit.delete</code> / <code>edit.crop</code> with parameters, then the nullary wrapper
+<code>edit.delete_selected</code> / <code>edit.uncrop</code>. The wrapper records the gesture;
+the inner command records the document edit.</p>
 <p><code>screenshot --headless</code> runs the same verbs with no window, for agents and
 tests, registered under the headless names above so Print Screen never
 lands in an instance nobody can see. It never asks anything: work that would need a

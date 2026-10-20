@@ -831,7 +831,13 @@ impl App {
         match self.execute(id, params, self.origin) {
             Ok(value) => Some(value),
             Err(error) => {
-                self.fail(error);
+                match error {
+                    command::Error::BadParams { msg, .. } | command::Error::Failed(msg) => {
+                        self.fail(msg);
+                    }
+                    command::Error::Disabled { reason, .. } => self.fail(reason),
+                    other => self.fail(other),
+                }
                 None
             }
         }
@@ -1976,6 +1982,105 @@ mod tests {
         assert_eq!(replies(&effects)[0].2["state"], "asking");
         assert!(!a.busy(), "nothing starts under the dialog");
         assert_eq!(a.ui.dialog, Some(Dialog::About));
+    }
+
+    #[test]
+    fn alias_undo_with_empty_history_returns_document_without_an_event() {
+        empty_history_alias("screenshot.undo", "edit.undo");
+    }
+
+    #[test]
+    fn alias_redo_with_empty_history_returns_document_without_an_event() {
+        empty_history_alias("screenshot.redo", "edit.redo");
+    }
+
+    fn empty_history_alias(verb: &str, command: &str) {
+        let mut a = with_doc();
+        let info = a.document.as_ref().unwrap().info();
+        let commands = a.commands.clone();
+        let strings = crate::strings();
+        a.command(1, verb, "{}");
+        let r = replies(&crate::jobs::settle(
+            &mut a,
+            &commands.borrow(),
+            &strings,
+            false,
+        ));
+        assert_eq!(r, vec![(1, 0, info)]);
+        assert!(commands.borrow().take_executed().0.is_empty());
+        a.command(
+            2,
+            "screenshot.execute",
+            &json!({"id":command}).to_string(),
+        );
+        let r = replies(&crate::jobs::settle(
+            &mut a,
+            &commands.borrow(),
+            &strings,
+            false,
+        ));
+        assert_eq!(r[0].1, 10);
+        assert_eq!(r[0].2["error_code"], "DISABLED");
+        assert!(commands.borrow().take_executed().0.is_empty());
+    }
+
+    #[test]
+    fn annotation_limit_preserves_alias_argument_and_execute_failed() {
+        let mut a = with_doc();
+        let commands = a.commands.clone();
+        let strings = crate::strings();
+        let params = serde_json::to_value(rect()).unwrap();
+        for _ in 0..annotation::MAX_OBJECTS {
+            a.command(1, "screenshot.annotate", &params.to_string());
+            let r = replies(&crate::jobs::settle(
+                &mut a,
+                &commands.borrow(),
+                &strings,
+                false,
+            ));
+            assert_eq!(r[0].1, 0);
+            assert_eq!(commands.borrow().take_executed().0.len(), 1);
+        }
+        let info = a.document.as_ref().unwrap().info();
+        for (verb, body, code) in [
+            ("screenshot.annotate", params.clone(), "ARGUMENT"),
+            (
+                "screenshot.execute",
+                json!({"id":"edit.annotate", "params":params}),
+                "FAILED",
+            ),
+        ] {
+            a.command(2, verb, &body.to_string());
+            let r = replies(&crate::jobs::settle(
+                &mut a,
+                &commands.borrow(),
+                &strings,
+                false,
+            ));
+            assert_eq!(r[0].1, 10);
+            assert_eq!(r[0].2["error_code"], code);
+            assert_eq!(a.document.as_ref().unwrap().info(), info);
+            assert!(commands.borrow().take_executed().0.is_empty());
+        }
+        a.add_shape(rect());
+        assert_eq!(a.status, format!("{}: annotation limit reached", a.label("error")));
+    }
+
+    #[test]
+    fn hand_edit_errors_show_only_the_inner_message() {
+        let mut a = with_doc();
+        a.undo();
+        assert_eq!(a.status, format!("{}: nothing to undo", a.label("error")));
+        let mut shape = rect();
+        shape.width = 0.0;
+        let message = a
+            .document
+            .as_mut()
+            .unwrap()
+            .add(shape.clone())
+            .unwrap_err();
+        a.add_shape(shape);
+        assert_eq!(a.status, format!("{}: {message}", a.label("error")));
     }
 
     #[test]

@@ -81,12 +81,12 @@ pub fn describe() -> Value {
         {"name":"screenshot.take","args":{"mode":"optional screen|window|region (default: the window's)","window":"optional {id, generation}","comp":"optional: the compositor the caller expects; refused (COMPOSITOR) if this instance serves another"},"description":"Take a screenshot as Print Screen does: unsaved work is asked about in the window, never discarded; answers at once whether it started or is asking","read_only":false},
         {"name":"screenshot.cancel","description":"Cancel a capture in progress (during its delay, before its frame)","read_only":false},
         {"name":"screenshot.open","args":{"path":"image file"},"description":"Open an image as a new document; refused while unsaved annotations exist","read_only":false},
-        {"name":"screenshot.annotate","args":shape,"deprecated":"screenshot.execute","description":"Deprecated alias of screenshot.execute edit.annotate: Add an annotation; answers its id","read_only":false},
-        {"name":"screenshot.move","args":{"id":"annotation id","dx":"pixels","dy":"pixels"},"deprecated":"screenshot.execute","description":"Deprecated alias of screenshot.execute edit.move: Move an annotation","read_only":false},
-        {"name":"screenshot.delete","args":{"id":"annotation id"},"deprecated":"screenshot.execute","description":"Deprecated alias of screenshot.execute edit.delete: Delete an annotation","read_only":false},
-        {"name":"screenshot.crop","args":{"crop":"{x,y,width,height} in original pixels, or null to reset"},"deprecated":"screenshot.execute","description":"Deprecated alias of screenshot.execute edit.crop: Crop the export (the original is kept)","read_only":false},
-        {"name":"screenshot.undo","deprecated":"screenshot.execute","description":"Deprecated alias of screenshot.execute edit.undo: Undo the last edit","read_only":false},
-        {"name":"screenshot.redo","deprecated":"screenshot.execute","description":"Deprecated alias of screenshot.execute edit.redo: Redo the last undone edit","read_only":false},
+        {"name":"screenshot.annotate","args":shape,"deprecated":true,"replaced_by":"screenshot.execute","description":"Deprecated alias of screenshot.execute edit.annotate: Add an annotation; answers its id","read_only":false},
+        {"name":"screenshot.move","args":{"id":"annotation id","dx":"pixels","dy":"pixels"},"deprecated":true,"replaced_by":"screenshot.execute","description":"Deprecated alias of screenshot.execute edit.move: Move an annotation","read_only":false},
+        {"name":"screenshot.delete","args":{"id":"annotation id"},"deprecated":true,"replaced_by":"screenshot.execute","description":"Deprecated alias of screenshot.execute edit.delete: Delete an annotation","read_only":false},
+        {"name":"screenshot.crop","args":{"crop":"{x,y,width,height} in original pixels, or null to reset"},"deprecated":true,"replaced_by":"screenshot.execute","description":"Deprecated alias of screenshot.execute edit.crop: Crop the export (the original is kept)","read_only":false},
+        {"name":"screenshot.undo","deprecated":true,"replaced_by":"screenshot.execute","description":"Deprecated alias of screenshot.execute edit.undo: Undo the last edit","read_only":false},
+        {"name":"screenshot.redo","deprecated":true,"replaced_by":"screenshot.execute","description":"Deprecated alias of screenshot.execute edit.redo: Redo the last undone edit","read_only":false},
         {"name":"screenshot.export","args":{"path":"new PNG file"},"description":"Save As: publish the annotated PNG at a path that does not exist yet","read_only":false},
         {"name":"screenshot.save","description":"Save into the screenshots folder (Pictures/Screenshots) as YYYYMMDD_HHMMSS.png, local time (_2, _3... when taken); publishes screenshot.saved","read_only":false},
         {"name":"screenshot.recent","args":{"limit":"optional 1..100 (default 10)"},"description":"The most recent saved shots, newest first: path, width, height, annotated, saved_at","read_only":true},
@@ -112,5 +112,21 @@ mod tests {
             .map(|v| v["name"].as_str().unwrap().to_owned())
             .collect();
         assert_eq!(described, VERBS);
+    }
+
+    #[test]
+    fn edit_aliases_have_boolean_deprecation_and_a_replacement() {
+        let surface = describe();
+        let aliases: Vec<_> = surface["verbs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|v| is_edit(v["name"].as_str().unwrap()))
+            .collect();
+        assert_eq!(aliases.len(), 6);
+        for verb in aliases {
+            assert_eq!(verb["deprecated"], true);
+            assert_eq!(verb["replaced_by"], "screenshot.execute");
+        }
     }
 }
