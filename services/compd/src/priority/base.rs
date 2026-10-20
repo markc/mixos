@@ -20,7 +20,11 @@ const RR_PRIORITY: i32 = 2;
 
 /// Apply the policy: `"realtime"` (the default) SCHED_RR, `"auto"` nice, `""`
 /// off.
-pub fn apply(priority: &str) {
+pub fn apply(priority: &str, backend: crate::cli::Backend) {
+    if backend == crate::cli::Backend::Headless {
+        info!("priority: headless keeps inherited scheduling and nice value");
+        return;
+    }
     match priority {
         "" => trace!("priority: disabled (settings.json priority=\"\")"),
         "auto" => auto(),

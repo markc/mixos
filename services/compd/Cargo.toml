@@ -28,9 +28,10 @@ default = ["backend-winit"]
 # Optional compatibility adapters. The native session does not enable these.
 desktop-dbus = ["dep:zbus", "world/desktop-dbus", "graphics/desktop-dbus", "slots/desktop-dbus"]
 backend-native = ["dep:native"]
-# Both backends in one binary; the backend is picked at runtime (src/cli.rs).
-backend-all = ["backend-native", "backend-winit"]
+# All backends in one binary; the backend is picked at runtime (src/cli.rs).
+backend-all = ["backend-native", "backend-winit", "backend-headless"]
 backend-winit = ["dep:nested"]
+backend-headless = ["dep:headless"]
 # Hardware video capture through libav (VA-API, NVENC). Off by default, so the
 # default binary links no ffmpeg; screenshots work either way.
 capture-ffmpeg = ["graphics/capture-ffmpeg"]
@@ -64,6 +65,7 @@ scene-host = { workspace = true }
 slots = { workspace = true }
 protocols = { workspace = true }
 nested = { workspace = true, optional = true }
+headless = { workspace = true, optional = true }
 world = { workspace = true }
 x11-wm = { workspace = true }
 libc = { workspace = true }

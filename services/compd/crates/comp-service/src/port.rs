@@ -57,7 +57,7 @@ use crate::channel::{CommandSender, CommandSource, Waker, command_channel};
 use crate::outbox::{ObservationOutbox, ObservationProducer, outbox};
 use crate::service::{PortContext, PortService};
 
-pub use comp_model::catalogue::{NESTED_SERVICE, REGISTRY_TOPIC, SERVICE};
+pub use comp_model::catalogue::{HEADLESS_SERVICE, NESTED_SERVICE, REGISTRY_TOPIC, SERVICE};
 pub use comp_model::reply::validate_service_name;
 
 pub const PORT_QUEUE_CAPACITY: usize = 16;

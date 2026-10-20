@@ -178,6 +178,7 @@ pub fn service_name(backend: Backend, requested: Option<&str>) -> String {
         (Some(name), _) => name.to_string(),
         (None, Backend::Kms) => comp_service::port::SERVICE.to_string(),
         (None, Backend::Nested) => comp_service::port::NESTED_SERVICE.to_string(),
+        (None, Backend::Headless) => comp_service::port::HEADLESS_SERVICE.to_string(),
     }
 }
 
@@ -399,6 +400,7 @@ impl Bus {
             binding_profile: match backend {
                 Backend::Nested => "nested",
                 Backend::Kms => "kms-live",
+                Backend::Headless => "headless",
             },
             pending,
             handle: handle.clone(),

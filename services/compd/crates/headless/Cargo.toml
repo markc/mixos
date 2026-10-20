@@ -5,7 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish = false
-description = "compd headless backend: Phase 0 spike (render node, no DRM master, offscreen)"
+description = "compd render-node backend with a virtual output and no seat"
 
 [package.metadata.mixos]
 component = "compd"
@@ -18,3 +18,18 @@ mod_module_files = "deny"
 
 [dependencies]
 smithay = { workspace = true }
+model = { workspace = true }
+world = { workspace = true }
+frames = { workspace = true }
+outputs = { workspace = true }
+render-gles = { workspace = true }
+protocols = { workspace = true }
+graphics = { workspace = true }
+scenegraph = { workspace = true }
+slots = { workspace = true }
+decor = { workspace = true }
+
+[dev-dependencies]
+wayland-client = { version = "=0.31.15" }
+libc = { workspace = true }
+serde_json = { workspace = true }

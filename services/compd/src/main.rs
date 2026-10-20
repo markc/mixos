@@ -45,6 +45,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     slots::sdnotify::init();
     let cli = cli::parse(&buildinfo::build_info!().line());
     let backend = cli::resolve(&cli);
+    if let Some(node) = cli.render_node.clone() {
+        model::environment::config::base::override_render_node(node);
+    }
     if let Some(device) = cli.device.clone() {
         model::environment::config::base::override_scanout_node(device);
     }
@@ -148,7 +151,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // CPU scheduling boost (settings.json `priority`): applied here — logging
     // is up (the ladder logs which mechanism succeeded), and no worker threads
     // that shouldn't inherit the nice value have spawned yet.
-    crate::priority::base::apply(&e.priority);
+    crate::priority::base::apply(&e.priority, backend);
 
     let env_flags: Vec<(String, String)> = vec![
         ("COMPOSITOR_PRIORITY".to_string(), e.priority.clone()),
@@ -428,6 +431,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &mut event_loop,
             );
         }
+        #[cfg(feature = "backend-headless")]
+        cli::Backend::Headless => {
+            headless::wire::wire(
+                &mut state,
+                &mut event_loop,
+                headless::wire::Options {
+                    size: cli.size.unwrap_or((1920, 1080)).into(),
+                    scale: cli::output_scale(&cli, backend).unwrap_or(1.0),
+                    render_node: cli.render_node.as_deref().unwrap_or(&e.render_node),
+                },
+            )?;
+        }
         // `cli::resolve` only returns a backend that is compiled in.
         #[allow(unreachable_patterns)]
         other => unreachable!("backend {other:?} is not compiled into this build"),
@@ -483,7 +498,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // on; and after the backend wire, so the first X11 window has an output to be
     // placed against. The server comes up asynchronously — `DISPLAY` is published from
     // its ready event, not here.
-    {
+    if backend != cli::Backend::Headless {
         let dh = state.inner.loader.display_handle.clone();
         xwayland::register(&dh, &mut event_loop);
     }
@@ -535,7 +550,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // nested session still get the right values. Only launches from OUTSIDE it are
     // affected, and those wanting a nested session can say so per-invocation
     // (`WAYLAND_DISPLAY=wayland-2 app`) instead of a global mutation nothing unwinds.
-    if !nested {
+    if backend == cli::Backend::Kms {
         world::environment::interface::lifecycle::lifecycle::announce_session(
             wayland_socket_name_default_subprocess_2.to_str().unwrap(),
             &environment.DesktopName,
@@ -552,7 +567,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // boost, as intended) — arm the kernel-level inheritance stop: tasks
     // created from here on, the IME below and every launched client included,
     // start at default scheduling.
-    crate::priority::arm::arm::arm(&model::environment::config::base::get().priority);
+    if backend != cli::Backend::Headless {
+        crate::priority::arm::arm::arm(&model::environment::config::base::get().priority);
+    }
 
     // Launch the compositor-owned input method configured in `preferences.json`
     // (`ime: { exec, args }`); unset ⇒ none is launched. Must be AFTER WAYLAND_DISPLAY is exported

@@ -11,15 +11,18 @@
 //! | flag | compd |
 //! |---|---|
 //! | `--nested` | nested (winit) backend |
+//! | `--headless` | render node only, virtual `headless-0` output, no seat or XWayland |
+//! | `--size WxH` | headless physical mode (default 1920x1080 at 60 Hz) |
+//! | `--render-node PATH` | headless render node (default `render_node` setting) |
 //! | `--kms`, `kms-live` | KMS backend (`kms-live` is the subcommand spelling) |
 //! | (neither) | both compiled in: nested when `WAYLAND_DISPLAY`/`DISPLAY` is set, else KMS |
 //! | `--socket NAME` | the Wayland socket name (default: the next free `wayland-N`) |
 //! | `--device PATH` | KMS: the scanout DRM node (overrides `scanout_node`) |
 //! | `--connector NAME` | KMS: drive this connector (`HDMI-A-1`, `eDP-1`, …) |
-//! | `--scale S` | the output scale, 0.5 ≤ S ≤ 4, rounded to 1/120 (wp_fractional_scale's unit); on KMS it defaults to 1, nested it defaults to following the host |
+//! | `--scale S` | the output scale, 0.5 ≤ S ≤ 4, rounded to 1/120 (wp_fractional_scale's unit); KMS/headless default to 1, nested follows the host |
 //! | `--kms-confirm` | accepted, no effect: compd never asks a human to confirm a takeover |
 //! | `--config-file PATH` | the settings file (read by `model::environment::config`) |
-//! | `--bus-service NAME` | the `comp` Bus service name (default `comp` on KMS, `comp-nested` nested) |
+//! | `--bus-service NAME` | the `comp` Bus service name (default `comp` on KMS, `comp-nested` nested, `comp-headless` headless) |
 //! | `--scene-service NAME` | the Mix Scenes host's fallback Bus name when `shell` is taken (overrides the `scene_service` preference; the host runs only with `scene_host` on) |
 //! | `--version`, `-V` / `--help`, `-h` | print and exit 0 |
 //! | `--chrome`, anything else | refused, exit 2 |
@@ -30,6 +33,7 @@ use std::process::exit;
 pub enum Backend {
     Nested,
     Kms,
+    Headless,
 }
 
 impl Backend {
@@ -37,6 +41,7 @@ impl Backend {
         match self {
             Backend::Nested => "nested",
             Backend::Kms => "kms",
+            Backend::Headless => "headless",
         }
     }
 }
@@ -48,6 +53,8 @@ pub struct Cli {
     pub socket: Option<String>,
     pub device: Option<String>,
     pub connector: Option<String>,
+    pub size: Option<(i32, i32)>,
+    pub render_node: Option<String>,
     /// `--bus-service`: the Bus service name, already checked against the ABP
     /// name grammar.
     pub bus_service: Option<String>,
@@ -58,8 +65,8 @@ pub struct Cli {
     pub scale: Option<f64>,
 }
 
-const USAGE: &str = "usage: compd [--nested | --kms | kms-live] [--socket NAME] \
-[--device PATH] [--connector NAME] [--scale S] [--kms-confirm] [--config-file PATH] \
+const USAGE: &str = "usage: compd [--nested | --kms | kms-live | --headless] [--socket NAME] \
+[--device PATH] [--connector NAME] [--size WxH] [--render-node PATH] [--scale S] [--kms-confirm] [--config-file PATH] \
 [--bus-service NAME] [--scene-service NAME] [--version] [--help]";
 
 fn refuse(msg: &str) -> ! {
@@ -80,7 +87,7 @@ pub fn parse_from(args: impl Iterator<Item = String>, version: &str) -> Cli {
     let mut args = args.peekable();
     let mut set_backend = |cli: &mut Cli, b: Backend| {
         if cli.backend.is_some_and(|prev| prev != b) {
-            refuse("--nested and --kms/kms-live are mutually exclusive");
+            refuse("--nested, --kms/kms-live and --headless are mutually exclusive");
         }
         cli.backend = Some(b);
     };
@@ -108,6 +115,12 @@ pub fn parse_from(args: impl Iterator<Item = String>, version: &str) -> Cli {
                 exit(0);
             }
             "--nested" => set_backend(&mut cli, Backend::Nested),
+            "--headless" => set_backend(&mut cli, Backend::Headless),
+            "--render-node" => cli.render_node = Some(value("--render-node")),
+            "--size" => {
+                let v = value("--size");
+                cli.size = Some(parse_size(&v).unwrap_or_else(|why| refuse(&format!("--size {v}: {why}"))));
+            }
             "--kms" | "kms-live" => set_backend(&mut cli, Backend::Kms),
             "--socket" => cli.socket = Some(value("--socket")),
             "--device" => cli.device = Some(value("--device")),
@@ -152,8 +165,11 @@ pub fn parse_from(args: impl Iterator<Item = String>, version: &str) -> Cli {
     if cli.backend.is_none() && (cli.device.is_some() || cli.connector.is_some()) {
         cli.backend = Some(Backend::Kms);
     }
-    if cli.backend == Some(Backend::Nested) && (cli.device.is_some() || cli.connector.is_some()) {
-        refuse("--device/--connector apply to the KMS backend, not --nested");
+    if cli.backend != Some(Backend::Kms) && (cli.device.is_some() || cli.connector.is_some()) {
+        refuse("--device/--connector apply only to the KMS backend");
+    }
+    if cli.backend != Some(Backend::Headless) && (cli.size.is_some() || cli.render_node.is_some()) {
+        refuse("--size/--render-node require --headless");
     }
     cli
 }
@@ -161,6 +177,17 @@ pub fn parse_from(args: impl Iterator<Item = String>, version: &str) -> Cli {
 /// The smallest and largest output scale compd accepts.
 pub const SCALE_MIN: f64 = 0.5;
 pub const SCALE_MAX: f64 = 4.0;
+
+/// Physical output dimensions; reject empty, overflowing and zero-sized modes.
+pub fn parse_size(value: &str) -> Result<(i32, i32), &'static str> {
+    let (w, h) = value.split_once('x').ok_or("expected WxH")?;
+    let w: i32 = w.parse().map_err(|_| "invalid width")?;
+    let h: i32 = h.parse().map_err(|_| "invalid height")?;
+    if w <= 0 || h <= 0 || w.checked_mul(h).and_then(|n| n.checked_mul(4)).is_none() {
+        return Err("dimensions must be positive and fit a pixel buffer");
+    }
+    Ok((w, h))
+}
 
 /// `--scale`'s value: a finite number in [`SCALE_MIN`, `SCALE_MAX`], rounded
 /// to 1/120 (the unit `wp_fractional_scale_v1` carries, so the scale a client
@@ -181,7 +208,7 @@ pub fn parse_scale(value: &str) -> Result<f64, &'static str> {
 /// nested run with no `--scale` returns `None`: it follows the host.
 pub fn output_scale(cli: &Cli, backend: Backend) -> Option<f64> {
     match backend {
-        Backend::Kms => Some(cli.scale.unwrap_or(1.0)),
+        Backend::Kms | Backend::Headless => Some(cli.scale.unwrap_or(1.0)),
         Backend::Nested => cli.scale,
     }
 }
@@ -192,7 +219,11 @@ pub fn output_scale(cli: &Cli, backend: Backend) -> Option<f64> {
 pub fn resolve(cli: &Cli) -> Backend {
     let nested_built = cfg!(feature = "backend-winit");
     let kms_built = cfg!(feature = "backend-native");
+    let headless_built = cfg!(feature = "backend-headless");
     match cli.backend {
+        Some(Backend::Headless) if !headless_built => {
+            refuse("headless-feature-disabled: --headless needs the backend-headless feature")
+        }
         Some(Backend::Nested) if !nested_built => {
             refuse("kms-live-only build: --nested needs the backend-winit feature")
         }
@@ -203,6 +234,7 @@ pub fn resolve(cli: &Cli) -> Backend {
         Some(b) => b,
         None if nested_built && !kms_built => Backend::Nested,
         None if kms_built && !nested_built => Backend::Kms,
+        None if headless_built && !nested_built && !kms_built => Backend::Headless,
         None => {
             let host = |v: &str| std::env::var_os(v).is_some_and(|s| !s.is_empty());
             if host("WAYLAND_DISPLAY") || host("DISPLAY") {

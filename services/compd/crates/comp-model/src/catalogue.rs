@@ -14,6 +14,8 @@ pub const SERVICE: &str = "comp";
 /// The service name nested (`--bus-service` overrides either). Verbs stay
 /// literal `comp.*` under it.
 pub const NESTED_SERVICE: &str = "comp-nested";
+/// The service name for the render-node-only virtual output.
+pub const HEADLESS_SERVICE: &str = "comp-headless";
 
 /// noded's own props topic; its `services.registered` diffs carry the full
 /// registration set, which is how the compositor sees a panel-holder

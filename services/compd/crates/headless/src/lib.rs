@@ -2,5 +2,11 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! headless: compd's render-node backend with a virtual output and no seat.
 //!
-//! Phase 0 (spike) only: the crate holds the go/no-go tests in `tests/`. The
-//! backend itself lands in Phase 1 if the spike passes.
+//! GBM/EGL owns only a render node. Frames are full repaints into two
+//! offscreen textures, paced by an on-demand calloop timer at at most 60 Hz.
+
+#[macro_use]
+extern crate model;
+
+pub mod wire;
+mod frame;
