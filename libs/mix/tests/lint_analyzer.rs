@@ -1971,6 +1971,8 @@ fn the_null_fix_is_offered_only_where_the_word_is_surely_a_value() {
         "$m = {null: 7}\nprint($m[null])\n",
         "$m = {to: {null: 7}}\nprint($m.to[null])\n",
         "$m = {in: {null: 7}}\nprint($m.in[null])\n",
+        "$m = {return: {null: 7}}\nprint($m.return[null])\n",
+        "$m = {and: {null: 7}}\nprint($m.and[null])\n",
         "$list = [7]\nprint($list[null])\n",
     ] {
         assert_eq!(fixes(src), vec![false], "{src:?}");
