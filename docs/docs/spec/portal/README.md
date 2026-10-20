@@ -1,6 +1,6 @@
-# Settings portal contract
+# Portal contract: Settings and ScreenCast
 
-Status: accepted, version 0.1.0. The cbc2 verification of `services/portald`
+Settings status: accepted, version 0.1.0 (ScreenCast is a draft, below). The cbc2 verification of `services/portald`
 passed on the commit that carries it (dcd2f1a). The verbs and wire shapes below
 are fixed by the XDG portal specification.
 
@@ -81,9 +81,53 @@ Version 2 of the interface is the one served. A breaking change to a method
 shape, key type or key value needs a new interface version, and both versions
 must be served during the deprecation period.
 
+## ScreenCast
+
+Status: draft. Served with `portald serve --screencast`; first verified on
+desk12 VT4, 2026-10-20 (a 3840x2160 frame received through the portal by a
+PipeWire consumer). The method and signal shapes are fixed by the XDG portal
+specification; what MixOS offers within them is below.
+
+| Item | Value |
+|---|---|
+| Interface | `org.freedesktop.portal.ScreenCast`, version property 5, same object |
+| `AvailableSourceTypes` | 1 (monitor) |
+| `AvailableCursorModes` | 3 (hidden, embedded) |
+| Request path | `/org/freedesktop/portal/desktop/request/<sender>/<handle_token>` |
+| Session path | `/org/freedesktop/portal/desktop/session/<sender>/<session_handle_token>` |
+
+`<sender>` is the caller's unique name without the leading `:` and with `.`
+as `_`. A token is 1 to 64 ASCII letters, digits or `_`; an absent token is
+generated.
+
+- `CreateSession(a{sv}) -> o`: `Response` 0 with `session_handle` (`s`).
+- `SelectSources(o, a{sv}) -> o`: `types` must include 1; `cursor_mode` 1 or 2
+  (default 1); otherwise `InvalidArgument` at the call. `multiple` and
+  `persist_mode` are accepted and ignored. `Response` 0.
+- `Start(o, s, a{sv}) -> o`: `InvalidArgument` before `SelectSources` or when
+  already started. `Response` 0 with `streams` `a(ua{sv})` (one stream:
+  `position (ii)`, `size (ii)` in logical coordinates, `source_type` 1, `id`
+  the output name) and `persist_mode` 0; `Response` 2 when nothing can be
+  captured.
+- `OpenPipeWireRemote(o, a{sv}) -> h`: after a successful `Start` only.
+- Every `Response` is addressed to the owner. `Request.Close` by the owner
+  removes the request with no `Response`; a `Start` closed this way stops its
+  cast.
+- A session is the caller's alone: another caller gets `NotFound` (methods)
+  or `AccessDenied` (`Session.Close`). It ends on `Session.Close` (no
+  signal), on its owner leaving the bus, or with `Session.Closed` when capture
+  stops on its own.
+- The stream is a PipeWire node with `media.class` `Video/Source`, `BGRx`, the
+  output's mode size, variable rate up to 30 fps, memfd buffers.
+
+Grants are not prompted in this version: every grant is logged with caller and
+output. That is acceptable only for trusted, unsandboxed session callers.
+
 ## Deferred
 
 - The FileChooser interface.
+- ScreenCast: a consent dialog, window sources, several streams, restore
+  tokens, DMA-BUF frames and a permission-limited remote.
 - Accent as a settings field. The current projection carries the design's
   resolved accent through settingsd's in-memory sidecar, outside the sealed
   snapshot.

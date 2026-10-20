@@ -1,14 +1,16 @@
 ---
-title: The Settings portal
-description: How portald serves the XDG Settings portal on the session bus, where the appearance values come from, and how applications and agents read them.
+title: The desktop portal
+description: How portald serves the XDG Settings and ScreenCast portals on the session bus, where the appearance values and screen frames come from, and how applications and agents use them.
 ---
 
-# The Settings portal
+# The desktop portal
 
 Applications on MixOS ask the desktop for its appearance (dark or light mode,
-contrast and accent colour) through the XDG Settings portal. `portald` is the
-MixOS implementation of that portal. It owns `org.freedesktop.portal.Desktop` on
-the session bus and answers the `org.freedesktop.appearance` namespace.
+contrast and accent colour) through the XDG Settings portal, and for a screen
+to share through the XDG ScreenCast portal. `portald` is the MixOS
+implementation of both. It owns `org.freedesktop.portal.Desktop` on the session
+bus, answers the `org.freedesktop.appearance` namespace and, when started with
+`--screencast`, serves monitor sources from the compositor.
 
 Values come from the settings authority, `settingsd`. The portal never writes
 settings. Before authority or cache data is available, it serves the documented
@@ -66,6 +68,60 @@ busctl --user call org.freedesktop.portal.Desktop /org/freedesktop/portal/deskto
   org.freedesktop.portal.Settings ReadOne ss org.freedesktop.appearance color-scheme
 ```
 
+## Screen sharing
+
+Interface `org.freedesktop.portal.ScreenCast`, version 5, on the same object.
+Video calls and browsers use it to share the screen: Zoom, Firefox and
+Chromium `getDisplayMedia()`, OBS.
+
+```text
+compd   --zwlr_screencopy_manager_v1 (shm, damage copies)-->  portald
+portald --PipeWire Video/Source node (BGRx, up to 30 fps)-->  the caller
+```
+
+| Property | Value |
+|---|---|
+| `AvailableSourceTypes` | 1: monitors only |
+| `AvailableCursorModes` | 1 hidden, 2 embedded |
+| `version` | 5 |
+
+A caller runs `CreateSession`, `SelectSources`, `Start`, then
+`OpenPipeWireRemote`. Each of the first three returns a request path at once and
+answers later with a `Response` signal addressed to the caller, as the portal
+specification describes. Request and session paths are derived from the
+caller's unique name and its `handle_token` / `session_handle_token`, so a
+caller can subscribe before it calls. `Start` answers with one stream:
+
+| Key | Meaning |
+|---|---|
+| node id | the PipeWire node to connect to |
+| `position`, `size` | the output in compositor (logical) coordinates |
+| `source_type` | 1, monitor |
+| `id` | the output name, such as `HDMI-A-1` |
+
+Frames are captured at the output's mode size with `copy_with_damage`, so a
+static screen costs nothing. The newest frame is sent again after a second
+without a new one, and as soon as a consumer attaches. The node is a
+`Video/Source` named `portald-screencast`, which is what the session manager
+links capture streams to.
+
+Sessions belong to the connection that created them. Another caller cannot
+select, start or close them (`NotFound`, `AccessDenied`). A session ends when
+its owner calls `Session.Close`, when the owner leaves the bus, or when capture
+stops on its own (then `Closed` is emitted). `Start` answers 2 when there is
+nothing to capture, for example no compositor or no output with a mode.
+
+This is a first cut, scoped to the trusted, unsandboxed session:
+
+- **No consent dialog.** Every grant is logged with the caller and the output.
+- **One stream per session:** the first output with a current mode.
+  `multiple` is accepted and ignored.
+- **No window sources and no restore tokens.** `persist_mode` is accepted and
+  ignored.
+- **shm frames,** copied twice per frame. DMA-BUF is later work.
+- **The remote is unrestricted.** `OpenPipeWireRemote` returns a plain
+  connection to the session's PipeWire, not one limited to the cast node.
+
 ## Startup and failure
 
 - Startup takes the bus name immediately with a valid cache for the requested
@@ -87,14 +143,17 @@ busctl --user call org.freedesktop.portal.Desktop /org/freedesktop/portal/deskto
 The unit is `portald@.service`, owned by `services/portald/units/`. It is part of
 `session@<instance>.target` and wants `noded@<instance>` and
 `settingsd@<instance>`. It runs as `mixos` with the session environment file, so
-it keeps `DBUS_SESSION_BUS_ADDRESS`.
+it keeps `DBUS_SESSION_BUS_ADDRESS`. The unit passes `--screencast`.
 
 ```text
-portald serve --instance <name> [--profile default] [--state-dir DIR]
+portald serve --instance <name> [--profile default] [--state-dir DIR] [--screencast]
 ```
 
 It needs `DBUS_SESSION_BUS_ADDRESS`. `--state-dir` defaults to
-`$STATE_DIRECTORY`, which systemd sets from `StateDirectory=portald`.
+`$STATE_DIRECTORY`, which systemd sets from `StateDirectory=portald`. With
+`--screencast` it also needs `WAYLAND_DISPLAY` and `XDG_RUNTIME_DIR` for the
+compositor, and `PIPEWIRE_RUNTIME_DIR` / `PIPEWIRE_REMOTE` (or
+`XDG_RUNTIME_DIR`) for PipeWire. The binary links the system `libpipewire-0.3`.
 
 ## Status for agents
 
@@ -121,6 +180,15 @@ changed-only signals, cache isolation and single ownership. It launches the
 production binary against a silent authority and requires a complete Read
 reply within 250 ms, including cached startup and profile switching.
 
+`tests/screencast.rs` runs the ScreenCast contract on a private `dbus-daemon`
+with no compositor: properties, the request and session paths, the Responses,
+refused source types and cursor modes, ownership, `Start` answering 2 with
+nothing to capture, `Close`, and sessions retired when their owner leaves.
+Capture itself needs compd and PipeWire. On a desktop session,
+`cargo run -p portald --example screencast_probe` drives one session and holds
+it so a consumer can attach, for example
+`gst-launch-1.0 pipewiresrc target-object=<serial> ! videoconvert ! autovideosink`.
+
 Native tests embed the real noded via [test-broker](../test-broker/README.md)
 and run the production settingsd loop. They cover initial fetch, live
 update without reconnect, settingsd restart at unchanged revision, and
@@ -135,5 +203,8 @@ dependencies.
   accent, held in settingsd outside the sealed snapshot, and will move into the
   settings contract when that is decided.
 - Sandboxed callers and D-Bus activation.
+- For ScreenCast: a consent dialog, window sources, several streams per
+  session, restore tokens, DMA-BUF frames and a permission-limited PipeWire
+  remote.
 
 The contract, with its status, is in [docs/docs/spec/portal](../docs/spec/portal/README.md).

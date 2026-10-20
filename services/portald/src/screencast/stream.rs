@@ -376,7 +376,7 @@ fn serve(
             if !streaming {
                 return;
             }
-            tracing::info!(
+            tracing::debug!(
                 triggered = stats.triggered.get(),
                 trigger_failed = stats.trigger_failed.get(),
                 processed = stats.processed.get(),
