@@ -100,10 +100,10 @@ pub(crate) async fn chunk_tokenizer(
     if let Some(tokenizer) = &guard.tokenizer {
         return Ok(tokenizer.clone());
     }
-    if let Some((failed_at, error)) = &guard.failure {
-        if failed_at.elapsed() < Duration::from_secs(60) {
-            return Err(error.clone());
-        }
+    if let Some((failed_at, error)) = &guard.failure
+        && failed_at.elapsed() < Duration::from_secs(60)
+    {
+        return Err(error.clone());
     }
     let svc = state.config.service.clone();
     let result = tokio::task::spawn_blocking(move || {
