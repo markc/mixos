@@ -8,7 +8,7 @@ use std::path::PathBuf;
 #[command(
     name = "portald",
     version,
-    about = "XDG desktop portal on the session bus: the Settings interface"
+    about = "XDG desktop portal on the session bus: Settings and ScreenCast"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -26,6 +26,10 @@ enum Command {
         /// Holds the validated appearance cache. Defaults to $STATE_DIRECTORY.
         #[arg(long)]
         state_dir: Option<PathBuf>,
+        /// Also serve org.freedesktop.portal.ScreenCast (needs a compositor
+        /// with zwlr_screencopy_manager_v1 and a PipeWire session).
+        #[arg(long)]
+        screencast: bool,
     },
 }
 
@@ -39,6 +43,7 @@ fn main() -> anyhow::Result<()> {
         instance,
         profile,
         state_dir,
+        screencast,
     } = Cli::parse().command;
     let binding = Binding { instance, profile };
     binding
@@ -46,11 +51,15 @@ fn main() -> anyhow::Result<()> {
         .map_err(|diagnostic| anyhow::anyhow!(diagnostic.message))?;
     let address = portald::env::session_address()?;
     let state_dir = state_dir.or_else(portald::env::state_directory);
-    tokio::runtime::Builder::new_multi_thread()
+    let runtime = tokio::runtime::Builder::new_multi_thread()
         // This I/O daemon needs a small fixed runtime; creating one worker per
         // CPU would make process startup depend on the host's core count.
         .worker_threads(2)
         .enable_all()
-        .build()?
-        .block_on(portald::run(binding, address, state_dir))
+        .build()?;
+    let result = runtime.block_on(portald::run(binding, address, state_dir, screencast));
+    // A blocking task stuck on a wedged compositor (ScreenCast) must not hold
+    // up exit: give the rest a moment, then leave.
+    runtime.shutdown_timeout(std::time::Duration::from_secs(2));
+    result
 }

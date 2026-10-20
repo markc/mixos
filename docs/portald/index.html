@@ -4,14 +4,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="How portald serves the XDG Settings portal on the session bus, where the appearance values come from, and how applications and agents read them.">
+    <meta name="description" content="How portald serves the XDG Settings and ScreenCast portals on the session bus, where the appearance values and screen frames come from, and how applications and agents use them.">
     <!-- Favicons from share/brand: the SVG follows the visitor's light/dark preference. -->
     <link rel="icon" href="/favicon.ico?v=400d5816f3" sizes="any">
     <link rel="icon" type="image/svg+xml" href="/_web/favicon.svg?v=4eb2d64677">
     <link rel="icon" type="image/png" sizes="32x32" href="/_web/brand/favicon-32-light.png?v=adbeaa7141" media="(prefers-color-scheme: light)">
     <link rel="icon" type="image/png" sizes="32x32" href="/_web/brand/favicon-32-dark.png?v=adbeaa7141" media="(prefers-color-scheme: dark)">
     <link rel="apple-touch-icon" sizes="180x180" href="/_web/brand/apple-touch-icon.png?v=edebfa3825">
-    <title>The Settings portal — MixOS</title>
+    <title>The desktop portal — MixOS</title>
     <link rel="canonical" href="https://mixos.dev/portald/">
     <link rel="alternate" type="text/markdown" href="/portald/README.md" title="Markdown source">
     <meta name="mixos-build" content="0e230d24c4f9">
@@ -210,6 +210,7 @@
                     <nav id="toc-nav">
                         <a href="#where-the-values-come-from">Where the values come from</a>
                         <a href="#what-applications-see">What applications see</a>
+                        <a href="#screen-sharing">Screen sharing</a>
                         <a href="#startup-and-failure">Startup and failure</a>
                         <a href="#running-it">Running it</a>
                         <a href="#status-for-agents">Status for agents</a>
@@ -239,11 +240,13 @@
 <main id="content" tabindex="-1">
     <div id="doc-view" class="content-section">
         <article id="content-doc" class="prose" data-pagefind-body>
-<h1 id="the-settings-portal">The Settings portal</h1>
+<h1 id="the-desktop-portal">The desktop portal</h1>
 <p>Applications on MixOS ask the desktop for its appearance (dark or light mode,
-contrast and accent colour) through the XDG Settings portal. <code>portald</code> is the
-MixOS implementation of that portal. It owns <code>org.freedesktop.portal.Desktop</code> on
-the session bus and answers the <code>org.freedesktop.appearance</code> namespace.</p>
+contrast and accent colour) through the XDG Settings portal, and for a screen
+to share through the XDG ScreenCast portal. <code>portald</code> is the MixOS
+implementation of both. It owns <code>org.freedesktop.portal.Desktop</code> on the session
+bus, answers the <code>org.freedesktop.appearance</code> namespace and, when started with
+<code>--screencast</code>, serves monitor sources from the compositor.</p>
 <p>Values come from the settings authority, <code>settingsd</code>. The portal never writes
 settings. Before authority or cache data is available, it serves the documented
 defaults.</p>
@@ -287,6 +290,51 @@ actually changed.</p>
 <pre><code class="language-sh">busctl --user call org.freedesktop.portal.Desktop /org/freedesktop/portal/desktop \
   org.freedesktop.portal.Settings ReadOne ss org.freedesktop.appearance color-scheme
 </code></pre>
+<h2 id="screen-sharing">Screen sharing</h2>
+<p>Interface <code>org.freedesktop.portal.ScreenCast</code>, version 5, on the same object.
+Video calls and browsers use it to share the screen: Zoom, Firefox and
+Chromium <code>getDisplayMedia()</code>, OBS.</p>
+<pre><code class="language-text">compd   --zwlr_screencopy_manager_v1 (shm, damage copies)--&gt;  portald
+portald --PipeWire Video/Source node (BGRx, up to 30 fps)--&gt;  the caller
+</code></pre>
+<table><thead><tr><th>Property</th><th>Value</th></tr></thead><tbody>
+<tr><td><code>AvailableSourceTypes</code></td><td>1: monitors only</td></tr>
+<tr><td><code>AvailableCursorModes</code></td><td>1 hidden, 2 embedded</td></tr>
+<tr><td><code>version</code></td><td>5</td></tr>
+</tbody></table>
+<p>A caller runs <code>CreateSession</code>, <code>SelectSources</code>, <code>Start</code>, then
+<code>OpenPipeWireRemote</code>. Each of the first three returns a request path at once and
+answers later with a <code>Response</code> signal addressed to the caller, as the portal
+specification describes. Request and session paths are derived from the
+caller's unique name and its <code>handle_token</code> / <code>session_handle_token</code>, so a
+caller can subscribe before it calls. <code>Start</code> answers with one stream:</p>
+<table><thead><tr><th>Key</th><th>Meaning</th></tr></thead><tbody>
+<tr><td>node id</td><td>the PipeWire node to connect to</td></tr>
+<tr><td><code>position</code>, <code>size</code></td><td>the output in compositor (logical) coordinates</td></tr>
+<tr><td><code>source_type</code></td><td>1, monitor</td></tr>
+<tr><td><code>id</code></td><td>the output name, such as <code>HDMI-A-1</code></td></tr>
+</tbody></table>
+<p>Frames are captured at the output's mode size with <code>copy_with_damage</code>, so a
+static screen costs nothing. The newest frame is sent again after a second
+without a new one, and as soon as a consumer attaches. The node is a
+<code>Video/Source</code> named <code>portald-screencast</code>, which is what the session manager
+links capture streams to.</p>
+<p>Sessions belong to the connection that created them. Another caller cannot
+select, start or close them (<code>NotFound</code>, <code>AccessDenied</code>). A session ends when
+its owner calls <code>Session.Close</code>, when the owner leaves the bus, or when capture
+stops on its own (then <code>Closed</code> is emitted). <code>Start</code> answers 2 when there is
+nothing to capture, for example no compositor or no output with a mode.</p>
+<p>This is a first cut, scoped to the trusted, unsandboxed session:</p>
+<ul>
+<li><strong>No consent dialog.</strong> Every grant is logged with the caller and the output.</li>
+<li><strong>One stream per session:</strong> the first output with a current mode.
+<code>multiple</code> is accepted and ignored.</li>
+<li><strong>No window sources and no restore tokens.</strong> <code>persist_mode</code> is accepted and
+ignored.</li>
+<li><strong>shm frames,</strong> copied twice per frame. DMA-BUF is later work.</li>
+<li><strong>The remote is unrestricted.</strong> <code>OpenPipeWireRemote</code> returns a plain
+connection to the session's PipeWire, not one limited to the cast node.</li>
+</ul>
 <h2 id="startup-and-failure">Startup and failure</h2>
 <ul>
 <li>Startup takes the bus name immediately with a valid cache for the requested
@@ -307,11 +355,14 @@ never sent back to settingsd.</li>
 <p>The unit is <code>portald@.service</code>, owned by <code>services/portald/units/</code>. It is part of
 <code>session@&lt;instance&gt;.target</code> and wants <code>noded@&lt;instance&gt;</code> and
 <code>settingsd@&lt;instance&gt;</code>. It runs as <code>mixos</code> with the session environment file, so
-it keeps <code>DBUS_SESSION_BUS_ADDRESS</code>.</p>
-<pre><code class="language-text">portald serve --instance &lt;name&gt; [--profile default] [--state-dir DIR]
+it keeps <code>DBUS_SESSION_BUS_ADDRESS</code>. The unit passes <code>--screencast</code>.</p>
+<pre><code class="language-text">portald serve --instance &lt;name&gt; [--profile default] [--state-dir DIR] [--screencast]
 </code></pre>
 <p>It needs <code>DBUS_SESSION_BUS_ADDRESS</code>. <code>--state-dir</code> defaults to
-<code>$STATE_DIRECTORY</code>, which systemd sets from <code>StateDirectory=portald</code>.</p>
+<code>$STATE_DIRECTORY</code>, which systemd sets from <code>StateDirectory=portald</code>. With
+<code>--screencast</code> it also needs <code>WAYLAND_DISPLAY</code> and <code>XDG_RUNTIME_DIR</code> for the
+compositor, and <code>PIPEWIRE_RUNTIME_DIR</code> / <code>PIPEWIRE_REMOTE</code> (or
+<code>XDG_RUNTIME_DIR</code>) for PipeWire. The binary links the system <code>libpipewire-0.3</code>.</p>
 <h2 id="status-for-agents">Status for agents</h2>
 <p><code>HELP</code> returns the verb manifest. The bus verb <code>portald.status</code> is read-only. It reports the origin of the held
 values (defaults, cache or settingsd), whether the name is owned, the identity
@@ -330,6 +381,14 @@ and ReadOne nesting, empty and adversarial ReadAll filters, NotFound,
 changed-only signals, cache isolation and single ownership. It launches the
 production binary against a silent authority and requires a complete Read
 reply within 250 ms, including cached startup and profile switching.</p>
+<p><code>tests/screencast.rs</code> runs the ScreenCast contract on a private <code>dbus-daemon</code>
+with no compositor: properties, the request and session paths, the Responses,
+refused source types and cursor modes, ownership, <code>Start</code> answering 2 with
+nothing to capture, <code>Close</code>, and sessions retired when their owner leaves.
+Capture itself needs compd and PipeWire. On a desktop session,
+<code>cargo run -p portald --example screencast_probe</code> drives one session and holds
+it so a consumer can attach, for example
+<code>gst-launch-1.0 pipewiresrc target-object=&lt;serial&gt; ! videoconvert ! autovideosink</code>.</p>
 <p>Native tests embed the real noded via <a href="/test-broker/">test-broker</a>
 and run the production settingsd loop. They cover initial fetch, live
 update without reconnect, settingsd restart at unchanged revision, and
@@ -343,6 +402,9 @@ dependencies.</p>
 accent, held in settingsd outside the sealed snapshot, and will move into the
 settings contract when that is decided.</li>
 <li>Sandboxed callers and D-Bus activation.</li>
+<li>For ScreenCast: a consent dialog, window sources, several streams per
+session, restore tokens, DMA-BUF frames and a permission-limited PipeWire
+remote.</li>
 </ul>
 <p>The contract, with its status, is in <a href="/docs/spec/portal/">docs/docs/spec/portal</a>.</p>
         </article>

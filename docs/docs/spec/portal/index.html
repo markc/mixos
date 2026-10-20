@@ -4,14 +4,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Status: accepted, version 0.1.0. The cbc2 verification of services/portald passed on the commit that carries it (dcd2f1a). The verbs and wire shapes below are…">
+    <meta name="description" content="Settings status: accepted, version 0.1.0 (ScreenCast is a draft, below). The cbc2 verification of services/portald passed on the commit that carries it…">
     <!-- Favicons from share/brand: the SVG follows the visitor's light/dark preference. -->
     <link rel="icon" href="/favicon.ico?v=400d5816f3" sizes="any">
     <link rel="icon" type="image/svg+xml" href="/_web/favicon.svg?v=4eb2d64677">
     <link rel="icon" type="image/png" sizes="32x32" href="/_web/brand/favicon-32-light.png?v=adbeaa7141" media="(prefers-color-scheme: light)">
     <link rel="icon" type="image/png" sizes="32x32" href="/_web/brand/favicon-32-dark.png?v=adbeaa7141" media="(prefers-color-scheme: dark)">
     <link rel="apple-touch-icon" sizes="180x180" href="/_web/brand/apple-touch-icon.png?v=edebfa3825">
-    <title>Settings portal contract — MixOS</title>
+    <title>Portal contract: Settings and ScreenCast — MixOS</title>
     <link rel="canonical" href="https://mixos.dev/docs/spec/portal/">
     <link rel="alternate" type="text/markdown" href="/docs/spec/portal/README.md" title="Markdown source">
     <meta name="mixos-build" content="0e230d24c4f9">
@@ -215,6 +215,7 @@
                         <a href="#startup">Startup</a>
                         <a href="#verbs">Verbs</a>
                         <a href="#compatibility">Compatibility</a>
+                        <a href="#screencast">ScreenCast</a>
                         <a href="#deferred">Deferred</a>
                     </nav>
                 </div>
@@ -240,8 +241,8 @@
 <main id="content" tabindex="-1">
     <div id="doc-view" class="content-section">
         <article id="content-doc" class="prose" data-pagefind-body>
-<h1 id="settings-portal-contract">Settings portal contract</h1>
-<p>Status: accepted, version 0.1.0. The cbc2 verification of <code>services/portald</code>
+<h1 id="portal-contract-settings-and-screencast">Portal contract: Settings and ScreenCast</h1>
+<p>Settings status: accepted, version 0.1.0 (ScreenCast is a draft, below). The cbc2 verification of <code>services/portald</code>
 passed on the commit that carries it (dcd2f1a). The verbs and wire shapes below
 are fixed by the XDG portal specification.</p>
 <p><code>portald</code> implements the Settings interface of the XDG desktop portal, on the
@@ -309,9 +310,49 @@ remains alive through initial broker failure.</li>
 <p>Version 2 of the interface is the one served. A breaking change to a method
 shape, key type or key value needs a new interface version, and both versions
 must be served during the deprecation period.</p>
+<h2 id="screencast">ScreenCast</h2>
+<p>Status: draft. Served with <code>portald serve --screencast</code>; first verified on
+desk12 VT4, 2026-10-20 (a 3840x2160 frame received through the portal by a
+PipeWire consumer). The method and signal shapes are fixed by the XDG portal
+specification; what MixOS offers within them is below.</p>
+<table><thead><tr><th>Item</th><th>Value</th></tr></thead><tbody>
+<tr><td>Interface</td><td><code>org.freedesktop.portal.ScreenCast</code>, version property 5, same object</td></tr>
+<tr><td><code>AvailableSourceTypes</code></td><td>1 (monitor)</td></tr>
+<tr><td><code>AvailableCursorModes</code></td><td>3 (hidden, embedded)</td></tr>
+<tr><td>Request path</td><td><code>/org/freedesktop/portal/desktop/request/&lt;sender&gt;/&lt;handle_token&gt;</code></td></tr>
+<tr><td>Session path</td><td><code>/org/freedesktop/portal/desktop/session/&lt;sender&gt;/&lt;session_handle_token&gt;</code></td></tr>
+</tbody></table>
+<p><code>&lt;sender&gt;</code> is the caller's unique name without the leading <code>:</code> and with <code>.</code>
+as <code>_</code>. A token is 1 to 64 ASCII letters, digits or <code>_</code>; an absent token is
+generated.</p>
+<ul>
+<li><code>CreateSession(a{sv}) -&gt; o</code>: <code>Response</code> 0 with <code>session_handle</code> (<code>s</code>).</li>
+<li><code>SelectSources(o, a{sv}) -&gt; o</code>: <code>types</code> must include 1; <code>cursor_mode</code> 1 or 2
+(default 1); otherwise <code>InvalidArgument</code> at the call. <code>multiple</code> and
+<code>persist_mode</code> are accepted and ignored. <code>Response</code> 0.</li>
+<li><code>Start(o, s, a{sv}) -&gt; o</code>: <code>InvalidArgument</code> before <code>SelectSources</code> or when
+already started. <code>Response</code> 0 with <code>streams</code> <code>a(ua{sv})</code> (one stream:
+<code>position (ii)</code>, <code>size (ii)</code> in logical coordinates, <code>source_type</code> 1, <code>id</code>
+the output name) and <code>persist_mode</code> 0; <code>Response</code> 2 when nothing can be
+captured.</li>
+<li><code>OpenPipeWireRemote(o, a{sv}) -&gt; h</code>: after a successful <code>Start</code> only.</li>
+<li>Every <code>Response</code> is addressed to the owner. <code>Request.Close</code> by the owner
+removes the request with no <code>Response</code>; a <code>Start</code> closed this way stops its
+cast.</li>
+<li>A session is the caller's alone: another caller gets <code>NotFound</code> (methods)
+or <code>AccessDenied</code> (<code>Session.Close</code>). It ends on <code>Session.Close</code> (no
+signal), on its owner leaving the bus, or with <code>Session.Closed</code> when capture
+stops on its own.</li>
+<li>The stream is a PipeWire node with <code>media.class</code> <code>Video/Source</code>, <code>BGRx</code>, the
+output's mode size, variable rate up to 30 fps, memfd buffers.</li>
+</ul>
+<p>Grants are not prompted in this version: every grant is logged with caller and
+output. That is acceptable only for trusted, unsandboxed session callers.</p>
 <h2 id="deferred">Deferred</h2>
 <ul>
 <li>The FileChooser interface.</li>
+<li>ScreenCast: a consent dialog, window sources, several streams, restore
+tokens, DMA-BUF frames and a permission-limited remote.</li>
 <li>Accent as a settings field. The current projection carries the design's
 resolved accent through settingsd's in-memory sidecar, outside the sealed
 snapshot.</li>

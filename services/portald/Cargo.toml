@@ -7,7 +7,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 publish = false
-description = "XDG desktop portal on the session bus: the Settings interface"
+description = "XDG desktop portal on the session bus: Settings and ScreenCast"
 
 [package.metadata.mixos]
 component = "portald"
@@ -30,10 +30,18 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 clap.workspace = true
 buildinfo.workspace = true
+futures-util.workspace = true
+libc.workspace = true
+# ScreenCast. The Wayland client crates are pinned to the versions already in
+# Cargo.lock (winit and compd testkit use the same ones). pipewire links the
+# system libpipewire-0.3; v0_3_34 is for pw_stream_trigger_process.
+pipewire = { version = "=0.10.1", features = ["v0_3_34"] }
+wayland-client = { version = "=0.31.15" }
+wayland-protocols = { version = "=0.32.13", features = ["client", "unstable"] }
+wayland-protocols-wlr = { version = "=0.3.12", features = ["client"] }
 
 [dev-dependencies]
 tempfile.workspace = true
-futures-util.workspace = true
 test-broker = { path = "../../libs/test-broker" }
 settingsd = { path = "../settingsd" }
 

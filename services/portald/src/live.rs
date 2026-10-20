@@ -7,6 +7,7 @@
 use crate::appearance::{NAMESPACE, Values};
 use crate::cache;
 use crate::portal::{self, Portal, PortalSignals};
+use crate::screencast::{self, ScreenCast, session::Sessions};
 use crate::status::{self, Origin, Shared};
 use settings::appearance::AppearanceProjection;
 use settings::{Binding, Revision};
@@ -20,6 +21,8 @@ pub struct Config {
     pub address: String,
     pub state_dir: Option<PathBuf>,
     pub binding: Binding,
+    /// Also serve `org.freedesktop.portal.ScreenCast` from compd screencopy.
+    pub screencast: bool,
 }
 
 /// The evidence identity of the values held. Ordering within one incarnation
@@ -150,10 +153,13 @@ pub async fn serve(
     // Export and acquire the name before touching the authority receiver.
     let mut source_open = true;
 
-    let connection = zbus::connection::Builder::address(config.address.as_str())?
-        .serve_at(portal::OBJECT_PATH, Portal::new(values.clone()))?
-        .build()
-        .await?;
+    let sessions = Sessions::default();
+    let mut builder = zbus::connection::Builder::address(config.address.as_str())?
+        .serve_at(portal::OBJECT_PATH, Portal::new(values.clone()))?;
+    if config.screencast {
+        builder = builder.serve_at(portal::OBJECT_PATH, ScreenCast::new(sessions.clone()))?;
+    }
+    let connection = builder.build().await?;
     // Interfaces are exported before the name, and an existing owner is refused
     // rather than queued or replaced.
     match connection
@@ -164,7 +170,16 @@ pub async fn serve(
         _ => anyhow::bail!("{} is owned by another service", portal::BUS_NAME),
     }
     status::update(&status, |s| s.name_owned = true);
-    tracing::info!(origin = ?state.origin(), "serving {}", portal::BUS_NAME);
+    tracing::info!(origin = ?state.origin(), screencast = config.screencast, "serving {}", portal::BUS_NAME);
+    let owners = config.screencast.then(|| {
+        let connection = connection.clone();
+        let sessions = sessions.clone();
+        tokio::spawn(async move {
+            if let Err(error) = screencast::watch_owners(connection, sessions).await {
+                tracing::warn!(%error, "screencast owner watch ended");
+            }
+        })
+    });
 
     let interface = connection
         .object_server()
@@ -206,6 +221,12 @@ pub async fn serve(
         }
     }
     tracing::info!("portal stopping");
+    if let Some(owners) = owners {
+        owners.abort();
+    }
+    for path in sessions.with(|map| map.keys().cloned().collect::<Vec<_>>()) {
+        screencast::session::end(&connection, &sessions, &path, true).await;
+    }
     Ok(())
 }
 
