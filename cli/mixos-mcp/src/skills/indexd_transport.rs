@@ -48,8 +48,14 @@ impl Transport {
                     if verb == "indexd.stats" && rc == 10 && text.is_empty() && error.as_deref() == Some(&format!("Service '{target}' not found")) {
                         anyhow::bail!("native indexd service is not registered on the MixOS Bus");
                     }
-                    let value = serde_json::from_str(&text).unwrap_or_else(|_| Value::String(text));
-                    reply_body(if rc < 10 { 0 } else { i64::from(rc) }, value, error.as_deref())
+                    if rc >= 10 {
+                        // Keep raw text and header precedence exactly as Bus call().
+                        let mut message = bus::BusMessage::new().with_body(&text);
+                        if let Some(error) = error { message.set("error", &error); }
+                        anyhow::bail!("{}", message.error_message());
+                    }
+                    let value = if text.is_empty() { Value::Null } else { serde_json::from_str(&text).unwrap_or(Value::String(text)) };
+                    reply_body(0, value, None)
                 }
                 Self::Ssh { state, .. } => state.lock().await.call(verb, body).await,
             }

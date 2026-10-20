@@ -173,7 +173,7 @@ async fn stdio_tools_use_the_real_fixture_bus_and_reconnect_without_replay() {
     let workspace = dir.path().join("work~space");
     std::fs::create_dir_all(workspace.join("_doc")).unwrap();
     let file = workspace.join("_doc/2026-10-20-fixture.md");
-    std::fs::write(&file, "# Fixture\n\nA document for indexing.\n").unwrap();
+    std::fs::write(&file, "# Fixture\n\nA document long enough for indexing, with one section to replace stale chunks.\n").unwrap();
     let expected_path = file.canonicalize().unwrap().to_string_lossy().into_owned();
     let rows = std::sync::Arc::new(std::sync::Mutex::new((0..2107).map(|id| json!({
         "id":id, "content":"old chunk", "source":"doc", "created":"2026-10-20",
