@@ -241,7 +241,7 @@
 <blockquote>
 <p><strong>Status: Bus wired.</strong> The engine, reconnecting daemon, bridge, CLI and
 system unit are implemented. Corpus parity and production cutover are
-separate steps; the tokenizer golden remains deferred until parity testing.</p>
+separate steps. The tokenizer golden records the legacy 0.21.4/onig token IDs.</p>
 </blockquote>
 <p><code>indexd</code> stores text chunks with their embeddings and returns the nearest
 matches for a query. Embeddings are computed locally on the CPU with
@@ -353,8 +353,9 @@ ownership from the legacy account; the new account does not reuse its UID.</p>
 real daemon/bridge pipe tests, and <code>services/indexd/tests/bus_test.mix</code> against
 <code>libs/test-broker</code>. Set <code>MIXOS_TEST_MIX</code> if Mix is not installed at
 <code>/opt/mixos/bin/mix</code>. Embeddings are deterministic cache fixtures; no model
-is needed. The tokenizer parity test stays ignored unless
-<code>INDEXD_TEST_TOKENIZER</code> is supplied with the stage-7 golden.</p>
+is needed. The tokenizer parity test compares 0.22.2 token IDs against the
+committed legacy 0.21.4/onig golden; it stays ignored unless
+<code>INDEXD_TEST_TOKENIZER</code> names the staged tokenizer file.</p>
 <h2 id="indexd-is-not-exhaustive">Indexd is not exhaustive</h2>
 <p>indexd answers "what is relevant to X", quickly and approximately, from an
 index that can lag the files. To prove that something does <strong>not</strong> occur, use

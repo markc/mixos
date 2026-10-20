@@ -3,6 +3,13 @@
 # header keeps it ("closest" precedence). Checked by a Mix gate (AGENTS.md §4).
 version = 1
 
+# Generated from the legacy tokenizers 0.21.4/onig build over tokenizer_corpus.txt.
+[[annotations]]
+path = "services/indexd/tests/tokenizer_golden.json"
+precedence = "closest"
+SPDX-FileCopyrightText = "2026 Mark Constable <mc@mixos.dev>"
+SPDX-License-Identifier = "MIT OR Apache-2.0"
+
 [[annotations]]
 path = "vendor/mail-parser/**"
 precedence = "override"

@@ -7583,7 +7583,7 @@ removes everything it made.
 
 > **Status: Bus wired.** The engine, reconnecting daemon, bridge, CLI and
 > system unit are implemented. Corpus parity and production cutover are
-> separate steps; the tokenizer golden remains deferred until parity testing.
+> separate steps. The tokenizer golden records the legacy 0.21.4/onig token IDs.
 
 `indexd` stores text chunks with their embeddings and returns the nearest
 matches for a query. Embeddings are computed locally on the CPU with
@@ -7722,8 +7722,9 @@ On a CBC worker, `cargo test -p indexd` runs the engine tests, registry checks,
 real daemon/bridge pipe tests, and `services/indexd/tests/bus_test.mix` against
 `libs/test-broker`. Set `MIXOS_TEST_MIX` if Mix is not installed at
 `/opt/mixos/bin/mix`. Embeddings are deterministic cache fixtures; no model
-is needed. The tokenizer parity test stays ignored unless
-`INDEXD_TEST_TOKENIZER` is supplied with the stage-7 golden.
+is needed. The tokenizer parity test compares 0.22.2 token IDs against the
+committed legacy 0.21.4/onig golden; it stays ignored unless
+`INDEXD_TEST_TOKENIZER` names the staged tokenizer file.
 
 ## Indexd is not exhaustive
 
