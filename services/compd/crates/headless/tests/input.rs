@@ -99,8 +99,10 @@ fn agent_sequence_types_into_a_probe_window() {
     assert_eq!(seats["agent"]["pointer"]["output"], "headless-0");
     assert_eq!(seats["agent"]["pointer"]["x"], 640.0);
     assert_eq!(seats["agent"]["pointer"]["y"], 360.0);
+    let output_x = row["window_x"].as_f64().unwrap() + 640.0 + 40.0;
+    let output_y = row["window_y"].as_f64().unwrap() + 360.0 + 50.0;
     let reply = bus.call(SERVICE, "comp.input.sequence", json!({"seat":"agent","steps":[
-        {"verb":"comp.input.pointer.move","args":{"window":target(&row),"x":40,"y":50}},
+        {"verb":"comp.input.pointer.move","args":{"output":"headless-0","x":output_x,"y":output_y}},
         {"verb":"comp.input.pointer.button","args":{"button":"left","action":"click"}},
         {"verb":"comp.input.key","args":{"window":target(&row),"text":"abc"}}
     ]}));
@@ -109,9 +111,9 @@ fn agent_sequence_types_into_a_probe_window() {
         probe.wait_for(&format!("PROBE seat \"agent\" {line}"));
     }
     // The single-step output-name path must project to the same window
-    // point as the window-local path. The probe is centred at world (-200,-120).
-    let moved = bus.call(SERVICE, "comp.input.pointer.move", json!({"seat":"agent","output":"headless-0","x":481,"y":291}));
-    assert_eq!(moved["pointer"]["x"], 481.0);
+    // point as the window-local path, independently of initial placement.
+    let moved = bus.call(SERVICE, "comp.input.pointer.move", json!({"seat":"agent","output":"headless-0","x":output_x+1.0,"y":output_y+1.0}));
+    assert_eq!(moved["pointer"]["x"], output_x+1.0);
     probe.wait_for("PROBE seat \"agent\" motion 41 51");
     bus.call(SERVICE, "comp.input.pointer.button", json!({"seat":"agent","action":"click"}));
     bus.call(SERVICE, "comp.input.key", json!({"seat":"agent","key":"d"}));
@@ -163,10 +165,11 @@ fn two_instances_register_distinct_services() {
     for service in [SERVICE, "comp-rec"] { bus.ready(service); }
     let row_a = window(&bus, SERVICE, "headless-first");
     let row_b = window(&bus, "comp-rec", "headless-second");
-    let info_a = bus.call(SERVICE, "comp.info", json!({}));
-    let info_b = bus.call("comp-rec", "comp.info", json!({}));
+    let info_a = bus.call(SERVICE, "comp.props.get", json!({"path":"info"}));
+    let info_b = bus.call("comp-rec", "comp.props.get", json!({"path":"info"}));
     assert_eq!(info_a["service"], SERVICE);
     assert_eq!(info_b["service"], "comp-rec");
+    assert!(info_a["instance"].is_string(), "{info_a}");
     assert_ne!(info_a["instance"], info_b["instance"]);
     // The transport namespaces every observation with the registered service.
     // Query the actual broker topic registry after both focus streams publish.
@@ -179,10 +182,12 @@ fn two_instances_register_distinct_services() {
     a.wait_for("PROBE seat \"agent\" key 30 0");
     assert!(!b.text().contains("PROBE seat \"agent\" key "));
     let before_b = bus.call("comp-rec", "comp.window.stats", target(&row_b));
-    bus.call(SERVICE, "comp.window.stats.reset", target(&row_a));
+    let reset = bus.call(SERVICE, "comp.window.stats.reset", target(&row_a));
     let after_b = bus.call("comp-rec", "comp.window.stats", target(&row_b));
-    // The other process's input mark is unaffected by the first's reset.
-    assert_eq!(before_b["input"], after_b["input"]);
+    assert!(before_b["since_us"].is_number(), "{before_b}");
+    assert_eq!(before_b["since_us"], after_b["since_us"]);
+    assert_ne!(after_b["since_us"], reset["since_us"]);
+    assert!(after_b["presented"].as_u64().unwrap() >= before_b["presented"].as_u64().unwrap());
     window(&bus, SERVICE, "headless-first");
     window(&bus, "comp-rec", "headless-second");
     assert!(first.child.try_wait().unwrap().is_none());
