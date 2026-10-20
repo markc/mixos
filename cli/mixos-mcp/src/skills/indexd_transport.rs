@@ -493,7 +493,8 @@ mod tests {
 
     #[tokio::test]
     async fn ssh_bridge_budget_leaves_client_deadline_margin() {
-        for (client_secs, bridge_secs) in [(2, 1), (3, 2), (10, 7), (20, 15), (21, 11), (120, 110)] {
+        for (client_secs, bridge_secs) in [(2, 1), (3, 2), (10, 7), (20, 15), (21, 11), (120, 110)]
+        {
             let Some((client, _dir)) = fake_with_timeout(client_secs) else {
                 return;
             };
