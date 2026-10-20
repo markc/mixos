@@ -1941,7 +1941,7 @@ fn the_null_fix_is_offered_only_where_the_word_is_surely_a_value() {
         "print([1, null])\n",
         "print([null])\n",
         "print([[null]])\n",
-        "print([1], [null])\n",
+        "print(contains([], [null]))\n",
         "print({a: [null]})\n",
         "$x = [null]\nprint($x)\n",
         "fn f()\nreturn [null]\nend\nprint(f())\n",
