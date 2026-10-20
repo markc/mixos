@@ -7,6 +7,8 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 publish = false
+# The daemon binary is added with the main port; until then the crate is a library.
+autobins = false
 
 [package.metadata.mixos]
 component = "blobd"
@@ -23,13 +25,25 @@ path = "src/lib.rs"
 
 [dependencies]
 mds = { path = "../../libs/mds" }
+props = { path = "../../libs/props" }
+bus = { path = "../../libs/bus" }
+buildinfo.workspace = true
+config = { path = "../../libs/config" }
+logging = { path = "../../libs/logging" }
 rusqlite.workspace = true
 tracing.workspace = true
 serde_json.workspace = true
+anyhow.workspace = true
 # flock on <root>/.blobd.lock — one GC owner per root.
 libc.workspace = true
 uuid.workspace = true
 blake3.workspace = true
+tokio.workspace = true
+futures-util.workspace = true
+axum.workspace = true
+reqwest.workspace = true
+http-body-util = "0.1"
+tokio-util = { version = "0.7", features = ["io"] }
 
 [dev-dependencies]
 tempfile.workspace = true

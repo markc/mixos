@@ -8,8 +8,14 @@
 //! — `{"blob":"b3:<64 hex>","size":N,"mime":…, "origin":"<node>"}` —
 //! cross the Bus; bytes never do.
 //!
-//! This is the port's first stage: the pure store core, with no Bus, no
-//! async runtime and no daemon. The citizen layer (verbs, events, props),
-//! the HTTP byte lane and the cross-node fetch follow in later stages.
+//! The pure store core (`core`) has no Bus and no async runtime. The Bus
+//! citizen (verbs, events, props) is `citizen`; the HTTP byte lane is
+//! `lane`; the cross-node fetch is `fetch`. The daemon `main` is ported
+//! after them.
 
+pub mod citizen;
 pub mod core;
+pub mod fetch;
+pub mod lane;
+pub mod props;
+pub mod refusal;
