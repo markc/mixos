@@ -181,7 +181,7 @@ impl Config {
 
 pub fn load_indexd_config(cli_path: Option<&Path>) -> Result<(PathBuf, Config)> {
     if let Some(path) = cli_path {
-        let path = PathBuf::from(expand_home(&path.to_string_lossy()));
+        let path = path.to_path_buf();
         return Ok((path.clone(), ::config::load_conf_mix_path(&path)?));
     }
     if let Some(found) = load_system_config(Path::new(SYSTEM_CFG_DIR))? {
@@ -215,17 +215,6 @@ fn load_optional(path: &Path) -> Result<Option<Config>> {
 fn load_system_config(dir: &Path) -> Result<Option<(PathBuf, Config)>> {
     let path = dir.join("config.conf.mix");
     Ok(load_optional(&path)?.map(|cfg| (path, cfg)))
-}
-
-pub(crate) fn expand_home(path: &str) -> String {
-    expand_home_with(path, std::env::var("HOME").ok().as_deref())
-}
-
-fn expand_home_with(path: &str, home: Option<&str>) -> String {
-    match (path.strip_prefix("~/"), home) {
-        (Some(rest), Some(home)) => format!("{home}/{rest}"),
-        _ => path.to_string(),
-    }
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
@@ -397,15 +386,15 @@ mod path_tests {
     }
 
     #[test]
-    fn tilde_expands_only_a_leading_home_slash() {
-        assert_eq!(
-            expand_home_with("~/x~y", Some("/home/user")),
-            "/home/user/x~y"
-        );
-        for path in ["/srv/~archive/file", "~other/file", "~", "x~/y"] {
-            assert_eq!(expand_home_with(path, Some("/home/user")), path);
-        }
-        assert_eq!(expand_home_with("~/file", None), "~/file");
+    fn explicit_config_path_is_literal() {
+        let dir = temp_dir("literal-config");
+        std::fs::create_dir(dir.join("~")).unwrap();
+        let path = dir.join("~/config.conf.mix");
+        std::fs::write(&path, "schema_version: 7\n").unwrap();
+        let (loaded, cfg) = load_indexd_config(Some(&path)).unwrap();
+        assert_eq!(loaded, path);
+        assert_eq!(cfg.schema_version, 7);
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

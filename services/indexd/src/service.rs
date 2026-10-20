@@ -100,12 +100,11 @@ pub(crate) async fn process_request(
                 // queue and runs the *same* `handle_index_file` path. The
                 // envelope carries origin context so the worker's CPU is
                 // attributed to the real requester, not left orphaned.
-                let filepath = expand_home(&req.path);
-                let file = std::path::Path::new(&filepath)
+                let file = std::path::Path::new(&req.path)
                     .file_name()
                     .and_then(|f| f.to_str())
                     .map(|s| s.to_string())
-                    .unwrap_or(filepath);
+                    .unwrap_or_else(|| req.path.clone());
                 // Reserve owned bytes before transferring the request into the
                 // bounded channel. Both count and byte overflow are explicit
                 // queue_full responses; no work is silently discarded.
