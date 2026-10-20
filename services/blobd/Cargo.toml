@@ -25,7 +25,7 @@ path = "src/lib.rs"
 
 [dependencies]
 mds = { path = "../../libs/mds" }
-props = { path = "../../libs/props" }
+props = { path = "../../libs/props", features = ["bus"] }
 bus = { path = "../../libs/bus" }
 buildinfo.workspace = true
 config = { path = "../../libs/config" }
@@ -38,10 +38,10 @@ anyhow.workspace = true
 libc.workspace = true
 uuid.workspace = true
 blake3.workspace = true
-tokio.workspace = true
+tokio = { workspace = true, features = ["fs", "io-util", "net", "rt-multi-thread", "signal"] }
 futures-util.workspace = true
 axum.workspace = true
-reqwest.workspace = true
+reqwest = { workspace = true, features = ["stream"] }
 http-body-util = "0.1"
 tokio-util = { version = "0.7", features = ["io"] }
 

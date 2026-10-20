@@ -635,6 +635,7 @@ fn resolve_args(command: &IncomingCommand) -> Option<Value> {
 /// copy, and every field is.
 fn clone_command(command: &IncomingCommand) -> IncomingCommand {
     IncomingCommand {
+        generation: command.generation,
         from: command.from.clone(),
         command: command.command.clone(),
         id: command.id.clone(),
@@ -718,9 +719,10 @@ pub async fn serve(citizen: Arc<Citizen>, verb_max_concurrent: usize) -> Result<
     loop {
         let connection = tokio::time::timeout(
             OP_TIMEOUT,
-            config::client_helpers::connect_default_with_provenance(
+            NodedClient::connect_with_provenance(
                 &service,
-                provenance.clone(),
+                &bus::noded_url(),
+                Some(provenance.clone()),
             ),
         )
         .await;
@@ -947,6 +949,7 @@ mod tests {
             headers.insert("args".into(), args.to_string());
         }
         IncomingCommand {
+            generation: 0,
             from: from.into(),
             command: verb.into(),
             id: Some("1".into()),
