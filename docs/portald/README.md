@@ -118,13 +118,20 @@ Nothing is captured until the request is granted, in this order:
 1. **Policy.** `--screencast-consent allow` grants everything. Use it only for
    headless and test sessions. The default is `prompt`.
 2. **A standing grant** that covers the caller's app (its process name, as in
-   `/proc/<pid>/comm`, so at most 15 characters). This is how automation shares
-   the screen with nobody at the desk.
+   `/proc/<pid>/comm`, so at most 15 bytes). This is how automation shares
+   the screen with nobody at the desk. A process name says which app is
+   asking but does not prove it, since any local process can set its own: a
+   named grant is a convenience for a trusted, unsandboxed session, not an
+   access control. A caller whose name cannot be read is covered only by a
+   grant for any app.
 3. **The person.** portald posts a notifyd question, "Share your screen?", with
    Allow and Deny. The request waits as a pending prompt until the button is
    pressed, an agent answers it over the Bus, or 60 seconds pass. A timeout, Deny
-   or a closed question all answer the app with 1 (cancelled). Without notifyd
-   the request still waits, and can only be answered over the Bus.
+   or a closed question all answer the app with 1 (cancelled). If the app
+   closes the request or its session, or leaves the bus, while it waits, the
+   question is taken down and nothing is captured. At most 4 requests wait at
+   once, one per caller; more are denied straight away. Without notifyd the
+   request still waits, and can only be answered over the Bus.
 
 | Verb | Body | Does |
 |---|---|---|
@@ -135,8 +142,10 @@ Nothing is captured until the request is granted, in this order:
 
 These verbs answer **callers on this node only**. A request with
 `broker_origin` other than `local` is refused with rc 13 `FORBIDDEN`, because a
-grant hands over the whole screen. Every grant, answer and decision is logged
-with the caller.
+grant hands over the whole screen. notifyd holds the same line for the
+buttons: `notify.action`, `notify.dismiss` and `notify.close_all` are refused
+for callers off this node, so no mesh peer can press Allow either. Every
+grant, answer and decision is logged with the caller.
 
 To share the screen from a script with nobody at the desk:
 

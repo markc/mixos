@@ -294,6 +294,16 @@ fn set_starting(sessions: &Sessions, path: &str, epoch: u64, starting: bool) {
     });
 }
 
+/// Whether the `Start` is still wanted: its request is still exported (the
+/// app has not closed it) and its session is the same one, still open.
+async fn still_wanted(connection: &Connection, sessions: &Sessions, target: &Target) -> bool {
+    let session = sessions.with(|map| {
+        map.get(target.session.as_str())
+            .is_some_and(|state| state.epoch == target.epoch)
+    });
+    session && request::live(connection, &target.request).await
+}
+
 /// Answers `Start` with failure and lets the session be started again.
 async fn refuse(connection: &Connection, sessions: &Sessions, target: &Target, why: &str) {
     tracing::warn!(owner = %target.owner, session = %target.session, "screencast not started: {why}");
@@ -324,11 +334,21 @@ async fn start_cast(connection: Connection, sessions: Sessions, target: Target, 
         return refuse(&connection, &sessions, &target, "no consent state").await;
     };
     let app = consent::app_name(caller_pid(&connection, owner).await);
-    let decision = consent::decide_start(consent, target.request.as_str(), &app, owner, &output.name).await;
+    let wanted = || still_wanted(&connection, &sessions, &target);
+    let decision =
+        consent::decide_start(consent, target.request.as_str(), app.as_deref(), owner, &output.name, wanted).await;
+    let app = app.as_deref().unwrap_or(consent::UNKNOWN_APP);
     if !decision.granted() {
         tracing::info!(%owner, %session, %app, output = %output.name, ?decision, "screencast refused");
         set_starting(&sessions, session.as_str(), target.epoch, false);
         request::respond(&connection, &target.request, owner, request::CANCELLED, HashMap::new()).await;
+        return;
+    }
+    // A grant decided in the last poll interval may still race the app
+    // leaving: nothing is captured for a request nobody holds.
+    if !still_wanted(&connection, &sessions, &target).await {
+        tracing::info!(%owner, %session, %app, "screencast granted but its request is gone; not started");
+        set_starting(&sessions, session.as_str(), target.epoch, false);
         return;
     }
     tracing::info!(%owner, %session, %app, output = %output.name, ?decision, "screencast granted");

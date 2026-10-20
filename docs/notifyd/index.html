@@ -279,8 +279,14 @@ listening, and match on the id the send returned. If you were disconnected,
 </tbody></table>
 <p>Each notification gets exactly one outcome. The first one wins, and a later
 button press or timeout is refused with <code>ALREADY_ANSWERED</code>.</p>
+<p><code>notify.action</code>, <code>notify.dismiss</code> and <code>notify.close_all</code> are the human's own
+acts, made through the desk's scenes, so notifyd takes them only from callers
+on this node (the broker's <code>broker_origin</code> stamp). A peer across the mesh can
+post and read notifications but never answer one for the person. That matters
+for questions such as portald's screen-share consent.</p>
 <p>Errors come back as <code>{error_code, message}</code>: rc 10 <code>USAGE</code> (a bad body),
-rc 14 <code>NOT_FOUND</code>, rc 15 <code>ALREADY_ANSWERED</code>, rc 16 <code>TOO_MANY_OPEN</code>.</p>
+rc 13 <code>FORBIDDEN</code> (not a local caller), rc 14 <code>NOT_FOUND</code>,
+rc 15 <code>ALREADY_ANSWERED</code>, rc 16 <code>TOO_MANY_OPEN</code>.</p>
 <h2 id="limits">Limits</h2>
 <p>A summary is at most 120 characters, a body 500, and a button label 32. A
 notification has at most four buttons. At most eight questions can wait for an

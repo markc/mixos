@@ -22,8 +22,13 @@
 -- on the topic "<name>.changed" with inner command notification.answered, and
 -- notify.get reads it afterwards. Other inner commands: notification.created,
 -- notification.closed (any outcome that is not a button press).
--- Replies: rc 0 with JSON; rc 10 bad request; rc 14 unknown id; rc 15 already
--- answered; rc 16 too many open. Errors use {error_code, message}.
+-- action, dismiss and close_all are the human's own acts, made through the
+-- desk's scenes, so they are taken from callers on this node only (the
+-- broker's broker_origin stamp): a peer across the mesh must never answer a
+-- question for the person, such as portald's screen-share consent.
+-- Replies: rc 0 with JSON; rc 10 bad request; rc 13 not a local caller;
+-- rc 14 unknown id; rc 15 already answered; rc 16 too many open. Errors use
+-- {error_code, message}.
 --
 -- State is one JSON file, written atomically on every change:
 -- $MIXOS_NOTIFYD_STATE, else $XDG_STATE_HOME/mixos/notifyd/state.json. After a
@@ -59,8 +64,17 @@ fn body()
 end
 
 fn fail($code, $message)
-  $rc = if $code == "NOT_FOUND" then 14 elif $code == "ALREADY_ANSWERED" then 15 elif $code == "TOO_MANY_OPEN" then 16 else 10 end
+  $rc = if $code == "NOT_FOUND" then 14 elif $code == "ALREADY_ANSWERED" then 15 elif $code == "TOO_MANY_OPEN" then 16 elif $code == "FORBIDDEN" then 13 else 10 end
   reply($rc, json_encode({error_code: $code, message: $message}))
+end
+
+-- Whether the request came from this node, as the broker stamped it. A
+-- refused caller has been answered.
+fn local_caller()
+  $headers = $event.headers ?? {}
+  if type($headers) == "map" and $headers.broker_origin == "local" then return true end
+  fail("FORBIDDEN", "only the desk on this node answers or dismisses notifications")
+  return false
 end
 
 fn announce($command, $record)
@@ -117,11 +131,11 @@ on notify.list desc "open notifications, oldest first (all: true for every recor
 end
 
 on notify.action desc "the human pressed button {action} on notification {id}"
-  $S = settle_and_reply(body().id, "action", body().action)
+  if local_caller() then $S = settle_and_reply(body().id, "action", body().action) end
 end
 
 on notify.dismiss desc "the human closed notification {id} without choosing"
-  $S = settle_and_reply(body().id, "dismissed", nil)
+  if local_caller() then $S = settle_and_reply(body().id, "dismissed", nil) end
 end
 
 on notify.close desc "withdraw notification {id} (its sender, or the Notifications page)"
@@ -129,28 +143,30 @@ on notify.close desc "withdraw notification {id} (its sender, or the Notificatio
 end
 
 on notify.close_all desc "close every open notification that has no buttons"
-  $closed = []
-  for each $r in $S.records
-    if $n.is_open($r) and not $n.is_actionable($r) then push($closed, $r.id) end
-  end
-  -- Settle all, save once, then announce: nothing is published that a
-  -- failed save would undo.
-  try
-    $next = $S
-    $records = []
-    for each $id in $closed
-      $out = $n.settle($next, $id, "closed", nil, now_iso())
-      $next = $out.state
-      push($records, $out.record)
+  if local_caller() then
+    $closed = []
+    for each $r in $S.records
+      if $n.is_open($r) and not $n.is_actionable($r) then push($closed, $r.id) end
     end
-    if len($closed) > 0 then save($next) end
-    $S = $next
-    for each $rec in $records
-      announce("notification.closed", $rec)
+    -- Settle all, save once, then announce: nothing is published that a
+    -- failed save would undo.
+    try
+      $next = $S
+      $records = []
+      for each $id in $closed
+        $out = $n.settle($next, $id, "closed", nil, now_iso())
+        $next = $out.state
+        push($records, $out.record)
+      end
+      if len($closed) > 0 then save($next) end
+      $S = $next
+      for each $rec in $records
+        announce("notification.closed", $rec)
+      end
+      reply(0, json_encode({closed: $closed}))
+    catch $m, $err
+      fail($err.code ?? "SAVE_FAILED", $m)
     end
-    reply(0, json_encode({closed: $closed}))
-  catch $m, $err
-    fail($err.code ?? "SAVE_FAILED", $m)
   end
 end
 
