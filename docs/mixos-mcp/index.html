@@ -210,6 +210,7 @@
                     <nav id="toc-nav">
                         <a href="#connection">Connection</a>
                         <a href="#tools">Tools</a>
+                        <a href="#host-indexd-from-a-desk" class="toc-h3">Host indexd from a desk</a>
                         <a href="#logging-and-tests">Logging and tests</a>
                     </nav>
                 </div>
@@ -280,13 +281,46 @@ uses the discovered URL. Calls are never replayed after reconnecting.</p>
 <li><code>mix_execute</code>, <code>mcp_status</code></li>
 </ul>
 <p>Knowledge tools retain their ranking, indexing, feedback and skill-learning
-behaviour. They require an <code>indexd</code> service on the selected Bus and send
-<code>indexd.&lt;action&gt;</code> requests through that broker. This bridge does not install
-indexd; an absent backend returns an explicit tool error. Skill refinement
-also needs a configured LLM backend. Settings are MixOS strict-data files:
+behaviour. By default they send <code>indexd.&lt;action&gt;</code> requests to <code>indexd</code> on
+the selected Bus. An absent backend returns an explicit tool error.
+Skill refinement also needs a configured LLM backend. Settings are MixOS strict-data files:
 <code>knowledge.conf.mix</code>, <code>domains.conf.mix</code>, <code>skills.conf.mix</code> and <code>llm.conf.mix</code>.
 LLM Bus providers use the same broker. <code>api_key_cmd</code> is Mix source, executed
 by <code>/opt/mixos/bin/mix -c</code>.</p>
+<h3 id="host-indexd-from-a-desk">Host indexd from a desk</h3>
+<p>When a desk cannot reach the host's Bus, select SSH in
+<code>$MIXOS_ETC/knowledge.conf.mix</code> (normally <code>~/.config/mixos/knowledge.conf.mix</code>):</p>
+<pre><code class="language-text">indexd: {
+    transport: "ssh",
+    target: "indexd",
+    ssh_host: "user@host.example",
+    ssh_command: ["/opt/mixos/bin/indexd", "bridge"],
+    call_timeout_secs: 120
+}
+</code></pre>
+<p>Install indexd on the host and configure key-based SSH access for the desk's
+user. The client runs <code>ssh -T -o BatchMode=yes -o ServerAliveInterval=30</code>
+with the configured host and command. The host command runs in the remote
+login shell; use trusted command arguments. <code>indexd bridge</code> uses the host's
+local Bus; <code>target</code> selects the address only in Bus mode.</p>
+<p>One bridge is shared by knowledge tools for the MCP server's lifetime,
+with one request in flight at a time. Each call has a deadline, including
+queueing and retries. A broken pipe, exited child or bridge transport failure
+gets one restart and retry; an application error is returned immediately.
+A timeout discards the child and returns an error without replaying the call.
+A retried mutation may already have executed, so retry is not an exactly-once
+guarantee. Normal MCP shutdown closes stdin and reaps the bridge.
+Restart the MCP server after changing transport settings.</p>
+<p>Missing settings default to <code>transport: "bus"</code>, <code>target: "indexd"</code>, the
+command above, an empty <code>ssh_host</code> and a 120-second call deadline. SSH mode
+requires <code>ssh_host</code>. When a Bus route is available, select
+<code>transport: "bus", target: "indexd.host.example.bus"</code> instead. Presence is
+checked with <code>indexd.stats</code> at the configured target, including routed targets.</p>
+<p>The default client domain map expands the user's home for <code>~/Projects/mixos</code>
+(<code>mixos</code>), <code>~/.mix</code> (<code>mix</code>), <code>~/.ns</code> (<code>ns</code>) and <code>~/.mc</code> (<code>mc</code>). Custom
+<code>domains.conf.mix</code> maps override these defaults. <code>index_workspace</code> expands
+only a leading <code>~</code> or <code>~/</code>, resolves the workspace to an absolute path, and
+sends absolute file paths and content to indexd.</p>
 <p>Terminal tools preserve explicit pane selection and instance checks. Native
 application tools require an exact service and semantic target. Read-only
 tools do not invoke mutations; arbitrary <code>bus_call</code> and <code>mix_execute</code> can.
@@ -298,7 +332,10 @@ default; <code>RUST_LOG=mixos_mcp=trace</code> explicitly enables full arguments
 <code>--version --json</code> reports build provenance without starting MCP or the Bus.</p>
 <p>Package tests cover parameter translation, target guards, output schemas,
 redaction and provider decoding. The stdio integration test uses the real
-fixture broker, including verified Unix ingress and lazy reconnection.</p>
+fixture broker, including verified Unix ingress and lazy reconnection.
+It also checks configured knowledge targets, paginated re-indexing and
+absolute file metadata. SSH client tests use a local Mix fake bridge through
+a test-only command hook; no SSH connection or indexd process is required.</p>
         </article>
         <p class="doc-source"><a href="/mixos-mcp/README.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
     </div>

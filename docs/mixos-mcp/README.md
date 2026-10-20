@@ -56,13 +56,54 @@ Each name below is exposed as `mcp__mixos__<name>` in Claude Code.
 - `mix_execute`, `mcp_status`
 
 Knowledge tools retain their ranking, indexing, feedback and skill-learning
-behaviour. They require an `indexd` service on the selected Bus and send
-`indexd.<action>` requests through that broker. This bridge does not install
-indexd; an absent backend returns an explicit tool error. Skill refinement
-also needs a configured LLM backend. Settings are MixOS strict-data files:
+behaviour. By default they send `indexd.<action>` requests to `indexd` on
+the selected Bus. An absent backend returns an explicit tool error.
+Skill refinement also needs a configured LLM backend. Settings are MixOS strict-data files:
 `knowledge.conf.mix`, `domains.conf.mix`, `skills.conf.mix` and `llm.conf.mix`.
 LLM Bus providers use the same broker. `api_key_cmd` is Mix source, executed
 by `/opt/mixos/bin/mix -c`.
+
+### Host indexd from a desk
+
+When a desk cannot reach the host's Bus, select SSH in
+`$MIXOS_ETC/knowledge.conf.mix` (normally `~/.config/mixos/knowledge.conf.mix`):
+
+```text
+indexd: {
+    transport: "ssh",
+    target: "indexd",
+    ssh_host: "user@host.example",
+    ssh_command: ["/opt/mixos/bin/indexd", "bridge"],
+    call_timeout_secs: 120
+}
+```
+
+Install indexd on the host and configure key-based SSH access for the desk's
+user. The client runs `ssh -T -o BatchMode=yes -o ServerAliveInterval=30`
+with the configured host and command. The host command runs in the remote
+login shell; use trusted command arguments. `indexd bridge` uses the host's
+local Bus; `target` selects the address only in Bus mode.
+
+One bridge is shared by knowledge tools for the MCP server's lifetime,
+with one request in flight at a time. Each call has a deadline, including
+queueing and retries. A broken pipe, exited child or bridge transport failure
+gets one restart and retry; an application error is returned immediately.
+A timeout discards the child and returns an error without replaying the call.
+A retried mutation may already have executed, so retry is not an exactly-once
+guarantee. Normal MCP shutdown closes stdin and reaps the bridge.
+Restart the MCP server after changing transport settings.
+
+Missing settings default to `transport: "bus"`, `target: "indexd"`, the
+command above, an empty `ssh_host` and a 120-second call deadline. SSH mode
+requires `ssh_host`. When a Bus route is available, select
+`transport: "bus", target: "indexd.host.example.bus"` instead. Presence is
+checked with `indexd.stats` at the configured target, including routed targets.
+
+The default client domain map expands the user's home for `~/Projects/mixos`
+(`mixos`), `~/.mix` (`mix`), `~/.ns` (`ns`) and `~/.mc` (`mc`). Custom
+`domains.conf.mix` maps override these defaults. `index_workspace` expands
+only a leading `~` or `~/`, resolves the workspace to an absolute path, and
+sends absolute file paths and content to indexd.
 
 Terminal tools preserve explicit pane selection and instance checks. Native
 application tools require an exact service and semantic target. Read-only
@@ -79,3 +120,6 @@ default; `RUST_LOG=mixos_mcp=trace` explicitly enables full arguments.
 Package tests cover parameter translation, target guards, output schemas,
 redaction and provider decoding. The stdio integration test uses the real
 fixture broker, including verified Unix ingress and lazy reconnection.
+It also checks configured knowledge targets, paginated re-indexing and
+absolute file metadata. SSH client tests use a local Mix fake bridge through
+a test-only command hook; no SSH connection or indexd process is required.
