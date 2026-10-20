@@ -108,8 +108,16 @@ async fn application_tools_round_trip_the_registry_contract() {
             json!({"service":"registry-fixture", "id":"file.refresh"}),
         ))
         .await
-        .unwrap_err();
-    assert!(rejected.to_string().contains("unknown field"), "{rejected}");
+        .unwrap();
+    assert_eq!(rejected.is_error, Some(true));
+    assert!(
+        rejected.content[0]
+            .as_text()
+            .unwrap()
+            .text
+            .contains("unknown field `id`"),
+        "{rejected:?}"
+    );
     assert_eq!(deliveries.load(std::sync::atomic::Ordering::SeqCst), 0);
     // No native connection has even been opened by the refused requests.
     let status = result(
