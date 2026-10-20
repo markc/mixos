@@ -87,7 +87,7 @@ pub const LINT_DOCS: &[LintDoc] = &[
     LintDoc {
         code: "MIX-E1101",
         summary: "undefined variable",
-        detail: "A `$name` read whose name is bound NOWHERE in its visible universe. Function bodies see their params, their own binders, and everything bound anywhere at file level (Mix has no block scoping and no read-before-assign rule, so lexical order is deliberately ignored). Never flagged: `${name}` interpolation (falls back to the process environment), `$1`-style positionals, the runtime-injected `rc`/`result`/`status`/`event`/`_`, and (conservatively) a name that matches any known callable even if no variable binds it. In an `ssh_mix` body whose opts cannot be read statically, variable checks stand down — dynamic `bindings`/`env` may supply any data name (reported once per call as MIX-D3018) — and a read one edit away from a name the body DOES bind gets MIX-D3017 instead of silence. Fix: assign it, use `env(\"NAME\")` for environment values, or pass `--allow-global NAME`.",
+        detail: "A `$name` read whose name is bound NOWHERE in its visible universe. Function bodies see their params, their own binders, and everything bound anywhere at file level (Mix has no block scoping and no read-before-assign rule, so lexical order is deliberately ignored). Never flagged: `${name}` interpolation (falls back to the process environment), `$1`-style positionals, the runtime-injected `rc`/`result`/`status`/`event`/`_`, and (conservatively) a name that matches any known callable even if no variable binds it. In an `ssh_mix` body whose opts cannot be read statically, variable checks stand down — dynamic `bindings`/`env` may supply any data name (reported once per call as MIX-D3018) — and a read one edit away from a name the body DOES bind gets MIX-D3017 instead of silence. Fix: assign it, use `env(\"NAME\")` for environment values, or declare an injected name with `-- lint: globals NAME` in the file (or pass `--allow-global NAME`).",
     },
     LintDoc {
         code: "MIX-E1102",
@@ -135,6 +135,16 @@ pub const LINT_DOCS: &[LintDoc] = &[
         detail: "A `require(\"path\")` whose literal target exists but does not parse as Mix. Lint parses literal-path modules so a broken dependency is caught at authoring time, not at run time.",
     },
     LintDoc {
+        code: "MIX-W2314",
+        summary: "require() export called with the wrong number of arguments",
+        detail: "A warning, not an error, while the check is new (0.117.0): a false positive must never fail a `mix lint` gate. `$m.helper(1)` where `$m = require(\"./lib.mix\")` and the module defines `function helper($a, $b)` once. The runtime fails the call (`helper: expected 2 argument(s), got 1`); lint reads the module and reports it at authoring time, with the same `min..max` rule as MIX-E1202 (parameters with defaults are optional). Checked only when `$m` is bound exactly once, to a literal path, and is not also a parameter; a dynamic path, a rebound `$m`, a module whose top-level `return` replaces the auto-export, a module that uses `source`/`include`, and a file that does stand down silently. A name defined more than once in the module is not arity-checked. Nested modules resolve through exports bound once to a literal `require()` (`$a.b.fn()`), next to the module that requires them.",
+    },
+    LintDoc {
+        code: "MIX-W2315",
+        summary: "require() module has no such export",
+        detail: "A warning, not an error, while the check is new (0.117.0): a false positive must never fail a `mix lint` gate. `$m.nosuch(2)` where the required module neither defines nor assigns `nosuch` at its top level (or only as a `_`-private name). The call falls through to UFCS and fails at run time with FUNCTION_UNDEFINED. Not reported when anything else could answer the call: a builtin, HOF or special form, an extension, a function this file defines, the prelude, an `--allow-function` name, an exported `$var` (it may hold a function value), or an enclosing `address` block (where an unknown member call is a send). A STATEMENT `$m.nosuch()` is different: it parses as a call of the field value, which has no UFCS fallback, so only an exported `$var` or an `address` block excuses it. The hint names the nearest export and lists them. Same stand-down rules as MIX-W2314.",
+    },
+    LintDoc {
         code: "MIX-E1501",
         summary: "dead mutation (write is lost)",
         detail: "A discarded `push`/`pop`/`shift` whose first argument is NOT a bare variable — `push($m[\"a\"], $v)`, `push($m.a, $v)`, `$m[\"a\"].push($v)`. These mutate through the variable slot, so given any other expression they append to a temporary copy and the write is lost in silence. An ERROR, not a warning: the statement does nothing while reading as though it did. The FIX DIFFERS BY BUILTIN: `push` returns the appended list, so assign it back — `$m[\"a\"] = push($m[\"a\"], $v)`. `pop`/`shift` return the REMOVED ELEMENT, not the list, so assigning that back would replace the list with the element (data corruption) — hoist first instead: `$l = $m[$k]; $x = pop($l); $m[$k] = $l`. A by-value parameter is a bare variable, handled by its own dead-push warning, so it is not double-reported.",
@@ -174,6 +184,11 @@ pub const LINT_DOCS: &[LintDoc] = &[
         summary: "assign-back of an in-place mutator",
         detail: "`$x = push($x, v)` binds nil — push mutates in place and returns nil, so the assign-back empties the list; `$x = pop($x)` / `$x = shift($x)` bind the REMOVED ELEMENT, not the list. Drop the assignment for push; bind the element separately for pop/shift.",
     },
+    LintDoc {
+        code: "MIX-E1601",
+        summary: "malformed `-- lint:` pragma",
+        detail: "A comment starting `-- lint:` (or `# lint:`) that is not one of the three pragmas: `-- lint: globals NAME, …` (names injected by `ssh_mix` bindings, an embedder or a `source` — an in-file `--allow-global`), `-- lint: ignore CODE` (suppress CODE on the next line holding code only, or on its own line when written after code) and `-- lint: ignore-file CODE` (the whole file). A bare `ignore` with no code is refused by design: every suppression names what it suppresses, so it can be reported once it goes stale (MIX-D3019). An unknown code, a non-name in `globals`, and an unknown directive are refused too. Pragmas are read from comments only, never from strings or heredocs.",
+    },
     // ---- Warnings (MIX-W2xxx) ----
     LintDoc {
         code: "MIX-W2101",
@@ -203,7 +218,7 @@ pub const LINT_DOCS: &[LintDoc] = &[
     LintDoc {
         code: "MIX-W2304",
         summary: "unknown builtin-result key",
-        detail: "A literal field/index key checked against the builtin's documented result-map fields (`mix builtins --json`). Works on a direct builtin call or a variable proven by straight-line assignment to hold that result. The hint names the closest documented key (e.g. `exit_code` rather than `code`). Dynamic keys, generic maps, and result shapes without declared fields stay silent.",
+        detail: "A literal field/index key checked against the builtin's documented result-map fields (`mix builtins --json`). Works on a direct builtin call or a variable proven by straight-line assignment to hold that result. The message names the declared shape (`process_result has no field 'code'`) and says that reading it is silently nil. The hint is a did-you-mean: the bash/Python/Node spellings map to the field they mean first (`code`/`rc`/`status`/`returncode` → `exit_code`, `status_code` → `status`, `success` → `ok`, `output` → `stdout`), then a field ending in `_key`, then the nearest by edit distance. Dynamic keys, generic maps, and result shapes without declared fields stay silent; the runtime is unchanged (a missing field reads nil).",
     },
     LintDoc {
         code: "MIX-W2305",
@@ -239,6 +254,16 @@ pub const LINT_DOCS: &[LintDoc] = &[
         code: "MIX-W2311",
         summary: "fmt/sprintf template consumes fewer operands than provided",
         detail: "A direct, unshadowed `fmt()`/`sprintf()` call whose template is a string literal that parses cleanly under the runtime grammar, and whose argument list is longer than the template consumes — `fmt(\"%s\", 1, 2)` provides two operands for a one-placeholder template. Both builtins are variadic, so the generic arity gate cannot see the surplus, and the runtime silently ignores the extra arguments. `%%` consumes nothing; a `*` width (and, for sprintf, a `*` precision) consumes one operand each, so `fmt(\"%*s\", 5, \"x\")` and `sprintf(\"%*.*f\", 4, 2, 1.5)` are exact and stay silent — as do deficits, which are the runtime's own \"not enough arguments\" error. Invalid, unknown or dynamically-built templates stay silent (they would raise at runtime, so no definite surplus can be claimed), as do calls whose name a user function, variable, address block or dynamic include can shadow.",
+    },
+    LintDoc {
+        code: "MIX-W2312",
+        summary: "bareword null/None/undefined is the string \"null\"",
+        detail: "A bareword `null`, `None`, `undefined`, `NULL` or `nullptr` used as a value. Mix has one null, `nil`; every other bareword is a string literal, so `{open: null}` sends `{\"open\":\"null\"}` and `if $x == None` compares against text. It bit a live Bus probe (2026-10-10): the verb rightly refused `open:\"null\"` and the refusal was taken for an app bug. A map key (`{null: 1}`), a field (`$x.null`), a call (`null()`), a statement head and a Bus command word are not values and stay silent, as does a quoted `\"null\"`. Where the word is surely a value (a call argument, list element, map value, the right side of `$x =`, a comparison or `??` operand, a `return` operand) the finding carries a quick fix to `nil`: `mix lint --fix FILE` applies it, and `--json` reports it as `fix`. There is deliberately no runtime alias: the language keeps one null.",
+    },
+    LintDoc {
+        code: "MIX-W2313",
+        summary: "function name collides with a mix shell extension",
+        detail: "A function named after an extension the `mix` binary registers in every mode (`ai`, `ai_diagnose`, `context`). An extension beats a user function at a bareword call, so `context()` in the defining file runs the shell's extension (a `\"pid=…, cwd=…\"` string), not the function. A member call on a `require()` exports map (`$m.context()`) does reach the function — in every mode, `--serve` included, since 0.117.0. Found when a serve citizen's module exported `fn context`. Rename it (e.g. `new_context`).",
     },
     LintDoc {
         code: "MIX-W2401",
@@ -330,6 +355,11 @@ pub const LINT_DOCS: &[LintDoc] = &[
         code: "MIX-D3018",
         summary: "ssh_mix opts unreadable — variable checks skipped",
         detail: "An `ssh_mix`/`ssh_mix_many` call whose opts argument is not a statically readable map (a call, a concatenation, a variable not bound exactly once to a map literal) — so the names its `bindings`/`env` inject are unknown, and undefined-VARIABLE checks stand down for that body: dynamic bindings may supply any free DATA variable, and a linter that cried E1101 about them would be turned off. The boundary is split, not blanket: a function name cannot ride in through strict-data bindings, so undefined-FUNCTION checks (MIX-E1102) and arity checks (MIX-E1202) keep running, and a read one edit from a bound name gets MIX-D3017. A variable bound exactly ONCE to a map literal IS resolved (`$o = {bindings: {…}}`), so the fleet opts-variable shape keeps full checks.",
+    },
+    LintDoc {
+        code: "MIX-D3019",
+        summary: "`-- lint:` suppression matches nothing",
+        detail: "A `-- lint: ignore CODE` whose next code line no longer reports CODE, or a `-- lint: ignore-file CODE` in a file that reports none — so the pragma is stale and can be deleted. Reported at the pragma's own line. A note, so it never gates.",
     },
     LintDoc {
         code: "MIX-D3014",

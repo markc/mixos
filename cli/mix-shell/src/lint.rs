@@ -4,7 +4,7 @@
 //! record D3).
 //!
 //! ```text
-//! mix lint [--json | --data] [--deny-warnings] [--require-version]
+//! mix lint [--json | --data] [--deny-warnings] [--require-version] [--fix]
 //!          [--allow-global NAME]... [--allow-function NAME]...
 //!          FILE...
 //! ```
@@ -18,13 +18,14 @@
 use std::io::Read;
 
 use mix::analyzer::{
-    self, Analysis, AnalyzerConfig, Diagnostic, FunctionDeclaration, HandlerDeclaration, Severity,
+    self, Analysis, AnalyzerConfig, Diagnostic, Fix, FunctionDeclaration, HandlerDeclaration,
+    Severity,
 };
 use mix::error::MixError;
 use mix::token::Token;
 
 const USAGE: &str = "Usage: mix lint [--json | --data] [--deny-warnings] [--agent] \
-[--require-version] [--allow-global NAME]... [--allow-function NAME]... FILE...";
+[--require-version] [--fix] [--allow-global NAME]... [--allow-function NAME]... FILE...";
 
 /// Line/column pair lifted from a lexer/parser span.
 struct SpanLite {
@@ -61,6 +62,7 @@ pub fn run_lint(args: &[String], version: &str) -> i32 {
         Ok("agent") | Ok("error")
     );
     let mut require_version = false;
+    let mut fix = false;
     let mut cfg = AnalyzerConfig::default();
     let mut files: Vec<String> = Vec::new();
     let mut stdin_used = false;
@@ -83,6 +85,7 @@ pub fn run_lint(args: &[String], version: &str) -> i32 {
             "--deny-warnings" => deny_warnings = true,
             "--agent" => agent = true,
             "--require-version" => require_version = true,
+            "--fix" => fix = true,
             "--allow-global" | "--allow-function" => {
                 let Some(name) = args.get(i + 1) else {
                     eprintln!("mix lint: {} requires a NAME", args[i]);
@@ -118,6 +121,12 @@ pub fn run_lint(args: &[String], version: &str) -> i32 {
     }
 
     cfg.agent = agent;
+    // This binary registers these in every mode, so a script linted here
+    // may call them, and a function named after one is shadowed.
+    cfg.extensions = analyzer::MIX_SHELL_EXTENSIONS
+        .iter()
+        .map(|name| name.to_string())
+        .collect();
 
     let mut all_diags: Vec<Diagnostic> = Vec::new();
     let mut capabilities: Vec<&'static str> = Vec::new();
@@ -144,7 +153,31 @@ pub fn run_lint(args: &[String], version: &str) -> i32 {
         // Stdin lints against the current directory for relative
         // require() resolution (D3): give it a synthetic ./- name.
         let file_label: Option<&str> = if file == "-" { Some("-") } else { Some(file) };
-        match lint_one(&source, file_label, &cfg) {
+        let mut source = source;
+        let mut outcome = lint_one(&source, file_label, &cfg);
+        // `--fix` applies each finding's quick fix to the file, then lints the
+        // result again, so the report shows what is left. Stdin has nowhere
+        // to write back, so its fixes are only reported.
+        if fix
+            && file != "-"
+            && let Ok(LintOutcome::Script(analysis)) = &outcome
+        {
+            let fixes: Vec<&Fix> = analysis
+                .diagnostics
+                .iter()
+                .filter_map(|d| d.fix.as_ref())
+                .collect();
+            if let Some((fixed, applied)) = apply_fixes(&source, &fixes) {
+                if let Err(e) = std::fs::write(file, &fixed) {
+                    eprintln!("mix lint: {file}: writing fixes: {e}");
+                    return 2;
+                }
+                eprintln!("mix lint: {file}: applied {applied} fix(es)");
+                source = fixed;
+                outcome = lint_one(&source, file_label, &cfg);
+            }
+        }
+        match outcome {
             Ok(LintOutcome::Script(analysis)) => {
                 all_diags.extend(analysis.diagnostics);
                 if let Some(diag) = version_header_diag(&source, file, require_version) {
@@ -221,6 +254,12 @@ pub fn run_lint(args: &[String], version: &str) -> i32 {
                 );
                 if let Some(hint) = &d.hint {
                     println!("  hint: {hint}");
+                }
+                if let Some(fix) = &d.fix {
+                    println!(
+                        "  fix: replace `{}` with `{}` at {}:{} (mix lint --fix applies it)",
+                        fix.replace, fix.with, fix.line, fix.column
+                    );
                 }
             }
             println!(
@@ -371,6 +410,7 @@ fn version_header_diag(source: &str, file: &str, require: bool) -> Option<Diagno
         hint: Some(format!(
             "add a `-- version: 0.1.0` comment near the top (the first {scan} lines are searched)"
         )),
+        fix: None,
     })
 }
 
@@ -384,7 +424,15 @@ fn version_header_diag(source: &str, file: &str, require: bool) -> Option<Diagno
 pub(crate) fn lint_source_for_execution(source: &str) -> (Vec<Diagnostic>, Vec<Diagnostic>) {
     let mut hard = Vec::new();
     let mut soft = Vec::new();
-    let outcome = lint_one(source, None, &AnalyzerConfig::default());
+    // The program runs under this binary, so its extensions are defined.
+    let cfg = AnalyzerConfig {
+        extensions: analyzer::MIX_SHELL_EXTENSIONS
+            .iter()
+            .map(|name| name.to_string())
+            .collect(),
+        ..AnalyzerConfig::default()
+    };
+    let outcome = lint_one(source, None, &cfg);
     let mut push = |d: Box<Diagnostic>| {
         if HARD_SAFE_EXEC_CODES.contains(&d.code) {
             hard.push(*d);
@@ -434,6 +482,7 @@ fn lint_one(
                 .and_then(|s| (s.column > 0).then_some(s.column)),
             message: msg,
             hint: None,
+            fix: None,
         })
     };
     // AMP scene envelope (2026-09-26 entry): a `---` front-matter header
@@ -503,6 +552,37 @@ fn lint_one(
     let mut cfg = cfg.clone();
     cfg.source = Some(source.to_string());
     Ok(LintOutcome::Script(analyzer::analyze(&stmts, file, &cfg)))
+}
+
+/// Apply quick fixes to `source`. Each edit is checked against the text at
+/// its position first; one that does not match is skipped, never forced.
+/// `None` when nothing was applied.
+fn apply_fixes(source: &str, fixes: &[&Fix]) -> Option<(String, usize)> {
+    let mut lines: Vec<String> = source.split('\n').map(str::to_string).collect();
+    let mut ordered = fixes.to_vec();
+    // Right to left within a line, so an edit never moves a later one's column.
+    ordered.sort_by_key(|fix| std::cmp::Reverse((fix.line, fix.column)));
+    ordered.dedup_by(|a, b| a.line == b.line && a.column == b.column);
+    let mut applied = 0;
+    for fix in ordered {
+        let Some(text) = fix.line.checked_sub(1).and_then(|i| lines.get_mut(i)) else {
+            continue;
+        };
+        let Some(start) = fix
+            .column
+            .checked_sub(1)
+            .and_then(|col| text.char_indices().nth(col))
+            .map(|(byte, _)| byte)
+        else {
+            continue;
+        };
+        if !text[start..].starts_with(&fix.replace) {
+            continue;
+        }
+        text.replace_range(start..start + fix.replace.len(), &fix.with);
+        applied += 1;
+    }
+    (applied > 0).then(|| (lines.join("\n"), applied))
 }
 
 fn strict_data_fallback(
@@ -615,9 +695,13 @@ fn strict_data_diagnostic(error: MixError, file: Option<&str>) -> Diagnostic {
         column,
         message: format!("strict-data parse error: {message}"),
         hint,
+        fix: None,
     }
 }
 
+// Each slice is a distinct field of the lint wire report; keep its schema
+// inputs explicit rather than coupling the analyser's collections.
+#[allow(clippy::too_many_arguments)]
 fn report_json(
     version: &str,
     files: &[String],
@@ -650,6 +734,13 @@ fn report_json(
             "column": d.column,
             "message": d.message,
             "hint": d.hint,
+            // Additive under schema 3: present (null) on every diagnostic.
+            "fix": d.fix.as_ref().map(|f| serde_json::json!({
+                "line": f.line,
+                "column": f.column,
+                "replace": f.replace,
+                "with": f.with,
+            })),
         })).collect::<Vec<_>>(),
         "capabilities": capabilities,
         "handlers": handlers.iter().map(|h| serde_json::json!({
@@ -669,4 +760,35 @@ fn report_json(
             "denied_warnings": summary.denied_warnings,
         },
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The pre-run lint knows the extensions the program will run with, as
+    /// `mix lint` does: a call to one is no undefined-function finding.
+    #[test]
+    fn the_execution_lint_knows_the_shell_extensions() {
+        let (hard, soft) = lint_source_for_execution("print(context())\nprint(ai(\"q\"))\n");
+        assert!(hard.is_empty(), "{hard:?}");
+        assert!(!soft.iter().any(|d| d.code == "MIX-E1102"), "{soft:?}");
+    }
+
+    #[test]
+    fn fixes_apply_only_where_the_text_matches() {
+        let fix = |line, column, replace: &str| Fix {
+            line,
+            column,
+            replace: replace.to_string(),
+            with: "nil".to_string(),
+        };
+        let a = fix(1, 6, "null");
+        let b = fix(1, 12, "null");
+        let stale = fix(2, 1, "null");
+        let (out, applied) = apply_fixes("$x = null; null\nprint(1)", &[&a, &b, &stale]).unwrap();
+        assert_eq!(out, "$x = nil; nil\nprint(1)");
+        assert_eq!(applied, 2);
+        assert!(apply_fixes("print(1)", &[&stale]).is_none());
+    }
 }

@@ -511,25 +511,94 @@ fn bare_dollar_question(piece: &str) -> Option<usize> {
 /// STRUCTURAL items before anything spawns (both the lone-command `-c` path
 /// and the multi-piece executor call this, so no shape can skip it).
 pub fn refuse_bash_keywords(items: &[(Connector, &str)]) -> Result<(), String> {
+    refuse_bash_keywords_in(None, items)
+}
+
+/// [`refuse_bash_keywords`], told the text the items were split from, so the
+/// refusal can name the line that tripped it (`line 3: …`).
+///
+/// A Mix assignment written the JS or bash way (`let i = 0`, a bareword
+/// `i = $i + 1`) is looked for FIRST, anywhere in the list: it is what made
+/// the Mix parse fail and sent the program here, so naming a later `while`
+/// (already in Mix form) sent agents to fix the wrong line (2026-10-17).
+pub fn refuse_bash_keywords_in(
+    source: Option<&str>,
+    items: &[(Connector, &str)],
+) -> Result<(), String> {
+    let at = |piece: &str| line_prefix(source, piece);
+    for (_, piece) in items {
+        if let Some(mix_form) = foreign_assignment(piece) {
+            return Err(format!(
+                "{}`{piece}` is not Mix — write `{mix_form}` (a variable carries the `$` sigil, \
+                 and there is no `let`). The whole command list was refused.",
+                at(piece)
+            ));
+        }
+    }
     for (_, piece) in items {
         // A literal `$?` is bash's last-status — Mix has `$rc` and
         // `.exit_code`. Quote-aware: inside single quotes `$?` is literal
         // text, so it stays.
         if let Some(pos) = bare_dollar_question(piece) {
             return Err(format!(
-                "`$?` at byte {pos} is bash syntax — in Mix read `$rc` (or a run result's \
-                 `.exit_code`); the whole command list was refused"
+                "{}`$?` at byte {pos} is bash syntax — in Mix read `$rc` (or a run result's \
+                 `.exit_code`); the whole command list was refused",
+                at(piece)
             ));
         }
         let head = head_word(piece);
         if let Some((kw, equivalent)) = BASH_KEYWORDS.iter().find(|(k, _)| *k == head) {
             return Err(format!(
-                "`{kw}` is bash, not Mix — {equivalent}. The whole command list was refused; \
-                 write the Mix form instead."
+                "{}`{kw}` is bash, not Mix — {equivalent}. The whole command list was refused; \
+                 write the Mix form instead.",
+                at(piece)
             ));
         }
     }
     Ok(())
+}
+
+/// `line N: `piece` — ` for a piece of a multi-line `source`, so a refusal
+/// points at the line; empty for a one-line source or a piece outside it.
+fn line_prefix(source: Option<&str>, piece: &str) -> String {
+    let Some(source) = source.filter(|s| s.contains('\n')) else {
+        return String::new();
+    };
+    let start = source.as_ptr() as usize;
+    let at = piece.as_ptr() as usize;
+    if at < start || at + piece.len() > start + source.len() {
+        return String::new();
+    }
+    let line = source[..at - start].matches('\n').count() + 1;
+    format!("line {line}: ")
+}
+
+/// A Mix assignment written the JS or bash way — `let i = 0`, `var i = 0`,
+/// `const i = 0`, or the bareword `i = $i + 1` — as its Mix form `$i = …`.
+/// `None` for anything else, and for a head that is a shell builtin or a real
+/// program on PATH (`cd =` stays a command, as the shell path promises).
+fn foreign_assignment(piece: &str) -> Option<String> {
+    let words: Vec<&str> = piece.split_whitespace().collect();
+    let ident = |w: &str| {
+        w.chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+            && w.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+    };
+    let (name, value) = match words.as_slice() {
+        [kw, name, "=", value @ ..] if matches!(*kw, "let" | "var" | "const") => {
+            (name.strip_prefix('$').unwrap_or(name), value)
+        }
+        [name, "=", value @ ..] => (*name, value),
+        _ => return None,
+    };
+    if !ident(name)
+        || crate::shell::SHELL_BUILTINS.contains(&words[0])
+        || crate::shell::is_external_command(words[0])
+    {
+        return None;
+    }
+    Some(format!("${name} = {}", value.join(" ")))
 }
 
 pub fn execute_command_list_with_policy(
@@ -2174,6 +2243,46 @@ fn apply_output_redirects(cmd: &mut Command, redirects: &[Redirect]) -> io::Resu
         });
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod foreign_assignment_tests {
+    use super::*;
+
+    #[test]
+    fn js_and_bareword_assignments_get_their_mix_form() {
+        assert_eq!(foreign_assignment("let i = 0").as_deref(), Some("$i = 0"));
+        assert_eq!(
+            foreign_assignment("const $n = 1").as_deref(),
+            Some("$n = 1")
+        );
+        assert_eq!(
+            foreign_assignment("zqx_total = $zqx_total + 1").as_deref(),
+            Some("$zqx_total = $zqx_total + 1")
+        );
+    }
+
+    #[test]
+    fn real_commands_are_left_alone() {
+        // A shell builtin (`cd =` changes into a directory named `=`), a
+        // program on PATH, and shapes that are not an assignment.
+        assert_eq!(foreign_assignment("cd ="), None);
+        assert_eq!(foreign_assignment("echo = x"), None);
+        assert_eq!(foreign_assignment("i=1"), None);
+        assert_eq!(foreign_assignment("let"), None);
+        assert_eq!(foreign_assignment("1x = 2"), None);
+    }
+
+    #[test]
+    fn a_refusal_names_the_line_only_for_a_multi_line_source() {
+        let source = "echo a\nlet i = 0";
+        let items = split_command_list(source).unwrap();
+        let err = refuse_bash_keywords_in(Some(source), &items).unwrap_err();
+        assert!(err.starts_with("line 2: `let i = 0` is not Mix"), "{err}");
+        let items = split_command_list("let i = 0").unwrap();
+        let err = refuse_bash_keywords_in(Some("let i = 0"), &items).unwrap_err();
+        assert!(err.starts_with("`let i = 0` is not Mix"), "{err}");
+    }
 }
 
 #[cfg(test)]

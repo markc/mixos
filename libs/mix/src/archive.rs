@@ -40,9 +40,19 @@
 //! compressed stream is drained to true EOF: the zstd frame checksum /
 //! gzip CRC is actually verified, the decoded tail must be all zero (GNU
 //! padding), AND the raw input must be fully consumed (a concatenated
-//! second frame never decodes, so only the source position can see it).
+//! second zstd frame never decodes, so only the source position can see
+//! it). Gzip is read member after member (RFC 1952 allows a file of several,
+//! as `pigz` and `cat a.gz b.gz` produce); every member's CRC is checked and
+//! their decoded bytes form one stream, so a second tar after the first's
+//! end is still non-zero data after the end and is refused.
+//!
+//! Member names may carry GNU tar's leading `./` (`tar -C dir .`); a bare
+//! `./` directory entry names the extraction root, and only its metadata is
+//! applied. A relative symlink may climb with leading `..` components as far
+//! as its own directory's depth allows, then only descend, and never through
+//! another symlink.
 
-use crate::builtins::{opt_invalid, sanitize_for_diag};
+use crate::builtins::{directory_names, opt_invalid, sanitize_for_diag};
 use crate::error::{MixError, MixResult};
 use crate::value::Value;
 use indexmap::IndexMap;
@@ -352,7 +362,7 @@ enum VerifiedDecode {
         >,
     },
     Gzip {
-        dec: flate2::bufread::GzDecoder<BufReader<File>>,
+        dec: Box<flate2::bufread::MultiGzDecoder<BufReader<File>>>,
     },
     None {
         src: BufReader<File>,
@@ -414,7 +424,10 @@ impl VerifiedDecode {
                 ),
             },
             Codec::Gzip => VerifiedDecode::Gzip {
-                dec: flate2::bufread::GzDecoder::new(br),
+                // Every member is decoded and CRC-checked; anything after
+                // the last member that is not a gzip header fails here as
+                // ARCHIVE_STREAM_CORRUPT.
+                dec: Box::new(flate2::bufread::MultiGzDecoder::new(br)),
             },
             Codec::None => VerifiedDecode::None { src: br },
         })
@@ -431,7 +444,9 @@ impl VerifiedDecode {
         }
     }
 
-    /// After decoded EOF, ensure the single-member decoder left no raw input.
+    /// After decoded EOF, ensure the decoder left no raw input: a second
+    /// zstd frame, or (defence in depth for gzip, whose multi-member decoder
+    /// reads to EOF) anything after the last member.
     fn verify_raw_end(&mut self, caller: &str) -> MixResult<()> {
         let reader = match self {
             VerifiedDecode::Zstd { dec } => dec.get_mut(),
@@ -444,7 +459,7 @@ impl VerifiedDecode {
         if !leftover.is_empty() {
             return Err(runtime(format!(
                 "{caller}: {} raw bytes remain after the decoded stream ended — \
-                 concatenated frames/members are refused",
+                 concatenated zstd frames are refused",
                 leftover.len()
             )));
         }
@@ -469,7 +484,7 @@ impl LimitedRead<'_> {
             if buf[..n].iter().any(|&b| b != 0) {
                 return Err(runtime(format!(
                     "{caller}: non-zero data after the tar end-of-archive (bytes {}..{}) — \
-                     single-frame artifacts only",
+                     one tar per artifact",
                     drained - n as u64,
                     drained
                 )));
@@ -505,8 +520,12 @@ fn clean_member(caller: &str, raw: &Path, max_name: usize) -> Result<PathBuf, Mi
         )));
     }
     let mut out = PathBuf::new();
-    for c in raw.components() {
+    for (i, c) in raw.components().enumerate() {
         match c {
+            // `components()` keeps a `.` only at the start: GNU tar's `./name`
+            // and `-C dir .` forms. It names the extraction root, so it is
+            // dropped; a bare `./` comes back empty (the root entry).
+            Component::CurDir if i == 0 => {}
             Component::Normal(part) => {
                 let pb = part.as_bytes();
                 if pb == b"." || pb == b".." || pb.is_empty() {
@@ -528,19 +547,104 @@ fn clean_member(caller: &str, raw: &Path, max_name: usize) -> Result<PathBuf, Mi
     Ok(out)
 }
 
+/// A symlink target, checked for containment relative to the link's own
+/// directory. Only LEADING `..` components are allowed, and no more of them
+/// than the link is deep: they climb through the link's real ancestors (made
+/// by this unpack with O_NOFOLLOW, so never symlinks). Everything after them
+/// must descend, so a `..` can never be applied to a symlink that resolves
+/// elsewhere (`d/../x` with `d -> ..` would climb out of the root). Returns
+/// the target as written (`../bin/demo`, `.` for the link's own directory)
+/// and the member path it resolves to.
 fn clean_link_target(
     caller: &str,
-    name: &str,
+    rel: &Path,
     target: &std::ffi::OsStr,
     max_name: usize,
-) -> Result<PathBuf, MixError> {
-    clean_member(caller, Path::new(target), max_name).map_err(|_| {
+) -> Result<(PathBuf, PathBuf), MixError> {
+    let refuse = |why: &str| {
         runtime(format!(
-            "{caller}: refusing symlink '{}' with absolute or escaping target '{}'",
-            name,
-            target.to_string_lossy()
+            "{caller}: refusing symlink '{}' with {why} target '{}'",
+            rel.display(),
+            sanitize_for_diag(&target.to_string_lossy())
         ))
-    })
+    };
+    let bytes = target.as_bytes();
+    if bytes.is_empty() || bytes.len() > max_name || target.to_str().is_none() {
+        return Err(refuse("an empty, over-long or non-UTF-8"));
+    }
+    let mut resolved: Vec<&std::ffi::OsStr> = rel
+        .parent()
+        .into_iter()
+        .flat_map(|p| p.components())
+        .map(|c| c.as_os_str())
+        .collect();
+    let mut written = PathBuf::new();
+    let mut descended = false;
+    for c in Path::new(target).components() {
+        match c {
+            Component::CurDir => {}
+            Component::ParentDir if !descended => {
+                if resolved.pop().is_none() {
+                    return Err(refuse("an escaping"));
+                }
+                written.push("..");
+            }
+            Component::ParentDir => return Err(refuse("a '..' after a name in its")),
+            Component::Normal(part) => {
+                descended = true;
+                resolved.push(part);
+                written.push(part);
+            }
+            Component::RootDir | Component::Prefix(_) => return Err(refuse("an absolute")),
+        }
+    }
+    if written.as_os_str().is_empty() {
+        written.push(".");
+    }
+    Ok((written, resolved.iter().collect()))
+}
+
+/// The archive's symlinks, kept so that no link's target passes through
+/// another link, whichever comes first. A link may end at another link (its
+/// own target is contained too), but a directory on the way that is really a
+/// link would resolve wherever that link points. Shared by the unpacker and
+/// the packer, so a packed archive always unpacks.
+#[derive(Default)]
+struct LinkGraph {
+    links: HashSet<PathBuf>,
+    /// Every directory a link target passes through on its way down.
+    traversed: HashSet<PathBuf>,
+}
+
+impl LinkGraph {
+    /// Record the link at `rel` resolving to `resolved`, or say why not.
+    fn add(&mut self, rel: &Path, resolved: &Path) -> Result<(), String> {
+        let ancestors: Vec<&Path> = resolved
+            .ancestors()
+            .skip(1)
+            .filter(|a| !a.as_os_str().is_empty())
+            .collect();
+        if let Some(through) = ancestors.iter().find(|a| self.links.contains(**a)) {
+            return Err(format!(
+                "its target passes through symlink '{}'",
+                through.display()
+            ));
+        }
+        if ancestors.contains(&rel) {
+            return Err("its target passes through itself".to_string());
+        }
+        if self.traversed.contains(rel) {
+            return Err("an earlier symlink's target passes through it".to_string());
+        }
+        self.traversed
+            .extend(ancestors.iter().map(|a| a.to_path_buf()));
+        self.links.insert(rel.to_path_buf());
+        Ok(())
+    }
+
+    fn contains(&self, rel: &Path) -> bool {
+        self.links.contains(rel)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -612,11 +716,14 @@ pub fn builtin_tar_list(args: Vec<Value>) -> MixResult<Option<Value>> {
                 .map_err(|e| runtime(format!("{caller}: member name: {e}")))?
                 .to_path_buf();
             let name = clean_member(caller, &raw, opts.max_name)?;
+            let name = if name.as_os_str().is_empty() {
+                // The `./` root entry of a `tar -C dir .` archive.
+                ".".to_string()
+            } else {
+                name.to_string_lossy().to_string()
+            };
             let mut map = IndexMap::new();
-            map.insert(
-                "name".to_string(),
-                Value::String(name.to_string_lossy().to_string()),
-            );
+            map.insert("name".to_string(), Value::String(name));
             map.insert("size".to_string(), Value::Number(entry.size() as f64));
             map.insert(
                 "mode".to_string(),
@@ -672,7 +779,13 @@ pub fn builtin_tar_unpack(args: Vec<Value>) -> MixResult<Option<Value>> {
     }
     let path = args[0].to_mix_string();
     let dest = args[1].to_mix_string();
-    let mut opts = UnpackOpts::default();
+    // GNU tar's rule: root restores the archive's owners, an ordinary user
+    // keeps their own. A non-root chown can still hand a file to any group
+    // the caller belongs to, which the archive should not choose.
+    let mut opts = UnpackOpts {
+        numeric_owner: unsafe { libc::geteuid() } == 0,
+        ..UnpackOpts::default()
+    };
     match args.get(2) {
         None | Some(Value::Nil) => {}
         Some(Value::Map(m)) => {
@@ -757,9 +870,15 @@ pub fn builtin_tar_unpack(args: Vec<Value>) -> MixResult<Option<Value>> {
     let staging =
         Staging::create(parent).map_err(|e| runtime(format!("{caller}: staging: {e}")))?;
     match unpack_staged(&path, &staging.dir, &opts, caller) {
-        Ok(receipt) => {
+        Ok((mut receipt, root_meta)) => {
             if let Err(e) = staging.commit(&leaf) {
                 return Err(staging.rollback(runtime(format!("{caller}: commit '{dest}': {e}"))));
+            }
+            if let Some(m) = root_meta {
+                let late = apply_root_meta(&staging.dir, &m, &opts, caller);
+                if let Some(Value::List(list)) = receipt.get_mut("warnings") {
+                    std::rc::Rc::make_mut(list).extend(late.into_iter().map(Value::String));
+                }
             }
             Ok(Some(Value::Map(std::rc::Rc::new(receipt))))
         }
@@ -1143,7 +1262,7 @@ fn unpack_staged(
     staging: &File,
     opts: &UnpackOpts,
     caller: &str,
-) -> MixResult<IndexMap<String, Value>> {
+) -> MixResult<(IndexMap<String, Value>, Option<DeferredMeta>)> {
     let mut dec = VerifiedDecode::open(Path::new(path), opts.codec, caller)?;
     let mut files: u64 = 0;
     let mut dirs: u64 = 0;
@@ -1156,9 +1275,10 @@ fn unpack_staged(
     let mut entry_count: u64 = 0;
     let mut implicit_dirs: u64 = 0;
     let mut warnings: Vec<String> = Vec::new();
-    let mut symlinks_created: HashSet<PathBuf> = HashSet::new();
+    let mut links = LinkGraph::default();
     let mut extracted_files: HashSet<PathBuf> = HashSet::new();
     let mut deferred: Vec<DeferredMeta> = Vec::new();
+    let mut root_meta: Option<DeferredMeta> = None;
     let mut limited = LimitedRead {
         inner: &mut dec,
         remaining: opts.max_stream_bytes,
@@ -1193,10 +1313,42 @@ fn unpack_staged(
                 .to_path_buf();
             let rel = clean_member(caller, &raw_path, opts.max_name)?;
 
+            let mode = header.mode().unwrap_or(0o644);
+            let masked = if opts.keep_special_bits {
+                mode & 0o7777
+            } else {
+                mode & !0o6000 & 0o7777
+            };
+            let mut meta = DeferredMeta {
+                rel: rel.clone(),
+                mode: masked,
+                uid: header.uid().unwrap_or(0) as u32,
+                gid: header.gid().unwrap_or(0) as u32,
+                mtime: header.mtime().unwrap_or(0) as i64,
+                is_symlink: false,
+                xattrs: Vec::new(),
+            };
+
+            // `./` (GNU tar `-C dir .`) names the extraction root itself: the
+            // staging directory, which already exists. Only its metadata is
+            // applied, by the caller, after the commit (`apply_root_meta`).
+            if rel.as_os_str().is_empty() {
+                if header.entry_type() != EntryType::Directory {
+                    return Err(runtime(format!(
+                        "{caller}: refusing member '{}': only a directory entry may name \
+                         the extraction root",
+                        sanitize_for_diag(&raw_path.to_string_lossy())
+                    )));
+                }
+                dirs += 1;
+                root_meta = Some(meta);
+                continue;
+            }
+
             // Never extract THROUGH a symlink this archive created. The
             // O_NOFOLLOW walk below would refuse it too; this names it.
             for ancestor in rel.ancestors().skip(1) {
-                if !ancestor.as_os_str().is_empty() && symlinks_created.contains(ancestor) {
+                if !ancestor.as_os_str().is_empty() && links.contains(ancestor) {
                     return Err(runtime(format!(
                         "{caller}: refusing to extract '{}' through symlink '{}'",
                         rel.display(),
@@ -1213,22 +1365,6 @@ fn unpack_staged(
             let (parent, leaf) = parent_at(staging, &rel, Some(&mut allowance))
                 .map_err(|e| runtime(format!("{caller}: parent of '{}': {e}", rel.display())))?;
             implicit_dirs += before - allowance;
-
-            let mode = header.mode().unwrap_or(0o644);
-            let masked = if opts.keep_special_bits {
-                mode & 0o7777
-            } else {
-                mode & !0o6000 & 0o7777
-            };
-            let mut meta = DeferredMeta {
-                rel: rel.clone(),
-                mode: masked,
-                uid: header.uid().unwrap_or(0) as u32,
-                gid: header.gid().unwrap_or(0) as u32,
-                mtime: header.mtime().unwrap_or(0) as i64,
-                is_symlink: false,
-                xattrs: Vec::new(),
-            };
 
             match header.entry_type() {
                 EntryType::Directory => {
@@ -1304,12 +1440,14 @@ fn unpack_staged(
                             ))
                         })?
                         .clone();
-                    let clean = clean_link_target(
-                        caller,
-                        &rel.to_string_lossy(),
-                        target.as_os_str(),
-                        opts.max_name,
-                    )?;
+                    let (clean, resolved) =
+                        clean_link_target(caller, &rel, target.as_os_str(), opts.max_name)?;
+                    links.add(&rel, &resolved).map_err(|why| {
+                        runtime(format!(
+                            "{caller}: refusing symlink '{}': {why}",
+                            rel.display()
+                        ))
+                    })?;
                     let clean = std::ffi::CString::new(clean.as_os_str().as_bytes())
                         .map_err(|_| runtime(format!("{caller}: link target contains NUL")))?;
                     if unsafe { libc::symlinkat(clean.as_ptr(), parent.as_raw_fd(), leaf.as_ptr()) }
@@ -1322,7 +1460,6 @@ fn unpack_staged(
                         )));
                     }
                     symlinks += 1;
-                    symlinks_created.insert(rel.clone());
                     let mut m = meta;
                     m.is_symlink = true;
                     deferred.push(m);
@@ -1390,8 +1527,6 @@ fn unpack_staged(
     // bit or a capability is applied only when the archive's owner was.
     let root = unsafe { libc::geteuid() } == 0;
     for m in deferred.iter().rev() {
-        let (parent, leaf) = parent_at(staging, &m.rel, None)
-            .map_err(|e| runtime(format!("{caller}: metadata '{}': {e}", m.rel.display())))?;
         let times = [
             libc::timespec {
                 tv_sec: m.mtime,
@@ -1403,6 +1538,8 @@ fn unpack_staged(
             },
         ];
         if m.is_symlink {
+            let (parent, leaf) = parent_at(staging, &m.rel, None)
+                .map_err(|e| runtime(format!("{caller}: metadata '{}': {e}", m.rel.display())))?;
             if opts.numeric_owner
                 && unsafe {
                     libc::fchownat(
@@ -1433,6 +1570,8 @@ fn unpack_staged(
             }
             continue;
         }
+        let (parent, leaf) = parent_at(staging, &m.rel, None)
+            .map_err(|e| runtime(format!("{caller}: metadata '{}': {e}", m.rel.display())))?;
         // O_NONBLOCK: the entry is a file or directory this unpack made, so
         // nothing can block; it is defence against a swapped-in fifo.
         let fd = unsafe {
@@ -1450,41 +1589,7 @@ fn unpack_staged(
             )));
         }
         let file = unsafe { File::from_raw_fd(fd) };
-        let mut owner_applied = true;
-        if opts.numeric_owner && unsafe { libc::fchown(file.as_raw_fd(), m.uid, m.gid) } != 0 {
-            owner_applied = false;
-            owner_not_applied(&mut warnings, &m.rel, m.uid, m.gid, root);
-        }
-        let mut mode = m.mode;
-        if !owner_applied && mode & 0o6000 != 0 {
-            mode &= !0o6000;
-            warnings.push(format!(
-                "'{}': setuid/setgid dropped because its owner was not applied",
-                m.rel.display()
-            ));
-        }
-        if unsafe { libc::fchmod(file.as_raw_fd(), mode) } != 0 {
-            return Err(runtime(format!(
-                "{caller}: mode of '{}': {}",
-                m.rel.display(),
-                last_error()
-            )));
-        }
-        if unsafe { libc::futimens(file.as_raw_fd(), times.as_ptr()) } != 0 {
-            return Err(runtime(format!(
-                "{caller}: mtime of '{}': {}",
-                m.rel.display(),
-                last_error()
-            )));
-        }
-        xattrs_restored += apply_xattrs(
-            &file,
-            &m.rel,
-            &m.xattrs,
-            owner_applied,
-            &mut warnings,
-            caller,
-        )?;
+        xattrs_restored += apply_entry_meta(&file, m, &m.rel, opts, &mut warnings, caller)?;
     }
 
     let mut map = IndexMap::new();
@@ -1517,7 +1622,84 @@ fn unpack_staged(
             warnings.into_iter().map(Value::String).collect(),
         )),
     );
-    Ok(map)
+    Ok((map, root_meta))
+}
+
+/// Apply one file's or directory's deferred metadata through its descriptor
+/// and return the xattrs restored. The order is owner, then mode, then
+/// mtime, then xattrs: chown clears setuid/setgid and security.capability,
+/// so chmod must follow it for a kept special bit to survive, and xattrs come
+/// last so nothing strips them again. A special bit or a capability is kept
+/// only where the entry ends up with the owner the archive named.
+fn apply_entry_meta(
+    file: &File,
+    m: &DeferredMeta,
+    shown: &Path,
+    opts: &UnpackOpts,
+    warnings: &mut Vec<String>,
+    caller: &str,
+) -> MixResult<u64> {
+    let root = unsafe { libc::geteuid() } == 0;
+    let times = [
+        libc::timespec {
+            tv_sec: m.mtime,
+            tv_nsec: 0,
+        },
+        libc::timespec {
+            tv_sec: m.mtime,
+            tv_nsec: 0,
+        },
+    ];
+    let owner_applied = if !opts.numeric_owner {
+        // Owners are not restored: the archive's owner is "applied" only
+        // where the entry already has it, so a special bit or capability
+        // never lands on an owner the archive did not name.
+        file.metadata()
+            .is_ok_and(|st| st.uid() == m.uid && st.gid() == m.gid)
+    } else if unsafe { libc::fchown(file.as_raw_fd(), m.uid, m.gid) } != 0 {
+        owner_not_applied(warnings, shown, m.uid, m.gid, root);
+        false
+    } else {
+        true
+    };
+    let mut mode = m.mode;
+    if !owner_applied && mode & 0o6000 != 0 {
+        mode &= !0o6000;
+        warnings.push(format!(
+            "'{}': setuid/setgid dropped because its owner was not applied",
+            shown.display()
+        ));
+    }
+    if unsafe { libc::fchmod(file.as_raw_fd(), mode) } != 0 {
+        return Err(runtime(format!(
+            "{caller}: mode of '{}': {}",
+            shown.display(),
+            last_error()
+        )));
+    }
+    if unsafe { libc::futimens(file.as_raw_fd(), times.as_ptr()) } != 0 {
+        return Err(runtime(format!(
+            "{caller}: mtime of '{}': {}",
+            shown.display(),
+            last_error()
+        )));
+    }
+    apply_xattrs(file, shown, &m.xattrs, owner_applied, warnings, caller)
+}
+
+/// The `./` root entry's metadata, applied AFTER the commit through the held
+/// descriptor of what is now `dest`. Before the commit the staging directory
+/// must stay the caller's own and private: handed to the archive's owner
+/// inside a sticky parent, that user could rename it and have something else
+/// published in its place, and a restrictive mode would lock the caller out
+/// of the children's post-pass. A failure here cannot roll back a committed
+/// tree, so it is a warning in the receipt, never an error.
+fn apply_root_meta(dir: &File, m: &DeferredMeta, opts: &UnpackOpts, caller: &str) -> Vec<String> {
+    let mut warnings = Vec::new();
+    if let Err(e) = apply_entry_meta(dir, m, Path::new("."), opts, &mut warnings, caller) {
+        warnings.push(format!("'.': {e} (dest is in place)"));
+    }
+    warnings
 }
 
 /// Record an owner that could not be applied. A non-root caller cannot give
@@ -1860,6 +2042,7 @@ fn walk_and_append(
     let mut symlinks: u64 = 0;
     let mut bytes: u64 = 0;
     let mut caps: u64 = 0;
+    let mut links = LinkGraph::default();
 
     let mut queue = vec![(PathBuf::new(), source)];
     while let Some((dir_rel, dir)) = queue.pop() {
@@ -1901,9 +2084,15 @@ fn walk_and_append(
             } else if meta.file_type().is_symlink() {
                 let target = readlink_fd(&child)
                     .map_err(|e| runtime(format!("{caller}: readlink '{}': {e}", rel.display())))?;
-                // Contained targets only, so packed archives always
-                // round-trip through the safe unpacker.
-                clean_link_target(caller, &rel.to_string_lossy(), target.as_os_str(), 4096)?;
+                // Contained targets only, by the unpacker's own rules, so packed
+                // archives always round-trip through the safe unpacker.
+                let (_, resolved) = clean_link_target(caller, &rel, target.as_os_str(), 4096)?;
+                links.add(&rel, &resolved).map_err(|why| {
+                    runtime(format!(
+                        "{caller}: refusing symlink '{}': {why}",
+                        rel.display()
+                    ))
+                })?;
                 let mut header = Header::new_gnu();
                 header.set_size(0);
                 header.set_entry_type(EntryType::Symlink);
@@ -2030,51 +2219,6 @@ fn open_child_checked(
 }
 
 /// Enumerate the directory already opened and queued, never its pathname.
-fn directory_names(dir: &File) -> std::io::Result<Vec<std::ffi::OsString>> {
-    struct DirStream(*mut libc::DIR);
-    impl Drop for DirStream {
-        fn drop(&mut self) {
-            unsafe {
-                libc::closedir(self.0);
-            }
-        }
-    }
-    let fd = unsafe { libc::fcntl(dir.as_raw_fd(), libc::F_DUPFD_CLOEXEC, 0) };
-    if fd < 0 {
-        return Err(std::io::Error::last_os_error());
-    }
-    let stream = unsafe { libc::fdopendir(fd) };
-    if stream.is_null() {
-        let err = std::io::Error::last_os_error();
-        unsafe {
-            libc::close(fd);
-        }
-        return Err(err);
-    }
-    let stream = DirStream(stream);
-    // The dup shares the held descriptor's offset, so an earlier listing
-    // left it at the end; without the rewind a second listing is empty.
-    unsafe { libc::rewinddir(stream.0) };
-    let mut names = Vec::new();
-    loop {
-        unsafe {
-            *libc::__errno_location() = 0;
-        }
-        let entry = unsafe { libc::readdir(stream.0) };
-        if entry.is_null() {
-            let err = std::io::Error::last_os_error();
-            if err.raw_os_error() != Some(0) {
-                return Err(err);
-            }
-            return Ok(names);
-        }
-        let bytes = unsafe { std::ffi::CStr::from_ptr((*entry).d_name.as_ptr()) }.to_bytes();
-        if bytes != b"." && bytes != b".." {
-            names.push(std::ffi::OsString::from_vec(bytes.to_vec()));
-        }
-    }
-}
-
 fn readlink_fd(file: &File) -> std::io::Result<PathBuf> {
     let mut target = vec![0u8; 4097];
     // Linux readlinkat with an empty name operates on the pinned O_PATH fd.

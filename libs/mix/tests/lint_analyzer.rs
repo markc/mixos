@@ -378,7 +378,7 @@ fn unknown_builtin_result_key_warns_with_real_key() {
         diagnostic
             .hint
             .as_deref()
-            .is_some_and(|hint| hint.contains("use 'exit_code'"))
+            .is_some_and(|hint| hint.contains("did you mean 'exit_code'"))
     );
 }
 
@@ -1893,4 +1893,240 @@ fn send_status_bare_function_call_statement_applies_its_summary() {
                send svc first\noverwrite_status && print(1)\nprint($rc)\n";
     let got = w2307_lines(src);
     assert!(got.contains(&Some(4)), "got: {got:?}");
+}
+
+// ── MIX-W2312 bareword null ─────────────────────────────────────────
+
+fn source_diags(src: &str) -> Vec<mix::analyzer::Diagnostic> {
+    let tokens = Lexer::new(src).tokenize().expect("lexes");
+    let stmts = Parser::new(tokens, src).parse_program().expect("parses");
+    let cfg = AnalyzerConfig {
+        source: Some(src.to_string()),
+        ..AnalyzerConfig::default()
+    };
+    analyze(&stmts, Some("test.mix"), &cfg).diagnostics
+}
+
+#[test]
+fn bareword_null_used_as_a_value_warns_with_a_fix_to_nil() {
+    // The 2026-10-10 probe: `{open: null}` sends the STRING "null".
+    let d = source_diags("print(json_encode({open: null, a: 1}))\n");
+    assert_eq!(d.len(), 1, "{d:?}");
+    assert_eq!(d[0].code, "MIX-W2312");
+    assert_eq!((d[0].line, d[0].column), (Some(1), Some(26)));
+    assert!(d[0].message.contains("nil"), "{}", d[0].message);
+    let fix = d[0].fix.as_ref().expect("a quick fix");
+    assert_eq!(
+        (
+            fix.line,
+            fix.column,
+            fix.replace.as_str(),
+            fix.with.as_str()
+        ),
+        (1, 26, "null", "nil")
+    );
+}
+
+#[test]
+fn the_null_fix_is_offered_only_where_the_word_is_surely_a_value() {
+    let fixes = |src: &str| -> Vec<bool> {
+        source_diags(src)
+            .into_iter()
+            .filter(|d| d.code == "MIX-W2312")
+            .map(|d| d.fix.is_some())
+            .collect()
+    };
+    for src in [
+        "print(null)\n",
+        "print([1, null])\n",
+        "print([null])\n",
+        "print([[null]])\n",
+        "for $x in [null]\nprint($x)\nend\n",
+        "print(if true then [null] else [] end)\n",
+        "print(if true then [] else [null] end)\n",
+        "print(contains([], [null]))\n",
+        "print({a: [null]})\n",
+        "$x = [null]\nprint($x)\n",
+        "fn f()\nreturn [null]\nend\nprint(f())\n",
+        "print([] == [null])\n",
+        "print(nil ?? [null])\n",
+        "print([] + [null])\n",
+        "[null]\n",
+        "print({a: null})\n",
+        "$x = null\nprint($x)\n",
+        "$x = 1\nprint($x == null)\n",
+        "$x = 1\nprint(null != $x)\n",
+        "$x = nil\nprint($x ?? null)\n",
+        "fn f()\n  return null\nend\nprint(f())\n",
+    ] {
+        assert_eq!(fixes(src), vec![true], "{src:?}");
+    }
+    // sol round 5: `null` here may be a bareword call of `fn null()`, so
+    // rewriting it would change the program. Warn, but offer no fix.
+    for src in [
+        "fn null()\n  print(\"called\")\nend\nprint(\"first\") && null\n",
+        // sol round 6: a bare grouping is no argument list.
+        "fn null()\n  print(\"called\")\nend\nprint(\"first\") && (null)\n",
+        "fn f($x = null)\n  return $x\nend\nprint(f())\n",
+        "send svc verb open=null\nprint($rc)\n",
+        // sol round 8: an index key, not a list element; `$m[nil]` would
+        // lose the entry stored under "null".
+        "$m = {null: 7}\nprint($m[null])\n",
+        "$m = {to: {null: 7}}\nprint($m.to[null])\n",
+        "$m = {in: {null: 7}}\nprint($m.in[null])\n",
+        "$m = {return: {null: 7}}\nprint($m.return[null])\n",
+        "$m = {and: {null: 7}}\nprint($m.and[null])\n",
+        "$list = [7]\nprint($list[null])\n",
+        "$m = {}\n$k = nil\nprint($m[$k ?? null])\n",
+        "$m = {}\n$k = nil\nprint($m[null ?? $k])\n",
+        "$m = {}\n$k = nil\nprint($m[$k == null])\n",
+        "$m = {}\n$k = nil\nprint($m[null == $k])\n",
+        "$m = {in: {}}\n$k = nil\nprint($m.in[$k ?? null])\n",
+        "$m = {then: {}}\n$k = nil\nprint($m.then[null == $k])\n",
+        "$m = {else: {}}\nprint($m.else[null])\n",
+        "$m = [{}]\nprint($m[0][nil ?? null])\n",
+        "$m = {}\nprint(($m)[nil == null])\n",
+        "$m = {}\nprint($m[contains([null], 1)])\n",
+    ] {
+        assert_eq!(fixes(src), vec![false], "{src:?}");
+    }
+}
+
+#[test]
+fn null_at_the_start_of_a_continuation_line_warns() {
+    // sol round 7: inside brackets a new line continues the statement, so
+    // its first word is a value, not a statement head.
+    let d = source_diags("print([\n  null,\n  None\n])\n");
+    let found: Vec<(Option<usize>, bool)> = d
+        .iter()
+        .filter(|d| d.code == "MIX-W2312")
+        .map(|d| (d.line, d.fix.is_some()))
+        .collect();
+    assert_eq!(found, vec![(Some(2), true), (Some(3), true)], "{d:?}");
+}
+
+#[test]
+fn every_foreign_null_spelling_warns() {
+    for spelling in ["null", "None", "undefined", "NULL", "nullptr"] {
+        for src in [
+            format!("$x = {spelling}\nprint($x)\n"),
+            format!("$x = 1\nif $x == {spelling} then print(1) end\n"),
+            format!("print([1, {spelling}])\n"),
+            format!("$x = true ? {spelling} : 1\nprint($x)\n"),
+            format!("send svc verb open={spelling}\nprint($rc)\n"),
+            // Expression bodies and parameter defaults of fn and lambdas.
+            format!("fn f($x = {spelling}) = $x\nprint(f())\n"),
+            format!("fn g() = {spelling}\nprint(g())\n"),
+            format!("$h = fn() = {spelling}\nprint($h())\n"),
+            format!("fn k() = if true then {spelling} end\nprint(k())\n"),
+        ] {
+            assert!(
+                codes_with_source(&src).contains(&"MIX-W2312".to_string()),
+                "{src:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn null_that_is_not_a_bareword_value_stays_silent() {
+    for src in [
+        // Quoted: the author asked for the text.
+        "print(\"null\")\n",
+        "$m = {\"null\": 1}\nprint($m)\n",
+        // A map key, a field, a bus command word.
+        "$m = {null: 1, None: 2}\nprint($m)\n",
+        "$m = {a: 1}\nprint($m.null)\n",
+        "send svc null\nprint($rc)\n",
+        "send svc-name null\nprint($rc)\n",
+        "$t = \"svc\"\nsend ($t) null\nprint($rc)\n",
+        // Loop labels and parse-template words are not values, and a fix
+        // there would not even parse.
+        "loop label null\n  break null\nend\nprint(\"null\")\n",
+        "parse \"a null b\" with $x null $y\nprint($x .. $y)\n",
+        // An include path is a path, not a value.
+        "include ./lib/null.mix\nprint(\"null\")\n",
+        // The text of an external command after `|`.
+        "print(\"null\") | echo null\n",
+        "send svc verb null=1\nprint($rc)\n",
+        // The real null.
+        "$x = nil\nprint($x)\n",
+        // A statement head is a bareword dispatch, not a value.
+        "null\n",
+    ] {
+        assert!(
+            !codes_with_source(src).contains(&"MIX-W2312".to_string()),
+            "{src:?}: {:?}",
+            codes_with_source(src)
+        );
+    }
+    // Without the source text the rule cannot tell `null` from "null".
+    assert!(!codes("$x = null\nprint($x)\n").contains(&"MIX-W2312".to_string()));
+}
+
+// ── MIX-W2304 typed-result fields ───────────────────────────────────
+
+#[test]
+fn a_missing_result_field_names_the_shape_and_the_field_meant() {
+    // The 2026-10-17 probe: `$r.code` after run_argv is silently nil.
+    for (src, shape, meant) in [
+        (
+            "$r = run_argv([\"true\"])\nprint($r.code)\n",
+            "process_result",
+            "exit_code",
+        ),
+        (
+            "$r = run_argv([\"true\"])\nprint($r.rc)\n",
+            "process_result",
+            "exit_code",
+        ),
+        (
+            "$r = run_argv([\"true\"])\nprint($r.status)\n",
+            "process_result",
+            "exit_code",
+        ),
+        (
+            "$r = run_argv([\"true\"])\nprint($r.returncode)\n",
+            "process_result",
+            "exit_code",
+        ),
+        (
+            "$r = ssh_run(\"h\", \"ls\")\nprint($r.rc)\n",
+            "ssh_result",
+            "exit_code",
+        ),
+        (
+            "$r = http_get(\"http://192.0.2.1/\")\nprint($r.code)\n",
+            "http_response",
+            "status",
+        ),
+        (
+            "$r = run_argv([\"true\"])\nprint($r.success)\n",
+            "process_result",
+            "ok",
+        ),
+    ] {
+        let d = source_diags(src);
+        assert_eq!(d.len(), 1, "{src:?}: {d:?}");
+        assert_eq!(d[0].code, "MIX-W2304");
+        assert!(
+            d[0].message.contains(&format!("{shape} (from ")),
+            "{src:?}: {}",
+            d[0].message
+        );
+        assert!(
+            d[0].hint
+                .as_deref()
+                .unwrap()
+                .contains(&format!("did you mean '{meant}'?")),
+            "{src:?}: {:?}",
+            d[0].hint
+        );
+    }
+}
+
+#[test]
+fn real_result_fields_stay_clean() {
+    let src = "$r = run_argv([\"true\"])\nprint($r.exit_code)\nprint($r.ok)\nprint($r.stdout)\n";
+    assert_eq!(codes(src), Vec::<String>::new());
 }

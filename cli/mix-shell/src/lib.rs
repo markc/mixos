@@ -502,7 +502,55 @@ fn arm_sigterm_backstop() {
         if let Err(e) = spawned {
             eprintln!("mix: failed to arm SIGTERM backstop: {e}");
         }
+        arm_sigint_standing();
     });
+}
+
+/// How long a `catch`/`finally` may compute after a SIGINT before the
+/// interrupt is raised again. Cleanup that only does a little work
+/// finishes inside it; one that loops does not.
+const SIGINT_CLEANUP_GRACE: std::time::Duration = std::time::Duration::from_secs(1);
+/// Cadence of the standing interrupt once the grace has run out.
+const SIGINT_REASSERT_EVERY: std::time::Duration = std::time::Duration::from_millis(20);
+
+/// Keep a SIGINT standing in non-interactive modes (TODO-mix 2026-10-09).
+///
+/// The first SIGINT is cooperative: an evaluator checkpoint converts the
+/// shared flag into a catchable `interrupted` error and CLEARS it, so a
+/// `catch` can run its cleanup. The shutdown arm of the caller's `select!`
+/// then ends the process, but only once the runtime is polled again — and
+/// a catch that keeps computing never yields, so the process ignored the
+/// signal for ever. This thread hears the same SIGINT, waits out the
+/// cleanup grace, then re-raises the flag on a short cadence. Each raise
+/// interrupts whatever Mix is still running (the catch body, a `finally`,
+/// an enclosing catch) until the evaluation unwinds and the recorded
+/// signal decides the exit (130, with an error frame under --result-fd).
+fn arm_sigint_standing() {
+    let mut signals = match signal_hook::iterator::Signals::new([libc::SIGINT]) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("mix: failed to arm SIGINT persistence: {e}");
+            return;
+        }
+    };
+    let spawned = std::thread::Builder::new()
+        .name("mix-sigint-standing".into())
+        .spawn(move || {
+            if signals.forever().next().is_none() {
+                return;
+            }
+            std::thread::sleep(SIGINT_CLEANUP_GRACE);
+            // Past the grace, catch no longer resumes the work: the unwind
+            // reaches the host whatever a `catch` does with the error.
+            mix::interrupt::set_standing();
+            loop {
+                mix::interrupt::raise();
+                std::thread::sleep(SIGINT_REASSERT_EVERY);
+            }
+        });
+    if let Err(e) = spawned {
+        eprintln!("mix: failed to arm SIGINT persistence: {e}");
+    }
 }
 
 fn print_help() {
@@ -1166,7 +1214,7 @@ fn run_command_line(
                 };
                 // B3/$?-refusal runs on EVERY path — the lone-command
                 // interception below would otherwise skip it.
-                if let Err(msg) = exec::refuse_bash_keywords(&items) {
+                if let Err(msg) = exec::refuse_bash_keywords_in(Some(&command), &items) {
                     eprintln!("mix: {msg}");
                     return 2;
                 }

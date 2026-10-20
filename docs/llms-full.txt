@@ -118,6 +118,7 @@ rot. `mix man syntax` is the mental model; gotchas is the corrections.
 - **[http](http.md)** — `http_get`/`http_post`/`http_request`, deadlines.
 - **[datastar](datastar.md)** — `ds_*` SSE event framing.
 - **[archives](tar.md)** — `tar_list`/`tar_unpack`/`tar_pack`, zstd/gzip/none, safe staged extraction.
+- **[SQLite](sqlopen.md)** — `sqlopen`/`sqlexec`/`sqlclose`, read-only by default, `"rwc"` creates.
 
 ## Mesh & runtime
 
@@ -809,7 +810,7 @@ checked separately by the layering gate.
 | [logging](https://github.com/markc/mixos/blob/main/libs/logging/Cargo.toml) | logging | lib | core | none | 0.1.1 |
 | [mds](https://github.com/markc/mixos/blob/main/libs/mds/Cargo.toml) | mds | lib | core | none | 0.1.1 |
 | [mimedb](https://github.com/markc/mixos/blob/main/libs/mimedb/Cargo.toml) | mimedb | lib | mix | none | 0.1.1 |
-| [mix](https://github.com/markc/mixos/blob/main/libs/mix/Cargo.toml) | mix | lib | mix | public | 0.116.0 |
+| [mix](https://github.com/markc/mixos/blob/main/libs/mix/Cargo.toml) | mix | lib | mix | public | 0.117.0 |
 | [props](https://github.com/markc/mixos/blob/main/libs/props/Cargo.toml) | props | lib | core | none | 0.1.1 |
 | [scene](https://github.com/markc/mixos/blob/main/libs/scene/Cargo.toml) | scene | lib | core | none | 0.1.1 |
 | [settings](https://github.com/markc/mixos/blob/main/libs/settings/Cargo.toml) | settings | lib | core | public | 0.8.0 |
@@ -8625,9 +8626,9 @@ Since 0.29.0 every builtin carries a structured contract — per-argument names/
   glob            List files matching a glob pattern (supports ** globstar in v0.2.1)
   ls              List directory entries
   mkdir           Create directory: mkdir(path[, {parents}]). parents defaults to true (create_dir_all). {parents: false} creates only the final component and fails if the parent is missing — the form to use when the parent was placed deliberately and re-creating it would hide its removal (v0.42.0)
-  flock           Take a process-held advisory file lock: flock(path[, {shared, wait}]) -> bool. Exclusive and non-blocking by default; contention returns false, genuine filesystem errors raise. wait is seconds (0 = do not wait). Repeated acquisition of the same canonical path by this process is idempotent-true (v0.43.0)
+  flock           Take a process-held advisory file lock: flock(path[, {shared, wait, create}]) -> bool. Exclusive and non-blocking by default; contention returns false, genuine filesystem errors raise. wait is seconds (0 = do not wait). A shared lock opens an existing file read-only, so it needs no write access; an exclusive one opens read-write. A missing file is created (0644) unless create:false, which raises LOCK_FILE_MISSING (v0.117.0). Repeated acquisition of the same canonical path by this process is idempotent-true (v0.43.0)
   funlock         Release and close this process's advisory lock for path. Returns true when held, false when not held (v0.43.0)
-  fcntl_lock      Take a POSIX record lock over the whole file: fcntl_lock(path[, {shared, wait}]) -> bool — the fcntl(2) lock namespace C daemons use for pidfiles/lockfiles, which flock(2) locks never see (Linux keeps the two families separate). Contract-identical to flock: exclusive + non-blocking default, contention false, real errors raise, per-process idempotent-true by canonical path. Implemented as open-file-description locks (F_OFD_SETLK): they conflict with other processes' traditional fcntl records, and survive this process opening/closing the same path elsewhere — a read_file of the locked path cannot drop them (v0.71.0)
+  fcntl_lock      Take a POSIX record lock over the whole file: fcntl_lock(path[, {shared, wait, create}]) -> bool — the fcntl(2) lock namespace C daemons use for pidfiles/lockfiles, which flock(2) locks never see (Linux keeps the two families separate). Contract-identical to flock: exclusive + non-blocking default, contention false, real errors raise, shared opens an existing file read-only, create:false refuses a missing one, per-process idempotent-true by canonical path. Implemented as open-file-description locks (F_OFD_SETLK): they conflict with other processes' traditional fcntl records, and survive this process opening/closing the same path elsewhere — a read_file of the locked path cannot drop them (v0.71.0)
   fcntl_unlock    Release and close this process's POSIX record lock for path. true when held, false when not (v0.71.0)
   copy            Copy a single file: copy(src, dst). Overwrites dst; preserves the source permission bits. Use copy_tree for a directory (v0.22.0).
   copy_tree       Recursively copy a directory: copy_tree(src, dst). Creates dst, copies files (perms preserved) and symlinks (as symlinks); merges into an existing dst (v0.22.0).
@@ -8637,7 +8638,8 @@ Since 0.29.0 every builtin carries a structured contract — per-argument names/
   remove          Remove a single file/symlink: remove(path). No-op if already gone (rm -f). Errors if path is a directory — use remove_dir (v0.22.0).
   remove_dir      Recursively remove a directory and its contents: remove_dir(path) (rm -rf). No-op if already gone (v0.22.0).
   chmod           Set file/directory permissions. chmod(path, 0o755) — mode as a VALUE (use an octal literal) or an octal string "0755" (v0.11.0: a number is now the value, not its decimal digits read as octal)
-  chown           Set file owner/group by numeric uid/gid: chown(path, 1000, 1000). Follows symlinks. Numeric only (no name resolution) (v0.17.1)
+  fsync           Make a file, a directory or a whole tree durable: fsync(path[, {recursive}]) -> number of inodes synced. A file is fsync(2)ed; a directory is opened and fsynced, which persists the entries created, renamed or removed in it; recursive:true syncs every regular file and directory beneath (children first, symlinks never followed, their entries persisted by their directory), then the directory itself. The path itself follows a symlink. Failures raise FSYNC_FAILED with details.path naming what could not be synced (v0.117.0)
+  chown           Set file owner/group by numeric uid/gid: chown(path, 1000, 1000). Follows symlinks by default; chown(path, uid, gid, {follow_symlinks:false}) changes a symlink itself (lchown, v0.117.0). Numeric only (no name resolution) (v0.17.1)
   mime_type       The type of a file from the freedesktop shared-mime-info database, as the desktop names it (requires mime feature): mime_type(path[, {content}]) -> {mime, by, uncertain, exists, parents}. Globs first, magic to settle a missing or ambiguous glob, then a text check (the GLib order). by is stat|glob|magic|content|fallback; parents lists every supertype nearest first, ending text/plain (for text/*) and application/octet-stream. {content:false} never opens the file. A missing path is typed by name with exists:false; an unreadable file by name, uncertain. Follows symlinks (v0.113.0)
   stat            Stat a path → map {uid, gid, nlink, size, mode, perm, ino, dev, ctime, mtime, atime, ctime_nsec, mtime_nsec, atime_nsec, is_file, is_dir, is_symlink}. ino/dev are STRINGS (u64, exceed f64 exact range); mode is full st_mode, perm = mode & 0o7777; *time are epoch seconds (f64) and *_nsec the sub-second part 0..=999999999 (v0.44.0) — compare the PAIR to see a same-second rewrite. Follows symlinks by default; stat(path, {follow_symlinks:false}) is lstat (v0.17.1)
   line_count      Count lines in a file by streaming — never loads the whole file (byte-oriented, so it works on non-UTF-8 files too) (streams since v0.28.1)
@@ -8648,15 +8650,15 @@ Since 0.29.0 every builtin carries a structured contract — per-argument names/
   extname         Return the file extension (including the leading dot)
   path_join       Join path components with the native separator
   path_parts      Decompose a path into {dir, base, stem, ext} (v0.2.1)
-  walk            Recursive directory walk: walk(dir, {max_depth, follow_symlinks, include_dirs}); invalid max_depth raises instead of becoming unlimited (strict since v0.55.0)
+  walk            Recursive directory walk: walk(dir, {max_depth, follow_symlinks, include_dirs, strict}); invalid max_depth raises instead of becoming unlimited (strict since v0.55.0). Unreadable directories and unstat-able entries are skipped unless strict: true, which raises WALK_UNREADABLE (details.path names the first one) so a gate can tell no matches from could not look
   readline        Read a line from stdin (optional prompt argument)
   read_stdin      Read all of stdin to EOF as a string (for pipe/hook input). STRICT UTF-8 — binary stdin raises; use read_stdin_bytes for that
   read_stdin_bytes Read all of stdin to EOF as raw bytes — the binary twin of read_stdin, which refuses invalid UTF-8. Optional arg caps the read: read_stdin_bytes(8192) reads at most 8192 bytes, the same cap contract as read_file_bytes (v0.65.0)
   tty_mode        Put the controlling terminal into raw or cooked mode: tty_mode("raw") disables canonical buffering, echo and signal generation (a lone ESC arrives as one byte — the keystroke-recorder primitive), tty_mode("cooked") restores the saved termios. The original termios is restored on process exit if the caller never returns to cooked (v0.103.9)
   stdin_copy      Copy stdin to a file, flushing every chunk, until EOF — the incremental twin of read_stdin_bytes, so a recorder killed mid-stream keeps the bytes it already read. Pair with tty_mode("raw") to capture keystrokes (v0.103.9)
-  sqlopen         Open a SQLite database and return a handle
+  sqlopen         Open a SQLite database and return a handle: sqlopen(path[, mode]). mode "ro" (default) is read-only and the file must exist (SQL_NO_DATABASE otherwise); "rw" or "rwc" opens read-write and creates a missing file, in WAL mode with a 5 s busy timeout. ":memory:" is a private in-memory database. Any other mode raises. See mix man sqlopen
   tar_list        List a tar archive (zstd default, gzip or none codec) WITHOUT extracting: streaming entries {name,size,mode,uid,gid,kind,mtime}; the compressed stream is drained to EOF so the frame checksum is verified
-  tar_unpack      Safely unpack a tar archive into dest (which must not exist, in a parent no other user can write unless sticky): every member is validated (no absolute/.. paths, no device/fifo, symlink targets contained, no extraction through a created symlink, hardlinks only to earlier files), entries land in a private staging dir held by descriptor and renamed into place (never replacing dest) only after the stream verifies to EOF — non-zero data after the tar end is refused (single frame); PAX global headers count as metadata. opts: codec (zstd default), numeric_owner, xattrs (default true: user.* only), keep_special_bits (default false strips suid/sgid and security.capability), privileged_xattrs (default false: trusted.*, ACLs, other security.*), max_entries, max_bytes, max_name, max_stream_bytes (bounds the decoded stream, longname/PAX buffers included), max_xattr_bytes (16 MiB). Unapplied owners are listed in the receipt's warnings, and their special bits dropped
+  tar_unpack      Safely unpack a tar archive into dest (which must not exist, in a parent no other user can write unless sticky): every member is validated (no absolute/.. paths, a leading ./ accepted, no device/fifo, symlink targets contained relative to the link's own directory and never through another symlink, no extraction through a created symlink, hardlinks only to earlier files), entries land in a private staging dir held by descriptor and renamed into place (never replacing dest) only after the stream verifies to EOF — non-zero data after the tar end is refused (one tar; one zstd frame, gzip members concatenate); PAX global headers count as metadata. opts: codec (zstd default), numeric_owner (default true for root only), xattrs (default true: user.* only), keep_special_bits (default false strips suid/sgid and security.capability), privileged_xattrs (default false: trusted.*, ACLs, other security.*), max_entries, max_bytes, max_name, max_stream_bytes (bounds the decoded stream, longname/PAX buffers included), max_xattr_bytes (16 MiB). Unapplied owners are listed in the receipt's warnings, and their special bits dropped
   tar_pack        Pack a source DIRECTORY into a new archive at path (deterministic sorted walk, numeric owner/mtime/mode, security.capability captured as a SCHILY.xattr PAX record with keep_special_bits; refuses device/fifo members, an output inside the source, and a file that changes size while packed). opts: codec (zstd default), level (zstd 1..=22 default 7, gzip clamps to 9), keep_special_bits (default false strips suid/sgid)
   sqlexec         Execute SQL on a SQLite handle, return result rows
   sqlclose        Close a SQLite database handle
@@ -8752,6 +8754,7 @@ Since 0.29.0 every builtin carries a structured contract — per-argument names/
   bytes_from      Build bytes from a LIST, flat-splicing each item — int 0-255 = one byte, string = its UTF-8, bytes/buffer = its content (same item vocabulary as buffer([items])) (v0.64.0)
   bytes_to_hex    Lowercase hex of a bytes/buffer value, two chars per byte, no separator (v0.64.0)
   bytes_from_hex  Decode a hex string to bytes — strict: even length, [0-9a-fA-F] only, no separators or whitespace. Exact inverse of bytes_to_hex (v0.64.0)
+  dns_query       Ask one DNS server one question and get the whole answer: dns_query(name, type[, {server, port, timeout, tcp, recurse}]) -> {ok, rcode, aa, ra, tc, answers, authority, additional, server, port, transport, duration_ms}; each record is {name, type, ttl, data}. type is A, AAAA, MX, TXT, SRV, NS, SOA, PTR, CNAME, CAA, ... (PTR of an IP address asks its reverse name). server defaults to the first resolv.conf nameserver, port 53, timeout 5 s, recurse true (the RD flag); tcp:true forces TCP and a truncated UDP answer is retried over TCP. The name is always fully qualified (no search list). Timeout, unreachable and malformed replies return {ok:false, error_code: DNS_TIMEOUT|DNS_UNREACHABLE|DNS_PROTOCOL|DNS_IO|DNS_SERVER, error}; bad arguments raise (v0.117.0)
   dns_lookup      Resolve a hostname to a list of IP address strings
   udp_send        Send ONE UDP datagram: udp_send(host, port, payload) -> bytes sent. Payload (string/bytes/buffer) goes out verbatim; host is resolved. Not a socket API — nothing to hold or close (v0.71.0)
   udp_recv        Receive ONE UDP datagram: udp_recv(port[, {timeout, host, max}]) -> {bytes, text, from_host, from_port}, or nil on timeout (an ordinary answer, not a fault). timeout seconds default 30, 0 = wait forever; host = bind address default 0.0.0.0; max caps the read (default 65535 = never truncates; a longer datagram truncates to max, recvfrom(2)'s own contract). text is the payload as UTF-8 or nil — bytes always carries the truth (v0.71.0)
@@ -9653,10 +9656,11 @@ end
 The handler uses a **lazy probe** with a small state machine, so Bus forms behave
 predictably on a host that may or may not have a broker:
 
-- **Never had a broker (`NeverPresent`).** `send` returns `nil` with `$rc = -3` (RC_UNAVAILABLE — "Bus unavailable before delivery"), `emit` is silently dropped, `port_exists` returns `false` — **no raise**, and subsequent Bus forms don't re-probe (no per-call boot cost). The same binary becomes mesh-viable the moment a broker appears.
+- **Never had a broker (`NeverPresent`).** `send` returns `nil` with `$rc = -3` (RC_UNAVAILABLE — "Bus unavailable before delivery"; `$result` names the URL it tried), `emit` is silently dropped, `port_exists` returns `false` — **no raise**. `emit` and `port_exists` don't re-probe (no per-call boot cost).
 - **Had a broker, lost the connection (`Lost`).** `send` returns `nil` with `$rc = -1` (RC_TRANSPORT) and `emit` is silently dropped — both **non-fatal**, so a mesh script survives a broker blip instead of crashing. `port_exists` **raises** `mesh unavailable: … (call bus_reconnect() to retry the probe)`.
+- **`send` retries.** In either state a `send` dials again before it answers, re-reading `MIXOS_NODED_URL` and the node config, bounded by its own `timeout=`. Without `timeout=`, each lane's connect is bounded by 5 seconds, including the WebSocket handshake: up to 10 seconds if both the verified Unix and anonymous TCP lanes stall. After a connection succeeds, waiting for the reply is bounded by `timeout=` when supplied, else by the client's 60-second safety net. A script that sent before its broker listened, that changed `MIXOS_NODED_URL`, or that outlived a broker restart recovers on its next `send` (since 0.117.0; before, every send answered `-3` until `bus_reconnect()`). A failed retry leaves the state as it was.
 - **`subscribe`/`unsubscribe`/`reply`** raise in *both* states — these can't be faked; a script must know they didn't happen.
-- **`bus_reconnect()`** resets the probe to `Unprobed` so the next Bus form re-dials — the recovery primitive after installing a broker or after a broker bounce.
+- **`bus_reconnect()`** resets the probe to `Unprobed` so the next Bus form re-dials — the recovery primitive for `emit`, `port_exists` and the serve forms after installing a broker or after a broker bounce.
 
 This is deliberate: `send`/`emit` stay **non-fatal in every state** (a bare host
 reads `$rc = -3`, a lost broker `-1`), so a script isn't forced to guard Bus it
@@ -14646,6 +14650,15 @@ exits with status `130` (`128 + SIGINT`) for non-interactive execution and
 interactive terminal retains status `0`. Don't build recovery logic on catching
 `run: interrupted` or branching on `.interrupted` (later statements may not run).
 
+A `catch` or `finally` that catches the interrupt gets about **one second** of
+cleanup. If it is still computing after that (a loop that never waits), the
+interrupt becomes standing: catches cannot resume execution, and a `finally`
+cannot replace the pending interrupt with `return`, `break` or `continue`.
+The flag is reasserted every 20 ms until the evaluation unwinds — so a
+SIGINT always ends a non-interactive `mix` (script, `-c`, a function command,
+`--serve`), whatever its handlers do. Cleanup that waits on something (`sleep`,
+a Bus `send`) is cut short sooner, at its first wait.
+
 The opts map is validated loudly (and catchably): an unknown key raises
 `run_rc: unknown opt "bogus" (supported: timeout)`, and a surplus argument raises
 `run() expects at most 2 argument(s), got 3` — a misplaced opts map errors instead
@@ -15597,7 +15610,7 @@ print($math["cube"](3))
 27
 ```
 
-**Dot-call works — member-first for function members** (0.72.0; 0.27.0–0.71 dispatched name-first). `$math.square(5)` calls the map's own `square` whenever the member exists **and holds a function** — even when a free/prelude function of the same name also exists (before 0.72.0 the free name won, which made a module export named `sum` or `lines` silently unreachable via dot-call). When the map has no function-valued member of that name, the call is ordinary UFCS sugar (`$list.map($f)`, `$s.upper()` — unchanged). Two residual collisions to know: a member named after a **builtin** is still unreachable via dot (the desugar happens at parse time), and serve-mode **extension** verbs still outrank members by design. `$math["square"](5)` calls the member unconditionally — the index form remains the collision-proof spelling:
+**Dot-call works — member-first for function members** (0.72.0; 0.27.0–0.71 dispatched name-first). `$math.square(5)` calls the map's own `square` whenever the member exists **and holds a function** — even when a free/prelude function of the same name also exists (before 0.72.0 the free name won, which made a module export named `sum` or `lines` silently unreachable via dot-call). When the map has no function-valued member of that name, the call is ordinary UFCS sugar (`$list.map($f)`, `$s.upper()` — unchanged). One residual collision to know: a member named after a **builtin** is still unreachable via dot (the desugar happens at parse time). A member also beats an **extension** (`context`, `ai`) in every mode, `--serve` included, since 0.117.0. `$math["square"](5)` calls the member unconditionally — the index form remains the collision-proof spelling:
 
 ```mix
 $math = { square: function($x) return $x * $x end }
@@ -15754,6 +15767,8 @@ must appear in the error.
 | you will guess | Mix is | probe | prints |
 |---|---|---|---|
 | a bare name reads the variable | a bare word is a **string literal** — `$` is not optional, and omitting it is silent | `$x = 5; print(x)` | `x` |
+| `null` (or `None`, `undefined`) is null | it is a bare word, so it is the **string** `"null"`; Mix's null is `nil` (`mix lint` warns, MIX-W2312, and `--fix` rewrites it) | `print(json_encode({a: null}))` | `{"a":"null"}` |
+| `let i = 0` declares a variable | Mix has no `let`, `var` or `const`: write `$i = 0` (and `$i = $i + 1`, never a bare `i = …`) | `let i = 0` | `!$i =` |
 | `"hi $name"` interpolates | only `${...}` interpolates; a bare `$name` in a string is **literal text** | `$n = "world"; print("hi $n")` | `hi $n` |
 | — so use braces | `${name}` — and it is the **same rule everywhere** a string is built, heredocs included | `$n = "world"; print("hi ${n}")` | `hi world` |
 | `elseif` | `elif` | `if 1 == 2 then print("a") elif 1 == 1 then print("b") end` | `b` |
@@ -17685,6 +17700,16 @@ write_atomic(path, data[, opts])     replace all-or-nothing: old OR new, never p
 `content` is a string, `bytes` or `buffer` — nothing else is coerced (a wrong
 type raises `TYPE_MISMATCH` before the file is touched).
 
+**FIFOs.** When the path is a named pipe, `read_file`, `write_file` and
+`append_file` wait for the other end **without holding the runtime thread**
+(since 0.117.0): Ctrl-C raises `interrupted`, SIGTERM takes the graceful
+shutdown path, and a `--serve` citizen whose `async` handler waits on a FIFO
+still answers `QUIT` and its other verbs. `read_file` returns once every
+writer has closed; a write returns once the data is in the pipe. Other
+builtins (`read_file_bytes`, `read_lines`, …), stuck NFS/FUSE paths and
+character devices still block the thread, and only the SIGTERM backstop
+bounds them. A regular file pays one extra `stat` to be told apart.
+
 ```mix
 write_file("/tmp/io/log.txt", "first\n")
 append_file("/tmp/io/log.txt", "second\n")
@@ -18033,8 +18058,9 @@ the options map flips the defaults:
 - `max_depth` (number, default unlimited) — nesting depth relative to `dir`; `max_depth: 0` returns only the direct children.
 - `include_dirs` (bool, default `false`) — include directory entries too.
 - `follow_symlinks` (bool, default `false`) — follow symlink dirs (loop-safe; the walker tracks visited inodes).
+- `strict` (bool, default `false`) — raise instead of skipping what cannot be read (below).
 
-The two boolean options take a real `bool` only — `"false"`, `0`, `nil` and the
+The boolean options take a real `bool` only — `"false"`, `0`, `nil` and the
 like raise `TYPE_MISMATCH` before traversal starts rather than being read as a
 truthiness.
 
@@ -18047,6 +18073,25 @@ best-effort: an unreadable directory is silently skipped — even the top-level
 one (it exists, so the walk proceeds and simply finds nothing, returning `[]`) —
 and so is an individual entry that fails to stat. One bad file deep in a subtree
 shouldn't abort the whole walk.
+
+A gate cannot tell "no matches" from "could not look" that way, so it passes
+`strict: true`. Then the first directory that cannot be read (the top-level one
+included, a `dir` that cannot even be stat'ed, or a `dir` that is a file) or
+entry that cannot be stat'ed raises
+`WALK_UNREADABLE`; `details.path` names it and `details.error` says why. An
+entry or directory that vanished since it was listed, or a dangling symlink under
+`follow_symlinks`, is still skipped: it was looked at, and nothing is there.
+
+```
+try
+  $files = walk("/srv/repo", {strict: true})
+catch $msg, $e
+  if $e.code == "WALK_UNREADABLE" then
+    die("cannot audit " .. $e.details.path)
+  end
+  raise($e.code, $msg, $e.details)
+end
+```
 
 ```mix
 print("--- files only, full depth ---")
@@ -18150,11 +18195,18 @@ false
 flock(path)                              exclusive, non-blocking
 flock(path, {shared: true})              shared, non-blocking
 flock(path, {wait: 2.5})                 wait for up to 2.5 seconds
+flock(path, {create: false})             refuse a missing lock file
 funlock(path)                            release this process's lock
 ```
 
-`flock` opens the file read/write, creating it with mode `0644` (subject to the
-process umask), then takes a kernel advisory lock with `flock(2)`. The default is
+`flock` opens the file, creating it with mode `0644` (subject to the process
+umask) when it is missing, then takes a kernel advisory lock with `flock(2)`. An
+exclusive lock opens the file read/write. A **shared** lock opens an existing
+file **read-only**, so a read-only diagnostic can share-lock a lock file it
+cannot write (root-owned, or on a read-only image). `create: false` never
+creates the file: a missing one raises `LOCK_FILE_MISSING` and nothing is
+written, which a diagnostic wants on a host where the lock file should already
+exist. A directory raises either way. The default is
 exclusive and non-blocking: `true` means acquired and `false` means another
 process currently holds an incompatible lock. Contention is normal control flow,
 not an exception. A positive `wait` retries without busy-spinning until the
@@ -18197,7 +18249,7 @@ and release its kernel lock.
 
 ```
 fcntl_lock(path)                         exclusive, non-blocking
-fcntl_lock(path, {shared: true, wait: 2.5})
+fcntl_lock(path, {shared: true, wait: 2.5, create: false})
 fcntl_unlock(path)                       release this process's record lock
 ```
 
@@ -18210,7 +18262,9 @@ Mix-to-Mix locking either works, and `flock` is the established default.
 
 The caller contract is identical to `flock`/`funlock` in every respect:
 exclusive + non-blocking by default, contention returns `false`, real errors
-raise, repeated acquisition in one process is idempotent-`true` by canonical
+raise, a shared lock opens an existing file read-only (a read lock needs only
+read access), `create: false` refuses a missing file with `LOCK_FILE_MISSING`,
+repeated acquisition in one process is idempotent-`true` by canonical
 path, the fd lives in a process-global registry and the kernel cleans up on
 exit, and the do-not-delete-a-live-lock-file rule applies unchanged. The
 lock always covers the **whole file**.
@@ -18311,6 +18365,35 @@ Also note `rename` reports the *client's* view. On NFS a client can be told the
 rename failed after a server crash even though the server performed it, so
 "raised" is not proof the old file survived; re-read the target if you must know.
 
+## Durability — `fsync` (v0.117.0)
+
+```
+fsync(path)                      a file's data, or a directory's entries
+fsync(dir, {recursive: true})    every file and directory beneath, then dir
+```
+
+A `rename`, `remove` or new file is atomic but not durable: after a power loss
+it can be gone, or be there without the journal entry written just before it.
+`fsync` asks the kernel to put it on disk and returns how many inodes it synced.
+On a **file** it syncs the file's data and metadata. On a **directory** it syncs
+the directory itself, which is what persists the entries created, renamed or
+removed in it (sync the directory after a `rename` into it, and after a
+`remove` from it). `recursive: true` syncs every regular file and directory
+beneath, children first, then `dir` itself: a tree built with `copy_tree` is
+durable when it returns. Inside the tree symlinks are never followed, and
+symlinks and special files are not opened (their directory's sync persists the
+entry); the `path` argument itself follows a symlink, as elsewhere.
+
+`write_atomic(path, data, {durability: "full"})` already does this for one file
+and its directory. `fsync` is the general form, without `sync -f`'s flush of the
+whole filesystem. A failure raises `FSYNC_FAILED`; `details.path` names what
+could not be synced (a missing path, an unreadable directory in the tree).
+
+```
+rename("/srv/app/.next", "/srv/app/current")
+fsync("/srv/app")                                -- the rename is now durable
+```
+
 ## Symbolic links — `symlink`, `read_link`
 
 ```
@@ -18355,10 +18438,16 @@ the other question — `exists(path, {follow_symlinks: false})` — whenever you
 ```
 chmod(path, mode)            mode as octal literal 0o755 or string "0755"
 chown(path, uid, gid)        numeric uid/gid only; follows symlinks
+chown(path, uid, gid, {follow_symlinks: false})   the link itself (lchown)
 ```
 
 Native syscalls — don't `run("chmod …")`. Both follow symlinks (the mode/owner is
-applied to the link's *target*, standard shell semantics). `chmod`'s mode is the
+applied to the link's *target*, standard shell semantics). `chown` with
+`{follow_symlinks: false}` changes the symlink itself, as `lchown(2)` does and
+as `stat`/`exists` read it: a root script that makes links in another user's
+tree can hand the links to that user too. It works on a dangling link, which
+the following form cannot chown. (Linux has no `lchmod`, and a link's mode is
+never used, so `chmod` has no such option.) `chmod`'s mode is the
 **value** (`0o755`, range `0..=0o7777`); a number out of range or with a fraction
 is rejected. `chown` takes numeric uid/gid only — no name resolution — and
 requires real `Number` arguments (a bool or numeric string is refused, so
@@ -18975,9 +19064,12 @@ should be "unified".
 The io category includes an embedded SQLite client (feature-gated `sqlite`; the
 `mix` binary turns it on). Handles are plain numbers:
 
+The full reference, with modes and examples, is `mix man sqlopen`.
+
 ```
-sqlopen(path)              open READ-ONLY               -> numeric handle
-sqlopen(path, "rw")        open read-write (WAL mode, 5s busy timeout)
+sqlopen(path)              open READ-ONLY; the file must exist -> numeric handle
+sqlopen(path, "rwc")       open read-write, creating a missing file (WAL mode,
+                           5s busy timeout); "rw" is the same mode
 sqlexec(h, sql[, params])  run one statement            -> rows or {affected}
 sqlclose(h)                close the handle (errors on an unknown handle)
 ```
@@ -19453,7 +19545,7 @@ parsing prose, and biased hard toward zero false positives on Mix's dynamic
 seams.
 
 ```text
-mix lint [--json | --data] [--deny-warnings] [--require-version]
+mix lint [--json | --data] [--deny-warnings] [--require-version] [--fix]
          [--allow-global NAME]... [--allow-function NAME]...
          FILE...
 ```
@@ -19462,7 +19554,9 @@ mix lint [--json | --data] [--deny-warnings] [--require-version]
 - Diagnostics go to **stdout**; CLI errors go to **stderr**. `--deny-warnings` changes only the exit decision, never a severity.
 - `--require-version` (0.95.0) reports `MIX-D3016` (a script with no `-- version:` header) as a **warning** instead of a note — the one flag that moves a severity, and only for that code. Pair it with `--deny-warnings` to make a missing header fail a gate.
 - `-` reads stdin (at most once); relative `require()` paths from stdin resolve against the current directory.
-- `--allow-global NAME` / `--allow-function NAME` declare names an embedder or environment provides (repeatable).
+- `--allow-global NAME` / `--allow-function NAME` declare names an embedder or environment provides (repeatable). A file can declare its own with a [`-- lint: globals` pragma](#in-file-pragmas-01170).
+- `--fix` (0.117.0) applies each finding's **quick fix** to the file and lints the result again, so the report shows what is left; it prints `applied N fix(es)` to stderr. Only mechanical rewrites carry one (today `MIX-W2312`, bareword `null` → `nil`), and each edit is checked against the text at its position before it is made. Stdin is never rewritten.
+- The `mix` binary's shell extensions (`ai`, `ai_diagnose`, `context`) are known callables: calling one is never `MIX-E1102`, and defining a function with one of those names is `MIX-W2313`.
 - If script parsing fails, lint tries the same strict-data parser as `load_data()`.
   A successful fallback exits cleanly and prints `validated as strict data (not
   as a script)`. If both parsers fail, an explicit top-level `key:` shape (or a
@@ -19496,6 +19590,7 @@ in their own summary field, and **never** gating. Current D-codes:
 | `MIX-D3016` | a **script with no `-- version: X.Y.Z` header** in its leading comment region (within the first 32 lines) (0.95.0), so [`mix SCRIPT --version`](invocation.md#--version-for-scripts) and `script_version()` can only say `unversioned` — every binary and every Mix script answers `--version` (Mark, 2026-09-25). Emitted by the lint driver, only for files **run as scripts**, decided by a deliberately simple heuristic over the path *as given*, in this order: (1) line 1 is a `#!` shebang — a script; (2) a `lib`, `_lib`, `tests` or `test` directory component — never reported: a library is loaded by `require`, and a test script must stay header-less, because a header would make it the entry script whose record `script_version()` returns; (3) a `bin`, `_bin`, `scripts` or `build` directory component — a script; (4) a serve citizen — a top-level `on <verb>` handler at column 0, or `--serve` mentioned in the leading comment region. `mix lint deploy.mix` from inside `_bin/` has no directory component, so lint from the repo root. Known false positive, Wontfix: a library under an absolute `/…/bin/…` path with no `lib` component is reported. The mirror holds too: any `/…/lib/…` or `/…/tests/…` ancestor in an absolute path exempts a script beneath it. Only the leading comment region counts as the header (see [invocation](invocation.md#--version-for-scripts)), so a `-- version:` inside a heredoc does not satisfy it. A header line whose value is not `X.Y.Z` is reported on its own line, since the runtime treats it as absent. A note by default; `--require-version` makes it a warning, code unchanged |
 | `MIX-D3017` | an **unprovable variable read inside an `ssh_mix` body with dynamic bindings** — the name is bound nowhere in the body, but the call's opts are unreadable so `bindings`/`env` may supply it at runtime, and it is NOT an error. Fires only when the name is one edit away from something the body DOES bind (a parameter or local), where the typo is the likelier explanation: `'$pott' … did you mean '$port'?` One edit is one edit — an adjacent transposition (`$prot`) is TWO under plain Levenshtein, and the short-name budget stays at one so unrelated dynamic bindings keep their silence. A name with no near neighbour is an ordinary dynamic binding and stays silent |
 | `MIX-D3018` | **`ssh_mix` opts are not a statically readable map** — the injected names are unknown, so undefined-**variable** checks stand down for that body (dynamic bindings may supply any free DATA name). The boundary is split, not blanket: undefined-**function** checks still run (strict-data bindings cannot create a callable, so a function name the body does not define is undefined no matter what the opts hold). A variable bound exactly once to a map literal IS resolved (`$o = {bindings: {…}}`), so the fleet opts-variable shape keeps full checks |
+| `MIX-D3019` | a **`-- lint:` suppression that matches nothing** (0.117.0) — an `ignore CODE` whose next statement no longer reports CODE, or an `ignore-file CODE` in a file that reports none. Reported at the pragma's line so stale suppressions get deleted. See [in-file pragmas](#in-file-pragmas-01170) |
 | `MIX-D3015` | a **bare `$NAME` in a double-quoted string** (0.90.0) where `NAME` is bound in the same file. Double quotes interpolate `${NAME}` only; the bare form is literal BY DESIGN, which is the opposite of bash — four occurrences in one file passed lint and all four failed at runtime. `\$NAME` and a single-quoted `'…'` string are the two clean spellings and neither is reported. The lexer drops the whole batch for a MULTI-LINE string and for one whose spelling contains `\"`: both mark NESTED source (an `ssh_mix` body, a `mix -c` program), where a bare `$rc` is the inner program's variable and correctly literal. A **note** where the heredoc twin `MIX-W2402` is a warning, and the asymmetry is measured — over 785 fleet scripts W2402 costs 4 findings and this one an order of magnitude more even after those exclusions, so a warning would fail `--deny-warnings` on scripts that are not wrong. D3xxx is the promotable namespace precisely so that can change once the residue is worked off |
 
 Member-call spellings are covered too: a builtin-named `.name(` desugars
@@ -19516,6 +19611,7 @@ MIX-E1202  user-function arity mismatch     MIX-E1502  discarded pure transform
                                             MIX-E1506  write to an outer variable in fn (--agent)
                                             MIX-E1507  shell command written as a bare string
                                             MIX-E1508  assign-back of an in-place mutator
+                                            MIX-E1601  malformed `-- lint:` pragma
                                             MIX-W2101  unreachable statement
                                             MIX-W2201  discarded must-use result
                                             MIX-W2301  `+` on a proven list/map raises
@@ -19528,6 +19624,10 @@ MIX-E1202  user-function arity mismatch     MIX-E1502  discarded pure transform
                                             MIX-W2309  builtin-named map member unreachable via dot-call
                                             MIX-W2310  proven-missing lookup on a literal collection
                                             MIX-W2311  fmt/sprintf surplus operands
+                                            MIX-W2312  bareword null/None/undefined is a string
+                                            MIX-W2313  function name collides with a shell extension
+                                            MIX-W2314  require() export: wrong argument count
+                                            MIX-W2315  require() module has no such export
                                             MIX-W2401  source/include defeats analysis
                                             MIX-W2402  bare bound variable in heredoc
                                             MIX-W2405  unknown escape kept literally
@@ -19574,9 +19674,16 @@ move, since a code's letter fixes its severity permanently. It is now
 - **MIX-W2304** checks a literal field/index key against the builtin's
   documented result-map fields from `mix builtins --json`. It works on a
   direct builtin call or a variable proven by straight-line assignment to
-  hold that result. The hint names the closest documented key (for example,
-  `exit_code` rather than `code`). Dynamic keys, generic maps and result
-  shapes without declared fields are deliberately silent.
+  hold that result. The message names the declared shape and says what the
+  read does: `process_result (from run_argv()) has no field 'code' — reading
+  it is silently nil`. The hint is a did-you-mean (0.117.0): the bash, Python
+  and Node spellings map to the field they mean first (`code`, `rc`,
+  `status`, `returncode` → `exit_code`; `status_code` → `status`;
+  `success` → `ok`; `output` → `stdout`), then a field ending in `_key`,
+  then the nearest by edit distance, so `$r.rc` no longer suggests `ok`.
+  Dynamic keys, generic maps and result shapes without declared fields are
+  deliberately silent, and the runtime is unchanged: a missing field reads
+  `nil`.
 - **MIX-W2305** flags `index_of()` / `byte_index_of()` / `bytes_find()` (added
   v0.64.0) used **bare as a truth
   value**. They return `-1` for "not found" and `0` for "found at the first
@@ -19617,11 +19724,86 @@ move, since a code's letter fixes its severity permanently. It is now
   runtime's own "not enough arguments" error), and calls a user function,
   variable, `address` block or `source`/`include` could shadow are silent
   too.
+- **MIX-W2312** (0.117.0) warns on a bareword `null`, `None`, `undefined`,
+  `NULL` or `nullptr` used as a value. Mix's only null is `nil`; every other
+  bareword is a string literal, so `{open: null}` sends `{"open":"null"}`
+  and `if $x == None` compares against text. A map key (`{null: 1}`), a
+  field (`$x.null`), a call name, a statement head, a Bus command word and a
+  quoted `"null"` stay silent. Where the word is surely a value (a call
+  argument, a list element, a map value, the right side of `$x =`, an
+  operand of a comparison or `??`, a `return` operand) the finding carries a
+  quick fix to `nil` (`mix lint --fix`); anywhere else, such as
+  `print("a") && null` where `null` may call a `fn null()`, it warns without
+  one. There is no runtime alias, by decision: the language
+  keeps one null. Like D3015 it needs the source text.
+- **MIX-W2313** (0.117.0) warns at the definition of a function named after
+  one of the `mix` binary's shell extensions (`ai`, `ai_diagnose`,
+  `context`). An extension beats a user function at a bareword call, so
+  `context()` runs the shell's extension. A member call on a `require()`
+  exports map (`$m.context()`) does reach the function, in every mode.
+- **MIX-W2314 / MIX-W2315** (0.117.0) are warnings while the check is new,
+  so a false positive can never fail a `mix lint` gate; the call they flag
+  fails at run time, and they may become errors with the type work. They
+  check member calls into a module
+  bound once to a literal path, `$m = require("./lib.mix")`, against what
+  the module exports: its top-level functions (with their arity) and
+  `$vars`, minus `_`-private names. `$m.helper(1)` for a two-parameter
+  `helper` is W2314; `$m.nosuch(2)` is W2315, with the nearest export as a
+  did-you-mean. W2315 stays silent when anything else can answer the call
+  (an exported `$var` that may hold a function, a function this file
+  defines, the prelude, an extension, an enclosing `address` block) — except
+  for a statement `$m.nosuch()`, which calls the field value and has no UFCS
+  fallback. An
+  export bound once to a literal `require()` resolves too, next to its own
+  module (`$a.b.fn()`), and a require cycle cannot loop the check. Both
+  stand down silently for a dynamic path, a rebound `$m` (or one that is
+  also a parameter), a module whose top-level `return` replaces the
+  auto-export or that uses `source`/`include`, and a file that does.
+- **MIX-E1601** (0.117.0) refuses a malformed [`-- lint:` pragma](#in-file-pragmas-01170): a bare `ignore` or `ignore-file`, an unknown code or directive, a `globals` with no valid names.
 - **MIX-W2401**: one `source`/`include` anywhere disables the undefined-name checks for the whole file (the loaded file can define anything) — reported once so you know analysis is degraded. Prefer `require()`: it is isolated, statically resolvable, and E1401/E1402 verify literal-path modules parse.
 - **MIX-W2402** warns when a heredoc literal contains bare `$NAME` and `NAME` is bound somewhere in the same visible universe. Heredocs interpolate `${NAME}`, not `$NAME`, so the bare form often means a generated config was silently corrupted. It does not fire for `${NAME}`, `$(` command substitution, explicitly escaped `\$NAME`, all-digit names such as `$1`, unknown names, or ordinary double-quoted strings. The warning is lint-only: bare `$NAME` still evaluates to literal `$NAME`, and intentional literal output requires no change. In a heredoc that ships as an `ssh_mix` body it stays silent for the names the **remote** program owns: the call's `bindings`/`env` keys and whatever the body binds itself. There, bare is exactly right, and `${NAME}` would splice the local value into the remote source. Any other bound name still warns.
 - **MIX-E1303** (0.90.0; was `MIX-W2403` from 0.74.0) errors at the *definition* of a function whose name is a builtin: the builtin wins at every call site (a builtin-named dot-call even desugars at parse time), so the definition is unreachable by name — only an extracted function value or an exports-map index still reaches it. The worst shape this produces is a script that keeps running while its own function quietly stops being called, and every release that adds a builtin name arms it again for older scripts. It was a warning on the theory that a compat shim for an older mix is legitimate authoring; the fleet refuted that — two sites across 785 scripts, neither a shim: one a hand-rolled `ends_with` duplicating the builtin, the other an `fn mix_version()` in a pre-commit hook written to report a *named* interpreter's version and silently answering with the running one's, a live wrong answer that sat behind a warning for sixteen releases. Lint is also the only gate an `ssh_mix` body passes through, and a warning stops nothing by default. The **runtime is unchanged** — the builtin still wins; the fix is to rename. Since 0.91.0 the check also covers the evaluator's inline forms that sit outside the builtin table's dispatch gate — `serve_name`, `printf` and its stdio siblings, and the Bus forms `quit`, `reply`, `subscribe` and the rest — which beat a same-named function just the same: `fn quit() return 1 end; print(quit())` printed `nil` with no diagnostic before. Since 0.92.0 the runtime agrees in operand position too: the binary-operator fast path used to call a user `fn printf` for `printf("B") .. "|"` while a bare `printf("B")` called the builtin; now the builtin wins in both.
 - **MIX-W2405** warns when a double-quoted literal contains a backslash escape the lexer does not recognise, so the backslash is kept: `"isn\x27t"` printed `isn\x27t` and nothing said so, which is how a `replace()` wrote that into a committed journal entry. 0.90.0 added `\xHH` (exactly two hex digits), `\0` and `\a \b \f \v`, so what remains is genuinely unrecognised — including `\x` with fewer than two hex digits and `\'`. A deliberate backslash is `\\`, so the warning has a clean escape. An unbraced `\u` is **exempt**: that literal is documented design (it protects embedded JSON and `C:\users`). Single-quoted strings and heredocs keep their own rules and are not scanned.
 - **MIX-D3015** and **MIX-W2405** ask how a literal was *spelled*, which the token stream deliberately forgets (`'$sp/x'` and `"$sp/x"` lex to the same token). They therefore need the source text: `mix lint` supplies it, and so does the nested analysis of an `ssh_mix` body, but an embedder calling `analyze()` without setting `AnalyzerConfig::source` simply does not get these two rules.
+
+## In-file pragmas (0.117.0)
+
+A comment starting `-- lint:` (or `# lint:`) tells lint something the code
+cannot, so the knowledge lives with the file instead of in a per-invocation
+flag. There are three, and they have no runtime effect:
+
+```mix
+-- lint: globals sha, target
+-- lint: ignore MIX-W2402
+-- lint: ignore-file MIX-D3015
+```
+
+The first declares names injected by `ssh_mix` bindings, an embedder or a
+`source`; the second suppresses MIX-W2402 on the next line of code only;
+the third suppresses MIX-D3015 everywhere in the file.
+
+- `globals` is the in-file `--allow-global`: each name counts as bound, so a
+  remote body whose caller binds `$sha` lints clean on its own.
+- `ignore` covers the **next line holding code** and nothing more (eslint's
+  `disable-next-line`): blank and comment lines between are skipped, every
+  statement on that line is covered, and a finding on a later line of the
+  same statement is not, so put the pragma right above the line that reports
+  the code. Most findings carry their statement's first line; a few (such as
+  `MIX-W2312`) carry the line of the offending word. Written after code on
+  the same line, `ignore` covers that line.
+- Every suppression names its code (several may be listed, comma- or
+  space-separated; the `MIX-` prefix and case are optional). A bare
+  `-- lint: ignore` is **refused** (`MIX-E1601`), as is an unknown code or
+  directive, so a typo cannot silently disable a check.
+- A suppression that matches nothing is reported as the note `MIX-D3019` at
+  the pragma's line, so stale ones get cleaned up. Notes never gate.
+- The text after a `|` on a line is shell text for the external command, so
+  `print(1) | echo -- lint: ignore` holds no pragma.
+- Pragmas are read from comments only: a `-- lint:` line inside a string or
+  heredoc (generated Mix source) belongs to that source, not to this file.
+  They apply to the analyzer's findings, not to the lexer/parser errors
+  (`MIX-E1001`–`E1003`) or the driver's `MIX-D3016`, and an embedder that
+  calls `analyze()` without the source text gets none.
 
 ## `mix explain MIX-XXXX` — the offline diagnostics explainer
 
@@ -19659,7 +19841,8 @@ Every existing key keeps its meaning, including `"note"` severity and
     "code": "MIX-E1101", "severity": "error", "file": "worker.mix",
     "line": 412, "column": null,
     "message": "undefined variable '$DOMAIN' (assigned nowhere in this file)",
-    "hint": "assign it, use env(\"DOMAIN\") for environment values, or pass --allow-global DOMAIN"
+    "hint": "assign it, use env(\"DOMAIN\") for environment values, or declare an injected name with `-- lint: globals DOMAIN` (or pass --allow-global DOMAIN)",
+    "fix": null
   }],
   "capabilities": ["fs-read", "network", "process"],
   "handlers": [],
@@ -19667,6 +19850,10 @@ Every existing key keeps its meaning, including `"note"` severity and
   "summary": {"errors": 1, "warnings": 0, "notes": 0, "denied_warnings": false}
 }
 ```
+
+`fix` (0.117.0, additive) is `null`, or the quick fix `--fix` would apply:
+`{"line": 1, "column": 6, "replace": "null", "with": "nil"}` (1-based line
+and character column).
 
 `--data` emits the same report as strict-data Mix source (parse with
 `data_parse`). `line`/`column` are 1-based or `null`. Most diagnostics are
@@ -20865,10 +21052,24 @@ print($f("A B"))                     -- a-b
 exports named `sum`/`lines` reachable via dot-call — from 0.27.0 to 0.71 a
 free/prelude name won instead and the prelude ran on the stringified map).
 When no such member exists, the call is the usual UFCS sugar (`$list.map($f)`,
-`$s.upper()`), then an address-block send. Two collisions survive the flip:
+`$s.upper()`), then an address-block send. The member wins in **every**
+mode, `--serve` included (0.117.0): before that a serve citizen's
+`$r.context({})` ran the mix shell's `context()` extension instead of the
+module's export. One collision survives:
 
 - An export named after a **builtin** must still be called via the index form (`$m["keys"](...)`) — a builtin-named dot-call desugars at parse time, before the member can be seen.
-- Serve-mode **extension** verbs outrank members by design — a citizen's map can never fake an injected `props.*` verb.
+
+A bare `context()` in the module itself still runs the extension, which
+beats a user function at a bareword call; `mix lint` reports a function
+named after a shell extension (`ai`, `ai_diagnose`, `context`) as
+`MIX-W2313`.
+
+`mix lint` reads a module bound once to a literal path
+(`$m = require("./lib.mix")`) and checks member calls against its exports:
+`MIX-W2314` for the wrong number of arguments, `MIX-W2315` for a name the
+module does not export. It stands down for a dynamic path, a rebound `$m`,
+and a module whose top-level `return` or `source`/`include` decides its
+exports.
 
 The index form `$m["foo"](...)` calls the member unconditionally and remains
 the collision-proof spelling.
@@ -25202,6 +25403,92 @@ mix keywords          every Mix keyword (so you know what the classifier reserve
 
 ---
 
+<!-- page: https://mixos.dev/mix/sqlopen/ (source: https://mixos.dev/mix/sqlopen.md) -->
+
+# sqlopen — SQLite files: sqlopen, sqlexec, sqlclose
+
+Mix has an embedded SQLite client (the `sqlite` feature; the `mix` binary
+turns it on), so a script can create, query and update a database file
+without the `sqlite3` CLI. Handles are plain numbers. These builtins are
+`FsWrite`: they are arbitrary filesystem authority. A host that hands a
+script one store should use the scoped `Db` seam (`db_query`) instead
+(`mix man capabilities`).
+
+```
+sqlopen(path[, mode])      open a database             -> numeric handle
+sqlexec(h, sql[, params])  run one statement           -> rows or {affected}
+sqlclose(h)                close the handle (an unknown handle raises)
+```
+
+## Modes
+
+| `mode` | Opens | A missing file |
+|---|---|---|
+| omitted, or `"ro"` | read-only | raises `SQL_NO_DATABASE`; nothing is created |
+| `"rwc"` | read-write, WAL journal, 5 s busy timeout | is created |
+| `"rw"` | the same as `"rwc"` | is created |
+
+The default is **read-only**, so a script that only reads a database (a
+secrets store, another program's state) cannot change it, or its journal
+mode, by accident. A write through a read-only handle raises. To create a
+database, say so with `"rwc"`. Any other mode, including `nil`, `"RW"` and
+`""`, raises `OPTION_INVALID`; before 0.117.0 an unknown mode silently
+opened read-only, which is why `sqlopen(path, "rwc")` used to fail on a new
+file with only `unable to open database file`.
+
+Opening read-write sets `PRAGMA journal_mode=WAL`, which is persistent: the
+file stays in WAL mode and gets `-wal` and `-shm` siblings while it is open.
+Open another program's database read-only unless the script owns it.
+
+`":memory:"` is a private in-memory database that lives as long as the
+handle. Open it with `"rw"`, since a read-only one can never hold a table.
+
+```mix
+$path = "/tmp/sqlopen-demo.db"
+$db = sqlopen($path, "rwc")
+sqlexec($db, "CREATE TABLE IF NOT EXISTS seen (id TEXT PRIMARY KEY, at INTEGER)")
+sqlexec($db, "INSERT OR IGNORE INTO seen VALUES (?, ?)", ["msg-1", 1760000000])
+sqlclose($db)
+
+$ro = sqlopen($path)
+print(json_encode(sqlexec($ro, "SELECT id FROM seen")))
+sqlclose($ro)
+```
+
+```text
+[{"id":"msg-1"}]
+```
+
+## Results and parameters
+
+`sqlexec` returns a **list of row maps** for anything that produces columns
+(`SELECT`, row-returning `PRAGMA`s) and `{affected: n}` for a write. SQLite
+decides which (`sqlite3_stmt_readonly`), so `REPLACE` and `WITH … INSERT`
+take the write path. Column values map NULL to `nil`, INTEGER and REAL to a
+number, and TEXT to a string. A BLOB comes back as the placeholder string
+`<blob N bytes>`, not as bytes.
+
+`params` binds `?` placeholders: a list binds positionally, and a single
+non-list value is one bind. Binds are typed: `nil` is NULL, a bool is
+INTEGER 0/1, a whole number is INTEGER, a fractional one is REAL, a string
+is TEXT and bytes are a BLOB. A list or map param raises. Always bind data;
+never splice values into the SQL string.
+
+## Errors
+
+| Code | When |
+|---|---|
+| `SQL_NO_DATABASE` | a read-only open of a path that does not exist |
+| `OPTION_INVALID` | a mode other than `"ro"`, `"rw"` or `"rwc"` |
+| (runtime error) | SQLite refused the open or the statement; the message is SQLite's |
+
+## See also
+
+- [io](io.md): the rest of the filesystem builtins.
+- [data](data.md): how Mix values cross serialization boundaries.
+
+---
+
 <!-- page: https://mixos.dev/mix/stats/ (source: https://mixos.dev/mix/stats.md) -->
 
 # Usage statistics
@@ -27094,7 +27381,8 @@ for multi-line remote Mix or anything with nested quotes. This page covers
 the *local* surface — launching processes and reading the machine. The category
 listing also shows families documented on their own pages: the `ssh_*` builtins
 ([remote](remote.md)), `http_*` ([http](http.md)), the date/time helpers
-([datetime](datetime.md)), `dns_lookup` ([builtins index](builtins.md)), and
+([datetime](datetime.md)), `dns_lookup` ([builtins index](builtins.md); its
+fuller sibling `dns_query` is covered below), and
 `panic` ([errors](errors.md)).
 
 ## The structured-return win
@@ -28815,6 +29103,62 @@ hello mix
 These (and `base64_*`, `uuid`) are behind the `crypto` feature, which the `mix`
 binary always enables.
 
+## DNS queries — `dns_query` (v0.117.0)
+
+```
+dns_query(name, type[, {server, port, timeout, tcp, recurse}])  -> result map
+```
+
+`dns_lookup(host)` asks the system resolver for addresses and nothing else.
+`dns_query` asks **one server one question** and returns the whole answer, so
+a script can tell an authoritative answer (`aa: true`) from a cached one, or
+an out-of-zone `REFUSED` from `NXDOMAIN`, without `dig`. The wire format is
+hickory-proto (pure Rust, the `dns` feature); no libresolv.
+
+- `type` is a record type name, case-insensitive: `A`, `AAAA`, `MX`, `TXT`,
+  `SRV`, `NS`, `SOA`, `PTR`, `CNAME`, `CAA` and the rest. `PTR` of an IP
+  address asks its reverse name, as `dig -x` does.
+- `name` is always fully qualified: there is no search list.
+- `server` is an address or a host name (default: the first `nameserver` in
+  `/etc/resolv.conf`, else `127.0.0.1`), `port` defaults to 53, `timeout` to
+  5 seconds for the whole query (resolving a server host name, a TCP retry
+  and a slowly delivered reply all count against it), and `recurse` (default `true`) sets the RD
+  flag. `tcp: true` forces TCP; a truncated UDP answer is retried over TCP
+  on its own.
+
+A reply, whatever its rcode, is `ok: true`:
+
+```
+{ok: true, rcode: "NOERROR", aa: true, ra: false, tc: false,
+ answers: [{name: "mail.example.com.", type: "AAAA", ttl: 300, data: "2001:db8::25"}],
+ authority: [], additional: [], server: "192.0.2.53", port: 53,
+ transport: "udp", duration_ms: 3}
+```
+
+`rcode` is dig's name (`NOERROR`, `NXDOMAIN`, `SERVFAIL`, `REFUSED`, ...).
+Each record's `data` is its zone-file text (`10 mail.example.com.` for an MX;
+a TXT record's strings joined). Names end in a dot.
+
+No reply is an operational failure, returned rather than raised, as
+`ssh_exec` does: `{ok: false, error_code, error, server, duration_ms}` with
+`error_code` one of `DNS_TIMEOUT`, `DNS_UNREACHABLE` (ICMP port unreachable,
+connection refused), `DNS_PROTOCOL` (only malformed replies), `DNS_IO` or
+`DNS_SERVER` (the server name did not resolve). A reply with another id is
+ignored, not taken as the answer. A bad argument (an unknown type or option,
+an invalid name) raises.
+
+```mix
+-- Which servers answer for mail.example.com with authority?
+for each $ns in ["192.0.2.53", "198.51.100.53"]
+  $r = dns_query("mail.example.com", "AAAA", {server: $ns, recurse: false})
+  if not $r.ok then
+    print($ns .. ": " .. $r.error_code)
+  else
+    print($ns .. ": " .. $r.rcode .. " aa=" .. $r.aa)
+  end
+end
+```
+
 ## UDP datagrams — `udp_send`, `udp_recv` (v0.71.0)
 
 ```
@@ -29344,12 +29688,17 @@ One-line help for each builtin is `mix builtins tar_list` (or `tar_unpack`,
 `"none"`. The builtin decoder is the universal reader, so the artifact
 profile below is a contract that any encoder must satisfy:
 
-- **single frame** — `tar_unpack`/`tar_list` drain the stream to true EOF:
-  the zstd content checksum (XXH64, verified whenever the frame carries one;
-  `tar_pack` always writes it) / gzip CRC are verified there, any non-zero decoded
-  bytes after the tar end are refused, and raw input left unconsumed (a
-  concatenated second frame or gzip member, including an empty member) is
-  refused. Trailing compressed bytes, including zeros, are refused too;
+- **one tar, one zstd frame** — `tar_unpack`/`tar_list` drain the stream to
+  true EOF: the zstd content checksum (XXH64, verified whenever the frame
+  carries one; `tar_pack` always writes it) / gzip CRC are verified there,
+  any non-zero decoded bytes after the tar end are refused, and raw input
+  left unconsumed (a concatenated second zstd frame) is refused. Gzip is
+  read **member after member**, as RFC 1952 allows (`pigz`, or `cat a.gz
+  b.gz`): a tar split across several members unpacks, every member's CRC
+  is checked, and an empty trailing member is harmless. A second whole tar
+  in a later member is still non-zero data after the first tar's end and is
+  refused. Trailing bytes that are not a gzip member, including zeros, raise
+  `ARCHIVE_STREAM_CORRUPT`;
 - **no dictionaries**;
 - zstd levels are `1..=22` (default 7). Level 22 is the largest the builtin
   packs, because its 2^27 (128 MiB) window is exactly the decoder's ceiling.
@@ -29394,9 +29743,13 @@ For artifacts that people unpack with stock tools, use `codec:"gzip"`
   staging directory is also checked to be the caller's own, `0700` and
   empty before anything is extracted into it.
 - Member names are validated on the *resolved* path (GNU longname and PAX
-  smuggling land there): no absolute paths, no `.`/`..` components, UTF-8
+  smuggling land there): no absolute paths, no `..` components, UTF-8
   only (invalid bytes raise — the extractor never guesses what got
-  extracted).
+  extracted). A leading `./` is accepted and dropped, so GNU tar's
+  `tar -C dir .` and `./name` archives unpack (hardlink targets too). A bare
+  `./` (or `.`) entry names the extraction root: it must be a directory, and
+  only its mode, owner and mtime are applied, to `dest` itself. `tar_list`
+  shows it as `.`.
 - Device, fifo and unknown entry types are **refused**. GNU sparse entries
   are refused by both the lister and extractor. A PAX global header (the
   first record `git archive` writes) is archive metadata: it is counted in
@@ -29405,18 +29758,32 @@ For artifacts that people unpack with stock tools, use `codec:"gzip"`
   stream, including an empty input or truncated zstd header) raises the
   structured code `ARCHIVE_STREAM_CORRUPT`. Match the code
   in the optional second `catch` binding, not the message text.
-- Symlink targets must be contained (no absolute, no `..`). Nothing is
-  ever extracted *through* a symlink the archive created. Hardlinks may
-  only target an earlier **regular file** (hardlink-to-hardlink is
-  refused).
-- `numeric_owner` (default true) restores uid/gid through the entry's
-  descriptor, never following a link. Non-root callers get the capability
-  limit silently (the owner is skipped) rather than an error. Any other
-  owner failure (an unmapped uid in a user namespace, a root-squashing
-  filesystem) is listed in the receipt's `warnings`. When an entry's owner
-  was not applied, its setuid/setgid bits and `security.capability` are
-  dropped (also listed in `warnings`): a special bit is only ever kept on
-  the owner the archive named. Mode and mtime failures raise.
+- Symlink targets must be relative and stay inside `dest`, judged from the
+  link's own directory: `demo/lib/alias -> ../bin/demo` is fine,
+  `demo/x -> ../../y` escapes and is refused. `..` may only lead the target
+  (`../../a/b`), never follow a name (`a/../b` is refused): a `..` applied to
+  a directory that is really a symlink would climb from wherever that link
+  points. A target may end at another symlink, but never pass through one,
+  in either order: a link whose target walks through an existing symlink is
+  refused, and so is a symlink created where an earlier link's target walks.
+  `tar_pack` applies the same rules, so a tree it packs always unpacks.
+  A leading `./` and interior `.` components are dropped from the written
+  target; a target of only `.` is written as `.`. Nothing is ever extracted
+  *through* a symlink the archive created. Hardlinks may only target an
+  earlier **regular file** (hardlink-to-hardlink is refused).
+- `numeric_owner` restores uid/gid through the entry's descriptor, never
+  following a link. It defaults to **true for root and false for everyone
+  else**, as GNU tar does (`--same-owner` / `--no-same-owner`): an ordinary
+  user's files keep their own uid and gid, because a non-root chown could
+  still hand a file to any group the caller belongs to, and the archive
+  should not choose which. With `numeric_owner:true`, a non-root caller gets
+  the capability limit silently (the owner is skipped) rather than an
+  error. Any other owner failure (an unmapped uid in a user namespace, a
+  root-squashing filesystem) is listed in the receipt's `warnings`. When an
+  entry does not end up with the owner the archive named (not restored, or
+  restoring it failed), its setuid/setgid bits and `security.capability`
+  are dropped (also listed in `warnings`): a special bit is only ever kept
+  on the owner the archive named. Mode and mtime failures raise.
 - Modes are restored as the archive gives them, as GNU tar does for root:
   a `0777` directory or `0666` file stays world-writable. Unpack untrusted
   archives into a tree whose modes you then check, or repack them.
@@ -29433,7 +29800,14 @@ For artifacts that people unpack with stock tools, use `codec:"gzip"`
   xattr names and values held for the whole archive until the post-pass
   applies them; one archive of many small records cannot exhaust memory.
 - Directory and symlink metadata (mode, mtime, owner) is applied in a
-  children-first post-pass, so directory mtimes stick.
+  children-first post-pass, so directory mtimes stick. A `./` root entry's
+  metadata is applied after the commit, through the descriptor of what is
+  now `dest`: until then the staging directory stays the caller's own and
+  `0700`, so an archive-named owner can never rename it in a sticky parent,
+  and a restrictive root mode cannot lock the caller out of the post-pass.
+  The tree is already in place by then, so a failure there is a `warnings`
+  entry rather than an error. When several `./` entries appear, the last
+  one wins.
 - Limits: `max_entries` (200k, counting both members and every parent
   directory created implicitly for a member whose directory the archive
   does not list; the receipt's `implicit_dirs` reports those),
@@ -32826,7 +33200,7 @@ the predecessor repository at revision
 
 > Mirrored from [`libs/mix/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/libs/mix/CHANGELOG.md), where releases update it. The component's page is [mix](README.md). This page describes the current `main` branch of MixOS.
 
-## Unreleased
+## 0.117.0 — 2026-10-21
 
 ### Added
 
@@ -32834,6 +33208,25 @@ the predecessor repository at revision
   `name`, `file` and `line`, including nested and duplicate definitions but
   excluding quoted and remote source. `mix lint --json` and `--data` expose
   this list in schema 3; every existing key and diagnostic retains its meaning.
+- `mix lint` reads in-file pragmas: `-- lint: globals a, b` declares
+  injected names, `-- lint: ignore CODE` suppresses CODE on the next line
+  holding code (or on its own line when written after code) and
+  `-- lint: ignore-file CODE` suppresses it file-wide. A bare or unknown
+  pragma is MIX-E1601; a suppression that matches nothing is the note
+  MIX-D3019. An `ssh_mix` body reads its own pragmas.
+- MIX-W2312: a bareword `null`, `None`, `undefined`, `NULL` or `nullptr`
+  used as a value is the string "null"; the warning carries a quick fix to
+  `nil` where the word is surely a value. `mix lint --fix` applies quick
+  fixes; `--json` reports each as `fix`. `Diagnostic` gains a `fix` field.
+- MIX-W2313: a function named after one of the `mix` binary's shell
+  extensions (`ai`, `ai_diagnose`, `context`). Lint now knows those
+  extensions (`MIX_SHELL_EXTENSIONS`, `AnalyzerConfig::extensions`), so
+  calling one is no longer MIX-E1102.
+- MIX-W2314 / MIX-W2315: member calls into a module bound once to a literal
+  `require()` path are checked against its exports, for arity and for a
+  missing name. Warnings in this release, while the check is new.
+- The parser names the fix for `let i = 0`, `var`/`const`, and a bareword
+  `i = …` ("Mix has no `let`: write `$i = …`").
 - Add the `archive` feature with the `tar_list`, `tar_unpack` and `tar_pack`
   builtins. Archives use zstd (default), gzip or no codec. `tar_unpack`
   validates every member, extracts into a staging directory and renames it
@@ -32882,9 +33275,51 @@ the predecessor repository at revision
   source no longer re-derives the grammar. Source that does not lex raises
   `MIX_SOURCE_LEX` with `details {line, col}`. Backed by the new
   `Lexer::source_tokens`. See `mix man syntax`.
+- `fsync(path[, {recursive}])` makes a file, a directory (its entries, after a
+  `rename` or `remove`) or a whole tree durable, without `sync -f`'s flush of
+  the whole filesystem. It returns the number of inodes synced; a failure
+  raises `FSYNC_FAILED` naming the path.
+- `dns_query(name, type[, {server, port, timeout, tcp, recurse}])` asks one
+  DNS server one question and returns the rcode, the `aa`/`ra`/`tc` flags and
+  every section with TTLs. Timeouts and unreachable servers come back as
+  `{ok: false, error_code}`. It is the new `dns` feature (hickory-proto, the
+  version mail-auth already uses); the `mix` binary turns it on.
+- `walk(dir, {strict: true})` raises `WALK_UNREADABLE`, naming the first
+  directory it cannot read or entry it cannot stat, instead of skipping it.
+- `chown(path, uid, gid, {follow_symlinks: false})` changes a symlink itself
+  (`lchown`).
+- `flock` and `fcntl_lock` take `create: false`, which refuses a missing lock
+  file with `LOCK_FILE_MISSING` and creates nothing.
+- `tar_unpack` and `tar_list` accept GNU tar's `./` member prefix (`tar -C
+  dir .`); a `./` directory entry's metadata is applied to `dest`. Relative
+  symlinks may climb with leading `..` while they stay inside `dest`, judged
+  from the link's own directory (`demo/lib/alias -> ../bin/demo`). Gzip input
+  may have several members, as `pigz` and `cat a.gz b.gz` write.
+- `mix man sqlopen` documents the SQLite builtins and their modes.
 
 ### Changed
 
+- `tar_unpack`'s `numeric_owner` now defaults to `true` only for root, as GNU
+  tar does. An ordinary user's unpacked files keep their own uid and gid; a
+  non-root chown could still give a file any of the caller's groups. Pass
+  `numeric_owner: true` for the old behaviour. A setuid/setgid bit or
+  capability is now kept only where the file ends up with the owner the
+  archive named, also when owners are not restored.
+- A symlink target may no longer pass through another symlink the archive
+  creates, in either order, and `..` may only lead a target: `a/../b` is
+  refused.
+- A shared `flock` or `fcntl_lock` opens an existing file read-only, so it no
+  longer needs write access to the lock file.
+- `sqlopen` raises `OPTION_INVALID` for a mode other than `"ro"`, `"rw"` or
+  `"rwc"` (`"rwc"` is new: read-write, creating the file, the same as `"rw"`).
+  An unknown mode used to open read-only, so `"rwc"` could not create a
+  database. A read-only open of a missing file raises `SQL_NO_DATABASE`
+  naming `"rwc"`.
+- A member call `$m.name(...)` on a map holding a function member calls
+  that member in every mode, `--serve` included; an extension (the shell's
+  `context()`) no longer wins there.
+- MIX-W2304 names the result shape and suggests the field a bash, Python or
+  Node spelling means (`code`, `rc`, `status` → `exit_code`).
 - The default remote mix binary is now `/opt/mixos/bin/mix` (was the legacy
   install path's mix). It applies to `ssh_mix`, `ssh_mix_many`, `ssh_exec`,
   `ssh_run`'s `env_transport: "mix"` and `send_mail`'s `host` hop whenever
@@ -32893,10 +33328,24 @@ the predecessor repository at revision
 
 ### Fixed
 
+- A `send` after a failed Bus connection retries within its timeout,
+  re-reading `MIXOS_NODED_URL` and node configuration. Without `timeout=`,
+  each lane's connect is bounded by 5 seconds (up to 10 seconds if both the
+  verified Unix and anonymous TCP lanes stall). A stale probe cannot
+  replace a newer connection, and reconnecting does not hold the state lock.
+- SIGINT still ends a non-interactive evaluation when a `catch` keeps
+  computing: after a cleanup grace the interrupt becomes standing. Nested
+  catches and `finally` control flow cannot swallow it. A served citizen
+  keeps its graceful deregistration and exit status 0.
+- `read_file`, `write_file` and `append_file` yield while waiting on a FIFO,
+  so served citizens still answer other verbs and `QUIT`. Reads honour the
+  string limit, and the FIFO path keeps the normal builtin arity rules.
 - `fs_watch` recovery (after a lost or overflowed event stream) re-arms each
   directory watch in place instead of unwatching and watching it again, so a
   change that lands during the repair (the close-write of a save racing the
   overflow) is still reported.
+- `mix lint` no longer reports MIX-E1101 for a variable assigned in a piped
+  statement (`$v = 1 | cat`).
 - `mix lint` MIX-W2307 (send result never checked) now counts a status read
   inside an `if` condition, a map value, a nested call argument or a string
   interpolation. A correctly checked send no longer warns.

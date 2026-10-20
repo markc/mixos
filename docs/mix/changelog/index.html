@@ -208,7 +208,7 @@
                 <div class="panel-title">On this page</div>
                 <div class="panel-content">
                     <nav id="toc-nav">
-                        <a href="#unreleased">Unreleased</a>
+                        <a href="#01170--2026-10-21">0.117.0 — 2026-10-21</a>
                         <a href="#added" class="toc-h3">Added</a>
                         <a href="#changed" class="toc-h3">Changed</a>
                         <a href="#fixed" class="toc-h3">Fixed</a>
@@ -263,13 +263,32 @@
 <blockquote>
 <p>Mirrored from <a href="https://github.com/markc/mixos/blob/main/libs/mix/CHANGELOG.md"><code>libs/mix/CHANGELOG.md</code></a>, where releases update it. The component's page is <a href="/mix/">mix</a>. This page describes the current <code>main</code> branch of MixOS.</p>
 </blockquote>
-<h2 id="unreleased">Unreleased</h2>
+<h2 id="01170--2026-10-21">0.117.0 — 2026-10-21</h2>
 <h3 id="added">Added</h3>
 <ul>
 <li><code>analyzer::Analysis.functions</code> reports named function declarations with
 <code>name</code>, <code>file</code> and <code>line</code>, including nested and duplicate definitions but
 excluding quoted and remote source. <code>mix lint --json</code> and <code>--data</code> expose
 this list in schema 3; every existing key and diagnostic retains its meaning.</li>
+<li><code>mix lint</code> reads in-file pragmas: <code>-- lint: globals a, b</code> declares
+injected names, <code>-- lint: ignore CODE</code> suppresses CODE on the next line
+holding code (or on its own line when written after code) and
+<code>-- lint: ignore-file CODE</code> suppresses it file-wide. A bare or unknown
+pragma is MIX-E1601; a suppression that matches nothing is the note
+MIX-D3019. An <code>ssh_mix</code> body reads its own pragmas.</li>
+<li>MIX-W2312: a bareword <code>null</code>, <code>None</code>, <code>undefined</code>, <code>NULL</code> or <code>nullptr</code>
+used as a value is the string "null"; the warning carries a quick fix to
+<code>nil</code> where the word is surely a value. <code>mix lint --fix</code> applies quick
+fixes; <code>--json</code> reports each as <code>fix</code>. <code>Diagnostic</code> gains a <code>fix</code> field.</li>
+<li>MIX-W2313: a function named after one of the <code>mix</code> binary's shell
+extensions (<code>ai</code>, <code>ai_diagnose</code>, <code>context</code>). Lint now knows those
+extensions (<code>MIX_SHELL_EXTENSIONS</code>, <code>AnalyzerConfig::extensions</code>), so
+calling one is no longer MIX-E1102.</li>
+<li>MIX-W2314 / MIX-W2315: member calls into a module bound once to a literal
+<code>require()</code> path are checked against its exports, for arity and for a
+missing name. Warnings in this release, while the check is new.</li>
+<li>The parser names the fix for <code>let i = 0</code>, <code>var</code>/<code>const</code>, and a bareword
+<code>i = …</code> ("Mix has no <code>let</code>: write <code>$i = …</code>").</li>
 <li>Add the <code>archive</code> feature with the <code>tar_list</code>, <code>tar_unpack</code> and <code>tar_pack</code>
 builtins. Archives use zstd (default), gzip or no codec. <code>tar_unpack</code>
 validates every member, extracts into a staging directory and renames it
@@ -318,9 +337,50 @@ token and, on request, the <code>#</code> and <code>--</code> comments. A tool t
 source no longer re-derives the grammar. Source that does not lex raises
 <code>MIX_SOURCE_LEX</code> with <code>details {line, col}</code>. Backed by the new
 <code>Lexer::source_tokens</code>. See <code>mix man syntax</code>.</li>
+<li><code>fsync(path[, {recursive}])</code> makes a file, a directory (its entries, after a
+<code>rename</code> or <code>remove</code>) or a whole tree durable, without <code>sync -f</code>'s flush of
+the whole filesystem. It returns the number of inodes synced; a failure
+raises <code>FSYNC_FAILED</code> naming the path.</li>
+<li><code>dns_query(name, type[, {server, port, timeout, tcp, recurse}])</code> asks one
+DNS server one question and returns the rcode, the <code>aa</code>/<code>ra</code>/<code>tc</code> flags and
+every section with TTLs. Timeouts and unreachable servers come back as
+<code>{ok: false, error_code}</code>. It is the new <code>dns</code> feature (hickory-proto, the
+version mail-auth already uses); the <code>mix</code> binary turns it on.</li>
+<li><code>walk(dir, {strict: true})</code> raises <code>WALK_UNREADABLE</code>, naming the first
+directory it cannot read or entry it cannot stat, instead of skipping it.</li>
+<li><code>chown(path, uid, gid, {follow_symlinks: false})</code> changes a symlink itself
+(<code>lchown</code>).</li>
+<li><code>flock</code> and <code>fcntl_lock</code> take <code>create: false</code>, which refuses a missing lock
+file with <code>LOCK_FILE_MISSING</code> and creates nothing.</li>
+<li><code>tar_unpack</code> and <code>tar_list</code> accept GNU tar's <code>./</code> member prefix (<code>tar -C dir .</code>); a <code>./</code> directory entry's metadata is applied to <code>dest</code>. Relative
+symlinks may climb with leading <code>..</code> while they stay inside <code>dest</code>, judged
+from the link's own directory (<code>demo/lib/alias -&gt; ../bin/demo</code>). Gzip input
+may have several members, as <code>pigz</code> and <code>cat a.gz b.gz</code> write.</li>
+<li><code>mix man sqlopen</code> documents the SQLite builtins and their modes.</li>
 </ul>
 <h3 id="changed">Changed</h3>
 <ul>
+<li><code>tar_unpack</code>'s <code>numeric_owner</code> now defaults to <code>true</code> only for root, as GNU
+tar does. An ordinary user's unpacked files keep their own uid and gid; a
+non-root chown could still give a file any of the caller's groups. Pass
+<code>numeric_owner: true</code> for the old behaviour. A setuid/setgid bit or
+capability is now kept only where the file ends up with the owner the
+archive named, also when owners are not restored.</li>
+<li>A symlink target may no longer pass through another symlink the archive
+creates, in either order, and <code>..</code> may only lead a target: <code>a/../b</code> is
+refused.</li>
+<li>A shared <code>flock</code> or <code>fcntl_lock</code> opens an existing file read-only, so it no
+longer needs write access to the lock file.</li>
+<li><code>sqlopen</code> raises <code>OPTION_INVALID</code> for a mode other than <code>"ro"</code>, <code>"rw"</code> or
+<code>"rwc"</code> (<code>"rwc"</code> is new: read-write, creating the file, the same as <code>"rw"</code>).
+An unknown mode used to open read-only, so <code>"rwc"</code> could not create a
+database. A read-only open of a missing file raises <code>SQL_NO_DATABASE</code>
+naming <code>"rwc"</code>.</li>
+<li>A member call <code>$m.name(...)</code> on a map holding a function member calls
+that member in every mode, <code>--serve</code> included; an extension (the shell's
+<code>context()</code>) no longer wins there.</li>
+<li>MIX-W2304 names the result shape and suggests the field a bash, Python or
+Node spelling means (<code>code</code>, <code>rc</code>, <code>status</code> → <code>exit_code</code>).</li>
 <li>The default remote mix binary is now <code>/opt/mixos/bin/mix</code> (was the legacy
 install path's mix). It applies to <code>ssh_mix</code>, <code>ssh_mix_many</code>, <code>ssh_exec</code>,
 <code>ssh_run</code>'s <code>env_transport: "mix"</code> and <code>send_mail</code>'s <code>host</code> hop whenever
@@ -329,10 +389,24 @@ the old install path, pass <code>mix_bin</code> or set <code>MIX_REMOTE_BIN</cod
 </ul>
 <h3 id="fixed">Fixed</h3>
 <ul>
+<li>A <code>send</code> after a failed Bus connection retries within its timeout,
+re-reading <code>MIXOS_NODED_URL</code> and node configuration. Without <code>timeout=</code>,
+each lane's connect is bounded by 5 seconds (up to 10 seconds if both the
+verified Unix and anonymous TCP lanes stall). A stale probe cannot
+replace a newer connection, and reconnecting does not hold the state lock.</li>
+<li>SIGINT still ends a non-interactive evaluation when a <code>catch</code> keeps
+computing: after a cleanup grace the interrupt becomes standing. Nested
+catches and <code>finally</code> control flow cannot swallow it. A served citizen
+keeps its graceful deregistration and exit status 0.</li>
+<li><code>read_file</code>, <code>write_file</code> and <code>append_file</code> yield while waiting on a FIFO,
+so served citizens still answer other verbs and <code>QUIT</code>. Reads honour the
+string limit, and the FIFO path keeps the normal builtin arity rules.</li>
 <li><code>fs_watch</code> recovery (after a lost or overflowed event stream) re-arms each
 directory watch in place instead of unwatching and watching it again, so a
 change that lands during the repair (the close-write of a save racing the
 overflow) is still reported.</li>
+<li><code>mix lint</code> no longer reports MIX-E1101 for a variable assigned in a piped
+statement (<code>$v = 1 | cat</code>).</li>
 <li><code>mix lint</code> MIX-W2307 (send result never checked) now counts a status read
 inside an <code>if</code> condition, a map value, a nested call argument or a string
 interpolation. A correctly checked send no longer warns.</li>

@@ -268,9 +268,9 @@ builtin_table! {
     ("glob", CapabilityClass::FsRead,            "io",      "List files matching a glob pattern (supports ** globstar in v0.2.1)", contract!((pattern: string) -> list(string); failure[raises])),
     ("ls", CapabilityClass::FsRead,              "io",      "List directory entries", contract!((path?: string) -> list(string); failure[raises])),
     ("mkdir", CapabilityClass::FsWrite,           "io",      "Create directory: mkdir(path[, {parents}]). parents defaults to true (create_dir_all). {parents: false} creates only the final component and fails if the parent is missing — the form to use when the parent was placed deliberately and re-creating it would hide its removal (v0.42.0)", contract!((path: string, opts?: any_of(map, nil)) -> nil; failure[raises])),
-    ("flock", CapabilityClass::FsWrite,           "io",      "Take a process-held advisory file lock: flock(path[, {shared, wait}]) -> bool. Exclusive and non-blocking by default; contention returns false, genuine filesystem errors raise. wait is seconds (0 = do not wait). Repeated acquisition of the same canonical path by this process is idempotent-true (v0.43.0)", contract!((path: string, opts?: any_of(map, nil)) -> bool; failure[raises])),
+    ("flock", CapabilityClass::FsWrite,           "io",      "Take a process-held advisory file lock: flock(path[, {shared, wait, create}]) -> bool. Exclusive and non-blocking by default; contention returns false, genuine filesystem errors raise. wait is seconds (0 = do not wait). A shared lock opens an existing file read-only, so it needs no write access; an exclusive one opens read-write. A missing file is created (0644) unless create:false, which raises LOCK_FILE_MISSING (v0.117.0). Repeated acquisition of the same canonical path by this process is idempotent-true (v0.43.0)", contract!((path: string, opts?: any_of(map, nil)) -> bool; failure[raises])),
     ("funlock", CapabilityClass::FsWrite,         "io",      "Release and close this process's advisory lock for path. Returns true when held, false when not held (v0.43.0)", contract!((path: string) -> bool; failure[raises])),
-    ("fcntl_lock", CapabilityClass::FsWrite,      "io",      "Take a POSIX record lock over the whole file: fcntl_lock(path[, {shared, wait}]) -> bool — the fcntl(2) lock namespace C daemons use for pidfiles/lockfiles, which flock(2) locks never see (Linux keeps the two families separate). Contract-identical to flock: exclusive + non-blocking default, contention false, real errors raise, per-process idempotent-true by canonical path. Implemented as open-file-description locks (F_OFD_SETLK): they conflict with other processes' traditional fcntl records, and survive this process opening/closing the same path elsewhere — a read_file of the locked path cannot drop them (v0.71.0)", contract!((path: string, opts?: any_of(map, nil)) -> bool; failure[raises])),
+    ("fcntl_lock", CapabilityClass::FsWrite,      "io",      "Take a POSIX record lock over the whole file: fcntl_lock(path[, {shared, wait, create}]) -> bool — the fcntl(2) lock namespace C daemons use for pidfiles/lockfiles, which flock(2) locks never see (Linux keeps the two families separate). Contract-identical to flock: exclusive + non-blocking default, contention false, real errors raise, shared opens an existing file read-only, create:false refuses a missing one, per-process idempotent-true by canonical path. Implemented as open-file-description locks (F_OFD_SETLK): they conflict with other processes' traditional fcntl records, and survive this process opening/closing the same path elsewhere — a read_file of the locked path cannot drop them (v0.71.0)", contract!((path: string, opts?: any_of(map, nil)) -> bool; failure[raises])),
     ("fcntl_unlock", CapabilityClass::FsWrite,    "io",      "Release and close this process's POSIX record lock for path. true when held, false when not (v0.71.0)", contract!((path: string) -> bool; failure[raises])),
     ("copy", CapabilityClass::FsWrite,            "io",      "Copy a single file: copy(src, dst). Overwrites dst; preserves the source permission bits. Use copy_tree for a directory (v0.22.0).", contract!((src: string, dst: string) -> nil; failure[raises])),
     ("copy_tree", CapabilityClass::FsWrite,       "io",      "Recursively copy a directory: copy_tree(src, dst). Creates dst, copies files (perms preserved) and symlinks (as symlinks); merges into an existing dst (v0.22.0).", contract!((src: string, dst: string) -> nil; failure[raises])),
@@ -280,7 +280,8 @@ builtin_table! {
     ("remove", CapabilityClass::FsWrite,          "io",      "Remove a single file/symlink: remove(path). No-op if already gone (rm -f). Errors if path is a directory — use remove_dir (v0.22.0).", contract!((path: string) -> nil; failure[raises])),
     ("remove_dir", CapabilityClass::FsWrite,      "io",      "Recursively remove a directory and its contents: remove_dir(path) (rm -rf). No-op if already gone (v0.22.0).", contract!((path: string) -> nil; failure[raises])),
     ("chmod", CapabilityClass::FsWrite,           "io",      "Set file/directory permissions. chmod(path, 0o755) — mode as a VALUE (use an octal literal) or an octal string \"0755\" (v0.11.0: a number is now the value, not its decimal digits read as octal)", contract!((path: string, mode: any_of(number, string)) -> nil; failure[raises])),
-    ("chown", CapabilityClass::FsWrite,           "io",      "Set file owner/group by numeric uid/gid: chown(path, 1000, 1000). Follows symlinks. Numeric only (no name resolution) (v0.17.1)", contract!((path: string, uid: number, gid: number) -> nil; failure[raises])),
+    ("fsync", CapabilityClass::FsWrite,           "io",      "Make a file, a directory or a whole tree durable: fsync(path[, {recursive}]) -> number of inodes synced. A file is fsync(2)ed; a directory is opened and fsynced, which persists the entries created, renamed or removed in it; recursive:true syncs every regular file and directory beneath (children first, symlinks never followed, their entries persisted by their directory), then the directory itself. The path itself follows a symlink. Failures raise FSYNC_FAILED with details.path naming what could not be synced (v0.117.0)", contract!((path: string, opts?: any_of(map("fsync_options", {recursive: bool}), nil)) -> number; failure[raises])),
+    ("chown", CapabilityClass::FsWrite,           "io",      "Set file owner/group by numeric uid/gid: chown(path, 1000, 1000). Follows symlinks by default; chown(path, uid, gid, {follow_symlinks:false}) changes a symlink itself (lchown, v0.117.0). Numeric only (no name resolution) (v0.17.1)", contract!((path: string, uid: number, gid: number, opts?: any_of(map("chown_options", {follow_symlinks: bool}), nil)) -> nil; failure[raises])),
     ("mime_type", CapabilityClass::FsRead,       "io",      "The type of a file from the freedesktop shared-mime-info database, as the desktop names it (requires mime feature): mime_type(path[, {content}]) -> {mime, by, uncertain, exists, parents}. Globs first, magic to settle a missing or ambiguous glob, then a text check (the GLib order). by is stat|glob|magic|content|fallback; parents lists every supertype nearest first, ending text/plain (for text/*) and application/octet-stream. {content:false} never opens the file. A missing path is typed by name with exists:false; an unreadable file by name, uncertain. Follows symlinks (v0.113.0)", contract!((path: string, opts?: any_of(map("mime_type_options", {content: bool}), nil)) -> map("mime_type", {mime: string, by: string, uncertain: bool, exists: bool, parents: list(string)}); failure[raises])),
     ("stat", CapabilityClass::FsRead,            "io",      "Stat a path → map {uid, gid, nlink, size, mode, perm, ino, dev, ctime, mtime, atime, ctime_nsec, mtime_nsec, atime_nsec, is_file, is_dir, is_symlink}. ino/dev are STRINGS (u64, exceed f64 exact range); mode is full st_mode, perm = mode & 0o7777; *time are epoch seconds (f64) and *_nsec the sub-second part 0..=999999999 (v0.44.0) — compare the PAIR to see a same-second rewrite. Follows symlinks by default; stat(path, {follow_symlinks:false}) is lstat (v0.17.1)", contract!((path: string, opts?: any_of(map("stat_options", {follow_symlinks: bool}), nil)) -> map("stat", {uid: number, gid: number, nlink: number, size: number, mode: number, perm: number, ino: string, dev: string, ctime: number, mtime: number, atime: number, ctime_nsec: number, mtime_nsec: number, atime_nsec: number, is_file: bool, is_dir: bool, is_symlink: bool}); failure[raises])),
     ("line_count", CapabilityClass::FsRead,      "io",      "Count lines in a file by streaming — never loads the whole file (byte-oriented, so it works on non-UTF-8 files too) (streams since v0.28.1)", contract!((path: string) -> number; failure[raises])),
@@ -291,15 +292,15 @@ builtin_table! {
     ("extname", CapabilityClass::Pure,         "io",      "Return the file extension (including the leading dot)", contract!((path: string) -> string)),
     ("path_join", CapabilityClass::Pure,       "io",      "Join path components with the native separator", contract!((a: string, b: string) -> string)),
     ("path_parts", CapabilityClass::Pure,      "io",      "Decompose a path into {dir, base, stem, ext} (v0.2.1)", contract!((path: string) -> map("path_parts", {dir: string, base: string, stem: string, ext: string}))),
-    ("walk", CapabilityClass::FsRead,            "io",      "Recursive directory walk: walk(dir, {max_depth, follow_symlinks, include_dirs}); invalid max_depth raises instead of becoming unlimited (strict since v0.55.0)", contract!((dir: string, opts?: any_of(map("walk_options", {max_depth: number, follow_symlinks: bool, include_dirs: bool}), nil)) -> list(string); failure[raises])),
+    ("walk", CapabilityClass::FsRead,            "io",      "Recursive directory walk: walk(dir, {max_depth, follow_symlinks, include_dirs, strict}); invalid max_depth raises instead of becoming unlimited (strict since v0.55.0). Unreadable directories and unstat-able entries are skipped unless strict: true, which raises WALK_UNREADABLE (details.path names the first one) so a gate can tell no matches from could not look", contract!((dir: string, opts?: any_of(map("walk_options", {max_depth: number, follow_symlinks: bool, include_dirs: bool, strict: bool}), nil)) -> list(string); failure[raises])),
     ("readline", CapabilityClass::Env,        "io",      "Read a line from stdin (optional prompt argument)", contract!((prompt?: string) -> string; effects[blocking])),
     ("read_stdin", CapabilityClass::Env,      "io",      "Read all of stdin to EOF as a string (for pipe/hook input). STRICT UTF-8 — binary stdin raises; use read_stdin_bytes for that", contract!(() -> string; effects[blocking])),
     ("read_stdin_bytes", CapabilityClass::Env, "io",     "Read all of stdin to EOF as raw bytes — the binary twin of read_stdin, which refuses invalid UTF-8. Optional arg caps the read: read_stdin_bytes(8192) reads at most 8192 bytes, the same cap contract as read_file_bytes (v0.65.0)", contract!((max?: any_of(number, nil)) -> bytes; effects[blocking]; failure[raises])),
     ("tty_mode", CapabilityClass::Env,          "io",      "Put the controlling terminal into raw or cooked mode: tty_mode(\"raw\") disables canonical buffering, echo and signal generation (a lone ESC arrives as one byte — the keystroke-recorder primitive), tty_mode(\"cooked\") restores the saved termios. The original termios is restored on process exit if the caller never returns to cooked (v0.103.9)", contract!((mode: string) -> nil; failure[raises])),
     ("stdin_copy", CapabilityClass::Env,        "io",      "Copy stdin to a file, flushing every chunk, until EOF — the incremental twin of read_stdin_bytes, so a recorder killed mid-stream keeps the bytes it already read. Pair with tty_mode(\"raw\") to capture keystrokes (v0.103.9)", contract!((path: string) -> nil; effects[blocking]; failure[raises])),
-    ("sqlopen", CapabilityClass::FsWrite,         "io",      "Open a SQLite database and return a handle", contract!((path: string, mode?: string) -> number; failure[raises])),
+    ("sqlopen", CapabilityClass::FsWrite,         "io",      "Open a SQLite database and return a handle: sqlopen(path[, mode]). mode \"ro\" (default) is read-only and the file must exist (SQL_NO_DATABASE otherwise); \"rw\" or \"rwc\" opens read-write and creates a missing file, in WAL mode with a 5 s busy timeout. \":memory:\" is a private in-memory database. Any other mode raises. See mix man sqlopen", contract!((path: string, mode?: string) -> number; failure[raises])),
     ("tar_list", CapabilityClass::FsRead,         "io",      "List a tar archive (zstd default, gzip or none codec) WITHOUT extracting: streaming entries {name,size,mode,uid,gid,kind,mtime}; the compressed stream is drained to EOF so the frame checksum is verified", contract!((path: string, opts?: map("tar_list_options", {codec: string, max_stream_bytes: number, max_name: number})) -> list(map); failure[raises])),
-    ("tar_unpack", CapabilityClass::FsWrite,      "io",      "Safely unpack a tar archive into dest (which must not exist, in a parent no other user can write unless sticky): every member is validated (no absolute/.. paths, no device/fifo, symlink targets contained, no extraction through a created symlink, hardlinks only to earlier files), entries land in a private staging dir held by descriptor and renamed into place (never replacing dest) only after the stream verifies to EOF — non-zero data after the tar end is refused (single frame); PAX global headers count as metadata. opts: codec (zstd default), numeric_owner, xattrs (default true: user.* only), keep_special_bits (default false strips suid/sgid and security.capability), privileged_xattrs (default false: trusted.*, ACLs, other security.*), max_entries, max_bytes, max_name, max_stream_bytes (bounds the decoded stream, longname/PAX buffers included), max_xattr_bytes (16 MiB). Unapplied owners are listed in the receipt's warnings, and their special bits dropped", contract!((path: string, dest: string, opts?: map("tar_unpack_options", {codec: string, numeric_owner: bool, xattrs: bool, keep_special_bits: bool, privileged_xattrs: bool, max_entries: number, max_bytes: number, max_name: number, max_stream_bytes: number, max_xattr_bytes: number})) -> map("tar_receipt"); failure[raises])),
+    ("tar_unpack", CapabilityClass::FsWrite,      "io",      "Safely unpack a tar archive into dest (which must not exist, in a parent no other user can write unless sticky): every member is validated (no absolute/.. paths, a leading ./ accepted, no device/fifo, symlink targets contained relative to the link's own directory and never through another symlink, no extraction through a created symlink, hardlinks only to earlier files), entries land in a private staging dir held by descriptor and renamed into place (never replacing dest) only after the stream verifies to EOF — non-zero data after the tar end is refused (one tar; one zstd frame, gzip members concatenate); PAX global headers count as metadata. opts: codec (zstd default), numeric_owner (default true for root only), xattrs (default true: user.* only), keep_special_bits (default false strips suid/sgid and security.capability), privileged_xattrs (default false: trusted.*, ACLs, other security.*), max_entries, max_bytes, max_name, max_stream_bytes (bounds the decoded stream, longname/PAX buffers included), max_xattr_bytes (16 MiB). Unapplied owners are listed in the receipt's warnings, and their special bits dropped", contract!((path: string, dest: string, opts?: map("tar_unpack_options", {codec: string, numeric_owner: bool, xattrs: bool, keep_special_bits: bool, privileged_xattrs: bool, max_entries: number, max_bytes: number, max_name: number, max_stream_bytes: number, max_xattr_bytes: number})) -> map("tar_receipt"); failure[raises])),
     ("tar_pack", CapabilityClass::FsWrite,        "io",      "Pack a source DIRECTORY into a new archive at path (deterministic sorted walk, numeric owner/mtime/mode, security.capability captured as a SCHILY.xattr PAX record with keep_special_bits; refuses device/fifo members, an output inside the source, and a file that changes size while packed). opts: codec (zstd default), level (zstd 1..=22 default 7, gzip clamps to 9), keep_special_bits (default false strips suid/sgid)", contract!((source: string, path: string, opts?: map("tar_pack_options", {codec: string, level: number, keep_special_bits: bool})) -> map("tar_receipt"); failure[raises])),
     ("sqlexec", CapabilityClass::FsWrite,         "io",      "Execute SQL on a SQLite handle, return result rows", contract!((handle: number, sql: string, params?: any) -> any_of(list, map); failure[raises])),
     ("sqlclose", CapabilityClass::FsWrite,        "io",      "Close a SQLite database handle", contract!((handle: number) -> nil; failure[raises])),
@@ -408,6 +409,7 @@ builtin_table! {
     ("buffer_get", CapabilityClass::Pure,      "buffer",  "Byte at 0-based index i as a number 0-255, or nil if out of range (v0.26.0)", contract!((buf: buffer, i: number) -> any_of(number, nil))),
     ("buffer_set", CapabilityClass::Pure,      "buffer",  "Write byte (0-255) at 0-based index i, in place; errors if i is out of range — grow with buffer_push first (v0.26.0)", contract!((buf: buffer, i: number, byte: number) -> nil; effects[mutates_args])),
     ("freeze", CapabilityClass::Pure,          "buffer",  "Snapshot a buffer to a value-semantic bytes (a copy of the current content) — the bridge into write_file/hash/base64/http (v0.26.0)", contract!((buf: buffer) -> bytes)),
+    ("dns_query", CapabilityClass::Network,       "system",  "Ask one DNS server one question and get the whole answer: dns_query(name, type[, {server, port, timeout, tcp, recurse}]) -> {ok, rcode, aa, ra, tc, answers, authority, additional, server, port, transport, duration_ms}; each record is {name, type, ttl, data}. type is A, AAAA, MX, TXT, SRV, NS, SOA, PTR, CNAME, CAA, ... (PTR of an IP address asks its reverse name). server defaults to the first resolv.conf nameserver, port 53, timeout 5 s, recurse true (the RD flag); tcp:true forces TCP and a truncated UDP answer is retried over TCP. The name is always fully qualified (no search list). Timeout, unreachable and malformed replies return {ok:false, error_code: DNS_TIMEOUT|DNS_UNREACHABLE|DNS_PROTOCOL|DNS_IO|DNS_SERVER, error}; bad arguments raise (v0.117.0)", contract!((name: string, type: string, opts?: any_of(map("dns_query_options", {server: string, port: number, timeout: number, tcp: bool, recurse: bool}), nil)) -> map("dns_result"); effects[must_use, blocking]; failure[returns_result])),
     ("dns_lookup", CapabilityClass::Network,      "system",  "Resolve a hostname to a list of IP address strings", contract!((host: string) -> list(string); effects[blocking]; failure[raises])),
     ("udp_send", CapabilityClass::Network,        "system",  "Send ONE UDP datagram: udp_send(host, port, payload) -> bytes sent. Payload (string/bytes/buffer) goes out verbatim; host is resolved. Not a socket API — nothing to hold or close (v0.71.0)", contract!((host: string, port: number, payload: any_of(string, bytes, buffer)) -> number; effects[blocking]; failure[raises])),
     ("udp_recv", CapabilityClass::Network,        "system",  "Receive ONE UDP datagram: udp_recv(port[, {timeout, host, max}]) -> {bytes, text, from_host, from_port}, or nil on timeout (an ordinary answer, not a fault). timeout seconds default 30, 0 = wait forever; host = bind address default 0.0.0.0; max caps the read (default 65535 = never truncates; a longer datagram truncates to max, recvfrom(2)'s own contract). text is the payload as UTF-8 or nil — bytes always carries the truth (v0.71.0)", contract!((port: number, opts?: any_of(map, nil)) -> any; effects[blocking]; failure[raises])),
@@ -651,6 +653,7 @@ pub fn call_builtin(name: &str, args: Vec<Value>) -> MixResult<Option<Value>> {
         "remove_dir" => builtin_remove_dir(args),
         "chmod" => builtin_chmod(args),
         "chown" => builtin_chown(args),
+        "fsync" => builtin_fsync(args),
         "stat" => builtin_stat(args),
         #[cfg(feature = "mime")]
         "mime_type" => builtin_mime_type(args),
@@ -935,6 +938,13 @@ pub fn call_builtin(name: &str, args: Vec<Value>) -> MixResult<Option<Value>> {
             span: None,
             msg: format!("{name}() requires the `ws` feature (tungstenite/rustls)"),
         }),
+        #[cfg(feature = "dns")]
+        "dns_query" => crate::dns::builtin_dns_query(args),
+        #[cfg(not(feature = "dns"))]
+        "dns_query" => Err(MixError::RuntimeError {
+            span: None,
+            msg: "dns_query() requires the `dns` feature (hickory-proto)".to_string(),
+        }),
         #[cfg(not(feature = "archive"))]
         name @ ("tar_list" | "tar_unpack" | "tar_pack") => Err(MixError::RuntimeError {
             span: None,
@@ -1046,6 +1056,7 @@ pub fn compiled_features() -> Vec<&'static str> {
     feat!("http");
     feat!("sqlite");
     feat!("archive");
+    feat!("dns");
     feat!("dkim");
     feat!("datastar");
     feat!("xml");
@@ -1094,6 +1105,9 @@ pub fn man_topic_for_builtin(name: &str) -> Option<&'static str> {
     ];
     if name.starts_with("tar_") {
         return Some("tar");
+    }
+    if matches!(name, "sqlopen" | "sqlexec" | "sqlclose") {
+        return Some("sqlopen");
     }
     if name.starts_with("http_") {
         return Some("http");
@@ -13480,7 +13494,11 @@ fn builtin_read_lines(args: Vec<Value>) -> MixResult<Option<Value>> {
 /// to_string instead of the old silent stringification (write_file used
 /// to stringify anything, which turned a wrong value into a silently
 /// wrong file).
-fn with_write_payload<R>(caller: &str, v: &Value, f: impl FnOnce(&[u8]) -> R) -> MixResult<R> {
+pub(crate) fn with_write_payload<R>(
+    caller: &str,
+    v: &Value,
+    f: impl FnOnce(&[u8]) -> R,
+) -> MixResult<R> {
     match v {
         Value::String(s) => Ok(f(s.as_bytes())),
         Value::Bytes(b) => Ok(f(b.as_slice())),
@@ -14044,7 +14062,8 @@ fn flock_runtime_error(msg: impl Into<String>) -> MixError {
     }
 }
 
-fn parse_flock_options(name: &str, args: &[Value]) -> MixResult<(bool, std::time::Duration)> {
+/// `(shared, wait, create)`.
+fn parse_flock_options(name: &str, args: &[Value]) -> MixResult<(bool, std::time::Duration, bool)> {
     if args.is_empty() || args.len() > 2 {
         return Err(flock_runtime_error(format!(
             "{name}() expects 1 or 2 args, got {}",
@@ -14053,24 +14072,26 @@ fn parse_flock_options(name: &str, args: &[Value]) -> MixResult<(bool, std::time
     }
 
     let mut shared = false;
+    let mut create = true;
     let mut wait_seconds = 0.0;
     if let Some(opts) = args.get(1) {
         match opts {
             Value::Nil => {}
             Value::Map(m) => {
                 for k in m.keys() {
-                    if k.as_str() != "shared" && k.as_str() != "wait" {
+                    if !matches!(k.as_str(), "shared" | "wait" | "create") {
                         return Err(flock_runtime_error(format!(
-                            "{name}(): unknown option '{k}' (supported: shared, wait)"
+                            "{name}(): unknown option '{k}' (supported: shared, wait, create)"
                         )));
                     }
                 }
-                if let Some(v) = m.get("shared") {
-                    match v {
-                        Value::Bool(b) => shared = *b,
-                        other => {
+                for (key, slot) in [("shared", &mut shared), ("create", &mut create)] {
+                    match m.get(key) {
+                        None => {}
+                        Some(Value::Bool(b)) => *slot = *b,
+                        Some(other) => {
                             return Err(flock_runtime_error(format!(
-                                "{name}(): option 'shared' must be a boolean, got {}",
+                                "{name}(): option '{key}' must be a boolean, got {}",
                                 other.type_name()
                             )));
                         }
@@ -14111,7 +14132,7 @@ fn parse_flock_options(name: &str, args: &[Value]) -> MixResult<(bool, std::time
             "{name}(): option 'wait' must be a finite non-negative number, got {wait_seconds}"
         ))
     })?;
-    Ok((shared, wait))
+    Ok((shared, wait, create))
 }
 
 fn try_flock_fd(
@@ -14156,10 +14177,66 @@ fn try_flock_fd(
 /// Open/create first, then canonicalise. Canonicalising before `open` cannot
 /// resolve an absent final component, while deriving a key from the parent gets
 /// a final symlink wrong: `open` follows it and locks the target file.
-fn builtin_flock(args: Vec<Value>) -> MixResult<Option<Value>> {
+/// Open the file a lock is taken on. A shared lock needs only read access,
+/// so an existing file is opened read-only: a diagnostic can share-lock a
+/// root-owned lock file, or one on a read-only filesystem. An exclusive
+/// lock opens read-write. A missing file is created (0644) unless
+/// `create: false`, which refuses it with `LOCK_FILE_MISSING`.
+fn open_lock_file(name: &str, path: &str, shared: bool, create: bool) -> MixResult<std::fs::File> {
     use std::os::unix::fs::OpenOptionsExt;
+    let missing = || {
+        MixError::structured(
+            "LOCK_FILE_MISSING",
+            format!("{name} '{path}': no such lock file, and create is false"),
+        )
+    };
+    if shared {
+        // O_NONBLOCK: a read-only open of a fifo with no writer would block
+        // before any lock is tried. Only a regular file is a lock file.
+        match std::fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_NONBLOCK)
+            .open(path)
+        {
+            // A directory opens read-only; refuse it as the read-write
+            // open of an exclusive lock does (EISDIR).
+            Ok(file) if file.metadata().is_ok_and(|m| m.is_dir()) => {
+                return Err(flock_runtime_error(format!(
+                    "{name} '{path}': {}",
+                    std::io::Error::from_raw_os_error(libc::EISDIR)
+                )));
+            }
+            Ok(file) if !file.metadata().is_ok_and(|m| m.is_file()) => {
+                return Err(flock_runtime_error(format!(
+                    "{name} '{path}': not a regular file"
+                )));
+            }
+            Ok(file) => return Ok(file),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound && !create => {
+                return Err(missing());
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(flock_runtime_error(format!("{name} '{path}': {e}"))),
+        }
+    }
+    std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(create)
+        .truncate(false)
+        .mode(0o644)
+        .open(path)
+        .map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound && !create {
+                missing()
+            } else {
+                flock_runtime_error(format!("{name} '{path}': {e}"))
+            }
+        })
+}
 
-    let (shared, wait) = parse_flock_options("flock", &args)?;
+fn builtin_flock(args: Vec<Value>) -> MixResult<Option<Value>> {
+    let (shared, wait, create) = parse_flock_options("flock", &args)?;
     let path = args[0].to_mix_string();
     let deadline = std::time::Instant::now()
         .checked_add(wait)
@@ -14178,14 +14255,7 @@ fn builtin_flock(args: Vec<Value>) -> MixResult<Option<Value>> {
         }
     }
 
-    let file = std::fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create(true)
-        .truncate(false)
-        .mode(0o644)
-        .open(&path)
-        .map_err(|e| flock_runtime_error(format!("flock '{}': {}", path, e)))?;
+    let file = open_lock_file("flock", &path, shared, create)?;
     let canonical = std::fs::canonicalize(&path)
         .map_err(|e| flock_runtime_error(format!("flock '{}': {}", path, e)))?;
 
@@ -14365,9 +14435,7 @@ fn try_fcntl_fd(
 /// raise, idempotent-true per canonical path within this process), but in
 /// the fcntl record-lock namespace that C daemons actually use.
 fn builtin_fcntl_lock(args: Vec<Value>) -> MixResult<Option<Value>> {
-    use std::os::unix::fs::OpenOptionsExt;
-
-    let (shared, wait) = parse_flock_options("fcntl_lock", &args)?;
+    let (shared, wait, create) = parse_flock_options("fcntl_lock", &args)?;
     let path = args[0].to_mix_string();
     let deadline = std::time::Instant::now()
         .checked_add(wait)
@@ -14383,14 +14451,7 @@ fn builtin_fcntl_lock(args: Vec<Value>) -> MixResult<Option<Value>> {
         }
     }
 
-    let file = std::fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create(true)
-        .truncate(false)
-        .mode(0o644)
-        .open(&path)
-        .map_err(|e| flock_runtime_error(format!("fcntl_lock '{}': {}", path, e)))?;
+    let file = open_lock_file("fcntl_lock", &path, shared, create)?;
     let canonical = std::fs::canonicalize(&path)
         .map_err(|e| flock_runtime_error(format!("fcntl_lock '{}': {}", path, e)))?;
 
@@ -14700,17 +14761,257 @@ fn builtin_chmod(args: Vec<Value>) -> MixResult<Option<Value>> {
 /// `std::os::unix::fs::chown` (stable std since 1.73), which follows
 /// symlinks. Name resolution is intentionally out of scope — numeric
 /// ids are what the substrate's per-mailbox chown-back needs, and a
-/// name lookup is a separate concern.
+/// name lookup is a separate concern. `{follow_symlinks: false}` changes
+/// a symlink itself (`lchown(2)`), matching `stat`/`exists`.
 fn builtin_chown(args: Vec<Value>) -> MixResult<Option<Value>> {
-    expect_args("chown", &args, 3)?;
+    expect_args_between("chown", &args, 3, 4)?;
     let path = args[0].to_mix_string();
     let uid = parse_id("chown", "uid", &args[1])?;
     let gid = parse_id("chown", "gid", &args[2])?;
-    std::os::unix::fs::chown(&path, Some(uid), Some(gid)).map_err(|e| MixError::RuntimeError {
+    let mut follow_symlinks = true;
+    match args.get(3) {
+        None | Some(Value::Nil) => {}
+        Some(Value::Map(m)) => {
+            for k in m.keys() {
+                if k != "follow_symlinks" {
+                    return Err(opt_invalid(
+                        "chown()",
+                        format!("unknown option '{k}' (supported: follow_symlinks)"),
+                    ));
+                }
+            }
+            if let Some(b) = bool_option("chown()", "follow_symlinks", m.get("follow_symlinks"))? {
+                follow_symlinks = b;
+            }
+        }
+        Some(other) => {
+            return Err(opt_invalid(
+                "chown()",
+                format!("options must be a map or nil, got {}", other.type_name()),
+            ));
+        }
+    }
+    let result = if follow_symlinks {
+        std::os::unix::fs::chown(&path, Some(uid), Some(gid))
+    } else {
+        std::os::unix::fs::lchown(&path, Some(uid), Some(gid))
+    };
+    result.map_err(|e| MixError::RuntimeError {
         span: None,
         msg: format!("chown '{}': {}", path, e),
     })?;
     Ok(Some(Value::Nil))
+}
+
+/// `fsync($path[, {recursive}])` — make a file, a directory, or a tree
+/// durable, and return how many inodes were synced. A directory fsync is
+/// what persists a `rename`/`remove`/create inside it; `write_atomic`'s
+/// `durability: "full"` does this for one file, and this is the general
+/// form (a tree built by `copy_tree`, a journal of directory renames)
+/// without `sync -f`'s whole-filesystem flush.
+fn builtin_fsync(args: Vec<Value>) -> MixResult<Option<Value>> {
+    use std::os::unix::fs::OpenOptionsExt;
+    expect_args_between("fsync", &args, 1, 2)?;
+    let path = args[0].to_mix_string();
+    let mut recursive = false;
+    match args.get(1) {
+        None | Some(Value::Nil) => {}
+        Some(Value::Map(m)) => {
+            for k in m.keys() {
+                if k != "recursive" {
+                    return Err(opt_invalid(
+                        "fsync()",
+                        format!("unknown option '{k}' (supported: recursive)"),
+                    ));
+                }
+            }
+            if let Some(b) = bool_option("fsync()", "recursive", m.get("recursive"))? {
+                recursive = b;
+            }
+        }
+        Some(other) => {
+            return Err(opt_invalid(
+                "fsync()",
+                format!("options must be a map or nil, got {}", other.type_name()),
+            ));
+        }
+    }
+    let root = std::path::Path::new(&path);
+    let mut synced = 0u64;
+    let result = if recursive && root.is_dir() {
+        // The path itself may be a symlink; nothing beneath it is followed.
+        std::fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_DIRECTORY | libc::O_CLOEXEC)
+            .open(root)
+            .map_err(|e| (root.to_path_buf(), e))
+            .and_then(|dir| fsync_tree(root, &dir, &mut synced))
+    } else {
+        fsync_one(root, false).map(|()| synced += 1)
+    };
+    result.map_err(|(failed, e)| {
+        let mut details = indexmap::IndexMap::new();
+        details.insert(
+            "path".to_string(),
+            Value::String(failed.to_string_lossy().into_owned()),
+        );
+        details.insert("error".to_string(), Value::String(e.to_string()));
+        MixError::Structured(Box::new(
+            crate::error::ErrorInfo::new(
+                "FSYNC_FAILED",
+                format!("fsync '{}': {e}", failed.display()),
+            )
+            .with_details(Value::map(details)),
+        ))
+    })?;
+    Ok(Some(Value::Number(synced as f64)))
+}
+
+/// fsync one file or directory. O_NONBLOCK so a fifo named at the top
+/// cannot hang the open (its fsync then fails, and raises); inside a tree
+/// `nofollow` refuses a symlink swapped in since the listing.
+fn fsync_one(
+    path: &std::path::Path,
+    nofollow: bool,
+) -> Result<(), (std::path::PathBuf, std::io::Error)> {
+    use std::os::unix::fs::OpenOptionsExt;
+    let flags = libc::O_NONBLOCK | libc::O_CLOEXEC | if nofollow { libc::O_NOFOLLOW } else { 0 };
+    std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(flags)
+        .open(path)
+        .and_then(|f| f.sync_all())
+        .map_err(|e| (path.to_path_buf(), e))
+}
+
+/// Children first, then the directory: when it returns, every entry and
+/// every regular file's data beneath `dir` is on disk. The walk goes through
+/// held descriptors, each child opened relative to its parent with
+/// O_NOFOLLOW, and the descriptor enumerated is the one synced: a directory
+/// swapped for a symlink after it was listed is refused, never followed out
+/// of the tree. Symlinks and special files are not opened; their
+/// directory's fsync persists the entry. An entry removed since the listing
+/// is skipped.
+fn fsync_tree(
+    path: &std::path::Path,
+    dir: &std::fs::File,
+    synced: &mut u64,
+) -> Result<(), (std::path::PathBuf, std::io::Error)> {
+    use std::os::fd::{AsRawFd, FromRawFd};
+    use std::os::unix::ffi::OsStrExt;
+    for name in directory_names(dir).map_err(|e| (path.to_path_buf(), e))? {
+        let child = path.join(&name);
+        let cname =
+            std::ffi::CString::new(name.as_bytes()).map_err(|e| (child.clone(), e.into()))?;
+        let mut st = std::mem::MaybeUninit::<libc::stat>::uninit();
+        // SAFETY: a valid dirfd, a NUL-terminated name and a stat buffer.
+        if unsafe {
+            libc::fstatat(
+                dir.as_raw_fd(),
+                cname.as_ptr(),
+                st.as_mut_ptr(),
+                libc::AT_SYMLINK_NOFOLLOW,
+            )
+        } != 0
+        {
+            let e = std::io::Error::last_os_error();
+            if e.kind() == std::io::ErrorKind::NotFound {
+                continue;
+            }
+            return Err((child, e));
+        }
+        // SAFETY: fstatat succeeded and filled the buffer.
+        let kind = unsafe { st.assume_init() }.st_mode & libc::S_IFMT;
+        let flags = match kind {
+            libc::S_IFDIR => libc::O_RDONLY | libc::O_DIRECTORY,
+            libc::S_IFREG => libc::O_RDONLY | libc::O_NONBLOCK,
+            _ => continue,
+        };
+        // SAFETY: as above; the returned descriptor is owned below.
+        let fd = unsafe {
+            libc::openat(
+                dir.as_raw_fd(),
+                cname.as_ptr(),
+                flags | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+            )
+        };
+        if fd < 0 {
+            let e = std::io::Error::last_os_error();
+            if e.kind() == std::io::ErrorKind::NotFound {
+                continue;
+            }
+            return Err((child, e));
+        }
+        // SAFETY: openat returned a fresh descriptor this scope now owns.
+        let opened = unsafe { std::fs::File::from_raw_fd(fd) };
+        if kind == libc::S_IFDIR {
+            fsync_tree(&child, &opened, synced)?;
+        } else {
+            // A swapped-in non-file is refused rather than synced as one.
+            let meta = opened.metadata().map_err(|e| (child.clone(), e))?;
+            if !meta.is_file() {
+                return Err((
+                    child,
+                    std::io::Error::other("replaced by a non-file while being synced"),
+                ));
+            }
+            opened.sync_all().map_err(|e| (child.clone(), e))?;
+            *synced += 1;
+        }
+    }
+    dir.sync_all().map_err(|e| (path.to_path_buf(), e))?;
+    *synced += 1;
+    Ok(())
+}
+
+/// The names in a held directory, without `.` and `..`, read through a
+/// duplicate of its descriptor (no path is resolved). Shared with the
+/// archive builtins.
+pub(crate) fn directory_names(dir: &std::fs::File) -> std::io::Result<Vec<std::ffi::OsString>> {
+    use std::os::fd::AsRawFd;
+    use std::os::unix::ffi::OsStringExt;
+    struct DirStream(*mut libc::DIR);
+    impl Drop for DirStream {
+        fn drop(&mut self) {
+            unsafe {
+                libc::closedir(self.0);
+            }
+        }
+    }
+    let fd = unsafe { libc::fcntl(dir.as_raw_fd(), libc::F_DUPFD_CLOEXEC, 0) };
+    if fd < 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    let stream = unsafe { libc::fdopendir(fd) };
+    if stream.is_null() {
+        let err = std::io::Error::last_os_error();
+        unsafe {
+            libc::close(fd);
+        }
+        return Err(err);
+    }
+    let stream = DirStream(stream);
+    // The dup shares the held descriptor's offset, so an earlier listing
+    // left it at the end; without the rewind a second listing is empty.
+    unsafe { libc::rewinddir(stream.0) };
+    let mut names = Vec::new();
+    loop {
+        unsafe {
+            *libc::__errno_location() = 0;
+        }
+        let entry = unsafe { libc::readdir(stream.0) };
+        if entry.is_null() {
+            let err = std::io::Error::last_os_error();
+            if err.raw_os_error() != Some(0) {
+                return Err(err);
+            }
+            return Ok(names);
+        }
+        let bytes = unsafe { std::ffi::CStr::from_ptr((*entry).d_name.as_ptr()) }.to_bytes();
+        if bytes != b"." && bytes != b".." {
+            names.push(std::ffi::OsString::from_vec(bytes.to_vec()));
+        }
+    }
 }
 
 /// Parse a numeric uid/gid argument: must be a finite, non-negative
@@ -16779,11 +17080,18 @@ fn builtin_path_parts(args: Vec<Value>) -> MixResult<Option<Value>> {
 ///   relative to `$dir`. `max_depth: 0` returns only direct children.
 /// - `include_dirs` (bool, default `false`): include directory
 ///   entries in the output list (not just files).
+/// - `strict` (bool, default `false`): raise `WALK_UNREADABLE` naming the
+///   first directory that cannot be read or entry that cannot be stat'ed,
+///   instead of skipping it.
 ///
-/// Errors on an unreadable top-level `$dir`. Silently skips
-/// individual entries that fail to stat — a single bad file in a
-/// subtree shouldn't abort the whole walk (digest scripts doing
-/// `walk(/srv)` would fail constantly otherwise).
+/// Errors on a missing `$dir`. By default silently skips directories
+/// that cannot be read (the top-level one included) and entries that
+/// fail to stat — a single bad file in a subtree shouldn't abort the
+/// whole walk (digest scripts doing `walk(/srv)` would fail constantly
+/// otherwise). A gate that must tell "no matches" from "could not look"
+/// passes `strict: true`. Even strict, an entry that vanishes between
+/// listing and stat, or a dangling symlink under `follow_symlinks`, is
+/// skipped: it was looked at, and there is nothing there.
 fn builtin_walk(args: Vec<Value>) -> MixResult<Option<Value>> {
     if args.is_empty() || args.len() > 2 {
         return Err(MixError::RuntimeError {
@@ -16796,6 +17104,7 @@ fn builtin_walk(args: Vec<Value>) -> MixResult<Option<Value>> {
     let mut follow_symlinks = false;
     let mut max_depth: Option<usize> = None;
     let mut include_dirs = false;
+    let mut strict = false;
 
     if let Some(opts) = args.get(1) {
         match opts {
@@ -16804,6 +17113,9 @@ fn builtin_walk(args: Vec<Value>) -> MixResult<Option<Value>> {
                 if let Some(b) = bool_option("walk()", "follow_symlinks", m.get("follow_symlinks"))?
                 {
                     follow_symlinks = b;
+                }
+                if let Some(b) = bool_option("walk()", "strict", m.get("strict"))? {
+                    strict = b;
                 }
                 if let Some(v) = m.get("max_depth") {
                     max_depth = Some(as_count(
@@ -16829,71 +17141,114 @@ fn builtin_walk(args: Vec<Value>) -> MixResult<Option<Value>> {
     }
 
     let root_path = std::path::PathBuf::from(&root);
-    if !root_path.exists() {
-        return Err(MixError::RuntimeError {
-            span: None,
-            msg: format!("walk(): '{}' does not exist", root),
-        });
+    match std::fs::metadata(&root_path) {
+        Ok(_) => {}
+        // A root that cannot even be stat'ed (a parent without search
+        // permission) is "could not look", which strict must say.
+        Err(e) if strict && e.kind() != std::io::ErrorKind::NotFound => {
+            return Err(walk_unreadable(&root_path, &e));
+        }
+        Err(_) => {
+            return Err(MixError::RuntimeError {
+                span: None,
+                msg: format!("walk(): '{}' does not exist", root),
+            });
+        }
     }
 
     let mut visited: std::collections::HashSet<(u64, u64)> = std::collections::HashSet::new();
     let mut out: Vec<Value> = Vec::new();
 
-    walk_recursive(
-        &root_path,
-        0,
+    let walk = WalkOpts {
         max_depth,
         follow_symlinks,
         include_dirs,
-        &mut visited,
-        &mut out,
-    );
+        strict,
+    };
+    if let Err((path, e)) = walk_recursive(&root_path, 0, &walk, &mut visited, &mut out) {
+        return Err(walk_unreadable(&path, &e));
+    }
 
     out.sort_by_key(|a| a.to_mix_string());
     Ok(Some(Value::list(out)))
 }
 
-fn walk_recursive(
-    dir: &std::path::Path,
-    depth: usize,
+fn walk_unreadable(path: &std::path::Path, e: &std::io::Error) -> MixError {
+    let mut details = indexmap::IndexMap::new();
+    details.insert(
+        "path".to_string(),
+        Value::String(path.to_string_lossy().into_owned()),
+    );
+    details.insert("error".to_string(), Value::String(e.to_string()));
+    MixError::Structured(Box::new(
+        crate::error::ErrorInfo::new(
+            "WALK_UNREADABLE",
+            format!(
+                "walk(): cannot read '{}': {e} (strict: true raises rather than skip it)",
+                path.display()
+            ),
+        )
+        .with_details(Value::map(details)),
+    ))
+}
+
+struct WalkOpts {
     max_depth: Option<usize>,
     follow_symlinks: bool,
     include_dirs: bool,
+    strict: bool,
+}
+
+/// Walk `dir` into `out`. Only a strict walk returns an error: the first
+/// path it could not read. A non-strict walk skips it and always succeeds.
+fn walk_recursive(
+    dir: &std::path::Path,
+    depth: usize,
+    opts: &WalkOpts,
     visited: &mut std::collections::HashSet<(u64, u64)>,
     out: &mut Vec<Value>,
-) {
+) -> Result<(), (std::path::PathBuf, std::io::Error)> {
+    let follow_symlinks = opts.follow_symlinks;
     let entries = match std::fs::read_dir(dir) {
         Ok(e) => e,
-        // Unreadable subdirectory — skip silently. Top-level
-        // unreadable errors are caught by the exists() check in
-        // the caller before we get here.
-        Err(_) => return,
+        // Removed since it was listed: looked at, nothing there.
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) if opts.strict => return Err((dir.to_path_buf(), e)),
+        // Unreadable directory — skip silently.
+        Err(_) => return Ok(()),
     };
 
-    for entry in entries.flatten() {
+    for entry in entries {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(e) if opts.strict => return Err((dir.to_path_buf(), e)),
+            Err(_) => continue,
+        };
         let path = entry.path();
         let metadata = if follow_symlinks {
-            match std::fs::metadata(&path) {
-                Ok(m) => m,
-                Err(_) => continue,
-            }
+            std::fs::metadata(&path)
         } else {
-            match std::fs::symlink_metadata(&path) {
-                Ok(m) => m,
-                Err(_) => continue,
-            }
+            std::fs::symlink_metadata(&path)
+        };
+        let metadata = match metadata {
+            Ok(m) => m,
+            // Gone since the listing, or a dangling link being followed:
+            // looked at, nothing there.
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(e) if opts.strict => return Err((path, e)),
+            Err(_) => continue,
         };
 
         let is_dir = metadata.is_dir();
 
-        if !is_dir || include_dirs {
+        if !is_dir || opts.include_dirs {
             out.push(Value::String(path.to_string_lossy().into_owned()));
         }
 
         if is_dir {
             // Depth check: max_depth == Some(0) means "direct
             // children only" — don't descend further.
-            let can_descend = match max_depth {
+            let can_descend = match opts.max_depth {
                 Some(max) => depth < max,
                 None => true,
             };
@@ -16914,17 +17269,10 @@ fn walk_recursive(
                 }
             }
 
-            walk_recursive(
-                &path,
-                depth + 1,
-                max_depth,
-                follow_symlinks,
-                include_dirs,
-                visited,
-                out,
-            );
+            walk_recursive(&path, depth + 1, opts, visited, out)?;
         }
     }
+    Ok(())
 }
 
 // --- System builtins (stdlib) ---
@@ -29512,11 +29860,41 @@ mod sqlite_builtins {
     static DB_MAP: std::sync::LazyLock<Mutex<HashMap<u64, rusqlite::Connection>>> =
         std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
 
-    /// sqlopen(path) or sqlopen(path, "rw") → numeric handle
+    /// sqlopen(path[, mode]) → numeric handle. Modes: "ro" (the default:
+    /// read-only, the file must exist), "rw" and "rwc" (read-write, creating
+    /// a missing file; WAL and a 5 s busy timeout). Anything else raises: an
+    /// unknown mode used to fall back to read-only, so `"rwc"` could not
+    /// create a database and said only "unable to open database file".
     pub fn builtin_sqlopen(args: Vec<Value>) -> MixResult<Option<Value>> {
-        expect_args("sqlopen", &args, 1)?;
+        expect_args_between("sqlopen", &args, 1, 2)?;
         let path = args[0].to_mix_string();
-        let read_write = args.get(1).is_some_and(|v| v.to_mix_string() == "rw");
+        let read_write = match args.get(1) {
+            None => false,
+            Some(Value::String(m)) if m == "ro" => false,
+            Some(Value::String(m)) if m == "rw" || m == "rwc" => true,
+            Some(other) => {
+                return Err(opt_invalid(
+                    "sqlopen()",
+                    format!(
+                        "mode must be \"ro\" (default, read-only), \"rw\" or \"rwc\" \
+                         (read-write, creating a missing file), got {}",
+                        match other {
+                            Value::String(m) => format!("\"{m}\""),
+                            other => other.type_name().to_string(),
+                        }
+                    ),
+                ));
+            }
+        };
+        if !read_write && path != ":memory:" && !std::path::Path::new(&path).exists() {
+            return Err(MixError::structured(
+                "SQL_NO_DATABASE",
+                format!(
+                    "sqlopen '{path}': no such database; read-only (the default) never \
+                     creates one — sqlopen(path, \"rwc\") creates it"
+                ),
+            ));
+        }
 
         let conn = if read_write {
             rusqlite::Connection::open(&path)
@@ -29702,6 +30080,75 @@ mod sqlite_builtins {
 
 #[cfg(feature = "sqlite")]
 use sqlite_builtins::{builtin_sqlclose, builtin_sqlexec, builtin_sqlopen};
+
+#[cfg(all(test, feature = "sqlite"))]
+mod sqlopen_mode_tests {
+    use super::*;
+
+    fn s(x: &str) -> Value {
+        Value::String(x.to_string())
+    }
+
+    fn exec(db: &Value, sql: &str) -> MixResult<Option<Value>> {
+        builtin_sqlexec(vec![db.clone(), s(sql)])
+    }
+
+    #[test]
+    fn rwc_creates_a_new_database_and_ro_reads_it_back() {
+        let d = std::env::temp_dir().join(format!("mix-sqlopen-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        let path = d.join("new.db");
+        let p = path.to_string_lossy().into_owned();
+        // A missing file under the read-only default: a named error, and
+        // nothing created.
+        let err = builtin_sqlopen(vec![s(&p)]).unwrap_err();
+        assert_eq!(err.info().map(|i| i.code.as_str()), Some("SQL_NO_DATABASE"));
+        assert!(format!("{err}").contains("\"rwc\""), "{err}");
+        let err = builtin_sqlopen(vec![s(&p), s("ro")]).unwrap_err();
+        assert_eq!(err.info().map(|i| i.code.as_str()), Some("SQL_NO_DATABASE"));
+        assert!(!path.exists());
+        // rwc (and rw, its other spelling) creates it.
+        let db = builtin_sqlopen(vec![s(&p), s("rwc")]).unwrap().unwrap();
+        exec(&db, "CREATE TABLE t (x)").unwrap();
+        exec(&db, "INSERT INTO t VALUES (1)").unwrap();
+        builtin_sqlclose(vec![db]).unwrap();
+        assert!(path.exists());
+        let other = d.join("other.db").to_string_lossy().into_owned();
+        let db = builtin_sqlopen(vec![s(&other), s("rw")]).unwrap().unwrap();
+        builtin_sqlclose(vec![db]).unwrap();
+        // An existing file opens under every mode; read-only refuses writes.
+        for mode in [None, Some("ro"), Some("rw"), Some("rwc")] {
+            let mut args = vec![s(&p)];
+            args.extend(mode.map(s));
+            let db = builtin_sqlopen(args).unwrap().unwrap();
+            let rows = exec(&db, "SELECT x FROM t").unwrap().unwrap();
+            assert_eq!(rows.to_mix_string().matches('1').count(), 1, "{mode:?}");
+            let write = exec(&db, "INSERT INTO t VALUES (2)");
+            assert_eq!(
+                write.is_err(),
+                matches!(mode, None | Some("ro")),
+                "{mode:?}"
+            );
+            builtin_sqlclose(vec![db]).unwrap();
+        }
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn an_unknown_mode_raises_instead_of_opening_read_only() {
+        for bad in [s("rwx"), s("RW"), s(""), Value::Nil, Value::Number(1.0)] {
+            let err = builtin_sqlopen(vec![s(":memory:"), bad.clone()]).unwrap_err();
+            assert_eq!(
+                err.info().map(|i| i.code.as_str()),
+                Some("OPTION_INVALID"),
+                "{bad:?}"
+            );
+            assert!(format!("{err}").contains("mode must be"), "{err}");
+        }
+        assert!(builtin_sqlopen(vec![s(":memory:"), s("rw"), s("extra")]).is_err());
+    }
+}
 
 // --- DKIM keygen (feature-gated) ---
 //
@@ -34542,6 +34989,120 @@ mod flock_tests {
         let d = tmpdir("directory");
         let err = builtin_flock(vec![s(&d)]).expect_err("opening a directory must raise");
         assert!(format!("{err}").contains("flock"), "wrong error: {err}");
+        let err = builtin_flock(vec![s(&d), shared_opts()])
+            .expect_err("a shared lock on a directory must raise too");
+        assert!(format!("{err}").contains("directory"), "wrong error: {err}");
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    fn lock_opts(pairs: &[(&str, Value)]) -> Value {
+        let mut opts = indexmap::IndexMap::new();
+        for (k, v) in pairs {
+            opts.insert((*k).to_string(), v.clone());
+        }
+        Value::Map(std::rc::Rc::new(opts))
+    }
+
+    fn lock_file_missing(result: MixResult<Option<Value>>) {
+        let err = result.expect_err("create:false must refuse a missing file");
+        assert_eq!(
+            err.info().map(|i| i.code.as_str()),
+            Some("LOCK_FILE_MISSING"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn a_shared_lock_needs_only_read_access() {
+        use std::os::unix::fs::PermissionsExt;
+        let _guard = TEST_LOCK.lock().unwrap();
+        let d = tmpdir("shared-readonly");
+        for (name, lock, unlock) in [
+            (
+                "flock",
+                builtin_flock as fn(Vec<Value>) -> MixResult<Option<Value>>,
+                builtin_funlock as fn(Vec<Value>) -> MixResult<Option<Value>>,
+            ),
+            ("fcntl_lock", builtin_fcntl_lock, builtin_fcntl_unlock),
+        ] {
+            let path = d.join(format!("{name}.lock"));
+            std::fs::write(&path, b"pid 1\n").unwrap();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o444)).unwrap();
+            assert!(bool_result(lock(vec![s(&path), shared_opts()])), "{name}");
+            assert!(bool_result(unlock(vec![s(&path)])), "{name}");
+            if unsafe { libc::geteuid() } != 0 {
+                // Exclusive still needs write access (root has it anyway).
+                assert!(lock(vec![s(&path)]).is_err(), "{name}");
+            }
+            assert_eq!(std::fs::read(&path).unwrap(), b"pid 1\n", "{name}");
+        }
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn a_shared_lock_on_a_fifo_raises_instead_of_hanging() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let d = tmpdir("shared-fifo");
+        let fifo = d.join("fifo");
+        let c = std::ffi::CString::new(fifo.to_string_lossy().as_bytes()).unwrap();
+        assert_eq!(unsafe { libc::mkfifo(c.as_ptr(), 0o644) }, 0);
+        for (name, lock) in [
+            (
+                "flock",
+                builtin_flock as fn(Vec<Value>) -> MixResult<Option<Value>>,
+            ),
+            ("fcntl_lock", builtin_fcntl_lock),
+        ] {
+            // A blocking open would never return here: no writer exists.
+            let err = lock(vec![s(&fifo), shared_opts()]).expect_err("a fifo is no lock file");
+            assert!(
+                format!("{err}").contains("not a regular file"),
+                "{name}: {err}"
+            );
+        }
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn create_false_refuses_a_missing_lock_file_and_creates_nothing() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let d = tmpdir("create-false");
+        for (name, lock, unlock) in [
+            (
+                "flock",
+                builtin_flock as fn(Vec<Value>) -> MixResult<Option<Value>>,
+                builtin_funlock as fn(Vec<Value>) -> MixResult<Option<Value>>,
+            ),
+            ("fcntl_lock", builtin_fcntl_lock, builtin_fcntl_unlock),
+        ] {
+            let path = d.join(format!("{name}.lock"));
+            for shared in [false, true] {
+                lock_file_missing(lock(vec![
+                    s(&path),
+                    lock_opts(&[
+                        ("shared", Value::Bool(shared)),
+                        ("create", Value::Bool(false)),
+                    ]),
+                ]));
+                assert!(!path.exists(), "{name} shared={shared} created the file");
+            }
+            // The default still creates it, shared or not.
+            assert!(bool_result(lock(vec![s(&path), shared_opts()])), "{name}");
+            assert!(path.exists(), "{name}");
+            assert!(bool_result(unlock(vec![s(&path)])), "{name}");
+            // And create:false takes a lock on a file that exists.
+            assert!(bool_result(lock(vec![
+                s(&path),
+                lock_opts(&[("create", Value::Bool(false))]),
+            ])));
+            assert!(bool_result(unlock(vec![s(&path)])), "{name}");
+            let err = lock(vec![s(&path), lock_opts(&[("create", Value::Number(0.0))])])
+                .expect_err("create must be a boolean");
+            assert!(
+                format!("{err}").contains("'create' must be a boolean"),
+                "{err}"
+            );
+        }
         let _ = std::fs::remove_dir_all(d);
     }
 }
@@ -35175,6 +35736,139 @@ mod fs_meta_tests {
         ])
         .expect("self-chown ok");
         assert_eq!(r, Some(Value::Nil));
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn fsync_syncs_a_file_a_directory_and_a_tree() {
+        use std::os::unix::fs::PermissionsExt;
+        fn count(v: MixResult<Option<Value>>) -> f64 {
+            match v.unwrap() {
+                Some(Value::Number(n)) => n,
+                other => panic!("fsync returns a count, got {other:?}"),
+            }
+        }
+        fn failed(v: MixResult<Option<Value>>) -> String {
+            let err = v.unwrap_err();
+            let info = err.info().expect("fsync failures are structured");
+            assert_eq!(info.code, "FSYNC_FAILED", "{}", info.message);
+            match &info.details {
+                Value::Map(m) => m["path"].to_mix_string(),
+                other => panic!("details must be a map, got {other:?}"),
+            }
+        }
+        let recursive = |on: bool| {
+            let mut m = indexmap::IndexMap::new();
+            m.insert("recursive".to_string(), Value::Bool(on));
+            Value::map(m)
+        };
+        let d = tmpdir("fsync");
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(d.join("sub/deeper")).unwrap();
+        std::fs::write(d.join("f1"), b"1").unwrap();
+        std::fs::write(d.join("sub/f2"), b"2").unwrap();
+        std::fs::write(d.join("sub/deeper/f3"), b"3").unwrap();
+        // Never followed inside a tree, even when it points outside.
+        std::os::unix::fs::symlink("/", d.join("sub/root-link")).unwrap();
+        assert_eq!(count(builtin_fsync(vec![s(&d.join("f1"))])), 1.0);
+        assert_eq!(count(builtin_fsync(vec![s(&d)])), 1.0);
+        assert_eq!(count(builtin_fsync(vec![s(&d), Value::Nil])), 1.0);
+        // root, sub, deeper + f1, f2, f3.
+        assert_eq!(count(builtin_fsync(vec![s(&d), recursive(true)])), 6.0);
+        assert_eq!(count(builtin_fsync(vec![s(&d), recursive(false)])), 1.0);
+        assert_eq!(
+            count(builtin_fsync(vec![s(&d.join("f1")), recursive(true)])),
+            1.0
+        );
+        let missing = d.join("missing");
+        assert_eq!(
+            failed(builtin_fsync(vec![s(&missing)])),
+            missing.to_string_lossy()
+        );
+        let locked = d.join("sub/locked");
+        std::fs::create_dir(&locked).unwrap();
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
+        if unsafe { libc::geteuid() } != 0 {
+            assert_eq!(
+                failed(builtin_fsync(vec![s(&d), recursive(true)])),
+                locked.to_string_lossy()
+            );
+        }
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let mut bad = indexmap::IndexMap::new();
+        bad.insert("deep".to_string(), Value::Bool(true));
+        let err = builtin_fsync(vec![s(&d), Value::map(bad)]).unwrap_err();
+        assert!(format!("{err}").contains("unknown option 'deep'"), "{err}");
+        assert!(builtin_fsync(vec![s(&d), Value::Number(1.0)]).is_err());
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn chown_follow_symlinks_false_changes_the_link_itself() {
+        use std::os::unix::fs::MetadataExt;
+        let d = tmpdir("chown-lchown");
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        let target = d.join("target");
+        std::fs::write(&target, b"x").unwrap();
+        let link = d.join("link");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        let dangling = d.join("dangling");
+        std::os::unix::fs::symlink(d.join("absent"), &dangling).unwrap();
+        let meta = std::fs::symlink_metadata(&link).unwrap();
+        let ids = |p: &std::path::Path| {
+            vec![
+                s(p),
+                Value::Number(meta.uid() as f64),
+                Value::Number(meta.gid() as f64),
+            ]
+        };
+        let nofollow = |p: &std::path::Path| {
+            let mut a = ids(p);
+            let mut m = indexmap::IndexMap::new();
+            m.insert("follow_symlinks".to_string(), Value::Bool(false));
+            a.push(Value::map(m));
+            a
+        };
+        // Following, a dangling link has nothing to chown; lchown does not
+        // care where it points.
+        let err = builtin_chown(ids(&dangling)).unwrap_err();
+        assert!(format!("{err}").contains("dangling"), "{err}");
+        assert_eq!(
+            builtin_chown(nofollow(&dangling)).unwrap(),
+            Some(Value::Nil)
+        );
+        assert_eq!(builtin_chown(nofollow(&link)).unwrap(), Some(Value::Nil));
+        // Observable with a second group: only the link changes.
+        let egid = unsafe { libc::getegid() };
+        let mut groups = vec![0 as libc::gid_t; 256];
+        let n = unsafe { libc::getgroups(groups.len() as i32, groups.as_mut_ptr()) };
+        groups.truncate(n.max(0) as usize);
+        if let Some(other) = groups.into_iter().find(|g| *g != egid) {
+            let mut args = nofollow(&link);
+            args[2] = Value::Number(other as f64);
+            builtin_chown(args).unwrap();
+            assert_eq!(std::fs::symlink_metadata(&link).unwrap().gid(), other);
+            assert_eq!(std::fs::metadata(&target).unwrap().gid(), egid);
+        }
+        // Explicit nil is the default; anything else is checked.
+        let mut args = ids(&link);
+        args.push(Value::Nil);
+        assert!(builtin_chown(args).is_ok());
+        let mut bad = indexmap::IndexMap::new();
+        bad.insert("follow".to_string(), Value::Bool(false));
+        let mut args = ids(&link);
+        args.push(Value::map(bad));
+        let err = builtin_chown(args).unwrap_err();
+        assert!(
+            format!("{err}").contains("unknown option 'follow'"),
+            "{err}"
+        );
+        let mut args = nofollow(&link);
+        if let Value::Map(m) = &mut args[3] {
+            std::rc::Rc::make_mut(m).insert("follow_symlinks".into(), Value::Number(0.0));
+        }
+        assert!(builtin_chown(args).is_err());
         let _ = std::fs::remove_dir_all(&d);
     }
 
@@ -39365,6 +40059,9 @@ mod man_topic_tests {
         // monotonic sits in the "system" catch-all category but is
         // documented on the datetime page beside time().
         assert_eq!(man_topic_for_builtin("monotonic"), Some("datetime"));
+        // The SQLite client has its own page, named for its entry point.
+        assert_eq!(man_topic_for_builtin("sqlopen"), Some("sqlopen"));
+        assert_eq!(man_topic_for_builtin("sqlexec"), Some("sqlopen"));
     }
 
     #[test]
@@ -39407,6 +40104,7 @@ mod man_topic_tests {
             "math",
             "regex",
             "remote",
+            "sqlopen",
             "strings",
             "system",
             "tar",
@@ -39436,7 +40134,7 @@ mod compiled_features_tests {
         // real optional feature name and each appears at most once.
         const KNOWN: &[&str] = &[
             "json", "regex", "markdown", "toml", "serde", "datetime", "url", "crypto", "http",
-            "sqlite", "dkim", "datastar", "xml", "yaml", "ws", "mime", "archive",
+            "sqlite", "dkim", "datastar", "xml", "yaml", "ws", "mime", "archive", "dns",
         ];
         let f = compiled_features();
         for name in &f {
@@ -39457,7 +40155,7 @@ mod compiled_features_tests {
     fn every_cargo_feature_is_reported_or_deliberately_skipped() {
         const KNOWN: &[&str] = &[
             "json", "regex", "markdown", "toml", "serde", "datetime", "url", "crypto", "http",
-            "sqlite", "dkim", "datastar", "xml", "yaml", "ws", "mime", "archive",
+            "sqlite", "dkim", "datastar", "xml", "yaml", "ws", "mime", "archive", "dns",
         ];
         const SKIP: &[&str] = &["default", "tokio-sleep"];
         let manifest = include_str!("../Cargo.toml");
@@ -39782,6 +40480,7 @@ mod strict_write_and_bool_option_tests {
             // File/IO family:
             ("stat", "opts"),
             ("walk", "opts"),
+            ("chown", "opts"),
             ("read_jsonl", "opts"),
             ("mkdir", "opts"),
             ("flock", "opts"),
@@ -39989,7 +40688,7 @@ mod strict_write_and_bool_option_tests {
             (
                 "walk",
                 "opts",
-                &["max_depth", "follow_symlinks", "include_dirs"],
+                &["max_depth", "follow_symlinks", "include_dirs", "strict"],
             ),
             ("read_jsonl", "opts", &["skip_errors"]),
             ("bytes_to_string", "opts", &["lossy"]),
@@ -40161,6 +40860,83 @@ mod strict_write_and_bool_option_tests {
             opts(&[("follow_symlinks", Value::String("false".into()))]),
         ])
         .unwrap_err();
+        assert!(is_type_mismatch(&err), "{err:?}");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn walk_strict_names_the_first_unreadable_path() {
+        use std::os::unix::fs::PermissionsExt;
+        fn strict() -> Value {
+            opts(&[("strict", Value::Bool(true))])
+        }
+        fn unreadable(err: MixError) -> String {
+            let info = err.info().expect("strict walk errors are structured");
+            assert_eq!(info.code, "WALK_UNREADABLE", "{}", info.message);
+            match &info.details {
+                Value::Map(m) => m["path"].to_mix_string(),
+                other => panic!("details must be a map, got {other:?}"),
+            }
+        }
+        let d = tmpdir("walk-strict");
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        std::fs::write(d.join("a.txt"), "x").unwrap();
+        // Looked at and empty, even strict: a dangling link being followed.
+        std::os::unix::fs::symlink(d.join("absent"), d.join("dangling")).unwrap();
+        let follow_strict = opts(&[
+            ("strict", Value::Bool(true)),
+            ("follow_symlinks", Value::Bool(true)),
+        ]);
+        let readable = builtin_walk(vec![s(&d), follow_strict.clone()])
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            readable.to_mix_string(),
+            Value::list(vec![s(&d.join("a.txt"))]).to_mix_string(),
+            "a readable tree walks the same under strict"
+        );
+        // A plain file is not a directory to walk: strict says so.
+        assert_eq!(
+            unreadable(builtin_walk(vec![s(&d.join("a.txt")), strict()]).unwrap_err()),
+            d.join("a.txt").to_string_lossy()
+        );
+        let locked = d.join("locked");
+        std::fs::create_dir(&locked).unwrap();
+        std::fs::write(locked.join("hidden.txt"), "x").unwrap();
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
+        if unsafe { libc::geteuid() } != 0 {
+            // Default: the unreadable subtree silently vanishes.
+            let lenient = builtin_walk(vec![s(&d)]).unwrap().unwrap();
+            assert!(!lenient.to_mix_string().contains("hidden.txt"));
+            assert_eq!(
+                builtin_walk(vec![s(&locked)]).unwrap(),
+                Some(Value::list(vec![]))
+            );
+            // Strict: raised, naming it, in a subtree and at the top.
+            assert_eq!(
+                unreadable(builtin_walk(vec![s(&d), strict()]).unwrap_err()),
+                locked.to_string_lossy()
+            );
+            assert_eq!(
+                unreadable(builtin_walk(vec![s(&locked), strict()]).unwrap_err()),
+                locked.to_string_lossy()
+            );
+            // A root under an unsearchable parent cannot even be stat'ed:
+            // strict names it rather than calling it missing.
+            let beneath = locked.join("sub");
+            assert_eq!(
+                unreadable(builtin_walk(vec![s(&beneath), strict()]).unwrap_err()),
+                beneath.to_string_lossy()
+            );
+            let err = builtin_walk(vec![s(&beneath)]).unwrap_err();
+            assert!(format!("{err}").contains("does not exist"), "{err}");
+        }
+        // A missing root is missing, strict or not.
+        let err = builtin_walk(vec![s(&d.join("absent")), strict()]).unwrap_err();
+        assert!(format!("{err}").contains("does not exist"), "{err}");
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let err = builtin_walk(vec![s(&d), opts(&[("strict", Value::Number(1.0))])]).unwrap_err();
         assert!(is_type_mismatch(&err), "{err:?}");
         let _ = std::fs::remove_dir_all(&d);
     }

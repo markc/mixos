@@ -12,6 +12,8 @@ mod desktop_events;
 pub mod error;
 pub mod evaluator;
 pub mod fd_hygiene;
+#[cfg(unix)]
+mod fifo_io;
 mod fs_watch;
 pub mod interrupt;
 pub mod lexer;
@@ -28,6 +30,9 @@ pub mod value;
 
 #[cfg(feature = "archive")]
 mod archive;
+
+#[cfg(feature = "dns")]
+mod dns;
 
 #[cfg(feature = "crypto")]
 mod jwt;

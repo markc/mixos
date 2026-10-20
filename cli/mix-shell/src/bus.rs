@@ -11,6 +11,8 @@ use mix::evaluator::{BusHandler, IncomingEvent, RC_UNAVAILABLE};
 use mix::value::Value;
 use tokio::sync::mpsc::UnboundedReceiver;
 
+const PROBE_CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
 /// Lazy-probe state machine for the pre-noded discovery path.
 /// Distinguishes bare-host (silent nil from `send`/`emit`) from
 /// configured-mesh-outage (loud `mesh unavailable` from
@@ -207,6 +209,13 @@ pub struct MixBusHandler {
     /// and undo the reset. `Cell` is fine — `MixBusHandler` is `!Send`,
     /// only the current-thread evaluator touches it.
     incoming_generation: Cell<u64>,
+    /// Bumped by every reset of `mesh` to `Unprobed`, so a `send` retry
+    /// probing without the lock can tell its result went stale.
+    mesh_generation: Cell<u64>,
+    /// Unit tests: probe this URL (anonymous only) instead of the real
+    /// configuration, so a retry never reaches a broker on the build host.
+    #[cfg(test)]
+    test_probe_url: RefCell<Option<String>>,
 }
 
 /// Serialise incoming initialisation and reads, including their await points.
@@ -357,6 +366,9 @@ impl MixBusHandler {
             incoming_closed: RefCell::new(false),
             incoming_broken: RefCell::new(false),
             incoming_generation: Cell::new(0),
+            mesh_generation: Cell::new(0),
+            #[cfg(test)]
+            test_probe_url: RefCell::new(None),
         }
     }
 
@@ -429,6 +441,8 @@ impl MixBusHandler {
         // Repairing one must neither discard nor consume the other's notice.
         if !keep {
             *mesh = MeshState::Unprobed;
+            self.mesh_generation
+                .set(self.mesh_generation.get().wrapping_add(1));
             observed.set(generation);
         }
         if !keep_serve {
@@ -493,7 +507,7 @@ impl MixBusHandler {
         options: &::bus::native_client::UnixConnectOptions,
     ) -> Option<::bus::native_client::VerifiedConnection> {
         match tokio::time::timeout(
-            std::time::Duration::from_secs(5),
+            PROBE_CONNECT_TIMEOUT,
             ::bus::native_client::NodedClient::connect_unix("", url, options, None),
         )
         .await
@@ -573,50 +587,120 @@ impl MixBusHandler {
     }
 
     async fn noded_access(&self) -> Result<std::sync::Arc<Lane>, MeshErr> {
+        self.noded_access_with(false).await
+    }
+
+    /// [`Self::noded_access`], except that `retry` re-probes from
+    /// `NeverPresent` and `Lost` instead of answering from the latch.
+    ///
+    /// `send` passes `retry`: it awaits a reply and carries its own
+    /// `timeout=`, which bounds the attempt, so a script that sent before
+    /// its broker listened, or that outlived a broker restart, recovers on
+    /// its next send without `bus_reconnect()`. The probe re-reads
+    /// `MIXOS_NODED_URL` and the node config. A failed retry leaves the
+    /// latch as it was. Every other form keeps the zero-cost latch.
+    async fn noded_access_with(&self, retry: bool) -> Result<std::sync::Arc<Lane>, MeshErr> {
         self.reconcile_native_attachment().await;
         let mut state = self.mesh.lock().await;
+        // A reset (bus_reconnect, a native re-attachment) that lands while
+        // a retry probes without the lock makes that probe stale: it may
+        // have dialled the old configuration. Start over instead of
+        // publishing it.
+        while retry && matches!(&*state, MeshState::NeverPresent | MeshState::Lost) {
+            let failed = match &*state {
+                MeshState::Lost => MeshErr::Lost,
+                _ => MeshErr::NeverPresent,
+            };
+            // Probe with the lock RELEASED: the latch-only forms (emit,
+            // port_exists, the serve paths) must keep answering at once
+            // while this send dials.
+            let generation = self.mesh_generation.get();
+            drop(state);
+            let probed = self.probe().await;
+            state = self.mesh.lock().await;
+            if self.mesh_generation.get() != generation {
+                continue;
+            }
+            return match (&*state, probed) {
+                // Another caller connected meanwhile: use its lane.
+                (MeshState::Connected(current), _) => Ok(current.clone()),
+                (_, Some(arc)) => {
+                    *state = MeshState::Connected(arc.clone());
+                    Ok(arc)
+                }
+                (_, None) => Err(failed),
+            };
+        }
         match &*state {
             MeshState::Connected(c) => Ok(c.clone()),
             MeshState::NeverPresent => Err(MeshErr::NeverPresent),
             MeshState::Lost => Err(MeshErr::Lost),
-            MeshState::Unprobed => {
-                let url = crate::node_config::resolve_noded_url();
-                // Verified FIRST. This is what makes a plain `send` reach a
-                // local service's protected verbs: the lane carries peer
-                // credentials, so the broker has a principal it did not have to
-                // be told. Nothing about the surface changes — the script still
-                // writes `send <target> <verb>`.
-                //
-                // It is deliberately not an error when this fails. A host with
-                // no local broker socket, a broker running as another account,
-                // a cross-node target — all of those are ordinary, and all of
-                // them must keep working exactly as they did.
-                if let Some(connection) = Self::connect_verified(&url).await {
-                    let arc = std::sync::Arc::new(Lane::Verified(connection));
+            MeshState::Unprobed => match self.probe().await {
+                Some(arc) => {
                     *state = MeshState::Connected(arc.clone());
-                    return Ok(arc);
+                    Ok(arc)
                 }
-                match ::bus::native_client::NodedClient::connect_anonymous(&url).await {
-                    Ok(client) => {
-                        let arc = std::sync::Arc::new(Lane::Anonymous(client));
-                        *state = MeshState::Connected(arc.clone());
-                        Ok(arc)
-                    }
-                    Err(_) => {
-                        // The first probe failed: stick at NeverPresent
-                        // until the script calls `bus_reconnect()`. Per
-                        // the locked contract the discovery path is
-                        // *zero-boot-cost*, which means a failed initial
-                        // probe must not retry on every subsequent Bus
-                        // form (the old "leave slot None, retry next
-                        // call" behaviour). Retry is explicit, not
-                        // ambient.
-                        *state = MeshState::NeverPresent;
-                        Err(MeshErr::NeverPresent)
-                    }
+                None => {
+                    // The first probe failed: stick at NeverPresent for
+                    // every form except `send` (see `noded_access_with`)
+                    // until the script calls `bus_reconnect()`. Per the
+                    // locked contract the discovery path is
+                    // *zero-boot-cost*, which means a failed initial probe
+                    // must not retry on every subsequent `emit` or lookup
+                    // (the old "leave slot None, retry next call"
+                    // behaviour).
+                    *state = MeshState::NeverPresent;
+                    Err(MeshErr::NeverPresent)
                 }
-            }
+            },
         }
+    }
+
+    /// The URL a probe dials, for messages.
+    fn probe_target(&self) -> String {
+        #[cfg(test)]
+        if let Some(url) = self.test_probe_url.borrow().clone() {
+            return url;
+        }
+        crate::node_config::resolve_noded_url()
+    }
+
+    /// One connection attempt against the CURRENT configuration: the
+    /// verified Unix lane first, then anonymous TCP. `None` when neither
+    /// answers.
+    async fn probe(&self) -> Option<std::sync::Arc<Lane>> {
+        #[cfg(test)]
+        let test_url = self.test_probe_url.borrow().clone();
+        #[cfg(test)]
+        if let Some(url) = test_url {
+            return Self::probe_anonymous(&url).await;
+        }
+        let url = crate::node_config::resolve_noded_url();
+        // Verified FIRST. This is what makes a plain `send` reach a local
+        // service's protected verbs: the lane carries peer credentials, so
+        // the broker has a principal it did not have to be told. Nothing
+        // about the surface changes — the script still writes
+        // `send <target> <verb>`.
+        //
+        // It is deliberately not an error when this fails. A host with no
+        // local broker socket, a broker running as another account, a
+        // cross-node target — all of those are ordinary, and all of them
+        // must keep working exactly as they did.
+        if let Some(connection) = Self::connect_verified(&url).await {
+            return Some(std::sync::Arc::new(Lane::Verified(connection)));
+        }
+        Self::probe_anonymous(&url).await
+    }
+
+    async fn probe_anonymous(url: &str) -> Option<std::sync::Arc<Lane>> {
+        tokio::time::timeout(
+            PROBE_CONNECT_TIMEOUT,
+            ::bus::native_client::NodedClient::connect_anonymous(url),
+        )
+        .await
+        .ok()
+        .and_then(Result::ok)
+        .map(|client| std::sync::Arc::new(Lane::Anonymous(client)))
     }
 
     /// Transition `Connected → Lost`, but only if the cached state is
@@ -662,8 +746,10 @@ impl BusHandler for MixBusHandler {
         Box::pin(async move {
             let json_args = value_to_json(args);
 
-            // Broker-routed path: apply the bare-vs-mesh policy.
-            let client = match self.noded_access().await {
+            // Broker-routed path: apply the bare-vs-mesh policy. A send
+            // re-probes a failed connection (bounded by its `timeout=`), so
+            // a broker that starts or restarts later is picked up.
+            let client = match self.noded_access_with(true).await {
                 Ok(c) => c,
                 // Broker NEVER present (a bare host): a NON-FATAL "not
                 // delivered" signal, NOT a fake `(0, Nil)` success (2026-07-02
@@ -675,13 +761,17 @@ impl BusHandler for MixBusHandler {
                 Err(MeshErr::NeverPresent) => {
                     return Ok((
                         RC_UNAVAILABLE,
-                        Value::String("Bus unavailable: broker never present".to_string()),
+                        Value::String(format!(
+                            "Bus unavailable: no broker answered at {} (the next send retries)",
+                            self.probe_target()
+                        )),
                         Value::Nil,
                     ));
                 }
                 Err(MeshErr::Lost) => {
                     return Err(mesh_unavailable(
-                        "noded was reachable but the cached connection is broken",
+                        "noded was reachable but the cached connection is broken, and \
+                         reconnecting failed",
                     ));
                 }
             };
@@ -1199,6 +1289,8 @@ impl BusHandler for MixBusHandler {
             let mut mesh = self.mesh.lock().await;
             let mut serve = self.serve.lock().await;
             *mesh = MeshState::Unprobed;
+            self.mesh_generation
+                .set(self.mesh_generation.get().wrapping_add(1));
             *serve = None;
             self.serve_epoch.set(None);
             // Also clear the incoming-receiver state. Without this, a
@@ -2635,23 +2727,195 @@ mod tests {
         );
     }
 
+    /// A loopback URL nothing listens on: the port of a listener that was
+    /// just closed.
+    fn closed_url() -> String {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+        format!("ws://127.0.0.1:{port}/ws")
+    }
+
     #[tokio::test(flavor = "current_thread")]
     async fn never_present_send_is_rc_unavailable() {
         let h = MixBusHandler::new();
+        let url = closed_url();
+        *h.test_probe_url.borrow_mut() = Some(url.clone());
         h.test_force_state(MeshState::NeverPresent).await;
         // Target contains a dot → no local socket short-circuit.
         let result = h.send("svc.example", "do_something", &Value::Nil).await;
         // A bare host: NON-FATAL "not delivered", NOT a fake (0, Nil) success
-        // (2026-07-02 rc-band unification). rc=-3 = RC_UNAVAILABLE.
+        // (2026-07-02 rc-band unification). rc=-3 = RC_UNAVAILABLE. The
+        // send retried the probe, and the message names where it looked.
         assert_eq!(
             result.unwrap(),
             (
                 RC_UNAVAILABLE,
-                Value::String("Bus unavailable: broker never present".to_string())
+                Value::String(format!(
+                    "Bus unavailable: no broker answered at {url} (the next send retries)"
+                ))
             )
         );
-        // State unchanged after the call.
+        // A failed retry leaves the latch where it was.
         assert_eq!(h.test_state_label().await, "NeverPresent");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn an_untimed_send_bounds_a_stalled_retry_handshake() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let h = MixBusHandler::new();
+        *h.test_probe_url.borrow_mut() = Some(format!("ws://127.0.0.1:{port}/ws"));
+        h.test_force_state(MeshState::NeverPresent).await;
+        let held = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            std::future::pending::<()>().await;
+            drop(socket);
+        });
+        // No per-send timeout: only the probe's own connect bound applies.
+        // The upper margin is generous: a loaded runner must not turn a
+        // correctly bounded redial into a failure.
+        let bound = PROBE_CONNECT_TIMEOUT + std::time::Duration::from_secs(10);
+        let started = std::time::Instant::now();
+        let result =
+            tokio::time::timeout(bound, h.send("svc.example", "do_something", &Value::Nil)).await;
+        held.abort();
+        let (rc, _) = result.expect("send exceeded the connect bound").unwrap();
+        assert_eq!(rc, RC_UNAVAILABLE);
+        assert!(started.elapsed() >= PROBE_CONNECT_TIMEOUT);
+        assert!(started.elapsed() < bound);
+        assert_eq!(h.test_state_label().await, "NeverPresent");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn a_dialling_send_does_not_hold_up_latched_forms() {
+        // The retry probes without the state lock, so an emit beside a
+        // send whose dial hangs (a listener that never answers the
+        // handshake) still answers from the latch at once.
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let h = std::rc::Rc::new(MixBusHandler::new());
+        *h.test_probe_url.borrow_mut() = Some(format!("ws://127.0.0.1:{port}/ws"));
+        h.test_force_state(MeshState::NeverPresent).await;
+        let local = tokio::task::LocalSet::new();
+        local
+            .run_until(async move {
+                let held = tokio::task::spawn_local(async move {
+                    // Accept and hold the socket open, never replying.
+                    let (socket, _) = listener.accept().await.unwrap();
+                    std::future::pending::<()>().await;
+                    drop(socket);
+                });
+                let sender = h.clone();
+                let send = tokio::task::spawn_local(async move {
+                    let _ = sender
+                        .send("svc.example", "do_something", &Value::Nil)
+                        .await;
+                });
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                let emitted = tokio::time::timeout(
+                    std::time::Duration::from_secs(1),
+                    h.emit("svc.example", "do_something", &Value::Nil),
+                )
+                .await;
+                assert!(emitted.is_ok(), "emit waited on the dialling send");
+                assert_eq!(h.test_state_label().await, "NeverPresent");
+                send.abort();
+                held.abort();
+            })
+            .await;
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn a_reconnect_during_a_retry_probe_makes_it_start_over() {
+        // The retry probes without the lock. A bus_reconnect() that lands
+        // meanwhile (the script re-pointed MIXOS_NODED_URL) must not be
+        // answered from the stale probe: the send starts over and dials
+        // the new configuration.
+        let old = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let old_port = old.local_addr().unwrap().port();
+        let new = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let new_port = new.local_addr().unwrap().port();
+        let h = std::rc::Rc::new(MixBusHandler::new());
+        *h.test_probe_url.borrow_mut() = Some(format!("ws://127.0.0.1:{old_port}/ws"));
+        h.test_force_state(MeshState::NeverPresent).await;
+        let dialled_new = std::rc::Rc::new(Cell::new(0u32));
+        let counter = dialled_new.clone();
+        let (release_tx, release_rx) = tokio::sync::oneshot::channel::<()>();
+        let local = tokio::task::LocalSet::new();
+        local
+            .run_until(async move {
+                tokio::task::spawn_local(async move {
+                    // Hold the old dial open until released, then fail it.
+                    let (socket, _) = old.accept().await.unwrap();
+                    let _ = release_rx.await;
+                    drop(socket);
+                });
+                tokio::task::spawn_local(async move {
+                    while let Ok((socket, _)) = new.accept().await {
+                        counter.set(counter.get() + 1);
+                        drop(socket);
+                    }
+                });
+                let sender = h.clone();
+                let send = tokio::task::spawn_local(async move {
+                    let _ = sender
+                        .send("svc.example", "do_something", &Value::Nil)
+                        .await;
+                });
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                h.reconnect().await.unwrap();
+                *h.test_probe_url.borrow_mut() = Some(format!("ws://127.0.0.1:{new_port}/ws"));
+                let _ = release_tx.send(());
+                for _ in 0..100 {
+                    if dialled_new.get() > 0 {
+                        break;
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                }
+                assert!(
+                    dialled_new.get() > 0,
+                    "the send answered from its stale probe instead of starting over"
+                );
+                send.abort();
+            })
+            .await;
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn send_retries_a_failed_connect_and_emit_keeps_the_latch() {
+        // A send after a failed connect re-probes (TODO-mix 2026-10-10); it
+        // used to answer -3 until bus_reconnect(). Here the probe reaches a
+        // listener, which proves the send dialled again; emit does not.
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let accepted = std::rc::Rc::new(Cell::new(0u32));
+        let counter = accepted.clone();
+        let local = tokio::task::LocalSet::new();
+        local
+            .run_until(async move {
+                tokio::task::spawn_local(async move {
+                    while let Ok((socket, _)) = listener.accept().await {
+                        counter.set(counter.get() + 1);
+                        drop(socket);
+                    }
+                });
+                let h = MixBusHandler::new();
+                *h.test_probe_url.borrow_mut() = Some(format!("ws://127.0.0.1:{port}/ws"));
+                h.test_force_state(MeshState::NeverPresent).await;
+                let _ = h.emit("svc.example", "do_something", &Value::Nil).await;
+                tokio::task::yield_now().await;
+                assert_eq!(accepted.get(), 0, "emit must keep the zero-cost latch");
+                let _ = h.send("svc.example", "do_something", &Value::Nil).await;
+                for _ in 0..50 {
+                    if accepted.get() > 0 {
+                        break;
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                }
+                assert!(accepted.get() > 0, "send never re-dialled the broker");
+            })
+            .await;
     }
 
     #[tokio::test(flavor = "current_thread")]
@@ -2698,6 +2962,9 @@ mod tests {
     #[tokio::test(flavor = "current_thread")]
     async fn lost_send_raises() {
         let h = MixBusHandler::new();
+        // The send retries first; with no broker the retry fails and the
+        // Lost latch still raises.
+        *h.test_probe_url.borrow_mut() = Some(closed_url());
         h.test_force_state(MeshState::Lost).await;
         let result = h.send("svc.example", "do_something", &Value::Nil).await;
         let msg = format!("{}", result.unwrap_err());

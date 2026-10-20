@@ -457,6 +457,15 @@ exits with status `130` (`128 + SIGINT`) for non-interactive execution and
 interactive terminal retains status `0`. Don't build recovery logic on catching
 `run: interrupted` or branching on `.interrupted` (later statements may not run).
 
+A `catch` or `finally` that catches the interrupt gets about **one second** of
+cleanup. If it is still computing after that (a loop that never waits), the
+interrupt becomes standing: catches cannot resume execution, and a `finally`
+cannot replace the pending interrupt with `return`, `break` or `continue`.
+The flag is reasserted every 20 ms until the evaluation unwinds — so a
+SIGINT always ends a non-interactive `mix` (script, `-c`, a function command,
+`--serve`), whatever its handlers do. Cleanup that waits on something (`sleep`,
+a Bus `send`) is cut short sooner, at its first wait.
+
 The opts map is validated loudly (and catchably): an unknown key raises
 `run_rc: unknown opt "bogus" (supported: timeout)`, and a surplus argument raises
 `run() expects at most 2 argument(s), got 3` — a misplaced opts map errors instead

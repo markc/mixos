@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.117.0 — 2026-10-21
 
 ### Added
 
@@ -8,6 +8,25 @@
   `name`, `file` and `line`, including nested and duplicate definitions but
   excluding quoted and remote source. `mix lint --json` and `--data` expose
   this list in schema 3; every existing key and diagnostic retains its meaning.
+- `mix lint` reads in-file pragmas: `-- lint: globals a, b` declares
+  injected names, `-- lint: ignore CODE` suppresses CODE on the next line
+  holding code (or on its own line when written after code) and
+  `-- lint: ignore-file CODE` suppresses it file-wide. A bare or unknown
+  pragma is MIX-E1601; a suppression that matches nothing is the note
+  MIX-D3019. An `ssh_mix` body reads its own pragmas.
+- MIX-W2312: a bareword `null`, `None`, `undefined`, `NULL` or `nullptr`
+  used as a value is the string "null"; the warning carries a quick fix to
+  `nil` where the word is surely a value. `mix lint --fix` applies quick
+  fixes; `--json` reports each as `fix`. `Diagnostic` gains a `fix` field.
+- MIX-W2313: a function named after one of the `mix` binary's shell
+  extensions (`ai`, `ai_diagnose`, `context`). Lint now knows those
+  extensions (`MIX_SHELL_EXTENSIONS`, `AnalyzerConfig::extensions`), so
+  calling one is no longer MIX-E1102.
+- MIX-W2314 / MIX-W2315: member calls into a module bound once to a literal
+  `require()` path are checked against its exports, for arity and for a
+  missing name. Warnings in this release, while the check is new.
+- The parser names the fix for `let i = 0`, `var`/`const`, and a bareword
+  `i = …` ("Mix has no `let`: write `$i = …`").
 - Add the `archive` feature with the `tar_list`, `tar_unpack` and `tar_pack`
   builtins. Archives use zstd (default), gzip or no codec. `tar_unpack`
   validates every member, extracts into a staging directory and renames it
@@ -56,9 +75,51 @@
   source no longer re-derives the grammar. Source that does not lex raises
   `MIX_SOURCE_LEX` with `details {line, col}`. Backed by the new
   `Lexer::source_tokens`. See `mix man syntax`.
+- `fsync(path[, {recursive}])` makes a file, a directory (its entries, after a
+  `rename` or `remove`) or a whole tree durable, without `sync -f`'s flush of
+  the whole filesystem. It returns the number of inodes synced; a failure
+  raises `FSYNC_FAILED` naming the path.
+- `dns_query(name, type[, {server, port, timeout, tcp, recurse}])` asks one
+  DNS server one question and returns the rcode, the `aa`/`ra`/`tc` flags and
+  every section with TTLs. Timeouts and unreachable servers come back as
+  `{ok: false, error_code}`. It is the new `dns` feature (hickory-proto, the
+  version mail-auth already uses); the `mix` binary turns it on.
+- `walk(dir, {strict: true})` raises `WALK_UNREADABLE`, naming the first
+  directory it cannot read or entry it cannot stat, instead of skipping it.
+- `chown(path, uid, gid, {follow_symlinks: false})` changes a symlink itself
+  (`lchown`).
+- `flock` and `fcntl_lock` take `create: false`, which refuses a missing lock
+  file with `LOCK_FILE_MISSING` and creates nothing.
+- `tar_unpack` and `tar_list` accept GNU tar's `./` member prefix (`tar -C
+  dir .`); a `./` directory entry's metadata is applied to `dest`. Relative
+  symlinks may climb with leading `..` while they stay inside `dest`, judged
+  from the link's own directory (`demo/lib/alias -> ../bin/demo`). Gzip input
+  may have several members, as `pigz` and `cat a.gz b.gz` write.
+- `mix man sqlopen` documents the SQLite builtins and their modes.
 
 ### Changed
 
+- `tar_unpack`'s `numeric_owner` now defaults to `true` only for root, as GNU
+  tar does. An ordinary user's unpacked files keep their own uid and gid; a
+  non-root chown could still give a file any of the caller's groups. Pass
+  `numeric_owner: true` for the old behaviour. A setuid/setgid bit or
+  capability is now kept only where the file ends up with the owner the
+  archive named, also when owners are not restored.
+- A symlink target may no longer pass through another symlink the archive
+  creates, in either order, and `..` may only lead a target: `a/../b` is
+  refused.
+- A shared `flock` or `fcntl_lock` opens an existing file read-only, so it no
+  longer needs write access to the lock file.
+- `sqlopen` raises `OPTION_INVALID` for a mode other than `"ro"`, `"rw"` or
+  `"rwc"` (`"rwc"` is new: read-write, creating the file, the same as `"rw"`).
+  An unknown mode used to open read-only, so `"rwc"` could not create a
+  database. A read-only open of a missing file raises `SQL_NO_DATABASE`
+  naming `"rwc"`.
+- A member call `$m.name(...)` on a map holding a function member calls
+  that member in every mode, `--serve` included; an extension (the shell's
+  `context()`) no longer wins there.
+- MIX-W2304 names the result shape and suggests the field a bash, Python or
+  Node spelling means (`code`, `rc`, `status` → `exit_code`).
 - The default remote mix binary is now `/opt/mixos/bin/mix` (was the legacy
   install path's mix). It applies to `ssh_mix`, `ssh_mix_many`, `ssh_exec`,
   `ssh_run`'s `env_transport: "mix"` and `send_mail`'s `host` hop whenever
@@ -67,10 +128,24 @@
 
 ### Fixed
 
+- A `send` after a failed Bus connection retries within its timeout,
+  re-reading `MIXOS_NODED_URL` and node configuration. Without `timeout=`,
+  each lane's connect is bounded by 5 seconds (up to 10 seconds if both the
+  verified Unix and anonymous TCP lanes stall). A stale probe cannot
+  replace a newer connection, and reconnecting does not hold the state lock.
+- SIGINT still ends a non-interactive evaluation when a `catch` keeps
+  computing: after a cleanup grace the interrupt becomes standing. Nested
+  catches and `finally` control flow cannot swallow it. A served citizen
+  keeps its graceful deregistration and exit status 0.
+- `read_file`, `write_file` and `append_file` yield while waiting on a FIFO,
+  so served citizens still answer other verbs and `QUIT`. Reads honour the
+  string limit, and the FIFO path keeps the normal builtin arity rules.
 - `fs_watch` recovery (after a lost or overflowed event stream) re-arms each
   directory watch in place instead of unwatching and watching it again, so a
   change that lands during the repair (the close-write of a save racing the
   overflow) is still reported.
+- `mix lint` no longer reports MIX-E1101 for a variable assigned in a piped
+  statement (`$v = 1 | cat`).
 - `mix lint` MIX-W2307 (send result never checked) now counts a status read
   inside an `if` condition, a map value, a nested call argument or a string
   interpolation. A correctly checked send no longer warns.

@@ -253,12 +253,16 @@ flate2 over its Rust backend.</p>
 <code>"none"</code>. The builtin decoder is the universal reader, so the artifact
 profile below is a contract that any encoder must satisfy:</p>
 <ul>
-<li><strong>single frame</strong> — <code>tar_unpack</code>/<code>tar_list</code> drain the stream to true EOF:
-the zstd content checksum (XXH64, verified whenever the frame carries one;
-<code>tar_pack</code> always writes it) / gzip CRC are verified there, any non-zero decoded
-bytes after the tar end are refused, and raw input left unconsumed (a
-concatenated second frame or gzip member, including an empty member) is
-refused. Trailing compressed bytes, including zeros, are refused too;</li>
+<li><strong>one tar, one zstd frame</strong> — <code>tar_unpack</code>/<code>tar_list</code> drain the stream to
+true EOF: the zstd content checksum (XXH64, verified whenever the frame
+carries one; <code>tar_pack</code> always writes it) / gzip CRC are verified there,
+any non-zero decoded bytes after the tar end are refused, and raw input
+left unconsumed (a concatenated second zstd frame) is refused. Gzip is
+read <strong>member after member</strong>, as RFC 1952 allows (<code>pigz</code>, or <code>cat a.gz b.gz</code>): a tar split across several members unpacks, every member's CRC
+is checked, and an empty trailing member is harmless. A second whole tar
+in a later member is still non-zero data after the first tar's end and is
+refused. Trailing bytes that are not a gzip member, including zeros, raise
+<code>ARCHIVE_STREAM_CORRUPT</code>;</li>
 <li><strong>no dictionaries</strong>;</li>
 <li>zstd levels are <code>1..=22</code> (default 7). Level 22 is the largest the builtin
 packs, because its 2^27 (128 MiB) window is exactly the decoder's ceiling.
@@ -299,9 +303,13 @@ check and the rename; refusing such a parent closes those windows. The new
 staging directory is also checked to be the caller's own, <code>0700</code> and
 empty before anything is extracted into it.</li>
 <li>Member names are validated on the <em>resolved</em> path (GNU longname and PAX
-smuggling land there): no absolute paths, no <code>.</code>/<code>..</code> components, UTF-8
+smuggling land there): no absolute paths, no <code>..</code> components, UTF-8
 only (invalid bytes raise — the extractor never guesses what got
-extracted).</li>
+extracted). A leading <code>./</code> is accepted and dropped, so GNU tar's
+<code>tar -C dir .</code> and <code>./name</code> archives unpack (hardlink targets too). A bare
+<code>./</code> (or <code>.</code>) entry names the extraction root: it must be a directory, and
+only its mode, owner and mtime are applied, to <code>dest</code> itself. <code>tar_list</code>
+shows it as <code>.</code>.</li>
 <li>Device, fifo and unknown entry types are <strong>refused</strong>. GNU sparse entries
 are refused by both the lister and extractor. A PAX global header (the
 first record <code>git archive</code> writes) is archive metadata: it is counted in
@@ -310,18 +318,32 @@ the receipt's <code>metadata</code> and nothing is extracted for it.</li>
 stream, including an empty input or truncated zstd header) raises the
 structured code <code>ARCHIVE_STREAM_CORRUPT</code>. Match the code
 in the optional second <code>catch</code> binding, not the message text.</li>
-<li>Symlink targets must be contained (no absolute, no <code>..</code>). Nothing is
-ever extracted <em>through</em> a symlink the archive created. Hardlinks may
-only target an earlier <strong>regular file</strong> (hardlink-to-hardlink is
-refused).</li>
-<li><code>numeric_owner</code> (default true) restores uid/gid through the entry's
-descriptor, never following a link. Non-root callers get the capability
-limit silently (the owner is skipped) rather than an error. Any other
-owner failure (an unmapped uid in a user namespace, a root-squashing
-filesystem) is listed in the receipt's <code>warnings</code>. When an entry's owner
-was not applied, its setuid/setgid bits and <code>security.capability</code> are
-dropped (also listed in <code>warnings</code>): a special bit is only ever kept on
-the owner the archive named. Mode and mtime failures raise.</li>
+<li>Symlink targets must be relative and stay inside <code>dest</code>, judged from the
+link's own directory: <code>demo/lib/alias -&gt; ../bin/demo</code> is fine,
+<code>demo/x -&gt; ../../y</code> escapes and is refused. <code>..</code> may only lead the target
+(<code>../../a/b</code>), never follow a name (<code>a/../b</code> is refused): a <code>..</code> applied to
+a directory that is really a symlink would climb from wherever that link
+points. A target may end at another symlink, but never pass through one,
+in either order: a link whose target walks through an existing symlink is
+refused, and so is a symlink created where an earlier link's target walks.
+<code>tar_pack</code> applies the same rules, so a tree it packs always unpacks.
+A leading <code>./</code> and interior <code>.</code> components are dropped from the written
+target; a target of only <code>.</code> is written as <code>.</code>. Nothing is ever extracted
+<em>through</em> a symlink the archive created. Hardlinks may only target an
+earlier <strong>regular file</strong> (hardlink-to-hardlink is refused).</li>
+<li><code>numeric_owner</code> restores uid/gid through the entry's descriptor, never
+following a link. It defaults to <strong>true for root and false for everyone
+else</strong>, as GNU tar does (<code>--same-owner</code> / <code>--no-same-owner</code>): an ordinary
+user's files keep their own uid and gid, because a non-root chown could
+still hand a file to any group the caller belongs to, and the archive
+should not choose which. With <code>numeric_owner:true</code>, a non-root caller gets
+the capability limit silently (the owner is skipped) rather than an
+error. Any other owner failure (an unmapped uid in a user namespace, a
+root-squashing filesystem) is listed in the receipt's <code>warnings</code>. When an
+entry does not end up with the owner the archive named (not restored, or
+restoring it failed), its setuid/setgid bits and <code>security.capability</code>
+are dropped (also listed in <code>warnings</code>): a special bit is only ever kept
+on the owner the archive named. Mode and mtime failures raise.</li>
 <li>Modes are restored as the archive gives them, as GNU tar does for root:
 a <code>0777</code> directory or <code>0666</code> file stays world-writable. Unpack untrusted
 archives into a tree whose modes you then check, or repack them.</li>
@@ -338,7 +360,14 @@ applied last, after owner and mode, because chown and data writes clear
 xattr names and values held for the whole archive until the post-pass
 applies them; one archive of many small records cannot exhaust memory.</li>
 <li>Directory and symlink metadata (mode, mtime, owner) is applied in a
-children-first post-pass, so directory mtimes stick.</li>
+children-first post-pass, so directory mtimes stick. A <code>./</code> root entry's
+metadata is applied after the commit, through the descriptor of what is
+now <code>dest</code>: until then the staging directory stays the caller's own and
+<code>0700</code>, so an archive-named owner can never rename it in a sticky parent,
+and a restrictive root mode cannot lock the caller out of the post-pass.
+The tree is already in place by then, so a failure there is a <code>warnings</code>
+entry rather than an error. When several <code>./</code> entries appear, the last
+one wins.</li>
 <li>Limits: <code>max_entries</code> (200k, counting both members and every parent
 directory created implicitly for a member whose directory the archive
 does not list; the receipt's <code>implicit_dirs</code> reports those),

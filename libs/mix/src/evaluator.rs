@@ -10323,12 +10323,14 @@ impl Evaluator {
                         // Catchable = DieError | RuntimeError | Structured.
                         // Control-flow signals (Return/Break/Continue) and
                         // lex/parse errors are NOT caught — but `finally`
-                        // still runs for them (below).
+                        // still runs for them (below). Once the interrupt is
+                        // standing (crate::interrupt::set_standing) nothing
+                        // is caught: the unwind must reach the host.
                         Err(
                             e @ (MixError::DieError { .. }
                             | MixError::RuntimeError { .. }
                             | MixError::Structured(_)),
-                        ) if catch.is_some() => {
+                        ) if catch.is_some() && !crate::interrupt::is_standing() => {
                             let clause = catch.as_ref().unwrap();
                             // Snapshot BEFORE binding so the optional
                             // second binding sees code/frames even for
@@ -10368,7 +10370,22 @@ impl Evaluator {
                                     MixError::Structured(info) => info,
                                     // Return/Break/Continue/ExitRequest from a
                                     // finally body legitimately hijack control.
-                                    other => return Err(other),
+                                    // Not while a standing interrupt is
+                                    // unwinding: the enclosing loop would take
+                                    // the `continue` and run on.
+                                    other => {
+                                        if crate::interrupt::is_standing()
+                                            && matches!(
+                                                pending,
+                                                Err(MixError::RuntimeError { .. }
+                                                    | MixError::DieError { .. }
+                                                    | MixError::Structured(_))
+                                            )
+                                        {
+                                            return pending;
+                                        }
+                                        return Err(other);
+                                    }
                                 };
                                 // Attach the displaced error (if it was
                                 // a real error, not Return/Break/Continue)
@@ -13795,6 +13812,20 @@ impl Evaluator {
                         }
                     }
 
+                    // A FIFO path waits without holding the runtime thread
+                    // (crate::fifo_io): shutdown, QUIT and Class C peers
+                    // keep running. Any other path stays on the sync
+                    // builtin; the only added cost is one stat.
+                    // Boxed out of line: this arm's future is on every
+                    // call's stack, and inline awaits here would grow it.
+                    #[cfg(unix)]
+                    if matches!(name.as_str(), "read_file" | "write_file" | "append_file")
+                        && let Some(Value::String(path)) = eval_args.first()
+                        && crate::fifo_io::is_fifo(path)
+                    {
+                        return self.call_fifo_builtin(name, &eval_args).await;
+                    }
+
                     // Async builtins (must be handled before sync builtins)
                     if name == "sleep" {
                         self.check_capability(name)?; // Knob A
@@ -15268,14 +15299,13 @@ impl Evaluator {
                 // at parse time). Dispatch order preserves every call
                 // that works today — object evaluated first, then args
                 // left-to-right, exactly like the old desugar's arg loop:
-                //   1. extensions (UFCS: object is first arg);
-                //   2. user functions via the registry (UFCS — the
-                //      "global beats member" precedence is pinned);
-                //   3. inside an `address` block, an unknown name is
+                //   1. a map member holding a Function is called with the
+                //      plain args (no implicit object) — the require()
+                //      exports calling convention — in every mode;
+                //   2. extensions (UFCS: object is first arg);
+                //   3. user functions via the registry (UFCS);
+                //   4. inside an `address` block, an unknown name is
                 //      still a send (use `$m["f"](…)` for members there);
-                //   4. NEW: a map member holding a Function is called
-                //      with the plain args (no implicit object) — the
-                //      require() exports calling convention;
                 //   5. else the undefined-function error, enriched.
                 Expr::MethodCall {
                     object,
@@ -15293,35 +15323,21 @@ impl Evaluator {
                         }
                     }
 
-                    // 1. Extensions — same clone-out + yield discipline
-                    // as the FunctionCall arm. EXTENSION-FIRST ONLY in
-                    // serve mode: the citizen's reserved verbs
-                    // (props.*, lifecycle.*) are injected as extensions,
-                    // and a citizen's map member must never fake them
-                    // (the 09-26 `$module.fn()` entry — in a plain
-                    // script, the AI helpers (ai, ai_diagnose, context)
-                    // shadowed module exports; a map member holding a
-                    // Function now wins there).
-                    let serve_extensions_first = self.globals.borrow().serve_runtime.is_some();
-                    if serve_extensions_first
-                        && let Some(ext_fn) =
-                            { self.globals.borrow().extensions.get(field).cloned() }
-                    {
-                        let fut = ext_fn(ufcs_args);
-                        return self.await_with_class_c_yield(fut).await?;
-                    }
-
-                    // 2. Map member holding a Function — the OBJECT's own
-                    // function beats a registry (user/prelude) function of
-                    // the same name (v0.72.0; before that UFCS won, which
-                    // made a module export named `sum` or `lines` silently
-                    // unreachable via dot-call — the prelude function ran
-                    // on the stringified map instead). Extensions stay
-                    // ABOVE members on purpose ONLY in serve mode (see
-                    // above); builtin-named members remain unreachable via
-                    // dot-call — `.name(` where name is a builtin
-                    // desugars to a plain FunctionCall at PARSE time;
-                    // index access is still the spelling for those.
+                    // 1. Map member holding a Function — the OBJECT's own
+                    // function beats an extension and a registry (user or
+                    // prelude) function of the same name, in EVERY mode.
+                    // UFCS won over members until v0.72.0, which made a
+                    // module export named `sum` or `lines` silently
+                    // unreachable via dot-call. Under `--serve`, extensions
+                    // stayed above members until 0.117.0, so that a
+                    // citizen's map could not fake an injected `props.*`
+                    // verb; but reserved verbs are serviced by the
+                    // ServeRuntime, never by extensions, so all that order
+                    // did was hand a module's `fn context` call to the
+                    // shell's `context()` string. Builtin-named members
+                    // remain unreachable via dot-call — `.name(` where name
+                    // is a builtin desugars to a plain FunctionCall at
+                    // PARSE time; index access is still the spelling there.
                     if let Value::Map(map) = &ufcs_args[0]
                         && let Some(Value::Function(rc)) = map.get(field)
                     {
@@ -15330,13 +15346,11 @@ impl Evaluator {
                         return self.call_function(&func, &ufcs_args[1..]).await;
                     }
 
-                    // 1b. Extensions in NON-serve mode — after members,
-                    // before user functions: the AI helpers stay
-                    // reachable, they just no longer shadow exports.
-                    if !serve_extensions_first
-                        && let Some(ext_fn) =
-                            { self.globals.borrow().extensions.get(field).cloned() }
-                    {
+                    // 2. Extensions (UFCS) — same clone-out + yield
+                    // discipline as the FunctionCall arm. After members,
+                    // before user functions: the AI helpers stay reachable,
+                    // they just never shadow an export.
+                    if let Some(ext_fn) = { self.globals.borrow().extensions.get(field).cloned() } {
                         let fut = ext_fn(ufcs_args);
                         return self.await_with_class_c_yield(fut).await?;
                     }
@@ -18240,6 +18254,80 @@ impl Evaluator {
         Ok(Value::Nil)
     }
 
+    /// `read_file` / `write_file` / `append_file` on a FIFO path: the same
+    /// results and error text as the sync builtins, but every wait yields
+    /// the runtime thread (see [`crate::fifo_io`]).
+    #[cfg(unix)]
+    fn call_fifo_builtin<'a>(
+        &'a mut self,
+        name: &'a str,
+        args: &'a [Value],
+    ) -> Pin<Box<dyn Future<Output = MixResult<Value>> + 'a>> {
+        Box::pin(async move {
+            self.check_capability(name)?;
+            // The same arity rule as the sync path: strict mode rejects a bad
+            // count, compatible mode warns about a surplus and goes on.
+            if self.ctx.arity_strict {
+                self.check_builtin_arity(name, args.len())?;
+            } else {
+                self.warn_surplus_arity(name, args.len());
+            }
+            let path = args[0].to_mix_string();
+            let fail = |e: std::io::Error| MixError::RuntimeError {
+                span: None,
+                msg: format!("{name} '{path}': {e}"),
+            };
+            if name == "read_file" {
+                // Stop reading just past the string cap (Knob D) instead of
+                // buffering an endless producer; the check below raises.
+                let limit = self.ctx.max_string_len;
+                let bytes = self
+                    .await_with_class_c_yield(crate::fifo_io::read(&path, limit))
+                    .await?
+                    .map_err(fail)?;
+                // Over the cap: refuse before decoding, since the read may
+                // have stopped mid-codepoint. (The length is what was read,
+                // a lower bound on what the producer had to give.)
+                if let Some(max) = limit
+                    && bytes.len() > max
+                {
+                    return Err(self.snapshot_builtin_error(
+                        name,
+                        self.runtime_err(format!(
+                            "string length {} exceeds limit {max}",
+                            bytes.len()
+                        )),
+                    ));
+                }
+                let text = String::from_utf8(bytes).map_err(|_| {
+                    fail(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        "stream did not contain valid UTF-8",
+                    ))
+                })?;
+                let value = Value::String(text);
+                self.check_collection_size(&value)
+                    .map_err(|e| self.snapshot_builtin_error(name, e))?;
+                return Ok(value);
+            }
+            // Same error as the sync builtin's expect_args, in either mode.
+            let Some(payload) = args.get(1) else {
+                return Err(MixError::RuntimeError {
+                    span: None,
+                    msg: format!(
+                        "{name}() expects at least 2 argument(s), got {}",
+                        args.len()
+                    ),
+                });
+            };
+            let data = builtins::with_write_payload(name, payload, <[u8]>::to_vec)?;
+            self.await_with_class_c_yield(crate::fifo_io::write(&path, &data))
+                .await?
+                .map_err(fail)?;
+            Ok(Value::Nil)
+        })
+    }
+
     /// Execute `sh "command"` as an expression — captures stdout.
     fn exec_sh_expr(&mut self, cmd: &str) -> MixResult<Value> {
         self.check_capability_class(crate::builtins::CapabilityClass::Process, "$()")?;
@@ -18750,6 +18838,271 @@ mod chain_class_tests {
     #[test]
     fn single_async_promotes_chain() {
         assert_eq!(ChainClass::from_entries(&[entry(true)]), ChainClass::ClassC);
+    }
+}
+
+/// A FIFO write takes the same arity path as a regular file: a surplus
+/// argument is ignored in compatible mode and refused in strict mode.
+#[cfg(all(test, unix))]
+mod fifo_arity_tests {
+    use super::{ArityMode, Evaluator};
+
+    fn block_on<T>(fut: impl std::future::Future<Output = T>) -> T {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(fut)
+    }
+
+    /// A fresh FIFO in a private directory, and the directory to remove.
+    fn fifo(tag: &str) -> (std::path::PathBuf, std::path::PathBuf) {
+        let dir = std::env::temp_dir().join(format!("mix-fifo-arity-{}-{tag}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("pipe");
+        let status = std::process::Command::new("mkfifo")
+            .arg(&path)
+            .status()
+            .expect("run mkfifo");
+        assert!(status.success(), "mkfifo failed");
+        (path, dir)
+    }
+
+    #[test]
+    fn compatible_fifo_write_ignores_a_surplus_argument() {
+        // The FIFO write polls the shared interrupt flag: hold its guard.
+        let _guard = crate::interrupt::TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        crate::interrupt::_test_clear();
+        block_on(async {
+            let (path, dir) = fifo("compat");
+            let reader_path = path.clone();
+            let reader = std::thread::spawn(move || std::fs::read(reader_path).unwrap());
+            let mut eval = Evaluator::new();
+            eval.set_arity_mode(ArityMode::Compatible);
+            let script = format!("write_file(\"{}\", \"x\", \"extra\")", path.display());
+            let result = eval.execute_script_source(&script).await;
+            let data = reader.join().unwrap();
+            let _ = std::fs::remove_dir_all(&dir);
+            result.expect("surplus is ignored in compatible mode");
+            assert_eq!(data, b"x");
+        });
+    }
+
+    #[test]
+    fn strict_fifo_write_refuses_a_surplus_argument() {
+        let _guard = crate::interrupt::TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        crate::interrupt::_test_clear();
+        block_on(async {
+            let (path, dir) = fifo("strict");
+            let mut eval = Evaluator::new();
+            eval.set_arity_mode(ArityMode::Strict);
+            let script = format!("write_file(\"{}\", \"x\", \"extra\")", path.display());
+            let result = eval.execute_script_source(&script).await;
+            let _ = std::fs::remove_dir_all(&dir);
+            let err = match result {
+                Ok(_) => panic!("strict mode accepted a surplus argument"),
+                Err(e) => format!("{e:?}"),
+            };
+            assert!(err.contains("not accepted"), "{err}");
+        });
+    }
+}
+
+/// The standing interrupt is process-wide state, so these tests run their
+/// body in a child process of this test binary. Otherwise a standing
+/// interrupt would reach every other `try`/`catch` test in the crate.
+#[cfg(test)]
+mod standing_interrupt_tests {
+    use super::{Evaluator, Value};
+
+    const CHILD_ENV: &str = "MIX_STANDING_INTERRUPT_CHILD";
+    const CASE_ENV: &str = "MIX_STANDING_INTERRUPT_CASE";
+    const MARKER_ENV: &str = "MIX_STANDING_INTERRUPT_MARKER";
+    /// How long one case's child may run before it is killed and the test
+    /// fails, so a regression fails instead of hanging the suite.
+    const CASE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
+
+    fn block_on<T>(fut: impl std::future::Future<Output = T>) -> T {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(fut)
+    }
+
+    /// One case: the Mix body (which writes `$marker` as its first statement
+    /// inside the protected `try`, before its loop), the expected `$log` (if
+    /// the case checks it), and whether the raiser keeps raising.
+    ///
+    /// The three guard cases raise ONCE, so the one interrupt lands at the
+    /// first checkpoint inside the protected body and the outcome is fixed.
+    /// The liveness case raises repeatedly and checks only that the run ends.
+    fn cases() -> Vec<(&'static str, Option<&'static str>, bool)> {
+        // `$marker` is a Mix global the child binds to the marker path, so the
+        // path is data, never part of the source text.
+        vec![
+            (
+                "try\n  $log = $log .. \"T\"\n  write_file($marker, \"x\")\n  while true\n    $n = 1\n  end\n\
+                 catch $m\n  $log = $log .. \"C\"\n\
+                 finally\n  $log = $log .. \"F\"\nend\n",
+                Some("TF"),
+                false,
+            ),
+            (
+                "try\n  try\n    write_file($marker, \"x\")\n    while true\n      $n = 1\n    end\n\
+                 catch $m\n    $log = $log .. \"C\"\n  end\n\
+                 catch $m2\n  $log = $log .. \"O\"\n\
+                 finally\n  $log = $log .. \"F\"\nend\n",
+                Some("F"),
+                false,
+            ),
+            // A finally's `continue` must not turn the unwind into a normal
+            // iteration of the enclosing loop. Without the guard the loop
+            // runs on with no further interrupt, and the parent's time limit
+            // fails the case.
+            (
+                "while true\n  try\n    write_file($marker, \"x\")\n    while true\n      $n = 1\n    end\n\
+                 finally\n    continue\n  end\nend\n$log = $log .. \"X\"\n",
+                Some(""),
+                false,
+            ),
+            // Liveness: repeated raises must still end the run, however the
+            // catch and finally clauses are entered.
+            (
+                "try\n  write_file($marker, \"x\")\n  while true\n    $n = 1\n  end\n\
+                 catch $m\n  $log = $log .. \"C\"\nend\n",
+                None,
+                true,
+            ),
+        ]
+    }
+
+    #[test]
+    fn standing_interrupt_reaches_the_host_through_catch() {
+        if std::env::var_os(CHILD_ENV).is_some() {
+            return;
+        }
+        let exe = std::env::current_exe().expect("test binary path");
+        let dir = std::env::temp_dir().join(format!("mix-standing-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        for case in 0..cases().len() {
+            let marker = dir.join(format!("case-{case}"));
+            // A marker left by an earlier run would release the raiser early.
+            let _ = std::fs::remove_file(&marker);
+            let mut child = std::process::Command::new(&exe)
+                .args([
+                    "--exact",
+                    "evaluator::standing_interrupt_tests::standing_child",
+                    "--nocapture",
+                    "--test-threads=1",
+                ])
+                .env(CHILD_ENV, "1")
+                .env(CASE_ENV, case.to_string())
+                .env(MARKER_ENV, &marker)
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .spawn()
+                .expect("spawn child test");
+            let started = std::time::Instant::now();
+            let finished = loop {
+                if child.try_wait().expect("poll child").is_some() {
+                    break true;
+                }
+                if started.elapsed() >= CASE_TIMEOUT {
+                    let _ = child.kill();
+                    break false;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            };
+            let out = child.wait_with_output().expect("collect child output");
+            let text = format!(
+                "{}{}",
+                String::from_utf8_lossy(&out.stdout),
+                String::from_utf8_lossy(&out.stderr)
+            );
+            assert!(
+                finished,
+                "case {case} did not end within {CASE_TIMEOUT:?}: the interrupt was caught \
+                 or the unwind never reached the host\n{text}"
+            );
+            assert!(out.status.success(), "case {case} failed:\n{text}");
+            assert!(
+                text.contains("standing child ok"),
+                "case {case} did not run:\n{text}"
+            );
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Runs one case in the child process (see the parent test above).
+    #[test]
+    fn standing_child() {
+        if std::env::var_os(CHILD_ENV).is_none() {
+            return;
+        }
+        let case: usize = std::env::var(CASE_ENV)
+            .expect("case index")
+            .parse()
+            .expect("case index is a number");
+        let marker = std::path::PathBuf::from(std::env::var_os(MARKER_ENV).expect("marker path"));
+        let (body, expected, repeated) = cases().into_iter().nth(case).expect("case in range");
+        block_on(async {
+            // One evaluator, whose flag is the process interrupt flag, as in
+            // mix-shell.
+            let mut eval = Evaluator::new();
+            crate::interrupt::init(eval.interrupt_flag());
+            // The marker path is bound as data; the source names it as `$marker`.
+            eval.set_global("marker", Value::String(marker.display().to_string()));
+            eval.execute_script_source("$log = \"\"\n$n = 0\n")
+                .await
+                .expect("init globals");
+            // The raiser stands the interrupt up only once the body has
+            // written its marker, which is inside the protected `try`. A
+            // guard case stops there; the liveness case keeps raising, as
+            // mix-shell's thread does, until the case ends.
+            let done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let stop = done.clone();
+            let raiser_marker = marker.clone();
+            let raiser = std::thread::spawn(move || {
+                // Give up if the body never wrote the marker (the case failed
+                // before its try): `done` is set once the run has ended.
+                while !raiser_marker.exists() {
+                    if stop.load(std::sync::atomic::Ordering::SeqCst) {
+                        return;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(2));
+                }
+                crate::interrupt::set_standing();
+                if repeated {
+                    while !stop.load(std::sync::atomic::Ordering::SeqCst) {
+                        crate::interrupt::raise();
+                        std::thread::sleep(std::time::Duration::from_millis(2));
+                    }
+                }
+            });
+            let result = eval.execute_script_source(body).await;
+            done.store(true, std::sync::atomic::Ordering::SeqCst);
+            raiser.join().expect("raiser thread");
+            crate::interrupt::_test_clear();
+            let err = match result {
+                Ok(_) => panic!("standing interrupt was caught (case {case})"),
+                Err(e) => e,
+            };
+            let text = format!("{err:?}");
+            assert!(text.contains("interrupted"), "case {case}: {text}");
+            if let Some(expected) = expected {
+                let log = eval.get_global("log");
+                match &log {
+                    Some(Value::String(text)) => assert_eq!(text, expected, "case {case}"),
+                    other => panic!("log not a string: {other:?}"),
+                }
+            }
+            println!("standing child ok");
+        });
     }
 }
 
