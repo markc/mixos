@@ -18,9 +18,12 @@ where
     let cursor_logical = match state.state.seat.seat.get_pointer() {
         Some(pointer) => pointer.current_location(),
         None => {
-            if state.inner.comp.injection.backend != crate::comp::injection::BackendInput::Headless {
+            if state.inner.comp.injection.backend != crate::comp::injection::BackendInput::Headless
+            {
                 static WARN: std::sync::Once = std::sync::Once::new();
-                WARN.call_once(|| warn!("Canvas viewport has no session pointer; using neutral cursor"));
+                WARN.call_once(|| {
+                    warn!("Canvas viewport has no session pointer; using neutral cursor")
+                });
             }
             Point::default()
         }

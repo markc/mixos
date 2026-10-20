@@ -522,7 +522,12 @@ impl Bus {
         if lock_ended {
             policy_host::input::retarget_pointer(lp);
         }
-        if clear_agent_input(lp.inner.comp.injection.backend, paused, self.paused, lock_began) {
+        if clear_agent_input(
+            lp.inner.comp.injection.backend,
+            paused,
+            self.paused,
+            lock_began,
+        ) {
             self.context.clear_agent();
             self.sequences.clear_agent(lp);
             policy_host::input::clear_agent(lp);

@@ -45,7 +45,10 @@ impl Bus {
             if reply["rc"] == 0 {
                 break;
             }
-            assert!(std::time::Instant::now() < deadline, "observer did not register: {reply}");
+            assert!(
+                std::time::Instant::now() < deadline,
+                "observer did not register: {reply}"
+            );
             std::thread::sleep(std::time::Duration::from_millis(20));
         }
         observer

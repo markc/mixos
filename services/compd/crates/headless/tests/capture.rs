@@ -257,8 +257,14 @@ fn pattern_mixed_cursor_captures_and_presentation_ledger() {
     }
     let (opaque_pixels, fill_pixels) =
         world::seat::pointer::texture::pointer_load::agent_arrow_pixel_counts(24);
-    assert_eq!(changed, opaque_pixels, "complete agent arrow must be captured");
-    assert_eq!(amber, fill_pixels, "complete agent arrow fill must be captured");
+    assert_eq!(
+        changed, opaque_pixels,
+        "complete agent arrow must be captured"
+    );
+    assert_eq!(
+        amber, fill_pixels,
+        "complete agent arrow fill must be captured"
+    );
     // Also exercise the shipped screenshot client against the same pattern.
     let shot = process.root.join("screenshot.ppm");
     let output = Command::new(binary("testkit-screenshot"))

@@ -220,8 +220,14 @@ const AGENT_FILL: [u8; 4] = [0x1C, 0x9F, 0xFF, 255];
 /// Opaque and amber pixel counts from the same sprite data used for rendering.
 pub fn agent_arrow_pixel_counts(size: u32) -> (usize, usize) {
     let pixels = arrow_pixels_filled(size, AGENT_FILL);
-    let opaque = pixels.chunks_exact(4).filter(|pixel| pixel[3] == 255).count();
-    let fill = pixels.chunks_exact(4).filter(|pixel| *pixel == AGENT_FILL).count();
+    let opaque = pixels
+        .chunks_exact(4)
+        .filter(|pixel| pixel[3] == 255)
+        .count();
+    let fill = pixels
+        .chunks_exact(4)
+        .filter(|pixel| *pixel == AGENT_FILL)
+        .count();
     (opaque, fill)
 }
 

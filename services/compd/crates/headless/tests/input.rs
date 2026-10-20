@@ -267,15 +267,24 @@ fn lock_clears_agent_input() {
     bus.ready(SERVICE);
     let row = window(&bus, SERVICE, "headless-lock");
     thread::scope(|scope| {
-        let run = scope.spawn(|| bus.request(SERVICE, "comp.input.sequence", json!({
-            "seat":"agent", "steps":[
-                {"verb":"comp.input.key","args":{"window":target(&row),"key":"a"}},
-                {"verb":"comp.input.key","args":{"key":"b"},"delay_ms":3000}
-            ]
-        })));
+        let run = scope.spawn(|| {
+            bus.request(
+                SERVICE,
+                "comp.input.sequence",
+                json!({
+                    "seat":"agent", "steps":[
+                        {"verb":"comp.input.key","args":{"window":target(&row),"key":"a"}},
+                        {"verb":"comp.input.key","args":{"key":"b"},"delay_ms":3000}
+                    ]
+                }),
+            )
+        });
         // The first event proves admission and that the delayed run is active.
         probe.wait_for("PROBE seat \"agent\" key 30 0");
-        assert!(!run.is_finished(), "sequence must still be waiting when locked");
+        assert!(
+            !run.is_finished(),
+            "sequence must still be waiting when locked"
+        );
         let log = process.root.join("lock.log");
         let file = fs::File::create(&log).unwrap();
         let child = Command::new(binary("testkit-lock-client"))
@@ -294,20 +303,30 @@ fn lock_clears_agent_input() {
         // Allow focus-leave cleanup to reach the probe, then wait beyond the
         // cancelled step's original deadline: no agent event may follow it.
         thread::sleep(Duration::from_millis(200));
-        let agent_events = |text: String| text.lines()
-            .filter(|line| line.starts_with("PROBE seat \"agent\" "))
-            .map(str::to_owned).collect::<Vec<_>>();
+        let agent_events = |text: String| {
+            text.lines()
+                .filter(|line| line.starts_with("PROBE seat \"agent\" "))
+                .map(str::to_owned)
+                .collect::<Vec<_>>()
+        };
         let before = agent_events(probe.text());
         thread::sleep(Duration::from_millis(3200));
         assert_eq!(agent_events(probe.text()), before);
         assert!(!probe.text().contains("PROBE seat \"agent\" key 48 "));
-        assert_eq!(unsafe { libc::kill(lock.child.id() as i32, libc::SIGUSR1) }, 0);
+        assert_eq!(
+            unsafe { libc::kill(lock.child.id() as i32, libc::SIGUSR1) },
+            0
+        );
         lock.wait_for("unlocked");
-        let reply = bus.call(SERVICE, "comp.input.sequence", json!({
-            "seat":"agent", "steps":[
-                {"verb":"comp.input.key","args":{"window":target(&row),"key":"c"}}
-            ]
-        }));
+        let reply = bus.call(
+            SERVICE,
+            "comp.input.sequence",
+            json!({
+                "seat":"agent", "steps":[
+                    {"verb":"comp.input.key","args":{"window":target(&row),"key":"c"}}
+                ]
+            }),
+        );
         assert_eq!(reply["steps"].as_array().unwrap().len(), 1, "{reply}");
         probe.wait_for("PROBE seat \"agent\" key 46 0");
     });
@@ -325,25 +344,41 @@ fn scale_two_centres_clamps_and_delivers_logical_coordinates() {
     let seats = bus.call(SERVICE, "comp.props.get", json!({"path":"input.seats"}));
     assert_eq!(seats["agent"]["pointer"]["x"], 320.0, "{seats}");
     assert_eq!(seats["agent"]["pointer"]["y"], 180.0, "{seats}");
-    let clamped = bus.call(SERVICE, "comp.input.pointer.move", json!({
-        "seat":"agent", "output":"headless-0", "x":10000, "y":10000
-    }));
+    let clamped = bus.call(
+        SERVICE,
+        "comp.input.pointer.move",
+        json!({
+            "seat":"agent", "output":"headless-0", "x":10000, "y":10000
+        }),
+    );
     assert_eq!(clamped["pointer"]["x"], 639.0, "{clamped}");
     assert_eq!(clamped["pointer"]["y"], 359.0, "{clamped}");
     // Leave the surface before asserting its next enter. Output positions
     // and the probe's local positions must both stay logical at scale two.
-    bus.call(SERVICE, "comp.input.pointer.move", json!({
-        "seat":"agent", "output":"headless-0", "x":0, "y":0
-    }));
+    bus.call(
+        SERVICE,
+        "comp.input.pointer.move",
+        json!({
+            "seat":"agent", "output":"headless-0", "x":0, "y":0
+        }),
+    );
     let x = row["window_x"].as_f64().unwrap() + 40.0;
     let y = row["window_y"].as_f64().unwrap() + 50.0;
-    bus.call(SERVICE, "comp.input.pointer.move", json!({
-        "seat":"agent", "output":"headless-0", "x":x, "y":y
-    }));
+    bus.call(
+        SERVICE,
+        "comp.input.pointer.move",
+        json!({
+            "seat":"agent", "output":"headless-0", "x":x, "y":y
+        }),
+    );
     probe.wait_for("PROBE seat \"agent\" enter 40 50");
-    bus.call(SERVICE, "comp.input.pointer.move", json!({
-        "seat":"agent", "output":"headless-0", "x":x+1.0, "y":y+1.0
-    }));
+    bus.call(
+        SERVICE,
+        "comp.input.pointer.move",
+        json!({
+            "seat":"agent", "output":"headless-0", "x":x+1.0, "y":y+1.0
+        }),
+    );
     probe.wait_for("PROBE seat \"agent\" motion 41 51");
     probe.no_human_input();
 }
@@ -365,7 +400,10 @@ fn two_instances_register_distinct_services() {
             if actual == expected {
                 break;
             }
-            assert!(Instant::now() < deadline, "topic counts {actual}, expected {expected}");
+            assert!(
+                Instant::now() < deadline,
+                "topic counts {actual}, expected {expected}"
+            );
             thread::sleep(Duration::from_millis(20));
         }
         // Give an erroneously cross-published edge time to reach the other
