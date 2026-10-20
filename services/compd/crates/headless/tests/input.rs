@@ -6,6 +6,8 @@
 mod bus;
 #[path = "support/process.rs"]
 mod process;
+#[path = "support/seats.rs"]
+mod seats;
 
 use bus::{Bus, binary};
 use serde_json::{Value, json};
@@ -311,6 +313,10 @@ fn human_seat_has_no_sources() {
     let mut process = process::spawn(1, None, "human", Some(&bus.url));
     let probe = Probe::start(&mut process, "headless-seats");
     bus.ready(SERVICE);
+    let caps = seats::capabilities(&process.root);
+    assert_eq!(caps.len(), 2);
+    assert!(caps["seat0"].is_empty(), "seat0 advertised capabilities: {caps:?}");
+    assert_eq!(caps["agent"], wayland_client::protocol::wl_seat::Capability::Pointer | wayland_client::protocol::wl_seat::Capability::Keyboard);
     let text = probe.text();
     assert!(
         text.contains("PROBE seat \"seat0\" bound keyboard=0 pointer=0 "),
