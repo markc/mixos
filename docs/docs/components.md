@@ -38,6 +38,7 @@ profile: [desktop](desktop.md) and [server](server.md). This page describes the 
 | [expr](../expr/README.md) | lib | none (library) | [`libs/expr`](https://github.com/markc/mixos/tree/main/libs/expr) | The pure expression language of Mix Scenes bindings, which compiles an expression, reports the globals it reads and evaluates it over JSON values under size and time limits. |
 | [files](../files/README.md) | lib | none (library) | [`libs/files`](https://github.com/markc/mixos/tree/main/libs/files) | Rooted reads and the files-as-truth markdown corpus model. |
 | [hostd](../hostd/README.md) · [changelog](../hostd/changelog.md) | service | unclassified | [`services/hostd`](https://github.com/markc/mixos/tree/main/services/hostd) | How hostd answers questions about the host and carries out privileged host changes through closed, typed verbs behind standing grants, receipts and rollback, so agents never need sudo. |
+| [indexd](../indexd/README.md) | service | desktop | [`services/indexd`](https://github.com/markc/mixos/tree/main/services/indexd) | How indexd embeds text locally with nomic-embed-text-v1.5 and answers vector search over the Bus, so agents can find relevant skills, docs and journals. Being ported from cosmix-indexd. |
 | [logging](../logging/README.md) | lib | none (library) | [`libs/logging`](https://github.com/markc/mixos/tree/main/libs/logging) | Shared tracing, sink selection, reload handles and process statistics for MixOS services and the Mix shell. |
 | [maild](../maild/README.md) · [changelog](../maild/changelog.md) | service | server | [`services/maild`](https://github.com/markc/mixos/tree/main/services/maild) | JMAP, SMTP, IMAP and DAV mail service |
 | [mds](../mds/README.md) | lib | none (library) | [`libs/mds`](https://github.com/markc/mixos/tree/main/libs/mds) | Per-container-set SQLite metadata and a content-addressable blob store, the storage library that maild links and blobd will use. A library, not a daemon. |
@@ -164,6 +165,7 @@ checked separately by the layering gate.
 | [dns-core](https://github.com/markc/mixos/blob/main/services/dnsd/crates/dns-core/Cargo.toml) | dnsd | service | core | none | 0.1.1 |
 | [editd](https://github.com/markc/mixos/blob/main/services/editd/Cargo.toml) | editd | service | core | public | 0.2.0 |
 | [hostd](https://github.com/markc/mixos/blob/main/services/hostd/Cargo.toml) | hostd | service | core | public | 0.1.0 |
+| [indexd](https://github.com/markc/mixos/blob/main/services/indexd/Cargo.toml) | indexd | service | core | public | 0.1.1 |
 | [maild](https://github.com/markc/mixos/blob/main/services/maild/Cargo.toml) | maild | service | core | public | 0.1.1 |
 | [maild-auth](https://github.com/markc/mixos/blob/main/services/maild/crates/maild-auth/Cargo.toml) | maild | service | core | none | 0.1.1 |
 | [maild-bayesian](https://github.com/markc/mixos/blob/main/services/maild/crates/maild-bayesian/Cargo.toml) | maild | service | core | none | 0.1.1 |

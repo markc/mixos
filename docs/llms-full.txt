@@ -716,6 +716,7 @@ profile: [desktop](desktop.md) and [server](server.md). This page describes the 
 | [expr](../expr/README.md) | lib | none (library) | [`libs/expr`](https://github.com/markc/mixos/tree/main/libs/expr) | The pure expression language of Mix Scenes bindings, which compiles an expression, reports the globals it reads and evaluates it over JSON values under size and time limits. |
 | [files](../files/README.md) | lib | none (library) | [`libs/files`](https://github.com/markc/mixos/tree/main/libs/files) | Rooted reads and the files-as-truth markdown corpus model. |
 | [hostd](../hostd/README.md) · [changelog](../hostd/changelog.md) | service | unclassified | [`services/hostd`](https://github.com/markc/mixos/tree/main/services/hostd) | How hostd answers questions about the host and carries out privileged host changes through closed, typed verbs behind standing grants, receipts and rollback, so agents never need sudo. |
+| [indexd](../indexd/README.md) | service | desktop | [`services/indexd`](https://github.com/markc/mixos/tree/main/services/indexd) | How indexd embeds text locally with nomic-embed-text-v1.5 and answers vector search over the Bus, so agents can find relevant skills, docs and journals. Being ported from cosmix-indexd. |
 | [logging](../logging/README.md) | lib | none (library) | [`libs/logging`](https://github.com/markc/mixos/tree/main/libs/logging) | Shared tracing, sink selection, reload handles and process statistics for MixOS services and the Mix shell. |
 | [maild](../maild/README.md) · [changelog](../maild/changelog.md) | service | server | [`services/maild`](https://github.com/markc/mixos/tree/main/services/maild) | JMAP, SMTP, IMAP and DAV mail service |
 | [mds](../mds/README.md) | lib | none (library) | [`libs/mds`](https://github.com/markc/mixos/tree/main/libs/mds) | Per-container-set SQLite metadata and a content-addressable blob store, the storage library that maild links and blobd will use. A library, not a daemon. |
@@ -842,6 +843,7 @@ checked separately by the layering gate.
 | [dns-core](https://github.com/markc/mixos/blob/main/services/dnsd/crates/dns-core/Cargo.toml) | dnsd | service | core | none | 0.1.1 |
 | [editd](https://github.com/markc/mixos/blob/main/services/editd/Cargo.toml) | editd | service | core | public | 0.2.0 |
 | [hostd](https://github.com/markc/mixos/blob/main/services/hostd/Cargo.toml) | hostd | service | core | public | 0.1.0 |
+| [indexd](https://github.com/markc/mixos/blob/main/services/indexd/Cargo.toml) | indexd | service | core | public | 0.1.1 |
 | [maild](https://github.com/markc/mixos/blob/main/services/maild/Cargo.toml) | maild | service | core | public | 0.1.1 |
 | [maild-auth](https://github.com/markc/mixos/blob/main/services/maild/crates/maild-auth/Cargo.toml) | maild | service | core | none | 0.1.1 |
 | [maild-bayesian](https://github.com/markc/mixos/blob/main/services/maild/crates/maild-bayesian/Cargo.toml) | maild | service | core | none | 0.1.1 |
@@ -7572,6 +7574,46 @@ The source is
 `cargo test -p hostd`: no test needs root. The live gate for network writes
 runs as root on a disposable networkd host, on dummy links only, and
 removes everything it made.
+
+---
+
+<!-- page: https://mixos.dev/indexd/ (source: https://mixos.dev/indexd/README.md) -->
+
+# The semantic index service
+
+> **Status: being ported.** This page describes the target design. The port
+> plan is `_plan/2026-10-20-indexd-port.md` in the planning hub. Only a
+> dependency probe exists so far. The full verb reference arrives with
+> stage 4.
+
+`indexd` stores text chunks with their embeddings and returns the nearest
+matches for a query. Embeddings are computed locally on the CPU with
+`nomic-ai/nomic-embed-text-v1.5` (768 dimensions), through the pure-Rust
+`candle` stack. The model files are loaded from a local directory and never
+downloaded at run time. Vectors live in SQLite (`sqlite-vec`), and search runs
+over an in-memory copy, re-ranked by feedback and staleness.
+
+It runs on one workstation host as a system service, registered on that
+host's own node. Agents usually reach it through `mixos-mcp`
+(`context_search`, `index_workspace`, the `skills_*` tools). A desk on the
+same machine reaches it over the Bus, or over ssh through `indexd bridge`,
+which reads newline-delimited JSON on stdin and makes each request as a local
+Bus call.
+
+## Asking it
+
+On the Bus, the service is `indexd`:
+
+```mix
+send indexd indexd.stats
+send indexd indexd.search query="how is SRS set up on rca" limit=3
+```
+
+## Indexd is not exhaustive
+
+indexd answers "what is relevant to X", quickly and approximately, from an
+index that can lag the files. To prove that something does **not** occur, use
+an exact search over the current files instead.
 
 ---
 
@@ -32869,6 +32911,7 @@ On every MixOS system.
 
 ## Desktop components
 
+- [indexd](../indexd/README.md) (service): How indexd embeds text locally with nomic-embed-text-v1.5 and answers vector search over the Bus, so agents can find relevant skills, docs and journals. Being ported from cosmix-indexd.
 - [monitor](../monitor/README.md) (app): Monitor is the MixOS task manager, showing the processes and performance that monitord reports for this node or any node on the mesh, with End task and Kill for this node's processes.
 
 ## Unclassified
