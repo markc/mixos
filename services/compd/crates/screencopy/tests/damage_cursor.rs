@@ -14,7 +14,9 @@ fn coalesced_damage_serves_pending_cursor_copy() {
     // Establish a damage baseline for this client and output.
     let (first, a) = h.client.capture_with(region, true);
     h.roundtrip();
-    let (buffer, _) = h.client.shm_buffer_with(10, 10, 40, wl_shm::Format::Xrgb8888);
+    let (buffer, _) = h
+        .client
+        .shm_buffer_with(10, 10, 40, wl_shm::Format::Xrgb8888);
     first.copy_with_damage(&buffer);
     h.roundtrip();
     h.service_screencopy(|_, _| 0x00123456, None);
@@ -22,7 +24,9 @@ fn coalesced_damage_serves_pending_cursor_copy() {
 
     let (next, b) = h.client.capture_with(region, true);
     h.roundtrip();
-    let (buffer, file) = h.client.shm_buffer_with(10, 10, 40, wl_shm::Format::Xrgb8888);
+    let (buffer, file) = h
+        .client
+        .shm_buffer_with(10, 10, 40, wl_shm::Format::Xrgb8888);
     next.copy_with_damage(&buffer);
     h.roundtrip();
     let output = h.wire.inner.output.clone();
@@ -53,8 +57,13 @@ fn coalesced_damage_serves_pending_cursor_copy() {
         },
     });
     let captures = screencopy::service_with_sources(
-        &mut renderer, screencopy::Sources { cursor, cursorless: None },
-        &output, Some(&damage),
+        &mut renderer,
+        screencopy::Sources {
+            cursor,
+            cursorless: None,
+        },
+        &output,
+        Some(&damage),
     );
     assert!(!captures.is_empty(), "coalescing must make the copy due");
     captures.finish(&mut renderer);

@@ -236,7 +236,11 @@ fn compose(
         || screencopy::file::pending_picture(&ctx.output, true);
     if cursor_needed {
         let texture_size = (size.w, size.h).into();
-        if ctx.cursor.as_ref().is_none_or(|texture| texture.size() != texture_size) {
+        if ctx
+            .cursor
+            .as_ref()
+            .is_none_or(|texture| texture.size() != texture_size)
+        {
             ctx.cursor = Some(Offscreen::<GlesTexture>::create_buffer(
                 &mut ctx.renderer,
                 smithay::backend::allocator::Fourcc::Abgr8888,
@@ -244,7 +248,9 @@ fn compose(
             )?);
         }
         {
-            let mut target = ctx.renderer.bind(ctx.cursor.as_mut().expect("cursor texture"))?;
+            let mut target = ctx
+                .renderer
+                .bind(ctx.cursor.as_mut().expect("cursor texture"))?;
             OutputDamageTracker::from_output(&ctx.output)
                 .render_output(
                     &mut ctx.renderer,
@@ -257,7 +263,8 @@ fn compose(
                 .wait()?;
         }
     }
-    let cursor_target = ctx.cursor
+    let cursor_target = ctx
+        .cursor
         .as_mut()
         .filter(|_| cursor_needed)
         .map(|texture| ctx.renderer.bind(texture))

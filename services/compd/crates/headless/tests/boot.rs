@@ -69,11 +69,11 @@ impl Dispatch<wl_output::WlOutput, ()> for OutputState {
     }
 }
 
-#[path = "support/process.rs"]
-mod process;
 #[path = "support/pattern.rs"]
 #[allow(dead_code)] // Shared client; this target exercises only callback pacing.
 mod pattern;
+#[path = "support/process.rs"]
+mod process;
 use process::spawn;
 
 fn boot(scale: i32, explicit_node: bool) {
@@ -213,8 +213,13 @@ fn lower_refresh_sets_the_virtual_mode() {
     let elapsed = start.elapsed();
     let callbacks = pattern.state.callbacks - before;
     let hz = callbacks as f64 / elapsed.as_secs_f64();
-    assert!((25.5..=34.5).contains(&hz), "30 Hz pacing: {callbacks} callbacks in {elapsed:?} = {hz:.2} Hz");
-    println!("headless virtual output 30 Hz; {callbacks} damage callbacks in {elapsed:?} = {hz:.2} Hz");
+    assert!(
+        (25.5..=34.5).contains(&hz),
+        "30 Hz pacing: {callbacks} callbacks in {elapsed:?} = {hz:.2} Hz"
+    );
+    println!(
+        "headless virtual output 30 Hz; {callbacks} damage callbacks in {elapsed:?} = {hz:.2} Hz"
+    );
 }
 
 fn refuses_node(node: &str, label: &str, reason: &str) {

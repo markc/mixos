@@ -158,9 +158,15 @@ fn rgb(colour: u32) -> [u8; 3] {
 }
 
 fn monotonic_ns() -> u64 {
-    let mut time = libc::timespec { tv_sec: 0, tv_nsec: 0 };
+    let mut time = libc::timespec {
+        tv_sec: 0,
+        tv_nsec: 0,
+    };
     // SAFETY: time is a valid writable timespec.
-    assert_eq!(unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut time) }, 0);
+    assert_eq!(
+        unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut time) },
+        0
+    );
     time.tv_sec as u64 * 1_000_000_000 + time.tv_nsec as u64
 }
 
@@ -168,9 +174,15 @@ fn frame_count(root: &Path) -> usize {
     let trace = fs::read_to_string(root.join("frames.log")).unwrap();
     assert!(!trace.contains("stage=trace_limit "));
     for line in trace.lines() {
-        assert!(line.contains(" dropped=0 "), "incomplete frame trace: {line}");
+        assert!(
+            line.contains(" dropped=0 "),
+            "incomplete frame trace: {line}"
+        );
     }
-    trace.lines().filter(|line| line.contains("stage=comp_frame_reasons ")).count()
+    trace
+        .lines()
+        .filter(|line| line.contains("stage=comp_frame_reasons "))
+        .count()
 }
 
 #[test]
@@ -298,7 +310,11 @@ fn pattern_mixed_cursor_captures_and_presentation_ledger() {
     let idle_start = Instant::now();
     while idle_start.elapsed() < Duration::from_secs(1) {
         pattern.pump();
-        assert_eq!(frame_count(&process.root), frames, "idle timer kept drawing");
+        assert_eq!(
+            frame_count(&process.root),
+            frames,
+            "idle timer kept drawing"
+        );
         thread::sleep(Duration::from_millis(20));
     }
     assert_eq!(
@@ -318,14 +334,19 @@ fn pattern_mixed_cursor_captures_and_presentation_ledger() {
     let wall_end = monotonic_ns();
     assert!(!pattern.state.times.is_empty());
     for time in &pattern.state.times {
-        assert!((wall_start..=wall_end).contains(time),
-            "presentation {time} outside monotonic test window {wall_start}..={wall_end}");
+        assert!(
+            (wall_start..=wall_end).contains(time),
+            "presentation {time} outside monotonic test window {wall_start}..={wall_end}"
+        );
     }
     println!(
         "presentation.presented {before} -> {after} -> {still}; {} callbacks, {} presented / {} discarded feedbacks; CLOCK_MONOTONIC",
         pattern.state.callbacks, pattern.state.presented, pattern.state.discarded
     );
-    println!("idle frame count stayed at {frames} for {:?}; timestamps within {wall_start}..={wall_end}", idle_start.elapsed());
+    println!(
+        "idle frame count stayed at {frames} for {:?}; timestamps within {wall_start}..={wall_end}",
+        idle_start.elapsed()
+    );
     // Different content still presents after the idle/callback-only stretch.
     pattern.change_buffer();
     let previous = pattern.state.callbacks;
@@ -367,10 +388,17 @@ fn bus_capture_completes_on_idle_output() {
         let ppm = fs::read(path).unwrap();
         assert!(ppm.starts_with(b"P6\n1280 720\n255\n"));
         assert_eq!(ppm.len(), "P6\n1280 720\n255\n".len() + 1280 * 720 * 3);
-        for (i, pixel) in ppm[b"P6\n1280 720\n255\n".len()..].chunks_exact(3).enumerate() {
+        for (i, pixel) in ppm[b"P6\n1280 720\n255\n".len()..]
+            .chunks_exact(3)
+            .enumerate()
+        {
             let (x, y) = (i % 1280, i / 1280);
             if !cursor || !(160..184).contains(&x) || !(160..184).contains(&y) {
-                assert_eq!(pixel, [26, 26, 26], "clear colour cursor={cursor} at {x},{y}");
+                assert_eq!(
+                    pixel,
+                    [26, 26, 26],
+                    "clear colour cursor={cursor} at {x},{y}"
+                );
             }
         }
         println!("idle Bus capture cursor={cursor}: {elapsed:?}, 1280x720 offscreen");
