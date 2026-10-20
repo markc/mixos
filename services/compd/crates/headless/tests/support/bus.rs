@@ -85,7 +85,9 @@ impl Bus {
         // A service still registering returns an error string. Keep it for
         // readiness callers, which inspect rc and retry; only success has a
         // JSON response body.
-        if reply["rc"] == 0 && let Some(body) = reply["body"].as_str() {
+        if reply["rc"] == 0
+            && let Some(body) = reply["body"].as_str()
+        {
             reply["body"] = serde_json::from_str(body).unwrap();
         }
         reply

@@ -395,7 +395,14 @@ fn wait_until(
     probe: &mut Probe,
     due: Instant,
 ) -> Result<(), String> {
-    dispatch_until_with_precision(queue, probe, due, |_| Instant::now() >= due, "rate timer", true)
+    dispatch_until_with_precision(
+        queue,
+        probe,
+        due,
+        |_| Instant::now() >= due,
+        "rate timer",
+        true,
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -469,7 +476,11 @@ fn run_rate(
             .map_err(|e| e.to_string())?;
         // Prepare a released buffer before the deadline: pixel generation
         // and the SHM copy must not become a delay after every timer tick.
-        wait_until(queue, probe, instant + scheduled(Duration::ZERO, commit, rate))?;
+        wait_until(
+            queue,
+            probe,
+            instant + scheduled(Duration::ZERO, commit, rate),
+        )?;
         if options.stall_every > 0 && (commit + 1).is_multiple_of(options.stall_every) {
             stalls += 1;
             wait_until(queue, probe, Instant::now() + options.stall)?;
@@ -525,14 +536,24 @@ fn run_rate(
         })
     });
     let pass = presented > 0 && output_ok && probe.clock_id == Some(libc::CLOCK_MONOTONIC as u32);
-    let mut latency_us = probe.feedback.iter().enumerate().filter_map(|(commit, slot)| {
-        match slot.outcome {
-            Some(Outcome::Presented { time, .. }) => Some(time.saturating_sub(submitted[commit]).as_micros()),
+    let mut latency_us = probe
+        .feedback
+        .iter()
+        .enumerate()
+        .filter_map(|(commit, slot)| match slot.outcome {
+            Some(Outcome::Presented { time, .. }) => {
+                Some(time.saturating_sub(submitted[commit]).as_micros())
+            }
             _ => None,
-        }
-    }).collect::<Vec<_>>();
+        })
+        .collect::<Vec<_>>();
     latency_us.sort_unstable();
-    let latency = |percent: usize| latency_us.get(latency_us.len().saturating_sub(1) * percent / 100).copied().unwrap_or(0);
+    let latency = |percent: usize| {
+        latency_us
+            .get(latency_us.len().saturating_sub(1) * percent / 100)
+            .copied()
+            .unwrap_or(0)
+    };
     println!(
         "{SUMMARY} {} frames={} commits={} presented={} rate_hz={} achieved_hz={:.6} missed={} stalls={} latency_p50_us={} latency_p99_us={}",
         if pass { "PASS" } else { "FAIL" },

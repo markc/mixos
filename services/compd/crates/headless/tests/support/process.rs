@@ -55,6 +55,7 @@ impl Process {
     }
 }
 
+#[allow(dead_code)] // The timing target uses spawn_measurement instead.
 pub fn spawn(scale: i32, explicit_node: Option<&str>, label: &str, bus: Option<&str>) -> Process {
     spawn_options(scale, explicit_node, label, bus, "60", None, true)
 }

@@ -58,6 +58,7 @@ fn measurement(process: &mut process::Process, stalled: bool) -> (f64, usize) {
             .unwrap()
     };
     assert_eq!(value("commits="), "3600");
+    assert_eq!(value("stalls="), if stalled { "120" } else { "0" });
     let achieved: f64 = value("achieved_hz=").parse().unwrap();
     assert!((achieved / 60.0 - 1.0).abs() <= 0.01, "{summary}");
     (achieved, value("missed=").parse().unwrap())
