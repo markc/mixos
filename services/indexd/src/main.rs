@@ -6,7 +6,7 @@
 //!
 //! Stage 1 (dependency review) placeholder. It only names one item from each
 //! heavy dependency so the build pulls in and compiles the full closure
-//! (candle with nomic_bert, tokenizers on the pure-Rust regex backend,
+//! (candle with nomic_bert, the single tokenizers that candle-core requires,
 //! sqlite-vec plus bundled SQLite). The daemon arrives in stages 2–4.
 
 use candle_core::Device;
