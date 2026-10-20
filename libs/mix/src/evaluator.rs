@@ -18254,7 +18254,6 @@ impl Evaluator {
         Ok(Value::Nil)
     }
 
-    /// Execute `sh "command"` as an expression — captures stdout.
     /// `read_file` / `write_file` / `append_file` on a FIFO path: the same
     /// results and error text as the sync builtins, but every wait yields
     /// the runtime thread (see [`crate::fifo_io`]).
@@ -18329,6 +18328,7 @@ impl Evaluator {
         })
     }
 
+    /// Execute `sh "command"` as an expression — captures stdout.
     fn exec_sh_expr(&mut self, cmd: &str) -> MixResult<Value> {
         self.check_capability_class(crate::builtins::CapabilityClass::Process, "$()")?;
         let output = std::process::Command::new("sh")

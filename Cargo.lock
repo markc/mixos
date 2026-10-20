@@ -5590,7 +5590,7 @@ dependencies = [
 
 [[package]]
 name = "mix"
-version = "0.116.0"
+version = "0.117.0"
 dependencies = [
  "base64 0.22.1",
  "bcrypt",
@@ -5599,7 +5599,7 @@ dependencies = [
  "datastar",
  "flate2",
  "futures-util",
- "hickory-proto",
+ "hickory-proto 0.26.0-alpha.1",
  "indexmap",
  "jaq-core",
  "jaq-json",

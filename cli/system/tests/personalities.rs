@@ -75,13 +75,15 @@ fn every_personality_reports_its_own_identity() {
     assert!(out.starts_with(&want), "got {out:?}, want prefix {want:?}");
     assert_noded_identity(&mut Command::new(dir.path().join("noded")));
 
-    let (code, out, err) = run(Command::new(dir.path().join("monitord")).args(["--version", "--json"]));
+    let (code, out, err) =
+        run(Command::new(dir.path().join("monitord")).args(["--version", "--json"]));
     assert_eq!(code, 0, "stderr: {err}");
     let doc: serde_json::Value = serde_json::from_str(out.trim()).unwrap();
     assert_eq!(doc["component"], "monitord");
     assert_eq!(doc["version"], monitord::COMPONENT_VERSION);
 
-    let (code, out, err) = run(Command::new(dir.path().join("maild")).args(["--version", "--json"]));
+    let (code, out, err) =
+        run(Command::new(dir.path().join("maild")).args(["--version", "--json"]));
     assert_eq!(code, 0, "stderr: {err}");
     let doc: serde_json::Value = serde_json::from_str(out.trim()).unwrap();
     assert_eq!(doc["component"], "maild");
@@ -133,7 +135,10 @@ fn an_unknown_name_exits_2_with_the_list() {
     let (code, out, err) = run(&mut Command::new(dir.path().join("unavailable-service")));
     assert_eq!(code, 2);
     assert_eq!(out, "");
-    assert!(err.starts_with("unavailable-service: not a personality"), "got {err:?}");
+    assert!(
+        err.starts_with("unavailable-service: not a personality"),
+        "got {err:?}"
+    );
     assert!(
         err.contains(&format!("noded {}", noded::COMPONENT_VERSION)),
         "got {err:?}"

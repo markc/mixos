@@ -18,7 +18,8 @@
 use std::io::Read;
 
 use mix::analyzer::{
-    self, Analysis, AnalyzerConfig, Diagnostic, Fix, FunctionDeclaration, HandlerDeclaration, Severity,
+    self, Analysis, AnalyzerConfig, Diagnostic, Fix, FunctionDeclaration, HandlerDeclaration,
+    Severity,
 };
 use mix::error::MixError;
 use mix::token::Token;
