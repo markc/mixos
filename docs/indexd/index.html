@@ -285,6 +285,10 @@ configured engine in-process and prints one JSON reply, with exit status 0
 for success or 1 for an error. Bare verb names also work. For example:</p>
 <pre><code class="language-text">indexd -c /etc/mixos/indexd/config.conf.mix call indexd.search '{"query":"service dependencies","limit":3}'
 </code></pre>
+<p>Writes (<code>store</code>, <code>update</code>, <code>delete</code>, <code>feedback</code>, <code>supersede</code>, <code>index_file</code>)
+require <code>call --offline</code> with the daemon stopped: otherwise its in-memory
+index would desynchronise. Read verbs need no flag. <code>call</code> always refuses
+<code>background:true</code> because no process remains to run the queued job.</p>
 <p><code>indexd bridge</code> connects to the local node's Bus once and forwards one call
 per stdin line, flushing each reply immediately. It does not open the index
 or require model configuration. Keep one process alive for repeated requests,

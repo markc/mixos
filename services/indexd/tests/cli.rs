@@ -215,6 +215,39 @@ fn call_is_in_process_and_uses_explicit_config() {
 }
 
 #[test]
+fn call_requires_offline_for_writes_and_always_refuses_background() {
+    let (_dir, config) = fixture();
+    let run = |verb: &str, body: &str, offline: bool| {
+        let mut command = std::process::Command::new(env!("CARGO_BIN_EXE_indexd"));
+        command.args(["-c", config.to_str().unwrap(), "call", verb, body]);
+        if offline { command.arg("--offline"); }
+        command.output().unwrap()
+    };
+    for action in ["store", "update", "delete", "feedback", "supersede", "index_file"] {
+        for verb in [action.to_string(), format!("indexd.{action}")] {
+            let output = run(&verb, "{}", false);
+            assert!(!output.status.success());
+            assert!(String::from_utf8_lossy(&output.stderr).contains("would desynchronise"));
+            let output = run(&verb, "{}", true);
+            assert!(!String::from_utf8_lossy(&output.stderr).contains("require --offline"));
+        }
+    }
+    for verb in ["search", "list", "stats", "stale", "embed"] {
+        let output = run(verb, "{}", false);
+        assert!(!String::from_utf8_lossy(&output.stderr).contains("require --offline"));
+        assert!(serde_json::from_slice::<Value>(&output.stdout).is_ok());
+    }
+    assert!(run("delete", r#"{"ids":[]}"#, true).status.success());
+    for offline in [false, true] {
+        for verb in ["indexd.index_file", "stats"] {
+            let output = run(verb, r#"{"background":true}"#, offline);
+            assert!(!output.status.success());
+            assert!(String::from_utf8_lossy(&output.stderr).contains("no process remains"));
+        }
+    }
+}
+
+#[test]
 fn desktop_package_carries_indexd_and_owned_units() {
     let mix = std::env::var("MIXOS_TEST_MIX").unwrap_or_else(|_| "/opt/mixos/bin/mix".into());
     let output = std::process::Command::new(mix)

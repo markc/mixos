@@ -30,6 +30,9 @@ enum Command {
         verb: String,
         #[arg(default_value = "{}")]
         json_body: String,
+        /// Allow writes only when the daemon is stopped.
+        #[arg(long)]
+        offline: bool,
     },
 }
 
@@ -68,6 +71,18 @@ fn main() -> Result<()> {
             result
         });
     }
+    if let Command::Call { verb, json_body, offline } = &cli.command {
+        let body: serde_json::Value = serde_json::from_str(json_body)?;
+        anyhow::ensure!(
+            body.get("background").and_then(serde_json::Value::as_bool) != Some(true),
+            "indexd call refuses background:true: no process remains to run the job; use the daemon"
+        );
+        let action = verb.strip_prefix("indexd.").unwrap_or(verb);
+        anyhow::ensure!(
+            *offline || !matches!(action, "store" | "update" | "delete" | "feedback" | "supersede" | "index_file"),
+            "indexd call writes require --offline with the daemon stopped: a running daemon's in-memory index would desynchronise"
+        );
+    }
     // Config discovery, validation and initial SQLite/index loading precede
     // entering the async runtime. Bridge never opens the store or model files.
     let (path, cfg) = indexd::config::load_indexd_config(cli.config.as_deref())?;
@@ -96,7 +111,7 @@ fn main() -> Result<()> {
                 }
                 Ok(())
             }
-            Command::Call { verb, json_body } => {
+            Command::Call { verb, json_body, .. } => {
                 let reply = engine.call(&verb, serde_json::from_str(&json_body)?).await;
                 println!("{reply}");
                 if reply.get("error").is_some() {

@@ -7640,6 +7640,11 @@ for success or 1 for an error. Bare verb names also work. For example:
 indexd -c /etc/mixos/indexd/config.conf.mix call indexd.search '{"query":"service dependencies","limit":3}'
 ```
 
+Writes (`store`, `update`, `delete`, `feedback`, `supersede`, `index_file`)
+require `call --offline` with the daemon stopped: otherwise its in-memory
+index would desynchronise. Read verbs need no flag. `call` always refuses
+`background:true` because no process remains to run the queued job.
+
 `indexd bridge` connects to the local node's Bus once and forwards one call
 per stdin line, flushing each reply immediately. It does not open the index
 or require model configuration. Keep one process alive for repeated requests,
