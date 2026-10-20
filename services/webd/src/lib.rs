@@ -9290,7 +9290,8 @@ vhost: [
             "webd: { listener: [ \
              { id: first, bind: '192.0.2.1:443', vhosts: ['site-a.example'] }, \
              { id: second, bind: '198.51.100.1:443', vhosts: ['site-a.example'] } ] }",
-        ).unwrap();
+        )
+        .unwrap();
         let listeners = cfg
             .synthesize_listeners(&["site-a.example".into()], &HashSet::new())
             .expect("a vhost may be served on two interfaces");
@@ -9330,15 +9331,21 @@ vhost: [
                 external: listener.external,
             };
             let app = build_router(node.clone()).layer(Extension(scope));
-            let response = app.clone()
-                .oneshot(req("site-a.example", "/index.html")).await.unwrap();
+            let response = app
+                .clone()
+                .oneshot(req("site-a.example", "/index.html"))
+                .await
+                .unwrap();
             assert_eq!(response.status(), StatusCode::OK);
             assert_eq!(body_bytes(response).await, b"SITE-A");
             assert!(Arc::ptr_eq(
                 &node.vhost_for_host("site-a.example").unwrap(),
                 &expected_vhost,
             ));
-            let denied = app.oneshot(req("site-b.example", "/index.html")).await.unwrap();
+            let denied = app
+                .oneshot(req("site-b.example", "/index.html"))
+                .await
+                .unwrap();
             assert_eq!(denied.status(), StatusCode::NOT_FOUND);
         }
     }
@@ -9349,16 +9356,29 @@ vhost: [
             "webd: { listener: [ \
              { id: first, bind: '192.0.2.1:443', vhosts: ['site-a.example'] }, \
              { id: second, bind: '198.51.100.1:443', vhosts: ['site-a.example'] } ] }",
-        ).unwrap();
+        )
+        .unwrap();
         let hosts = vec!["site-a.example".into(), "site-b.example".into()];
-        let err = cfg.synthesize_listeners(&hosts, &HashSet::new()).unwrap_err();
+        let err = cfg
+            .synthesize_listeners(&hosts, &HashSet::new())
+            .unwrap_err();
         let msg = err.to_string();
-        assert!(msg.contains("site-b.example") && msg.contains("not served by any listener"), "{msg}");
+        assert!(
+            msg.contains("site-b.example") && msg.contains("not served by any listener"),
+            "{msg}"
+        );
         let mut duplicate = cfg;
-        duplicate.webd.listener[1].vhosts.push("site-a.example".into());
-        let err = duplicate.synthesize_listeners(&["site-a.example".into()], &HashSet::new()).unwrap_err();
+        duplicate.webd.listener[1]
+            .vhosts
+            .push("site-a.example".into());
+        let err = duplicate
+            .synthesize_listeners(&["site-a.example".into()], &HashSet::new())
+            .unwrap_err();
         let msg = err.to_string();
-        assert!(msg.contains("listed twice") && msg.contains("second"), "{msg}");
+        assert!(
+            msg.contains("listed twice") && msg.contains("second"),
+            "{msg}"
+        );
     }
 
     #[tokio::test]

@@ -1838,7 +1838,8 @@ mod tests {
                 enabled.0 || enabled.1
             );
             assert_eq!(
-                cfg.synthesize_listeners(&[h.to_string()], &HashSet::new()).is_ok(),
+                cfg.synthesize_listeners(&[h.to_string()], &HashSet::new())
+                    .is_ok(),
                 enabled.0 || enabled.1
             );
         }
@@ -1851,8 +1852,14 @@ mod tests {
             &[],
         );
         let msg = listener_add_error(Some(&cfg), h).expect("later duplicate refused");
-        assert!(msg.contains("listed twice") && msg.contains("third"), "{msg}");
-        assert!(cfg.synthesize_listeners(&[h.to_string()], &HashSet::new()).is_err());
+        assert!(
+            msg.contains("listed twice") && msg.contains("third"),
+            "{msg}"
+        );
+        assert!(
+            cfg.synthesize_listeners(&[h.to_string()], &HashSet::new())
+                .is_err()
+        );
     }
 
     #[test]

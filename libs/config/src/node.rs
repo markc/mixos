@@ -1093,7 +1093,7 @@ mod transplanted_tests {
     }
 
     #[test]
-    fn synthesize_listeners_rejects_disabled_only_and_double_claim() {
+    fn synthesize_listeners_rejects_disabled_only_even_with_double_claim() {
         // Host served only by a disabled listener ⇒ unreachable ⇒ error.
         let disabled_only = node_with_listeners(
             "wg_ip: \"192.0.2.5\"\nwebd: { listener: [ \

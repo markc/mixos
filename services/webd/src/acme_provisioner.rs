@@ -5964,18 +5964,27 @@ mod tests {
         _stage_real_live(tmp.path(), "shared.example");
         let live = tmp.path().join("shared.example").join(LIVE_DIR);
         p.plans = vec![_staging_plan("shared.example")];
-        p.acme_identities.insert("shared.example".into(), TlsIdentityConfig {
-            server_name: "shared.example".into(),
-            cert: live.join(FULLCHAIN_FILE).to_string_lossy().into_owned(),
-            key: live.join(PRIVKEY_FILE).to_string_lossy().into_owned(),
-            default: false,
-            no_sni_fallback: false,
-        });
+        p.acme_identities.insert(
+            "shared.example".into(),
+            TlsIdentityConfig {
+                server_name: "shared.example".into(),
+                cert: live.join(FULLCHAIN_FILE).to_string_lossy().into_owned(),
+                key: live.join(PRIVKEY_FILE).to_string_lossy().into_owned(),
+                default: false,
+                no_sni_fallback: false,
+            },
+        );
         let first = crate::empty_listener_tls(true).unwrap();
         let second = crate::empty_listener_tls(true).unwrap();
         p.attach_tls_listeners(
-            HashMap::from([("first".into(), first.clone()), ("second".into(), second.clone())]),
-            HashMap::from([("shared.example".into(), vec!["first".into(), "second".into()])]),
+            HashMap::from([
+                ("first".into(), first.clone()),
+                ("second".into(), second.clone()),
+            ]),
+            HashMap::from([(
+                "shared.example".into(),
+                vec!["first".into(), "second".into()],
+            )]),
         );
         let mut previous = None;
         for _ in 0..2 {
@@ -5983,8 +5992,16 @@ mod tests {
             p.republish_tls_config().await.unwrap();
             let (a, _) = first.current().expect("first serves TLS");
             let (b, _) = second.current().expect("second serves TLS");
-            let a_cert = &a.pick_for_sni(Some("shared.example")).unwrap().certified_key.cert;
-            let b_cert = &b.pick_for_sni(Some("shared.example")).unwrap().certified_key.cert;
+            let a_cert = &a
+                .pick_for_sni(Some("shared.example"))
+                .unwrap()
+                .certified_key
+                .cert;
+            let b_cert = &b
+                .pick_for_sni(Some("shared.example"))
+                .unwrap()
+                .certified_key
+                .cert;
             assert_eq!(a_cert, b_cert);
             if let Some(old) = previous {
                 assert_ne!(old, *a_cert, "both listeners must adopt the replacement");
