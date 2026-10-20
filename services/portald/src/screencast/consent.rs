@@ -558,6 +558,84 @@ mod tests {
         assert!(consent.pending().is_empty());
     }
 
+    fn command(verb: &str, body: serde_json::Value, origin: Option<&str>) -> IncomingCommand {
+        let mut headers = std::collections::BTreeMap::new();
+        if let Some(origin) = origin {
+            headers.insert("broker_origin".to_owned(), origin.to_owned());
+        }
+        IncomingCommand {
+            generation: 0,
+            from: "agent".into(),
+            command: verb.into(),
+            id: None,
+            args: serde_json::Value::Null,
+            body: body.to_string(),
+            headers,
+        }
+    }
+
+    /// The verbs, the Bus answer and the grant path, against the installed
+    /// (process-wide) consent. One test, since the state is shared.
+    #[tokio::test]
+    async fn bus_verbs_answer_and_grant_for_local_callers_only() {
+        let consent = install(Consent::new(Policy::Prompt));
+
+        // Mesh and unstamped callers are refused.
+        for origin in [Some("mesh"), None] {
+            let (rc, _) = handle_verb(&command("portald.screencast.grant", json!({}), origin));
+            assert_eq!(rc, FORBIDDEN);
+        }
+
+        // A grant covers the next Start by that app without asking.
+        let (rc, grant) = handle_verb(&command(
+            "portald.screencast.grant",
+            json!({"app": "obs", "count": 1, "ttl_ms": 60000}),
+            Some("local"),
+        ));
+        assert_eq!(rc, 0, "{grant}");
+        let (_, listed) = handle_verb(&command("portald.screencast.pending", json!({}), Some("local")));
+        assert_eq!(listed["grants"].as_array().map(Vec::len), Some(1));
+        assert_eq!(
+            decide_start(&consent, "/r/obs", "obs", ":1.9", "HDMI-A-1").await,
+            Decision::Grant
+        );
+
+        // Without a grant the Start waits; an agent answers it.
+        let waiting = tokio::spawn({
+            let consent = consent.clone();
+            async move { decide_start(&consent, "/r/ff", "firefox", ":1.10", "HDMI-A-1").await }
+        });
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !consent.is_pending("/r/ff") {
+            assert!(Instant::now() < deadline, "the Start never waited");
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        let (_, listed) = handle_verb(&command("portald.screencast.pending", json!({}), Some("local")));
+        assert_eq!(listed["pending"][0]["app"], "firefox");
+        let (rc, _) = handle_verb(&command(
+            "portald.screencast.answer",
+            json!({"request": "/r/ff", "allow": true}),
+            Some("local"),
+        ));
+        assert_eq!(rc, 0);
+        assert_eq!(waiting.await.unwrap(), Decision::AnsweredAllow);
+
+        // Answering what is not waiting, and malformed bodies.
+        let (rc, _) = handle_verb(&command(
+            "portald.screencast.answer",
+            json!({"request": "/r/none", "allow": false}),
+            Some("local"),
+        ));
+        assert_eq!(rc, 14);
+        let (rc, _) = handle_verb(&command("portald.screencast.answer", json!({"request": "/r/x"}), Some("local")));
+        assert_eq!(rc, 10);
+
+        // Revoke clears grants.
+        handle_verb(&command("portald.screencast.grant", json!({}), Some("local")));
+        let (_, revoked) = handle_verb(&command("portald.screencast.revoke", json!({}), Some("local")));
+        assert_eq!(revoked["revoked"], 1);
+    }
+
     #[test]
     fn decisions_say_whether_they_grant() {
         assert!(Decision::Grant.granted());
