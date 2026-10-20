@@ -26,7 +26,7 @@ impl Default for Config {
     }
 }
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct SourceTypeSpec {
     pub required: Vec<String>,
@@ -34,7 +34,25 @@ pub struct SourceTypeSpec {
 }
 
 fn default_source_types() -> BTreeMap<String, SourceTypeSpec> {
-    BTreeMap::new()
+    // Preserve the deployed source policy, including legacy corpus types.
+    [
+        ("doc", vec!["path", "domain"], None),
+        ("journal", vec!["path", "domain", "date"], Some("date")),
+        ("memory", vec!["path", "domain", "date", "generator"], Some("date")),
+        ("mix-script", vec!["file", "domain"], None),
+        ("notes", vec!["path", "domain"], None),
+        ("observation", vec!["observer", "tool", "observed_at", "domain"], None),
+        ("plan", vec!["path", "domain"], None),
+        ("rust-doc", vec!["file", "kind", "domain"], None),
+        ("skill", vec!["name", "trigger", "approach"], None),
+        ("spec", vec!["path", "domain"], None),
+    ]
+    .into_iter()
+    .map(|(name, required, date_field)| (name.into(), SourceTypeSpec {
+        required: required.into_iter().map(str::to_owned).collect(),
+        date_field: date_field.map(str::to_owned),
+    }))
+    .collect()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -291,6 +309,15 @@ mod tests {
 mod path_tests {
     use super::*;
     use crate::test_support::temp_dir;
+
+    #[test]
+    fn default_source_policy_matches_deployed_config() {
+        let deployed: Config = ::config::from_conf_mix_str(include_str!("../tests/source_types.conf.mix")).unwrap();
+        assert_eq!(Config::default().source_types, deployed.source_types);
+        assert!(validate_store_entry("journal", r#"{"path":"/srv/a.md","domain":"mixos","date":"2026-10-20"}"#, &deployed).is_ok());
+        assert!(validate_store_entry("journal", r#"{"path":"/srv/a.md","domain":"mixos"}"#, &deployed).is_err());
+        assert!(validate_store_entry("skill", r#"{"name":"name","trigger":"trigger","approach":"approach"}"#, &deployed).is_ok());
+    }
 
     #[test]
     fn tilde_expands_only_a_leading_home_slash() {

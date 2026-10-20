@@ -242,9 +242,15 @@ mod tests {
     #[test]
     fn feedback_implicit_negative_and_staleness_keep_cosmix_weights() {
         let mut result = SearchResult {
-            id: 1, content: String::new(), source: "doc".into(), metadata: "{}".into(),
-            distance: 1.0, feedback_score: 2, retrieval_count: 10,
-            last_retrieved: None, created: "2020-01-01 00:00:00".into(),
+            id: 1,
+            content: String::new(),
+            source: "doc".into(),
+            metadata: "{}".into(),
+            distance: 1.0,
+            feedback_score: 2,
+            retrieval_count: 10,
+            last_retrieved: None,
+            created: "2020-01-01 00:00:00".into(),
         };
         let now = sqlite_datetime_to_days("2026-10-20 00:00:00").unwrap();
         assert!((adjusted_distance(&result, now) - 0.93).abs() < 1e-12);
@@ -257,4 +263,3 @@ mod tests {
         assert_eq!(adjusted_distance(&result, now), 1.0);
     }
 }
-

@@ -1268,7 +1268,10 @@ mod tests {
         let dir = temp_dir("index-success");
         let mut config = Config::default();
         config.service.vectors_db = dir.join("vectors.db").to_string_lossy().into_owned();
-        config.service.model_dir = dir.join("missing-local-model").to_string_lossy().into_owned();
+        config.service.model_dir = dir
+            .join("missing-local-model")
+            .to_string_lossy()
+            .into_owned();
         config.source_types.insert(
             "journal".into(),
             SourceTypeSpec {
@@ -1324,11 +1327,22 @@ mod tests {
         let changed = format!("## Changed\n{}", "c".repeat(100));
         cache(&engine, &changed, "search_document: ", 0.75).await;
         let failed = engine.index_file(json!({"path":path,"content":format!("{changed}\n## Missing embedding\n{}", "d".repeat(100))})).await;
-        assert!(failed["error"].as_str().unwrap().contains("stored 1/2 sections"));
+        assert!(
+            failed["error"]
+                .as_str()
+                .unwrap()
+                .contains("stored 1/2 sections")
+        );
         let after_failure = engine.list(json!({})).await;
         assert_eq!(after_failure["total"], 3);
         for previous in listed["items"].as_array().unwrap() {
-            assert!(after_failure["items"].as_array().unwrap().iter().any(|item| item["id"] == previous["id"]));
+            assert!(
+                after_failure["items"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|item| item["id"] == previous["id"])
+            );
         }
         assert_eq!(engine.index_file(body).await["sections"], 2);
         assert_eq!(engine.list(json!({})).await, listed);
