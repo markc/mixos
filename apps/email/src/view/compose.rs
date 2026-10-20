@@ -161,12 +161,12 @@ pub fn dialog(ui: &mut Ui, state: &State, events: &mut Vec<UiEvent>) {
 fn recipients(
     ui: &mut Ui,
     compose: &ComposeState,
-    label: &str,
     field: ComposeField,
+    label: egui::Id,
     width: f32,
     events: &mut Vec<UiEvent>,
 ) {
-    let id = egui::Id::new("compose-recipients").with(label);
+    let id = egui::Id::new("compose-recipients").with(row_label(field));
     let suggest = compose
         .suggest
         .as_ref()
@@ -192,7 +192,9 @@ fn recipients(
         });
     }
     let mut buffer = compose.recipients(field).to_owned();
-    let response = ui.add(field::text_edit(&mut buffer, &crate::label(label), width).id(id));
+    let response = ui
+        .add(field::text_edit(&mut buffer, "", width).id(id))
+        .labelled_by(label);
     if response.changed() {
         events.push(UiEvent::ComposeField(field, buffer));
     }
@@ -253,22 +255,105 @@ fn dropdown(
         });
 }
 
+/// The space between a row's label and its field, and between a field and
+/// the buttons after it.
+const GAP: f32 = 8.0;
+
+/// The space between the To row's Cc, Bcc and Reply-To buttons.
+const BUTTON_GAP: f32 = 2.0;
+
+/// The catalogue key of a row's label.
+fn row_label(field: ComposeField) -> &'static str {
+    match field {
+        ComposeField::To => "to",
+        ComposeField::Cc => "cc",
+        ComposeField::Bcc => "bcc",
+        ComposeField::ReplyTo => "reply-to",
+        ComposeField::Subject => "subject",
+        ComposeField::Body => "body",
+    }
+}
+
+/// The To row's button for an optional row: its icon and hover text.
+fn row_button(field: ComposeField) -> (toolkit::Icon, &'static str) {
+    match field {
+        ComposeField::Cc => (toolkit::Icon::Copy, "show-cc"),
+        ComposeField::Bcc => (toolkit::Icon::EyeOff, "show-bcc"),
+        _ => (toolkit::Icon::Reply, "show-reply-to"),
+    }
+}
+
+/// One form row as Thunderbird lays it out: the label outside the field,
+/// right-aligned in a column `column` wide, then `add` with the rest of the
+/// row and the label's id (for the field's accessible name).
+fn row<R>(
+    ui: &mut Ui,
+    text: &str,
+    column: f32,
+    add: impl FnOnce(&mut Ui, egui::Id) -> R,
+) -> R {
+    row_of(ui, text, column, field::HEIGHT, add)
+}
+
+/// [`row`] for a row `height` tall (the From row holds a push button,
+/// taller than a field): the label centres on the row's middle.
+fn row_of<R>(
+    ui: &mut Ui,
+    text: &str,
+    column: f32,
+    height: f32,
+    add: impl FnOnce(&mut Ui, egui::Id) -> R,
+) -> R {
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = GAP;
+        let label = ui
+            .allocate_ui_with_layout(
+                egui::vec2(column, height),
+                egui::Layout::right_to_left(egui::Align::Center),
+                |ui| {
+                    ui.set_min_width(column);
+                    ui.label(text)
+                },
+            )
+            .inner;
+        add(ui, label.id)
+    })
+    .inner
+}
+
 /// The dialog's fields. Each edit is one event; the state owns the draft.
+///
+/// The rows, labels outside on the left: From (the identity, with
+/// Identities… at the right), To (with the Cc, Bcc and Reply-To buttons at
+/// the right), the optional rows the person opened, and Subject.
 fn form(ui: &mut Ui, compose: &ComposeState, state: &State, events: &mut Vec<UiEvent>) {
-    let width = ui.available_width();
-    let line =
-        |ui: &mut Ui, label: &str, field: ComposeField, value: &str, events: &mut Vec<UiEvent>| {
-            let mut buffer = value.to_owned();
-            let response = field::text(ui, &mut buffer, &crate::label(label), width);
-            if response.changed() {
-                events.push(UiEvent::ComposeField(field, buffer));
-            }
-        };
+    // The label column fits the widest label shown.
+    let shown: Vec<ComposeField> = [ComposeField::To]
+        .into_iter()
+        .chain(ComposeField::OPTIONAL)
+        .chain([ComposeField::Subject])
+        .filter(|f| compose.shows(*f))
+        .collect();
+    let font = egui::TextStyle::Body.resolve(ui.style());
+    let column = shown
+        .iter()
+        .map(|f| crate::label(row_label(*f)))
+        .chain([crate::label("from")])
+        .map(|text| {
+            ui.painter()
+                .layout_no_wrap(text, font.clone(), egui::Color32::PLACEHOLDER)
+                .size()
+                .x
+        })
+        .fold(0.0_f32, f32::max)
+        .ceil();
+    let icon = field::HEIGHT;
     // While a send is in flight every field is read-only: the dialog shows
     // exactly what is being sent.
     ui.add_enabled_ui(!compose.busy, |ui| {
-        // From: every identity of the accounts that can send, when there is a
-        // choice. The draft's own identity is the one shown.
+        // From: every identity of the accounts that can send; the draft's
+        // own identity is the one shown. Identities… edits the draft's
+        // account's identities in place.
         let senders: Vec<(String, settings::email::Identity)> = state
             .accounts
             .iter()
@@ -280,56 +365,100 @@ fn form(ui: &mut Ui, compose: &ComposeState, state: &State, events: &mut Vec<UiE
                     .map(|identity| (v.entry.id.clone(), identity))
             })
             .collect();
-        if senders.len() > 1 {
-            let names: Vec<String> = senders
-                .iter()
-                .map(|(_, i)| format!("{} <{}>", i.name, i.address))
-                .collect();
-            let mut at = senders
-                .iter()
-                .position(|(account, i)| *account == compose.account && i.id == compose.identity)
-                .or_else(|| {
-                    senders
-                        .iter()
-                        .position(|(account, _)| *account == compose.account)
-                })
-                .unwrap_or(0);
-            ui.horizontal(|ui| {
-                ui.label(crate::label("from"));
-                if toolkit::combo::show(ui, "compose-from", &mut at, &names, Some(width * 0.8))
-                    .changed()
-                {
-                    let (account, identity) = &senders[at];
-                    events.push(UiEvent::ComposeIdentity {
-                        account: account.clone(),
-                        identity: identity.id.clone(),
-                    });
+        let height = toolkit::chrome::Chrome::of(ui.ctx())
+            .metrics
+            .push_height
+            .max(field::HEIGHT);
+        row_of(ui, &crate::label("from"), column, height, |ui, label| {
+            let identities = toolkit::button::PushButton::secondary(crate::label("identities-open"));
+            // The button is laid out first from the right, so the identity
+            // takes exactly what is left.
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.add(identities).clicked() {
+                    events.push(UiEvent::OpenIdentities(compose.account.clone()));
                 }
+                let width = (ui.available_width() - GAP).max(0.0);
+                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                    if senders.len() > 1 {
+                        let names: Vec<String> = senders
+                            .iter()
+                            .map(|(_, i)| format!("{} <{}>", i.name, i.address))
+                            .collect();
+                        let mut at = senders
+                            .iter()
+                            .position(|(account, i)| {
+                                *account == compose.account && i.id == compose.identity
+                            })
+                            .or_else(|| {
+                                senders
+                                    .iter()
+                                    .position(|(account, _)| *account == compose.account)
+                            })
+                            .unwrap_or(0);
+                        let combo =
+                            toolkit::combo::show(ui, "compose-from", &mut at, &names, Some(width))
+                                .labelled_by(label);
+                        if combo.changed() {
+                            let (account, identity) = &senders[at];
+                            events.push(UiEvent::ComposeIdentity {
+                                account: account.clone(),
+                                identity: identity.id.clone(),
+                            });
+                        }
+                    } else {
+                        // One identity: what the message goes out as.
+                        let from = if compose.draft.from_name.is_empty() {
+                            compose.draft.from.clone()
+                        } else {
+                            format!("{} <{}>", compose.draft.from_name, compose.draft.from)
+                        };
+                        ui.label(from).labelled_by(label);
+                    }
+                });
             });
+        });
+        // To, its optional-row buttons at the right.
+        row(ui, &crate::label("to"), column, |ui, label| {
+            // The buttons are laid out first from the right (so they end
+            // where Identities… ends), then the field takes the rest.
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.spacing_mut().item_spacing.x = BUTTON_GAP;
+                for extra in ComposeField::OPTIONAL.into_iter().rev() {
+                    let (glyph, tip) = row_button(extra);
+                    let button = toolkit::button::IconButton::new(glyph)
+                        .size(icon)
+                        .selected(compose.shows(extra))
+                        .tooltip(crate::label(tip));
+                    if ui.add(button).clicked() {
+                        events.push(UiEvent::ComposeShow(extra));
+                    }
+                }
+                ui.add_space(GAP - BUTTON_GAP);
+                let width = ui.available_width();
+                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                    recipients(ui, compose, ComposeField::To, label, width, events);
+                });
+            });
+        });
+        for extra in ComposeField::OPTIONAL {
+            if compose.shows(extra) {
+                row(ui, &crate::label(row_label(extra)), column, |ui, label| {
+                    let width = ui.available_width();
+                    recipients(ui, compose, extra, label, width, events);
+                });
+            }
         }
-        // The identities of the draft's account, for changing them in place.
-        if ui
-            .add(toolkit::button::PushButton::secondary(crate::label(
-                "identities-open",
-            )))
-            .clicked()
-        {
-            events.push(UiEvent::OpenIdentities(compose.account.clone()));
-        }
-        for (label, field) in [
-            ("to", ComposeField::To),
-            ("cc", ComposeField::Cc),
-            ("bcc", ComposeField::Bcc),
-        ] {
-            recipients(ui, compose, label, field, width, events);
-        }
-        line(
-            ui,
-            "subject",
-            ComposeField::Subject,
-            &compose.draft.subject,
-            events,
-        );
+        row(ui, &crate::label("subject"), column, |ui, label| {
+            let mut buffer = compose.draft.subject.clone();
+            let width = ui.available_width();
+            let response = ui
+                .add(field::text_edit(&mut buffer, "", width).id(egui::Id::new("compose-subject")))
+                .labelled_by(label);
+            if response.changed() {
+                events.push(UiEvent::ComposeField(ComposeField::Subject, buffer));
+            }
+        });
+        ui.add_space(4.0);
         let mut body = compose.draft.body.clone();
         let mut edited = false;
         // The text takes the composer's own padding, font and size.

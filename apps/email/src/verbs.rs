@@ -271,7 +271,7 @@ pub const VERBS: &[Verb] = &[
     verb(
         "email.compose",
         false,
-        r#"{"account":"optional account id","to":"optional addresses","cc":"optional addresses","subject":"optional string","body":"optional string"}"#,
+        r#"{"account":"optional account id","to":"optional addresses","cc":"optional addresses","bcc":"optional addresses","reply_to":"optional address (absent: the identity's)","subject":"optional string","body":"optional string"}"#,
         "Open the compose dialog, filled in",
     ),
     verb(
@@ -1251,11 +1251,17 @@ fn dispatch(
             let draft = Composed {
                 to: addresses(args, "to")?,
                 cc: addresses(args, "cc")?,
+                bcc: addresses(args, "bcc")?,
                 subject: text(args, "subject")?.unwrap_or_default(),
                 body: text(args, "body")?.unwrap_or_default(),
                 ..Composed::default()
             };
+            // The identity sets Reply-To; an explicit one replaces it.
+            let reply_to = text(args, "reply_to")?.filter(|r| !r.trim().is_empty());
             state.open_compose(Some(&account), draft);
+            if let (Some(reply_to), Some(compose)) = (reply_to, state.compose.as_mut()) {
+                compose.draft.reply_to = Some(reply_to);
+            }
             state.reply(id, 0, json!({ "composing": account }));
         }
         "email.reply" | "email.forward" => {

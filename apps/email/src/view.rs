@@ -59,6 +59,8 @@ pub enum UiEvent {
     /// The compose dialog's From account.
     ComposeAccount(String),
     ComposeField(crate::state::ComposeField, String),
+    /// The To row's Cc, Bcc or Reply-To button: show or hide that row.
+    ComposeShow(crate::state::ComposeField),
     /// Cancel or Escape on the compose: it closes, or (something typed)
     /// the person is asked first.
     CloseCompose,

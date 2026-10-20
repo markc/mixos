@@ -802,6 +802,83 @@ fn compose_suggestions_studio_dark() {
     h.snapshot("compose_suggestions_studio_dark");
 }
 
+/// The compose field named `name`. A row's label names its field (egui
+/// folds a `labelled_by` label into the field's accessible name), so the
+/// field is how a row is found.
+fn field(h: &Harness<'static, (State, Vec<UiEvent>)>, name: &str) -> Option<egui::Rect> {
+    use egui_kittest::kittest::NodeT;
+    h.query_all_by_label(name)
+        .find(|n| n.accesskit_node().role() == egui::accesskit::Role::TextInput)
+        .map(|n| n.rect())
+}
+
+fn button(h: &Harness<'static, (State, Vec<UiEvent>)>, key: &str) -> egui::Rect {
+    h.get_by_label(&label(key)).rect()
+}
+
+#[test]
+fn compose_rows_put_labels_outside_and_open_cc_bcc_and_reply_to_from_the_to_row() {
+    let mut state = opened("text/plain", PLAIN);
+    assert!(state.open_compose(Some("home"), Default::default()));
+    let mut h = window(state, &theme(Scheme::Studio, Mode::Dark));
+    h.run();
+    let to = field(&h, "To").expect("To");
+    let subject = field(&h, "Subject").expect("Subject");
+    assert!(subject.top() > to.bottom(), "Subject under To");
+    // Cc, Bcc and Reply-To are buttons at the right of the To row, their
+    // rows hidden until asked for.
+    for (row, tip) in [("Cc", "show-cc"), ("Bcc", "show-bcc"), ("Reply-To", "show-reply-to")] {
+        assert!(field(&h, row).is_none(), "{row} hidden at first");
+        let b = button(&h, tip);
+        assert!((b.center().y - to.center().y).abs() < 4.0, "{tip} on the To row");
+        assert!(b.left() > to.right(), "{tip} right of the field");
+    }
+    // Identities… is on the row above To (From), ending where the To row's
+    // buttons end.
+    let identities = button(&h, "identities-open");
+    assert!(identities.bottom() <= to.top() + 1.0);
+    let last = button(&h, "show-reply-to");
+    assert!((identities.right() - last.right()).abs() < 2.0, "{identities:?} {last:?}");
+    // Each button opens its row under To.
+    for tip in ["show-cc", "show-bcc", "show-reply-to"] {
+        h.get_by_label(&label(tip)).click();
+        h.run();
+        h.run();
+    }
+    let cc = field(&h, "Cc").expect("Cc opened");
+    let reply_to = field(&h, "Reply-To").expect("Reply-To opened");
+    let subject = field(&h, "Subject").unwrap();
+    let to = field(&h, "To").unwrap();
+    assert!(to.bottom() <= cc.top() && reply_to.bottom() <= subject.top());
+    // Labels outside, in one column: every field starts at the same x,
+    // well in from the dialog's edge.
+    for (name, rect) in [("Cc", cc), ("Reply-To", reply_to), ("Subject", subject)] {
+        assert!((rect.left() - to.left()).abs() < 1.0, "{name} lines up with To");
+    }
+    // A Reply-To typed here is the draft's, and the button closes an
+    // empty row again.
+    h.state_mut().0.apply_ui(UiEvent::ComposeField(
+        email::state::ComposeField::ReplyTo,
+        "help@home.example.invalid".into(),
+    ));
+    h.run();
+    h.snapshot("compose_rows_studio_dark");
+    let compose = h.state().0.compose.clone().unwrap();
+    assert_eq!(
+        compose.draft.reply_to.as_deref(),
+        Some("help@home.example.invalid")
+    );
+    assert!(compose.keepable());
+    h.get_by_label(&label("show-cc")).click();
+    h.run();
+    h.run();
+    assert!(field(&h, "Cc").is_none(), "empty Cc closes");
+    h.get_by_label(&label("show-reply-to")).click();
+    h.run();
+    h.run();
+    assert!(field(&h, "Reply-To").is_some(), "a filled row stays");
+}
+
 #[test]
 fn identities_dialog_studio_dark() {
     let (mut state, _) = composing("an");

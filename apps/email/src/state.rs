@@ -109,8 +109,17 @@ pub enum ComposeField {
     To,
     Cc,
     Bcc,
+    /// The Reply-To header: the identity's, else none; editable per draft.
+    ReplyTo,
     Subject,
     Body,
+}
+
+impl ComposeField {
+    /// The rows a compose shows only when asked (or when they hold
+    /// something), in the order they sit under To.
+    pub const OPTIONAL: [ComposeField; 3] =
+        [ComposeField::Cc, ComposeField::Bcc, ComposeField::ReplyTo];
 }
 
 /// The mail surface.
@@ -488,6 +497,9 @@ pub struct ComposeState {
     pub reply: Option<ReplyQuote>,
     /// The sender identity (its id within `account`) the draft is from.
     pub identity: String,
+    /// The optional rows (Cc, Bcc, Reply-To) the person opened from the To
+    /// row's buttons. A row that holds something shows whatever this says.
+    pub extra: Vec<ComposeField>,
 }
 
 /// The quote a reply carries: the attribution and quoted original, the
@@ -596,8 +608,17 @@ impl ComposeState {
             ComposeField::To => &self.to_text,
             ComposeField::Cc => &self.cc_text,
             ComposeField::Bcc => &self.bcc_text,
+            ComposeField::ReplyTo => self.draft.reply_to.as_deref().unwrap_or(""),
             ComposeField::Subject | ComposeField::Body => "",
         }
+    }
+
+    /// Whether row `field` shows: To, Subject and the body always; Cc, Bcc
+    /// and Reply-To once opened or while they hold something.
+    pub fn shows(&self, field: ComposeField) -> bool {
+        !ComposeField::OPTIONAL.contains(&field)
+            || self.extra.contains(&field)
+            || !self.recipients(field).trim().is_empty()
     }
 
     /// Whether closing this compose could lose something: it was edited,
@@ -663,6 +684,7 @@ impl ComposeState {
             attempt: jmap::SendAttempt::default(),
             reply: None,
             identity: String::new(),
+            extra: Vec::new(),
         }
     }
 }
@@ -4059,7 +4081,7 @@ impl State {
             ComposeField::To => &mut compose.to_text,
             ComposeField::Cc => &mut compose.cc_text,
             ComposeField::Bcc => &mut compose.bcc_text,
-            ComposeField::Subject | ComposeField::Body => return,
+            ComposeField::ReplyTo | ComposeField::Subject | ComposeField::Body => return,
         };
         *text = crate::suggest::accept(text, item);
         compose.revision += 1;
@@ -5348,6 +5370,19 @@ impl State {
                 self.identity_save();
             }
             UiEvent::CloseIdentities => self.close_identities(),
+            // A Cc, Bcc or Reply-To button: the row opens, or closes again
+            // (a row holding something stays while it does).
+            UiEvent::ComposeShow(field) => {
+                if let Some(compose) = &mut self.compose
+                    && ComposeField::OPTIONAL.contains(&field)
+                {
+                    if let Some(at) = compose.extra.iter().position(|f| *f == field) {
+                        compose.extra.remove(at);
+                    } else {
+                        compose.extra.push(field);
+                    }
+                }
+            }
             UiEvent::ComposeField(field, value) => {
                 // While a send is in flight the dialog shows what was sent:
                 // edits wait for its answer (the view disables the fields).
@@ -5359,6 +5394,9 @@ impl State {
                         ComposeField::To => compose.to_text = value,
                         ComposeField::Cc => compose.cc_text = value,
                         ComposeField::Bcc => compose.bcc_text = value,
+                        ComposeField::ReplyTo => {
+                            compose.draft.reply_to = Some(value).filter(|v| !v.trim().is_empty());
+                        }
                         ComposeField::Subject => compose.draft.subject = value,
                         ComposeField::Body => compose.draft.body = value,
                     }
