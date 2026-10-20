@@ -423,21 +423,16 @@ fn run_rate(
         .presentation
         .clone()
         .ok_or("wp_presentation unavailable")?;
+    let mut pixels = vec![0; bytes];
+    for pixel in pixels.chunks_exact_mut(4) {
+        pixel.copy_from_slice(&[0x40, 0x80, 0x40, 255]);
+    }
+    let mut submitted = vec![Duration::ZERO; options.frames];
     let start = monotonic_now();
     let instant = Instant::now();
     let timeout = instant + scheduled(Duration::ZERO, options.frames, rate) + options.timeout;
-    let mut pixels = vec![0; bytes];
     let mut stalls = 0;
     for commit in 0..options.frames {
-        wait_until(
-            queue,
-            probe,
-            instant + scheduled(Duration::ZERO, commit, rate),
-        )?;
-        if options.stall_every > 0 && (commit + 1).is_multiple_of(options.stall_every) {
-            stalls += 1;
-            wait_until(queue, probe, Instant::now() + options.stall)?;
-        }
         dispatch_until(
             queue,
             probe,
@@ -446,17 +441,22 @@ fn run_rate(
             "buffer release",
         )?;
         let slot = probe.busy.iter().position(|busy| !busy).unwrap();
-        for pixel in pixels.chunks_exact_mut(4) {
-            pixel.copy_from_slice(&[(commit % 256) as u8, 0x80, 0x40, 255]);
-        }
         frame_id(&mut pixels, options.width, options.height, commit as u32);
         backing
             .write_all_at(&pixels, (slot * bytes) as u64)
             .map_err(|e| e.to_string())?;
+        // Prepare a released buffer before the deadline: pixel generation
+        // and the SHM copy must not become a delay after every timer tick.
+        wait_until(queue, probe, instant + scheduled(Duration::ZERO, commit, rate))?;
+        if options.stall_every > 0 && (commit + 1).is_multiple_of(options.stall_every) {
+            stalls += 1;
+            wait_until(queue, probe, Instant::now() + options.stall)?;
+        }
         surface.attach(Some(&buffers[slot]), 0, 0);
         surface.damage_buffer(0, 0, options.width as i32, options.height as i32);
         presentation.feedback(surface, qh, commit);
         probe.busy[slot] = true;
+        submitted[commit] = monotonic_now();
         surface.commit();
         connection.flush().map_err(|e| e.to_string())?;
     }
@@ -503,8 +503,16 @@ fn run_rate(
         })
     });
     let pass = presented > 0 && output_ok && probe.clock_id == Some(libc::CLOCK_MONOTONIC as u32);
+    let mut latency_us = probe.feedback.iter().enumerate().filter_map(|(commit, slot)| {
+        match slot.outcome {
+            Some(Outcome::Presented { time, .. }) => Some(time.saturating_sub(submitted[commit]).as_micros()),
+            _ => None,
+        }
+    }).collect::<Vec<_>>();
+    latency_us.sort_unstable();
+    let latency = |percent: usize| latency_us.get(latency_us.len().saturating_sub(1) * percent / 100).copied().unwrap_or(0);
     println!(
-        "{SUMMARY} {} frames={} commits={} presented={} rate_hz={} achieved_hz={:.6} missed={} stalls={}",
+        "{SUMMARY} {} frames={} commits={} presented={} rate_hz={} achieved_hz={:.6} missed={} stalls={} latency_p50_us={} latency_p99_us={}",
         if pass { "PASS" } else { "FAIL" },
         options.frames,
         options.frames,
@@ -512,7 +520,9 @@ fn run_rate(
         rate,
         options.frames as f64 / elapsed,
         missed,
-        stalls
+        stalls,
+        latency(50),
+        latency(99),
     );
     Ok(pass)
 }
