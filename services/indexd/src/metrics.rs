@@ -237,10 +237,10 @@ pub static REQUEST_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::Atomic
 /// JSON contract, so inspect parsed top-level members rather than serialised
 /// prefixes. `Invalid` is assigned by the caller for parse failures, never
 /// here.
-pub fn classify_response(response: &str) -> Outcome {
-    match serde_json::from_str::<serde_json::Value>(response) {
-        Ok(serde_json::Value::Object(object)) if object.contains_key("error") => Outcome::Error,
-        Ok(serde_json::Value::Object(object))
+pub fn classify_response(response: &serde_json::Value) -> Outcome {
+    match response {
+        serde_json::Value::Object(object) if object.contains_key("error") => Outcome::Error,
+        serde_json::Value::Object(object)
             if object.get("accepted").and_then(serde_json::Value::as_bool) == Some(true) =>
         {
             Outcome::Queued
@@ -287,10 +287,10 @@ mod tests {
 
     #[test]
     fn classify_response_uses_top_level_members() {
-        assert_eq!(classify_response("{\"error\":\"boom\"}"), Outcome::Error);
+        assert_eq!(classify_response(&serde_json::json!({"error":"boom"})), Outcome::Error);
         assert_eq!(
             classify_response(
-                "{\"code\":\"duplicate_vanished\",\"error\":\"store transaction rolled back\"}"
+                &serde_json::json!({"code":"duplicate_vanished","error":"store transaction rolled back"})
             ),
             Outcome::Error,
             "duplicate-race exhaustion must stay an error regardless of key order"
@@ -298,11 +298,11 @@ mod tests {
         // A substring check would misclassify this successful payload
         // whose *content* mentions an error key.
         assert_eq!(
-            classify_response("{\"items\":[{\"content\":\"set \\\"error\\\" handler\"}]}"),
+            classify_response(&serde_json::json!({"items":[{"content":"set \"error\" handler"}]})),
             Outcome::Ok
         );
         assert_eq!(
-            classify_response("{\"accepted\":true,\"queued\":true,\"file\":\"x.md\"}"),
+            classify_response(&serde_json::json!({"accepted":true,"queued":true,"file":"x.md"})),
             Outcome::Queued
         );
     }

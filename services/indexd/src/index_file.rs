@@ -315,7 +315,7 @@ pub(crate) async fn handle_index_file(
     state: &Arc<EngineState>,
     activity_tx: &tokio::sync::mpsc::Sender<()>,
     t: &mut ReqTiming,
-) -> String {
+) -> serde_json::Value {
     let config = state.config.clone();
     let t_start = std::time::Instant::now();
     if let Err(error) = validate_file_path(&req.path) {
@@ -431,7 +431,7 @@ pub(crate) async fn handle_index_file(
             t.db_us += db_t0.elapsed().as_micros() as u64;
         }
         info!(file = %filename, path = %filepath, "indexed 0 sections (empty/below-threshold)");
-        return serde_json::json!({"indexed": true, "sections": 0, "file": filename}).to_string();
+        return serde_json::json!({"indexed": true, "sections": 0, "file": filename});
     }
 
     // Keep the 6000-char heuristic as the fast first pass, then count with a
@@ -531,9 +531,7 @@ pub(crate) async fn handle_index_file(
         // not by substring: a successful StoreResponse never carries one,
         // so this can't false-positive on data that merely contains the
         // token "error".
-        let parsed = serde_json::from_str::<serde_json::Value>(&resp).ok();
-        let store_failed = parsed.as_ref().is_some_and(|v| v.get("error").is_some());
-        if store_failed {
+        if resp.get("error").is_some() {
             // Failure ⇒ old chunks survive (old_ids were never deleted), so a
             // re-run after the cause is fixed reconciles cleanly. The caller
             // (record_request) emits the structured warn carrying this
@@ -548,9 +546,8 @@ pub(crate) async fn handle_index_file(
             return json_error(&detail);
         }
         // Accumulate the ids this section stored or dedup-matched.
-        if let Some(ids) = parsed
-            .as_ref()
-            .and_then(|v| v.get("ids"))
+        if let Some(ids) = resp
+            .get("ids")
             .and_then(|v| v.as_array())
         {
             kept_ids.extend(ids.iter().filter_map(|i| i.as_i64()));
@@ -597,7 +594,6 @@ pub(crate) async fn handle_index_file(
         "sections": total,
         "domain": domain,
     })
-    .to_string()
 }
 
 #[cfg(test)]

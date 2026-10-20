@@ -759,7 +759,6 @@ impl VectorDb {
         Ok(updated)
     }
 
-    #[cfg(test)]
     pub(crate) fn delete(&self, ids: &[i64]) -> Result<usize> {
         self.delete_filtered(ids, &[])
     }

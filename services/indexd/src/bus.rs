@@ -166,7 +166,7 @@ pub(crate) async fn serve_client(
                             }
                         }
                     };
-                    let reply = engine.call(&cmd.command, body).await;
+                    let reply = engine.call_sized(&cmd.command, body, cmd.body.len()).await;
                     let rc = if reply.get("error").is_some() { 10 } else { 0 };
                     if let Err(error) = client.respond(&cmd, rc, &reply.to_string()).await {
                         tracing::warn!(%error, "Bus reply failed");

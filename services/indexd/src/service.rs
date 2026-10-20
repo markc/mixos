@@ -23,15 +23,14 @@ pub(crate) fn action_name(req: &Request) -> &'static str {
 
 pub(crate) async fn process_request(
     input: serde_json::Value,
+    bytes: usize,
     state: &Arc<EngineState>,
     activity_tx: &tokio::sync::mpsc::Sender<()>,
     ctx: &RequestContext,
-) -> String {
+) -> serde_json::Value {
     let config = state.config.clone();
     let seq = metrics::REQUEST_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    // Serialise only to account for the byte budget; dispatch consumes the
-    // parsed value directly, without another JSON text parse.
-    let bytes = input.to_string().len() as u64;
+    let bytes = bytes as u64;
     let t0 = Instant::now();
     let mut t = ReqTiming::default();
 
@@ -147,8 +146,7 @@ pub(crate) async fn process_request(
                         "accepted": true,
                         "queued": true,
                         "file": file,
-                    })
-                    .to_string(),
+                    }),
                     Err(tokio::sync::mpsc::error::TrySendError::Full(_job)) => json_code_error(
                         "queue_full",
                         "background index queue count budget exhausted",
@@ -164,7 +162,7 @@ pub(crate) async fn process_request(
         }
         Request::Stats => handle_stats(state, &mut t).await,
     };
-    let response = if response.len() > config.service.max_response_bytes {
+    let response = if json_size(&response) > config.service.max_response_bytes {
         json_code_error(
             "response_too_large",
             "serialised response exceeds configured byte limit",
@@ -190,7 +188,7 @@ pub(crate) async fn handle_embed(
     state: &Arc<EngineState>,
     activity_tx: &tokio::sync::mpsc::Sender<()>,
     t: &mut ReqTiming,
-) -> String {
+) -> serde_json::Value {
     let config = state.config.clone();
     if req.texts.len() > MAX_TEXTS_PER_REQUEST {
         return json_error(&format!(
@@ -203,7 +201,7 @@ pub(crate) async fn handle_embed(
     }
     t.work = req.texts.len() as u64;
     match compute_embeddings(state, &req.texts, &req.prefix, activity_tx, t).await {
-        Ok(embeddings) => serde_json::to_string(&EmbedResponse { embeddings }).unwrap(),
+        Ok(embeddings) => serde_json::to_value(&EmbedResponse { embeddings }).unwrap(),
         Err(e) => json_error(&e),
     }
 }
@@ -248,7 +246,7 @@ pub(crate) async fn handle_store(
     state: &Arc<EngineState>,
     activity_tx: &tokio::sync::mpsc::Sender<()>,
     t: &mut ReqTiming,
-) -> String {
+) -> serde_json::Value {
     let config = state.config.clone();
     if req.texts.len() > MAX_TEXTS_PER_REQUEST {
         return json_error(&format!(
@@ -317,7 +315,7 @@ pub(crate) async fn handle_store(
             Ok(StoreAttempt::Committed { ids, duplicates }) => {
                 let stored = ids.len() - duplicates;
                 t.work = ids.len() as u64;
-                return serde_json::to_string(&StoreResponse {
+                return serde_json::to_value(&StoreResponse {
                     stored,
                     duplicates,
                     ids,
@@ -360,7 +358,7 @@ pub(crate) async fn handle_search(
     state: &Arc<EngineState>,
     activity_tx: &tokio::sync::mpsc::Sender<()>,
     t: &mut ReqTiming,
-) -> String {
+) -> serde_json::Value {
     let config = state.config.clone();
     if req.metadata_filter.len() > MAX_METADATA_FILTERS {
         return json_error(&format!(
@@ -405,7 +403,7 @@ pub(crate) async fn handle_search(
                 guard.db.mark_retrieved(&ids);
                 t.db_us += db_t0.elapsed().as_micros() as u64;
                 t.work = results.len() as u64;
-                serde_json::to_string(&SearchResponse { results }).unwrap()
+                serde_json::to_value(&SearchResponse { results }).unwrap()
             }
             Err(e) => {
                 t.db_us += db_t0.elapsed().as_micros() as u64;
@@ -457,7 +455,7 @@ pub(crate) async fn handle_search(
                 t.db_us += db_t0.elapsed().as_micros() as u64;
             }
             t.work = results.len() as u64;
-            serde_json::to_string(&SearchResponse { results }).unwrap()
+            serde_json::to_value(&SearchResponse { results }).unwrap()
         }
         Ok(Err(e)) => json_error(&format!("search failed: {e}")),
         Err(join) => json_error(&format!("search worker failed: {join}")),
@@ -469,7 +467,7 @@ pub(crate) async fn handle_update(
     state: &Arc<EngineState>,
     activity_tx: &tokio::sync::mpsc::Sender<()>,
     t: &mut ReqTiming,
-) -> String {
+) -> serde_json::Value {
     let prefix = "search_document: ";
 
     // Re-embed off-lock if content changed (compute_embeddings caches).
@@ -499,7 +497,7 @@ pub(crate) async fn handle_update(
     match update_res {
         Ok(updated) => {
             t.work = updated as u64;
-            serde_json::to_string(&UpdateResponse {
+            serde_json::to_value(&UpdateResponse {
                 updated,
                 re_embedded: new_embedding.is_some(),
             })
@@ -513,7 +511,7 @@ pub(crate) async fn handle_delete(
     req: DeleteRequest,
     state: &Arc<EngineState>,
     t: &mut ReqTiming,
-) -> String {
+) -> serde_json::Value {
     let guard = lock_timed(state, t).await;
     let db_t0 = Instant::now();
     let res = guard.db.delete_filtered(&req.ids, &req.filter);
@@ -521,7 +519,7 @@ pub(crate) async fn handle_delete(
     match res {
         Ok(deleted) => {
             t.work = deleted as u64;
-            serde_json::to_string(&DeleteResponse { deleted }).unwrap()
+            serde_json::to_value(&DeleteResponse { deleted }).unwrap()
         }
         Err(e) => json_error(&format!("delete failed: {e}")),
     }
@@ -531,7 +529,7 @@ pub(crate) async fn handle_list(
     req: ListRequest,
     state: &Arc<EngineState>,
     t: &mut ReqTiming,
-) -> String {
+) -> serde_json::Value {
     let config = state.config.clone();
     let limit = match sqlite_count(clamp_list_limit(req.limit), "list.limit") {
         Ok(value) => value,
@@ -553,7 +551,7 @@ pub(crate) async fn handle_list(
     match res {
         Ok((items, total)) => {
             t.work = items.len() as u64;
-            serde_json::to_string(&ListResponse { items, total }).unwrap()
+            serde_json::to_value(&ListResponse { items, total }).unwrap()
         }
         Err(e) => json_error(&format!("list failed: {e}")),
     }
@@ -563,7 +561,7 @@ pub(crate) async fn handle_feedback(
     req: FeedbackRequest,
     state: &Arc<EngineState>,
     t: &mut ReqTiming,
-) -> String {
+) -> serde_json::Value {
     let guard = lock_timed(state, t).await;
     let db_t0 = Instant::now();
     let res = guard.db.feedback(req.id, req.useful);
@@ -571,7 +569,7 @@ pub(crate) async fn handle_feedback(
     match res {
         Ok(new_score) => {
             t.work = 1;
-            serde_json::json!({"ok": true, "id": req.id, "feedback_score": new_score}).to_string()
+            serde_json::json!({"ok": true, "id": req.id, "feedback_score": new_score})
         }
         Err(e) => json_error(&format!("feedback failed: {e}")),
     }
@@ -581,7 +579,7 @@ pub(crate) async fn handle_supersede(
     req: SupersedeRequest,
     state: &Arc<EngineState>,
     t: &mut ReqTiming,
-) -> String {
+) -> serde_json::Value {
     if !req.reason.is_empty() {
         info!(
             old_id = req.old_id,
@@ -605,7 +603,6 @@ pub(crate) async fn handle_supersede(
                 "new_id": req.new_id,
                 "updated": updated,
             })
-            .to_string()
         }
         Err(e) => json_error(&format!("supersede failed: {e}")),
     }
@@ -615,7 +612,7 @@ pub(crate) async fn handle_stale(
     req: StaleRequest,
     state: &Arc<EngineState>,
     t: &mut ReqTiming,
-) -> String {
+) -> serde_json::Value {
     let guard = lock_timed(state, t).await;
     let db_t0 = Instant::now();
     let res = guard.db.stale_query(&req);
@@ -625,12 +622,12 @@ pub(crate) async fn handle_stale(
             t.work = (resp.never_retrieved_old.len()
                 + resp.low_value.len()
                 + resp.long_dormant.len()) as u64;
-            serde_json::to_string(&resp).unwrap()
+            serde_json::to_value(&resp).unwrap()
         }
         Err(e) => json_error(&format!("stale query failed: {e}")),
     }
 }
-pub(crate) async fn handle_stats(state: &Arc<EngineState>, t: &mut ReqTiming) -> String {
+pub(crate) async fn handle_stats(state: &Arc<EngineState>, t: &mut ReqTiming) -> serde_json::Value {
     let guard = lock_timed(state, t).await;
     let db_t0 = Instant::now();
     let res = guard.db.stats(&guard.db_path);
@@ -661,22 +658,22 @@ pub(crate) async fn handle_stats(state: &Arc<EngineState>, t: &mut ReqTiming) ->
             if let Some(obj) = v.as_object_mut() {
                 obj.insert("request_metrics".into(), METRICS.snapshot());
             }
-            v.to_string()
+            v
         }
         Err(e) => json_error(&format!("stats failed: {e}")),
     }
 }
 
-pub(crate) fn json_error(msg: &str) -> String {
-    serde_json::to_string(&ErrorResponse {
+pub(crate) fn json_error(msg: &str) -> serde_json::Value {
+    serde_json::to_value(&ErrorResponse {
         error: msg.to_string(),
         code: None,
     })
     .unwrap()
 }
 
-pub(crate) fn json_code_error(code: &str, msg: &str) -> String {
-    serde_json::to_string(&ErrorResponse {
+pub(crate) fn json_code_error(code: &str, msg: &str) -> serde_json::Value {
+    serde_json::to_value(&ErrorResponse {
         error: msg.to_string(),
         code: Some(code.to_string()),
     })
@@ -694,7 +691,7 @@ fn record_request(
     t: &ReqTiming,
     elapsed: Duration,
     outcome: Outcome,
-    response: &str,
+    response: &serde_json::Value,
 ) {
     let elapsed_us = elapsed.as_micros() as u64;
     METRICS
@@ -704,7 +701,7 @@ fn record_request(
     if matches!(outcome, Outcome::Error | Outcome::Invalid) {
         // Error bodies are indexd-generated (json_error), not user data;
         // truncate defensively anyway.
-        let brief: String = response.chars().take(200).collect();
+        let brief: String = response.to_string().chars().take(200).collect();
         warn!(
             seq,
             action,
@@ -764,8 +761,8 @@ fn finish_request(
     bytes: u64,
     t: &ReqTiming,
     started: Instant,
-    response: String,
-) -> String {
+    response: serde_json::Value,
+) -> serde_json::Value {
     record_request(
         seq,
         action,
@@ -843,6 +840,12 @@ impl Engine {
     );
 
     pub async fn call(&self, verb: &str, body: serde_json::Value) -> serde_json::Value {
+        let bytes = json_size(&body);
+        self.call_sized(verb, body, bytes).await
+    }
+
+    /// Dispatch a parsed request with its original transport byte count.
+    pub async fn call_sized(&self, verb: &str, body: serde_json::Value, bytes: usize) -> serde_json::Value {
         let action = verb.strip_prefix("indexd.").unwrap_or(verb);
         if !crate::bus::verb_manifest()
             .iter()
@@ -870,17 +873,17 @@ impl Engine {
         let runtime = tokio::runtime::Handle::current();
         // SQLite, file IO and chunk tokenisation are synchronous. Poll the
         // request on the blocking pool, leaving runtime workers free for Bus IO.
-        let response = tokio::task::spawn_blocking(move || {
+        tokio::task::spawn_blocking(move || {
             runtime.block_on(process_request(
                 serde_json::Value::Object(object),
+                bytes,
                 &state,
                 &activity_tx,
                 &ctx,
             ))
         })
         .await
-        .unwrap_or_else(|e| json_error(&format!("request worker failed: {e}")));
-        serde_json::from_str(&response).expect("handlers produce JSON")
+        .unwrap_or_else(|e| json_error(&format!("request worker failed: {e}")))
     }
 
     pub fn open(config: Config) -> Result<Self> {

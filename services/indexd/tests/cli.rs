@@ -253,6 +253,19 @@ fn call_is_in_process_and_uses_explicit_config() {
 }
 
 #[test]
+fn call_charges_original_argv_bytes_including_whitespace() {
+    let (_dir, config) = fixture();
+    let mut value: Value = serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
+    value["service"]["max_request_line_bytes"] = json!(128);
+    std::fs::write(&config, value.to_string()).unwrap();
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_indexd"))
+        .args(["--config", config.to_str().unwrap(), "call", "stats", &format!("{}{{}}", " ".repeat(128))])
+        .output().unwrap();
+    assert!(!output.status.success());
+    assert_eq!(serde_json::from_slice::<Value>(&output.stdout).unwrap()["code"], "request_too_large");
+}
+
+#[test]
 fn call_requires_offline_for_writes_and_always_refuses_background() {
     let (_dir, config) = fixture();
     let run = |verb: &str, body: &str, offline: bool| {

@@ -130,7 +130,7 @@ fn main() -> Result<()> {
             Command::Call {
                 verb, json_body, ..
             } => {
-                let reply = engine.call(&verb, serde_json::from_str(&json_body)?).await;
+                let reply = engine.call_sized(&verb, serde_json::from_str(&json_body)?, json_body.len()).await;
                 println!("{reply}");
                 if reply.get("error").is_some() {
                     anyhow::bail!("indexd call failed");

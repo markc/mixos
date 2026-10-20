@@ -103,7 +103,7 @@ impl Default for ServiceConfig {
             vindex_dtype: "f32".into(),
             max_sequence_tokens: 2048,
             max_forward_tokens: 4096,
-            max_request_text_bytes: 8 * 1024 * 1024,
+            max_request_text_bytes: (8 * 1024 * 1024).min(BUS_BODY_LIMIT),
             max_prefix_bytes: 4 * 1024,
             max_request_line_bytes: BUS_BODY_LIMIT,
             max_response_bytes: BUS_BODY_LIMIT,
@@ -136,6 +136,7 @@ fn resolve_snapshot(root: &Path) -> PathBuf {
 impl Config {
     pub fn validate(&self) -> Result<()> {
         for (name, value) in [
+            ("max_request_text_bytes", self.service.max_request_text_bytes),
             (
                 "max_request_line_bytes",
                 self.service.max_request_line_bytes,
@@ -317,12 +318,12 @@ mod path_tests {
 
     #[test]
     fn byte_limits_cannot_exceed_bus_frame_budget() {
-        for response in [false, true] {
+        for field in ["max_request_text_bytes", "max_request_line_bytes", "max_response_bytes"] {
             let mut cfg = Config::default();
-            if response {
-                cfg.service.max_response_bytes = BUS_BODY_LIMIT + 1;
-            } else {
-                cfg.service.max_request_line_bytes = BUS_BODY_LIMIT + 1;
+            match field {
+                "max_request_text_bytes" => cfg.service.max_request_text_bytes = BUS_BODY_LIMIT + 1,
+                "max_request_line_bytes" => cfg.service.max_request_line_bytes = BUS_BODY_LIMIT + 1,
+                _ => cfg.service.max_response_bytes = BUS_BODY_LIMIT + 1,
             }
             assert!(
                 cfg.validate()

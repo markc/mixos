@@ -13,6 +13,21 @@ pub const BUS_BODY_LIMIT: usize = if ::bus::MAX_MESSAGE_BYTES < ::bus::WS_MAX_FR
 
 pub(crate) const EMBEDDING_DIM: usize = 768;
 
+/// Count JSON wire bytes without allocating an encoded copy.
+pub(crate) fn json_size(value: &serde_json::Value) -> usize {
+    struct Counter(usize);
+    impl std::io::Write for Counter {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0 = self.0.saturating_add(bytes.len());
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
+    }
+    let mut counter = Counter(0);
+    serde_json::to_writer(&mut counter, value).expect("JSON values are serialisable");
+    counter.0
+}
+
 /// Wall-clock cap on a single off-lock embed batch. A hung candle forward
 /// pass must not pin the embed circuit breaker open forever; on expiry the
 /// The request returns an error on expiry, but the blocking worker retains its
@@ -37,10 +52,8 @@ pub(crate) const MAX_METADATA_FILTERS: usize = 32;
 /// MAX_CHUNK_CHARS), low enough to reject a flood of tiny sections.
 pub(crate) const MAX_INDEX_FILE_SECTIONS: usize = 4000;
 
-pub(crate) fn transient_background_failure(response: &str) -> bool {
-    serde_json::from_str::<serde_json::Value>(response)
-        .ok()
-        .and_then(|value| value.get("error")?.as_str().map(str::to_owned))
+pub(crate) fn transient_background_failure(response: &serde_json::Value) -> bool {
+    response.get("error").and_then(serde_json::Value::as_str)
         .is_some_and(|error| {
             error.contains("inference_busy:")
                 || error.contains("model loading suspended")
