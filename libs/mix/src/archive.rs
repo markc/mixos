@@ -362,7 +362,7 @@ enum VerifiedDecode {
         >,
     },
     Gzip {
-        dec: flate2::bufread::MultiGzDecoder<BufReader<File>>,
+        dec: Box<flate2::bufread::MultiGzDecoder<BufReader<File>>>,
     },
     None {
         src: BufReader<File>,
@@ -427,7 +427,7 @@ impl VerifiedDecode {
                 // Every member is decoded and CRC-checked; anything after
                 // the last member that is not a gzip header fails here as
                 // ARCHIVE_STREAM_CORRUPT.
-                dec: flate2::bufread::MultiGzDecoder::new(br),
+                dec: Box::new(flate2::bufread::MultiGzDecoder::new(br)),
             },
             Codec::None => VerifiedDecode::None { src: br },
         })
