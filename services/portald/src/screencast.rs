@@ -146,9 +146,10 @@ impl ScreenCast {
             .name_has_owner(header.sender().map(|name| name.clone().into()).ok_or_else(|| {
                 PortalError::InvalidArgument("no sender".into())
             })?)
-            .await
-            .unwrap_or(false);
-        if !present {
+            .await;
+        // Only a definite answer ends the session; a failed query keeps it
+        // (NameOwnerChanged still retires it if the owner really left).
+        if matches!(present, Ok(false)) {
             session::end(connection, &self.sessions, session.as_str(), false).await;
             let _ = connection
                 .object_server()

@@ -51,11 +51,15 @@ fn main() -> anyhow::Result<()> {
         .map_err(|diagnostic| anyhow::anyhow!(diagnostic.message))?;
     let address = portald::env::session_address()?;
     let state_dir = state_dir.or_else(portald::env::state_directory);
-    tokio::runtime::Builder::new_multi_thread()
+    let runtime = tokio::runtime::Builder::new_multi_thread()
         // This I/O daemon needs a small fixed runtime; creating one worker per
         // CPU would make process startup depend on the host's core count.
         .worker_threads(2)
         .enable_all()
-        .build()?
-        .block_on(portald::run(binding, address, state_dir, screencast))
+        .build()?;
+    let result = runtime.block_on(portald::run(binding, address, state_dir, screencast));
+    // A blocking task stuck on a wedged compositor (ScreenCast) must not hold
+    // up exit: give the rest a moment, then leave.
+    runtime.shutdown_timeout(std::time::Duration::from_secs(2));
+    result
 }
