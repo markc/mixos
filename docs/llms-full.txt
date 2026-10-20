@@ -7698,7 +7698,7 @@ following the component-owned maild packaging pattern. Install the binary
 under `/opt/mixos/bin`, the unit under `/etc/systemd/system`, sysusers under
 `/usr/lib/sysusers.d/indexd.conf`, and a customised config under
 `/etc/mixos/indexd/config.conf.mix`. Apply sysusers before starting the service.
-The unit requires system `noded.service`, runs as `indexd:indexd`, limits memory
+The unit wants system `noded.service`, runs as `indexd:indexd`, limits memory
 to 2 GiB, sets `MALLOC_ARENA_MAX=2`, and hardens filesystem, devices and kernel
 access. TCP address families remain available for the configured broker.
 `MemoryDenyWriteExecute=yes` follows the former candle CPU service.

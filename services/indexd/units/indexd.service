@@ -4,7 +4,7 @@
 Description=MixOS semantic index service
 Documentation=https://mixos.dev/indexd/
 After=noded.service
-Requires=noded.service
+Wants=noded.service
 
 [Service]
 Type=simple
