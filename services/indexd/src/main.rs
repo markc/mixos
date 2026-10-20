@@ -34,7 +34,7 @@ fn main() -> Result<()> {
     match cli.command {
         Command::CheckConfig => println!("{}", ::config::to_conf_mix_string(&cfg)?),
         Command::Serve => {
-            let runtime = tokio::runtime::Builder::new_current_thread()
+            let runtime = tokio::runtime::Builder::new_multi_thread()
                 .enable_all()
                 .build()?;
             runtime.block_on(async {

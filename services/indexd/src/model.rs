@@ -568,34 +568,45 @@ pub(crate) fn rss_bytes() -> u64 {
 /// Background indexing job envelope. Carries the origin context so the
 /// worker's CPU is attributed to the requester that queued it — the
 /// foreground `index_file` ack is near-zero cost, the real work lands
-pub(crate) async fn ensure_model(state: &mut AppState) -> Result<()> {
-    if state.model.is_some() {
-        return Ok(());
+pub(crate) async fn ensure_model(state: &Arc<EngineState>, lease: Arc<InferenceLease>, t: &mut ReqTiming) -> Result<Arc<EmbedModel>> {
+    let mut guard = lock_timed(state, t).await;
+    if let Some(model) = &guard.model {
+        return Ok(model.clone());
     }
-    if !state.model_breaker.allow_request() {
+    if !guard.model_breaker.allow_request() {
         anyhow::bail!(
             "model loading suspended (circuit {}, cooldown active)",
-            state.model_breaker.state_name()
+            guard.model_breaker.state_name()
         );
     }
     info!("loading model on demand...");
-    metrics::RSS_BEFORE_LOAD_BYTES.store(rss_bytes(), Ordering::Relaxed);
-    let svc = &state.config.service;
-    match EmbedModel::load(
-        state.dtype,
+    let dtype = guard.dtype;
+    drop(guard);
+    let svc = state.config.service.clone();
+    // The worker retains the permit even if the requesting future is cancelled.
+    let loaded = tokio::task::spawn_blocking(move || {
+        let _lease = lease;
+        metrics::RSS_BEFORE_LOAD_BYTES.store(rss_bytes(), Ordering::Relaxed);
+        let model = EmbedModel::load(
+        dtype,
         &svc.model_dir,
         svc.max_sequence_tokens,
         svc.max_forward_tokens,
-    ) {
+        );
+        metrics::RSS_AFTER_LOAD_BYTES.store(rss_bytes(), Ordering::Relaxed);
+        model
+    }).await.context("model loader worker failed")?;
+    let mut guard = lock_timed(state, t).await;
+    match loaded {
         Ok(model) => {
-            state.model = Some(Arc::new(model));
-            state.model_breaker.record_success();
+            let model = Arc::new(model);
+            guard.model = Some(model.clone());
+            guard.model_breaker.record_success();
             metrics::MODEL_GENERATION.fetch_add(1, Ordering::Relaxed);
-            metrics::RSS_AFTER_LOAD_BYTES.store(rss_bytes(), Ordering::Relaxed);
-            Ok(())
+            Ok(model)
         }
         Err(e) => {
-            state.model_breaker.record_failure();
+            guard.model_breaker.record_failure();
             Err(e)
         }
     }
@@ -618,7 +629,7 @@ pub(crate) async fn ensure_model(state: &mut AppState) -> Result<()> {
 /// Returns the embeddings for `texts` in order. Errors are human-readable
 /// strings the callers wrap into `json_error`.
 pub(crate) async fn compute_embeddings(
-    state: &Arc<Mutex<AppState>>,
+    state: &Arc<EngineState>,
     texts: &[String],
     prefix: &str,
     activity_tx: &tokio::sync::mpsc::Sender<()>,
@@ -627,7 +638,7 @@ pub(crate) async fn compute_embeddings(
     if texts.is_empty() {
         return Ok(vec![]);
     }
-    let config = state.lock().await.config.clone();
+    let config = state.config.clone();
     validate_embedding_budget(texts, prefix, &config.service)?;
 
     // Cache fast path, then permit-before-model ordering. The second cache
@@ -649,7 +660,8 @@ pub(crate) async fn compute_embeddings(
     )
     .await?;
 
-    let (mut cached, needs_embed, model) = {
+    let inference_lease = Arc::new(InferenceLease { _permit: permit });
+    let (mut cached, needs_embed, was_cold) = {
         let mut guard = lock_timed(state, t).await;
         let (cached, needs_embed) = guard.embed_cache.lookup_batch(texts, prefix);
         if needs_embed.is_empty() {
@@ -664,22 +676,18 @@ pub(crate) async fn compute_embeddings(
             ));
         }
 
-        let was_cold = guard.model.is_none();
-        let load_t0 = Instant::now();
-        let load_res = ensure_model(&mut guard).await;
-        if was_cold {
+        (cached, needs_embed, guard.model.is_none())
+    };
+    let load_t0 = Instant::now();
+    let load_res = ensure_model(state, inference_lease.clone(), t).await;
+    if was_cold {
             // Commit BEFORE checking the result: a slow FAILED load is
             // exactly the burn this instrumentation must expose, not
             // unexplained elapsed time with cold_model=false.
             t.cold_model = true;
             t.model_load_us += load_t0.elapsed().as_micros() as u64;
-        }
-        if let Err(e) = load_res {
-            return Err(format!("model load failed: {e}"));
-        }
-        let model = guard.model.clone().unwrap();
-        (cached, needs_embed, model)
-    };
+    }
+    let model = load_res.map_err(|e| format!("model load failed: {e}"))?;
 
     let texts_to_embed: Vec<String> = needs_embed.iter().map(|&i| texts[i].clone()).collect();
 
@@ -690,7 +698,6 @@ pub(crate) async fn compute_embeddings(
     metrics::INFERENCE_IN_FLIGHT.fetch_add(1, Ordering::Relaxed);
     let lifecycle = Arc::new(AtomicU8::new(0));
     let worker_lifecycle = lifecycle.clone();
-    let inference_lease = Arc::new(InferenceLease { _permit: permit });
     let worker = InferenceWorkerGuard {
         _lease: inference_lease.clone(),
         lifecycle: worker_lifecycle,
@@ -783,7 +790,7 @@ pub(crate) async fn acquire_inference_permit(
 /// Re-lock state solely to record an embed-breaker failure (error/timeout).
 /// The re-lock wait is charged to the failing request's timing — failed
 /// embeds must not under-report lock contention.
-pub(crate) async fn record_embed_failure(state: &Arc<Mutex<AppState>>, t: &mut ReqTiming) {
+pub(crate) async fn record_embed_failure(state: &Arc<EngineState>, t: &mut ReqTiming) {
     lock_timed(state, t).await.embed_breaker.record_failure();
 }
 

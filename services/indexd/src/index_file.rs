@@ -86,15 +86,27 @@ impl ChunkTokenizer {
     }
 }
 
+#[derive(Default)]
+pub(crate) struct TokenizerCache {
+    pub(crate) tokenizer: Option<Arc<ChunkTokenizer>>,
+    failure: Option<(Instant, String)>,
+}
+
 pub(crate) async fn chunk_tokenizer(
-    state: &Arc<Mutex<AppState>>,
+    state: &Arc<EngineState>,
 ) -> Result<Arc<ChunkTokenizer>, String> {
-    let mut guard = state.lock().await;
-    if let Some(tokenizer) = &guard.chunk_tokenizer {
+    // Serialise only tokenizer loading; reads and health never wait on this lock.
+    let mut guard = state.chunk_tokenizer.lock().await;
+    if let Some(tokenizer) = &guard.tokenizer {
         return Ok(tokenizer.clone());
     }
-    let svc = guard.config.service.clone();
-    let tokenizer = tokio::task::spawn_blocking(move || {
+    if let Some((failed_at, error)) = &guard.failure {
+        if failed_at.elapsed() < Duration::from_secs(60) {
+            return Err(error.clone());
+        }
+    }
+    let svc = state.config.service.clone();
+    let result = tokio::task::spawn_blocking(move || {
         ChunkTokenizer::load(
             &svc.model_dir,
             svc.max_sequence_tokens,
@@ -102,10 +114,18 @@ pub(crate) async fn chunk_tokenizer(
         )
     })
     .await
-    .map_err(|e| format!("chunk tokenizer worker failed: {e}"))?
-    .map_err(|e| format!("loading tokenizer for index_file chunking: {e:#}"))?;
+    .map_err(|e| format!("chunk tokenizer worker failed: {e}"))
+    .and_then(|result| result.map_err(|e| format!("loading tokenizer for index_file chunking: {e:#}")));
+    let tokenizer = match result {
+        Ok(tokenizer) => tokenizer,
+        Err(error) => {
+            guard.failure = Some((Instant::now(), error.clone()));
+            return Err(error);
+        }
+    };
     let tokenizer = Arc::new(tokenizer);
-    guard.chunk_tokenizer = Some(tokenizer.clone());
+    guard.failure = None;
+    guard.tokenizer = Some(tokenizer.clone());
     Ok(tokenizer)
 }
 /// Split one char-bounded piece further until the tokenizer (including the
@@ -277,11 +297,11 @@ pub(crate) fn read_file_bounded(path: &Path, max_bytes: usize) -> Result<String,
 /// Called from git post-commit hooks via Bus: `indexd.index_file {"path": "/path/to/file.md"}`
 pub(crate) async fn handle_index_file(
     req: IndexFileRequest,
-    state: &Arc<Mutex<AppState>>,
+    state: &Arc<EngineState>,
     activity_tx: &tokio::sync::mpsc::Sender<()>,
     t: &mut ReqTiming,
 ) -> String {
-    let config = state.lock().await.config.clone();
+    let config = state.config.clone();
     let t_start = std::time::Instant::now();
     if req.path.starts_with('~') {
         return json_error("path must be absolute (daemon runs as system user indexd; \"~\" has no meaning here)");

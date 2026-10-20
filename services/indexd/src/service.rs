@@ -23,11 +23,11 @@ pub(crate) fn action_name(req: &Request) -> &'static str {
 
 pub(crate) async fn process_request(
     input: &str,
-    state: &Arc<Mutex<AppState>>,
+    state: &Arc<EngineState>,
     activity_tx: &tokio::sync::mpsc::Sender<()>,
     ctx: &RequestContext,
 ) -> String {
-    let config = state.lock().await.config.clone();
+    let config = state.config.clone();
     let seq = metrics::REQUEST_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let bytes = input.len() as u64;
     let t0 = Instant::now();
@@ -183,11 +183,11 @@ pub(crate) async fn process_request(
 }
 pub(crate) async fn handle_embed(
     req: EmbedRequest,
-    state: &Arc<Mutex<AppState>>,
+    state: &Arc<EngineState>,
     activity_tx: &tokio::sync::mpsc::Sender<()>,
     t: &mut ReqTiming,
 ) -> String {
-    let config = state.lock().await.config.clone();
+    let config = state.config.clone();
     if req.texts.len() > MAX_TEXTS_PER_REQUEST {
         return json_error(&format!(
             "too many texts: {} (max {MAX_TEXTS_PER_REQUEST})",
@@ -241,11 +241,11 @@ pub(crate) fn validate_store_entry(
 
 pub(crate) async fn handle_store(
     req: StoreRequest,
-    state: &Arc<Mutex<AppState>>,
+    state: &Arc<EngineState>,
     activity_tx: &tokio::sync::mpsc::Sender<()>,
     t: &mut ReqTiming,
 ) -> String {
-    let config = state.lock().await.config.clone();
+    let config = state.config.clone();
     if req.texts.len() > MAX_TEXTS_PER_REQUEST {
         return json_error(&format!(
             "too many texts: {} (max {MAX_TEXTS_PER_REQUEST})",
@@ -353,11 +353,11 @@ pub(crate) async fn handle_store(
 
 pub(crate) async fn handle_search(
     req: SearchRequest,
-    state: &Arc<Mutex<AppState>>,
+    state: &Arc<EngineState>,
     activity_tx: &tokio::sync::mpsc::Sender<()>,
     t: &mut ReqTiming,
 ) -> String {
-    let config = state.lock().await.config.clone();
+    let config = state.config.clone();
     if req.metadata_filter.len() > MAX_METADATA_FILTERS {
         return json_error(&format!(
             "too many metadata filters: {} (max {MAX_METADATA_FILTERS})",
@@ -462,7 +462,7 @@ pub(crate) async fn handle_search(
 
 pub(crate) async fn handle_update(
     req: UpdateRequest,
-    state: &Arc<Mutex<AppState>>,
+    state: &Arc<EngineState>,
     activity_tx: &tokio::sync::mpsc::Sender<()>,
     t: &mut ReqTiming,
 ) -> String {
@@ -507,7 +507,7 @@ pub(crate) async fn handle_update(
 
 pub(crate) async fn handle_delete(
     req: DeleteRequest,
-    state: &Arc<Mutex<AppState>>,
+    state: &Arc<EngineState>,
     t: &mut ReqTiming,
 ) -> String {
     let guard = lock_timed(state, t).await;
@@ -525,10 +525,10 @@ pub(crate) async fn handle_delete(
 
 pub(crate) async fn handle_list(
     req: ListRequest,
-    state: &Arc<Mutex<AppState>>,
+    state: &Arc<EngineState>,
     t: &mut ReqTiming,
 ) -> String {
-    let config = state.lock().await.config.clone();
+    let config = state.config.clone();
     let limit = match sqlite_count(clamp_list_limit(req.limit), "list.limit") {
         Ok(value) => value,
         Err(e) => return json_error(&e),
@@ -557,7 +557,7 @@ pub(crate) async fn handle_list(
 
 pub(crate) async fn handle_feedback(
     req: FeedbackRequest,
-    state: &Arc<Mutex<AppState>>,
+    state: &Arc<EngineState>,
     t: &mut ReqTiming,
 ) -> String {
     let guard = lock_timed(state, t).await;
@@ -575,7 +575,7 @@ pub(crate) async fn handle_feedback(
 
 pub(crate) async fn handle_supersede(
     req: SupersedeRequest,
-    state: &Arc<Mutex<AppState>>,
+    state: &Arc<EngineState>,
     t: &mut ReqTiming,
 ) -> String {
     if !req.reason.is_empty() {
@@ -609,7 +609,7 @@ pub(crate) async fn handle_supersede(
 
 pub(crate) async fn handle_stale(
     req: StaleRequest,
-    state: &Arc<Mutex<AppState>>,
+    state: &Arc<EngineState>,
     t: &mut ReqTiming,
 ) -> String {
     let guard = lock_timed(state, t).await;
@@ -626,7 +626,7 @@ pub(crate) async fn handle_stale(
         Err(e) => json_error(&format!("stale query failed: {e}")),
     }
 }
-pub(crate) async fn handle_stats(state: &Arc<Mutex<AppState>>, t: &mut ReqTiming) -> String {
+pub(crate) async fn handle_stats(state: &Arc<EngineState>, t: &mut ReqTiming) -> String {
     let guard = lock_timed(state, t).await;
     let db_t0 = Instant::now();
     let res = guard.db.stats(&guard.db_path);
@@ -779,7 +779,7 @@ fn finish_request(
 /// Mutex wait is tracked separately from `db_us` so lock contention
 /// can't hide inside apparent SQLite time.
 pub(crate) async fn lock_timed<'a>(
-    state: &'a Arc<Mutex<AppState>>,
+    state: &'a Arc<EngineState>,
     t: &mut ReqTiming,
 ) -> tokio::sync::MutexGuard<'a, AppState> {
     let t0 = Instant::now();
@@ -788,14 +788,24 @@ pub(crate) async fn lock_timed<'a>(
     guard
 }
 // This state is private to the engine; requests never hold it across inference.
-pub(crate) struct AppState {
+pub(crate) struct EngineState {
     pub(crate) config: Arc<Config>,
+    pub(crate) chunk_tokenizer: Mutex<TokenizerCache>,
+    inner: Mutex<AppState>,
+}
+
+impl std::ops::Deref for EngineState {
+    type Target = Mutex<AppState>;
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+pub(crate) struct AppState {
     pub(crate) model: Option<Arc<EmbedModel>>,
-    pub(crate) chunk_tokenizer: Option<Arc<ChunkTokenizer>>,
     pub(crate) dtype: DType,
     pub(crate) db: VectorDb,
     pub(crate) db_path: String,
-    pub(crate) idle_timeout_secs: u64,
     pub(crate) model_breaker: CircuitBreaker,
     pub(crate) embed_breaker: CircuitBreaker,
     pub(crate) embed_cache: EmbeddingCache,
@@ -807,7 +817,7 @@ pub(crate) struct AppState {
 /// Transport-independent service. Construct inside a Tokio runtime.
 /// Each verb accepts its original JSON body and returns its original JSON reply.
 pub struct Engine {
-    state: Arc<Mutex<AppState>>,
+    state: Arc<EngineState>,
     activity_tx: tokio::sync::mpsc::Sender<()>,
     tasks: Vec<tokio::task::JoinHandle<()>>,
 }
@@ -835,13 +845,14 @@ impl Engine {
             transport: "engine",
             peer: String::new(),
         };
-        let response = process_request(
-            &serde_json::Value::Object(object).to_string(),
-            &self.state,
-            &self.activity_tx,
-            &ctx,
-        )
-        .await;
+        let state = self.state.clone();
+        let activity_tx = self.activity_tx.clone();
+        let runtime = tokio::runtime::Handle::current();
+        // SQLite, file IO and chunk tokenisation are synchronous. Poll the
+        // request on the blocking pool, leaving runtime workers free for Bus IO.
+        let response = tokio::task::spawn_blocking(move || runtime.block_on(process_request(
+            &serde_json::Value::Object(object).to_string(), &state, &activity_tx, &ctx,
+        ))).await.unwrap_or_else(|e| json_error(&format!("request worker failed: {e}")));
         serde_json::from_str(&response).expect("handlers produce JSON")
     }
 
@@ -860,10 +871,11 @@ impl Engine {
             svc.background_queue_max_jobs,
             svc.background_queue_max_bytes,
         );
-        let state = Arc::new(Mutex::new(AppState {
+        let state = Arc::new(EngineState {
             config: Arc::new(config),
+            chunk_tokenizer: Mutex::new(TokenizerCache::default()),
+            inner: Mutex::new(AppState {
             model: None,
-            chunk_tokenizer: None,
             dtype: if svc.dtype == "f32" {
                 DType::F32
             } else {
@@ -871,14 +883,13 @@ impl Engine {
             },
             db,
             db_path,
-            idle_timeout_secs: svc.idle_timeout_secs,
             model_breaker: CircuitBreaker::new(2, Duration::from_secs(60)),
             embed_breaker: CircuitBreaker::new(3, Duration::from_secs(30)),
             embed_cache: EmbeddingCache::new(),
             inference_gate: Arc::new(tokio::sync::Semaphore::new(1)),
             job_tx: job_tx.clone(),
             queue_budget: queue_budget.clone(),
-        }));
+        })});
         let (activity_tx, mut activity_rx) = tokio::sync::mpsc::channel::<()>(16);
         let background_retry_max_attempts = svc.background_retry_max_attempts.max(1);
         let background_retry_initial_backoff_secs =
@@ -895,11 +906,14 @@ impl Engine {
                     if LONG_READERS.load(Ordering::Acquire) != 0 || !checkpoint_budget.is_empty() {
                         continue;
                     }
-                    let guard = checkpoint_state.lock().await;
+                    let state = checkpoint_state.clone();
+                    let _ = tokio::task::spawn_blocking(move || {
+                    let guard = state.blocking_lock();
                     if let Err(e) = guard.db.checkpoint_truncate() {
                         guard.db.mark_checkpoint_owed();
                         tracing::debug!("WAL checkpoint retry failed: {e}");
                     }
+                    }).await;
                 }
             }
         }));
@@ -912,7 +926,7 @@ impl Engine {
                 }
                 while activity_rx.try_recv().is_ok() {}
 
-                let timeout = watchdog_state.lock().await.idle_timeout_secs;
+                let timeout = watchdog_state.config.service.idle_timeout_secs;
                 // 0 = never unload. Don't run the countdown at all; just go back
                 // to waiting for the next activity ping (which we drain above).
                 if timeout == 0 {
@@ -935,12 +949,15 @@ impl Engine {
                                 }
                                 if guard.model.is_some() {
                                     info!("model idle for {timeout}s, unloading to free memory");
-                                    guard.model = None;
+                                    let model = guard.model.take();
                                     drop(guard);
+                                    let _ = tokio::task::spawn_blocking(move || {
+                                    drop(model);
                                     // SAFETY: zero requests release of unused allocator pages.
                                     unsafe { libc::malloc_trim(0); }
                                     metrics::RSS_AFTER_UNLOAD_BYTES
                                         .store(rss_bytes(), Ordering::Relaxed);
+                                    }).await;
                                 }
                                 break;
                             }
@@ -992,9 +1009,15 @@ impl Engine {
                 ..Default::default()
             };
             let max_attempts = background_retry_max_attempts;
-            let resp =
-                handle_index_file(job.req.clone(), &worker_state, &worker_activity_tx, &mut t)
-                    .await;
+            let state = worker_state.clone();
+            let activity = worker_activity_tx.clone();
+            let request = job.req.clone();
+            let runtime = tokio::runtime::Handle::current();
+            let (resp, timing) = tokio::task::spawn_blocking(move || {
+                let response = runtime.block_on(handle_index_file(request, &state, &activity, &mut t));
+                (response, t)
+            }).await.expect("background indexing worker panicked");
+            let t = timing;
             if transient_background_failure(&resp) {
                 if job.attempt < max_attempts {
                     let backoff = background_retry_backoff(
@@ -1304,7 +1327,7 @@ mod tests {
             .unk_token("[UNK]".into())
             .build()
             .unwrap();
-        engine.state.lock().await.chunk_tokenizer = Some(Arc::new(ChunkTokenizer {
+        engine.state.chunk_tokenizer.lock().await.tokenizer = Some(Arc::new(ChunkTokenizer {
             tokenizer: Tokenizer::new(tokenizer),
             max_seq_len: 2048,
         }));

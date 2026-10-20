@@ -253,7 +253,7 @@ pub(crate) async fn defer_background_job(
 
 pub(crate) async fn release_background_reservation(
     job: &mut IndexJob,
-    state: &Arc<Mutex<AppState>>,
+    state: &Arc<EngineState>,
     queue_budget: &Arc<QueueBudget>,
 ) {
     let drained_at_completion = job.reservation.release();
