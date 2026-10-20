@@ -9,6 +9,7 @@ type Bound = (Option<String>, Vec<String>);
 pub(crate) struct Bindings {
     current: BTreeMap<&'static str, Bound>,
     defaults: Option<BTreeMap<&'static str, Bound>>,
+    overridden: BTreeSet<&'static str>,
 }
 
 impl Bindings {
@@ -49,6 +50,10 @@ impl Bindings {
             .get(id)
             .map(|(own, more)| own.iter().chain(more).cloned().collect())
             .unwrap_or_default()
+    }
+
+    pub fn is_overridden(&self, id: &str) -> bool {
+        self.overridden.contains(id)
     }
 
     pub fn rebind(
@@ -109,6 +114,7 @@ impl Bindings {
                 (id, (own, more))
             })
             .collect();
+        self.overridden = chosen.keys().copied().collect();
         bound.extend(chosen);
         self.current = bound;
         notes

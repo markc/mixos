@@ -358,6 +358,12 @@ impl<S> Registry<S> {
         self.bindings.shortcuts_of(id)
     }
 
+    /// Whether the current binding came from a valid override, rather than
+    /// the built defaults. Adapters use this to retain parsed default chords.
+    pub fn shortcuts_overridden(&self, id: &str) -> bool {
+        self.bindings.is_overridden(id)
+    }
+
     /// The adapter supplies chord validation/canonicalisation; conflict handling,
     /// defaults and overrides are pure data shared by headless clients.
     pub fn rebind(
