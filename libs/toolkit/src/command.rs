@@ -15,9 +15,9 @@ pub use crate::executed::Origin;
 use crate::icons::Icon;
 use crate::menu::{self, Entry, Menu, Row};
 use crate::strings::Strings;
-use egui::{KeyboardShortcut, ModifierNames};
 pub use ::command::{Call, Class, Described, Error, ParamSpec, Place, Scope};
 pub use ::command::{Command as EngineCommand, Registry as EngineRegistry};
+use egui::{KeyboardShortcut, ModifierNames};
 use std::collections::HashMap;
 use std::fmt;
 
@@ -34,7 +34,9 @@ pub fn label_text(strings: &Strings, key: &str) -> String {
 
 struct ToolkitLabels<'a>(&'a Strings);
 impl ::command::Labels for ToolkitLabels<'_> {
-    fn label(&self, key: &str) -> String { label_text(self.0, key) }
+    fn label(&self, key: &str) -> String {
+        label_text(self.0, key)
+    }
 }
 
 /// One legacy nullary action. New engine tables use `command::Command`.
@@ -131,13 +133,27 @@ impl<S> Registry<S> {
                 command.id
             );
         }
-        self.core.add_nullary(::command::Command {
-            id: command.id, label: command.label, menu: command.menu,
-            submenu: command.submenu, group: command.group, shortcut: None,
-            icon: command.icon.map(Icon::name), enabled: ::command::always,
-            run: |_, _| Ok(serde_json::Value::Null), params: None, class: Class::Intent,
-        }, command.enabled, command.run);
-        self.core.set_shortcut(command.id, command.shortcut.map(|s| crate::keymap::chord_text(&s)));
+        self.core.add_nullary(
+            ::command::Command {
+                id: command.id,
+                label: command.label,
+                menu: command.menu,
+                submenu: command.submenu,
+                group: command.group,
+                shortcut: None,
+                icon: command.icon.map(Icon::name),
+                enabled: ::command::always,
+                run: |_, _| Ok(serde_json::Value::Null),
+                params: None,
+                class: Class::Intent,
+            },
+            command.enabled,
+            command.run,
+        );
+        self.core.set_shortcut(
+            command.id,
+            command.shortcut.map(|s| crate::keymap::chord_text(&s)),
+        );
         self.commands.push(command);
         self
     }
@@ -267,7 +283,10 @@ impl<S> Registry<S> {
             .get(id)
             .unwrap_or_else(|| panic!("no command {id:?}"))
             .id;
-        self.core.add_shortcuts(id, shortcuts.into_iter().map(|s| crate::keymap::chord_text(&s)));
+        self.core.add_shortcuts(
+            id,
+            shortcuts.into_iter().map(|s| crate::keymap::chord_text(&s)),
+        );
         self.refresh_shortcuts();
         self
     }
@@ -330,11 +349,27 @@ impl<S> Registry<S> {
 
     fn refresh_shortcuts(&mut self) {
         self.extras.clear();
+        let mut seen = Vec::new();
         for c in &mut self.commands {
-            let mut chords = self.core.shortcuts_of(c.id).into_iter().filter_map(|s| crate::keymap::parse_chord(&s));
+            let chords: Vec<_> = self
+                .core
+                .shortcuts_of(c.id)
+                .into_iter()
+                .map(|s| {
+                    crate::keymap::parse_chord(&s)
+                        .unwrap_or_else(|| panic!("invalid shortcut {s:?} on {:?}", c.id))
+                })
+                .collect();
+            for chord in &chords {
+                assert!(!seen.contains(chord), "duplicate shortcut on {:?}", c.id);
+                seen.push(*chord);
+            }
+            let mut chords = chords.into_iter();
             c.shortcut = chords.next();
             let more: Vec<_> = chords.collect();
-            if !more.is_empty() { self.extras.insert(c.id, more); }
+            if !more.is_empty() {
+                self.extras.insert(c.id, more);
+            }
         }
     }
     /// Run the command `id` against `state`: the one dispatch path for the
@@ -342,13 +377,16 @@ impl<S> Registry<S> {
     /// an accepted run is recorded for `<app>.command.executed` once the
     /// handler returns, and a refused one is not.
     pub fn execute(&self, id: &str, state: &mut S, origin: Origin) -> Result<(), CommandError> {
-        self.core.execute(id, state, serde_json::Value::Null, origin)
+        self.core
+            .execute(id, state, serde_json::Value::Null, origin)
             .map(|_| ())
             .map_err(|err| match err {
                 Error::Unknown(id) => CommandError::Unknown(id),
                 Error::Disabled { id, .. } => CommandError::Disabled(id),
                 // This adapter only registers infallible nullary intents.
-                Error::BadParams { .. } | Error::Failed(_) => unreachable!("nullary adapter: {err}"),
+                Error::BadParams { .. } | Error::Failed(_) => {
+                    unreachable!("nullary adapter: {err}")
+                }
             })
     }
 
@@ -374,8 +412,12 @@ impl<S> Registry<S> {
         // including symbols for arrows, byte for byte.
         for row in &mut rows {
             let mut chords = self.shortcuts_of(row.id).into_iter();
-            row.shortcut = chords.next().map(|s| s.format(&ModifierNames::NAMES, false));
-            row.more = chords.map(|s| s.format(&ModifierNames::NAMES, false)).collect();
+            row.shortcut = chords
+                .next()
+                .map(|s| s.format(&ModifierNames::NAMES, false));
+            row.more = chords
+                .map(|s| s.format(&ModifierNames::NAMES, false))
+                .collect();
         }
         rows
     }
@@ -698,41 +740,131 @@ impl<S> EngineAdapter<S> {
         // Private UI rows use the legacy metadata shape so both table formats
         // share the same rendering and exact-modifier input code. The dummy
         // callbacks are never exposed or dispatched: core owns every handler.
-        let commands = core.iter().map(|c| Command {
-            id: c.id, label: c.label, menu: c.menu, submenu: c.submenu, group: c.group,
-            shortcut: None,
-            icon: c.icon.and_then(|name| Icon::ALL.iter().copied().find(|i| i.name() == name)),
-            enabled: always, run: choose,
-        }).collect();
-        let mut ui = Registry { commands, search_menu: None, core, extras: HashMap::new() };
+        let commands = core
+            .iter()
+            .map(|c| Command {
+                id: c.id,
+                label: c.label,
+                menu: c.menu,
+                submenu: c.submenu,
+                group: c.group,
+                shortcut: None,
+                icon: c
+                    .icon
+                    .and_then(|name| Icon::ALL.iter().copied().find(|i| i.name() == name)),
+                enabled: always,
+                run: choose,
+            })
+            .collect();
+        let mut ui = Registry {
+            commands,
+            search_menu: None,
+            core,
+            extras: HashMap::new(),
+        };
         ui.refresh_shortcuts();
         Self { ui }
     }
 
-    pub fn registry(&self) -> &EngineRegistry<S> { &self.ui.core }
-    pub fn into_registry(self) -> EngineRegistry<S> { self.ui.core }
-    pub fn execute(&self, id: &str, state: &mut S, params: serde_json::Value, origin: Origin) -> Result<serde_json::Value, Error> {
+    pub fn registry(&self) -> &EngineRegistry<S> {
+        &self.ui.core
+    }
+    pub fn into_registry(self) -> EngineRegistry<S> {
+        self.ui.core
+    }
+    pub fn execute(
+        &self,
+        id: &str,
+        state: &mut S,
+        params: serde_json::Value,
+        origin: Origin,
+    ) -> Result<serde_json::Value, Error> {
         self.ui.core.execute(id, state, params, origin)
     }
-    pub fn note(&self, id: &str, origin: Origin) { self.ui.note(id, origin); }
-    pub fn take_executed(&self) -> (Vec<Executed>, u64) { self.ui.take_executed() }
-    pub fn describe(&self, state: &S, strings: &Strings) -> Vec<Described> { self.ui.describe(state, strings) }
-    pub fn search<'a>(&'a self, query: &str, state: &S, strings: &Strings) -> Vec<&'a EngineCommand<S>> {
-        self.ui.search(query, state, strings).into_iter().filter_map(|c| self.ui.core.get(c.id)).collect()
+    pub fn note(&self, id: &str, origin: Origin) {
+        self.ui.note(id, origin);
     }
-    pub fn icon(&self, id: &str) -> Option<Icon> { self.ui.get(id).and_then(|c| c.icon) }
-    pub fn search_menu(&mut self, menu: &'static str) -> &mut Self { self.ui.search_menu(menu); self }
-    pub fn rebind(&mut self, overrides: &crate::keymap::Overrides) -> Vec<String> { self.ui.rebind(overrides) }
-    pub fn shortcuts_of(&self, id: &str) -> Vec<KeyboardShortcut> { self.ui.shortcuts_of(id) }
-    pub fn shortcuts(&self, ctx: &egui::Context, state: &S) -> Vec<&'static str> { self.ui.shortcuts(ctx, state) }
-    pub fn takes(&self, event: &egui::Event, state: &S) -> bool { self.ui.takes(event, state) }
-    pub fn shortcut_grid(&self, ui: &mut egui::Ui, strings: &Strings) { self.ui.shortcut_grid(ui, strings); }
-    pub fn model(&self, ctx: &egui::Context, state: &S, strings: &Strings) -> Vec<Menu> { self.ui.model(ctx, state, strings) }
-    pub fn menu_bar(&self, ui: &mut egui::Ui, state: &S, strings: &Strings) -> Vec<(&'static str, Origin)> { self.ui.menu_bar(ui, state, strings) }
-    pub fn menus(&self, ui: &mut egui::Ui, state: &S, strings: &Strings) -> Vec<(&'static str, Origin)> { self.ui.menus(ui, state, strings) }
-    pub fn context_menu(&self, response: &egui::Response, menu: &str, state: &S, strings: &Strings) -> Option<&'static str> { self.ui.context_menu(response, menu, state, strings) }
+    pub fn take_executed(&self) -> (Vec<Executed>, u64) {
+        self.ui.take_executed()
+    }
+    pub fn describe(&self, state: &S, strings: &Strings) -> Vec<Described> {
+        self.ui.describe(state, strings)
+    }
+    pub fn search<'a>(
+        &'a self,
+        query: &str,
+        state: &S,
+        strings: &Strings,
+    ) -> Vec<&'a EngineCommand<S>> {
+        self.ui
+            .search(query, state, strings)
+            .into_iter()
+            .filter_map(|c| self.ui.core.get(c.id))
+            .collect()
+    }
+    pub fn icon(&self, id: &str) -> Option<Icon> {
+        self.ui.get(id).and_then(|c| c.icon)
+    }
+    pub fn search_menu(&mut self, menu: &'static str) -> &mut Self {
+        self.ui.search_menu(menu);
+        self
+    }
+    pub fn rebind(&mut self, overrides: &crate::keymap::Overrides) -> Vec<String> {
+        self.ui.rebind(overrides)
+    }
+    pub fn shortcuts_of(&self, id: &str) -> Vec<KeyboardShortcut> {
+        self.ui.shortcuts_of(id)
+    }
+    pub fn shortcuts(&self, ctx: &egui::Context, state: &S) -> Vec<&'static str> {
+        self.ui.shortcuts(ctx, state)
+    }
+    pub fn takes(&self, event: &egui::Event, state: &S) -> bool {
+        self.ui.takes(event, state)
+    }
+    pub fn shortcut_grid(&self, ui: &mut egui::Ui, strings: &Strings) {
+        self.ui.shortcut_grid(ui, strings);
+    }
+    pub fn model(&self, ctx: &egui::Context, state: &S, strings: &Strings) -> Vec<Menu> {
+        self.ui.model(ctx, state, strings)
+    }
+    pub fn menu_bar(
+        &self,
+        ui: &mut egui::Ui,
+        state: &S,
+        strings: &Strings,
+    ) -> Vec<(&'static str, Origin)> {
+        self.ui.menu_bar(ui, state, strings)
+    }
+    pub fn menus(
+        &self,
+        ui: &mut egui::Ui,
+        state: &S,
+        strings: &Strings,
+    ) -> Vec<(&'static str, Origin)> {
+        self.ui.menus(ui, state, strings)
+    }
+    pub fn context_menu(
+        &self,
+        response: &egui::Response,
+        menu: &str,
+        state: &S,
+        strings: &Strings,
+    ) -> Option<&'static str> {
+        self.ui.context_menu(response, menu, state, strings)
+    }
     #[allow(clippy::too_many_arguments)] // Mirrors the legacy context-menu API.
-    pub fn context_menu_over(&self, ui: &egui::Ui, rect: egui::Rect, id: egui::Id, menu: &str, state: &S, strings: &Strings) -> Option<&'static str> { self.ui.context_menu_over(ui, rect, id, menu, state, strings) }
+    pub fn context_menu_over(
+        &self,
+        ui: &egui::Ui,
+        rect: egui::Rect,
+        id: egui::Id,
+        menu: &str,
+        state: &S,
+        strings: &Strings,
+    ) -> Option<&'static str> {
+        self.ui
+            .context_menu_over(ui, rect, id, menu, state, strings)
+    }
 }
 
 #[cfg(test)]
@@ -762,28 +894,58 @@ mod tests {
         let mut s = Counter::default();
         let key = KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::SHIFT, Key::B);
         assert_eq!(ui.shortcuts_of("count.bump"), [key]);
-        let press = egui::Event::Key { key: Key::B, physical_key: None, pressed: true, repeat: false, modifiers: key.modifiers };
+        let press = egui::Event::Key {
+            key: Key::B,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: key.modifiers,
+        };
         assert!(ui.takes(&press, &s));
-        assert_eq!(ui.search("bump", &s, &Strings::new(FTL))[0].id, "count.bump");
+        assert_eq!(
+            ui.search("bump", &s, &Strings::new(FTL))[0].id,
+            "count.bump"
+        );
         assert_eq!(ui.icon("count.bump"), None);
-        assert_eq!(ui.execute("count.bump", &mut s, serde_json::Value::Null, Origin::Shortcut).unwrap(), serde_json::Value::Null);
+        assert_eq!(
+            ui.execute(
+                "count.bump",
+                &mut s,
+                serde_json::Value::Null,
+                Origin::Shortcut
+            )
+            .unwrap(),
+            serde_json::Value::Null
+        );
         assert_eq!(s.n, 1);
         assert_eq!(ui.take_executed().0[0].origin, Origin::Shortcut);
         s.locked = true;
         assert!(!ui.takes(&press, &s));
-        assert_eq!(ui.describe(&s, &Strings::new(FTL))[0].reason, Some("locked"));
-        assert!(!ui.model(&egui::Context::default(), &s, &Strings::new(FTL))[0].entries[0].row().unwrap().enabled);
+        assert_eq!(
+            ui.describe(&s, &Strings::new(FTL))[0].reason,
+            Some("locked")
+        );
+        assert!(
+            !ui.model(&egui::Context::default(), &s, &Strings::new(FTL))[0].entries[0]
+                .row()
+                .unwrap()
+                .enabled
+        );
     }
 
     #[test]
     fn legacy_description_fields_keep_their_wire_values() {
         let r = registry();
-        let row = serde_json::to_value(&r.describe(&Counter::default(), &Strings::new(FTL))[0]).unwrap();
-        assert_eq!(row, serde_json::json!({
-            "id": "count.bump", "label": "Bump", "menu": "Edit",
-            "shortcut": KeyboardShortcut::new(Modifiers::COMMAND, Key::B).format(&ModifierNames::NAMES, false),
-            "enabled": true, "checked": null, "reason": null, "class": "intent", "schema": null
-        }));
+        let row =
+            serde_json::to_value(&r.describe(&Counter::default(), &Strings::new(FTL))[0]).unwrap();
+        assert_eq!(
+            row,
+            serde_json::json!({
+                "id": "count.bump", "label": "Bump", "menu": "Edit",
+                "shortcut": KeyboardShortcut::new(Modifiers::COMMAND, Key::B).format(&ModifierNames::NAMES, false),
+                "enabled": true, "checked": null, "reason": null, "class": "intent", "schema": null
+            })
+        );
     }
 
     fn registry() -> Registry<Counter> {

@@ -9,8 +9,8 @@
 //! The person's bindings come from the desktop profile
 //! (`settings::keymap`); [`crate::Registry::rebind`] applies them.
 
-use egui::{Key, KeyboardShortcut, Modifiers};
 pub use ::command::keymap::Overrides;
+use egui::{Key, KeyboardShortcut, Modifiers};
 
 /// The shortcut `text` names, or `None` when it is not a chord egui has.
 pub fn parse_chord(text: &str) -> Option<KeyboardShortcut> {

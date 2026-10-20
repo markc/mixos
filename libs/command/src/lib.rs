@@ -7,13 +7,13 @@ pub mod keymap;
 pub mod strings;
 
 pub use executed::{Executed, Journal, Origin};
-pub use strings::Strings;
 use schemars::Schema;
 use serde::Serialize;
 use serde_json::Value;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt;
+pub use strings::Strings;
 
 /// Label lookup, including any catalogue fallback supplied by a UI adapter.
 pub trait Labels {
@@ -85,10 +85,20 @@ pub fn always<S>(_: &S) -> Result<(), &'static str> {
 macro_rules! nullary {
     ($id:expr, $label:expr, $run:expr) => {
         $crate::Command {
-            id: $id, label: $label, menu: None, submenu: None, group: 0,
-            shortcut: None, icon: None, enabled: $crate::always,
-            run: |state, _| { ($run)(state); Ok(::serde_json::Value::Null) },
-            params: None, class: $crate::Class::Intent,
+            id: $id,
+            label: $label,
+            menu: None,
+            submenu: None,
+            group: 0,
+            shortcut: None,
+            icon: None,
+            enabled: $crate::always,
+            run: |state, _| {
+                ($run)(state);
+                Ok(::serde_json::Value::Null)
+            },
+            params: None,
+            class: $crate::Class::Intent,
         }
     };
 }
@@ -96,8 +106,14 @@ macro_rules! nullary {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Error {
     Unknown(String),
-    Disabled { id: &'static str, reason: &'static str },
-    BadParams { id: &'static str, msg: String },
+    Disabled {
+        id: &'static str,
+        reason: &'static str,
+    },
+    BadParams {
+        id: &'static str,
+        msg: String,
+    },
     Failed(String),
 }
 
@@ -180,28 +196,45 @@ pub struct Registry<S> {
 impl<S> Default for Registry<S> {
     fn default() -> Self {
         Self {
-            commands: Vec::new(), nullary: HashMap::new(), legacy_enabled: HashMap::new(),
-            checks: HashMap::new(), scopes: HashMap::new(), labels: HashMap::new(),
-            bindings: keymap::Bindings::default(), journal: RefCell::new(Journal::default()),
+            commands: Vec::new(),
+            nullary: HashMap::new(),
+            legacy_enabled: HashMap::new(),
+            checks: HashMap::new(),
+            scopes: HashMap::new(),
+            labels: HashMap::new(),
+            bindings: keymap::Bindings::default(),
+            journal: RefCell::new(Journal::default()),
             authorize: None,
         }
     }
 }
 
 impl<S> Registry<S> {
-    pub fn new() -> Self { Self::default() }
+    pub fn new() -> Self {
+        Self::default()
+    }
 
     /// Panics on duplicate ids or shortcuts, which would make dispatch ambiguous.
     pub fn add(&mut self, command: Command<S>) -> &mut Self {
-        assert!(self.get(command.id).is_none(), "duplicate command id {:?}", command.id);
-        self.bindings.add(command.id, command.shortcut.map(str::to_owned));
+        assert!(
+            self.get(command.id).is_none(),
+            "duplicate command id {:?}",
+            command.id
+        );
+        self.bindings
+            .add(command.id, command.shortcut.map(str::to_owned));
         self.commands.push(command);
         self
     }
 
     /// Compatibility constructor for old bool-enabled, nullary command tables.
     /// Metadata is forced to a nullary intent; execution still uses this registry.
-    pub fn add_nullary(&mut self, mut command: Command<S>, enabled: fn(&S) -> bool, run: fn(&mut S)) -> &mut Self {
+    pub fn add_nullary(
+        &mut self,
+        mut command: Command<S>,
+        enabled: fn(&S) -> bool,
+        run: fn(&mut S),
+    ) -> &mut Self {
         command.params = None;
         command.class = Class::Intent;
         let id = command.id;
@@ -211,7 +244,12 @@ impl<S> Registry<S> {
         self
     }
 
-    pub fn add_choice(&mut self, place: Place, run: impl Fn(&mut S) + 'static, checked: impl Fn(&S) -> bool + 'static) -> &mut Self {
+    pub fn add_choice(
+        &mut self,
+        place: Place,
+        run: impl Fn(&mut S) + 'static,
+        checked: impl Fn(&S) -> bool + 'static,
+    ) -> &mut Self {
         let mut command = nullary!(place.id, place.label, |_: &mut S| {});
         command.menu = place.menu;
         command.submenu = place.submenu;
@@ -221,15 +259,27 @@ impl<S> Registry<S> {
     }
 
     /// Install the closure of a registered nullary choice (adapter support).
-    pub fn set_choice(&mut self, id: &str, run: impl Fn(&mut S) + 'static, checked: impl Fn(&S) -> bool + 'static) -> &mut Self {
+    pub fn set_choice(
+        &mut self,
+        id: &str,
+        run: impl Fn(&mut S) + 'static,
+        checked: impl Fn(&S) -> bool + 'static,
+    ) -> &mut Self {
         let id = self.require(id);
-        assert!(self.get(id).expect("known command").params.is_none(), "choice commands are nullary");
+        assert!(
+            self.get(id).expect("known command").params.is_none(),
+            "choice commands are nullary"
+        );
         self.nullary.insert(id, NullaryRun::Choice(Box::new(run)));
         self.check(id, checked)
     }
 
     /// Toggle commands are nullary, like choice commands.
-    pub fn add_toggle(&mut self, command: Command<S>, checked: impl Fn(&S) -> bool + 'static) -> &mut Self {
+    pub fn add_toggle(
+        &mut self,
+        command: Command<S>,
+        checked: impl Fn(&S) -> bool + 'static,
+    ) -> &mut Self {
         assert!(command.params.is_none(), "toggle commands are nullary");
         let id = command.id;
         self.add(command);
@@ -243,18 +293,26 @@ impl<S> Registry<S> {
     }
 
     fn require(&self, id: &str) -> &'static str {
-        self.get(id).unwrap_or_else(|| panic!("no command {id:?}")).id
+        self.get(id)
+            .unwrap_or_else(|| panic!("no command {id:?}"))
+            .id
     }
 
-    pub fn get(&self, id: &str) -> Option<&Command<S>> { self.commands.iter().find(|c| c.id == id) }
-    pub fn iter(&self) -> impl Iterator<Item = &Command<S>> { self.commands.iter() }
+    pub fn get(&self, id: &str) -> Option<&Command<S>> {
+        self.commands.iter().find(|c| c.id == id)
+    }
+    pub fn iter(&self) -> impl Iterator<Item = &Command<S>> {
+        self.commands.iter()
+    }
 
     pub fn scope(&mut self, id: &str, scope: Scope) -> &mut Self {
         let id = self.require(id);
         self.scopes.insert(id, scope);
         self
     }
-    pub fn scope_of(&self, id: &str) -> Scope { self.scopes.get(id).copied().unwrap_or_default() }
+    pub fn scope_of(&self, id: &str) -> Scope {
+        self.scopes.get(id).copied().unwrap_or_default()
+    }
 
     pub fn relabel(&mut self, id: &str, label: impl Fn(&S) -> &'static str + 'static) -> &mut Self {
         let id = self.require(id);
@@ -265,13 +323,21 @@ impl<S> Registry<S> {
         let c = self.get(id)?;
         Some(self.labels.get(id).map_or(c.label, |label| label(state)))
     }
-    pub fn checked(&self, id: &str, state: &S) -> Option<bool> { self.checks.get(id).map(|f| f(state)) }
+    pub fn checked(&self, id: &str, state: &S) -> Option<bool> {
+        self.checks.get(id).map(|f| f(state))
+    }
 
     pub fn enabled(&self, id: &str, state: &S) -> Result<(), &'static str> {
         let c = self.get(id).ok_or("unknown command")?;
         if let Some(enabled) = self.legacy_enabled.get(id) {
-            if enabled(state) { Ok(()) } else { Err("disabled") }
-        } else { (c.enabled)(state) }
+            if enabled(state) {
+                Ok(())
+            } else {
+                Err("disabled")
+            }
+        } else {
+            (c.enabled)(state)
+        }
     }
 
     /// Set the built accelerator for a legacy adapter (before rebinding).
@@ -279,35 +345,70 @@ impl<S> Registry<S> {
         let id = self.require(id);
         self.bindings.set_shortcut(id, shortcut);
     }
-    pub fn add_shortcuts(&mut self, id: &str, shortcuts: impl IntoIterator<Item = String>) -> &mut Self {
+    pub fn add_shortcuts(
+        &mut self,
+        id: &str,
+        shortcuts: impl IntoIterator<Item = String>,
+    ) -> &mut Self {
         let id = self.require(id);
         self.bindings.add_shortcuts(id, shortcuts);
         self
     }
-    pub fn shortcuts_of(&self, id: &str) -> Vec<String> { self.bindings.shortcuts_of(id) }
+    pub fn shortcuts_of(&self, id: &str) -> Vec<String> {
+        self.bindings.shortcuts_of(id)
+    }
 
     /// The adapter supplies chord validation/canonicalisation; conflict handling,
     /// defaults and overrides are pure data shared by headless clients.
-    pub fn rebind(&mut self, overrides: &keymap::Overrides, parse: impl Fn(&str) -> Option<String>) -> Vec<String> {
+    pub fn rebind(
+        &mut self,
+        overrides: &keymap::Overrides,
+        parse: impl Fn(&str) -> Option<String>,
+    ) -> Vec<String> {
         self.bindings.rebind(overrides, parse)
     }
 
-    pub fn execute(&self, id: &str, state: &mut S, params: Value, origin: Origin) -> Result<Value, Error> {
+    pub fn execute(
+        &self,
+        id: &str,
+        state: &mut S,
+        params: Value,
+        origin: Origin,
+    ) -> Result<Value, Error> {
         let c = self.get(id).ok_or_else(|| Error::Unknown(id.to_owned()))?;
         if let Some(authorize) = self.authorize {
-            authorize(&Call { id: c.id, origin, params: &params })
-                .map_err(|reason| Error::Disabled { id: c.id, reason })?;
+            authorize(&Call {
+                id: c.id,
+                origin,
+                params: &params,
+            })
+            .map_err(|reason| Error::Disabled { id: c.id, reason })?;
         }
-        self.enabled(id, state).map_err(|reason| Error::Disabled { id: c.id, reason })?;
-        if c.params.is_none() && !params.is_null() && !params.as_object().is_some_and(|p| p.is_empty()) {
-            return Err(Error::BadParams { id: c.id, msg: "command takes no parameters".into() });
+        self.enabled(id, state)
+            .map_err(|reason| Error::Disabled { id: c.id, reason })?;
+        if c.params.is_none()
+            && !params.is_null()
+            && !params.as_object().is_some_and(|p| p.is_empty())
+        {
+            return Err(Error::BadParams {
+                id: c.id,
+                msg: "command takes no parameters".into(),
+            });
         }
         let result = match self.nullary.get(id) {
-            Some(NullaryRun::Function(run)) => { run(state); Value::Null }
-            Some(NullaryRun::Choice(run)) => { run(state); Value::Null }
+            Some(NullaryRun::Function(run)) => {
+                run(state);
+                Value::Null
+            }
+            Some(NullaryRun::Choice(run)) => {
+                run(state);
+                Value::Null
+            }
             None => (c.run)(state, &params)?,
         };
-        if c.class.journal() { self.journal.borrow_mut().record(c.id, origin); }
+        if c.class.journal() {
+            self.journal.borrow_mut().record(c.id, origin);
+        }
         Ok(result)
     }
 
@@ -317,19 +418,29 @@ impl<S> Registry<S> {
             self.journal.borrow_mut().record(id, origin);
         }
     }
-    pub fn take_executed(&self) -> (Vec<Executed>, u64) { self.journal.borrow_mut().take() }
+    pub fn take_executed(&self) -> (Vec<Executed>, u64) {
+        self.journal.borrow_mut().take()
+    }
 
     pub fn describe(&self, state: &S, strings: &impl Labels) -> Vec<Described> {
-        self.commands.iter().map(|c| {
-            let reason = self.enabled(c.id, state).err();
-            let mut chords = self.shortcuts_of(c.id).into_iter();
-            Described {
-                id: c.id, label: label_text(strings, self.label_of(c.id, state).unwrap_or(c.label)),
-                menu: c.menu.map(|m| label_text(strings, m)),
-                shortcut: chords.next(), more: chords.collect(), enabled: reason.is_none(),
-                checked: self.checked(c.id, state), reason, class: c.class,
-                schema: c.params.map(|p| (p.schema)()),
-            }
-        }).collect()
+        self.commands
+            .iter()
+            .map(|c| {
+                let reason = self.enabled(c.id, state).err();
+                let mut chords = self.shortcuts_of(c.id).into_iter();
+                Described {
+                    id: c.id,
+                    label: label_text(strings, self.label_of(c.id, state).unwrap_or(c.label)),
+                    menu: c.menu.map(|m| label_text(strings, m)),
+                    shortcut: chords.next(),
+                    more: chords.collect(),
+                    enabled: reason.is_none(),
+                    checked: self.checked(c.id, state),
+                    reason,
+                    class: c.class,
+                    schema: c.params.map(|p| (p.schema)()),
+                }
+            })
+            .collect()
     }
 }

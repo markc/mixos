@@ -18,4 +18,3 @@ pub(crate) fn own(key: &str) -> String {
 pub(crate) fn own_with(key: &str, args: &[(&str, &str)]) -> String {
     OWN.with(|s| s.with(key, args))
 }
-
