@@ -34,6 +34,23 @@ impl Drop for Process {
     }
 }
 
+impl Process {
+    #[allow(dead_code)] // Only the long presentation measurement extends it.
+    pub fn extend_watchdog(&mut self, duration: Duration) {
+        let _ = self.stop.send(());
+        if let Some(watchdog) = self.watchdog.take() { let _ = watchdog.join(); }
+        let pid = self.child.id();
+        let (stop, stopped) = mpsc::channel();
+        self.stop = stop;
+        self.watchdog = Some(thread::spawn(move || {
+            if stopped.recv_timeout(duration).is_err() {
+                // SAFETY: killing only our owned test child.
+                unsafe { libc::kill(pid as i32, libc::SIGKILL); }
+            }
+        }));
+    }
+}
+
 pub fn spawn(scale: i32, explicit_node: Option<&str>, label: &str, bus: Option<&str>) -> Process {
     spawn_options(scale, explicit_node, label, bus, "60", None)
 }

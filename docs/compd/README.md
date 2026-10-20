@@ -151,6 +151,20 @@ The plain EGL client probe needs `weston-simple-egl` (override its path with
 `COMPD_TEST_EGL_CLIENT`); it records the first buffer's actual creation
 request and checks captured pixels.
 
+`compd-headless@.service` runs inside a headless desk with its own noded,
+session bus, PipeWire and portald. `%i` is the session slot (for example
+`rec`), with settings in `/etc/mixos/session/%i.env` and Bus service `comp`
+inside that desk. It uses the render group, no seatd or tty, nice 10 and
+`mixos-headless.slice` (`CPUQuota=200%`). Provisioning places the desk's
+capture services and encoder in the same slice. Both units are owned by
+`services/compd/units/`; they do not create the desk.
+
+`testkit-presentation-probe --rate 60 --hold-s 60` measures independent
+commit pacing and presentation misses. Add `--stall-every 30 --stall-ms 50`
+for a positive control. Its header documents the pixel frame ID marker;
+`services/compd/crates/testkit/scripts/frame_ids.mix FILE.rgba --size WxH`
+decodes unscaled raw RGBA client content (PNG is not supported).
+
 `cursor_sensitivity` in `preferences.json` is a speed multiplier on top of
 the output scale: compd multiplies each relative pointer delta by both, so
 `1.0` moves the cursor at the same logical speed at every scale. Clients

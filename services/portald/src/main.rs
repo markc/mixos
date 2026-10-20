@@ -35,6 +35,9 @@ enum Command {
         /// headless and test sessions only.
         #[arg(long, default_value = "prompt")]
         screencast_consent: portald::screencast::consent::Policy,
+        /// Frame-rate ceiling offered to ScreenCast consumers (1..=120).
+        #[arg(long, default_value = "30")]
+        screencast_max_framerate: portald::screencast::MaxFramerate,
     },
 }
 
@@ -50,6 +53,7 @@ fn main() -> anyhow::Result<()> {
         state_dir,
         screencast,
         screencast_consent,
+        screencast_max_framerate,
     } = Cli::parse().command;
     let binding = Binding { instance, profile };
     binding
@@ -63,9 +67,29 @@ fn main() -> anyhow::Result<()> {
         .worker_threads(2)
         .enable_all()
         .build()?;
-    let result = runtime.block_on(portald::run(binding, address, state_dir, screencast.then_some(screencast_consent)));
+    let result = runtime.block_on(portald::run(binding, address, state_dir, screencast.then_some(screencast_consent), screencast_max_framerate));
     // A blocking task stuck on a wedged compositor (ScreenCast) must not hold
     // up exit: give the rest a moment, then leave.
     runtime.shutdown_timeout(std::time::Duration::from_secs(2));
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn screencast_framerate_default_and_range() {
+        let Command::Serve { screencast_max_framerate, .. } =
+            Cli::try_parse_from(["portald", "serve", "--instance", "test"]).unwrap().command;
+        assert_eq!(screencast_max_framerate.get(), 30);
+        for rate in ["1", "60", "120"] {
+            assert!(Cli::try_parse_from(["portald", "serve", "--instance", "test", "--screencast-max-framerate", rate]).is_ok());
+        }
+        for rate in ["0", "121", "-1", "invalid"] {
+            let error = Cli::try_parse_from(["portald", "serve", "--instance", "test", "--screencast-max-framerate", rate]).err().unwrap().to_string();
+            assert!(error.contains("screencast-max-framerate"), "{error}");
+        }
+        assert!("0".parse::<portald::screencast::MaxFramerate>().unwrap_err().contains("SCREENCAST_MAX_FRAMERATE"));
+    }
 }

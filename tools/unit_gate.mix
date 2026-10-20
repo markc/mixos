@@ -1,0 +1,29 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Collect component-owned systemd units without installing anything.
+-- Usage: mix tools/unit_gate.mix [--json]
+-- --json emits the source/owner/name records for downstream installers.
+$root = dirname(dirname(realpath($0)))
+if len(args()) > 1 or (len(args()) == 1 and args()[0] != "--json") then
+  raise("UNIT_ARGS", "unit_gate.mix [--json]")
+end
+$units = []
+$owners = {}
+for $kind in ["apps", "services", "cli", "libs", "session"]
+  for $path in sort(glob($root .. "/" .. $kind .. "/**/units/*"))
+    $owner_dir = dirname(dirname($path))
+    if not is_file($owner_dir .. "/Cargo.toml") and not is_file($owner_dir .. "/component.mx") then
+      raise("UNIT_ORPHAN", $path .. ": units must belong to a component")
+    end
+    $name = basename($path)
+    if not is_file($path) or not re_match($name, "^[A-Za-z0-9_@.-]+\\.(service|socket|target|slice|timer|path|mount|automount|scope)$") then
+      -- Component-owned sysusers/tmpfiles fragments are also allowed here.
+      if ends_with($name, "sysusers.conf") or ends_with($name, "tmpfiles.conf") or ends_with($name, ".rules") then continue end
+      raise("UNIT_FILE", $path .. ": unsupported unit file")
+    end
+    if $owners[$name] != nil then raise("UNIT_DUPLICATE", $name .. ": " .. $owners[$name] .. " and " .. $owner_dir) end
+    if not contains(read_file($path), "[Unit]") then raise("UNIT_CONTENT", $path .. ": missing [Unit]") end
+    $owners[$name] = $owner_dir
+    push($units, {source: substr($path, len($root) + 1), owner: basename($owner_dir), name: $name})
+  end
+end
+if contains(args(), "--json") then print(json_encode($units)) else print("unit_gate: " .. len($units) .. " component-owned units, no duplicates or orphans") end

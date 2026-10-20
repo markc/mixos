@@ -180,6 +180,7 @@ async fn screencast_contract() {
                 profile: "default".into(),
             },
             screencast: Some(portald::screencast::consent::Policy::Prompt),
+            screencast_max_framerate: Default::default(),
         },
         received,
         status::shared(),

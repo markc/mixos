@@ -35,19 +35,42 @@ pub const VERSION: u32 = 5;
 pub const SOURCE_MONITOR: u32 = 1;
 pub const CURSOR_HIDDEN: u32 = 1;
 pub const CURSOR_EMBEDDED: u32 = 2;
-/// The frame-rate ceiling offered to consumers.
-pub const MAX_FRAMERATE: u32 = 30;
+/// A validated frame-rate ceiling offered to consumers.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MaxFramerate(u32);
+
+impl MaxFramerate {
+    pub fn get(self) -> u32 { self.0 }
+}
+
+impl Default for MaxFramerate {
+    fn default() -> Self { Self(30) }
+}
+
+impl std::str::FromStr for MaxFramerate {
+    type Err = String;
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        value.parse::<u32>().ok().filter(|rate| (1..=120).contains(rate)).map(Self)
+            .ok_or_else(|| "SCREENCAST_MAX_FRAMERATE: --screencast-max-framerate must be in 1..=120".into())
+    }
+}
 
 pub struct ScreenCast {
     sessions: Sessions,
     counter: Arc<AtomicU64>,
+    max_framerate: MaxFramerate,
 }
 
 impl ScreenCast {
     pub fn new(sessions: Sessions) -> Self {
+        Self::with_max_framerate(sessions, MaxFramerate::default())
+    }
+
+    pub fn with_max_framerate(sessions: Sessions, max_framerate: MaxFramerate) -> Self {
         Self {
             sessions,
             counter: Arc::new(AtomicU64::new(0)),
+            max_framerate,
         }
     }
 }
@@ -240,6 +263,7 @@ impl ScreenCast {
                 owner,
             },
             cursor_mode,
+            self.max_framerate,
         ));
         Ok(request)
     }
@@ -314,7 +338,7 @@ async fn refuse(connection: &Connection, sessions: &Sessions, target: &Target, w
 /// Picks the source, starts the stream and answers `Start`. A cast whose
 /// request was closed, or whose session went away or was replaced meanwhile,
 /// is stopped.
-async fn start_cast(connection: Connection, sessions: Sessions, target: Target, cursor_mode: u32) {
+async fn start_cast(connection: Connection, sessions: Sessions, target: Target, cursor_mode: u32, max_framerate: MaxFramerate) {
     let outputs = match tokio::time::timeout(OUTPUTS_TIMEOUT, tokio::task::spawn_blocking(capture::outputs)).await {
         Ok(Ok(Ok(outputs))) => outputs,
         Ok(Ok(Err(error))) => return refuse(&connection, &sessions, &target, &error.to_string()).await,
@@ -356,7 +380,7 @@ async fn start_cast(connection: Connection, sessions: Sessions, target: Target, 
     tracing::info!(%owner, %session, %app, output = %output.name, ?decision, "screencast granted");
     let source = output.clone();
     let cast = match tokio::task::spawn_blocking(move || {
-        stream::start(source, cursor_mode == CURSOR_EMBEDDED, MAX_FRAMERATE)
+        stream::start(source, cursor_mode == CURSOR_EMBEDDED, max_framerate.get())
     })
     .await
     {

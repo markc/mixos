@@ -1,0 +1,30 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Synthetic encoder is deliberately independent of the decoder's samples.
+$decoder = require("lib/frame_ids.mix")
+$file = "/tmp/frame-ids-" .. uuid() .. ".rgba"
+try
+  for $id in [0, 1, 0x89ABCDEF, 0xFFFFFFFF]
+    $pixels = buffer()
+    for $y = 0 to 15
+      $value = if $y < 8 then 0xA55AA55A else $id end
+      for $x = 0 to 255
+        $shade = if floor($value / pow(2, floor($x / 8))) % 2 == 1 then 255 else 0 end
+        buffer_push($pixels, $shade, $shade, $shade, 255)
+      end
+    end
+    write_file($file, $pixels)
+    $result = run_argv_must(["/opt/mixos/bin/mix", dirname(realpath($0)) .. "/frame_ids.mix", $file, "--size", "256x16"])
+    if to_number(trim($result)) != $id then raise("TEST", "CLI frame ID round-trip failed") end
+    buffer_set($pixels, (4 * 256 + 4) * 4, 127)
+    $rejected = false
+    try
+      $unused = $decoder.decode($pixels, 256, 16)
+    catch $message, $error
+      $rejected = $error.code == "FRAME_ID_PIXEL"
+    end
+    if not $rejected then raise("TEST", "invalid marker accepted") end
+  end
+  print("PASS frame_ids: four synthetic RGBA round-trips and invalid marker rejection")
+finally
+  remove($file)
+end

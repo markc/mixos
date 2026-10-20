@@ -23,6 +23,7 @@ pub async fn run(
     address: String,
     state_dir: Option<PathBuf>,
     screencast: Option<screencast::consent::Policy>,
+    screencast_max_framerate: screencast::MaxFramerate,
 ) -> anyhow::Result<()> {
     let (projections, received) = mpsc::channel(8);
     let status = status::shared();
@@ -40,6 +41,7 @@ pub async fn run(
             state_dir,
             binding,
             screencast,
+            screencast_max_framerate,
         },
         received,
         status,

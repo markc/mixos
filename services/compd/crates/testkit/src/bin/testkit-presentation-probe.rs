@@ -22,6 +22,21 @@
 //!
 //! `--version` / `-V` as the first argument prints the probe's name and
 //! version and exits 0.
+//!
+//! `--rate HZ` commits on absolute CLOCK_MONOTONIC deadlines, independently
+//! of frame callbacks. `--hold-s` is the run duration in this mode (otherwise
+//! `--frames` commits); when both are supplied, the first limit wins.
+//! `--stall-every N --stall-ms M` delays every Nth commit before submission.
+//! `missed` counts absent/discarded feedback or presentation later than the
+//! scheduled commit deadline plus one interval, including injected stalls.
+//! `achieved_hz` counts commits over the paced run, excluding feedback drain.
+//!
+//! Pixel IDs (unscaled client buffer, at least 256x16): y=0..7 holds sync
+//! 0xA55AA55A; y=8..15 holds the zero-based u32 commit ID. Each row has 32
+//! 8x8 blocks at x=8*bit, least significant bit first. RGB black=0, white=1,
+//! alpha=255. Raw RGBA and XRGB8888 have identical black/white channels.
+//! Smaller legacy buffers omit the marker. Capture consumers must locate the
+//! client content origin and undo output scaling before decoding.
 
 use std::{
     env,
@@ -87,6 +102,7 @@ struct Probe {
     feedback: Vec<FeedbackSlot>,
     closed: bool,
     failure: Option<String>,
+    busy: Vec<bool>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -174,6 +190,9 @@ fn dispatch_until(
 }
 
 struct Options {
+    rate: Option<f64>,
+    stall_every: usize,
+    stall: Duration,
     frames: usize,
     burst: usize,
     width: u32,
@@ -200,6 +219,9 @@ fn options() -> Result<Options, String> {
 
 fn parse_options(mut arguments: impl Iterator<Item = String>) -> Result<Options, String> {
     let mut options = Options {
+        rate: None,
+        stall_every: 0,
+        stall: Duration::ZERO,
         frames: 300,
         burst: 1,
         width: 256,
@@ -211,6 +233,7 @@ fn parse_options(mut arguments: impl Iterator<Item = String>) -> Result<Options,
         kms_refresh_ns: None,
         expect_output: None,
     };
+    let mut frames_set = false;
     while let Some(argument) = arguments.next() {
         let mut value = || {
             arguments
@@ -219,6 +242,7 @@ fn parse_options(mut arguments: impl Iterator<Item = String>) -> Result<Options,
         };
         match argument.as_str() {
             "--frames" => {
+                frames_set = true;
                 options.frames = value()?
                     .parse()
                     .map_err(|error| format!("--frames: {error}"))?;
@@ -244,6 +268,9 @@ fn parse_options(mut arguments: impl Iterator<Item = String>) -> Result<Options,
                 );
             }
             "--callbacks-only" => options.callbacks_only = true,
+            "--rate" => options.rate = Some(value()?.parse::<f64>().map_err(|error| format!("--rate: {error}"))?),
+            "--stall-every" => options.stall_every = value()?.parse().map_err(|error| format!("--stall-every: {error}"))?,
+            "--stall-ms" => options.stall = Duration::from_millis(value()?.parse().map_err(|error| format!("--stall-ms: {error}"))?),
             "--hold-s" => {
                 options.hold = Duration::from_secs(
                     value()?
@@ -267,7 +294,128 @@ fn parse_options(mut arguments: impl Iterator<Item = String>) -> Result<Options,
     if options.frames == 0 || options.burst == 0 || options.width == 0 || options.height == 0 {
         return Err("frames, burst and size must be non-zero".into());
     }
+    if let Some(rate) = options.rate {
+        if !rate.is_finite() || !(1.0..=1000.0).contains(&rate) {
+            return Err("--rate must be finite and in 1..=1000 Hz".into());
+        }
+        if options.callbacks_only || options.burst != 1 || options.width < 256 || options.height < 16 {
+            return Err("--rate requires presentation feedback, --burst 1 and --size at least 256x16".into());
+        }
+        if !options.hold.is_zero() {
+            let duration_frames = (options.hold.as_secs_f64() * rate).ceil() as usize;
+            options.frames = if frames_set { options.frames.min(duration_frames) } else { duration_frames };
+        }
+    }
+    if (options.stall_every > 0) != !options.stall.is_zero() || (options.stall_every > 0 && options.rate.is_none()) {
+        return Err("--stall-every and --stall-ms must both be positive and require --rate".into());
+    }
     Ok(options)
+}
+
+/// Absolute deadlines avoid accumulating sleep/dispatch overhead. The fake
+/// clock test below exercises the same schedule and lateness predicate.
+fn scheduled(start: Duration, frame: usize, rate: f64) -> Duration {
+    start + Duration::from_secs_f64(frame as f64 / rate)
+}
+
+fn missed(outcome: Option<Outcome>, due: Duration, interval: Duration) -> bool {
+    !matches!(outcome, Some(Outcome::Presented { time, .. }) if time <= due + interval)
+}
+
+fn frame_id(pixels: &mut [u8], width: u32, height: u32, id: u32) {
+    if width < 256 || height < 16 { return; }
+    for (row, value) in [0xA55A_A55A_u32, id].into_iter().enumerate() {
+        for bit in 0..32 {
+            let shade = if value & (1 << bit) == 0 { 0 } else { 255 };
+            for y in row * 8..row * 8 + 8 {
+                for x in bit * 8..bit * 8 + 8 {
+                    let offset = (y * width as usize + x) * 4;
+                    pixels[offset..offset + 4].copy_from_slice(&[shade, shade, shade, 255]);
+                }
+            }
+        }
+    }
+}
+
+fn wait_until(queue: &mut EventQueue<Probe>, probe: &mut Probe, due: Instant) -> Result<(), String> {
+    dispatch_until(queue, probe, due, |_| Instant::now() >= due, "rate timer")
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_rate(
+    connection: &Connection,
+    queue: &mut EventQueue<Probe>,
+    probe: &mut Probe,
+    surface: &wl_surface::WlSurface,
+    shm: &wl_shm::WlShm,
+    qh: &QueueHandle<Probe>,
+    options: &Options,
+) -> Result<bool, String> {
+    let rate = options.rate.unwrap();
+    let interval = Duration::from_secs_f64(1.0 / rate);
+    let bytes = options.width as usize * options.height as usize * 4;
+    let name = CString::new(NAME).unwrap();
+    // SAFETY: valid name, descriptor ownership transferred to File below.
+    let raw = unsafe { libc::memfd_create(name.as_ptr(), libc::MFD_CLOEXEC) };
+    if raw < 0 { return Err(std::io::Error::last_os_error().to_string()); }
+    // SAFETY: memfd_create returned a new owned descriptor.
+    let backing = unsafe { File::from_raw_fd(raw) };
+    const SLOTS: usize = 8;
+    backing.set_len((bytes * SLOTS) as u64).map_err(|e| e.to_string())?;
+    let pool = shm.create_pool(backing.as_fd(), (bytes * SLOTS) as i32, qh, ());
+    let buffers = (0..SLOTS).map(|slot| pool.create_buffer(
+        (slot * bytes) as i32, options.width as i32, options.height as i32,
+        (options.width * 4) as i32, wl_shm::Format::Xrgb8888, qh, slot,
+    )).collect::<Vec<_>>();
+    probe.busy = vec![false; SLOTS];
+    probe.feedback = (0..options.frames).map(|_| FeedbackSlot::default()).collect();
+    let presentation = probe.presentation.clone().ok_or("wp_presentation unavailable")?;
+    let start = monotonic_now();
+    let instant = Instant::now();
+    let timeout = instant + scheduled(Duration::ZERO, options.frames, rate) + options.timeout;
+    let mut pixels = vec![0; bytes];
+    let mut stalls = 0;
+    for commit in 0..options.frames {
+        wait_until(queue, probe, instant + scheduled(Duration::ZERO, commit, rate))?;
+        if options.stall_every > 0 && (commit + 1).is_multiple_of(options.stall_every) {
+            stalls += 1;
+            wait_until(queue, probe, Instant::now() + options.stall)?;
+        }
+        dispatch_until(queue, probe, timeout, |p| p.busy.iter().any(|busy| !busy), "buffer release")?;
+        let slot = probe.busy.iter().position(|busy| !busy).unwrap();
+        for pixel in pixels.chunks_exact_mut(4) {
+            pixel.copy_from_slice(&[(commit % 256) as u8, 0x80, 0x40, 255]);
+        }
+        frame_id(&mut pixels, options.width, options.height, commit as u32);
+        backing.write_all_at(&pixels, (slot * bytes) as u64).map_err(|e| e.to_string())?;
+        surface.attach(Some(&buffers[slot]), 0, 0);
+        surface.damage_buffer(0, 0, options.width as i32, options.height as i32);
+        presentation.feedback(surface, qh, commit);
+        probe.busy[slot] = true;
+        surface.commit();
+        connection.flush().map_err(|e| e.to_string())?;
+    }
+    wait_until(queue, probe, instant + scheduled(Duration::ZERO, options.frames, rate))?;
+    let elapsed = instant.elapsed().as_secs_f64();
+    // A missing feedback is a measured miss, not an unbounded wait or a
+    // process failure. Drain for at most two seconds after the timed run.
+    let _ = dispatch_until(queue, probe, Instant::now() + Duration::from_secs(2),
+        |p| p.feedback.iter().all(|slot| slot.outcome.is_some()), "rate feedback drain");
+    if probe.closed || probe.failure.is_some() { return Err("rate feedback connection failed".into()); }
+    let missed = probe.feedback.iter().enumerate().filter(|(commit, slot)|
+        missed(slot.outcome, scheduled(start, *commit, rate), interval)).count();
+    let presented = probe.feedback.iter().filter(|slot| matches!(slot.outcome, Some(Outcome::Presented { .. }))).count();
+    let output_ok = options.expect_output.as_ref().is_none_or(|expected| probe.feedback.iter().all(|slot|
+        match slot.outcome {
+            Some(Outcome::Presented { synced: Some(index), .. }) => probe.output_info[index].name.as_ref() == Some(expected),
+            Some(Outcome::Presented { .. }) => false,
+            _ => true,
+        }));
+    let pass = presented > 0 && output_ok && probe.clock_id == Some(libc::CLOCK_MONOTONIC as u32);
+    println!("{SUMMARY} {} frames={} commits={} presented={} rate_hz={} achieved_hz={:.6} missed={} stalls={}",
+        if pass { "PASS" } else { "FAIL" }, options.frames, options.frames, presented, rate,
+        options.frames as f64 / elapsed, missed, stalls);
+    Ok(pass)
 }
 
 /// Which commits ask for feedback: all of them without bursts; otherwise
@@ -445,6 +593,12 @@ fn run() -> Result<bool, String> {
     )?;
     xdg.ack_configure(probe.configured.take().unwrap_or_default());
 
+    if options.rate.is_some() {
+        let result = run_rate(&connection, &mut queue, &mut probe, &surface, &shm, &qh, &options);
+        toplevel.destroy();
+        return result;
+    }
+
     let (width, height) = (options.width, options.height);
     let stride = width * 4;
     let buffer_bytes = (stride * height) as usize;
@@ -495,6 +649,7 @@ fn run() -> Result<bool, String> {
             for pixel in pixels.chunks_exact_mut(4) {
                 pixel.copy_from_slice(&[shade, 255 - shade, 0x40, 0xff]);
             }
+            frame_id(&mut pixels, width, height, commit as u32);
             backing
                 .write_all_at(&pixels, (slot * buffer_bytes) as u64)
                 .map_err(|error| error.to_string())?;
@@ -537,13 +692,14 @@ fn run() -> Result<bool, String> {
         };
         println!(
             "{SUMMARY} CALLBACKS frames={} callback_p50_us={} \
-             callback_p99_us={} callback_min_us={} callback_max_us={} presentation={}",
+             callback_p99_us={} callback_min_us={} callback_max_us={} presentation={} rate_hz=0 achieved_hz={:.6} missed=0 stalls=0",
             options.frames,
             at(50),
             at(99),
             intervals.first().copied().unwrap_or(0),
             intervals.last().copied().unwrap_or(0),
             presentation.is_some(),
+            options.frames as f64 / monotonic_now().saturating_sub(started).as_secs_f64(),
         );
         toplevel.destroy();
         return Ok(!intervals.is_empty());
@@ -705,7 +861,8 @@ fn run() -> Result<bool, String> {
          min_presented={} clock_id={} outputs={} unsynced={} tv_before_commit={} \
          tv_first_us={} tv_last_us={} window_start_us={} commits_done_us={} \
          window_end_us={} increasing={} in_window={} window_lead_us={} flags_zero={} \
-         seq_zero={} refresh_zero={} interval_p50_us={} interval_p99_us={} interval_max_us={}",
+         seq_zero={} refresh_zero={} interval_p50_us={} interval_p99_us={} interval_max_us={} \
+         rate_hz=0 achieved_hz={:.6} missed={} stalls=0",
         if pass { "PASS" } else { "FAIL" },
         options.frames,
         burst,
@@ -737,6 +894,9 @@ fn run() -> Result<bool, String> {
         percentile(50),
         percentile(99),
         sorted.last().copied().unwrap_or(0),
+        commits as f64 / committed.saturating_sub(started).as_secs_f64(),
+        probe.feedback.iter().enumerate().filter(|(commit, slot)| asks_feedback(*commit, burst)
+            && missed(slot.outcome, commit_times[*commit], Duration::from_micros(percentile(50).max(1)))).count(),
     );
     if !options.hold.is_zero() {
         use std::io::Write as _;
@@ -940,6 +1100,15 @@ impl Dispatch<wl_callback::WlCallback, ()> for Probe {
     }
 }
 
+impl Dispatch<wl_buffer::WlBuffer, usize> for Probe {
+    fn event(state: &mut Self, _: &wl_buffer::WlBuffer, event: wl_buffer::Event,
+        slot: &usize, _: &Connection, _: &QueueHandle<Self>) {
+        if let wl_buffer::Event::Release = event {
+            state.busy[*slot] = false;
+        }
+    }
+}
+
 macro_rules! ignore_events {
     ($($interface:ty),+ $(,)?) => {
         $(
@@ -997,6 +1166,49 @@ mod tests {
     use super::*;
 
     const R: u32 = 16_666_667;
+
+    #[test]
+    fn absolute_pacing_with_fake_clock_and_stalls() {
+        let rate = 60.0;
+        let interval = Duration::from_secs_f64(1.0 / rate);
+        let simulate = |stall_every: usize| {
+            let mut clock = Duration::ZERO;
+            let mut misses = 0;
+            for frame in 0..3600 {
+                let due = scheduled(Duration::ZERO, frame, rate);
+                clock = clock.max(due);
+                if stall_every > 0 && (frame + 1).is_multiple_of(stall_every) {
+                    clock += Duration::from_millis(50);
+                }
+                // Simulate 0.5 ms of submission overhead each time. Relative
+                // sleeps would drift by 1.8 s; absolute deadlines recover.
+                clock += Duration::from_micros(500);
+                misses += usize::from(missed(Some(Outcome::Presented {
+                    time: clock, refresh_ns: 0, seq: 0, flags: 0, synced: Some(0),
+                }), due, interval));
+            }
+            clock = clock.max(scheduled(Duration::ZERO, 3600, rate));
+            (3600.0 / clock.as_secs_f64(), misses)
+        };
+        let (achieved, clean) = simulate(0);
+        assert!((achieved / rate - 1.0).abs() <= 0.01);
+        assert_eq!(clean, 0);
+        let (achieved, stalled) = simulate(30);
+        assert!((achieved / rate - 1.0).abs() <= 0.01);
+        assert!(stalled > clean);
+        assert!(missed(None, Duration::ZERO, interval));
+        assert!(missed(Some(Outcome::Discarded), Duration::ZERO, interval));
+    }
+
+    #[test]
+    fn independent_rate_options() {
+        let parse = |args: &[&str]| parse_options(args.iter().map(|s| (*s).to_string()));
+        assert_eq!(parse(&["--rate", "60", "--hold-s", "60"]).unwrap().frames, 3600);
+        assert_eq!(parse(&["--rate", "60", "--hold-s", "60", "--frames", "10"]).unwrap().frames, 10);
+        for args in [vec!["--rate", "NaN"], vec!["--rate", "0"], vec!["--rate", "60", "--callbacks-only"], vec!["--stall-ms", "50"], vec!["--rate", "60", "--stall-every", "30"]] {
+            assert!(parse(&args).is_err(), "{args:?}");
+        }
+    }
 
     #[test]
     fn defaults_and_flag_parsing() {
