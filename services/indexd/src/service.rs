@@ -1154,4 +1154,48 @@ mod tests {
         drop(engine);
         std::fs::remove_dir_all(dir).unwrap();
     }
+
+    #[tokio::test]
+    async fn index_file_replaces_old_chunks_after_all_sections_store() {
+        let dir = temp_dir("index-success");
+        let mut config = Config::default();
+        config.service.vectors_db = dir.join("vectors.db").to_string_lossy().into_owned();
+        config.source_types.insert("journal".into(), SourceTypeSpec {
+            required: vec!["path".into(), "domain".into(), "date".into()],
+            date_field: Some("date".into()),
+        });
+        config.domains.map.insert("/srv/project".into(), "parent".into());
+        config.domains.map.insert("/srv/project/deep".into(), "child".into());
+        let engine = Engine::open(config).unwrap();
+        let tokenizer = tokenizers::models::wordlevel::WordLevel::builder()
+            .vocab([("[UNK]".to_string(), 0)].into_iter().collect())
+            .unk_token("[UNK]".into()).build().unwrap();
+        engine.state.lock().await.chunk_tokenizer = Some(Arc::new(ChunkTokenizer {
+            tokenizer: Tokenizer::new(tokenizer), max_seq_len: 2048,
+        }));
+        let path = "/srv/project/deep/_journal/2026-10-20-entry.md";
+        let old = seed(&engine, "obsolete", &json!({"path":path}).to_string(), 1.0).await;
+        let first = format!("## First\n{}", "a".repeat(100));
+        let second = format!("## Second\n{}", "b".repeat(100));
+        cache(&engine, &first, "search_document: ", 0.0).await;
+        cache(&engine, &second, "search_document: ", 0.5).await;
+        let body = json!({"path":path, "content":format!("{first}\n{second}")});
+        let result = engine.index_file(body.clone()).await;
+        assert_eq!(result["sections"], 2, "{result}");
+        assert_eq!(result["domain"], "child");
+        let listed = engine.list(json!({})).await;
+        assert_eq!(listed["total"], 2);
+        for item in listed["items"].as_array().unwrap() {
+            assert_ne!(item["id"], old);
+            assert_eq!(item["source"], "journal");
+            let metadata: serde_json::Value = serde_json::from_str(item["metadata"].as_str().unwrap()).unwrap();
+            assert_eq!(metadata["date"], "2026-10-20");
+            assert_eq!(metadata["domain"], "child");
+            assert_eq!(metadata["path"], path);
+        }
+        assert_eq!(engine.index_file(body).await["sections"], 2);
+        assert_eq!(engine.list(json!({})).await, listed, "unchanged reindex preserves IDs and metadata");
+        drop(engine);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 }
