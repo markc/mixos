@@ -251,7 +251,9 @@ impl Bridge {
         self.next_id = self.next_id.wrapping_add(1);
         let id = self.next_id;
         let timeout_secs = self.settings.call_timeout_secs.saturating_sub(10).max(1);
-        let request = json!({"id":id, "verb":verb, "body":body, "timeout_secs":timeout_secs}).to_string() + "\n";
+        let request = json!({"id":id, "verb":verb, "body":body, "timeout_secs":timeout_secs})
+            .to_string()
+            + "\n";
         for attempt in 0..2 {
             // Owning the session across await is deliberate: cancellation or timeout
             // drops/kills it, so a late reply cannot be consumed by the next call.
@@ -760,7 +762,10 @@ mod tests {
         .expect("queue wait must respect the configured budget")
         .unwrap_err()
         .to_string();
-        assert!(error.contains("queue wait exceeded 1s; request not delivered"), "{error}");
+        assert!(
+            error.contains("queue wait exceeded 1s; request not delivered"),
+            "{error}"
+        );
         assert!(!dir.path().join("starts").exists());
         drop(guard);
         client.call("indexd.stats", &json!({})).await.unwrap();

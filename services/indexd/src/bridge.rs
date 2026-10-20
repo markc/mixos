@@ -158,7 +158,11 @@ mod tests {
             serde_json::from_slice::<Value>(&output).unwrap(),
             json!({"id":null,"rc":-1,"error":"incomplete request line"})
         );
-        assert!(tokio::time::timeout(std::time::Duration::from_millis(50), incoming.recv()).await.is_err());
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(50), incoming.recv())
+                .await
+                .is_err()
+        );
         client.unwrap().close().await;
         owner.close().await;
     }

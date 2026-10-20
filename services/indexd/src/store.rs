@@ -72,8 +72,10 @@ pub(crate) fn append_metadata_filters(
                 "delete metadata filters do not allow contains"
             );
             anyhow::ensure!(
-                matches!(filter.value, serde_json::Value::String(_) | serde_json::Value::Number(_))
-                    || (matches!(filter.op, FilterOp::Eq) && filter.value.is_boolean()),
+                matches!(
+                    filter.value,
+                    serde_json::Value::String(_) | serde_json::Value::Number(_)
+                ) || (matches!(filter.op, FilterOp::Eq) && filter.value.is_boolean()),
                 "delete metadata filter requires a non-null string or number (or boolean for eq)"
             );
         }
@@ -96,7 +98,10 @@ pub(crate) fn append_metadata_filters(
             let value = value.ok_or_else(|| {
                 anyhow::anyhow!("contains metadata filter requires a non-empty string")
             })?;
-            let escaped = value.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
+            let escaped = value
+                .replace('\\', "\\\\")
+                .replace('%', "\\%")
+                .replace('_', "\\_");
             sql.push_str(" ESCAPE '\\'");
             params.push(Box::new(format!("%{escaped}%")));
         } else {
@@ -815,16 +820,19 @@ impl VectorDb {
                 sql.push_str(&vec!["?"; batch.len()].join(","));
                 sql.push(')');
                 params.extend(
-                    batch.iter()
+                    batch
+                        .iter()
                         .map(|id| Box::new(*id) as Box<dyn rusqlite::types::ToSql>),
                 );
             }
             append_metadata_filters(&mut sql, &mut params, filters, true)?;
-            let refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
-            selected.extend(tx
-                .prepare(&sql)?
-                .query_map(&*refs, |row| row.get::<_, i64>(0))?
-                .collect::<rusqlite::Result<Vec<_>>>()?);
+            let refs: Vec<&dyn rusqlite::types::ToSql> =
+                params.iter().map(|p| p.as_ref()).collect();
+            selected.extend(
+                tx.prepare(&sql)?
+                    .query_map(&*refs, |row| row.get::<_, i64>(0))?
+                    .collect::<rusqlite::Result<Vec<_>>>()?,
+            );
         }
         for id in &selected {
             deleted += tx.execute("DELETE FROM chunks WHERE id = ?1", [id])?;
@@ -1060,25 +1068,39 @@ mod tests {
     fn delete_chunks_2500_ids_in_one_transaction() {
         let db = test_vector_db();
         let texts: Vec<String> = (0..2501).map(|i| format!("chunk {i}")).collect();
-        let StoreAttempt::Committed { ids, .. } = db.store_revalidated(
-            &vec![Some(vec![1.0; EMBEDDING_DIM]); texts.len()],
-            &vec![None; texts.len()],
-            &texts,
-            "doc",
-            &vec!["{}".into(); texts.len()],
-        ).unwrap() else {
+        let StoreAttempt::Committed { ids, .. } = db
+            .store_revalidated(
+                &vec![Some(vec![1.0; EMBEDDING_DIM]); texts.len()],
+                &vec![None; texts.len()],
+                &texts,
+                "doc",
+                &vec!["{}".into(); texts.len()],
+            )
+            .unwrap()
+        else {
             panic!("unexpected race")
         };
         assert_eq!(db.delete_filtered(&ids[..2500], &[]).unwrap(), 2500);
         assert_eq!(db.stats("").unwrap().total_vectors, 1);
         assert_eq!(db.search_index.read().unwrap().len(), 1);
-        assert_eq!(db.conn.query_row("SELECT rowid FROM vec_chunks", [], |row| row.get::<_, i64>(0)).unwrap(), ids[2500]);
+        assert_eq!(
+            db.conn
+                .query_row("SELECT rowid FROM vec_chunks", [], |row| row
+                    .get::<_, i64>(0))
+                .unwrap(),
+            ids[2500]
+        );
     }
 
     #[test]
     fn delete_refuses_contains_and_invalid_comparison_values() {
         let db = test_vector_db();
-        db.conn.execute("INSERT INTO chunks(content, metadata) VALUES ('keep', '{}')", []).unwrap();
+        db.conn
+            .execute(
+                "INSERT INTO chunks(content, metadata) VALUES ('keep', '{}')",
+                [],
+            )
+            .unwrap();
         for raw in [
             serde_json::json!({"field":"path","op":"contains","value":"a"}),
             serde_json::json!({"field":"path","op":"eq"}),
@@ -1100,32 +1122,70 @@ mod tests {
         let path = dir.path().join("contains.db");
         let path = path.to_str().unwrap();
         let db = VectorDb::open(path, vindex::VectorDtype::F32, 65536).unwrap();
-        let texts: Vec<String> = ["a_b", "axb", "a%b", "a\\b"].into_iter().map(String::from).collect();
-        let metadata: Vec<String> = texts.iter().map(|text| serde_json::json!({"path":text}).to_string()).collect();
+        let texts: Vec<String> = ["a_b", "axb", "a%b", "a\\b"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+        let metadata: Vec<String> = texts
+            .iter()
+            .map(|text| serde_json::json!({"path":text}).to_string())
+            .collect();
         db.store_revalidated(
             &vec![Some(vec![1.0; EMBEDDING_DIM]); texts.len()],
             &vec![None; texts.len()],
             &texts,
             "doc",
             &metadata,
-        ).unwrap();
+        )
+        .unwrap();
         for needle in ["a_b", "a%b", "a\\b"] {
             let filters: Vec<MetadataFilter> = serde_json::from_value(serde_json::json!([
                 {"field":"path","op":"contains","value":needle}
-            ])).unwrap();
-            let fallback = db.search(&vec![1.0; EMBEDDING_DIM], 10, "", &filters, BUS_BODY_LIMIT).unwrap();
-            let (exact, _) = search_exact(path, &db.search_index, &vec![1.0; EMBEDDING_DIM], 10, "", &filters, BUS_BODY_LIMIT).unwrap();
+            ]))
+            .unwrap();
+            let fallback = db
+                .search(&vec![1.0; EMBEDDING_DIM], 10, "", &filters, BUS_BODY_LIMIT)
+                .unwrap();
+            let (exact, _) = search_exact(
+                path,
+                &db.search_index,
+                &vec![1.0; EMBEDDING_DIM],
+                10,
+                "",
+                &filters,
+                BUS_BODY_LIMIT,
+            )
+            .unwrap();
             for results in [fallback, exact] {
                 assert_eq!(results.len(), 1, "{needle}");
                 assert_eq!(results[0].content, needle);
             }
         }
-        for value in [serde_json::json!(""), serde_json::json!(7), serde_json::Value::Null] {
+        for value in [
+            serde_json::json!(""),
+            serde_json::json!(7),
+            serde_json::Value::Null,
+        ] {
             let filters: Vec<MetadataFilter> = serde_json::from_value(serde_json::json!([
                 {"field":"path","op":"contains","value":value}
-            ])).unwrap();
-            assert!(db.search(&vec![1.0; EMBEDDING_DIM], 10, "", &filters, BUS_BODY_LIMIT).is_err());
-            assert!(search_exact(path, &db.search_index, &vec![1.0; EMBEDDING_DIM], 10, "", &filters, BUS_BODY_LIMIT).is_err());
+            ]))
+            .unwrap();
+            assert!(
+                db.search(&vec![1.0; EMBEDDING_DIM], 10, "", &filters, BUS_BODY_LIMIT)
+                    .is_err()
+            );
+            assert!(
+                search_exact(
+                    path,
+                    &db.search_index,
+                    &vec![1.0; EMBEDDING_DIM],
+                    10,
+                    "",
+                    &filters,
+                    BUS_BODY_LIMIT
+                )
+                .is_err()
+            );
         }
     }
 
