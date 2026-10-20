@@ -2,20 +2,22 @@
 //! carries its own `error`, so one failing source never blanks the others.
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use bus::native_client::NodedClient;
 use serde_json::{Value, json};
 
+use crate::ssh::Ssh;
 use crate::units;
 
 /// Where the MixOS mix binary lives in the gold copy.
 const MIX_BIN: &str = "/opt/mixos/bin/mix";
 
-pub async fn build(client: &NodedClient) -> Value {
+pub async fn build(client: &NodedClient, ssh: &Arc<Ssh>) -> Value {
     let cos = tab_cos().await;
     let bus = tab_bus(client).await;
     let mix = tab_mix().await;
-    let ssh = tab_ssh().await;
+    let ssh = tab_ssh(ssh).await;
     json!({ "cos": cos, "bus": bus, "mix": mix, "ssh": ssh })
 }
 
@@ -81,69 +83,17 @@ async fn tab_mix() -> Value {
     result.unwrap_or_else(|error| json!({ "error": error.to_string() }))
 }
 
-/// SSH: the concrete `Host` aliases in the user's ssh config.
-async fn tab_ssh() -> Value {
-    let result = tokio::task::spawn_blocking(|| {
-        let Some(home) = std::env::var_os("HOME") else {
-            return json!({ "error": "HOME is not set" });
-        };
-        let path = PathBuf::from(home).join(".ssh/config");
-        match std::fs::read_to_string(&path) {
-            Ok(text) => json!({ "hosts": ssh_hosts(&text) }),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => json!({ "hosts": [] }),
-            Err(error) => json!({ "hosts": [], "error": error.to_string() }),
-        }
-    })
-    .await;
-    result.unwrap_or_else(|error| json!({ "error": error.to_string() }))
-}
-
-/// The concrete host aliases in an ssh config. Patterns (`*`, `?`) and
-/// negations (`!`) are skipped, since they name no host to connect to.
-pub fn ssh_hosts(text: &str) -> Vec<String> {
-    let mut hosts = Vec::new();
-    for line in text.lines() {
-        let line = line.trim();
-        let mut words = line.split_whitespace();
-        let Some(key) = words.next() else { continue };
-        if !key.eq_ignore_ascii_case("host") {
-            continue;
-        }
-        for word in words {
-            if word.contains(['*', '?', '!']) {
-                continue;
-            }
-            if !hosts.iter().any(|h| h == word) {
-                hosts.push(word.to_string());
-            }
-        }
-    }
-    hosts
+/// SSH: the host fragments, the trash, the keys and the latest probes.
+async fn tab_ssh(ssh: &Arc<Ssh>) -> Value {
+    let ssh = Arc::clone(ssh);
+    tokio::task::spawn_blocking(move || ssh.tab())
+        .await
+        .unwrap_or_else(|error| json!({ "error": error.to_string() }))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn ssh_hosts_keeps_concrete_aliases_and_skips_patterns() {
-        let config = "\
-# comment
-Host alpha beta
-    HostName 192.0.2.10
-Host *
-    ForwardAgent no
-Host gamma !delta
-Host web-?
-host alpha
-";
-        assert_eq!(ssh_hosts(config), vec!["alpha", "beta", "gamma"]);
-    }
-
-    #[test]
-    fn ssh_hosts_of_an_empty_config_is_empty() {
-        assert!(ssh_hosts("").is_empty());
-    }
 
     #[test]
     fn peer_list_takes_the_routing_view_of_an_authority_record() {
@@ -153,7 +103,10 @@ host alpha
                 "routing_view": [{"name": "alpha"}, {"name": "beta"}],
             },
         });
-        assert_eq!(peer_list(reply), json!([{"name": "alpha"}, {"name": "beta"}]));
+        assert_eq!(
+            peer_list(reply),
+            json!([{"name": "alpha"}, {"name": "beta"}])
+        );
     }
 
     #[test]

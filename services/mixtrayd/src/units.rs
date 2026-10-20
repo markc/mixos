@@ -132,13 +132,19 @@ mod tests {
     fn watched_units_are_plain_service_names() {
         for (name, _) in WATCHED {
             assert!(name.ends_with(".service"), "{name}");
-            assert!(!name.contains('@'), "templated units need an instance: {name}");
+            assert!(
+                !name.contains('@'),
+                "templated units need an instance: {name}"
+            );
         }
     }
 
     #[test]
     fn object_paths_use_systemd_escaping() {
-        assert_eq!(object_path("noded.service"), "/org/freedesktop/systemd1/unit/noded_2eservice");
+        assert_eq!(
+            object_path("noded.service"),
+            "/org/freedesktop/systemd1/unit/noded_2eservice"
+        );
         assert_eq!(
             object_path("getty@tty1.service"),
             "/org/freedesktop/systemd1/unit/getty_40tty1_2eservice"

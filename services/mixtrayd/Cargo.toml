@@ -27,7 +27,8 @@ path = "src/main.rs"
 anyhow.workspace = true
 bus = { workspace = true, features = ["native"] }
 futures.workspace = true
+notify.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros", "sync", "time", "net", "io-util"] }
+tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros", "sync", "time", "net", "io-util", "process"] }
 zbus = { workspace = true, features = ["blocking-api"] }
