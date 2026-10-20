@@ -770,7 +770,7 @@ fn finish_request(
 /// Lock the global state, charging the wait to the request's timing.
 /// Mutex wait is tracked separately from `db_us` so lock contention
 /// can't hide inside apparent SQLite time.
-async fn lock_timed<'a>(
+pub(crate) async fn lock_timed<'a>(
     state: &'a Arc<Mutex<AppState>>,
     t: &mut ReqTiming,
 ) -> tokio::sync::MutexGuard<'a, AppState> {
