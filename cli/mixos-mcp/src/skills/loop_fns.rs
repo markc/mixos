@@ -406,7 +406,7 @@ fn parse_json_response<T: serde::de::DeserializeOwned>(response: &str) -> Result
     serde_json::from_str(json_str).with_context(|| {
         format!(
             "failed to parse JSON from LLM response: {}",
-            &json_str[..json_str.len().min(200)]
+            crate::text::truncate_bytes(json_str, 200)
         )
     })
 }
@@ -415,7 +415,7 @@ fn truncate(s: &str, max_len: usize) -> String {
     if s.len() <= max_len {
         s.to_string()
     } else {
-        format!("{}...[truncated]", &s[..max_len])
+        format!("{}...[truncated]", crate::text::truncate_bytes(s, max_len))
     }
 }
 

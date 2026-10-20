@@ -23,10 +23,12 @@ mod llm;
 mod mix_worker;
 mod native_tools;
 mod skills;
+mod text;
 mod tool_output;
 
 struct MixosMcp {
     noded: connection::BrokerConnection,
+    indexd_client: Arc<tokio::sync::Mutex<Option<crate::skills::IndexdClient>>>,
     tool_router: rmcp::handler::server::tool::ToolRouter<Self>,
     metrics: Arc<Metrics>,
     /// The frontend and instance the last successful term_list read: the
@@ -968,9 +970,24 @@ impl MixosMcp {
     }
 
     async fn indexd(&self) -> Result<crate::skills::IndexdClient, String> {
-        crate::skills::IndexdClient::from_config()
+        if let Some(client) = self
+            .indexd_client
+            .lock()
             .await
-            .map_err(|e| format!("indexd connect failed: {e}. Ensure indexd is running."))
+            .as_ref()
+            .filter(|c| c.is_connected())
+        {
+            return Ok(client.clone());
+        }
+        let client = crate::skills::IndexdClient::from_config()
+            .await
+            .map_err(|e| format!("indexd connect failed: {e}. Ensure indexd is running."))?;
+        let mut cached = self.indexd_client.lock().await;
+        if let Some(existing) = cached.as_ref().filter(|c| c.is_connected()) {
+            return Ok(existing.clone());
+        }
+        *cached = Some(client.clone());
+        Ok(client)
     }
 }
 
@@ -1578,19 +1595,11 @@ impl MixosMcp {
     /// Idempotent — deletes old entries for re-indexed files before storing new ones.
     #[tool]
     async fn index_workspace(&self, Parameters(p): Parameters<IndexWorkspaceParams>) -> String {
-        let workspace = p
-            .path
-            .map(|p| p.replace("~", &std::env::var("HOME").unwrap_or_default()))
-            .unwrap_or_else(|| {
-                std::env::current_dir()
-                    .map(|p| p.to_string_lossy().to_string())
-                    .unwrap_or_default()
-            });
-
-        let workspace_path = std::path::Path::new(&workspace);
-        if !workspace_path.exists() {
-            return format!("ERROR: workspace path does not exist: {workspace}");
-        }
+        let workspace = match workspace_path(p.path.as_deref()) {
+            Ok(path) => path,
+            Err(error) => return format!("ERROR: {error}"),
+        };
+        let workspace_path = workspace.as_path();
 
         let domain = crate::skills::detect_domain(workspace_path);
 
@@ -1656,7 +1665,13 @@ impl MixosMcp {
                 }
 
                 // Delete old entries for this file (idempotent re-index)
-                let path_str = filepath.to_string_lossy().to_string();
+                let path_str = match filepath.canonicalize() {
+                    Ok(path) => path.to_string_lossy().into_owned(),
+                    Err(e) => {
+                        errors.push(format!("{filename}: canonical path failed: {e}"));
+                        continue;
+                    }
+                };
                 if let Err(e) = delete_by_path(&mut indexd, &path_str).await {
                     errors.push(format!("{filename}: delete failed: {e}"));
                 }
@@ -2285,7 +2300,7 @@ impl MixosMcp {
             for (i, (_, doc, _)) in active_skills.iter().enumerate() {
                 brief.push_str(&format!("{}. **{}**: {}\n", i + 1, doc.name, doc.trigger));
                 let approach = if doc.approach.len() > 200 {
-                    format!("{}...", &doc.approach[..200])
+                    format!("{}...", text::truncate_bytes(&doc.approach, 200))
                 } else {
                     doc.approach.clone()
                 };
@@ -2304,7 +2319,7 @@ impl MixosMcp {
                 // Take first 2 lines of snippet
                 let short: String = snippet.lines().take(2).collect::<Vec<_>>().join(" ");
                 let short = if short.len() > 150 {
-                    format!("{}...", &short[..150])
+                    format!("{}...", text::truncate_bytes(&short, 150))
                 } else {
                     short
                 };
@@ -2323,7 +2338,7 @@ impl MixosMcp {
                 let snippet = j.get("snippet").and_then(|v| v.as_str()).unwrap_or("");
                 let first_line = snippet.lines().next().unwrap_or("");
                 let first_line = if first_line.len() > 120 {
-                    format!("{}...", &first_line[..120])
+                    format!("{}...", text::truncate_bytes(first_line, 120))
                 } else {
                     first_line.to_string()
                 };
@@ -2523,7 +2538,7 @@ fn format_search_hits(resp: &serde_json::Value) -> Vec<serde_json::Value> {
                     let dist = h.get("distance").and_then(|d| d.as_f64()).unwrap_or(1.0);
                     let content = h.get("content").and_then(|c| c.as_str()).unwrap_or("");
                     let snippet = if content.len() > 500 {
-                        format!("{}...", &content[..500])
+                        format!("{}...", text::truncate_bytes(content, 500))
                     } else {
                         content.to_string()
                     };
@@ -2684,38 +2699,32 @@ async fn delete_by_path(
     indexd: &mut crate::skills::IndexdClient,
     path: &str,
 ) -> Result<(), String> {
-    // List entries and find those matching this path
-    let list_req = serde_json::json!({
-        "action": "list", "limit": 1000, "offset": 0,
-    });
-
-    let resp = indexd
-        .raw_request(&list_req)
+    indexd
+        .raw_request(&serde_json::json!({
+            "action":"delete", "filter":[{"field":"path", "op":"eq", "value":path}]
+        }))
         .await
         .map_err(|e| e.to_string())?;
-    let mut ids_to_delete = Vec::new();
-
-    if let Some(items) = resp.get("items").and_then(|i| i.as_array()) {
-        for item in items {
-            if let Some(meta_str) = item.get("metadata").and_then(|m| m.as_str())
-                && let Ok(meta) = serde_json::from_str::<serde_json::Value>(meta_str)
-                && meta.get("path").and_then(|p| p.as_str()) == Some(path)
-                && let Some(id) = item.get("id").and_then(|i| i.as_i64())
-            {
-                ids_to_delete.push(id);
-            }
-        }
-    }
-
-    if !ids_to_delete.is_empty() {
-        let del_req = serde_json::json!({"action": "delete", "ids": ids_to_delete});
-        indexd
-            .raw_request(&del_req)
-            .await
-            .map_err(|e| e.to_string())?;
-    }
-
     Ok(())
+}
+
+/// Expand only a leading home marker, then resolve relative paths and symlinks.
+/// indexd receives absolute paths in metadata and never expands a user's home.
+fn workspace_path(path: Option<&str>) -> Result<std::path::PathBuf, String> {
+    let path = match path {
+        Some("~") => directories::BaseDirs::new()
+            .ok_or("home directory unavailable")?
+            .home_dir()
+            .to_path_buf(),
+        Some(p) if p.starts_with("~/") => directories::BaseDirs::new()
+            .ok_or("home directory unavailable")?
+            .home_dir()
+            .join(&p[2..]),
+        Some(p) => std::path::PathBuf::from(p),
+        None => std::env::current_dir().map_err(|e| e.to_string())?,
+    };
+    path.canonicalize()
+        .map_err(|e| format!("workspace path {}: {e}", path.display()))
 }
 
 /// Per-call deadline for a tool, in seconds (0 = no deadline). The server
@@ -3043,8 +3052,10 @@ async fn async_main() {
         target: "mixos_mcp",
         "mixos-mcp starting (broker + indexd connections deferred until first tool call)"
     );
+    let indexd_client = Arc::new(tokio::sync::Mutex::new(None));
     let server = MixosMcp {
         noded: connection::BrokerConnection::new(),
+        indexd_client: Arc::clone(&indexd_client),
         tool_router: MixosMcp::tool_router() + MixosMcp::native_tool_router(),
         metrics: Arc::new(Metrics::new()),
         term_pin: std::sync::Mutex::new(None),
@@ -3058,10 +3069,29 @@ async fn async_main() {
     };
     // Wait for the service to finish (client disconnect / EOF)
     let _ = service.waiting().await;
+    if let Some(client) = indexd_client.lock().await.take() {
+        client.shutdown().await;
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn search_hit_snippets_handle_multibyte_characters_at_byte_limit() {
+        for ch in ['—', '😀'] {
+            for offset in 1..ch.len_utf8() {
+                let prefix = "a".repeat(500 - offset);
+                let response = serde_json::json!({"results": [{
+                    "content": format!("{prefix}{ch}tail"),
+                    "metadata": "{}"
+                }]});
+                let hits = super::format_search_hits(&response);
+                assert_eq!(hits.len(), 1);
+                assert_eq!(hits[0]["snippet"], format!("{prefix}..."));
+            }
+        }
+    }
+
     fn bare_type() -> super::TermTypeParams {
         super::TermTypeParams {
             text: "x".into(),

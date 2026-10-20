@@ -5,31 +5,38 @@ use super::SkillDocument;
 use anyhow::{Context, Result};
 use serde::Deserialize;
 
+#[derive(Clone)]
 pub struct IndexdClient {
-    client: std::sync::Arc<crate::connection::Client>,
+    transport: super::indexd_transport::Transport,
 }
 
 impl IndexdClient {
     pub async fn from_config() -> Result<Self> {
-        let broker = crate::connection::BrokerConnection::new();
-        let client = broker.get().await.map_err(anyhow::Error::msg)?;
-        if !client
-            .list_services()
-            .await?
-            .iter()
-            .any(|name| name == "indexd")
-        {
-            anyhow::bail!("native indexd service is not registered on the MixOS Bus");
-        }
-        Ok(Self { client })
+        let settings = config::store::load_service::<crate::knowledge_settings::KnowledgeSettings>(
+            "knowledge",
+        )?;
+        let mut client = Self {
+            transport: super::indexd_transport::Transport::connect(settings.indexd).await?,
+        };
+        // Probe the configured address, which may be a routed Bus service.
+        let _: serde_json::Value = client.request(r#"{"action":"stats"}"#).await?;
+        Ok(client)
+    }
+
+    pub fn is_connected(&self) -> bool {
+        self.transport.is_connected()
+    }
+
+    pub async fn shutdown(&self) {
+        self.transport.shutdown().await;
     }
 
     async fn request<T: for<'de> Deserialize<'de>>(&mut self, json: &str) -> Result<T> {
         let request: serde_json::Value = serde_json::from_str(json)?;
         let action = request["action"].as_str().context("missing index action")?;
         let response = self
-            .client
-            .call("indexd", &format!("indexd.{action}"), request)
+            .transport
+            .call(&format!("indexd.{action}"), &request)
             .await?;
         if let Some(error) = response.get("error").and_then(serde_json::Value::as_str) {
             anyhow::bail!("indexd error: {error}");

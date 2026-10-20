@@ -49,7 +49,7 @@ try
   -- legal-notice distribution, without claiming to build or run an app.
   $bins = $tmp .. "/bin"
   mkdir($bins)
-  for $name in ["mix","mixos-mcp","noded","editd","settingsd","portald","compd","ced","dopus","prefs","busviewer","monitor","screenshot"]
+  for $name in ["mix","mixos-mcp","noded","editd","settingsd","portald","compd","ced","dopus","prefs","busviewer","monitor","screenshot","indexd"]
     write_file($bins .. "/" .. $name,"fixture: " .. $name .. "\n")
   end
   $out = $tmp .. "/release"

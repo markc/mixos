@@ -716,6 +716,7 @@ profile: [desktop](desktop.md) and [server](server.md). This page describes the 
 | [expr](../expr/README.md) | lib | none (library) | [`libs/expr`](https://github.com/markc/mixos/tree/main/libs/expr) | The pure expression language of Mix Scenes bindings, which compiles an expression, reports the globals it reads and evaluates it over JSON values under size and time limits. |
 | [files](../files/README.md) | lib | none (library) | [`libs/files`](https://github.com/markc/mixos/tree/main/libs/files) | Rooted reads and the files-as-truth markdown corpus model. |
 | [hostd](../hostd/README.md) · [changelog](../hostd/changelog.md) | service | unclassified | [`services/hostd`](https://github.com/markc/mixos/tree/main/services/hostd) | How hostd answers questions about the host and carries out privileged host changes through closed, typed verbs behind standing grants, receipts and rollback, so agents never need sudo. |
+| [indexd](../indexd/README.md) | service | desktop | [`services/indexd`](https://github.com/markc/mixos/tree/main/services/indexd) | Local semantic search over the MixOS Bus, with an ssh bridge and an in-process CLI. |
 | [logging](../logging/README.md) | lib | none (library) | [`libs/logging`](https://github.com/markc/mixos/tree/main/libs/logging) | Shared tracing, sink selection, reload handles and process statistics for MixOS services and the Mix shell. |
 | [maild](../maild/README.md) · [changelog](../maild/changelog.md) | service | server | [`services/maild`](https://github.com/markc/mixos/tree/main/services/maild) | JMAP, SMTP, IMAP and DAV mail service |
 | [mds](../mds/README.md) | lib | none (library) | [`libs/mds`](https://github.com/markc/mixos/tree/main/libs/mds) | Per-container-set SQLite metadata and a content-addressable blob store, the storage library that maild links and blobd will use. A library, not a daemon. |
@@ -723,7 +724,7 @@ profile: [desktop](desktop.md) and [server](server.md). This page describes the 
 | [mimedb](../mimedb/README.md) | lib | none (library) | [`libs/mimedb`](https://github.com/markc/mixos/tree/main/libs/mimedb) | A library that reads the freedesktop shared-mime-info database and decides a file's type from its name and content the way GLib does, so MixOS names a file's type as the desktop does. |
 | [mix](../mix/README.md) · [changelog](../mix/changelog.md) | lib | none (library) | [`libs/mix`](https://github.com/markc/mixos/tree/main/libs/mix) |  |
 | [mix-shell](../mix-shell/README.md) · [changelog](../mix-shell/changelog.md) | cli | unclassified | [`cli/mix-shell`](https://github.com/markc/mixos/tree/main/cli/mix-shell) | The Mix shell library, holding the interactive line editor, the command classifier, the native-session bootstrap and the Bus citizen runtime that the mix binary runs. |
-| [mixos-mcp](../mixos-mcp/README.md) | cli | base | [`cli/mixos-mcp`](https://github.com/markc/mixos/tree/main/cli/mixos-mcp) | MCP stdio access to the native MixOS Bus. |
+| [mixos-mcp](../mixos-mcp/README.md) · [changelog](../mixos-mcp/changelog.md) | cli | base | [`cli/mixos-mcp`](https://github.com/markc/mixos/tree/main/cli/mixos-mcp) | MCP stdio access to the native MixOS Bus. |
 | [mixtrayd](../mixtrayd/README.md) | service | unclassified | [`services/mixtrayd`](https://github.com/markc/mixos/tree/main/services/mixtrayd) |  |
 | [monitor](../monitor/README.md) | app | desktop | [`apps/monitor`](https://github.com/markc/mixos/tree/main/apps/monitor) | Monitor is the MixOS task manager, showing the processes and performance that monitord reports for this node or any node on the mesh, with End task and Kill for this node's processes. |
 | [monitord](../monitord/README.md) · [changelog](../monitord/changelog.md) | service | base | [`services/monitord`](https://github.com/markc/mixos/tree/main/services/monitord) | How monitord samples a host's CPU, memory, disks, network and processes, keeps history in memory and SQLite, and answers read verbs on the Bus, so any node's load can be read from anywhere on the… |
@@ -843,6 +844,7 @@ checked separately by the layering gate.
 | [dns-core](https://github.com/markc/mixos/blob/main/services/dnsd/crates/dns-core/Cargo.toml) | dnsd | service | core | none | 0.1.1 |
 | [editd](https://github.com/markc/mixos/blob/main/services/editd/Cargo.toml) | editd | service | core | public | 0.2.0 |
 | [hostd](https://github.com/markc/mixos/blob/main/services/hostd/Cargo.toml) | hostd | service | core | public | 0.1.0 |
+| [indexd](https://github.com/markc/mixos/blob/main/services/indexd/Cargo.toml) | indexd | service | core | public | 0.1.1 |
 | [maild](https://github.com/markc/mixos/blob/main/services/maild/Cargo.toml) | maild | service | core | public | 0.1.1 |
 | [maild-auth](https://github.com/markc/mixos/blob/main/services/maild/crates/maild-auth/Cargo.toml) | maild | service | core | none | 0.1.1 |
 | [maild-bayesian](https://github.com/markc/mixos/blob/main/services/maild/crates/maild-bayesian/Cargo.toml) | maild | service | core | none | 0.1.1 |
@@ -7618,6 +7620,178 @@ The source is
 `cargo test -p hostd`: no test needs root. The live gate for network writes
 runs as root on a disposable networkd host, on dummy links only, and
 removes everything it made.
+
+---
+
+<!-- page: https://mixos.dev/indexd/ (source: https://mixos.dev/indexd/README.md) -->
+
+# The semantic index service
+
+> **Status: Bus wired.** The engine, reconnecting daemon, bridge, CLI and
+> system unit are implemented. Corpus parity and production cutover are
+> separate steps. The tokenizer golden records the legacy 0.21.4/onig token IDs.
+
+`indexd` stores text chunks with their embeddings and returns the nearest
+matches for a query. Embeddings are computed locally on the CPU with
+`nomic-ai/nomic-embed-text-v1.5` (768 dimensions), through the pure-Rust
+`candle` stack. The model files are loaded from a local directory and never
+downloaded at run time. Vectors live in SQLite (`sqlite-vec`), and search runs
+over an in-memory copy, re-ranked by feedback and staleness.
+
+It runs on one workstation host as a system service, registered on that
+host's own node. Agents usually reach it through `mixos-mcp`
+(`context_search`, `index_workspace`, the `skills_*` tools). A desk on the
+same machine reaches it over the Bus, or over ssh through `indexd bridge`,
+which reads newline-delimited JSON on stdin and makes each request as a local
+Bus call.
+
+## Asking it
+
+On the Bus, the service is `indexd`:
+
+```mix
+send indexd indexd.stats
+send indexd indexd.search query="how are service dependencies declared" limit=3
+```
+
+Each body is a JSON object. Clients may include an `action` equal to the verb
+suffix; a conflicting value is rejected. Replies contain the verb's JSON
+directly. Errors use rc 10 and a string `error` field. Metadata is always a
+JSON-encoded string, including each element of `store.metadata`.
+
+| Verb | Request fields | Reply |
+|---|---|---|
+| `indexd.embed` | `texts`, optional `prefix` | `embeddings` |
+| `indexd.store` | `texts`, `source`, `metadata` | `stored`, `duplicates`, `ids` |
+| `indexd.search` | `query`, `limit`, optional `source`, `metadata_filter` | `results` |
+| `indexd.update` | `id`, optional `content`, `metadata`, `source` | `updated`, `re_embedded` |
+| `indexd.delete` | optional `ids`, optional `filter` (at least one non-empty) | `deleted` |
+| `indexd.list` | optional `source`, `limit`, `offset` | `items`, `total` |
+| `indexd.feedback` | `id`, `useful` | `id`, `feedback_score` |
+| `indexd.supersede` | `old_id`, `new_id`, optional `reason` | `updated` |
+| `indexd.stale` | optional `source`, `never_retrieved_age_days`, `low_value_min_retrievals`, `long_dormant_days`, `per_bucket_limit` | three buckets, `total_chunks` |
+| `indexd.stats` | none | counts, model/cache/queue statistics, `by_source` |
+| `indexd.index_file` | absolute `path`, optional `content`, `source`, `domain`, `background` | `indexed`, `sections`; background acknowledgement when queued |
+
+`search` excludes superseded chunks before applying its limit. Filter entries
+have `field`, `op` (`eq`, `gt`, `lt`, `gte`, `lte`, `contains`) and `value`.
+
+Delete filters use the same predicate shape, for example
+`{"filter":[{"field":"path","op":"eq","value":"/srv/project/a.md"}]}`.
+Predicates are ANDed; when IDs are also supplied they restrict the matching set.
+DELETE accepts only `eq`, with a non-empty string, number or boolean value.
+Each predicate also requires the matching JSON type (integers and reals share
+the numeric type); null, arrays and objects are refused. Search retains all
+operators listed above.
+Deletion updates the durable vectors and in-memory index in one operation.
+
+## CLI and bridge
+
+`indexd -c /etc/mixos/indexd/config.conf.mix call indexd.stats` opens the
+configured engine in-process and prints one JSON reply, with exit status 0
+for success or 1 for an error. Bare verb names also work. For example:
+
+```text
+indexd -c /etc/mixos/indexd/config.conf.mix call indexd.search '{"query":"service dependencies","limit":3}'
+```
+
+Writes (`store`, `update`, `delete`, `feedback`, `supersede`, `index_file`)
+require `call --offline` with the daemon stopped: otherwise its in-memory
+index would desynchronise. Read verbs need no flag. `call` always refuses
+`background:true` because no process remains to run the queued job.
+
+`indexd bridge` connects to the local node's Bus once and forwards one call
+per stdin line, flushing each reply immediately. It does not open the index
+or require model configuration. Keep one process alive for repeated requests,
+including through `ssh -T user@example.test /opt/mixos/bin/indexd bridge`.
+The bridge honours non-empty `MIXOS_NODED_URL` first. Otherwise it reads
+`--node-config PATH`, then non-empty `MIXOS_NODE_CONFIG`, defaulting to
+`/opt/mixos/etc/node.conf.mix`, the same file pinned by the system unit.
+It derives the broker address from that file rather than user config discovery.
+
+```json
+{"id":1,"verb":"indexd.search","body":{"query":"service dependencies","limit":3}}
+```
+
+Each stdout line is `{"id":1,"rc":0,"body":{...}}`, with the original JSON
+`id` preserved. Application errors retain rc 10 and the JSON error body.
+Transport failures use `{"id":1,"rc":-1,"error":"..."}` and then exit non-zero,
+including initial connection failure, so a supervisor can respawn it. EOF exits 0;
+stdout contains only protocol replies. The bridge never retries a call.
+
+Requests may carry `timeout_secs`, default 60 and capped at 600 seconds.
+A timeout returns `{"id":1,"rc":-1,"kind":"timeout","error":"..."}` and
+leaves the bridge alive. The operation's outcome is unknown. Empty Bus bodies
+become JSON `null`; Bus error headers are forwarded as the top-level `error`.
+
+## Operating the system service
+
+`indexd serve` registers service `indexd` using the standard Bus connection
+helper, advertises the eleven verbs above, and reconnects with backoff.
+`MIXOS_NODE_CONFIG` selects the system broker, as for dnsd. The supplied unit
+pins `/opt/mixos/etc/node.conf.mix`; no broker URL is embedded in indexd.
+SIGTERM stops admission and completes accepted Bus calls before exit.
+The model loads lazily on the blocking pool under the inference permit and
+unloads after the configured idle interval (300 seconds by default).
+
+Configuration lookup is `-c/--config`, then
+`/etc/mixos/indexd/config.conf.mix`, then
+`$XDG_CONFIG_HOME/mixos/indexd.conf.mix` (or the equivalent under `$HOME/.config`).
+`indexd -c FILE check-config` validates the local `config.json`,
+`tokenizer.json` and `model.safetensors` before loading any weights. HF snapshot
+symlinks are supported. There is no database environment override;
+`service.vectors_db` is authoritative. `MIXOS_INDEXD_SEARCH` remains the
+engine's one-release rollback switch (`sqlite` selects SQLite search).
+
+The default domain map is empty, so unmapped files use `general`. Configure
+absolute prefixes; the daemon does not expand `~` in domain keys or file paths.
+The sample at [`services/indexd/examples/config.conf.mix`](https://github.com/markc/mixos/blob/main/services/indexd/examples/config.conf.mix) includes:
+
+```text
+domains: {map: {
+  "/home/user/Projects/mixos": "mixos",
+  "/home/user/.mix": "mix",
+  "/home/user/.ns": "ns",
+  "/home/user/.mc": "mc"
+}}
+```
+
+Replace `/home/user` with the operator's absolute home path. Set `model_dir`
+to the pre-seeded snapshot; no model download happens at runtime.
+`ProtectHome=yes` hides home directories from the service: callers must pass
+`index_file.content` for those paths, or use `store`. `index_file` rejects a
+tilde-prefixed path even when content is supplied.
+
+The component owns `indexd.service` and `sysusers.conf`; the desktop release
+bundle carries the standalone binary and these files under `share/indexd/units/`,
+with the sample config under `share/indexd/examples/config.conf.mix`,
+following the component-owned maild packaging pattern. Install the binary
+under `/opt/mixos/bin`, the unit under `/etc/systemd/system`, sysusers under
+`/usr/lib/sysusers.d/indexd.conf`, and a customised config under
+`/etc/mixos/indexd/config.conf.mix`. Apply sysusers before starting the service.
+The unit wants system `noded.service`, runs as `indexd:indexd`, limits memory
+to 2 GiB, sets `MALLOC_ARENA_MAX=2`, and hardens filesystem, devices and kernel
+access. TCP address families remain available for the configured broker.
+`MemoryDenyWriteExecute=yes` follows the former candle CPU service.
+systemd creates the state and configuration directories, so no tmpfiles entry
+is needed. Before cutover, back up existing data and explicitly change its
+ownership from the legacy account; the new account does not reuse its UID.
+
+## Tests
+
+On a CBC worker, `cargo test -p indexd` runs the engine tests, registry checks,
+real daemon/bridge pipe tests, and `services/indexd/tests/bus_test.mix` against
+`libs/test-broker`. Set `MIXOS_TEST_MIX` if Mix is not installed at
+`/opt/mixos/bin/mix`. Embeddings are deterministic cache fixtures; no model
+is needed. The tokenizer parity test compares 0.22.2 token IDs against the
+committed legacy 0.21.4/onig golden; it stays ignored unless
+`INDEXD_TEST_TOKENIZER` names the staged tokenizer file.
+
+## Indexd is not exhaustive
+
+indexd answers "what is relevant to X", quickly and approximately, from an
+index that can lag the files. To prove that something does **not** occur, use
+an exact search over the current files instead.
 
 ---
 
@@ -29674,13 +29848,54 @@ Each name below is exposed as `mcp__mixos__<name>` in Claude Code.
 - `mix_execute`, `mcp_status`
 
 Knowledge tools retain their ranking, indexing, feedback and skill-learning
-behaviour. They require an `indexd` service on the selected Bus and send
-`indexd.<action>` requests through that broker. This bridge does not install
-indexd; an absent backend returns an explicit tool error. Skill refinement
-also needs a configured LLM backend. Settings are MixOS strict-data files:
+behaviour. By default they send `indexd.<action>` requests to `indexd` on
+the selected Bus. An absent backend returns an explicit tool error.
+Skill refinement also needs a configured LLM backend. Settings are MixOS strict-data files:
 `knowledge.conf.mix`, `domains.conf.mix`, `skills.conf.mix` and `llm.conf.mix`.
 LLM Bus providers use the same broker. `api_key_cmd` is Mix source, executed
 by `/opt/mixos/bin/mix -c`.
+
+### Host indexd from a desk
+
+When a desk cannot reach the host's Bus, select SSH in
+`$MIXOS_ETC/knowledge.conf.mix` (normally `~/.config/mixos/knowledge.conf.mix`):
+
+```text
+indexd: {
+    transport: "ssh",
+    target: "indexd",
+    ssh_host: "user@host.example",
+    ssh_command: ["/opt/mixos/bin/indexd", "bridge"],
+    call_timeout_secs: 120
+}
+```
+
+Install indexd on the host and configure key-based SSH access for the desk's
+user. The client runs `ssh -T -o BatchMode=yes -o ServerAliveInterval=30`
+with the configured host and command. The host command runs in the remote
+login shell; use trusted command arguments. `indexd bridge` uses the host's
+local Bus; `target` selects the address only in Bus mode.
+
+One bridge is shared by knowledge tools for the MCP server's lifetime,
+with one request in flight at a time. Each call has a deadline, including
+queueing and retries. A broken pipe, exited child or bridge transport failure
+gets one restart and retry; an application error is returned immediately.
+A timeout discards the child and returns an error without replaying the call.
+A retried mutation may already have executed, so retry is not an exactly-once
+guarantee. Normal MCP shutdown closes stdin and reaps the bridge.
+Restart the MCP server after changing transport settings.
+
+Missing settings default to `transport: "bus"`, `target: "indexd"`, the
+command above, an empty `ssh_host` and a 120-second call deadline. SSH mode
+requires `ssh_host`. When a Bus route is available, select
+`transport: "bus", target: "indexd.host.example.bus"` instead. Presence is
+checked with `indexd.stats` at the configured target, including routed targets.
+
+The default client domain map expands the user's home for `~/Projects/mixos`
+(`mixos`), `~/.mix` (`mix`), `~/.ns` (`ns`) and `~/.mc` (`mc`). Custom
+`domains.conf.mix` maps override these defaults. `index_workspace` expands
+only a leading `~` or `~/`, resolves the workspace to an absolute path, and
+sends absolute file paths and content to indexd.
 
 Terminal tools preserve explicit pane selection and instance checks. Native
 application tools require an exact service and semantic target. Read-only
@@ -29697,6 +29912,9 @@ default; `RUST_LOG=mixos_mcp=trace` explicitly enables full arguments.
 Package tests cover parameter translation, target guards, output schemas,
 redaction and provider decoding. The stdio integration test uses the real
 fixture broker, including verified Unix ingress and lazy reconnection.
+It also checks configured knowledge targets, paginated re-indexing and
+absolute file metadata. SSH client tests use a local Mix fake bridge through
+a test-only command hook; no SSH connection or indexd process is required.
 
 ---
 
@@ -32742,6 +32960,21 @@ native-session handoff bytes retain the frozen compatibility contract.
 
 ---
 
+<!-- page: https://mixos.dev/mixos-mcp/changelog/ (source: https://mixos.dev/mixos-mcp/changelog.md) -->
+
+# Changelog
+
+> Mirrored from [`cli/mixos-mcp/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/cli/mixos-mcp/CHANGELOG.md), where releases update it. The component's page is [mixos-mcp](README.md). This page describes the current `main` branch of MixOS.
+
+## Unreleased
+
+- The indexd Bus-mode call timeout is now 120 seconds by default, previously
+  the Bus library's 60 seconds. SSH bridge requests carry the configured timeout.
+- Retry bridge failures once before delivery for every verb; after delivery,
+  retry only idempotent verbs. Feedback and timeouts report an unknown outcome.
+
+---
+
 <!-- page: https://mixos.dev/monitord/changelog/ (source: https://mixos.dev/monitord/changelog.md) -->
 
 # monitord contract changes
@@ -33069,6 +33302,7 @@ On every MixOS system.
 
 ## Desktop components
 
+- [indexd](../indexd/README.md) (service): Local semantic search over the MixOS Bus, with an ssh bridge and an in-process CLI.
 - [monitor](../monitor/README.md) (app): Monitor is the MixOS task manager, showing the processes and performance that monitord reports for this node or any node on the mesh, with End task and Kill for this node's processes.
 
 ## Unclassified

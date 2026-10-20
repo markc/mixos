@@ -4,7 +4,7 @@
 
 [workspace]
 resolver = "3"
-members = ["libs/*", "services/blobd", "services/noded","services/noded/crates/*", "cli/mix-shell", "cli/system", "cli/mixos-mcp", "cli/mesh-sign", "services/editd", "services/settingsd", "services/portald", "services/hostd", "services/maild", "services/webd", "services/dnsd", "services/dnsd/crates/*", "services/maild/crates/*", "services/monitord", "services/mixtrayd", "apps/busviewer", "apps/busviewer/crates/*", "apps/monitor", "apps/monitor/crates/*", "apps/prefs", "apps/prefs/crates/*", "apps/ced", "apps/ced/crates/*", "apps/dopus", "apps/dopus/crates/*", "apps/screenshot", "apps/screenshot/crates/*", "apps/backdrop", "apps/backdrop/crates/*", "apps/email", "apps/email/crates/*", "apps/term", "apps/term/crates/*", "apps/tray", "services/compd","services/compd/crates/*"]
+members = ["libs/*", "services/blobd", "services/noded","services/noded/crates/*", "cli/mix-shell", "cli/system", "cli/mixos-mcp", "cli/mesh-sign", "services/editd", "services/settingsd", "services/portald", "services/hostd", "services/maild", "services/webd", "services/dnsd", "services/dnsd/crates/*", "services/maild/crates/*", "services/monitord", "services/mixtrayd", "services/indexd", "apps/busviewer", "apps/busviewer/crates/*", "apps/monitor", "apps/monitor/crates/*", "apps/prefs", "apps/prefs/crates/*", "apps/ced", "apps/ced/crates/*", "apps/dopus", "apps/dopus/crates/*", "apps/screenshot", "apps/screenshot/crates/*", "apps/backdrop", "apps/backdrop/crates/*", "apps/email", "apps/email/crates/*", "apps/term", "apps/term/crates/*", "apps/tray", "services/compd","services/compd/crates/*"]
 exclude = ["vendor", "vendor/teletypewriter", "vendor/msedit/lsh", "vendor/msedit/stdext"]
 
 [workspace.package]
@@ -73,6 +73,16 @@ tokio-rustls = { version = "0.26", default-features = false, features = ["ring",
 rcgen = { version = "0.13", default-features = false, features = ["crypto", "pem", "ring"] }
 rusqlite = { version = "0.38", features = ["bundled"] }
 rustc-hash = "2"
+# indexd's embedding stack (_plan/2026-10-20-indexd-port.md D3–D5): crates.io
+# candle, not git. 0.10.2's nomic_bert.rs is byte-identical to cosmix's pin
+# 09b9145. candle-core itself requires tokenizers 0.22 with `onig` on every
+# non-wasm target, so indexd matches it exactly, giving ONE tokenizers. onig (C)
+# stays because candle needs it. Without `esaxx_fast`, esaxx-rs builds without C++.
+candle-core = { version = "=0.10.2" }
+candle-nn = { version = "=0.10.2" }
+candle-transformers = { version = "=0.10.2" }
+tokenizers = { version = "=0.22.2", default-features = false, features = ["onig"] }
+sqlite-vec = { version = "=0.1.9" }
 serde = { version = "=1.0.229", features = ["derive", "rc"] }
 # serde_json must never gain `preserve_order` (indexmap): frozen wire formats
 # rely on BTreeMap key order.

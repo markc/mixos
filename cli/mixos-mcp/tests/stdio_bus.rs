@@ -17,12 +17,20 @@ async fn stdio_tools_use_the_real_fixture_bus_and_reconnect_without_replay() {
     let dir = tempfile::tempdir().unwrap();
     let config = dir.path().join("node.conf.mix");
     std::fs::write(&config, "node: \"fixture\"\nnoded: {port: 4200}\n").unwrap();
+    // A different service name proves the client probes its target rather
+    // than requiring a locally registered service named indexd.
+    std::fs::write(
+        dir.path().join("knowledge.conf.mix"),
+        "indexd: {target: \"knowledge-fixture\"}\n",
+    )
+    .unwrap();
     let mut command = Command::new(env!("CARGO_BIN_EXE_mixos-mcp"));
     command
         .env("MIXOS_NODED_URL", &broker.url)
         .env("MIXOS_BUS_SOCKET", &broker.endpoint)
         .env("MIXOS_BROKER_ACCOUNT", std::env::var("USER").unwrap())
         .env("MIXOS_NODE_CONFIG", &config)
+        .env("MIXOS_ETC", dir.path())
         .env("HOME", dir.path())
         .env("MIXOS_LOG", dir.path().join("logs"))
         .current_dir(dir.path());
@@ -162,17 +170,105 @@ async fn stdio_tools_use_the_real_fixture_bus_and_reconnect_without_replay() {
             .unwrap(),
     );
     assert!(native["stdout"].as_str().unwrap().contains("Email"));
-    let index = NodedClient::connect("indexd", &broker.url).await.unwrap();
+    let absent = service
+        .call_tool(call("skills_list", json!({})))
+        .await
+        .unwrap();
+    assert!(absent.is_error.unwrap_or(false));
+    assert!(
+        format!("{absent:?}").contains("native indexd service is not registered on the MixOS Bus")
+    );
+
+    let workspace = dir.path().join("work~space");
+    std::fs::create_dir_all(workspace.join("_doc")).unwrap();
+    let file = workspace.join("_doc/2026-10-20-fixture.md");
+    std::fs::write(&file, "# Fixture\n\nA document long enough for indexing, with one section to replace stale chunks.\n").unwrap();
+    let expected_path = file.canonicalize().unwrap().to_string_lossy().into_owned();
+    let rows = std::sync::Arc::new(std::sync::Mutex::new((0..2107).map(|id| json!({
+        "id":id, "content":"old chunk", "source":"doc", "created":"2026-10-20",
+        "metadata":json!({"path":if [0, 1000, 2106].contains(&id) { expected_path.as_str() } else { "/other/document.md" }}).to_string(),
+    })).collect::<Vec<_>>()));
+    let index_rows = rows.clone();
+    let offsets = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let index_offsets = offsets.clone();
+    let stored_paths = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let index_paths = stored_paths.clone();
+    let deleted_ids = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let index_deleted = deleted_ids.clone();
+    let index = NodedClient::connect("knowledge-fixture", &broker.url)
+        .await
+        .unwrap();
     let mut requests = index.incoming_async().await.unwrap();
     let indexing = tokio::spawn(async move {
         while let Some(command) = requests.recv().await {
-            let body = match command.command.as_str() {
-                "indexd.list" => json!({"items":[], "total":0}),
-                "indexd.search" => json!({"results":[]}),
-                "indexd.feedback" => json!({"updated":1}),
+            let request: Value = serde_json::from_str(&command.body).unwrap();
+            assert_eq!(
+                command.command,
+                format!("indexd.{}", request["action"].as_str().unwrap())
+            );
+            let (rc, body) = match command.command.as_str() {
+                "indexd.stats" => (0, json!({"total_vectors":2107})),
+                "indexd.list" => {
+                    if request["source"] == "skill" {
+                        (0, json!({"items":[], "total":0}))
+                    } else {
+                        let offset = request["offset"].as_u64().unwrap() as usize;
+                        let limit = request["limit"].as_u64().unwrap() as usize;
+                        index_offsets.lock().unwrap().push(offset);
+                        let rows = index_rows.lock().unwrap();
+                        (
+                            0,
+                            json!({"items":rows.iter().skip(offset).take(limit).collect::<Vec<_>>(), "total":rows.len()}),
+                        )
+                    }
+                }
+                "indexd.delete" => {
+                    assert!(request.get("ids").is_none());
+                    assert_eq!(request["filter"][0]["field"], "path");
+                    assert_eq!(request["filter"][0]["op"], "eq");
+                    let mut rows = index_rows.lock().unwrap();
+                    let before = rows.len();
+                    rows.retain(|row| {
+                        let meta: Value =
+                            serde_json::from_str(row["metadata"].as_str().unwrap()).unwrap();
+                        let keep = meta["path"] != request["filter"][0]["value"];
+                        if !keep {
+                            index_deleted
+                                .lock()
+                                .unwrap()
+                                .push(row["id"].as_i64().unwrap());
+                        }
+                        keep
+                    });
+                    (0, json!({"deleted":before - rows.len()}))
+                }
+                "indexd.store" => {
+                    let metadata = request["metadata"][0].as_str().unwrap();
+                    let meta: Value = serde_json::from_str(metadata).unwrap();
+                    index_paths
+                        .lock()
+                        .unwrap()
+                        .push(meta["path"].as_str().unwrap().to_string());
+                    index_rows
+                        .lock()
+                        .unwrap()
+                        .push(json!({"id":9999,"metadata":metadata}));
+                    (0, json!({"stored":1,"ids":[9999]}))
+                }
+                "indexd.feedback" if request["id"] == -1 => {
+                    (10, json!({"error":"fixture refusal"}))
+                }
+                "indexd.feedback" if request["id"] == -2 => {
+                    (0, json!({"error":"fixture body error"}))
+                }
+                "indexd.search" => (0, json!({"results":[]})),
+                "indexd.feedback" => (0, json!({"updated":1})),
                 _ => panic!("unexpected index request: {}", command.command),
             };
-            index.respond(&command, 0, &body.to_string()).await.unwrap();
+            index
+                .respond(&command, rc, &body.to_string())
+                .await
+                .unwrap();
         }
     });
     let skills = result(
@@ -199,6 +295,44 @@ async fn stdio_tools_use_the_real_fixture_bus_and_reconnect_without_replay() {
             .unwrap(),
     );
     assert!(feedback.get("result").is_some());
+    for (id, message) in [
+        (-1, "fixture refusal"),
+        (-2, "indexd error: fixture body error"),
+    ] {
+        let rejected = service
+            .call_tool(call("docs_feedback", json!({"id":id,"useful":true})))
+            .await
+            .unwrap();
+        assert!(rejected.is_error.unwrap_or(false), "{rejected:?}");
+        assert!(format!("{rejected:?}").contains(message), "{rejected:?}");
+    }
+    for path in ["work~space", "~/work~space"] {
+        let indexed = result(
+            service
+                .call_tool(call("index_workspace", json!({"path":path})))
+                .await
+                .unwrap(),
+        );
+        assert!(indexed["result"].get("errors").is_none(), "{indexed}");
+        assert_eq!(indexed["result"]["sections"], 1);
+    }
+    assert_eq!(
+        *stored_paths.lock().unwrap(),
+        [expected_path.clone(), expected_path]
+    );
+    assert!(
+        offsets.lock().unwrap().is_empty(),
+        "deletion must not list the corpus"
+    );
+    assert_eq!(*deleted_ids.lock().unwrap(), [0, 1000, 2106, 9999]);
+    let remaining = rows
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|row| row["id"].as_i64().unwrap())
+        .collect::<Vec<_>>();
+    assert!(!remaining.contains(&0) && !remaining.contains(&1000) && !remaining.contains(&2106));
+    assert_eq!(remaining.iter().filter(|&&id| id == 9999).count(), 1);
     indexing.abort();
     task.abort();
     broker.bounce();

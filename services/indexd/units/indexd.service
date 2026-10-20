@@ -1,0 +1,65 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+# Copyright 2026 Mark Constable <mc@mixos.dev>
+[Unit]
+Description=MixOS semantic index service
+Documentation=https://mixos.dev/indexd/
+After=noded.service
+Wants=noded.service
+StartLimitIntervalSec=10min
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=indexd
+Group=indexd
+Environment=MIXOS_ETC=/etc/mixos
+Environment=MIXOS_VAR=/var/lib/mixos
+Environment=MIXOS_NODE_CONFIG=/opt/mixos/etc/node.conf.mix
+Environment=MALLOC_ARENA_MAX=2
+Environment=HOME=%S/mixos/indexd
+ExecStart=/opt/mixos/bin/indexd -c /etc/mixos/indexd/config.conf.mix serve
+StateDirectory=mixos/indexd
+StateDirectoryMode=0750
+ConfigurationDirectory=mixos/indexd
+ConfigurationDirectoryMode=0755
+WorkingDirectory=%S/mixos/indexd
+MemoryMax=2G
+MemoryHigh=1536M
+MemorySwapMax=0
+Restart=on-failure
+RestartSec=30s
+TimeoutStopSec=180s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=indexd
+LogRateLimitIntervalSec=30s
+LogRateLimitBurst=10000
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+# The node configuration selects a TCP broker; model loading uses local files.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+# Retained from the deployed cosmix-indexd unit (candle CPU/gemm).
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectProc=invisible
+ProcSubset=pid
+CapabilityBoundingSet=
+AmbientCapabilities=
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target

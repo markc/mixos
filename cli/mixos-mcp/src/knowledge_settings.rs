@@ -28,7 +28,12 @@ pub struct DomainsSettings {
 
 impl Default for DomainsSettings {
     fn default() -> Self {
-        let map = BTreeMap::from([("~/Projects/mixos".into(), "mixos".into())]);
+        let map = BTreeMap::from([
+            ("~/Projects/mixos".into(), "mixos".into()),
+            ("~/.mix".into(), "mix".into()),
+            ("~/.ns".into(), "ns".into()),
+            ("~/.mc".into(), "mc".into()),
+        ]);
         Self { map }
     }
 }
@@ -40,17 +45,24 @@ impl DomainsSettings {
     /// Longest prefix wins when multiple entries match.
     pub fn resolve(&self, path: &Path) -> Option<String> {
         let home = directories::BaseDirs::new()?.home_dir().to_path_buf();
-        let path_str = path.to_string_lossy();
+        self.resolve_with_home(path, &home)
+    }
+
+    fn resolve_with_home(&self, path: &Path, home: &Path) -> Option<String> {
+        let home = home.canonicalize().unwrap_or_else(|_| home.to_path_buf());
 
         let mut best: Option<(usize, &str)> = None;
         for (prefix, domain) in &self.map {
             let expanded = if let Some(rest) = prefix.strip_prefix("~/") {
-                format!("{}/{rest}", home.display())
+                home.join(rest)
+            } else if prefix == "~" {
+                home.clone()
             } else {
-                prefix.clone()
+                std::path::PathBuf::from(prefix)
             };
-            if path_str.starts_with(&expanded) {
-                let len = expanded.len();
+            let expanded = expanded.canonicalize().unwrap_or(expanded);
+            if path.starts_with(&expanded) {
+                let len = expanded.as_os_str().len();
                 if best.is_none() || len > best.unwrap().0 {
                     best = Some((len, domain));
                 }
@@ -190,6 +202,7 @@ impl Default for SkillsSettings {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct KnowledgeSettings {
+    pub indexd: IndexdSettings,
     /// Distance bonus for `_spec/` chunks (normative contracts, highest authority).
     pub trust_weight_spec: f64,
     /// Distance bonus for `_doc/` chunks (curated design truth). Subtracted from distance.
@@ -215,6 +228,7 @@ pub struct KnowledgeSettings {
 impl Default for KnowledgeSettings {
     fn default() -> Self {
         Self {
+            indexd: IndexdSettings::default(),
             trust_weight_spec: 0.10,
             trust_weight_doc: 0.08,
             trust_weight_notes: 0.06,
@@ -226,5 +240,109 @@ impl Default for KnowledgeSettings {
             journal_decay_per_month: 0.02,
             journal_max_age_days: 180,
         }
+    }
+}
+
+/// Client-side indexd connection. SSH credentials and host names belong in
+/// the user's knowledge.conf.mix, never in component defaults.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct IndexdSettings {
+    pub transport: IndexdTransport,
+    pub target: String,
+    pub ssh_host: String,
+    pub ssh_command: Vec<String>,
+    pub call_timeout_secs: u64,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum IndexdTransport {
+    #[default]
+    Bus,
+    Ssh,
+}
+
+impl Default for IndexdSettings {
+    fn default() -> Self {
+        Self {
+            transport: IndexdTransport::Bus,
+            target: "indexd".into(),
+            ssh_host: String::new(),
+            ssh_command: vec!["/opt/mixos/bin/indexd".into(), "bridge".into()],
+            call_timeout_secs: 120,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn domains_match_canonical_home_and_prefixes() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path().join("real-home");
+        std::fs::create_dir_all(home.join("Projects/repo")).unwrap();
+        let alias = dir.path().join("home-alias");
+        std::os::unix::fs::symlink(&home, &alias).unwrap();
+        let domains = DomainsSettings {
+            map: BTreeMap::from([
+                ("~".into(), "home".into()),
+                ("~/Projects".into(), "projects".into()),
+                (
+                    alias.join("Projects/repo").to_string_lossy().into_owned(),
+                    "repo".into(),
+                ),
+            ]),
+        };
+        assert_eq!(
+            domains
+                .resolve_with_home(&home.join("Projects/repo/_doc/a.md"), &alias)
+                .as_deref(),
+            Some("repo")
+        );
+        assert_eq!(
+            domains
+                .resolve_with_home(&home.join("Projects/other"), &alias)
+                .as_deref(),
+            Some("projects")
+        );
+        assert_eq!(
+            domains
+                .resolve_with_home(&home.join("Projects-other"), &alias)
+                .as_deref(),
+            Some("home")
+        );
+    }
+
+    #[test]
+    fn knowledge_transport_defaults_and_partial_config() {
+        let dir = tempfile::tempdir().unwrap();
+        let absent =
+            config::store::load_service_in::<KnowledgeSettings>(dir.path(), "knowledge").unwrap();
+        assert_eq!(absent.indexd, IndexdSettings::default());
+        std::fs::write(
+            dir.path().join("knowledge.conf.mix"),
+            "indexd: {transport: \"ssh\", ssh_host: \"user@host.example\"}\n",
+        )
+        .unwrap();
+        let partial =
+            config::store::load_service_in::<KnowledgeSettings>(dir.path(), "knowledge").unwrap();
+        assert_eq!(partial.indexd.transport, IndexdTransport::Ssh);
+        assert_eq!(partial.indexd.target, "indexd");
+        assert_eq!(partial.indexd.call_timeout_secs, 120);
+        assert_eq!(
+            partial.indexd.ssh_command,
+            ["/opt/mixos/bin/indexd", "bridge"]
+        );
+        std::fs::write(
+            dir.path().join("knowledge.conf.mix"),
+            "indexd: {transport: \"invalid\"}\n",
+        )
+        .unwrap();
+        assert!(
+            config::store::load_service_in::<KnowledgeSettings>(dir.path(), "knowledge").is_err()
+        );
     }
 }

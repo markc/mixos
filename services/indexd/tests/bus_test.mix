@@ -1,0 +1,45 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- Executed by bus::tests::native_contract on libs/test-broker. The Rust
+-- fixture seeds deterministic embedding-cache entries, never model weights.
+if env("INDEXD_TEST_BROKER") != "1" then
+  raise("TEST_CONFIG", "run cargo test -p indexd native_contract on CBC")
+end
+fn check($ok, $message)
+  if not $ok then raise("INDEXD_BUS_TEST", $message) end
+end
+fn call($verb, $body)
+  $encoded = json_encode($body)
+  send indexd $verb body=$encoded timeout=10
+  $value = $reply
+  return {rc: $rc, body: $value}
+end
+fn ok($verb, $body)
+  $reply = call($verb, $body)
+  check($reply.rc == 0, $verb .. ": " .. json_encode($reply))
+  return $reply.body
+end
+check(ok("indexd.stats", {action:"stats"}).total_vectors == 0, "initial stats")
+$meta = json_encode({path:"/srv/project/a.md",domain:"test"})
+$stored = ok("indexd.store", {action:"store",texts:["alpha", "beta"],source:"doc",metadata:[$meta,$meta]})
+check($stored.stored == 2, "store")
+$old = $stored.ids[0]
+$new = $stored.ids[1]
+check(len(ok("indexd.search", {query:"query",limit:10}).results) == 2, "search")
+$listed = ok("indexd.list", {limit:10,offset:0})
+check($listed.total == 2 and type($listed.items[0].metadata) == "string", "list metadata strings")
+$updated = ok("indexd.update", {id:$old,content:"changed",metadata:$meta})
+check($updated.updated and $updated.re_embedded, "update")
+check(ok("indexd.feedback", {id:$old,useful:true}).feedback_score == 1, "feedback")
+check(ok("indexd.supersede", {old_id:$old,new_id:$new,reason:"newer"}).updated == 1, "supersede")
+$active = ok("indexd.search", {query:"query",limit:10}).results
+check(len($active) == 1 and $active[0].id == $new, "superseded hidden from search")
+check(ok("indexd.stale", {}).total_chunks == 2, "stale")
+check(len(ok("indexd.embed", {texts:["alpha"]}).embeddings[0]) == 768, "embed")
+check(ok("indexd.index_file", {path:"/srv/project/empty.md",content:""}).sections == 0, "index_file")
+check(ok("indexd.delete", {ids:[$old,$new]}).deleted == 2, "delete")
+$bad = call("indexd.store", {texts:["x"],metadata:[{}]})
+check($bad.rc == 10 and type($bad.body.error) == "string", "error rc and JSON body")
+$mismatch = call("indexd.stats", {action:"search"})
+check($mismatch.rc == 10 and type($mismatch.body.error) == "string", "redundant action verified")
+print("indexd Bus: 11 verbs, mutation chain, superseded filter and error replies passed")

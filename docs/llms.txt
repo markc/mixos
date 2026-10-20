@@ -41,6 +41,7 @@ One line per component with a page: kind, then install profiles. The
 - [files](https://mixos.dev/files/README.md): lib; profiles: none (library). Rooted reads and the files-as-truth markdown corpus model.
 - [hostd](https://mixos.dev/hostd/README.md): service; profiles: unclassified. How hostd answers questions about the host and carries out privileged host changes through closed, typed verbs behind standing grants, receipts and rollback, so agents never need sudo.
   - [hostd — changelog](https://mixos.dev/hostd/changelog.md): Release notes of the hostd component, mirrored from services/hostd/CHANGELOG.md.
+- [indexd](https://mixos.dev/indexd/README.md): service; profiles: desktop. Local semantic search over the MixOS Bus, with an ssh bridge and an in-process CLI.
 - [logging](https://mixos.dev/logging/README.md): lib; profiles: none (library). Shared tracing, sink selection, reload handles and process statistics for MixOS services and the Mix shell.
 - [maild](https://mixos.dev/maild/README.md): service; profiles: server. JMAP, SMTP, IMAP and DAV mail service
   - [maild — changelog](https://mixos.dev/maild/changelog.md): Release notes of the maild component, mirrored from services/maild/CHANGELOG.md.
@@ -95,6 +96,7 @@ One line per component with a page: kind, then install profiles. The
 - [mix-shell](https://mixos.dev/mix-shell/README.md): cli; profiles: unclassified. The Mix shell library, holding the interactive line editor, the command classifier, the native-session bootstrap and the Bus citizen runtime that the mix binary runs.
   - [mix-shell — changelog](https://mixos.dev/mix-shell/changelog.md): Release notes of the mix-shell component, mirrored from cli/mix-shell/CHANGELOG.md.
 - [mixos-mcp](https://mixos.dev/mixos-mcp/README.md): cli; profiles: base. MCP stdio access to the native MixOS Bus.
+  - [mixos-mcp — changelog](https://mixos.dev/mixos-mcp/changelog.md): Release notes of the mixos-mcp component, mirrored from cli/mixos-mcp/CHANGELOG.md.
 - [mixtrayd](https://mixos.dev/mixtrayd/README.md): service; profiles: unclassified. mixtrayd is the data service behind the MixOS tray popup, mixtray. It registers on the noded Bus as mixtrayd and answers one verb, mixtrayd.snapshot, with four…
 - [monitor](https://mixos.dev/monitor/README.md): app; profiles: desktop. Monitor is the MixOS task manager, showing the processes and performance that monitord reports for this node or any node on the mesh, with End task and Kill for this node's processes.
 - [monitord](https://mixos.dev/monitord/README.md): service; profiles: base. How monitord samples a host's CPU, memory, disks, network and processes, keeps history in memory and SQLite, and answers read verbs on the Bus, so any node's load can be read from anywhere on the mesh.
