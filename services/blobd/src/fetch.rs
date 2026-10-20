@@ -1643,6 +1643,7 @@ mod tests {
         let mut headers = BTreeMap::new();
         headers.insert("args".into(), args.to_string());
         IncomingCommand {
+            generation: 0,
             from: from.into(),
             command: verb.into(),
             id: Some("1".into()),
