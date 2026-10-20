@@ -363,3 +363,81 @@ fn bindings_move_unbind_and_restore_without_a_ui() {
     assert_eq!(r.shortcuts_of("count.bump"), ["Ctrl+B", "Ctrl+U"]);
     assert!(r.shortcuts_of("count.reset").is_empty());
 }
+
+#[test]
+fn extra_chords_never_become_menu_accelerators() {
+    let mut r = registry();
+    r.add_shortcuts("count.reset", ["Ctrl+U".into()]);
+    r.rebind(&Default::default(), |s| Some(s.to_owned()));
+    assert_eq!(r.bound_of("count.reset"), (None, vec!["Ctrl+U".into()]));
+    let row = serde_json::to_value(&r.describe(&Counter::default(), &Strings::new(FTL))[1]).unwrap();
+    assert_eq!(row["shortcut"], Value::Null);
+    assert_eq!(row["more"], json!(["Ctrl+U"]));
+}
+
+#[test]
+fn late_commands_survive_rebinding_and_accept_more_bindings() {
+    let mut r = registry();
+    r.rebind(&Default::default(), |s| Some(s.to_owned()));
+    let mut late = command::nullary!("late", "Late", |_: &mut Counter| {});
+    late.shortcut = Some("Ctrl+L");
+    r.add(late);
+    r.rebind(&Default::default(), |s| Some(s.to_owned()));
+    assert_eq!(r.shortcuts_of("late"), ["Ctrl+L"]);
+    r.set_shortcut("late", Some("Ctrl+X".into()));
+    r.add_shortcuts("late", ["Ctrl+Y".into()]);
+    assert_eq!(r.shortcuts_of("late"), ["Ctrl+X", "Ctrl+Y"]);
+}
+
+#[test]
+fn disabled_precedes_bad_parameters() {
+    let mut r = registry();
+    let mut c = typed();
+    c.enabled = |_| Err("locked");
+    r.add(c);
+    let mut s = Counter { locked: true, ..Default::default() };
+    for id in ["count.bump", "count.set"] {
+        assert!(matches!(r.execute(id, &mut s, json!({"bad": true}), Origin::Bus),
+            Err(Error::Disabled { reason: "locked", .. })));
+    }
+    assert!(r.take_executed().0.is_empty());
+}
+
+#[test]
+#[allow(deprecated)] // Exercise the transitional API directly until step 7.
+fn legacy_nullary_uses_its_enabled_and_run_callbacks() {
+    let mut r = Registry::new();
+    let mut c = typed();
+    c.run = |_, _| panic!("legacy callback must run instead");
+    r.add_nullary(c, |s| !s.locked, |s| s.n += 1);
+    let mut s = Counter::default();
+    assert_eq!(r.execute("count.set", &mut s, Value::Null, Origin::Bus), Ok(Value::Null));
+    assert_eq!(s.n, 1);
+    s.locked = true;
+    assert!(matches!(r.execute("count.set", &mut s, Value::Null, Origin::Bus), Err(Error::Disabled { .. })));
+    assert_eq!(r.take_executed().0.len(), 1);
+    let c = r.get("count.set").unwrap();
+    assert!(c.params.is_none());
+    assert_eq!(c.class, Class::Intent);
+}
+
+#[test]
+fn chords_are_stored_in_canonical_modifier_order() {
+    let mut r = registry();
+    let mut c = command::nullary!("canonical", "Canonical", |_: &mut Counter| {});
+    c.shortcut = Some("Alt+Shift+Ctrl+C");
+    r.add(c);
+    r.add_shortcuts("canonical", ["Shift+Ctrl+Alt+C".into()]);
+    assert_eq!(r.shortcuts_of("canonical"), ["Ctrl+Shift+Alt+C"]);
+}
+
+#[test]
+#[should_panic(expected = "duplicate shortcut")]
+fn reordered_modifiers_are_duplicate_chords_at_add() {
+    let mut r = Registry::new();
+    for (id, shortcut) in [("one", "Shift+Ctrl+B"), ("two", "Ctrl+Shift+B")] {
+        let mut c = command::nullary!(id, id, |_: &mut Counter| {});
+        c.shortcut = Some(shortcut);
+        r.add(c);
+    }
+}

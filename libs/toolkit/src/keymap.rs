@@ -51,8 +51,8 @@ pub fn chord_text(shortcut: &KeyboardShortcut) -> String {
     let m = shortcut.modifiers;
     for (on, name) in [
         (m.command || m.ctrl || m.mac_cmd, "Ctrl+"),
-        (m.alt, "Alt+"),
         (m.shift, "Shift+"),
+        (m.alt, "Alt+"),
     ] {
         if on {
             out.push_str(name);

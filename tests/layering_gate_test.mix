@@ -1,6 +1,8 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Gate regressions: direct, indirect, optional, renamed and dev dependencies.
 $root = dirname(dirname(realpath($0)))
+$mix = env("MIXOS_TEST_MIX") ?? "/opt/mixos/bin/mix"
+if $mix == "" then $mix = "/opt/mixos/bin/mix" end
 $tmp = $root .. "/.layering-test-" .. uuid()
 mkdir($tmp)
 $layers_file = $tmp .. "/layers.conf.mix"
@@ -23,7 +25,7 @@ fn check_case($name, $deps, $bridge, $expected, $flags)
     package_row("bridge", "another-owner", $bridge),
     package_row("toolkit", "toolkit", [dep("egui", nil)])
   ]}))
-  $result = run_argv(concat(["/opt/mixos/bin/mix", $root .. "/tools/layering_gate.mix", "--metadata-file", $file, "--layers", $layers_file, "--across-components", "--require"], $flags), {stderr: "stdout"})
+  $result = run_argv(concat([$mix, $root .. "/tools/layering_gate.mix", "--metadata-file", $file, "--layers", $layers_file, "--across-components", "--require"], $flags), {stderr: "stdout"})
   if $result.exit_code != $expected then
     push($failures, $name)
     print("FAIL " .. $name .. "\n" .. $result.stdout)
@@ -40,13 +42,68 @@ fn check_external_feature($active, $kind, $expected)
     package_row("bridge", "external", [dep("egui", nil)]),
     package_row("egui", "external", [])
   ], resolve: {nodes: [{id: "bridge", deps: $edges}]}}))
-  $result = run_argv(["/opt/mixos/bin/mix", $root .. "/tools/layering_gate.mix", "--metadata-file", $file, "--layers", $layers_file, "--across-components", "--require"], {stderr: "stdout"})
+  $result = run_argv([$mix, $root .. "/tools/layering_gate.mix", "--metadata-file", $file, "--layers", $layers_file, "--across-components", "--require"], {stderr: "stdout"})
   $name = "external feature " .. to_string($active) .. " kind " .. to_string($kind)
   if $result.exit_code != $expected then
     push($failures, $name)
     print("FAIL " .. $name .. "\n" .. $result.stdout)
   else
     print("PASS " .. $name)
+  end
+end
+
+fn check_feature_invocation()
+  -- Model cargo metadata resolving an external GUI edge only when the
+  -- workspace feature enabling bridge/gui is active. No local cargo runs.
+  $file = $tmp .. "/feature.json"
+  $inactive = {workspace_members: ["engine"], packages: [
+    package_row("engine", "one-app", [dep("bridge", nil)]),
+    package_row("bridge", "external", [dep("egui", nil)]),
+    package_row("egui", "external", [])
+  ], resolve: {nodes: [{id: "bridge", deps: []}]}}
+  write_file($tmp .. "/inactive.json", json_encode($inactive))
+  $active = $inactive
+  $active.resolve.nodes = [{id: "bridge", deps: [{pkg: "egui", dep_kinds: [{kind: nil}]}]}]
+  write_file($file, json_encode($active))
+  $fake_bin = $tmp .. "/bin"
+  mkdir($fake_bin)
+  write_file($fake_bin .. "/cargo", "#!" .. $mix .. "\n" .. '
+$av = args()
+if !contains($av, "metadata") then exit(2) end
+if contains($av, "--all-features") then
+  print(read_file(env("TEST_ACTIVE_METADATA")))
+else
+  print(read_file(env("TEST_INACTIVE_METADATA")))
+end
+')
+  chmod($fake_bin .. "/cargo", 0o755)
+  $manifest = $tmp .. "/Cargo.toml"
+  write_file($manifest, "# metadata invocation fixture\n")
+  $result = run_argv([$mix, $root .. "/tools/layering_gate.mix", "--manifest-path", $manifest, "--layers", $layers_file, "--across-components", "--require"], {stderr: "stdout", env: {
+    PATH: $fake_bin .. ":" .. env("PATH"),
+    TEST_ACTIVE_METADATA: $file,
+    TEST_INACTIVE_METADATA: $tmp .. "/inactive.json"
+  }})
+  if $result.exit_code != 1 or !contains($result.stdout, "engine -> bridge -> egui") then
+    push($failures, "all workspace features resolve external GUI edge")
+    print("FAIL all workspace features resolve external GUI edge\n" .. $result.stdout)
+  else
+    print("PASS all workspace features resolve external GUI edge")
+  end
+end
+
+fn check_missing_engine()
+  $old = read_file($layers_file)
+  write_file($layers_file, replace($old, "core_crates: []", 'core_crates: ["engine", "missing-engine"]'))
+  $file = $tmp .. "/missing.json"
+  write_file($file, json_encode({workspace_members: ["engine"], packages: [package_row("engine", "one-app", [])]}))
+  $result = run_argv([$mix, $root .. "/tools/layering_gate.mix", "--metadata-file", $file, "--layers", $layers_file, "--across-components", "--require"], {stderr: "stdout"})
+  write_file($layers_file, $old)
+  if $result.exit_code != 1 or !contains($result.stdout, "missing-engine") then
+    push($failures, "missing listed engine")
+    print("FAIL missing listed engine\n" .. $result.stdout)
+  else
+    print("PASS missing listed engine")
   end
 end
 
@@ -63,6 +120,8 @@ try
   check_external_feature(false, nil, 0)
   check_external_feature(true, nil, 1)
   check_external_feature(true, "dev", 0)
+  check_feature_invocation()
+  check_missing_engine()
 finally
   remove_dir($tmp)
 end

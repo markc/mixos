@@ -31,12 +31,14 @@
 --     --across-components select listed workspace crates regardless of owner;
 --                       check dependency paths through unlisted packages too,
 --                       including edges to listed external GUI dependencies.
+--                       Cargo metadata enables all workspace features.
 --                       --no-deps metadata covers all workspace paths and their
 --                       declared external edges; resolved metadata additionally
 --                       covers paths through external packages. Workspace
 --                       optional deps are checked even when their features are
 --                       off; external edges follow Cargo's resolved features.
---     --require         fail when no listed crate is in the workspace yet.
+--     --require         fail when no listed crate or any core_crates entry is
+--                       missing from the workspace.
 --     --offline/--locked/--frozen  passed through to cargo metadata.
 --
 -- Exit codes:
@@ -135,7 +137,7 @@ else
     usage_die("manifest not found: " .. $manifest)
   end
   $argv = ["cargo", "metadata", "--format-version", "1"]
-  if !$across then push($argv, "--no-deps") end
+  if $across then push($argv, "--all-features") else push($argv, "--no-deps") end
   $argv = concat($argv, ["--manifest-path", $manifest], $passthrough)
   $r = run_argv($argv, {timeout: 600, max_output: 536870912})
   if !$r.ok or $r.stdout_truncated then
@@ -201,6 +203,13 @@ $listed = filter($names, fn($n) = $layers[$n] != nil)
 $unlisted = filter($names, fn($n) = $layers[$n] == nil)
 
 print("layering gate: " .. len($names) .. " workspace packages, " .. len($listed) .. " in the layer table, " .. len($unlisted) .. " unlisted")
+if $require then
+  $missing = filter($conf.core_crates, fn($n) = $ws[$n] == nil)
+  if len($missing) > 0 then
+    eprint("FAIL: listed engine crate(s) missing from workspace: " .. join(sort($missing), ", "))
+    exit(1)
+  end
+end
 if len($listed) == 0 then
   if $require then
     eprint("FAIL: nothing to check — no crate from " .. $layers_path .. " is in this workspace (--require)")

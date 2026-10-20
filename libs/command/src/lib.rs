@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! UI-free command tables and the single dispatch path for an application.
 //! Toolkit supplies the egui adapter; engine crates depend only on this crate.
 
@@ -7,6 +8,8 @@ pub mod keymap;
 pub mod strings;
 
 pub use executed::{Executed, Journal, Origin};
+#[doc(hidden)]
+pub use serde_json;
 use schemars::Schema;
 use serde::Serialize;
 use serde_json::Value;
@@ -76,10 +79,11 @@ pub fn always<S>(_: &S) -> Result<(), &'static str> {
 /// Wrap a non-capturing `fn(&mut S)` expression in a nullary intent command.
 ///
 /// ```
+/// use command::serde_json::Value;
 /// let c: command::Command<u32> = command::nullary!("count.bump", "bump", |s: &mut u32| *s += 1);
 /// let mut r = command::Registry::new();
 /// r.add(c);
-/// assert_eq!(r.execute("count.bump", &mut 0, serde_json::Value::Null, command::Origin::Bus).unwrap(), serde_json::Value::Null);
+/// assert_eq!(r.execute("count.bump", &mut 0, Value::Null, command::Origin::Bus).unwrap(), Value::Null);
 /// ```
 #[macro_export]
 macro_rules! nullary {
@@ -95,7 +99,7 @@ macro_rules! nullary {
             enabled: $crate::always,
             run: |state, _| {
                 ($run)(state);
-                Ok(::serde_json::Value::Null)
+                Ok($crate::serde_json::Value::Null)
             },
             params: None,
             class: $crate::Class::Intent,
@@ -229,6 +233,8 @@ impl<S> Registry<S> {
 
     /// Compatibility constructor for old bool-enabled, nullary command tables.
     /// Metadata is forced to a nullary intent; execution still uses this registry.
+    #[doc(hidden)]
+    #[deprecated(note = "transitional; removed in plan step 7")]
     pub fn add_nullary(
         &mut self,
         mut command: Command<S>,
@@ -357,6 +363,9 @@ impl<S> Registry<S> {
     pub fn shortcuts_of(&self, id: &str) -> Vec<String> {
         self.bindings.shortcuts_of(id)
     }
+    pub fn bound_of(&self, id: &str) -> (Option<String>, Vec<String>) {
+        self.bindings.bound_of(id)
+    }
 
     /// Whether the current binding came from a valid override, rather than
     /// the built defaults. Adapters use this to retain parsed default chords.
@@ -433,13 +442,13 @@ impl<S> Registry<S> {
             .iter()
             .map(|c| {
                 let reason = self.enabled(c.id, state).err();
-                let mut chords = self.shortcuts_of(c.id).into_iter();
+                let (shortcut, more) = self.bound_of(c.id);
                 Described {
                     id: c.id,
                     label: label_text(strings, self.label_of(c.id, state).unwrap_or(c.label)),
                     menu: c.menu.map(|m| label_text(strings, m)),
-                    shortcut: chords.next(),
-                    more: chords.collect(),
+                    shortcut,
+                    more,
                     enabled: reason.is_none(),
                     checked: self.checked(c.id, state),
                     reason,
