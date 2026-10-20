@@ -22,18 +22,20 @@ pub(crate) fn action_name(req: &Request) -> &'static str {
 }
 
 pub(crate) async fn process_request(
-    input: &str,
+    input: serde_json::Value,
     state: &Arc<EngineState>,
     activity_tx: &tokio::sync::mpsc::Sender<()>,
     ctx: &RequestContext,
 ) -> String {
     let config = state.config.clone();
     let seq = metrics::REQUEST_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let bytes = input.len() as u64;
+    // Serialise only to account for the byte budget; dispatch consumes the
+    // parsed value directly, without another JSON text parse.
+    let bytes = input.to_string().len() as u64;
     let t0 = Instant::now();
     let mut t = ReqTiming::default();
 
-    if input.len() > config.service.max_request_line_bytes {
+    if bytes > config.service.max_request_line_bytes as u64 {
         let response =
             json_code_error("request_too_large", "request exceeds configured byte limit");
         record_request(
@@ -49,7 +51,8 @@ pub(crate) async fn process_request(
         return response;
     }
 
-    let req: Request = match serde_json::from_str(input) {
+    let invalid_action = metrics::action_of_invalid(&input);
+    let req: Request = match serde_json::from_value(input) {
         Ok(r) => r,
         Err(e) => {
             let response = json_error(&format!("invalid request: {e}"));
@@ -58,7 +61,7 @@ pub(crate) async fn process_request(
             // understated; only actionless garbage lands in `invalid`.
             record_request(
                 seq,
-                &metrics::action_of_invalid(input),
+                &invalid_action,
                 ctx,
                 bytes,
                 &t,
@@ -869,7 +872,7 @@ impl Engine {
         // request on the blocking pool, leaving runtime workers free for Bus IO.
         let response = tokio::task::spawn_blocking(move || {
             runtime.block_on(process_request(
-                &serde_json::Value::Object(object).to_string(),
+                serde_json::Value::Object(object),
                 &state,
                 &activity_tx,
                 &ctx,

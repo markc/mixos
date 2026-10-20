@@ -11,7 +11,8 @@ use tokio::sync::watch;
 
 pub const BUS_SERVICE: &str = "indexd";
 
-pub fn verb_manifest() -> Vec<VerbDescriptor> {
+pub fn verb_manifest() -> &'static [VerbDescriptor] {
+    static VERBS: std::sync::LazyLock<Vec<VerbDescriptor>> = std::sync::LazyLock::new(|| {
     [
         (
             "indexd.embed",
@@ -79,6 +80,8 @@ pub fn verb_manifest() -> Vec<VerbDescriptor> {
     .into_iter()
     .map(|(name, args, help, read_only)| VerbDescriptor::new(name, &args, help, read_only))
     .collect()
+    });
+    &VERBS
 }
 
 pub async fn run(engine: Arc<Engine>, mut stop: watch::Receiver<bool>) {
@@ -103,7 +106,7 @@ pub async fn run(engine: Arc<Engine>, mut stop: watch::Receiver<bool>) {
         match connected {
             Ok(client) => {
                 let started = Instant::now();
-                let client = Arc::new(client.with_verbs(verb_manifest()));
+                let client = Arc::new(client.with_verbs(verb_manifest().to_vec()));
                 tracing::info!(service = BUS_SERVICE, "registered on node Bus");
                 serve_client(engine.clone(), client.clone(), &mut stop).await;
                 client.close().await;
@@ -243,7 +246,7 @@ mod tests {
             NodedClient::connect(BUS_SERVICE, &broker.url)
                 .await
                 .unwrap()
-                .with_verbs(verb_manifest()),
+                .with_verbs(verb_manifest().to_vec()),
         );
         let (stop_tx, mut stop_rx) = watch::channel(false);
         let task = tokio::spawn(async move {

@@ -254,14 +254,10 @@ pub fn classify_response(response: &str) -> Outcome {
 /// vanishing into the catch-all bucket and understating that action's
 /// real traffic. Falls back to "invalid" when even the action field is
 /// missing or the input isn't JSON.
-pub fn action_of_invalid(input: &str) -> String {
-    serde_json::from_str::<serde_json::Value>(input)
-        .ok()
-        .and_then(|v| {
-            v.get("action")
-                .and_then(|a| a.as_str())
-                .map(|s| s.to_string())
-        })
+pub fn action_of_invalid(input: &serde_json::Value) -> String {
+    input.get("action")
+        .and_then(|a| a.as_str())
+        .map(|s| s.to_string())
         .unwrap_or_else(|| "invalid".to_string())
 }
 
@@ -313,12 +309,12 @@ mod tests {
     #[test]
     fn invalid_requests_keep_their_action() {
         assert_eq!(
-            action_of_invalid("{\"action\":\"search\",\"limit\":\"x\"}"),
+            action_of_invalid(&serde_json::json!({"action":"search","limit":"x"})),
             "search"
         );
-        assert_eq!(action_of_invalid("{\"action\":\"nonsense\"}"), "nonsense");
-        assert_eq!(action_of_invalid("not json at all"), "invalid");
-        assert_eq!(action_of_invalid("{\"no_action\":true}"), "invalid");
+        assert_eq!(action_of_invalid(&serde_json::json!({"action":"nonsense"})), "nonsense");
+        assert_eq!(action_of_invalid(&serde_json::json!("not an object")), "invalid");
+        assert_eq!(action_of_invalid(&serde_json::json!({"no_action":true})), "invalid");
     }
 
     #[test]
