@@ -24,6 +24,40 @@ const READY_TIMEOUT: Duration = Duration::from_secs(5);
 /// this long without a fresh one.
 const KEEPALIVE: Duration = Duration::from_secs(1);
 
+/// `spa_meta_header` (`SPA_META_Header`): the timing a consumer needs to place
+/// each frame. libspa keeps its wrapper's fields private, so this mirrors the C
+/// layout. The size assert below fails the build if the two ever diverge.
+#[repr(C)]
+struct MetaHeader {
+    flags: u32,
+    offset: u32,
+    /// Presentation time in nanoseconds on the graph clock (CLOCK_MONOTONIC).
+    pts: i64,
+    dts_offset: i64,
+    /// Frame counter, one per queued buffer.
+    seq: u64,
+}
+
+const _: () = assert!(
+    std::mem::size_of::<MetaHeader>() == std::mem::size_of::<spa::sys::spa_meta_header>()
+);
+
+impl spa::buffer::meta::Metadata for MetaHeader {
+    const META_TYPE: u32 = spa::sys::SPA_META_Header;
+}
+
+/// Now on CLOCK_MONOTONIC, the clock PipeWire's graph runs on, so each frame
+/// carries the time it was captured.
+fn now_ns() -> i64 {
+    let mut ts = libc::timespec {
+        tv_sec: 0,
+        tv_nsec: 0,
+    };
+    // SAFETY: clock_gettime writes into the timespec we pass; CLOCK_MONOTONIC is always available.
+    unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut ts) };
+    ts.tv_sec * 1_000_000_000 + ts.tv_nsec
+}
+
 enum Message {
     Frame(Arc<Frame>),
     /// The capture thread ended; the cast is over.
@@ -137,6 +171,25 @@ fn format(width: u32, height: u32, max_fps: u32) -> anyhow::Result<Vec<u8>> {
     })
 }
 
+/// Meta parameter: every buffer carries a `MetaHeader`, so consumers get the
+/// PTS and sequence of each frame.
+fn header_meta() -> anyhow::Result<Vec<u8>> {
+    serialise(Object {
+        type_: spa::utils::SpaTypes::ObjectParamMeta.as_raw(),
+        id: spa::param::ParamType::Meta.as_raw(),
+        properties: vec![
+            Property::new(
+                spa::sys::SPA_PARAM_META_type,
+                Value::Id(spa::utils::Id(spa::sys::SPA_META_Header)),
+            ),
+            Property::new(
+                spa::sys::SPA_PARAM_META_size,
+                Value::Int(i32::try_from(std::mem::size_of::<MetaHeader>())?),
+            ),
+        ],
+    })
+}
+
 /// Buffers for the negotiated format: shm (memfd), one block of a frame.
 fn buffers(stride: u32, height: u32) -> anyhow::Result<Vec<u8>> {
     let size = i32::try_from(u64::from(stride) * u64::from(height))?;
@@ -183,6 +236,8 @@ struct Stats {
     no_buffer: Cell<u64>,
     unmapped: Cell<u64>,
     queued: Cell<u64>,
+    /// The `seq` stamped on the next buffer; counts every buffer queued.
+    sequence: Cell<u64>,
 }
 
 fn bump(cell: &Cell<u64>) {
@@ -302,6 +357,16 @@ fn serve(
                 bump(&data.stats.no_buffer);
                 return;
             };
+            // Stamp the frame's timing before the data goes out, so a consumer
+            // can place it in time. Without this every frame looks identical.
+            if let Some(header) = buffer.find_meta_mut::<MetaHeader>() {
+                header.flags = 0;
+                header.offset = 0;
+                header.pts = now_ns();
+                header.dts_offset = 0;
+                header.seq = data.stats.sequence.get();
+            }
+            bump(&data.stats.sequence);
             let datas = buffer.datas_mut();
             let Some(block) = datas.first_mut() else {
                 return;
@@ -324,7 +389,11 @@ fn serve(
         .register()?;
 
     let offer = format(width, height, max_fps)?;
-    let mut params = [Pod::from_bytes(&offer).ok_or_else(|| anyhow::anyhow!("bad format pod"))?];
+    let meta = header_meta()?;
+    let mut params = [
+        Pod::from_bytes(&offer).ok_or_else(|| anyhow::anyhow!("bad format pod"))?,
+        Pod::from_bytes(&meta).ok_or_else(|| anyhow::anyhow!("bad meta pod"))?,
+    ];
     stream.connect(
         spa::utils::Direction::Output,
         None,
