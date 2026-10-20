@@ -1,0 +1,35 @@
+[package]
+name = "blobd"
+description = "Node blob store: content-addressed bytes over mds, owner pins, quotas, GC"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[package.metadata.mixos]
+component = "blobd"
+kind = "service"
+layer = "core"
+contract = "none"
+
+[lints.clippy]
+mod_module_files = "deny"
+
+[lib]
+name = "blobd"
+path = "src/lib.rs"
+
+[dependencies]
+mds = { path = "../../libs/mds" }
+rusqlite.workspace = true
+tracing.workspace = true
+serde_json.workspace = true
+# flock on <root>/.blobd.lock — one GC owner per root.
+libc.workspace = true
+uuid.workspace = true
+blake3.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

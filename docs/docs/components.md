@@ -16,6 +16,7 @@ profile: [desktop](desktop.md) and [server](server.md). This page describes the 
 |---|---|---|---|---|
 | [assets](../assets/README.md) | lib | none (library) | [`libs/assets`](https://github.com/markc/mixos/tree/main/libs/assets) | The resolver for a pinned, immutable set of fonts, icons and emoji on the local disk, which finds, verifies and reads a published set without any downloader or daemon. |
 | [backdrop](../backdrop/README.md) | app | unclassified | [`apps/backdrop`](https://github.com/markc/mixos/tree/main/apps/backdrop) | The MixOS desktop background — drawn by its own program on the compositor's background layer, on every output, at native and fractional scale. |
+| [blobd](../blobd/README.md) | service | unclassified | [`services/blobd`](https://github.com/markc/mixos/tree/main/services/blobd) | The node blob store: content-addressed bytes kept in mds, with owner pins, quotas and garbage collection. Ported from cosmix-blobd; the store core is ported, the Bus and byte-lane layers follow. |
 | [bridged](../bridged/README.md) · [changelog](../bridged/changelog.md) | service | unclassified | [`services/bridged`](https://github.com/markc/mixos/tree/main/services/bridged) | How bridged puts an external application with a line-delimited JSON control channel on the Bus, one instance per application, and what that exposes. |
 | [buildinfo](../buildinfo/README.md) | lib | none (library) | [`libs/buildinfo`](https://github.com/markc/mixos/tree/main/libs/buildinfo) | Compile-time build provenance for MixOS binaries, and the --version contract every binary answers. |
 | [bus](../bus/README.md) | lib | none (library) | [`libs/bus`](https://github.com/markc/mixos/tree/main/libs/bus) | The Bus wire format and the broker client library, with a supervised connection to noded that survives broker restarts. |
@@ -125,6 +126,7 @@ checked separately by the layering gate.
 | [test-broker](https://github.com/markc/mixos/blob/main/libs/test-broker/Cargo.toml) | test-broker | lib | core | none | 0.1.1 |
 | [thumbs](https://github.com/markc/mixos/blob/main/libs/thumbs/Cargo.toml) | thumbs | lib | core | none | 0.1.1 |
 | [toolkit](https://github.com/markc/mixos/blob/main/libs/toolkit/Cargo.toml) | toolkit | lib | desktop | none | 0.1.1 |
+| [blobd](https://github.com/markc/mixos/blob/main/services/blobd/Cargo.toml) | blobd | service | core | none | 0.1.1 |
 | [bridged](https://github.com/markc/mixos/blob/main/services/bridged/component.mx) | bridged | service | desktop | public | 0.2.0 |
 | [compd](https://github.com/markc/mixos/blob/main/services/compd/Cargo.toml) | compd | service | desktop | public | 0.2.0 |
 | [comp-model](https://github.com/markc/mixos/blob/main/services/compd/crates/comp-model/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
