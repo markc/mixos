@@ -44,7 +44,6 @@ JSON-encoded string, including each element of `store.metadata`.
 | `indexd.search` | `query`, `limit`, optional `source`, `metadata_filter` | `results` |
 | `indexd.update` | `id`, optional `content`, `metadata`, `source` | `updated`, `re_embedded` |
 | `indexd.delete` | optional `ids`, optional `filter` (at least one non-empty) | `deleted` |
-
 | `indexd.list` | optional `source`, `limit`, `offset` | `items`, `total` |
 | `indexd.feedback` | `id`, `useful` | `id`, `feedback_score` |
 | `indexd.supersede` | `old_id`, `new_id`, optional `reason` | `updated` |
@@ -79,7 +78,8 @@ index would desynchronise. Read verbs need no flag. `call` always refuses
 per stdin line, flushing each reply immediately. It does not open the index
 or require model configuration. Keep one process alive for repeated requests,
 including through `ssh -T user@example.test /opt/mixos/bin/indexd bridge`.
-The bridge reads `--node-config PATH`, then `MIXOS_NODE_CONFIG`, defaulting to
+The bridge honours non-empty `MIXOS_NODED_URL` first. Otherwise it reads
+`--node-config PATH`, then non-empty `MIXOS_NODE_CONFIG`, defaulting to
 `/opt/mixos/etc/node.conf.mix`, the same file pinned by the system unit.
 It derives the broker address from that file rather than user config discovery.
 
@@ -92,6 +92,11 @@ Each stdout line is `{"id":1,"rc":0,"body":{...}}`, with the original JSON
 Transport failures use `{"id":1,"rc":-1,"error":"..."}` and then exit non-zero,
 including initial connection failure, so a supervisor can respawn it. EOF exits 0;
 stdout contains only protocol replies. The bridge never retries a call.
+
+Requests may carry `timeout_secs`, default 60 and capped at 600 seconds.
+A timeout returns `{"id":1,"rc":-1,"kind":"timeout","error":"..."}` and
+leaves the bridge alive. The operation's outcome is unknown. Empty Bus bodies
+become JSON `null`; Bus error headers are forwarded as the top-level `error`.
 
 ## Operating the system service
 

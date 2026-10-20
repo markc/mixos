@@ -270,13 +270,13 @@ JSON-encoded string, including each element of <code>store.metadata</code>.</p>
 <tr><td><code>indexd.search</code></td><td><code>query</code>, <code>limit</code>, optional <code>source</code>, <code>metadata_filter</code></td><td><code>results</code></td></tr>
 <tr><td><code>indexd.update</code></td><td><code>id</code>, optional <code>content</code>, <code>metadata</code>, <code>source</code></td><td><code>updated</code>, <code>re_embedded</code></td></tr>
 <tr><td><code>indexd.delete</code></td><td>optional <code>ids</code>, optional <code>filter</code> (at least one non-empty)</td><td><code>deleted</code></td></tr>
+<tr><td><code>indexd.list</code></td><td>optional <code>source</code>, <code>limit</code>, <code>offset</code></td><td><code>items</code>, <code>total</code></td></tr>
+<tr><td><code>indexd.feedback</code></td><td><code>id</code>, <code>useful</code></td><td><code>id</code>, <code>feedback_score</code></td></tr>
+<tr><td><code>indexd.supersede</code></td><td><code>old_id</code>, <code>new_id</code>, optional <code>reason</code></td><td><code>updated</code></td></tr>
+<tr><td><code>indexd.stale</code></td><td>optional <code>source</code>, <code>never_retrieved_age_days</code>, <code>low_value_min_retrievals</code>, <code>long_dormant_days</code>, <code>per_bucket_limit</code></td><td>three buckets, <code>total_chunks</code></td></tr>
+<tr><td><code>indexd.stats</code></td><td>none</td><td>counts, model/cache/queue statistics, <code>by_source</code></td></tr>
+<tr><td><code>indexd.index_file</code></td><td>absolute <code>path</code>, optional <code>content</code>, <code>source</code>, <code>domain</code>, <code>background</code></td><td><code>indexed</code>, <code>sections</code>; background acknowledgement when queued</td></tr>
 </tbody></table>
-<p>| <code>indexd.list</code> | optional <code>source</code>, <code>limit</code>, <code>offset</code> | <code>items</code>, <code>total</code> |
-| <code>indexd.feedback</code> | <code>id</code>, <code>useful</code> | <code>id</code>, <code>feedback_score</code> |
-| <code>indexd.supersede</code> | <code>old_id</code>, <code>new_id</code>, optional <code>reason</code> | <code>updated</code> |
-| <code>indexd.stale</code> | optional <code>source</code>, <code>never_retrieved_age_days</code>, <code>low_value_min_retrievals</code>, <code>long_dormant_days</code>, <code>per_bucket_limit</code> | three buckets, <code>total_chunks</code> |
-| <code>indexd.stats</code> | none | counts, model/cache/queue statistics, <code>by_source</code> |
-| <code>indexd.index_file</code> | absolute <code>path</code>, optional <code>content</code>, <code>source</code>, <code>domain</code>, <code>background</code> | <code>indexed</code>, <code>sections</code>; background acknowledgement when queued |</p>
 <p><code>search</code> excludes superseded chunks before applying its limit. Filter entries
 have <code>field</code>, <code>op</code> (<code>eq</code>, <code>gt</code>, <code>lt</code>, <code>gte</code>, <code>lte</code>, <code>contains</code>) and <code>value</code>.</p>
 <p>Delete filters use the same predicate shape, for example
@@ -297,7 +297,8 @@ index would desynchronise. Read verbs need no flag. <code>call</code> always ref
 per stdin line, flushing each reply immediately. It does not open the index
 or require model configuration. Keep one process alive for repeated requests,
 including through <code>ssh -T user@example.test /opt/mixos/bin/indexd bridge</code>.
-The bridge reads <code>--node-config PATH</code>, then <code>MIXOS_NODE_CONFIG</code>, defaulting to
+The bridge honours non-empty <code>MIXOS_NODED_URL</code> first. Otherwise it reads
+<code>--node-config PATH</code>, then non-empty <code>MIXOS_NODE_CONFIG</code>, defaulting to
 <code>/opt/mixos/etc/node.conf.mix</code>, the same file pinned by the system unit.
 It derives the broker address from that file rather than user config discovery.</p>
 <pre><code class="language-json">{"id":1,"verb":"indexd.search","body":{"query":"service dependencies","limit":3}}
@@ -307,6 +308,10 @@ It derives the broker address from that file rather than user config discovery.<
 Transport failures use <code>{"id":1,"rc":-1,"error":"..."}</code> and then exit non-zero,
 including initial connection failure, so a supervisor can respawn it. EOF exits 0;
 stdout contains only protocol replies. The bridge never retries a call.</p>
+<p>Requests may carry <code>timeout_secs</code>, default 60 and capped at 600 seconds.
+A timeout returns <code>{"id":1,"rc":-1,"kind":"timeout","error":"..."}</code> and
+leaves the bridge alive. The operation's outcome is unknown. Empty Bus bodies
+become JSON <code>null</code>; Bus error headers are forwarded as the top-level <code>error</code>.</p>
 <h2 id="operating-the-system-service">Operating the system service</h2>
 <p><code>indexd serve</code> registers service <code>indexd</code> using the standard Bus connection
 helper, advertises the eleven verbs above, and reconnects with backoff.

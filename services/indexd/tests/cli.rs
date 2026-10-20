@@ -196,6 +196,7 @@ fn bridge_initial_connection_failure_replies_then_exits_nonzero() {
     std::fs::write(&path, "noded: { port: 0 }\n").unwrap();
     let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_indexd"))
         .arg("bridge")
+        .env_remove("MIXOS_NODED_URL")
         .env("MIXOS_NODE_CONFIG", path)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -211,6 +212,25 @@ fn bridge_initial_connection_failure_replies_then_exits_nonzero() {
     let reply: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(reply["id"], 7);
     assert_eq!(reply["rc"], -1);
+}
+
+#[tokio::test]
+async fn bridge_honours_url_override_with_empty_node_config() {
+    use tokio::io::AsyncWriteExt;
+    let broker = test_broker::Broker::start();
+    let mut child = Child(tokio::process::Command::new(env!("CARGO_BIN_EXE_indexd"))
+        .arg("bridge").env("MIXOS_NODE_CONFIG", "").env("MIXOS_NODED_URL", &broker.url)
+        .stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().unwrap());
+    let mut input = child.0.stdin.take().unwrap();
+    input.write_all(b"{\"id\":1,\"verb\":\"indexd.stats\",\"body\":{}}\n").await.unwrap();
+    drop(input);
+    let mut lines = BufReader::new(child.0.stdout.take().unwrap()).lines();
+    let line = tokio::time::timeout(Duration::from_secs(5), lines.next_line()).await.unwrap().unwrap().unwrap();
+    let reply: Value = serde_json::from_str(&line).unwrap();
+    assert_eq!(reply["rc"], 10);
+    assert!(reply["body"].is_null());
+    assert!(reply["error"].as_str().unwrap().contains("not found"));
+    assert!(child.0.wait().await.unwrap().success());
 }
 
 #[test]

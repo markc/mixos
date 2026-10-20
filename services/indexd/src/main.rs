@@ -50,14 +50,19 @@ fn main() -> Result<()> {
     if let Command::Bridge { node_config } = &cli.command {
         let node_config = node_config
             .clone()
-            .or_else(|| std::env::var_os("MIXOS_NODE_CONFIG").map(PathBuf::from))
+            .or_else(|| std::env::var_os("MIXOS_NODE_CONFIG").filter(|v| !v.is_empty()).map(PathBuf::from))
             .unwrap_or_else(|| PathBuf::from("/opt/mixos/etc/node.conf.mix"));
         return runtime.block_on(async {
             let client = async {
-                let source = std::fs::read_to_string(&node_config)?;
-                let url = ::bus::client::url_from_node_config(&source).ok_or_else(|| {
-                    anyhow::anyhow!("invalid node config: {}", node_config.display())
-                })?;
+                let url = match std::env::var("MIXOS_NODED_URL").ok().filter(|v| !v.is_empty()) {
+                    Some(url) => url,
+                    None => {
+                        let source = std::fs::read_to_string(&node_config)?;
+                        ::bus::client::url_from_node_config(&source).ok_or_else(|| {
+                            anyhow::anyhow!("invalid node config: {}", node_config.display())
+                        })?
+                    }
+                };
                 ::bus::native_client::NodedClient::connect_anonymous(&url).await
             }
             .await;
