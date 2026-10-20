@@ -302,11 +302,12 @@ fn serve(
                 return;
             };
             let mut written = 0;
-            if let Some(slice) = block.data() {
-                written = slice.len().min(frame.data.len());
-                slice[..written].copy_from_slice(&frame.data[..written]);
-            } else {
-                bump(&data.stats.unmapped);
+            match block.data() {
+                Some(slice) if !slice.is_empty() => {
+                    written = slice.len().min(frame.data.len());
+                    slice[..written].copy_from_slice(&frame.data[..written]);
+                }
+                _ => bump(&data.stats.unmapped),
             }
             bump(&data.stats.queued);
             let chunk = block.chunk_mut();
@@ -322,9 +323,10 @@ fn serve(
     stream.connect(
         spa::utils::Direction::Output,
         None,
-        pw::stream::StreamFlags::DRIVER
-            | pw::stream::StreamFlags::ALLOC_BUFFERS
-            | pw::stream::StreamFlags::MAP_BUFFERS,
+        // No ALLOC_BUFFERS: that flag means the application supplies the
+        // memory in add_buffer. PipeWire allocates shareable memfd buffers
+        // from the Buffers parameter instead, and MAP_BUFFERS maps them here.
+        pw::stream::StreamFlags::DRIVER | pw::stream::StreamFlags::MAP_BUFFERS,
         &mut params,
     )?;
 
