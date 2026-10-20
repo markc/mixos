@@ -889,7 +889,7 @@ async fn run_with_limits(
                 target: "webd::mix_handler",
                 script = %script_for_log.display(),
                 error = %mix_err,
-                "mix handler failed",
+                "mix handler failed: {mix_err}",
             );
             server_error()
         }
