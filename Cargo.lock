@@ -825,6 +825,7 @@ dependencies = [
  "blake3",
  "buildinfo",
  "bus",
+ "clap",
  "config",
  "futures-util",
  "http-body-util",
