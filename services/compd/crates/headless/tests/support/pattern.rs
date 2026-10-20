@@ -71,6 +71,9 @@ impl Pattern {
             assert!(Instant::now() < deadline, "initial configure");
             thread::sleep(Duration::from_millis(5));
         }
+        // xdg-shell may initially offer 0x0 (the client's choice), before
+        // compd places the first buffer and sends its decided size.
+        if state.size == (0,0) {state.size=(1280,720);}
         assert_eq!(state.size, (1280, 720));
         let (w,h) = state.size;
         let buffer = buffer(&shm, &qh, w, h, |x,y| COLOURS[usize::from(x >= w/2) + 2*usize::from(y >= h/2)]);

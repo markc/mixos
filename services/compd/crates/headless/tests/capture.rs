@@ -34,6 +34,10 @@ impl Bus {
         assert_eq!(reply["rc"],0,"{verb}: {reply}");
         match &reply["body"] {Value::String(body)=>serde_json::from_str(body).unwrap(), body=>body.clone()}
     }
+    fn ready(&self) {
+        let output=helper("ready",&self.root,&[],Some(&self.url));
+        assert!(output.status.success(),"headless Bus readiness: {}",String::from_utf8_lossy(&output.stderr));
+    }
     fn window(&self) -> Value {
         let reply = self.call("comp.windows.list", json!({"app_id":"headless-pattern"}));
         reply["windows"].as_array().unwrap().first().expect("mapped pattern window").clone()
@@ -87,7 +91,8 @@ fn rgb(colour: u32) -> [u8;3] {[(colour>>16) as u8,(colour>>8) as u8,colour as u
 fn pattern_mixed_cursor_captures_and_presentation_ledger() {
     let bus = Bus::start("pixels");
     let mut process = process::spawn(1,None,"pixels",Some(&bus.url));
-    let mut pattern = Pattern::new(connect(&mut process));
+    let stream=connect(&mut process);bus.ready();
+    let mut pattern = Pattern::new(stream);
     pattern.wait_callback(0);
     // Explicitly move the human pointer: the client supplies a known 16x16
     // cyan sprite with hotspot 0,0. No cursor theme or animation enters the test.
@@ -152,6 +157,7 @@ fn bus_capture_completes_on_idle_output() {
     let bus=Bus::start("idle");
     let mut process=process::spawn(1,None,"idle",Some(&bus.url));
     drop(connect(&mut process));
+    bus.ready();
     thread::sleep(Duration::from_millis(300));
     assert_eq!(bus.call("comp.windows.list",json!({}))["windows"],json!([]));
     for cursor in [false,true] {

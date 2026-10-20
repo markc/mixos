@@ -10,6 +10,14 @@ if $a[0] == "start" then
   print(json_encode($bus))
 elif $a[0] == "stop" then
   $pb.stop(json_parse(read_file($record)))
+elif $a[0] == "ready" then
+  $deadline = monotonic() + 15
+  while monotonic() < $deadline
+    send comp-headless comp.windows.list timeout=1 body="{}"
+    if $rc == 0 then exit(0) end
+    sleep(0.1)
+  end
+  raise("COMPD_READY", "headless Bus port did not register")
 else
   $verb = $a[2]
   $body = $a[3]
