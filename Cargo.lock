@@ -8455,6 +8455,8 @@ dependencies = [
  "protocols",
  "serde_json",
  "smithay",
+ "testkit",
+ "wayland-client",
 ]
 
 [[package]]
