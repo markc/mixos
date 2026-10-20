@@ -5,7 +5,10 @@
 
 use std::{
     fs,
-    os::unix::{fs::{FileTypeExt, PermissionsExt}, net::UnixStream},
+    os::unix::{
+        fs::{FileTypeExt, PermissionsExt},
+        net::UnixStream,
+    },
     path::PathBuf,
     process::{Child, Command, Stdio},
     sync::mpsc,
@@ -183,9 +186,13 @@ fn spawn(scale: i32, explicit_node: Option<&str>, label: &str) -> Process {
 }
 
 fn boot(scale: i32, explicit_node: bool) {
-    let node = std::env::var("COMPD_TEST_RENDER_NODE")
-        .unwrap_or_else(|_| "/dev/dri/renderD128".into());
-    let mut process = spawn(scale, explicit_node.then_some(node.as_str()), &format!("boot-{scale}"));
+    let node =
+        std::env::var("COMPD_TEST_RENDER_NODE").unwrap_or_else(|_| "/dev/dri/renderD128".into());
+    let mut process = spawn(
+        scale,
+        explicit_node.then_some(node.as_str()),
+        &format!("boot-{scale}"),
+    );
     let pid = process.child.id();
     let log = process.root.join("compd.log");
     let deadline = Instant::now() + Duration::from_secs(30);
@@ -238,7 +245,12 @@ fn boot(scale: i32, explicit_node: bool) {
     );
     assert!(output.contains("headless: XWayland disabled"), "{output}");
     assert!(!output.contains("XWayland ready"), "{output}");
-    assert!(!process.root.join("compd/wayland-headless-test.xwayland.env").exists());
+    assert!(
+        !process
+            .root
+            .join("compd/wayland-headless-test.xwayland.env")
+            .exists()
+    );
     let stat = fs::read_to_string(format!("/proc/{pid}/stat")).unwrap();
     let fields: Vec<_> = stat
         .rsplit_once(')')
@@ -283,11 +295,17 @@ fn refuses_node(node: &str, label: &str, reason: &str) {
         if let Some(status) = process.child.try_wait().unwrap() {
             break status;
         }
-        assert!(Instant::now() < deadline, "invalid render node did not exit");
+        assert!(
+            Instant::now() < deadline,
+            "invalid render node did not exit"
+        );
         thread::sleep(Duration::from_millis(20));
     };
     let output = fs::read_to_string(process.root.join("compd.log")).unwrap();
-    assert!(!status.success(), "invalid render node was accepted: {output}");
+    assert!(
+        !status.success(),
+        "invalid render node was accepted: {output}"
+    );
     assert!(output.contains(reason), "missing {reason}: {output}");
     println!("render node {node} refused with {reason}");
 }
@@ -295,18 +313,31 @@ fn refuses_node(node: &str, label: &str, reason: &str) {
 #[test]
 #[ignore = "needs a built compd with backend-headless"]
 fn render_node_nonexistent_is_refused() {
-    refuses_node("/dev/dri/nonexistent-render-node", "missing-node", "headless-render-node-invalid:");
+    refuses_node(
+        "/dev/dri/nonexistent-render-node",
+        "missing-node",
+        "headless-render-node-invalid:",
+    );
 }
 
 #[test]
 #[ignore = "needs a built compd with backend-headless"]
 fn render_node_primary_or_non_render_is_refused() {
-    let card = fs::read_dir("/dev/dri").ok().into_iter().flatten()
+    let card = fs::read_dir("/dev/dri")
+        .ok()
+        .into_iter()
+        .flatten()
         .filter_map(Result::ok)
         .map(|entry| entry.path())
-        .find(|path| path.file_name().unwrap().to_string_lossy().starts_with("card"));
+        .find(|path| {
+            path.file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with("card")
+        });
     let node = card.or_else(|| {
-        fs::metadata("/dev/null").ok()
+        fs::metadata("/dev/null")
+            .ok()
             .filter(|metadata| metadata.file_type().is_char_device())
             .map(|_| PathBuf::from("/dev/null"))
     });

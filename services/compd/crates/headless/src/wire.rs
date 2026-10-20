@@ -71,7 +71,10 @@ pub fn wire(
 ) -> Result<(), Box<dyn std::error::Error>> {
     // No DrmDevice, seat, udev or input backend: GBM holds only this render fd.
     let node = DrmNode::from_path(options.render_node).map_err(|error| {
-        format!("headless-render-node-invalid: {}: {error}", options.render_node)
+        format!(
+            "headless-render-node-invalid: {}: {error}",
+            options.render_node
+        )
     })?;
     if node.ty() != NodeType::Render {
         return Err("headless-render-node-required: expected a DRM render node, not a primary or control node".into());

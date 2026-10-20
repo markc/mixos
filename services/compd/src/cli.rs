@@ -173,7 +173,9 @@ fn infer_backend(cli: &mut Cli) -> Result<(), &'static str> {
     let kms_only = cli.device.is_some() || cli.connector.is_some();
     let headless_only = cli.size.is_some() || cli.render_node.is_some();
     if kms_only && headless_only {
-        return Err("backend-flag-conflict: --size/--render-node cannot be combined with --device/--connector");
+        return Err(
+            "backend-flag-conflict: --size/--render-node cannot be combined with --device/--connector",
+        );
     }
     if cli.backend.is_none() {
         cli.backend = if kms_only {
@@ -188,7 +190,9 @@ fn infer_backend(cli: &mut Cli) -> Result<(), &'static str> {
         return Err("backend-flag-conflict: --device/--connector apply only to the KMS backend");
     }
     if cli.backend != Some(Backend::Headless) && headless_only {
-        return Err("backend-flag-conflict: --size/--render-node apply only to the headless backend");
+        return Err(
+            "backend-flag-conflict: --size/--render-node apply only to the headless backend",
+        );
     }
     Ok(())
 }
@@ -301,19 +305,35 @@ mod tests {
         ] {
             let cli = p(&flags);
             assert_eq!(cli.backend, Some(Backend::Headless));
-            assert_eq!(resolve_with(&cli, false, false, true, false), Ok(Backend::Headless));
-            assert_eq!(resolve_with(&cli, true, true, true, true), Ok(Backend::Headless));
-            assert!(resolve_with(&cli, true, true, false, true)
-                .unwrap_err()
-                .starts_with("headless-feature-disabled:"));
+            assert_eq!(
+                resolve_with(&cli, false, false, true, false),
+                Ok(Backend::Headless)
+            );
+            assert_eq!(
+                resolve_with(&cli, true, true, true, true),
+                Ok(Backend::Headless)
+            );
+            assert!(
+                resolve_with(&cli, true, true, false, true)
+                    .unwrap_err()
+                    .starts_with("headless-feature-disabled:")
+            );
         }
         assert_eq!(p(&["--connector=HDMI-A-1"]).backend, Some(Backend::Kms));
-        assert_eq!(p(&["--device=/dev/dri/card0", "--scale=2"]).backend, Some(Backend::Kms));
+        assert_eq!(
+            p(&["--device=/dev/dri/card0", "--scale=2"]).backend,
+            Some(Backend::Kms)
+        );
     }
 
     #[test]
     fn conflicting_backend_flags_are_refused_by_name() {
-        for backend in [None, Some(Backend::Kms), Some(Backend::Headless), Some(Backend::Nested)] {
+        for backend in [
+            None,
+            Some(Backend::Kms),
+            Some(Backend::Headless),
+            Some(Backend::Nested),
+        ] {
             for device in [false, true] {
                 for size in [false, true] {
                     let mut cli = Cli {
@@ -324,12 +344,20 @@ mod tests {
                         render_node: (!size).then(|| "/dev/dri/renderD128".into()),
                         ..Cli::default()
                     };
-                    assert!(infer_backend(&mut cli).unwrap_err().starts_with("backend-flag-conflict:"));
+                    assert!(
+                        infer_backend(&mut cli)
+                            .unwrap_err()
+                            .starts_with("backend-flag-conflict:")
+                    );
                 }
             }
         }
         for backend in [Backend::Kms, Backend::Nested] {
-            let mut cli = Cli { backend: Some(backend), size: Some((1280, 720)), ..Cli::default() };
+            let mut cli = Cli {
+                backend: Some(backend),
+                size: Some((1280, 720)),
+                ..Cli::default()
+            };
             assert!(infer_backend(&mut cli).is_err());
         }
     }

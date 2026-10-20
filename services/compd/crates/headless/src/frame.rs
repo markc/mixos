@@ -28,8 +28,11 @@ struct Retry {
 impl Retry {
     /// Back off every failure, but emit at most one warning per five seconds.
     fn failed(&mut self, now: Instant) -> bool {
-        self.delay = (self.delay * 2).max(INTERVAL).min(Duration::from_secs(1));
-        if self.warned.is_none_or(|last| now.duration_since(last) >= Duration::from_secs(5)) {
+        self.delay = (self.delay * 2).clamp(INTERVAL, Duration::from_secs(1));
+        if self
+            .warned
+            .is_none_or(|last| now.duration_since(last) >= Duration::from_secs(5))
+        {
             self.warned = Some(now);
             true
         } else {
@@ -75,11 +78,9 @@ pub(crate) fn arm(state: &mut Loop, context: &Rc<RefCell<Context>>) {
     if ctx.armed || !state.state.redraw.needs(&key) {
         return;
     }
-    let at = ctx
-        .last
-        .map_or_else(Instant::now, |last| {
-            (last + INTERVAL.max(ctx.retry.delay)).max(Instant::now())
-        });
+    let at = ctx.last.map_or_else(Instant::now, |last| {
+        (last + INTERVAL.max(ctx.retry.delay)).max(Instant::now())
+    });
     let context = Rc::clone(context);
     state
         .loop_handle
@@ -131,8 +132,13 @@ fn draw(state: &mut Loop, ctx: &mut Context) {
             send_frames(state, &ctx.output, &visible);
         }
         Err(error) => {
-            if ctx.retry.failed(Instant::now()) {
-                warn!("headless: frame failed (retry in {:?}): {error}", ctx.retry.delay);
+            let now = Instant::now();
+            ctx.last = Some(now);
+            if ctx.retry.failed(now) {
+                warn!(
+                    "headless: frame failed (retry in {:?}): {error}",
+                    ctx.retry.delay
+                );
             }
             ctx.tracker = OutputDamageTracker::from_output(&ctx.output);
             state
