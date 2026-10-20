@@ -39,10 +39,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // `compd <semver> (<sha12>, built <ts>)` BEFORE any side effect, then exit 0.
     buildinfo::exit_on_version!();
 
-    // Capture $NOTIFY_SOCKET while still single-threaded (it is removed from
-    // the environment so launched clients do not inherit it), then the command
-    // line — before config, so --help/--version need no settings file.
-    slots::sdnotify::init();
+    // Parse before config or any thread can start, so backend environment
+    // overrides are safe and --help/--version need no settings file.
     let cli = cli::parse(&buildinfo::build_info!().line());
     let backend = cli::resolve(&cli);
     if backend == cli::Backend::Headless {
@@ -50,6 +48,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // the configured XWayland props agree with this backend's policy.
         unsafe { std::env::set_var("COMPD_XWAYLAND", "0") };
     }
+    // Capture and remove $NOTIFY_SOCKET while still single-threaded.
+    slots::sdnotify::init();
     if let Some(node) = cli.render_node.clone() {
         model::environment::config::base::override_render_node(node);
     }
@@ -159,7 +159,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     crate::priority::base::apply(&e.priority, backend);
 
     let env_flags: Vec<(String, String)> = vec![
-        ("COMPOSITOR_PRIORITY".to_string(), e.priority.clone()),
+        (
+            "COMPOSITOR_PRIORITY".to_string(),
+            if backend == cli::Backend::Headless {
+                String::new()
+            } else {
+                e.priority.clone()
+            },
+        ),
         (
             "COMPOSITOR_RENDERER_SYNC".to_string(),
             e.renderer_sync.clone(),
@@ -506,6 +513,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if backend != cli::Backend::Headless {
         let dh = state.inner.loader.display_handle.clone();
         xwayland::register(&dh, &mut event_loop);
+    } else {
+        info!("headless: XWayland disabled");
     }
 
     // SIGTERM / SIGINT -> stop the loop, so the teardown below actually runs. Registered

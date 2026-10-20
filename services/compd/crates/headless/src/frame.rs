@@ -19,6 +19,25 @@ use world::state::Loop;
 
 const INTERVAL: Duration = Duration::from_nanos(1_000_000_000 / 60);
 
+#[derive(Default)]
+struct Retry {
+    delay: Duration,
+    warned: Option<Instant>,
+}
+
+impl Retry {
+    /// Back off every failure, but emit at most one warning per five seconds.
+    fn failed(&mut self, now: Instant) -> bool {
+        self.delay = (self.delay * 2).max(INTERVAL).min(Duration::from_secs(1));
+        if self.warned.is_none_or(|last| now.duration_since(last) >= Duration::from_secs(5)) {
+            self.warned = Some(now);
+            true
+        } else {
+            false
+        }
+    }
+}
+
 pub(crate) struct Context {
     output: Output,
     renderer: GlesRenderer,
@@ -27,6 +46,7 @@ pub(crate) struct Context {
     tracker: OutputDamageTracker,
     last: Option<Instant>,
     armed: bool,
+    retry: Retry,
 }
 
 impl Context {
@@ -44,6 +64,7 @@ impl Context {
             tracker,
             last: None,
             armed: false,
+            retry: Retry::default(),
         }
     }
 }
@@ -56,7 +77,9 @@ pub(crate) fn arm(state: &mut Loop, context: &Rc<RefCell<Context>>) {
     }
     let at = ctx
         .last
-        .map_or_else(Instant::now, |last| (last + INTERVAL).max(Instant::now()));
+        .map_or_else(Instant::now, |last| {
+            (last + INTERVAL.max(ctx.retry.delay)).max(Instant::now())
+        });
     let context = Rc::clone(context);
     state
         .loop_handle
@@ -86,6 +109,7 @@ fn draw(state: &mut Loop, ctx: &mut Context) {
     let result = compose(state, ctx, &mut visible);
     match result {
         Ok(true) => {
+            ctx.retry.delay = Duration::ZERO;
             state.state.redraw.frame(&key, false);
             present(state, &ctx.output, &visible);
             model::stats::registry::base::present(&key);
@@ -94,13 +118,22 @@ fn draw(state: &mut Loop, ctx: &mut Context) {
             }
         }
         Ok(false) => {
+            ctx.retry.delay = Duration::ZERO;
             state.state.redraw.frame(&key, true);
             // Empty frames owe callbacks too. This draw was already paced by
             // the one-shot timer, so no unbounded commit/callback loop arises.
+            let mut feedback = frames::draw::present::callbacks::callbacks::collect_feedback(
+                &ctx.output,
+                &visible,
+                None,
+            );
+            feedback.discarded();
             send_frames(state, &ctx.output, &visible);
         }
         Err(error) => {
-            warn!("headless: frame failed: {error}");
+            if ctx.retry.failed(Instant::now()) {
+                warn!("headless: frame failed (retry in {:?}): {error}", ctx.retry.delay);
+            }
             ctx.tracker = OutputDamageTracker::from_output(&ctx.output);
             state
                 .state
@@ -138,7 +171,12 @@ fn compose(
     // Track content changes independently of the alternating targets. This
     // age-1 query is only a scene diff; it never assumes preserved pixels in
     // either texture. An unchanged scene submits nothing.
-    if ctx.tracker.damage_output(1, &scene.Element)?.0.is_none() {
+    let damaged = ctx
+        .tracker
+        .damage_output(1, &scene.Element)?
+        .0
+        .is_some_and(|damage| !damage.is_empty());
+    if !damaged {
         return Ok(false);
     }
     let mut target = ctx.renderer.bind(&mut ctx.targets[ctx.next])?;
@@ -151,12 +189,11 @@ fn compose(
         &scene.Element,
         [0.1, 0.1, 0.1, 1.0],
     )?;
-    let damaged = result.damage.is_some_and(|d| !d.is_empty());
     result.sync.wait()?;
     ctx.next ^= 1;
     // TODO(Phase 2): screencopy and Bus capture read this completed target;
     // cursor inclusion is selected for each capture, not globally.
-    Ok(damaged)
+    Ok(true)
 }
 
 fn present(state: &mut Loop, output: &Output, visible: &[Window]) {
@@ -182,4 +219,28 @@ fn send_frames(state: &mut Loop, output: &Output, visible: &[Window]) {
     callbacks::send_window_frames(state, output, visible);
     callbacks::send_layer_frames(state, output);
     frames::draw::present::cursor::cursor::send_frames(state, output);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn persistent_errors_back_off_and_warnings_are_throttled() {
+        let mut retry = Retry::default();
+        let now = Instant::now();
+        assert!(retry.failed(now));
+        assert_eq!(retry.delay, INTERVAL);
+        assert!(!retry.failed(now + INTERVAL));
+        assert_eq!(retry.delay, INTERVAL * 2);
+        for _ in 0..10 {
+            assert!(!retry.failed(now + Duration::from_secs(1)));
+        }
+        assert_eq!(retry.delay, Duration::from_secs(1));
+        assert!(retry.failed(now + Duration::from_secs(5)));
+        // A good frame clears the delay; warning throttling survives recovery.
+        retry.delay = Duration::ZERO;
+        assert!(!retry.failed(now + Duration::from_secs(6)));
+        assert_eq!(retry.delay, INTERVAL);
+    }
 }

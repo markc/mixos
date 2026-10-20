@@ -5,7 +5,7 @@
 
 use std::{
     fs,
-    os::unix::{fs::PermissionsExt, net::UnixStream},
+    os::unix::{fs::{FileTypeExt, PermissionsExt}, net::UnixStream},
     path::PathBuf,
     process::{Child, Command, Stdio},
     sync::mpsc,
@@ -96,7 +96,7 @@ impl Drop for Process {
     }
 }
 
-fn boot(scale: i32, explicit_node: bool) {
+fn spawn(scale: i32, explicit_node: Option<&str>, label: &str) -> Process {
     let binary = std::env::var_os("COMPD_TEST_BINARY")
         .map(PathBuf::from)
         .unwrap_or_else(|| {
@@ -113,7 +113,7 @@ fn boot(scale: i32, explicit_node: bool) {
         "build compd with backend-headless before this test: {}",
         binary.display()
     );
-    let root = std::env::temp_dir().join(format!("compd-headless-{}-{scale}", std::process::id()));
+    let root = std::env::temp_dir().join(format!("compd-headless-{}-{label}", std::process::id()));
     fs::create_dir(&root).unwrap();
     fs::set_permissions(&root, fs::Permissions::from_mode(0o700)).unwrap();
     let node =
@@ -121,7 +121,7 @@ fn boot(scale: i32, explicit_node: bool) {
     let mut config = model::environment::config::base::default_settings();
     // Default priority is realtime: headless must override the startup policy.
     assert_eq!(config.priority, "realtime");
-    config.render_node = if explicit_node {
+    config.render_node = if explicit_node.is_some() {
         "/dev/dri/nonexistent-render-node".into()
     } else {
         node.clone()
@@ -157,8 +157,8 @@ fn boot(scale: i32, explicit_node: bool) {
         .env_remove("MIXOS_VT")
         .stdout(Stdio::from(stderr.try_clone().unwrap()))
         .stderr(stderr);
-    if explicit_node {
-        command.args(["--render-node", &node]);
+    if let Some(node) = explicit_node {
+        command.args(["--render-node", node]);
     }
     if scale != 1 {
         command.args(["--scale", &scale.to_string()]);
@@ -174,12 +174,20 @@ fn boot(scale: i32, explicit_node: bool) {
             }
         }
     });
-    let mut process = Process {
+    Process {
         child,
         root,
         stop,
         watchdog: Some(watchdog),
-    };
+    }
+}
+
+fn boot(scale: i32, explicit_node: bool) {
+    let node = std::env::var("COMPD_TEST_RENDER_NODE")
+        .unwrap_or_else(|_| "/dev/dri/renderD128".into());
+    let mut process = spawn(scale, explicit_node.then_some(node.as_str()), &format!("boot-{scale}"));
+    let pid = process.child.id();
+    let log = process.root.join("compd.log");
     let deadline = Instant::now() + Duration::from_secs(30);
     let stream = loop {
         if let Some(status) = process.child.try_wait().unwrap() {
@@ -223,6 +231,14 @@ fn boot(scale: i32, explicit_node: bool) {
         );
         thread::sleep(Duration::from_millis(20));
     }
+    let output = fs::read_to_string(&log).unwrap();
+    assert!(
+        output.contains("priority: headless keeps inherited scheduling and nice value"),
+        "headless scheduling policy was not applied: {output}"
+    );
+    assert!(output.contains("headless: XWayland disabled"), "{output}");
+    assert!(!output.contains("XWayland ready"), "{output}");
+    assert!(!process.root.join("compd/wayland-headless-test.xwayland.env").exists());
     let stat = fs::read_to_string(format!("/proc/{pid}/stat")).unwrap();
     let fields: Vec<_> = stat
         .rsplit_once(')')
@@ -258,4 +274,50 @@ fn boot_mode_scale_and_scheduling() {
 #[ignore = "needs a GPU render node and a built compd with backend-headless"]
 fn boot_config_render_node_and_default_scale() {
     boot(1, false);
+}
+
+fn refuses_node(node: &str, label: &str, reason: &str) {
+    let mut process = spawn(1, Some(node), label);
+    let deadline = Instant::now() + Duration::from_secs(30);
+    let status = loop {
+        if let Some(status) = process.child.try_wait().unwrap() {
+            break status;
+        }
+        assert!(Instant::now() < deadline, "invalid render node did not exit");
+        thread::sleep(Duration::from_millis(20));
+    };
+    let output = fs::read_to_string(process.root.join("compd.log")).unwrap();
+    assert!(!status.success(), "invalid render node was accepted: {output}");
+    assert!(output.contains(reason), "missing {reason}: {output}");
+    println!("render node {node} refused with {reason}");
+}
+
+#[test]
+#[ignore = "needs a built compd with backend-headless"]
+fn render_node_nonexistent_is_refused() {
+    refuses_node("/dev/dri/nonexistent-render-node", "missing-node", "headless-render-node-invalid:");
+}
+
+#[test]
+#[ignore = "needs a built compd with backend-headless"]
+fn render_node_primary_or_non_render_is_refused() {
+    let card = fs::read_dir("/dev/dri").ok().into_iter().flatten()
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .find(|path| path.file_name().unwrap().to_string_lossy().starts_with("card"));
+    let node = card.or_else(|| {
+        fs::metadata("/dev/null").ok()
+            .filter(|metadata| metadata.file_type().is_char_device())
+            .map(|_| PathBuf::from("/dev/null"))
+    });
+    let Some(node) = node else {
+        println!("SKIP: no primary DRM node or non-render character device available");
+        return;
+    };
+    let reason = if node.starts_with("/dev/dri") {
+        "headless-render-node-required:"
+    } else {
+        "headless-render-node-invalid:"
+    };
+    refuses_node(node.to_str().unwrap(), "non-render-node", reason);
 }

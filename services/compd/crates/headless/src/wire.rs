@@ -36,6 +36,7 @@ impl DisplayBackend for Contract {
     fn bind_display(&mut self, handle: &DisplayHandle) -> FormatSet {
         if let Err(error) = self.renderer.bind_wl_display(handle) {
             warn!("headless: legacy EGL client bridge unavailable: {error}");
+            return FormatSet::default();
         }
         self.renderer.dmabuf_formats()
     }
@@ -69,8 +70,11 @@ pub fn wire(
     options: Options<'_>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // No DrmDevice, seat, udev or input backend: GBM holds only this render fd.
-    if DrmNode::from_path(options.render_node)?.ty() != NodeType::Render {
-        return Err("headless requires a DRM render node, not a primary or control node".into());
+    let node = DrmNode::from_path(options.render_node).map_err(|error| {
+        format!("headless-render-node-invalid: {}: {error}", options.render_node)
+    })?;
+    if node.ty() != NodeType::Render {
+        return Err("headless-render-node-required: expected a DRM render node, not a primary or control node".into());
     }
     let file = OpenOptions::new()
         .read(true)

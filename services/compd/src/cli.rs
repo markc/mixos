@@ -12,14 +12,14 @@
 //! |---|---|
 //! | `--nested` | nested (winit) backend |
 //! | `--headless` | render node only, virtual `headless-0` output, no seat or XWayland |
-//! | `--size WxH` | headless physical mode (default 1920x1080 at 60 Hz) |
-//! | `--render-node PATH` | headless render node (default `render_node` setting) |
+//! | `--size WxH` | implies headless; physical mode (default 1920x1080 at 60 Hz) |
+//! | `--render-node PATH` | implies headless; render node (default `render_node` setting) |
 //! | `--kms`, `kms-live` | KMS backend (`kms-live` is the subcommand spelling) |
 //! | (neither) | both compiled in: nested when `WAYLAND_DISPLAY`/`DISPLAY` is set, else KMS |
 //! | `--socket NAME` | the Wayland socket name (default: the next free `wayland-N`) |
-//! | `--device PATH` | KMS: the scanout DRM node (overrides `scanout_node`) |
-//! | `--connector NAME` | KMS: drive this connector (`HDMI-A-1`, `eDP-1`, …) |
-//! | `--scale S` | the output scale, 0.5 ≤ S ≤ 4, rounded to 1/120 (wp_fractional_scale's unit); KMS/headless default to 1, nested follows the host |
+//! | `--device PATH` | implies KMS; scanout DRM node (overrides `scanout_node`); conflicts with headless-only flags |
+//! | `--connector NAME` | implies KMS; drive this connector (`HDMI-A-1`, `eDP-1`, …); conflicts with headless-only flags |
+//! | `--scale S` | implies headless unless a backend or KMS-only flag is given; output scale, 0.5 ≤ S ≤ 4, rounded to 1/120; KMS/headless default to 1, nested follows the host |
 //! | `--kms-confirm` | accepted, no effect: compd never asks a human to confirm a takeover |
 //! | `--config-file PATH` | the settings file (read by `model::environment::config`) |
 //! | `--bus-service NAME` | the `comp` Bus service name (default `comp` on KMS, `comp-nested` nested, `comp-headless` headless) |
@@ -163,17 +163,34 @@ pub fn parse_from(args: impl Iterator<Item = String>, version: &str) -> Cli {
             other => refuse(&format!("unknown argument {other:?}")),
         }
     }
-    // KMS-only flags imply KMS when no backend was named.
-    if cli.backend.is_none() && (cli.device.is_some() || cli.connector.is_some()) {
-        cli.backend = Some(Backend::Kms);
-    }
-    if cli.backend != Some(Backend::Kms) && (cli.device.is_some() || cli.connector.is_some()) {
-        refuse("--device/--connector apply only to the KMS backend");
-    }
-    if cli.backend != Some(Backend::Headless) && (cli.size.is_some() || cli.render_node.is_some()) {
-        refuse("--size/--render-node require --headless");
-    }
+    infer_backend(&mut cli).unwrap_or_else(|why| refuse(why));
     cli
+}
+
+/// Apply flag inference independently of feature availability, which `resolve`
+/// checks for explicit and inferred backends alike.
+fn infer_backend(cli: &mut Cli) -> Result<(), &'static str> {
+    let kms_only = cli.device.is_some() || cli.connector.is_some();
+    let headless_only = cli.size.is_some() || cli.render_node.is_some();
+    if kms_only && headless_only {
+        return Err("backend-flag-conflict: --size/--render-node cannot be combined with --device/--connector");
+    }
+    if cli.backend.is_none() {
+        cli.backend = if kms_only {
+            Some(Backend::Kms)
+        } else if headless_only || cli.scale.is_some() {
+            Some(Backend::Headless)
+        } else {
+            None
+        };
+    }
+    if cli.backend != Some(Backend::Kms) && kms_only {
+        return Err("backend-flag-conflict: --device/--connector apply only to the KMS backend");
+    }
+    if cli.backend != Some(Backend::Headless) && headless_only {
+        return Err("backend-flag-conflict: --size/--render-node apply only to the headless backend");
+    }
+    Ok(())
 }
 
 /// The smallest and largest output scale compd accepts.
@@ -219,30 +236,44 @@ pub fn output_scale(cli: &Cli, backend: Backend) -> Option<f64> {
 /// only one compiled in, else (both compiled in) nested when a host display is
 /// reachable. Refuses, naming the cargo feature, when the request is not built.
 pub fn resolve(cli: &Cli) -> Backend {
-    let nested_built = cfg!(feature = "backend-winit");
-    let kms_built = cfg!(feature = "backend-native");
-    let headless_built = cfg!(feature = "backend-headless");
+    let host = |v: &str| std::env::var_os(v).is_some_and(|s| !s.is_empty());
+    resolve_with(
+        cli,
+        cfg!(feature = "backend-winit"),
+        cfg!(feature = "backend-native"),
+        cfg!(feature = "backend-headless"),
+        host("WAYLAND_DISPLAY") || host("DISPLAY"),
+    )
+    .unwrap_or_else(|why| refuse(why))
+}
+
+fn resolve_with(
+    cli: &Cli,
+    nested_built: bool,
+    kms_built: bool,
+    headless_built: bool,
+    host_display: bool,
+) -> Result<Backend, &'static str> {
     match cli.backend {
         Some(Backend::Headless) if !headless_built => {
-            refuse("headless-feature-disabled: --headless needs the backend-headless feature")
+            Err("headless-feature-disabled: headless needs the backend-headless feature")
         }
         Some(Backend::Nested) if !nested_built => {
-            refuse("kms-live-only build: --nested needs the backend-winit feature")
+            Err("kms-live-only build: --nested needs the backend-winit feature")
         }
         // The reason code the deploy probe looks for.
         Some(Backend::Kms) if !kms_built => {
-            refuse("kms-live-feature-disabled: this build lacks the backend-native feature")
+            Err("kms-live-feature-disabled: this build lacks the backend-native feature")
         }
-        Some(b) => b,
-        None if nested_built && !kms_built => Backend::Nested,
-        None if kms_built && !nested_built => Backend::Kms,
-        None if headless_built && !nested_built && !kms_built => Backend::Headless,
+        Some(b) => Ok(b),
+        None if nested_built && !kms_built => Ok(Backend::Nested),
+        None if kms_built && !nested_built => Ok(Backend::Kms),
+        None if headless_built && !nested_built && !kms_built => Ok(Backend::Headless),
         None => {
-            let host = |v: &str| std::env::var_os(v).is_some_and(|s| !s.is_empty());
-            if host("WAYLAND_DISPLAY") || host("DISPLAY") {
-                Backend::Nested
+            if host_display {
+                Ok(Backend::Nested)
             } else {
-                Backend::Kms
+                Ok(Backend::Kms)
             }
         }
     }
@@ -260,6 +291,48 @@ pub const UNSUPPORTED_ENV: &[&str] = &[
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn headless_flags_infer_backend_and_require_feature() {
+        for flags in [
+            vec!["--size", "1280x720"],
+            vec!["--scale=2"],
+            vec!["--render-node=/dev/dri/renderD128"],
+        ] {
+            let cli = p(&flags);
+            assert_eq!(cli.backend, Some(Backend::Headless));
+            assert_eq!(resolve_with(&cli, false, false, true, false), Ok(Backend::Headless));
+            assert_eq!(resolve_with(&cli, true, true, true, true), Ok(Backend::Headless));
+            assert!(resolve_with(&cli, true, true, false, true)
+                .unwrap_err()
+                .starts_with("headless-feature-disabled:"));
+        }
+        assert_eq!(p(&["--connector=HDMI-A-1"]).backend, Some(Backend::Kms));
+        assert_eq!(p(&["--device=/dev/dri/card0", "--scale=2"]).backend, Some(Backend::Kms));
+    }
+
+    #[test]
+    fn conflicting_backend_flags_are_refused_by_name() {
+        for backend in [None, Some(Backend::Kms), Some(Backend::Headless), Some(Backend::Nested)] {
+            for device in [false, true] {
+                for size in [false, true] {
+                    let mut cli = Cli {
+                        backend,
+                        device: device.then(|| "/dev/dri/card0".into()),
+                        connector: (!device).then(|| "HDMI-A-1".into()),
+                        size: size.then_some((1280, 720)),
+                        render_node: (!size).then(|| "/dev/dri/renderD128".into()),
+                        ..Cli::default()
+                    };
+                    assert!(infer_backend(&mut cli).unwrap_err().starts_with("backend-flag-conflict:"));
+                }
+            }
+        }
+        for backend in [Backend::Kms, Backend::Nested] {
+            let mut cli = Cli { backend: Some(backend), size: Some((1280, 720)), ..Cli::default() };
+            assert!(infer_backend(&mut cli).is_err());
+        }
+    }
 
     #[test]
     fn headless_launch_parses_mode_scale_and_node() {
