@@ -234,14 +234,14 @@ end
 
 fn restart_noded($node, $is_local)
   if $is_local then
-    $r = run_argv(["sudo", "-n", "systemctl", "restart", $d.project() .. "-noded"])
+    $r = run_argv(["sudo", "-n", "systemctl", "restart", $d.unit_name("noded")])
     $d.die_if($r["exit_code"] != 0,
-      "restart " .. $d.project() .. "-noded (local): " .. trim($r["stderr"]))
+      "restart " .. $d.unit_name("noded") .. " (local): " .. trim($r["stderr"]))
     return nil
   end
-  $r = ssh_mix($node, 'print(run("systemctl restart " .. $d.project() .. "-noded"))')
+  $r = ssh_mix($node, 'print(run("systemctl restart ' .. $d.unit_name("noded") .. '"))')
   $d.die_if(not $r["ok"],
-    "restart " .. $d.project() .. "-noded on " .. $node .. ": " .. trim($r["stdout"]) .. " " .. trim($r["stderr"]))
+    "restart " .. $d.unit_name("noded") .. " on " .. $node .. ": " .. trim($r["stdout"]) .. " " .. trim($r["stderr"]))
 end
 
 -- A fresh interpreter is load-bearing after the local broker restarts: the
@@ -515,9 +515,9 @@ else
   end
   $pk = run_argv([$SIGN, "pubkey"])
   $d.die_if($pk["exit_code"] != 0,
-    $d.project() .. "-mesh-sign pubkey failed: " .. trim($pk["stderr"]))
+    "mesh-sign pubkey failed: " .. trim($pk["stderr"]))
   $pub = trim($pk["stdout"])
-  $d.die_if($pub == "", $d.project() .. "-mesh-sign pubkey returned empty")
+  $d.die_if($pub == "", "mesh-sign pubkey returned empty")
   print("  selected: " .. $selected)
   print("")
 
@@ -585,7 +585,7 @@ for each $node in $order
     -- Anchor is checked before either mutable payload file reaches the node.
     ensure_genesis($node, $is_local, $pub)
     install_payload($node, $is_local, $roster_file,
-      $d.etc_root() .. "/noded/config.conf.mix", "root", $d.project() .. "-noded", "0640")
+      $d.etc_root() .. "/noded/config.conf.mix", "root", $d.group_name("noded"), "0640")
     install_payload($node, $is_local, $SIGNED_PRIV,
       $d.state_root() .. "/noded/inventory.signed", "root", "root", "0644")
     restart_noded($node, $is_local)

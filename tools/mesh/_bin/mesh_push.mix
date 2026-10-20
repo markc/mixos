@@ -128,10 +128,10 @@ end
 -- Obtain the public key only. The anchor is never replaced as a side effect.
 $pk = run_argv([$SIGN, "pubkey"])
 $d.die_if($pk["exit_code"] != 0,
-  $d.project() .. "-mesh-sign pubkey failed: " .. trim($pk["stderr"]))
+  "mesh-sign pubkey failed: " .. trim($pk["stderr"]))
 $pub = trim($pk["stdout"])
 $d.die_if(is_empty($pub),
-  $d.project() .. "-mesh-sign pubkey returned empty — refusing to install a blank anchor")
+  "mesh-sign pubkey returned empty — refusing to install a blank anchor")
 
 if not $dry then
   $mkdirs = run_argv(["sudo", "-n", "install", "-d", "-m", "0755",
@@ -222,7 +222,7 @@ if $dry then
   end
   print("")
   print("dry-run complete: would push epoch " .. ("" .. $vi["epoch"]) ..
-    " to " .. $d.state_root() .. "/noded/inventory.signed and restart " .. $d.project() .. "-noded")
+    " to " .. $d.state_root() .. "/noded/inventory.signed and restart " .. $d.unit_name("noded"))
   exit(0)
 end
 
@@ -231,10 +231,10 @@ $m.install_atomic($out, $d.state_root() .. "/noded/inventory.signed",
   "root", "root", "0644")
 print("  pushed   : " .. $d.state_root() .. "/noded/inventory.signed")
 
-$restart = run_argv(["sudo", "-n", "systemctl", "restart", $d.project() .. "-noded"])
+$restart = run_argv(["sudo", "-n", "systemctl", "restart", $d.unit_name("noded")])
 $d.die_if($restart["exit_code"] != 0,
-  "restart " .. $d.project() .. "-noded: " .. trim($restart["stderr"]))
-print("  reloaded : " .. $d.project() .. "-noded restarted")
+  "restart " .. $d.unit_name("noded") .. ": " .. trim($restart["stderr"]))
+print("  reloaded : " .. $d.unit_name("noded") .. " restarted")
 
 -- Confirm the daemon accepted this exact payload. Each attempt reconnects
 -- because a failed Bus probe is latched until explicitly reset, and each send
@@ -250,8 +250,8 @@ while $attempt < 5 and $rc != 0
   $attempt = $attempt + 1
 end
 $d.die_if($rc != 0,
-  $d.project() .. "-noded did not answer noded.inventory after " .. ("" .. $attempt) ..
-  " attempts (last rc " .. ("" .. $rc) .. ") — the cache was pushed and the daemon restarted, but nothing here confirms it accepted the new trust root. Check: systemctl status " .. $d.project() .. "-noded")
+  $d.unit_name("noded") .. " did not answer noded.inventory after " .. ("" .. $attempt) ..
+  " attempts (last rc " .. ("" .. $rc) .. ") — the cache was pushed and the daemon restarted, but nothing here confirms it accepted the new trust root. Check: systemctl status " .. $d.unit_name("noded"))
 $d.die_if(type($result) != "map",
   "noded.inventory answered rc 0 but not with a map — cannot confirm acceptance")
 

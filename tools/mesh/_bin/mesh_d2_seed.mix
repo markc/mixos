@@ -4,7 +4,7 @@
 -- The signed inventory is verified before its current D2 public keys are used.
 -- Seeds come from the hub's private SQLite store through parameter bindings,
 -- travel only in mode-0600 files, and are atomically installed as
--- /etc/<project>/noded/d2.seed (root:<project>-noded 0640). The daemon is NOT
+-- /etc/<project>/noded/d2.seed (root:noded 0640). The daemon is NOT
 -- restarted: it loads the staged seed at the later admission-posture roll.
 --
 -- With no arguments, every rostered mesh member is handled in the canonical
@@ -196,7 +196,7 @@ fn install_local($node, $source, $expected, $before)
   end
   $temporary = dirname($DEST) .. "/.d2.seed.new." .. uuid()
   $install = run_argv(["sudo", "-n", "install", "-m", "0640", "-o", "root",
-    "-g", $d.project() .. "-noded", $source, $temporary])
+    "-g", $d.group_name("noded"), $source, $temporary])
   if $install["exit_code"] != 0 then
     $_remove_failed = run_argv(["sudo", "-n", "rm", "-f", $temporary])
     cleanup_local_dir(dirname($source))
@@ -320,7 +320,7 @@ end
 $DB = $resolved_db
 $DB_ID = stat($DB)
 $d.die_if(not is_file($SIGN),
-  $d.project() .. "-mesh-sign release binary not found: " .. $SIGN)
+  "mesh-sign release binary not found: " .. $SIGN)
 
 -- ── local secret and public-key preflight ──────────────────────────────
 $SEEDS = read_seeds($DB, $EXPECTED_MESH, $nodes)
@@ -362,12 +362,12 @@ for each $node in $nodes
     $sudo = run_argv(["sudo", "-n", "true"])
     $d.die_if($sudo["exit_code"] != 0,
       $node .. " local sudo preflight failed: " .. trim($sudo["stderr"]))
-    $gid = run_argv(["getent", "group", $d.project() .. "-noded"])
+    $gid = run_argv(["getent", "group", $d.group_name("noded")])
     $d.die_if($gid["exit_code"] != 0,
-      $node .. " has no " .. $d.project() .. "-noded group")
+      $node .. " has no " .. $d.group_name("noded") .. " group")
     $fields = split(trim($gid["stdout"]), ":")
     $d.die_if(len($fields) < 3 or not re_match($fields[2], "^[0-9]+$"),
-      $node .. " returned an unparseable " .. $d.project() .. "-noded group record")
+      $node .. " returned an unparseable " .. $d.group_name("noded") .. " group record")
     $GIDS[$node] = $fields[2]
     $BEFORE[$node] = current_local_hash($DEST)
     $meta = ""
@@ -384,9 +384,9 @@ for each $node in $nodes
     $remote = $d.is_foreign($ROSTER, $node) ? $node : "root@" .. $d.mesh_ip($node)
     $REMOTE[$node] = $remote
     $probe = ssh_mix($remote, '
-$gid_text = trim(run("id -g " .. $d.project() .. "-noded"))
+$gid_text = trim(run("id -g " .. $d.group_name("noded")))
 if $rc != 0 or not re_match($gid_text, "^[0-9]+$") then
-  eprint($d.project() .. "-noded group is absent or unparseable")
+  eprint($d.group_name("noded") .. " group is absent or unparseable")
   exit(7)
 end
 $state = "__ABSENT__"
@@ -495,9 +495,9 @@ end
 if not is_file($staged) or hash_file($staged, "sha256") != $expected then
   fail("transferred seed is not byte-identical to the secrets DB snapshot", 9)
 end
-$gid_text = trim(run("id -g " .. $d.project() .. "-noded"))
+$gid_text = trim(run("id -g " .. $d.group_name("noded")))
 if $rc != 0 or not re_match($gid_text, "^[0-9]+$") then
-  fail($d.project() .. "-noded group disappeared after preflight", 10)
+  fail($d.group_name("noded") .. " group disappeared after preflight", 10)
 end
 mkdir(dirname($dest), {parents: true})
 chmod(dirname($dest), 0o755)
@@ -554,7 +554,7 @@ print(json_encode({hash: hash_file($dest, "sha256"), uid: $info["uid"],
       $node .. " post-install seed hash/ownership/mode does not match the approved state")
   end
   print("[" .. $node .. "] placed: " .. $DEST ..
-    " (root:" .. $d.project() .. "-noded 0640) integrity=MATCH sha256=" .. substr($expected, 0, 12))
+    " (root:" .. $d.group_name("noded") .. " 0640) integrity=MATCH sha256=" .. substr($expected, 0, 12))
 end
 
 print("")

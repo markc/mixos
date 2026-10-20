@@ -1,5 +1,5 @@
 #!/usr/bin/env mix
--- mesh.mix — inspect the mesh through the local <project>-noded broker.
+-- mesh.mix — inspect the mesh through the local noded broker.
 --
 --   mix _bin/mesh.mix             node names only (self first)
 --   mix _bin/mesh.mix -a|--all    trust identity and joined node table
@@ -59,7 +59,7 @@ for each $p in $result["peers"]
 end
 
 -- noded.inventory is derived from the signed inventory already accepted by
--- <project>-noded. mesh_lib's file verifier is deliberately not repeated here:
+-- noded. mesh_lib's file verifier is deliberately not repeated here:
 -- this installed-node observer has no hub authoring file and must report the
 -- same atomically-published authority snapshot used for routing.
 send noded noded.inventory

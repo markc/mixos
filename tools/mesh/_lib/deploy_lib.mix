@@ -15,12 +15,13 @@
 --   hub_root()      $MESH_HUB — the directory that holds _etc/mesh/ (site state)
 --   project_root()  $MESH_SRC — the project's source checkout (for built binaries)
 --
--- Derived names (all use project()):
---   project_bin(n)    release binary <project>-<n> in the build directory
---   installed_bin(n)  <prefix>/bin/<project>-<n>, prefix = $MESH_PREFIX else /opt/<project>
+-- Derived names. The project names directories; components keep their plain names:
+--   project_bin(n)    release binary <n> in the build directory
+--   installed_bin(n)  <prefix>/bin/<n>, prefix = $MESH_PREFIX else /opt/<project>
 --   etc_dir(n)        /etc/<project>/<n>
 --   state_dir(n)      /var/lib/<project>/<n>
---   group_name(n)     <project>-<n>
+--   unit_name(n)      <n>
+--   group_name(n)     <n>
 
 fn project()
   $e = env("MESH_PROJECT")
@@ -57,13 +58,13 @@ end
 fn project_bin($name)
   $bd = env("MESH_BIN_DIR")
   if $bd != "" then
-    return $bd .. "/" .. project() .. "-" .. $name
+    return $bd .. "/" .. $name
   end
   $ct = env("CARGO_TARGET_DIR")
   if $ct != "" then
-    return $ct .. "/release/" .. project() .. "-" .. $name
+    return $ct .. "/release/" .. $name
   end
-  return project_root() .. "/target/release/" .. project() .. "-" .. $name
+  return project_root() .. "/target/release/" .. $name
 end
 
 fn installed_prefix()
@@ -75,7 +76,7 @@ fn installed_prefix()
 end
 
 fn installed_bin($name)
-  return installed_prefix() .. "/bin/" .. project() .. "-" .. $name
+  return installed_prefix() .. "/bin/" .. $name
 end
 
 fn etc_root()
@@ -94,14 +95,14 @@ fn state_dir($name)
   return state_root() .. "/" .. $name
 end
 
--- The systemd unit, service and process name for a component: <project>-<name>.
+-- The systemd unit, service and process name for a component: its plain name.
 fn unit_name($name)
-  return project() .. "-" .. $name
+  return $name
 end
 
--- The system group a component runs as: also <project>-<name>.
+-- The system group a component runs as: also its plain name.
 fn group_name($name)
-  return project() .. "-" .. $name
+  return $name
 end
 
 -- The interpreter to hand to child mix processes: $MESH_MIX, else the one on PATH.
