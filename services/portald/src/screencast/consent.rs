@@ -362,11 +362,13 @@ pub const VERBS: &[(&str, &str, bool)] = &[
 /// rc 13: the caller is not on this node.
 const FORBIDDEN: u8 = 13;
 
-fn args(command: &IncomingCommand) -> serde_json::Value {
+/// The request body; `Err` for a body that is not JSON, which is refused
+/// rather than read as empty (an empty grant covers any app).
+fn args(command: &IncomingCommand) -> Result<serde_json::Value, serde_json::Error> {
     if command.body.trim().is_empty() {
-        command.args.clone()
+        Ok(command.args.clone())
     } else {
-        serde_json::from_str(&command.body).unwrap_or(serde_json::Value::Null)
+        serde_json::from_str(&command.body)
     }
 }
 
@@ -395,7 +397,10 @@ pub fn handle_verb(command: &IncomingCommand) -> (u8, serde_json::Value) {
         return (FORBIDDEN, json!({"error_code": "FORBIDDEN", "message": "screen-share consent is answered on this node only"}));
     }
     let caller = command.from.clone();
-    let body = args(command);
+    let body = match args(command) {
+        Ok(body) => body,
+        Err(error) => return usage(format!("body is not JSON: {error}")),
+    };
     match command.command.as_str() {
         "portald.screencast.pending" => (
             0,
@@ -465,7 +470,9 @@ pub fn handle_verb(command: &IncomingCommand) -> (u8, serde_json::Value) {
 fn withdraw(id: u64) {
     if let Some(client) = client() {
         tokio::spawn(async move {
-            let _ = client.call("notify", "notify.close", json!({"id": id})).await;
+            if let Err(error) = client.call("notify", "notify.close", json!({"id": id})).await {
+                tracing::debug!(id, %error, "consent question not withdrawn; it expires on its own");
+            }
         });
     }
 }
@@ -760,6 +767,11 @@ mod tests {
         assert_eq!(rc, 14);
         let (rc, _) = handle_verb(&command("portald.screencast.answer", json!({"request": "/r/x"}), Some("local")));
         assert_eq!(rc, 10);
+
+        // A body that is not JSON is refused, never read as an any-app grant.
+        let mut garbage = command("portald.screencast.grant", json!({}), Some("local"));
+        garbage.body = "garbage".into();
+        assert_eq!(handle_verb(&garbage).0, 10);
 
         // Wrongly typed fields are refused, never read as their defaults.
         let (rc, _) = handle_verb(&command("portald.screencast.grant", json!({"count": "5"}), Some("local")));

@@ -126,7 +126,8 @@ Nothing is captured until the request is granted, in this order:
    grant for any app.
 3. **The person.** portald posts a notifyd question, "Share your screen?", with
    Allow and Deny. The request waits as a pending prompt until the button is
-   pressed, an agent answers it over the Bus, or 60 seconds pass. A timeout, Deny
+   pressed, an agent answers it over the Bus, or 60 seconds pass (up to 65
+   when the question could not be posted). A timeout, Deny
    or a closed question all answer the app with 1 (cancelled). If the app
    closes the request or its session, or leaves the bus, while it waits, the
    question is taken down and nothing is captured. At most 4 requests wait at
@@ -143,9 +144,17 @@ Nothing is captured until the request is granted, in this order:
 These verbs answer **callers on this node only**. A request with
 `broker_origin` other than `local` is refused with rc 13 `FORBIDDEN`, because a
 grant hands over the whole screen. notifyd holds the same line for the
-buttons: `notify.action`, `notify.dismiss` and `notify.close_all` are refused
-for callers off this node, so no mesh peer can press Allow either. Every
-grant, answer and decision is logged with the caller.
+buttons: `notify.action`, `notify.dismiss`, `notify.close` and
+`notify.close_all` are refused for callers off this node, so no mesh peer can
+press Allow either. Every grant, answer and decision is logged with the
+caller.
+
+The trust model, plainly: consent keeps the screen from other nodes and from
+an app that shares by accident. It is not a wall between processes of the
+same session. Any local process can answer or grant over the Bus, and any
+Wayland client of this desk can already capture the screen through compd, so
+an app that wants to approve its own share can. Sandboxed apps, where that
+would matter, are out of scope for now.
 
 To share the screen from a script with nobody at the desk:
 

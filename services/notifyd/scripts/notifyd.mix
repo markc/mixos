@@ -22,10 +22,10 @@
 -- on the topic "<name>.changed" with inner command notification.answered, and
 -- notify.get reads it afterwards. Other inner commands: notification.created,
 -- notification.closed (any outcome that is not a button press).
--- action, dismiss and close_all are the human's own acts, made through the
--- desk's scenes, so they are taken from callers on this node only (the
--- broker's broker_origin stamp): a peer across the mesh must never answer a
--- question for the person, such as portald's screen-share consent.
+-- action, dismiss, close and close_all settle a notification, so they are
+-- taken from callers on this node only (the broker's broker_origin stamp): a
+-- peer across the mesh must never answer or withdraw a question for the
+-- person, such as portald's screen-share consent.
 -- Replies: rc 0 with JSON; rc 10 bad request; rc 13 not a local caller;
 -- rc 14 unknown id; rc 15 already answered; rc 16 too many open. Errors use
 -- {error_code, message}.
@@ -139,7 +139,7 @@ on notify.dismiss desc "the human closed notification {id} without choosing"
 end
 
 on notify.close desc "withdraw notification {id} (its sender, or the Notifications page)"
-  $S = settle_and_reply(body().id, "closed", nil)
+  if local_caller() then $S = settle_and_reply(body().id, "closed", nil) end
 end
 
 on notify.close_all desc "close every open notification that has no buttons"

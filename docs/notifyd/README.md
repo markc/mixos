@@ -63,10 +63,10 @@ An expired question was not answered. Treat it as "no answer", never as yes.
 Each notification gets exactly one outcome. The first one wins, and a later
 button press or timeout is refused with `ALREADY_ANSWERED`.
 
-`notify.action`, `notify.dismiss` and `notify.close_all` are the human's own
-acts, made through the desk's scenes, so notifyd takes them only from callers
-on this node (the broker's `broker_origin` stamp). A peer across the mesh can
-post and read notifications but never answer one for the person. That matters
+`notify.action`, `notify.dismiss`, `notify.close` and `notify.close_all`
+settle a notification, so notifyd takes them only from callers on this node
+(the broker's `broker_origin` stamp). A peer across the mesh can post and read
+notifications but never answer or withdraw one for the person. That matters
 for questions such as portald's screen-share consent.
 
 Errors come back as `{error_code, message}`: rc 10 `USAGE` (a bad body),
