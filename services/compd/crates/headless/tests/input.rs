@@ -10,6 +10,7 @@ mod process;
 mod seats;
 
 use bus::{Bus, binary};
+use comp_model::catalogue::{FOCUS_TOPIC_SUFFIX, topic_name};
 use serde_json::{Value, json};
 use std::{
     fs,
@@ -149,14 +150,14 @@ fn agent_sequence_types_into_a_probe_window() {
     let mut probe = Probe::start(&mut process, "headless-input");
     bus.ready(SERVICE);
     let row = window(&bus, SERVICE, "headless-input");
-    // Read the initial pointer before moving it; world (0,0) is mode centre.
+    // Read the initial pointer before moving it (the camera is pinned).
     let seats = bus.call(SERVICE, "comp.props.get", json!({"path":"input.seats"}));
     println!("initial seats: {seats}");
     assert_eq!(seats["agent"]["pointer"]["output"], "headless-0");
     assert_eq!(seats["agent"]["pointer"]["x"], 640.0);
     assert_eq!(seats["agent"]["pointer"]["y"], 360.0);
-    let output_x = row["window_x"].as_f64().unwrap() + 640.0 + 40.0;
-    let output_y = row["window_y"].as_f64().unwrap() + 360.0 + 50.0;
+    let output_x = row["window_x"].as_f64().unwrap() + 40.0;
+    let output_y = row["window_y"].as_f64().unwrap() + 50.0;
     let reply = bus.call(SERVICE, "comp.input.sequence", json!({"seat":"agent","steps":[
         {"verb":"comp.input.pointer.move","args":{"output":"headless-0","x":output_x,"y":output_y}},
         {"verb":"comp.input.pointer.button","args":{"button":"left","action":"click"}},
@@ -276,13 +277,20 @@ fn two_instances_register_distinct_services() {
     assert_eq!(info_b["service"], "comp-rec");
     assert!(info_a["instance"].is_string(), "{info_a}");
     assert_ne!(info_a["instance"], info_b["instance"]);
-    // The transport namespaces every observation with the registered service.
-    // Query the actual broker topic registry after both focus streams publish.
+    // Focus names come from the same resolver used by the transport. An
+    // empty human seat has no keyboard focus edge to publish; mapped and
+    // session topics prove the live publisher namespaces on the broker.
+    assert_eq!(topic_name(SERVICE, FOCUS_TOPIC_SUFFIX), "comp-headless.focus.changed");
+    assert_eq!(topic_name("comp-rec", FOCUS_TOPIC_SUFFIX), "comp-rec.focus.changed");
+    assert_ne!(topic_name(SERVICE, FOCUS_TOPIC_SUFFIX), topic_name("comp-rec", FOCUS_TOPIC_SUFFIX));
     let topics = bus.call("noded", "topic.list", json!({}));
     println!("broker topics: {topics}");
-    let topics = topics.to_string();
-    assert!(topics.contains("comp-headless.focus.changed"));
-    assert!(topics.contains("comp-rec.focus.changed"));
+    for service in [SERVICE, "comp-rec"] {
+        for suffix in ["surface.mapped", "session.changed"] {
+            let expected = format!("{service}.{suffix}");
+            assert!(topics.as_array().unwrap().iter().any(|row| row["name"] == expected && row["last_publisher"] == service), "{topics}");
+        }
+    }
     bus.call(
         SERVICE,
         "comp.input.key",
