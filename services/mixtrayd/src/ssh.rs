@@ -694,7 +694,12 @@ pub fn host_fragment(name: &str, hostname: &str, port: u16, user: &str, key: &st
     )
 }
 
+/// Resolves a leading `~/`. `~/.ssh/...` is taken against the SSH root, which
+/// is `$HOME/.ssh` in the daemon, so the same holds for any root.
 fn expand_home(path: &str, ssh_root: &Path) -> PathBuf {
+    if let Some(rest) = path.strip_prefix("~/.ssh/") {
+        return ssh_root.join(rest);
+    }
     match path.strip_prefix("~/") {
         Some(rest) => ssh_root.parent().unwrap_or(Path::new("/")).join(rest),
         None => PathBuf::from(path),
