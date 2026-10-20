@@ -125,7 +125,7 @@ pub(crate) fn append_metadata_filters(
             match &filter.value {
                 serde_json::Value::Number(n) => params.push(Box::new(n.as_f64().unwrap_or(0.0))),
                 serde_json::Value::String(s) => params.push(Box::new(s.clone())),
-                serde_json::Value::Bool(b) if for_delete => params.push(Box::new(*b)),
+                serde_json::Value::Bool(b) => params.push(Box::new(*b)),
                 other => params.push(Box::new(other.to_string())),
             }
         }
@@ -1185,6 +1185,51 @@ mod tests {
         }
         assert_eq!(db.stats("").unwrap().total_vectors, 1);
         assert_eq!(db.search_index.read().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn search_boolean_equality_matches_delete_on_both_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("bool.db");
+        let path = path.to_str().unwrap();
+        let db = VectorDb::open(path, vindex::VectorDtype::F32, 65536).unwrap();
+        db.store_revalidated(
+            &vec![Some(vec![1.0; EMBEDDING_DIM]); 3],
+            &[None; 3],
+            &["yes".into(), "no".into(), "text".into()],
+            "doc",
+            &[
+                r#"{"flag":true}"#.into(),
+                r#"{"flag":false}"#.into(),
+                r#"{"flag":"true"}"#.into(),
+            ],
+        )
+        .unwrap();
+        for (value, content) in [(true, "yes"), (false, "no")] {
+            let filters: Vec<MetadataFilter> = serde_json::from_value(serde_json::json!([
+                {"field":"flag","op":"eq","value":value}
+            ]))
+            .unwrap();
+            let fallback = db
+                .search(&vec![1.0; EMBEDDING_DIM], 10, "", &filters, BUS_BODY_LIMIT)
+                .unwrap();
+            let (exact, _) = search_exact(
+                path,
+                &db.search_index,
+                &vec![1.0; EMBEDDING_DIM],
+                10,
+                "",
+                &filters,
+                BUS_BODY_LIMIT,
+            )
+            .unwrap();
+            for results in [fallback, exact] {
+                assert_eq!(results.len(), 1);
+                assert_eq!(results[0].content, content);
+            }
+            assert_eq!(db.delete_filtered(&[], &filters).unwrap(), 1);
+        }
+        assert_eq!(db.stats("").unwrap().total_vectors, 1);
     }
 
     #[test]
