@@ -643,10 +643,25 @@ mod tests {
     use super::*;
     use std::collections::BTreeMap;
 
+    /// The Settings side never writes. The only mutating verbs are the
+    /// ScreenCast consent ones (answer, grant, revoke), which change consent
+    /// state and nothing in settings.
     #[test]
-    fn the_manifest_is_read_only() {
+    fn the_manifest_is_read_only_but_for_screencast_consent() {
         let manifest = manifest();
-        assert!(manifest.iter().all(|verb| verb.read_only));
+        let writers: Vec<_> = manifest
+            .iter()
+            .filter(|verb| !verb.read_only)
+            .map(|verb| verb.name.as_str())
+            .collect();
+        assert_eq!(
+            writers,
+            [
+                "portald.screencast.answer",
+                "portald.screencast.grant",
+                "portald.screencast.revoke"
+            ]
+        );
         assert!(manifest.iter().any(|verb| verb.name == "portald.status"));
     }
 
