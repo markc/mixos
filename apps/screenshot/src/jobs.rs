@@ -8,12 +8,12 @@ use crate::app::{App, Effect, SaveTo};
 use crate::capture::{self, Comp, Request, Window};
 use annotation::library::{self, Ledger, Saved};
 use annotation::{Document, Face};
+use command::{Error, Origin};
 use image::RgbaImage;
 use serde_json::{Value, json};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
-use command::{Error, Origin};
 use toolkit::Strings;
 
 /// A finished job, for [`apply`].
@@ -228,7 +228,11 @@ pub fn settle(
                 }
                 Effect::Execute { id, request, alias } => {
                     let command = request.id;
-                    let (rc, body) = match app.execute(&command, request.params.unwrap_or(Value::Null), Origin::Bus) {
+                    let (rc, body) = match app.execute(
+                        &command,
+                        request.params.unwrap_or(Value::Null),
+                        Origin::Bus,
+                    ) {
                         Ok(result) if alias => (0, result),
                         Ok(result) => (
                             0,
@@ -261,8 +265,12 @@ pub fn settle(
                             10,
                             json!({"error_code":"DISABLED","message":crate::label("command-disabled")}),
                         ),
-                        Err(Error::BadParams { msg, .. }) => (10, json!({"error_code":"ARGUMENT", "message":msg})),
-                        Err(Error::Failed(msg)) => (10, json!({"error_code":"FAILED", "message":msg})),
+                        Err(Error::BadParams { msg, .. }) => {
+                            (10, json!({"error_code":"ARGUMENT", "message":msg}))
+                        }
+                        Err(Error::Failed(msg)) => {
+                            (10, json!({"error_code":"FAILED", "message":msg}))
+                        }
                     };
                     out.push(Effect::Reply { id, rc, body });
                 }

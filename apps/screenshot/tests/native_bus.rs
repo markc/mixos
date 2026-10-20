@@ -170,13 +170,27 @@ async fn agent_capture_annotate_save_recent_export_cancel_and_quit() {
         "the raw capture is private"
     );
     let params = json!({"kind":"redact","points":[{"x":10,"y":10},{"x":50,"y":40}],"colour":[0,0,0,1],"width":2});
-    let edit = call(&client, "screenshot.execute", json!({"id":"edit.annotate", "params":params})).await.unwrap();
-    let alias = call(&client, "screenshot.annotate", params.clone()).await.unwrap();
-    call(&client, "screenshot.execute", json!({"id":"edit.undo"})).await.unwrap();
+    let edit = call(
+        &client,
+        "screenshot.execute",
+        json!({"id":"edit.annotate", "params":params}),
+    )
+    .await
+    .unwrap();
+    let alias = call(&client, "screenshot.annotate", params.clone())
+        .await
+        .unwrap();
+    call(&client, "screenshot.execute", json!({"id":"edit.undo"}))
+        .await
+        .unwrap();
     let info = call(&client, "screenshot.info", json!({})).await.unwrap();
     assert_eq!(info["document"]["objects"].as_array().unwrap().len(), 1);
     assert_eq!(info["document"]["undo"], 1);
-    for (id, object_id) in [("edit.annotate", edit["result"]["id"].clone()), ("edit.annotate", alias["id"].clone()), ("edit.undo", Value::Null)] {
+    for (id, object_id) in [
+        ("edit.annotate", edit["result"]["id"].clone()),
+        ("edit.annotate", alias["id"].clone()),
+        ("edit.undo", Value::Null),
+    ] {
         let event = next_on(&mut incoming, &format!("{SERVICE}.command.executed")).await;
         assert_eq!(event["v"], 2);
         assert_eq!(event["id"], id);
@@ -184,7 +198,9 @@ async fn agent_capture_annotate_save_recent_export_cancel_and_quit() {
         if id == "edit.annotate" {
             assert_eq!(event["params"], params);
             assert_eq!(event["result"]["id"], object_id);
-        } else { assert!(event["params"].is_null()); }
+        } else {
+            assert!(event["params"].is_null());
+        }
     }
     let refused = call(&client, "screenshot.open", json!({"path": source}))
         .await

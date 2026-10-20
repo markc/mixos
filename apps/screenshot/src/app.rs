@@ -19,11 +19,11 @@ use crate::ink::Ink;
 use crate::verbs;
 use annotation::library::Saved;
 use annotation::{Crop, Document, Kind, Point, Shape};
+use command::{ExecuteRequest, Origin};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 use std::{cell::RefCell, rc::Rc};
-use command::{ExecuteRequest, Origin};
 
 pub type Commands = toolkit::command::EngineAdapter<App>;
 pub type SharedCommands = Rc<RefCell<Commands>>;
@@ -316,7 +316,11 @@ pub enum Effect {
     /// Answer `id` with the command registry's description.
     Commands { id: u64 },
     /// Run registry command `command` and answer `id`.
-    Execute { id: u64, request: ExecuteRequest, alias: bool },
+    Execute {
+        id: u64,
+        request: ExecuteRequest,
+        alias: bool,
+    },
     /// Answer `id` with the Bus surface (`HELP`: its verbs only).
     Describe { id: u64, help: bool },
     /// Hand window verb `verb` (`ui.click`, `window`, …) to the drive layer.
@@ -810,7 +814,12 @@ impl App {
 
     /// All hand and Bus edits use the same registry and journal. An immutable
     /// adapter borrow permits shell commands to dispatch an engine command.
-    pub fn execute(&mut self, id: &str, params: Value, origin: Origin) -> Result<Value, command::Error> {
+    pub fn execute(
+        &mut self,
+        id: &str,
+        params: Value,
+        origin: Origin,
+    ) -> Result<Value, command::Error> {
         let commands = self.commands.clone();
         let previous = std::mem::replace(&mut self.origin, origin);
         let result = commands.borrow().execute(id, self, params, origin);
@@ -821,18 +830,27 @@ impl App {
     fn edit_command(&mut self, id: &str, params: Value) -> Option<Value> {
         match self.execute(id, params, self.origin) {
             Ok(value) => Some(value),
-            Err(error) => { self.fail(error); None }
+            Err(error) => {
+                self.fail(error);
+                None
+            }
         }
     }
 
-    pub fn undo(&mut self) { self.edit_command("edit.undo", Value::Null); }
-    pub fn redo(&mut self) { self.edit_command("edit.redo", Value::Null); }
+    pub fn undo(&mut self) {
+        self.edit_command("edit.undo", Value::Null);
+    }
+    pub fn redo(&mut self) {
+        self.edit_command("edit.redo", Value::Null);
+    }
     pub fn delete_selected(&mut self) {
         if let Some(id) = self.ui.selected {
             self.edit_command("edit.delete", json!({"id": id}));
         }
     }
-    pub fn uncrop(&mut self) { self.edit_command("edit.crop", json!({"crop": null})); }
+    pub fn uncrop(&mut self) {
+        self.edit_command("edit.crop", json!({"crop": null}));
+    }
     pub fn deselect(&mut self) {
         self.ui.selected = None;
     }
@@ -1040,7 +1058,10 @@ impl App {
             }
             _ => {}
         }
-        if let Some(result) = self.edit_command("edit.annotate", serde_json::to_value(shape).expect("finite UI shape")) {
+        if let Some(result) = self.edit_command(
+            "edit.annotate",
+            serde_json::to_value(shape).expect("finite UI shape"),
+        ) {
             self.ui.selected = result["id"].as_u64();
         }
     }
@@ -1372,10 +1393,15 @@ impl App {
             "screenshot.commands" => return self.effects.push(Effect::Commands { id }),
             "screenshot.execute" => {
                 return match serde_json::from_value::<ExecuteRequest>(args) {
-                    Ok(request) => self.effects.push(Effect::Execute { id, request, alias: false }),
+                    Ok(request) => self.effects.push(Effect::Execute {
+                        id,
+                        request,
+                        alias: false,
+                    }),
                     Err(error) => self.error(id, code::ARGUMENT, &error.to_string()),
                 };
-            }            "screenshot.cancel" => {
+            }
+            "screenshot.cancel" => {
                 let cancelling = self.capturing();
                 self.cancel();
                 if cancelling {
@@ -1407,7 +1433,9 @@ impl App {
             return self.error(id, code::BUSY, &message);
         }
         if verbs::is_edit(verb) {
-            if self.document.is_none() { return self.error(id, code::NO_IMAGE, "no image"); }
+            if self.document.is_none() {
+                return self.error(id, code::NO_IMAGE, "no image");
+            }
             let name = verb.strip_prefix("screenshot.").expect("edit verb");
             return self.effects.push(Effect::Execute {
                 id,
@@ -1417,7 +1445,8 @@ impl App {
                 },
                 alias: true,
             });
-        }        let unsaved = || {
+        }
+        let unsaved = || {
             (
                 code::UNSAVED,
                 "save, export or undo the unsaved annotations first".to_owned(),
@@ -1704,9 +1733,15 @@ fn expand_home(text: &str) -> String {
 
 /// The document edit verbs.
 impl annotation::HasDocument for App {
-    fn document(&self) -> Option<&Document> { self.document.as_ref() }
-    fn document_mut(&mut self) -> Option<&mut Document> { self.document.as_mut() }
-    fn document_changed(&mut self) { self.changed(); }
+    fn document(&self) -> Option<&Document> {
+        self.document.as_ref()
+    }
+    fn document_mut(&mut self) -> Option<&mut Document> {
+        self.document.as_mut()
+    }
+    fn document_changed(&mut self) {
+        self.changed();
+    }
 }
 #[cfg(test)]
 mod tests {
@@ -1944,6 +1979,47 @@ mod tests {
     }
 
     #[test]
+    fn aliases_and_execute_record_identical_edits_and_ui_uses_the_same_journal() {
+        let mut a = with_doc();
+        let initial = a.document.clone();
+        let commands = a.commands.clone();
+        let strings = crate::strings();
+        let params = serde_json::to_value(rect()).unwrap();
+        a.command(1, "screenshot.annotate", &params.to_string());
+        let alias = replies(&crate::jobs::settle(&mut a, &commands.borrow(), &strings, false))[0].2.clone();
+        let mut alias_event = commands.borrow().take_executed().0.remove(0);
+        a.document = initial.clone();
+        a.command(2, "screenshot.execute", &json!({"id":"edit.annotate", "params":params}).to_string());
+        let execute = replies(&crate::jobs::settle(&mut a, &commands.borrow(), &strings, false))[0].2.clone();
+        let mut execute_event = commands.borrow().take_executed().0.remove(0);
+        assert_eq!(alias, execute["result"]);
+        alias_event.seq = 0; alias_event.at_ms = 0;
+        execute_event.seq = 0; execute_event.at_ms = 0;
+        assert_eq!(alias_event, execute_event);
+        a.document = initial;
+        crate::view::apply(&mut a, &commands.borrow(), vec![crate::view::UiEvent::Add(rect())]);
+        let ui = commands.borrow().take_executed().0.remove(0);
+        assert_eq!(ui.id, "edit.annotate");
+        assert_eq!(ui.params, params);
+        assert_eq!(ui.result, alias);
+        assert_eq!(ui.origin, Origin::Ui);
+        println!("UI_EXECUTED {}", ui.body());
+        let id = a.ui.selected.unwrap();
+        crate::view::apply(&mut a, &commands.borrow(), vec![crate::view::UiEvent::Move(id, 4.0, 0.0)]);
+        let moved = commands.borrow().take_executed().0;
+        assert_eq!(moved.len(), 1);
+        assert_eq!(moved[0].params, json!({"id":id, "dx":4.0, "dy":0.0}));
+        a.execute("edit.undo", Value::Null, Origin::Shortcut).unwrap();
+        assert_eq!(a.document.as_ref().unwrap().object(id).unwrap().shape, rect());
+        a.execute("edit.delete_selected", Value::Null, Origin::Shortcut).unwrap();
+        assert!(a.document.as_ref().unwrap().objects().is_empty());
+        let runs = commands.borrow().take_executed().0;
+        assert_eq!(runs.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(), ["edit.undo", "edit.delete", "edit.delete_selected"]);
+        assert!(runs.iter().all(|r| r.origin == Origin::Shortcut));
+        assert_eq!(runs[1].params, json!({"id":id}));
+    }
+
+    #[test]
     fn edits_over_the_bus_share_the_document_and_history() {
         let mut a = with_doc();
         let commands = a.commands.clone();
@@ -1953,7 +2029,12 @@ mod tests {
             "screenshot.annotate",
             &json!({"kind":"arrow","points":[{"x":1,"y":1},{"x":30,"y":20}],"colour":[0,0,255,255],"width":3}).to_string(),
         );
-        let r = replies(&crate::jobs::settle(&mut a, &commands.borrow(), &strings, false));
+        let r = replies(&crate::jobs::settle(
+            &mut a,
+            &commands.borrow(),
+            &strings,
+            false,
+        ));
         assert_eq!(r[0].1, 0);
         let id = r[0].2["id"].as_u64().unwrap();
         a.command(
@@ -1967,23 +2048,43 @@ mod tests {
             r#"{"crop":{"x":0,"y":0,"width":50,"height":40}}"#,
         );
         a.command(4, "screenshot.undo", "{}");
-        let r = replies(&crate::jobs::settle(&mut a, &commands.borrow(), &strings, false));
+        let r = replies(&crate::jobs::settle(
+            &mut a,
+            &commands.borrow(),
+            &strings,
+            false,
+        ));
         assert!(r.iter().all(|(_, rc, _)| *rc == 0), "{r:?}");
         assert!(a.document.as_ref().unwrap().crop().is_none());
         let runs = commands.borrow().take_executed().0;
-        assert_eq!(runs.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(), ["edit.annotate", "edit.move", "edit.crop", "edit.undo"]);
+        assert_eq!(
+            runs.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(),
+            ["edit.annotate", "edit.move", "edit.crop", "edit.undo"]
+        );
         assert_eq!(runs[0].params["kind"], "arrow");
         assert_eq!(runs[0].result["id"], id);
         assert_eq!(runs[3].params, Value::Null);
         assert!(runs[3].result["crop"].is_null());
         a.command(5, "screenshot.delete", r#"{"id":999}"#);
         assert_eq!(
-            replies(&crate::jobs::settle(&mut a, &commands.borrow(), &strings, false))[0].2["error_code"],
+            replies(&crate::jobs::settle(
+                &mut a,
+                &commands.borrow(),
+                &strings,
+                false
+            ))[0]
+                .2["error_code"],
             code::ARGUMENT
         );
         a.command(6, "screenshot.undo", r#"{"x":1}"#);
         assert_eq!(
-            replies(&crate::jobs::settle(&mut a, &commands.borrow(), &strings, false))[0].2["error_code"],
+            replies(&crate::jobs::settle(
+                &mut a,
+                &commands.borrow(),
+                &strings,
+                false
+            ))[0]
+                .2["error_code"],
             code::ARGUMENT
         );
     }
@@ -2444,8 +2545,13 @@ mod tests {
         // Idle, they open.
         let mut h = app();
         assert!(
-            r.execute("help.about", &mut h, Value::Null, toolkit::command::Origin::Bus)
-                .is_ok()
+            r.execute(
+                "help.about",
+                &mut h,
+                Value::Null,
+                toolkit::command::Origin::Bus
+            )
+            .is_ok()
         );
         assert_eq!(h.ui.dialog, Some(Dialog::About));
         // A Discard or Save answered while a job runs is refused; the job
@@ -2589,7 +2695,12 @@ mod tests {
         let commands = crate::commands::registry();
         let mut a = app();
         commands
-            .execute("capture.take", &mut a, Value::Null, toolkit::command::Origin::Ui)
+            .execute(
+                "capture.take",
+                &mut a,
+                Value::Null,
+                toolkit::command::Origin::Ui,
+            )
             .unwrap();
         assert!(focused(a.take_effects()), "the Take button");
         // Print Screen forwarded to a running window.

@@ -22,7 +22,7 @@ pub mod library;
 pub mod paint;
 pub mod viewport;
 
-pub use document::{Crop, Document, Kind, MAX_OBJECTS, MAX_PIXELS, Object, Point, Shape};
 pub use commands::{Annotate, Delete, HasDocument, Move, SetCrop, commands};
+pub use document::{Crop, Document, Kind, MAX_OBJECTS, MAX_PIXELS, Object, Point, Shape};
 pub use paint::Face;
 pub use viewport::Viewport;

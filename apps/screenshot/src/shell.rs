@@ -15,6 +15,7 @@
 //! The session theme is the look settingsd holds for the desktop profile,
 //! followed through a [`settings::follow::Follower`]; without it, the theme
 //! file's. The window's own choice (View › Theme) lays over either.
+use crate::app::SharedCommands;
 use crate::app::{App, Effect, Pending};
 use crate::capture::{Comp, CompBus, Mode, Target};
 use crate::jobs::{self, Done};
@@ -30,7 +31,6 @@ use std::sync::{Arc, Mutex, mpsc};
 use std::task::Poll;
 use toolkit::command::Origin;
 use toolkit::{Strings, Theme, drive};
-use crate::app::SharedCommands;
 
 /// What finished off the UI thread.
 pub enum Event {

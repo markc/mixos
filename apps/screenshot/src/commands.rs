@@ -29,8 +29,15 @@ pub fn needs_window(id: &str) -> bool {
 }
 
 fn edit_ready(a: &App) -> Result<(), &'static str> {
-    if a.editable() { Ok(()) } else if a.modal() { Err("dialog open") }
-    else if a.busy() || a.quitting { Err("busy") } else { Err("no image") }
+    if a.editable() {
+        Ok(())
+    } else if a.modal() {
+        Err("dialog open")
+    } else if a.busy() || a.quitting {
+        Err("busy")
+    } else {
+        Err("no image")
+    }
 }
 
 fn editable(a: &App) -> bool {
@@ -128,13 +135,20 @@ pub fn registry() -> toolkit::command::EngineAdapter<App> {
     // Edit.
     for mut command in annotation::commands::<App>() {
         command.enabled = match command.id {
-            "edit.undo" => |a| { edit_ready(a)?; annotation::commands::can_undo(a) },
-            "edit.redo" => |a| { edit_ready(a)?; annotation::commands::can_redo(a) },
+            "edit.undo" => |a| {
+                edit_ready(a)?;
+                annotation::commands::can_undo(a)
+            },
+            "edit.redo" => |a| {
+                edit_ready(a)?;
+                annotation::commands::can_redo(a)
+            },
             _ => edit_ready,
         };
         r.add_engine(command);
     }
-    r.add(Command {        id: "edit.delete_selected",
+    r.add(Command {
+        id: "edit.delete_selected",
         label: "delete",
         menu: Some("edit"),
         submenu: None,
@@ -167,7 +181,10 @@ pub fn registry() -> toolkit::command::EngineAdapter<App> {
         run: App::deselect,
     });
     r.add_shortcuts("edit.redo", [KeyboardShortcut::new(CTRL, Key::Y)]);
-    r.add_shortcuts("edit.delete_selected", [KeyboardShortcut::new(NONE, Key::Backspace)]);
+    r.add_shortcuts(
+        "edit.delete_selected",
+        [KeyboardShortcut::new(NONE, Key::Backspace)],
+    );
     // Capture.
     r.add(Command {
         id: "capture.take",
@@ -566,9 +583,10 @@ mod tests {
         let mut a = app();
         a.document = Some(annotation::Document::new(image::RgbaImage::new(4, 4)).unwrap());
         for tool in Tool::ALL {
-            r.execute(tool_id(tool), &mut a, serde_json::Value::Null, Origin::Bus).unwrap();
+            r.execute(tool_id(tool), &mut a, serde_json::Value::Null, Origin::Bus)
+                .unwrap();
             assert_eq!(a.ui.tool, tool);
-            assert_eq!(r.checked(tool_id(tool), &a), Some(true));
+            assert_eq!(r.registry().checked(tool_id(tool), &a), Some(true));
         }
     }
 
@@ -576,16 +594,48 @@ mod tests {
     fn choices_set_and_tick_the_ui_state() {
         let r = registry();
         let mut a = app();
-        r.execute("capture.mode.window", &mut a, serde_json::Value::Null, Origin::Bus)
-            .unwrap();
-        r.execute("capture.delay.5", &mut a, serde_json::Value::Null, Origin::Bus).unwrap();
-        r.execute("annotate.colour.teal", &mut a, serde_json::Value::Null, Origin::Bus)
-            .unwrap();
-        r.execute("annotate.width.heavy", &mut a, serde_json::Value::Null, Origin::Bus)
-            .unwrap();
-        r.execute("annotate.size.large", &mut a, serde_json::Value::Null, Origin::Bus)
-            .unwrap();
-        r.execute("capture.pointer", &mut a, serde_json::Value::Null, Origin::Bus).unwrap();
+        r.execute(
+            "capture.mode.window",
+            &mut a,
+            serde_json::Value::Null,
+            Origin::Bus,
+        )
+        .unwrap();
+        r.execute(
+            "capture.delay.5",
+            &mut a,
+            serde_json::Value::Null,
+            Origin::Bus,
+        )
+        .unwrap();
+        r.execute(
+            "annotate.colour.teal",
+            &mut a,
+            serde_json::Value::Null,
+            Origin::Bus,
+        )
+        .unwrap();
+        r.execute(
+            "annotate.width.heavy",
+            &mut a,
+            serde_json::Value::Null,
+            Origin::Bus,
+        )
+        .unwrap();
+        r.execute(
+            "annotate.size.large",
+            &mut a,
+            serde_json::Value::Null,
+            Origin::Bus,
+        )
+        .unwrap();
+        r.execute(
+            "capture.pointer",
+            &mut a,
+            serde_json::Value::Null,
+            Origin::Bus,
+        )
+        .unwrap();
         assert_eq!(a.ui.mode, Mode::Window);
         assert_eq!(a.ui.delay, 5);
         assert_eq!(a.ui.colour, a.inks[3].rgba);
@@ -600,9 +650,9 @@ mod tests {
             "annotate.size.large",
             "capture.pointer",
         ] {
-            assert_eq!(r.checked(id, &a), Some(true), "{id}");
+            assert_eq!(r.registry().checked(id, &a), Some(true), "{id}");
         }
-        assert_eq!(r.checked("capture.mode.region", &a), Some(false));
+        assert_eq!(r.registry().checked("capture.mode.region", &a), Some(false));
     }
 
     #[test]
@@ -620,7 +670,8 @@ mod tests {
             "help.about",
         ] {
             assert!(
-                r.execute(id, &mut a, serde_json::Value::Null, Origin::Bus).is_err(),
+                r.execute(id, &mut a, serde_json::Value::Null, Origin::Bus)
+                    .is_err(),
                 "{id} must be disabled under a dialog"
             );
         }

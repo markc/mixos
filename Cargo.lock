@@ -226,9 +226,11 @@ name = "annotation"
 version = "0.1.1"
 dependencies = [
  "chrono",
+ "command",
  "cosmic-text",
  "image",
  "libc",
+ "schemars",
  "serde",
  "serde_json",
  "tempfile",
@@ -1436,7 +1438,7 @@ dependencies = [
 
 [[package]]
 name = "command"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "fluent-bundle",
  "schemars",
@@ -8441,6 +8443,7 @@ dependencies = [
  "buildinfo",
  "bus",
  "citizen",
+ "command",
  "design",
  "eframe",
  "egui",

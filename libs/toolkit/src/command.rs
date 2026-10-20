@@ -132,10 +132,17 @@ impl<S> Registry<S> {
     pub fn add_engine(&mut self, command: EngineCommand<S>) -> &mut Self {
         if command.params.is_none() {
             self.commands.push(Command {
-                id: command.id, label: command.label, menu: command.menu,
-                submenu: command.submenu, group: command.group, shortcut: None,
-                icon: command.icon.and_then(|name| Icon::ALL.iter().copied().find(|i| i.name() == name)),
-                enabled: always, run: choose,
+                id: command.id,
+                label: command.label,
+                menu: command.menu,
+                submenu: command.submenu,
+                group: command.group,
+                shortcut: None,
+                icon: command
+                    .icon
+                    .and_then(|name| Icon::ALL.iter().copied().find(|i| i.name() == name)),
+                enabled: always,
+                run: choose,
             });
         }
         self.core.add(command);
@@ -275,6 +282,10 @@ impl<S> Registry<S> {
     /// Whether command `id` is a choice, and if so whether it is ticked.
     pub fn checked(&self, id: &str, state: &S) -> Option<bool> {
         self.core.checked(id, state)
+    }
+
+    pub(crate) fn enabled(&self, id: &str, state: &S) -> bool {
+        self.core.enabled(id, state).is_ok()
     }
 
     /// Open the menu `menu` (a Fluent menu key, usually Help) with a field
@@ -766,7 +777,7 @@ fn context_entries(ui: &mut egui::Ui, entries: &[Entry]) -> Option<&'static str>
 /// palette, which dispatch nullary actions. They remain describable and can be
 /// run through `execute` with explicit parameters.
 pub struct EngineAdapter<S> {
-    ui: Registry<S>,
+    pub(crate) ui: Registry<S>,
 }
 
 impl<S> EngineAdapter<S> {
@@ -840,6 +851,10 @@ impl<S> EngineAdapter<S> {
     }
     pub fn icon(&self, id: &str) -> Option<Icon> {
         self.ui.get(id).and_then(|c| c.icon)
+    }
+    /// Label and parsed accelerator, using the same metadata as menus.
+    pub fn tooltip(&self, ctx: &egui::Context, id: &str, strings: &Strings) -> Option<String> {
+        self.ui.get(id).map(|c| crate::tooltip::for_command(ctx, c, strings))
     }
     pub fn search_menu(&mut self, menu: &'static str) -> &mut Self {
         self.ui.search_menu(menu);

@@ -302,7 +302,8 @@ impl Document {
 
     /// The exported size: the crop's, else the original's.
     pub fn output_dimensions(&self) -> (u32, u32) {
-        self.history.current()
+        self.history
+            .current()
             .crop
             .map_or(self.dimensions(), |c| (c.width, c.height))
     }
@@ -349,7 +350,8 @@ impl Document {
     /// used, so no number ever repeats.
     pub fn next_number(&self) -> Option<u32> {
         let next = self
-            .history.current()
+            .history
+            .current()
             .objects
             .iter()
             .filter_map(|o| o.shape.number)
@@ -375,7 +377,8 @@ impl Document {
             return Err("annotation limit reached".into());
         }
         if self
-            .history.current()
+            .history
+            .current()
             .objects
             .iter()
             .map(|o| o.shape.points.len())
@@ -434,7 +437,8 @@ impl Document {
     }
 
     fn position(&self, id: u64) -> Result<usize, String> {
-        self.history.current()
+        self.history
+            .current()
             .objects
             .iter()
             .position(|o| o.id == id)
@@ -461,13 +465,18 @@ impl Document {
         Ok(())
     }
 
-    pub fn undo(&mut self) -> bool { self.history.undo() }
+    pub fn undo(&mut self) -> bool {
+        self.history.undo()
+    }
 
-    pub fn redo(&mut self) -> bool { self.history.redo() }
+    pub fn redo(&mut self) -> bool {
+        self.history.redo()
+    }
 
     /// The topmost object within `tolerance` pixels of `p`.
     pub fn hit(&self, p: Point, tolerance: f32) -> Option<u64> {
-        self.history.current()
+        self.history
+            .current()
             .objects
             .iter()
             .rev()
@@ -494,11 +503,14 @@ impl Document {
 }
 
 fn history(initial: State) -> History<State> {
-    History::new(initial, Budget {
-        max_entries: MAX_HISTORY,
-        max_bytes: MAX_HISTORY_BYTES,
-        bytes: State::bytes,
-    })
+    History::new(
+        initial,
+        Budget {
+            max_entries: MAX_HISTORY,
+            max_bytes: MAX_HISTORY_BYTES,
+            bytes: State::bytes,
+        },
+    )
 }
 
 fn check_size(w: u32, h: u32) -> Result<(), String> {

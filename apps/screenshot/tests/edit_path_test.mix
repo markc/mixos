@@ -1,0 +1,102 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Real headless edit path; owns its broker and never contacts the host Bus.
+-- mix edit_path_test.mix --private-bus --noded PATH [--screenshot PATH]
+$root = realpath(dirname($0) .. "/../../..")
+$private = require($root .. "/tests/lib/private_bus.mix")
+$mix = env("MIXOS_TEST_MIX", "/opt/mixos/bin/mix")
+$noded = env("MIXOS_TEST_NODED", "/opt/mixos/bin/noded")
+$screenshot = env("MIXOS_TEST_SCREENSHOT", $root .. "/target/debug/screenshot")
+$argv = args()
+for $i = 0 to len($argv) - 1
+  if $argv[$i] == "--noded" then $noded = $argv[$i + 1]
+  elif $argv[$i] == "--screenshot" then $screenshot = $argv[$i + 1]
+  elif $argv[$i] == "--private-bus" then nil
+  elif $i == 0 or not contains(["--noded", "--screenshot"], $argv[$i - 1]) then
+    raise("USAGE", "edit_path_test.mix --private-bus --noded PATH [--screenshot PATH]")
+  end
+end
+$tmp = "/tmp/screenshot-edit-path-" .. uuid()
+mkdir($tmp)
+$bus = nil
+$app_pid = nil
+$watch_pid = nil
+$events = $tmp .. "/events.jsonl"
+fn check($ok, $message)
+  if not $ok then raise("EDIT_PATH", $message) end
+end
+fn call($verb, $body)
+  write_file($tmp .. "/call.mix", '$body = $2' .. "\n" ..
+    'send screenshot-step3 $1 body=$body timeout=5' .. "\n" ..
+    'print(json_encode({rc:$rc, body:$reply}))' .. "\n")
+  $r = run_argv([$mix, $tmp .. "/call.mix", $verb, json_encode($body)], {clear_env:true, env:$child_env, timeout:10})
+  check($r.ok, "client failed: " .. $r.stderr)
+  return json_parse($r.stdout)
+end
+fn ok($verb, $body)
+  $r = call($verb, $body)
+  check($r.rc == 0, $verb .. ": " .. json_encode($r))
+  return $r.body
+end
+try
+  $bus = $private.start({dir:$tmp .. "/broker", name:"screenshot-edit-test", noded:$noded})
+  $child_env = merge($private.client_env($bus), {HOME:$tmp, PATH:env("PATH"),
+    XDG_RUNTIME_DIR:$tmp, MIXOS_APP_HOME:$tmp .. "/state", MIXOS_SCREENSHOTS_DIR:$tmp .. "/shots"})
+  -- A self-contained one-pixel PNG; no image utility or compositor needed.
+  write_file($tmp .. "/image.png", base64_decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j7mkAAAAASUVORK5CYII="))
+  write_file($events, "")
+  write_file($tmp .. "/watch.mix", <<WATCH
+subscribe("screenshot-step3.command.executed")
+on screenshot-step3.command.executed
+  append_file(env("EVENTS"), json_encode($event.args) .. "\n")
+end
+WATCH
+)
+  $watch_pid = spawn([$mix, "--serve", $tmp .. "/watch.mix", "--name", "screenshot-step3-watch"],
+    {detach:true, clear_env:true, env:merge($child_env, {EVENTS:$events}), stdout:{file:$tmp .. "/watch.log"}, stderr:"stdout"})
+  -- Confirm the subscription with a round-trip probe before editing.
+  $ready = false
+  for $i = 1 to 50
+    publish("screenshot-step3.command.executed", json_encode({probe:true}))
+    sleep(0.1)
+    if contains(read_file($events), "probe") then $ready = true; break end
+  end
+  check($ready, "subscriber did not receive its readiness probe")
+  $app_pid = spawn([$screenshot, "--headless", "--service", "screenshot-step3", "--noded-url", $bus.url],
+    {detach:true, clear_env:true, env:$child_env, stdout:{file:$tmp .. "/app.log"}, stderr:"stdout"})
+  $ready = false
+  for $i = 1 to 50
+    if call("screenshot.ping", {}).rc == 0 then $ready = true; break end
+    sleep(0.1)
+  end
+  check($ready, "headless startup failed: " .. read_file($tmp .. "/app.log"))
+  ok("screenshot.open", {path:$tmp .. "/image.png"})
+  $params = {kind:"arrow", points:[{x:0,y:0},{x:1,y:1}], colour:[255,0,0,255], width:2}
+  $added = ok("screenshot.execute", {id:"edit.annotate", params:$params})
+  $id = $added.result.id
+  ok("screenshot.execute", {id:"edit.move", params:{id:$id, dx:2, dy:0}})
+  ok("screenshot.execute", {id:"edit.undo"})
+  $info = ok("screenshot.info", {})
+  check($info.document.undo == 1 and $info.document.redo == 1, "shared undo history")
+  check($info.document.objects[0].shape.points[0].x == 0, "undo restored geometry")
+  print("INFO " .. json_encode($info.document))
+  $rows = []
+  for $i = 1 to 50
+    $rows = filter(map(filter(lines(read_file($events)), fn($l) = $l != ""), fn($l) = json_parse($l)), fn($r) = $r.probe == nil)
+    if len($rows) == 3 then break end
+    sleep(0.1)
+  end
+  check(len($rows) == 3, "three executed events")
+  check(deep_eq(map($rows, fn($r) = $r.id), ["edit.annotate", "edit.move", "edit.undo"]), "event order")
+  for $row in $rows
+    check($row.v == 2 and $row.origin == "bus", "v2 Bus event")
+    print("EXECUTED " .. json_encode($row))
+  end
+  check(deep_eq($rows[0].params, $params) and $rows[0].result.id == $id, "accepted params and returned id")
+  check($rows[2].params == nil, "undo has null parameters")
+  print("PASS screenshot headless edit path")
+finally
+  for $pid in [$app_pid, $watch_pid]
+    if $pid != nil and process_alive($pid) then kill($pid, 15) end
+  end
+  if $bus != nil then $private.stop($bus) end
+end

@@ -11,6 +11,7 @@
 //! the canvas surround; the status bar. The picture is the painter's own
 //! render (what is saved is what is shown); only a gesture in progress and
 //! the selection are drawn over it here.
+use crate::app::Commands;
 use crate::app::{Answer, App, Dialog, SIZES, Tool, WIDTHS};
 use crate::capture::{Mode, Target};
 use crate::commands::{ink_id, mode_id, size_id, tool_id, width_id};
@@ -24,7 +25,6 @@ use toolkit::command::Origin;
 use toolkit::dialog::{self, Choice, Role};
 use toolkit::titlebar::{self, Control};
 use toolkit::{Icon, Strings, bars, field, tooltip};
-use crate::app::Commands;
 
 /// One interaction from this frame.
 #[derive(Clone, Debug, PartialEq)]
@@ -118,7 +118,7 @@ pub fn view(
             icon: Icon::Keyboard,
         },
     ];
-    let fired = titlebar::show_with(
+    let fired = titlebar::show_engine_with(
         ui,
         &title(app),
         Some(Icon::Camera),
@@ -150,14 +150,15 @@ fn command_button(
     selected: bool,
     events: &mut Vec<UiEvent>,
 ) {
-    let Some(command) = commands.registry().get(id) else {
-        return;
-    };
-    let tip = tooltip::for_command(ui.ctx(), command, strings);
+    if commands.registry().get(id).is_none() { return; }
+    let tip = commands.tooltip(ui.ctx(), id, strings).unwrap_or_default();
     let button = IconButton::new(commands.icon(id).unwrap_or(Icon::Square))
         .selected(selected)
         .tooltip(tip);
-    if ui.add_enabled(commands.registry().enabled(id, app).is_ok(), button).clicked() {
+    if ui
+        .add_enabled(commands.registry().enabled(id, app).is_ok(), button)
+        .clicked()
+    {
         events.push(UiEvent::Command(id, Origin::Ui));
     }
 }
@@ -170,11 +171,14 @@ fn controls(
     strings: &Strings,
     events: &mut Vec<UiEvent>,
 ) {
-    if let Some(take) = commands.registry().get("capture.take") {
+    if commands.registry().get("capture.take").is_some() {
         let button = PushButton::primary(label("take"));
         let response = ui
-            .add_enabled(commands.registry().enabled("capture.take", app).is_ok(), button)
-            .on_hover_text(tooltip::for_command(ui.ctx(), take, strings));
+            .add_enabled(
+                commands.registry().enabled("capture.take", app).is_ok(),
+                button,
+            )
+            .on_hover_text(commands.tooltip(ui.ctx(), "capture.take", strings).unwrap_or_default());
         if response.clicked() {
             events.push(UiEvent::Command("capture.take", Origin::Ui));
         }
@@ -186,7 +190,8 @@ fn controls(
     ] {
         let id = mode_id(mode);
         let enabled = commands.registry().enabled(id, app).is_ok() && !app.busy();
-        let tip = commands.registry()
+        let tip = commands
+            .registry()
             .get(id)
             .map(|c| toolkit::command::label_text(strings, c.label))
             .unwrap_or_default();
@@ -418,16 +423,19 @@ fn file_buttons(
             continue;
         };
         let tip = if id == "file.save" {
-            let shortcut = command.shortcut.map(|s| ui.ctx().format_shortcut(&s));
+            let shortcut = commands.shortcuts_of(id).first().map(|s| ui.ctx().format_shortcut(s));
             tooltip::text(
                 &label_with("save-tip", &[("folder", screenshots_folder())]),
                 shortcut.as_deref(),
             )
         } else {
-            tooltip::for_command(ui.ctx(), command, strings)
+            commands.tooltip(ui.ctx(), id, strings).unwrap_or_default()
         };
         let response = ui
-            .add_enabled(commands.registry().enabled(id, app).is_ok(), PushButton::secondary(label(text)))
+            .add_enabled(
+                commands.registry().enabled(id, app).is_ok(),
+                PushButton::secondary(label(text)),
+            )
             .on_hover_text(tip);
         if response.clicked() {
             events.push(UiEvent::Command(id, Origin::Ui));
