@@ -60,7 +60,7 @@ const D2_SERVICE: &str = "mesh-d2";
 /// The `username` (credential role) for the current d2 admission key.
 const D2_KEY_ID: &str = "d2";
 const DEFAULT_SECRETS_DB: &str = "~/.ns/_etc/secrets/secrets.db";
-// Frozen wire constant (AGENTS.md §3.7): kept byte-for-byte from cosmix-mesh-sign.
+// Frozen wire constant (AGENTS.md §3.7): kept byte-for-byte from the predecessor signer.
 const VERIFY_JSON_FORMAT: &str = "cosmix-mesh-sign.verify.v1";
 const ED25519_PUBLIC_KEY_LEN: usize = 32;
 /// Mix represents numbers as f64, so this is the largest integer the control

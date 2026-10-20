@@ -46,7 +46,7 @@ RestrictNamespaces=yes
 RestrictRealtime=yes
 RestrictSUIDSGID=yes
 LockPersonality=yes
-# Retained from the deployed cosmix-indexd unit (candle CPU/gemm).
+# Retained from the predecessor's deployed indexd unit (candle CPU/gemm).
 MemoryDenyWriteExecute=yes
 SystemCallArchitectures=native
 SystemCallFilter=@system-service

@@ -68,10 +68,10 @@ generated: by docs/_build/gen-site.mix from libs/mix/CHANGELOG.md; do not edit
 ### Changed
 
 - The default remote mix binary is now `/opt/mixos/bin/mix` (was the legacy
-  `/opt/cosmix/bin/mix`). It applies to `ssh_mix`, `ssh_mix_many`, `ssh_exec`,
+  install path's mix). It applies to `ssh_mix`, `ssh_mix_many`, `ssh_exec`,
   `ssh_run`'s `env_transport: "mix"` and `send_mail`'s `host` hop whenever
   neither `mix_bin` nor `MIX_REMOTE_BIN` is set. For a host still on
-  `/opt/cosmix`, pass `mix_bin` or set `MIX_REMOTE_BIN=/opt/cosmix/bin/mix`.
+  the old install path, pass `mix_bin` or set `MIX_REMOTE_BIN` to its mix.
 
 ### Fixed
 
@@ -109,7 +109,7 @@ generated: by docs/_build/gen-site.mix from libs/mix/CHANGELOG.md; do not edit
   remote mix (`ssh_mix`, `ssh_mix_many`, `ssh_exec`, `ssh_run`'s
   `env_transport: "mix"`, `send_mail`'s `host` hop) resolves it in one
   place: the `mix_bin` option, else the local env var `MIX_REMOTE_BIN`
-  (empty counts as unset), else `/opt/cosmix/bin/mix`, the unchanged
+  (empty counts as unset), else the old install path's mix, the unchanged
   default. The value is interpolated into the remote command string, so
   it must be an absolute path or a bare name using only `[A-Za-z0-9_./+-]`;
   anything else raises `OPTION_INVALID` locally before ssh runs. A host with
@@ -274,4 +274,4 @@ generated: by docs/_build/gen-site.mix from libs/mix/CHANGELOG.md; do not edit
 Initial MixOS transplant of the current language library and regression corpus.
 Language syntax, builtin contracts and evaluator behaviour retain the source
 version. Environment and project roots use MixOS names. SSH helpers retain the
-installed Mix path used by existing Cosmix nodes during the migration.
+installed Mix path used by existing predecessor nodes during the migration.

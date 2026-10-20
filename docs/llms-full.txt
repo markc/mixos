@@ -32545,8 +32545,8 @@ written in Mix on `tcp_listen`.
 ## 0.2.0
 
 Transplant the `edit.*` buffer contract and retained golden fixtures from
-cosmix `e0297242305f3a3c3de09f1ca01e8faa771768da`. Resolve broker discovery
-and recovery directories through the isolated MixOS environment.
+the predecessor repository at revision
+`e0297242305f3a3c3de09f1ca01e8faa771768da`. Resolve broker discovery and recovery directories through the isolated MixOS environment.
 
 ---
 
@@ -32609,16 +32609,16 @@ and recovery directories through the isolated MixOS environment.
 
 ## Unreleased — ported into MixOS
 
-- Moved from cosmix into MixOS as `cli/mesh-sign` (package and binary
-  `mesh-sign`). Behaviour is unchanged.
+- Moved from the predecessor repository into MixOS as `cli/mesh-sign`
+  (package and binary `mesh-sign`). Behaviour is unchanged.
 - The verify report keeps its `cosmix-mesh-sign.verify.v1` format string: it
   is a frozen wire constant.
 - Reads the authored inventory with `mix::parse_data_file` (the MixOS
-  equivalent of `cosmix_config::load_mix_data`).
+  equivalent of the predecessor's `load_mix_data`).
 - The shared canonicaliser and verifier come from `services/noded/crates/mesh-trust`.
 - `wg-gen` and `wg-pubkey` use only the key part of the WireGuard code
   (X25519, standard base64, clamping), on `curve25519-dalek`. The rest of
-  cosmix-lib-wg is not ported.
+  the predecessor's WireGuard library is not ported.
 
 ## 0.7.3 — 2026-08-16
 
@@ -32712,10 +32712,10 @@ and recovery directories through the isolated MixOS environment.
 ### Changed
 
 - The default remote mix binary is now `/opt/mixos/bin/mix` (was the legacy
-  `/opt/cosmix/bin/mix`). It applies to `ssh_mix`, `ssh_mix_many`, `ssh_exec`,
+  install path's mix). It applies to `ssh_mix`, `ssh_mix_many`, `ssh_exec`,
   `ssh_run`'s `env_transport: "mix"` and `send_mail`'s `host` hop whenever
   neither `mix_bin` nor `MIX_REMOTE_BIN` is set. For a host still on
-  `/opt/cosmix`, pass `mix_bin` or set `MIX_REMOTE_BIN=/opt/cosmix/bin/mix`.
+  the old install path, pass `mix_bin` or set `MIX_REMOTE_BIN` to its mix.
 
 ### Fixed
 
@@ -32753,7 +32753,7 @@ and recovery directories through the isolated MixOS environment.
   remote mix (`ssh_mix`, `ssh_mix_many`, `ssh_exec`, `ssh_run`'s
   `env_transport: "mix"`, `send_mail`'s `host` hop) resolves it in one
   place: the `mix_bin` option, else the local env var `MIX_REMOTE_BIN`
-  (empty counts as unset), else `/opt/cosmix/bin/mix`, the unchanged
+  (empty counts as unset), else the old install path's mix, the unchanged
   default. The value is interpolated into the remote command string, so
   it must be an absolute path or a bare name using only `[A-Za-z0-9_./+-]`;
   anything else raises `OPTION_INVALID` locally before ssh runs. A host with
@@ -32918,7 +32918,7 @@ and recovery directories through the isolated MixOS environment.
 Initial MixOS transplant of the current language library and regression corpus.
 Language syntax, builtin contracts and evaluator behaviour retain the source
 version. Environment and project roots use MixOS names. SSH helpers retain the
-installed Mix path used by existing Cosmix nodes during the migration.
+installed Mix path used by existing predecessor nodes during the migration.
 
 ---
 
@@ -32958,7 +32958,7 @@ installed Mix path used by existing Cosmix nodes during the migration.
 
 - Released with mix 0.116.0: the remote mix binary for `ssh_mix` and the
   other remote-mix builtins comes from the `mix_bin` option, else
-  `MIX_REMOTE_BIN`, else `/opt/cosmix/bin/mix` (`mix man remote`).
+  `MIX_REMOTE_BIN`, else the old install path's mix (`mix man remote`).
 
 ## 0.115.0
 

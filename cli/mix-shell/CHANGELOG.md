@@ -30,7 +30,7 @@
 
 - Released with mix 0.116.0: the remote mix binary for `ssh_mix` and the
   other remote-mix builtins comes from the `mix_bin` option, else
-  `MIX_REMOTE_BIN`, else `/opt/cosmix/bin/mix` (`mix man remote`).
+  `MIX_REMOTE_BIN`, else the old install path's mix (`mix man remote`).
 
 ## 0.115.0
 

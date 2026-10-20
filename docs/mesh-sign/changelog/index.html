@@ -242,16 +242,16 @@
 </blockquote>
 <h2 id="unreleased--ported-into-mixos">Unreleased — ported into MixOS</h2>
 <ul>
-<li>Moved from cosmix into MixOS as <code>cli/mesh-sign</code> (package and binary
-<code>mesh-sign</code>). Behaviour is unchanged.</li>
+<li>Moved from the predecessor repository into MixOS as <code>cli/mesh-sign</code>
+(package and binary <code>mesh-sign</code>). Behaviour is unchanged.</li>
 <li>The verify report keeps its <code>cosmix-mesh-sign.verify.v1</code> format string: it
 is a frozen wire constant.</li>
 <li>Reads the authored inventory with <code>mix::parse_data_file</code> (the MixOS
-equivalent of <code>cosmix_config::load_mix_data</code>).</li>
+equivalent of the predecessor's <code>load_mix_data</code>).</li>
 <li>The shared canonicaliser and verifier come from <code>services/noded/crates/mesh-trust</code>.</li>
 <li><code>wg-gen</code> and <code>wg-pubkey</code> use only the key part of the WireGuard code
 (X25519, standard base64, clamping), on <code>curve25519-dalek</code>. The rest of
-cosmix-lib-wg is not ported.</li>
+the predecessor's WireGuard library is not ported.</li>
 </ul>
 <h2 id="073--2026-08-16">0.7.3 — 2026-08-16</h2>
 <ul>

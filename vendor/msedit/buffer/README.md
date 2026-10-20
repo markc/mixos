@@ -5,8 +5,8 @@
 | upstream | `https://github.com/microsoft/edit` |
 | commit | `826b4c097b6f14ba0a846dc56f2f0223a3aaf73a` (2026-08-27) |
 | licence | MIT, Copyright (c) Microsoft Corporation — `LICENSE` in this directory, verbatim |
-| pristine import | cosmix commit `b46ac3b6` (byte-for-byte, not wired into the crate), before MixOS |
-| patch | the cosmix commit that follows it ("cosmix-edit-core: patch and wire vendored msedit"); the crate is now `libs/edit` |
+| pristine import | predecessor repository commit `b46ac3b6` (byte-for-byte, not wired into the crate), before MixOS |
+| patch | the predecessor repository commit that follows it, which patched and wired the vendored msedit; the crate is now `libs/edit` |
 
 ## Files
 

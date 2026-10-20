@@ -35,7 +35,8 @@ original licence files retained, local fixes in each PATCHES.md.
 
 Microsoft Edit buffer and syntax sources: Microsoft Corporation, MIT,
 revision 826b4c097b6f14ba0a846dc56f2f0223a3aaf73a; see vendor/msedit.
-editd retains source from cosmix e0297242305f3a3c3de09f1ca01e8faa771768da (Mark Constable, MIT).
+editd retains source from the predecessor repository at revision
+e0297242305f3a3c3de09f1ca01e8faa771768da (Mark Constable, MIT).
 
 Toolkit assets (libs/toolkit/assets)
 ------------------------------------
@@ -88,15 +89,15 @@ a generated-by comment. CSS masks paint those copies in the current colour; the
 Lucide ISC and Feather-derived MIT notices ship in docs/_web/icons/LICENSE-Lucide.txt.
 
 mds storage source and tests (services/maild/crates/mds) were ported from
-cosmix/src/crates/cosmix-mds, revision 516cd2656e6ecb0d4f96f17a0bf611994717e259.
+the predecessor repository's mds crate, revision 516cd2656e6ecb0d4f96f17a0bf611994717e259.
 Copyright Mark Constable; MIT OR Apache-2.0.
 
 Web configuration and ACME policy (libs/config) transplanted from
-cosmix/src/crates/cosmix-lib-config at
+the predecessor repository's config library at
 044aec63a5f8d0fa4ad4246f802c487f17dfdfa9, Mark Constable, MIT OR Apache-2.0.
 
 Daemon infrastructure (libs/daemon) transplanted from
-cosmix/src/crates/cosmix-lib-daemon at
+the predecessor repository's daemon library at
 044aec63a5f8d0fa4ad4246f802c487f17dfdfa9, Mark Constable, MIT OR Apache-2.0.
 The four LE staging root certificates in libs/daemon/src/tls/staging_roots/
 are unchanged public certificates from Internet Security Research Group:
@@ -105,11 +106,11 @@ letsencrypt-stg-root-ye.der, letsencrypt-stg-root-yr.der. Source and capture
 date are retained in tls/le_staging_roots.rs.
 
 Files core and rooted reads (libs/files) transplanted from
-cosmix/src/crates/cosmix-lib-files at
+the predecessor repository's files library at
 044aec63a5f8d0fa4ad4246f802c487f17dfdfa9, Mark Constable, MIT OR Apache-2.0.
 
 Web service, Mix handlers and original web assets (services/webd)
-transplanted from cosmix/src/crates/webd at
+transplanted from the predecessor repository's webd crate at
 044aec63a5f8d0fa4ad4246f802c487f17dfdfa9, Mark Constable, MIT OR Apache-2.0.
 Original assets retained: vhosts/assets/site.js, favicon.svg, favicon.ico
 and dcs-wordmark.svg; the source attribution applies to each.

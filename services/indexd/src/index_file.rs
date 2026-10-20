@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-// Ported from cosmix-indexd/src/main.rs.
+// Ported from the predecessor indexd's src/main.rs.
 
 use crate::*;
 

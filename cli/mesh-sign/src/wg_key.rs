@@ -2,7 +2,7 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Node-local WireGuard key bootstrap (X25519). No secret output.
 //!
-//! Only the key part of cosmix-lib-wg is ported: generation, clamping,
+//! Only the key part of the predecessor's WireGuard library is ported: generation, clamping,
 //! standard base64 and public-key derivation. The wire, netlink and QR parts
 //! of that crate are not needed by the signer and are not ported. Derivation
 //! uses `curve25519-dalek`, the same primitive `hostd` uses for WireGuard keys.

@@ -322,10 +322,10 @@ source no longer re-derives the grammar. Source that does not lex raises
 <h3 id="changed">Changed</h3>
 <ul>
 <li>The default remote mix binary is now <code>/opt/mixos/bin/mix</code> (was the legacy
-<code>/opt/cosmix/bin/mix</code>). It applies to <code>ssh_mix</code>, <code>ssh_mix_many</code>, <code>ssh_exec</code>,
+install path's mix). It applies to <code>ssh_mix</code>, <code>ssh_mix_many</code>, <code>ssh_exec</code>,
 <code>ssh_run</code>'s <code>env_transport: "mix"</code> and <code>send_mail</code>'s <code>host</code> hop whenever
 neither <code>mix_bin</code> nor <code>MIX_REMOTE_BIN</code> is set. For a host still on
-<code>/opt/cosmix</code>, pass <code>mix_bin</code> or set <code>MIX_REMOTE_BIN=/opt/cosmix/bin/mix</code>.</li>
+the old install path, pass <code>mix_bin</code> or set <code>MIX_REMOTE_BIN</code> to its mix.</li>
 </ul>
 <h3 id="fixed">Fixed</h3>
 <ul>
@@ -362,7 +362,7 @@ correct but calls a non-pure builtin between a send and its check.</li>
 remote mix (<code>ssh_mix</code>, <code>ssh_mix_many</code>, <code>ssh_exec</code>, <code>ssh_run</code>'s
 <code>env_transport: "mix"</code>, <code>send_mail</code>'s <code>host</code> hop) resolves it in one
 place: the <code>mix_bin</code> option, else the local env var <code>MIX_REMOTE_BIN</code>
-(empty counts as unset), else <code>/opt/cosmix/bin/mix</code>, the unchanged
+(empty counts as unset), else the old install path's mix, the unchanged
 default. The value is interpolated into the remote command string, so
 it must be an absolute path or a bare name using only <code>[A-Za-z0-9_./+-]</code>;
 anything else raises <code>OPTION_INVALID</code> locally before ssh runs. A host with
@@ -519,7 +519,7 @@ Dovecot.</li>
 <p>Initial MixOS transplant of the current language library and regression corpus.
 Language syntax, builtin contracts and evaluator behaviour retain the source
 version. Environment and project roots use MixOS names. SSH helpers retain the
-installed Mix path used by existing Cosmix nodes during the migration.</p>
+installed Mix path used by existing predecessor nodes during the migration.</p>
         </article>
         <p class="doc-source"><a href="/mix/changelog.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
     </div>
