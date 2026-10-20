@@ -13,8 +13,21 @@ where
     R: smithay::backend::renderer::Renderer + ImportAll + ImportMem,
     R::TextureId: Texture + Clone + Send + 'static,
 {
-    let pointer = state.state.seat.seat.get_pointer().unwrap();
-    let cursor_logical = pointer.current_location();
+    // A headless human seat has no pointer. Canvas context still exists;
+    // its neutral cursor must not depend on an absent input source.
+    let cursor_logical = match state.state.seat.seat.get_pointer() {
+        Some(pointer) => pointer.current_location(),
+        None => {
+            if state.inner.comp.injection.backend != crate::comp::injection::BackendInput::Headless
+            {
+                static WARN: std::sync::Once = std::sync::Once::new();
+                WARN.call_once(|| {
+                    warn!("Canvas viewport has no session pointer; using neutral cursor")
+                });
+            }
+            Point::default()
+        }
+    };
 
     let logical_w = size.w as f64 / state.inner.camera_mut().transform.zoom();
     let logical_h = size.h as f64 / state.inner.camera_mut().transform.zoom();

@@ -33,8 +33,43 @@ use surfaces::SeatKind;
 
 use crate::state::Loop;
 
+/// Input policy selected by the backend, per compositor instance. Session
+/// backends retain VT/host authority and strict absolute-coordinate bounds.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum BackendInput {
+    #[default]
+    Session,
+    Headless,
+}
+
+impl BackendInput {
+    /// Headless owns its agent seat without a VT. Session locks still clear
+    /// it separately; KMS and nested continue to follow session pauses.
+    pub fn agent_authoritative(self, session_paused: bool) -> bool {
+        self == Self::Headless || !session_paused
+    }
+
+    /// Absolute output-local coordinates. Only headless clamps to the last
+    /// logical pixel; existing session callers keep their out_of_bounds error.
+    pub fn output_position(self, x: f64, y: f64, width: u32, height: u32) -> Option<(f64, f64)> {
+        if width == 0 || height == 0 || !x.is_finite() || !y.is_finite() {
+            return None;
+        }
+        if self == Self::Headless {
+            Some((
+                x.clamp(0.0, f64::from(width - 1)),
+                y.clamp(0.0, f64::from(height - 1)),
+            ))
+        } else {
+            ((0.0..f64::from(width)).contains(&x) && (0.0..f64::from(height)).contains(&y))
+                .then_some((x, y))
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Injection {
+    pub backend: BackendInput,
     /// The last `input_seq` minted (0 = none yet).
     seq: u64,
     /// Events injected so far (a sequence yields every 256).
@@ -63,6 +98,7 @@ pub struct Injection {
 impl Default for Injection {
     fn default() -> Self {
         Self {
+            backend: BackendInput::default(),
             seq: 0,
             events: 0,
             current_run: None,

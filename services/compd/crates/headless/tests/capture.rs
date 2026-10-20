@@ -7,7 +7,7 @@ mod pattern;
 #[path = "support/process.rs"]
 mod process;
 
-use pattern::{COLOURS, CURSOR, Pattern};
+use pattern::{COLOURS, Pattern};
 use serde_json::{Value, json};
 use std::{
     fs,
@@ -195,11 +195,11 @@ fn pattern_mixed_cursor_captures_and_presentation_ledger() {
     let wall_start = monotonic_ns();
     let mut pattern = Pattern::new(stream);
     pattern.wait_callback(0);
-    // Explicitly move the human pointer: the client supplies a known 16x16
-    // cyan sprite with hotspot 0,0. No cursor theme or animation enters the test.
+    // Headless has no human sources. Move the fixed built-in 24px amber
+    // agent arrow; no host cursor theme or animation enters the test.
     bus.call(
         "comp.input.pointer.move",
-        json!({"seat":"human","output":"headless-0","x":160,"y":160}),
+        json!({"seat":"agent","output":"headless-0","x":160,"y":160}),
     );
     for _ in 0..20 {
         pattern.pump();
@@ -241,20 +241,30 @@ fn pattern_mixed_cursor_captures_and_presentation_ledger() {
         "negative colour control"
     );
     let mut changed = 0;
+    let mut amber = 0;
     for y in 0..720 {
         for x in 0..1280 {
             let a = pixel(&off_pixels, 1280, x, y);
             let b = pixel(&on_pixels, 1280, x, y);
-            if (160..176).contains(&x) && (160..176).contains(&y) {
+            if (160..184).contains(&x) && (160..184).contains(&y) {
                 assert_eq!(a, rgb(COLOURS[0]), "cursorless pixel");
-                assert_eq!(b, CURSOR, "cursor pixel");
                 changed += usize::from(a != b);
+                amber += usize::from(b == [255, 159, 28]);
             } else {
                 assert_eq!(a, b, "unexpected difference at {x},{y}");
             }
         }
     }
-    assert_eq!(changed, 256, "only the pointer's rectangle differs");
+    let (opaque_pixels, fill_pixels) =
+        world::seat::pointer::texture::pointer_load::agent_arrow_pixel_counts(24);
+    assert_eq!(
+        changed, opaque_pixels,
+        "complete agent arrow must be captured"
+    );
+    assert_eq!(
+        amber, fill_pixels,
+        "complete agent arrow fill must be captured"
+    );
     // Also exercise the shipped screenshot client against the same pattern.
     let shot = process.root.join("screenshot.ppm");
     let output = Command::new(binary("testkit-screenshot"))
@@ -279,7 +289,7 @@ fn pattern_mixed_cursor_captures_and_presentation_ledger() {
         assert_eq!(&ppm[at..at + 3], &rgb(colour));
     }
     println!(
-        "four pattern points + negative control; screenshot; mixed cursor frame: exactly {changed} changed pixels in [160,160,16,16]"
+        "four pattern points + negative control; screenshot; mixed cursor frame: {changed} changed pixels confined to [160,160,24,24], {amber} amber pixels"
     );
 
     let before = bus.window()["presentation"]["presented"].as_u64().unwrap();
@@ -368,7 +378,7 @@ fn bus_capture_completes_on_idle_output() {
     );
     bus.call(
         "comp.input.pointer.move",
-        json!({"seat":"human","output":"headless-0","x":160,"y":160}),
+        json!({"seat":"agent","output":"headless-0","x":160,"y":160}),
     );
     for cursor in [false, true] {
         let path = process.root.join(format!("idle-{cursor}.ppm"));

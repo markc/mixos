@@ -5321,6 +5321,13 @@ The binding profile is `headless`; the default Bus service is
 instances. Headless never requests realtime priority or negative nice,
 starts no XWayland, and leaves the desktop session environment alone.
 
+Headless owns agent input authority without a VT; session locks still clear
+agent input, while KMS and nested retain their session-pause rules. `seat0`
+is advertised with no capabilities, and human input refuses `seat_unavailable`.
+The agent pointer starts at output centre; absolute `headless-0` moves clamp
+to the mode's logical bounds. Each Bus service has its own observation topics,
+window registry and presentation statistics.
+
 Screencopy and Bus captures run after completed offscreen rendering, including
 on idle outputs. The normal picture excludes cursor elements; a second pass
 is made only when a capture requests them. Cursor inclusion is chosen per

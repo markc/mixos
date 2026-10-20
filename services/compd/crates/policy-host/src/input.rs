@@ -191,6 +191,15 @@ fn payload(
     op: &InputOp,
     target_window: Option<(u64, u64)>,
 ) -> ControlReply {
+    // The headless human seat cannot accept synthetic device
+    // input. Refuse before targeting/focus or any device handler; cleanup is
+    // still safe and must remain available.
+    if seat == SeatKind::Human
+        && !matches!(op, InputOp::ReleaseAll | InputOp::OnSeat { .. })
+        && lp.inner.comp.injection.backend == world::comp::injection::BackendInput::Headless
+    {
+        return ControlReply::refused("seat_unavailable", json!({"reason":"no_sources"}));
+    }
     if seat == SeatKind::Agent {
         let facts = agent_seat_facts(lp);
         if let Err(reply) = agent_preflight(op, &facts) {
@@ -518,7 +527,7 @@ fn move_human_pointer(
     let moved = match target {
         PointerMoveTarget::Relative { dx, dy } => Moved::By(*dx, *dy),
         PointerMoveTarget::Output { output, x, y } => {
-            let (_, row) = output_row(lp, output.as_deref(), *x, *y)?;
+            let (_, row, x, y) = output_row(lp, output.as_deref(), *x, *y)?;
             // The cursor goes to that output (the engine keeps one cursor output).
             let name = row.name.clone();
             let key = lp
@@ -768,7 +777,7 @@ fn resolve_agent_motion(
             (None, (x + dx, y + dy))
         }
         PointerMoveTarget::Output { output, x, y } => {
-            let (_, row) = output_row(lp, output.as_deref(), *x, *y)?;
+            let (_, row, x, y) = output_row(lp, output.as_deref(), *x, *y)?;
             (None, (f64::from(row.x) + x, f64::from(row.y) + y))
         }
     };
@@ -1485,13 +1494,14 @@ fn visible_hit(lp: &Loop, hit: &SurfaceHit) -> bool {
 }
 
 /// `{output, x, y}`: the output's row (by key or name; `None` is the default
-/// output) with `(x, y)` inside it (`unknown_output` / `out_of_bounds` otherwise).
+/// output) and the resolved point. The backend chooses strict bounds (session)
+/// or clamping (headless); unknown names always refuse `unknown_output`.
 fn output_row(
     lp: &Loop,
     output: Option<&str>,
     x: f64,
     y: f64,
-) -> Result<(String, OutputSnapshot), ControlReply> {
+) -> Result<(String, OutputSnapshot, f64, f64), ControlReply> {
     let (rows, _, _) = crate::project::project_outputs(lp);
     let row = match output {
         Some(requested) => rows
@@ -1505,14 +1515,19 @@ fn output_row(
             json!({"output": output}),
         ));
     };
-    let (width, height) = (f64::from(row.width), f64::from(row.height));
-    if !(0.0..width).contains(&x) || !(0.0..height).contains(&y) {
+    let Some((x, y)) = lp
+        .inner
+        .comp
+        .injection
+        .backend
+        .output_position(x, y, row.width, row.height)
+    else {
         return Err(ControlReply::refused(
             "out_of_bounds",
             json!({"output": key, "x": x, "y": y, "width": row.width, "height": row.height}),
         ));
-    }
-    Ok((key, row))
+    };
+    Ok((key, row, x, y))
 }
 
 /// The seat's pointer as `(output key, output name, output-local x, y)`.

@@ -28,7 +28,12 @@ where
         return elements;
     }
 
-    let pointer = state.state.seat.seat.get_pointer().unwrap();
+    let Some(pointer) = state.state.seat.seat.get_pointer() else {
+        if state.inner.comp.injection.backend == world::comp::injection::BackendInput::Headless {
+            elements.extend(agent_arrow(state, renderer));
+        }
+        return elements;
+    };
     // The sprite belongs where the user's HAND is — which, under a displacing
     // bundle, is NOT where `current_location()` points.
     //
