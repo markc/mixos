@@ -10,7 +10,7 @@
 -- satisfy the freshness floor before any node is changed. Every target is
 -- then preflighted before the shared mesh write lock is taken. The remote edit
 -- preserves every other node.conf.mix value, replaces the file atomically,
--- restarts <project>-noded, and is independently re-read before the next node.
+-- restarts noded, and is independently re-read before the next node.
 
 $d = require("../_lib/deploy_lib.mix")
 $m = require("../_lib/mesh_lib.mix")
@@ -171,7 +171,7 @@ for each $node in $nodes
 end
 
 $CFG = $d.etc_root() .. "/node.conf.mix"
-$UNIT = $d.project() .. "-noded"
+$UNIT = $d.unit_name("noded")
 $INVOCATIONS = {}
 $reach_token = uuid()
 

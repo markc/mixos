@@ -175,8 +175,8 @@ function installed_noded_version($node)
   $output = trim($result["stdout"])
   $binary = word($output, 1)
   $version = word($output, 2)
-  if $binary != ($d.project() .. "-noded") or $version == nil or is_empty($version) then
-    return {ok: false, detail: "node " .. $node .. " returned unparseable " .. $d.project() .. "-noded --version output"}
+  if $binary != $d.unit_name("noded") or $version == nil or is_empty($version) then
+    return {ok: false, detail: "node " .. $node .. " returned unparseable " .. $d.unit_name("noded") .. " --version output"}
   end
   return {ok: true, version: $version}
 end
@@ -193,8 +193,8 @@ function installed_noded_listens_on($node, $mesh_ip, $port)
   -- (and a config-derived noded bind always renders exactly <mesh_ip>:<port>).
   $wildcard_v4 = "0.0.0.0:" .. $port_text
   -- Exact ss process token: quote-and-comma delimited so a similarly named
-  -- process ("<project>-noded-helper") cannot certify the endpoint.
-  $noded_token = "(\"" .. $d.project() .. "-noded\","
+  -- process ("noded-helper") cannot certify the endpoint.
+  $noded_token = "(\"" .. $d.unit_name("noded") .. "\","
   for each $line in split($result["stdout"], "\n")
     $local_address = word($line, 4)
     $address_matches = $local_address == $mesh_endpoint
@@ -203,7 +203,7 @@ function installed_noded_listens_on($node, $mesh_ip, $port)
       return {ok: true}
     end
   end
-  return {ok: false, detail: "node " .. $node .. " has no " .. $d.project() .. "-noded listener on " ..
+  return {ok: false, detail: "node " .. $node .. " has no " .. $d.unit_name("noded") .. " listener on " ..
     $mesh_endpoint .. " (or an IPv4 wildcard bind)"}
 end
 
@@ -465,7 +465,7 @@ function validate_inventory($inv)
 end
 
 -- ─── zones.mix generation (Tier 2, _plan/2026-06-06-mesh-ip-autodiscovery.md) ───
--- Emit a <project>-dnsd zones.mix from the signed inventory (IP-bearing mesh
+-- Emit a dnsd zones.mix from the signed inventory (IP-bearing mesh
 -- records) + the hand-authored overlay (zones.overlay.mix: soa/ns/serials/
 -- goldcoast/mail-auth). The emitter reproduces the live file's exact 2/4/6/10-
 -- space hand-format so a regenerate is BYTE-IDENTICAL until the inventory
@@ -919,7 +919,7 @@ end
 --
 -- Why it is needed: the equal-epoch content check binds a rolled-out epoch to
 -- the payload's authoring_blake3, and `verify_keys` is in SIGNER_OWNED_FIELDS
--- (<project>-lib-mesh-trust inventory.rs) — so the authoring projection REMOVES
+-- (the mesh-trust library's inventory.rs) — so the authoring projection REMOVES
 -- it before hashing. Two payloads with the same roster and the same epoch but
 -- DIFFERENT verify_keys therefore share an authoring hash, and the check would
 -- wave through a swap of the future trust roots as "same content". That is the
@@ -1049,7 +1049,7 @@ function verified_inventory($signed_path, $opts)
   -- rather than accept a payload whose freshness cannot be established.
   if type($v["recovery_generation"]) != "number" or ($v["via_recovery"] != true and $v["via_recovery"] != false) then
     print("  ERROR: verifier did not report recovery_generation/via_recovery for " .. $signed_path)
-    print("         " .. $d.project() .. "-mesh-sign is too old to establish freshness on the recovery axis.")
+    print("         mesh-sign is too old to establish freshness on the recovery axis.")
     mesh_fatal()
   end
   assert_exact_int($v["epoch"], "epoch", $signed_path)
@@ -1058,7 +1058,7 @@ function verified_inventory($signed_path, $opts)
   -- Whether the AUTHENTICATED payload actually carries recovery_generation is
   -- a different question from what the verifier REPORTS, and only the first
   -- one can be enforced here. The CLI builds its trust state with
-  -- last_recovery_generation = 0 every time (<project>-mesh-sign/src/main.rs
+  -- last_recovery_generation = 0 every time (mesh-sign's src/main.rs
   -- trust_state()), and inventory.rs reads an OMITTED field as "inherit the
   -- cached floor" — so the reported number is `payload_echo ?? 0`, never a
   -- statement about the fleet. The payload field itself IS one: present means
@@ -1205,7 +1205,7 @@ end
 
 -- ── epoch baseline (rollback / downgrade floor) ──────────────────────────
 -- A signature proves WHO wrote a payload, never that it is the CURRENT one.
--- `<project>-mesh-sign verify` builds its trust state with last_epoch: 0, so an
+-- `mesh-sign verify` builds its trust state with last_epoch: 0, so an
 -- OLD but still validly-signed inventory (plus its matching authored file)
 -- verifies cleanly — and the DNS/WG deploy paths, unlike noded, keep no
 -- persisted epoch of their own to compare against. Restoring an old pair
@@ -1901,7 +1901,7 @@ function mesh_baseline_write($path, $mesh_name, $epoch, $generation, $authoring,
     "-- None of them is a claim that the rollout FINISHED. Every\n" ..
     "-- verified_inventory() call refuses a payload below the floor. Both axes are\n" ..
     "-- kept because recovery\n" ..
-    "-- SUPERSEDES the epoch axis (" .. $d.project() .. "-lib-mesh-trust inventory.rs, the\n" ..
+    "-- SUPERSEDES the epoch axis (the mesh-trust library's inventory.rs, the\n" ..
     "-- rollback/recovery axis): a genesis recovery may carry a LOWER epoch and is\n" ..
     "-- fresh anyway if its generation advances. An epoch-only floor would reject\n" ..
     "-- exactly the payload recovery exists to deliver. Git-tracked so a fresh clone\n" ..
@@ -1991,7 +1991,7 @@ function mesh_baseline_write($path, $mesh_name, $epoch, $generation, $authoring,
 end
 
 -- Enforced inside verified_inventory (see opts.baseline). This MIRRORS the
--- acceptance rule in <project>-lib-mesh-trust (the rollback/recovery axis) rather
+-- acceptance rule in the mesh-trust library (the rollback/recovery axis) rather
 -- than inventing a second one: the verifier has already applied the genesis
 -- authorisation rules and hands us the ACCEPTED pair, so all that is left is
 -- the rollback comparison the verifier structurally cannot make (it builds its

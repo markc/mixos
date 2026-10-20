@@ -8,7 +8,7 @@ configuration, so a fork can relabel the whole tree.
 
 | Setting | Where | What it names |
 |---|---|---|
-| `MESH_PROJECT` or `_etc/mesh/project.mix` | env or hub | the project: binaries `<name>-<tool>`, `/etc/<name>/`, `/var/lib/<name>/`, the unit `<name>-noded`, the group `<name>-noded` |
+| `MESH_PROJECT` or `_etc/mesh/project.mix` | env or hub | the project: `/etc/<name>/`, `/var/lib/<name>/`, `/opt/<name>/bin/`; binaries, units and groups keep their plain names (`noded`, `mesh-sign`) |
 | `MESH_HUB` | env (required) | the directory that holds `_etc/mesh/` (inventory, epoch, zones) |
 | `MESH_SRC` | env (required) | the project's source checkout, for built binaries |
 | `MESH_BIN_DIR` | env, optional | a directory of built binaries, overriding `target/release` |
@@ -35,8 +35,8 @@ tree does not ship active.
 
 The tools call two binaries built by the project itself:
 
-- `<name>-mesh-sign` signs the inventory and prints its public key.
-- `<name>-noded` is the broker each node runs.
+- `mesh-sign` signs the inventory and prints its public key.
+- `noded` is the broker each node runs.
 
 Both are found through `project_bin()` and `installed_bin()` in `deploy_lib.mix`.
 
