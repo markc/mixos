@@ -817,6 +817,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "blobd"
+version = "0.1.1"
+dependencies = [
+ "blake3",
+ "libc",
+ "mds",
+ "rusqlite",
+ "serde_json",
+ "tempfile",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "block-buffer"
 version = "0.10.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
