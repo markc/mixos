@@ -1,6 +1,14 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-use std::{fs, os::unix::fs::PermissionsExt, path::PathBuf, process::{Child, Command, Stdio}, sync::mpsc, thread, time::Duration};
+use std::{
+    fs,
+    os::unix::fs::PermissionsExt,
+    path::PathBuf,
+    process::{Child, Command, Stdio},
+    sync::mpsc,
+    thread,
+    time::Duration,
+};
 pub struct Process {
     pub child: Child,
     pub root: PathBuf,
@@ -35,7 +43,13 @@ pub fn spawn_at_refresh(refresh: &str) -> Process {
     spawn_options(1, None, "refresh", None, refresh)
 }
 
-fn spawn_options(scale: i32, explicit_node: Option<&str>, label: &str, bus: Option<&str>, refresh: &str) -> Process {
+fn spawn_options(
+    scale: i32,
+    explicit_node: Option<&str>,
+    label: &str,
+    bus: Option<&str>,
+    refresh: &str,
+) -> Process {
     let binary = std::env::var_os("COMPD_TEST_BINARY")
         .map(PathBuf::from)
         .unwrap_or_else(|| {
@@ -121,4 +135,3 @@ fn spawn_options(scale: i32, explicit_node: Option<&str>, label: &str, bus: Opti
         watchdog: Some(watchdog),
     }
 }
-

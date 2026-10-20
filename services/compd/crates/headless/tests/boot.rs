@@ -5,10 +5,7 @@
 
 use std::{
     fs,
-    os::unix::{
-        fs::FileTypeExt,
-        net::UnixStream,
-    },
+    os::unix::{fs::FileTypeExt, net::UnixStream},
     path::PathBuf,
     thread,
     time::{Duration, Instant},
@@ -186,7 +183,9 @@ fn lower_refresh_sets_the_virtual_mode() {
     let mut process = process::spawn_at_refresh("30");
     let deadline = Instant::now() + Duration::from_secs(25);
     let stream = loop {
-        if let Ok(stream) = UnixStream::connect(process.root.join("wayland-headless-test")) {break stream;}
+        if let Ok(stream) = UnixStream::connect(process.root.join("wayland-headless-test")) {
+            break stream;
+        }
         assert!(process.child.try_wait().unwrap().is_none(), "compd exited");
         assert!(Instant::now() < deadline, "startup timed out");
         thread::sleep(Duration::from_millis(10));
@@ -195,8 +194,9 @@ fn lower_refresh_sets_the_virtual_mode() {
     let mut queue = conn.new_event_queue::<OutputState>();
     let _registry = conn.display().get_registry(&queue.handle(), ());
     let mut state = OutputState::default();
-    queue.roundtrip(&mut state).unwrap();queue.roundtrip(&mut state).unwrap();
-    assert_eq!(state.mode, Some((1280,720,30_000)));
+    queue.roundtrip(&mut state).unwrap();
+    queue.roundtrip(&mut state).unwrap();
+    assert_eq!(state.mode, Some((1280, 720, 30_000)));
     println!("headless virtual output and timer configured for 30 Hz");
 }
 

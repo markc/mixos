@@ -716,7 +716,15 @@ pub fn service_with_sources<R: ExportMem>(
     output: &Output,
     damage: Option<&[Rectangle<i32, Physical>]>,
 ) -> Captures<R> {
-    service_inner(renderer, sources.cursor, sources.cursorless, output, damage, false, true)
+    service_inner(
+        renderer,
+        sources.cursor,
+        sources.cursorless,
+        output,
+        damage,
+        false,
+        true,
+    )
 }
 
 fn service_inner<R: ExportMem>(
@@ -785,7 +793,9 @@ fn service_inner<R: ExportMem>(
             (true, true, _) => true,
             (false, _, true) => false,
             _ if strict => {
-                warn!("screencopy: a copy on {name} failed: requested cursor policy {overlay_cursor} was not offered");
+                warn!(
+                    "screencopy: a copy on {name} failed: requested cursor policy {overlay_cursor} was not offered"
+                );
                 pending.frame.failed();
                 continue;
             }

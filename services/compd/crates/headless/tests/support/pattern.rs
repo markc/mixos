@@ -1,9 +1,40 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Shm test client: four opaque quadrants and a controlled 16x16 cyan cursor.
-use std::{fs::File, os::{fd::{AsFd, FromRawFd}, unix::{fs::FileExt, net::UnixStream}}, thread, time::{Duration, Instant}};
-use wayland_client::{Connection, Dispatch, EventQueue, QueueHandle, delegate_noop, protocol::{wl_registry::{self, WlRegistry}, wl_compositor::WlCompositor, wl_surface::WlSurface, wl_shm::{self, WlShm}, wl_shm_pool::WlShmPool, wl_buffer::WlBuffer, wl_seat::WlSeat, wl_pointer::{self, WlPointer}, wl_callback::{self, WlCallback}}};
-use wayland_protocols::{xdg::shell::client::{xdg_wm_base::{self, XdgWmBase}, xdg_surface::{self, XdgSurface}, xdg_toplevel::{self, XdgToplevel}}, wp::presentation_time::client::{wp_presentation::{self, WpPresentation}, wp_presentation_feedback::{self, WpPresentationFeedback}}};
+use std::{
+    fs::File,
+    os::{
+        fd::{AsFd, FromRawFd},
+        unix::{fs::FileExt, net::UnixStream},
+    },
+    thread,
+    time::{Duration, Instant},
+};
+use wayland_client::{
+    Connection, Dispatch, EventQueue, QueueHandle, delegate_noop,
+    protocol::{
+        wl_buffer::WlBuffer,
+        wl_callback::{self, WlCallback},
+        wl_compositor::WlCompositor,
+        wl_pointer::{self, WlPointer},
+        wl_registry::{self, WlRegistry},
+        wl_seat::WlSeat,
+        wl_shm::{self, WlShm},
+        wl_shm_pool::WlShmPool,
+        wl_surface::WlSurface,
+    },
+};
+use wayland_protocols::{
+    wp::presentation_time::client::{
+        wp_presentation::{self, WpPresentation},
+        wp_presentation_feedback::{self, WpPresentationFeedback},
+    },
+    xdg::shell::client::{
+        xdg_surface::{self, XdgSurface},
+        xdg_toplevel::{self, XdgToplevel},
+        xdg_wm_base::{self, XdgWmBase},
+    },
+};
 
 pub const COLOURS: [u32; 4] = [0xffd02030, 0xff20d040, 0xff3040d0, 0xffe0d020];
 pub const CURSOR: [u8; 3] = [0, 255, 255];
@@ -40,7 +71,14 @@ impl Pattern {
         let registry = conn.display().get_registry(&qh, ());
         let mut state = State::default();
         queue.roundtrip(&mut state).unwrap();
-        let find = |name: &str| state.globals.iter().find(|(_, interface, _)| interface == name).map(|(n,v,version)| (*n, v.clone(), *version)).unwrap();
+        let find = |name: &str| {
+            state
+                .globals
+                .iter()
+                .find(|(_, interface, _)| interface == name)
+                .map(|(n, v, version)| (*n, v.clone(), *version))
+                .unwrap()
+        };
         let (n, _, v) = find("wl_compositor");
         let compositor: WlCompositor = registry.bind(n, v.min(4), &qh, ());
         let (n, _, _) = find("wl_shm");
@@ -73,11 +111,23 @@ impl Pattern {
         }
         // xdg-shell may initially offer 0x0 (the client's choice), before
         // compd places the first buffer and sends its decided size.
-        if state.size == (0,0) {state.size=(1280,720);}
+        if state.size == (0, 0) {
+            state.size = (1280, 720);
+        }
         assert_eq!(state.size, (1280, 720));
-        let (w,h) = state.size;
-        let buffer = buffer(&shm, &qh, w, h, |x,y| COLOURS[usize::from(x >= w/2) + 2*usize::from(y >= h/2)]);
-        let mut client = Self {conn, queue, state, surface, shm, presentation, buffer};
+        let (w, h) = state.size;
+        let buffer = buffer(&shm, &qh, w, h, |x, y| {
+            COLOURS[usize::from(x >= w / 2) + 2 * usize::from(y >= h / 2)]
+        });
+        let mut client = Self {
+            conn,
+            queue,
+            state,
+            surface,
+            shm,
+            presentation,
+            buffer,
+        };
         client.commit(true);
         client
     }
@@ -87,8 +137,9 @@ impl Pattern {
         self.queue.dispatch_pending(&mut self.state).unwrap();
         if let Some(guard) = self.queue.prepare_read() {
             match guard.read() {
-                Ok(_) => {},
-                Err(wayland_client::backend::WaylandError::Io(e)) if e.kind() == std::io::ErrorKind::WouldBlock => {},
+                Ok(_) => {}
+                Err(wayland_client::backend::WaylandError::Io(e))
+                    if e.kind() == std::io::ErrorKind::WouldBlock => {}
                 Err(e) => panic!("pattern read: {e}"),
             }
         }
@@ -98,10 +149,12 @@ impl Pattern {
     pub fn commit(&mut self, damage: bool) {
         if damage {
             self.surface.attach(Some(&self.buffer), 0, 0);
-            self.surface.damage_buffer(0, 0, self.state.size.0, self.state.size.1);
+            self.surface
+                .damage_buffer(0, 0, self.state.size.0, self.state.size.1);
         }
         self.surface.frame(&self.queue.handle(), ());
-        self.presentation.feedback(&self.surface, &self.queue.handle(), ());
+        self.presentation
+            .feedback(&self.surface, &self.queue.handle(), ());
         self.surface.commit();
         self.conn.flush().unwrap();
     }
@@ -116,71 +169,165 @@ impl Pattern {
     }
 
     pub fn change_buffer(&mut self) {
-        let (w,h) = self.state.size;
-        self.buffer = buffer(&self.shm, &self.queue.handle(), w, h, |_,_| 0xffaa3377);
+        let (w, h) = self.state.size;
+        self.buffer = buffer(&self.shm, &self.queue.handle(), w, h, |_, _| 0xffaa3377);
     }
 }
 
-fn buffer(shm: &WlShm, qh: &QueueHandle<State>, w: i32, h: i32, colour: impl Fn(i32,i32)->u32) -> WlBuffer {
-    let fd = unsafe {libc::memfd_create(c"headless-pattern".as_ptr(), libc::MFD_CLOEXEC)};
+fn buffer(
+    shm: &WlShm,
+    qh: &QueueHandle<State>,
+    w: i32,
+    h: i32,
+    colour: impl Fn(i32, i32) -> u32,
+) -> WlBuffer {
+    let fd = unsafe { libc::memfd_create(c"headless-pattern".as_ptr(), libc::MFD_CLOEXEC) };
     assert!(fd >= 0);
-    let file = unsafe {File::from_raw_fd(fd)};
-    file.set_len((w*h*4) as u64).unwrap();
+    let file = unsafe { File::from_raw_fd(fd) };
+    file.set_len((w * h * 4) as u64).unwrap();
     for y in 0..h {
-        let row: Vec<_> = (0..w).flat_map(|x| colour(x,y).to_le_bytes()).collect();
-        file.write_all_at(&row, (y*w*4) as u64).unwrap();
+        let row: Vec<_> = (0..w).flat_map(|x| colour(x, y).to_le_bytes()).collect();
+        file.write_all_at(&row, (y * w * 4) as u64).unwrap();
     }
-    let pool = shm.create_pool(file.as_fd(), w*h*4, qh, ());
-    let buffer = pool.create_buffer(0,w,h,w*4,wl_shm::Format::Argb8888,qh,());
+    let pool = shm.create_pool(file.as_fd(), w * h * 4, qh, ());
+    let buffer = pool.create_buffer(0, w, h, w * 4, wl_shm::Format::Argb8888, qh, ());
     pool.destroy();
     buffer
 }
 
 impl Dispatch<WlRegistry, ()> for State {
-    fn event(state: &mut Self, _: &WlRegistry, event: wl_registry::Event, _: &(), _: &Connection, _: &QueueHandle<Self>) {
-        if let wl_registry::Event::Global {name,interface,version} = event {state.globals.push((name,interface,version));}
+    fn event(
+        state: &mut Self,
+        _: &WlRegistry,
+        event: wl_registry::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if let wl_registry::Event::Global {
+            name,
+            interface,
+            version,
+        } = event
+        {
+            state.globals.push((name, interface, version));
+        }
     }
 }
 impl Dispatch<XdgWmBase, ()> for State {
-    fn event(_: &mut Self, base: &XdgWmBase, event: xdg_wm_base::Event, _: &(), _: &Connection, _: &QueueHandle<Self>) {
-        if let xdg_wm_base::Event::Ping {serial} = event {base.pong(serial);}
+    fn event(
+        _: &mut Self,
+        base: &XdgWmBase,
+        event: xdg_wm_base::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if let xdg_wm_base::Event::Ping { serial } = event {
+            base.pong(serial);
+        }
     }
 }
 impl Dispatch<XdgSurface, ()> for State {
-    fn event(state: &mut Self, surface: &XdgSurface, event: xdg_surface::Event, _: &(), _: &Connection, _: &QueueHandle<Self>) {
-        if let xdg_surface::Event::Configure {serial} = event {surface.ack_configure(serial);state.configured = true;}
+    fn event(
+        state: &mut Self,
+        surface: &XdgSurface,
+        event: xdg_surface::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if let xdg_surface::Event::Configure { serial } = event {
+            surface.ack_configure(serial);
+            state.configured = true;
+        }
     }
 }
 impl Dispatch<XdgToplevel, ()> for State {
-    fn event(state: &mut Self, _: &XdgToplevel, event: xdg_toplevel::Event, _: &(), _: &Connection, _: &QueueHandle<Self>) {
-        if let xdg_toplevel::Event::Configure {width,height,..} = event {state.size = (width,height);}
+    fn event(
+        state: &mut Self,
+        _: &XdgToplevel,
+        event: xdg_toplevel::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if let xdg_toplevel::Event::Configure { width, height, .. } = event {
+            state.size = (width, height);
+        }
     }
 }
 impl Dispatch<WlPointer, ()> for State {
-    fn event(state: &mut Self, pointer: &WlPointer, event: wl_pointer::Event, _: &(), _: &Connection, _: &QueueHandle<Self>) {
-        if let wl_pointer::Event::Enter {serial,..} = event {pointer.set_cursor(serial,state.cursor.as_ref(),0,0);}
+    fn event(
+        state: &mut Self,
+        pointer: &WlPointer,
+        event: wl_pointer::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if let wl_pointer::Event::Enter { serial, .. } = event {
+            pointer.set_cursor(serial, state.cursor.as_ref(), 0, 0);
+        }
     }
 }
 impl Dispatch<WlCallback, ()> for State {
-    fn event(state: &mut Self, _: &WlCallback, event: wl_callback::Event, _: &(), _: &Connection, _: &QueueHandle<Self>) {
-        if let wl_callback::Event::Done {..} = event {state.callbacks+=1;}
+    fn event(
+        state: &mut Self,
+        _: &WlCallback,
+        event: wl_callback::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if let wl_callback::Event::Done { .. } = event {
+            state.callbacks += 1;
+        }
     }
 }
 impl Dispatch<WpPresentation, ()> for State {
-    fn event(state: &mut Self, _: &WpPresentation, event: wp_presentation::Event, _: &(), _: &Connection, _: &QueueHandle<Self>) {
-        if let wp_presentation::Event::ClockId {clk_id} = event {state.clock=Some(clk_id);}
+    fn event(
+        state: &mut Self,
+        _: &WpPresentation,
+        event: wp_presentation::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if let wp_presentation::Event::ClockId { clk_id } = event {
+            state.clock = Some(clk_id);
+        }
     }
 }
 impl Dispatch<WpPresentationFeedback, ()> for State {
-    fn event(state: &mut Self, _: &WpPresentationFeedback, event: wp_presentation_feedback::Event, _: &(), _: &Connection, _: &QueueHandle<Self>) {
+    fn event(
+        state: &mut Self,
+        _: &WpPresentationFeedback,
+        event: wp_presentation_feedback::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
         match event {
-            wp_presentation_feedback::Event::Presented {tv_sec_hi,tv_sec_lo,tv_nsec, flags,..} => {
-                assert_eq!(flags, wayland_client::WEnum::Value(wp_presentation_feedback::Kind::empty()));
-                state.presented+=1;
-                state.times.push((((tv_sec_hi as u64)<<32) | tv_sec_lo as u64)*1_000_000_000 + tv_nsec as u64);
-            },
-            wp_presentation_feedback::Event::Discarded => state.discarded+=1,
-            _=>{},
+            wp_presentation_feedback::Event::Presented {
+                tv_sec_hi,
+                tv_sec_lo,
+                tv_nsec,
+                flags,
+                ..
+            } => {
+                assert_eq!(
+                    flags,
+                    wayland_client::WEnum::Value(wp_presentation_feedback::Kind::empty())
+                );
+                state.presented += 1;
+                state.times.push(
+                    (((tv_sec_hi as u64) << 32) | tv_sec_lo as u64) * 1_000_000_000
+                        + tv_nsec as u64,
+                );
+            }
+            wp_presentation_feedback::Event::Discarded => state.discarded += 1,
+            _ => {}
         }
     }
 }
