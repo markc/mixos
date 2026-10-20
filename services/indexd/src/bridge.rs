@@ -42,6 +42,13 @@ where
                 }
             }
         }
+        if line.last() != Some(&b'\n') {
+            output
+                .write_all(b"{\"id\":null,\"rc\":-1,\"error\":\"incomplete request line\"}\n")
+                .await?;
+            output.flush().await?;
+            break;
+        }
         let reply = if oversized || std::str::from_utf8(&line).is_err() {
             json!({"id":null,"rc":-1,"error":"invalid bridge request"})
         } else {
@@ -136,6 +143,24 @@ mod tests {
             )["error"],
             "header reason"
         );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn incomplete_feedback_at_eof_is_never_dispatched() {
+        let broker = test_broker::Broker::start();
+        let owner = NodedClient::connect("indexd", &broker.url).await.unwrap();
+        let mut incoming = owner.incoming_async().await.unwrap();
+        let client = NodedClient::connect_anonymous(&broker.url).await;
+        let input = br#"{"id":1,"verb":"indexd.feedback","body":{},"timeout_secs":0}"#;
+        let mut output = Vec::new();
+        run(&input[..], &mut output, &client).await.unwrap();
+        assert_eq!(
+            serde_json::from_slice::<Value>(&output).unwrap(),
+            json!({"id":null,"rc":-1,"error":"incomplete request line"})
+        );
+        assert!(tokio::time::timeout(std::time::Duration::from_millis(50), incoming.recv()).await.is_err());
+        client.unwrap().close().await;
+        owner.close().await;
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
