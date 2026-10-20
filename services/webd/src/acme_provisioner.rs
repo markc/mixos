@@ -405,12 +405,12 @@ pub struct AcmeProvisioner {
     /// loop, so a `swap` here is seen live by that listener.
     tls_listeners: HashMap<String, ListenerTls>,
 
-    /// Maps every served vhost FQDN to its owning listener id (P2-C2)
+    /// Maps every served vhost FQDN to all its listener ids (P2-C2)
     /// — the partition key `republish_tls_config_for_plans` uses to
     /// route each manual-PEM / ACME identity into the right listener's
     /// rebuilt resolver. Built once from the resolved listener set and
     /// attached alongside [`Self::tls_listeners`].
-    fqdn_to_listener: HashMap<String, String>,
+    fqdn_to_listeners: HashMap<String, Vec<String>>,
     /// Per-listener `strict_sni` as the startup resolvers were built with
     /// (the L1 `webd.listeners` value at boot). Only the fallback now:
     /// republish reads the LIVE value through [`Self::listeners_runtime`].
@@ -632,7 +632,7 @@ impl std::fmt::Debug for AcmeProvisioner {
                 "tls_listeners",
                 &self.tls_listeners.keys().collect::<Vec<_>>(),
             )
-            .field("fqdn_to_listener", &self.fqdn_to_listener)
+            .field("fqdn_to_listeners", &self.fqdn_to_listeners)
             .field("renewal_tick", &self.renewal_tick)
             .field(
                 "staging_client",
@@ -756,7 +756,7 @@ impl AcmeProvisioner {
             base_identities,
             acme_identities: HashMap::new(),
             tls_listeners: HashMap::new(),
-            fqdn_to_listener: HashMap::new(),
+            fqdn_to_listeners: HashMap::new(),
             listener_strict_sni: HashMap::new(),
             listeners_runtime: None,
             renewal_tick,
@@ -846,10 +846,10 @@ impl AcmeProvisioner {
     pub fn attach_tls_listeners(
         &mut self,
         listeners: HashMap<String, ListenerTls>,
-        fqdn_to_listener: HashMap<String, String>,
+        fqdn_to_listeners: HashMap<String, Vec<String>>,
     ) {
         self.tls_listeners = listeners;
-        self.fqdn_to_listener = fqdn_to_listener;
+        self.fqdn_to_listeners = fqdn_to_listeners;
     }
 
     /// Attach each listener's boot `strict_sni` — the FALLBACK used when
@@ -2836,7 +2836,7 @@ impl AcmeProvisioner {
     /// (`acme_identities`) identities — **filtered through
     /// `self.plans`** so an ACME identity whose plan has been
     /// removed (C4b `VhostRemoved` arm) no longer serves on the
-    /// TLS surface — partitioned by [`Self::fqdn_to_listener`] and
+    /// TLS surface — distributed by [`Self::fqdn_to_listeners`] and
     /// swapped into the matching [`ListenerTls`]. No-op (Ok) if no
     /// listeners were attached (test paths).
     ///
@@ -2895,7 +2895,7 @@ impl AcmeProvisioner {
         // When there is exactly one TLS listener (the implicit
         // single-`wg` deployment, and any explicit one-listener
         // config), an identity whose host the startup
-        // `fqdn_to_listener` snapshot doesn't know — e.g. a runtime
+        // `fqdn_to_listeners` snapshot doesn't know — e.g. a runtime
         // `vhost.add` issued after startup — has only one place it
         // could be served, so route it there. This preserves the
         // pre-P2 behaviour where the single resolver served every
@@ -2910,19 +2910,19 @@ impl AcmeProvisioner {
         };
         let mut by_listener: HashMap<&str, Vec<TlsIdentityConfig>> = HashMap::new();
         for ident in &idents {
-            let target = self
-                .fqdn_to_listener
-                .get(&ident.server_name)
-                .map(String::as_str)
-                .or(sole_listener);
-            match target {
-                Some(lid) => by_listener.entry(lid).or_default().push(ident.clone()),
-                None => warn!(
+            if let Some(lids) = self.fqdn_to_listeners.get(&ident.server_name) {
+                for lid in lids {
+                    by_listener.entry(lid).or_default().push(ident.clone());
+                }
+            } else if let Some(lid) = sole_listener {
+                by_listener.entry(lid).or_default().push(ident.clone());
+            } else {
+                warn!(
                     server_name = %ident.server_name,
                     "republish: identity for a host with no listener mapping on a \
                      multi-listener node — skipped (a runtime vhost.add has no \
                      interface assignment until config names it)"
-                ),
+                );
             }
         }
         // Rebuild every listener's resolver from its bucket (an empty
@@ -5796,7 +5796,7 @@ mod tests {
         let mut tls = HashMap::new();
         tls.insert("pub".to_string(), handle.clone());
         let mut map = HashMap::new();
-        map.insert("live.example".to_string(), "pub".to_string());
+        map.insert("live.example".to_string(), vec!["pub".to_string()]);
         p.attach_tls_listeners(tls, map);
         // Boot map says lenient; the live row says strict — live wins.
         let mut boot = HashMap::new();
@@ -5922,7 +5922,7 @@ mod tests {
         let mut tls = HashMap::new();
         tls.insert("rt".to_string(), handle.clone());
         let mut map = HashMap::new();
-        map.insert("rt.example".to_string(), "rt".to_string());
+        map.insert("rt.example".to_string(), vec!["rt".to_string()]);
         p.attach_tls_listeners(tls, map);
         let mut strict = HashMap::new();
         strict.insert("rt".to_string(), true);
@@ -5956,6 +5956,49 @@ mod tests {
         assert!(resolver.pick_for_sni(None).is_none());
     }
 
+    #[tokio::test]
+    async fn republish_shared_certificate_updates_both_listener_resolvers() {
+        _install_crypto_provider();
+        let tmp = tempfile::tempdir().unwrap();
+        let mut p = _new_acme_provisioner(tmp.path().to_path_buf());
+        _stage_real_live(tmp.path(), "shared.example");
+        let live = tmp.path().join("shared.example").join(LIVE_DIR);
+        p.plans = vec![_staging_plan("shared.example")];
+        p.acme_identities.insert("shared.example".into(), TlsIdentityConfig {
+            server_name: "shared.example".into(),
+            cert: live.join(FULLCHAIN_FILE).to_string_lossy().into_owned(),
+            key: live.join(PRIVKEY_FILE).to_string_lossy().into_owned(),
+            default: false,
+            no_sni_fallback: false,
+        });
+        let first = crate::empty_listener_tls(true).unwrap();
+        let second = crate::empty_listener_tls(true).unwrap();
+        p.attach_tls_listeners(
+            HashMap::from([("first".into(), first.clone()), ("second".into(), second.clone())]),
+            HashMap::from([("shared.example".into(), vec!["first".into(), "second".into()])]),
+        );
+        let mut previous = None;
+        for _ in 0..2 {
+            let pem = std::fs::read(live.join(FULLCHAIN_FILE)).unwrap();
+            p.republish_tls_config().await.unwrap();
+            let (a, _) = first.current().expect("first serves TLS");
+            let (b, _) = second.current().expect("second serves TLS");
+            let a_cert = &a.pick_for_sni(Some("shared.example")).unwrap().certified_key.cert;
+            let b_cert = &b.pick_for_sni(Some("shared.example")).unwrap().certified_key.cert;
+            assert_eq!(a_cert, b_cert);
+            if let Some(old) = previous {
+                assert_ne!(old, *a_cert, "both listeners must adopt the replacement");
+            }
+            previous = Some(a_cert.clone());
+            assert!(a.pick_for_sni(Some("other.example")).is_none());
+            assert!(b.pick_for_sni(Some("other.example")).is_none());
+            assert!(a.pick_for_sni(None).is_none());
+            assert!(b.pick_for_sni(None).is_none());
+            _stage_real_live(tmp.path(), "shared.example");
+            assert_ne!(pem, std::fs::read(live.join(FULLCHAIN_FILE)).unwrap());
+        }
+    }
+
     /// MAJOR-4 for a listener built from config identities: republish
     /// (here via a runtime adoption onto the same listener) keeps the
     /// strict policy it booted with; a lenient listener stays lenient.
@@ -5984,8 +6027,8 @@ mod tests {
         tls.insert("strict".to_string(), strict_handle.clone());
         tls.insert("lenient".to_string(), lenient_handle.clone());
         let mut map = HashMap::new();
-        map.insert("cfg.example".to_string(), "strict".to_string());
-        map.insert("run.example".to_string(), "lenient".to_string());
+        map.insert("cfg.example".to_string(), vec!["strict".to_string()]);
+        map.insert("run.example".to_string(), vec!["lenient".to_string()]);
         p.attach_tls_listeners(tls, map);
         let mut strict = HashMap::new();
         strict.insert("strict".to_string(), true);

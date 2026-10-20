@@ -1794,10 +1794,13 @@ mod tests {
             ],
             &[],
         );
-        let msg = listener_add_error(Some(&two), h).expect("double owner refused");
-        assert!(msg.contains("two listeners"), "{msg}");
-        // Listed twice by ONE listener: startup counts slots, not
-        // listeners, so this aborts the boot — the check must agree.
+        assert!(listener_add_error(Some(&two), h).is_none());
+        let shared = two
+            .synthesize_listeners(&[h.to_string()], &HashSet::new())
+            .expect("two listeners may serve the same host");
+        assert_eq!(shared.len(), 2);
+        assert!(shared.iter().all(|l| l.hosts == [h]));
+        // Listed twice by ONE listener still aborts boot.
         let dup = cfg_with(vec![listener("pub", "192.0.2.1:443", true, &[h, h])], &[]);
         assert!(
             dup.synthesize_listeners(&[h.to_string()], &HashSet::new())
@@ -1817,6 +1820,39 @@ mod tests {
             &[],
         );
         assert!(listener_add_error(Some(&upper), h).is_some());
+    }
+
+    #[test]
+    fn listener_add_error_checks_all_shared_listener_slots_and_enabled_coverage() {
+        let h = "new.example.org";
+        for enabled in [(true, false), (false, true), (false, false)] {
+            let cfg = cfg_with(
+                vec![
+                    listener("first", "192.0.2.1:443", enabled.0, &[h]),
+                    listener("second", "198.51.100.1:443", enabled.1, &[h]),
+                ],
+                &[],
+            );
+            assert_eq!(
+                listener_add_error(Some(&cfg), h).is_none(),
+                enabled.0 || enabled.1
+            );
+            assert_eq!(
+                cfg.synthesize_listeners(&[h.to_string()], &HashSet::new()).is_ok(),
+                enabled.0 || enabled.1
+            );
+        }
+        let cfg = cfg_with(
+            vec![
+                listener("first", "192.0.2.1:443", true, &[h]),
+                listener("second", "198.51.100.1:443", true, &[h]),
+                listener("third", "203.0.113.1:443", true, &[h, h]),
+            ],
+            &[],
+        );
+        let msg = listener_add_error(Some(&cfg), h).expect("later duplicate refused");
+        assert!(msg.contains("listed twice") && msg.contains("third"), "{msg}");
+        assert!(cfg.synthesize_listeners(&[h.to_string()], &HashSet::new()).is_err());
     }
 
     #[test]

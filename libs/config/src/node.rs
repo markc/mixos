@@ -445,10 +445,10 @@ impl NodeConfig {
     ///   (would `EADDRINUSE` or silently shadow);
     /// - every host named in a listener's `vhosts` is a known host
     ///   (in `all_hosts`);
-    /// - every host in `all_hosts` is claimed by exactly one listener,
-    ///   and that listener is **enabled** (a host on no listener, on a
-    ///   disabled-only listener, or on two listeners is a hard error —
-    ///   never a silent drop or ambiguous route).
+    /// - every host in `all_hosts` is claimed by at least one **enabled**
+    ///   listener (a host on no listener or only disabled listeners is a
+    ///   hard error); a host may occur on several listeners, but only
+    ///   once within each listener's allowlist.
     ///
     /// **`disabled_hosts` (B1 fail-soft)** is every vhost name webd
     /// dropped at resolve time (bad cert / missing www_dir / unopenable
@@ -530,11 +530,19 @@ impl NodeConfig {
             }
         }
 
-        // ── host → owning listener (each host on exactly one) ────────
+        // ── host coverage + uniqueness within each listener ──────────
         let known: HashSet<&str> = all_hosts.iter().map(String::as_str).collect();
         let mut owner: HashMap<&str, &WebdListenerConfig> = HashMap::new();
         for l in listeners {
+            let mut seen = HashSet::new();
             for h in &l.vhosts {
+                if !seen.insert(h.as_str()) {
+                    anyhow::bail!(
+                        "[webd] vhost {:?} is listed twice in listener {:?}'s `vhosts`",
+                        h,
+                        l.id
+                    );
+                }
                 // B1 fail-soft: a host webd disabled at resolve time
                 // (bad cert / missing www_dir / unopenable CMS DB) is
                 // absent from `all_hosts` but may still be named here.
@@ -551,14 +559,9 @@ impl NodeConfig {
                         h
                     );
                 }
-                if let Some(prev) = owner.insert(h.as_str(), l) {
-                    anyhow::bail!(
-                        "[webd] vhost {:?} is served by two listeners ({:?} and {:?}) \
-                         — a host belongs to exactly one listener",
-                        h,
-                        prev.id,
-                        l.id
-                    );
+                // Prefer an enabled claim, regardless of declaration order.
+                if l.enabled || !owner.contains_key(h.as_str()) {
+                    owner.insert(h.as_str(), l);
                 }
             }
         }
@@ -1102,17 +1105,51 @@ mod transplanted_tests {
                 .is_err()
         );
 
-        // Host claimed by two listeners ⇒ ambiguous route ⇒ error.
+        // Two claims still fail when neither listener is enabled.
         let double = node_with_listeners(
             "wg_ip: \"192.0.2.5\"\nwebd: { listener: [ \
-             { id: \"wg\", bind: \"192.0.2.5:443\", vhosts: [\"a.example.org\"] }, \
-             { id: \"pub\", bind: \"203.0.113.5:443\", external: true, vhosts: [\"a.example.org\"] } ] }\n",
+             { id: \"wg\", bind: \"192.0.2.5:443\", enabled: false, vhosts: [\"a.example.org\"] }, \
+             { id: \"pub\", bind: \"203.0.113.5:443\", enabled: false, external: true, vhosts: [\"a.example.org\"] } ] }\n",
         );
         assert!(
             double
                 .synthesize_listeners(&["a.example.org".into()], &HashSet::new())
                 .is_err()
         );
+    }
+
+    #[test]
+    fn synthesize_listeners_shared_host_keeps_binds_and_enabled_coverage() {
+        for enabled in [(true, true), (true, false), (false, true)] {
+            let nc = node_with_listeners(&format!(
+                "webd: {{ listener: [ \
+                 {{ id: first, bind: '192.0.2.1:443', enabled: {}, vhosts: ['a.example.org'] }}, \
+                 {{ id: second, bind: '198.51.100.1:443', enabled: {}, vhosts: ['a.example.org'] }} ] }}",
+                enabled.0, enabled.1
+            ));
+            let hosts = vec!["a.example.org".to_string()];
+            let out = nc.synthesize_listeners(&hosts, &HashSet::new()).unwrap();
+            assert_eq!(out.len(), 2);
+            assert_eq!(out[0].bind, "192.0.2.1:443");
+            assert_eq!(out[1].bind, "198.51.100.1:443");
+            assert_eq!(out[0].hosts, hosts);
+            assert_eq!(out[1].hosts, hosts);
+            assert_eq!((out[0].enabled, out[1].enabled), enabled);
+        }
+    }
+
+    #[test]
+    fn synthesize_listeners_rejects_duplicate_even_when_host_is_disabled() {
+        let nc = node_with_listeners(
+            "webd: { listener: [ \
+             { id: first, bind: '192.0.2.1:443', vhosts: ['a.example.org', 'a.example.org'] } ] }",
+        );
+        for disabled in [HashSet::new(), HashSet::from(["a.example.org".to_string()])] {
+            let err = nc
+                .synthesize_listeners(&["a.example.org".into()], &disabled)
+                .unwrap_err();
+            assert!(err.to_string().contains("listed twice"), "{err}");
+        }
     }
 
     #[test]
