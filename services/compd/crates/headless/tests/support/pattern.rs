@@ -264,8 +264,17 @@ impl Dispatch<WlCallback, ()> for State {
     }
 }
 impl Dispatch<WlSeat, ()> for State {
-    fn event(state: &mut Self, seat: &WlSeat, event: wl_seat::Event, _: &(), _: &Connection, qh: &QueueHandle<Self>) {
-        if let wl_seat::Event::Capabilities { capabilities: WEnum::Value(caps) } = event
+    fn event(
+        state: &mut Self,
+        seat: &WlSeat,
+        event: wl_seat::Event,
+        _: &(),
+        _: &Connection,
+        qh: &QueueHandle<Self>,
+    ) {
+        if let wl_seat::Event::Capabilities {
+            capabilities: WEnum::Value(caps),
+        } = event
             && caps.contains(wl_seat::Capability::Pointer)
         {
             state.pointers.push(seat.get_pointer(qh, ()));

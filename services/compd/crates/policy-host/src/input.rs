@@ -779,11 +779,17 @@ fn resolve_agent_motion(
         }
         PointerMoveTarget::Output { output, x, y } => {
             let (_, row, x, y) = output_row(lp, output.as_deref(), *x, *y)?;
-            let position = if lp.inner.comp.injection.backend == world::comp::injection::BackendInput::Headless {
+            let position = if lp.inner.comp.injection.backend
+                == world::comp::injection::BackendInput::Headless
+            {
                 // Output coordinates are screen-local; the single virtual
                 // output's host Space is centre-anchored. Keep existing
                 // session backends' coordinate path unchanged.
-                let transform: Transform = (Point::<f64, Physical>::from((x * row.scale, y * row.scale)), lp.size_ctx_all()).into();
+                let transform: Transform = (
+                    Point::<f64, Physical>::from((x * row.scale, y * row.scale)),
+                    lp.size_ctx_all(),
+                )
+                    .into();
                 let world = transform.into_storage_point_f64();
                 (world.x, world.y)
             } else {
@@ -1526,7 +1532,13 @@ fn output_row(
             json!({"output": output}),
         ));
     };
-    let Some((x, y)) = lp.inner.comp.injection.backend.output_position(x, y, row.width, row.height) else {
+    let Some((x, y)) = lp
+        .inner
+        .comp
+        .injection
+        .backend
+        .output_position(x, y, row.width, row.height)
+    else {
         return Err(ControlReply::refused(
             "out_of_bounds",
             json!({"output": key, "x": x, "y": y, "width": row.width, "height": row.height}),
@@ -1560,8 +1572,11 @@ fn pointer_position(lp: &Loop, seat: SeatKind) -> Option<(String, String, f64, f
         }
         SeatKind::Agent => {
             let (x, y) = lp.inner.comp.injection.agent_pointer?;
-            let (x, y) = if lp.inner.comp.injection.backend == world::comp::injection::BackendInput::Headless {
-                let transform: Transform = (Point::<f64, Logical>::from((x, y)), lp.size_ctx_all()).into();
+            let (x, y) = if lp.inner.comp.injection.backend
+                == world::comp::injection::BackendInput::Headless
+            {
+                let transform: Transform =
+                    (Point::<f64, Logical>::from((x, y)), lp.size_ctx_all()).into();
                 let screen: Point<f64, Physical> = transform.into();
                 let scale = lp.inner.current_output().current_scale().fractional_scale();
                 (screen.x / scale, screen.y / scale)

@@ -15,7 +15,11 @@ where
 {
     // A headless human seat has no pointer. Canvas context still exists;
     // its neutral cursor must not depend on an absent input source.
-    let cursor_logical = state.state.seat.seat.get_pointer()
+    let cursor_logical = state
+        .state
+        .seat
+        .seat
+        .get_pointer()
         .map(|pointer| pointer.current_location())
         .unwrap_or_default();
 

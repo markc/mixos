@@ -255,7 +255,10 @@ fn pattern_mixed_cursor_captures_and_presentation_ledger() {
             }
         }
     }
-    assert!(changed > 0 && changed <= 24 * 24, "agent arrow pixels: {changed}");
+    assert!(
+        changed > 0 && changed <= 24 * 24,
+        "agent arrow pixels: {changed}"
+    );
     assert!(amber > 0, "built-in agent arrow fill must be captured");
     // Also exercise the shipped screenshot client against the same pattern.
     let shot = process.root.join("screenshot.ppm");

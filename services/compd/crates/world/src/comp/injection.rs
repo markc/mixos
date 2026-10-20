@@ -56,7 +56,10 @@ impl BackendInput {
             return None;
         }
         if self == Self::Headless {
-            Some((x.clamp(0.0, f64::from(width - 1)), y.clamp(0.0, f64::from(height - 1))))
+            Some((
+                x.clamp(0.0, f64::from(width - 1)),
+                y.clamp(0.0, f64::from(height - 1)),
+            ))
         } else {
             ((0.0..f64::from(width)).contains(&x) && (0.0..f64::from(height)).contains(&y))
                 .then_some((x, y))

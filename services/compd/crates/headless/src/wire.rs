@@ -144,12 +144,22 @@ pub fn wire(
     // centre at every scale, just like the initial human cursor placement.
     let centre = smithay::utils::Point::from((0.0, 0.0));
     state.inner.comp.injection.agent_pointer = Some((centre.x, centre.y));
-    if let Some(pointer) = state.state.seat.agent.as_ref().and_then(|seat| seat.get_pointer()) {
-        pointer.motion(&mut state.state, None, &smithay::input::pointer::MotionEvent {
-            location: centre,
-            serial: smithay::utils::SERIAL_COUNTER.next_serial(),
-            time: 0,
-        });
+    if let Some(pointer) = state
+        .state
+        .seat
+        .agent
+        .as_ref()
+        .and_then(|seat| seat.get_pointer())
+    {
+        pointer.motion(
+            &mut state.state,
+            None,
+            &smithay::input::pointer::MotionEvent {
+                location: centre,
+                serial: smithay::utils::SERIAL_COUNTER.next_serial(),
+                time: 0,
+            },
+        );
         pointer.frame(&mut state.state);
     }
     let formats = state
