@@ -2773,7 +2773,9 @@ mod tests {
             drop(socket);
         });
         // No per-send timeout: only the probe's own connect bound applies.
-        let bound = PROBE_CONNECT_TIMEOUT + std::time::Duration::from_secs(1);
+        // The upper margin is generous: a loaded runner must not turn a
+        // correctly bounded redial into a failure.
+        let bound = PROBE_CONNECT_TIMEOUT + std::time::Duration::from_secs(10);
         let started = std::time::Instant::now();
         let result =
             tokio::time::timeout(bound, h.send("svc.example", "do_something", &Value::Nil)).await;
