@@ -1095,6 +1095,8 @@ mod tests {
     #[test]
     fn delete_refuses_contains_and_invalid_comparison_values() {
         let db = test_vector_db();
+        let missing_value = serde_json::json!({"filter":[{"field":"path","op":"eq"}]});
+        assert!(serde_json::from_value::<DeleteRequest>(missing_value).is_err());
         db.conn
             .execute(
                 "INSERT INTO chunks(content, metadata) VALUES ('keep', '{}')",
@@ -1103,7 +1105,6 @@ mod tests {
             .unwrap();
         for raw in [
             serde_json::json!({"field":"path","op":"contains","value":"a"}),
-            serde_json::json!({"field":"path","op":"eq"}),
             serde_json::json!({"field":"path","op":"eq","value":null}),
             serde_json::json!({"field":"path","op":"eq","value":[]}),
             serde_json::json!({"field":"path","op":"eq","value":{}}),
