@@ -431,6 +431,74 @@ fn a_single_click_opens_and_marks_read_and_a_double_click_does_not_reopen() {
     );
 }
 
+fn right_click(h: &mut Harness<'static, Window>, label: &str) {
+    let row = h.get_by_label_contains(label).rect().center();
+    h.hover_at(row);
+    h.run();
+    let clicks = [true, false].map(|pressed| egui::Event::PointerButton {
+        pos: row,
+        button: egui::PointerButton::Secondary,
+        pressed,
+        modifiers: egui::Modifiers::NONE,
+    });
+    h.input_mut().events.extend(clicks);
+    h.run();
+    h.run();
+}
+
+#[test]
+fn a_right_click_on_a_row_opens_the_message_menu_for_that_email() {
+    let mut h = harness(fixture());
+    assert!(h.query_by_label_contains("Send as New").is_none());
+    // A row outside the selection becomes it, and opens.
+    right_click(&mut h, "Minutes");
+    let ticket = h
+        .state_mut()
+        .state
+        .take_work()
+        .iter()
+        .find_map(|w| match w {
+            Work::OpenEmail { ticket, id, .. } if id == "E2" => Some(*ticket),
+            _ => None,
+        })
+        .expect("the right-clicked row opens");
+    assert_eq!(
+        h.state().state.account("home").unwrap().mail.table.selection,
+        ["E2"]
+    );
+    // The menu is up; what acts on the open email waits for E2 to load.
+    let entry = |h: &Harness<'static, Window>| {
+        h.get_by_label_contains("Send as New")
+            .accesskit_node()
+            .is_disabled()
+    };
+    assert!(entry(&h), "disabled while E2 loads");
+    let e2 = serde_json::json!({
+        "id": "E2",
+        "subject": "Minutes",
+        "from": [{ "name": "Cy", "email": "cy@example.invalid" }],
+        "receivedAt": "2026-10-12T05:00:00Z",
+        "keywords": { "$seen": true }
+    });
+    done(
+        &mut h.state_mut().state,
+        "home",
+        Done::Opened(ticket, None, Box::new(Ok(serde_json::from_value(e2).unwrap()))),
+    );
+    h.run();
+    assert!(!entry(&h), "enabled once E2 is open");
+    h.get_by_label_contains("Send as New").click();
+    h.run();
+    assert!(
+        h.state().seen.contains(&UiEvent::Command(
+            "mail.send_as_new",
+            toolkit::command::Origin::Menu
+        )),
+        "{:?}",
+        h.state().seen
+    );
+}
+
 /// The message list's rows, top to bottom, by their accessible labels.
 fn list_rows(h: &Harness<'static, Window>) -> Vec<String> {
     let mut rows: Vec<(f32, String)> = h

@@ -146,6 +146,7 @@ forward-header = ---------- Forwarded message ----------
     Date: { $date }
     Subject: { $subject }
     To: { $to }
+send-as-new = Send as New
 mark-unread = Mark as Unread
 mark-read = Mark as Read
 flag = Star

@@ -46,11 +46,15 @@ fn composable(state: &State) -> bool {
     idle(state) && state.compose_account().is_some()
 }
 
-/// The current account has an email open, in the mail surface.
+/// The current account has an email open, in the mail surface, and no
+/// other one is loading in its place: a row just clicked (or right-clicked
+/// for its menu) is not answered by the email that was open before it.
 fn reading(state: &State) -> bool {
     ready(state)
         && state.mode == Mode::Mail
-        && state.current().is_some_and(|v| v.mail.open.is_some())
+        && state
+            .current()
+            .is_some_and(|v| v.mail.open.is_some() && !v.opening_another())
 }
 
 /// The message list has a target for the message actions (the selection,
@@ -191,6 +195,18 @@ pub fn registry() -> Registry<State> {
         icon: Some(Icon::Forward),
         enabled: reading,
         run: State::forward_open,
+    })
+    // Thunderbird's Edit as New Message, and its key.
+    .add(Command {
+        id: "mail.send_as_new",
+        submenu: None,
+        group: 0,
+        label: "send-as-new",
+        menu: Some("message"),
+        shortcut: key(Modifiers::COMMAND, Key::E),
+        icon: Some(Icon::Redo2),
+        enabled: reading,
+        run: State::send_as_new_open,
     })
     .add(Command {
         id: "mail.reply_quoted",

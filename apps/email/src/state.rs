@@ -726,6 +726,15 @@ impl AccountView {
         self.generation
     }
 
+    /// Another email than the open one was asked for and has not loaded
+    /// (or failed to): actions on "the open email" would hit the wrong one.
+    pub fn opening_another(&self) -> bool {
+        self.tickets
+            .open_requested
+            .as_deref()
+            .is_some_and(|id| self.mail.open.as_ref().is_none_or(|e| e.id != id))
+    }
+
     /// Drop everything fetched (a new connection starts empty). Tickets
     /// keep counting, so nothing in flight can match a new request.
     fn forget(&mut self) {
@@ -4276,6 +4285,13 @@ impl State {
         }
     }
 
+    /// Send the open email again as a new one (Edit as New Message).
+    pub fn send_as_new_open(&mut self) {
+        if let Some((account, email)) = self.reading() {
+            self.send_as_new(&account, &email);
+        }
+    }
+
     /// Open the New Event form on the current account's selected calendar,
     /// starting at the next whole hour, an hour long.
     pub fn new_event(&mut self) {
@@ -5103,6 +5119,48 @@ impl State {
             compose.to_text = to.to_owned();
         }
         opened
+    }
+
+    /// A compose that sends `email` again as a new message from `account`:
+    /// its To, Cc, subject and text body as they were, unmarked and
+    /// unquoted, threaded to nothing. It sends as the identity the original
+    /// came from when that is one of the account's, else the default; the
+    /// body is taken as it is (its signature included), never re-signed.
+    /// Attachments do not come along: a compose carries none yet.
+    pub fn send_as_new(&mut self, account: &str, email: &Email) -> bool {
+        let list = |list: &Option<Vec<EmailAddress>>| list.clone().unwrap_or_default();
+        let body = email.text_body_value().unwrap_or_default().to_owned();
+        let opened = self.open_compose(
+            Some(account),
+            Composed {
+                to: list(&email.to),
+                cc: list(&email.cc),
+                subject: email.subject.clone().unwrap_or_default(),
+                body,
+                ..Composed::default()
+            },
+        );
+        if !opened {
+            return false;
+        }
+        let from = email
+            .from
+            .as_ref()
+            .and_then(|f| f.first())
+            .map(|a| a.email.to_ascii_lowercase());
+        let identity = from.and_then(|from| {
+            self.senders(account)
+                .into_iter()
+                .find(|s| s.address.eq_ignore_ascii_case(&from))
+                .map(|s| s.id)
+        });
+        let current = self.compose.as_ref().map(|c| c.identity.clone());
+        if let Some(identity) = identity
+            && current.as_deref() != Some(identity.as_str())
+        {
+            self.choose_sender(account.to_owned(), Some(identity));
+        }
+        true
     }
 
     /// A compose replying to `email` from `account` (`all`: to everyone it
@@ -7976,6 +8034,79 @@ pub(crate) mod tests {
                 .iter()
                 .any(|w| matches!(w, Work::FetchEvents { calendar, .. } if calendar == "C1"))
         );
+    }
+
+    #[test]
+    fn send_as_new_copies_the_open_email_as_a_fresh_compose() {
+        let mut state = reading();
+        let mut email: serde_json::Value = serde_json::to_value(unread_email("E1")).unwrap();
+        email["bodyValues"] = json!({ "p1": { "value": "Lunch at one?\n-- \nBob", "partId": "p1" } });
+        email["textBody"] = json!([{ "partId": "p1", "type": "text/plain" }]);
+        state.account_mut("a").unwrap().mail.open = Some(serde_json::from_value(email).unwrap());
+        registry_run(&mut state, "mail.send_as_new");
+        let compose = state.compose.clone().expect("a compose");
+        assert_eq!(compose.draft.subject, "Hello", "no Re: or Fwd:");
+        assert_eq!(compose.to_text, "ann@a.example.invalid, cy@example.invalid");
+        assert_eq!(compose.cc_text, "dee@example.invalid");
+        assert_eq!(compose.draft.body, "Lunch at one?\n-- \nBob", "as it was, not re-signed");
+        assert_eq!(compose.draft.in_reply_to, None, "a new thread");
+        assert!(compose.reply.is_none());
+    }
+
+    #[test]
+    fn send_as_new_sends_as_the_identity_the_original_came_from() {
+        let mut state = reading();
+        let identity = |id: &str, address: &str| settings::email::Identity {
+            id: id.into(),
+            name: id.into(),
+            address: address.into(),
+            signature: String::new(),
+            reply_to: None,
+        };
+        state.account_mut("a").unwrap().entry.identities = vec![
+            identity("default", "ann@a.example.invalid"),
+            identity("sales", "sales@a.example.invalid"),
+        ];
+        let mut email = unread_email("E1");
+        email.from = Some(vec![EmailAddress {
+            name: None,
+            email: "Sales@a.example.invalid".into(),
+        }]);
+        state.account_mut("a").unwrap().mail.open = Some(email);
+        state.send_as_new_open();
+        let compose = state.compose.clone().expect("a compose");
+        assert_eq!(compose.identity, "sales");
+        assert_eq!(compose.draft.from, "sales@a.example.invalid");
+        // From someone else: the account's default.
+        state.compose = None;
+        state.account_mut("a").unwrap().mail.open = Some(unread_email("E1"));
+        state.send_as_new_open();
+        assert_eq!(state.compose.as_ref().unwrap().identity, "default");
+    }
+
+    #[test]
+    fn open_email_actions_wait_while_another_email_loads() {
+        let mut state = reading();
+        let registry = crate::commands::registry();
+        let enabled = |state: &State, id: &str| (registry.get(id).unwrap().enabled)(state);
+        for id in ["mail.reply", "mail.forward", "mail.send_as_new"] {
+            assert!(enabled(&state, id), "{id} with E1 open");
+        }
+        // A click (or a right-click) on E2: E1 is still shown until E2 loads.
+        assert!(state.open_email("a", "E2".into()));
+        for id in ["mail.reply", "mail.forward", "mail.send_as_new"] {
+            assert!(!enabled(&state, id), "{id} while E2 loads");
+        }
+        // Row actions act on the selection, which is E2 already.
+        assert!(enabled(&state, "mail.delete"));
+        state.account_mut("a").unwrap().mail.open = Some(unread_email("E2"));
+        assert!(enabled(&state, "mail.reply"), "E2 loaded");
+    }
+
+    fn registry_run(state: &mut State, id: &str) {
+        crate::commands::registry()
+            .execute(id, state, toolkit::command::Origin::Bus)
+            .unwrap();
     }
 
     #[test]

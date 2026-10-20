@@ -736,6 +736,10 @@ impl<S> Registry<S> {
 
 /// A context menu's `entries` as egui menu buttons; the command chosen.
 fn context_entries(ui: &mut egui::Ui, entries: &[Entry]) -> Option<&'static str> {
+    // Rows flush against each other, as the menu bar's: a long menu (the
+    // email Message menu) keeps its height, and hover highlights touch.
+    // Separators keep their own spacing.
+    ui.spacing_mut().item_spacing.y = 0.0;
     let mut chosen = None;
     for entry in entries {
         match entry {

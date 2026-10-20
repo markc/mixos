@@ -33,7 +33,7 @@ pub fn list(
     ui: &mut Ui,
     state: &State,
     view: &AccountView,
-    _commands: &Registry<State>,
+    commands: &Registry<State>,
     strings: &Strings,
     _stroke: f32,
     events: &mut Vec<UiEvent>,
@@ -97,6 +97,24 @@ pub fn list(
             .selected_count(view.mail.everything.then(|| view.mail.selection_count()))
             .empty_text(crate::label(empty))
             .show(ui, &rows);
+        // A right-click on a row opens the Message menu for it, as the
+        // reader's does. The table has already made a row outside the
+        // selection the selection (which opens it); each entry is its
+        // registry command, enabled as the menu bar's, so Reply waits for
+        // the right-clicked email to load. Only a row opens the menu, never
+        // the header or the pager.
+        let on_row = fired
+            .iter()
+            .any(|e| matches!(e, toolkit::datatable::TableEvent::ContextMenu { .. }));
+        let area = if on_row {
+            ui.max_rect()
+        } else {
+            egui::Rect::NOTHING
+        };
+        let menu = ui.id().with("list-menu");
+        if let Some(id) = commands.context_menu_over(ui, area, menu, "message", state, strings) {
+            events.push(UiEvent::Command(id, Origin::Menu));
+        }
         for event in fired {
             events.push(UiEvent::MailTable(view.id().to_owned(), event));
         }
