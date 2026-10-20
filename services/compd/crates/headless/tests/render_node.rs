@@ -113,7 +113,11 @@ fn render_and_check(gles: &mut GlesRenderer, label: &str) -> Vec<u8> {
     }
     let framebuffer = gles.bind(&mut target).expect("rebind target");
     let mapping = gles
-        .copy_framebuffer(&framebuffer, Rectangle::from_size((W, H).into()), Fourcc::Abgr8888)
+        .copy_framebuffer(
+            &framebuffer,
+            Rectangle::from_size((W, H).into()),
+            Fourcc::Abgr8888,
+        )
         .unwrap_or_else(|error| panic!("{label}: copy framebuffer: {error:?}"));
     drop(framebuffer);
     let pixels = gles.map_texture(&mapping).expect("map readback").to_vec();
@@ -126,7 +130,10 @@ fn render_and_check(gles: &mut GlesRenderer, label: &str) -> Vec<u8> {
     ];
     for ((x, y), want, what) in checks {
         let got = pixel(&pixels, x, y);
-        assert!(near(got, want), "{label}: {what}: got {got:?}, want {want:?}");
+        assert!(
+            near(got, want),
+            "{label}: {what}: got {got:?}, want {want:?}"
+        );
     }
     // Negative control: the comparison must reject a wrong colour, or the
     // checks above prove nothing.
@@ -185,7 +192,10 @@ fn surfaceless_renders_a_client_buffer_offscreen() {
         .and_then(|d| d.try_get_render_node().ok().flatten())
         .and_then(|n| n.dev_path());
     // Surfaceless binds no node itself; record which device Mesa picked.
-    println!("surfaceless: EGL device render node = {egl_node:?} (device query ok: {})", device.is_ok());
+    println!(
+        "surfaceless: EGL device render node = {egl_node:?} (device query ok: {})",
+        device.is_ok()
+    );
     let context = EGLContext::new(&display).expect("EGL context, surfaceless");
     let mut gles = unsafe { GlesRenderer::new(context) }.expect("GLES renderer, surfaceless");
     render_and_check(&mut gles, "surfaceless");

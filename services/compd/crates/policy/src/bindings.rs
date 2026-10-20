@@ -615,8 +615,12 @@ impl BindingState {
                 // Window/workspace commands, without VT switching, host
                 // interception or the nested compositor's exit chord.
                 let mut table = BindingTable::nested_defaults();
-                table.bindings.retain(|b| !matches!(b.action,
-                    BindingAction::ExitNestedCompositor | BindingAction::ToggleInterception));
+                table.bindings.retain(|b| {
+                    !matches!(
+                        b.action,
+                        BindingAction::ExitNestedCompositor | BindingAction::ToggleInterception
+                    )
+                });
                 table
             }
         };

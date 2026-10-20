@@ -8,5 +8,5 @@
 #[macro_use]
 extern crate model;
 
-pub mod wire;
 mod frame;
+pub mod wire;

@@ -350,10 +350,11 @@ fn headless_profile_has_no_vt_host_or_exit_actions() {
     assert_eq!(snapshot.profile, "headless");
     assert!(!snapshot.table.is_empty());
     for binding in &state.table.bindings {
-        assert!(!matches!(binding.action,
-            super::BindingAction::SwitchVt(_) |
-            super::BindingAction::ToggleInterception |
-            super::BindingAction::ExitNestedCompositor));
+        assert!(!matches!(
+            binding.action,
+            super::BindingAction::SwitchVt(_)
+                | super::BindingAction::ToggleInterception
+                | super::BindingAction::ExitNestedCompositor
+        ));
     }
 }
-
