@@ -237,8 +237,9 @@
 <h1 id="the-semantic-index-service">The semantic index service</h1>
 <blockquote>
 <p><strong>Status: being ported.</strong> This page describes the target design. The port
-plan is <code>_plan/2026-10-20-indexd-port.md</code> in the planning hub. Only a
-dependency probe exists so far. The full verb reference arrives with
+plan is <code>_plan/2026-10-20-indexd-port.md</code> in the planning hub. The local
+engine is implemented; <code>serve</code> opens the store and exits with a stage-4
+notice. Bus registration, <code>bridge</code> and the full verb reference arrive in
 stage 4.</p>
 </blockquote>
 <p><code>indexd</code> stores text chunks with their embeddings and returns the nearest

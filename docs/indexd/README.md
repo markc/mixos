@@ -6,8 +6,9 @@ description: How indexd embeds text locally with nomic-embed-text-v1.5 and answe
 # The semantic index service
 
 > **Status: being ported.** This page describes the target design. The port
-> plan is `_plan/2026-10-20-indexd-port.md` in the planning hub. Only a
-> dependency probe exists so far. The full verb reference arrives with
+> plan is `_plan/2026-10-20-indexd-port.md` in the planning hub. The local
+> engine is implemented; `serve` opens the store and exits with a stage-4
+> notice. Bus registration, `bridge` and the full verb reference arrive in
 > stage 4.
 
 `indexd` stores text chunks with their embeddings and returns the nearest

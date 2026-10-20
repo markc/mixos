@@ -1,47 +1,48 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
+use anyhow::Result;
+use clap::{Parser, Subcommand};
+use std::path::PathBuf;
 
-//! indexd: semantic index daemon, being ported from cosmix-indexd
-//! (`_plan/2026-10-20-indexd-port.md`).
-//!
-//! Stage 1 (dependency review) placeholder. It only names one item from each
-//! heavy dependency so the build pulls in and compiles the full closure
-//! (candle with nomic_bert, the single tokenizers that candle-core requires,
-//! sqlite-vec plus bundled SQLite). The daemon arrives in stages 2–4.
-
-use candle_core::Device;
-use candle_transformers::models::nomic_bert::NomicBertModel;
-use tokenizers::Tokenizer;
-
-fn main() {
-    let _ = Device::Cpu;
-    println!(
-        "indexd stage-1 probe: {} {} sqlite-vec loaded={}",
-        std::any::type_name::<NomicBertModel>(),
-        std::any::type_name::<Tokenizer>(),
-        register_sqlite_vec(),
-    );
+#[derive(Parser)]
+#[command(version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("MIXOS_GIT_SHA"), ", built ", env!("MIXOS_BUILD_TIME"), ")"))]
+struct Cli {
+    #[arg(short, long, global = true)]
+    config: Option<PathBuf>,
+    #[command(subcommand)]
+    command: Command,
 }
 
-/// Proves sqlite-vec links against the bundled SQLite. cosmix-indexd
-/// registers it the same way.
-fn register_sqlite_vec() -> bool {
-    type Init = unsafe extern "C" fn(
-        *mut rusqlite::ffi::sqlite3,
-        *mut *mut std::os::raw::c_char,
-        *const rusqlite::ffi::sqlite3_api_routines,
-    ) -> std::os::raw::c_int;
-    // SAFETY: sqlite3_vec_init has exactly the SQLite extension entry-point
-    // signature. sqlite3_auto_extension only records the pointer.
-    let rc = unsafe {
-        rusqlite::ffi::sqlite3_auto_extension(Some(std::mem::transmute::<*const (), Init>(
-            sqlite_vec::sqlite3_vec_init as *const (),
-        )))
-    };
-    if rc != rusqlite::ffi::SQLITE_OK {
-        return false;
+#[derive(Subcommand)]
+enum Command {
+    /// Open the engine store. Bus registration arrives in stage 4.
+    Serve,
+    /// Parse configuration without loading weights.
+    CheckConfig,
+}
+
+fn main() -> Result<()> {
+    buildinfo::exit_on_version!();
+    let cli = Cli::parse();
+    let _logging = logging::init(
+        &logging::LogOpts::default(),
+        &logging::StatsOpts::default(),
+        logging::LogDefaults::daemon("indexd").with_stats(false),
+    )?;
+    let (path, cfg) = indexd::config::load_indexd_config(cli.config.as_deref())?;
+    cfg.validate()?;
+    match cli.command {
+        Command::CheckConfig => println!("{}", ::config::to_conf_mix_string(&cfg)?),
+        Command::Serve => {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()?;
+            runtime.block_on(async {
+                let _engine = indexd::Engine::open(cfg)?;
+                tracing::info!(config = %path.display(), "bus not wired yet (stage 4)");
+                Ok::<_, anyhow::Error>(())
+            })?;
+        }
     }
-    rusqlite::Connection::open_in_memory()
-        .and_then(|c| c.query_row("SELECT vec_version()", [], |r| r.get::<_, String>(0)))
-        .is_ok()
+    Ok(())
 }
