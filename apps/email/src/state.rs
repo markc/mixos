@@ -1882,6 +1882,12 @@ impl State {
         } else {
             self.held = None;
         }
+        // settingsd came back: the status bar stops saying it is missing,
+        // also in the "Accounts not saved: …" form a refused write left.
+        // (The look's own status, if any, was set above and stands.)
+        if self.source == Source::Missing && self.status.contains(&crate::label("settings-missing")) {
+            self.status = crate::label("settings-back");
+        }
         self.settings = email;
         self.source = Source::Settings;
         self.epoch += 1;
@@ -7186,6 +7192,30 @@ pub(crate) mod tests {
                 .iter()
                 .any(|w| matches!(w, Work::Settings { .. }))
         );
+    }
+
+    /// settingsd comes back after being missing: the status bar stops
+    /// saying it is missing (it was sticky on VT4 on 2026-10-21).
+    #[test]
+    fn settingsd_back_clears_the_missing_status() {
+        let mut state = State::new(
+            UiState::default(),
+            Mode::Mail,
+            None,
+            settings(&["a"]),
+            secrets(&["a"]),
+        );
+        state.take_work();
+        state.settings_missing();
+        assert_eq!(state.status, crate::label("settings-missing"));
+        state.set_settings(settings(&["a"]));
+        assert_eq!(state.source, Source::Settings);
+        assert_eq!(state.status, crate::label("settings-back"));
+        // Missing again, then a look that holds the accounts shown: the
+        // held notice wins over the comeback notice.
+        state.settings_missing();
+        state.set_settings(settings(&[]));
+        assert_eq!(state.status, crate::label("settings-empty-held"));
     }
 
     #[test]

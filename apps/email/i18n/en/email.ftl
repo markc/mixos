@@ -106,6 +106,7 @@ account-failed = Cannot connect: { $error }
 account-no-password = No password is saved for { $email }. Enter it in Email Settings.
 account-disabled = This account is turned off in Email Settings.
 settings-missing = Settings service not running: showing the saved accounts, read-only
+settings-back = Settings service back: the accounts can be changed again
 settings-conflict = The accounts changed elsewhere while this change was being saved; try again
 settings-failed = Accounts not saved: { $message }
 unknown-account = No account { $id }
