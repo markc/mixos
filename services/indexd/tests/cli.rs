@@ -100,3 +100,13 @@ fn call_is_in_process_and_uses_explicit_config() {
     assert_eq!(bad.status.code(), Some(1));
     assert!(serde_json::from_slice::<Value>(&bad.stdout).unwrap()["error"].is_string());
 }
+
+#[test]
+fn desktop_package_carries_indexd_and_owned_units() {
+    let mix = std::env::var("MIXOS_TEST_MIX").unwrap_or_else(|_| "/opt/mixos/bin/mix".into());
+    let output = std::process::Command::new(mix)
+        .args([concat!(env!("CARGO_MANIFEST_DIR"), "/tests/package_test.mix"), env!("CARGO_BIN_EXE_indexd")])
+        .output().unwrap();
+    assert!(output.status.success(), "{}\n{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+    println!("{}", String::from_utf8_lossy(&output.stdout));
+}

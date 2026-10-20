@@ -83,7 +83,9 @@ pub(crate) async fn process_request(
         Request::Stale(req) => handle_stale(req, state, &mut t).await,
         Request::IndexFile(req) => {
             let max_file_bytes = config.service.max_file_bytes;
-            if req
+            if let Err(error) = validate_file_path(&req.path) {
+                json_error(&error)
+            } else if req
                 .content
                 .as_ref()
                 .is_some_and(|content| content.len() > max_file_bytes)
@@ -1154,6 +1156,8 @@ mod tests {
         let (engine, dir) = engine("tilde");
         let reply = engine.index_file(json!({"path":"~/doc.md", "content":""})).await;
         assert_eq!(reply["error"], "path must be absolute (daemon runs as system user indexd; \"~\" has no meaning here)");
+        let queued = engine.index_file(json!({"path":"~/doc.md", "content":"", "background":true})).await;
+        assert_eq!(queued, reply, "background must reject before acknowledging");
         drop(engine);
         std::fs::remove_dir_all(dir).unwrap();
     }

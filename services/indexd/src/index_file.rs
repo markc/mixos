@@ -293,6 +293,16 @@ pub(crate) fn read_file_bounded(path: &Path, max_bytes: usize) -> Result<String,
     read_open_file_bounded(file, max_bytes)
 }
 
+pub(crate) fn validate_file_path(path: &str) -> Result<(), String> {
+    if path.starts_with('~') {
+        return Err("path must be absolute (daemon runs as system user indexd; \"~\" has no meaning here)".into());
+    }
+    if !Path::new(path).is_absolute() {
+        return Err("path must be absolute".into());
+    }
+    Ok(())
+}
+
 /// Index a single markdown file: read, split on ## headings, delete old entries, store new ones.
 /// Called from git post-commit hooks via Bus: `indexd.index_file {"path": "/path/to/file.md"}`
 pub(crate) async fn handle_index_file(
@@ -303,11 +313,8 @@ pub(crate) async fn handle_index_file(
 ) -> String {
     let config = state.config.clone();
     let t_start = std::time::Instant::now();
-    if req.path.starts_with('~') {
-        return json_error("path must be absolute (daemon runs as system user indexd; \"~\" has no meaning here)");
-    }
-    if !Path::new(&req.path).is_absolute() {
-        return json_error("path must be absolute");
+    if let Err(error) = validate_file_path(&req.path) {
+        return json_error(&error);
     }
     let filepath = req.path.clone();
     let path = std::path::Path::new(&filepath);

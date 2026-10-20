@@ -42,9 +42,9 @@ fn main() -> Result<()> {
                 .build()?;
     if matches!(cli.command, Command::Bridge) {
         return runtime.block_on(async {
-            let client = ::bus::client_helpers::connect_anonymous_default().await?;
+            let client = ::bus::client_helpers::connect_anonymous_default().await;
             let result = indexd::bridge::run(tokio::io::BufReader::new(tokio::io::stdin()), tokio::io::stdout(), &client).await;
-            client.close().await;
+            if let Ok(client) = client { client.close().await; }
             result
         });
     }

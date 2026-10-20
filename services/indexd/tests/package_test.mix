@@ -1,0 +1,36 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- The actual indexd binary in the desktop tarball, with owned unit/config.
+$root = dirname(dirname(dirname(dirname(realpath($0)))))
+if len(args()) != 1 then raise("USAGE", "package_test.mix PATH_TO_INDEXD") end
+$binary = realpath(args()[0])
+$mix_bin = realpath("/proc/self/exe")
+$version = toml_parse(read_file($root .. "/Cargo.toml")).workspace.package.version
+$case_dir = "/var/tmp/indexd-package-" .. uuid()
+mkdir($case_dir .. "/bin", {parents:true})
+try
+  copy($mix_bin, $case_dir .. "/bin/mix")
+  copy($binary, $case_dir .. "/bin/indexd")
+  for $name in ["mixos-mcp", "noded", "editd", "settingsd", "portald", "compd", "ced", "dopus", "prefs", "busviewer", "monitor", "screenshot"]
+    copy("/usr/bin/true", $case_dir .. "/bin/" .. $name)
+  end
+  run_argv_must([$mix_bin, $root .. "/tools/package.mix", "--release", $version,
+    "--bin-dir", $case_dir .. "/bin", "--out", $case_dir .. "/out"], {timeout:120})
+  $top_name = "mixos-desktop-" .. $version .. "-linux-" .. platform().arch
+  mkdir($case_dir .. "/extracted")
+  run_argv_must(["tar", "-xzf", $case_dir .. "/out/" .. $top_name .. ".tar.gz", "-C", $case_dir .. "/extracted"], {timeout:60})
+  $top = $case_dir .. "/extracted/" .. $top_name
+  if hash_file($binary, "sha256") != hash_file($top .. "/bin/indexd", "sha256") then
+    raise("PACKAGE_BINARY", "indexd differs from built binary")
+  end
+  $identity = json_parse(run_argv_must([$top .. "/bin/indexd", "--version", "--json"]))
+  if $identity.component != "indexd" then raise("PACKAGE_IDENTITY", "wrong packaged binary") end
+  for $name in ["indexd.service", "sysusers.conf", "config.conf.mix.example"]
+    if hash_file($root .. "/services/indexd/units/" .. $name, "sha256") != hash_file($top .. "/share/indexd/units/" .. $name, "sha256") then
+      raise("PACKAGE_UNIT", $name .. " differs from component source")
+    end
+  end
+  print("indexd package: standalone binary, unit, sysusers and sample config passed")
+finally
+  remove_dir($case_dir)
+end
