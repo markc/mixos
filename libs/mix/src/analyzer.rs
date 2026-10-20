@@ -6540,15 +6540,41 @@ fn unambiguous_value(before: &[crate::token::SpannedToken], next: Option<&Token>
             before.len().checked_sub(2).map(|i| &before[i].token),
             Some(Token::String(_) | Token::Variable(_) | Token::Print | Token::Eprint)
         ),
-        // `[` after a value is an index (`$m[null]` looks up the key null).
-        Token::LBracket => !matches!(
+        // Only a value position proves this is a list literal. Fields may
+        // lex as keywords (`$m.to[null]`), so excluding a few value tokens
+        // would still rewrite index keys and change their meaning.
+        Token::LBracket => matches!(
             before.len().checked_sub(2).map(|i| &before[i].token),
-            Some(
-                Token::Variable(_)
-                    | Token::String(_)
-                    | Token::RParen
-                    | Token::RBracket
-                    | Token::RBrace
+            None | Some(
+                Token::LParen
+                    | Token::LBracket
+                    | Token::Comma
+                    | Token::Colon
+                    | Token::Assign
+                    | Token::Return
+                    | Token::Eq
+                    | Token::NotEq
+                    | Token::Lt
+                    | Token::Gt
+                    | Token::LtEq
+                    | Token::GtEq
+                    | Token::StrEq
+                    | Token::StrNe
+                    | Token::NilCoalesce
+                    | Token::Plus
+                    | Token::Minus
+                    | Token::Star
+                    | Token::Slash
+                    | Token::Percent
+                    | Token::Power
+                    | Token::DotDot
+                    | Token::And
+                    | Token::Or
+                    | Token::Not
+                    | Token::Bang
+                    | Token::Question
+                    | Token::Newline
+                    | Token::Semicolon
             )
         ),
         Token::Comma | Token::Colon | Token::Return => true,

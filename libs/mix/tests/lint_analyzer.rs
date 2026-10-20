@@ -1939,6 +1939,16 @@ fn the_null_fix_is_offered_only_where_the_word_is_surely_a_value() {
     for src in [
         "print(null)\n",
         "print([1, null])\n",
+        "print([null])\n",
+        "print([[null]])\n",
+        "print([1], [null])\n",
+        "print({a: [null]})\n",
+        "$x = [null]\nprint($x)\n",
+        "fn f()\nreturn [null]\nend\nprint(f())\n",
+        "print([] == [null])\n",
+        "print(nil ?? [null])\n",
+        "print([] + [null])\n",
+        "[null]\n",
         "print({a: null})\n",
         "$x = null\nprint($x)\n",
         "$x = 1\nprint($x == null)\n",
@@ -1959,6 +1969,9 @@ fn the_null_fix_is_offered_only_where_the_word_is_surely_a_value() {
         // sol round 8: an index key, not a list element; `$m[nil]` would
         // lose the entry stored under "null".
         "$m = {null: 7}\nprint($m[null])\n",
+        "$m = {to: {null: 7}}\nprint($m.to[null])\n",
+        "$m = {in: {null: 7}}\nprint($m.in[null])\n",
+        "$list = [7]\nprint($list[null])\n",
     ] {
         assert_eq!(fixes(src), vec![false], "{src:?}");
     }
