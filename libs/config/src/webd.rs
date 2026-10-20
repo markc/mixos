@@ -211,8 +211,9 @@ pub struct WebdListenerConfig {
     /// disabled listener is held but not bound. Default `true`.
     pub enabled: bool,
     /// The vhost FQDNs served on this listener — the allowlist. Every
-    /// vhost webd serves must be named in exactly one **enabled**
-    /// listener; a host named here must be a known vhost
+    /// vhost webd serves must be named in at least one **enabled**
+    /// listener, and may be served by several listeners. Each host may
+    /// appear only once here and must be a known vhost
     /// (`synthesize_listeners` rejects both gaps).
     pub vhosts: Vec<String>,
 }

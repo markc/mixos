@@ -773,10 +773,8 @@ impl ListenerConfigSource {
 /// (exact match — the startup check compares the namespace key
 /// byte-for-byte).
 ///
-/// Per SLOT, not per listener: `synthesize_listeners` records an owner
-/// per allowlist entry, so one listener listing the host twice is
-/// already a "served by two listeners" boot failure and must count as
-/// two here.
+/// Per SLOT, not per listener: one listener listing the host twice is
+/// a boot failure and must count as two here.
 fn listeners_naming<'a>(cfg: &'a NodeConfig, fqdn: &str) -> Vec<&'a WebdListenerConfig> {
     cfg.webd
         .listener
@@ -787,40 +785,39 @@ fn listeners_naming<'a>(cfg: &'a NodeConfig, fqdn: &str) -> Vec<&'a WebdListener
 
 /// Would the next restart serve a newly enabled `fqdn`? Mirrors the
 /// per-host half of `NodeConfig::synthesize_listeners`: with an explicit
-/// listener array the host must be named by exactly one listener, and
-/// that listener must be enabled. `None` = admissible (including the
+/// listener array the host must be named by at least one enabled listener,
+/// with no duplicate slots in a listener. `None` = admissible (including the
 /// implicit single-listener node, which serves every host).
 pub fn listener_add_error(cfg: Option<&NodeConfig>, fqdn: &str) -> Option<String> {
     let cfg = cfg?;
     if cfg.webd.listener.is_empty() {
         return None;
     }
-    match listeners_naming(cfg, fqdn).as_slice() {
+    let naming = listeners_naming(cfg, fqdn);
+    // Check every listener, including ones after the first two matches.
+    let mut seen = std::collections::HashSet::new();
+    if let Some(l) = naming.iter().find(|l| !seen.insert(l.id.as_str())) {
+        return Some(format!(
+            "vhost {fqdn:?} is listed twice in listener {:?}'s `vhosts` in \
+             node.conf.mix; the next webd restart would refuse to start. List \
+             it once",
+            l.id,
+        ));
+    }
+    match naming.as_slice() {
         [] => Some(format!(
             "vhost {fqdn:?} is not in any [[webd.listener]] `vhosts` allowlist in \
              node.conf.mix; the next webd restart would refuse to start and take \
-             every vhost on this node down. Add it to exactly one enabled \
+             every vhost on this node down. Add it to at least one enabled \
              listener's `vhosts` first, then retry",
         )),
-        [l] if !l.enabled => Some(format!(
+        [l, ..] if !naming.iter().any(|l| l.enabled) => Some(format!(
             "vhost {fqdn:?} is named only by the disabled listener {:?} in \
              node.conf.mix; the next webd restart would refuse to start. Move it \
              to an enabled listener first, then retry",
             l.id,
         )),
-        [_] => None,
-        [a, b, ..] if a.id == b.id => Some(format!(
-            "vhost {fqdn:?} is listed twice in listener {:?}'s `vhosts` in \
-             node.conf.mix; the next webd restart would refuse to start. List \
-             it once",
-            a.id,
-        )),
-        [a, b, ..] => Some(format!(
-            "vhost {fqdn:?} is named by two listeners ({:?} and {:?}) in \
-             node.conf.mix; the next webd restart would refuse to start. A host \
-             belongs to exactly one listener",
-            a.id, b.id,
-        )),
+        _ => None,
     }
 }
 

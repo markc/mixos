@@ -730,12 +730,12 @@ impl ConnHandler for WebdConnHandler {
     }
 }
 
-/// Partition a flat, validated TLS identity list into per-listener
+/// Distribute a flat, validated TLS identity list into per-listener
 /// buckets keyed by listener id (P2-C2). Each identity's `server_name`
-/// (a vhost host) is routed to the listener whose `hosts` allowlist
+/// (a vhost host) is copied to every listener whose `hosts` allowlist
 /// names it; `synthesize_listeners` has already proven every served
-/// host belongs to exactly one listener, so a `server_name` with no
-/// owning listener is a wiring bug — logged and skipped rather than
+/// host has an enabled listener, so a `server_name` with no
+/// listener is a wiring bug — logged and skipped rather than
 /// silently mis-served.
 ///
 /// Each bucket is fed verbatim to `SniCertResolver::from_config`,
@@ -748,19 +748,26 @@ pub(crate) fn partition_identities_by_listener(
     identities: &[TlsIdentityConfig],
     listeners: &[ResolvedWebdListener],
 ) -> HashMap<String, Vec<TlsIdentityConfig>> {
-    let mut host_to_listener: HashMap<&str, &str> = HashMap::new();
+    let mut host_to_listeners: HashMap<&str, Vec<&str>> = HashMap::new();
     for l in listeners {
         for h in &l.hosts {
-            host_to_listener.insert(h.as_str(), l.id.as_str());
+            host_to_listeners
+                .entry(h.as_str())
+                .or_default()
+                .push(l.id.as_str());
         }
     }
     let mut by_listener: HashMap<String, Vec<TlsIdentityConfig>> = HashMap::new();
     for ident in identities {
-        match host_to_listener.get(ident.server_name.as_str()) {
-            Some(lid) => by_listener
-                .entry((*lid).to_string())
-                .or_default()
-                .push(ident.clone()),
+        match host_to_listeners.get(ident.server_name.as_str()) {
+            Some(lids) => {
+                for lid in lids {
+                    by_listener
+                        .entry((*lid).to_string())
+                        .or_default()
+                        .push(ident.clone());
+                }
+            }
             None => tracing::warn!(
                 server_name = %ident.server_name,
                 "TLS identity for a host claimed by no listener — skipped \
@@ -7826,7 +7833,7 @@ async fn async_main() -> Result<()> {
             //
             // An explicit `[[webd.listener]]` array is validated by
             // `synthesize_listeners` (unique ids/binds, every served
-            // host on exactly one ENABLED listener, no
+            // host on at least one ENABLED listener, no
             // wildcard+specific clash) — so a namespace host missing
             // from the listener allowlists fails loudly at startup
             // rather than silently 404ing. An empty array — or a
@@ -7901,13 +7908,18 @@ async fn async_main() -> Result<()> {
                     .map(|r| (r.id.clone(), r))
                     .collect();
 
-            // Map every served host to its owning listener — the
+            // Map every served host to all its listeners — the
             // partition key for both the startup resolver split and
             // the provisioner's per-listener renewal republish.
-            let fqdn_to_listener: HashMap<String, String> = resolved_listeners
-                .iter()
-                .flat_map(|l| l.hosts.iter().map(move |h| (h.clone(), l.id.clone())))
-                .collect();
+            let mut fqdn_to_listeners: HashMap<String, Vec<String>> = HashMap::new();
+            for l in &resolved_listeners {
+                for h in &l.hosts {
+                    fqdn_to_listeners
+                        .entry(h.clone())
+                        .or_default()
+                        .push(l.id.clone());
+                }
+            }
 
             // P2-C2: split the validated identity list into
             // per-listener buckets and build one `ListenerTls` per
@@ -8178,7 +8190,7 @@ async fn async_main() -> Result<()> {
                     // old "no TLS surface ⇒ don't spawn renewal" shape.
                     Some(mut provisioner) if !tls_listeners.is_empty() => {
                         provisioner
-                            .attach_tls_listeners(tls_listeners.clone(), fqdn_to_listener.clone());
+                            .attach_tls_listeners(tls_listeners.clone(), fqdn_to_listeners.clone());
                         provisioner.attach_listener_strict_sni(listener_strict_sni);
                         provisioner.attach_listeners_runtime(listeners_runtime.clone());
                         let events_rx = vhosts_provisioner_events_rx_opt
@@ -9267,6 +9279,106 @@ vhost: [
             .unwrap();
         assert_eq!(resp_b.status(), StatusCode::OK);
         assert_eq!(body_bytes(resp_b).await, b"SITE-B");
+    }
+
+    #[tokio::test]
+    async fn shared_vhost_resolves_same_certificate_and_content_on_both_listeners() {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+        let td = TempDir::new().unwrap();
+        let node = synth_node(&td);
+        let cfg: config::node::NodeConfig = config::from_conf_mix_str(
+            "webd: { listener: [ \
+             { id: first, bind: '192.0.2.1:443', vhosts: ['site-a.example'] }, \
+             { id: second, bind: '198.51.100.1:443', vhosts: ['site-a.example'] } ] }",
+        )
+        .unwrap();
+        let listeners = cfg
+            .synthesize_listeners(&["site-a.example".into()], &HashSet::new())
+            .expect("a vhost may be served on two interfaces");
+        assert_eq!(listeners.len(), 2);
+        assert_ne!(listeners[0].bind, listeners[1].bind);
+        let key = rcgen::KeyPair::generate().unwrap();
+        let cert = rcgen::CertificateParams::new(vec!["site-a.example".into()])
+            .unwrap()
+            .self_signed(&key)
+            .unwrap();
+        let cert_path = td.path().join("cert.pem");
+        let key_path = td.path().join("key.pem");
+        std::fs::write(&cert_path, cert.pem()).unwrap();
+        std::fs::write(&key_path, key.serialize_pem()).unwrap();
+        let ident = TlsIdentityConfig {
+            server_name: "site-a.example".into(),
+            cert: cert_path.to_string_lossy().into_owned(),
+            key: key_path.to_string_lossy().into_owned(),
+            default: false,
+            no_sni_fallback: false,
+        };
+        let buckets = partition_identities_by_listener(&[ident], &listeners);
+        assert_eq!(buckets.len(), 2);
+        let expected_vhost = node.vhost_for_host("site-a.example").unwrap();
+        for listener in listeners {
+            let bucket = &buckets[&listener.id];
+            assert_eq!(bucket.len(), 1);
+            let resolver = SniCertResolver::from_config(bucket, true).unwrap();
+            let selected = resolver.pick_for_sni(Some("site-a.example")).unwrap();
+            assert_eq!(selected.name, "site-a.example");
+            assert_eq!(selected.certified_key.cert[0], *cert.der());
+            assert!(resolver.pick_for_sni(Some("site-b.example")).is_none());
+            assert!(resolver.pick_for_sni(None).is_none());
+            let scope = ListenerScope {
+                id: Arc::from(listener.id),
+                allowed_hosts: Arc::new(listener.hosts.into_iter().collect()),
+                external: listener.external,
+            };
+            let app = build_router(node.clone()).layer(Extension(scope));
+            let response = app
+                .clone()
+                .oneshot(req("site-a.example", "/index.html"))
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            assert_eq!(body_bytes(response).await, b"SITE-A");
+            assert!(Arc::ptr_eq(
+                &node.vhost_for_host("site-a.example").unwrap(),
+                &expected_vhost,
+            ));
+            let denied = app
+                .oneshot(req("site-b.example", "/index.html"))
+                .await
+                .unwrap();
+            assert_eq!(denied.status(), StatusCode::NOT_FOUND);
+        }
+    }
+
+    #[test]
+    fn shared_listener_validation_still_reports_duplicate_and_unrouted_hosts() {
+        let cfg: config::node::NodeConfig = config::from_conf_mix_str(
+            "webd: { listener: [ \
+             { id: first, bind: '192.0.2.1:443', vhosts: ['site-a.example'] }, \
+             { id: second, bind: '198.51.100.1:443', vhosts: ['site-a.example'] } ] }",
+        )
+        .unwrap();
+        let hosts = vec!["site-a.example".into(), "site-b.example".into()];
+        let err = cfg
+            .synthesize_listeners(&hosts, &HashSet::new())
+            .unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("site-b.example") && msg.contains("not served by any listener"),
+            "{msg}"
+        );
+        let mut duplicate = cfg;
+        duplicate.webd.listener[1]
+            .vhosts
+            .push("site-a.example".into());
+        let err = duplicate
+            .synthesize_listeners(&["site-a.example".into()], &HashSet::new())
+            .unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("listed twice") && msg.contains("second"),
+            "{msg}"
+        );
     }
 
     #[tokio::test]
