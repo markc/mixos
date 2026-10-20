@@ -45,17 +45,24 @@ impl DomainsSettings {
     /// Longest prefix wins when multiple entries match.
     pub fn resolve(&self, path: &Path) -> Option<String> {
         let home = directories::BaseDirs::new()?.home_dir().to_path_buf();
-        let path_str = path.to_string_lossy();
+        self.resolve_with_home(path, &home)
+    }
+
+    fn resolve_with_home(&self, path: &Path, home: &Path) -> Option<String> {
+        let home = home.canonicalize().unwrap_or_else(|_| home.to_path_buf());
 
         let mut best: Option<(usize, &str)> = None;
         for (prefix, domain) in &self.map {
             let expanded = if let Some(rest) = prefix.strip_prefix("~/") {
-                format!("{}/{rest}", home.display())
+                home.join(rest)
+            } else if prefix == "~" {
+                home.clone()
             } else {
-                prefix.clone()
+                std::path::PathBuf::from(prefix)
             };
-            if Path::new(path_str.as_ref()).starts_with(&expanded) {
-                let len = expanded.len();
+            let expanded = expanded.canonicalize().unwrap_or(expanded);
+            if path.starts_with(&expanded) {
+                let len = expanded.as_os_str().len();
                 if best.is_none() || len > best.unwrap().0 {
                     best = Some((len, domain));
                 }
@@ -271,6 +278,23 @@ impl Default for IndexdSettings {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn domains_match_canonical_home_and_prefixes() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path().join("real-home");
+        std::fs::create_dir_all(home.join("Projects/repo")).unwrap();
+        let alias = dir.path().join("home-alias");
+        std::os::unix::fs::symlink(&home, &alias).unwrap();
+        let domains = DomainsSettings { map: BTreeMap::from([
+            ("~".into(), "home".into()),
+            ("~/Projects".into(), "projects".into()),
+            (alias.join("Projects/repo").to_string_lossy().into_owned(), "repo".into()),
+        ]) };
+        assert_eq!(domains.resolve_with_home(&home.join("Projects/repo/_doc/a.md"), &alias).as_deref(), Some("repo"));
+        assert_eq!(domains.resolve_with_home(&home.join("Projects/other"), &alias).as_deref(), Some("projects"));
+        assert_eq!(domains.resolve_with_home(&home.join("Projects-other"), &alias).as_deref(), Some("home"));
+    }
 
     #[test]
     fn knowledge_transport_defaults_and_partial_config() {
