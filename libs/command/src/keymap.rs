@@ -7,7 +7,6 @@ type Bound = (Option<String>, Vec<String>);
 
 #[derive(Default)]
 pub(crate) struct Bindings {
-    built: BTreeMap<&'static str, Bound>,
     current: BTreeMap<&'static str, Bound>,
     defaults: Option<BTreeMap<&'static str, Bound>>,
 }
@@ -16,8 +15,7 @@ impl Bindings {
     pub fn add(&mut self, id: &'static str, own: Option<String>) {
         assert!(!self.current.contains_key(id), "duplicate command id {id:?}");
         if let Some(s) = &own { assert!(!self.taken(s), "duplicate shortcut on {id:?}"); }
-        self.current.insert(id, (own.clone(), Vec::new()));
-        self.built.insert(id, (own, Vec::new()));
+        self.current.insert(id, (own, Vec::new()));
     }
 
     fn taken(&self, shortcut: &str) -> bool {
@@ -26,15 +24,13 @@ impl Bindings {
 
     pub fn set_shortcut(&mut self, id: &'static str, own: Option<String>) {
         if let Some(s) = &own { assert!(!self.taken(s), "duplicate shortcut on {id:?}"); }
-        self.current.get_mut(id).expect("known command").0 = own.clone();
-        self.built.get_mut(id).expect("known command").0 = own;
+        self.current.get_mut(id).expect("known command").0 = own;
     }
 
     pub fn add_shortcuts(&mut self, id: &'static str, shortcuts: impl IntoIterator<Item = String>) {
         for s in shortcuts {
             if !self.taken(&s) {
-                self.current.get_mut(id).expect("known command").1.push(s.clone());
-                self.built.get_mut(id).expect("known command").1.push(s);
+                self.current.get_mut(id).expect("known command").1.push(s);
             }
         }
     }

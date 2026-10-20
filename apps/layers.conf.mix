@@ -1,0 +1,36 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+# Application engines and their GUI boundary. Read with --across-components:
+# ownership spans private app crates and shared libraries. Dependency paths
+# through unlisted workspace libraries are checked too. Optional GUI deps
+# are forbidden even when their feature is disabled.
+layers: {
+  "wallpaper": 0,
+  "inspector": 0,
+  "documents": 0,
+  "dopus-core": 0,
+  "vitals": 0,
+  "preferences": 0,
+  "annotation": 0,
+  "term-core": 0,
+  "jmap": 0,
+  "command": 0,
+  "backdrop": 1,
+  "busviewer": 1,
+  "ced": 1,
+  "dopus": 1,
+  "monitor": 1,
+  "prefs": 1,
+  "screenshot": 1,
+  "term": 1,
+  "email": 1,
+  "toolkit": 1,
+  "egui": 1,
+  "eframe": 1,
+  "egui-wgpu": 1,
+  "winit": 1,
+  "rfd": 1,
+}
+# Compatibility with the component layer-table schema.
+binary: "toolkit"
+core_crates: ["wallpaper", "inspector", "documents", "dopus-core", "vitals", "preferences", "annotation", "term-core", "jmap", "command"]
+effects_crates: []

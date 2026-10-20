@@ -12,13 +12,10 @@
 use egui::{Key, KeyboardShortcut, Modifiers};
 pub use ::command::keymap::Overrides;
 
-/// One app's bindings as the profile stores them: action id to chords; an
-/// empty list unbinds.
-
-
 /// The shortcut `text` names, or `None` when it is not a chord egui has.
 pub fn parse_chord(text: &str) -> Option<KeyboardShortcut> {
-    let parts: Vec<&str> = text.split('+').collect();
+    // A plus key follows the separator in Ctrl++ (or stands alone as +).
+    let parts: Vec<&str> = text.strip_suffix('+').unwrap_or(text).split('+').collect();
     let (key, mods) = parts.split_last()?;
     let mut modifiers = Modifiers::NONE;
     for m in mods {
@@ -41,6 +38,7 @@ pub fn parse_chord(text: &str) -> Option<KeyboardShortcut> {
         "=" => Key::Equals,
         "-" => Key::Minus,
         "/" => Key::Slash,
+        "" if text.ends_with('+') => Key::Plus,
         "" => return None,
         one if one.chars().count() == 1 => Key::from_name(&one.to_ascii_uppercase())?,
         name => Key::from_name(name)?,
@@ -91,6 +89,8 @@ mod tests {
             "Ctrl+=",
             "Ctrl+-",
             "Ctrl+/",
+            "Ctrl++",
+            "+",
             "Shift+Delete",
             "Ctrl+PageDown",
             "Backspace",
@@ -112,6 +112,15 @@ mod tests {
         assert_eq!(parse_chord("Ctrl+1").unwrap().logical_key, Key::Num1);
         for bad in ["", "Ctrl+", "Hyper+X", "Ctrl+Ctrl+B", "Ctrl+Nope"] {
             assert!(parse_chord(bad).is_none(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn every_egui_key_round_trips_through_the_adapter_cache() {
+        for &key in Key::ALL {
+            let shortcut = KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::SHIFT, key);
+            let text = chord_text(&shortcut);
+            assert_eq!(parse_chord(&text), Some(shortcut), "{text}");
         }
     }
 }

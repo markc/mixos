@@ -40,6 +40,9 @@ catalogues; `Labels` allows an adapter to supply catalogue fallbacks.
 menus and palette rendering. Its existing nullary `Command`, `CommandError`
 and three-argument `Registry::execute` remain compatibility wrappers, so
 existing application tables need no edits. It re-exports the moved data types.
+New engine-owned tables use `toolkit::command::EngineAdapter::new(registry)`:
+it caches parsed shortcuts and resolved icons and dispatches typed parameters
+through the original registry.
 
 Executed events remain **v1**, with exactly the existing body: v, run, seq,
 at_ms, id, origin and dropped. `note` and `take_executed` remain available

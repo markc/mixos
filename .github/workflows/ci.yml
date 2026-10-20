@@ -95,6 +95,7 @@ jobs:
           mix=target/debug/mix
           $mix tools/closure_gate.mix --locked
           $mix tools/layering_gate.mix --manifest-path Cargo.toml --locked
+          $mix tools/layering_gate.mix --manifest-path Cargo.toml --layers apps/layers.conf.mix --across-components --require --locked
           $mix tools/verb_registry.mix
           $mix tools/smithay_guards.mix
           $mix tools/component_index.mix --check

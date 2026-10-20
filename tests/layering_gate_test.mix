@@ -1,0 +1,47 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Gate regressions: direct, indirect, optional, renamed and dev dependencies.
+$root = dirname(dirname(realpath($0)))
+$tmp = $root .. "/.layering-test-" .. uuid()
+mkdir($tmp)
+$layers_file = $tmp .. "/layers.conf.mix"
+write_file($layers_file, 'layers: {engine: 0, toolkit: 1, egui: 1, eframe: 1, "egui-wgpu": 1, winit: 1, rfd: 1}, binary: "toolkit", core_crates: [], effects_crates: []')
+$failures = []
+
+fn dep($name, $kind)
+  return {name: $name, kind: $kind, optional: true, rename: "alias"}
+end
+
+fn package_row($name, $owner, $deps)
+  return {id: $name, name: $name, metadata: {mixos: {component: $owner}}, dependencies: $deps}
+end
+
+fn check_case($name, $deps, $bridge, $expected, $flags)
+  $file = $tmp .. "/metadata.json"
+  write_file($file, json_encode({workspace_members: ["engine", "bridge", "toolkit"], packages: [
+    package_row("engine", "one-app", $deps),
+    package_row("bridge", "another-owner", $bridge),
+    package_row("toolkit", "toolkit", [dep("egui", nil)])
+  ]}))
+  $result = run_argv(concat(["/opt/mixos/bin/mix", $root .. "/tools/layering_gate.mix", "--metadata-file", $file, "--layers", $layers_file, "--across-components", "--require"], $flags), {stderr: "stdout"})
+  if $result.exit_code != $expected then
+    push($failures, $name)
+    print("FAIL " .. $name .. "\n" .. $result.stdout)
+  else
+    print("PASS " .. $name)
+  end
+end
+
+try
+  check_case("UI may depend downwards", [dep("bridge", nil)], [], 0, [])
+  for $gui in ["toolkit", "egui", "eframe", "egui-wgpu", "winit", "rfd"]
+    check_case("direct " .. $gui, [dep($gui, nil)], [], 1, [])
+    check_case("indirect " .. $gui, [dep("bridge", nil)], [dep($gui, "build")], 1, [])
+  end
+  check_case("dev edge excluded", [dep("egui", "dev")], [], 0, [])
+  check_case("dev edge included", [dep("egui", "dev")], [], 1, ["--include-dev"])
+  check_case("cycles terminate", [dep("bridge", nil)], [dep("engine", nil)], 0, [])
+finally
+  remove_dir($tmp)
+end
+if len($failures) > 0 then exit(1) end
+print("OK: layering regressions passed")

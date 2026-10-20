@@ -263,7 +263,10 @@ catalogues; <code>Labels</code> allows an adapter to supply catalogue fallbacks.
 <p><a href="/toolkit/">Toolkit</a> retains egui shortcut parsing, event handling,
 menus and palette rendering. Its existing nullary <code>Command</code>, <code>CommandError</code>
 and three-argument <code>Registry::execute</code> remain compatibility wrappers, so
-existing application tables need no edits. It re-exports the moved data types.</p>
+existing application tables need no edits. It re-exports the moved data types.
+New engine-owned tables use <code>toolkit::command::EngineAdapter::new(registry)</code>:
+it caches parsed shortcuts and resolved icons and dispatches typed parameters
+through the original registry.</p>
 <p>Executed events remain <strong>v1</strong>, with exactly the existing body: v, run, seq,
 at_ms, id, origin and dropped. <code>note</code> and <code>take_executed</code> remain available
 through toolkit for citizen's publisher.</p>

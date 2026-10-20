@@ -17,6 +17,7 @@ use crate::menu::{self, Entry, Menu, Row};
 use crate::strings::Strings;
 use egui::{KeyboardShortcut, ModifierNames};
 pub use ::command::{Call, Class, Described, Error, ParamSpec, Place, Scope};
+pub use ::command::{Command as EngineCommand, Registry as EngineRegistry};
 use std::collections::HashMap;
 use std::fmt;
 
@@ -685,6 +686,55 @@ fn context_entries(ui: &mut egui::Ui, entries: &[Entry]) -> Option<&'static str>
     chosen
 }
 
+/// The egui view of an engine-owned command table. Shortcuts and icons are
+/// resolved once on construction and after rebinding. Dispatch and enablement
+/// always use the original engine registry; no handlers live in this adapter.
+pub struct EngineAdapter<S> {
+    ui: Registry<S>,
+}
+
+impl<S> EngineAdapter<S> {
+    pub fn new(core: EngineRegistry<S>) -> Self {
+        // Private UI rows use the legacy metadata shape so both table formats
+        // share the same rendering and exact-modifier input code. The dummy
+        // callbacks are never exposed or dispatched: core owns every handler.
+        let commands = core.iter().map(|c| Command {
+            id: c.id, label: c.label, menu: c.menu, submenu: c.submenu, group: c.group,
+            shortcut: None,
+            icon: c.icon.and_then(|name| Icon::ALL.iter().copied().find(|i| i.name() == name)),
+            enabled: always, run: choose,
+        }).collect();
+        let mut ui = Registry { commands, search_menu: None, core, extras: HashMap::new() };
+        ui.refresh_shortcuts();
+        Self { ui }
+    }
+
+    pub fn registry(&self) -> &EngineRegistry<S> { &self.ui.core }
+    pub fn into_registry(self) -> EngineRegistry<S> { self.ui.core }
+    pub fn execute(&self, id: &str, state: &mut S, params: serde_json::Value, origin: Origin) -> Result<serde_json::Value, Error> {
+        self.ui.core.execute(id, state, params, origin)
+    }
+    pub fn note(&self, id: &str, origin: Origin) { self.ui.note(id, origin); }
+    pub fn take_executed(&self) -> (Vec<Executed>, u64) { self.ui.take_executed() }
+    pub fn describe(&self, state: &S, strings: &Strings) -> Vec<Described> { self.ui.describe(state, strings) }
+    pub fn search<'a>(&'a self, query: &str, state: &S, strings: &Strings) -> Vec<&'a EngineCommand<S>> {
+        self.ui.search(query, state, strings).into_iter().filter_map(|c| self.ui.core.get(c.id)).collect()
+    }
+    pub fn icon(&self, id: &str) -> Option<Icon> { self.ui.get(id).and_then(|c| c.icon) }
+    pub fn search_menu(&mut self, menu: &'static str) -> &mut Self { self.ui.search_menu(menu); self }
+    pub fn rebind(&mut self, overrides: &crate::keymap::Overrides) -> Vec<String> { self.ui.rebind(overrides) }
+    pub fn shortcuts_of(&self, id: &str) -> Vec<KeyboardShortcut> { self.ui.shortcuts_of(id) }
+    pub fn shortcuts(&self, ctx: &egui::Context, state: &S) -> Vec<&'static str> { self.ui.shortcuts(ctx, state) }
+    pub fn takes(&self, event: &egui::Event, state: &S) -> bool { self.ui.takes(event, state) }
+    pub fn shortcut_grid(&self, ui: &mut egui::Ui, strings: &Strings) { self.ui.shortcut_grid(ui, strings); }
+    pub fn model(&self, ctx: &egui::Context, state: &S, strings: &Strings) -> Vec<Menu> { self.ui.model(ctx, state, strings) }
+    pub fn menu_bar(&self, ui: &mut egui::Ui, state: &S, strings: &Strings) -> Vec<(&'static str, Origin)> { self.ui.menu_bar(ui, state, strings) }
+    pub fn menus(&self, ui: &mut egui::Ui, state: &S, strings: &Strings) -> Vec<(&'static str, Origin)> { self.ui.menus(ui, state, strings) }
+    pub fn context_menu(&self, response: &egui::Response, menu: &str, state: &S, strings: &Strings) -> Option<&'static str> { self.ui.context_menu(response, menu, state, strings) }
+    #[allow(clippy::too_many_arguments)] // Mirrors the legacy context-menu API.
+    pub fn context_menu_over(&self, ui: &egui::Ui, rect: egui::Rect, id: egui::Id, menu: &str, state: &S, strings: &Strings) -> Option<&'static str> { self.ui.context_menu_over(ui, rect, id, menu, state, strings) }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -698,6 +748,43 @@ mod tests {
     }
 
     const FTL: &str = "menu-edit = Edit\ncmd-bump = Bump\ncmd-reset = Reset\n";
+
+    #[test]
+    fn engine_owned_tables_use_the_same_input_rendering_and_dispatch() {
+        let mut core = EngineRegistry::new();
+        let mut c = ::command::nullary!("count.bump", "cmd-bump", |s: &mut Counter| s.n += 1);
+        c.shortcut = Some("Ctrl+Shift+B");
+        c.icon = Some("plus"); // Unshipped icon names have no image.
+        c.menu = Some("menu-edit");
+        c.enabled = |s| if s.locked { Err("locked") } else { Ok(()) };
+        core.add(c);
+        let ui = EngineAdapter::new(core);
+        let mut s = Counter::default();
+        let key = KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::SHIFT, Key::B);
+        assert_eq!(ui.shortcuts_of("count.bump"), [key]);
+        let press = egui::Event::Key { key: Key::B, physical_key: None, pressed: true, repeat: false, modifiers: key.modifiers };
+        assert!(ui.takes(&press, &s));
+        assert_eq!(ui.search("bump", &s, &Strings::new(FTL))[0].id, "count.bump");
+        assert_eq!(ui.icon("count.bump"), None);
+        assert_eq!(ui.execute("count.bump", &mut s, serde_json::Value::Null, Origin::Shortcut).unwrap(), serde_json::Value::Null);
+        assert_eq!(s.n, 1);
+        assert_eq!(ui.take_executed().0[0].origin, Origin::Shortcut);
+        s.locked = true;
+        assert!(!ui.takes(&press, &s));
+        assert_eq!(ui.describe(&s, &Strings::new(FTL))[0].reason, Some("locked"));
+        assert!(!ui.model(&egui::Context::default(), &s, &Strings::new(FTL))[0].entries[0].row().unwrap().enabled);
+    }
+
+    #[test]
+    fn legacy_description_fields_keep_their_wire_values() {
+        let r = registry();
+        let row = serde_json::to_value(&r.describe(&Counter::default(), &Strings::new(FTL))[0]).unwrap();
+        assert_eq!(row, serde_json::json!({
+            "id": "count.bump", "label": "Bump", "menu": "Edit",
+            "shortcut": KeyboardShortcut::new(Modifiers::COMMAND, Key::B).format(&ModifierNames::NAMES, false),
+            "enabled": true, "checked": null, "reason": null, "class": "intent", "schema": null
+        }));
+    }
 
     fn registry() -> Registry<Counter> {
         let mut r = Registry::new();
