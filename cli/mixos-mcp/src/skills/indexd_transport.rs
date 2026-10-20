@@ -710,6 +710,8 @@ mod tests {
         let Some((client, dir)) = fake_with_timeout(2) else {
             return;
         };
+        // Finish spawning Mix before exercising the bridge/client deadline gap.
+        client.call("indexd.stats", &json!({})).await.unwrap();
         let error = client
             .call("indexd.feedback", &json!({"mode":"delayed_bridge_timeout"}))
             .await
