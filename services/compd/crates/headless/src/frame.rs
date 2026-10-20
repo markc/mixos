@@ -3,7 +3,7 @@
 //! On-demand software presentation. No timer remains armed on an idle output.
 
 use smithay::backend::renderer::{
-    Bind,
+    Bind, Offscreen,
     damage::OutputDamageTracker,
     gles::{GlesRenderer, GlesTexture},
 };
@@ -167,7 +167,9 @@ fn compose(
     visible: &mut Vec<Window>,
 ) -> Result<bool, Box<dyn std::error::Error>> {
     use frames::draw::plan::frame::frame::{FramePass, plan};
-    if !plan(&state.inner.status).has_pass(FramePass::Scene) {
+    let capture = screencopy::wants_full_frame(&ctx.output)
+        || screencopy::file::pending(&ctx.output);
+    if !plan(&state.inner.status).has_pass(FramePass::Scene) && !capture {
         return Ok(false);
     }
     let size = ctx.output.current_mode().expect("headless mode").size;
@@ -177,29 +179,81 @@ fn compose(
     // Track content changes independently of the alternating targets. This
     // age-1 query is only a scene diff; it never assumes preserved pixels in
     // either texture. An unchanged scene submits nothing.
-    let damaged = ctx
+    let damage = ctx
         .tracker
         .damage_output(1, &scene.Element)?
         .0
-        .is_some_and(|damage| !damage.is_empty());
-    if !damaged {
+        .filter(|damage| !damage.is_empty())
+        .cloned();
+    let damaged = damage.is_some();
+    let due = screencopy::sources_due(&ctx.output, damage.as_deref());
+    if !damaged && !capture && !due.any() {
         return Ok(false);
     }
-    let mut target = ctx.renderer.bind(&mut ctx.targets[ctx.next])?;
-    // No buffer-age assumptions: each target is repainted completely.
-    let mut repaint = OutputDamageTracker::from_output(&ctx.output);
-    let result = repaint.render_output(
+
+    let scale = ctx.output.current_scale().fractional_scale();
+    // Window jobs use the owning window's scene (including parked worlds),
+    // just as nested does. They never consume the output framebuffer.
+    screencopy::offscreen::capture_windows(&mut ctx.renderer, &ctx.output, |renderer, target| {
+        let window = world::window::draw::frame::scene::capture_window(
+            state, target.id, target.generation,
+        )
+        .map_err(|error| screencopy::file::ControlReply::WindowTarget { id: target.id, error })?;
+        world::window::draw::frame::scene::capture(renderer, &window, scale)
+            .map_err(screencopy::file::capture_failed)
+    });
+
+    // The normal target is always cursorless. No second allocation or pass
+    // occurs unless a protocol or Bus capture explicitly asks for the cursor.
+    {
+        let elements: Vec<_> = scene.Element.iter().filter(|element| !element.is_cursor()).collect();
+        let mut target = ctx.renderer.bind(&mut ctx.targets[ctx.next])?;
+        // No buffer-age assumptions: each target is repainted completely.
+        OutputDamageTracker::from_output(&ctx.output)
+            .render_output(&mut ctx.renderer, &mut target, 0, &elements, [0.1, 0.1, 0.1, 1.0])?
+            .sync.wait()?;
+    }
+    let mut cursor = if due.cursor || screencopy::file::pending_picture(&ctx.output, true) {
+        let mut texture = Offscreen::<GlesTexture>::create_buffer(
+            &mut ctx.renderer, smithay::backend::allocator::Fourcc::Abgr8888,
+            (size.w, size.h).into(),
+        )?;
+        {
+            let mut target = ctx.renderer.bind(&mut texture)?;
+            OutputDamageTracker::from_output(&ctx.output)
+                .render_output(&mut ctx.renderer, &mut target, 0, &scene.Element, [0.1, 0.1, 0.1, 1.0])?
+                .sync.wait()?;
+        }
+        Some(texture)
+    } else { None };
+    let cursor_target = cursor.as_mut().map(|texture| ctx.renderer.bind(texture)).transpose()?;
+    let target = ctx.renderer.bind(&mut ctx.targets[ctx.next])?;
+    let readback = screencopy::Readback { size, origin_bottom_left: false };
+    // All copies start only after completion of both passes. Missing sources
+    // fail explicitly rather than borrowing another capture's cursor policy.
+    let captures = screencopy::service_with_sources(
         &mut ctx.renderer,
-        &mut target,
-        0,
-        &scene.Element,
-        [0.1, 0.1, 0.1, 1.0],
-    )?;
-    result.sync.wait()?;
+        screencopy::Sources {
+            cursor: cursor_target.as_ref().map(|framebuffer| screencopy::Source { framebuffer, readback }),
+            cursorless: Some(screencopy::Source { framebuffer: &target, readback }),
+        },
+        &ctx.output,
+        damage.as_deref(),
+    );
+    screencopy::file::service(
+        &mut ctx.renderer, screencopy::Source { framebuffer: &target, readback },
+        &ctx.output, screencopy::file::CaptureSource::Offscreen, false,
+    );
+    if let Some(framebuffer) = cursor_target.as_ref() {
+        screencopy::file::service(
+            &mut ctx.renderer, screencopy::Source { framebuffer, readback },
+            &ctx.output, screencopy::file::CaptureSource::Offscreen, true,
+        );
+    }
+    captures.finish(&mut ctx.renderer);
     ctx.next ^= 1;
-    // TODO(Phase 2): screencopy and Bus capture read this completed target;
-    // cursor inclusion is selected for each capture, not globally.
-    Ok(true)
+    // A capture of unchanged content is not a new presentation.
+    Ok(damaged)
 }
 
 fn present(state: &mut Loop, output: &Output, visible: &[Window]) {

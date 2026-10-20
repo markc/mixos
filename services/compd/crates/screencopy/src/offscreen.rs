@@ -124,6 +124,7 @@ pub fn capture<E>(
             output,
             None,
             true,
+            false,
         )
         .finish(renderer);
         crate::fail_plain_output(output);

@@ -28,8 +28,11 @@ graphics = { workspace = true }
 scenegraph = { workspace = true }
 slots = { workspace = true }
 decor = { workspace = true }
+screencopy = { workspace = true }
 
 [dev-dependencies]
 wayland-client = { version = "=0.31.15" }
 libc = { workspace = true }
 serde_json = { workspace = true }
+testkit = { workspace = true }
+wayland-protocols = { version = "=0.32.13", features = ["client"] }

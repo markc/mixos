@@ -169,8 +169,7 @@ pub fn wire(
         })?;
     state.state.redraw.set_ping(ping);
     first.ping();
-    // TODO(Phase 2): advertise and service screencopy, Bus captures and
-    // per-capture cursor sources together, after GPU completion.
+    screencopy::create_global(&state.state.output.display_handle);
     info!(
         "headless: headless-0 {}x{} at scale {} wired",
         mode.size.w, mode.size.h, options.scale

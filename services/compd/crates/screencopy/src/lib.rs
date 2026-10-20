@@ -698,7 +698,25 @@ pub fn service<R: ExportMem>(
     output: &Output,
     damage: Option<&[Rectangle<i32, Physical>]>,
 ) -> Captures<R> {
-    service_inner(renderer, cursor, cursorless, output, damage, false)
+    service_inner(renderer, cursor, cursorless, output, damage, false, false)
+}
+
+/// Explicit pictures for per-capture cursor selection. An absent picture fails
+/// only the copies requesting it; it never substitutes the other cursor policy.
+pub struct Sources<'a, 'b, R: ExportMem> {
+    pub cursor: Option<Source<'a, 'b, R>>,
+    pub cursorless: Option<Source<'a, 'b, R>>,
+}
+
+/// Strict counterpart of [`service`], for backends offering explicit capture
+/// pictures. Existing backends retain their legacy fallback through `service`.
+pub fn service_with_sources<R: ExportMem>(
+    renderer: &mut R,
+    sources: Sources<'_, '_, R>,
+    output: &Output,
+    damage: Option<&[Rectangle<i32, Physical>]>,
+) -> Captures<R> {
+    service_inner(renderer, sources.cursor, sources.cursorless, output, damage, false, true)
 }
 
 fn service_inner<R: ExportMem>(
@@ -708,6 +726,7 @@ fn service_inner<R: ExportMem>(
     output: &Output,
     damage: Option<&[Rectangle<i32, Physical>]>,
     plain_only: bool,
+    strict: bool,
 ) -> Captures<R> {
     let mut captures = Captures {
         output: output.name(),
@@ -765,6 +784,11 @@ fn service_inner<R: ExportMem>(
         let use_cursor = match (overlay_cursor, cursor.is_some(), cursorless.is_some()) {
             (true, true, _) => true,
             (false, _, true) => false,
+            _ if strict => {
+                warn!("screencopy: a copy on {name} failed: requested cursor policy {overlay_cursor} was not offered");
+                pending.frame.failed();
+                continue;
+            }
             (_, false, false) => {
                 warn!("screencopy: a copy on {name} failed: the backend offered no picture");
                 pending.frame.failed();
