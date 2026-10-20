@@ -8,7 +8,7 @@ use std::path::PathBuf;
 #[command(
     name = "portald",
     version,
-    about = "XDG desktop portal on the session bus: the Settings interface"
+    about = "XDG desktop portal on the session bus: Settings and ScreenCast"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -26,6 +26,10 @@ enum Command {
         /// Holds the validated appearance cache. Defaults to $STATE_DIRECTORY.
         #[arg(long)]
         state_dir: Option<PathBuf>,
+        /// Also serve org.freedesktop.portal.ScreenCast (needs a compositor
+        /// with zwlr_screencopy_manager_v1 and a PipeWire session).
+        #[arg(long)]
+        screencast: bool,
     },
 }
 
@@ -39,6 +43,7 @@ fn main() -> anyhow::Result<()> {
         instance,
         profile,
         state_dir,
+        screencast,
     } = Cli::parse().command;
     let binding = Binding { instance, profile };
     binding
@@ -52,5 +57,5 @@ fn main() -> anyhow::Result<()> {
         .worker_threads(2)
         .enable_all()
         .build()?
-        .block_on(portald::run(binding, address, state_dir))
+        .block_on(portald::run(binding, address, state_dir, screencast))
 }
