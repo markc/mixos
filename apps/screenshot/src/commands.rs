@@ -433,7 +433,6 @@ pub fn registry() -> toolkit::command::EngineAdapter<App> {
         enabled: |a: &App| a.idle() && !a.headless,
         run: |a: &mut App| a.open(Dialog::About),
     });
-    r.search_menu("help");
     let mut adapter = toolkit::command::EngineAdapter::new(r.into_registry());
     adapter.search_menu("help");
     adapter

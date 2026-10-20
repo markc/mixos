@@ -1731,7 +1731,7 @@ fn expand_home(text: &str) -> String {
     }
 }
 
-/// The document edit verbs.
+/// Engine access to the shell's document and preview invalidation.
 impl annotation::HasDocument for App {
     fn document(&self) -> Option<&Document> {
         self.document.as_ref()

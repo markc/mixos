@@ -42,15 +42,14 @@ try
   $child_env = merge($private.client_env($bus), {HOME:$tmp, PATH:env("PATH"),
     XDG_RUNTIME_DIR:$tmp, MIXOS_APP_HOME:$tmp .. "/state", MIXOS_SCREENSHOTS_DIR:$tmp .. "/shots"})
   -- A self-contained one-pixel PNG; no image utility or compositor needed.
-  write_file($tmp .. "/image.png", base64_decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j7mkAAAAASUVORK5CYII="))
+  write_file($tmp .. "/image.png", base64_decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII="))
   write_file($events, "")
-  write_file($tmp .. "/watch.mix", <<WATCH
-subscribe("screenshot-step3.command.executed")
-on screenshot-step3.command.executed
-  append_file(env("EVENTS"), json_encode($event.args) .. "\n")
-end
-WATCH
-)
+  write_file($tmp .. "/watch.mix", join([
+    'subscribe("screenshot-step3.command.executed")',
+    'on screenshot-step3.command.executed',
+    '  append_file(env("EVENTS"), json_encode($event.args) .. "\n")',
+    'end'
+  ], "\n") .. "\n")
   $watch_pid = spawn([$mix, "--serve", $tmp .. "/watch.mix", "--name", "screenshot-step3-watch"],
     {detach:true, clear_env:true, env:merge($child_env, {EVENTS:$events}), stdout:{file:$tmp .. "/watch.log"}, stderr:"stdout"})
   -- Confirm the subscription with a round-trip probe before editing.
