@@ -3778,6 +3778,7 @@ dependencies = [
 name = "headless"
 version = "0.1.1"
 dependencies = [
+ "comp-model",
  "decor",
  "frames",
  "graphics",

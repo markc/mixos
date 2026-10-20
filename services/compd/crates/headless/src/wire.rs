@@ -143,10 +143,9 @@ pub fn wire(
     // The loop pins the camera to identity before input or drawing. Put the
     // agent at the logical output centre, as centre_pointer_once does for
     // the human pointer. main's apply_pointer only seeds the human accumulator.
-    let geometry = state.inner.host_space().state.output_geometry(&output).expect("headless geometry");
     let centre = smithay::utils::Point::from((
-        f64::from(geometry.loc.x) + f64::from(geometry.size.w) / 2.0,
-        f64::from(geometry.loc.y) + f64::from(geometry.size.h) / 2.0,
+        f64::from(mode.size.w) / options.scale / 2.0,
+        f64::from(mode.size.h) / options.scale / 2.0,
     ));
     state.inner.comp.injection.agent_pointer = Some((centre.x, centre.y));
     if let Some(pointer) = state
