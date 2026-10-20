@@ -46,14 +46,36 @@ Each name below is exposed as `mcp__mixos__<name>` in Claude Code.
 - `bus_call`, `bus_list_services`, `bus_node_info`, `bus_list_peers`, `noded_ping`
 - `term_list`, `term_snapshot`, `term_type`, `term_tab`, `term_pane`
 - `log_tail`, `log_search`
-- `app_describe`, `app_controls_list`, `app_control_get`, `app_control_set`,
-  `app_actions_list`, `app_action_invoke`, `app_control_wait`
+- `app_describe`, `app_commands`, `app_execute`
 - `desktop_windows`, `desktop_window_wait`
 - `context_search`, `index_workspace`, `knowledge_digest`, `knowledge_brief`
 - `skills_retrieve`, `skills_store`, `skills_refine`, `skills_graduate`,
   `skills_list`, `skills_delete`
 - `docs_feedback`, `journal_feedback`, `memory_feedback`, `journal_supersede`
 - `mix_execute`, `mcp_status`
+
+### Application commands
+
+`app_describe {service}` calls `app.describe` on that Bus service.
+`app_commands {service}` calls `<service>.commands`. Its `result` contains
+the application's command rows unchanged: `id`, `label`, `menu`, `shortcut`,
+`more` (when present), `enabled` and `checked`, plus any further metadata.
+
+`app_execute {service, id, params?}` calls `<service>.execute` once with
+`{id}` or `{id, params}`. `service` is a Bus service name such as
+`"busviewer"`, `id` is a dotted command id such as `"file.refresh"`, and
+`params` is an optional JSON object. Parameters are forwarded unchanged as
+a sibling of `id`; the application owns validation and may refuse unsupported
+parameters. Successful calls return `{service, command, result}`; application
+error messages from the Bus client pass through unchanged as tool errors.
+
+Retired tools: `app_actions_list`, `app_action_invoke`, `app_controls_list`,
+`app_control_get`, `app_control_set` and `app_control_wait` have been removed
+without aliases. Use `app_commands` and `app_execute` for registry commands,
+and `app_describe` to discover an application's state verbs. These retired
+tool names must not be reused.
+
+### Knowledge tools
 
 Knowledge tools retain their ranking, indexing, feedback and skill-learning
 behaviour. By default they send `indexd.<action>` requests to `indexd` on
@@ -120,6 +142,8 @@ default; `RUST_LOG=mixos_mcp=trace` explicitly enables full arguments.
 Package tests cover parameter translation, target guards, output schemas,
 redaction and provider decoding. The stdio integration test uses the real
 fixture broker, including verified Unix ingress and lazy reconnection.
+An in-process fake application checks command listing, execute request bodies
+with and without parameters, and unchanged application error messages.
 It also checks configured knowledge targets, paginated re-indexing and
 absolute file metadata. SSH client tests use a local Mix fake bridge through
 a test-only command hook; no SSH connection or indexd process is required.
