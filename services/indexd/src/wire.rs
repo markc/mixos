@@ -79,7 +79,10 @@ pub(crate) struct UpdateRequest {
 
 #[derive(Deserialize)]
 pub(crate) struct DeleteRequest {
+    #[serde(default)]
     pub(crate) ids: Vec<i64>,
+    #[serde(default)]
+    pub(crate) filter: Vec<MetadataFilter>,
 }
 
 #[derive(Deserialize)]

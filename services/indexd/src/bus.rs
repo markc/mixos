@@ -38,7 +38,7 @@ pub fn verb_manifest() -> &'static [VerbDescriptor] {
                 "Update a chunk",
                 false,
             ),
-            ("indexd.delete", vec!["ids"], "Delete chunks", false),
+            ("indexd.delete", vec!["ids", "filter"], "Delete chunks: optional ids and filter, at least one non-empty", false),
             (
                 "indexd.list",
                 vec!["source", "limit", "offset"],

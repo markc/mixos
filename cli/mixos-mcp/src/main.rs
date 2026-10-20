@@ -2683,48 +2683,12 @@ async fn delete_by_path(
     indexd: &mut crate::skills::IndexdClient,
     path: &str,
 ) -> Result<(), String> {
-    let mut ids_to_delete = Vec::new();
-    let mut offset = 0;
-    loop {
-        let resp = indexd
-            .raw_request(&serde_json::json!({
-                "action": "list", "limit": 1000, "offset": offset,
-            }))
-            .await
-            .map_err(|e| e.to_string())?;
-        let items = resp
-            .get("items")
-            .and_then(|i| i.as_array())
-            .ok_or("indexd list response missing items")?;
-        let total = resp
-            .get("total")
-            .and_then(|n| n.as_u64())
-            .ok_or("indexd list response missing total")?;
-        for item in items {
-            if let Some(meta_str) = item.get("metadata").and_then(|m| m.as_str())
-                && let Ok(meta) = serde_json::from_str::<serde_json::Value>(meta_str)
-                && meta.get("path").and_then(|p| p.as_str()) == Some(path)
-                && let Some(id) = item.get("id").and_then(|i| i.as_i64())
-            {
-                ids_to_delete.push(id);
-            }
-        }
-        offset += items.len() as u64;
-        if items.is_empty() || offset >= total {
-            break;
-        }
-    }
-
-    // Defer deletion until pagination finishes so offsets cannot skip rows.
-    // Bound deletion request sizes as well as list pages.
-    for ids in ids_to_delete.chunks(1000) {
-        let del_req = serde_json::json!({"action": "delete", "ids": ids});
-        indexd
-            .raw_request(&del_req)
-            .await
-            .map_err(|e| e.to_string())?;
-    }
-
+    indexd
+        .raw_request(&serde_json::json!({
+            "action":"delete", "filter":[{"field":"path", "op":"eq", "value":path}]
+        }))
+        .await
+        .map_err(|e| e.to_string())?;
     Ok(())
 }
 

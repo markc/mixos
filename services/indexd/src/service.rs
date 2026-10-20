@@ -516,7 +516,7 @@ pub(crate) async fn handle_delete(
 ) -> String {
     let guard = lock_timed(state, t).await;
     let db_t0 = Instant::now();
-    let res = guard.db.delete(&req.ids);
+    let res = guard.db.delete_filtered(&req.ids, &req.filter);
     t.db_us += db_t0.elapsed().as_micros() as u64;
     match res {
         Ok(deleted) => {

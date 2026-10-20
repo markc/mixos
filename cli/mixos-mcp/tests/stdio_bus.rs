@@ -223,14 +223,17 @@ async fn stdio_tools_use_the_real_fixture_bus_and_reconnect_without_replay() {
                     }
                 }
                 "indexd.delete" => {
-                    let ids = request["ids"].as_array().unwrap();
-                    index_deleted
-                        .lock()
-                        .unwrap()
-                        .extend(ids.iter().filter_map(Value::as_i64));
+                    assert!(request.get("ids").is_none());
+                    assert_eq!(request["filter"][0]["field"], "path");
+                    assert_eq!(request["filter"][0]["op"], "eq");
                     let mut rows = index_rows.lock().unwrap();
                     let before = rows.len();
-                    rows.retain(|row| !ids.contains(&row["id"]));
+                    rows.retain(|row| {
+                        let meta: Value = serde_json::from_str(row["metadata"].as_str().unwrap()).unwrap();
+                        let keep = meta["path"] != request["filter"][0]["value"];
+                        if !keep { index_deleted.lock().unwrap().push(row["id"].as_i64().unwrap()); }
+                        keep
+                    });
                     (0, json!({"deleted":before - rows.len()}))
                 }
                 "indexd.store" => {
@@ -311,7 +314,7 @@ async fn stdio_tools_use_the_real_fixture_bus_and_reconnect_without_replay() {
         *stored_paths.lock().unwrap(),
         [expected_path.clone(), expected_path]
     );
-    assert_eq!(*offsets.lock().unwrap(), [0, 1000, 2000, 0, 1000, 2000]);
+    assert!(offsets.lock().unwrap().is_empty(), "deletion must not list the corpus");
     assert_eq!(*deleted_ids.lock().unwrap(), [0, 1000, 2106, 9999]);
     let remaining = rows
         .lock()

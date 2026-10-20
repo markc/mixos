@@ -264,7 +264,7 @@ fn call_requires_offline_for_writes_and_always_refuses_background() {
         assert!(!String::from_utf8_lossy(&output.stderr).contains("require --offline"));
         assert!(serde_json::from_slice::<Value>(&output.stdout).is_ok());
     }
-    assert!(run("delete", r#"{"ids":[]}"#, true).status.success());
+    assert!(!run("delete", r#"{"ids":[]}"#, true).status.success());
     for offline in [false, true] {
         for verb in ["indexd.index_file", "stats"] {
             let output = run(verb, r#"{"background":true}"#, offline);

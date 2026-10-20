@@ -59,6 +59,35 @@ impl CheckpointOwed {
     }
 }
 
+fn append_metadata_filters(
+    sql: &mut String,
+    params: &mut Vec<Box<dyn rusqlite::types::ToSql>>,
+    filters: &[MetadataFilter],
+) {
+    for filter in filters {
+        let idx = params.len() + 1;
+        let op = match filter.op {
+            FilterOp::Eq => "=",
+            FilterOp::Gt => ">",
+            FilterOp::Lt => "<",
+            FilterOp::Gte => ">=",
+            FilterOp::Lte => "<=",
+            FilterOp::Contains => "LIKE",
+        };
+        sql.push_str(&format!(" AND json_extract(c.metadata, ?{idx}) {op} ?{}", idx + 1));
+        params.push(Box::new(format!("$.{}", filter.field)));
+        if matches!(filter.op, FilterOp::Contains) {
+            params.push(Box::new(format!("%{}%", filter.value.as_str().unwrap_or(""))));
+        } else {
+            match &filter.value {
+                serde_json::Value::Number(n) => params.push(Box::new(n.as_f64().unwrap_or(0.0))),
+                serde_json::Value::String(s) => params.push(Box::new(s.clone())),
+                other => params.push(Box::new(other.to_string())),
+            }
+        }
+    }
+}
+
 impl VectorDb {
     pub(crate) fn open(
         path: &str,
@@ -453,57 +482,14 @@ impl VectorDb {
             .map_err(anyhow::Error::msg)?;
         let mut params: Vec<Box<dyn rusqlite::types::ToSql>> =
             vec![Box::new(blob), Box::new(limit)];
-        let mut param_idx = 3;
+        let param_idx = 3;
 
         if !source_filter.is_empty() {
             sql.push_str(&format!(" AND c.source = ?{param_idx}"));
             params.push(Box::new(source_filter.to_string()));
-            param_idx += 1;
         }
 
-        for filter in metadata_filters {
-            let json_path = format!("$.{}", filter.field);
-            let op_str = match filter.op {
-                FilterOp::Eq => "=",
-                FilterOp::Gt => ">",
-                FilterOp::Lt => "<",
-                FilterOp::Gte => ">=",
-                FilterOp::Lte => "<=",
-                FilterOp::Contains => "LIKE",
-            };
-
-            if matches!(filter.op, FilterOp::Contains) {
-                let pattern = format!("%{}%", filter.value.as_str().unwrap_or(""));
-                sql.push_str(&format!(
-                    " AND json_extract(c.metadata, ?{}) {} ?{}",
-                    param_idx,
-                    op_str,
-                    param_idx + 1
-                ));
-                params.push(Box::new(json_path));
-                params.push(Box::new(pattern));
-            } else {
-                sql.push_str(&format!(
-                    " AND json_extract(c.metadata, ?{}) {} ?{}",
-                    param_idx,
-                    op_str,
-                    param_idx + 1
-                ));
-                params.push(Box::new(json_path));
-                match &filter.value {
-                    serde_json::Value::Number(n) => {
-                        if let Some(f) = n.as_f64() {
-                            params.push(Box::new(f));
-                        } else {
-                            params.push(Box::new(n.as_i64().unwrap_or(0)));
-                        }
-                    }
-                    serde_json::Value::String(s) => params.push(Box::new(s.clone())),
-                    other => params.push(Box::new(other.to_string())),
-                }
-            }
-            param_idx += 2;
-        }
+        append_metadata_filters(&mut sql, &mut params, metadata_filters);
 
         sql.push_str(" ORDER BY v.distance");
 
@@ -684,9 +670,9 @@ impl VectorDb {
         };
 
         let sql = if has_filter {
-            "SELECT id, content, source, metadata, created FROM chunks WHERE source = ?1 ORDER BY created DESC LIMIT ?2 OFFSET ?3"
+            "SELECT id, content, source, metadata, created FROM chunks WHERE source = ?1 ORDER BY created DESC, id DESC LIMIT ?2 OFFSET ?3"
         } else {
-            "SELECT id, content, source, metadata, created FROM chunks WHERE 1=1 ORDER BY created DESC LIMIT ?1 OFFSET ?2"
+            "SELECT id, content, source, metadata, created FROM chunks WHERE 1=1 ORDER BY created DESC, id DESC LIMIT ?1 OFFSET ?2"
         };
 
         let mut stmt = self.conn.prepare(sql)?;
@@ -773,7 +759,14 @@ impl VectorDb {
         Ok(updated)
     }
 
+    #[cfg(test)]
     pub(crate) fn delete(&self, ids: &[i64]) -> Result<usize> {
+        self.delete_filtered(ids, &[])
+    }
+
+    /// IDs and metadata predicates are intersected when both are supplied.
+    pub(crate) fn delete_filtered(&self, ids: &[i64], filters: &[MetadataFilter]) -> Result<usize> {
+        anyhow::ensure!(!ids.is_empty() || !filters.is_empty(), "delete requires non-empty ids or filter");
         let mut deleted = 0usize;
         // Single transaction so a multi-id delete is one commit (IMMEDIATE via the
         // connection's default behavior set in `open()`), gated on the
@@ -783,12 +776,24 @@ impl VectorDb {
             .write()
             .expect("search index RwLock poisoned");
         let tx = self.conn.unchecked_transaction()?;
-        for id in ids {
+        let mut sql = String::from("SELECT c.id FROM chunks c WHERE 1=1");
+        let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+        if !ids.is_empty() {
+            sql.push_str(" AND c.id IN (");
+            sql.push_str(&vec!["?"; ids.len()].join(","));
+            sql.push(')');
+            params.extend(ids.iter().map(|id| Box::new(*id) as Box<dyn rusqlite::types::ToSql>));
+        }
+        append_metadata_filters(&mut sql, &mut params, filters);
+        let refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+        let selected = tx.prepare(&sql)?.query_map(&*refs, |row| row.get::<_, i64>(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        for id in &selected {
             deleted += tx.execute("DELETE FROM chunks WHERE id = ?1", [id])?;
             tx.execute("DELETE FROM vec_chunks WHERE rowid = ?1", [id])?;
         }
         tx.commit()?;
-        for id in ids {
+        for id in &selected {
             vindex.remove(*id);
         }
         Ok(deleted)
@@ -1011,6 +1016,35 @@ mod tests {
             ))),
             checkpoint_owed: CheckpointOwed::default(),
         }
+    }
+
+    #[test]
+    fn filtered_delete_is_atomic_and_list_ties_are_stable() {
+        let db = test_vector_db();
+        let texts = vec!["a".into(), "b".into(), "c".into()];
+        let StoreAttempt::Committed { ids, .. } = db.store_revalidated(
+            &vec![Some(vec![1.0; EMBEDDING_DIM]); 3], &[None; 3], &texts, "doc",
+            &[r#"{"path":"/srv/a","rank":1}"#.into(), r#"{"path":"/srv/a","rank":2}"#.into(), r#"{"path":"/srv/b","rank":3}"#.into()],
+        ).unwrap() else { panic!("unexpected race") };
+        db.conn.execute("UPDATE chunks SET created = '2026-10-20'", []).unwrap();
+        for source in ["", "doc"] {
+            let (page, _) = db.list(source, 1, 1, BUS_BODY_LIMIT).unwrap();
+            assert_eq!(page[0].id, ids[1]);
+        }
+        assert!(db.delete_filtered(&[], &[]).is_err());
+        let filters: Vec<MetadataFilter> = serde_json::from_value(serde_json::json!([
+            {"field":"path","op":"eq","value":"/srv/a"},
+            {"field":"rank","op":"gte","value":2}
+        ])).unwrap();
+        assert_eq!(db.delete_filtered(&[ids[0], ids[1]], &filters).unwrap(), 1);
+        let filters: Vec<MetadataFilter> = serde_json::from_value(serde_json::json!([
+            {"field":"path","op":"eq","value":"/srv/a"}
+        ])).unwrap();
+        assert_eq!(db.delete_filtered(&[], &filters).unwrap(), 1);
+        assert_eq!(db.delete_filtered(&[], &filters).unwrap(), 0);
+        assert_eq!(db.conn.query_row("SELECT COUNT(*) FROM vec_chunks", [], |r| r.get::<_, i64>(0)).unwrap(), 1);
+        let (remaining, _) = db.list("", 10, 0, BUS_BODY_LIMIT).unwrap();
+        assert_eq!(remaining[0].id, ids[2]);
     }
 
     #[test]

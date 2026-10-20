@@ -43,7 +43,8 @@ JSON-encoded string, including each element of `store.metadata`.
 | `indexd.store` | `texts`, `source`, `metadata` | `stored`, `duplicates`, `ids` |
 | `indexd.search` | `query`, `limit`, optional `source`, `metadata_filter` | `results` |
 | `indexd.update` | `id`, optional `content`, `metadata`, `source` | `updated`, `re_embedded` |
-| `indexd.delete` | `ids` | `deleted` |
+| `indexd.delete` | optional `ids`, optional `filter` (at least one non-empty) | `deleted` |
+
 | `indexd.list` | optional `source`, `limit`, `offset` | `items`, `total` |
 | `indexd.feedback` | `id`, `useful` | `id`, `feedback_score` |
 | `indexd.supersede` | `old_id`, `new_id`, optional `reason` | `updated` |
@@ -53,6 +54,11 @@ JSON-encoded string, including each element of `store.metadata`.
 
 `search` excludes superseded chunks before applying its limit. Filter entries
 have `field`, `op` (`eq`, `gt`, `lt`, `gte`, `lte`, `contains`) and `value`.
+
+Delete filters use the same predicate shape, for example
+`{"filter":[{"field":"path","op":"eq","value":"/srv/project/a.md"}]}`.
+Predicates are ANDed; when IDs are also supplied they restrict the matching set.
+Deletion updates the durable vectors and in-memory index in one operation.
 
 ## CLI and bridge
 
