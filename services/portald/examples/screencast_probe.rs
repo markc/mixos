@@ -11,7 +11,8 @@
 //! ScreenCast.
 use std::collections::HashMap;
 use std::time::Duration;
-use zbus::blocking::{Connection, MessageIterator};
+use futures_util::StreamExt;
+use zbus::{Connection, MessageStream};
 use zbus::zvariant::{OwnedFd, OwnedObjectPath, OwnedValue, Value};
 use zbus::{MatchRule, message};
 
@@ -29,12 +30,15 @@ fn segment(connection: &Connection) -> String {
 }
 
 /// Calls `method` with a `handle_token` and waits for its Response.
-fn request(
+async fn request<F>(
     connection: &Connection,
     token: &str,
     method: &str,
-    body: impl FnOnce(HashMap<&'static str, Value<'static>>) -> zbus::Result<zbus::Message>,
-) -> anyhow::Result<HashMap<String, OwnedValue>> {
+    body: impl FnOnce(HashMap<&'static str, Value<'static>>) -> F,
+) -> anyhow::Result<HashMap<String, OwnedValue>>
+where
+    F: std::future::Future<Output = zbus::Result<zbus::Message>>,
+{
     let path = format!("/org/freedesktop/portal/desktop/request/{}/{token}", segment(connection));
     let rule = MatchRule::builder()
         .msg_type(message::Type::Signal)
@@ -42,29 +46,35 @@ fn request(
         .member("Response")?
         .path(path)?
         .build();
-    let mut responses = MessageIterator::for_match_rule(rule, connection, None)?;
+    let mut responses = MessageStream::for_match_rule(rule, connection, None).await?;
     let mut options = HashMap::new();
     options.insert("handle_token", Value::from(token.to_owned()));
-    body(options).map_err(|error| anyhow::anyhow!("{method}: {error}"))?;
+    body(options)
+        .await
+        .map_err(|error| anyhow::anyhow!("{method}: {error}"))?;
     let message = responses
         .next()
+        .await
         .ok_or_else(|| anyhow::anyhow!("{method}: no Response"))??;
     let (code, results): (u32, HashMap<String, OwnedValue>) = message.body().deserialize()?;
     anyhow::ensure!(code == 0, "{method} answered {code}");
     Ok(results)
 }
 
-fn main() -> anyhow::Result<()> {
+#[tokio::main(flavor = "current_thread")]
+async fn main() -> anyhow::Result<()> {
     let hold: u64 = std::env::args()
         .nth(1)
         .and_then(|arg| arg.parse().ok())
         .unwrap_or(20);
-    let connection = Connection::session()?;
+    let connection = Connection::session().await?;
 
     let created = request(&connection, "probe_create", "CreateSession", |mut options| {
         options.insert("session_handle_token", Value::from("probe"));
-        connection.call_method(Some(BUS), PATH, Some(CAST), "CreateSession", &(options,))
-    })?;
+        let connection = connection.clone();
+        async move { connection.call_method(Some(BUS), PATH, Some(CAST), "CreateSession", &(options,)).await }
+    })
+    .await?;
     let session = OwnedObjectPath::try_from(
         created["session_handle"]
             .downcast_ref::<&str>()
@@ -76,12 +86,18 @@ fn main() -> anyhow::Result<()> {
     request(&connection, "probe_select", "SelectSources", |mut options| {
         options.insert("types", Value::from(1u32));
         options.insert("cursor_mode", Value::from(2u32));
-        connection.call_method(Some(BUS), PATH, Some(CAST), "SelectSources", &(&session, options))
-    })?;
+        let connection = connection.clone();
+        let session = session.clone();
+        async move { connection.call_method(Some(BUS), PATH, Some(CAST), "SelectSources", &(&session, options)).await }
+    })
+    .await?;
 
     let started = request(&connection, "probe_start", "Start", |options| {
-        connection.call_method(Some(BUS), PATH, Some(CAST), "Start", &(&session, "", options))
-    })?;
+        let connection = connection.clone();
+        let session = session.clone();
+        async move { connection.call_method(Some(BUS), PATH, Some(CAST), "Start", &(&session, "", options)).await }
+    })
+    .await?;
     let streams: Vec<(u32, HashMap<String, OwnedValue>)> = started["streams"].try_clone()?.try_into()?;
     for (node, properties) in &streams {
         let mut keys: Vec<_> = properties.iter().collect();
@@ -99,14 +115,17 @@ fn main() -> anyhow::Result<()> {
             Some(CAST),
             "OpenPipeWireRemote",
             &(&session, HashMap::<&str, Value>::new()),
-        )?
+        )
+        .await?
         .body()
         .deserialize()?;
     println!("pipewire remote fd {remote:?}");
 
     println!("holding the session for {hold}s");
-    std::thread::sleep(Duration::from_secs(hold));
-    connection.call_method(Some(BUS), session.as_str(), Some("org.freedesktop.portal.Session"), "Close", &())?;
+    tokio::time::sleep(Duration::from_secs(hold)).await;
+    connection
+        .call_method(Some(BUS), session.as_str(), Some("org.freedesktop.portal.Session"), "Close", &())
+        .await?;
     println!("closed");
     Ok(())
 }
