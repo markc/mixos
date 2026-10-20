@@ -40,18 +40,28 @@ pub const CURSOR_EMBEDDED: u32 = 2;
 pub struct MaxFramerate(u32);
 
 impl MaxFramerate {
-    pub fn get(self) -> u32 { self.0 }
+    pub fn get(self) -> u32 {
+        self.0
+    }
 }
 
 impl Default for MaxFramerate {
-    fn default() -> Self { Self(30) }
+    fn default() -> Self {
+        Self(30)
+    }
 }
 
 impl std::str::FromStr for MaxFramerate {
     type Err = String;
     fn from_str(value: &str) -> Result<Self, Self::Err> {
-        value.parse::<u32>().ok().filter(|rate| (1..=120).contains(rate)).map(Self)
-            .ok_or_else(|| "SCREENCAST_MAX_FRAMERATE: --screencast-max-framerate must be in 1..=120".into())
+        value
+            .parse::<u32>()
+            .ok()
+            .filter(|rate| (1..=120).contains(rate))
+            .map(Self)
+            .ok_or_else(|| {
+                "SCREENCAST_MAX_FRAMERATE: --screencast-max-framerate must be in 1..=120".into()
+            })
     }
 }
 
@@ -82,7 +92,10 @@ fn sender(header: &Header<'_>) -> Result<String, PortalError> {
         .ok_or_else(|| PortalError::InvalidArgument("no sender".into()))
 }
 
-fn option_u32(options: &HashMap<String, OwnedValue>, key: &str) -> Result<Option<u32>, PortalError> {
+fn option_u32(
+    options: &HashMap<String, OwnedValue>,
+    key: &str,
+) -> Result<Option<u32>, PortalError> {
     options
         .get(key)
         .map(|value| {
@@ -147,7 +160,10 @@ impl ScreenCast {
         #[zbus(connection)] connection: &Connection,
     ) -> Result<OwnedObjectPath, PortalError> {
         let owner = sender(&header)?;
-        let request = handle::request_path(&owner, &handle::token(&options, "handle_token", &self.counter)?)?;
+        let request = handle::request_path(
+            &owner,
+            &handle::token(&options, "handle_token", &self.counter)?,
+        )?;
         let session = handle::session_path(
             &owner,
             &handle::token(&options, "session_handle_token", &self.counter)?,
@@ -157,7 +173,9 @@ impl ScreenCast {
             .at(session.clone(), Session::new(&owner, self.sessions.clone()))
             .await?
         {
-            return Err(PortalError::InvalidArgument(format!("session {session} already exists")));
+            return Err(PortalError::InvalidArgument(format!(
+                "session {session} already exists"
+            )));
         }
         self.sessions.insert(session.as_str(), &owner);
         if let Err(error) = request::export(connection, &request, &owner).await {
@@ -169,9 +187,12 @@ impl ScreenCast {
         // the session.
         let present = zbus::fdo::DBusProxy::new(connection)
             .await?
-            .name_has_owner(header.sender().map(|name| name.clone().into()).ok_or_else(|| {
-                PortalError::InvalidArgument("no sender".into())
-            })?)
+            .name_has_owner(
+                header
+                    .sender()
+                    .map(|name| name.clone().into())
+                    .ok_or_else(|| PortalError::InvalidArgument("no sender".into()))?,
+            )
             .await;
         // Only a definite answer ends the session; a failed query keeps it
         // (NameOwnerChanged still retires it if the owner really left).
@@ -181,12 +202,20 @@ impl ScreenCast {
                 .object_server()
                 .remove::<request::Request, _>(request.clone())
                 .await;
-            return Err(PortalError::InvalidArgument(format!("{owner} left the bus")));
+            return Err(PortalError::InvalidArgument(format!(
+                "{owner} left the bus"
+            )));
         }
         tracing::info!(%owner, %session, "screencast session created");
         let mut results = HashMap::new();
         results.insert("session_handle", Value::from(session.as_str().to_owned()));
-        respond_later(connection, request.clone(), owner, request::SUCCESS, results);
+        respond_later(
+            connection,
+            request.clone(),
+            owner,
+            request::SUCCESS,
+            results,
+        );
         Ok(request)
     }
 
@@ -199,7 +228,10 @@ impl ScreenCast {
         #[zbus(connection)] connection: &Connection,
     ) -> Result<OwnedObjectPath, PortalError> {
         let owner = sender(&header)?;
-        let request = handle::request_path(&owner, &handle::token(&options, "handle_token", &self.counter)?)?;
+        let request = handle::request_path(
+            &owner,
+            &handle::token(&options, "handle_token", &self.counter)?,
+        )?;
         let types = option_u32(&options, "types")?.unwrap_or(SOURCE_MONITOR);
         if types & SOURCE_MONITOR == 0 {
             return Err(PortalError::InvalidArgument(
@@ -214,13 +246,21 @@ impl ScreenCast {
         }
         check_session(&self.sessions, &session_handle, &owner, |state| {
             if state.starting {
-                return Err(PortalError::InvalidArgument("session already started".into()));
+                return Err(PortalError::InvalidArgument(
+                    "session already started".into(),
+                ));
             }
             state.cursor_mode = Some(cursor_mode);
             Ok(())
         })?;
         request::export(connection, &request, &owner).await?;
-        respond_later(connection, request.clone(), owner, request::SUCCESS, HashMap::new());
+        respond_later(
+            connection,
+            request.clone(),
+            owner,
+            request::SUCCESS,
+            HashMap::new(),
+        );
         Ok(request)
     }
 
@@ -234,7 +274,10 @@ impl ScreenCast {
         #[zbus(connection)] connection: &Connection,
     ) -> Result<OwnedObjectPath, PortalError> {
         let owner = sender(&header)?;
-        let request = handle::request_path(&owner, &handle::token(&options, "handle_token", &self.counter)?)?;
+        let request = handle::request_path(
+            &owner,
+            &handle::token(&options, "handle_token", &self.counter)?,
+        )?;
         let mut cursor_mode = CURSOR_HIDDEN;
         let mut epoch = 0;
         check_session(&self.sessions, &session_handle, &owner, |state| {
@@ -242,7 +285,9 @@ impl ScreenCast {
                 return Err(PortalError::InvalidArgument("SelectSources first".into()));
             };
             if state.starting {
-                return Err(PortalError::InvalidArgument("session already started".into()));
+                return Err(PortalError::InvalidArgument(
+                    "session already started".into(),
+                ));
             }
             state.starting = true;
             cursor_mode = mode;
@@ -332,40 +377,86 @@ async fn still_wanted(connection: &Connection, sessions: &Sessions, target: &Tar
 async fn refuse(connection: &Connection, sessions: &Sessions, target: &Target, why: &str) {
     tracing::warn!(owner = %target.owner, session = %target.session, "screencast not started: {why}");
     set_starting(sessions, target.session.as_str(), target.epoch, false);
-    request::respond(connection, &target.request, &target.owner, request::FAILED, HashMap::new()).await;
+    request::respond(
+        connection,
+        &target.request,
+        &target.owner,
+        request::FAILED,
+        HashMap::new(),
+    )
+    .await;
 }
 
 /// Picks the source, starts the stream and answers `Start`. A cast whose
 /// request was closed, or whose session went away or was replaced meanwhile,
 /// is stopped.
-async fn start_cast(connection: Connection, sessions: Sessions, target: Target, cursor_mode: u32, max_framerate: MaxFramerate) {
-    let outputs = match tokio::time::timeout(OUTPUTS_TIMEOUT, tokio::task::spawn_blocking(capture::outputs)).await {
+async fn start_cast(
+    connection: Connection,
+    sessions: Sessions,
+    target: Target,
+    cursor_mode: u32,
+    max_framerate: MaxFramerate,
+) {
+    let outputs = match tokio::time::timeout(
+        OUTPUTS_TIMEOUT,
+        tokio::task::spawn_blocking(capture::outputs),
+    )
+    .await
+    {
         Ok(Ok(Ok(outputs))) => outputs,
-        Ok(Ok(Err(error))) => return refuse(&connection, &sessions, &target, &error.to_string()).await,
+        Ok(Ok(Err(error))) => {
+            return refuse(&connection, &sessions, &target, &error.to_string()).await;
+        }
         Ok(Err(error)) => return refuse(&connection, &sessions, &target, &error.to_string()).await,
-        Err(_) => return refuse(&connection, &sessions, &target, "compd did not list its outputs in time").await,
+        Err(_) => {
+            return refuse(
+                &connection,
+                &sessions,
+                &target,
+                "compd did not list its outputs in time",
+            )
+            .await;
+        }
     };
     let Some(output) = outputs
         .into_iter()
         .find(|output| output.mode_width > 0 && output.mode_height > 0)
     else {
-        return refuse(&connection, &sessions, &target, "compd advertises no output with a current mode").await;
+        return refuse(
+            &connection,
+            &sessions,
+            &target,
+            "compd advertises no output with a current mode",
+        )
+        .await;
     };
-    let Target {
-        session, owner, ..
-    } = &target;
+    let Target { session, owner, .. } = &target;
     let Some(consent) = consent::installed() else {
         return refuse(&connection, &sessions, &target, "no consent state").await;
     };
     let app = consent::app_name(caller_pid(&connection, owner).await);
     let wanted = || still_wanted(&connection, &sessions, &target);
-    let decision =
-        consent::decide_start(consent, target.request.as_str(), app.as_deref(), owner, &output.name, wanted).await;
+    let decision = consent::decide_start(
+        consent,
+        target.request.as_str(),
+        app.as_deref(),
+        owner,
+        &output.name,
+        wanted,
+    )
+    .await;
     let app = app.as_deref().unwrap_or(consent::UNKNOWN_APP);
     if !decision.granted() {
         tracing::info!(%owner, %session, %app, output = %output.name, ?decision, "screencast refused");
         set_starting(&sessions, session.as_str(), target.epoch, false);
-        request::respond(&connection, &target.request, owner, request::CANCELLED, HashMap::new()).await;
+        request::respond(
+            &connection,
+            &target.request,
+            owner,
+            request::CANCELLED,
+            HashMap::new(),
+        )
+        .await;
         return;
     }
     // A grant decided in the last poll interval may still race the app
@@ -374,7 +465,14 @@ async fn start_cast(connection: Connection, sessions: Sessions, target: Target, 
         tracing::info!(%owner, %session, %app, "screencast granted but its request is gone; not started");
         set_starting(&sessions, session.as_str(), target.epoch, false);
         // Removes the request when only its session went away.
-        request::respond(&connection, &target.request, owner, request::CANCELLED, HashMap::new()).await;
+        request::respond(
+            &connection,
+            &target.request,
+            owner,
+            request::CANCELLED,
+            HashMap::new(),
+        )
+        .await;
         return;
     }
     tracing::info!(%owner, %session, %app, output = %output.name, ?decision, "screencast granted");
@@ -401,7 +499,14 @@ async fn start_cast(connection: Connection, sessions: Sessions, target: Target, 
     });
     if let Some(cast) = leftover {
         tokio::task::spawn_blocking(move || drop(cast));
-        request::respond(&connection, &target.request, owner, request::FAILED, HashMap::new()).await;
+        request::respond(
+            &connection,
+            &target.request,
+            owner,
+            request::FAILED,
+            HashMap::new(),
+        )
+        .await;
         return;
     }
 
@@ -413,7 +518,15 @@ async fn start_cast(connection: Connection, sessions: Sessions, target: Target, 
     let mut results = HashMap::new();
     results.insert("streams", Value::from(vec![(node_id, properties)]));
     results.insert("persist_mode", Value::from(0u32));
-    if !request::respond(&connection, &target.request, owner, request::SUCCESS, results).await {
+    if !request::respond(
+        &connection,
+        &target.request,
+        owner,
+        request::SUCCESS,
+        results,
+    )
+    .await
+    {
         // The owner closed the request: cancel the cast.
         let cast = sessions.with(|map| {
             map.get_mut(session.as_str())
@@ -468,7 +581,10 @@ pub async fn watch_owners(connection: Connection, sessions: Sessions) -> zbus::R
     let mut changes = proxy.receive_name_owner_changed().await?;
     while let Some(change) = changes.next().await {
         let Ok(args) = change.args() else { continue };
-        if args.new_owner().is_none() && args.name().as_str().starts_with(':') && !sessions.is_empty() {
+        if args.new_owner().is_none()
+            && args.name().as_str().starts_with(':')
+            && !sessions.is_empty()
+        {
             retire(&connection, &sessions, args.name().as_str()).await;
         }
     }

@@ -268,9 +268,25 @@ fn parse_options(mut arguments: impl Iterator<Item = String>) -> Result<Options,
                 );
             }
             "--callbacks-only" => options.callbacks_only = true,
-            "--rate" => options.rate = Some(value()?.parse::<f64>().map_err(|error| format!("--rate: {error}"))?),
-            "--stall-every" => options.stall_every = value()?.parse().map_err(|error| format!("--stall-every: {error}"))?,
-            "--stall-ms" => options.stall = Duration::from_millis(value()?.parse().map_err(|error| format!("--stall-ms: {error}"))?),
+            "--rate" => {
+                options.rate = Some(
+                    value()?
+                        .parse::<f64>()
+                        .map_err(|error| format!("--rate: {error}"))?,
+                )
+            }
+            "--stall-every" => {
+                options.stall_every = value()?
+                    .parse()
+                    .map_err(|error| format!("--stall-every: {error}"))?
+            }
+            "--stall-ms" => {
+                options.stall = Duration::from_millis(
+                    value()?
+                        .parse()
+                        .map_err(|error| format!("--stall-ms: {error}"))?,
+                )
+            }
             "--hold-s" => {
                 options.hold = Duration::from_secs(
                     value()?
@@ -298,15 +314,28 @@ fn parse_options(mut arguments: impl Iterator<Item = String>) -> Result<Options,
         if !rate.is_finite() || !(1.0..=1000.0).contains(&rate) {
             return Err("--rate must be finite and in 1..=1000 Hz".into());
         }
-        if options.callbacks_only || options.burst != 1 || options.width < 256 || options.height < 16 {
-            return Err("--rate requires presentation feedback, --burst 1 and --size at least 256x16".into());
+        if options.callbacks_only
+            || options.burst != 1
+            || options.width < 256
+            || options.height < 16
+        {
+            return Err(
+                "--rate requires presentation feedback, --burst 1 and --size at least 256x16"
+                    .into(),
+            );
         }
         if !options.hold.is_zero() {
             let duration_frames = (options.hold.as_secs_f64() * rate).ceil() as usize;
-            options.frames = if frames_set { options.frames.min(duration_frames) } else { duration_frames };
+            options.frames = if frames_set {
+                options.frames.min(duration_frames)
+            } else {
+                duration_frames
+            };
         }
     }
-    if (options.stall_every > 0) != !options.stall.is_zero() || (options.stall_every > 0 && options.rate.is_none()) {
+    if (options.stall_every > 0) != !options.stall.is_zero()
+        || (options.stall_every > 0 && options.rate.is_none())
+    {
         return Err("--stall-every and --stall-ms must both be positive and require --rate".into());
     }
     Ok(options)
@@ -323,7 +352,9 @@ fn missed(outcome: Option<Outcome>, due: Duration, interval: Duration) -> bool {
 }
 
 fn frame_id(pixels: &mut [u8], width: u32, height: u32, id: u32) {
-    if width < 256 || height < 16 { return; }
+    if width < 256 || height < 16 {
+        return;
+    }
     for (row, value) in [0xA55A_A55A_u32, id].into_iter().enumerate() {
         for bit in 0..32 {
             let shade = if value & (1 << bit) == 0 { 0 } else { 255 };
@@ -337,7 +368,11 @@ fn frame_id(pixels: &mut [u8], width: u32, height: u32, id: u32) {
     }
 }
 
-fn wait_until(queue: &mut EventQueue<Probe>, probe: &mut Probe, due: Instant) -> Result<(), String> {
+fn wait_until(
+    queue: &mut EventQueue<Probe>,
+    probe: &mut Probe,
+    due: Instant,
+) -> Result<(), String> {
     dispatch_until(queue, probe, due, |_| Instant::now() >= due, "rate timer")
 }
 
@@ -357,37 +392,67 @@ fn run_rate(
     let name = CString::new(NAME).unwrap();
     // SAFETY: valid name, descriptor ownership transferred to File below.
     let raw = unsafe { libc::memfd_create(name.as_ptr(), libc::MFD_CLOEXEC) };
-    if raw < 0 { return Err(std::io::Error::last_os_error().to_string()); }
+    if raw < 0 {
+        return Err(std::io::Error::last_os_error().to_string());
+    }
     // SAFETY: memfd_create returned a new owned descriptor.
     let backing = unsafe { File::from_raw_fd(raw) };
     const SLOTS: usize = 8;
-    backing.set_len((bytes * SLOTS) as u64).map_err(|e| e.to_string())?;
+    backing
+        .set_len((bytes * SLOTS) as u64)
+        .map_err(|e| e.to_string())?;
     let pool = shm.create_pool(backing.as_fd(), (bytes * SLOTS) as i32, qh, ());
-    let buffers = (0..SLOTS).map(|slot| pool.create_buffer(
-        (slot * bytes) as i32, options.width as i32, options.height as i32,
-        (options.width * 4) as i32, wl_shm::Format::Xrgb8888, qh, slot,
-    )).collect::<Vec<_>>();
+    let buffers = (0..SLOTS)
+        .map(|slot| {
+            pool.create_buffer(
+                (slot * bytes) as i32,
+                options.width as i32,
+                options.height as i32,
+                (options.width * 4) as i32,
+                wl_shm::Format::Xrgb8888,
+                qh,
+                slot,
+            )
+        })
+        .collect::<Vec<_>>();
     probe.busy = vec![false; SLOTS];
-    probe.feedback = (0..options.frames).map(|_| FeedbackSlot::default()).collect();
-    let presentation = probe.presentation.clone().ok_or("wp_presentation unavailable")?;
+    probe.feedback = (0..options.frames)
+        .map(|_| FeedbackSlot::default())
+        .collect();
+    let presentation = probe
+        .presentation
+        .clone()
+        .ok_or("wp_presentation unavailable")?;
     let start = monotonic_now();
     let instant = Instant::now();
     let timeout = instant + scheduled(Duration::ZERO, options.frames, rate) + options.timeout;
     let mut pixels = vec![0; bytes];
     let mut stalls = 0;
     for commit in 0..options.frames {
-        wait_until(queue, probe, instant + scheduled(Duration::ZERO, commit, rate))?;
+        wait_until(
+            queue,
+            probe,
+            instant + scheduled(Duration::ZERO, commit, rate),
+        )?;
         if options.stall_every > 0 && (commit + 1).is_multiple_of(options.stall_every) {
             stalls += 1;
             wait_until(queue, probe, Instant::now() + options.stall)?;
         }
-        dispatch_until(queue, probe, timeout, |p| p.busy.iter().any(|busy| !busy), "buffer release")?;
+        dispatch_until(
+            queue,
+            probe,
+            timeout,
+            |p| p.busy.iter().any(|busy| !busy),
+            "buffer release",
+        )?;
         let slot = probe.busy.iter().position(|busy| !busy).unwrap();
         for pixel in pixels.chunks_exact_mut(4) {
             pixel.copy_from_slice(&[(commit % 256) as u8, 0x80, 0x40, 255]);
         }
         frame_id(&mut pixels, options.width, options.height, commit as u32);
-        backing.write_all_at(&pixels, (slot * bytes) as u64).map_err(|e| e.to_string())?;
+        backing
+            .write_all_at(&pixels, (slot * bytes) as u64)
+            .map_err(|e| e.to_string())?;
         surface.attach(Some(&buffers[slot]), 0, 0);
         surface.damage_buffer(0, 0, options.width as i32, options.height as i32);
         presentation.feedback(surface, qh, commit);
@@ -395,28 +460,60 @@ fn run_rate(
         surface.commit();
         connection.flush().map_err(|e| e.to_string())?;
     }
-    wait_until(queue, probe, instant + scheduled(Duration::ZERO, options.frames, rate))?;
+    wait_until(
+        queue,
+        probe,
+        instant + scheduled(Duration::ZERO, options.frames, rate),
+    )?;
     let elapsed = instant.elapsed().as_secs_f64();
     // A missing feedback is a measured miss, not an unbounded wait or a
     // process failure. Drain for at most two seconds after the timed run.
-    if let Err(error) = dispatch_until(queue, probe, Instant::now() + Duration::from_secs(2),
-        |p| p.feedback.iter().all(|slot| slot.outcome.is_some()), "rate feedback drain")
-        && error != "rate feedback drain did not complete in time"
-    { return Err(error); }
-    if probe.closed || probe.failure.is_some() { return Err("rate feedback connection failed".into()); }
-    let missed = probe.feedback.iter().enumerate().filter(|(commit, slot)|
-        missed(slot.outcome, scheduled(start, *commit, rate), interval)).count();
-    let presented = probe.feedback.iter().filter(|slot| matches!(slot.outcome, Some(Outcome::Presented { .. }))).count();
-    let output_ok = options.expect_output.as_ref().is_none_or(|expected| probe.feedback.iter().all(|slot|
-        match slot.outcome {
-            Some(Outcome::Presented { synced: Some(index), .. }) => probe.output_info[index].name.as_ref() == Some(expected),
+    if let Err(error) = dispatch_until(
+        queue,
+        probe,
+        Instant::now() + Duration::from_secs(2),
+        |p| p.feedback.iter().all(|slot| slot.outcome.is_some()),
+        "rate feedback drain",
+    ) && error != "rate feedback drain did not complete in time"
+    {
+        return Err(error);
+    }
+    if probe.closed || probe.failure.is_some() {
+        return Err("rate feedback connection failed".into());
+    }
+    let missed = probe
+        .feedback
+        .iter()
+        .enumerate()
+        .filter(|(commit, slot)| missed(slot.outcome, scheduled(start, *commit, rate), interval))
+        .count();
+    let presented = probe
+        .feedback
+        .iter()
+        .filter(|slot| matches!(slot.outcome, Some(Outcome::Presented { .. })))
+        .count();
+    let output_ok = options.expect_output.as_ref().is_none_or(|expected| {
+        probe.feedback.iter().all(|slot| match slot.outcome {
+            Some(Outcome::Presented {
+                synced: Some(index),
+                ..
+            }) => probe.output_info[index].name.as_ref() == Some(expected),
             Some(Outcome::Presented { .. }) => false,
             _ => true,
-        }));
+        })
+    });
     let pass = presented > 0 && output_ok && probe.clock_id == Some(libc::CLOCK_MONOTONIC as u32);
-    println!("{SUMMARY} {} frames={} commits={} presented={} rate_hz={} achieved_hz={:.6} missed={} stalls={}",
-        if pass { "PASS" } else { "FAIL" }, options.frames, options.frames, presented, rate,
-        options.frames as f64 / elapsed, missed, stalls);
+    println!(
+        "{SUMMARY} {} frames={} commits={} presented={} rate_hz={} achieved_hz={:.6} missed={} stalls={}",
+        if pass { "PASS" } else { "FAIL" },
+        options.frames,
+        options.frames,
+        presented,
+        rate,
+        options.frames as f64 / elapsed,
+        missed,
+        stalls
+    );
     Ok(pass)
 }
 
@@ -596,7 +693,15 @@ fn run() -> Result<bool, String> {
     xdg.ack_configure(probe.configured.take().unwrap_or_default());
 
     if options.rate.is_some() {
-        let result = run_rate(&connection, &mut queue, &mut probe, &surface, &shm, &qh, &options);
+        let result = run_rate(
+            &connection,
+            &mut queue,
+            &mut probe,
+            &surface,
+            &shm,
+            &qh,
+            &options,
+        );
         toplevel.destroy();
         return result;
     }
@@ -897,8 +1002,17 @@ fn run() -> Result<bool, String> {
         percentile(99),
         sorted.last().copied().unwrap_or(0),
         commits as f64 / committed.saturating_sub(started).as_secs_f64(),
-        probe.feedback.iter().enumerate().filter(|(commit, slot)| asks_feedback(*commit, burst)
-            && missed(slot.outcome, commit_times[*commit], Duration::from_micros(percentile(50).max(1)))).count(),
+        probe
+            .feedback
+            .iter()
+            .enumerate()
+            .filter(|(commit, slot)| asks_feedback(*commit, burst)
+                && missed(
+                    slot.outcome,
+                    commit_times[*commit],
+                    Duration::from_micros(percentile(50).max(1))
+                ))
+            .count(),
     );
     if !options.hold.is_zero() {
         use std::io::Write as _;
@@ -1103,8 +1217,14 @@ impl Dispatch<wl_callback::WlCallback, ()> for Probe {
 }
 
 impl Dispatch<wl_buffer::WlBuffer, usize> for Probe {
-    fn event(state: &mut Self, _: &wl_buffer::WlBuffer, event: wl_buffer::Event,
-        slot: &usize, _: &Connection, _: &QueueHandle<Self>) {
+    fn event(
+        state: &mut Self,
+        _: &wl_buffer::WlBuffer,
+        event: wl_buffer::Event,
+        slot: &usize,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
         if let wl_buffer::Event::Release = event {
             state.busy[*slot] = false;
         }
@@ -1185,9 +1305,17 @@ mod tests {
                 // Simulate 0.5 ms of submission overhead each time. Relative
                 // sleeps would drift by 1.8 s; absolute deadlines recover.
                 clock += Duration::from_micros(500);
-                misses += usize::from(missed(Some(Outcome::Presented {
-                    time: clock, refresh_ns: 0, seq: 0, flags: 0, synced: Some(0),
-                }), due, interval));
+                misses += usize::from(missed(
+                    Some(Outcome::Presented {
+                        time: clock,
+                        refresh_ns: 0,
+                        seq: 0,
+                        flags: 0,
+                        synced: Some(0),
+                    }),
+                    due,
+                    interval,
+                ));
             }
             clock = clock.max(scheduled(Duration::ZERO, 3600, rate));
             (3600.0 / clock.as_secs_f64(), misses)
@@ -1205,9 +1333,23 @@ mod tests {
     #[test]
     fn independent_rate_options() {
         let parse = |args: &[&str]| parse_options(args.iter().map(|s| (*s).to_string()));
-        assert_eq!(parse(&["--rate", "60", "--hold-s", "60"]).unwrap().frames, 3600);
-        assert_eq!(parse(&["--rate", "60", "--hold-s", "60", "--frames", "10"]).unwrap().frames, 10);
-        for args in [vec!["--rate", "NaN"], vec!["--rate", "0"], vec!["--rate", "60", "--callbacks-only"], vec!["--stall-ms", "50"], vec!["--rate", "60", "--stall-every", "30"]] {
+        assert_eq!(
+            parse(&["--rate", "60", "--hold-s", "60"]).unwrap().frames,
+            3600
+        );
+        assert_eq!(
+            parse(&["--rate", "60", "--hold-s", "60", "--frames", "10"])
+                .unwrap()
+                .frames,
+            10
+        );
+        for args in [
+            vec!["--rate", "NaN"],
+            vec!["--rate", "0"],
+            vec!["--rate", "60", "--callbacks-only"],
+            vec!["--stall-ms", "50"],
+            vec!["--rate", "60", "--stall-every", "30"],
+        ] {
             assert!(parse(&args).is_err(), "{args:?}");
         }
     }

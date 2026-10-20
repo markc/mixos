@@ -630,7 +630,7 @@ impl NativePortal {
                 state_dir: None,
                 binding,
                 screencast: None,
-            screencast_max_framerate: Default::default(),
+                screencast_max_framerate: Default::default(),
             },
             received,
             shared.clone(),
