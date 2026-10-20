@@ -321,7 +321,7 @@ symlinks are supported. There is no database environment override;
 engine's one-release rollback switch (<code>sqlite</code> selects SQLite search).</p>
 <p>The default domain map is empty, so unmapped files use <code>general</code>. Configure
 absolute prefixes; the daemon does not expand <code>~</code> in domain keys or file paths.
-The sample at <code>services/indexd/units/config.conf.mix.example</code> includes:</p>
+The sample at <a href="https://github.com/markc/mixos/blob/main/services/indexd/examples/config.conf.mix"><code>services/indexd/examples/config.conf.mix</code></a> includes:</p>
 <pre><code class="language-text">domains: {map: {
   "/home/user/Projects/mixos": "mixos",
   "/home/user/.mix": "mix",
@@ -336,6 +336,7 @@ to the pre-seeded snapshot; no model download happens at runtime.
 tilde-prefixed path even when content is supplied.</p>
 <p>The component owns <code>indexd.service</code> and <code>sysusers.conf</code>; the desktop release
 bundle carries the standalone binary and these files under <code>share/indexd/units/</code>,
+with the sample config under <code>share/indexd/examples/config.conf.mix</code>,
 following the component-owned maild packaging pattern. Install the binary
 under <code>/opt/mixos/bin</code>, the unit under <code>/etc/systemd/system</code>, sysusers under
 <code>/usr/lib/sysusers.d/indexd.conf</code>, and a customised config under

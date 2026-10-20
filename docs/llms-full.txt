@@ -7684,7 +7684,7 @@ engine's one-release rollback switch (`sqlite` selects SQLite search).
 
 The default domain map is empty, so unmapped files use `general`. Configure
 absolute prefixes; the daemon does not expand `~` in domain keys or file paths.
-The sample at `services/indexd/units/config.conf.mix.example` includes:
+The sample at [`services/indexd/examples/config.conf.mix`](https://github.com/markc/mixos/blob/main/services/indexd/examples/config.conf.mix) includes:
 
 ```text
 domains: {map: {
@@ -7703,6 +7703,7 @@ tilde-prefixed path even when content is supplied.
 
 The component owns `indexd.service` and `sysusers.conf`; the desktop release
 bundle carries the standalone binary and these files under `share/indexd/units/`,
+with the sample config under `share/indexd/examples/config.conf.mix`,
 following the component-owned maild packaging pattern. Install the binary
 under `/opt/mixos/bin`, the unit under `/etc/systemd/system`, sysusers under
 `/usr/lib/sysusers.d/indexd.conf`, and a customised config under

@@ -25,10 +25,13 @@ try
   end
   $identity = json_parse(run_argv_must([$top .. "/bin/indexd", "--version", "--json"]))
   if $identity.component != "indexd" then raise("PACKAGE_IDENTITY", "wrong packaged binary") end
-  for $name in ["indexd.service", "sysusers.conf", "config.conf.mix.example"]
+  for $name in ["indexd.service", "sysusers.conf"]
     if hash_file($root .. "/services/indexd/units/" .. $name, "sha256") != hash_file($top .. "/share/indexd/units/" .. $name, "sha256") then
       raise("PACKAGE_UNIT", $name .. " differs from component source")
     end
+  end
+  if hash_file($root .. "/services/indexd/examples/config.conf.mix", "sha256") != hash_file($top .. "/share/indexd/examples/config.conf.mix", "sha256") then
+    raise("PACKAGE_EXAMPLE", "sample config differs from component source")
   end
   print("indexd package: standalone binary, unit, sysusers and sample config passed")
 finally

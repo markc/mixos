@@ -88,10 +88,13 @@ for $pkg in sort(keys($PACKAGES))
   end
   if $pkg == "mixos-desktop" then
     mkdir($top .. "/share/indexd/units", {parents: true})
-    for $u in ["indexd.service", "sysusers.conf", "config.conf.mix.example"]
+    for $u in ["indexd.service", "sysusers.conf"]
       copy($source .. "/services/indexd/units/" .. $u, $top .. "/share/indexd/units/" .. $u)
       chmod($top .. "/share/indexd/units/" .. $u, 0o644)
     end
+    mkdir($top .. "/share/indexd/examples", {parents: true})
+    copy($source .. "/services/indexd/examples/config.conf.mix", $top .. "/share/indexd/examples/config.conf.mix")
+    chmod($top .. "/share/indexd/examples/config.conf.mix", 0o644)
     run_argv_must([$mix, $source .. "/libs/toolkit/scripts/install_licenses.mix",
       "--root", $top .. "/share"], {timeout: 30})
   end
