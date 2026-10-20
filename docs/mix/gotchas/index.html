@@ -251,6 +251,8 @@ fiction.</p>
 must appear in the error.</p>
 <table><thead><tr><th>you will guess</th><th>Mix is</th><th>probe</th><th>prints</th></tr></thead><tbody>
 <tr><td>a bare name reads the variable</td><td>a bare word is a <strong>string literal</strong> — <code>$</code> is not optional, and omitting it is silent</td><td><code>$x = 5; print(x)</code></td><td><code>x</code></td></tr>
+<tr><td><code>null</code> (or <code>None</code>, <code>undefined</code>) is null</td><td>it is a bare word, so it is the <strong>string</strong> <code>"null"</code>; Mix's null is <code>nil</code> (<code>mix lint</code> warns, MIX-W2312, and <code>--fix</code> rewrites it)</td><td><code>print(json_encode({a: null}))</code></td><td><code>{"a":"null"}</code></td></tr>
+<tr><td><code>let i = 0</code> declares a variable</td><td>Mix has no <code>let</code>, <code>var</code> or <code>const</code>: write <code>$i = 0</code> (and <code>$i = $i + 1</code>, never a bare <code>i = …</code>)</td><td><code>let i = 0</code></td><td><code>!$i =</code></td></tr>
 <tr><td><code>"hi $name"</code> interpolates</td><td>only <code>${...}</code> interpolates; a bare <code>$name</code> in a string is <strong>literal text</strong></td><td><code>$n = "world"; print("hi $n")</code></td><td><code>hi $n</code></td></tr>
 <tr><td>— so use braces</td><td><code>${name}</code> — and it is the <strong>same rule everywhere</strong> a string is built, heredocs included</td><td><code>$n = "world"; print("hi ${n}")</code></td><td><code>hi world</code></td></tr>
 <tr><td><code>elseif</code></td><td><code>elif</code></td><td><code>if 1 == 2 then print("a") elif 1 == 1 then print("b") end</code></td><td><code>b</code></td></tr>

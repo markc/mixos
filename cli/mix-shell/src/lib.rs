@@ -1166,7 +1166,7 @@ fn run_command_line(
                 };
                 // B3/$?-refusal runs on EVERY path — the lone-command
                 // interception below would otherwise skip it.
-                if let Err(msg) = exec::refuse_bash_keywords(&items) {
+                if let Err(msg) = exec::refuse_bash_keywords_in(Some(&command), &items) {
                     eprintln!("mix: {msg}");
                     return 2;
                 }

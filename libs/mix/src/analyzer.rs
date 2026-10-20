@@ -42,7 +42,7 @@ use crate::builtin_info::{FieldInfo, TypeShape};
 use crate::builtins::{self, CapabilityClass};
 use crate::evaluator::{INLINE_SPECIAL_FORMS, split_interp_coalesce};
 use crate::scope::param_arity;
-use crate::token::StringPart;
+use crate::token::{StringPart, Token};
 
 /// Diagnostic severity — the D3 wire values are lowercase.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -87,7 +87,29 @@ pub struct Diagnostic {
     pub column: Option<usize>,
     pub message: String,
     pub hint: Option<String>,
+    /// A mechanical quick fix, when the finding has exactly one right
+    /// rewrite (`null` → `nil`). `mix lint --fix` applies it; `--json`
+    /// reports it.
+    pub fix: Option<Fix>,
 }
+
+/// One quick-fix edit: replace the text `replace` starting at 1-based
+/// `line` / character `column` with `with`. The applier checks that
+/// `replace` is really there before it edits anything.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Fix {
+    pub line: usize,
+    pub column: usize,
+    pub replace: String,
+    pub with: String,
+}
+
+/// The functions the `mix` binary registers as evaluator extensions in
+/// every mode (`register_ai_extensions` in mix-shell, which a test pins to
+/// this list). An extension beats a user function of the same name at a
+/// bareword call site, so lint must know them: a call to one is defined,
+/// and a function named after one is flagged (MIX-W2313).
+pub const MIX_SHELL_EXTENSIONS: &[&str] = &["ai", "ai_diagnose", "context"];
 
 /// Analyzer inputs beyond the AST.
 #[derive(Debug, Clone, Default)]
@@ -107,6 +129,11 @@ pub struct AnalyzerConfig {
     /// embedder that sets this also skips `ssh_mix` body analysis, as
     /// before.
     pub suppress_name_checks: bool,
+    /// Extension functions the host evaluator registers (`mix lint` passes
+    /// [`MIX_SHELL_EXTENSIONS`]). Calls to them are defined, and a function
+    /// definition of the same name gets MIX-W2313, since the extension wins
+    /// a bareword call.
+    pub extensions: Vec<String>,
     /// The file's SOURCE text, when the caller has it (0.90.0).
     ///
     /// Two rules need what the token stream deliberately forgets: a bare
@@ -194,7 +221,7 @@ pub fn prelude_function_names() -> &'static HashSet<String> {
 /// definitions execute wherever control flow reaches them, and lint
 /// does not model reachability).
 fn collect_function_defs(stmts: &[Stmt], out: &mut HashSet<String>) {
-    walk_stmts(stmts, &mut |stmt| {
+    walk_every_stmt(stmts, &mut |stmt| {
         if let StmtKind::FunctionDef { name, .. } = &stmt.kind {
             out.insert(name.clone());
         }
@@ -424,6 +451,31 @@ fn collect_bindings(
     out: &mut HashSet<String>,
 ) {
     for stmt in stmts {
+        // `$x = v | cat` and `a && $x = v` wrap their statements: the
+        // operands bind like any statement of their own.
+        match &stmt.kind {
+            StmtKind::PipeToExternal { stmt: inner, .. } => {
+                collect_bindings(
+                    std::slice::from_ref(inner.as_ref()),
+                    into_functions,
+                    callable_only,
+                    out,
+                );
+                continue;
+            }
+            StmtKind::Chain { left, right, .. } => {
+                for operand in [left, right] {
+                    collect_bindings(
+                        std::slice::from_ref(operand.as_ref()),
+                        into_functions,
+                        callable_only,
+                        out,
+                    );
+                }
+                continue;
+            }
+            _ => {}
+        }
         match &stmt.kind {
             StmtKind::Assignment { name, value } | StmtKind::Export { name, value }
                 if callable_only =>
@@ -501,7 +553,7 @@ fn collect_bindings(
 /// barrier: the loaded file can define arbitrary globals/functions).
 fn has_dynamic_include(stmts: &[Stmt]) -> (bool, Option<usize>) {
     let mut found = None;
-    walk_stmts(stmts, &mut |stmt| {
+    walk_every_stmt(stmts, &mut |stmt| {
         if found.is_none()
             && matches!(
                 stmt.kind,
@@ -516,7 +568,21 @@ fn has_dynamic_include(stmts: &[Stmt]) -> (bool, Option<usize>) {
 
 /// The whole-file analyzer entry point.
 pub fn analyze(stmts: &[Stmt], file: Option<&str>, cfg: &AnalyzerConfig) -> Analysis {
-    let mut analysis = analyze_at(stmts, file, cfg, false, false);
+    // `-- lint:` pragmas live in comments, so they need the source text. A
+    // `globals` pragma is an in-file `--allow-global`; the suppressions are
+    // applied to the finished analysis.
+    let pragmas = cfg.source.as_deref().map(parse_lint_pragmas);
+    let mut analysis = match &pragmas {
+        Some(pragmas) if !pragmas.globals.is_empty() => {
+            let mut cfg = cfg.clone();
+            cfg.allow_globals.extend(pragmas.globals.iter().cloned());
+            analyze_at(stmts, file, &cfg, false, false)
+        }
+        _ => analyze_at(stmts, file, cfg, false, false),
+    };
+    if let Some(pragmas) = pragmas {
+        apply_lint_pragmas(pragmas, file, &mut analysis);
+    }
     // Handler declarations come from this file's own AST only. The remote
     // `ssh_mix` bodies analysed inside `analyze_at` are literal payloads, so
     // they never reach this walk.
@@ -571,6 +637,7 @@ fn analyze_at(
             message: "source/include loads code at runtime — undefined-name analysis disabled"
                 .to_string(),
             hint: Some("prefer require() for statically analyzable modules".to_string()),
+            fix: None,
         });
     }
 
@@ -579,6 +646,9 @@ fn analyze_at(
     check_pad_loop_idiom(stmts, &ctx, &mut a);
     check_unreachable(stmts, &ctx, &mut a);
     check_requires(stmts, &ctx, &mut a);
+    check_require_calls(stmts, &ctx, &mut a);
+    check_extension_collisions(stmts, &ctx, cfg, &mut a);
+    check_null_barewords(stmts, &ctx, cfg, &mut a);
     check_scope(
         stmts,
         &ctx,
@@ -1171,6 +1241,7 @@ impl FileContext {
         let mut known_callables: HashSet<String> = defs;
         known_callables.extend(prelude_function_names().iter().cloned());
         known_callables.extend(cfg.allow_functions.iter().cloned());
+        known_callables.extend(cfg.extensions.iter().cloned());
 
         let (has_include, _) = has_dynamic_include(stmts);
         let dynamic = has_include || cfg.suppress_name_checks;
@@ -1239,6 +1310,7 @@ fn diag(
         column: None,
         message,
         hint,
+        fix: None,
     }
 }
 
@@ -1960,7 +2032,7 @@ fn check_expr(
                         )
                     } else {
                         format!(
-                            "assign it, use env(\"{name}\") for environment values, or pass --allow-global {name}"
+                            "assign it, use env(\"{name}\") for environment values, or declare an injected name with `-- lint: globals {name}` (or pass --allow-global {name})"
                         )
                     }),
                 ));
@@ -4854,8 +4926,13 @@ fn analyse_remote_body(
             );
         }
     };
+    // The body is a program of its own and carries its own `-- lint:`
+    // pragmas: its globals join the injected names, and its suppressions
+    // apply to its findings before they are mapped into this file.
+    let pragmas = parse_lint_pragmas(src);
     let mut allow_globals = cfg.allow_globals.clone();
     allow_globals.extend(injected.into_iter().flatten().cloned());
+    allow_globals.extend(pragmas.globals.iter().cloned());
     let inner_cfg = AnalyzerConfig {
         allow_globals,
         allow_functions: cfg.allow_functions.clone(),
@@ -4865,6 +4942,8 @@ fn analyse_remote_body(
         // stand down), but a FUNCTION name cannot ride in through
         // strict-data bindings, so callable checks keep running.
         suppress_name_checks: false,
+        // The remote end is the same mix binary, with the same extensions.
+        extensions: cfg.extensions.clone(),
         // The BODY's own text, never the enclosing file's — the spelling
         // rules must read the source they are reporting lines against.
         // Lint is the only gate this remote program ever passes through.
@@ -4873,11 +4952,16 @@ fn analyse_remote_body(
         // linting its ssh_mix programs wants the same error strength there.
         agent: cfg.agent,
     };
-    let nested = analyze_at(&inner, None, &inner_cfg, true, injected.is_none());
+    let mut nested = analyze_at(&inner, None, &inner_cfg, true, injected.is_none());
+    apply_lint_pragmas(pragmas, None, &mut nested);
     for mut d in nested.diagnostics {
         d.file.clone_from(&ctx.file);
         d.line = Some(map_inner_line(lines, first_line, d.line.unwrap_or(1)));
         d.message = format!("[inside ssh_mix body] {}", d.message);
+        // A body's columns count from the body string, not the file, and its
+        // escapes shift them, so a body fix cannot be applied in place.
+        d.column = None;
+        d.fix = None;
         if reported.first(&d) {
             a.diagnostics.push(d);
         }
@@ -5329,6 +5413,70 @@ fn check_builtin_result_key(
         return;
     }
     let valid = fields.iter().map(|field| field.name).collect::<Vec<_>>();
+    let closest = result_key_suggestion(key, &valid);
+    let shape = builtins::builtin_info_of(builtin).and_then(|info| match info.contract.returns {
+        TypeShape::Map { shape, .. } => shape,
+        _ => None,
+    });
+    let subject = match shape {
+        Some(shape) => format!("{shape} (from {builtin}())"),
+        None => format!("{builtin}() result"),
+    };
+    let hint = match closest {
+        Some(candidate) => format!(
+            "did you mean '{candidate}'? documented fields: {}",
+            valid.join(", ")
+        ),
+        None => format!("documented fields: {}", valid.join(", ")),
+    };
+    a.diagnostics.push(diag(
+        ctx,
+        "MIX-W2304",
+        Severity::Warning,
+        line,
+        format!("{subject} has no field '{key}' — reading it is silently nil"),
+        Some(hint),
+    ));
+}
+
+/// The bash, Python and Node spellings of a result field, and the field each
+/// one means. Consulted before edit distance, which answers the wrong question
+/// here: the nearest spelling of `rc` is `ok`, and of `status` is `stdout`.
+/// Each row lists targets in preference order; the first one the shape has wins.
+const FOREIGN_RESULT_KEYS: &[(&str, &[&str])] = &[
+    ("code", &["exit_code", "status"]),
+    ("rc", &["exit_code"]),
+    ("status", &["exit_code"]),
+    ("returncode", &["exit_code"]),
+    ("return_code", &["exit_code"]),
+    ("exitcode", &["exit_code"]),
+    ("exit_status", &["exit_code"]),
+    ("exitstatus", &["exit_code"]),
+    ("exit", &["exit_code"]),
+    ("status_code", &["status"]),
+    ("statuscode", &["status"]),
+    ("success", &["ok"]),
+    ("succeeded", &["ok"]),
+    ("output", &["stdout", "body"]),
+    ("out", &["stdout"]),
+    ("err", &["stderr", "error"]),
+    ("text", &["body", "stdout"]),
+    ("data", &["body", "value"]),
+];
+
+/// The field a misspelled result key most likely meant: a foreign spelling
+/// from [`FOREIGN_RESULT_KEYS`], then a field ending in `_key` (`code` →
+/// `exit_code`), then the nearest by edit distance.
+fn result_key_suggestion<'a>(key: &str, valid: &[&'a str]) -> Option<&'a str> {
+    if let Some((_, targets)) = FOREIGN_RESULT_KEYS
+        .iter()
+        .find(|(foreign, _)| *foreign == key)
+        && let Some(target) = targets
+            .iter()
+            .find_map(|target| valid.iter().copied().find(|field| field == target))
+    {
+        return Some(target);
+    }
     let suffix = format!("_{key}");
     let suffix_matches = valid
         .iter()
@@ -5336,24 +5484,14 @@ fn check_builtin_result_key(
         .filter(|candidate| candidate.ends_with(&suffix))
         .collect::<Vec<_>>();
     let candidates = if suffix_matches.is_empty() {
-        valid.clone()
+        valid.to_vec()
     } else {
         suffix_matches
     };
-    let closest = candidates
+    candidates
         .iter()
         .min_by_key(|candidate| edit_distance(key, candidate))
-        .copied();
-    let hint = closest
-        .map(|candidate| format!("use '{candidate}'; documented keys: {}", valid.join(", ")));
-    a.diagnostics.push(diag(
-        ctx,
-        "MIX-W2304",
-        Severity::Warning,
-        line,
-        format!("{builtin}() result has no documented key '{key}'"),
-        hint,
-    ));
+        .copied()
 }
 
 pub(crate) fn edit_distance(left: &str, right: &str) -> usize {
@@ -5806,6 +5944,1004 @@ fn check_used_call_expr(
         _ => walk_expr_children(expr, &mut |child| {
             check_used_call_expr(child, true, line, bad, shadowable, ctx, a)
         }),
+    }
+}
+
+// ── W2313 shell-extension collisions ─────────────────────────────────
+
+/// MIX-W2313: a function named after an extension the host registers
+/// (`context`, `ai`, `ai_diagnose` under the `mix` binary). An extension
+/// beats a user function at a bareword call, so `context()` in the defining
+/// file runs the extension; only a member call on a `require()` exports map
+/// (`$m.context()`) reaches the function. Found in a serve citizen whose
+/// module exported `fn context`: every handler got the shell's
+/// `"pid=…, cwd=…"` string instead of the service context.
+fn check_extension_collisions(
+    stmts: &[Stmt],
+    ctx: &FileContext,
+    cfg: &AnalyzerConfig,
+    a: &mut Analysis,
+) {
+    if cfg.extensions.is_empty() {
+        return;
+    }
+    walk_every_stmt(stmts, &mut |stmt| {
+        if let StmtKind::FunctionDef { name, .. } = &stmt.kind
+            && cfg.extensions.iter().any(|ext| ext == name)
+        {
+            a.diagnostics.push(diag(
+                ctx,
+                "MIX-W2313",
+                Severity::Warning,
+                stmt.line,
+                format!(
+                    "function '{name}' collides with the mix shell's {name}() extension — a bare {name}(…) call runs the extension, not this function"
+                ),
+                Some(format!(
+                    "rename it (e.g. new_{name}); a member call $m.{name}(…) on a require() exports map still reaches it"
+                )),
+            ));
+        }
+    });
+}
+
+// ── W2314 / W2315 calls into require() modules ──────────────────────
+
+/// What a `require()`d module exports, read statically from its source
+/// (see `mix man modules`, "What gets exported").
+struct ModuleExports {
+    /// The path as the requiring code spelled it, for messages.
+    label: String,
+    /// The module's directory: its own requires resolve next to it.
+    dir: Option<std::path::PathBuf>,
+    /// Exported functions whose definition is certain: one top-level `fn`,
+    /// defined nowhere else and not also a `$var` → its (min, max) arity.
+    functions: HashMap<String, (usize, usize)>,
+    /// Names the module may export without proof of their arity, or of being
+    /// a function at all: its `$vars` (one may hold a function value) and
+    /// functions defined more than once, in a block, or inside another
+    /// function. A call through one is never an error.
+    maybe: HashSet<String>,
+    /// Exported `$vars` bound exactly once to a literal `require()`: the
+    /// name → the path literal (a nested module, `$a.b.fn()`).
+    requires: HashMap<String, String>,
+}
+
+/// The names `require()` never exports: the implicit frame names.
+const MODULE_FRAME_NAMES: &[&str] = &["rc", "result", "status", "event"];
+
+/// Visit every statement that runs in a module's (or script's) own top-level
+/// scope: nested blocks and if-expression branches, but not function or
+/// lambda bodies, which run in frames of their own.
+fn walk_module_level(stmts: &[Stmt], visit: &mut dyn FnMut(&Stmt)) {
+    for stmt in stmts {
+        visit(stmt);
+        match &stmt.kind {
+            StmtKind::FunctionDef { .. } => continue,
+            StmtKind::Chain { left, right, .. } => {
+                walk_module_level(std::slice::from_ref(left.as_ref()), visit);
+                walk_module_level(std::slice::from_ref(right.as_ref()), visit);
+                continue;
+            }
+            StmtKind::PipeToExternal { stmt: inner, .. } => {
+                walk_module_level(std::slice::from_ref(inner.as_ref()), visit);
+                continue;
+            }
+            _ => {}
+        }
+        for body in stmt_bodies(&stmt.kind) {
+            walk_module_level(body, visit);
+        }
+        walk_stmt_exprs(stmt, &mut |expr| {
+            for_each_embedded_stmt_list(expr, false, &mut |body| walk_module_level(body, visit));
+        });
+    }
+}
+
+/// How many statements bind each name. Any second binding (a reassignment,
+/// a field write, a loop variable of the same name) makes a module binding
+/// unprovable, so the checks stand down for it.
+fn binding_site_counts(stmts: &[Stmt], module_level_only: bool) -> HashMap<String, usize> {
+    let mut counts: HashMap<String, usize> = HashMap::new();
+    let mut count = |stmt: &Stmt| {
+        let mut bump = |name: &str| *counts.entry(name.to_string()).or_default() += 1;
+        match &stmt.kind {
+            StmtKind::Assignment { name, .. }
+            | StmtKind::Export { name, .. }
+            | StmtKind::FieldAssignment { object: name, .. }
+            | StmtKind::IndexAssignment { object: name, .. }
+            | StmtKind::PathAssignment { root: name, .. } => bump(name),
+            StmtKind::For { var, .. } => bump(var),
+            StmtKind::ForEach { var, index_var, .. } => {
+                bump(var);
+                if let Some(index) = index_var {
+                    bump(index);
+                }
+            }
+            StmtKind::TryCatch { catch: Some(c), .. } => {
+                bump(&c.var);
+                if let Some(err) = &c.err_var {
+                    bump(err);
+                }
+            }
+            StmtKind::Parse { parts, .. } => {
+                for part in parts {
+                    if let ParsePart::Variable(name) = part {
+                        bump(name);
+                    }
+                }
+            }
+            _ => {}
+        }
+    };
+    if module_level_only {
+        walk_module_level(stmts, &mut count);
+    } else {
+        walk_every_stmt(stmts, &mut count);
+    }
+    counts
+}
+
+/// The names bound exactly once, to `require("<literal>")`: name → literal.
+fn literal_require_bindings(stmts: &[Stmt], module_level_only: bool) -> HashMap<String, String> {
+    let counts = binding_site_counts(stmts, module_level_only);
+    let mut out = HashMap::new();
+    let mut find = |stmt: &Stmt| {
+        if let StmtKind::Assignment { name, value } = &stmt.kind
+            && counts.get(name) == Some(&1)
+            && let Expr::FunctionCall { name: call, args } = value
+            && call == "require"
+            && let [Expr::StringLiteral(path)] = args.as_slice()
+        {
+            out.insert(name.clone(), path.clone());
+        }
+    };
+    if module_level_only {
+        walk_module_level(stmts, &mut find);
+    } else {
+        walk_every_stmt(stmts, &mut find);
+    }
+    out
+}
+
+/// The directory a file's own relative requires resolve against: the
+/// parent of its canonical path, as the runtime takes it.
+fn canonical_dir(path: &std::path::Path) -> Option<std::path::PathBuf> {
+    let canonical = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    canonical.parent().map(std::path::Path::to_path_buf)
+}
+
+/// A `require()` path as the analyzer resolves it: absolute, or next to the
+/// requiring file (the runtime's script-relative rule).
+fn resolve_require_path(path: &str, base_dir: Option<&std::path::Path>) -> std::path::PathBuf {
+    let p = std::path::Path::new(path);
+    match base_dir {
+        Some(dir) if !p.is_absolute() => dir.join(p),
+        _ => p.to_path_buf(),
+    }
+}
+
+/// Read a module's export table. `None` (the checks stand down) when the
+/// file cannot be read or parsed, when a top-level `return` replaces the
+/// auto-export, or when a `source`/`include` can define anything.
+fn read_module_exports(path: &std::path::Path, label: &str) -> Option<ModuleExports> {
+    let src = std::fs::read_to_string(path).ok()?;
+    let tokens = crate::lexer::Lexer::new(&src).tokenize().ok()?;
+    let stmts = crate::parser::Parser::new_speculative(tokens, &src)
+        .parse_program()
+        .ok()?;
+    let mut top_level_return = false;
+    walk_module_level(&stmts, &mut |stmt| {
+        top_level_return |= matches!(stmt.kind, StmtKind::Return(_));
+    });
+    if top_level_return || has_dynamic_include(&stmts).0 {
+        return None;
+    }
+    // `_` names are private; the frame names are never exported as `$vars`
+    // (a function of that name is).
+    let private = |name: &str| name.starts_with('_');
+    let mut vars = HashSet::new();
+    collect_bound_names(&stmts, false, &mut vars);
+    vars.retain(|name| !private(name) && !MODULE_FRAME_NAMES.contains(&name.as_str()));
+    // Every definition anywhere, and the ones the top level makes
+    // unconditionally (a top-level `fn` is hoisted).
+    let mut all_defs: HashMap<String, usize> = HashMap::new();
+    walk_every_stmt(&stmts, &mut |stmt| {
+        if let StmtKind::FunctionDef { name, .. } = &stmt.kind {
+            *all_defs.entry(name.clone()).or_default() += 1;
+        }
+    });
+    let mut functions = HashMap::new();
+    let mut maybe: HashSet<String> = vars.clone();
+    for stmt in &stmts {
+        if let StmtKind::FunctionDef { name, params, .. } = &stmt.kind
+            && !private(name)
+            && all_defs.get(name) == Some(&1)
+            && !vars.contains(name)
+        {
+            functions.insert(name.clone(), param_arity(params));
+        }
+    }
+    // A name defined more than once, inside a block or another function, or
+    // also assigned as a `$var` (the variable wins the export) may or may
+    // not hold a function when the call runs.
+    maybe.extend(
+        all_defs
+            .into_keys()
+            .filter(|name| !private(name) && !functions.contains_key(name)),
+    );
+    let requires = literal_require_bindings(&stmts, true)
+        .into_iter()
+        .filter(|(name, _)| vars.contains(name))
+        .collect();
+    Some(ModuleExports {
+        label: label.to_string(),
+        dir: canonical_dir(path),
+        functions,
+        maybe,
+        requires,
+    })
+}
+
+/// Module tables, read once per canonical path for the whole analysis. A
+/// cycle (`a` requires `b` requires `a`) cannot loop: a table only records
+/// its nested modules' paths, and they are read when an expression reaches
+/// through one.
+#[derive(Default)]
+struct ModuleCache {
+    tables: HashMap<std::path::PathBuf, Option<std::rc::Rc<ModuleExports>>>,
+}
+
+impl ModuleCache {
+    fn load(&mut self, path: &std::path::Path, label: &str) -> Option<std::rc::Rc<ModuleExports>> {
+        if !path.is_file() {
+            return None;
+        }
+        let key = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+        self.tables
+            .entry(key)
+            .or_insert_with(|| read_module_exports(path, label).map(std::rc::Rc::new))
+            .clone()
+    }
+
+    /// The module an expression provably holds: a `$m` bound once to a
+    /// literal `require()`, or an export of one bound the same way.
+    fn resolve(
+        &mut self,
+        expr: &Expr,
+        roots: &HashMap<String, String>,
+        base_dir: Option<&std::path::Path>,
+    ) -> Option<std::rc::Rc<ModuleExports>> {
+        match expr {
+            Expr::Variable(name) => {
+                let literal = roots.get(name)?;
+                self.load(&resolve_require_path(literal, base_dir), literal)
+            }
+            Expr::FieldAccess { object, field } => {
+                let parent = self.resolve(object, roots, base_dir)?;
+                let literal = parent.requires.get(field)?;
+                self.load(
+                    &resolve_require_path(literal, parent.dir.as_deref()),
+                    literal,
+                )
+            }
+            _ => None,
+        }
+    }
+}
+
+/// MIX-W2314 / MIX-W2315: a member call into a `require()`d module, checked
+/// against the module's export table. `check_requires` proves the module
+/// exists and parses; this proves the call can land.
+///
+/// Stands down (silently) wherever the target is not proven: a dynamic path,
+/// `$m` bound more than once or also a parameter, a module whose exports a
+/// top-level `return` or a `source`/`include` decides, and a `source` or
+/// `include` in this file. A missing export is an error only when nothing
+/// else can answer the call: the runtime falls through to UFCS (an
+/// extension, a user or prelude function) and then, inside an `address`
+/// block, to a send.
+fn check_require_calls(stmts: &[Stmt], ctx: &FileContext, a: &mut Analysis) {
+    // A remote body requires files on the remote host, which lint cannot read.
+    if ctx.dynamic || ctx.remote_body {
+        return;
+    }
+    let mut roots = literal_require_bindings(stmts, false);
+    let params = every_param_name(stmts);
+    // `$rc`, `$result`, `$reply`… are rewritten by every send and command,
+    // so a module bound to one is not proven to still be there.
+    roots.retain(|name, _| !params.contains(name) && !INJECTED_VARS.contains(&name.as_str()));
+    if roots.is_empty() {
+        return;
+    }
+    // The runtime resolves a script-relative require next to the script's
+    // CANONICAL path (symlinked launchers), and nested requires next to the
+    // canonical module path; `canonical_dir` matches both.
+    let base_dir = ctx
+        .file
+        .as_deref()
+        .and_then(|f| canonical_dir(std::path::Path::new(f)));
+    let mut in_address: HashSet<*const Stmt> = HashSet::new();
+    walk_every_stmt(stmts, &mut |stmt| {
+        if let StmtKind::Address { body, .. } = &stmt.kind {
+            walk_every_stmt(body, &mut |inner| {
+                in_address.insert(inner as *const Stmt);
+            });
+        }
+    });
+    let mut cache = ModuleCache::default();
+    walk_all_exprs(stmts, &mut |stmt, e| {
+        // A chain or pipe wrapper holds no expressions of its own: its operands,
+        // walk visits as statements of their own, on their own lines.
+        if matches!(
+            stmt.kind,
+            StmtKind::Chain { .. } | StmtKind::PipeToExternal { .. }
+        ) {
+            return;
+        }
+        // `print($m.f(1))` is a member call, which falls back to UFCS; the
+        // statement `$m.f(1)` parses as a call of the FIELD value, which
+        // does not (calling a missing member is calling nil).
+        let (object, field, argc, ufcs) = match e {
+            Expr::MethodCall {
+                object,
+                field,
+                args,
+            } => (object, field, args.len(), true),
+            Expr::ValueCall { callee, args } => match &**callee {
+                Expr::FieldAccess { object, field } => (object, field, args.len(), false),
+                _ => return,
+            },
+            _ => return,
+        };
+        let Some(module) = cache.resolve(object, &roots, base_dir.as_deref()) else {
+            return;
+        };
+        let addressed = in_address.contains(&(stmt as *const Stmt));
+        let call = ModuleCall {
+            field,
+            argc,
+            ufcs,
+            addressed,
+            line: stmt.line,
+        };
+        check_module_call(&module, &call, ctx, a);
+    });
+}
+
+/// Every expression of `stmts` at any depth, with the statement that holds
+/// it. [`walk_stmts`] reaches every statement (lambda block bodies
+/// included); this adds what its expression walk skips: the parameter
+/// defaults and expression bodies of `fn` definitions and lambdas.
+fn walk_all_exprs(stmts: &[Stmt], visit: &mut dyn FnMut(&Stmt, &Expr)) {
+    fn deep(stmt: &Stmt, expr: &Expr, visit: &mut dyn FnMut(&Stmt, &Expr)) {
+        for_each_expr(expr, &mut |e| {
+            visit(stmt, e);
+            if let Expr::FunctionLiteral { params, body } = e {
+                function_exprs(stmt, params, body, visit);
+            }
+        });
+    }
+    fn function_exprs(
+        stmt: &Stmt,
+        params: &[Param],
+        body: &FunctionBody,
+        visit: &mut dyn FnMut(&Stmt, &Expr),
+    ) {
+        for default in params.iter().filter_map(|param| param.default.as_ref()) {
+            deep(stmt, default, visit);
+        }
+        if let FunctionBody::Expression(body) = body {
+            deep(stmt, body, visit);
+        }
+    }
+    walk_every_stmt(stmts, &mut |stmt| {
+        walk_stmt_exprs(stmt, &mut |expr| deep(stmt, expr, visit));
+        if let StmtKind::FunctionDef { params, body, .. } = &stmt.kind {
+            function_exprs(stmt, params, body, visit);
+        }
+    });
+}
+
+/// [`walk_stmts`], plus the statements it cannot see: those in statement
+/// lists embedded in a `fn` definition's parameter defaults and expression
+/// body (`fn f() = if c then $m = 1 end`). `walk_stmts` finds the lists
+/// embedded in a statement's own expressions, but a definition's defaults
+/// and expression body are not statement expressions.
+fn walk_every_stmt(stmts: &[Stmt], visit: &mut dyn FnMut(&Stmt)) {
+    walk_stmts(stmts, &mut |stmt| {
+        visit(stmt);
+        if let StmtKind::FunctionDef { params, body, .. } = &stmt.kind {
+            let exprs = params
+                .iter()
+                .filter_map(|param| param.default.as_ref())
+                .chain(match body {
+                    FunctionBody::Expression(body) => Some(body),
+                    FunctionBody::Block(_) => None,
+                });
+            for expr in exprs {
+                for_each_embedded_stmt_list(expr, true, &mut |list| walk_every_stmt(list, visit));
+            }
+        }
+    });
+}
+
+/// Every parameter name of every `fn` and lambda, wherever it is written.
+fn every_param_name(stmts: &[Stmt]) -> HashSet<String> {
+    let mut out = HashSet::new();
+    walk_every_stmt(stmts, &mut |stmt| {
+        if let StmtKind::FunctionDef { params, .. } = &stmt.kind {
+            out.extend(params.iter().map(|param| param.name.clone()));
+        }
+    });
+    walk_all_exprs(stmts, &mut |_, e| {
+        if let Expr::FunctionLiteral { params, .. } = e {
+            out.extend(params.iter().map(|param| param.name.clone()));
+        }
+    });
+    out
+}
+
+/// One call into a module, as `check_module_call` judges it.
+struct ModuleCall<'a> {
+    field: &'a str,
+    argc: usize,
+    /// A member call (`$m.f()` in an expression), which falls back to UFCS
+    /// when the member is missing; a call of the field value does not.
+    ufcs: bool,
+    /// Inside an `address` block, where a missing member call is a send.
+    addressed: bool,
+    line: usize,
+}
+
+fn check_module_call(
+    module: &ModuleExports,
+    call: &ModuleCall,
+    ctx: &FileContext,
+    a: &mut Analysis,
+) {
+    let &ModuleCall {
+        field,
+        argc,
+        ufcs,
+        addressed,
+        line,
+    } = call;
+    if let Some(&(min, max)) = module.functions.get(field) {
+        if argc < min || argc > max {
+            a.diagnostics.push(diag(
+                ctx,
+                "MIX-W2314",
+                Severity::Warning,
+                line,
+                format!(
+                    "{field}() from module '{}' called with {argc} argument(s); definition takes {}",
+                    module.label,
+                    if min == max {
+                        min.to_string()
+                    } else {
+                        format!("{min}..{max}")
+                    }
+                ),
+                None,
+            ));
+        }
+        return;
+    }
+    if module.maybe.contains(field)
+        || addressed
+        || (ufcs
+            && (ctx.known_callables.contains(field)
+                || builtins::is_builtin(field)
+                || crate::builtins_hof::HOF_NAMES.contains(&field)
+                || INLINE_SPECIAL_FORMS.contains(&field)))
+    {
+        return;
+    }
+    let mut exports: Vec<&str> = module
+        .functions
+        .keys()
+        .chain(module.maybe.iter())
+        .map(String::as_str)
+        .collect();
+    exports.sort_unstable();
+    exports.dedup();
+    let threshold = if field.chars().count() <= 4 { 1 } else { 2 };
+    let near = exports
+        .iter()
+        .copied()
+        .filter(|name| edit_distance(field, name) <= threshold)
+        .min_by_key(|name| edit_distance(field, name));
+    let listed = if exports.is_empty() {
+        "the module exports nothing".to_string()
+    } else {
+        format!("exports: {}", exports.join(", "))
+    };
+    let hint = match (near, field.starts_with('_')) {
+        (_, true) => format!("names starting with `_` are private to the module; {listed}"),
+        (Some(name), false) => format!("did you mean '{name}'? {listed}"),
+        (None, false) => listed,
+    };
+    a.diagnostics.push(diag(
+        ctx,
+        "MIX-W2315",
+        Severity::Warning,
+        line,
+        format!(
+            "module '{}' has no export '{field}' — the call fails at run time (FUNCTION_UNDEFINED)",
+            module.label
+        ),
+        Some(hint),
+    ));
+}
+
+// ── W2312 bareword null ──────────────────────────────────────────────
+
+/// Whether the token after `before` is a word of a Bus statement head: the
+/// target or command of a `send`/`emit`, an `on` command, an `address`
+/// target. A target can span several tokens (`send svc-name null`), so this
+/// scans back through the statement: a Bus keyword reached before anything
+/// that opens a value (`=`, `(`, `{`, `[`, `,`) means a head word.
+fn in_bus_words(before: &[crate::token::SpannedToken]) -> bool {
+    // Brackets closed before the word are skipped whole: `send ($target) null`.
+    let mut depth = 0usize;
+    for tok in before.iter().rev() {
+        match tok.token {
+            Token::RParen | Token::RBrace | Token::RBracket => depth += 1,
+            Token::LParen | Token::LBrace | Token::LBracket if depth > 0 => depth -= 1,
+            Token::Newline | Token::Semicolon => return false,
+            _ if depth > 0 => {}
+            Token::Send | Token::Emit | Token::On | Token::Address => return true,
+            Token::Assign | Token::LParen | Token::LBrace | Token::LBracket | Token::Comma => {
+                return false;
+            }
+            _ => {}
+        }
+    }
+    false
+}
+
+/// Whether a bareword between `before` and `next` is, without doubt, a
+/// value, so that rewriting it to `nil` cannot change what the program
+/// does. An allow-list, not the warning's own exclusions: the fix is
+/// offered only for a call argument or a list element (after a call's `(`,
+/// a `[` or a `,`), a map value (after `:`), the right side of `$x =`, an operand of a
+/// comparison or `??`, and a `return` operand. Anywhere else, such as
+/// `print("a") && null`, where `null` may dispatch a function, the warning
+/// stands without a fix.
+fn unambiguous_value(before: &[crate::token::SpannedToken], next: Option<&Token>) -> bool {
+    let comparison = |tok: &Token| {
+        matches!(
+            tok,
+            Token::Eq
+                | Token::NotEq
+                | Token::Lt
+                | Token::Gt
+                | Token::LtEq
+                | Token::GtEq
+                | Token::StrEq
+                | Token::StrNe
+                | Token::NilCoalesce
+        )
+    };
+    let Some(prev) = before.last().map(|tok| &tok.token) else {
+        return false;
+    };
+    let statement_start = before
+        .iter()
+        .rev()
+        .take_while(|tok| !matches!(tok.token, Token::Newline | Token::Semicolon))
+        .last()
+        .map(|tok| &tok.token);
+    match prev {
+        // `(` only opens an argument list after a call name: a bare grouping
+        // `&& (null)` may still dispatch a `fn null()`.
+        Token::LParen => matches!(
+            before.len().checked_sub(2).map(|i| &before[i].token),
+            Some(Token::String(_) | Token::Variable(_) | Token::Print | Token::Eprint)
+        ),
+        // `[` after a value is an index (`$m[null]` looks up the key null).
+        Token::LBracket => !matches!(
+            before.len().checked_sub(2).map(|i| &before[i].token),
+            Some(
+                Token::Variable(_)
+                    | Token::String(_)
+                    | Token::RParen
+                    | Token::RBracket
+                    | Token::RBrace
+            )
+        ),
+        Token::Comma | Token::Colon | Token::Return => true,
+        Token::Assign => matches!(statement_start, Some(Token::Variable(_))),
+        _ if comparison(prev) => true,
+        _ => next.is_some_and(comparison),
+    }
+}
+
+/// Whether the token after `before` is a word of a `parse … with` template
+/// (delimiters and variable names) or of an `include`/`source` path
+/// (`include ./lib/null.mix`): raw words, never values.
+fn in_raw_words(before: &[crate::token::SpannedToken]) -> bool {
+    before
+        .iter()
+        .rev()
+        .take_while(|tok| !matches!(tok.token, Token::Newline | Token::Semicolon))
+        .any(|tok| matches!(tok.token, Token::With | Token::Include | Token::Source))
+}
+
+/// Whether the token after `before` is text for an external command: the
+/// statement has a `|` before it (`print(x) | echo null`). The pipe tail is
+/// raw shell text, never a Mix value.
+fn after_a_pipe(before: &[crate::token::SpannedToken]) -> bool {
+    before
+        .iter()
+        .rev()
+        .take_while(|tok| !matches!(tok.token, Token::Newline | Token::Semicolon))
+        .any(|tok| matches!(tok.token, Token::Pipe))
+}
+
+/// The null spellings other languages taught. In Mix each is a bareword,
+/// and a bareword is a string literal: `{open: null}` sends `"null"`.
+const NULL_SPELLINGS: &[&str] = &["null", "None", "undefined", "NULL", "nullptr"];
+
+/// MIX-W2312: a bareword `null` (or `None`, `undefined`, `NULL`, `nullptr`)
+/// used as a value. It is the STRING "null", not nil, and nothing at runtime
+/// says so: `busviewer.dialog {open: null}` sent `{"open":"null"}`, the verb
+/// rightly refused it, and the refusal was taken for an app bug (2026-10-10).
+///
+/// Needs the source text: a bareword and a quoted `"null"` parse to the same
+/// `StringLiteral`, so the analyzer re-lexes and reads the character at each
+/// token's offset. A map key (`{null: 1}`), a field (`$x.null`), a call
+/// (`null()`), a `send` argument name (`null=1`), a statement head, a Bus
+/// command word and the text of a `| external` command are not values and
+/// stay silent. The fix is mechanical, so the finding carries it (`mix lint --fix`).
+fn check_null_barewords(stmts: &[Stmt], ctx: &FileContext, cfg: &AnalyzerConfig, a: &mut Analysis) {
+    let Some(source) = cfg.source.as_deref() else {
+        return;
+    };
+    if !NULL_SPELLINGS
+        .iter()
+        .any(|spelling| source.contains(spelling))
+    {
+        return;
+    }
+    // Only a spelling that reaches the AST as a string literal can be a value.
+    let mut literals: HashSet<&str> = HashSet::new();
+    walk_all_exprs(stmts, &mut |_, e| {
+        if let Expr::StringLiteral(text) = e
+            && let Some(spelling) = NULL_SPELLINGS.iter().copied().find(|s| *s == text.as_str())
+        {
+            literals.insert(spelling);
+        }
+    });
+    if literals.is_empty() {
+        return;
+    }
+    let Ok(tokens) = crate::lexer::Lexer::new(source).tokenize() else {
+        return;
+    };
+    let chars: Vec<char> = source.chars().collect();
+    for (i, tok) in tokens.iter().enumerate() {
+        let Token::String(text) = &tok.token else {
+            continue;
+        };
+        if !literals.contains(text.as_str())
+            || chars.get(tok.offset) != text.chars().next().as_ref()
+        {
+            continue;
+        }
+        let at = |back: usize| i.checked_sub(back).map(|j| &tokens[j].token);
+        let prev = at(1);
+        let next = tokens.get(i + 1).map(|t| &t.token);
+        let statement_head = matches!(prev, None | Some(Token::Newline | Token::Semicolon));
+        let map_key = matches!(next, Some(Token::Colon))
+            && matches!(prev, Some(Token::LBrace | Token::Comma));
+        let not_a_value = statement_head
+            || map_key
+            // A call name, or a `send` argument name (`null=1`).
+            || matches!(next, Some(Token::LParen | Token::Assign))
+            || matches!(
+                prev,
+                Some(
+                    Token::Dot
+                        | Token::Loop
+                        | Token::Break
+                        | Token::Continue
+                        | Token::Label
+                        | Token::Function
+                        | Token::On
+                        | Token::Send
+                        | Token::Emit
+                        | Token::Address
+                        | Token::Alias
+                        | Token::Export
+                        | Token::With
+                )
+            )
+            || in_bus_words(&tokens[..i])
+            || after_a_pipe(&tokens[..i])
+            || in_raw_words(&tokens[..i]);
+        if not_a_value {
+            continue;
+        }
+        let fixable = unambiguous_value(&tokens[..i], next);
+        let mut d = diag(
+            ctx,
+            "MIX-W2312",
+            Severity::Warning,
+            tok.line,
+            format!(
+                "bareword `{text}` is the string \"{text}\", not a null value — Mix's null is `nil`"
+            ),
+            Some(if fixable {
+                format!(
+                    "write `nil` (mix lint --fix rewrites it); quote it as \"{text}\" if you mean the text"
+                )
+            } else {
+                format!("write `nil`, or quote it as \"{text}\" if you mean the text")
+            }),
+        );
+        d.column = Some(tok.column);
+        if fixable {
+            d.fix = Some(Fix {
+                line: tok.line,
+                column: tok.column,
+                replace: text.clone(),
+                with: "nil".to_string(),
+            });
+        }
+        a.diagnostics.push(d);
+    }
+}
+
+// ── `-- lint:` pragmas ───────────────────────────────────────────────
+
+/// Where one suppression applies.
+#[derive(Clone, Copy)]
+enum PragmaScope {
+    /// `-- lint: ignore-file CODE`: the whole file.
+    File,
+    /// `-- lint: ignore CODE`: the next line holding code (or, written after
+    /// code, its own line).
+    Line(usize),
+    /// `-- lint: ignore CODE` with no code after it.
+    Nothing,
+}
+
+/// One `-- lint: ignore` / `ignore-file` code.
+struct Suppression {
+    /// The pragma's own line, where a stale one is reported.
+    line: usize,
+    code: &'static str,
+    directive: &'static str,
+    scope: PragmaScope,
+    used: bool,
+}
+
+impl Suppression {
+    fn covers(&self, line: Option<usize>) -> bool {
+        match self.scope {
+            PragmaScope::File => true,
+            PragmaScope::Line(target) => line == Some(target),
+            PragmaScope::Nothing => false,
+        }
+    }
+}
+
+/// Every `-- lint:` pragma in a file's comments.
+#[derive(Default)]
+struct LintPragmas {
+    /// `-- lint: globals a, b`: names an embedder, `ssh_mix` bindings or a
+    /// `source` inject, declared like `--allow-global`.
+    globals: Vec<String>,
+    suppressions: Vec<Suppression>,
+    /// Malformed pragmas: (line, message, hint), each a MIX-E1601.
+    malformed: Vec<(usize, String, String)>,
+}
+
+/// Read the `-- lint:` pragmas from the comments of `source`. Comments come
+/// from the editor highlighter, which drives the real lexer, so a `-- lint:`
+/// line inside a string or heredoc (generated Mix source) is never read as
+/// a pragma.
+fn parse_lint_pragmas(source: &str) -> LintPragmas {
+    let mut out = LintPragmas::default();
+    if !source.contains("lint:") {
+        return out;
+    }
+    let line_starts: Vec<usize> = std::iter::once(0)
+        .chain(source.match_indices('\n').map(|(i, _)| i + 1))
+        .collect();
+    let line_of = |byte: usize| line_starts.partition_point(|&start| start <= byte);
+    let spans = crate::lexer::highlight(source, crate::lexer::MixFlavor::Script);
+    // Lines holding anything but comments and whitespace: the lines an
+    // `ignore` can point at. A heredoc or multi-line string marks every line
+    // it spans.
+    let mut code_lines: Vec<usize> = Vec::new();
+    for (range, class) in &spans {
+        if *class == crate::lexer::TokenClass::Comment || range.is_empty() {
+            continue;
+        }
+        code_lines.extend(line_of(range.start)..=line_of(range.end - 1));
+    }
+    code_lines.sort_unstable();
+    code_lines.dedup();
+    // eslint's disable-next-line: the next line holding code, nothing more.
+    let next_code_line = |line: usize| {
+        let at = code_lines.partition_point(|&l| l <= line);
+        code_lines.get(at).copied()
+    };
+    // Every `|` and `;` the lexer sees, as (line, column).
+    let tokens = crate::lexer::Lexer::new(source)
+        .tokenize()
+        .unwrap_or_default();
+    let positions = |wanted: fn(&Token) -> bool| -> Vec<(usize, usize)> {
+        tokens
+            .iter()
+            .filter(|tok| wanted(&tok.token))
+            .map(|tok| (tok.line, tok.column))
+            .collect()
+    };
+    let pipes = positions(|tok| matches!(tok, Token::Pipe));
+    let semicolons = positions(|tok| matches!(tok, Token::Semicolon));
+    for (range, class) in spans {
+        if class != crate::lexer::TokenClass::Comment {
+            continue;
+        }
+        let text = &source[range.clone()];
+        let Some(body) = text.strip_prefix("--").or_else(|| text.strip_prefix('#')) else {
+            continue;
+        };
+        let Some(rest) = body.trim_start().strip_prefix("lint:") else {
+            continue;
+        };
+        let line = line_of(range.start);
+        // The tail of `stmt | external …` is raw shell text, which the
+        // highlighter colours as a comment from any `--` in it on:
+        // `print(1) | echo -- lint: ignore` prints the words, it is no pragma.
+        let column = source[line_starts[line - 1]..range.start].chars().count() + 1;
+        // A `;` after the pipe ends its tail: what follows is Mix again.
+        let tail_ended = |pipe: usize| {
+            semicolons
+                .iter()
+                .any(|&(l, c)| l == line && pipe < c && c < column)
+        };
+        if pipes
+            .iter()
+            .any(|&(l, c)| l == line && c < column && !tail_ended(c))
+        {
+            continue;
+        }
+        let after_code = !source[line_starts[line - 1]..range.start].trim().is_empty();
+        let rest = rest.trim();
+        let (directive, args) = rest.split_once(char::is_whitespace).unwrap_or((rest, ""));
+        let words: Vec<&str> = args
+            .split(|c: char| c == ',' || c.is_whitespace())
+            .filter(|word| !word.is_empty())
+            .collect();
+        let mut bad: Vec<(usize, String, String)> = Vec::new();
+        let mut malformed = |message: String, hint: &str| {
+            bad.push((line, message, hint.to_string()));
+        };
+        match directive {
+            "globals" => {
+                if words.is_empty() {
+                    malformed(
+                        "`-- lint: globals` names no globals".to_string(),
+                        "list the injected names: `-- lint: globals sha, target`",
+                    );
+                }
+                for word in words {
+                    let name = word.strip_prefix('$').unwrap_or(word);
+                    if is_plain_name(name) {
+                        out.globals.push(name.to_string());
+                    } else {
+                        malformed(
+                            format!("`-- lint: globals` entry `{word}` is not a variable name"),
+                            "list plain names, comma-separated: `-- lint: globals sha, target`",
+                        );
+                    }
+                }
+            }
+            "ignore" | "ignore-file" => {
+                let directive: &'static str = if directive == "ignore" {
+                    "ignore"
+                } else {
+                    "ignore-file"
+                };
+                if words.is_empty() {
+                    malformed(
+                        format!(
+                            "a bare `-- lint: {directive}` is refused — every suppression names its code"
+                        ),
+                        "name the code it suppresses: `-- lint: ignore MIX-W2402`",
+                    );
+                }
+                let scope = if directive == "ignore-file" {
+                    PragmaScope::File
+                } else if after_code {
+                    PragmaScope::Line(line)
+                } else {
+                    next_code_line(line).map_or(PragmaScope::Nothing, PragmaScope::Line)
+                };
+                for word in words {
+                    let known = crate::lint_docs::looks_like_code(word)
+                        .then(|| crate::lint_docs::explain(word))
+                        .flatten();
+                    match known {
+                        Some(doc) => out.suppressions.push(Suppression {
+                            line,
+                            code: doc.code,
+                            directive,
+                            scope,
+                            used: false,
+                        }),
+                        None => malformed(
+                            format!(
+                                "`-- lint: {directive}` names `{word}`, which is not a lint code"
+                            ),
+                            "name a code from `mix explain`, e.g. `-- lint: ignore MIX-W2402`",
+                        ),
+                    }
+                }
+            }
+            _ => malformed(
+                format!("unknown lint pragma `-- lint: {rest}`"),
+                "the pragmas are `-- lint: globals NAME, …`, `-- lint: ignore CODE` and `-- lint: ignore-file CODE`",
+            ),
+        }
+        out.malformed.extend(bad);
+    }
+    out
+}
+
+/// Drop the diagnostics a pragma suppresses, then report what the pragmas
+/// themselves got wrong: a malformed pragma (MIX-E1601) and a suppression
+/// that matched nothing (MIX-D3019, so stale ones get cleaned up).
+fn apply_lint_pragmas(mut pragmas: LintPragmas, file: Option<&str>, a: &mut Analysis) {
+    a.diagnostics.retain(|d| {
+        let mut suppressed = false;
+        for s in &mut pragmas.suppressions {
+            if s.code == d.code && s.covers(d.line) {
+                s.used = true;
+                suppressed = true;
+            }
+        }
+        !suppressed
+    });
+    let report =
+        |code: &'static str, severity: Severity, line: usize, message: String, hint: String| {
+            Diagnostic {
+                code,
+                severity,
+                file: file.map(str::to_string),
+                line: Some(line),
+                column: None,
+                message,
+                hint: Some(hint),
+                fix: None,
+            }
+        };
+    for (line, message, hint) in pragmas.malformed {
+        a.diagnostics
+            .push(report("MIX-E1601", Severity::Error, line, message, hint));
+    }
+    for s in pragmas.suppressions.iter().filter(|s| !s.used) {
+        let reason = match s.scope {
+            PragmaScope::File => format!("nothing in this file reports {}", s.code),
+            PragmaScope::Line(target) => format!("line {target} reports no {}", s.code),
+            PragmaScope::Nothing => "no code follows it".to_string(),
+        };
+        a.diagnostics.push(report(
+            "MIX-D3019",
+            Severity::Note,
+            s.line,
+            format!(
+                "`-- lint: {} {}` suppresses nothing — {reason}",
+                s.directive, s.code
+            ),
+            "delete the pragma, or move it to the line before the statement that reports the code"
+                .to_string(),
+        ));
     }
 }
 

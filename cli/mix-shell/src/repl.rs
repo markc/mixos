@@ -1495,6 +1495,23 @@ mod tests {
         assert!(pipeline_has_plumbing(&parsed("FOO=1 mix stats never")));
     }
 
+    /// `mix lint` learns the shell's extensions from
+    /// `mix::analyzer::MIX_SHELL_EXTENSIONS`; this pins that list to what
+    /// `register_ai_extensions` really registers, so the two cannot drift.
+    #[test]
+    fn registered_extensions_match_the_lint_list() {
+        let mut eval = mix::evaluator::Evaluator::new();
+        super::register_ai_extensions(&mut eval);
+        let mut registered = eval.extension_names();
+        registered.sort();
+        let mut listed: Vec<String> = mix::analyzer::MIX_SHELL_EXTENSIONS
+            .iter()
+            .map(|name| name.to_string())
+            .collect();
+        listed.sort();
+        assert_eq!(registered, listed);
+    }
+
     /// Subcommands answering from live REPL state are refused when plumbed
     /// (an external child would silently answer from different state);
     /// stateless ones fall through to a real external run.
