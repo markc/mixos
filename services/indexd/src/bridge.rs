@@ -21,6 +21,7 @@ where
 {
     let mut line = String::new();
     loop {
+        let mut transport_failed = false;
         line.clear();
         if input.read_line(&mut line).await? == 0 {
             break;
@@ -45,7 +46,10 @@ where
                         json!({"id":request.id,"rc":-1,"error":format!("invalid Bus reply JSON: {error}")})
                     }
                 },
-                Err(error) => json!({"id":request.id,"rc":-1,"error":error.to_string()}),
+                Err(error) => {
+                    transport_failed = true;
+                    json!({"id":request.id,"rc":-1,"error":error.to_string()})
+                }
             },
             Err(error) => {
                 let id = serde_json::from_str::<Value>(&line)
@@ -58,6 +62,7 @@ where
         output.write_all(reply.to_string().as_bytes()).await?;
         output.write_all(b"\n").await?;
         output.flush().await?;
+        anyhow::ensure!(!transport_failed, "bridge Bus connection failed");
     }
     Ok(())
 }

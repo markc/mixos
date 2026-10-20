@@ -162,15 +162,37 @@ async fn serve_reconnect_bridge_flush_eof_and_sigterm() {
     assert_eq!(response["id"], 4);
     assert_eq!(response["rc"], -1);
     assert!(response["error"].is_string());
-    drop(input);
     assert!(
-        tokio::time::timeout(Duration::from_secs(5), bridge.0.wait())
+        !tokio::time::timeout(Duration::from_secs(5), bridge.0.wait())
             .await
             .unwrap()
             .unwrap()
             .success()
     );
     assert!(lines.next_line().await.unwrap().is_none());
+}
+
+#[test]
+fn bridge_initial_connection_failure_replies_then_exits_nonzero() {
+    use std::io::Write;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("node.conf.mix");
+    std::fs::write(&path, "noded: { port: 0 }\n").unwrap();
+    let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_indexd"))
+        .arg("bridge")
+        .env("MIXOS_NODE_CONFIG", path)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut input = child.stdin.take().unwrap();
+    input.write_all(b"{\"id\":7,\"verb\":\"indexd.stats\",\"body\":{}}\n").unwrap();
+    // Keep stdin open: exit must not depend on EOF.
+    let output = child.wait_with_output().unwrap();
+    assert!(!output.status.success());
+    let reply: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(reply["id"], 7);
+    assert_eq!(reply["rc"], -1);
 }
 
 #[test]

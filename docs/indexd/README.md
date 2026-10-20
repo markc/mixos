@@ -78,7 +78,8 @@ It derives the broker address from that file rather than user config discovery.
 
 Each stdout line is `{"id":1,"rc":0,"body":{...}}`, with the original JSON
 `id` preserved. Application errors retain rc 10 and the JSON error body.
-Transport failures use `{"id":1,"rc":-1,"error":"..."}`. EOF exits 0;
+Transport failures use `{"id":1,"rc":-1,"error":"..."}` and then exit non-zero,
+including initial connection failure, so a supervisor can respawn it. EOF exits 0;
 stdout contains only protocol replies. The bridge never retries a call.
 
 ## Operating the system service

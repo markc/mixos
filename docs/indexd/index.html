@@ -296,7 +296,8 @@ It derives the broker address from that file rather than user config discovery.<
 </code></pre>
 <p>Each stdout line is <code>{"id":1,"rc":0,"body":{...}}</code>, with the original JSON
 <code>id</code> preserved. Application errors retain rc 10 and the JSON error body.
-Transport failures use <code>{"id":1,"rc":-1,"error":"..."}</code>. EOF exits 0;
+Transport failures use <code>{"id":1,"rc":-1,"error":"..."}</code> and then exit non-zero,
+including initial connection failure, so a supervisor can respawn it. EOF exits 0;
 stdout contains only protocol replies. The bridge never retries a call.</p>
 <h2 id="operating-the-system-service">Operating the system service</h2>
 <p><code>indexd serve</code> registers service <code>indexd</code> using the standard Bus connection
