@@ -5,6 +5,8 @@ Description=MixOS semantic index service
 Documentation=https://mixos.dev/indexd/
 After=noded.service
 Wants=noded.service
+StartLimitIntervalSec=10min
+StartLimitBurst=3
 
 [Service]
 Type=simple
@@ -22,8 +24,10 @@ ConfigurationDirectory=mixos/indexd
 ConfigurationDirectoryMode=0755
 WorkingDirectory=%S/mixos/indexd
 MemoryMax=2G
+MemoryHigh=1536M
+MemorySwapMax=0
 Restart=on-failure
-RestartSec=5s
+RestartSec=30s
 TimeoutStopSec=180s
 StandardOutput=journal
 StandardError=journal
