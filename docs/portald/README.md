@@ -111,9 +111,44 @@ its owner calls `Session.Close`, when the owner leaves the bus, or when capture
 stops on its own (then `Closed` is emitted). `Start` answers 2 when there is
 nothing to capture, for example no compositor or no output with a mode.
 
+### Consent
+
+Nothing is captured until the request is granted, in this order:
+
+1. **Policy.** `--screencast-consent allow` grants everything. Use it only for
+   headless and test sessions. The default is `prompt`.
+2. **A standing grant** that covers the caller's app (its process name, as in
+   `/proc/<pid>/comm`, so at most 15 characters). This is how automation shares
+   the screen with nobody at the desk.
+3. **The person.** portald posts a notifyd question, "Share your screen?", with
+   Allow and Deny. The request waits as a pending prompt until the button is
+   pressed, an agent answers it over the Bus, or 60 seconds pass. A timeout, Deny
+   or a closed question all answer the app with 1 (cancelled). Without notifyd
+   the request still waits, and can only be answered over the Bus.
+
+| Verb | Body | Does |
+|---|---|---|
+| `portald.screencast.pending` | `{}` | lists waiting requests (`request`, `app`, `owner`, `output`, `notification`), the grants, and the policy |
+| `portald.screencast.answer` | `{request, allow}` | decides a waiting request, as if the person pressed the button; withdraws the question |
+| `portald.screencast.grant` | `{app?, count?, ttl_ms?}` | covers the next `count` (default 1, at most 100) Starts by `app` (any app when absent) for `ttl_ms` (default 5 minutes, at most an hour); at most 16 grants |
+| `portald.screencast.revoke` | `{id?}` | withdraws one grant, or all of them |
+
+These verbs answer **callers on this node only**. A request with
+`broker_origin` other than `local` is refused with rc 13 `FORBIDDEN`, because a
+grant hands over the whole screen. Every grant, answer and decision is logged
+with the caller.
+
+To share the screen from a script with nobody at the desk:
+
+```text
+send portald portald.screencast.grant body='{"app":"obs","count":1,"ttl_ms":60000}'
+```
+
+Then start the share in the app. To drive the prompt instead, read
+`portald.screencast.pending` and answer the request it lists.
+
 This is a first cut, scoped to the trusted, unsandboxed session:
 
-- **No consent dialog.** Every grant is logged with the caller and the output.
 - **One stream per session:** the first output with a current mode.
   `multiple` is accepted and ignored.
 - **No window sources and no restore tokens.** `persist_mode` is accepted and
@@ -203,7 +238,7 @@ dependencies.
   accent, held in settingsd outside the sealed snapshot, and will move into the
   settings contract when that is decided.
 - Sandboxed callers and D-Bus activation.
-- For ScreenCast: a consent dialog, window sources, several streams per
+- For ScreenCast: window sources, several streams per
   session, restore tokens, DMA-BUF frames and a permission-limited PipeWire
   remote.
 

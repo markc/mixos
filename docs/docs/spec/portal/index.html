@@ -346,12 +346,17 @@ stops on its own.</li>
 <li>The stream is a PipeWire node with <code>media.class</code> <code>Video/Source</code>, <code>BGRx</code>, the
 output's mode size, variable rate up to 30 fps, memfd buffers.</li>
 </ul>
-<p>Grants are not prompted in this version: every grant is logged with caller and
-output. That is acceptable only for trusted, unsandboxed session callers.</p>
+<p>Consent: every <code>Start</code> is granted by the <code>allow</code> policy, a standing grant
+matching the caller's process name, or an answer to a notifyd question (Allow /
+Deny, 60 s, timeout denies). A refusal answers <code>Response</code> 1. Bus verbs, all
+local-only (<code>broker_origin</code> must be <code>local</code>, else rc 13 <code>FORBIDDEN</code>):
+<code>portald.screencast.pending</code> (query), <code>portald.screencast.answer {request, allow}</code> (input), <code>portald.screencast.grant {app?, count?, ttl_ms?}</code> (intent),
+<code>portald.screencast.revoke {id?}</code> (intent). Registered in
+<code>docs/docs/spec/bus/verbs.conf.mix</code>.</p>
 <h2 id="deferred">Deferred</h2>
 <ul>
 <li>The FileChooser interface.</li>
-<li>ScreenCast: a consent dialog, window sources, several streams, restore
+<li>ScreenCast: window sources, several streams, restore
 tokens, DMA-BUF frames and a permission-limited remote.</li>
 <li>Accent as a settings field. The current projection carries the design's
 resolved accent through settingsd's in-memory sidecar, outside the sealed
