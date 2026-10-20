@@ -150,7 +150,9 @@ fn command_button(
     selected: bool,
     events: &mut Vec<UiEvent>,
 ) {
-    if commands.registry().get(id).is_none() { return; }
+    if commands.registry().get(id).is_none() {
+        return;
+    }
     let tip = commands.tooltip(ui.ctx(), id, strings).unwrap_or_default();
     let button = IconButton::new(commands.icon(id).unwrap_or(Icon::Square))
         .selected(selected)
@@ -178,7 +180,11 @@ fn controls(
                 commands.registry().enabled("capture.take", app).is_ok(),
                 button,
             )
-            .on_hover_text(commands.tooltip(ui.ctx(), "capture.take", strings).unwrap_or_default());
+            .on_hover_text(
+                commands
+                    .tooltip(ui.ctx(), "capture.take", strings)
+                    .unwrap_or_default(),
+            );
         if response.clicked() {
             events.push(UiEvent::Command("capture.take", Origin::Ui));
         }
@@ -419,11 +425,14 @@ fn file_buttons(
     events: &mut Vec<UiEvent>,
 ) {
     for (id, text) in [("file.save", "save"), ("file.copy", "copy-short")] {
-        let Some(command) = commands.registry().get(id) else {
+        if commands.registry().get(id).is_none() {
             continue;
-        };
+        }
         let tip = if id == "file.save" {
-            let shortcut = commands.shortcuts_of(id).first().map(|s| ui.ctx().format_shortcut(s));
+            let shortcut = commands
+                .shortcuts_of(id)
+                .first()
+                .map(|s| ui.ctx().format_shortcut(s));
             tooltip::text(
                 &label_with("save-tip", &[("folder", screenshots_folder())]),
                 shortcut.as_deref(),

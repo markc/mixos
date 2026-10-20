@@ -854,7 +854,9 @@ impl<S> EngineAdapter<S> {
     }
     /// Label and parsed accelerator, using the same metadata as menus.
     pub fn tooltip(&self, ctx: &egui::Context, id: &str, strings: &Strings) -> Option<String> {
-        self.ui.get(id).map(|c| crate::tooltip::for_command(ctx, c, strings))
+        self.ui
+            .get(id)
+            .map(|c| crate::tooltip::for_command(ctx, c, strings))
     }
     pub fn search_menu(&mut self, menu: &'static str) -> &mut Self {
         self.ui.search_menu(menu);

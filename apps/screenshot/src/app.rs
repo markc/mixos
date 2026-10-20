@@ -1986,18 +1986,42 @@ mod tests {
         let strings = crate::strings();
         let params = serde_json::to_value(rect()).unwrap();
         a.command(1, "screenshot.annotate", &params.to_string());
-        let alias = replies(&crate::jobs::settle(&mut a, &commands.borrow(), &strings, false))[0].2.clone();
+        let alias = replies(&crate::jobs::settle(
+            &mut a,
+            &commands.borrow(),
+            &strings,
+            false,
+        ))[0]
+            .2
+            .clone();
         let mut alias_event = commands.borrow().take_executed().0.remove(0);
         a.document = initial.clone();
-        a.command(2, "screenshot.execute", &json!({"id":"edit.annotate", "params":params}).to_string());
-        let execute = replies(&crate::jobs::settle(&mut a, &commands.borrow(), &strings, false))[0].2.clone();
+        a.command(
+            2,
+            "screenshot.execute",
+            &json!({"id":"edit.annotate", "params":params}).to_string(),
+        );
+        let execute = replies(&crate::jobs::settle(
+            &mut a,
+            &commands.borrow(),
+            &strings,
+            false,
+        ))[0]
+            .2
+            .clone();
         let mut execute_event = commands.borrow().take_executed().0.remove(0);
         assert_eq!(alias, execute["result"]);
-        alias_event.seq = 0; alias_event.at_ms = 0;
-        execute_event.seq = 0; execute_event.at_ms = 0;
+        alias_event.seq = 0;
+        alias_event.at_ms = 0;
+        execute_event.seq = 0;
+        execute_event.at_ms = 0;
         assert_eq!(alias_event, execute_event);
         a.document = initial;
-        crate::view::apply(&mut a, &commands.borrow(), vec![crate::view::UiEvent::Add(rect())]);
+        crate::view::apply(
+            &mut a,
+            &commands.borrow(),
+            vec![crate::view::UiEvent::Add(rect())],
+        );
         let ui = commands.borrow().take_executed().0.remove(0);
         assert_eq!(ui.id, "edit.annotate");
         assert_eq!(ui.params, params);
@@ -2005,16 +2029,28 @@ mod tests {
         assert_eq!(ui.origin, Origin::Ui);
         println!("UI_EXECUTED {}", ui.body());
         let id = a.ui.selected.unwrap();
-        crate::view::apply(&mut a, &commands.borrow(), vec![crate::view::UiEvent::Move(id, 4.0, 0.0)]);
+        crate::view::apply(
+            &mut a,
+            &commands.borrow(),
+            vec![crate::view::UiEvent::Move(id, 4.0, 0.0)],
+        );
         let moved = commands.borrow().take_executed().0;
         assert_eq!(moved.len(), 1);
         assert_eq!(moved[0].params, json!({"id":id, "dx":4.0, "dy":0.0}));
-        a.execute("edit.undo", Value::Null, Origin::Shortcut).unwrap();
-        assert_eq!(a.document.as_ref().unwrap().object(id).unwrap().shape, rect());
-        a.execute("edit.delete_selected", Value::Null, Origin::Shortcut).unwrap();
+        a.execute("edit.undo", Value::Null, Origin::Shortcut)
+            .unwrap();
+        assert_eq!(
+            a.document.as_ref().unwrap().object(id).unwrap().shape,
+            rect()
+        );
+        a.execute("edit.delete_selected", Value::Null, Origin::Shortcut)
+            .unwrap();
         assert!(a.document.as_ref().unwrap().objects().is_empty());
         let runs = commands.borrow().take_executed().0;
-        assert_eq!(runs.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(), ["edit.undo", "edit.delete", "edit.delete_selected"]);
+        assert_eq!(
+            runs.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(),
+            ["edit.undo", "edit.delete", "edit.delete_selected"]
+        );
         assert!(runs.iter().all(|r| r.origin == Origin::Shortcut));
         assert_eq!(runs[1].params, json!({"id":id}));
     }

@@ -322,7 +322,16 @@ pub fn show_engine_with<S>(
     strings: &Strings,
     controls: &mut [Control<'_>],
 ) -> Vec<(&'static str, Origin)> {
-    show_with(ui, title, icon, stroke, &registry.ui, state, strings, controls)
+    show_with(
+        ui,
+        title,
+        icon,
+        stroke,
+        &registry.ui,
+        state,
+        strings,
+        controls,
+    )
 }
 
 /// The registry's menus laid out left to right in `room`; their commands
@@ -428,11 +437,19 @@ fn right_group<S>(
             } => registry.get(command).map(|c| {
                 let tooltip = crate::tooltip::for_command(ui.ctx(), c, strings);
                 let button = IconButton::new(*icon).selected(*selected).tooltip(tooltip);
-                (c, cell.add_enabled(registry.enabled(c.id, state), button).clicked())
+                (
+                    c,
+                    cell.add_enabled(registry.enabled(c.id, state), button)
+                        .clicked(),
+                )
             }),
             Control::Link { command, icon } => registry.get(command).map(|c| {
                 let link = Link::new(*icon, crate::command::label_text(strings, c.label));
-                (c, cell.add_enabled(registry.enabled(c.id, state), link).clicked())
+                (
+                    c,
+                    cell.add_enabled(registry.enabled(c.id, state), link)
+                        .clicked(),
+                )
             }),
         };
         if let Some((command, true)) = command {

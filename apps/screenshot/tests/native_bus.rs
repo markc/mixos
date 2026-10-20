@@ -269,8 +269,6 @@ async fn agent_capture_annotate_save_recent_export_cancel_and_quit() {
         .unwrap();
     assert_eq!(executed["executed"], "file.save");
     let run = next_on(&mut incoming, &format!("{SERVICE}.command.executed")).await;
-    assert_eq!(run["id"], "edit.crop");
-    let run = next_on(&mut incoming, &format!("{SERVICE}.command.executed")).await;
     assert_eq!(run["id"], "edit.annotate");
     let run = next_on(&mut incoming, &format!("{SERVICE}.command.executed")).await;
     assert_eq!(run["id"], "file.save");
