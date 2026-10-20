@@ -699,6 +699,9 @@ fn strict_data_diagnostic(error: MixError, file: Option<&str>) -> Diagnostic {
     }
 }
 
+// Each slice is a distinct field of the lint wire report; keep its schema
+// inputs explicit rather than coupling the analyser's collections.
+#[allow(clippy::too_many_arguments)]
 fn report_json(
     version: &str,
     files: &[String],
