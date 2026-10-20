@@ -30,7 +30,10 @@ pub fn check(args: &Value) -> Result<Request, String> {
     let request: Request =
         serde_json::from_value(args.clone()).map_err(|e| format!("bad request: {e}"))?;
     if !ACTIONS.contains(&request.action.as_str()) {
-        return Err(format!("action must be start, stop or restart, not {}", request.action));
+        return Err(format!(
+            "action must be start, stop or restart, not {}",
+            request.action
+        ));
     }
     if !units::is_controllable(&request.unit) {
         return Err(format!("{} is not controlled from MixTray", request.unit));

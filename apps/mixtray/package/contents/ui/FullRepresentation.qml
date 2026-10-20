@@ -19,6 +19,9 @@ Item {
     signal refreshRequested()
     signal controlRequested(string unit, string action)
     signal logsRequested(string unit)
+    signal sshRequested(var words)
+    signal connectRequested(string id)
+    signal editRequested(string path)
 
     Layout.minimumWidth: Kirigami.Units.gridUnit * 20
     Layout.minimumHeight: Kirigami.Units.gridUnit * 20
@@ -116,6 +119,10 @@ Item {
 
             SshTab {
                 snap: root.snap
+                acting: root.acting
+                onSshRequested: words => root.sshRequested(words)
+                onConnectRequested: id => root.connectRequested(id)
+                onEditRequested: path => root.editRequested(path)
             }
         }
     }

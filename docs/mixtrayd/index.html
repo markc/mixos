@@ -210,6 +210,7 @@
                     <nav id="toc-nav">
                         <a href="#live-updates">Live updates</a>
                         <a href="#control">Control</a>
+                        <a href="#ssh-hosts">SSH hosts</a>
                         <a href="#use">Use</a>
                         <a href="#not-yet">Not yet</a>
                     </nav>
@@ -244,14 +245,16 @@ registers on the noded Bus as <code>mixtrayd</code> and answers one verb,
 <tr><td>COS</td><td>systemd <code>ActiveState</code> for the MixOS units (system and user managers)</td></tr>
 <tr><td>BUS</td><td>the services noded has registered (<code>noded.list</code>) and mesh peers (<code>noded.peers</code>)</td></tr>
 <tr><td>MIX</td><td>the installed <code>mix</code> binary and its version</td></tr>
-<tr><td>SSH</td><td>the concrete <code>Host</code> aliases in <code>~/.ssh/config</code></td></tr>
+<tr><td>SSH</td><td>host files in <code>~/.ssh/hosts/</code>, their trash, keys in <code>~/.ssh/keys/</code>, and probe results</td></tr>
 </tbody></table>
 <p>Each tab carries its own <code>error</code> field, so one failing source does not blank
 the others. The daemon polls nothing: it reads its sources when a snapshot is
 asked for.</p>
 <h2 id="live-updates">Live updates</h2>
 <p>The daemon subscribes to systemd's unit signals on the system and user buses
-and keeps a revision that moves whenever a COS unit changes. Every snapshot
+and watches <code>~/.ssh/config</code>, <code>~/.ssh/hosts/</code> and <code>~/.ssh/keys/</code>. It keeps a
+revision that moves whenever a COS unit changes, one of those files changes,
+or an SSH probe starts or finishes. Every snapshot
 carries the revision it was read at. <code>mixtrayd.wait</code> takes a revision and
 answers with a new snapshot as soon as the revision moves past it, or after
 45 seconds, inside the Bus client's 60-second call limit. While the popup is
@@ -265,18 +268,34 @@ no sudo or polkit prompt is involved. The daemon refuses <code>hostd.service</co
 its own unit, and it marks each unit it can control in the snapshot.</p>
 <p>Every control action is recorded as a hostd receipt, and <code>hostd.undo</code> refuses
 it, since a restart has no undo.</p>
+<h2 id="ssh-hosts">SSH hosts</h2>
+<p>Each host is one file in <code>~/.ssh/hosts/</code>, named after its alias and holding a
+single <code>Host</code> line, which <code>~/.ssh/config</code> pulls in with
+<code>Include ~/.ssh/hosts/*</code>. Dotfiles in that directory are shared snippets, not
+hosts. The <code>mixtrayd.ssh</code> verb takes an <code>action</code>:</p>
+<table><thead><tr><th>Action</th><th>Fields</th><th>Effect</th></tr></thead><tbody>
+<tr><td><code>probe</code></td><td><code>ids</code> (empty for every usable host)</td><td>runs <code>ssh ALIAS true</code> in batch mode, four at a time, 10 s each</td></tr>
+<tr><td><code>create</code></td><td><code>name</code>, <code>hostname</code>, <code>port</code>, <code>user</code>, <code>key</code></td><td>writes a new owner-only host file using <code>~/.ssh/keys/KEY</code>; never overwrites one</td></tr>
+<tr><td><code>trash</code></td><td><code>id</code></td><td>renames the file <code>.trashed-ID</code></td></tr>
+<tr><td><code>restore</code></td><td><code>id</code></td><td>renames it back, refusing to replace a live host</td></tr>
+<tr><td><code>purge</code></td><td><code>id</code></td><td>deletes a trashed host; a live host must be trashed first</td></tr>
+</tbody></table>
+<p>The popup opens Connect (<code>konsole -e ssh ALIAS</code>) and Edit (<code>xdg-open</code> on the
+host file) itself, since those run in the desktop session, not the daemon's.</p>
 <h2 id="use">Use</h2>
 <pre><code>mixtrayd serve                   # the daemon (the default)
 mixtrayd snapshot                # print one snapshot from the running daemon
 mixtrayd wait REVISION           # print the next snapshot once a COS unit changes
 mixtrayd control UNIT ACTION     # start, stop or restart one controllable unit
+mixtrayd ssh probe [ID...]       # test every usable host, or the ones named
+mixtrayd ssh create NAME HOSTNAME PORT USER KEY
+mixtrayd ssh trash|restore|purge ID
 mixtrayd --version
 </code></pre>
 <h2 id="not-yet">Not yet</h2>
 <ul>
 <li>MIX scripts, runs and trash have no MixOS source yet, so the MIX tab
 reports only the binary.</li>
-<li>SSH keys and trash are not listed.</li>
 </ul>
         </article>
         <p class="doc-source"><a href="/mixtrayd/README.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
