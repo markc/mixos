@@ -150,7 +150,7 @@ mod tests {
                 }
             }
         });
-        let client = Ok(NodedClient::connect_anonymous(&broker.url).await.unwrap());
+        let client = NodedClient::connect_anonymous(&broker.url).await;
         let input = b"{\"id\":1,\"verb\":\"indexd.feedback\",\"body\":{},\"timeout_secs\":0}\n{\"id\":2,\"verb\":\"indexd.stats\",\"body\":{}}\n";
         let mut output = Vec::new();
         run(&input[..], &mut output, &client).await.unwrap();
