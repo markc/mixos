@@ -280,15 +280,31 @@ fn two_instances_register_distinct_services() {
     // Focus names come from the same resolver used by the transport. An
     // empty human seat has no keyboard focus edge to publish; mapped and
     // session topics prove the live publisher namespaces on the broker.
-    assert_eq!(topic_name(SERVICE, FOCUS_TOPIC_SUFFIX), "comp-headless.focus.changed");
-    assert_eq!(topic_name("comp-rec", FOCUS_TOPIC_SUFFIX), "comp-rec.focus.changed");
-    assert_ne!(topic_name(SERVICE, FOCUS_TOPIC_SUFFIX), topic_name("comp-rec", FOCUS_TOPIC_SUFFIX));
+    assert_eq!(
+        topic_name(SERVICE, FOCUS_TOPIC_SUFFIX),
+        "comp-headless.focus.changed"
+    );
+    assert_eq!(
+        topic_name("comp-rec", FOCUS_TOPIC_SUFFIX),
+        "comp-rec.focus.changed"
+    );
+    assert_ne!(
+        topic_name(SERVICE, FOCUS_TOPIC_SUFFIX),
+        topic_name("comp-rec", FOCUS_TOPIC_SUFFIX)
+    );
     let topics = bus.call("noded", "topic.list", json!({}));
     println!("broker topics: {topics}");
     for service in [SERVICE, "comp-rec"] {
         for suffix in ["surface.mapped", "session.changed"] {
             let expected = format!("{service}.{suffix}");
-            assert!(topics.as_array().unwrap().iter().any(|row| row["name"] == expected && row["last_publisher"] == service), "{topics}");
+            assert!(
+                topics
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|row| row["name"] == expected && row["last_publisher"] == service),
+                "{topics}"
+            );
         }
     }
     bus.call(
@@ -323,8 +339,15 @@ fn human_seat_has_no_sources() {
     bus.ready(SERVICE);
     let caps = seats::capabilities(&process.root);
     assert_eq!(caps.len(), 2);
-    assert!(caps["seat0"].is_empty(), "seat0 advertised capabilities: {caps:?}");
-    assert_eq!(caps["agent"], wayland_client::protocol::wl_seat::Capability::Pointer | wayland_client::protocol::wl_seat::Capability::Keyboard);
+    assert!(
+        caps["seat0"].is_empty(),
+        "seat0 advertised capabilities: {caps:?}"
+    );
+    assert_eq!(
+        caps["agent"],
+        wayland_client::protocol::wl_seat::Capability::Pointer
+            | wayland_client::protocol::wl_seat::Capability::Keyboard
+    );
     let text = probe.text();
     assert!(
         text.contains("PROBE seat \"seat0\" bound keyboard=0 pointer=0 "),

@@ -18,10 +18,16 @@ impl Dispatch<wl_registry::WlRegistry, ()> for Seats {
         _: &Connection,
         qh: &QueueHandle<Self>,
     ) {
-        if let wl_registry::Event::Global { name, interface, version } = event
+        if let wl_registry::Event::Global {
+            name,
+            interface,
+            version,
+        } = event
             && interface == "wl_seat"
         {
-            state.0.push((registry.bind(name, version.min(7), qh, ()), None, None));
+            state
+                .0
+                .push((registry.bind(name, version.min(7), qh, ()), None, None));
         }
     }
 }
@@ -38,18 +44,26 @@ impl Dispatch<wl_seat::WlSeat, ()> for Seats {
         let row = state.0.iter_mut().find(|row| row.0 == *seat).unwrap();
         match event {
             wl_seat::Event::Name { name } => row.1 = Some(name),
-            wl_seat::Event::Capabilities { capabilities: WEnum::Value(caps) } => row.2 = Some(caps),
+            wl_seat::Event::Capabilities {
+                capabilities: WEnum::Value(caps),
+            } => row.2 = Some(caps),
             _ => {}
         }
     }
 }
 
 pub fn capabilities(root: &Path) -> BTreeMap<String, wl_seat::Capability> {
-    let conn = Connection::from_socket(UnixStream::connect(root.join("wayland-headless-test")).unwrap()).unwrap();
+    let conn =
+        Connection::from_socket(UnixStream::connect(root.join("wayland-headless-test")).unwrap())
+            .unwrap();
     let mut queue = conn.new_event_queue::<Seats>();
     let _registry = conn.display().get_registry(&queue.handle(), ());
     let mut seats = Seats::default();
     queue.roundtrip(&mut seats).unwrap();
     queue.roundtrip(&mut seats).unwrap();
-    seats.0.into_iter().map(|(_, name, caps)| (name.unwrap(), caps.unwrap())).collect()
+    seats
+        .0
+        .into_iter()
+        .map(|(_, name, caps)| (name.unwrap(), caps.unwrap()))
+        .collect()
 }
