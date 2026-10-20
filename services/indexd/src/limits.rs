@@ -565,6 +565,7 @@ mod tests {
 #[cfg(test)]
 mod framing {
 use super::*;
+use tokio::io::AsyncBufReadExt;
 pub(crate) enum RequestLineRead {
     Eof,
     Complete,

@@ -372,7 +372,7 @@ pub(crate) async fn handle_index_file(
         // stale chunks (there is nothing to store, so delete-after collapses to
         // delete-all).
         if !old_ids.is_empty() {
-            let mut guard = lock_timed(state, t).await;
+            let guard = lock_timed(state, t).await;
             let db_t0 = Instant::now();
             match guard.db.delete(&old_ids) {
                 Ok(_) => {}
@@ -519,7 +519,7 @@ pub(crate) async fn handle_index_file(
         .filter(|id| !kept_ids.contains(id))
         .collect();
     if !to_delete.is_empty() {
-        let mut guard = lock_timed(state, t).await;
+        let guard = lock_timed(state, t).await;
         let db_t0 = Instant::now();
         match guard.db.delete(&to_delete) {
             Ok(_) => {}

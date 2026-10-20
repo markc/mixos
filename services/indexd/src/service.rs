@@ -295,7 +295,7 @@ pub(crate) async fn handle_store(
 
     const MAX_VANISH_ATTEMPTS: usize = 3;
     for attempt in 1..=MAX_VANISH_ATTEMPTS {
-        let mut guard = lock_timed(state, t).await;
+        let guard = lock_timed(state, t).await;
         let db_t0 = Instant::now();
         let stored_res = guard.db.store_revalidated(
             &embeddings,
@@ -506,7 +506,7 @@ pub(crate) async fn handle_delete(
     state: &Arc<Mutex<AppState>>,
     t: &mut ReqTiming,
 ) -> String {
-    let mut guard = lock_timed(state, t).await;
+    let guard = lock_timed(state, t).await;
     let db_t0 = Instant::now();
     let res = guard.db.delete(&req.ids);
     t.db_us += db_t0.elapsed().as_micros() as u64;
@@ -674,6 +674,8 @@ pub(crate) fn json_code_error(code: &str, msg: &str) -> String {
 
 
 const SLOW_REQUEST_MS: u128 = 250;
+// Keep the original explicit timing and request-context arguments together.
+#[allow(clippy::too_many_arguments)]
 fn record_request(
     seq: u64,
     action: &str,

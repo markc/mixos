@@ -952,7 +952,6 @@ pub(crate) fn vec_to_blob(v: &[f32]) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::temp_dir;
     #[test]
     fn checkpoint_owed_stays_sticky_until_success() {
         let owed = CheckpointOwed::default();
