@@ -1,0 +1,65 @@
+# MixOS blob store daemon (blobd). The same identities as the cosmix unit it
+# replaces: uid cosmix-blobd, group cosmix-blob (522), the same state root
+# /var/lib/cosmix/blobd and config /etc/cosmix/blobd/config.conf.mix, so the
+# store is read in place. Stop cosmix-blobd before starting this one: both
+# register as the Bus service "blobd" and both hold the lane port.
+
+[Unit]
+Description=MixOS blob store daemon (blobd)
+After=network-online.target cosmix-noded.service
+Wants=network-online.target cosmix-noded.service
+StartLimitIntervalSec=10min
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=cosmix-blobd
+Group=cosmix-blobd
+SupplementaryGroups=cosmix-blob
+StateDirectory=cosmix/blobd
+StateDirectoryMode=0750
+RuntimeDirectory=cosmix/blobd
+RuntimeDirectoryMode=0750
+ConfigurationDirectory=cosmix/blobd
+ConfigurationDirectoryMode=0755
+WorkingDirectory=%S/cosmix/blobd
+ExecStart=/opt/mixos/bin/blobd -c %E/cosmix/blobd/config.conf.mix
+Restart=on-failure
+RestartSec=30s
+Environment=RUST_LOG=blobd=info
+Environment=HOME=%S/cosmix/blobd
+Environment=MIXOS_NODE_CONFIG=%E/cosmix/node.conf.mix
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=blobd
+LogRateLimitIntervalSec=30s
+LogRateLimitBurst=10000
+
+# §5.1 required (Level 1)
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+
+# §5.2 mandatory hardening (Level 2)
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+SystemCallFilter=@chown
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectProc=invisible
+ProcSubset=pid
+UMask=0027
+PrivateDevices=yes
+
+[Install]
+WantedBy=multi-user.target

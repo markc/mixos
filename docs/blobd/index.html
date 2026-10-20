@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="The node blob store: content-addressed bytes kept in mds, with owner pins, quotas and garbage collection. Ported from cosmix-blobd; the store core is ported, the Bus and byte-lane layers follow.">
+    <meta name="description" content="The node blob store: content-addressed bytes kept in mds, with owner pins, quotas and garbage collection. The MixOS port of cosmix-blobd, with the store, the Bus citizen, the byte lane and the cross-node fetch.">
     <!-- Favicons from share/brand: the SVG follows the visitor's light/dark preference. -->
     <link rel="icon" href="/favicon.ico?v=400d5816f3" sizes="any">
     <link rel="icon" type="image/svg+xml" href="/_web/favicon.svg?v=4eb2d64677">
@@ -238,9 +238,11 @@
 Names live by owner, in a blobd-owned <code>blobd.sqlite</code>. Movement between nodes
 happens over a byte lane on the WireGuard address; the Bus carries references
 only, never bytes.</p>
-<p>This is the first stage of the port: the store core, with no Bus, no daemon
-and no HTTP. The citizen layer (verbs, events, props), the byte lane and the
-cross-node fetch are later stages.</p>
+<p>The daemon <code>blobd</code> registers on the Bus as <code>blobd</code>, serves the <code>blob.*</code> verbs,
+publishes its events with <code>retain: false</code>, and listens for byte-lane transfers
+on the WireGuard address. Cross-node fetches go through the same lane.</p>
+<p>On a mesh node that runs the cosmix build, it replaces <code>cosmix-blobd</code> in place: the unit keeps the uid, the group
+and the state root, and the cosmix unit is disabled.</p>
 <ul>
 <li><strong>Storage:</strong> the store runs on the <code>mds</code> library (<code>libs/mds</code>).</li>
 <li><strong>Identity kept on disk:</strong> the cas group <code>cosmix-blob</code> and the state root
