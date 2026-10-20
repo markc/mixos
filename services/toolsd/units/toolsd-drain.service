@@ -1,0 +1,90 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+[Unit]
+Description=MixOS toolsd drain (claims queued tool runs, executes them, reports output)
+# Reaches OUT to webd (claim/report over HTTPS) and to the internet (whois:43, DNS:53).
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=toolsd
+Group=toolsd
+
+# TOOLS_BASE_URL (which webd to claim from) + TOOLS_CA_FILE (verify its cert honestly —
+# never ssl_verify:false). NO `-` prefix: a missing config fails the unit CLOSED rather
+# than draining nothing, or the wrong vhost.
+EnvironmentFile=/etc/mixos/toolsd/env
+
+# Serialize drains ON THIS HOST. The FLEET-wide guarantee is not this flock (which is
+# host-local) — it is the claim endpoint's atomic NOT EXISTS guard, which refuses to lease
+# a second run while one is claimed anywhere. This just stops two local drains racing.
+# -n = fail fast rather than queue a redundant drain.
+ExecStart=/usr/bin/flock -n /run/toolsd/drain.lock /opt/mixos/bin/mix /opt/mixos/lib/toolsd/toolsd_drain.mix
+
+# The ONE credential this identity holds, delivered per-run into $CREDENTIALS_DIRECTORY
+# (0400, readable only by this unit's user) and never present in the environment.
+# It authorises claiming TOOL RUNS ONLY — a separate secret, queue and endpoint from any
+# provisioning drain's, so this identity can never lease a provisioning job.
+LoadCredential=tools_secret:/etc/mixos/toolsd/secret
+
+# The drain bounds its own WALL (MAX_WALL=600s): it stops claiming once the budget is
+# spent, and never starts a run it cannot finish. Worst case = MAX_WALL + one full run
+# (claim 15 + exec 40 + report 20 = 75s) ~= 675s. 900s leaves headroom without letting a
+# wedged drain hang forever. The bound counts the CLAIM and REPORT round-trips, not just
+# execution.
+TimeoutStartSec=900
+
+# Hardening. This process execs whois/dig/mix and talks to the network — nothing else.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectControlGroups=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+LockPersonality=yes
+# whois is TCP/43, dig is UDP+TCP/53, webd is HTTPS — inet only. No AF_NETLINK, no
+# AF_PACKET: this identity has no business enumerating or shaping the host's network.
+# This restricts socket FAMILIES, not destinations — the egress policy below confines
+# where the drain may connect.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+# EGRESS CONFINEMENT — "toolsd cannot reach the hypervisors or the mesh" as an ENFORCED
+# invariant. The drain's real needs are narrow:
+#   * 127.0.0.53 — the systemd-resolved stub. dig/whois resolve THROUGH it, so the drain
+#                  itself never needs arbitrary DNS egress.
+#   * webd       — for claim/report. Allowed per host by a drop-in (see below).
+#   * public internet — whois(43) connects straight to registry whois servers.
+# So: deny every private/management range, then re-allow exactly what is needed (a longer
+# prefix wins in systemd's BPF policy). Public destinations stay reachable.
+IPAddressDeny=10.0.0.0/8
+IPAddressDeny=172.16.0.0/12
+IPAddressDeny=192.168.0.0/16
+IPAddressDeny=169.254.0.0/16
+IPAddressDeny=100.64.0.0/10
+IPAddressDeny=127.0.0.0/8
+IPAddressDeny=::1/128
+IPAddressDeny=fc00::/7
+IPAddressDeny=fe80::/10
+IPAddressAllow=127.0.0.53/32
+# The webd this host claims from is pinned per host in
+# /etc/systemd/system/toolsd-drain.service.d/webd.conf:
+#   [Service]
+#   IPAddressAllow=<webd address>/32
+# A private (WG) webd address needs it to get past the deny-list above; a public one is
+# already reachable but is pinned anyway to document intent.
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+# Bounds the blast radius of a runaway tool.
+MemoryMax=512M
+TasksMax=64
+# ProtectSystem=strict makes the whole hierarchy read-only; flock needs to open the lock
+# file in /run/toolsd, so that ONE path is carved back out as writable.
+ReadWritePaths=/run/toolsd

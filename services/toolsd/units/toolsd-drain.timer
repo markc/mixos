@@ -1,0 +1,39 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+[Unit]
+Description=MixOS toolsd drain backstop (covers a missed wake or a truncated drain)
+
+[Timer]
+# The ABP wake (webd bus_call -> toolsd citizen -> systemctl start drain) is the PRIMARY
+# trigger and is what makes the modal's spinner start immediately. This timer is never the
+# mechanism, and it is REQUIRED for TWO duties:
+#   (a) a lost wake — starting an already-active oneshot does not schedule another run, so
+#       a wake arriving in the drain's final microsecond would otherwise be lost and its
+#       run would sit queued forever;
+#   (b) a TRUNCATED drain — all four of the drain's exits can leave work queued, and the
+#       wake that would have covered it has already been spent. Nothing else re-arms, so
+#       this timer is what picks that work up.
+#
+# 5min is the MINIMUM backstop the no-polling rule allows (no sub-5min timers, so a
+# backstop can never quietly become the mechanism), not a tuned value.
+#
+# It can cost the full interval. The drain does NOT loop until the queue is empty — it
+# has FOUR exits, and ALL FOUR can leave work queued (toolsd_drain.mix):
+#   1. claim answers 204            — "empty OR another run is already claimed" (global
+#                                     concurrency is 1), so this never proves an empty queue;
+#   2. MAX_RUNS (8) reached         — a 9th job in one burst is simply left;
+#   3. wall budget (MAX_WALL - WORST_RUN = 525s) spent;
+#   4. a claim HTTP/JSON error      — returns the same nil as 204 and breaks the loop.
+# So an interactive spinner can wait up to 5min + AccuracySec. That is accepted because the
+# tools queue is operator-driven and rarely bursts past 8, NOT because it cannot happen.
+# The proper fix is the drain signalling "I exited with work outstanding" and something
+# re-arming promptly.
+#
+# A redundant run against an empty queue costs one claim (204) and exits. OnBootSec gives
+# a delayed post-boot recovery for jobs enqueued while the host was down.
+OnBootSec=2min
+OnUnitInactiveSec=5min
+AccuracySec=10s
+Unit=toolsd-drain.service
+
+[Install]
+WantedBy=timers.target

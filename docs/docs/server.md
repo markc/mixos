@@ -22,6 +22,7 @@ On every MixOS system.
 
 - [dnsd](../dnsd/README.md) (service): authoritative mesh DNS for the zones in zones.mix
 - [maild](../maild/README.md) (service): JMAP, SMTP, IMAP and DAV mail service
+- [toolsd](../toolsd/README.md) (service): Runs the tools webd's admin panel queues (whois, dig, traceroute, shwho) as an unprivileged drain, outside webd's sandbox.
 - [webd](../webd/README.md) (service): Virtual hosts, CMS routes, embedded Mix handlers and ACME for the MixOS web service.
 
 ## Unclassified

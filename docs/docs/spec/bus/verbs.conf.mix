@@ -151,6 +151,7 @@
     {name:"releases.rollback", owner:"releasesd", version:"0.1.0", status:"accepted", class:"intent"},
     {name:"releases.remove", owner:"releasesd", version:"0.1.0", status:"accepted", class:"intent"},
     {name:"releases.link", owner:"releasesd", version:"0.1.0", status:"accepted", class:"intent"},
+    {name:"toolsd.wake", owner:"toolsd", version:"0.1.0", status:"accepted", class:"intent"},
     {name:"notify.send", owner:"notifyd", version:"0.1.0", status:"draft", class:"intent"},
     {name:"notify.get", owner:"notifyd", version:"0.1.0", status:"draft", class:"query"},
     {name:"notify.list", owner:"notifyd", version:"0.1.0", status:"draft", class:"query"},

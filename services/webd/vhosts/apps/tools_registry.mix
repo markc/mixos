@@ -5,7 +5,7 @@
 -- this ONE source (single source of truth):
 --
 --   /opt/mixos/vhosts/shared/apps/tools_registry.mix   (webd — validate at enqueue)
---   /opt/mixos/share/mixos/tools_registry.mix             (toolsd — validate again at exec)
+--   /opt/mixos/lib/toolsd/lib/tools_registry.mix          (toolsd — validate again at exec)
 --
 -- Codex (019f5bc3) requires validation at BOTH ends: webd is the authenticated gate,
 -- toolsd re-validates because it is the thing that actually execs. This file therefore
