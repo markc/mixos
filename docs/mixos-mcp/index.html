@@ -292,7 +292,9 @@ the application's command rows unchanged: <code>id</code>, <code>label</code>, <
 <code>params</code> is an optional JSON object. Parameters are forwarded unchanged as
 a sibling of <code>id</code>; the application owns validation and may refuse unsupported
 parameters. Successful calls return <code>{service, command, result}</code>; application
-error messages from the Bus client pass through unchanged as tool errors.</p>
+error messages from the Bus client pass through unchanged as tool errors.
+The same error-text pass-through and prefix removal apply to <code>app_describe</code>,
+<code>desktop_windows</code> and <code>desktop_window_wait</code> through their shared native helper.</p>
 <p>Retired tools: <code>app_actions_list</code>, <code>app_action_invoke</code>, <code>app_controls_list</code>,
 <code>app_control_get</code>, <code>app_control_set</code> and <code>app_control_wait</code> have been removed
 without aliases. Use <code>app_commands</code> and <code>app_execute</code> for registry commands,

@@ -55,8 +55,11 @@ async fn application_tools_round_trip_the_registry_contract() {
         .await
         .unwrap();
     let mut incoming = owner.incoming_async().await.unwrap();
+    let deliveries = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let count = deliveries.clone();
     let task = tokio::spawn(async move {
         while let Some(command) = incoming.recv().await {
+            count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             let args: Value = serde_json::from_str(&command.body).unwrap();
             let (rc, reply) = match command.command.as_str() {
                 "registry-fixture.commands" => {
@@ -66,7 +69,15 @@ async fn application_tools_round_trip_the_registry_contract() {
                 "registry-fixture.execute" if args["id"] == "missing.command" => {
                     (10, "unknown command: missing.command".to_string())
                 }
+                "registry-fixture.execute" if args["id"] == "missing.structured" => (
+                    10,
+                    json!({
+                        "error_code":"UNKNOWN_COMMAND", "message":"unknown command: missing.structured"
+                    })
+                    .to_string(),
+                ),
                 "registry-fixture.execute" => (0, args.to_string()),
+                "app.describe" => (10, "fixture describe refusal".to_string()),
                 _ => panic!("unexpected application request: {}", command.command),
             };
             owner.respond(&command, rc, &reply).await.unwrap();
@@ -75,6 +86,39 @@ async fn application_tools_round_trip_the_registry_contract() {
     let call = |name, args: Value| {
         CallToolRequestParams::new(name).with_arguments(args.as_object().unwrap().clone())
     };
+    for target in ["busviewer@mesh.example", "a.b"] {
+        for name in ["app_commands", "app_execute"] {
+            let mut args = json!({"service":target});
+            if name == "app_execute" {
+                args["id"] = json!("file.refresh");
+            }
+            let refused = service.call_tool(call(name, args)).await.unwrap();
+            assert_eq!(refused.is_error, Some(true));
+            assert_eq!(refused.content.len(), 1);
+            assert_eq!(
+                refused.content[0].as_text().unwrap().text,
+                format!("service must be a plain Bus service name (no '@' or '.'): {target}")
+            );
+            assert_eq!(deliveries.load(std::sync::atomic::Ordering::SeqCst), 0);
+        }
+    }
+    let rejected = service
+        .call_tool(call(
+            "app_commands",
+            json!({"service":"registry-fixture", "id":"file.refresh"}),
+        ))
+        .await
+        .unwrap_err();
+    assert!(rejected.to_string().contains("unknown field"), "{rejected}");
+    assert_eq!(deliveries.load(std::sync::atomic::Ordering::SeqCst), 0);
+    // No native connection has even been opened by the refused requests.
+    let status = result(
+        service
+            .call_tool(call("mcp_status", json!({})))
+            .await
+            .unwrap(),
+    );
+    assert_eq!(status["broker_connected"], false);
     let observed = result(
         service
             .call_tool(call("app_commands", json!({"service":"registry-fixture"})))
@@ -105,21 +149,38 @@ async fn application_tools_round_trip_the_registry_contract() {
             })
         );
     }
-    let refused = service
-        .call_tool(call(
-            "app_execute",
-            json!({
-                "service":"registry-fixture", "id":"missing.command"
-            }),
-        ))
-        .await
-        .unwrap();
-    assert_eq!(refused.is_error, Some(true));
-    assert_eq!(refused.content.len(), 1);
-    assert_eq!(
-        refused.content[0].as_text().unwrap().text,
-        "unknown command: missing.command"
+    let observed = result(
+        service
+            .call_tool(call(
+                "app_execute",
+                json!({"service":"registry-fixture", "id":"file.refresh", "params":null}),
+            ))
+            .await
+            .unwrap(),
     );
+    assert_eq!(observed["result"], json!({"id":"file.refresh"}));
+    for (name, args, message) in [
+        (
+            "app_execute",
+            json!({"service":"registry-fixture", "id":"missing.command"}),
+            "unknown command: missing.command",
+        ),
+        (
+            "app_execute",
+            json!({"service":"registry-fixture", "id":"missing.structured"}),
+            "UNKNOWN_COMMAND: unknown command: missing.structured",
+        ),
+        (
+            "app_describe",
+            json!({"service":"registry-fixture"}),
+            "fixture describe refusal",
+        ),
+    ] {
+        let refused = service.call_tool(call(name, args)).await.unwrap();
+        assert_eq!(refused.is_error, Some(true));
+        assert_eq!(refused.content.len(), 1);
+        assert_eq!(refused.content[0].as_text().unwrap().text, message);
+    }
     task.abort();
     service.cancel().await.unwrap();
 }

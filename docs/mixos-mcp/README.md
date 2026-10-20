@@ -68,6 +68,8 @@ the application's command rows unchanged: `id`, `label`, `menu`, `shortcut`,
 a sibling of `id`; the application owns validation and may refuse unsupported
 parameters. Successful calls return `{service, command, result}`; application
 error messages from the Bus client pass through unchanged as tool errors.
+The same error-text pass-through and prefix removal apply to `app_describe`,
+`desktop_windows` and `desktop_window_wait` through their shared native helper.
 
 Retired tools: `app_actions_list`, `app_action_invoke`, `app_controls_list`,
 `app_control_get`, `app_control_set` and `app_control_wait` have been removed

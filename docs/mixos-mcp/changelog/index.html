@@ -242,6 +242,9 @@
 <li>Replace the unserved application action/control tools with <code>app_commands</code>
 and <code>app_execute</code>, using the application's registry Bus verbs. Forward optional
 command parameters unchanged and preserve application error messages.</li>
+<li>Error-text pass-through without the old <code>application rc=</code> prefix also applies
+to <code>app_describe</code>, <code>desktop_windows</code> and <code>desktop_window_wait</code> through their
+shared native helper.</li>
 <li>The indexd Bus-mode call timeout is now 120 seconds by default, previously
 the Bus library's 60 seconds. SSH bridge requests carry the configured timeout.</li>
 <li>Retry bridge failures once before delivery for every verb; after delivery,

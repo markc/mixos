@@ -29866,6 +29866,8 @@ the application's command rows unchanged: `id`, `label`, `menu`, `shortcut`,
 a sibling of `id`; the application owns validation and may refuse unsupported
 parameters. Successful calls return `{service, command, result}`; application
 error messages from the Bus client pass through unchanged as tool errors.
+The same error-text pass-through and prefix removal apply to `app_describe`,
+`desktop_windows` and `desktop_window_wait` through their shared native helper.
 
 Retired tools: `app_actions_list`, `app_action_invoke`, `app_controls_list`,
 `app_control_get`, `app_control_set` and `app_control_wait` have been removed
@@ -33062,6 +33064,9 @@ native-session handoff bytes retain the frozen compatibility contract.
 - Replace the unserved application action/control tools with `app_commands`
   and `app_execute`, using the application's registry Bus verbs. Forward optional
   command parameters unchanged and preserve application error messages.
+- Error-text pass-through without the old `application rc=` prefix also applies
+  to `app_describe`, `desktop_windows` and `desktop_window_wait` through their
+  shared native helper.
 - The indexd Bus-mode call timeout is now 120 seconds by default, previously
   the Bus library's 60 seconds. SSH bridge requests carry the configured timeout.
 - Retry bridge failures once before delivery for every verb; after delivery,

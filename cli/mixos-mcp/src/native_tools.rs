@@ -126,7 +126,10 @@ impl MixosMcp {
         // One attempt only. A lost reply does not establish that work stopped.
         let result = match noded.call_typed(&service, command, args).await {
             Ok(PortReply::Ok { value, .. }) => value,
-            Ok(PortReply::AppError { message, .. }) => {
+            Ok(PortReply::AppError { rc, message }) => {
+                if message.trim().is_empty() {
+                    return Err(format!("rc={rc}: unknown error"));
+                }
                 return Err(message);
             }
             Err(error) => {
@@ -176,6 +179,13 @@ impl MixosMcp {
         &self,
         Parameters(p): Parameters<ServiceTarget>,
     ) -> Result<Json<NativeObservation>, String> {
+        exact_target(&p.service, "service")?;
+        if p.service.contains(['@', '.']) {
+            return Err(format!(
+                "service must be a plain Bus service name (no '@' or '.'): {}",
+                p.service
+            ));
+        }
         let command = format!("{}.commands", p.service);
         self.native_observation(p.service, &command, json!({}))
             .await
@@ -192,6 +202,13 @@ impl MixosMcp {
         &self,
         Parameters(p): Parameters<CommandInvocation>,
     ) -> Result<Json<NativeObservation>, String> {
+        exact_target(&p.service, "service")?;
+        if p.service.contains(['@', '.']) {
+            return Err(format!(
+                "service must be a plain Bus service name (no '@' or '.'): {}",
+                p.service
+            ));
+        }
         exact_target(&p.id, "id")?;
         let command = format!("{}.execute", p.service);
         let mut args = json!({"id": p.id});
@@ -273,10 +290,35 @@ mod tests {
     #[test]
     fn semantic_inputs_reject_unknown_fields() {
         assert!(
+            serde_json::from_value::<ServiceTarget>(json!({
+                "service":"busviewer", "id":"file.refresh"
+            }))
+            .is_err()
+        );
+        assert!(
             serde_json::from_value::<CommandInvocation>(json!({
                 "service":"busviewer", "id":"file.refresh", "focus":true
             }))
             .is_err()
         );
+    }
+
+    #[test]
+    fn command_invocation_distinguishes_empty_params_from_absent_or_null() {
+        let absent: CommandInvocation = serde_json::from_value(json!({
+            "service":"busviewer", "id":"file.refresh"
+        }))
+        .unwrap();
+        assert_eq!(absent.params, None);
+        let empty: CommandInvocation = serde_json::from_value(json!({
+            "service":"busviewer", "id":"file.refresh", "params":{}
+        }))
+        .unwrap();
+        assert_eq!(empty.params, Some(serde_json::Map::new()));
+        let null: CommandInvocation = serde_json::from_value(json!({
+            "service":"busviewer", "id":"file.refresh", "params":null
+        }))
+        .unwrap();
+        assert_eq!(null.params, None);
     }
 }
