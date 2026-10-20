@@ -54,7 +54,7 @@ const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 /// writer. Small on purpose: the bound is the backpressure law, not
 /// throughput.
 const PUMP_FRAMES: usize = 4;
-/// Longest `X-Cosmix-Owner` accepted; longer (or empty) values fall
+/// Longest `X-Mixos-Owner` accepted; longer (or empty) values fall
 /// back to the peer-derived owner.
 const MAX_OWNER_HEADER: usize = 128;
 
@@ -503,11 +503,11 @@ impl Lane {
         body: Body,
     ) -> Response {
         let owner = lane_owner(headers, peer);
-        let name = match string_header(headers, "x-cosmix-name") {
+        let name = match string_header(headers, "x-mixos-name") {
             Ok(name) => name,
             Err(error) => return lane_error(StatusCode::BAD_REQUEST, &error.to_string()),
         };
-        let mime = match string_header(headers, "x-cosmix-mime") {
+        let mime = match string_header(headers, "x-mixos-mime") {
             Ok(mime) => mime,
             Err(error) => return lane_error(StatusCode::BAD_REQUEST, &error.to_string()),
         }
@@ -794,11 +794,11 @@ fn stream_into_store(
 // ---- Headers and responses ----
 
 /// The lane carries no Bus identity, so an upload is pinned to
-/// `lane:<peer ip>` unless `X-Cosmix-Owner` names a more specific
+/// `lane:<peer ip>` unless `X-Mixos-Owner` names a more specific
 /// owner (non-empty, bounded length — it is a pin row key).
 fn lane_owner(headers: &HeaderMap, peer: SocketAddr) -> String {
     headers
-        .get("x-cosmix-owner")
+        .get("x-mixos-owner")
         .and_then(|v| v.to_str().ok())
         .filter(|s| !s.is_empty() && s.len() <= MAX_OWNER_HEADER)
         .map(str::to_string)
@@ -811,7 +811,7 @@ fn string_header(headers: &HeaderMap, name: &str) -> std::result::Result<Option<
     let Some(value) = values.next() else { return Ok(None); };
     if values.next().is_some() { return Err(invalid()); }
     let value = value.to_str().map_err(|_| invalid())?;
-    let decoded = if name == "x-cosmix-name" {
+    let decoded = if name == "x-mixos-name" {
         // RFC 3986: '+' is literal, never form-encoded whitespace.
         let mut bytes = value.bytes();
         let mut out = Vec::with_capacity(value.len());
@@ -824,7 +824,7 @@ fn string_header(headers: &HeaderMap, name: &str) -> std::result::Result<Option<
         }
         String::from_utf8(out).map_err(|_| invalid())?
     } else { value.to_owned() };
-    let limit = if name == "x-cosmix-name" { 1024 } else { 256 };
+    let limit = if name == "x-mixos-name" { 1024 } else { 256 };
     if decoded.is_empty() || decoded.len() > limit || decoded.chars().any(char::is_control) {
         return Err(invalid());
     }
@@ -887,7 +887,7 @@ pub(crate) mod test_support {
             quota_total_bytes: crate::core::DEFAULT_QUOTA_TOTAL_BYTES,
             quota_owner_default_bytes: crate::core::DEFAULT_QUOTA_OWNER_BYTES,
             owner_limits: BTreeMap::new(),
-            cas_group: "cosmix-blob".into(),
+            cas_group: "blob".into(),
         }
     }
 
@@ -1179,7 +1179,7 @@ mod tests {
             .set_read_timeout(Some(Duration::from_secs(10)))
             .unwrap();
         let head = "PUT /blob/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
-                    HTTP/1.1\r\nHost: blobd.test\r\nX-Cosmix-Owner: capped\r\n\
+                    HTTP/1.1\r\nHost: blobd.test\r\nX-Mixos-Owner: capped\r\n\
                     Content-Length: 2097152\r\n\r\n";
         stream.write_all(head.as_bytes()).unwrap();
         stream.write_all(b"pref").unwrap();
@@ -1197,7 +1197,7 @@ mod tests {
             .unwrap();
         let mut response_stream = stream.try_clone().unwrap();
         let reader = std::thread::spawn(move || read_response(&mut response_stream, false));
-        let head = "POST /blob HTTP/1.1\r\nHost: blobd.test\r\nX-Cosmix-Owner: capped\r\n\
+        let head = "POST /blob HTTP/1.1\r\nHost: blobd.test\r\nX-Mixos-Owner: capped\r\n\
                     Transfer-Encoding: chunked\r\n\r\n";
         stream.write_all(head.as_bytes()).unwrap();
         let chunk = pseudo_random(128 * 1024, 0xCA11);
@@ -1254,7 +1254,7 @@ mod tests {
                 let reader =
                     std::thread::spawn(move || read_response(&mut response_stream, false).0);
                 let head = format!(
-                    "POST /blob HTTP/1.1\r\nHost: blobd.test\r\nX-Cosmix-Owner: race\r\n\
+                    "POST /blob HTTP/1.1\r\nHost: blobd.test\r\nX-Mixos-Owner: race\r\n\
                      Content-Length: {}\r\n\r\n",
                     bytes.len()
                 );
@@ -1379,9 +1379,9 @@ mod tests {
             "POST",
             "/blob",
             &[
-                ("X-Cosmix-Mime", "image/png"),
-                ("X-Cosmix-Name", "shot.png"),
-                ("X-Cosmix-Owner", "capture"),
+                ("X-Mixos-Mime", "image/png"),
+                ("X-Mixos-Name", "shot.png"),
+                ("X-Mixos-Owner", "capture"),
             ],
             &bytes,
         );
@@ -1493,7 +1493,7 @@ mod tests {
             addr,
             "PUT",
             &format!("/blob/{}", blob::hex(&hash)),
-            &[("X-Cosmix-Owner", "tiny")],
+            &[("X-Mixos-Owner", "tiny")],
             b"",
         );
         assert_eq!(status, 413, "{}", String::from_utf8_lossy(&body));

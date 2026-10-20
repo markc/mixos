@@ -202,7 +202,7 @@ pub struct StoreOptions {
     pub owner_limits: BTreeMap<String, u64>,
     /// Shared-read group for the state root and CAS root (M4):
     /// chgrped and setgid at open, so `blob.path` targets are
-    /// traversable by the group's members. Default `cosmix-blob`
+    /// traversable by the group's members. Default `blob`
     /// (SPEC 10a §3.3).
     pub cas_group: String,
 }
@@ -471,7 +471,7 @@ impl Store {
 
         // M4: the CAS must be traversable by the shared-read group —
         // the unit's 0750 StateDirectory + 0027 UMask alone leaves the
-        // tree owned cosmix-blobd:cosmix-blobd and no member can walk
+        // tree owned blobd:blobd and no member can walk
         // it. Chgrp the state root and the CAS root, setgid them: every
         // shard directory mds creates below inherits group and bit, so
         // CAS files inherit the group.
@@ -1657,7 +1657,7 @@ fn shrink_owner_used(tx: &rusqlite::Transaction<'_>, owner: &str, delta: u64) ->
 /// created below the CAS root inherits the group (M4). Best-effort
 /// with a log line per failure mode: an absent group (a dev host —
 /// the tree stays daemon-owned), a refused chown (the daemon is not a
-/// member; the unit's `SupplementaryGroups=cosmix-blob` is what grants
+/// member; the unit's `SupplementaryGroups=blob` is what grants
 /// it), a refused chmod. Never fatal: a private CAS still serves
 /// verbs, it just has no same-node zero-copy readers.
 fn apply_cas_group(state_root: &Path, blobs_root: &Path, group: &str) {
@@ -1684,7 +1684,7 @@ fn apply_cas_group(state_root: &Path, blobs_root: &Path, group: &str) {
             tracing::warn!(
                 target: "blobd",
                 "chgrp {} to {group:?} failed (is the daemon a member? the unit carries \
-                 SupplementaryGroups=cosmix-blob): {}",
+                 SupplementaryGroups=blob): {}",
                 dir.display(),
                 io::Error::last_os_error()
             );
@@ -1901,7 +1901,7 @@ mod tests {
             quota_total_bytes: DEFAULT_QUOTA_TOTAL_BYTES,
             quota_owner_default_bytes: DEFAULT_QUOTA_OWNER_BYTES,
             owner_limits: BTreeMap::new(),
-            cas_group: "cosmix-blob".into(),
+            cas_group: "blob".into(),
         }
     }
 
@@ -2026,7 +2026,7 @@ mod tests {
             quota_total_bytes: 100,
             quota_owner_default_bytes: 100,
             owner_limits: BTreeMap::from([("small".into(), 10u64), ("other".into(), 1000u64)]),
-            cas_group: "cosmix-blob".into(),
+            cas_group: "blob".into(),
         };
         let store = Store::open(dir.path().join("store"), opts).unwrap();
         let big = write_src(&dir, "big.bin", &[7u8; 80]);
@@ -2329,7 +2329,7 @@ mod tests {
                 quota_total_bytes: 2 * 1024 * 1024,
                 quota_owner_default_bytes: 2 * 1024 * 1024,
                 owner_limits: BTreeMap::from([(("race").to_string(), 1024 * 1024)]),
-                cas_group: "cosmix-blob".into(),
+                cas_group: "blob".into(),
             },
         )
         .unwrap();
@@ -2457,7 +2457,7 @@ mod tests {
 
     #[test]
     fn cas_roots_and_shard_dirs_carry_the_group_and_setgid() {
-        // The test host may not have cosmix-blob, so drive the fix with
+        // The test host may not have blob, so drive the fix with
         // this process's own primary group — the mechanics under test
         // (chgrp, setgid, inheritance into mds's shard dirs and the CAS
         // files) are group-name-agnostic.
@@ -2524,7 +2524,7 @@ mod tests {
         let store = Store::open(
             dir.path().join("store"),
             StoreOptions {
-                cas_group: "cosmix-blob-definitely-not-on-any-host".into(),
+                cas_group: "blob-definitely-not-on-any-host".into(),
                 ..options()
             },
         )

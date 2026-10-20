@@ -916,7 +916,7 @@ mod tests {
                 quota_total_bytes: crate::core::DEFAULT_QUOTA_TOTAL_BYTES,
                 quota_owner_default_bytes: crate::core::DEFAULT_QUOTA_OWNER_BYTES,
                 owner_limits: BTreeMap::new(),
-                cas_group: "cosmix-blob".into(),
+                cas_group: "blob".into(),
             },
         )
         .unwrap();
@@ -1074,8 +1074,8 @@ mod tests {
         ).await;
         let client = reqwest::Client::new();
         let base = format!("http://{addr}/blob/uploads");
-        let session: Value = client.post(&base).header("X-Cosmix-Owner", "tester")
-            .header("X-Cosmix-Size", "2").send().await.unwrap().json().await.unwrap();
+        let session: Value = client.post(&base).header("X-Mixos-Owner", "tester")
+            .header("X-Mixos-Size", "2").send().await.unwrap().json().await.unwrap();
         let id = session["upload"].as_str().unwrap();
         let url = format!("{base}/{id}");
         assert_eq!(client.patch(&url).header("Content-Range", "bytes 0-0/2").body("a").send().await.unwrap().status(), 200);

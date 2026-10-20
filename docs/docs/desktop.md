@@ -28,7 +28,7 @@ Apps, services and command-line components that do not declare install profiles
 yet. They are listed on both this page and the server page until they do.
 
 - [backdrop](../backdrop/README.md) (app): The MixOS desktop background — drawn by its own program on the compositor's background layer, on every output, at native and fractional scale.
-- [blobd](../blobd/README.md) (service): The node blob store: content-addressed bytes kept in mds, with owner pins, quotas and garbage collection. The MixOS port of cosmix-blobd, with the store, the Bus citizen, the byte lane and the…
+- [blobd](../blobd/README.md) (service): The node blob store: content-addressed bytes kept in mds, with owner pins, quotas and garbage collection. The MixOS port of blobd, with the store, the Bus citizen, the byte lane and the cross-node…
 - [bridged](../bridged/README.md) (service): How bridged puts an external application with a line-delimited JSON control channel on the Bus, one instance per application, and what that exposes.
 - [busviewer](../busviewer/README.md) (app): BusViewer is the MixOS desktop app that lists the services and verbs on this node's Bus, shows each verb's description and the mesh peers, and calls one verb once with a JSON body.
 - [ced](../ced/README.md) (app): The MixOS Editor, a desktop text editor over the edit Bus service, where people and agents edit the same document at once and see each other's carets, selections and changes live.

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! Descriptor-bound local ingest. Like cosmix-lib-files' rooted_read helper,
+//! Descriptor-bound local ingest. Like files' rooted_read helper,
 //! opened directories and the returned file are authority, not checked paths.
 use super::*;
 use std::ffi::{CString, OsStr};

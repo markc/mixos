@@ -207,7 +207,7 @@ mod tests {
         PropsInput {
             lane_bind: "10.42.0.5:4210".into(),
             lane_port: 4210,
-            root: "/var/lib/cosmix/blobd".into(),
+            root: "/var/lib/mixos/blobd".into(),
             instance: "default".into(),
             counts_blobs: 3,
             counts_pins: 5,
@@ -227,7 +227,7 @@ mod tests {
         let snapshot: Value = (&props.snapshot()).into();
         assert_eq!(snapshot["lane"]["port"], 4210);
         assert_eq!(snapshot["lane"]["bind"], "10.42.0.5:4210");
-        assert_eq!(snapshot["root"], "/var/lib/cosmix/blobd");
+        assert_eq!(snapshot["root"], "/var/lib/mixos/blobd");
         assert_eq!(snapshot["counts"]["blobs"], 3);
         assert_eq!(snapshot["counts"]["pins"], 5);
         assert_eq!(snapshot["quota"]["total"]["used"], 1024);

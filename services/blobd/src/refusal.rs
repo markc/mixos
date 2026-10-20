@@ -70,8 +70,8 @@ mod tests {
     #[test]
     fn root_locked_keeps_the_flock_text() {
         assert_eq!(
-            root_locked(Path::new("/var/lib/cosmix/blobd")),
-            "another instance holds /var/lib/cosmix/blobd; one GC owner per root — exiting"
+            root_locked(Path::new("/var/lib/mixos/blobd")),
+            "another instance holds /var/lib/mixos/blobd; one GC owner per root — exiting"
         );
     }
 

@@ -15,7 +15,7 @@ One line per component with a page: kind, then install profiles. The
 
 - [assets](https://mixos.dev/assets/README.md): lib; profiles: none (library). The resolver for a pinned, immutable set of fonts, icons and emoji on the local disk, which finds, verifies and reads a published set without any downloader or daemon.
 - [backdrop](https://mixos.dev/backdrop/README.md): app; profiles: unclassified. The MixOS desktop background — drawn by its own program on the compositor's background layer, on every output, at native and fractional scale.
-- [blobd](https://mixos.dev/blobd/README.md): service; profiles: unclassified. The node blob store: content-addressed bytes kept in mds, with owner pins, quotas and garbage collection. The MixOS port of cosmix-blobd, with the store, the Bus citizen, the byte lane and the cross-node fetch.
+- [blobd](https://mixos.dev/blobd/README.md): service; profiles: unclassified. The node blob store: content-addressed bytes kept in mds, with owner pins, quotas and garbage collection. The MixOS port of blobd, with the store, the Bus citizen, the byte lane and the cross-node fetch.
 - [bridged](https://mixos.dev/bridged/README.md): service; profiles: unclassified. How bridged puts an external application with a line-delimited JSON control channel on the Bus, one instance per application, and what that exposes.
   - [bridged — changelog](https://mixos.dev/bridged/changelog.md): Release notes of the bridged component, mirrored from services/bridged/CHANGELOG.md.
 - [buildinfo](https://mixos.dev/buildinfo/README.md): lib; profiles: none (library). Compile-time build provenance for MixOS binaries, and the --version contract every binary answers.

@@ -42,7 +42,7 @@ pub const DEFAULT_VERB_MAX_CONCURRENT: usize = 8;
 /// state root and CAS root to this group with the setgid bit at open,
 /// so members read `blob.path` targets and the daemon's supplementary
 /// groups must include it (the unit's `SupplementaryGroups` line).
-pub const DEFAULT_CAS_GROUP: &str = "cosmix-blob";
+pub const DEFAULT_CAS_GROUP: &str = "blob";
 /// Default total per-upload deadline (F8): a slow client holds an
 /// upload permit and quota reservation for at most this long; expiry
 /// aborts the upload (staging deleted) and answers `408`. The 30 s
@@ -59,7 +59,7 @@ pub const DEFAULT_FETCH_DEADLINE_SECS: u64 = 3600;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Config {
     /// mds root. `None` means the caller's default (the unit's
-    /// `StateDirectory`, `/var/lib/cosmix/blobd`).
+    /// `StateDirectory`, `/var/lib/mixos/blobd`).
     pub root: Option<PathBuf>,
     /// Instance name: the Bus service is `blobd` or `blobd-<name>`,
     /// with a root per instance.
@@ -318,13 +318,13 @@ pub type ByteSize = u64;
 
 /// The documented default root, used when neither `root:` nor the
 /// unit's `$STATE_DIRECTORY` names one.
-pub const DEFAULT_ROOT: &str = "/var/lib/cosmix/blobd";
+pub const DEFAULT_ROOT: &str = "/var/lib/mixos/blobd";
 
 /// The root when the config sets none (m10): systemd's
 /// `$STATE_DIRECTORY` (the unit's `StateDirectory`, a named instance's
 /// drop-in included; the first entry when it lists several), else
 /// [`DEFAULT_ROOT`]. Never the XDG resolver — under the unit's
-/// `HOME=%S/cosmix/blobd` redirect a non-root uid resolves that
+/// `HOME=%S/mixos/blobd` redirect a non-root uid resolves that
 /// somewhere under the state dir, not to it.
 pub fn default_root(state_directory: Option<&str>) -> PathBuf {
     state_directory
@@ -341,12 +341,12 @@ mod tests {
     #[test]
     fn default_root_is_the_state_directory_else_the_documented_path() {
         assert_eq!(
-            default_root(Some("/var/lib/cosmix/blobd-two")),
-            PathBuf::from("/var/lib/cosmix/blobd-two")
+            default_root(Some("/var/lib/mixos/blobd-two")),
+            PathBuf::from("/var/lib/mixos/blobd-two")
         );
         assert_eq!(
-            default_root(Some("/var/lib/cosmix/blobd:/var/lib/other")),
-            PathBuf::from("/var/lib/cosmix/blobd")
+            default_root(Some("/var/lib/mixos/blobd:/var/lib/other")),
+            PathBuf::from("/var/lib/mixos/blobd")
         );
         assert_eq!(default_root(Some("")), PathBuf::from(DEFAULT_ROOT));
         assert_eq!(default_root(None), PathBuf::from(DEFAULT_ROOT));
@@ -364,14 +364,14 @@ mod tests {
     #[test]
     fn parses_every_key() {
         let cfg = Config::parse(
-            "# comment\nroot: /var/lib/cosmix/blobd-two\nname: two\n\
+            "# comment\nroot: /var/lib/mixos/blobd-two\nname: two\n\
              lane_bind: 10.42.0.5:4210\nlane_max_uploads: 8\nfetch_max_concurrent: 3\n\
              fetch_queue_max: 8\nverb_max_concurrent: 2\nquota_total_bytes: 100GiB\n\
              quota_owner_default_bytes: 512MiB\nquota_owner: maild=1GiB\n\
-             quota_owner: capture=2 GiB\ncas_group: cosmix-blob\nignored_key: whatever\n",
+             quota_owner: capture=2 GiB\ncas_group: blob\nignored_key: whatever\n",
         )
         .unwrap();
-        assert_eq!(cfg.root, Some(PathBuf::from("/var/lib/cosmix/blobd-two")));
+        assert_eq!(cfg.root, Some(PathBuf::from("/var/lib/mixos/blobd-two")));
         assert_eq!(cfg.name.as_deref(), Some("two"));
         assert_eq!(cfg.service_name(), "blobd-two");
         assert_eq!(
@@ -382,7 +382,7 @@ mod tests {
         assert_eq!(cfg.fetch_max_concurrent, 3);
         assert_eq!(cfg.fetch_queue_max, 8);
         assert_eq!(cfg.verb_max_concurrent, 2);
-        assert_eq!(cfg.cas_group, "cosmix-blob");
+        assert_eq!(cfg.cas_group, "blob");
         assert_eq!(
             cfg.lane_upload_deadline_secs,
             DEFAULT_LANE_UPLOAD_DEADLINE_SECS

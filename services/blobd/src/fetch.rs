@@ -2,7 +2,7 @@
 //! completion through the `blob.fetched` event.
 //!
 //! The verb **replies immediately** — never a deferred reply: the mesh
-//! response timeout is 30 s (`cosmix-lib-mesh/src/peer.rs`) and a
+//! response timeout is 30 s (the mesh peer code) and a
 //! multi-GiB pull outlives it. Completion is the `blob.fetched` event
 //! (`retain: false`) plus the `blob.stat` transition `present:false →
 //! true`.

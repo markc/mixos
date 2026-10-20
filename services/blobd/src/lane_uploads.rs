@@ -54,21 +54,21 @@ fn integer(s: &str) -> Option<u64> {
 }
 
 fn create_options(headers: &HeaderMap) -> Result<UploadCreate> {
-    let owner = text_header(headers, "x-cosmix-owner", true)?.unwrap();
-    let size = text_header(headers, "x-cosmix-size", true)?
+    let owner = text_header(headers, "x-mixos-owner", true)?.unwrap();
+    let size = text_header(headers, "x-mixos-size", true)?
         .and_then(|s| integer(&s))
-        .ok_or_else(|| StoreError::BadRequest("invalid X-Cosmix-Size".into()))?;
-    let expected_hash = text_header(headers, "x-cosmix-expect", false)?
+        .ok_or_else(|| StoreError::BadRequest("invalid X-Mixos-Size".into()))?;
+    let expected_hash = text_header(headers, "x-mixos-expect", false)?
         .map(|s| {
             if !s.is_ascii() {
-                return Err(StoreError::BadRequest("invalid X-Cosmix-Expect".into()));
+                return Err(StoreError::BadRequest("invalid X-Mixos-Expect".into()));
             }
             crate::core::reference::parse_blob_id(&s)
-                .ok_or_else(|| StoreError::BadRequest("invalid X-Cosmix-Expect".into()))
+                .ok_or_else(|| StoreError::BadRequest("invalid X-Mixos-Expect".into()))
         })
         .transpose()?;
-    let name = string_header(headers, "x-cosmix-name")?;
-    let mime = string_header(headers, "x-cosmix-mime")?.unwrap_or_else(|| {
+    let name = string_header(headers, "x-mixos-name")?;
+    let mime = string_header(headers, "x-mixos-mime")?.unwrap_or_else(|| {
         name.as_deref()
             .map(mime::sniff)
             .unwrap_or("application/octet-stream")
@@ -80,30 +80,30 @@ fn create_options(headers: &HeaderMap) -> Result<UploadCreate> {
         expected_hash,
         name,
         mime,
-        key: text_header(headers, "x-cosmix-upload-key", false)?,
+        key: text_header(headers, "x-mixos-upload-key", false)?,
     })
 }
 
 fn metadata_headers(mut response: Response, s: &UploadSession) -> Response {
     let mut headers = vec![
-        ("x-cosmix-offset", s.offset.to_string()),
-        ("x-cosmix-size", s.size.to_string()),
-        ("x-cosmix-expires", s.expires_at.to_string()),
-        ("x-cosmix-state", s.state.clone()),
-        ("x-cosmix-owner", s.owner.clone()),
-        ("x-cosmix-mime", s.mime.clone()),
+        ("x-mixos-offset", s.offset.to_string()),
+        ("x-mixos-size", s.size.to_string()),
+        ("x-mixos-expires", s.expires_at.to_string()),
+        ("x-mixos-state", s.state.clone()),
+        ("x-mixos-owner", s.owner.clone()),
+        ("x-mixos-mime", s.mime.clone()),
     ];
     if let Some(hash) = &s.expected_hash {
-        headers.push(("x-cosmix-expect", format!("b3:{hash}")));
+        headers.push(("x-mixos-expect", format!("b3:{hash}")));
     }
     if let Some(hash) = &s.actual_hash {
-        headers.push(("x-cosmix-blob", format!("b3:{hash}")));
+        headers.push(("x-mixos-blob", format!("b3:{hash}")));
     }
     if let Some(key) = &s.key {
-        headers.push(("x-cosmix-upload-key", key.clone()));
+        headers.push(("x-mixos-upload-key", key.clone()));
     }
     if let Some(name) = &s.name {
-        headers.push(("x-cosmix-name", encoded_name(name)));
+        headers.push(("x-mixos-name", encoded_name(name)));
     }
     for (name, value) in headers {
         if let Ok(value) = axum::http::HeaderValue::from_str(&value) {
@@ -151,7 +151,7 @@ fn error(error: StoreError) -> Response {
             serde_json::json!({"error": error.to_string(), "offset": offset}),
         );
         response.headers_mut().insert(
-            "x-cosmix-offset",
+            "x-mixos-offset",
             offset.to_string().parse().expect("integer header"),
         );
     }
@@ -347,14 +347,14 @@ mod tests {
     #[test]
     fn names_decode_rfc3986_and_reject_controls_and_bad_utf8() {
         let mut h = HeaderMap::new();
-        h.insert("x-cosmix-name", "caf%C3%A9+%20100%25.txt".parse().unwrap());
-        assert_eq!(string_header(&h, "x-cosmix-name").unwrap().as_deref(), Some("café+ 100%.txt"));
+        h.insert("x-mixos-name", "caf%C3%A9+%20100%25.txt".parse().unwrap());
+        assert_eq!(string_header(&h, "x-mixos-name").unwrap().as_deref(), Some("café+ 100%.txt"));
         for value in ["%", "%GG", "%FF", "%00", "%0A", "%7F", "%C2%85"] {
-            h.insert("x-cosmix-name", value.parse().unwrap());
-            assert!(string_header(&h, "x-cosmix-name").is_err(), "{value}");
+            h.insert("x-mixos-name", value.parse().unwrap());
+            assert!(string_header(&h, "x-mixos-name").is_err(), "{value}");
         }
-        h.insert("x-cosmix-mime", axum::http::HeaderValue::from_bytes("text/café".as_bytes()).unwrap());
-        assert!(string_header(&h, "x-cosmix-mime").is_err());
+        h.insert("x-mixos-mime", axum::http::HeaderValue::from_bytes("text/café".as_bytes()).unwrap());
+        assert!(string_header(&h, "x-mixos-mime").is_err());
     }
 
     #[tokio::test]
@@ -363,23 +363,23 @@ mod tests {
         let client = reqwest::Client::new();
         let name = "café+ 100%.txt";
         let encoded = encoded_name(name);
-        let response = client.post(format!("http://{addr}/blob")).header("X-Cosmix-Name", &encoded).body("v1").send().await.unwrap();
+        let response = client.post(format!("http://{addr}/blob")).header("X-Mixos-Name", &encoded).body("v1").send().await.unwrap();
         assert_eq!(response.status(), 201);
         assert_eq!(response.json::<serde_json::Value>().await.unwrap()["name"], name);
         let base = format!("http://{addr}/blob/uploads");
-        let response = client.post(&base).header("X-Cosmix-Owner", "tester").header("X-Cosmix-Size", "0").header("X-Cosmix-Name", &encoded).send().await.unwrap();
+        let response = client.post(&base).header("X-Mixos-Owner", "tester").header("X-Mixos-Size", "0").header("X-Mixos-Name", &encoded).send().await.unwrap();
         assert_eq!(response.status(), 201);
         let session: serde_json::Value = response.json().await.unwrap();
         assert_eq!(session["name"], name);
         let id = session["upload"].as_str().unwrap();
         let head = client.head(format!("{base}/{id}")).send().await.unwrap();
-        assert_eq!(head.headers()["x-cosmix-name"], encoded);
+        assert_eq!(head.headers()["x-mixos-name"], encoded);
         let committed = client.post(format!("{base}/{id}/commit")).send().await.unwrap();
         assert_eq!(committed.status(), 201);
         assert_eq!(committed.json::<serde_json::Value>().await.unwrap()["name"], name);
         assert_eq!(store.upload_status(id).unwrap().name.as_deref(), Some(name));
         for route in [format!("http://{addr}/blob"), base] {
-            let response = client.post(route).header("X-Cosmix-Owner", "tester").header("X-Cosmix-Size", "0").header("X-Cosmix-Name", "%0A").body("").send().await.unwrap();
+            let response = client.post(route).header("X-Mixos-Owner", "tester").header("X-Mixos-Size", "0").header("X-Mixos-Name", "%0A").body("").send().await.unwrap();
             assert_eq!(response.status(), 400);
         }
     }
@@ -411,9 +411,9 @@ mod tests {
         let base = format!("http://{addr}/blob/uploads");
         let created = client
             .post(&base)
-            .header("X-Cosmix-Owner", "tester")
-            .header("X-Cosmix-Size", "3")
-            .header("X-Cosmix-Upload-Key", "one")
+            .header("X-Mixos-Owner", "tester")
+            .header("X-Mixos-Size", "3")
+            .header("X-Mixos-Upload-Key", "one")
             .send()
             .await
             .unwrap();
@@ -422,9 +422,9 @@ mod tests {
         let url = format!("{base}/{}", s["upload"].as_str().unwrap());
         let again = client
             .post(&base)
-            .header("X-Cosmix-Owner", "tester")
-            .header("X-Cosmix-Size", "3")
-            .header("X-Cosmix-Upload-Key", "one")
+            .header("X-Mixos-Owner", "tester")
+            .header("X-Mixos-Size", "3")
+            .header("X-Mixos-Upload-Key", "one")
             .send()
             .await
             .unwrap();
@@ -439,8 +439,8 @@ mod tests {
             409
         );
         let head = client.head(&url).send().await.unwrap();
-        assert_eq!(head.headers()["x-cosmix-offset"], "0");
-        assert_eq!(head.headers()["x-cosmix-state"], "active");
+        assert_eq!(head.headers()["x-mixos-offset"], "0");
+        assert_eq!(head.headers()["x-mixos-state"], "active");
         assert_eq!(head.headers()["cache-control"], "no-store");
         let patch = client
             .patch(&url)
@@ -450,7 +450,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(patch.status(), 200);
-        assert_eq!(patch.headers()["x-cosmix-offset"], "3");
+        assert_eq!(patch.headers()["x-mixos-offset"], "3");
         let replay = client
             .patch(&url)
             .header("Content-Range", "bytes 0-2/3")
@@ -459,7 +459,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(replay.status(), 409);
-        assert_eq!(replay.headers()["x-cosmix-offset"], "3");
+        assert_eq!(replay.headers()["x-mixos-offset"], "3");
         let first = client.post(format!("{url}/commit")).send().await.unwrap();
         assert_eq!(first.status(), 201);
         let reference: serde_json::Value = first.json().await.unwrap();
@@ -498,7 +498,7 @@ mod tests {
         assert_eq!(
             client
                 .post(&base)
-                .header("X-Cosmix-Size", "3")
+                .header("X-Mixos-Size", "3")
                 .send()
                 .await
                 .unwrap()
@@ -508,8 +508,8 @@ mod tests {
         assert_eq!(
             client
                 .post(&base)
-                .header("X-Cosmix-Owner", "tester")
-                .header("X-Cosmix-Size", "4")
+                .header("X-Mixos-Owner", "tester")
+                .header("X-Mixos-Size", "4")
                 .send()
                 .await
                 .unwrap()
@@ -518,8 +518,8 @@ mod tests {
         );
         let s = client
             .post(&base)
-            .header("X-Cosmix-Owner", "tester")
-            .header("X-Cosmix-Size", "3")
+            .header("X-Mixos-Owner", "tester")
+            .header("X-Mixos-Size", "3")
             .send()
             .await
             .unwrap()
@@ -539,7 +539,7 @@ mod tests {
             400
         );
         assert_eq!(
-            client.head(&url).send().await.unwrap().headers()["x-cosmix-offset"],
+            client.head(&url).send().await.unwrap().headers()["x-mixos-offset"],
             "0"
         );
         assert_eq!(client.delete(&url).send().await.unwrap().status(), 204);
@@ -574,7 +574,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(refused.status(), 409);
-        assert_eq!(refused.headers()["x-cosmix-offset"], "0");
+        assert_eq!(refused.headers()["x-mixos-offset"], "0");
         assert_eq!(client.delete(&url).send().await.unwrap().status(), 409);
         assert_eq!(
             client
@@ -661,7 +661,7 @@ mod tests {
             422
         );
         assert_eq!(
-            client.head(&url).send().await.unwrap().headers()["x-cosmix-state"],
+            client.head(&url).send().await.unwrap().headers()["x-mixos-state"],
             "failed"
         );
         let (empty, _) = store
