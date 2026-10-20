@@ -219,7 +219,10 @@ mod tests {
         let hash = digest["sha256"].as_str().unwrap();
         assert_eq!(hash, format!("{:x}", Sha256::digest(&bytes)));
         assert_eq!(hash.len(), 64);
-        assert!(hash.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)));
+        assert!(
+            hash.bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        );
         assert!(serde_json::to_vec(&digest).unwrap().len() < EXECUTED_RESULT_BYTES);
         assert_eq!(bounded(digest.clone()), digest);
         assert_eq!(bounded(Value::Null), Value::Null);

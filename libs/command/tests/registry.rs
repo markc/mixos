@@ -456,8 +456,17 @@ fn denied_precedes_both_enabled_and_disabled_without_running() {
         r.authorize = Some(|_| Err("refused"));
         let mut s = Counter { locked, n: 0 };
         let error = r.execute("count.bump", &mut s, json!({"bad": true}), Origin::Bus);
-        assert_eq!(error, Err(Error::Denied { id: "count.bump", reason: "refused" }));
-        assert_eq!(error.unwrap_err().to_string(), "command \"count.bump\" is denied: refused");
+        assert_eq!(
+            error,
+            Err(Error::Denied {
+                id: "count.bump",
+                reason: "refused"
+            })
+        );
+        assert_eq!(
+            error.unwrap_err().to_string(),
+            "command \"count.bump\" is denied: refused"
+        );
         assert_eq!(s.n, 0);
         assert!(r.take_executed().0.is_empty());
     }
@@ -474,7 +483,11 @@ fn execute_request_is_strict_and_reports_its_schema() {
     let body = json!({"id": "x", "params": {"n": 2}});
     let request: ExecuteRequest = serde_json::from_value(body.clone()).unwrap();
     assert_eq!(serde_json::to_value(request).unwrap(), body);
-    for bad in [json!({}), json!({"id": 1}), json!({"id": "x", "extra": true})] {
+    for bad in [
+        json!({}),
+        json!({"id": 1}),
+        json!({"id": "x", "extra": true}),
+    ] {
         assert!(serde_json::from_value::<ExecuteRequest>(bad).is_err());
     }
     let schema = serde_json::to_value(schema_for!(ExecuteRequest)).unwrap();
@@ -489,7 +502,14 @@ fn journal_bounds_both_values_and_preserves_the_accepted_body() {
     c.run = |_, _| Ok(json!({"returned": "y".repeat(5000)}));
     r.add(c);
     let params = json!({"accepted": "x".repeat(5000)});
-    let result = r.execute("count.set", &mut Counter::default(), params.clone(), Origin::Bus).unwrap();
+    let result = r
+        .execute(
+            "count.set",
+            &mut Counter::default(),
+            params.clone(),
+            Origin::Bus,
+        )
+        .unwrap();
     assert!(result["returned"].as_str().unwrap().len() > 4096);
     let event = r.take_executed().0.remove(0);
     assert_eq!(event.params, command::executed::bounded(params));
@@ -499,11 +519,23 @@ fn journal_bounds_both_values_and_preserves_the_accepted_body() {
     c.run = |_, _| Ok(json!({"n": 9}));
     r.add(c);
     for params in [Value::Null, json!({})] {
-        r.execute("defaults", &mut Counter::default(), params.clone(), Origin::Bus).unwrap();
+        r.execute(
+            "defaults",
+            &mut Counter::default(),
+            params.clone(),
+            Origin::Bus,
+        )
+        .unwrap();
         assert_eq!(r.take_executed().0[0].params, params);
     }
     let r = registry();
-    r.execute("count.bump", &mut Counter::default(), json!({}), Origin::Bus).unwrap();
+    r.execute(
+        "count.bump",
+        &mut Counter::default(),
+        json!({}),
+        Origin::Bus,
+    )
+    .unwrap();
     r.note("external", Origin::Ui);
     for run in r.take_executed().0 {
         assert_eq!(run.params, Value::Null);

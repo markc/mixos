@@ -905,10 +905,7 @@ mod tests {
         let strings = Strings::new(FTL);
         let row = serde_json::to_value(&r.describe(&state, &strings)[1]).unwrap();
         assert_eq!(row["shortcut"], serde_json::Value::Null);
-        assert_eq!(
-            row["more"],
-            serde_json::json!(["Ctrl+U"])
-        );
+        assert_eq!(row["more"], serde_json::json!(["Ctrl+U"]));
         assert!(
             r.model(&egui::Context::default(), &state, &strings)[0].entries[1]
                 .row()
@@ -1045,7 +1042,12 @@ mod tests {
                 Key::B
             )]
         );
-        assert_eq!(ui.describe(&Counter::default(), &Strings::new(FTL))[0].shortcut.as_deref(), Some("Ctrl+Alt+Shift+B"));
+        assert_eq!(
+            ui.describe(&Counter::default(), &Strings::new(FTL))[0]
+                .shortcut
+                .as_deref(),
+            Some("Ctrl+Alt+Shift+B")
+        );
     }
 
     #[test]

@@ -78,7 +78,10 @@ mod tests {
 
     #[test]
     fn chords_parse_and_round_trip() {
-        assert_eq!(chord_text(&parse_chord("Shift+Ctrl+Alt+B").unwrap()), "Ctrl+Alt+Shift+B");
+        assert_eq!(
+            chord_text(&parse_chord("Shift+Ctrl+Alt+B").unwrap()),
+            "Ctrl+Alt+Shift+B"
+        );
         for text in [
             "F2",
             "Ctrl+B",

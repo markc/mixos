@@ -436,7 +436,11 @@ impl<S> Registry<S> {
             None => (c.run)(state, &params)?,
         };
         if c.class.journal() {
-            let params = if c.params.is_none() { Value::Null } else { params };
+            let params = if c.params.is_none() {
+                Value::Null
+            } else {
+                params
+            };
             self.journal
                 .borrow_mut()
                 .record(c.id, origin, params, result.clone());
