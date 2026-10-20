@@ -288,7 +288,10 @@ for success or 1 for an error. Bare verb names also work. For example:</p>
 <p><code>indexd bridge</code> connects to the local node's Bus once and forwards one call
 per stdin line, flushing each reply immediately. It does not open the index
 or require model configuration. Keep one process alive for repeated requests,
-including through <code>ssh -T user@example.test /opt/mixos/bin/indexd bridge</code>.</p>
+including through <code>ssh -T user@example.test /opt/mixos/bin/indexd bridge</code>.
+The bridge reads <code>--node-config PATH</code>, then <code>MIXOS_NODE_CONFIG</code>, defaulting to
+<code>/opt/mixos/etc/node.conf.mix</code>, the same file pinned by the system unit.
+It derives the broker address from that file rather than user config discovery.</p>
 <pre><code class="language-json">{"id":1,"verb":"indexd.search","body":{"query":"service dependencies","limit":3}}
 </code></pre>
 <p>Each stdout line is <code>{"id":1,"rc":0,"body":{...}}</code>, with the original JSON

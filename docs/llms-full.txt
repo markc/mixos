@@ -7644,6 +7644,9 @@ indexd -c /etc/mixos/indexd/config.conf.mix call indexd.search '{"query":"servic
 per stdin line, flushing each reply immediately. It does not open the index
 or require model configuration. Keep one process alive for repeated requests,
 including through `ssh -T user@example.test /opt/mixos/bin/indexd bridge`.
+The bridge reads `--node-config PATH`, then `MIXOS_NODE_CONFIG`, defaulting to
+`/opt/mixos/etc/node.conf.mix`, the same file pinned by the system unit.
+It derives the broker address from that file rather than user config discovery.
 
 ```json
 {"id":1,"verb":"indexd.search","body":{"query":"service dependencies","limit":3}}

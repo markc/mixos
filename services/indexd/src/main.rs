@@ -20,7 +20,11 @@ enum Command {
     /// Parse configuration without loading weights.
     CheckConfig,
     /// Forward NDJSON requests to the local indexd Bus service.
-    Bridge,
+    Bridge {
+        /// Node configuration (defaults to the system service's config).
+        #[arg(long)]
+        node_config: Option<PathBuf>,
+    },
     /// Execute one verb in-process, without the Bus.
     Call {
         verb: String,
@@ -40,9 +44,18 @@ fn main() -> Result<()> {
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?;
-    if matches!(cli.command, Command::Bridge) {
+    if let Command::Bridge { node_config } = &cli.command {
+        let node_config = node_config
+            .clone()
+            .or_else(|| std::env::var_os("MIXOS_NODE_CONFIG").map(PathBuf::from))
+            .unwrap_or_else(|| PathBuf::from("/opt/mixos/etc/node.conf.mix"));
         return runtime.block_on(async {
-            let client = ::bus::client_helpers::connect_anonymous_default().await;
+            let client = async {
+                let source = std::fs::read_to_string(&node_config)?;
+                let url = ::bus::client::url_from_node_config(&source)
+                    .ok_or_else(|| anyhow::anyhow!("invalid node config: {}", node_config.display()))?;
+                ::bus::native_client::NodedClient::connect_anonymous(&url).await
+            }.await;
             let result = indexd::bridge::run(
                 tokio::io::BufReader::new(tokio::io::stdin()),
                 tokio::io::stdout(),
@@ -91,7 +104,7 @@ fn main() -> Result<()> {
                 }
                 Ok(())
             }
-            Command::Bridge | Command::CheckConfig => unreachable!(),
+            Command::Bridge { .. } | Command::CheckConfig => unreachable!(),
         }
     });
     drop(engine);

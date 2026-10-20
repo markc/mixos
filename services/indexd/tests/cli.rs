@@ -90,8 +90,10 @@ async fn serve_reconnect_bridge_flush_eof_and_sigterm() {
     let mut bridge = Child(
         tokio::process::Command::new(env!("CARGO_BIN_EXE_indexd"))
             .arg("bridge")
+            .arg("--node-config")
+            .arg(&node_config)
             .env_remove("MIXOS_NODED_URL")
-            .env("MIXOS_NODE_CONFIG", &node_config)
+            .env("MIXOS_NODE_CONFIG", "/nonexistent/overridden.conf.mix")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .spawn()
