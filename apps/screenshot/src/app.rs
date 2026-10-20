@@ -2100,10 +2100,7 @@ mod tests {
         assert_eq!(runs[0].params["kind"], "arrow");
         assert_eq!(runs[0].result["id"], id);
         assert_eq!(runs[1].params, json!({"id":id, "dx":5, "dy":0}));
-        assert_eq!(
-            runs[1].result["objects"][0]["shape"]["points"][0]["x"],
-            6.0
-        );
+        assert_eq!(runs[1].result["objects"][0]["shape"]["points"][0]["x"], 6.0);
         assert_eq!(
             runs[2].params,
             json!({"crop":{"x":0,"y":0,"width":50,"height":40}})
