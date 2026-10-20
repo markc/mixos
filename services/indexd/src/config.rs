@@ -38,20 +38,33 @@ fn default_source_types() -> BTreeMap<String, SourceTypeSpec> {
     [
         ("doc", vec!["path", "domain"], None),
         ("journal", vec!["path", "domain", "date"], Some("date")),
-        ("memory", vec!["path", "domain", "date", "generator"], Some("date")),
+        (
+            "memory",
+            vec!["path", "domain", "date", "generator"],
+            Some("date"),
+        ),
         ("mix-script", vec!["file", "domain"], None),
         ("notes", vec!["path", "domain"], None),
-        ("observation", vec!["observer", "tool", "observed_at", "domain"], None),
+        (
+            "observation",
+            vec!["observer", "tool", "observed_at", "domain"],
+            None,
+        ),
         ("plan", vec!["path", "domain"], None),
         ("rust-doc", vec!["file", "kind", "domain"], None),
         ("skill", vec!["name", "trigger", "approach"], None),
         ("spec", vec!["path", "domain"], None),
     ]
     .into_iter()
-    .map(|(name, required, date_field)| (name.into(), SourceTypeSpec {
-        required: required.into_iter().map(str::to_owned).collect(),
-        date_field: date_field.map(str::to_owned),
-    }))
+    .map(|(name, required, date_field)| {
+        (
+            name.into(),
+            SourceTypeSpec {
+                required: required.into_iter().map(str::to_owned).collect(),
+                date_field: date_field.map(str::to_owned),
+            },
+        )
+    })
     .collect()
 }
 
@@ -312,11 +325,33 @@ mod path_tests {
 
     #[test]
     fn default_source_policy_matches_deployed_config() {
-        let deployed: Config = ::config::from_conf_mix_str(include_str!("../tests/source_types.conf.mix")).unwrap();
+        let deployed: Config =
+            ::config::from_conf_mix_str(include_str!("../tests/source_types.conf.mix")).unwrap();
         assert_eq!(Config::default().source_types, deployed.source_types);
-        assert!(validate_store_entry("journal", r#"{"path":"/srv/a.md","domain":"mixos","date":"2026-10-20"}"#, &deployed).is_ok());
-        assert!(validate_store_entry("journal", r#"{"path":"/srv/a.md","domain":"mixos"}"#, &deployed).is_err());
-        assert!(validate_store_entry("skill", r#"{"name":"name","trigger":"trigger","approach":"approach"}"#, &deployed).is_ok());
+        assert!(
+            validate_store_entry(
+                "journal",
+                r#"{"path":"/srv/a.md","domain":"mixos","date":"2026-10-20"}"#,
+                &deployed
+            )
+            .is_ok()
+        );
+        assert!(
+            validate_store_entry(
+                "journal",
+                r#"{"path":"/srv/a.md","domain":"mixos"}"#,
+                &deployed
+            )
+            .is_err()
+        );
+        assert!(
+            validate_store_entry(
+                "skill",
+                r#"{"name":"name","trigger":"trigger","approach":"approach"}"#,
+                &deployed
+            )
+            .is_ok()
+        );
     }
 
     #[test]

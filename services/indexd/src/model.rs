@@ -489,6 +489,7 @@ pub(crate) fn cleanup_f16_tmp_files(weights_path: &Path) -> Result<()> {
 pub(crate) fn validate_f16_weights(source: &Path, target: &Path) -> Result<()> {
     // SAFETY: both weight files remain immutable while their mappings are alive.
     let source = unsafe { candle_core::safetensors::MmapedSafetensors::new(source)? };
+    // SAFETY: the target stays immutable until validation drops this mapping.
     let target = unsafe { candle_core::safetensors::MmapedSafetensors::new(target)? };
     let source_tensors = source.tensors();
     let target_tensors = target.tensors();
