@@ -26,7 +26,7 @@ end
 
 $PACKAGES = {
   "mixos-server": ["mix", "mixos-mcp", "noded", "editd", "settingsd", "portald", "maild"],
-  "mixos-desktop": ["compd", "ced", "dopus", "prefs", "busviewer", "monitor", "screenshot"]
+  "mixos-desktop": ["compd", "ced", "dopus", "prefs", "busviewer", "monitor", "screenshot", "indexd"]
 }
 -- Desktop entries ship with their app: a packaged binary NAME with an
 -- apps/NAME/assets/dev.mixos.NAME.desktop carries it, so binary and entry
@@ -87,6 +87,11 @@ for $pkg in sort(keys($PACKAGES))
     chmod($top .. "/share/doc/" .. $pkg .. "/" .. $d, 0o644)
   end
   if $pkg == "mixos-desktop" then
+    mkdir($top .. "/share/indexd/units", {parents: true})
+    for $u in ["indexd.service", "sysusers.conf", "config.conf.mix.example"]
+      copy($source .. "/services/indexd/units/" .. $u, $top .. "/share/indexd/units/" .. $u)
+      chmod($top .. "/share/indexd/units/" .. $u, 0o644)
+    end
     run_argv_must([$mix, $source .. "/libs/toolkit/scripts/install_licenses.mix",
       "--root", $top .. "/share"], {timeout: 30})
   end

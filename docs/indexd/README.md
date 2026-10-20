@@ -1,15 +1,13 @@
 ---
 title: The semantic index service
-description: How indexd embeds text locally with nomic-embed-text-v1.5 and answers vector search over the Bus, so agents can find relevant skills, docs and journals. Being ported from cosmix-indexd.
+description: Local semantic search over the MixOS Bus, with an ssh bridge and an in-process CLI.
 ---
 
 # The semantic index service
 
-> **Status: being ported.** This page describes the target design. The port
-> plan is `_plan/2026-10-20-indexd-port.md` in the planning hub. The local
-> engine is implemented; `serve` opens the store and exits with a stage-4
-> notice. Bus registration, `bridge` and the full verb reference arrive in
-> stage 4.
+> **Status: Bus wired.** The engine, reconnecting daemon, bridge, CLI and
+> system unit are implemented. Corpus parity and production cutover are
+> separate steps; the tokenizer golden remains deferred until parity testing.
 
 `indexd` stores text chunks with their embeddings and returns the nearest
 matches for a query. Embeddings are computed locally on the CPU with
@@ -31,8 +29,115 @@ On the Bus, the service is `indexd`:
 
 ```mix
 send indexd indexd.stats
-send indexd indexd.search query="how is SRS set up on rca" limit=3
+send indexd indexd.search query="how are service dependencies declared" limit=3
 ```
+
+Each body is a JSON object. Clients may include an `action` equal to the verb
+suffix; a conflicting value is rejected. Replies contain the verb's JSON
+directly. Errors use rc 10 and a string `error` field. Metadata is always a
+JSON-encoded string, including each element of `store.metadata`.
+
+| Verb | Request fields | Reply |
+|---|---|---|
+| `indexd.embed` | `texts`, optional `prefix` | `embeddings` |
+| `indexd.store` | `texts`, `source`, `metadata` | `stored`, `duplicates`, `ids` |
+| `indexd.search` | `query`, `limit`, optional `source`, `metadata_filter` | `results` |
+| `indexd.update` | `id`, optional `content`, `metadata`, `source` | `updated`, `re_embedded` |
+| `indexd.delete` | `ids` | `deleted` |
+| `indexd.list` | optional `source`, `limit`, `offset` | `items`, `total` |
+| `indexd.feedback` | `id`, `useful` | `id`, `feedback_score` |
+| `indexd.supersede` | `old_id`, `new_id`, optional `reason` | `updated` |
+| `indexd.stale` | optional `source`, `never_retrieved_age_days`, `low_value_min_retrievals`, `long_dormant_days`, `per_bucket_limit` | three buckets, `total_chunks` |
+| `indexd.stats` | none | counts, model/cache/queue statistics, `by_source` |
+| `indexd.index_file` | absolute `path`, optional `content`, `source`, `domain`, `background` | `indexed`, `sections`; background acknowledgement when queued |
+
+`search` excludes superseded chunks before applying its limit. Filter entries
+have `field`, `op` (`eq`, `gt`, `lt`, `gte`, `lte`, `contains`) and `value`.
+
+## CLI and bridge
+
+`indexd -c /etc/mixos/indexd/config.conf.mix call indexd.stats` opens the
+configured engine in-process and prints one JSON reply, with exit status 0
+for success or 1 for an error. Bare verb names also work. For example:
+
+```text
+indexd -c /etc/mixos/indexd/config.conf.mix call indexd.search '{"query":"service dependencies","limit":3}'
+```
+
+`indexd bridge` connects to the local node's Bus once and forwards one call
+per stdin line, flushing each reply immediately. It does not open the index
+or require model configuration. Keep one process alive for repeated requests,
+including through `ssh -T user@example.test /opt/mixos/bin/indexd bridge`.
+
+```json
+{"id":1,"verb":"indexd.search","body":{"query":"service dependencies","limit":3}}
+```
+
+Each stdout line is `{"id":1,"rc":0,"body":{...}}`, with the original JSON
+`id` preserved. Application errors retain rc 10 and the JSON error body.
+Transport failures use `{"id":1,"rc":-1,"error":"..."}`. EOF exits 0;
+stdout contains only protocol replies. The bridge never retries a call.
+
+## Operating the system service
+
+`indexd serve` registers service `indexd` using the standard Bus connection
+helper, advertises the eleven verbs above, and reconnects with backoff.
+`MIXOS_NODE_CONFIG` selects the system broker, as for dnsd. The supplied unit
+pins `/opt/mixos/etc/node.conf.mix`; no broker URL is embedded in indexd.
+SIGTERM stops admission and completes accepted Bus calls before exit.
+The model loads lazily on the blocking pool under the inference permit and
+unloads after the configured idle interval (300 seconds by default).
+
+Configuration lookup is `-c/--config`, then
+`/etc/mixos/indexd/config.conf.mix`, then
+`$XDG_CONFIG_HOME/mixos/indexd.conf.mix` (or the equivalent under `$HOME/.config`).
+`indexd -c FILE check-config` validates the local `config.json`,
+`tokenizer.json` and `model.safetensors` before loading any weights. HF snapshot
+symlinks are supported. There is no database environment override;
+`service.vectors_db` is authoritative. `MIXOS_INDEXD_SEARCH` remains the
+engine's one-release rollback switch (`sqlite` selects SQLite search).
+
+The default domain map is empty, so unmapped files use `general`. Configure
+absolute prefixes; the daemon does not expand `~` in domain keys or file paths.
+The sample at `services/indexd/units/config.conf.mix.example` includes:
+
+```text
+domains: {map: {
+  "/home/user/Projects/mixos": "mixos",
+  "/home/user/.mix": "mix",
+  "/home/user/.ns": "ns",
+  "/home/user/.mc": "mc"
+}}
+```
+
+Replace `/home/user` with the operator's absolute home path. Set `model_dir`
+to the pre-seeded snapshot; no model download happens at runtime.
+`ProtectHome=yes` hides home directories from the service: callers must pass
+`index_file.content` for those paths, or use `store`. `index_file` rejects a
+tilde-prefixed path even when content is supplied.
+
+The component owns `indexd.service` and `sysusers.conf`; the desktop release
+bundle carries the standalone binary and these files under `share/indexd/units/`,
+following the component-owned maild packaging pattern. Install the binary
+under `/opt/mixos/bin`, the unit under `/etc/systemd/system`, sysusers under
+`/usr/lib/sysusers.d/indexd.conf`, and a customised config under
+`/etc/mixos/indexd/config.conf.mix`. Apply sysusers before starting the service.
+The unit requires system `noded.service`, runs as `indexd:indexd`, limits memory
+to 2 GiB, sets `MALLOC_ARENA_MAX=2`, and hardens filesystem, devices and kernel
+access. TCP address families remain available for the configured broker.
+`MemoryDenyWriteExecute=yes` follows the former candle CPU service.
+systemd creates the state and configuration directories, so no tmpfiles entry
+is needed. Before cutover, back up existing data and explicitly change its
+ownership from the legacy account; the new account does not reuse its UID.
+
+## Tests
+
+On a CBC worker, `cargo test -p indexd` runs the engine tests, registry checks,
+real daemon/bridge pipe tests, and `services/indexd/tests/bus_test.mix` against
+`libs/test-broker`. Set `MIXOS_TEST_MIX` if Mix is not installed at
+`/opt/mixos/bin/mix`. Embeddings are deterministic cache fixtures; no model
+is needed. The tokenizer parity test stays ignored unless
+`INDEXD_TEST_TOKENIZER` is supplied with the stage-7 golden.
 
 ## Indexd is not exhaustive
 

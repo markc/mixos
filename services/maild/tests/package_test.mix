@@ -11,7 +11,7 @@ $case_dir = $root .. "/target/mixos/maild-package-" .. uuid()
 mkdir($case_dir .. "/bin", {parents:true})
 try
   copy($binary, $case_dir .. "/bin/mix")
-  for $name in ["noded", "editd", "settingsd", "portald", "compd", "ced", "dopus", "prefs", "busviewer", "monitor", "screenshot"]
+  for $name in ["noded", "editd", "settingsd", "portald", "compd", "ced", "dopus", "prefs", "busviewer", "monitor", "screenshot", "indexd"]
     copy("/usr/bin/true", $case_dir .. "/bin/" .. $name)
   end
   run_argv_must([$mix_bin, $root .. "/tools/package.mix", "--release", $version,

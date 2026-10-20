@@ -20,7 +20,7 @@ On every MixOS system.
 
 ## Desktop components
 
-- [indexd](../indexd/README.md) (service): How indexd embeds text locally with nomic-embed-text-v1.5 and answers vector search over the Bus, so agents can find relevant skills, docs and journals. Being ported from cosmix-indexd.
+- [indexd](../indexd/README.md) (service): Local semantic search over the MixOS Bus, with an ssh bridge and an in-process CLI.
 - [monitor](../monitor/README.md) (app): Monitor is the MixOS task manager, showing the processes and performance that monitord reports for this node or any node on the mesh, with End task and Kill for this node's processes.
 
 ## Unclassified

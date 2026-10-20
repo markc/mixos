@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="How indexd embeds text locally with nomic-embed-text-v1.5 and answers vector search over the Bus, so agents can find relevant skills, docs and journals. Being ported from cosmix-indexd.">
+    <meta name="description" content="Local semantic search over the MixOS Bus, with an ssh bridge and an in-process CLI.">
     <!-- Favicons from share/brand: the SVG follows the visitor's light/dark preference. -->
     <link rel="icon" href="/favicon.ico?v=400d5816f3" sizes="any">
     <link rel="icon" type="image/svg+xml" href="/_web/favicon.svg?v=4eb2d64677">
@@ -209,6 +209,9 @@
                 <div class="panel-content">
                     <nav id="toc-nav">
                         <a href="#asking-it">Asking it</a>
+                        <a href="#cli-and-bridge">CLI and bridge</a>
+                        <a href="#operating-the-system-service">Operating the system service</a>
+                        <a href="#tests">Tests</a>
                         <a href="#indexd-is-not-exhaustive">Indexd is not exhaustive</a>
                     </nav>
                 </div>
@@ -236,11 +239,9 @@
         <article id="content-doc" class="prose" data-pagefind-body>
 <h1 id="the-semantic-index-service">The semantic index service</h1>
 <blockquote>
-<p><strong>Status: being ported.</strong> This page describes the target design. The port
-plan is <code>_plan/2026-10-20-indexd-port.md</code> in the planning hub. The local
-engine is implemented; <code>serve</code> opens the store and exits with a stage-4
-notice. Bus registration, <code>bridge</code> and the full verb reference arrive in
-stage 4.</p>
+<p><strong>Status: Bus wired.</strong> The engine, reconnecting daemon, bridge, CLI and
+system unit are implemented. Corpus parity and production cutover are
+separate steps; the tokenizer golden remains deferred until parity testing.</p>
 </blockquote>
 <p><code>indexd</code> stores text chunks with their embeddings and returns the nearest
 matches for a query. Embeddings are computed locally on the CPU with
@@ -257,8 +258,94 @@ Bus call.</p>
 <h2 id="asking-it">Asking it</h2>
 <p>On the Bus, the service is <code>indexd</code>:</p>
 <pre><code class="language-mix">send indexd indexd.stats
-send indexd indexd.search query="how is SRS set up on rca" limit=3
+send indexd indexd.search query="how are service dependencies declared" limit=3
 </code></pre>
+<p>Each body is a JSON object. Clients may include an <code>action</code> equal to the verb
+suffix; a conflicting value is rejected. Replies contain the verb's JSON
+directly. Errors use rc 10 and a string <code>error</code> field. Metadata is always a
+JSON-encoded string, including each element of <code>store.metadata</code>.</p>
+<table><thead><tr><th>Verb</th><th>Request fields</th><th>Reply</th></tr></thead><tbody>
+<tr><td><code>indexd.embed</code></td><td><code>texts</code>, optional <code>prefix</code></td><td><code>embeddings</code></td></tr>
+<tr><td><code>indexd.store</code></td><td><code>texts</code>, <code>source</code>, <code>metadata</code></td><td><code>stored</code>, <code>duplicates</code>, <code>ids</code></td></tr>
+<tr><td><code>indexd.search</code></td><td><code>query</code>, <code>limit</code>, optional <code>source</code>, <code>metadata_filter</code></td><td><code>results</code></td></tr>
+<tr><td><code>indexd.update</code></td><td><code>id</code>, optional <code>content</code>, <code>metadata</code>, <code>source</code></td><td><code>updated</code>, <code>re_embedded</code></td></tr>
+<tr><td><code>indexd.delete</code></td><td><code>ids</code></td><td><code>deleted</code></td></tr>
+<tr><td><code>indexd.list</code></td><td>optional <code>source</code>, <code>limit</code>, <code>offset</code></td><td><code>items</code>, <code>total</code></td></tr>
+<tr><td><code>indexd.feedback</code></td><td><code>id</code>, <code>useful</code></td><td><code>id</code>, <code>feedback_score</code></td></tr>
+<tr><td><code>indexd.supersede</code></td><td><code>old_id</code>, <code>new_id</code>, optional <code>reason</code></td><td><code>updated</code></td></tr>
+<tr><td><code>indexd.stale</code></td><td>optional <code>source</code>, <code>never_retrieved_age_days</code>, <code>low_value_min_retrievals</code>, <code>long_dormant_days</code>, <code>per_bucket_limit</code></td><td>three buckets, <code>total_chunks</code></td></tr>
+<tr><td><code>indexd.stats</code></td><td>none</td><td>counts, model/cache/queue statistics, <code>by_source</code></td></tr>
+<tr><td><code>indexd.index_file</code></td><td>absolute <code>path</code>, optional <code>content</code>, <code>source</code>, <code>domain</code>, <code>background</code></td><td><code>indexed</code>, <code>sections</code>; background acknowledgement when queued</td></tr>
+</tbody></table>
+<p><code>search</code> excludes superseded chunks before applying its limit. Filter entries
+have <code>field</code>, <code>op</code> (<code>eq</code>, <code>gt</code>, <code>lt</code>, <code>gte</code>, <code>lte</code>, <code>contains</code>) and <code>value</code>.</p>
+<h2 id="cli-and-bridge">CLI and bridge</h2>
+<p><code>indexd -c /etc/mixos/indexd/config.conf.mix call indexd.stats</code> opens the
+configured engine in-process and prints one JSON reply, with exit status 0
+for success or 1 for an error. Bare verb names also work. For example:</p>
+<pre><code class="language-text">indexd -c /etc/mixos/indexd/config.conf.mix call indexd.search '{"query":"service dependencies","limit":3}'
+</code></pre>
+<p><code>indexd bridge</code> connects to the local node's Bus once and forwards one call
+per stdin line, flushing each reply immediately. It does not open the index
+or require model configuration. Keep one process alive for repeated requests,
+including through <code>ssh -T user@example.test /opt/mixos/bin/indexd bridge</code>.</p>
+<pre><code class="language-json">{"id":1,"verb":"indexd.search","body":{"query":"service dependencies","limit":3}}
+</code></pre>
+<p>Each stdout line is <code>{"id":1,"rc":0,"body":{...}}</code>, with the original JSON
+<code>id</code> preserved. Application errors retain rc 10 and the JSON error body.
+Transport failures use <code>{"id":1,"rc":-1,"error":"..."}</code>. EOF exits 0;
+stdout contains only protocol replies. The bridge never retries a call.</p>
+<h2 id="operating-the-system-service">Operating the system service</h2>
+<p><code>indexd serve</code> registers service <code>indexd</code> using the standard Bus connection
+helper, advertises the eleven verbs above, and reconnects with backoff.
+<code>MIXOS_NODE_CONFIG</code> selects the system broker, as for dnsd. The supplied unit
+pins <code>/opt/mixos/etc/node.conf.mix</code>; no broker URL is embedded in indexd.
+SIGTERM stops admission and completes accepted Bus calls before exit.
+The model loads lazily on the blocking pool under the inference permit and
+unloads after the configured idle interval (300 seconds by default).</p>
+<p>Configuration lookup is <code>-c/--config</code>, then
+<code>/etc/mixos/indexd/config.conf.mix</code>, then
+<code>$XDG_CONFIG_HOME/mixos/indexd.conf.mix</code> (or the equivalent under <code>$HOME/.config</code>).
+<code>indexd -c FILE check-config</code> validates the local <code>config.json</code>,
+<code>tokenizer.json</code> and <code>model.safetensors</code> before loading any weights. HF snapshot
+symlinks are supported. There is no database environment override;
+<code>service.vectors_db</code> is authoritative. <code>MIXOS_INDEXD_SEARCH</code> remains the
+engine's one-release rollback switch (<code>sqlite</code> selects SQLite search).</p>
+<p>The default domain map is empty, so unmapped files use <code>general</code>. Configure
+absolute prefixes; the daemon does not expand <code>~</code> in domain keys or file paths.
+The sample at <code>services/indexd/units/config.conf.mix.example</code> includes:</p>
+<pre><code class="language-text">domains: {map: {
+  "/home/user/Projects/mixos": "mixos",
+  "/home/user/.mix": "mix",
+  "/home/user/.ns": "ns",
+  "/home/user/.mc": "mc"
+}}
+</code></pre>
+<p>Replace <code>/home/user</code> with the operator's absolute home path. Set <code>model_dir</code>
+to the pre-seeded snapshot; no model download happens at runtime.
+<code>ProtectHome=yes</code> hides home directories from the service: callers must pass
+<code>index_file.content</code> for those paths, or use <code>store</code>. <code>index_file</code> rejects a
+tilde-prefixed path even when content is supplied.</p>
+<p>The component owns <code>indexd.service</code> and <code>sysusers.conf</code>; the desktop release
+bundle carries the standalone binary and these files under <code>share/indexd/units/</code>,
+following the component-owned maild packaging pattern. Install the binary
+under <code>/opt/mixos/bin</code>, the unit under <code>/etc/systemd/system</code>, sysusers under
+<code>/usr/lib/sysusers.d/indexd.conf</code>, and a customised config under
+<code>/etc/mixos/indexd/config.conf.mix</code>. Apply sysusers before starting the service.
+The unit requires system <code>noded.service</code>, runs as <code>indexd:indexd</code>, limits memory
+to 2 GiB, sets <code>MALLOC_ARENA_MAX=2</code>, and hardens filesystem, devices and kernel
+access. TCP address families remain available for the configured broker.
+<code>MemoryDenyWriteExecute=yes</code> follows the former candle CPU service.
+systemd creates the state and configuration directories, so no tmpfiles entry
+is needed. Before cutover, back up existing data and explicitly change its
+ownership from the legacy account; the new account does not reuse its UID.</p>
+<h2 id="tests">Tests</h2>
+<p>On a CBC worker, <code>cargo test -p indexd</code> runs the engine tests, registry checks,
+real daemon/bridge pipe tests, and <code>services/indexd/tests/bus_test.mix</code> against
+<code>libs/test-broker</code>. Set <code>MIXOS_TEST_MIX</code> if Mix is not installed at
+<code>/opt/mixos/bin/mix</code>. Embeddings are deterministic cache fixtures; no model
+is needed. The tokenizer parity test stays ignored unless
+<code>INDEXD_TEST_TOKENIZER</code> is supplied with the stage-7 golden.</p>
 <h2 id="indexd-is-not-exhaustive">Indexd is not exhaustive</h2>
 <p>indexd answers "what is relevant to X", quickly and approximately, from an
 index that can lag the files. To prove that something does <strong>not</strong> occur, use

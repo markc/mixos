@@ -101,7 +101,7 @@ jobs:
           ( while sleep 60; do free -m | sed -n 2,3p; done ) &
           cargo build --release --locked \
             -p system -p mixos-mcp -p noded -p editd -p settingsd -p portald \
-            -p compd -p ced -p dopus -p prefs -p busviewer -p screenshot
+            -p compd -p ced -p dopus -p prefs -p busviewer -p screenshot -p indexd
 
       - name: Package
         run: target/release/mix tools/package.mix --release "$VERSION" --arch ${{ matrix.arch }}
