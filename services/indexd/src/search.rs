@@ -50,17 +50,9 @@ pub(crate) fn search_exact(
     metadata_filters: &[MetadataFilter],
     max_response_bytes: usize,
 ) -> Result<(Vec<SearchResult>, SearchPhases)> {
-    let _reader = LongReaderGuard::new();
-    let mut phases = SearchPhases::default();
-    let vguard = index.read().expect("search index RwLock poisoned");
-    let conn = Connection::open_with_flags(db_path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
-    conn.execute_batch("PRAGMA busy_timeout=5000;")?;
-    let tx = conn.unchecked_transaction()?;
-
     // Candidate preselection — the SAME predicate semantics the old
     // path applied post-KNN (json_extract comparisons, LIKE contains),
     // now applied BEFORE distance selection.
-    let t0 = Instant::now();
     let mut sql = String::from("SELECT c.id FROM chunks c WHERE c.superseded_by IS NULL");
     let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
     if !source_filter.is_empty() {
@@ -68,6 +60,15 @@ pub(crate) fn search_exact(
         params.push(Box::new(source_filter.to_string()));
     }
     append_metadata_filters(&mut sql, &mut params, metadata_filters, false)?;
+
+    let _reader = LongReaderGuard::new();
+    let mut phases = SearchPhases::default();
+    let vguard = index.read().expect("search index RwLock poisoned");
+    let conn = Connection::open_with_flags(db_path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    conn.execute_batch("PRAGMA busy_timeout=5000;")?;
+    let tx = conn.unchecked_transaction()?;
+
+    let t0 = Instant::now();
     let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
     let mut stmt = tx.prepare(&sql)?;
     let candidates: Vec<i64> = stmt

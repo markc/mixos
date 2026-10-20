@@ -59,12 +59,29 @@ impl CheckpointOwed {
     }
 }
 
+fn validate_metadata_filter_fields(filters: &[MetadataFilter]) -> Result<()> {
+    for filter in filters {
+        let field = filter.field.as_bytes();
+        anyhow::ensure!(
+            field
+                .first()
+                .is_some_and(|c| c.is_ascii_alphanumeric() || *c == b'_')
+                && field
+                    .iter()
+                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, b'_' | b'.' | b'-')),
+            "metadata filter.field must be non-empty and match ^[A-Za-z0-9_][A-Za-z0-9_.-]*$"
+        );
+    }
+    Ok(())
+}
+
 pub(crate) fn append_metadata_filters(
     sql: &mut String,
     params: &mut Vec<Box<dyn rusqlite::types::ToSql>>,
     filters: &[MetadataFilter],
     for_delete: bool,
 ) -> Result<()> {
+    validate_metadata_filter_fields(filters)?;
     for filter in filters {
         if for_delete {
             anyhow::ensure!(
@@ -825,6 +842,7 @@ impl VectorDb {
             !ids.is_empty() || !filters.is_empty(),
             "delete requires non-empty ids or filter"
         );
+        validate_metadata_filter_fields(filters)?;
         let mut deleted = 0usize;
         // Single transaction so a multi-id delete is one commit (IMMEDIATE via the
         // connection's default behavior set in `open()`), gated on the
@@ -1196,6 +1214,88 @@ mod tests {
         }
         assert_eq!(db.stats("").unwrap().total_vectors, 1);
         assert_eq!(db.search_index.read().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn metadata_fields_are_validated_before_sql_on_search_and_delete() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("fields.db");
+        let path = path.to_str().unwrap();
+        let missing_path = dir.path().join("missing.db");
+        let db = VectorDb::open(path, vindex::VectorDtype::F32, 65536).unwrap();
+        db.store_revalidated(
+            &[Some(vec![1.0; EMBEDDING_DIM])],
+            &[None],
+            &["keep".into()],
+            "doc",
+            &[r#"{"path":"x","a":{"b":"x"}}"#.into()],
+        )
+        .unwrap();
+        // A delete that starts SQL before validation would fail with a nested
+        // transaction error; exact search would fail opening the missing file.
+        let tx = db.conn.unchecked_transaction().unwrap();
+        for field in ["$", "a'b", "a\"b", "a[0]", "", ".a", "-a", "é", "a\n"] {
+            let filters: Vec<MetadataFilter> = serde_json::from_value(serde_json::json!([
+                {"field":field,"op":"eq","value":"x"}
+            ]))
+            .unwrap();
+            let errors = [
+                db.delete_filtered(&[], &filters).unwrap_err(),
+                db.search(&vec![1.0; EMBEDDING_DIM], 10, "", &filters, BUS_BODY_LIMIT)
+                    .unwrap_err(),
+                search_exact(
+                    missing_path.to_str().unwrap(),
+                    &db.search_index,
+                    &vec![1.0; EMBEDDING_DIM],
+                    10,
+                    "",
+                    &filters,
+                    BUS_BODY_LIMIT,
+                )
+                .err()
+                .unwrap(),
+            ];
+            for error in errors {
+                let error = error.to_string();
+                assert!(error.contains("metadata filter.field"), "{field:?}: {error}");
+                assert!(error.contains("^[A-Za-z0-9_][A-Za-z0-9_.-]*$"));
+            }
+        }
+        tx.rollback().unwrap();
+        assert_eq!(db.stats("").unwrap().total_vectors, 1);
+        assert_eq!(db.search_index.read().unwrap().len(), 1);
+        for field in ["path", "a.b", "_", "0", "a-b"] {
+            let filters: Vec<MetadataFilter> = serde_json::from_value(serde_json::json!([
+                {"field":field,"op":"eq","value":"x"}
+            ]))
+            .unwrap();
+            let fallback = db
+                .search(&vec![1.0; EMBEDDING_DIM], 10, "", &filters, BUS_BODY_LIMIT)
+                .unwrap();
+            let (exact, _) = search_exact(
+                path,
+                &db.search_index,
+                &vec![1.0; EMBEDDING_DIM],
+                10,
+                "",
+                &filters,
+                BUS_BODY_LIMIT,
+            )
+            .unwrap();
+            let expected = usize::from(matches!(field, "path" | "a.b"));
+            for results in [fallback, exact] {
+                assert_eq!(results.len(), expected, "{field}");
+            }
+            // A valid field is accepted even when another predicate prevents
+            // this validation test from removing its shared fixture.
+            assert_eq!(db.delete_filtered(&[-1], &filters).unwrap(), 0);
+        }
+        let filters: Vec<MetadataFilter> = serde_json::from_value(serde_json::json!([
+            {"field":"path","op":"eq","value":"x"},
+            {"field":"a.b","op":"eq","value":"x"}
+        ]))
+        .unwrap();
+        assert_eq!(db.delete_filtered(&[], &filters).unwrap(), 1);
     }
 
     #[test]
