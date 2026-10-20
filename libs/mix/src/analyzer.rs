@@ -6521,8 +6521,10 @@ fn unambiguous_value(before: &[crate::token::SpannedToken], next: Option<&Token>
             Token::LBracket => {
                 let prev = i.checked_sub(1).map(|j| &before[j].token);
                 let field = i.checked_sub(2).map(|j| &before[j].token);
-                if matches!(prev, Some(Token::Variable(_) | Token::RBracket | Token::RParen))
-                    || matches!(field, Some(Token::Dot))
+                if matches!(
+                    prev,
+                    Some(Token::Variable(_) | Token::RBracket | Token::RParen)
+                ) || matches!(field, Some(Token::Dot))
                 {
                     return false;
                 }

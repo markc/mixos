@@ -2775,11 +2775,8 @@ mod tests {
         // No per-send timeout: only the probe's own connect bound applies.
         let bound = PROBE_CONNECT_TIMEOUT + std::time::Duration::from_secs(1);
         let started = std::time::Instant::now();
-        let result = tokio::time::timeout(
-            bound,
-            h.send("svc.example", "do_something", &Value::Nil),
-        )
-        .await;
+        let result =
+            tokio::time::timeout(bound, h.send("svc.example", "do_something", &Value::Nil)).await;
         held.abort();
         let (rc, _) = result.expect("send exceeded the connect bound").unwrap();
         assert_eq!(rc, RC_UNAVAILABLE);
