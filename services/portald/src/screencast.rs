@@ -134,7 +134,28 @@ impl ScreenCast {
             return Err(PortalError::InvalidArgument(format!("session {session} already exists")));
         }
         self.sessions.insert(session.as_str(), &owner);
-        request::export(connection, &request, &owner).await?;
+        if let Err(error) = request::export(connection, &request, &owner).await {
+            session::end(connection, &self.sessions, session.as_str(), false).await;
+            return Err(error.into());
+        }
+        // The owner may have left before this call was dispatched, in which
+        // case its NameOwnerChanged already went by: nothing would retire
+        // the session.
+        let present = zbus::fdo::DBusProxy::new(connection)
+            .await?
+            .name_has_owner(header.sender().map(|name| name.clone().into()).ok_or_else(|| {
+                PortalError::InvalidArgument("no sender".into())
+            })?)
+            .await
+            .unwrap_or(false);
+        if !present {
+            session::end(connection, &self.sessions, session.as_str(), false).await;
+            let _ = connection
+                .object_server()
+                .remove::<request::Request, _>(request.clone())
+                .await;
+            return Err(PortalError::InvalidArgument(format!("{owner} left the bus")));
+        }
         tracing::info!(%owner, %session, "screencast session created");
         let mut results = HashMap::new();
         results.insert("session_handle", Value::from(session.as_str().to_owned()));
@@ -188,6 +209,7 @@ impl ScreenCast {
         let owner = sender(&header)?;
         let request = handle::request_path(&owner, &handle::token(&options, "handle_token", &self.counter)?)?;
         let mut cursor_mode = CURSOR_HIDDEN;
+        let mut epoch = 0;
         check_session(&self.sessions, &session_handle, &owner, |state| {
             let Some(mode) = state.cursor_mode else {
                 return Err(PortalError::InvalidArgument("SelectSources first".into()));
@@ -197,15 +219,22 @@ impl ScreenCast {
             }
             state.starting = true;
             cursor_mode = mode;
+            epoch = state.epoch;
             Ok(())
         })?;
-        request::export(connection, &request, &owner).await?;
+        if let Err(error) = request::export(connection, &request, &owner).await {
+            set_starting(&self.sessions, session_handle.as_str(), epoch, false);
+            return Err(error.into());
+        }
         tokio::spawn(start_cast(
             connection.clone(),
             self.sessions.clone(),
-            session_handle,
-            request.clone(),
-            owner,
+            Target {
+                session: session_handle,
+                epoch,
+                request: request.clone(),
+                owner,
+            },
             cursor_mode,
         ));
         Ok(request)
@@ -230,44 +259,56 @@ impl ScreenCast {
     }
 }
 
-/// Picks the source, starts the stream and answers `Start`. A cast whose
-/// request was closed, or whose session went away meanwhile, is stopped.
-async fn start_cast(
-    connection: Connection,
-    sessions: Sessions,
+/// How long `Start` waits for compd to list its outputs. A wedged compositor
+/// must not leave the request unanswered.
+const OUTPUTS_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// The session and request one `Start` answers.
+struct Target {
     session: OwnedObjectPath,
+    /// The session's epoch when `Start` was accepted.
+    epoch: u64,
     request: OwnedObjectPath,
     owner: String,
-    cursor_mode: u32,
-) {
-    let fail = |why: String| {
-        let connection = connection.clone();
-        let sessions = sessions.clone();
-        let session = session.clone();
-        let request = request.clone();
-        let owner = owner.clone();
-        async move {
-            tracing::warn!(%owner, %session, "screencast not started: {why}");
-            sessions.with(|map| {
-                if let Some(state) = map.get_mut(session.as_str()) {
-                    state.starting = false;
-                }
-            });
-            request::respond(&connection, &request, &owner, request::FAILED, HashMap::new()).await;
-        }
-    };
+}
 
-    let outputs = match tokio::task::spawn_blocking(capture::outputs).await {
-        Ok(Ok(outputs)) => outputs,
-        Ok(Err(error)) => return fail(error.to_string()).await,
-        Err(error) => return fail(error.to_string()).await,
+/// Sets `starting` on the session if it is still the same session.
+fn set_starting(sessions: &Sessions, path: &str, epoch: u64, starting: bool) {
+    sessions.with(|map| {
+        if let Some(state) = map.get_mut(path)
+            && state.epoch == epoch
+        {
+            state.starting = starting;
+        }
+    });
+}
+
+/// Answers `Start` with failure and lets the session be started again.
+async fn refuse(connection: &Connection, sessions: &Sessions, target: &Target, why: &str) {
+    tracing::warn!(owner = %target.owner, session = %target.session, "screencast not started: {why}");
+    set_starting(sessions, target.session.as_str(), target.epoch, false);
+    request::respond(connection, &target.request, &target.owner, request::FAILED, HashMap::new()).await;
+}
+
+/// Picks the source, starts the stream and answers `Start`. A cast whose
+/// request was closed, or whose session went away or was replaced meanwhile,
+/// is stopped.
+async fn start_cast(connection: Connection, sessions: Sessions, target: Target, cursor_mode: u32) {
+    let outputs = match tokio::time::timeout(OUTPUTS_TIMEOUT, tokio::task::spawn_blocking(capture::outputs)).await {
+        Ok(Ok(Ok(outputs))) => outputs,
+        Ok(Ok(Err(error))) => return refuse(&connection, &sessions, &target, &error.to_string()).await,
+        Ok(Err(error)) => return refuse(&connection, &sessions, &target, &error.to_string()).await,
+        Err(_) => return refuse(&connection, &sessions, &target, "compd did not list its outputs in time").await,
     };
     let Some(output) = outputs
         .into_iter()
         .find(|output| output.mode_width > 0 && output.mode_height > 0)
     else {
-        return fail("compd advertises no output with a current mode".into()).await;
+        return refuse(&connection, &sessions, &target, "compd advertises no output with a current mode").await;
     };
+    let Target {
+        session, owner, ..
+    } = &target;
     tracing::info!(
         %owner, %session, output = %output.name,
         "granting monitor screencast (trusted session, no prompt)"
@@ -279,22 +320,23 @@ async fn start_cast(
     .await
     {
         Ok(Ok(cast)) => cast,
-        Ok(Err(error)) => return fail(error.to_string()).await,
-        Err(error) => return fail(error.to_string()).await,
+        Ok(Err(error)) => return refuse(&connection, &sessions, &target, &error.to_string()).await,
+        Err(error) => return refuse(&connection, &sessions, &target, &error.to_string()).await,
     };
     let node_id = cast.node_id;
 
     // Install the cast before answering, so OpenPipeWireRemote right after
-    // the Response finds it.
+    // the Response finds it. Only into the session Start was accepted for.
     let leftover = sessions.with(|map| match map.get_mut(session.as_str()) {
-        Some(state) => {
+        Some(state) if state.epoch == target.epoch => {
             state.cast = Some(cast);
             None
         }
-        None => Some(cast),
+        _ => Some(cast),
     });
     if let Some(cast) = leftover {
         tokio::task::spawn_blocking(move || drop(cast));
+        request::respond(&connection, &target.request, owner, request::FAILED, HashMap::new()).await;
         return;
     }
 
@@ -306,27 +348,33 @@ async fn start_cast(
     let mut results = HashMap::new();
     results.insert("streams", Value::from(vec![(node_id, properties)]));
     results.insert("persist_mode", Value::from(0u32));
-    if !request::respond(&connection, &request, &owner, request::SUCCESS, results).await {
+    if !request::respond(&connection, &target.request, owner, request::SUCCESS, results).await {
         // The owner closed the request: cancel the cast.
         let cast = sessions.with(|map| {
-            map.get_mut(session.as_str()).and_then(|state| {
-                state.starting = false;
-                state.cast.take()
-            })
+            map.get_mut(session.as_str())
+                .filter(|state| state.epoch == target.epoch)
+                .and_then(|state| {
+                    state.starting = false;
+                    state.cast.take()
+                })
         });
         tokio::task::spawn_blocking(move || drop(cast));
         return;
     }
     tracing::info!(%owner, %session, node_id, output = %output.name, "screencast started");
-    watch(connection, sessions, session.to_string());
+    watch(connection, sessions, session.to_string(), target.epoch);
 }
 
 /// Ends the session with `Closed` once its cast stops on its own.
-fn watch(connection: Connection, sessions: Sessions, session: String) {
+fn watch(connection: Connection, sessions: Sessions, session: String, epoch: u64) {
     tokio::spawn(async move {
         loop {
             tokio::time::sleep(Duration::from_secs(1)).await;
-            let state = sessions.with(|map| map.get(&session).map(|s| s.cast.as_ref().is_some_and(|c| c.ended())));
+            let state = sessions.with(|map| {
+                map.get(&session)
+                    .filter(|s| s.epoch == epoch)
+                    .map(|s| s.cast.as_ref().is_some_and(|c| c.ended()))
+            });
             match state {
                 None => return,
                 Some(false) => continue,

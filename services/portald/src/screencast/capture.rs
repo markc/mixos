@@ -252,9 +252,12 @@ fn recycle(pool: &mut Vec<Arc<Frame>>, width: u32, height: u32, stride: u32) -> 
 }
 
 /// Captures `output_name` until `stop` is raised or capture fails, handing
-/// each frame to `sink`. Frames come no faster than `max_fps`.
+/// each frame to `sink`. Frames come no faster than `max_fps`. Every frame is
+/// `size` (the mode the stream was offered at) with tight rows; a mode change
+/// ends the capture, since the stream cannot follow it.
 pub fn run(
     output_name: &str,
+    size: (u32, u32),
     overlay_cursor: bool,
     max_fps: u32,
     stop: &AtomicBool,
@@ -290,7 +293,19 @@ pub fn run(
             frame.destroy();
             anyhow::bail!("compd offered no shm layout for {output_name}");
         };
-        let (format, _, _, _) = layout;
+        let (format, width, height, stride) = layout;
+        if (width, height) != size {
+            frame.destroy();
+            anyhow::bail!(
+                "{output_name} changed mode from {}x{} to {width}x{height}",
+                size.0,
+                size.1
+            );
+        }
+        if stride < width * 4 {
+            frame.destroy();
+            anyhow::bail!("screencopy stride {stride} is too small for width {width}");
+        }
         if format != wl_shm::Format::Xrgb8888 as u32 && format != wl_shm::Format::Argb8888 as u32 {
             frame.destroy();
             anyhow::bail!("unsupported screencopy format {format:#x}");
@@ -321,18 +336,24 @@ pub fn run(
         failures = 0;
         first = false;
 
-        let (_, width, height, stride) = layout;
-        let mut picture = recycle(&mut frames, width, height, stride);
+        // Rows are repacked tight (width * 4): the stream was offered that
+        // stride, whatever padding compd puts in its shm layout.
+        let tight = width * 4;
+        let mut picture = recycle(&mut frames, width, height, tight);
         let target = &mut Arc::get_mut(&mut picture).expect("unshared frame").data;
         let source = buffer.bytes();
-        if state.copy.y_invert {
-            let row = stride as usize;
+        if !state.copy.y_invert && stride == tight {
+            target.copy_from_slice(source);
+        } else {
+            let (row, pitch) = (tight as usize, stride as usize);
             for (y, line) in target.chunks_exact_mut(row).enumerate() {
-                let from = (height as usize - 1 - y) * row;
+                let from = if state.copy.y_invert {
+                    (height as usize - 1 - y) * pitch
+                } else {
+                    y * pitch
+                };
                 line.copy_from_slice(&source[from..from + row]);
             }
-        } else {
-            target.copy_from_slice(source);
         }
         frames.push(picture.clone());
         frames.truncate(4);

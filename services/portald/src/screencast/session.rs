@@ -5,6 +5,7 @@
 //! the stream handle is dropped with it.
 use crate::screencast::stream;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use zbus::message::Header;
 use zbus::object_server::{ObjectServer, SignalEmitter};
@@ -16,6 +17,9 @@ pub const VERSION: u32 = 1;
 /// What one session has been told and what it runs.
 pub struct State {
     pub owner: String,
+    /// Unique per inserted session. A path can be reused after `Close`, so
+    /// work started for one session checks this before touching the entry.
+    pub epoch: u64,
     /// `cursor_mode` from `SelectSources`; `None` until sources are selected.
     pub cursor_mode: Option<u32>,
     /// Set once `Start` has been accepted; a session starts at most once.
@@ -24,25 +28,32 @@ pub struct State {
 }
 
 #[derive(Clone, Default)]
-pub struct Sessions(Arc<Mutex<HashMap<String, State>>>);
+pub struct Sessions {
+    map: Arc<Mutex<HashMap<String, State>>>,
+    epochs: Arc<AtomicU64>,
+}
 
 impl Sessions {
     pub fn with<R>(&self, f: impl FnOnce(&mut HashMap<String, State>) -> R) -> R {
-        f(&mut self.0.lock().unwrap_or_else(PoisonError::into_inner))
+        f(&mut self.map.lock().unwrap_or_else(PoisonError::into_inner))
     }
 
-    pub fn insert(&self, path: &str, owner: &str) {
+    /// Registers a session and returns its epoch.
+    pub fn insert(&self, path: &str, owner: &str) -> u64 {
+        let epoch = self.epochs.fetch_add(1, Ordering::Relaxed);
         self.with(|map| {
             map.insert(
                 path.to_owned(),
                 State {
                     owner: owner.to_owned(),
+                    epoch,
                     cursor_mode: None,
                     starting: false,
                     cast: None,
                 },
             )
         });
+        epoch
     }
 
     /// Removes a session, stopping its capture. The handle is dropped outside

@@ -93,7 +93,12 @@ pub fn start(output: OutputInfo, overlay_cursor: bool, max_fps: u32) -> anyhow::
             Ok(handle)
         }
         Ok(Err(error)) => Err(error),
-        Err(_) => anyhow::bail!("PipeWire did not publish the screencast node in time"),
+        Err(mpsc::RecvTimeoutError::Timeout) => {
+            anyhow::bail!("PipeWire did not publish the screencast node in time")
+        }
+        Err(mpsc::RecvTimeoutError::Disconnected) => {
+            anyhow::bail!("the screencast stream ended before PipeWire published it (see the log)")
+        }
     }
 }
 
@@ -330,21 +335,24 @@ fn serve(
         &mut params,
     )?;
 
-    let capture = {
+    // Detached: a capture thread stuck in a Wayland call to a wedged compd
+    // must not hold up the stream, the session or portald's shutdown. It
+    // sees `stop` at its next poll and exits on its own.
+    {
         let name = output.name.clone();
         let stop = stop.clone();
         std::thread::Builder::new()
             .name("portald-capture".into())
             .spawn(move || {
                 let frames = sender.clone();
-                if let Err(error) = capture::run(&name, overlay_cursor, max_fps, &stop, |frame| {
+                if let Err(error) = capture::run(&name, (width, height), overlay_cursor, max_fps, &stop, |frame| {
                     let _ = frames.send(Message::Frame(frame));
                 }) {
                     tracing::warn!(%error, output = %name, "screencast capture ended");
                 }
                 let _ = sender.send(Message::CaptureEnded);
-            })?
-    };
+            })?;
+    }
 
     let _attached = receiver.attach(mainloop.loop_(), {
         let mainloop = mainloop.clone();
@@ -397,6 +405,5 @@ fn serve(
     mainloop.run();
     stop.store(true, Ordering::Relaxed);
     let _ = stream.disconnect();
-    let _ = capture.join();
     Ok(())
 }
