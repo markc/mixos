@@ -748,6 +748,7 @@ impl AccountView {
         };
         self.tickets.open += 1;
         self.tickets.open_mailbox = None;
+        self.tickets.open_requested = None;
         self.tickets.ids += 1;
     }
 
@@ -759,6 +760,9 @@ impl AccountView {
     fn select_mailbox(&mut self, id: String, limit: u32, work: &mut Vec<Work>) {
         self.mail.selected = Some(id.clone());
         self.mail.open = None;
+        // An open still loading was for the old mailbox: its answer is
+        // dropped, so it is no longer asked for.
+        self.tickets.open_requested = None;
         // The old mailbox's rows go at once, so none of them can be opened
         // under the new selection while its page loads.
         self.mail.emails.clear();
@@ -2693,7 +2697,14 @@ impl State {
                             }
                             view.mail.open = Some(email);
                         }
-                        Err(ref error) => self.status = error.to_string(),
+                        Err(ref error) => {
+                            // Nothing is loading now: the email shown stays
+                            // the one its actions answer, and the failed row
+                            // can be clicked again to retry.
+                            view.tickets.open_requested =
+                                view.mail.open.as_ref().map(|e| e.id.clone());
+                            self.status = error.to_string();
+                        }
                     },
                     Done::Marked(Ok(())) => self.work.push(Work::FetchMailboxes {
                         account: tag.account.clone(),
@@ -3012,6 +3023,17 @@ impl State {
                 view.mail.table.apply(&event, SelectionMode::Multi);
                 view.mail.everything = false;
             }
+            // The right-clicked row's menu: its Reply, Forward and Send as
+            // New are for that email, so it opens (a row outside the
+            // selection was selected and opened just before). A selection
+            // it is part of stays, for the row actions.
+            TableEvent::ContextMenu { key, .. } => {
+                let opened = view.mail.open.as_ref().is_some_and(|e| e.id == *key)
+                    || view.tickets.open_requested.as_deref() == Some(key.as_str());
+                if !opened {
+                    self.open_email(account, key.clone());
+                }
+            }
             // Offered only once the whole page is selected: the count is
             // the mailbox's total, which the list already has (its ids are
             // fetched only when an action needs them).
@@ -3323,6 +3345,7 @@ impl State {
                         .is_some_and(|e| gone.contains(&e.id))
                     {
                         view.mail.open = None;
+                        view.tickets.open_requested = None;
                     }
                     self.work.push(Work::FetchMailboxes {
                         account: tag.account.clone(),
@@ -3927,6 +3950,7 @@ impl State {
             if let Some(open) = view.mail.open.as_ref().filter(|e| gone.contains(&e.id)) {
                 advance = neighbour(&view.mail.emails, &open.id, gone);
                 view.mail.open = None;
+                view.tickets.open_requested = None;
             }
             view.mail.emails.retain(|e| !gone.contains(&e.id));
             view.mail.table.selection.clear();
@@ -5159,6 +5183,12 @@ impl State {
             && current.as_deref() != Some(identity.as_str())
         {
             self.choose_sender(account.to_owned(), Some(identity));
+            // Part of opening it, not an edit: an untouched compose still
+            // closes without offering to keep a draft.
+            if let Some(compose) = &mut self.compose {
+                compose.revision = 0;
+                compose.saved = 0;
+            }
         }
         true
     }
@@ -8077,6 +8107,7 @@ pub(crate) mod tests {
         let compose = state.compose.clone().expect("a compose");
         assert_eq!(compose.identity, "sales");
         assert_eq!(compose.draft.from, "sales@a.example.invalid");
+        assert!(!compose.keepable(), "the switch is not an edit");
         // From someone else: the account's default.
         state.compose = None;
         state.account_mut("a").unwrap().mail.open = Some(unread_email("E1"));
@@ -8101,6 +8132,87 @@ pub(crate) mod tests {
         assert!(enabled(&state, "mail.delete"));
         state.account_mut("a").unwrap().mail.open = Some(unread_email("E2"));
         assert!(enabled(&state, "mail.reply"), "E2 loaded");
+    }
+
+    #[test]
+    fn a_failed_open_gives_the_actions_back_to_the_email_shown() {
+        let mut state = reading();
+        let registry = crate::commands::registry();
+        assert!(state.open_email("a", "E2".into()));
+        let ticket = state
+            .take_work()
+            .iter()
+            .find_map(|w| match w {
+                Work::OpenEmail { ticket, .. } => Some(*ticket),
+                _ => None,
+            })
+            .unwrap();
+        assert!(!(registry.get("mail.reply").unwrap().enabled)(&state));
+        let tag = tag(&state, "a");
+        state.apply(Event::Account(
+            tag,
+            Done::Opened(ticket, None, Box::new(Err(jmap::Error::Protocol("gone".into())))),
+        ));
+        assert!(
+            (registry.get("mail.reply").unwrap().enabled)(&state),
+            "E1 is still shown and answers Reply"
+        );
+        // And a click on E2 tries it again.
+        state.mail_table(
+            "a",
+            TableEvent::Selected {
+                index: 1,
+                key: "E2".into(),
+                pick: toolkit::datatable::Pick::Only,
+            },
+        );
+        assert!(
+            state
+                .take_work()
+                .iter()
+                .any(|w| matches!(w, Work::OpenEmail { id, .. } if id == "E2"))
+        );
+    }
+
+    #[test]
+    fn a_right_click_inside_a_selection_opens_that_row_and_keeps_the_selection() {
+        let mut state = reading();
+        state.account_mut("a").unwrap().mail.table.selection = vec!["E1".into(), "E2".into()];
+        state.take_work();
+        state.mail_table(
+            "a",
+            TableEvent::ContextMenu {
+                index: 1,
+                key: "E2".into(),
+            },
+        );
+        assert!(
+            state
+                .take_work()
+                .iter()
+                .any(|w| matches!(w, Work::OpenEmail { id, .. } if id == "E2")),
+            "the menu's Reply is for E2"
+        );
+        assert_eq!(
+            state.account("a").unwrap().mail.table.selection,
+            ["E1", "E2"],
+            "Delete and Move still act on both"
+        );
+        // On the open row it opens nothing again.
+        state.account_mut("a").unwrap().mail.open = Some(unread_email("E2"));
+        state.mail_table(
+            "a",
+            TableEvent::ContextMenu {
+                index: 1,
+                key: "E2".into(),
+            },
+        );
+        assert!(
+            !state
+                .take_work()
+                .iter()
+                .any(|w| matches!(w, Work::OpenEmail { .. }))
+        );
     }
 
     fn registry_run(state: &mut State, id: &str) {
