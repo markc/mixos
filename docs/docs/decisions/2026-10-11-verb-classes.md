@@ -8,6 +8,17 @@ description: Every registered Bus verb declares a class (intent, query, input or
 Status: accepted 2026-10-11. Amends AGENTS.md §5 (Bus verbs are wire
 contracts).
 
+Amended 2026-10-20 by [commands take parameters and return results](2026-10-20-commands-take-parameters.md).
+Registry schema 4 adds a trailing `schema` field to every verb and family:
+`none` for no body or an empty object, `pending` through 2026-11-30 inclusive
+in UTC, or a Rust serde request type deriving `JsonSchema`. Type paths match
+`^[a-z][a-z0-9_]*(::[A-Za-z][A-Za-z0-9_]*)+$`, such as
+`command::ExecuteRequest`. The gate accepts schema 2, 3 or 4 for fixtures;
+the repository registry must be 4. It refuses `schema` below version 4,
+missing or malformed body schemas at version 4, and expired `pending`
+placeholders, naming each expired verb or family. `--today YYYY-MM-DD`
+overrides the UTC date for tests.
+
 ## The decision
 
 - **The verb registry moves to schema 2.** Every entry in

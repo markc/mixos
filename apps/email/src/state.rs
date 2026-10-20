@@ -1238,6 +1238,7 @@ pub mod code {
     pub const BUSY: &str = "BUSY";
     pub const UNKNOWN_VERB: &str = "UNKNOWN_VERB";
     pub const UNKNOWN_COMMAND: &str = "UNKNOWN_COMMAND";
+    pub const DENIED: &str = "DENIED";
     pub const DISABLED: &str = "DISABLED";
 }
 

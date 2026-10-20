@@ -51,8 +51,8 @@ pub fn chord_text(shortcut: &KeyboardShortcut) -> String {
     let m = shortcut.modifiers;
     for (on, name) in [
         (m.command || m.ctrl || m.mac_cmd, "Ctrl+"),
-        (m.shift, "Shift+"),
         (m.alt, "Alt+"),
+        (m.shift, "Shift+"),
     ] {
         if on {
             out.push_str(name);
@@ -78,6 +78,10 @@ mod tests {
 
     #[test]
     fn chords_parse_and_round_trip() {
+        assert_eq!(
+            chord_text(&parse_chord("Shift+Ctrl+Alt+B").unwrap()),
+            "Ctrl+Alt+Shift+B"
+        );
         for text in [
             "F2",
             "Ctrl+B",

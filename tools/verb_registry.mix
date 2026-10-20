@@ -1,17 +1,23 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Copyright 2026 Mark Constable <mc@mixos.dev>
--- version: 0.4.0
+-- version: 0.5.0
 -- The Bus verb registry gate (AGENTS.md §5) for docs/docs/spec/bus/verbs.conf.mix:
 --
--- - schema 2 or 3 (schema 1 is refused);
--- - verbs: every entry is a map of exactly name, owner, version, status and
---   class, all strings; names are unique and well formed, owners are
+-- - schema 2, 3 or 4 (the repository must use 4);
+-- - schema 4 adds a trailing schema string to every verb and family: none,
+--   pending (through 2026-11-30 inclusive in UTC), or a Rust request type path
+--   deriving JsonSchema, matching ^[a-z][a-z0-9_]*(::[A-Za-z][A-Za-z0-9_]*)+$;
+--   time() and date_parse are UTC. --today YYYY-MM-DD overrides the test date;
+-- - verbs in schema 4: every entry is a map of exactly name, owner, version,
+--   status, class and schema, all strings (schema 2/3 omit schema);
+--   names are unique and well formed, owners are
 --   component names, versions are release versions (MAJOR.MINOR.PATCH, no
 --   leading zeros), statuses and classes come from their fixed sets
 --   (classes: docs/docs/decisions/2026-10-11-verb-classes.md);
--- - families (schema 3 only, additive; docs/docs/decisions/2026-10-13-instance-verb-families.md):
---   each is a map of exactly pattern, owner, members, version, status and
---   class. pattern is <app>.<suffix> and unique; members is "instances" (the
+-- - families (schema 3 and 4; docs/docs/decisions/2026-10-13-instance-verb-families.md):
+--   each is a map of exactly pattern, owner, members, version, status, class
+--   and schema (schema 3 omits schema). pattern is <app>.<suffix> and unique;
+--   members is "instances" (the
 --   runtime members are instances, not listed) or a nonempty list of unique
 --   Bus service names. A listed member may be shared by families of one owner
 --   only. It may equal a concrete verb prefix only when every concrete verb
@@ -34,16 +40,16 @@
 -- Bus name rule, the reserved names and the registry's collisions. Neither
 -- check reads a config's contents or a token, or touches the network.
 --
---   mix tools/verb_registry.mix [FILE] [--source ROOT] [--instances DIR]
+--   mix tools/verb_registry.mix [FILE] [--source ROOT] [--instances DIR] [--today YYYY-MM-DD]
 --
--- With no FILE the repository registry is checked, and its source is checked
+-- With no FILE the repository registry must be schema 4, and its source is checked
 -- against the repository root unless --source names another root. With an
 -- explicit FILE and no --source the check is data only. Exit 0 when clean,
 -- 1 when any check fails, 2 on a usage error.
 $root = dirname(dirname(realpath($0)))
 $src = require("lib/verb_registry_source.mix")
 
-$USAGE = "usage: mix tools/verb_registry.mix [FILE] [--source ROOT] [--instances DIR]\n  FILE: the registry (default docs/docs/spec/bus/verbs.conf.mix)\n  --source ROOT: check the component sources under ROOT (default with no FILE: the repository)\n  --instances DIR: check the instance config names in DIR against the registry\n  --help: this text"
+$USAGE = "usage: mix tools/verb_registry.mix [FILE] [--source ROOT] [--instances DIR] [--today YYYY-MM-DD]\n  FILE: the registry (default docs/docs/spec/bus/verbs.conf.mix; repository must be schema 4)\n  schema 4: trailing schema field is none, pending, or a Rust request type path matching ^[a-z][a-z0-9_]*(::[A-Za-z][A-Za-z0-9_]*)+$\n  --source ROOT: check the component sources under ROOT (default with no FILE: the repository)\n  --instances DIR: check the instance config names in DIR against the registry\n  --today YYYY-MM-DD: override today's UTC date for the pending cutoff (2026-11-30 inclusive)\n  --help: this text"
 -- A listed family member is a Bus service name, as the instance names are.
 $_MEMBER = "^[a-z][a-z0-9-]{1,30}$"
 
@@ -56,6 +62,7 @@ end
 $file = nil
 $source = nil
 $instances = nil
+$today = time()
 $a = args()
 $i = 0
 while $i < len($a)
@@ -63,12 +70,20 @@ while $i < len($a)
   if $x == "--help" or $x == "-h" then
     print($USAGE)
     exit(0)
-  elif $x == "--source" or $x == "--instances" then
+  elif $x == "--source" or $x == "--instances" or $x == "--today" then
     if $i + 1 >= len($a) then usage_error($x .. " needs a value") end
     if $x == "--source" then
       $source = $a[$i + 1]
-    else
+    elif $x == "--instances" then
       $instances = $a[$i + 1]
+    else
+      $date = $a[$i + 1]
+      if not re_match($date, "^[0-9]{4}-[0-9]{2}-[0-9]{2}$") then usage_error("--today needs YYYY-MM-DD") end
+      try
+        $today = date_parse($date)
+      catch $m
+        usage_error("--today needs a valid date")
+      end
     end
     $i = $i + 2
   elif starts_with($x, "--") then
@@ -144,20 +159,41 @@ if $read_failed then
 end
 $schema = nil
 if type($registry) == "map" and has_key($registry, "schema") then $schema = $registry.schema end
-if type($schema) != "number" or ($schema != 2 and $schema != 3) then
-  push($problems, "schema must be 2 or 3")
+if type($schema) != "number" or ($schema != 2 and $schema != 3 and $schema != 4) then
+  push($problems, "schema must be 2, 3 or 4")
+end
+if $file == nil and $schema != 4 then
+  push($problems, "repository registry must be schema 4")
+end
+if $schema == 4 then
+  push($fields, "schema")
+  push($family_fields, "schema")
 end
 $has_families = type($registry) == "map" and has_key($registry, "families")
 if $schema == 2 and $has_families then
   push($problems, "schema 2 takes no families; a families list needs schema 3")
 end
 $families = []
-if $schema == 3 then
+if $schema == 3 or $schema == 4 then
   if $has_families and type($registry.families) == "list" then
     $families = $registry.families
   else
-    push($problems, "schema 3 requires a families list")
+    push($problems, "schema " .. to_string($schema) .. " requires a families list")
   end
+end
+
+fn body_schema_problem($row, $today)
+  if not has_key($row, "schema") or type($row.schema) != "string" then
+    return "schema must be a string"
+  end
+  if $row.schema == "pending" then
+    if $today >= date_parse("2026-11-30") + 86400 then
+      return "pending schema expired after 2026-11-30"
+    end
+  elif $row.schema != "none" and not re_match($row.schema, "^[a-z][a-z0-9_]*(::[A-Za-z][A-Za-z0-9_]*)+$") then
+    return "schema must be none, pending or a Rust request type path"
+  end
+  return nil
 end
 
 $verbs = []
@@ -195,6 +231,10 @@ for each $verb in $verbs
     if $ok then
       $name = $verb.name
       $where = $name
+      if $schema == 4 then
+        $problem = body_schema_problem($verb, $today)
+        if $problem != nil then push($problems, $where .. ": " .. $problem) end
+      end
       if not re_match($name, "^[a-z][a-z0-9_-]*(\\.[a-z][a-z0-9_]*)+$") then
         push($problems, $where .. ": malformed name")
       end
@@ -239,6 +279,10 @@ for each $f in $families
     push($problems, $where .. ": not a map")
   else
     if has_key($f, "pattern") and type($f.pattern) == "string" then $where = $f.pattern end
+    if $schema == 4 then
+      $problem = body_schema_problem($f, $today)
+      if $problem != nil then push($problems, $where .. ": " .. $problem) end
+    end
     for each $key in keys($f)
       if not contains($family_fields, $key) then
         push($problems, $where .. ": unknown field " .. $key)
@@ -348,6 +392,9 @@ else
       $verb = $verbs[$i]
       if type($verb) == "map" and has_key($verb, "name") then
         $expected = "    {name:\"" .. to_string($verb.name) .. "\", owner:\"" .. to_string($verb.owner) .. "\", version:\"" .. to_string($verb.version) .. "\", status:\"" .. to_string($verb.status) .. "\", class:\"" .. to_string($verb.class) .. "\"}"
+        if $schema == 4 then
+          $expected = strip_suffix($expected, "}") .. ", schema:\"" .. to_string($verb.schema) .. "\"}"
+        end
         if $i < len($verbs) - 1 then
           $expected = $expected .. ","
         end
@@ -360,7 +407,7 @@ else
   end
 end
 
-if $schema == 3 then
+if $schema == 3 or $schema == 4 then
   $fblock = find_block($lines, "families")
   if $fblock.start < 0 or $fblock.end_at < 0 then
     push($problems, "no `families: [` … `]` block on lines of their own")
@@ -376,6 +423,9 @@ if $schema == 3 then
           $mem = "\"instances\""
           if type($f.members) == "list" then $mem = quoted_list($f.members) end
           $expected = "    {pattern:\"" .. to_string($f.pattern) .. "\", owner:\"" .. to_string($f.owner) .. "\", members:" .. $mem .. ", version:\"" .. to_string($f.version) .. "\", status:\"" .. to_string($f.status) .. "\", class:\"" .. to_string($f.class) .. "\"}"
+          if $schema == 4 then
+            $expected = strip_suffix($expected, "}") .. ", schema:\"" .. to_string($f.schema) .. "\"}"
+          end
           if $i < len($families) - 1 then
             $expected = $expected .. ","
           end

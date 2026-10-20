@@ -12,7 +12,22 @@
 //! the `dropped` of the next run it actually sends.
 
 use serde::Serialize;
+use serde_json::Value;
+use sha2::{Digest, Sha256};
 use std::collections::VecDeque;
+
+/// Maximum compact JSON size retained inline for each parameter or result value.
+pub const EXECUTED_RESULT_BYTES: usize = 4096;
+
+/// Retain small values verbatim; describe larger values by their compact bytes.
+pub fn bounded(value: Value) -> Value {
+    let bytes = serde_json::to_vec(&value).expect("JSON values always serialize");
+    if bytes.len() <= EXECUTED_RESULT_BYTES {
+        value
+    } else {
+        serde_json::json!({"bytes": bytes.len(), "sha256": format!("{:x}", Sha256::digest(&bytes))})
+    }
+}
 
 /// How a command was reached: the mechanism that dispatched it, not an
 /// earlier cause.
@@ -47,6 +62,9 @@ pub struct Executed {
     /// The command's stable id.
     pub id: String,
     pub origin: Origin,
+    /// Accepted parameters and returned result, each bounded independently.
+    pub params: Value,
+    pub result: Value,
     /// Events this run lost since the last one published: written by the
     /// publisher just before it sends the run, 0 until then.
     pub dropped: u64,
@@ -63,6 +81,8 @@ impl Executed {
             "at_ms": self.at_ms,
             "id": self.id,
             "origin": self.origin,
+            "params": self.params,
+            "result": self.result,
             "dropped": self.dropped,
         })
     }
@@ -117,7 +137,7 @@ impl Journal {
     }
 
     /// Record a run of `id` that the handler has just returned from.
-    pub fn record(&mut self, id: &str, origin: Origin) {
+    pub fn record(&mut self, id: &str, origin: Origin, params: Value, result: Value) {
         let seq = self.next;
         self.next += 1;
         if self.queue.len() >= self.capacity {
@@ -125,12 +145,14 @@ impl Journal {
             self.lost += 1;
         }
         self.queue.push_back(Executed {
-            v: 1,
+            v: 2,
             run: self.run.clone(),
             seq,
             at_ms: now_ms(),
             id: id.to_owned(),
             origin,
+            params: bounded(params),
+            result: bounded(result),
             dropped: 0,
         });
     }
@@ -152,9 +174,9 @@ mod tests {
     #[test]
     fn seq_is_assigned_in_order_and_a_full_queue_drops_its_oldest() {
         let mut j = Journal::new(2);
-        j.record("a", Origin::Menu);
-        j.record("b", Origin::Bus);
-        j.record("c", Origin::Shortcut); // pushes "a" out
+        j.record("a", Origin::Menu, Value::Null, Value::Null);
+        j.record("b", Origin::Bus, Value::Null, Value::Null);
+        j.record("c", Origin::Shortcut, Value::Null, Value::Null); // pushes "a" out
         let (taken, lost) = j.take();
         assert_eq!(
             taken
@@ -170,15 +192,39 @@ mod tests {
     #[test]
     fn the_body_is_the_contract() {
         let mut j = Journal::new(8);
-        j.record("file.open", Origin::Palette);
+        j.record("file.open", Origin::Palette, Value::Null, Value::Null);
         let event = j.take().0.remove(0);
         let body = event.body();
         assert_eq!(body, serde_json::to_value(&event).unwrap());
-        assert_eq!(body["v"], 1);
+        assert_eq!(body["v"], 2);
+        assert_eq!(body["params"], Value::Null);
+        assert_eq!(body["result"], Value::Null);
         assert_eq!(body["id"], "file.open");
         assert_eq!(body["origin"], "palette");
         assert_eq!(body["run"], j.run());
         assert_eq!(body["dropped"], 0);
         assert!(body["at_ms"].as_u64().unwrap() > 1_700_000_000_000);
+    }
+
+    #[test]
+    fn bounds_use_compact_bytes_and_include_the_exact_limit() {
+        let inline = Value::String("x".repeat(EXECUTED_RESULT_BYTES - 2));
+        assert_eq!(serde_json::to_vec(&inline).unwrap().len(), 4096);
+        assert_eq!(bounded(inline.clone()), inline);
+        let large = Value::String("x".repeat(EXECUTED_RESULT_BYTES - 1));
+        let bytes = serde_json::to_vec(&large).unwrap();
+        assert_eq!(bytes.len(), 4097);
+        let digest = bounded(large);
+        assert_eq!(digest["bytes"], 4097);
+        let hash = digest["sha256"].as_str().unwrap();
+        assert_eq!(hash, format!("{:x}", Sha256::digest(&bytes)));
+        assert_eq!(hash.len(), 64);
+        assert!(
+            hash.bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        );
+        assert!(serde_json::to_vec(&digest).unwrap().len() < EXECUTED_RESULT_BYTES);
+        assert_eq!(bounded(digest.clone()), digest);
+        assert_eq!(bounded(Value::Null), Value::Null);
     }
 }

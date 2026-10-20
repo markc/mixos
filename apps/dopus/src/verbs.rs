@@ -1119,7 +1119,8 @@ mod tests {
     }
 
     /// What dopus.command.executed carries for a Bus call: the action of an
-    /// accepted dopus.action, never a refused one or another verb.
+    /// accepted dopus.action, never a refused one or another verb. The v2 body
+    /// carries null params and result for these noted actions.
     #[test]
     fn only_accepted_actions_are_executed_runs() {
         let (_dir, mut core) = core();

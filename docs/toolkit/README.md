@@ -16,10 +16,10 @@ routes every action through one command registry.
 The UI-free registry and Fluent `Strings` now live in
 [`command`](../command/README.md). Toolkit keeps the egui adapter and its
 existing nullary command API, with the moved data types re-exported.
-Core `describe()` emits stored chord grammar (`Ctrl+=`, `ArrowLeft`), while
-the toolkit wrapper keeps egui NAMES spelling for today's consumers; plan
-step 2 switches `<app>.commands` to core spelling as part of the
-describe/schema contract change.
+Core and toolkit `describe()` emit stored chords in the keymaps grammar
+(`Ctrl+=`, `ArrowLeft`, or short forms), ordered Ctrl, Alt, Shift. Executed
+events use the command 0.2.0 v2 body with bounded params and result, and the
+legacy wrapper maps authorisation refusals to `CommandError::Denied`.
 
 It gives each app:
 

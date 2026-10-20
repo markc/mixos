@@ -773,6 +773,11 @@ fn executed_commands_are_published_with_their_origin() {
         .filter(|(topic, _)| topic == "ced.command.executed")
         .map(|(_, body)| body.clone())
         .collect();
+    for body in &bodies {
+        assert_eq!(body["v"], 2);
+        assert_eq!(body.get("params"), Some(&serde_json::Value::Null));
+        assert_eq!(body.get("result"), Some(&serde_json::Value::Null));
+    }
     let got: Vec<(&str, &str)> = bodies
         .iter()
         .map(|b| (b["id"].as_str().unwrap(), b["origin"].as_str().unwrap()))

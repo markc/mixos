@@ -29,7 +29,7 @@ fn published_events_reach_a_subscriber_in_order() {
 
     let (handle, _deliveries) = citizen::start("pubtest", "pubtest", &broker.url).unwrap();
     assert_eq!(handle.service(), "pubtest");
-    let event = |seq: u64| json!({"v": 1, "seq": seq, "id": "x", "origin": "menu", "dropped": 0});
+    let event = |seq: u64| json!({"v": 2, "params": null, "result": null, "seq": seq, "id": "x", "origin": "menu", "dropped": 0});
     // Three were lost before these two.
     handle.publish(TOPIC, vec![event(4), event(5)], 3);
 

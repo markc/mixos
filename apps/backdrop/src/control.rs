@@ -1085,6 +1085,9 @@ mod tests {
         assert_eq!(engine.status().active, 1);
         let (runs, lost) = registry.take_executed();
         assert_eq!((runs.len(), lost), (1, 0));
+        assert_eq!(runs[0].v, 2);
+        assert_eq!(runs[0].params, Value::Null);
+        assert_eq!(runs[0].result, Value::Null);
         assert_eq!(runs[0].id, SET);
         assert_eq!(runs[0].origin, Origin::Bus);
         assert!(

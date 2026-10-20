@@ -8,13 +8,13 @@ description: UI-free command registry, typed dispatch and executed journal.
 
 `command` is the shared, UI-free registry for application engines. It owns
 `Command<S>`, `Registry<S>`, `Described`, `Error`, `Scope`, `Origin`,
-`Executed`, `Journal` and Fluent `Strings`. Its public contract starts at 0.1.0.
+`Executed`, `Journal` and Fluent `Strings`. Its public contract is 0.2.0.
 There are no egui or windowing dependencies.
 
 `Registry::execute(id, state, params, origin)` looks up the command, calls
 the optional `authorize` hook, checks enablement, refuses parameters on
 nullary commands, then runs the handler and returns its JSON result.
-Refusals are `Unknown`, `Disabled { id, reason }`, `BadParams { id, msg }`
+Refusals are `Unknown`, `Denied { id, reason }`, `Disabled { id, reason }`, `BadParams { id, msg }`
 or `Failed`. Only successful handlers are journaled. Queries skip the journal;
 intent, input and system commands are recorded.
 
@@ -44,9 +44,25 @@ New engine-owned tables use `toolkit::command::EngineAdapter::new(registry)`:
 it caches parsed shortcuts and resolved icons and dispatches typed parameters
 through the original registry.
 
-Executed events remain **v1**, with exactly the existing body: v, run, seq,
-at_ms, id, origin and dropped. `note` and `take_executed` remain available
-through toolkit for citizen's publisher.
+Executed events are **v2**: v, run, seq, at_ms, id, origin, params, result,
+then dropped. The accepted params are preserved verbatim, including null;
+nullary runs store null params and `note()` stores null for both fields.
+The result is the handler's returned value. Each field above 4096 compact
+JSON bytes is replaced with `{ bytes, sha256 }`, the byte count and lowercase
+SHA-256 of `serde_json::to_vec` output. `executed::bounded` and
+`executed::EXECUTED_RESULT_BYTES` expose that policy. `note` and `take_executed`
+remain available through toolkit for citizen's publisher, which updates dropped.
+
+`ExecuteRequest { id, params }` is the body type referenced by every
+`<app>.execute` row in verb registry schema 4. It derives serde and JsonSchema,
+refuses unknown fields, and defaults omitted or null params to None. Existing
+apps retain their current parsers during migration.
+
+Authorisation refusal returns Denied before checking enablement, parameters
+or running the handler. Toolkit maps it to legacy `CommandError::Denied`.
+Both adapters report stored `shortcut` and `more` strings in the keymaps
+grammar, in Ctrl, Alt, Shift order. Keys preserve the stored spelling, such as
+`ArrowLeft` or `Left`, `=`, `-` and `/`.
 
 The application layering table (`apps/layers.conf.mix`) prevents engine
 dependency paths from reaching GUI crates, including through another workspace

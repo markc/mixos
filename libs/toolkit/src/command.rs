@@ -17,7 +17,7 @@ use crate::menu::{self, Entry, Menu, Row};
 use crate::strings::Strings;
 pub use ::command::{Call, Class, Described, Error, ParamSpec, Place, Scope};
 pub use ::command::{Command as EngineCommand, Registry as EngineRegistry};
-use egui::{KeyboardShortcut, ModifierNames};
+use egui::KeyboardShortcut;
 use std::collections::HashMap;
 use std::fmt;
 
@@ -71,6 +71,7 @@ pub fn always<S>(_: &S) -> bool {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CommandError {
     Unknown(String),
+    Denied(&'static str),
     Disabled(&'static str),
 }
 
@@ -78,6 +79,7 @@ impl fmt::Display for CommandError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Unknown(id) => write!(f, "unknown command {id:?}"),
+            Self::Denied(id) => write!(f, "command {id:?} is denied"),
             Self::Disabled(id) => write!(f, "command {id:?} is disabled"),
         }
     }
@@ -401,6 +403,7 @@ impl<S> Registry<S> {
             .map(|_| ())
             .map_err(|err| match err {
                 Error::Unknown(id) => CommandError::Unknown(id),
+                Error::Denied { id, .. } => CommandError::Denied(id),
                 Error::Disabled { id, .. } => CommandError::Disabled(id),
                 Error::BadParams { .. } | Error::Failed(_) => CommandError::Disabled(
                     "legacy nullary dispatch: invalid parameters or handler failure",
@@ -425,25 +428,7 @@ impl<S> Registry<S> {
 
     /// Every command with its current enablement, for `<app>.commands`.
     pub fn describe(&self, state: &S, strings: &Strings) -> Vec<Described> {
-        let mut rows = self.core.describe(state, &ToolkitLabels(strings));
-        // Keep the established egui ModifierNames::NAMES wire spelling
-        // byte for byte.
-        for row in &mut rows {
-            let Some(command) = self.get(row.id) else {
-                continue;
-            };
-            row.shortcut = command
-                .shortcut
-                .map(|s| s.format(&ModifierNames::NAMES, false));
-            row.more = self
-                .extras
-                .get(row.id)
-                .into_iter()
-                .flatten()
-                .map(|s| s.format(&ModifierNames::NAMES, false))
-                .collect();
-        }
-        rows
+        self.core.describe(state, &ToolkitLabels(strings))
     }
 
     /// Ids of the enabled commands whose shortcut was pressed this frame, in
@@ -920,10 +905,7 @@ mod tests {
         let strings = Strings::new(FTL);
         let row = serde_json::to_value(&r.describe(&state, &strings)[1]).unwrap();
         assert_eq!(row["shortcut"], serde_json::Value::Null);
-        assert_eq!(
-            row["more"],
-            serde_json::json!([chord.format(&ModifierNames::NAMES, false)])
-        );
+        assert_eq!(row["more"], serde_json::json!(["Ctrl+U"]));
         assert!(
             r.model(&egui::Context::default(), &state, &strings)[0].entries[1]
                 .row()
@@ -974,6 +956,14 @@ mod tests {
         assert!(
             matches!(r.execute("bad", &mut state, Origin::Bus), Err(CommandError::Disabled(message)) if message.contains("invalid parameters"))
         );
+        r.core.authorize = Some(|_| Err("refused"));
+        for locked in [false, true] {
+            state.locked = locked;
+            assert_eq!(
+                r.execute("count.bump", &mut state, Origin::Bus),
+                Err(CommandError::Denied("count.bump"))
+            );
+        }
     }
 
     #[test]
@@ -1052,6 +1042,12 @@ mod tests {
                 Key::B
             )]
         );
+        assert_eq!(
+            ui.describe(&Counter::default(), &Strings::new(FTL))[0]
+                .shortcut
+                .as_deref(),
+            Some("Ctrl+Alt+Shift+B")
+        );
     }
 
     #[test]
@@ -1076,7 +1072,7 @@ mod tests {
     }
 
     #[test]
-    fn legacy_describe_golden_locks_egui_names() {
+    fn legacy_describe_golden_uses_stored_chord_grammar() {
         let mut r: Registry<Counter> = Registry::new();
         for (id, key) in [
             ("left", Key::ArrowLeft),
@@ -1105,19 +1101,19 @@ mod tests {
         let rows =
             serde_json::to_value(r.describe(&Counter::default(), &Strings::new(FTL))).unwrap();
         let golden = [
-            "Ctrl+Left",
-            "Ctrl+Right",
-            "Ctrl+Up",
-            "Ctrl+Down",
-            "Ctrl+Equals",
-            "Ctrl+Minus",
+            "Ctrl+ArrowLeft",
+            "Ctrl+ArrowRight",
+            "Ctrl+ArrowUp",
+            "Ctrl+ArrowDown",
+            "Ctrl+=",
+            "Ctrl+-",
         ];
         for (row, shortcut) in rows.as_array().unwrap().iter().zip(golden) {
             let id = row["id"].as_str().unwrap();
             let mut expected = serde_json::json!({"id": id, "label": id, "menu": null, "shortcut": shortcut,
                 "enabled": true, "checked": null, "reason": null, "class": "intent", "schema": null});
             if id == "equals" {
-                expected["more"] = serde_json::json!(["Alt+Left"]);
+                expected["more"] = serde_json::json!(["Alt+ArrowLeft"]);
             }
             assert_eq!(row, &expected);
         }
@@ -1211,7 +1207,7 @@ mod tests {
     }
 
     #[test]
-    fn legacy_description_fields_keep_their_wire_values() {
+    fn legacy_description_fields_use_canonical_chords() {
         let r = registry();
         let row =
             serde_json::to_value(&r.describe(&Counter::default(), &Strings::new(FTL))[0]).unwrap();
@@ -1219,7 +1215,7 @@ mod tests {
             row,
             serde_json::json!({
                 "id": "count.bump", "label": "Bump", "menu": "Edit",
-                "shortcut": KeyboardShortcut::new(Modifiers::COMMAND, Key::B).format(&ModifierNames::NAMES, false),
+                "shortcut": "Ctrl+B",
                 "enabled": true, "checked": null, "reason": null, "class": "intent", "schema": null
             })
         );

@@ -66,7 +66,12 @@ pub fn run(service: &str, url: &str, config: Config, paths: &[String]) -> Result
                         }
                         Effect::Prompt(prompt) => eprintln!("ced: needs a window: {prompt:?}"),
                         Effect::Executed { id } => {
-                            journal.record(&id, toolkit::command::Origin::Bus);
+                            journal.record(
+                                &id,
+                                toolkit::command::Origin::Bus,
+                                serde_json::Value::Null,
+                                serde_json::Value::Null,
+                            );
                         }
                         Effect::ClipboardRead { intent, .. } => {
                             next.extend(ctl.on_paste(intent, None));

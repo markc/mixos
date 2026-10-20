@@ -267,8 +267,10 @@ applies to every GUI app and to the desktop furniture.
 - **Engine first.** Behaviour lives in pure-data engine crates; the egui crate
   is a thin shell that renders state and dispatches commands.
 - **Every action is a command** with an id, label, menu path, optional
-  shortcut, enablement rule and handler. Menus, shortcuts and the palette are
-  generated from the registry; the UI, the CLI and Bus verbs dispatch by id.
+  shortcut, enablement rule and handler, with typed parameters and a result;
+  UI, shortcuts, palette, macros, Bus and headless dispatch through one registry
+  (`libs/command`). Menus, shortcuts and the palette are generated from it
+  ([decision](docs/docs/decisions/2026-10-20-commands-take-parameters.md)).
 - **Every executed command is published** on `<app>.command.executed`, with
   how it was reached
   ([decision](docs/docs/decisions/2026-10-11-executed-commands.md)).
@@ -293,8 +295,9 @@ applies to every GUI app and to the desktop furniture.
   A breaking change needs a deprecation period with both behaviours
   working, and a migration where data is involved.
 - **Bus verbs are wire contracts.** Every verb is registered in
-  `docs/docs/spec/bus/verbs.conf.mix` (owner, version, status, and its class:
-  intent, query, input or system,
+  `docs/docs/spec/bus/verbs.conf.mix` (schema 4: owner, version, status, class:
+  intent, query, input or system, and `schema`: a Rust request type path,
+  `none`, or `pending` through 2026-11-30,
   [decision](docs/docs/decisions/2026-10-11-verb-classes.md)). The registry gate
   (`tools/verb_registry.mix`) refuses a malformed, duplicate or unclassified
   entry. A component's registry test (`apps/<app>/tests/registry.rs`) checks
