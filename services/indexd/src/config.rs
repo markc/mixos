@@ -105,8 +105,8 @@ impl Default for ServiceConfig {
             max_forward_tokens: 4096,
             max_request_text_bytes: 8 * 1024 * 1024,
             max_prefix_bytes: 4 * 1024,
-            max_request_line_bytes: 20 * 1024 * 1024,
-            max_response_bytes: 20 * 1024 * 1024,
+            max_request_line_bytes: BUS_BODY_LIMIT,
+            max_response_bytes: BUS_BODY_LIMIT,
             inference_admission_timeout_secs: 30,
             background_queue_max_bytes: 128 * 1024 * 1024,
             background_queue_max_jobs: 512,
@@ -135,6 +135,15 @@ fn resolve_snapshot(root: &Path) -> PathBuf {
 
 impl Config {
     pub fn validate(&self) -> Result<()> {
+        for (name, value) in [
+            ("max_request_line_bytes", self.service.max_request_line_bytes),
+            ("max_response_bytes", self.service.max_response_bytes),
+        ] {
+            anyhow::ensure!(
+                value > 0 && value <= BUS_BODY_LIMIT,
+                "{name} must be between 1 and {BUS_BODY_LIMIT} bytes (Bus frame budget)"
+            );
+        }
         anyhow::ensure!(
             matches!(self.service.dtype.as_str(), "f16" | "f32"),
             "dtype must be f16 or f32"
@@ -267,7 +276,7 @@ mod tests {
         assert_eq!(cfg.service.vindex_dtype, "f32");
         assert_eq!(cfg.service.inference_admission_timeout_secs, 30);
         assert_eq!(cfg.service.max_prefix_bytes, 4096);
-        assert_eq!(cfg.service.max_response_bytes, 20 * 1024 * 1024);
+        assert_eq!(cfg.service.max_response_bytes, BUS_BODY_LIMIT);
         assert_eq!(cfg.service.background_retry_max_attempts, 5);
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -313,6 +322,19 @@ mod tests {
 mod path_tests {
     use super::*;
     use crate::test_support::temp_dir;
+
+    #[test]
+    fn byte_limits_cannot_exceed_bus_frame_budget() {
+        for response in [false, true] {
+            let mut cfg = Config::default();
+            if response {
+                cfg.service.max_response_bytes = BUS_BODY_LIMIT + 1;
+            } else {
+                cfg.service.max_request_line_bytes = BUS_BODY_LIMIT + 1;
+            }
+            assert!(cfg.validate().unwrap_err().to_string().contains("Bus frame budget"));
+        }
+    }
 
     #[test]
     fn validation_follows_model_symlinks_and_rejects_relative_domains() {

@@ -4,6 +4,13 @@
 
 use crate::*;
 
+/// Leave room for ABP routing headers and framing below both transport limits.
+pub const BUS_BODY_LIMIT: usize = if ::bus::MAX_MESSAGE_BYTES < ::bus::WS_MAX_FRAME_BYTES {
+    ::bus::MAX_MESSAGE_BYTES
+} else {
+    ::bus::WS_MAX_FRAME_BYTES
+} - 64 * 1024;
+
 pub(crate) const EMBEDDING_DIM: usize = 768;
 
 /// Wall-clock cap on a single off-lock embed batch. A hung candle forward

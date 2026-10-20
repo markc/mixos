@@ -185,6 +185,35 @@ mod tests {
     use super::*;
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn oversized_reply_is_rc10_and_connection_survives() {
+        let broker = test_broker::Broker::start();
+        let root = tempfile::tempdir().unwrap();
+        let mut config = crate::config::Config::default();
+        config.service.vectors_db = root.path().join("vectors.db").to_string_lossy().into_owned();
+        config.service.model_dir = root.path().join("model").to_string_lossy().into_owned();
+        config.service.max_response_bytes = 128;
+        crate::test_support::model_files(&config);
+        let engine = Arc::new(Engine::open(config).unwrap());
+        let client = Arc::new(NodedClient::connect(BUS_SERVICE, &broker.url).await.unwrap());
+        let (stop_tx, mut stop_rx) = watch::channel(false);
+        let task = tokio::spawn(async move {
+            serve_client(engine, client.clone(), &mut stop_rx).await;
+            client.close().await;
+        });
+        let caller = NodedClient::connect_anonymous(&broker.url).await.unwrap();
+        for _ in 0..2 {
+            let (rc, body, _) = caller.call_with_headers_raw(
+                BUS_SERVICE, "indexd.stats", &Default::default(), "{}"
+            ).await.unwrap();
+            assert_eq!(rc, 10);
+            assert!(body.contains("response_too_large"), "{body}");
+        }
+        caller.close().await;
+        let _ = stop_tx.send(true);
+        task.await.unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn native_contract() {
         let broker = test_broker::Broker::start();
         let root = tempfile::tempdir().unwrap();
