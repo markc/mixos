@@ -6,6 +6,7 @@
 
 pub mod domain;
 mod indexd_client;
+mod indexd_transport;
 mod llm_client;
 mod loop_fns;
 mod prompts;

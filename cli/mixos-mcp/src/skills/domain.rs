@@ -108,4 +108,15 @@ mod tests {
             "general"
         );
     }
+
+    #[test]
+    fn default_domains_expand_home_and_respect_directory_boundaries() {
+        let settings = crate::knowledge_settings::DomainsSettings::default();
+        let home = directories::BaseDirs::new().unwrap().home_dir().to_path_buf();
+        for (path, domain) in [("Projects/mixos/src", "mixos"), (".mix/_doc", "mix"), (".ns/_doc", "ns"), (".mc/_doc", "mc")] {
+            assert_eq!(settings.resolve(&home.join(path)).as_deref(), Some(domain));
+        }
+        assert_eq!(settings.resolve(&home.join(".mix-other")), None);
+        assert_eq!(settings.resolve(&home.join("Projects/mixos-old")), None);
+    }
 }

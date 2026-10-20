@@ -28,7 +28,12 @@ pub struct DomainsSettings {
 
 impl Default for DomainsSettings {
     fn default() -> Self {
-        let map = BTreeMap::from([("~/Projects/mixos".into(), "mixos".into())]);
+        let map = BTreeMap::from([
+            ("~/Projects/mixos".into(), "mixos".into()),
+            ("~/.mix".into(), "mix".into()),
+            ("~/.ns".into(), "ns".into()),
+            ("~/.mc".into(), "mc".into()),
+        ]);
         Self { map }
     }
 }
@@ -49,7 +54,7 @@ impl DomainsSettings {
             } else {
                 prefix.clone()
             };
-            if path_str.starts_with(&expanded) {
+            if Path::new(path_str.as_ref()).starts_with(&expanded) {
                 let len = expanded.len();
                 if best.is_none() || len > best.unwrap().0 {
                     best = Some((len, domain));
@@ -190,6 +195,7 @@ impl Default for SkillsSettings {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct KnowledgeSettings {
+    pub indexd: IndexdSettings,
     /// Distance bonus for `_spec/` chunks (normative contracts, highest authority).
     pub trust_weight_spec: f64,
     /// Distance bonus for `_doc/` chunks (curated design truth). Subtracted from distance.
@@ -215,6 +221,7 @@ pub struct KnowledgeSettings {
 impl Default for KnowledgeSettings {
     fn default() -> Self {
         Self {
+            indexd: IndexdSettings::default(),
             trust_weight_spec: 0.10,
             trust_weight_doc: 0.08,
             trust_weight_notes: 0.06,
@@ -226,5 +233,57 @@ impl Default for KnowledgeSettings {
             journal_decay_per_month: 0.02,
             journal_max_age_days: 180,
         }
+    }
+}
+
+/// Client-side indexd connection. SSH credentials and host names belong in
+/// the user's knowledge.conf.mix, never in component defaults.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct IndexdSettings {
+    pub transport: IndexdTransport,
+    pub target: String,
+    pub ssh_host: String,
+    pub ssh_command: Vec<String>,
+    pub call_timeout_secs: u64,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum IndexdTransport {
+    #[default]
+    Bus,
+    Ssh,
+}
+
+impl Default for IndexdSettings {
+    fn default() -> Self {
+        Self {
+            transport: IndexdTransport::Bus,
+            target: "indexd".into(),
+            ssh_host: String::new(),
+            ssh_command: vec!["/opt/mixos/bin/indexd".into(), "bridge".into()],
+            call_timeout_secs: 120,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn knowledge_transport_defaults_and_partial_config() {
+        let dir = tempfile::tempdir().unwrap();
+        let absent = config::store::load_service_in::<KnowledgeSettings>(dir.path(), "knowledge").unwrap();
+        assert_eq!(absent.indexd, IndexdSettings::default());
+        std::fs::write(dir.path().join("knowledge.conf.mix"), "indexd: {transport: \"ssh\", ssh_host: \"user@host.example\"}\n").unwrap();
+        let partial = config::store::load_service_in::<KnowledgeSettings>(dir.path(), "knowledge").unwrap();
+        assert_eq!(partial.indexd.transport, IndexdTransport::Ssh);
+        assert_eq!(partial.indexd.target, "indexd");
+        assert_eq!(partial.indexd.call_timeout_secs, 120);
+        assert_eq!(partial.indexd.ssh_command, ["/opt/mixos/bin/indexd", "bridge"]);
+        std::fs::write(dir.path().join("knowledge.conf.mix"), "indexd: {transport: \"invalid\"}\n").unwrap();
+        assert!(config::store::load_service_in::<KnowledgeSettings>(dir.path(), "knowledge").is_err());
     }
 }

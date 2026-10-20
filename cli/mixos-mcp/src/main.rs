@@ -27,6 +27,7 @@ mod tool_output;
 
 struct MixosMcp {
     noded: connection::BrokerConnection,
+    indexd_client: Arc<tokio::sync::Mutex<Option<crate::skills::IndexdClient>>>,
     tool_router: rmcp::handler::server::tool::ToolRouter<Self>,
     metrics: Arc<Metrics>,
     /// The frontend and instance the last successful term_list read: the
@@ -968,9 +969,15 @@ impl MixosMcp {
     }
 
     async fn indexd(&self) -> Result<crate::skills::IndexdClient, String> {
-        crate::skills::IndexdClient::from_config()
+        let mut cached = self.indexd_client.lock().await;
+        if let Some(client) = cached.as_ref().filter(|c| c.is_connected()) {
+            return Ok(client.clone());
+        }
+        let client = crate::skills::IndexdClient::from_config()
             .await
-            .map_err(|e| format!("indexd connect failed: {e}. Ensure indexd is running."))
+            .map_err(|e| format!("indexd connect failed: {e}. Ensure indexd is running."))?;
+        *cached = Some(client.clone());
+        Ok(client)
     }
 }
 
@@ -1578,19 +1585,11 @@ impl MixosMcp {
     /// Idempotent — deletes old entries for re-indexed files before storing new ones.
     #[tool]
     async fn index_workspace(&self, Parameters(p): Parameters<IndexWorkspaceParams>) -> String {
-        let workspace = p
-            .path
-            .map(|p| p.replace("~", &std::env::var("HOME").unwrap_or_default()))
-            .unwrap_or_else(|| {
-                std::env::current_dir()
-                    .map(|p| p.to_string_lossy().to_string())
-                    .unwrap_or_default()
-            });
-
-        let workspace_path = std::path::Path::new(&workspace);
-        if !workspace_path.exists() {
-            return format!("ERROR: workspace path does not exist: {workspace}");
-        }
+        let workspace = match workspace_path(p.path.as_deref()) {
+            Ok(path) => path,
+            Err(error) => return format!("ERROR: {error}"),
+        };
+        let workspace_path = workspace.as_path();
 
         let domain = crate::skills::detect_domain(workspace_path);
 
@@ -2684,18 +2683,14 @@ async fn delete_by_path(
     indexd: &mut crate::skills::IndexdClient,
     path: &str,
 ) -> Result<(), String> {
-    // List entries and find those matching this path
-    let list_req = serde_json::json!({
-        "action": "list", "limit": 1000, "offset": 0,
-    });
-
-    let resp = indexd
-        .raw_request(&list_req)
-        .await
-        .map_err(|e| e.to_string())?;
     let mut ids_to_delete = Vec::new();
-
-    if let Some(items) = resp.get("items").and_then(|i| i.as_array()) {
+    let mut offset = 0;
+    loop {
+        let resp = indexd.raw_request(&serde_json::json!({
+            "action": "list", "limit": 1000, "offset": offset,
+        })).await.map_err(|e| e.to_string())?;
+        let items = resp.get("items").and_then(|i| i.as_array()).ok_or("indexd list response missing items")?;
+        let total = resp.get("total").and_then(|n| n.as_u64()).ok_or("indexd list response missing total")?;
         for item in items {
             if let Some(meta_str) = item.get("metadata").and_then(|m| m.as_str())
                 && let Ok(meta) = serde_json::from_str::<serde_json::Value>(meta_str)
@@ -2705,10 +2700,14 @@ async fn delete_by_path(
                 ids_to_delete.push(id);
             }
         }
+        offset += items.len() as u64;
+        if items.is_empty() || offset >= total { break; }
     }
 
-    if !ids_to_delete.is_empty() {
-        let del_req = serde_json::json!({"action": "delete", "ids": ids_to_delete});
+    // Defer deletion until pagination finishes so offsets cannot skip rows.
+    // Bound deletion request sizes as well as list pages.
+    for ids in ids_to_delete.chunks(1000) {
+        let del_req = serde_json::json!({"action": "delete", "ids": ids});
         indexd
             .raw_request(&del_req)
             .await
@@ -2716,6 +2715,18 @@ async fn delete_by_path(
     }
 
     Ok(())
+}
+
+/// Expand only a leading home marker, then resolve relative paths and symlinks.
+/// indexd receives absolute paths in metadata and never expands a user's home.
+fn workspace_path(path: Option<&str>) -> Result<std::path::PathBuf, String> {
+    let path = match path {
+        Some("~") => directories::BaseDirs::new().ok_or("home directory unavailable")?.home_dir().to_path_buf(),
+        Some(p) if p.starts_with("~/") => directories::BaseDirs::new().ok_or("home directory unavailable")?.home_dir().join(&p[2..]),
+        Some(p) => std::path::PathBuf::from(p),
+        None => std::env::current_dir().map_err(|e| e.to_string())?,
+    };
+    path.canonicalize().map_err(|e| format!("workspace path {}: {e}", path.display()))
 }
 
 /// Per-call deadline for a tool, in seconds (0 = no deadline). The server
@@ -3043,8 +3054,10 @@ async fn async_main() {
         target: "mixos_mcp",
         "mixos-mcp starting (broker + indexd connections deferred until first tool call)"
     );
+    let indexd_client = Arc::new(tokio::sync::Mutex::new(None));
     let server = MixosMcp {
         noded: connection::BrokerConnection::new(),
+        indexd_client: Arc::clone(&indexd_client),
         tool_router: MixosMcp::tool_router() + MixosMcp::native_tool_router(),
         metrics: Arc::new(Metrics::new()),
         term_pin: std::sync::Mutex::new(None),
@@ -3058,6 +3071,9 @@ async fn async_main() {
     };
     // Wait for the service to finish (client disconnect / EOF)
     let _ = service.waiting().await;
+    if let Some(client) = indexd_client.lock().await.take() {
+        client.shutdown().await;
+    }
 }
 
 #[cfg(test)]
