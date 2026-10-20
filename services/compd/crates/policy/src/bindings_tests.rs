@@ -290,7 +290,11 @@ fn a_screenshot_launch_names_its_mode_and_window() {
 /// The person's own keys (bare F1–F12) are never bound by default.
 #[test]
 fn no_default_binds_a_bare_function_key() {
-    for profile in [BindingProfile::Nested, BindingProfile::KmsLive] {
+    for profile in [
+        BindingProfile::Nested,
+        BindingProfile::KmsLive,
+        BindingProfile::Headless,
+    ] {
         let state = BindingState::for_profile(profile, true);
         for binding in state.table.bindings() {
             let function_key = (keysym::F1..=keysym::F12).contains(&binding.keysym);
@@ -306,7 +310,11 @@ fn no_default_binds_a_bare_function_key() {
 
 #[test]
 fn chords_and_ids_are_unique_and_spelled_as_comp_spells_them() {
-    for profile in [BindingProfile::Nested, BindingProfile::KmsLive] {
+    for profile in [
+        BindingProfile::Nested,
+        BindingProfile::KmsLive,
+        BindingProfile::Headless,
+    ] {
         let state = BindingState::for_profile(profile, true);
         let bindings = state.table.bindings();
         let ids: HashSet<_> = bindings.iter().map(|binding| binding.id).collect();
@@ -318,6 +326,7 @@ fn chords_and_ids_are_unique_and_spelled_as_comp_spells_them() {
             match profile {
                 BindingProfile::Nested => 1,
                 BindingProfile::KmsLive => 12,
+                BindingProfile::Headless => 0,
             }
         );
     }
