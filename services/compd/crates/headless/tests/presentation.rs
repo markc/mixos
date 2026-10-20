@@ -2,6 +2,9 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Independent-rate probe against an owned render-node compd. Run with
 //! --nocapture to retain the baseline and positive-control summary lines.
+//! For timing, select an optimised compd through COMPD_TEST_BINARY. The
+//! harness and probe need not be optimised; buffer preparation precedes the
+//! timer deadline. A debug compositor's render time counts towards misses.
 use std::{
     fs,
     process::Command,
@@ -63,7 +66,7 @@ fn measurement(process: &mut process::Process, stalled: bool) -> (f64, usize) {
 #[test]
 #[ignore = "needs a render node, built headless compd and testkit-presentation-probe; two 60 s runs"]
 fn independent_60hz_and_stall_control() {
-    let mut process = process::spawn(1, None, "presentation", None);
+    let mut process = process::spawn_measurement();
     process.extend_watchdog(Duration::from_secs(180));
     let deadline = Instant::now() + Duration::from_secs(30);
     while !process.root.join("wayland-headless-test").exists() {

@@ -365,7 +365,12 @@ capture services and encoder in the same slice. Both units are owned by
 commit pacing and presentation misses. Add <code>--stall-every 30 --stall-ms 50</code>
 for a positive control. Its header documents the pixel frame ID marker;
 <code>services/compd/crates/testkit/scripts/frame_ids.mix FILE.rgba --size WxH</code>
-decodes unscaled raw RGBA client content (PNG is not supported).</p>
+decodes unscaled raw RGBA client content (PNG is not supported).
+Run timing assertions with an optimised compositor, built with
+<code>--profile release-fast</code> and selected through <code>COMPD_TEST_BINARY</code>; the test
+harness and probe can remain debug builds. Report the binary profile with
+the measured rates and misses. Debug compositor overhead is part of its
+measured presentation latency and can dominate a one-interval deadline.</p>
 <p><code>cursor_sensitivity</code> in <code>preferences.json</code> is a speed multiplier on top of
 the output scale: compd multiplies each relative pointer delta by both, so
 <code>1.0</code> moves the cursor at the same logical speed at every scale. Clients

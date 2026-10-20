@@ -128,6 +128,17 @@ fn dispatch_until(
     complete: impl Fn(&Probe) -> bool,
     phase: &str,
 ) -> Result<(), String> {
+    dispatch_until_with_precision(queue, probe, deadline, complete, phase, false)
+}
+
+fn dispatch_until_with_precision(
+    queue: &mut EventQueue<Probe>,
+    probe: &mut Probe,
+    deadline: Instant,
+    complete: impl Fn(&Probe) -> bool,
+    phase: &str,
+    precise: bool,
+) -> Result<(), String> {
     while !complete(probe) {
         queue
             .dispatch_pending(probe)
@@ -154,7 +165,18 @@ fn dispatch_until(
         };
         // SAFETY: descriptor is valid writable storage for one pollfd and the
         // read guard keeps the Wayland connection fd alive during poll.
-        let ready = unsafe { libc::poll(&mut descriptor, 1, timeout_ms) };
+        let ready = if precise {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            let timeout = libc::timespec {
+                tv_sec: remaining.as_secs() as libc::time_t,
+                tv_nsec: remaining.subsec_nanos().into(),
+            };
+            // SAFETY: valid descriptor/timeout; null keeps the signal mask.
+            unsafe { libc::ppoll(&mut descriptor, 1, &timeout, std::ptr::null()) }
+        } else {
+            // Preserve the existing modes' millisecond timeout behaviour.
+            unsafe { libc::poll(&mut descriptor, 1, timeout_ms) }
+        };
         if ready == 0 {
             drop(read_guard);
             continue;
@@ -373,7 +395,7 @@ fn wait_until(
     probe: &mut Probe,
     due: Instant,
 ) -> Result<(), String> {
-    dispatch_until(queue, probe, due, |_| Instant::now() >= due, "rate timer")
+    dispatch_until_with_precision(queue, probe, due, |_| Instant::now() >= due, "rate timer", true)
 }
 
 #[allow(clippy::too_many_arguments)]

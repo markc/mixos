@@ -56,17 +56,22 @@ impl Process {
 }
 
 pub fn spawn(scale: i32, explicit_node: Option<&str>, label: &str, bus: Option<&str>) -> Process {
-    spawn_options(scale, explicit_node, label, bus, "60", None)
+    spawn_options(scale, explicit_node, label, bus, "60", None, true)
 }
 
 #[allow(dead_code)]
 pub fn spawn_service(label: &str, bus: &str, service: &str) -> Process {
-    spawn_options(1, None, label, Some(bus), "60", Some(service))
+    spawn_options(1, None, label, Some(bus), "60", Some(service), true)
 }
 
 #[allow(dead_code)] // Used only by boot.rs; each integration target shares this module.
 pub fn spawn_at_refresh(refresh: &str) -> Process {
-    spawn_options(1, None, "refresh", None, refresh, None)
+    spawn_options(1, None, "refresh", None, refresh, None, true)
+}
+
+#[allow(dead_code)] // Only the timing integration target disables tracing.
+pub fn spawn_measurement() -> Process {
+    spawn_options(1, None, "presentation", None, "60", None, false)
 }
 
 fn spawn_options(
@@ -76,6 +81,7 @@ fn spawn_options(
     bus: Option<&str>,
     refresh: &str,
     service: Option<&str>,
+    trace: bool,
 ) -> Process {
     let binary = std::env::var_os("COMPD_TEST_BINARY")
         .map(PathBuf::from)
@@ -132,7 +138,7 @@ fn spawn_options(
         .env("MIXOS_RUN", root.join("run"))
         .env("MIXOS_NODED_URL", bus.unwrap_or("ws://127.0.0.1:1"))
         .env("COMPD_HEADLESS_REFRESH_HZ", refresh)
-        .env("COMPD_FRAME_TRACE", "1")
+        .env("COMPD_FRAME_TRACE", if trace { "1" } else { "0" })
         .env("COMPD_FRAME_TRACE_FILE", root.join("frames.log"))
         .env("COMPD_FRAME_TRACE_LIMIT", "0")
         // Fixed built-in 24px arrow: no host theme or cursor animation.
