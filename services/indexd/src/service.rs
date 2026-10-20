@@ -1150,6 +1150,8 @@ mod tests {
         assert_eq!(response["results"].as_array().unwrap().len(), 1);
         assert_eq!(response["results"][0]["id"], active);
         assert!(response["results"][0]["metadata"].is_string());
+        let nearest = engine.search(json!({"query":"query", "limit":1})).await;
+        assert_eq!(nearest["results"][0]["id"], other);
         let response = engine.search(json!({"query":"query", "limit":10})).await;
         let ids: Vec<_> = response["results"]
             .as_array()
@@ -1168,7 +1170,7 @@ mod tests {
             .unwrap()
             .collect::<rusqlite::Result<_>>()
             .unwrap();
-        assert_eq!(counts, [(old, 0), (active, 2), (other, 1)]);
+        assert_eq!(counts, [(old, 0), (active, 2), (other, 2)]);
         drop(state);
         drop(engine);
         std::fs::remove_dir_all(dir).unwrap();
@@ -1266,6 +1268,7 @@ mod tests {
         let dir = temp_dir("index-success");
         let mut config = Config::default();
         config.service.vectors_db = dir.join("vectors.db").to_string_lossy().into_owned();
+        config.service.model_dir = dir.join("missing-local-model").to_string_lossy().into_owned();
         config.source_types.insert(
             "journal".into(),
             SourceTypeSpec {
@@ -1312,12 +1315,23 @@ mod tests {
             assert_eq!(metadata["domain"], "child");
             assert_eq!(metadata["path"], path);
         }
-        assert_eq!(engine.index_file(body).await["sections"], 2);
+        assert_eq!(engine.index_file(body.clone()).await["sections"], 2);
         assert_eq!(
             engine.list(json!({})).await,
             listed,
             "unchanged reindex preserves IDs and metadata"
         );
+        let changed = format!("## Changed\n{}", "c".repeat(100));
+        cache(&engine, &changed, "search_document: ", 0.75).await;
+        let failed = engine.index_file(json!({"path":path,"content":format!("{changed}\n## Missing embedding\n{}", "d".repeat(100))})).await;
+        assert!(failed["error"].as_str().unwrap().contains("stored 1/2 sections"));
+        let after_failure = engine.list(json!({})).await;
+        assert_eq!(after_failure["total"], 3);
+        for previous in listed["items"].as_array().unwrap() {
+            assert!(after_failure["items"].as_array().unwrap().iter().any(|item| item["id"] == previous["id"]));
+        }
+        assert_eq!(engine.index_file(body).await["sections"], 2);
+        assert_eq!(engine.list(json!({})).await, listed);
         drop(engine);
         std::fs::remove_dir_all(dir).unwrap();
     }
