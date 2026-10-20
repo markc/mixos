@@ -75,7 +75,7 @@ where
     Ok(())
 }
 
-fn bus_reply(id: Value, rc: i32, body: &str) -> Value {
+fn bus_reply(id: Value, rc: u8, body: &str) -> Value {
     let body = serde_json::from_str::<Value>(body)
         .unwrap_or_else(|_| json!({"error":body}));
     json!({"id":id,"rc":rc,"body":body})
