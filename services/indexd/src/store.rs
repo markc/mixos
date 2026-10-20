@@ -801,23 +801,31 @@ impl VectorDb {
             .write()
             .expect("search index RwLock poisoned");
         let tx = self.conn.unchecked_transaction()?;
-        let mut sql = String::from("SELECT c.id FROM chunks c WHERE 1=1");
-        let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
-        if !ids.is_empty() {
-            sql.push_str(" AND c.id IN (");
-            sql.push_str(&vec!["?"; ids.len()].join(","));
-            sql.push(')');
-            params.extend(
-                ids.iter()
-                    .map(|id| Box::new(*id) as Box<dyn rusqlite::types::ToSql>),
-            );
+        let batches: Vec<&[i64]> = if ids.is_empty() {
+            vec![ids]
+        } else {
+            ids.chunks(1000).collect()
+        };
+        let mut selected = Vec::new();
+        for batch in batches {
+            let mut sql = String::from("SELECT c.id FROM chunks c WHERE 1=1");
+            let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+            if !batch.is_empty() {
+                sql.push_str(" AND c.id IN (");
+                sql.push_str(&vec!["?"; batch.len()].join(","));
+                sql.push(')');
+                params.extend(
+                    batch.iter()
+                        .map(|id| Box::new(*id) as Box<dyn rusqlite::types::ToSql>),
+                );
+            }
+            append_metadata_filters(&mut sql, &mut params, filters, true)?;
+            let refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+            selected.extend(tx
+                .prepare(&sql)?
+                .query_map(&*refs, |row| row.get::<_, i64>(0))?
+                .collect::<rusqlite::Result<Vec<_>>>()?);
         }
-        append_metadata_filters(&mut sql, &mut params, filters, true)?;
-        let refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
-        let selected = tx
-            .prepare(&sql)?
-            .query_map(&*refs, |row| row.get::<_, i64>(0))?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
         for id in &selected {
             deleted += tx.execute("DELETE FROM chunks WHERE id = ?1", [id])?;
             tx.execute("DELETE FROM vec_chunks WHERE rowid = ?1", [id])?;
@@ -1046,6 +1054,25 @@ mod tests {
             ))),
             checkpoint_owed: CheckpointOwed::default(),
         }
+    }
+
+    #[test]
+    fn delete_chunks_2500_ids_in_one_transaction() {
+        let db = test_vector_db();
+        let texts: Vec<String> = (0..2501).map(|i| format!("chunk {i}")).collect();
+        let StoreAttempt::Committed { ids, .. } = db.store_revalidated(
+            &vec![Some(vec![1.0; EMBEDDING_DIM]); texts.len()],
+            &vec![None; texts.len()],
+            &texts,
+            "doc",
+            &vec!["{}".into(); texts.len()],
+        ).unwrap() else {
+            panic!("unexpected race")
+        };
+        assert_eq!(db.delete_filtered(&ids[..2500], &[]).unwrap(), 2500);
+        assert_eq!(db.stats("").unwrap().total_vectors, 1);
+        assert_eq!(db.search_index.read().unwrap().len(), 1);
+        assert_eq!(db.conn.query_row("SELECT rowid FROM vec_chunks", [], |row| row.get::<_, i64>(0)).unwrap(), ids[2500]);
     }
 
     #[test]
