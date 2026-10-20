@@ -236,8 +236,13 @@
     <div id="doc-view" class="content-section">
         <article id="content-doc" class="prose" data-pagefind-body>
 <h1 id="decision--one-system-binary">Decision — one system binary</h1>
-<p>Status: accepted 2026-10-12. Amends <a href="/docs/decisions/2026-10-04-source-layout/">the source layout</a>
+<p>Status: accepted 2026-10-12, <strong>on hold 2026-10-20</strong>. Amends <a href="/docs/decisions/2026-10-04-source-layout/">the source layout</a>
 (AGENTS.md §2.3, §3.4, §6 and §9).</p>
+<blockquote>
+<p><strong>On hold (2026-10-20).</strong> The single multicall binary is not to be deployed on
+any host of the fleet. The fleet runs separate binaries. The personality
+plumbing stays in the tree, and the decision is to be revisited at a future date.</p>
+</blockquote>
 <blockquote>
 <p><strong>Correction (2026-10-19): the fleet build target is glibc, not musl.</strong> The
 "Fleet builds are static" item below does not describe current practice. cbc

@@ -3934,8 +3934,12 @@ before it joins `server`.
 
 # Decision — one system binary
 
-Status: accepted 2026-10-12. Amends [the source layout](2026-10-04-source-layout.md)
+Status: accepted 2026-10-12, **on hold 2026-10-20**. Amends [the source layout](2026-10-04-source-layout.md)
 (AGENTS.md §2.3, §3.4, §6 and §9).
+
+> **On hold (2026-10-20).** The single multicall binary is not to be deployed on
+> any host of the fleet. The fleet runs separate binaries. The personality
+> plumbing stays in the tree, and the decision is to be revisited at a future date.
 
 > **Correction (2026-10-19): the fleet build target is glibc, not musl.** The
 > "Fleet builds are static" item below does not describe current practice. cbc
