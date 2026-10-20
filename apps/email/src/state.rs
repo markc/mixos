@@ -2798,7 +2798,8 @@ impl State {
                             let text = match suggest.field {
                                 ComposeField::To => &compose.to_text,
                                 ComposeField::Cc => &compose.cc_text,
-                                _ => &compose.bcc_text,
+                                ComposeField::Bcc => &compose.bcc_text,
+                                _ => return,
                             };
                             let found: Vec<_> = contacts
                                 .iter()
@@ -5055,10 +5056,14 @@ impl State {
             .senders(&compose.account)
             .into_iter()
             .find(|s| s.id == compose.identity)
-            .or_else(|| self.senders(&compose.account).into_iter().next())
-            .map(|s| s.signature)
-            .unwrap_or_default();
-        let old = signature_block(&previous);
+            .or_else(|| self.senders(&compose.account).into_iter().next());
+        let previous_explicit = self
+            .account(&compose.account)
+            .is_some_and(|v| !v.entry.identities.is_empty());
+        let old_reply_to = previous
+            .as_ref()
+            .and_then(|s| from_fields(previous_explicit, s).1);
+        let old = signature_block(&previous.map(|s| s.signature).unwrap_or_default());
         let new = signature_block(&sender.signature);
         let (from_name, reply_to) = from_fields(explicit, &sender);
         if let Some(compose) = &mut self.compose {
@@ -5069,7 +5074,11 @@ impl State {
             compose.identity = sender.id;
             compose.draft.from = sender.address;
             compose.draft.from_name = from_name;
-            compose.draft.reply_to = reply_to;
+            // Like the signature: the old identity's Reply-To (or none)
+            // follows the new identity; one the person typed stays.
+            if compose.draft.reply_to.is_none() || compose.draft.reply_to == old_reply_to {
+                compose.draft.reply_to = reply_to;
+            }
             // The new identity's From is its current address.
             compose.stale = None;
             compose.error = None;
@@ -5401,6 +5410,10 @@ impl State {
                         ComposeField::Body => compose.draft.body = value,
                     }
                     compose.revision += 1;
+                    // A row being edited stays open, even cleared to retype.
+                    if ComposeField::OPTIONAL.contains(&field) && !compose.extra.contains(&field) {
+                        compose.extra.push(field);
+                    }
                     if matches!(
                         field,
                         ComposeField::To | ComposeField::Cc | ComposeField::Bcc
@@ -5932,6 +5945,13 @@ fn parse_recipients(compose: &ComposeState) -> Result<Recipients, String> {
     let bcc = jmap::parse_addresses(&compose.bcc_text)?;
     if to.is_empty() {
         return Err("no recipient in To".to_owned());
+    }
+    // Reply-To is sent as typed, so it is checked like the others: one
+    // address (a name with it is fine).
+    if let Some(reply_to) = &compose.draft.reply_to
+        && jmap::parse_addresses(reply_to)?.len() != 1
+    {
+        return Err(format!("Reply-To must be one address: {reply_to:?}"));
     }
     Ok((to, cc, bcc))
 }
@@ -8170,6 +8190,55 @@ pub(crate) mod tests {
         assert!(enabled(&state, "mail.delete"));
         state.account_mut("a").unwrap().mail.open = Some(unread_email("E2"));
         assert!(enabled(&state, "mail.reply"), "E2 loaded");
+    }
+
+    #[test]
+    fn a_typed_reply_to_survives_an_identity_change_and_the_identitys_follows() {
+        let mut state = reading();
+        let identity = |id: &str, reply_to: Option<&str>| settings::email::Identity {
+            id: id.into(),
+            name: id.into(),
+            address: format!("{id}@a.example.invalid"),
+            signature: String::new(),
+            reply_to: reply_to.map(Into::into),
+        };
+        state.account_mut("a").unwrap().entry.identities = vec![
+            identity("ann", Some("help@a.example.invalid")),
+            identity("sales", Some("orders@a.example.invalid")),
+        ];
+        assert!(state.open_compose(Some("a"), Composed::default()));
+        let reply_to = |state: &State| state.compose.as_ref().unwrap().draft.reply_to.clone();
+        assert_eq!(reply_to(&state).as_deref(), Some("help@a.example.invalid"));
+        // Untouched: the identity's Reply-To follows the identity.
+        state.choose_sender("a".into(), Some("sales".into()));
+        assert_eq!(reply_to(&state).as_deref(), Some("orders@a.example.invalid"));
+        // Typed: it stays.
+        state.apply_ui(UiEvent::ComposeField(ComposeField::ReplyTo, "me@x.invalid".into()));
+        state.choose_sender("a".into(), Some("ann".into()));
+        assert_eq!(reply_to(&state).as_deref(), Some("me@x.invalid"));
+    }
+
+    #[test]
+    fn an_optional_row_stays_open_while_cleared_and_reply_to_is_checked_at_send() {
+        let mut state = reading();
+        assert!(state.open_compose(Some("a"), Composed::default()));
+        let shows = |state: &State, f| state.compose.as_ref().unwrap().shows(f);
+        assert!(!shows(&state, ComposeField::Cc));
+        state.apply_ui(UiEvent::ComposeField(ComposeField::Cc, "x@y.invalid".into()));
+        state.apply_ui(UiEvent::ComposeField(ComposeField::Cc, String::new()));
+        assert!(shows(&state, ComposeField::Cc), "cleared to retype: still open");
+        // The button closes it again.
+        state.apply_ui(UiEvent::ComposeShow(ComposeField::Cc));
+        assert!(!shows(&state, ComposeField::Cc));
+        // Reply-To must be one address.
+        state.apply_ui(UiEvent::ComposeField(ComposeField::To, "bob@example.invalid".into()));
+        state.apply_ui(UiEvent::ComposeField(ComposeField::ReplyTo, "a@x.invalid, b@x.invalid".into()));
+        assert!(parse_recipients(state.compose.as_ref().unwrap()).is_err());
+        state.apply_ui(UiEvent::ComposeField(ComposeField::ReplyTo, "Help <help@x.invalid>".into()));
+        assert!(parse_recipients(state.compose.as_ref().unwrap()).is_ok());
+        // Cleared: no Reply-To at all.
+        state.apply_ui(UiEvent::ComposeField(ComposeField::ReplyTo, "  ".into()));
+        assert_eq!(state.compose.as_ref().unwrap().draft.reply_to, None);
     }
 
     #[test]

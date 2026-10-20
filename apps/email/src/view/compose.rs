@@ -327,17 +327,14 @@ fn row_of<R>(
 /// Identities… at the right), To (with the Cc, Bcc and Reply-To buttons at
 /// the right), the optional rows the person opened, and Subject.
 fn form(ui: &mut Ui, compose: &ComposeState, state: &State, events: &mut Vec<UiEvent>) {
-    // The label column fits the widest label shown.
-    let shown: Vec<ComposeField> = [ComposeField::To]
+    // The label column fits the widest label any row can have, so opening
+    // a row never moves the fields sideways.
+    let font = egui::TextStyle::Body.resolve(ui.style());
+    let column = [ComposeField::To]
         .into_iter()
         .chain(ComposeField::OPTIONAL)
         .chain([ComposeField::Subject])
-        .filter(|f| compose.shows(*f))
-        .collect();
-    let font = egui::TextStyle::Body.resolve(ui.style());
-    let column = shown
-        .iter()
-        .map(|f| crate::label(row_label(*f)))
+        .map(|f| crate::label(row_label(f)))
         .chain([crate::label("from")])
         .map(|text| {
             ui.painter()
@@ -377,8 +374,12 @@ fn form(ui: &mut Ui, compose: &ComposeState, state: &State, events: &mut Vec<UiE
                 if ui.add(identities).clicked() {
                     events.push(UiEvent::OpenIdentities(compose.account.clone()));
                 }
-                let width = (ui.available_width() - GAP).max(0.0);
+                let width = ui.available_width();
                 ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                    // A long "Name <address>" is cut short, never widening
+                    // the dialog.
+                    ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
+                    ui.set_max_width(width);
                     if senders.len() > 1 {
                         let names: Vec<String> = senders
                             .iter()
@@ -436,6 +437,7 @@ fn form(ui: &mut Ui, compose: &ComposeState, state: &State, events: &mut Vec<UiE
                 ui.add_space(GAP - BUTTON_GAP);
                 let width = ui.available_width();
                 ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                    ui.set_max_width(width);
                     recipients(ui, compose, ComposeField::To, label, width, events);
                 });
             });
