@@ -349,6 +349,8 @@ async fn start_cast(connection: Connection, sessions: Sessions, target: Target, 
     if !still_wanted(&connection, &sessions, &target).await {
         tracing::info!(%owner, %session, %app, "screencast granted but its request is gone; not started");
         set_starting(&sessions, session.as_str(), target.epoch, false);
+        // Removes the request when only its session went away.
+        request::respond(&connection, &target.request, owner, request::CANCELLED, HashMap::new()).await;
         return;
     }
     tracing::info!(%owner, %session, %app, output = %output.name, ?decision, "screencast granted");
