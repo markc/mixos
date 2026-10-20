@@ -831,6 +831,9 @@ macro_rules! verbs {
 }
 
 impl Engine {
+    pub(crate) fn max_request_bytes(&self) -> usize {
+        self.state.config.service.max_request_line_bytes
+    }
     verbs!(
         embed, store, search, update, delete, list, feedback, supersede, stale, stats, index_file
     );
@@ -1151,6 +1154,21 @@ mod tests {
         let (engine, dir) = engine("tilde");
         let reply = engine.index_file(json!({"path":"~/doc.md", "content":""})).await;
         assert_eq!(reply["error"], "path must be absolute (daemon runs as system user indexd; \"~\" has no meaning here)");
+        drop(engine);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn tokenizer_loading_lock_does_not_block_stats_and_failures_have_cooldown() {
+        let (engine, dir) = engine("tokenizer-cooldown");
+        let held = engine.state.chunk_tokenizer.lock().await;
+        let stats = tokio::time::timeout(Duration::from_secs(1), engine.stats(json!({}))).await.unwrap();
+        assert_eq!(stats["total_vectors"], 0);
+        drop(held);
+        let first = chunk_tokenizer(&engine.state).await.err().unwrap();
+        std::fs::remove_file(Path::new(&engine.state.config.service.model_dir).join("config.json")).unwrap();
+        let second = chunk_tokenizer(&engine.state).await.err().unwrap();
+        assert_eq!(first, second, "failed load is memoised during cooldown");
         drop(engine);
         std::fs::remove_dir_all(dir).unwrap();
     }

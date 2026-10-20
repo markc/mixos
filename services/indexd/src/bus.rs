@@ -63,6 +63,10 @@ pub(crate) async fn serve_client(engine: Arc<Engine>, client: Arc<NodedClient>, 
             }
             command = incoming.recv() => {
                 let Some(cmd) = command else { break; };
+                if cmd.body.len() > engine.max_request_bytes() {
+                    let _ = client.respond(&cmd, 10, r#"{"error":"request exceeds configured byte limit"}"#).await;
+                    continue;
+                }
                 if requests.len() >= 64 {
                     let _ = client.respond(&cmd, 10, r#"{"error":"indexd busy"}"#).await;
                     continue;

@@ -11,8 +11,7 @@ end
 fn call($verb, $body)
   $encoded = json_encode($body)
   send indexd $verb body=$encoded timeout=10
-  $value = $result
-  if type($value) == "string" then $value = json_parse($value) end
+  $value = $reply
   return {rc: $rc, body: $value}
 end
 fn ok($verb, $body)

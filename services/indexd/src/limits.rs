@@ -258,14 +258,16 @@ pub(crate) async fn release_background_reservation(
 ) {
     let drained_at_completion = job.reservation.release();
     if drained_at_completion && queue_budget.is_empty() {
+        let state = state.clone();
+        let _ = tokio::task::spawn_blocking(move || {
         if LONG_READERS.load(Ordering::Acquire) == 0 {
-            let guard = state.lock().await;
+            let guard = state.blocking_lock();
             if let Err(e) = guard.db.checkpoint_truncate() {
                 guard.db.mark_checkpoint_owed();
                 tracing::debug!("background-drain WAL checkpoint skipped: {e}");
             }
         } else {
-            state.lock().await.db.mark_checkpoint_owed();
+            state.blocking_lock().db.mark_checkpoint_owed();
         }
         // Bulk indexing can leave freed allocator spans resident; trim once
         // at the queue-empty transition, never per job.
@@ -273,6 +275,7 @@ pub(crate) async fn release_background_reservation(
         unsafe {
             libc::malloc_trim(0);
         }
+        }).await;
     }
 }
 

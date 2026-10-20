@@ -4196,6 +4196,7 @@ version = "0.1.1"
 dependencies = [
  "anyhow",
  "buildinfo",
+ "bus",
  "candle-core",
  "candle-nn",
  "candle-transformers",
@@ -4207,6 +4208,8 @@ dependencies = [
  "serde",
  "serde_json",
  "sqlite-vec",
+ "tempfile",
+ "test-broker",
  "tokenizers",
  "tokio",
  "tracing",
