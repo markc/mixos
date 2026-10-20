@@ -1242,7 +1242,8 @@ mod tests {
             let errors = [
                 db.delete_filtered(&[], &filters).unwrap_err(),
                 db.search(&vec![1.0; EMBEDDING_DIM], 10, "", &filters, BUS_BODY_LIMIT)
-                    .unwrap_err(),
+                    .err()
+                    .unwrap(),
                 search_exact(
                     missing_path.to_str().unwrap(),
                     &db.search_index,
@@ -1257,7 +1258,10 @@ mod tests {
             ];
             for error in errors {
                 let error = error.to_string();
-                assert!(error.contains("metadata filter.field"), "{field:?}: {error}");
+                assert!(
+                    error.contains("metadata filter.field"),
+                    "{field:?}: {error}"
+                );
                 assert!(error.contains("^[A-Za-z0-9_][A-Za-z0-9_.-]*$"));
             }
         }
@@ -1359,7 +1363,11 @@ mod tests {
         db.store_revalidated(
             &vec![Some(vec![1.0; EMBEDDING_DIM]); 3],
             &[None; 3],
-            &["first integer".into(), "second integer".into(), "real".into()],
+            &[
+                "first integer".into(),
+                "second integer".into(),
+                "real".into(),
+            ],
             "doc",
             &[
                 r#"{"n":9007199254740992}"#.into(),
@@ -1401,7 +1409,8 @@ mod tests {
             let errors = [
                 db.delete_filtered(&[], &filters).unwrap_err(),
                 db.search(&vec![1.0; EMBEDDING_DIM], 10, "", &filters, BUS_BODY_LIMIT)
-                    .unwrap_err(),
+                    .err()
+                    .unwrap(),
                 search_exact(
                     path,
                     &db.search_index,
