@@ -14,8 +14,7 @@ use egui::{Key, KeyboardShortcut, Modifiers};
 
 /// The shortcut `text` names, or `None` when it is not a chord egui has.
 pub fn parse_chord(text: &str) -> Option<KeyboardShortcut> {
-    // A plus key follows the separator in Ctrl++ (or stands alone as +).
-    let parts: Vec<&str> = text.strip_suffix('+').unwrap_or(text).split('+').collect();
+    let parts: Vec<&str> = text.split('+').collect();
     let (key, mods) = parts.split_last()?;
     let mut modifiers = Modifiers::NONE;
     for m in mods {
@@ -38,7 +37,6 @@ pub fn parse_chord(text: &str) -> Option<KeyboardShortcut> {
         "=" => Key::Equals,
         "-" => Key::Minus,
         "/" => Key::Slash,
-        "" if text.ends_with('+') => Key::Plus,
         "" => return None,
         one if one.chars().count() == 1 => Key::from_name(&one.to_ascii_uppercase())?,
         name => Key::from_name(name)?,
@@ -89,8 +87,6 @@ mod tests {
             "Ctrl+=",
             "Ctrl+-",
             "Ctrl+/",
-            "Ctrl++",
-            "+",
             "Shift+Delete",
             "Ctrl+PageDown",
             "Backspace",

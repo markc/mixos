@@ -408,8 +408,8 @@ impl<S> Registry<S> {
     /// Every command with its current enablement, for `<app>.commands`.
     pub fn describe(&self, state: &S, strings: &Strings) -> Vec<Described> {
         let mut rows = self.core.describe(state, &ToolkitLabels(strings));
-        // Keep the established egui ModifierNames::NAMES wire spelling,
-        // including symbols for arrows, byte for byte.
+        // Keep the established egui ModifierNames::NAMES wire spelling
+        // byte for byte.
         for row in &mut rows {
             let mut chords = self.shortcuts_of(row.id).into_iter();
             row.shortcut = chords
