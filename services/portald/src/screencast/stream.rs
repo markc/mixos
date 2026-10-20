@@ -9,16 +9,20 @@ use pipewire as pw;
 use pw::spa;
 use pw::spa::pod::{ChoiceValue, Object, Pod, Property, Value};
 use pw::spa::utils::{Choice, ChoiceEnum, ChoiceFlags, Fraction, Rectangle};
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::thread::JoinHandle;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// How long `Start` waits for PipeWire to publish the node.
 const READY_TIMEOUT: Duration = Duration::from_secs(5);
+/// A static screen sends no frames; consumers still need one now and then
+/// (a newly attached one needs its first). The newest frame is re-sent after
+/// this long without a fresh one.
+const KEEPALIVE: Duration = Duration::from_secs(1);
 
 enum Message {
     Frame(Arc<Frame>),
@@ -166,6 +170,7 @@ fn buffers(stride: u32, height: u32) -> anyhow::Result<Vec<u8>> {
 
 struct Data {
     latest: Rc<RefCell<Option<Arc<Frame>>>>,
+    sent: Rc<Cell<Option<Instant>>>,
     ready: Option<mpsc::Sender<anyhow::Result<u32>>>,
     stride: u32,
     height: u32,
@@ -206,14 +211,25 @@ fn serve(
     )?;
 
     let latest: Rc<RefCell<Option<Arc<Frame>>>> = Rc::new(RefCell::new(None));
+    let sent: Rc<Cell<Option<Instant>>> = Rc::new(Cell::new(None));
     let _listener = stream
         .add_local_listener_with_user_data(Data {
             latest: latest.clone(),
+            sent: sent.clone(),
             ready: Some(ready),
             stride: width * 4,
             height,
         })
-        .state_changed(|stream, data, _old, new| {
+        .state_changed(|stream, data, old, new| {
+            tracing::info!(?old, ?new, node = stream.node_id(), "screencast stream state");
+            // A consumer just attached: give it the newest frame now rather
+            // than waiting for the screen to change.
+            if matches!(new, pw::stream::StreamState::Streaming)
+                && data.latest.borrow().is_some()
+                && let Err(error) = stream.trigger_process()
+            {
+                tracing::debug!(%error, "process not triggered");
+            }
             if matches!(new, pw::stream::StreamState::Paused | pw::stream::StreamState::Streaming)
                 && let Some(ready) = data.ready.take()
             {
@@ -258,6 +274,7 @@ fn serve(
             *chunk.offset_mut() = 0;
             *chunk.stride_mut() = frame.stride as i32;
             *chunk.size_mut() = written as u32;
+            data.sent.set(Some(Instant::now()));
         })
         .register()?;
 
@@ -292,10 +309,14 @@ fn serve(
         let mainloop = mainloop.clone();
         let stream = stream.clone();
         let latest = latest.clone();
+        let first_frame = Cell::new(true);
         move |message| match message {
             Message::Frame(frame) => {
+                if first_frame.replace(false) {
+                    tracing::info!(width = frame.width, height = frame.height, "screencast first frame captured");
+                }
                 *latest.borrow_mut() = Some(frame);
-                if stream.state() == pw::stream::StreamState::Streaming
+                if matches!(stream.state(), pw::stream::StreamState::Streaming)
                     && let Err(error) = stream.trigger_process()
                 {
                     tracing::debug!(%error, "process not triggered");
@@ -304,6 +325,23 @@ fn serve(
             Message::CaptureEnded | Message::Quit => mainloop.quit(),
         }
     });
+
+    let keepalive = mainloop.loop_().add_timer({
+        let stream = stream.clone();
+        let latest = latest.clone();
+        let sent = sent.clone();
+        move |_| {
+            let stale = sent.get().is_none_or(|at| at.elapsed() >= KEEPALIVE);
+            if stale
+                && latest.borrow().is_some()
+                && matches!(stream.state(), pw::stream::StreamState::Streaming)
+                && let Err(error) = stream.trigger_process()
+            {
+                tracing::debug!(%error, "keepalive not triggered");
+            }
+        }
+    });
+    let _ = keepalive.update_timer(Some(KEEPALIVE), Some(KEEPALIVE)).into_sync_result();
 
     mainloop.run();
     stop.store(true, Ordering::Relaxed);
