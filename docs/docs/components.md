@@ -39,6 +39,7 @@ profile: [desktop](desktop.md) and [server](server.md). This page describes the 
 | [hostd](../hostd/README.md) · [changelog](../hostd/changelog.md) | service | unclassified | [`services/hostd`](https://github.com/markc/mixos/tree/main/services/hostd) | How hostd answers questions about the host and carries out privileged host changes through closed, typed verbs behind standing grants, receipts and rollback, so agents never need sudo. |
 | [logging](../logging/README.md) | lib | none (library) | [`libs/logging`](https://github.com/markc/mixos/tree/main/libs/logging) | Shared tracing, sink selection, reload handles and process statistics for MixOS services and the Mix shell. |
 | [maild](../maild/README.md) · [changelog](../maild/changelog.md) | service | server | [`services/maild`](https://github.com/markc/mixos/tree/main/services/maild) | JMAP, SMTP, IMAP and DAV mail service |
+| [mds](../mds/README.md) | lib | none (library) | [`libs/mds`](https://github.com/markc/mixos/tree/main/libs/mds) | Per-container-set SQLite metadata and a content-addressable blob store, the storage library that maild links and blobd will use. A library, not a daemon. |
 | [mesh-sign](../mesh-sign/README.md) · [changelog](../mesh-sign/changelog.md) | cli | unclassified | [`cli/mesh-sign`](https://github.com/markc/mixos/tree/main/cli/mesh-sign) | Signs and verifies the mesh inventory, the trust root of a MixOS mesh. |
 | [mimedb](../mimedb/README.md) | lib | none (library) | [`libs/mimedb`](https://github.com/markc/mixos/tree/main/libs/mimedb) | A library that reads the freedesktop shared-mime-info database and decides a file's type from its name and content the way GLib does, so MixOS names a file's type as the desktop does. |
 | [mix](../mix/README.md) · [changelog](../mix/changelog.md) | lib | none (library) | [`libs/mix`](https://github.com/markc/mixos/tree/main/libs/mix) |  |
@@ -113,6 +114,7 @@ checked separately by the layering gate.
 | [expr](https://github.com/markc/mixos/blob/main/libs/expr/Cargo.toml) | expr | lib | core | none | 0.1.1 |
 | [files](https://github.com/markc/mixos/blob/main/libs/files/Cargo.toml) | files | lib | core | none | 0.1.1 |
 | [logging](https://github.com/markc/mixos/blob/main/libs/logging/Cargo.toml) | logging | lib | core | none | 0.1.1 |
+| [mds](https://github.com/markc/mixos/blob/main/libs/mds/Cargo.toml) | mds | lib | core | none | 0.1.1 |
 | [mimedb](https://github.com/markc/mixos/blob/main/libs/mimedb/Cargo.toml) | mimedb | lib | mix | none | 0.1.1 |
 | [mix](https://github.com/markc/mixos/blob/main/libs/mix/Cargo.toml) | mix | lib | mix | public | 0.116.0 |
 | [props](https://github.com/markc/mixos/blob/main/libs/props/Cargo.toml) | props | lib | core | none | 0.1.1 |
@@ -164,7 +166,6 @@ checked separately by the layering gate.
 | [maild-auth](https://github.com/markc/mixos/blob/main/services/maild/crates/maild-auth/Cargo.toml) | maild | service | core | none | 0.1.1 |
 | [maild-bayesian](https://github.com/markc/mixos/blob/main/services/maild/crates/maild-bayesian/Cargo.toml) | maild | service | core | none | 0.1.1 |
 | [maild-rules](https://github.com/markc/mixos/blob/main/services/maild/crates/maild-rules/Cargo.toml) | maild | service | core | none | 0.1.1 |
-| [mds](https://github.com/markc/mixos/blob/main/services/maild/crates/mds/Cargo.toml) | maild | service | core | none | 0.1.1 |
 | [mixtrayd](https://github.com/markc/mixos/blob/main/services/mixtrayd/Cargo.toml) | mixtrayd | service | desktop | public | 0.1.1 |
 | [monitord](https://github.com/markc/mixos/blob/main/services/monitord/Cargo.toml) | monitord | service | core | public | 0.1.0 |
 | [noded](https://github.com/markc/mixos/blob/main/services/noded/Cargo.toml) | noded | service | core | public | 0.18.3 |

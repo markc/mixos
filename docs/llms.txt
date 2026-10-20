@@ -43,6 +43,7 @@ One line per component with a page: kind, then install profiles. The
 - [logging](https://mixos.dev/logging/README.md): lib; profiles: none (library). Shared tracing, sink selection, reload handles and process statistics for MixOS services and the Mix shell.
 - [maild](https://mixos.dev/maild/README.md): service; profiles: server. JMAP, SMTP, IMAP and DAV mail service
   - [maild — changelog](https://mixos.dev/maild/changelog.md): Release notes of the maild component, mirrored from services/maild/CHANGELOG.md.
+- [mds](https://mixos.dev/mds/README.md): lib; profiles: none (library). Per-container-set SQLite metadata and a content-addressable blob store, the storage library that maild links and blobd will use. A library, not a daemon.
 - [mesh-sign](https://mixos.dev/mesh-sign/README.md): cli; profiles: unclassified. Signs and verifies the mesh inventory, the trust root of a MixOS mesh.
   - [mesh-sign — changelog](https://mixos.dev/mesh-sign/changelog.md): Release notes of the mesh-sign component, mirrored from cli/mesh-sign/CHANGELOG.md.
 - [mimedb](https://mixos.dev/mimedb/README.md): lib; profiles: none (library). A library that reads the freedesktop shared-mime-info database and decides a file's type from its name and content the way GLib does, so MixOS names a file's type as the desktop does.

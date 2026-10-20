@@ -4,7 +4,7 @@ priority: 2
 draft: false
 deadline: nil
 allow_list: [
-  "services/maild/crates/mds/src/schema/v1_1.sql"
+  "libs/mds/src/schema/v1_1.sql"
 ]
 deny_list: ["mod.rs", "v1.sql", "import.rs", "tests/import.rs"]
 review: {

@@ -11,8 +11,8 @@ autobins = false
 description = "Per-container-set SQLite metadata and content-addressable blob storage"
 
 [package.metadata.mixos]
-component = "maild"
-kind = "service"
+component = "mds"
+kind = "lib"
 layer = "core"
 contract = "none"
 

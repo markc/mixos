@@ -14,6 +14,6 @@ Its service config is `/etc/mixos/maild/config.conf.mix`. State is owned by
 Configured TLS certificates and DKIM keys must be readable by that account.
 
 See the [manual](../../docs/maild/README.md) and
-[storage API](crates/mds/README.md). The [test accounting](tests/README.md)
+[storage API](../../libs/mds/README.md). The [test accounting](tests/README.md)
 records every ported test and the inherited gates. Run Rust tests on a build
 worker; parser nesting tests require the workspace's patched mail-parser.

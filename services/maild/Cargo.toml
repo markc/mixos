@@ -24,7 +24,7 @@ name = "maild"
 path = "src/main.rs"
 
 [dependencies]
-mds = { path = "crates/mds" }
+mds = { path = "../../libs/mds" }
 maild-auth = { path = "crates/maild-auth" }
 maild-rules = { path = "crates/maild-rules" }
 maild-bayesian = { path = "crates/maild-bayesian" }
