@@ -5,7 +5,7 @@ use ::bus::native_client::NodedClient;
 use anyhow::Result;
 use serde::Deserialize;
 use serde_json::{Value, json};
-use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 #[derive(Deserialize)]
 struct Request {
@@ -19,14 +19,27 @@ where
     R: AsyncBufRead + Unpin,
     W: AsyncWrite + Unpin,
 {
-    let mut line = String::new();
+    let mut line = Vec::new();
     loop {
         let mut transport_failed = false;
         line.clear();
-        if input.read_line(&mut line).await? == 0 {
+        if (&mut input).take((crate::limits::BUS_BODY_LIMIT + 1) as u64)
+            .read_until(b'\n', &mut line).await? == 0 {
             break;
         }
-        let reply = match serde_json::from_str::<Request>(&line) {
+        let oversized = line.len() > crate::limits::BUS_BODY_LIMIT;
+        if oversized {
+            // Drain just this line in bounded chunks, then resume the protocol.
+            while line.last() != Some(&b'\n') {
+                line.clear();
+                if (&mut input).take(8192).read_until(b'\n', &mut line).await? == 0 {
+                    break;
+                }
+            }
+        }
+        let reply = if oversized || std::str::from_utf8(&line).is_err() {
+            json!({"id":null,"rc":-1,"error":"invalid bridge request"})
+        } else { match serde_json::from_slice::<Request>(&line) {
             Ok(request) => match match client {
                 Ok(client) => {
                     client
@@ -52,13 +65,13 @@ where
                 }
             },
             Err(error) => {
-                let id = serde_json::from_str::<Value>(&line)
+                let id = serde_json::from_slice::<Value>(&line)
                     .ok()
                     .and_then(|v| v.get("id").cloned())
                     .unwrap_or(Value::Null);
                 json!({"id":id,"rc":-1,"error":format!("invalid bridge request: {error}")})
             }
-        };
+        }};
         output.write_all(reply.to_string().as_bytes()).await?;
         output.write_all(b"\n").await?;
         output.flush().await?;

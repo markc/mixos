@@ -101,6 +101,15 @@ async fn serve_reconnect_bridge_flush_eof_and_sigterm() {
     );
     let mut input = bridge.0.stdin.take().unwrap();
     let mut lines = BufReader::new(bridge.0.stdout.take().unwrap()).lines();
+    for invalid in [vec![0xff, b'\n'], vec![b'x'; ::bus::WS_MAX_FRAME_BYTES + 1]] {
+        input.write_all(&invalid).await.unwrap();
+        if invalid.last() != Some(&b'\n') { input.write_all(b"\n").await.unwrap(); }
+        input.flush().await.unwrap();
+        let line = tokio::time::timeout(Duration::from_secs(5), lines.next_line())
+            .await.unwrap().unwrap().unwrap();
+        assert_eq!(serde_json::from_str::<Value>(&line).unwrap(),
+            json!({"id":null,"rc":-1,"error":"invalid bridge request"}));
+    }
     for (id, verb, body, rc) in [
         (
             json!({"correlation":[1,"x"]}),
