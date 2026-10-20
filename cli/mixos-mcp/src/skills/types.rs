@@ -69,7 +69,7 @@ impl SkillDocument {
         if self.source_commit.is_some() || self.source_file.is_some() {
             md.push_str("\n**Provenance:**");
             if let Some(ref commit) = self.source_commit {
-                md.push_str(&format!(" commit `{}`", &commit[..commit.len().min(12)]));
+                md.push_str(&format!(" commit `{}`", crate::text::truncate_bytes(commit, 12)));
             }
             if let Some(ref file) = self.source_file {
                 md.push_str(&format!(" file `{file}`"));

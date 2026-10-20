@@ -23,6 +23,7 @@ mod llm;
 mod mix_worker;
 mod native_tools;
 mod skills;
+mod text;
 mod tool_output;
 
 struct MixosMcp {
@@ -2299,7 +2300,7 @@ impl MixosMcp {
             for (i, (_, doc, _)) in active_skills.iter().enumerate() {
                 brief.push_str(&format!("{}. **{}**: {}\n", i + 1, doc.name, doc.trigger));
                 let approach = if doc.approach.len() > 200 {
-                    format!("{}...", &doc.approach[..200])
+                    format!("{}...", text::truncate_bytes(&doc.approach, 200))
                 } else {
                     doc.approach.clone()
                 };
@@ -2318,7 +2319,7 @@ impl MixosMcp {
                 // Take first 2 lines of snippet
                 let short: String = snippet.lines().take(2).collect::<Vec<_>>().join(" ");
                 let short = if short.len() > 150 {
-                    format!("{}...", &short[..150])
+                    format!("{}...", text::truncate_bytes(&short, 150))
                 } else {
                     short
                 };
@@ -2337,7 +2338,7 @@ impl MixosMcp {
                 let snippet = j.get("snippet").and_then(|v| v.as_str()).unwrap_or("");
                 let first_line = snippet.lines().next().unwrap_or("");
                 let first_line = if first_line.len() > 120 {
-                    format!("{}...", &first_line[..120])
+                    format!("{}...", text::truncate_bytes(first_line, 120))
                 } else {
                     first_line.to_string()
                 };
@@ -2537,7 +2538,7 @@ fn format_search_hits(resp: &serde_json::Value) -> Vec<serde_json::Value> {
                     let dist = h.get("distance").and_then(|d| d.as_f64()).unwrap_or(1.0);
                     let content = h.get("content").and_then(|c| c.as_str()).unwrap_or("");
                     let snippet = if content.len() > 500 {
-                        format!("{}...", &content[..500])
+                        format!("{}...", text::truncate_bytes(content, 500))
                     } else {
                         content.to_string()
                     };
@@ -3075,6 +3076,22 @@ async fn async_main() {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn search_hit_snippets_handle_multibyte_characters_at_byte_limit() {
+        for ch in ['—', '😀'] {
+            for offset in 1..ch.len_utf8() {
+                let prefix = "a".repeat(500 - offset);
+                let response = serde_json::json!({"results": [{
+                    "content": format!("{prefix}{ch}tail"),
+                    "metadata": "{}"
+                }]});
+                let hits = super::format_search_hits(&response);
+                assert_eq!(hits.len(), 1);
+                assert_eq!(hits[0]["snippet"], format!("{prefix}..."));
+            }
+        }
+    }
+
     fn bare_type() -> super::TermTypeParams {
         super::TermTypeParams {
             text: "x".into(),
