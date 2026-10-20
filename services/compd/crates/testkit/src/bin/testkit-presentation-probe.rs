@@ -432,7 +432,7 @@ fn run_rate(
     let instant = Instant::now();
     let timeout = instant + scheduled(Duration::ZERO, options.frames, rate) + options.timeout;
     let mut stalls = 0;
-    for commit in 0..options.frames {
+    for (commit, submitted_at) in submitted.iter_mut().enumerate() {
         dispatch_until(
             queue,
             probe,
@@ -456,7 +456,7 @@ fn run_rate(
         surface.damage_buffer(0, 0, options.width as i32, options.height as i32);
         presentation.feedback(surface, qh, commit);
         probe.busy[slot] = true;
-        submitted[commit] = monotonic_now();
+        *submitted_at = monotonic_now();
         surface.commit();
         connection.flush().map_err(|e| e.to_string())?;
     }
