@@ -796,10 +796,7 @@ pub fn listener_add_error(cfg: Option<&NodeConfig>, fqdn: &str) -> Option<String
     let naming = listeners_naming(cfg, fqdn);
     // Check every listener, including ones after the first two matches.
     let mut seen = std::collections::HashSet::new();
-    if let Some(l) = naming
-        .iter()
-        .find(|l| !seen.insert(l.id.as_str()))
-    {
+    if let Some(l) = naming.iter().find(|l| !seen.insert(l.id.as_str())) {
         return Some(format!(
             "vhost {fqdn:?} is listed twice in listener {:?}'s `vhosts` in \
              node.conf.mix; the next webd restart would refuse to start. List \

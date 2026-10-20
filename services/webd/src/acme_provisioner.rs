@@ -5986,6 +5986,10 @@ mod tests {
                 vec!["first".into(), "second".into()],
             )]),
         );
+        p.attach_listener_strict_sni(HashMap::from([
+            ("first".into(), true),
+            ("second".into(), true),
+        ]));
         let mut previous = None;
         for _ in 0..2 {
             let pem = std::fs::read(live.join(FULLCHAIN_FILE)).unwrap();
