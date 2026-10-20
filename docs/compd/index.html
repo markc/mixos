@@ -303,7 +303,9 @@ at the repository root.</p>
 <pre><code>cargo build --profile release-fast -p compd                     # nested backend
 cargo build --profile release-fast -p compd --no-default-features \
     --features backend-native                                   # KMS backend
-cargo build --profile release-fast -p compd --features backend-all   # both
+cargo build --profile release-fast -p compd --features backend-all   # all three
+cargo build --profile release-fast -p compd --no-default-features \
+    --features backend-headless                                 # headless
 </code></pre>
 <p><code>capture-ffmpeg</code> adds hardware video capture through libav; the default
 build links no FFmpeg.</p>
@@ -324,6 +326,24 @@ placement before exec and <code>cgroup.kill</code> provide complete cleanup when
 (default <code>comp</code>); <code>compd --help</code> lists every flag. Settings are read from
 <code>--config-file</code>, else <code>~/.config/compd/settings.json</code>. Preferences are read
 from <code>preferences.json</code> beside it.</p>
+<p>With the <code>backend-headless</code> feature, a render node can drive a virtual
+output without a VT, seat, input device or parent compositor:</p>
+<pre><code>compd --headless --socket wayland-headless --size 1920x1080 --scale 1 \
+    --render-node /dev/dri/renderD128 --config-file settings.json
+</code></pre>
+<p>The output is <code>headless-0</code> at 60 Hz; <code>--size</code> sets physical pixels and
+<code>--scale</code> sets the logical-to-physical scale (defaults 1920x1080 and 1).
+<code>--render-node</code> defaults to the <code>render_node</code> setting. EGL must report the
+selected node. The default Bus name is <code>comp-headless</code>, overridden with
+<code>--bus-service</code>; the binding profile is <code>headless</code>, without VT or host
+interception chords. XWayland is disabled. Startup preserves inherited
+scheduling and nice values and does not publish desktop session variables.</p>
+<p>Frames repaint into alternating offscreen textures only when the scene
+changes, capped at 60 Hz. Completion is waited on before frame callbacks
+and software presentation feedback. This initial backend does not yet
+service screencopy, Bus capture or cursor capture.</p>
+<p>The ignored <code>headless</code> GPU tests need a built <code>compd</code> with this feature
+beside the test binaries, or selected by <code>COMPD_TEST_BINARY</code>.</p>
 <p><code>cursor_sensitivity</code> in <code>preferences.json</code> is a speed multiplier on top of
 the output scale: compd multiplies each relative pointer delta by both, so
 <code>1.0</code> moves the cursor at the same logical speed at every scale. Clients

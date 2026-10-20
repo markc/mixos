@@ -648,7 +648,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         // The key bindings with or without a Bus port: this backend's table,
         // then the chords the keyboard queued this dispatch.
-        state.inner.comp.bindings.ensure(if nested { "nested" } else { "kms-live" });
+        state.inner.comp.bindings.ensure(match backend {
+            cli::Backend::Nested => "nested",
+            cli::Backend::Kms => "kms-live",
+            cli::Backend::Headless => "headless",
+        });
         policy_host::control::apply_bindings(state);
         // Print Screen presses, queued by the chords above or by a Bus
         // pass's injected key, start (or hand off to) the screenshot app.
@@ -798,7 +802,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Then the session environment, which outlives this process and would otherwise point
     // the next login at a socket nobody is listening on.
-    shutdown::teardown(&mut state, nested);
+    shutdown::teardown(&mut state, backend != cli::Backend::Kms);
 
     // Our own teardown first, so anything EGL has to say about it is still
     // reported — the compositor's contexts and surfaces go out with `state`.

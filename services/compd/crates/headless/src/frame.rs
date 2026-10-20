@@ -69,6 +69,7 @@ fn draw(state: &mut Loop, ctx: &mut Context) {
         }
         Err(error) => {
             warn!("headless: frame failed: {error}");
+            ctx.tracker = OutputDamageTracker::from_output(&ctx.output);
             state.state.redraw.request_for(protocols::redraw::schedule::schedule::RedrawReason::Rescue);
         }
     }
@@ -88,9 +89,16 @@ fn compose(state: &mut Loop, ctx: &mut Context, visible: &mut Vec<Window>) -> Re
     let prepared = frames::scene::scene::prepare(state, &mut ctx.renderer, size);
     let scene = frames::scene::scene::scene(state, &mut ctx.renderer, size, prepared);
     *visible = scene.visible_window;
+    // Track content changes independently of the alternating targets. This
+    // age-1 query is only a scene diff; it never assumes preserved pixels in
+    // either texture. An unchanged scene submits nothing.
+    if ctx.tracker.damage_output(1, &scene.Element)?.0.is_none() {
+        return Ok(false);
+    }
     let mut target = ctx.renderer.bind(&mut ctx.targets[ctx.next])?;
     // No buffer-age assumptions: each target is repainted completely.
-    let result = ctx.tracker.render_output(&mut ctx.renderer, &mut target, 0, &scene.Element, [0.1, 0.1, 0.1, 1.0])?;
+    let mut repaint = OutputDamageTracker::from_output(&ctx.output);
+    let result = repaint.render_output(&mut ctx.renderer, &mut target, 0, &scene.Element, [0.1, 0.1, 0.1, 1.0])?;
     let damaged = result.damage.is_some_and(|d| !d.is_empty());
     result.sync.wait()?;
     ctx.next ^= 1;

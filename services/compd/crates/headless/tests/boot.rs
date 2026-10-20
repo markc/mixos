@@ -73,7 +73,7 @@ fn boot(scale: i32, explicit_node: bool) {
     let log = root.join("compd.log");
     let stderr = fs::File::create(&log).unwrap();
     let mut command = Command::new(binary);
-    command.args(["--headless", "--socket", "wayland-headless-test", "--size", "1280x720", "--scale", &scale.to_string(), "--config-file"])
+    command.args(["--headless", "--socket", "wayland-headless-test", "--size", "1280x720", "--config-file"])
         .arg(settings)
         .env("XDG_RUNTIME_DIR", &root)
         .env("XDG_CONFIG_HOME", root.join("config"))
@@ -87,6 +87,7 @@ fn boot(scale: i32, explicit_node: bool) {
         .env_remove("MIXOS_VT")
         .stdout(Stdio::from(stderr.try_clone().unwrap())).stderr(stderr);
     if explicit_node { command.args(["--render-node", &node]); }
+    if scale != 1 { command.args(["--scale", &scale.to_string()]); }
     let child = command.spawn().expect("start compd");
     let pid = child.id();
     let (stop, stopped) = mpsc::channel();

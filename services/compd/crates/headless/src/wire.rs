@@ -87,8 +87,8 @@ pub fn wire(state: &mut Loop, event_loop: &mut EventLoop<Loop>, options: Options
     model::stats::registry::base::set_compositor_prefers_dmabuf(false);
     frames::scene::gpu::prewarm(state, &mut contract.renderer);
     let targets = [
-        Offscreen::<GlesTexture>::create_buffer(&mut contract.renderer, Fourcc::Abgr8888, options.size)?,
-        Offscreen::<GlesTexture>::create_buffer(&mut contract.renderer, Fourcc::Abgr8888, options.size)?,
+        Offscreen::<GlesTexture>::create_buffer(&mut contract.renderer, Fourcc::Abgr8888, (options.size.w, options.size.h).into())?,
+        Offscreen::<GlesTexture>::create_buffer(&mut contract.renderer, Fourcc::Abgr8888, (options.size.w, options.size.h).into())?,
     ];
     decor::window::install(decor::ChromeTheme::load(
         decor::ChromeStyle::from_name(&state.inner.preference.chrome_style).unwrap_or_default(),

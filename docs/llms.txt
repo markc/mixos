@@ -175,6 +175,7 @@ One line per component with a page: kind, then install profiles. The
 - [Decision — site URL layout](https://mixos.dev/docs/decisions/2026-10-16-site-url-layout.md): Every component's documentation lives at the top of mixos.dev under its own name, in HTML and Markdown at fixed addresses. Everything that is not a component lives under one /docs/ section, so the only names a component can never take are docs and v.
 - [Decision — service property storage belongs in props](https://mixos.dev/docs/decisions/2026-10-18-property-store-in-props.md): Keep service domain records and native Bus routing in props, with an opt-in logging bridge and unchanged persisted contracts.
 - [MCP bridge program name](https://mixos.dev/docs/decisions/2026-10-19-mcp-program-name.md): Status: accepted.
+- [Render-node headless compositor backend](https://mixos.dev/docs/decisions/2026-10-20-headless-backend.md): A third compd backend for offscreen testing and recording.
 
 ### Specs
 

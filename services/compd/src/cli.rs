@@ -259,6 +259,20 @@ pub const UNSUPPORTED_ENV: &[&str] = &[
 mod tests {
     use super::*;
 
+    #[test]
+    fn headless_launch_parses_mode_scale_and_node() {
+        let cli = p(&["--headless", "--size=1280x720", "--scale", "2", "--render-node", "/dev/dri/renderD128"]);
+        assert_eq!(cli.backend, Some(Backend::Headless));
+        assert_eq!(cli.size, Some((1280, 720)));
+        assert_eq!(cli.render_node.as_deref(), Some("/dev/dri/renderD128"));
+        assert_eq!(output_scale(&cli, Backend::Headless), Some(2.0));
+        assert_eq!(output_scale(&p(&["--headless"]), Backend::Headless), Some(1.0));
+        assert_eq!(crate::comp::service_name(Backend::Headless, None), "comp-headless");
+        for bad in ["", "0x720", "1280x0", "-1x720", "1280", "1280x720x2", "2147483647x2"] {
+            assert!(parse_size(bad).is_err(), "{bad}");
+        }
+    }
+
     fn p(args: &[&str]) -> Cli {
         parse_from(args.iter().map(|s| s.to_string()), "test")
     }

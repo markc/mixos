@@ -54,6 +54,7 @@
   <url><loc>https://mixos.dev/docs/decisions/2026-10-16-site-url-layout/</loc></url>
   <url><loc>https://mixos.dev/docs/decisions/2026-10-18-property-store-in-props/</loc></url>
   <url><loc>https://mixos.dev/docs/decisions/2026-10-19-mcp-program-name/</loc></url>
+  <url><loc>https://mixos.dev/docs/decisions/2026-10-20-headless-backend/</loc></url>
   <url><loc>https://mixos.dev/docs/spec/bridge/</loc></url>
   <url><loc>https://mixos.dev/docs/spec/handler-closure-capture/</loc></url>
   <url><loc>https://mixos.dev/docs/spec/mix/2026-10-08-programs-and-documents/</loc></url>
