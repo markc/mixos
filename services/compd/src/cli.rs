@@ -19,7 +19,7 @@
 //! | `--socket NAME` | the Wayland socket name (default: the next free `wayland-N`) |
 //! | `--device PATH` | implies KMS; scanout DRM node (overrides `scanout_node`); conflicts with headless-only flags |
 //! | `--connector NAME` | implies KMS; drive this connector (`HDMI-A-1`, `eDP-1`, …); conflicts with headless-only flags |
-//! | `--scale S` | implies headless unless a backend or KMS-only flag is given; output scale, 0.5 ≤ S ≤ 4, rounded to 1/120; KMS/headless default to 1, nested follows the host |
+//! | `--scale S` | implies no backend (every backend takes it); output scale, 0.5 ≤ S ≤ 4, rounded to 1/120; KMS/headless default to 1, nested follows the host |
 //! | `--kms-confirm` | accepted, no effect: compd never asks a human to confirm a takeover |
 //! | `--config-file PATH` | the settings file (read by `model::environment::config`) |
 //! | `--bus-service NAME` | the `comp` Bus service name (default `comp` on KMS, `comp-nested` nested, `comp-headless` headless) |
@@ -180,7 +180,7 @@ fn infer_backend(cli: &mut Cli) -> Result<(), &'static str> {
     if cli.backend.is_none() {
         cli.backend = if kms_only {
             Some(Backend::Kms)
-        } else if headless_only || cli.scale.is_some() {
+        } else if headless_only {
             Some(Backend::Headless)
         } else {
             None
@@ -300,7 +300,7 @@ mod tests {
     fn headless_flags_infer_backend_and_require_feature() {
         for flags in [
             vec!["--size", "1280x720"],
-            vec!["--scale=2"],
+            vec!["--size", "1280x720", "--scale=2"],
             vec!["--render-node=/dev/dri/renderD128"],
         ] {
             let cli = p(&flags);
@@ -319,6 +319,8 @@ mod tests {
                     .starts_with("headless-feature-disabled:")
             );
         }
+        // --scale is shared by every backend, so alone it infers nothing.
+        assert_eq!(p(&["--scale=2"]).backend, None);
         assert_eq!(p(&["--connector=HDMI-A-1"]).backend, Some(Backend::Kms));
         assert_eq!(
             p(&["--device=/dev/dri/card0", "--scale=2"]).backend,

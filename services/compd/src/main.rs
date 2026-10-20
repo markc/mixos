@@ -161,8 +161,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let env_flags: Vec<(String, String)> = vec![
         (
             "COMPOSITOR_PRIORITY".to_string(),
+            // Stats only: report what headless actually runs with.
             if backend == cli::Backend::Headless {
-                String::new()
+                "inherited".to_string()
             } else {
                 e.priority.clone()
             },
