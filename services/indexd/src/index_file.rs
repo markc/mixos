@@ -546,10 +546,7 @@ pub(crate) async fn handle_index_file(
             return json_error(&detail);
         }
         // Accumulate the ids this section stored or dedup-matched.
-        if let Some(ids) = resp
-            .get("ids")
-            .and_then(|v| v.as_array())
-        {
+        if let Some(ids) = resp.get("ids").and_then(|v| v.as_array()) {
             kept_ids.extend(ids.iter().filter_map(|i| i.as_i64()));
         }
     }

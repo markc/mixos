@@ -218,14 +218,28 @@ fn bridge_initial_connection_failure_replies_then_exits_nonzero() {
 async fn bridge_honours_url_override_with_empty_node_config() {
     use tokio::io::AsyncWriteExt;
     let broker = test_broker::Broker::start();
-    let mut child = Child(tokio::process::Command::new(env!("CARGO_BIN_EXE_indexd"))
-        .arg("bridge").env("MIXOS_NODE_CONFIG", "").env("MIXOS_NODED_URL", &broker.url)
-        .stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().unwrap());
+    let mut child = Child(
+        tokio::process::Command::new(env!("CARGO_BIN_EXE_indexd"))
+            .arg("bridge")
+            .env("MIXOS_NODE_CONFIG", "")
+            .env("MIXOS_NODED_URL", &broker.url)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap(),
+    );
     let mut input = child.0.stdin.take().unwrap();
-    input.write_all(b"{\"id\":1,\"verb\":\"indexd.stats\",\"body\":{}}\n").await.unwrap();
+    input
+        .write_all(b"{\"id\":1,\"verb\":\"indexd.stats\",\"body\":{}}\n")
+        .await
+        .unwrap();
     drop(input);
     let mut lines = BufReader::new(child.0.stdout.take().unwrap()).lines();
-    let line = tokio::time::timeout(Duration::from_secs(5), lines.next_line()).await.unwrap().unwrap().unwrap();
+    let line = tokio::time::timeout(Duration::from_secs(5), lines.next_line())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
     let reply: Value = serde_json::from_str(&line).unwrap();
     assert_eq!(reply["rc"], 10);
     assert!(reply["body"].is_null());
@@ -255,14 +269,25 @@ fn call_is_in_process_and_uses_explicit_config() {
 #[test]
 fn call_charges_original_argv_bytes_including_whitespace() {
     let (_dir, config) = fixture();
-    let mut value: Value = serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
+    let mut value: Value =
+        serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
     value["service"]["max_request_line_bytes"] = json!(128);
     std::fs::write(&config, value.to_string()).unwrap();
     let output = std::process::Command::new(env!("CARGO_BIN_EXE_indexd"))
-        .args(["--config", config.to_str().unwrap(), "call", "stats", &format!("{}{{}}", " ".repeat(128))])
-        .output().unwrap();
+        .args([
+            "--config",
+            config.to_str().unwrap(),
+            "call",
+            "stats",
+            &format!("{}{{}}", " ".repeat(128)),
+        ])
+        .output()
+        .unwrap();
     assert!(!output.status.success());
-    assert_eq!(serde_json::from_slice::<Value>(&output.stdout).unwrap()["code"], "request_too_large");
+    assert_eq!(
+        serde_json::from_slice::<Value>(&output.stdout).unwrap()["code"],
+        "request_too_large"
+    );
 }
 
 #[test]

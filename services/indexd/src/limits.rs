@@ -21,7 +21,9 @@ pub(crate) fn json_size(value: &serde_json::Value) -> usize {
             self.0 = self.0.saturating_add(bytes.len());
             Ok(bytes.len())
         }
-        fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
     }
     let mut counter = Counter(0);
     serde_json::to_writer(&mut counter, value).expect("JSON values are serialisable");
@@ -53,7 +55,9 @@ pub(crate) const MAX_METADATA_FILTERS: usize = 32;
 pub(crate) const MAX_INDEX_FILE_SECTIONS: usize = 4000;
 
 pub(crate) fn transient_background_failure(response: &serde_json::Value) -> bool {
-    response.get("error").and_then(serde_json::Value::as_str)
+    response
+        .get("error")
+        .and_then(serde_json::Value::as_str)
         .is_some_and(|error| {
             error.contains("inference_busy:")
                 || error.contains("model loading suspended")

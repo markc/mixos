@@ -287,7 +287,10 @@ mod tests {
 
     #[test]
     fn classify_response_uses_top_level_members() {
-        assert_eq!(classify_response(&serde_json::json!({"error":"boom"})), Outcome::Error);
+        assert_eq!(
+            classify_response(&serde_json::json!({"error":"boom"})),
+            Outcome::Error
+        );
         assert_eq!(
             classify_response(
                 &serde_json::json!({"code":"duplicate_vanished","error":"store transaction rolled back"})

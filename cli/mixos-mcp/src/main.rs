@@ -969,7 +969,13 @@ impl MixosMcp {
     }
 
     async fn indexd(&self) -> Result<crate::skills::IndexdClient, String> {
-        if let Some(client) = self.indexd_client.lock().await.as_ref().filter(|c| c.is_connected()) {
+        if let Some(client) = self
+            .indexd_client
+            .lock()
+            .await
+            .as_ref()
+            .filter(|c| c.is_connected())
+        {
             return Ok(client.clone());
         }
         let client = crate::skills::IndexdClient::from_config()
@@ -1658,7 +1664,13 @@ impl MixosMcp {
                 }
 
                 // Delete old entries for this file (idempotent re-index)
-                let path_str = filepath.to_string_lossy().to_string();
+                let path_str = match filepath.canonicalize() {
+                    Ok(path) => path.to_string_lossy().into_owned(),
+                    Err(e) => {
+                        errors.push(format!("{filename}: canonical path failed: {e}"));
+                        continue;
+                    }
+                };
                 if let Err(e) = delete_by_path(&mut indexd, &path_str).await {
                     errors.push(format!("{filename}: delete failed: {e}"));
                 }

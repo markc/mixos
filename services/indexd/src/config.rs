@@ -136,7 +136,10 @@ fn resolve_snapshot(root: &Path) -> PathBuf {
 impl Config {
     pub fn validate(&self) -> Result<()> {
         for (name, value) in [
-            ("max_request_text_bytes", self.service.max_request_text_bytes),
+            (
+                "max_request_text_bytes",
+                self.service.max_request_text_bytes,
+            ),
             (
                 "max_request_line_bytes",
                 self.service.max_request_line_bytes,
@@ -318,7 +321,11 @@ mod path_tests {
 
     #[test]
     fn byte_limits_cannot_exceed_bus_frame_budget() {
-        for field in ["max_request_text_bytes", "max_request_line_bytes", "max_response_bytes"] {
+        for field in [
+            "max_request_text_bytes",
+            "max_request_line_bytes",
+            "max_response_bytes",
+        ] {
             let mut cfg = Config::default();
             match field {
                 "max_request_text_bytes" => cfg.service.max_request_text_bytes = BUS_BODY_LIMIT + 1,

@@ -286,14 +286,34 @@ mod tests {
         std::fs::create_dir_all(home.join("Projects/repo")).unwrap();
         let alias = dir.path().join("home-alias");
         std::os::unix::fs::symlink(&home, &alias).unwrap();
-        let domains = DomainsSettings { map: BTreeMap::from([
-            ("~".into(), "home".into()),
-            ("~/Projects".into(), "projects".into()),
-            (alias.join("Projects/repo").to_string_lossy().into_owned(), "repo".into()),
-        ]) };
-        assert_eq!(domains.resolve_with_home(&home.join("Projects/repo/_doc/a.md"), &alias).as_deref(), Some("repo"));
-        assert_eq!(domains.resolve_with_home(&home.join("Projects/other"), &alias).as_deref(), Some("projects"));
-        assert_eq!(domains.resolve_with_home(&home.join("Projects-other"), &alias).as_deref(), Some("home"));
+        let domains = DomainsSettings {
+            map: BTreeMap::from([
+                ("~".into(), "home".into()),
+                ("~/Projects".into(), "projects".into()),
+                (
+                    alias.join("Projects/repo").to_string_lossy().into_owned(),
+                    "repo".into(),
+                ),
+            ]),
+        };
+        assert_eq!(
+            domains
+                .resolve_with_home(&home.join("Projects/repo/_doc/a.md"), &alias)
+                .as_deref(),
+            Some("repo")
+        );
+        assert_eq!(
+            domains
+                .resolve_with_home(&home.join("Projects/other"), &alias)
+                .as_deref(),
+            Some("projects")
+        );
+        assert_eq!(
+            domains
+                .resolve_with_home(&home.join("Projects-other"), &alias)
+                .as_deref(),
+            Some("home")
+        );
     }
 
     #[test]

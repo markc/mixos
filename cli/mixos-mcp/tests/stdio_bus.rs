@@ -229,9 +229,15 @@ async fn stdio_tools_use_the_real_fixture_bus_and_reconnect_without_replay() {
                     let mut rows = index_rows.lock().unwrap();
                     let before = rows.len();
                     rows.retain(|row| {
-                        let meta: Value = serde_json::from_str(row["metadata"].as_str().unwrap()).unwrap();
+                        let meta: Value =
+                            serde_json::from_str(row["metadata"].as_str().unwrap()).unwrap();
                         let keep = meta["path"] != request["filter"][0]["value"];
-                        if !keep { index_deleted.lock().unwrap().push(row["id"].as_i64().unwrap()); }
+                        if !keep {
+                            index_deleted
+                                .lock()
+                                .unwrap()
+                                .push(row["id"].as_i64().unwrap());
+                        }
                         keep
                     });
                     (0, json!({"deleted":before - rows.len()}))
@@ -314,7 +320,10 @@ async fn stdio_tools_use_the_real_fixture_bus_and_reconnect_without_replay() {
         *stored_paths.lock().unwrap(),
         [expected_path.clone(), expected_path]
     );
-    assert!(offsets.lock().unwrap().is_empty(), "deletion must not list the corpus");
+    assert!(
+        offsets.lock().unwrap().is_empty(),
+        "deletion must not list the corpus"
+    );
     assert_eq!(*deleted_ids.lock().unwrap(), [0, 1000, 2106, 9999]);
     let remaining = rows
         .lock()

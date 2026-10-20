@@ -80,9 +80,14 @@ impl Transport {
         // Queue admission has its own bound; callers receive the full call budget
         // once they own the serial bridge, regardless of preceding requests.
         let mut bridge = if let Self::Ssh { state, .. } = self {
-            Some(tokio::time::timeout(Duration::from_secs(30), state.lock()).await
-                .context("indexd bridge queue wait exceeded 30s; request not delivered")?)
-        } else { None };
+            Some(
+                tokio::time::timeout(Duration::from_secs(30), state.lock())
+                    .await
+                    .context("indexd bridge queue wait exceeded 30s; request not delivered")?,
+            )
+        } else {
+            None
+        };
         tokio::time::timeout(limit, async {
             match self {
                 Self::Bus { client, target, .. } => {
@@ -117,7 +122,13 @@ impl Transport {
                     };
                     reply_body(0, value, None)
                 }
-                Self::Ssh { .. } => bridge.as_mut().expect("SSH lock acquired").call(verb, body).await,
+                Self::Ssh { .. } => {
+                    bridge
+                        .as_mut()
+                        .expect("SSH lock acquired")
+                        .call(verb, body)
+                        .await
+                }
             }
         })
         .await
@@ -131,7 +142,11 @@ impl Transport {
 
     pub(super) async fn shutdown(&self) {
         if let Self::Ssh { state, .. } = self {
-            let Ok(mut bridge) = tokio::time::timeout(Duration::from_millis(500), state.lock()).await else { return; };
+            let Ok(mut bridge) =
+                tokio::time::timeout(Duration::from_millis(500), state.lock()).await
+            else {
+                return;
+            };
             let session = bridge.session.take();
             drop(bridge);
             if let Some(mut session) = session {
@@ -245,7 +260,10 @@ impl Bridge {
             match session.exchange(id, &request).await {
                 Ok(reply) if reply.kind.as_deref() == Some("timeout") => {
                     self.session = Some(session);
-                    anyhow::bail!("indexd bridge timeout; outcome unknown: {}", reply.error.as_deref().unwrap_or("request timed out"));
+                    anyhow::bail!(
+                        "indexd bridge timeout; outcome unknown: {}",
+                        reply.error.as_deref().unwrap_or("request timed out")
+                    );
                 }
                 Ok(reply) => {
                     self.session = Some(session);
@@ -263,8 +281,11 @@ impl Bridge {
                         .copied()
                         .collect::<Vec<_>>();
                     if error.delivered && !retry_after_delivery(verb) {
-                        anyhow::bail!("indexd bridge failed; outcome unknown: {:#}; stderr: {}",
-                            error.error, String::from_utf8_lossy(&diagnostic));
+                        anyhow::bail!(
+                            "indexd bridge failed; outcome unknown: {:#}; stderr: {}",
+                            error.error,
+                            String::from_utf8_lossy(&diagnostic)
+                        );
                     }
                     if attempt == 1 {
                         anyhow::bail!(
@@ -291,8 +312,19 @@ struct Reply {
 }
 
 fn retry_after_delivery(verb: &str) -> bool {
-    matches!(verb.strip_prefix("indexd.").unwrap_or(verb),
-        "search" | "list" | "stats" | "stale" | "embed" | "store" | "update" | "delete" | "supersede" | "index_file")
+    matches!(
+        verb.strip_prefix("indexd.").unwrap_or(verb),
+        "search"
+            | "list"
+            | "stats"
+            | "stale"
+            | "embed"
+            | "store"
+            | "update"
+            | "delete"
+            | "supersede"
+            | "index_file"
+    )
 }
 
 struct ExchangeFailure {
@@ -311,50 +343,65 @@ struct Session {
 impl Session {
     async fn stop(&mut self) {
         let _ = tokio::time::timeout(Duration::from_millis(500), self.child.kill()).await;
-        if tokio::time::timeout(Duration::from_millis(500), &mut self.drain).await.is_err() {
+        if tokio::time::timeout(Duration::from_millis(500), &mut self.drain)
+            .await
+            .is_err()
+        {
             self.drain.abort();
         }
     }
 
-    async fn exchange(&mut self, id: u64, request: &str) -> std::result::Result<Reply, ExchangeFailure> {
+    async fn exchange(
+        &mut self,
+        id: u64,
+        request: &str,
+    ) -> std::result::Result<Reply, ExchangeFailure> {
         let delivery: Result<()> = async {
-        anyhow::ensure!(self.child.try_wait()?.is_none(), "bridge child exited");
-        let input = self.input.as_mut().context("bridge stdin closed")?;
-        input
-            .write_all(request.as_bytes())
-            .await
-            .context("writing bridge request")?;
-        input.flush().await.context("flushing bridge request")?;
-        Ok(())
-        }.await;
-        delivery.map_err(|error| ExchangeFailure { delivered: false, error })?;
+            anyhow::ensure!(self.child.try_wait()?.is_none(), "bridge child exited");
+            let input = self.input.as_mut().context("bridge stdin closed")?;
+            input
+                .write_all(request.as_bytes())
+                .await
+                .context("writing bridge request")?;
+            input.flush().await.context("flushing bridge request")?;
+            Ok(())
+        }
+        .await;
+        delivery.map_err(|error| ExchangeFailure {
+            delivered: false,
+            error,
+        })?;
         let response: Result<Reply> = async {
-        let mut line = Vec::new();
-        // Match the Bus body cap while bounding a broken peer's output.
-        let n = (&mut self.output)
-            .take(16 * 1024 * 1024 + 1)
-            .read_until(b'\n', &mut line)
-            .await
-            .context("reading bridge reply")?;
-        anyhow::ensure!(n > 0, "bridge closed stdout");
-        anyhow::ensure!(
-            line.last() == Some(&b'\n') && n <= 16 * 1024 * 1024,
-            "bridge reply exceeds limit or is incomplete"
-        );
-        let reply: Reply = serde_json::from_slice(&line).context("parsing bridge reply")?;
-        anyhow::ensure!(
-            reply.id == id,
-            "bridge reply id mismatch: expected {id}, got {}",
-            reply.id
-        );
-        anyhow::ensure!(
-            reply.rc != -1 || reply.kind.as_deref() == Some("timeout"),
-            "bridge transport failure: {}",
-            reply.error.as_deref().unwrap_or("unknown error")
-        );
-        Ok(reply)
-        }.await;
-        response.map_err(|error| ExchangeFailure { delivered: true, error })
+            let mut line = Vec::new();
+            // Match the Bus body cap while bounding a broken peer's output.
+            let n = (&mut self.output)
+                .take(16 * 1024 * 1024 + 1)
+                .read_until(b'\n', &mut line)
+                .await
+                .context("reading bridge reply")?;
+            anyhow::ensure!(n > 0, "bridge closed stdout");
+            anyhow::ensure!(
+                line.last() == Some(&b'\n') && n <= 16 * 1024 * 1024,
+                "bridge reply exceeds limit or is incomplete"
+            );
+            let reply: Reply = serde_json::from_slice(&line).context("parsing bridge reply")?;
+            anyhow::ensure!(
+                reply.id == id,
+                "bridge reply id mismatch: expected {id}, got {}",
+                reply.id
+            );
+            anyhow::ensure!(
+                reply.rc != -1 || reply.kind.as_deref() == Some("timeout"),
+                "bridge transport failure: {}",
+                reply.error.as_deref().unwrap_or("unknown error")
+            );
+            Ok(reply)
+        }
+        .await;
+        response.map_err(|error| ExchangeFailure {
+            delivered: true,
+            error,
+        })
     }
 }
 
@@ -370,9 +417,15 @@ mod tests {
     use super::*;
 
     fn fake() -> Option<(Transport, tempfile::TempDir)> {
-        let mix = std::env::var_os("MIXOS_TEST_MIX").map(std::path::PathBuf::from)
-            .or_else(|| std::env::var_os("PATH").and_then(|path|
-                std::env::split_paths(&path).map(|p| p.join("mix")).find(|p| p.is_file())));
+        let mix = std::env::var_os("MIXOS_TEST_MIX")
+            .map(std::path::PathBuf::from)
+            .or_else(|| {
+                std::env::var_os("PATH").and_then(|path| {
+                    std::env::split_paths(&path)
+                        .map(|p| p.join("mix"))
+                        .find(|p| p.is_file())
+                })
+            });
         let Some(mix) = mix else {
             eprintln!("SKIP fake bridge test: set MIXOS_TEST_MIX or put Mix on PATH");
             return None;
@@ -407,15 +460,23 @@ mod tests {
 
     #[tokio::test]
     async fn ssh_round_trips_share_one_child_and_shutdown_with_eof() {
-        let Some((client, dir)) = fake() else { return; };
+        let Some((client, dir)) = fake() else {
+            return;
+        };
         let a = json!({"action":"stats"});
         let b = json!({"action":"search", "query":"fixture"});
         let (first, second) = tokio::join!(
             client.call("indexd.stats", &a),
             client.call("indexd.search", &b)
         );
-        assert_eq!(first.unwrap(), json!({"echo":a, "verb":"indexd.stats", "timeout_secs":120}));
-        assert_eq!(second.unwrap(), json!({"echo":b, "verb":"indexd.search", "timeout_secs":120}));
+        assert_eq!(
+            first.unwrap(),
+            json!({"echo":a, "verb":"indexd.stats", "timeout_secs":120})
+        );
+        assert_eq!(
+            second.unwrap(),
+            json!({"echo":b, "verb":"indexd.search", "timeout_secs":120})
+        );
         assert_eq!(starts(&dir), 1);
         client.shutdown().await;
         assert!(dir.path().join("starts.eof").exists());
@@ -423,7 +484,9 @@ mod tests {
 
     #[tokio::test]
     async fn ssh_child_dying_mid_session_respawns_once() {
-        let Some((client, dir)) = fake() else { return; };
+        let Some((client, dir)) = fake() else {
+            return;
+        };
         client.call("indexd.stats", &json!({})).await.unwrap();
         client
             .call("indexd.search", &json!({"mode":"die_once"}))
@@ -436,7 +499,9 @@ mod tests {
 
     #[tokio::test]
     async fn ssh_persistent_failure_preserves_diagnostics_after_one_retry() {
-        let Some((client, dir)) = fake() else { return; };
+        let Some((client, dir)) = fake() else {
+            return;
+        };
         let error = client
             .call("indexd.stats", &json!({"mode":"failure"}))
             .await
@@ -449,7 +514,9 @@ mod tests {
 
     #[tokio::test]
     async fn ssh_timeout_discards_session_and_does_not_replay_call() {
-        let Some((client, dir)) = fake() else { return; };
+        let Some((client, dir)) = fake() else {
+            return;
+        };
         let error = client
             .call("indexd.store", &json!({"mode":"timeout"}))
             .await
@@ -467,7 +534,9 @@ mod tests {
 
     #[tokio::test]
     async fn ssh_application_errors_match_bus_errors_without_respawn() {
-        let Some((client, dir)) = fake() else { return; };
+        let Some((client, dir)) = fake() else {
+            return;
+        };
         let error = client
             .call("indexd.search", &json!({"mode":"error"}))
             .await
@@ -483,7 +552,9 @@ mod tests {
         assert_eq!(
             error,
             bus::BusMessage::new()
-                .with_body(&json!({"echo":body, "verb":"indexd.search", "timeout_secs":120}).to_string())
+                .with_body(
+                    &json!({"echo":body, "verb":"indexd.search", "timeout_secs":120}).to_string()
+                )
                 .error_message()
         );
         assert_eq!(starts(&dir), 1);
@@ -493,7 +564,9 @@ mod tests {
     #[tokio::test]
     async fn ssh_transport_error_and_wrong_id_cannot_be_successes() {
         for mode in ["transport_error", "wrong_id"] {
-            let Some((client, dir)) = fake() else { return; };
+            let Some((client, dir)) = fake() else {
+                return;
+            };
             let error = client
                 .call("indexd.stats", &json!({"mode":mode}))
                 .await
@@ -514,9 +587,14 @@ mod tests {
     #[tokio::test]
     async fn ssh_feedback_post_delivery_failures_are_never_replayed() {
         for mode in ["die_once", "transport_error", "wrong_id"] {
-            let Some((client, dir)) = fake() else { return; };
-            let error = client.call("indexd.feedback", &json!({"mode":mode}))
-                .await.unwrap_err().to_string();
+            let Some((client, dir)) = fake() else {
+                return;
+            };
+            let error = client
+                .call("indexd.feedback", &json!({"mode":mode}))
+                .await
+                .unwrap_err()
+                .to_string();
             assert!(error.contains("outcome unknown"), "{error}");
             assert_eq!(starts(&dir), 1, "{mode} replayed feedback");
         }
@@ -525,9 +603,16 @@ mod tests {
     #[tokio::test]
     async fn ssh_pre_delivery_failure_replays_feedback() {
         for exited in [false, true] {
-            let Some((client, dir)) = fake() else { return; };
-            client.call("indexd.stats", &json!({"mode":"exit_after_reply"})).await.unwrap();
-            let Transport::Ssh { state, .. } = &client else { unreachable!() };
+            let Some((client, dir)) = fake() else {
+                return;
+            };
+            client
+                .call("indexd.stats", &json!({"mode":"exit_after_reply"}))
+                .await
+                .unwrap();
+            let Transport::Ssh { state, .. } = &client else {
+                unreachable!()
+            };
             {
                 let mut bridge = state.lock().await;
                 let session = bridge.session.as_mut().unwrap();
@@ -545,10 +630,27 @@ mod tests {
 
     #[tokio::test]
     async fn ssh_bridge_timeout_is_not_retried_for_any_verb() {
-        let Some((client, dir)) = fake() else { return; };
-        for verb in ["search", "list", "stats", "stale", "embed", "store", "update", "delete", "supersede", "index_file", "feedback"] {
-            let error = client.call(&format!("indexd.{verb}"), &json!({"mode":"bridge_timeout"}))
-                .await.unwrap_err().to_string();
+        let Some((client, dir)) = fake() else {
+            return;
+        };
+        for verb in [
+            "search",
+            "list",
+            "stats",
+            "stale",
+            "embed",
+            "store",
+            "update",
+            "delete",
+            "supersede",
+            "index_file",
+            "feedback",
+        ] {
+            let error = client
+                .call(&format!("indexd.{verb}"), &json!({"mode":"bridge_timeout"}))
+                .await
+                .unwrap_err()
+                .to_string();
             assert!(error.contains("outcome unknown"), "{error}");
             assert!(error.contains("fixture deadline"), "{error}");
             assert_eq!(starts(&dir), 1);
@@ -560,11 +662,23 @@ mod tests {
 
     #[tokio::test]
     async fn ssh_stderr_flood_is_drained_and_tail_is_retained() {
-        let Some((client, dir)) = fake() else { return; };
-        let Transport::Ssh { state, .. } = &client else { unreachable!() };
+        let Some((client, dir)) = fake() else {
+            return;
+        };
+        let Transport::Ssh { state, .. } = &client else {
+            unreachable!()
+        };
         let error = tokio::time::timeout(Duration::from_secs(5), async {
-            state.lock().await.call("indexd.feedback", &json!({"mode":"flood"})).await
-        }).await.expect("stderr flood must not deadlock").unwrap_err().to_string();
+            state
+                .lock()
+                .await
+                .call("indexd.feedback", &json!({"mode":"flood"}))
+                .await
+        })
+        .await
+        .expect("stderr flood must not deadlock")
+        .unwrap_err()
+        .to_string();
         assert!(error.contains("fixture flood tail"), "{error}");
         assert!(error.len() < 9000, "diagnostic tail must be bounded");
         assert_eq!(starts(&dir), 1);
@@ -572,9 +686,13 @@ mod tests {
 
     #[tokio::test]
     async fn ssh_stderr_drain_and_shutdown_lock_wait_are_bounded() {
-        let Some((client, _dir)) = fake() else { return; };
+        let Some((client, _dir)) = fake() else {
+            return;
+        };
         client.call("indexd.stats", &json!({})).await.unwrap();
-        let Transport::Ssh { state, .. } = &client else { unreachable!() };
+        let Transport::Ssh { state, .. } = &client else {
+            unreachable!()
+        };
         let mut bridge = state.lock().await;
         let session = bridge.session.as_mut().unwrap();
         session.drain.abort();
@@ -584,15 +702,22 @@ mod tests {
         assert!(started.elapsed() >= Duration::from_millis(450));
         assert!(started.elapsed() < Duration::from_millis(1500));
         // The held guard models an in-flight request during shutdown.
-        tokio::time::timeout(Duration::from_millis(1500), client.shutdown()).await.unwrap();
+        tokio::time::timeout(Duration::from_millis(1500), client.shutdown())
+            .await
+            .unwrap();
         drop(bridge);
     }
 
     #[tokio::test]
     async fn ssh_queue_wait_does_not_consume_call_deadline() {
-        let Some((client, dir)) = fake() else { return; };
+        let Some((client, dir)) = fake() else {
+            return;
+        };
         let body = json!({"mode":"delay"});
-        let (first, second) = tokio::join!(client.call("indexd.stats", &body), client.call("indexd.stats", &body));
+        let (first, second) = tokio::join!(
+            client.call("indexd.stats", &body),
+            client.call("indexd.stats", &body)
+        );
         first.unwrap();
         second.unwrap();
         assert_eq!(starts(&dir), 1);

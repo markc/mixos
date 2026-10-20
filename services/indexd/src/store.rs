@@ -74,10 +74,16 @@ fn append_metadata_filters(
             FilterOp::Lte => "<=",
             FilterOp::Contains => "LIKE",
         };
-        sql.push_str(&format!(" AND json_extract(c.metadata, ?{idx}) {op} ?{}", idx + 1));
+        sql.push_str(&format!(
+            " AND json_extract(c.metadata, ?{idx}) {op} ?{}",
+            idx + 1
+        ));
         params.push(Box::new(format!("$.{}", filter.field)));
         if matches!(filter.op, FilterOp::Contains) {
-            params.push(Box::new(format!("%{}%", filter.value.as_str().unwrap_or(""))));
+            params.push(Box::new(format!(
+                "%{}%",
+                filter.value.as_str().unwrap_or("")
+            )));
         } else {
             match &filter.value {
                 serde_json::Value::Number(n) => params.push(Box::new(n.as_f64().unwrap_or(0.0))),
@@ -765,7 +771,10 @@ impl VectorDb {
 
     /// IDs and metadata predicates are intersected when both are supplied.
     pub(crate) fn delete_filtered(&self, ids: &[i64], filters: &[MetadataFilter]) -> Result<usize> {
-        anyhow::ensure!(!ids.is_empty() || !filters.is_empty(), "delete requires non-empty ids or filter");
+        anyhow::ensure!(
+            !ids.is_empty() || !filters.is_empty(),
+            "delete requires non-empty ids or filter"
+        );
         let mut deleted = 0usize;
         // Single transaction so a multi-id delete is one commit (IMMEDIATE via the
         // connection's default behavior set in `open()`), gated on the
@@ -781,11 +790,16 @@ impl VectorDb {
             sql.push_str(" AND c.id IN (");
             sql.push_str(&vec!["?"; ids.len()].join(","));
             sql.push(')');
-            params.extend(ids.iter().map(|id| Box::new(*id) as Box<dyn rusqlite::types::ToSql>));
+            params.extend(
+                ids.iter()
+                    .map(|id| Box::new(*id) as Box<dyn rusqlite::types::ToSql>),
+            );
         }
         append_metadata_filters(&mut sql, &mut params, filters);
         let refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
-        let selected = tx.prepare(&sql)?.query_map(&*refs, |row| row.get::<_, i64>(0))?
+        let selected = tx
+            .prepare(&sql)?
+            .query_map(&*refs, |row| row.get::<_, i64>(0))?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         for id in &selected {
             deleted += tx.execute("DELETE FROM chunks WHERE id = ?1", [id])?;
@@ -1021,11 +1035,25 @@ mod tests {
     fn filtered_delete_is_atomic_and_list_ties_are_stable() {
         let db = test_vector_db();
         let texts = vec!["a".into(), "b".into(), "c".into()];
-        let StoreAttempt::Committed { ids, .. } = db.store_revalidated(
-            &vec![Some(vec![1.0; EMBEDDING_DIM]); 3], &[None; 3], &texts, "doc",
-            &[r#"{"path":"/srv/a","rank":1}"#.into(), r#"{"path":"/srv/a","rank":2}"#.into(), r#"{"path":"/srv/b","rank":3}"#.into()],
-        ).unwrap() else { panic!("unexpected race") };
-        db.conn.execute("UPDATE chunks SET created = '2026-10-20'", []).unwrap();
+        let StoreAttempt::Committed { ids, .. } = db
+            .store_revalidated(
+                &vec![Some(vec![1.0; EMBEDDING_DIM]); 3],
+                &[None; 3],
+                &texts,
+                "doc",
+                &[
+                    r#"{"path":"/srv/a","rank":1}"#.into(),
+                    r#"{"path":"/srv/a","rank":2}"#.into(),
+                    r#"{"path":"/srv/b","rank":3}"#.into(),
+                ],
+            )
+            .unwrap()
+        else {
+            panic!("unexpected race")
+        };
+        db.conn
+            .execute("UPDATE chunks SET created = '2026-10-20'", [])
+            .unwrap();
         for source in ["", "doc"] {
             let (page, _) = db.list(source, 1, 1, BUS_BODY_LIMIT).unwrap();
             assert_eq!(page[0].id, ids[1]);
@@ -1034,14 +1062,23 @@ mod tests {
         let filters: Vec<MetadataFilter> = serde_json::from_value(serde_json::json!([
             {"field":"path","op":"eq","value":"/srv/a"},
             {"field":"rank","op":"gte","value":2}
-        ])).unwrap();
+        ]))
+        .unwrap();
         assert_eq!(db.delete_filtered(&[ids[0], ids[1]], &filters).unwrap(), 1);
         let filters: Vec<MetadataFilter> = serde_json::from_value(serde_json::json!([
             {"field":"path","op":"eq","value":"/srv/a"}
-        ])).unwrap();
+        ]))
+        .unwrap();
         assert_eq!(db.delete_filtered(&[], &filters).unwrap(), 1);
         assert_eq!(db.delete_filtered(&[], &filters).unwrap(), 0);
-        assert_eq!(db.conn.query_row("SELECT COUNT(*) FROM vec_chunks", [], |r| r.get::<_, i64>(0)).unwrap(), 1);
+        assert_eq!(
+            db.conn
+                .query_row("SELECT COUNT(*) FROM vec_chunks", [], |r| r
+                    .get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
+        assert_eq!(db.search_index.read().unwrap().len(), 1);
         let (remaining, _) = db.list("", 10, 0, BUS_BODY_LIMIT).unwrap();
         assert_eq!(remaining[0].id, ids[2]);
     }

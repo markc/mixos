@@ -512,6 +512,11 @@ pub(crate) async fn handle_delete(
     state: &Arc<EngineState>,
     t: &mut ReqTiming,
 ) -> serde_json::Value {
+    if req.filter.len() > MAX_METADATA_FILTERS {
+        return json_error(&format!(
+            "too many metadata filters (max {MAX_METADATA_FILTERS})"
+        ));
+    }
     let guard = lock_timed(state, t).await;
     let db_t0 = Instant::now();
     let res = guard.db.delete_filtered(&req.ids, &req.filter);
@@ -845,7 +850,12 @@ impl Engine {
     }
 
     /// Dispatch a parsed request with its original transport byte count.
-    pub async fn call_sized(&self, verb: &str, body: serde_json::Value, bytes: usize) -> serde_json::Value {
+    pub async fn call_sized(
+        &self,
+        verb: &str,
+        body: serde_json::Value,
+        bytes: usize,
+    ) -> serde_json::Value {
         let action = verb.strip_prefix("indexd.").unwrap_or(verb);
         if !crate::bus::verb_manifest()
             .iter()

@@ -50,11 +50,18 @@ fn main() -> Result<()> {
     if let Command::Bridge { node_config } = &cli.command {
         let node_config = node_config
             .clone()
-            .or_else(|| std::env::var_os("MIXOS_NODE_CONFIG").filter(|v| !v.is_empty()).map(PathBuf::from))
+            .or_else(|| {
+                std::env::var_os("MIXOS_NODE_CONFIG")
+                    .filter(|v| !v.is_empty())
+                    .map(PathBuf::from)
+            })
             .unwrap_or_else(|| PathBuf::from("/opt/mixos/etc/node.conf.mix"));
         return runtime.block_on(async {
             let client = async {
-                let url = match std::env::var("MIXOS_NODED_URL").ok().filter(|v| !v.is_empty()) {
+                let url = match std::env::var("MIXOS_NODED_URL")
+                    .ok()
+                    .filter(|v| !v.is_empty())
+                {
                     Some(url) => url,
                     None => {
                         let source = std::fs::read_to_string(&node_config)?;
@@ -130,7 +137,9 @@ fn main() -> Result<()> {
             Command::Call {
                 verb, json_body, ..
             } => {
-                let reply = engine.call_sized(&verb, serde_json::from_str(&json_body)?, json_body.len()).await;
+                let reply = engine
+                    .call_sized(&verb, serde_json::from_str(&json_body)?, json_body.len())
+                    .await;
                 println!("{reply}");
                 if reply.get("error").is_some() {
                     anyhow::bail!("indexd call failed");
