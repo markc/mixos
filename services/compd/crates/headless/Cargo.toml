@@ -1,0 +1,20 @@
+[package]
+name = "headless"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+description = "compd headless backend: Phase 0 spike (render node, no DRM master, offscreen)"
+
+[package.metadata.mixos]
+component = "compd"
+kind = "service"
+layer = "desktop"
+contract = "none"
+
+[lints.clippy]
+mod_module_files = "deny"
+
+[dependencies]
+smithay = { workspace = true }

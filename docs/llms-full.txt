@@ -818,6 +818,7 @@ checked separately by the layering gate.
 | [effects](https://github.com/markc/mixos/blob/main/services/compd/crates/effects/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
 | [frames](https://github.com/markc/mixos/blob/main/services/compd/crates/frames/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
 | [graphics](https://github.com/markc/mixos/blob/main/services/compd/crates/graphics/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
+| [headless](https://github.com/markc/mixos/blob/main/services/compd/crates/headless/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
 | [kms](https://github.com/markc/mixos/blob/main/services/compd/crates/kms/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
 | [ledger](https://github.com/markc/mixos/blob/main/services/compd/crates/ledger/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
 | [model](https://github.com/markc/mixos/blob/main/services/compd/crates/model/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
