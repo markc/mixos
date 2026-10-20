@@ -402,9 +402,9 @@ impl<S> Registry<S> {
             .map_err(|err| match err {
                 Error::Unknown(id) => CommandError::Unknown(id),
                 Error::Disabled { id, .. } => CommandError::Disabled(id),
-                Error::BadParams { .. } | Error::Failed(_) => {
-                    CommandError::Disabled("legacy nullary dispatch: invalid parameters or handler failure")
-                }
+                Error::BadParams { .. } | Error::Failed(_) => CommandError::Disabled(
+                    "legacy nullary dispatch: invalid parameters or handler failure",
+                ),
             })
     }
 
@@ -429,10 +429,17 @@ impl<S> Registry<S> {
         // Keep the established egui ModifierNames::NAMES wire spelling
         // byte for byte.
         for row in &mut rows {
-            let Some(command) = self.get(row.id) else { continue };
-            row.shortcut = command.shortcut
+            let Some(command) = self.get(row.id) else {
+                continue;
+            };
+            row.shortcut = command
+                .shortcut
                 .map(|s| s.format(&ModifierNames::NAMES, false));
-            row.more = self.extras.get(row.id).into_iter().flatten()
+            row.more = self
+                .extras
+                .get(row.id)
+                .into_iter()
+                .flatten()
                 .map(|s| s.format(&ModifierNames::NAMES, false))
                 .collect();
         }
@@ -913,19 +920,26 @@ mod tests {
         let strings = Strings::new(FTL);
         let row = serde_json::to_value(&r.describe(&state, &strings)[1]).unwrap();
         assert_eq!(row["shortcut"], serde_json::Value::Null);
-        assert_eq!(row["more"], serde_json::json!([chord.format(&ModifierNames::NAMES, false)]));
-        assert!(r.model(&egui::Context::default(), &state, &strings)[0].entries[1].row().unwrap().shortcut.is_none());
+        assert_eq!(
+            row["more"],
+            serde_json::json!([chord.format(&ModifierNames::NAMES, false)])
+        );
+        assert!(
+            r.model(&egui::Context::default(), &state, &strings)[0].entries[1]
+                .row()
+                .unwrap()
+                .shortcut
+                .is_none()
+        );
         let press = egui::Event::Key {
-            key: Key::U, physical_key: None, pressed: true, repeat: false,
+            key: Key::U,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
             modifiers: chord.modifiers,
         };
         assert!(r.takes(&press, &state));
-        let ctx = egui::Context::default();
-        let mut fired = Vec::new();
-        let _ = ctx.run(egui::RawInput { events: vec![press], ..Default::default() }, |ctx| {
-            fired = r.shortcuts(ctx, &state);
-        });
-        assert_eq!(fired, ["count.reset"]);
+        assert_eq!(fired_key(&r, &state, chord), ["count.reset"]);
     }
 
     #[test]
@@ -935,27 +949,49 @@ mod tests {
         r.execute("count.bump", &mut state, Origin::Bus).unwrap();
         assert_eq!(state.n, 1);
         state.locked = true;
-        assert_eq!(r.execute("count.bump", &mut state, Origin::Bus), Err(CommandError::Disabled("count.bump")));
-        assert_eq!(r.execute("absent", &mut state, Origin::Bus), Err(CommandError::Unknown("absent".into())));
+        assert_eq!(
+            r.execute("count.bump", &mut state, Origin::Bus),
+            Err(CommandError::Disabled("count.bump"))
+        );
+        assert_eq!(
+            r.execute("absent", &mut state, Origin::Bus),
+            Err(CommandError::Unknown("absent".into()))
+        );
         let mut failed = ::command::nullary!("failed", "Failed", |_: &mut Counter| {});
         failed.run = |_, _| Err(Error::Failed("handler failed".into()));
         r.core.add(failed);
-        assert!(matches!(r.execute("failed", &mut state, Origin::Bus), Err(CommandError::Disabled(message)) if message.contains("handler failure")));
+        assert!(
+            matches!(r.execute("failed", &mut state, Origin::Bus), Err(CommandError::Disabled(message)) if message.contains("handler failure"))
+        );
         let mut bad = ::command::nullary!("bad", "Bad", |_: &mut Counter| {});
-        bad.run = |_, _| Err(Error::BadParams { id: "bad", msg: "invalid".into() });
+        bad.run = |_, _| {
+            Err(Error::BadParams {
+                id: "bad",
+                msg: "invalid".into(),
+            })
+        };
         r.core.add(bad);
-        assert!(matches!(r.execute("bad", &mut state, Origin::Bus), Err(CommandError::Disabled(message)) if message.contains("invalid parameters")));
+        assert!(
+            matches!(r.execute("bad", &mut state, Origin::Bus), Err(CommandError::Disabled(message)) if message.contains("invalid parameters"))
+        );
     }
 
     #[test]
     fn typed_engine_commands_execute_but_are_absent_from_nullary_ui() {
         let mut core = EngineRegistry::new();
         let mut c = ::command::nullary!("count.set", "Set", |_: &mut Counter| {});
-        c.params = Some(ParamSpec { type_name: "Count", schema: || serde_json::from_value(serde_json::json!({"type": "object"})).unwrap() });
+        c.params = Some(ParamSpec {
+            type_name: "Count",
+            schema: || serde_json::from_value(serde_json::json!({"type": "object"})).unwrap(),
+        });
         c.menu = Some("menu-edit");
         c.shortcut = Some("Ctrl+B");
         c.run = |s, params| {
-            let n: u32 = serde_json::from_value(params["n"].clone()).map_err(|e| Error::BadParams { id: "count.set", msg: e.to_string() })?;
+            let n: u32 =
+                serde_json::from_value(params["n"].clone()).map_err(|e| Error::BadParams {
+                    id: "count.set",
+                    msg: e.to_string(),
+                })?;
             s.n = n;
             Ok(serde_json::json!({"n": n}))
         };
@@ -963,14 +999,40 @@ mod tests {
         let ui = EngineAdapter::new(core);
         let mut state = Counter::default();
         let strings = Strings::new(FTL);
-        assert!(ui.model(&egui::Context::default(), &state, &strings).is_empty());
+        assert!(
+            ui.model(&egui::Context::default(), &state, &strings)
+                .is_empty()
+        );
         assert!(ui.search("", &state, &strings).is_empty());
         assert!(ui.shortcuts_of("count.set").is_empty());
-        let press = egui::Event::Key { key: Key::B, physical_key: None, pressed: true, repeat: false, modifiers: Modifiers::COMMAND };
+        let press = egui::Event::Key {
+            key: Key::B,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: Modifiers::COMMAND,
+        };
         assert!(!ui.takes(&press, &state));
         assert!(ui.describe(&state, &strings)[0].schema.is_some());
-        assert!(matches!(ui.execute("count.set", &mut state, serde_json::Value::Null, Origin::Bus), Err(Error::BadParams { .. })));
-        assert_eq!(ui.execute("count.set", &mut state, serde_json::json!({"n": 42}), Origin::Bus).unwrap(), serde_json::json!({"n": 42}));
+        assert!(matches!(
+            ui.execute(
+                "count.set",
+                &mut state,
+                serde_json::Value::Null,
+                Origin::Bus
+            ),
+            Err(Error::BadParams { .. })
+        ));
+        assert_eq!(
+            ui.execute(
+                "count.set",
+                &mut state,
+                serde_json::json!({"n": 42}),
+                Origin::Bus
+            )
+            .unwrap(),
+            serde_json::json!({"n": 42})
+        );
         assert_eq!(state.n, 42);
         assert_eq!(ui.take_executed().0.len(), 1);
     }
@@ -983,36 +1045,80 @@ mod tests {
         core.add(c);
         core.add_shortcuts("one", ["Ctrl+Shift+Alt+B".into()]);
         let ui = EngineAdapter::new(core);
-        assert_eq!(ui.shortcuts_of("one"), [KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::SHIFT | Modifiers::ALT, Key::B)]);
+        assert_eq!(
+            ui.shortcuts_of("one"),
+            [KeyboardShortcut::new(
+                Modifiers::COMMAND | Modifiers::SHIFT | Modifiers::ALT,
+                Key::B
+            )]
+        );
     }
 
     #[test]
-    #[should_panic(expected = "duplicate shortcut \"Ctrl+B\" on \"command\" (chord text decides duplicates)")]
+    #[should_panic(
+        expected = "duplicate shortcut \"Ctrl+B\" on \"command\" (chord text decides duplicates)"
+    )]
     fn ctrl_and_command_duplicates_are_decided_by_chord_text() {
         let mut r: Registry<Counter> = Registry::new();
         for (id, modifiers) in [("ctrl", Modifiers::CTRL), ("command", Modifiers::COMMAND)] {
-            r.add(Command { id, label: id, menu: None, submenu: None, group: 0,
-                shortcut: Some(KeyboardShortcut::new(modifiers, Key::B)), icon: None,
-                enabled: always, run: |_| {} });
+            r.add(Command {
+                id,
+                label: id,
+                menu: None,
+                submenu: None,
+                group: 0,
+                shortcut: Some(KeyboardShortcut::new(modifiers, Key::B)),
+                icon: None,
+                enabled: always,
+                run: |_| {},
+            });
         }
     }
 
     #[test]
     fn legacy_describe_golden_locks_egui_names() {
         let mut r: Registry<Counter> = Registry::new();
-        for (id, key) in [("left", Key::ArrowLeft), ("right", Key::ArrowRight), ("up", Key::ArrowUp), ("down", Key::ArrowDown), ("equals", Key::Equals), ("minus", Key::Minus)] {
-            r.add(Command { id, label: id, menu: None, submenu: None, group: 0,
-                shortcut: Some(KeyboardShortcut::new(Modifiers::COMMAND, key)), icon: None,
-                enabled: always, run: |_| {} });
+        for (id, key) in [
+            ("left", Key::ArrowLeft),
+            ("right", Key::ArrowRight),
+            ("up", Key::ArrowUp),
+            ("down", Key::ArrowDown),
+            ("equals", Key::Equals),
+            ("minus", Key::Minus),
+        ] {
+            r.add(Command {
+                id,
+                label: id,
+                menu: None,
+                submenu: None,
+                group: 0,
+                shortcut: Some(KeyboardShortcut::new(Modifiers::COMMAND, key)),
+                icon: None,
+                enabled: always,
+                run: |_| {},
+            });
         }
-        r.add_shortcuts("equals", [KeyboardShortcut::new(Modifiers::ALT, Key::ArrowLeft)]);
-        let rows = serde_json::to_value(r.describe(&Counter::default(), &Strings::new(FTL))).unwrap();
-        let golden = ["Ctrl+⏴", "Ctrl+⏵", "Ctrl+⏶", "Ctrl+⏷", "Ctrl+=", "Ctrl+-"];
+        r.add_shortcuts(
+            "equals",
+            [KeyboardShortcut::new(Modifiers::ALT, Key::ArrowLeft)],
+        );
+        let rows =
+            serde_json::to_value(r.describe(&Counter::default(), &Strings::new(FTL))).unwrap();
+        let golden = [
+            "Ctrl+Left",
+            "Ctrl+Right",
+            "Ctrl+Up",
+            "Ctrl+Down",
+            "Ctrl+Equals",
+            "Ctrl+Minus",
+        ];
         for (row, shortcut) in rows.as_array().unwrap().iter().zip(golden) {
             let id = row["id"].as_str().unwrap();
             let mut expected = serde_json::json!({"id": id, "label": id, "menu": null, "shortcut": shortcut,
                 "enabled": true, "checked": null, "reason": null, "class": "intent", "schema": null});
-            if id == "equals" { expected["more"] = serde_json::json!(["Alt+⏴"]); }
+            if id == "equals" {
+                expected["more"] = serde_json::json!(["Alt+Left"]);
+            }
             assert_eq!(row, &expected);
         }
     }

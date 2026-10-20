@@ -10,7 +10,10 @@ type Bound = (Option<String>, Vec<String>);
 fn canonical_chord(text: &str) -> String {
     let parts: Vec<_> = text.split('+').collect();
     let (key, modifiers) = parts.split_last().expect("split always has a part");
-    if modifiers.iter().any(|m| !["Ctrl", "Shift", "Alt"].contains(m)) {
+    if modifiers
+        .iter()
+        .any(|m| !["Ctrl", "Shift", "Alt"].contains(m))
+    {
         return text.to_owned();
     }
     let mut out = String::new();
@@ -39,7 +42,10 @@ impl Bindings {
             "duplicate command id {id:?}"
         );
         if let Some(s) = &own {
-            assert!(!self.taken(s), "duplicate shortcut {s:?} on {id:?} (chord text decides duplicates)");
+            assert!(
+                !self.taken(s),
+                "duplicate shortcut {s:?} on {id:?} (chord text decides duplicates)"
+            );
         }
         let bound = (own, Vec::new());
         if let Some(defaults) = &mut self.defaults {
@@ -57,7 +63,10 @@ impl Bindings {
     pub fn set_shortcut(&mut self, id: &'static str, own: Option<String>) {
         let own = own.map(|s| canonical_chord(&s));
         if let Some(s) = &own {
-            assert!(!self.taken(s), "duplicate shortcut {s:?} on {id:?} (chord text decides duplicates)");
+            assert!(
+                !self.taken(s),
+                "duplicate shortcut {s:?} on {id:?} (chord text decides duplicates)"
+            );
         }
         self.current.get_mut(id).expect("known command").0 = own;
     }

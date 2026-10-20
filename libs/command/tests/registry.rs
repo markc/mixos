@@ -370,7 +370,8 @@ fn extra_chords_never_become_menu_accelerators() {
     r.add_shortcuts("count.reset", ["Ctrl+U".into()]);
     r.rebind(&Default::default(), |s| Some(s.to_owned()));
     assert_eq!(r.bound_of("count.reset"), (None, vec!["Ctrl+U".into()]));
-    let row = serde_json::to_value(&r.describe(&Counter::default(), &Strings::new(FTL))[1]).unwrap();
+    let row =
+        serde_json::to_value(&r.describe(&Counter::default(), &Strings::new(FTL))[1]).unwrap();
     assert_eq!(row["shortcut"], Value::Null);
     assert_eq!(row["more"], json!(["Ctrl+U"]));
 }
@@ -395,10 +396,18 @@ fn disabled_precedes_bad_parameters() {
     let mut c = typed();
     c.enabled = |_| Err("locked");
     r.add(c);
-    let mut s = Counter { locked: true, ..Default::default() };
+    let mut s = Counter {
+        locked: true,
+        ..Default::default()
+    };
     for id in ["count.bump", "count.set"] {
-        assert!(matches!(r.execute(id, &mut s, json!({"bad": true}), Origin::Bus),
-            Err(Error::Disabled { reason: "locked", .. })));
+        assert!(matches!(
+            r.execute(id, &mut s, json!({"bad": true}), Origin::Bus),
+            Err(Error::Disabled {
+                reason: "locked",
+                ..
+            })
+        ));
     }
     assert!(r.take_executed().0.is_empty());
 }
@@ -411,10 +420,16 @@ fn legacy_nullary_uses_its_enabled_and_run_callbacks() {
     c.run = |_, _| panic!("legacy callback must run instead");
     r.add_nullary(c, |s| !s.locked, |s| s.n += 1);
     let mut s = Counter::default();
-    assert_eq!(r.execute("count.set", &mut s, Value::Null, Origin::Bus), Ok(Value::Null));
+    assert_eq!(
+        r.execute("count.set", &mut s, Value::Null, Origin::Bus),
+        Ok(Value::Null)
+    );
     assert_eq!(s.n, 1);
     s.locked = true;
-    assert!(matches!(r.execute("count.set", &mut s, Value::Null, Origin::Bus), Err(Error::Disabled { .. })));
+    assert!(matches!(
+        r.execute("count.set", &mut s, Value::Null, Origin::Bus),
+        Err(Error::Disabled { .. })
+    ));
     assert_eq!(r.take_executed().0.len(), 1);
     let c = r.get("count.set").unwrap();
     assert!(c.params.is_none());

@@ -8,10 +8,10 @@ pub mod keymap;
 pub mod strings;
 
 pub use executed::{Executed, Journal, Origin};
-#[doc(hidden)]
-pub use serde_json;
 use schemars::Schema;
 use serde::Serialize;
+#[doc(hidden)]
+pub use serde_json;
 use serde_json::Value;
 use std::cell::RefCell;
 use std::collections::HashMap;
