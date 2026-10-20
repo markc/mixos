@@ -150,8 +150,9 @@ press Allow either. Every grant, answer and decision is logged with the
 caller.
 
 The trust model, plainly: consent keeps the screen from other nodes and from
-an app that shares by accident. It is not a wall between processes of the
-same session. Any local process can answer or grant over the Bus, and any
+an app that shares by accident. It is not a wall between local processes:
+any process on this node that can reach the Bus (`local` means this node,
+not this session) can answer or grant, and any
 Wayland client of this desk can already capture the screen through compd, so
 an app that wants to approve its own share can. Sandboxed apps, where that
 would matter, are out of scope for now.
