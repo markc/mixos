@@ -82,10 +82,6 @@ pub struct ServiceConfig {
     pub max_prefix_bytes: usize,
     pub max_request_line_bytes: usize,
     pub max_response_bytes: usize,
-    pub max_ingress_bytes: usize,
-    pub connection_idle_timeout_secs: u64,
-    pub request_frame_timeout_secs: u64,
-    pub max_connections: usize,
     pub inference_admission_timeout_secs: u64,
     pub background_queue_max_bytes: usize,
     pub background_queue_max_jobs: usize,
@@ -111,10 +107,6 @@ impl Default for ServiceConfig {
             max_prefix_bytes: 4 * 1024,
             max_request_line_bytes: 20 * 1024 * 1024,
             max_response_bytes: 20 * 1024 * 1024,
-            max_ingress_bytes: 64 * 1024 * 1024,
-            connection_idle_timeout_secs: 300,
-            request_frame_timeout_secs: 600,
-            max_connections: 64,
             inference_admission_timeout_secs: 30,
             background_queue_max_bytes: 128 * 1024 * 1024,
             background_queue_max_jobs: 512,
@@ -160,13 +152,21 @@ impl Config {
             !self.service.model_dir.is_empty(),
             "model_dir must name a local model directory"
         );
+        for name in ["config.json", "tokenizer.json", "model.safetensors"] {
+            let path = Path::new(&self.service.model_dir).join(name);
+            anyhow::ensure!(path.is_file(), "missing local model file {}", path.display());
+        }
+        for prefix in self.domains.map.keys() {
+            anyhow::ensure!(Path::new(prefix).is_absolute(), "domains.map prefixes must be absolute: {prefix}");
+        }
         Ok(())
     }
 }
 
 pub fn load_indexd_config(cli_path: Option<&Path>) -> Result<(PathBuf, Config)> {
     if let Some(path) = cli_path {
-        return Ok((path.to_path_buf(), ::config::load_conf_mix_path(path)?));
+        let path = PathBuf::from(expand_home(&path.to_string_lossy()));
+        return Ok((path.clone(), ::config::load_conf_mix_path(&path)?));
     }
     if let Some(found) = load_system_config(Path::new(SYSTEM_CFG_DIR))? {
         return Ok(found);
@@ -212,26 +212,10 @@ fn expand_home_with(path: &str, home: Option<&str>) -> String {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Domains {
     pub map: BTreeMap<String, String>,
-}
-
-impl Default for Domains {
-    fn default() -> Self {
-        Self {
-            map: [
-                ("~/Projects/mixos", "mixos"),
-                ("~/.mix", "mix"),
-                ("~/.ns", "ns"),
-                ("~/.mc", "mc"),
-            ]
-            .into_iter()
-            .map(|(k, v)| (k.into(), v.into()))
-            .collect(),
-        }
-    }
 }
 
 impl Domains {
@@ -239,7 +223,7 @@ impl Domains {
         self.map
             .iter()
             .filter_map(|(prefix, domain)| {
-                let prefix = PathBuf::from(expand_home(prefix));
+                let prefix = PathBuf::from(prefix);
                 path.starts_with(&prefix)
                     .then_some((prefix.as_os_str().len(), domain))
             })
@@ -324,6 +308,25 @@ mod path_tests {
     use crate::test_support::temp_dir;
 
     #[test]
+    fn validation_follows_model_symlinks_and_rejects_relative_domains() {
+        let dir = temp_dir("validate");
+        let mut cfg = Config::default();
+        cfg.service.model_dir = dir.join("snapshot").to_string_lossy().into_owned();
+        assert!(cfg.validate().unwrap_err().to_string().contains("config.json"));
+        std::fs::create_dir(dir.join("snapshot")).unwrap();
+        std::fs::write(dir.join("blob"), "fixture").unwrap();
+        for name in ["config.json", "tokenizer.json", "model.safetensors"] {
+            std::os::unix::fs::symlink("../blob", dir.join("snapshot").join(name)).unwrap();
+        }
+        cfg.validate().unwrap();
+        cfg.domains.map.insert("~/project".into(), "project".into());
+        assert!(cfg.validate().unwrap_err().to_string().contains("must be absolute"));
+        std::fs::remove_file(dir.join("blob")).unwrap();
+        assert!(cfg.validate().is_err(), "broken symlinks must fail");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
     fn default_source_policy_matches_deployed_config() {
         let deployed: Config =
             ::config::from_conf_mix_str(include_str!("../tests/source_types.conf.mix")).unwrap();
@@ -402,7 +405,6 @@ mod path_tests {
         );
         assert_eq!(domains.resolve(Path::new("/srv/project-other/a.md")), None);
         let defaults = Domains::default();
-        assert_eq!(defaults.map.get("~/Projects/mixos").unwrap(), "mixos");
-        assert_eq!(defaults.map.get("~/.mix").unwrap(), "mix");
+        assert!(defaults.map.is_empty());
     }
 }

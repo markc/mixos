@@ -1103,6 +1103,7 @@ mod tests {
         let mut config = Config::default();
         config.service.vectors_db = dir.join("vectors.db").to_string_lossy().into_owned();
         config.service.model_dir = dir.join("no-model").to_string_lossy().into_owned();
+        crate::test_support::model_files(&config);
         (Engine::open(config).unwrap(), dir)
     }
 
@@ -1113,6 +1114,15 @@ mod tests {
             .await
             .embed_cache
             .store(text, prefix, vec![value; EMBEDDING_DIM]);
+    }
+
+    #[tokio::test]
+    async fn index_file_rejects_tilde_even_with_content() {
+        let (engine, dir) = engine("tilde");
+        let reply = engine.index_file(json!({"path":"~/doc.md", "content":""})).await;
+        assert_eq!(reply["error"], "path must be absolute (daemon runs as system user indexd; \"~\" has no meaning here)");
+        drop(engine);
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     async fn seed(engine: &Engine, text: &str, metadata: &str, value: f32) -> i64 {
@@ -1287,6 +1297,7 @@ mod tests {
             .domains
             .map
             .insert("/srv/project/deep".into(), "child".into());
+        crate::test_support::model_files(&config);
         let engine = Engine::open(config).unwrap();
         let tokenizer = tokenizers::models::wordlevel::WordLevel::builder()
             .vocab([("[UNK]".to_string(), 0)].into_iter().collect())

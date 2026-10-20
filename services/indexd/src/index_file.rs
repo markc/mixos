@@ -283,7 +283,13 @@ pub(crate) async fn handle_index_file(
 ) -> String {
     let config = state.lock().await.config.clone();
     let t_start = std::time::Instant::now();
-    let filepath = expand_home(&req.path);
+    if req.path.starts_with('~') {
+        return json_error("path must be absolute (daemon runs as system user indexd; \"~\" has no meaning here)");
+    }
+    if !Path::new(&req.path).is_absolute() {
+        return json_error("path must be absolute");
+    }
+    let filepath = req.path.clone();
     let path = std::path::Path::new(&filepath);
 
     let filename = path.file_name().and_then(|f| f.to_str()).unwrap_or("?");
