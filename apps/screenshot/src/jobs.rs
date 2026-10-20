@@ -306,9 +306,16 @@ mod tests {
     fn execute_and_commands_are_answered_in_place() {
         let strings = crate::strings();
         let mut a = App::new(crate::label, crate::ink::inks(), false);
+        a.document = Some(Document::new(RgbaImage::new(16, 16)).unwrap());
         let commands = a.commands.clone();
+        let params = json!({"kind":"arrow", "points":[{"x":1,"y":1},{"x":8,"y":8}], "colour":[255,0,0,255], "width":2});
         a.command(1, "screenshot.commands", "{}");
         a.command(2, "screenshot.execute", r#"{"id":"nope"}"#);
+        a.command(
+            6,
+            "screenshot.execute",
+            &json!({"id":"edit.annotate", "params":params}).to_string(),
+        );
         a.command(3, "screenshot.execute", r#"{"id":"help.about"}"#);
         a.command(4, "screenshot.execute", r#"{"id":"help.about"}"#);
         a.command(5, "HELP", "{}");
@@ -327,6 +334,8 @@ mod tests {
                 .is_some_and(|c| c.iter().any(|c| c["id"] == "capture.take"))
         );
         assert_eq!(reply(2).unwrap().1["error_code"], "UNKNOWN_COMMAND");
+        assert_eq!(reply(6).unwrap().0, 0);
+        assert_eq!(reply(6).unwrap().1["result"]["id"], 1);
         assert_eq!(reply(3).unwrap().1["dialog"], "about");
         assert_eq!(reply(4).unwrap().1["error_code"], "DISABLED");
         let help = reply(5).unwrap().1;
@@ -339,9 +348,12 @@ mod tests {
         assert!(names.contains(&"screenshot.ui.click"));
         assert!(names.contains(&"screenshot.recent"));
         let (runs, _) = commands.borrow().take_executed();
-        assert_eq!(runs.len(), 1, "only the accepted execute ran");
-        assert_eq!(runs[0].params, Value::Null);
-        assert_eq!(runs[0].result, Value::Null);
+        assert_eq!(runs.len(), 2, "only the accepted executes ran");
+        assert_eq!(runs[0].id, "edit.annotate");
+        assert_eq!(runs[0].params, params);
+        assert_eq!(runs[0].result, reply(6).unwrap().1["result"]);
+        assert_eq!(runs[1].params, Value::Null);
+        assert_eq!(runs[1].result, Value::Null);
         assert_eq!(reply(3).unwrap().1["result"], Value::Null);
     }
 

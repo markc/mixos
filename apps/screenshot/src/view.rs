@@ -485,7 +485,7 @@ fn tools(
         }
     }
     bars::hairline(ui);
-    for id in ["edit.undo", "edit.redo", "edit.delete"] {
+    for id in ["edit.undo", "edit.redo", "edit.delete_selected"] {
         command_button(ui, app, commands, strings, id, false, events);
     }
 }
