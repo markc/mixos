@@ -23,8 +23,12 @@ where
     loop {
         let mut transport_failed = false;
         line.clear();
-        if (&mut input).take((crate::limits::BUS_BODY_LIMIT + 1) as u64)
-            .read_until(b'\n', &mut line).await? == 0 {
+        if (&mut input)
+            .take((crate::limits::BUS_BODY_LIMIT + 1) as u64)
+            .read_until(b'\n', &mut line)
+            .await?
+            == 0
+        {
             break;
         }
         let oversized = line.len() > crate::limits::BUS_BODY_LIMIT;
@@ -39,34 +43,36 @@ where
         }
         let reply = if oversized || std::str::from_utf8(&line).is_err() {
             json!({"id":null,"rc":-1,"error":"invalid bridge request"})
-        } else { match serde_json::from_slice::<Request>(&line) {
-            Ok(request) => match match client {
-                Ok(client) => {
-                    client
-                        .call_with_headers_raw(
-                            "indexd",
-                            &request.verb,
-                            &Default::default(),
-                            &request.body.to_string(),
-                        )
-                        .await
-                }
-                Err(error) => Err(anyhow::anyhow!(error.to_string())),
-            } {
-                Ok((rc, body, _)) => bus_reply(request.id, rc, &body),
+        } else {
+            match serde_json::from_slice::<Request>(&line) {
+                Ok(request) => match match client {
+                    Ok(client) => {
+                        client
+                            .call_with_headers_raw(
+                                "indexd",
+                                &request.verb,
+                                &Default::default(),
+                                &request.body.to_string(),
+                            )
+                            .await
+                    }
+                    Err(error) => Err(anyhow::anyhow!(error.to_string())),
+                } {
+                    Ok((rc, body, _)) => bus_reply(request.id, rc, &body),
+                    Err(error) => {
+                        transport_failed = true;
+                        json!({"id":request.id,"rc":-1,"error":error.to_string()})
+                    }
+                },
                 Err(error) => {
-                    transport_failed = true;
-                    json!({"id":request.id,"rc":-1,"error":error.to_string()})
+                    let id = serde_json::from_slice::<Value>(&line)
+                        .ok()
+                        .and_then(|v| v.get("id").cloned())
+                        .unwrap_or(Value::Null);
+                    json!({"id":id,"rc":-1,"error":format!("invalid bridge request: {error}")})
                 }
-            },
-            Err(error) => {
-                let id = serde_json::from_slice::<Value>(&line)
-                    .ok()
-                    .and_then(|v| v.get("id").cloned())
-                    .unwrap_or(Value::Null);
-                json!({"id":id,"rc":-1,"error":format!("invalid bridge request: {error}")})
             }
-        }};
+        };
         output.write_all(reply.to_string().as_bytes()).await?;
         output.write_all(b"\n").await?;
         output.flush().await?;
@@ -76,8 +82,7 @@ where
 }
 
 fn bus_reply(id: Value, rc: u8, body: &str) -> Value {
-    let body = serde_json::from_str::<Value>(body)
-        .unwrap_or_else(|_| json!({"error":body}));
+    let body = serde_json::from_str::<Value>(body).unwrap_or_else(|_| json!({"error":body}));
     json!({"id":id,"rc":rc,"body":body})
 }
 
@@ -87,7 +92,9 @@ mod tests {
 
     #[test]
     fn plain_text_bus_error_preserves_rc_and_body() {
-        assert_eq!(bus_reply(json!(7), 42, "service unavailable"),
-            json!({"id":7,"rc":42,"body":{"error":"service unavailable"}}));
+        assert_eq!(
+            bus_reply(json!(7), 42, "service unavailable"),
+            json!({"id":7,"rc":42,"body":{"error":"service unavailable"}})
+        );
     }
 }

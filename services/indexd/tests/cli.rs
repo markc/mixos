@@ -103,12 +103,19 @@ async fn serve_reconnect_bridge_flush_eof_and_sigterm() {
     let mut lines = BufReader::new(bridge.0.stdout.take().unwrap()).lines();
     for invalid in [vec![0xff, b'\n'], vec![b'x'; ::bus::WS_MAX_FRAME_BYTES + 1]] {
         input.write_all(&invalid).await.unwrap();
-        if invalid.last() != Some(&b'\n') { input.write_all(b"\n").await.unwrap(); }
+        if invalid.last() != Some(&b'\n') {
+            input.write_all(b"\n").await.unwrap();
+        }
         input.flush().await.unwrap();
         let line = tokio::time::timeout(Duration::from_secs(5), lines.next_line())
-            .await.unwrap().unwrap().unwrap();
-        assert_eq!(serde_json::from_str::<Value>(&line).unwrap(),
-            json!({"id":null,"rc":-1,"error":"invalid bridge request"}));
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            serde_json::from_str::<Value>(&line).unwrap(),
+            json!({"id":null,"rc":-1,"error":"invalid bridge request"})
+        );
     }
     for (id, verb, body, rc) in [
         (
@@ -195,7 +202,9 @@ fn bridge_initial_connection_failure_replies_then_exits_nonzero() {
         .spawn()
         .unwrap();
     let mut input = child.stdin.take().unwrap();
-    input.write_all(b"{\"id\":7,\"verb\":\"indexd.stats\",\"body\":{}}\n").unwrap();
+    input
+        .write_all(b"{\"id\":7,\"verb\":\"indexd.stats\",\"body\":{}}\n")
+        .unwrap();
     // Keep stdin open: exit must not depend on EOF.
     let output = child.wait_with_output().unwrap();
     assert!(!output.status.success());
@@ -229,10 +238,19 @@ fn call_requires_offline_for_writes_and_always_refuses_background() {
     let run = |verb: &str, body: &str, offline: bool| {
         let mut command = std::process::Command::new(env!("CARGO_BIN_EXE_indexd"));
         command.args(["-c", config.to_str().unwrap(), "call", verb, body]);
-        if offline { command.arg("--offline"); }
+        if offline {
+            command.arg("--offline");
+        }
         command.output().unwrap()
     };
-    for action in ["store", "update", "delete", "feedback", "supersede", "index_file"] {
+    for action in [
+        "store",
+        "update",
+        "delete",
+        "feedback",
+        "supersede",
+        "index_file",
+    ] {
         for verb in [action.to_string(), format!("indexd.{action}")] {
             let output = run(&verb, "{}", false);
             assert!(!output.status.success());

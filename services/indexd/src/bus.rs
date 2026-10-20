@@ -13,73 +13,73 @@ pub const BUS_SERVICE: &str = "indexd";
 
 pub fn verb_manifest() -> &'static [VerbDescriptor] {
     static VERBS: std::sync::LazyLock<Vec<VerbDescriptor>> = std::sync::LazyLock::new(|| {
-    [
-        (
-            "indexd.embed",
-            vec!["texts", "prefix"],
-            "Embed text locally",
-            true,
-        ),
-        (
-            "indexd.store",
-            vec!["texts", "source", "metadata"],
-            "Store semantic chunks",
-            false,
-        ),
-        (
-            "indexd.search",
-            vec!["query", "limit", "source", "metadata_filter"],
-            "Search active chunks",
-            true,
-        ),
-        (
-            "indexd.update",
-            vec!["id", "content", "metadata"],
-            "Update a chunk",
-            false,
-        ),
-        ("indexd.delete", vec!["ids"], "Delete chunks", false),
-        (
-            "indexd.list",
-            vec!["source", "limit", "offset"],
-            "List chunks",
-            true,
-        ),
-        (
-            "indexd.feedback",
-            vec!["id", "useful"],
-            "Record retrieval feedback",
-            false,
-        ),
-        (
-            "indexd.supersede",
-            vec!["old_id", "new_id", "reason"],
-            "Supersede a chunk",
-            false,
-        ),
-        (
-            "indexd.stale",
-            vec![
-                "never_retrieved_age_days",
-                "low_value_min_retrievals",
-                "long_dormant_days",
-                "per_bucket_limit",
-                "source",
-            ],
-            "Find stale chunks",
-            true,
-        ),
-        ("indexd.stats", vec![], "Read index statistics", true),
-        (
-            "indexd.index_file",
-            vec!["path", "content", "source", "domain", "background"],
-            "Index markdown sections",
-            false,
-        ),
-    ]
-    .into_iter()
-    .map(|(name, args, help, read_only)| VerbDescriptor::new(name, &args, help, read_only))
-    .collect()
+        [
+            (
+                "indexd.embed",
+                vec!["texts", "prefix"],
+                "Embed text locally",
+                true,
+            ),
+            (
+                "indexd.store",
+                vec!["texts", "source", "metadata"],
+                "Store semantic chunks",
+                false,
+            ),
+            (
+                "indexd.search",
+                vec!["query", "limit", "source", "metadata_filter"],
+                "Search active chunks",
+                true,
+            ),
+            (
+                "indexd.update",
+                vec!["id", "content", "metadata"],
+                "Update a chunk",
+                false,
+            ),
+            ("indexd.delete", vec!["ids"], "Delete chunks", false),
+            (
+                "indexd.list",
+                vec!["source", "limit", "offset"],
+                "List chunks",
+                true,
+            ),
+            (
+                "indexd.feedback",
+                vec!["id", "useful"],
+                "Record retrieval feedback",
+                false,
+            ),
+            (
+                "indexd.supersede",
+                vec!["old_id", "new_id", "reason"],
+                "Supersede a chunk",
+                false,
+            ),
+            (
+                "indexd.stale",
+                vec![
+                    "never_retrieved_age_days",
+                    "low_value_min_retrievals",
+                    "long_dormant_days",
+                    "per_bucket_limit",
+                    "source",
+                ],
+                "Find stale chunks",
+                true,
+            ),
+            ("indexd.stats", vec![], "Read index statistics", true),
+            (
+                "indexd.index_file",
+                vec!["path", "content", "source", "domain", "background"],
+                "Index markdown sections",
+                false,
+            ),
+        ]
+        .into_iter()
+        .map(|(name, args, help, read_only)| VerbDescriptor::new(name, &args, help, read_only))
+        .collect()
     });
     &VERBS
 }
@@ -192,12 +192,20 @@ mod tests {
         let broker = test_broker::Broker::start();
         let root = tempfile::tempdir().unwrap();
         let mut config = crate::config::Config::default();
-        config.service.vectors_db = root.path().join("vectors.db").to_string_lossy().into_owned();
+        config.service.vectors_db = root
+            .path()
+            .join("vectors.db")
+            .to_string_lossy()
+            .into_owned();
         config.service.model_dir = root.path().join("model").to_string_lossy().into_owned();
         config.service.max_response_bytes = 128;
         crate::test_support::model_files(&config);
         let engine = Arc::new(Engine::open(config).unwrap());
-        let client = Arc::new(NodedClient::connect(BUS_SERVICE, &broker.url).await.unwrap());
+        let client = Arc::new(
+            NodedClient::connect(BUS_SERVICE, &broker.url)
+                .await
+                .unwrap(),
+        );
         let (stop_tx, mut stop_rx) = watch::channel(false);
         let task = tokio::spawn(async move {
             serve_client(engine, client.clone(), &mut stop_rx).await;
@@ -205,9 +213,10 @@ mod tests {
         });
         let caller = NodedClient::connect_anonymous(&broker.url).await.unwrap();
         for _ in 0..2 {
-            let (rc, body, _) = caller.call_with_headers_raw(
-                BUS_SERVICE, "indexd.stats", &Default::default(), "{}"
-            ).await.unwrap();
+            let (rc, body, _) = caller
+                .call_with_headers_raw(BUS_SERVICE, "indexd.stats", &Default::default(), "{}")
+                .await
+                .unwrap();
             assert_eq!(rc, 10);
             assert!(body.contains("response_too_large"), "{body}");
         }

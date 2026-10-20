@@ -255,7 +255,8 @@ pub fn classify_response(response: &str) -> Outcome {
 /// real traffic. Falls back to "invalid" when even the action field is
 /// missing or the input isn't JSON.
 pub fn action_of_invalid(input: &serde_json::Value) -> String {
-    input.get("action")
+    input
+        .get("action")
         .and_then(|a| a.as_str())
         .map(|s| s.to_string())
         .unwrap_or_else(|| "invalid".to_string())
@@ -312,9 +313,18 @@ mod tests {
             action_of_invalid(&serde_json::json!({"action":"search","limit":"x"})),
             "search"
         );
-        assert_eq!(action_of_invalid(&serde_json::json!({"action":"nonsense"})), "nonsense");
-        assert_eq!(action_of_invalid(&serde_json::json!("not an object")), "invalid");
-        assert_eq!(action_of_invalid(&serde_json::json!({"no_action":true})), "invalid");
+        assert_eq!(
+            action_of_invalid(&serde_json::json!({"action":"nonsense"})),
+            "nonsense"
+        );
+        assert_eq!(
+            action_of_invalid(&serde_json::json!("not an object")),
+            "invalid"
+        );
+        assert_eq!(
+            action_of_invalid(&serde_json::json!({"no_action":true})),
+            "invalid"
+        );
     }
 
     #[test]

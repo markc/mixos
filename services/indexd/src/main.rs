@@ -55,10 +55,12 @@ fn main() -> Result<()> {
         return runtime.block_on(async {
             let client = async {
                 let source = std::fs::read_to_string(&node_config)?;
-                let url = ::bus::client::url_from_node_config(&source)
-                    .ok_or_else(|| anyhow::anyhow!("invalid node config: {}", node_config.display()))?;
+                let url = ::bus::client::url_from_node_config(&source).ok_or_else(|| {
+                    anyhow::anyhow!("invalid node config: {}", node_config.display())
+                })?;
                 ::bus::native_client::NodedClient::connect_anonymous(&url).await
-            }.await;
+            }
+            .await;
             let result = indexd::bridge::run(
                 tokio::io::BufReader::new(tokio::io::stdin()),
                 tokio::io::stdout(),
@@ -71,7 +73,12 @@ fn main() -> Result<()> {
             result
         });
     }
-    if let Command::Call { verb, json_body, offline } = &cli.command {
+    if let Command::Call {
+        verb,
+        json_body,
+        offline,
+    } = &cli.command
+    {
         let body: serde_json::Value = serde_json::from_str(json_body)?;
         anyhow::ensure!(
             body.get("background").and_then(serde_json::Value::as_bool) != Some(true),
@@ -79,7 +86,11 @@ fn main() -> Result<()> {
         );
         let action = verb.strip_prefix("indexd.").unwrap_or(verb);
         anyhow::ensure!(
-            *offline || !matches!(action, "store" | "update" | "delete" | "feedback" | "supersede" | "index_file"),
+            *offline
+                || !matches!(
+                    action,
+                    "store" | "update" | "delete" | "feedback" | "supersede" | "index_file"
+                ),
             "indexd call writes require --offline with the daemon stopped: a running daemon's in-memory index would desynchronise"
         );
     }
@@ -111,7 +122,9 @@ fn main() -> Result<()> {
                 }
                 Ok(())
             }
-            Command::Call { verb, json_body, .. } => {
+            Command::Call {
+                verb, json_body, ..
+            } => {
                 let reply = engine.call(&verb, serde_json::from_str(&json_body)?).await;
                 println!("{reply}");
                 if reply.get("error").is_some() {

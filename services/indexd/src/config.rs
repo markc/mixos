@@ -136,7 +136,10 @@ fn resolve_snapshot(root: &Path) -> PathBuf {
 impl Config {
     pub fn validate(&self) -> Result<()> {
         for (name, value) in [
-            ("max_request_line_bytes", self.service.max_request_line_bytes),
+            (
+                "max_request_line_bytes",
+                self.service.max_request_line_bytes,
+            ),
             ("max_response_bytes", self.service.max_response_bytes),
         ] {
             anyhow::ensure!(
@@ -321,7 +324,12 @@ mod path_tests {
             } else {
                 cfg.service.max_request_line_bytes = BUS_BODY_LIMIT + 1;
             }
-            assert!(cfg.validate().unwrap_err().to_string().contains("Bus frame budget"));
+            assert!(
+                cfg.validate()
+                    .unwrap_err()
+                    .to_string()
+                    .contains("Bus frame budget")
+            );
         }
     }
 
