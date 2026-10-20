@@ -2686,11 +2686,20 @@ async fn delete_by_path(
     let mut ids_to_delete = Vec::new();
     let mut offset = 0;
     loop {
-        let resp = indexd.raw_request(&serde_json::json!({
-            "action": "list", "limit": 1000, "offset": offset,
-        })).await.map_err(|e| e.to_string())?;
-        let items = resp.get("items").and_then(|i| i.as_array()).ok_or("indexd list response missing items")?;
-        let total = resp.get("total").and_then(|n| n.as_u64()).ok_or("indexd list response missing total")?;
+        let resp = indexd
+            .raw_request(&serde_json::json!({
+                "action": "list", "limit": 1000, "offset": offset,
+            }))
+            .await
+            .map_err(|e| e.to_string())?;
+        let items = resp
+            .get("items")
+            .and_then(|i| i.as_array())
+            .ok_or("indexd list response missing items")?;
+        let total = resp
+            .get("total")
+            .and_then(|n| n.as_u64())
+            .ok_or("indexd list response missing total")?;
         for item in items {
             if let Some(meta_str) = item.get("metadata").and_then(|m| m.as_str())
                 && let Ok(meta) = serde_json::from_str::<serde_json::Value>(meta_str)
@@ -2701,7 +2710,9 @@ async fn delete_by_path(
             }
         }
         offset += items.len() as u64;
-        if items.is_empty() || offset >= total { break; }
+        if items.is_empty() || offset >= total {
+            break;
+        }
     }
 
     // Defer deletion until pagination finishes so offsets cannot skip rows.
@@ -2721,12 +2732,19 @@ async fn delete_by_path(
 /// indexd receives absolute paths in metadata and never expands a user's home.
 fn workspace_path(path: Option<&str>) -> Result<std::path::PathBuf, String> {
     let path = match path {
-        Some("~") => directories::BaseDirs::new().ok_or("home directory unavailable")?.home_dir().to_path_buf(),
-        Some(p) if p.starts_with("~/") => directories::BaseDirs::new().ok_or("home directory unavailable")?.home_dir().join(&p[2..]),
+        Some("~") => directories::BaseDirs::new()
+            .ok_or("home directory unavailable")?
+            .home_dir()
+            .to_path_buf(),
+        Some(p) if p.starts_with("~/") => directories::BaseDirs::new()
+            .ok_or("home directory unavailable")?
+            .home_dir()
+            .join(&p[2..]),
         Some(p) => std::path::PathBuf::from(p),
         None => std::env::current_dir().map_err(|e| e.to_string())?,
     };
-    path.canonicalize().map_err(|e| format!("workspace path {}: {e}", path.display()))
+    path.canonicalize()
+        .map_err(|e| format!("workspace path {}: {e}", path.display()))
 }
 
 /// Per-call deadline for a tool, in seconds (0 = no deadline). The server

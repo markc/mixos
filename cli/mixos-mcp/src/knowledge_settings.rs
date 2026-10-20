@@ -275,15 +275,30 @@ mod tests {
     #[test]
     fn knowledge_transport_defaults_and_partial_config() {
         let dir = tempfile::tempdir().unwrap();
-        let absent = config::store::load_service_in::<KnowledgeSettings>(dir.path(), "knowledge").unwrap();
+        let absent =
+            config::store::load_service_in::<KnowledgeSettings>(dir.path(), "knowledge").unwrap();
         assert_eq!(absent.indexd, IndexdSettings::default());
-        std::fs::write(dir.path().join("knowledge.conf.mix"), "indexd: {transport: \"ssh\", ssh_host: \"user@host.example\"}\n").unwrap();
-        let partial = config::store::load_service_in::<KnowledgeSettings>(dir.path(), "knowledge").unwrap();
+        std::fs::write(
+            dir.path().join("knowledge.conf.mix"),
+            "indexd: {transport: \"ssh\", ssh_host: \"user@host.example\"}\n",
+        )
+        .unwrap();
+        let partial =
+            config::store::load_service_in::<KnowledgeSettings>(dir.path(), "knowledge").unwrap();
         assert_eq!(partial.indexd.transport, IndexdTransport::Ssh);
         assert_eq!(partial.indexd.target, "indexd");
         assert_eq!(partial.indexd.call_timeout_secs, 120);
-        assert_eq!(partial.indexd.ssh_command, ["/opt/mixos/bin/indexd", "bridge"]);
-        std::fs::write(dir.path().join("knowledge.conf.mix"), "indexd: {transport: \"invalid\"}\n").unwrap();
-        assert!(config::store::load_service_in::<KnowledgeSettings>(dir.path(), "knowledge").is_err());
+        assert_eq!(
+            partial.indexd.ssh_command,
+            ["/opt/mixos/bin/indexd", "bridge"]
+        );
+        std::fs::write(
+            dir.path().join("knowledge.conf.mix"),
+            "indexd: {transport: \"invalid\"}\n",
+        )
+        .unwrap();
+        assert!(
+            config::store::load_service_in::<KnowledgeSettings>(dir.path(), "knowledge").is_err()
+        );
     }
 }

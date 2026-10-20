@@ -19,7 +19,11 @@ async fn stdio_tools_use_the_real_fixture_bus_and_reconnect_without_replay() {
     std::fs::write(&config, "node: \"fixture\"\nnoded: {port: 4200}\n").unwrap();
     // A different service name proves the client probes its target rather
     // than requiring a locally registered service named indexd.
-    std::fs::write(dir.path().join("knowledge.conf.mix"), "indexd: {target: \"knowledge-fixture\"}\n").unwrap();
+    std::fs::write(
+        dir.path().join("knowledge.conf.mix"),
+        "indexd: {target: \"knowledge-fixture\"}\n",
+    )
+    .unwrap();
     let mut command = Command::new(env!("CARGO_BIN_EXE_mixos-mcp"));
     command
         .env("MIXOS_NODED_URL", &broker.url)
@@ -166,9 +170,14 @@ async fn stdio_tools_use_the_real_fixture_bus_and_reconnect_without_replay() {
             .unwrap(),
     );
     assert!(native["stdout"].as_str().unwrap().contains("Email"));
-    let absent = service.call_tool(call("skills_list", json!({}))).await.unwrap();
+    let absent = service
+        .call_tool(call("skills_list", json!({})))
+        .await
+        .unwrap();
     assert!(absent.is_error.unwrap_or(false));
-    assert!(format!("{absent:?}").contains("native indexd service is not registered on the MixOS Bus"));
+    assert!(
+        format!("{absent:?}").contains("native indexd service is not registered on the MixOS Bus")
+    );
 
     let workspace = dir.path().join("work~space");
     std::fs::create_dir_all(workspace.join("_doc")).unwrap();
@@ -186,12 +195,17 @@ async fn stdio_tools_use_the_real_fixture_bus_and_reconnect_without_replay() {
     let index_paths = stored_paths.clone();
     let deleted_ids = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
     let index_deleted = deleted_ids.clone();
-    let index = NodedClient::connect("knowledge-fixture", &broker.url).await.unwrap();
+    let index = NodedClient::connect("knowledge-fixture", &broker.url)
+        .await
+        .unwrap();
     let mut requests = index.incoming_async().await.unwrap();
     let indexing = tokio::spawn(async move {
         while let Some(command) = requests.recv().await {
             let request: Value = serde_json::from_str(&command.body).unwrap();
-            assert_eq!(command.command, format!("indexd.{}", request["action"].as_str().unwrap()));
+            assert_eq!(
+                command.command,
+                format!("indexd.{}", request["action"].as_str().unwrap())
+            );
             let (rc, body) = match command.command.as_str() {
                 "indexd.stats" => (0, json!({"total_vectors":2107})),
                 "indexd.list" => {
@@ -202,12 +216,18 @@ async fn stdio_tools_use_the_real_fixture_bus_and_reconnect_without_replay() {
                         let limit = request["limit"].as_u64().unwrap() as usize;
                         index_offsets.lock().unwrap().push(offset);
                         let rows = index_rows.lock().unwrap();
-                        (0, json!({"items":rows.iter().skip(offset).take(limit).collect::<Vec<_>>(), "total":rows.len()}))
+                        (
+                            0,
+                            json!({"items":rows.iter().skip(offset).take(limit).collect::<Vec<_>>(), "total":rows.len()}),
+                        )
                     }
                 }
                 "indexd.delete" => {
                     let ids = request["ids"].as_array().unwrap();
-                    index_deleted.lock().unwrap().extend(ids.iter().filter_map(Value::as_i64));
+                    index_deleted
+                        .lock()
+                        .unwrap()
+                        .extend(ids.iter().filter_map(Value::as_i64));
                     let mut rows = index_rows.lock().unwrap();
                     let before = rows.len();
                     rows.retain(|row| !ids.contains(&row["id"]));
@@ -216,17 +236,30 @@ async fn stdio_tools_use_the_real_fixture_bus_and_reconnect_without_replay() {
                 "indexd.store" => {
                     let metadata = request["metadata"][0].as_str().unwrap();
                     let meta: Value = serde_json::from_str(metadata).unwrap();
-                    index_paths.lock().unwrap().push(meta["path"].as_str().unwrap().to_string());
-                    index_rows.lock().unwrap().push(json!({"id":9999,"metadata":metadata}));
+                    index_paths
+                        .lock()
+                        .unwrap()
+                        .push(meta["path"].as_str().unwrap().to_string());
+                    index_rows
+                        .lock()
+                        .unwrap()
+                        .push(json!({"id":9999,"metadata":metadata}));
                     (0, json!({"stored":1,"ids":[9999]}))
                 }
-                "indexd.feedback" if request["id"] == -1 => (10, json!({"error":"fixture refusal"})),
-                "indexd.feedback" if request["id"] == -2 => (0, json!({"error":"fixture body error"})),
+                "indexd.feedback" if request["id"] == -1 => {
+                    (10, json!({"error":"fixture refusal"}))
+                }
+                "indexd.feedback" if request["id"] == -2 => {
+                    (0, json!({"error":"fixture body error"}))
+                }
                 "indexd.search" => (0, json!({"results":[]})),
                 "indexd.feedback" => (0, json!({"updated":1})),
                 _ => panic!("unexpected index request: {}", command.command),
             };
-            index.respond(&command, rc, &body.to_string()).await.unwrap();
+            index
+                .respond(&command, rc, &body.to_string())
+                .await
+                .unwrap();
         }
     });
     let skills = result(
@@ -253,20 +286,39 @@ async fn stdio_tools_use_the_real_fixture_bus_and_reconnect_without_replay() {
             .unwrap(),
     );
     assert!(feedback.get("result").is_some());
-    for (id, message) in [(-1, "fixture refusal"), (-2, "indexd error: fixture body error")] {
-        let rejected = service.call_tool(call("docs_feedback", json!({"id":id,"useful":true}))).await.unwrap();
+    for (id, message) in [
+        (-1, "fixture refusal"),
+        (-2, "indexd error: fixture body error"),
+    ] {
+        let rejected = service
+            .call_tool(call("docs_feedback", json!({"id":id,"useful":true})))
+            .await
+            .unwrap();
         assert!(rejected.is_error.unwrap_or(false), "{rejected:?}");
         assert!(format!("{rejected:?}").contains(message), "{rejected:?}");
     }
     for path in ["work~space", "~/work~space"] {
-        let indexed = result(service.call_tool(call("index_workspace", json!({"path":path}))).await.unwrap());
+        let indexed = result(
+            service
+                .call_tool(call("index_workspace", json!({"path":path})))
+                .await
+                .unwrap(),
+        );
         assert!(indexed["result"].get("errors").is_none(), "{indexed}");
         assert_eq!(indexed["result"]["sections"], 1);
     }
-    assert_eq!(*stored_paths.lock().unwrap(), [expected_path.clone(), expected_path]);
+    assert_eq!(
+        *stored_paths.lock().unwrap(),
+        [expected_path.clone(), expected_path]
+    );
     assert_eq!(*offsets.lock().unwrap(), [0, 1000, 2000, 0, 1000, 2000]);
     assert_eq!(*deleted_ids.lock().unwrap(), [0, 1000, 2106, 9999]);
-    let remaining = rows.lock().unwrap().iter().map(|row| row["id"].as_i64().unwrap()).collect::<Vec<_>>();
+    let remaining = rows
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|row| row["id"].as_i64().unwrap())
+        .collect::<Vec<_>>();
     assert!(!remaining.contains(&0) && !remaining.contains(&1000) && !remaining.contains(&2106));
     assert_eq!(remaining.iter().filter(|&&id| id == 9999).count(), 1);
     indexing.abort();
