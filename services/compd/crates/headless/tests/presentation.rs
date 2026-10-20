@@ -84,7 +84,15 @@ fn independent_60hz_and_stall_control() {
     println!(
         "60 s baseline achieved_hz={hz} missed={clean}; stall achieved_hz={stall_hz} missed={stalled}"
     );
-    // The baseline bound is set from the first observed worker run, before
-    // this test is accepted; see the follow-up evidence commit.
+    // Optimised 60 s calibration: 395 strict misses with millisecond waits
+    // and frame tracing; 328 with ppoll and tracing off. Retain the largest
+    // observed count as an empirical regression guard. This 11% guard is
+    // not a low-miss acceptance target: that remains unproven with the
+    // current free-running headless timer and a one-interval deadline.
+    const OBSERVED_MISSED_BOUND: usize = 395;
+    assert!(
+        clean <= OBSERVED_MISSED_BOUND,
+        "baseline missed={clean}, observed bound={OBSERVED_MISSED_BOUND}"
+    );
     assert!(stalled > clean, "stall injection must raise missed");
 }
