@@ -21,6 +21,8 @@ contract = "none"
 mod_module_files = "deny"
 
 [dependencies]
+command.workspace = true
+schemars.workspace = true
 chrono = { workspace = true, features = ["clock"] }
 # Annotation text, shaped with the face the caller supplies (no host fonts).
 cosmic-text.workspace = true

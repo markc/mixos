@@ -2,7 +2,7 @@
 # command
 
 The UI-free command registry. See the [manual](../../docs/command/README.md)
-for dispatch, schemas, classes and toolkit compatibility. Public contract 0.2.0.
+for dispatch, schemas, classes and toolkit compatibility. Public contract 0.3.0.
 
 The legacy nullary path (`Registry::add_nullary`),
 `toolkit::command::{Command, CommandError}`, toolkit's 3-argument
@@ -21,3 +21,19 @@ compact JSON bytes inline; larger values carry `{ bytes, sha256 }` instead.
 
 Plan step 6's registry conformance test will check that each `<app>.execute`
 row's schema matches the app's real parser.
+
+## History
+
+`command::History<D>` holds bounded `Arc<D>` snapshots for a cloneable,
+comparable document state. `History::new(initial, history::Budget {
+max_entries, max_bytes, bytes })` bounds retained undo and redo snapshots;
+the current state and saved checkpoint are retained separately. The byte
+function measures one snapshot, conservatively counting shared allocations.
+Edits clone the current state and commit only on success. Failed edits leave
+the state, checkpoint and both stacks untouched. New edits clear redo.
+
+`edit(label, closure)` starts an undo step; consecutive
+`edit_coalesced(key, closure)` calls with the same key share a step. An ordinary
+edit, undo, redo or `mark_saved()` ends the coalescing group. `current()`,
+`can_undo()`, `can_redo()`, `depth()` and `labels()` expose state without mutation.
+`mark_saved()` records a checkpoint; `dirty()` compares document values.

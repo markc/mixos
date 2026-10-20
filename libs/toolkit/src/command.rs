@@ -121,6 +121,28 @@ impl<S> Registry<S> {
         Self::default()
     }
 
+    /// Finish a transitional table, retaining its handlers and bindings in
+    /// the core registry so an engine table can be added before adaptation.
+    pub fn into_registry(self) -> EngineRegistry<S> {
+        self.core
+    }
+
+    /// Add an engine-owned command while assembling a transitional table.
+    /// Only nullary commands get UI rows; all handlers stay in core.
+    pub fn add_engine(&mut self, command: EngineCommand<S>) -> &mut Self {
+        if command.params.is_none() {
+            self.commands.push(Command {
+                id: command.id, label: command.label, menu: command.menu,
+                submenu: command.submenu, group: command.group, shortcut: None,
+                icon: command.icon.and_then(|name| Icon::ALL.iter().copied().find(|i| i.name() == name)),
+                enabled: always, run: choose,
+            });
+        }
+        self.core.add(command);
+        self.refresh_shortcuts();
+        self
+    }
+
     /// Add `command`.
     ///
     /// # Panics

@@ -4,10 +4,12 @@
 //! Toolkit supplies the egui adapter; engine crates depend only on this crate.
 
 pub mod executed;
+pub mod history;
 pub mod keymap;
 pub mod strings;
 
 pub use executed::{Executed, Journal, Origin};
+pub use history::History;
 use schemars::{JsonSchema, Schema};
 use serde::{Deserialize, Serialize};
 #[doc(hidden)]

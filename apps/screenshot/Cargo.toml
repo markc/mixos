@@ -24,6 +24,7 @@ annotation = { path = "crates/annotation" }
 buildinfo.workspace = true
 # The Bus connection: commands, replies, calls to compd, topics, activation.
 citizen.workspace = true
+command.workspace = true
 design.workspace = true
 eframe.workspace = true
 egui.workspace = true

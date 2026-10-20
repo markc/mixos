@@ -3,7 +3,9 @@
 //! Immutable source pixels and bounded editable objects. Undo snapshots
 //! hold geometry, never raster copies; the original is shared, never
 //! written.
+use command::{History, history::Budget};
 use image::RgbaImage;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::{path::Path, sync::Arc};
 
@@ -25,7 +27,7 @@ const MAX_HISTORY_BYTES: usize = 16 * 1024 * 1024;
 const MAX_SIDE: u32 = 16_384;
 
 /// A position in original-image pixels.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Point {
     pub x: f32,
@@ -42,7 +44,7 @@ impl Point {
 }
 
 /// The part of the original that is shown and exported.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Crop {
     pub x: u32,
@@ -52,7 +54,7 @@ pub struct Crop {
 }
 
 /// What an object draws.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Kind {
     Line,
@@ -112,7 +114,7 @@ impl Kind {
 }
 
 /// One object's geometry and look, in original-image pixels.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Shape {
     pub kind: Kind,
@@ -246,10 +248,7 @@ impl State {
 #[derive(Debug, Clone)]
 pub struct Document {
     pub(crate) original: Arc<RgbaImage>,
-    pub(crate) state: State,
-    undo: Vec<State>,
-    redo: Vec<State>,
-    saved: State,
+    pub(crate) history: History<State>,
     next_id: u64,
 }
 
@@ -258,10 +257,7 @@ impl Document {
         check_size(image.width(), image.height())?;
         Ok(Self {
             original: Arc::new(image),
-            state: State::default(),
-            undo: vec![],
-            redo: vec![],
-            saved: State::default(),
+            history: history(State::default()),
             next_id: 1,
         })
     }
@@ -306,7 +302,7 @@ impl Document {
 
     /// The exported size: the crop's, else the original's.
     pub fn output_dimensions(&self) -> (u32, u32) {
-        self.state
+        self.history.current()
             .crop
             .map_or(self.dimensions(), |c| (c.width, c.height))
     }
@@ -316,44 +312,44 @@ impl Document {
     }
 
     pub fn crop(&self) -> Option<Crop> {
-        self.state.crop
+        self.history.current().crop
     }
 
     pub fn objects(&self) -> &[Object] {
-        &self.state.objects
+        &self.history.current().objects
     }
 
     pub fn object(&self, id: u64) -> Option<&Object> {
-        self.state.objects.iter().find(|o| o.id == id)
+        self.history.current().objects.iter().find(|o| o.id == id)
     }
 
     /// Changed since it was last saved (or since it was captured).
     pub fn dirty(&self) -> bool {
-        self.state != self.saved
+        self.history.dirty()
     }
 
     /// Anything drawn on it, or cropped: the export differs from the original.
     pub fn annotated(&self) -> bool {
-        !self.state.objects.is_empty() || self.state.crop.is_some()
+        !self.history.current().objects.is_empty() || self.history.current().crop.is_some()
     }
 
     pub fn mark_saved(&mut self) {
-        self.saved = self.state.clone();
+        self.history.mark_saved();
     }
 
     pub fn can_undo(&self) -> bool {
-        !self.undo.is_empty()
+        self.history.can_undo()
     }
 
     pub fn can_redo(&self) -> bool {
-        !self.redo.is_empty()
+        self.history.can_redo()
     }
 
     /// The number the next numbered marker takes; `None` once 9999 is
     /// used, so no number ever repeats.
     pub fn next_number(&self) -> Option<u32> {
         let next = self
-            .state
+            .history.current()
             .objects
             .iter()
             .filter_map(|o| o.shape.number)
@@ -367,32 +363,19 @@ impl Document {
     pub fn raster_snapshot(&self) -> Self {
         Self {
             original: self.original.clone(),
-            state: self.state.clone(),
-            undo: vec![],
-            redo: vec![],
-            saved: State::default(),
+            history: history(self.history.current().clone()),
             next_id: self.next_id,
         }
-    }
-
-    fn checkpoint(&mut self) {
-        self.undo.push(self.state.clone());
-        while self.undo.len() > MAX_HISTORY
-            || self.undo.iter().map(State::bytes).sum::<usize>() > MAX_HISTORY_BYTES
-        {
-            self.undo.remove(0);
-        }
-        self.redo.clear();
     }
 
     /// Add `shape`; its new id.
     pub fn add(&mut self, shape: Shape) -> Result<u64, String> {
         shape.validate()?;
-        if self.state.objects.len() >= MAX_OBJECTS {
+        if self.history.current().objects.len() >= MAX_OBJECTS {
             return Err("annotation limit reached".into());
         }
         if self
-            .state
+            .history.current()
             .objects
             .iter()
             .map(|o| o.shape.points.len())
@@ -407,25 +390,29 @@ impl Document {
             .next_id
             .checked_add(1)
             .ok_or("annotation id exhausted")?;
-        self.checkpoint();
-        self.state.objects.push(Object { id, shape });
-        Ok(id)
+        self.history.edit("annotate", |state| {
+            state.objects.push(Object { id, shape });
+            Ok(id)
+        })
     }
 
     pub fn delete(&mut self, id: u64) -> Result<(), String> {
         let at = self.position(id)?;
-        self.checkpoint();
-        self.state.objects.remove(at);
-        Ok(())
+        self.history.edit("delete", |state| {
+            state.objects.remove(at);
+            Ok(())
+        })
     }
 
     pub fn move_object(&mut self, id: u64, dx: f32, dy: f32) -> Result<(), String> {
         let at = self.position(id)?;
-        let moved = self.state.objects[at].shape.translated(dx, dy);
+        let moved = self.history.current().objects[at].shape.translated(dx, dy);
         moved.validate()?;
         if dx != 0.0 || dy != 0.0 {
-            self.checkpoint();
-            self.state.objects[at].shape = moved;
+            self.history.edit("move", |state| {
+                state.objects[at].shape = moved;
+                Ok::<_, String>(())
+            })?;
         }
         Ok(())
     }
@@ -433,19 +420,21 @@ impl Document {
     /// Change object `id`'s colour and stroke width (one undo step).
     pub fn restyle(&mut self, id: u64, colour: [u8; 4], width: f32) -> Result<(), String> {
         let at = self.position(id)?;
-        let mut shape = self.state.objects[at].shape.clone();
+        let mut shape = self.history.current().objects[at].shape.clone();
         shape.colour = colour;
         shape.width = width;
         shape.validate()?;
-        if shape != self.state.objects[at].shape {
-            self.checkpoint();
-            self.state.objects[at].shape = shape;
+        if shape != self.history.current().objects[at].shape {
+            self.history.edit("restyle", |state| {
+                state.objects[at].shape = shape;
+                Ok::<_, String>(())
+            })?;
         }
         Ok(())
     }
 
     fn position(&self, id: u64) -> Result<usize, String> {
-        self.state
+        self.history.current()
             .objects
             .iter()
             .position(|o| o.id == id)
@@ -463,34 +452,22 @@ impl Document {
                 return Err("crop outside image".into());
             }
         }
-        if self.state.crop != crop {
-            self.checkpoint();
-            self.state.crop = crop;
+        if self.history.current().crop != crop {
+            self.history.edit("crop", |state| {
+                state.crop = crop;
+                Ok::<_, String>(())
+            })?;
         }
         Ok(())
     }
 
-    pub fn undo(&mut self) -> bool {
-        if let Some(s) = self.undo.pop() {
-            self.redo.push(std::mem::replace(&mut self.state, s));
-            true
-        } else {
-            false
-        }
-    }
+    pub fn undo(&mut self) -> bool { self.history.undo() }
 
-    pub fn redo(&mut self) -> bool {
-        if let Some(s) = self.redo.pop() {
-            self.undo.push(std::mem::replace(&mut self.state, s));
-            true
-        } else {
-            false
-        }
-    }
+    pub fn redo(&mut self) -> bool { self.history.redo() }
 
     /// The topmost object within `tolerance` pixels of `p`.
     pub fn hit(&self, p: Point, tolerance: f32) -> Option<u64> {
-        self.state
+        self.history.current()
             .objects
             .iter()
             .rev()
@@ -510,10 +487,18 @@ impl Document {
             "width": width, "height": height,
             "original_width": original_width, "original_height": original_height,
             "dirty": self.dirty(), "annotated": self.annotated(),
-            "objects": self.state.objects, "crop": self.state.crop,
-            "undo": self.undo.len(), "redo": self.redo.len(),
+            "objects": self.history.current().objects, "crop": self.history.current().crop,
+            "undo": self.history.depth().0, "redo": self.history.depth().1,
         })
     }
+}
+
+fn history(initial: State) -> History<State> {
+    History::new(initial, Budget {
+        max_entries: MAX_HISTORY,
+        max_bytes: MAX_HISTORY_BYTES,
+        bytes: State::bytes,
+    })
 }
 
 fn check_size(w: u32, h: u32) -> Result<(), String> {
@@ -572,7 +557,7 @@ mod tests {
         let original = d.original.clone();
         let id = d.add(shape(Kind::Arrow)).unwrap();
         d.move_object(id, 2.0, 3.0).unwrap();
-        assert_eq!(d.undo.len(), 2);
+        assert_eq!(d.history.depth().0, 2);
         assert!(Arc::ptr_eq(&original, &d.original));
         d.undo();
         assert_eq!(d.objects()[0].shape.points[0], Point { x: 4.0, y: 4.0 });
@@ -608,7 +593,7 @@ mod tests {
             d.add(shape(Kind::Line)).unwrap();
         }
         assert!(d.add(shape(Kind::Line)).is_err());
-        assert_eq!(d.undo.len(), MAX_HISTORY);
+        assert_eq!(d.history.depth().0, MAX_HISTORY);
     }
 
     #[test]

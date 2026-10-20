@@ -4,6 +4,7 @@
 //!
 //! - [`document`]: the immutable captured raster and its editable objects,
 //!   with stable ids, bounds and undo/redo; edits are geometry, never pixels;
+//! - [`commands`]: the UI-free, parameterised document edit command table;
 //! - [`paint`]: one painter for preview, clipboard and export, so what is
 //!   saved is what was shown; text is shaped with a [`Face`] the caller
 //!   supplies, so no host font is ever consulted;
@@ -15,11 +16,13 @@
 //! Transplanted from `apps/cap/src/{document,viewport,capture}.rs`
 //! (markc/mixos-iced); the painter no longer reaches into a UI toolkit for
 //! its text shaper.
+pub mod commands;
 pub mod document;
 pub mod library;
 pub mod paint;
 pub mod viewport;
 
 pub use document::{Crop, Document, Kind, MAX_OBJECTS, MAX_PIXELS, Object, Point, Shape};
+pub use commands::{Annotate, Delete, HasDocument, Move, SetCrop, commands};
 pub use paint::Face;
 pub use viewport::Viewport;

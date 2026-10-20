@@ -8,7 +8,7 @@ description: UI-free command registry, typed dispatch and executed journal.
 
 `command` is the shared, UI-free registry for application engines. It owns
 `Command<S>`, `Registry<S>`, `Described`, `Error`, `Scope`, `Origin`,
-`Executed`, `Journal` and Fluent `Strings`. Its public contract is 0.2.0.
+`Executed`, `Journal` and Fluent `Strings`. Its public contract is 0.3.0.
 There are no egui or windowing dependencies.
 
 `Registry::execute(id, state, params, origin)` looks up the command, calls
@@ -68,3 +68,19 @@ The application layering table (`apps/layers.conf.mix`) prevents engine
 dependency paths from reaching GUI crates, including through another workspace
 library. Unit and integration tests cover dispatch, schema reporting, journals
 and the toolkit shortcut behaviour.
+
+## History
+
+`command::History<D>` holds bounded `Arc<D>` snapshots for a cloneable,
+comparable document state. `History::new(initial, history::Budget {
+max_entries, max_bytes, bytes })` bounds retained undo and redo snapshots;
+the current state and saved checkpoint are retained separately. The byte
+function measures one snapshot, conservatively counting shared allocations.
+Edits clone the current state and commit only on success. Failed edits leave
+the state, checkpoint and both stacks untouched. New edits clear redo.
+
+`edit(label, closure)` starts an undo step; consecutive
+`edit_coalesced(key, closure)` calls with the same key share a step. An ordinary
+edit, undo, redo or `mark_saved()` ends the coalescing group. `current()`,
+`can_undo()`, `can_redo()`, `depth()` and `labels()` expose state without mutation.
+`mark_saved()` records a checkpoint; `dirty()` compares document values.

@@ -23,7 +23,8 @@ use toolkit::button::{IconButton, PushButton};
 use toolkit::command::Origin;
 use toolkit::dialog::{self, Choice, Role};
 use toolkit::titlebar::{self, Control};
-use toolkit::{Icon, Registry, Strings, bars, field, tooltip};
+use toolkit::{Icon, Strings, bars, field, tooltip};
+use crate::app::Commands;
 
 /// One interaction from this frame.
 #[derive(Clone, Debug, PartialEq)]
@@ -99,7 +100,7 @@ pub fn title(app: &App) -> String {
 pub fn view(
     ui: &mut Ui,
     app: &App,
-    commands: &Registry<App>,
+    commands: &Commands,
     strings: &Strings,
     stroke: f32,
     preview: Option<&Preview>,
@@ -143,20 +144,20 @@ pub fn view(
 fn command_button(
     ui: &mut Ui,
     app: &App,
-    commands: &Registry<App>,
+    commands: &Commands,
     strings: &Strings,
     id: &'static str,
     selected: bool,
     events: &mut Vec<UiEvent>,
 ) {
-    let Some(command) = commands.get(id) else {
+    let Some(command) = commands.registry().get(id) else {
         return;
     };
     let tip = tooltip::for_command(ui.ctx(), command, strings);
-    let button = IconButton::new(command.icon.unwrap_or(Icon::Square))
+    let button = IconButton::new(commands.icon(id).unwrap_or(Icon::Square))
         .selected(selected)
         .tooltip(tip);
-    if ui.add_enabled((command.enabled)(app), button).clicked() {
+    if ui.add_enabled(commands.registry().enabled(id, app).is_ok(), button).clicked() {
         events.push(UiEvent::Command(id, Origin::Ui));
     }
 }
@@ -165,14 +166,14 @@ fn command_button(
 fn controls(
     ui: &mut Ui,
     app: &App,
-    commands: &Registry<App>,
+    commands: &Commands,
     strings: &Strings,
     events: &mut Vec<UiEvent>,
 ) {
-    if let Some(take) = commands.get("capture.take") {
+    if let Some(take) = commands.registry().get("capture.take") {
         let button = PushButton::primary(label("take"));
         let response = ui
-            .add_enabled((take.enabled)(app), button)
+            .add_enabled(commands.registry().enabled("capture.take", app).is_ok(), button)
             .on_hover_text(tooltip::for_command(ui.ctx(), take, strings));
         if response.clicked() {
             events.push(UiEvent::Command("capture.take", Origin::Ui));
@@ -184,8 +185,8 @@ fn controls(
         (Mode::Window, Icon::AppWindow),
     ] {
         let id = mode_id(mode);
-        let enabled = commands.get(id).is_some_and(|c| (c.enabled)(app)) && !app.busy();
-        let tip = commands
+        let enabled = commands.registry().enabled(id, app).is_ok() && !app.busy();
+        let tip = commands.registry()
             .get(id)
             .map(|c| toolkit::command::label_text(strings, c.label))
             .unwrap_or_default();
@@ -385,7 +386,7 @@ fn size_combo(
 fn options(
     ui: &mut Ui,
     app: &App,
-    commands: &Registry<App>,
+    commands: &Commands,
     strings: &Strings,
     events: &mut Vec<UiEvent>,
 ) {
@@ -408,12 +409,12 @@ fn options(
 fn file_buttons(
     ui: &mut Ui,
     app: &App,
-    commands: &Registry<App>,
+    commands: &Commands,
     strings: &Strings,
     events: &mut Vec<UiEvent>,
 ) {
     for (id, text) in [("file.save", "save"), ("file.copy", "copy-short")] {
-        let Some(command) = commands.get(id) else {
+        let Some(command) = commands.registry().get(id) else {
             continue;
         };
         let tip = if id == "file.save" {
@@ -426,7 +427,7 @@ fn file_buttons(
             tooltip::for_command(ui.ctx(), command, strings)
         };
         let response = ui
-            .add_enabled((command.enabled)(app), PushButton::secondary(label(text)))
+            .add_enabled(commands.registry().enabled(id, app).is_ok(), PushButton::secondary(label(text)))
             .on_hover_text(tip);
         if response.clicked() {
             events.push(UiEvent::Command(id, Origin::Ui));
@@ -448,7 +449,7 @@ fn screenshots_folder() -> &'static str {
 fn tools(
     ui: &mut Ui,
     app: &App,
-    commands: &Registry<App>,
+    commands: &Commands,
     strings: &Strings,
     events: &mut Vec<UiEvent>,
 ) {
@@ -849,7 +850,7 @@ fn guide(
 fn dialogs(
     ctx: &egui::Context,
     app: &App,
-    commands: &Registry<App>,
+    commands: &Commands,
     strings: &Strings,
     events: &mut Vec<UiEvent>,
 ) {
@@ -952,14 +953,14 @@ fn dialogs(
 
 /// Apply one frame's interactions: edits first, then commands, so a
 /// command sees every edit made in the same frame.
-pub fn apply(app: &mut App, commands: &Registry<App>, events: Vec<UiEvent>) {
+pub fn apply(app: &mut App, _commands: &Commands, events: Vec<UiEvent>) {
     let (fired, edits): (Vec<_>, Vec<_>) = events
         .into_iter()
         .partition(|e| matches!(e, UiEvent::Command(..)));
     for event in edits.into_iter().chain(fired) {
         match event {
             UiEvent::Command(id, origin) => {
-                let _ = commands.execute(id, app, origin);
+                let _ = app.execute(id, serde_json::Value::Null, origin);
             }
             UiEvent::Add(shape) => app.add_shape(shape),
             UiEvent::Crop(crop) => app.crop(crop),

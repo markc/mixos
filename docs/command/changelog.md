@@ -9,6 +9,11 @@ generated: by docs/_build/gen-site.mix from libs/command/CHANGELOG.md; do not ed
 <!-- SPDX-License-Identifier: MIT OR Apache-2.0 -->
 # Changelog
 
+## 0.3.0 — 2026-10-21
+
+- Add bounded transactional `History<D>` snapshots, explicit coalescing,
+  undo/redo labels and saved checkpoints for application engines.
+
 ## 0.2.0 — 2026-10-21
 
 - Emit only v2 executed bodies, with accepted params and returned result;

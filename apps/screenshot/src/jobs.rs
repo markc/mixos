@@ -13,8 +13,8 @@ use serde_json::{Value, json};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
-use toolkit::command::{CommandError, Origin};
-use toolkit::{Registry, Strings};
+use command::{Error, Origin};
+use toolkit::Strings;
 
 /// A finished job, for [`apply`].
 #[derive(Debug)]
@@ -210,7 +210,7 @@ pub fn describe(window: bool) -> Value {
 /// to.
 pub fn settle(
     app: &mut App,
-    commands: &Registry<App>,
+    commands: &crate::app::Commands,
     strings: &Strings,
     window: bool,
 ) -> Vec<Effect> {
@@ -226,22 +226,24 @@ pub fn settle(
                     let body = json!({ "commands": commands.describe(app, strings) });
                     out.push(Effect::Reply { id, rc: 0, body });
                 }
-                Effect::Execute { id, command } => {
-                    let (rc, body) = match commands.execute(&command, app, Origin::Bus) {
-                        Ok(()) => (
+                Effect::Execute { id, request, alias } => {
+                    let command = request.id;
+                    let (rc, body) = match app.execute(&command, request.params.unwrap_or(Value::Null), Origin::Bus) {
+                        Ok(result) if alias => (0, result),
+                        Ok(result) => (
                             0,
-                            json!({"executed": command, "status": app.status,
+                            json!({"executed": command, "result": result, "status": app.status,
                                 "dialog": app.ui.dialog, "job": app.job().map(crate::app::JobKind::name)}),
                         ),
-                        Err(CommandError::Denied(_)) => (
+                        Err(Error::Denied { .. }) => (
                             10,
                             json!({"error_code":"DENIED","message":crate::label("command-denied")}),
                         ),
-                        Err(CommandError::Unknown(_)) => (
+                        Err(Error::Unknown(_)) => (
                             10,
                             json!({"error_code":"UNKNOWN_COMMAND","message":crate::label("unknown-command")}),
                         ),
-                        Err(CommandError::Disabled(_))
+                        Err(Error::Disabled { .. })
                             if app.headless && crate::commands::needs_window(&command) =>
                         {
                             (
@@ -249,10 +251,18 @@ pub fn settle(
                                 json!({"error_code":"HEADLESS","message":crate::label("no-window")}),
                             )
                         }
-                        Err(CommandError::Disabled(_)) => (
+                        Err(Error::Disabled { reason, .. }) if alias => (
+                            10,
+                            json!({"error_code": match reason {
+                                "no image" => "NO_IMAGE", "dialog open" => "DIALOG", "busy" => "BUSY", _ => "DISABLED"
+                            }, "message": reason}),
+                        ),
+                        Err(Error::Disabled { .. }) => (
                             10,
                             json!({"error_code":"DISABLED","message":crate::label("command-disabled")}),
                         ),
+                        Err(Error::BadParams { msg, .. }) => (10, json!({"error_code":"ARGUMENT", "message":msg})),
+                        Err(Error::Failed(msg)) => (10, json!({"error_code":"FAILED", "message":msg})),
                     };
                     out.push(Effect::Reply { id, rc, body });
                 }
@@ -286,14 +296,15 @@ mod tests {
 
     #[test]
     fn execute_and_commands_are_answered_in_place() {
-        let (commands, strings) = (crate::commands::registry(), crate::strings());
+        let strings = crate::strings();
         let mut a = App::new(crate::label, crate::ink::inks(), false);
+        let commands = a.commands.clone();
         a.command(1, "screenshot.commands", "{}");
         a.command(2, "screenshot.execute", r#"{"id":"nope"}"#);
         a.command(3, "screenshot.execute", r#"{"id":"help.about"}"#);
         a.command(4, "screenshot.execute", r#"{"id":"help.about"}"#);
         a.command(5, "HELP", "{}");
-        let effects = settle(&mut a, &commands, &strings, true);
+        let effects = settle(&mut a, &commands.borrow(), &strings, true);
         let reply = |id: u64| {
             effects.iter().find_map(|x| match x {
                 Effect::Reply { id: i, rc, body } if *i == id => Some((*rc, body.clone())),
@@ -319,8 +330,11 @@ mod tests {
             .collect();
         assert!(names.contains(&"screenshot.ui.click"));
         assert!(names.contains(&"screenshot.recent"));
-        let (runs, _) = commands.take_executed();
+        let (runs, _) = commands.borrow().take_executed();
         assert_eq!(runs.len(), 1, "only the accepted execute ran");
+        assert_eq!(runs[0].params, Value::Null);
+        assert_eq!(runs[0].result, Value::Null);
+        assert_eq!(reply(3).unwrap().1["result"], Value::Null);
     }
 
     #[test]
