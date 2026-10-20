@@ -32,8 +32,8 @@ pub(super) enum Transport {
 impl Transport {
     pub(super) async fn connect(settings: IndexdSettings) -> Result<Self> {
         anyhow::ensure!(
-            settings.call_timeout_secs > 0,
-            "indexd call_timeout_secs must be positive"
+            settings.call_timeout_secs >= 2,
+            "indexd call_timeout_secs must be at least 2 seconds"
         );
         let timeout = Duration::from_secs(settings.call_timeout_secs);
         match settings.transport {
@@ -250,7 +250,8 @@ impl Bridge {
     async fn call(&mut self, verb: &str, body: &Value) -> Result<Value> {
         self.next_id = self.next_id.wrapping_add(1);
         let id = self.next_id;
-        let timeout_secs = self.settings.call_timeout_secs.saturating_sub(10).max(1);
+        let c = self.settings.call_timeout_secs;
+        let timeout_secs = if c > 20 { c - 10 } else { (c * 3 / 4).max(1) };
         let request = json!({"id":id, "verb":verb, "body":body, "timeout_secs":timeout_secs})
             .to_string()
             + "\n";
@@ -469,6 +470,37 @@ mod tests {
             .unwrap()
             .parse()
             .unwrap()
+    }
+
+    #[tokio::test]
+    async fn connect_refuses_call_budgets_below_two_seconds() {
+        for transport in [IndexdTransport::Bus, IndexdTransport::Ssh] {
+            for call_timeout_secs in [0, 1] {
+                let result = Transport::connect(IndexdSettings {
+                    transport,
+                    call_timeout_secs,
+                    ..Default::default()
+                })
+                .await;
+                let error = result.err().expect("invalid budget accepted").to_string();
+                assert!(
+                    error.contains("call_timeout_secs must be at least 2"),
+                    "{error}"
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn ssh_bridge_budget_leaves_client_deadline_margin() {
+        for (client_secs, bridge_secs) in [(2, 1), (3, 2), (10, 7), (20, 15), (21, 11), (120, 110)] {
+            let Some((client, _dir)) = fake_with_timeout(client_secs) else {
+                return;
+            };
+            let reply = client.call("indexd.stats", &json!({})).await.unwrap();
+            assert_eq!(reply["timeout_secs"], bridge_secs);
+            client.shutdown().await;
+        }
     }
 
     #[tokio::test]
