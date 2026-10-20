@@ -32,6 +32,24 @@ fn check_case($name, $deps, $bridge, $expected, $flags)
   end
 end
 
+fn check_external_feature($active, $kind, $expected)
+  $edges = if $active then [{pkg: "egui", dep_kinds: [{kind: $kind}]}] else [] end
+  $file = $tmp .. "/resolved.json"
+  write_file($file, json_encode({workspace_members: ["engine"], packages: [
+    package_row("engine", "one-app", [dep("bridge", nil)]),
+    package_row("bridge", "external", [dep("egui", nil)]),
+    package_row("egui", "external", [])
+  ], resolve: {nodes: [{id: "bridge", deps: $edges}]}}))
+  $result = run_argv(["/opt/mixos/bin/mix", $root .. "/tools/layering_gate.mix", "--metadata-file", $file, "--layers", $layers_file, "--across-components", "--require"], {stderr: "stdout"})
+  $name = "external feature " .. to_string($active) .. " kind " .. to_string($kind)
+  if $result.exit_code != $expected then
+    push($failures, $name)
+    print("FAIL " .. $name .. "\n" .. $result.stdout)
+  else
+    print("PASS " .. $name)
+  end
+end
+
 try
   check_case("UI may depend downwards", [dep("bridge", nil)], [], 0, [])
   for $gui in ["toolkit", "egui", "eframe", "egui-wgpu", "winit", "rfd"]
@@ -42,6 +60,9 @@ try
   check_case("dev edge included", [dep("egui", "dev")], [], 1, ["--include-dev"])
   check_case("cycles terminate", [dep("bridge", nil)], [dep("engine", nil)], 0, [])
   check_case("external GUI dependency path", [dep("bridge", nil)], [dep("egui", nil)], 1, [])
+  check_external_feature(false, nil, 0)
+  check_external_feature(true, nil, 1)
+  check_external_feature(true, "dev", 0)
 finally
   remove_dir($tmp)
 end

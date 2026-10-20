@@ -33,8 +33,9 @@
 --                       including edges to listed external GUI dependencies.
 --                       --no-deps metadata covers all workspace paths and their
 --                       declared external edges; resolved metadata additionally
---                       covers paths through external packages. Optional deps
---                       are checked even when their features are off.
+--                       covers paths through external packages. Workspace
+--                       optional deps are checked even when their features are
+--                       off; external edges follow Cargo's resolved features.
 --     --require         fail when no listed crate is in the workspace yet.
 --     --offline/--locked/--frozen  passed through to cargo metadata.
 --
@@ -163,10 +164,31 @@ end
 $component = $conf.component ?? nil
 $ws = {}
 $graph = {}
+$id_names = {}
+for each $p in $meta.packages ?? []
+  $id_names[$p.id] = $p.name
+end
+-- External packages can declare inactive GUI tooling (for example a GPU
+-- allocator's optional visualiser). Follow their resolved feature edges,
+-- rather than treating every feature in their manifest as enabled.
+$resolved = {}
+for each $node in ($meta.resolve ?? {}).nodes ?? []
+  $deps = []
+  for each $edge in $node.deps ?? []
+    for each $kind in $edge.dep_kinds ?? [{kind: nil}]
+      push($deps, {name: $id_names[$edge.pkg], kind: $kind.kind})
+    end
+  end
+  $resolved[$node.id] = $deps
+end
 for each $p in $meta.packages ?? []
   -- Multiple external versions may share a name. Union their declarations
   -- conservatively instead of overwriting one version's edges.
-  $graph[$p.name] = concat($graph[$p.name] ?? [], $p.dependencies ?? [])
+  $deps = $p.dependencies ?? []
+  if $member_ids[$p.id] == nil and $resolved[$p.id] != nil then
+    $deps = $resolved[$p.id]
+  end
+  $graph[$p.name] = concat($graph[$p.name] ?? [], $deps)
   if $member_ids[$p.id] != nil then
     $owner = (($p.metadata ?? {}).mixos ?? {}).component ?? nil
     if ($across and $layers[$p.name] != nil) or (!$across and ($component == nil or $owner == $component)) then
