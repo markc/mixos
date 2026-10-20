@@ -1335,7 +1335,7 @@ pub static DESCRIPTORS: &[DescribeEntry] = &[
         String,
         "Compositor build version"
     ),
-    descriptor!(&[L("info"), L("backend")], String, "Active compositor backend", enum = &["nested", "kms"]),
+    descriptor!(&[L("info"), L("backend")], String, "Active compositor backend", enum = &["nested", "kms", "headless"]),
     descriptor!(&[L("info"), L("engine")], String, "Rendering engine"),
     descriptor!(
         &[L("info"), L("instance")],
@@ -1750,7 +1750,7 @@ pub static DESCRIPTORS: &[DescribeEntry] = &[
         Bool,
         "Whether normal compositor key interception is enabled"
     ),
-    descriptor!(&[L("bindings"), L("profile")], String, "Compiled binding profile", enum = &["nested", "kms-live"]),
+    descriptor!(&[L("bindings"), L("profile")], String, "Compiled binding profile", enum = &["nested", "kms-live", "headless"]),
     descriptor!(
         &[L("bindings"), L("table")],
         List,

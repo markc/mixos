@@ -39,12 +39,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // `compd <semver> (<sha12>, built <ts>)` BEFORE any side effect, then exit 0.
     buildinfo::exit_on_version!();
 
-    // Capture $NOTIFY_SOCKET while still single-threaded (it is removed from
-    // the environment so launched clients do not inherit it), then the command
-    // line — before config, so --help/--version need no settings file.
-    slots::sdnotify::init();
+    // Parse before config or any thread can start, so backend environment
+    // overrides are safe and --help/--version need no settings file.
     let cli = cli::parse(&buildinfo::build_info!().line());
     let backend = cli::resolve(&cli);
+    if backend == cli::Backend::Headless {
+        // SAFETY: before logging or any other threads are started. Also makes
+        // the configured XWayland props agree with this backend's policy.
+        unsafe { std::env::set_var("COMPD_XWAYLAND", "0") };
+    }
+    // Capture and remove $NOTIFY_SOCKET while still single-threaded.
+    slots::sdnotify::init();
+    if let Some(node) = cli.render_node.clone() {
+        model::environment::config::base::override_render_node(node);
+    }
     if let Some(device) = cli.device.clone() {
         model::environment::config::base::override_scanout_node(device);
     }
@@ -148,10 +156,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // CPU scheduling boost (settings.json `priority`): applied here — logging
     // is up (the ladder logs which mechanism succeeded), and no worker threads
     // that shouldn't inherit the nice value have spawned yet.
-    crate::priority::base::apply(&e.priority);
+    crate::priority::base::apply(&e.priority, backend);
 
     let env_flags: Vec<(String, String)> = vec![
-        ("COMPOSITOR_PRIORITY".to_string(), e.priority.clone()),
+        (
+            "COMPOSITOR_PRIORITY".to_string(),
+            // Stats only: report what headless actually runs with.
+            if backend == cli::Backend::Headless {
+                "inherited".to_string()
+            } else {
+                e.priority.clone()
+            },
+        ),
         (
             "COMPOSITOR_RENDERER_SYNC".to_string(),
             e.renderer_sync.clone(),
@@ -428,6 +444,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &mut event_loop,
             );
         }
+        #[cfg(feature = "backend-headless")]
+        cli::Backend::Headless => {
+            headless::wire::wire(
+                &mut state,
+                &mut event_loop,
+                headless::wire::Options {
+                    size: cli.size.unwrap_or((1920, 1080)).into(),
+                    scale: cli::output_scale(&cli, backend).unwrap_or(1.0),
+                    render_node: cli.render_node.as_deref().unwrap_or(&e.render_node),
+                },
+            )?;
+        }
         // `cli::resolve` only returns a backend that is compiled in.
         #[allow(unreachable_patterns)]
         other => unreachable!("backend {other:?} is not compiled into this build"),
@@ -483,9 +511,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // on; and after the backend wire, so the first X11 window has an output to be
     // placed against. The server comes up asynchronously — `DISPLAY` is published from
     // its ready event, not here.
-    {
+    if backend != cli::Backend::Headless {
         let dh = state.inner.loader.display_handle.clone();
         xwayland::register(&dh, &mut event_loop);
+    } else {
+        info!("headless: XWayland disabled");
     }
 
     // SIGTERM / SIGINT -> stop the loop, so the teardown below actually runs. Registered
@@ -535,7 +565,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // nested session still get the right values. Only launches from OUTSIDE it are
     // affected, and those wanting a nested session can say so per-invocation
     // (`WAYLAND_DISPLAY=wayland-2 app`) instead of a global mutation nothing unwinds.
-    if !nested {
+    if backend == cli::Backend::Kms {
         world::environment::interface::lifecycle::lifecycle::announce_session(
             wayland_socket_name_default_subprocess_2.to_str().unwrap(),
             &environment.DesktopName,
@@ -552,7 +582,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // boost, as intended) — arm the kernel-level inheritance stop: tasks
     // created from here on, the IME below and every launched client included,
     // start at default scheduling.
-    crate::priority::arm::arm::arm(&model::environment::config::base::get().priority);
+    if backend != cli::Backend::Headless {
+        crate::priority::arm::arm::arm(&model::environment::config::base::get().priority);
+    }
 
     // Launch the compositor-owned input method configured in `preferences.json`
     // (`ime: { exec, args }`); unset ⇒ none is launched. Must be AFTER WAYLAND_DISPLAY is exported
@@ -631,7 +663,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         // The key bindings with or without a Bus port: this backend's table,
         // then the chords the keyboard queued this dispatch.
-        state.inner.comp.bindings.ensure(if nested { "nested" } else { "kms-live" });
+        state.inner.comp.bindings.ensure(match backend {
+            cli::Backend::Nested => "nested",
+            cli::Backend::Kms => "kms-live",
+            cli::Backend::Headless => "headless",
+        });
         policy_host::control::apply_bindings(state);
         // Print Screen presses, queued by the chords above or by a Bus
         // pass's injected key, start (or hand off to) the screenshot app.
@@ -781,7 +817,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Then the session environment, which outlives this process and would otherwise point
     // the next login at a socket nobody is listening on.
-    shutdown::teardown(&mut state, nested);
+    shutdown::teardown(&mut state, backend != cli::Backend::Kms);
 
     // Our own teardown first, so anything EGL has to say about it is still
     // reported — the compositor's contexts and surfaces go out with `state`.

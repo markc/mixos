@@ -300,6 +300,7 @@ impl BindingAction {
 pub enum BindingProfile {
     Nested,
     KmsLive,
+    Headless,
 }
 
 impl BindingProfile {
@@ -307,15 +308,16 @@ impl BindingProfile {
         match self {
             Self::Nested => "nested",
             Self::KmsLive => "kms-live",
+            Self::Headless => "headless",
         }
     }
 
     /// The profile a `bindings.profile` name selects (`nested` otherwise).
     pub fn from_name(name: &str) -> Self {
-        if name == "kms-live" {
-            Self::KmsLive
-        } else {
-            Self::Nested
+        match name {
+            "kms-live" => Self::KmsLive,
+            "headless" => Self::Headless,
+            _ => Self::Nested,
         }
     }
 }
@@ -609,6 +611,18 @@ impl BindingState {
         let table = match profile {
             BindingProfile::Nested => BindingTable::nested_defaults(),
             BindingProfile::KmsLive => BindingTable::kms_live_defaults(),
+            BindingProfile::Headless => {
+                // Window/workspace commands, without VT switching, host
+                // interception or the nested compositor's exit chord.
+                let mut table = BindingTable::nested_defaults();
+                table.bindings.retain(|b| {
+                    !matches!(
+                        b.action,
+                        BindingAction::ExitNestedCompositor | BindingAction::ToggleInterception
+                    )
+                });
+                table
+            }
         };
         Self {
             table,

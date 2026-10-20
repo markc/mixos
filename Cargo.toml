@@ -183,6 +183,7 @@ edges = { path = "services/compd/crates/edges" }
 frames = { path = "services/compd/crates/frames" }
 native = { path = "services/compd/crates/native" }
 nested = { path = "services/compd/crates/nested" }
+headless = { path = "services/compd/crates/headless" }
 outputs = { path = "services/compd/crates/outputs" }
 policy-host = { path = "services/compd/crates/policy-host" }
 recorder = { path = "services/compd/crates/recorder" }

@@ -83,7 +83,9 @@ at the repository root.
 cargo build --profile release-fast -p compd                     # nested backend
 cargo build --profile release-fast -p compd --no-default-features \
     --features backend-native                                   # KMS backend
-cargo build --profile release-fast -p compd --features backend-all   # both
+cargo build --profile release-fast -p compd --features backend-all   # all three
+cargo build --profile release-fast -p compd --no-default-features \
+    --features backend-headless                                 # headless
 ```
 
 `capture-ffmpeg` adds hardware video capture through libav; the default
@@ -114,6 +116,30 @@ compd waits for its own VT to become active and never switches VT itself.
 (default `comp`); `compd --help` lists every flag. Settings are read from
 `--config-file`, else `~/.config/compd/settings.json`. Preferences are read
 from `preferences.json` beside it.
+
+With the `backend-headless` feature, a render node can drive a virtual
+output without a VT, seat, input device or parent compositor:
+
+```
+compd --headless --socket wayland-headless --size 1920x1080 --scale 1 \
+    --render-node /dev/dri/renderD128 --config-file settings.json
+```
+
+The output is `headless-0` at 60 Hz; `--size` sets physical pixels and
+`--scale` sets the logical-to-physical scale (defaults 1920x1080 and 1).
+`--render-node` defaults to the `render_node` setting. EGL must report the
+selected node. The default Bus name is `comp-headless`, overridden with
+`--bus-service`; the binding profile is `headless`, without VT or host
+interception chords. XWayland is disabled. Startup preserves inherited
+scheduling and nice values and does not publish desktop session variables.
+
+Frames repaint into alternating offscreen textures only when the scene
+changes, capped at 60 Hz. Completion is waited on before frame callbacks
+and software presentation feedback. This initial backend does not yet
+service screencopy, Bus capture or cursor capture.
+
+The ignored `headless` GPU tests need a built `compd` with this feature
+beside the test binaries, or selected by `COMPD_TEST_BINARY`.
 
 `cursor_sensitivity` in `preferences.json` is a speed multiplier on top of
 the output scale: compd multiplies each relative pointer delta by both, so

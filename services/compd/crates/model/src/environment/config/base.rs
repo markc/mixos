@@ -235,6 +235,13 @@ static ENV: OnceLock<Environment> = OnceLock::new();
 /// `--device PATH` overrides `scanout_node` for this run without touching
 /// settings.json. Set before [`init`]; applied by it.
 static SCANOUT_OVERRIDE: OnceLock<String> = OnceLock::new();
+static RENDER_OVERRIDE: OnceLock<String> = OnceLock::new();
+
+/// CLI render-node selection, installed before configuration is read so all
+/// renderer consumers see the same device, including off-thread producers.
+pub fn override_render_node(path: String) {
+    let _ = RENDER_OVERRIDE.set(path);
+}
 
 /// Record a command-line `scanout_node` override. Must run before [`init`];
 /// a second call is ignored.
@@ -299,6 +306,9 @@ pub fn init() {
     });
     if let Some(node) = SCANOUT_OVERRIDE.get() {
         parsed.scanout_node = node.clone();
+    }
+    if let Some(node) = RENDER_OVERRIDE.get() {
+        parsed.render_node = node.clone();
     }
     if ENV.set(parsed).is_err() {
         panic!("environment already initialized");

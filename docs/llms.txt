@@ -180,6 +180,7 @@ One line per component with a page: kind, then install profiles. The
 - [Decision — service property storage belongs in props](https://mixos.dev/docs/decisions/2026-10-18-property-store-in-props.md): Keep service domain records and native Bus routing in props, with an opt-in logging bridge and unchanged persisted contracts.
 - [MCP bridge program name](https://mixos.dev/docs/decisions/2026-10-19-mcp-program-name.md): Status: accepted.
 - [Decision — commands take parameters and return results](https://mixos.dev/docs/decisions/2026-10-20-commands-take-parameters.md): Typed parameters, returned results and one UI-free command registry for every dispatch path.
+- [Render-node headless compositor backend](https://mixos.dev/docs/decisions/2026-10-20-headless-backend.md): A third compd backend for offscreen testing and recording.
 
 ### Specs
 
