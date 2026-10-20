@@ -1,0 +1,16 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- Native subscriptions: each mapped edge must stay on its instance topic.
+$first = 0
+$second = 0
+subscribe("comp-headless.surface.mapped")
+subscribe("comp-rec.surface.mapped")
+on comp-headless.surface.mapped
+  $first = $first + 1
+end
+on comp-rec.surface.mapped
+  $second = $second + 1
+end
+on observer.count
+  reply(0, json_encode({first: $first, second: $second}))
+end

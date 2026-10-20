@@ -91,6 +91,36 @@ use crate::cli::Backend;
 /// not in compd's build.
 const RENDERER: RendererId = RendererId::Gles;
 
+/// Only a session backend loses agent authority on pause; every backend
+/// clears agent input when a session lock begins.
+fn clear_agent_input(
+    backend: world::comp::injection::BackendInput,
+    paused: bool,
+    was_paused: bool,
+    lock_began: bool,
+) -> bool {
+    (!backend.agent_authoritative(paused) && !was_paused) || lock_began
+}
+
+#[cfg(test)]
+mod authority_tests {
+    use super::clear_agent_input;
+    use world::comp::injection::BackendInput::{Headless, Session};
+
+    #[test]
+    fn pause_and_lock_clear_only_when_agent_authority_is_lost() {
+        assert!(clear_agent_input(Session, true, false, false));
+        assert!(!clear_agent_input(Headless, true, false, false));
+        for backend in [Session, Headless] {
+            for paused in [false, true] {
+                assert!(clear_agent_input(backend, paused, false, true));
+            }
+            assert!(!clear_agent_input(backend, false, false, false));
+            assert!(!clear_agent_input(backend, true, true, false));
+        }
+    }
+}
+
 /// What docked Mix Scenes panels reserve on each output: the scene
 /// host keys its panels by compd's output key (`make model serial`), the
 /// usable area by output name. Empty with no scene host.
@@ -492,8 +522,7 @@ impl Bus {
         if lock_ended {
             policy_host::input::retarget_pointer(lp);
         }
-        let agent_paused = !lp.inner.comp.injection.backend.agent_authoritative(paused);
-        if (agent_paused && !self.paused) || lock_began {
+        if clear_agent_input(lp.inner.comp.injection.backend, paused, self.paused, lock_began) {
             self.context.clear_agent();
             self.sequences.clear_agent(lp);
             policy_host::input::clear_agent(lp);

@@ -29,7 +29,9 @@ where
     }
 
     let Some(pointer) = state.state.seat.seat.get_pointer() else {
-        elements.extend(agent_arrow(state, renderer));
+        if state.inner.comp.injection.backend == world::comp::injection::BackendInput::Headless {
+            elements.extend(agent_arrow(state, renderer));
+        }
         return elements;
     };
     // The sprite belongs where the user's HAND is — which, under a displacing

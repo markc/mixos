@@ -259,13 +259,123 @@ fn agent_runs_survive_without_a_vt() {
 }
 
 #[test]
+#[ignore = "needs a GPU render node and built compd, noded and testkit clients"]
+fn lock_clears_agent_input() {
+    let bus = Bus::start("lock");
+    let mut process = process::spawn(1, None, "lock", Some(&bus.url));
+    let mut probe = Probe::start(&mut process, "headless-lock");
+    bus.ready(SERVICE);
+    let row = window(&bus, SERVICE, "headless-lock");
+    thread::scope(|scope| {
+        let run = scope.spawn(|| bus.request(SERVICE, "comp.input.sequence", json!({
+            "seat":"agent", "steps":[
+                {"verb":"comp.input.key","args":{"window":target(&row),"key":"a"}},
+                {"verb":"comp.input.key","args":{"key":"b"},"delay_ms":3000}
+            ]
+        })));
+        // The first event proves admission and that the delayed run is active.
+        probe.wait_for("PROBE seat \"agent\" key 30 0");
+        assert!(!run.is_finished(), "sequence must still be waiting when locked");
+        let log = process.root.join("lock.log");
+        let file = fs::File::create(&log).unwrap();
+        let child = Command::new(binary("testkit-lock-client"))
+            .args(["--hold", "30"])
+            .env("XDG_RUNTIME_DIR", &process.root)
+            .env("WAYLAND_DISPLAY", "wayland-headless-test")
+            .stdout(Stdio::from(file.try_clone().unwrap()))
+            .stderr(file)
+            .spawn()
+            .unwrap();
+        let mut lock = Probe { child, log };
+        lock.wait_for("locked");
+        let reply = run.join().unwrap();
+        assert_eq!(reply["body"]["error"], "input_cleared", "{reply}");
+        assert_ne!(reply["rc"], 0, "{reply}");
+        // Allow focus-leave cleanup to reach the probe, then wait beyond the
+        // cancelled step's original deadline: no agent event may follow it.
+        thread::sleep(Duration::from_millis(200));
+        let agent_events = |text: String| text.lines()
+            .filter(|line| line.starts_with("PROBE seat \"agent\" "))
+            .map(str::to_owned).collect::<Vec<_>>();
+        let before = agent_events(probe.text());
+        thread::sleep(Duration::from_millis(3200));
+        assert_eq!(agent_events(probe.text()), before);
+        assert!(!probe.text().contains("PROBE seat \"agent\" key 48 "));
+        assert_eq!(unsafe { libc::kill(lock.child.id() as i32, libc::SIGUSR1) }, 0);
+        lock.wait_for("unlocked");
+        let reply = bus.call(SERVICE, "comp.input.sequence", json!({
+            "seat":"agent", "steps":[
+                {"verb":"comp.input.key","args":{"window":target(&row),"key":"c"}}
+            ]
+        }));
+        assert_eq!(reply["steps"].as_array().unwrap().len(), 1, "{reply}");
+        probe.wait_for("PROBE seat \"agent\" key 46 0");
+    });
+    probe.no_human_input();
+}
+
+#[test]
+#[ignore = "needs a GPU render node and built compd, noded and testkit-input-probe"]
+fn scale_two_centres_clamps_and_delivers_logical_coordinates() {
+    let bus = Bus::start("scale-two");
+    let mut process = process::spawn(2, None, "scale-two", Some(&bus.url));
+    let mut probe = Probe::start(&mut process, "headless-scale-two");
+    bus.ready(SERVICE);
+    let row = window(&bus, SERVICE, "headless-scale-two");
+    let seats = bus.call(SERVICE, "comp.props.get", json!({"path":"input.seats"}));
+    assert_eq!(seats["agent"]["pointer"]["x"], 320.0, "{seats}");
+    assert_eq!(seats["agent"]["pointer"]["y"], 180.0, "{seats}");
+    let clamped = bus.call(SERVICE, "comp.input.pointer.move", json!({
+        "seat":"agent", "output":"headless-0", "x":10000, "y":10000
+    }));
+    assert_eq!(clamped["pointer"]["x"], 639.0, "{clamped}");
+    assert_eq!(clamped["pointer"]["y"], 359.0, "{clamped}");
+    // Leave the surface before asserting its next enter. Output positions
+    // and the probe's local positions must both stay logical at scale two.
+    bus.call(SERVICE, "comp.input.pointer.move", json!({
+        "seat":"agent", "output":"headless-0", "x":0, "y":0
+    }));
+    let x = row["window_x"].as_f64().unwrap() + 40.0;
+    let y = row["window_y"].as_f64().unwrap() + 50.0;
+    bus.call(SERVICE, "comp.input.pointer.move", json!({
+        "seat":"agent", "output":"headless-0", "x":x, "y":y
+    }));
+    probe.wait_for("PROBE seat \"agent\" enter 40 50");
+    bus.call(SERVICE, "comp.input.pointer.move", json!({
+        "seat":"agent", "output":"headless-0", "x":x+1.0, "y":y+1.0
+    }));
+    probe.wait_for("PROBE seat \"agent\" motion 41 51");
+    probe.no_human_input();
+}
+
+#[test]
 #[ignore = "needs a GPU render node and built compd, noded and testkit-input-probe"]
 fn two_instances_register_distinct_services() {
     let bus = Bus::start("two");
     let mut first = process::spawn(1, None, "two-a", Some(&bus.url));
     let mut second = process::spawn_service("two-b", &bus.url, "comp-rec");
+    let _observer = bus.observe();
+    let counts = || bus.call("headless-observer", "observer.count", json!({}));
+    assert_eq!(counts(), json!({"first":0,"second":0}));
     let mut a = Probe::start(&mut first, "headless-first");
+    let wait_counts = |expected: Value| {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            let actual = counts();
+            if actual == expected {
+                break;
+            }
+            assert!(Instant::now() < deadline, "topic counts {actual}, expected {expected}");
+            thread::sleep(Duration::from_millis(20));
+        }
+        // Give an erroneously cross-published edge time to reach the other
+        // subscription, then require silence there as well as the own edge.
+        thread::sleep(Duration::from_millis(200));
+        assert_eq!(counts(), expected);
+    };
+    wait_counts(json!({"first":1,"second":0}));
     let b = Probe::start(&mut second, "headless-second");
+    wait_counts(json!({"first":1,"second":1}));
     for service in [SERVICE, "comp-rec"] {
         bus.ready(service);
     }

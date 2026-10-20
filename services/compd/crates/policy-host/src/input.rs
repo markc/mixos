@@ -191,13 +191,12 @@ fn payload(
     op: &InputOp,
     target_window: Option<(u64, u64)>,
 ) -> ControlReply {
-    // A source-free human seat (headless) cannot accept synthetic device
+    // The headless human seat cannot accept synthetic device
     // input. Refuse before targeting/focus or any device handler; cleanup is
     // still safe and must remain available.
     if seat == SeatKind::Human
         && !matches!(op, InputOp::ReleaseAll | InputOp::OnSeat { .. })
-        && lp.state.seat.seat.get_pointer().is_none()
-        && lp.state.seat.seat.get_keyboard().is_none()
+        && lp.inner.comp.injection.backend == world::comp::injection::BackendInput::Headless
     {
         return ControlReply::refused("seat_unavailable", json!({"reason":"no_sources"}));
     }
