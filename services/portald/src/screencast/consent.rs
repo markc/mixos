@@ -242,7 +242,7 @@ impl Consent {
                     answer: Some(sender),
                 },
             );
-            Ok(receiver)
+            Ok(())
         })?;
         Ok(receiver)
     }
