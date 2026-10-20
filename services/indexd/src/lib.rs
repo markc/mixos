@@ -11,10 +11,10 @@ mod model;
 mod search;
 mod service;
 mod store;
-mod vindex;
-mod wire;
 #[cfg(test)]
 mod test_support;
+mod vindex;
+mod wire;
 
 pub use service::Engine;
 

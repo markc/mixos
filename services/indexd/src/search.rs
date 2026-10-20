@@ -21,11 +21,8 @@ pub(crate) fn sqlite_search_fallback() -> bool {
 /// callers (context_search asks for ≤10).
 pub(crate) const MAX_SEARCH_LIMIT: usize = 200;
 
-/// Admission gate for concurrent in-memory scans. The socket is
-/// world-writable, and each scan walks the full 164MiB embedding array
-/// — unbounded concurrency would trash memory-bandwidth locality and
-/// starve the shared blocking pool that embeds also run on. Two
-/// permits: one active scan plus one on deck.
+/// Bound concurrent scans so they cannot starve inference or memory bandwidth.
+/// Two permits: one active scan plus one on deck.
 pub(crate) static SEARCH_GATE: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(2);
 
 #[derive(Default)]
@@ -236,5 +233,28 @@ pub(crate) fn adjusted_distance(r: &SearchResult, now_days: i64) -> f64 {
     };
 
     r.distance - feedback_boost + implicit_penalty + staleness_penalty
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn feedback_implicit_negative_and_staleness_keep_cosmix_weights() {
+        let mut result = SearchResult {
+            id: 1, content: String::new(), source: "doc".into(), metadata: "{}".into(),
+            distance: 1.0, feedback_score: 2, retrieval_count: 10,
+            last_retrieved: None, created: "2020-01-01 00:00:00".into(),
+        };
+        let now = sqlite_datetime_to_days("2026-10-20 00:00:00").unwrap();
+        assert!((adjusted_distance(&result, now) - 0.93).abs() < 1e-12);
+        result.feedback_score = 0;
+        assert!((adjusted_distance(&result, now) - 1.10).abs() < 1e-12);
+        result.retrieval_count = 3;
+        result.last_retrieved = Some("2020-01-01 00:00:00".into());
+        assert!((adjusted_distance(&result, now) - 1.02).abs() < 1e-12);
+        result.last_retrieved = Some("2026-10-20T00:00:00".into());
+        assert_eq!(adjusted_distance(&result, now), 1.0);
+    }
 }
 

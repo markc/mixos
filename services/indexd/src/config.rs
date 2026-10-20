@@ -17,7 +17,12 @@ pub struct Config {
 
 impl Default for Config {
     fn default() -> Self {
-        Self { schema_version: 1, service: ServiceConfig::default(), source_types: default_source_types(), domains: Domains::default() }
+        Self {
+            schema_version: 1,
+            service: ServiceConfig::default(),
+            source_types: default_source_types(),
+            domains: Domains::default(),
+        }
     }
 }
 
@@ -63,7 +68,9 @@ impl Default for ServiceConfig {
     fn default() -> Self {
         Self {
             vectors_db: "/var/lib/mixos/indexd/vectors.db".into(),
-            model_dir: resolve_snapshot(Path::new(SNAPSHOTS)).to_string_lossy().into_owned(),
+            model_dir: resolve_snapshot(Path::new(SNAPSHOTS))
+                .to_string_lossy()
+                .into_owned(),
             idle_timeout_secs: 300,
             dtype: "f16".into(),
             vindex_dtype: "f32".into(),
@@ -89,18 +96,39 @@ impl Default for ServiceConfig {
 }
 
 fn resolve_snapshot(root: &Path) -> PathBuf {
-    let dirs: Vec<_> = std::fs::read_dir(root).into_iter().flatten().filter_map(|e| e.ok())
-        .map(|e| e.path()).filter(|p| p.is_dir()).collect();
-    if dirs.len() == 1 { dirs[0].clone() } else { root.to_path_buf() }
+    let dirs: Vec<_> = std::fs::read_dir(root)
+        .into_iter()
+        .flatten()
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| p.is_dir())
+        .collect();
+    if dirs.len() == 1 {
+        dirs[0].clone()
+    } else {
+        root.to_path_buf()
+    }
 }
 
 impl Config {
     pub fn validate(&self) -> Result<()> {
-        anyhow::ensure!(matches!(self.service.dtype.as_str(), "f16" | "f32"), "dtype must be f16 or f32");
+        anyhow::ensure!(
+            matches!(self.service.dtype.as_str(), "f16" | "f32"),
+            "dtype must be f16 or f32"
+        );
         vindex::VectorDtype::parse(&self.service.vindex_dtype).map_err(anyhow::Error::msg)?;
-        anyhow::ensure!(self.service.max_forward_tokens > 0, "max_forward_tokens must be positive");
-        anyhow::ensure!(self.service.background_queue_max_jobs > 0, "background_queue_max_jobs must be positive");
-        anyhow::ensure!(!self.service.model_dir.is_empty(), "model_dir must name a local model directory");
+        anyhow::ensure!(
+            self.service.max_forward_tokens > 0,
+            "max_forward_tokens must be positive"
+        );
+        anyhow::ensure!(
+            self.service.background_queue_max_jobs > 0,
+            "background_queue_max_jobs must be positive"
+        );
+        anyhow::ensure!(
+            !self.service.model_dir.is_empty(),
+            "model_dir must name a local model directory"
+        );
         Ok(())
     }
 }
@@ -109,19 +137,29 @@ pub fn load_indexd_config(cli_path: Option<&Path>) -> Result<(PathBuf, Config)> 
     if let Some(path) = cli_path {
         return Ok((path.to_path_buf(), ::config::load_conf_mix_path(path)?));
     }
-    if let Some(found) = load_system_config(Path::new(SYSTEM_CFG_DIR))? { return Ok(found); }
-    let user_dir = std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from)
+    if let Some(found) = load_system_config(Path::new(SYSTEM_CFG_DIR))? {
+        return Ok(found);
+    }
+    let user_dir = std::env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")));
     if let Some(dir) = user_dir {
         let path = dir.join("mixos/indexd.conf.mix");
-        if let Some(cfg) = load_optional(&path)? { return Ok((path, cfg)); }
+        if let Some(cfg) = load_optional(&path)? {
+            return Ok((path, cfg));
+        }
     }
-    Ok((Path::new(SYSTEM_CFG_DIR).join("config.conf.mix"), Config::default()))
+    Ok((
+        Path::new(SYSTEM_CFG_DIR).join("config.conf.mix"),
+        Config::default(),
+    ))
 }
 
 fn load_optional(path: &Path) -> Result<Option<Config>> {
     match std::fs::metadata(path) {
-        Ok(_) => ::config::load_conf_mix_path(path).map(Some).with_context(|| format!("loading {}", path.display())),
+        Ok(_) => ::config::load_conf_mix_path(path)
+            .map(Some)
+            .with_context(|| format!("loading {}", path.display())),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(e) => Err(e).with_context(|| format!("reading {}", path.display())),
     }
@@ -151,22 +189,33 @@ pub struct Domains {
 
 impl Default for Domains {
     fn default() -> Self {
-        Self { map: [("~/Projects/mixos", "mixos"), ("~/.mix", "mix"), ("~/.ns", "ns"), ("~/.mc", "mc")]
-            .into_iter().map(|(k,v)| (k.into(), v.into())).collect() }
+        Self {
+            map: [
+                ("~/Projects/mixos", "mixos"),
+                ("~/.mix", "mix"),
+                ("~/.ns", "ns"),
+                ("~/.mc", "mc"),
+            ]
+            .into_iter()
+            .map(|(k, v)| (k.into(), v.into()))
+            .collect(),
+        }
     }
 }
 
 impl Domains {
     pub fn resolve(&self, path: &Path) -> Option<String> {
-        self.map.iter().filter_map(|(prefix, domain)| {
-            let prefix = PathBuf::from(expand_home(prefix));
-            path.starts_with(&prefix).then_some((prefix.as_os_str().len(), domain))
-        }).max_by_key(|(len, _)| *len).map(|(_, domain)| domain.clone())
+        self.map
+            .iter()
+            .filter_map(|(prefix, domain)| {
+                let prefix = PathBuf::from(expand_home(prefix));
+                path.starts_with(&prefix)
+                    .then_some((prefix.as_os_str().len(), domain))
+            })
+            .max_by_key(|(len, _)| *len)
+            .map(|(_, domain)| domain.clone())
     }
 }
-// SPDX-License-Identifier: MIT OR Apache-2.0
-// Copyright 2026 Mark Constable <mc@mixos.dev>
-// Ported from cosmix-indexd/src/main.rs.
 
 #[cfg(test)]
 mod tests {
@@ -245,7 +294,10 @@ mod path_tests {
 
     #[test]
     fn tilde_expands_only_a_leading_home_slash() {
-        assert_eq!(expand_home_with("~/x~y", Some("/home/user")), "/home/user/x~y");
+        assert_eq!(
+            expand_home_with("~/x~y", Some("/home/user")),
+            "/home/user/x~y"
+        );
         for path in ["/srv/~archive/file", "~other/file", "~", "x~/y"] {
             assert_eq!(expand_home_with(path, Some("/home/user")), path);
         }
@@ -260,16 +312,32 @@ mod path_tests {
         std::fs::write(dir.join("not-a-snapshot"), "x").unwrap();
         assert_eq!(resolve_snapshot(&dir), dir.join("rev-a"));
         std::fs::create_dir(dir.join("rev-b")).unwrap();
-        assert_eq!(resolve_snapshot(&dir), dir, "ambiguous snapshots require explicit model_dir");
+        assert_eq!(
+            resolve_snapshot(&dir),
+            dir,
+            "ambiguous snapshots require explicit model_dir"
+        );
         std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
     fn domains_use_longest_component_prefix() {
-        let domains = Domains { map: [("/srv/project", "project"), ("/srv/project/deep", "deep")]
-            .into_iter().map(|(k,v)| (k.into(), v.into())).collect() };
-        assert_eq!(domains.resolve(Path::new("/srv/project/deep/a.md")).as_deref(), Some("deep"));
-        assert_eq!(domains.resolve(Path::new("/srv/project/a.md")).as_deref(), Some("project"));
+        let domains = Domains {
+            map: [("/srv/project", "project"), ("/srv/project/deep", "deep")]
+                .into_iter()
+                .map(|(k, v)| (k.into(), v.into()))
+                .collect(),
+        };
+        assert_eq!(
+            domains
+                .resolve(Path::new("/srv/project/deep/a.md"))
+                .as_deref(),
+            Some("deep")
+        );
+        assert_eq!(
+            domains.resolve(Path::new("/srv/project/a.md")).as_deref(),
+            Some("project")
+        );
         assert_eq!(domains.resolve(Path::new("/srv/project-other/a.md")), None);
         let defaults = Domains::default();
         assert_eq!(defaults.map.get("~/Projects/mixos").unwrap(), "mixos");

@@ -41,14 +41,7 @@ pub(crate) fn is_valid_ymd(s: &str) -> bool {
     (1970..=9999).contains(&year) && (1..=12).contains(&month) && (1..=31).contains(&day)
 }
 
-/// Validate source type + required metadata fields. Enforces layer separation:
-/// each source type has a distinct contract declared in the indexd config
-/// TOML loaded at startup (path resolved per [`Cli::config`]). Adding a new
-/// source type is a TOML edit plus `systemctl restart cosmix-indexd` — no
-/// rebuild required.
-///
-/// Rules remain in Rust for mechanisms (date-format check, JSON parsing);
-/// the TOML declares policy (which source types are accepted, which
+/// Character ceiling before the tokenizer-aware pass further splits dense text.
 pub(crate) const MAX_CHUNK_CHARS: usize = 6000;
 
 pub(crate) struct ChunkTokenizer {
@@ -57,12 +50,17 @@ pub(crate) struct ChunkTokenizer {
 }
 
 impl ChunkTokenizer {
-    pub(crate) fn load(model_dir: &str, configured_max_seq_len: usize, max_forward_tokens: usize) -> Result<Self> {
+    pub(crate) fn load(
+        model_dir: &str,
+        configured_max_seq_len: usize,
+        max_forward_tokens: usize,
+    ) -> Result<Self> {
         // Load only config.json + tokenizer.json. This path must never touch
         // model.safetensors: token-aware file chunking is needed before the
         // first embed and must not force a full model allocation.
         let config_path = Path::new(model_dir).join("config.json");
-        let tokenizer_path = Path::new(model_dir).join("tokenizer.json");        let config: nomic_bert::Config = serde_json::from_str(
+        let tokenizer_path = Path::new(model_dir).join("tokenizer.json");
+        let config: nomic_bert::Config = serde_json::from_str(
             &std::fs::read_to_string(&config_path).context("reading chunker config.json")?,
         )?;
         let mut tokenizer =
@@ -88,16 +86,24 @@ impl ChunkTokenizer {
     }
 }
 
-pub(crate) async fn chunk_tokenizer(state: &Arc<Mutex<AppState>>) -> Result<Arc<ChunkTokenizer>, String> {
+pub(crate) async fn chunk_tokenizer(
+    state: &Arc<Mutex<AppState>>,
+) -> Result<Arc<ChunkTokenizer>, String> {
     let mut guard = state.lock().await;
     if let Some(tokenizer) = &guard.chunk_tokenizer {
         return Ok(tokenizer.clone());
     }
     let svc = guard.config.service.clone();
     let tokenizer = tokio::task::spawn_blocking(move || {
-        ChunkTokenizer::load(&svc.model_dir, svc.max_sequence_tokens, svc.max_forward_tokens)
-    }).await.map_err(|e| format!("chunk tokenizer worker failed: {e}"))?
-        .map_err(|e| format!("loading tokenizer for index_file chunking: {e:#}"))?;
+        ChunkTokenizer::load(
+            &svc.model_dir,
+            svc.max_sequence_tokens,
+            svc.max_forward_tokens,
+        )
+    })
+    .await
+    .map_err(|e| format!("chunk tokenizer worker failed: {e}"))?
+    .map_err(|e| format!("loading tokenizer for index_file chunking: {e:#}"))?;
     let tokenizer = Arc::new(tokenizer);
     guard.chunk_tokenizer = Some(tokenizer.clone());
     Ok(tokenizer)
@@ -226,7 +232,10 @@ pub(crate) fn is_date_shaped(s: &str) -> bool {
     s.len() == 10 && b[4] == b'-' && b[7] == b'-' && b[..4].iter().all(u8::is_ascii_digit)
 }
 
-pub(crate) fn read_open_file_bounded(mut file: std::fs::File, max_bytes: usize) -> Result<String, String> {
+pub(crate) fn read_open_file_bounded(
+    mut file: std::fs::File,
+    max_bytes: usize,
+) -> Result<String, String> {
     let metadata = file.metadata().map_err(|e| format!("fstat failed: {e}"))?;
     if !metadata.is_file() {
         return Err("path is not a regular file".to_string());
@@ -294,7 +303,10 @@ pub(crate) async fn handle_index_file(
     let domain = if !req.domain.is_empty() {
         req.domain.clone()
     } else {
-        config.domains.resolve(path).unwrap_or_else(|| "general".to_string())
+        config
+            .domains
+            .resolve(path)
+            .unwrap_or_else(|| "general".to_string())
     };
 
     // Obtain content: caller-supplied bytes take precedence (the only way
@@ -565,7 +577,13 @@ mod tests {
     fn fifo_open_is_nonblocking_and_rejected() {
         let dir = temp_dir("fifo");
         let fifo = dir.join("input.fifo");
-        assert!(std::process::Command::new("mkfifo").arg(&fifo).status().unwrap().success());
+        assert!(
+            std::process::Command::new("mkfifo")
+                .arg(&fifo)
+                .status()
+                .unwrap()
+                .success()
+        );
         let started = Instant::now();
         let error = read_file_bounded(&fifo, 1024).unwrap_err();
         assert!(error.contains("not a regular file"), "{error}");
@@ -691,5 +709,5 @@ mod tests {
         assert!(!is_valid_ymd("2026-13-01"));
         assert!(is_date_shaped("2026-06-aa")); // digit year + delimiters
         assert!(!is_valid_ymd("2026-06-aa"));
-}
+    }
 }

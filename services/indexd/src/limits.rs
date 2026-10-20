@@ -66,7 +66,11 @@ pub(crate) fn sqlite_count(value: usize, field: &str) -> Result<i64, String> {
     i64::try_from(value).map_err(|_| format!("{field} exceeds SQLite integer range"))
 }
 
-pub(crate) fn charge_response_item(used: &mut usize, fields: &[&str], max_bytes: usize) -> Result<()> {
+pub(crate) fn charge_response_item(
+    used: &mut usize,
+    fields: &[&str],
+    max_bytes: usize,
+) -> Result<()> {
     let item_bytes = fields.iter().try_fold(256usize, |total, field| {
         let serialised_len = serde_json::to_string(field)?.len();
         total
@@ -93,7 +97,11 @@ pub(crate) fn total_embedding_input_bytes(texts: &[String], prefix: &str) -> Opt
     total_text_bytes(texts)?.checked_add(prefix.len().checked_mul(texts.len())?)
 }
 
-pub(crate) fn validate_embedding_budget(texts: &[String], prefix: &str, service: &ServiceConfig) -> Result<(), String> {
+pub(crate) fn validate_embedding_budget(
+    texts: &[String],
+    prefix: &str,
+    service: &ServiceConfig,
+) -> Result<(), String> {
     let max_prefix = service.max_prefix_bytes;
     if prefix.len() > max_prefix {
         return Err(format!(
@@ -343,7 +351,8 @@ pub(crate) fn index_job_owned_bytes(req: &IndexFileRequest) -> usize {
         .saturating_add(req.content.as_ref().map_or(0, String::len))
 }
 
-pub(crate) static LONG_READERS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub(crate) static LONG_READERS: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
 
 pub(crate) struct LongReaderGuard;
 
@@ -564,103 +573,103 @@ mod tests {
 
 #[cfg(test)]
 mod framing {
-use super::*;
-use tokio::io::AsyncBufReadExt;
-pub(crate) enum RequestLineRead {
-    Eof,
-    Complete,
-    TooLarge,
-    TimedOut,
-    FrameTimedOut,
-    IngressFull,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ReadTimeoutKind {
-    Idle,
-    Frame,
-}
-
-pub(crate) fn next_read_timeout(
-    idle_timeout: Option<Duration>,
-    frame_timeout: Option<Duration>,
-    frame_elapsed: Option<Duration>,
-) -> Option<(Duration, ReadTimeoutKind)> {
-    let frame_remaining = match (frame_timeout, frame_elapsed) {
-        (Some(limit), Some(elapsed)) => Some(limit.saturating_sub(elapsed)),
-        _ => None,
-    };
-    match (idle_timeout, frame_remaining) {
-        (Some(idle), Some(frame)) if frame <= idle => Some((frame, ReadTimeoutKind::Frame)),
-        (Some(idle), _) => Some((idle, ReadTimeoutKind::Idle)),
-        (None, Some(frame)) => Some((frame, ReadTimeoutKind::Frame)),
-        (None, None) => None,
+    use super::*;
+    use tokio::io::AsyncBufReadExt;
+    pub(crate) enum RequestLineRead {
+        Eof,
+        Complete,
+        TooLarge,
+        TimedOut,
+        FrameTimedOut,
+        IngressFull,
     }
-}
 
-pub(crate) async fn read_request_line<R: tokio::io::AsyncBufRead + Unpin>(
-    reader: &mut R,
-    line: &mut Vec<u8>,
-    max_bytes: usize,
-    idle_timeout: Option<Duration>,
-    frame_timeout: Option<Duration>,
-    ingress_budget: &Arc<IngressBudget>,
-    ingress_reservation: &mut Option<IngressReservation>,
-) -> std::io::Result<RequestLineRead> {
-    let mut frame_started: Option<Instant> = None;
-    loop {
-        let wait = next_read_timeout(
-            idle_timeout,
-            frame_timeout,
-            frame_started.map(|started| started.elapsed()),
-        );
-        let available = if let Some((timeout, kind)) = wait {
-            match tokio::time::timeout(timeout, reader.fill_buf()).await {
-                Ok(result) => result?,
-                Err(_) => {
-                    return Ok(match kind {
-                        ReadTimeoutKind::Idle => RequestLineRead::TimedOut,
-                        ReadTimeoutKind::Frame => RequestLineRead::FrameTimedOut,
-                    });
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub(crate) enum ReadTimeoutKind {
+        Idle,
+        Frame,
+    }
+
+    pub(crate) fn next_read_timeout(
+        idle_timeout: Option<Duration>,
+        frame_timeout: Option<Duration>,
+        frame_elapsed: Option<Duration>,
+    ) -> Option<(Duration, ReadTimeoutKind)> {
+        let frame_remaining = match (frame_timeout, frame_elapsed) {
+            (Some(limit), Some(elapsed)) => Some(limit.saturating_sub(elapsed)),
+            _ => None,
+        };
+        match (idle_timeout, frame_remaining) {
+            (Some(idle), Some(frame)) if frame <= idle => Some((frame, ReadTimeoutKind::Frame)),
+            (Some(idle), _) => Some((idle, ReadTimeoutKind::Idle)),
+            (None, Some(frame)) => Some((frame, ReadTimeoutKind::Frame)),
+            (None, None) => None,
+        }
+    }
+
+    pub(crate) async fn read_request_line<R: tokio::io::AsyncBufRead + Unpin>(
+        reader: &mut R,
+        line: &mut Vec<u8>,
+        max_bytes: usize,
+        idle_timeout: Option<Duration>,
+        frame_timeout: Option<Duration>,
+        ingress_budget: &Arc<IngressBudget>,
+        ingress_reservation: &mut Option<IngressReservation>,
+    ) -> std::io::Result<RequestLineRead> {
+        let mut frame_started: Option<Instant> = None;
+        loop {
+            let wait = next_read_timeout(
+                idle_timeout,
+                frame_timeout,
+                frame_started.map(|started| started.elapsed()),
+            );
+            let available = if let Some((timeout, kind)) = wait {
+                match tokio::time::timeout(timeout, reader.fill_buf()).await {
+                    Ok(result) => result?,
+                    Err(_) => {
+                        return Ok(match kind {
+                            ReadTimeoutKind::Idle => RequestLineRead::TimedOut,
+                            ReadTimeoutKind::Frame => RequestLineRead::FrameTimedOut,
+                        });
+                    }
+                }
+            } else {
+                reader.fill_buf().await?
+            };
+            if available.is_empty() {
+                return Ok(if line.is_empty() {
+                    RequestLineRead::Eof
+                } else {
+                    RequestLineRead::Complete
+                });
+            }
+            if frame_started.is_none() {
+                frame_started = Some(Instant::now());
+                match ingress_budget.try_reserve(max_bytes) {
+                    Ok(reservation) => *ingress_reservation = Some(reservation),
+                    Err(()) => return Ok(RequestLineRead::IngressFull),
                 }
             }
-        } else {
-            reader.fill_buf().await?
-        };
-        if available.is_empty() {
-            return Ok(if line.is_empty() {
-                RequestLineRead::Eof
-            } else {
-                RequestLineRead::Complete
-            });
-        }
-        if frame_started.is_none() {
-            frame_started = Some(Instant::now());
-            match ingress_budget.try_reserve(max_bytes) {
-                Ok(reservation) => *ingress_reservation = Some(reservation),
-                Err(()) => return Ok(RequestLineRead::IngressFull),
+            let newline = available.iter().position(|&byte| byte == b'\n');
+            // The configured cap is payload bytes, consistently with the Bus
+            // path's `input.len()`: the delimiter is framing, not payload.
+            let payload_take = newline.unwrap_or(available.len());
+            if line
+                .len()
+                .checked_add(payload_take)
+                .is_none_or(|len| len > max_bytes)
+            {
+                return Ok(RequestLineRead::TooLarge);
+            }
+            line.try_reserve_exact(payload_take)
+                .map_err(|e| std::io::Error::other(format!("reserving request frame: {e}")))?;
+            line.extend_from_slice(&available[..payload_take]);
+            reader.consume(payload_take + usize::from(newline.is_some()));
+            if newline.is_some() {
+                return Ok(RequestLineRead::Complete);
             }
         }
-        let newline = available.iter().position(|&byte| byte == b'\n');
-        // The configured cap is payload bytes, consistently with the Bus
-        // path's `input.len()`: the delimiter is framing, not payload.
-        let payload_take = newline.unwrap_or(available.len());
-        if line
-            .len()
-            .checked_add(payload_take)
-            .is_none_or(|len| len > max_bytes)
-        {
-            return Ok(RequestLineRead::TooLarge);
-        }
-        line.try_reserve_exact(payload_take)
-            .map_err(|e| std::io::Error::other(format!("reserving request frame: {e}")))?;
-        line.extend_from_slice(&available[..payload_take]);
-        reader.consume(payload_take + usize::from(newline.is_some()));
-        if newline.is_some() {
-            return Ok(RequestLineRead::Complete);
-        }
     }
-}
 }
 #[cfg(test)]
 use framing::*;

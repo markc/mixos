@@ -204,8 +204,12 @@ pub(crate) async fn handle_embed(
     }
 }
 
-/// Days since Unix epoch, UTC. Used for staleness penalties without a date crate.
-pub(crate) fn validate_store_entry(source: &str, metadata_json: &str, cfg: &Config) -> Result<(), String> {
+/// Validate source_types policy from the loaded strict-data configuration.
+pub(crate) fn validate_store_entry(
+    source: &str,
+    metadata_json: &str,
+    cfg: &Config,
+) -> Result<(), String> {
     // Skip validation for empty metadata (legacy/test path) or unset source.
     if metadata_json.is_empty() || source.is_empty() {
         return Ok(());
@@ -519,7 +523,11 @@ pub(crate) async fn handle_delete(
     }
 }
 
-pub(crate) async fn handle_list(req: ListRequest, state: &Arc<Mutex<AppState>>, t: &mut ReqTiming) -> String {
+pub(crate) async fn handle_list(
+    req: ListRequest,
+    state: &Arc<Mutex<AppState>>,
+    t: &mut ReqTiming,
+) -> String {
     let config = state.lock().await.config.clone();
     let limit = match sqlite_count(clamp_list_limit(req.limit), "list.limit") {
         Ok(value) => value,
@@ -671,8 +679,6 @@ pub(crate) fn json_code_error(code: &str, msg: &str) -> String {
     .unwrap()
 }
 
-
-
 const SLOW_REQUEST_MS: u128 = 250;
 // Keep the original explicit timing and request-context arguments together.
 #[allow(clippy::too_many_arguments)]
@@ -815,7 +821,9 @@ macro_rules! verbs {
 }
 
 impl Engine {
-    verbs!(embed, store, search, update, delete, list, feedback, supersede, stale, stats, index_file);
+    verbs!(
+        embed, store, search, update, delete, list, feedback, supersede, stale, stats, index_file
+    );
 
     async fn call(&self, action: &str, body: serde_json::Value) -> serde_json::Value {
         let mut object = match body {
@@ -823,8 +831,17 @@ impl Engine {
             _ => return serde_json::json!({"error": "request body must be an object"}),
         };
         object.insert("action".into(), action.into());
-        let ctx = RequestContext { transport: "engine", peer: String::new() };
-        let response = process_request(&serde_json::Value::Object(object).to_string(), &self.state, &self.activity_tx, &ctx).await;
+        let ctx = RequestContext {
+            transport: "engine",
+            peer: String::new(),
+        };
+        let response = process_request(
+            &serde_json::Value::Object(object).to_string(),
+            &self.state,
+            &self.activity_tx,
+            &ctx,
+        )
+        .await;
         serde_json::from_str(&response).expect("handlers produce JSON")
     }
 
@@ -832,25 +849,40 @@ impl Engine {
         config.validate()?;
         let svc = config.service.clone();
         let db_path = svc.vectors_db.clone();
-        let db = VectorDb::open(&db_path, vindex::VectorDtype::parse(&svc.vindex_dtype).map_err(anyhow::Error::msg)?, svc.journal_size_limit_bytes)?;
-        let (job_tx, mut job_rx) = tokio::sync::mpsc::channel::<IndexJob>(svc.background_queue_max_jobs);
-        let queue_budget = QueueBudget::new(svc.background_queue_max_jobs, svc.background_queue_max_bytes);
+        let db = VectorDb::open(
+            &db_path,
+            vindex::VectorDtype::parse(&svc.vindex_dtype).map_err(anyhow::Error::msg)?,
+            svc.journal_size_limit_bytes,
+        )?;
+        let (job_tx, mut job_rx) =
+            tokio::sync::mpsc::channel::<IndexJob>(svc.background_queue_max_jobs);
+        let queue_budget = QueueBudget::new(
+            svc.background_queue_max_jobs,
+            svc.background_queue_max_bytes,
+        );
         let state = Arc::new(Mutex::new(AppState {
             config: Arc::new(config),
             model: None,
             chunk_tokenizer: None,
-            dtype: if svc.dtype == "f32" { DType::F32 } else { DType::F16 },
-            db, db_path,
+            dtype: if svc.dtype == "f32" {
+                DType::F32
+            } else {
+                DType::F16
+            },
+            db,
+            db_path,
             idle_timeout_secs: svc.idle_timeout_secs,
             model_breaker: CircuitBreaker::new(2, Duration::from_secs(60)),
             embed_breaker: CircuitBreaker::new(3, Duration::from_secs(30)),
             embed_cache: EmbeddingCache::new(),
             inference_gate: Arc::new(tokio::sync::Semaphore::new(1)),
-            job_tx: job_tx.clone(), queue_budget: queue_budget.clone(),
+            job_tx: job_tx.clone(),
+            queue_budget: queue_budget.clone(),
         }));
         let (activity_tx, mut activity_rx) = tokio::sync::mpsc::channel::<()>(16);
         let background_retry_max_attempts = svc.background_retry_max_attempts.max(1);
-        let background_retry_initial_backoff_secs = svc.background_retry_initial_backoff_secs.max(1);
+        let background_retry_initial_backoff_secs =
+            svc.background_retry_initial_backoff_secs.max(1);
         let mut tasks = Vec::new();
 
         let checkpoint_state = state.clone();
@@ -860,7 +892,9 @@ impl Engine {
                 CHECKPOINT_RETRY_NOTIFY.notified().await;
                 while checkpoint_state.lock().await.db.checkpoint_owed.is_owed() {
                     tokio::time::sleep(Duration::from_secs(300)).await;
-                    if LONG_READERS.load(Ordering::Acquire) != 0 || !checkpoint_budget.is_empty() { continue; }
+                    if LONG_READERS.load(Ordering::Acquire) != 0 || !checkpoint_budget.is_empty() {
+                        continue;
+                    }
                     let guard = checkpoint_state.lock().await;
                     if let Err(e) = guard.db.checkpoint_truncate() {
                         guard.db.mark_checkpoint_owed();
@@ -869,72 +903,72 @@ impl Engine {
                 }
             }
         }));
-    // Spawn idle watchdog
-    let watchdog_state = state.clone();
-    tasks.push(tokio::spawn(async move {
-        loop {
-            if activity_rx.recv().await.is_none() {
-                break;
-            }
-            while activity_rx.try_recv().is_ok() {}
-
-            let timeout = watchdog_state.lock().await.idle_timeout_secs;
-            // 0 = never unload. Don't run the countdown at all; just go back
-            // to waiting for the next activity ping (which we drain above).
-            if timeout == 0 {
-                continue;
-            }
-            let mut idle_remaining = timeout;
+        // Spawn idle watchdog
+        let watchdog_state = state.clone();
+        tasks.push(tokio::spawn(async move {
             loop {
-                tokio::select! {
-                    _ = tokio::time::sleep(Duration::from_secs(1)) => {
-                        idle_remaining = idle_remaining.saturating_sub(1);
-                        if idle_remaining == 0 {
-                            let mut guard = watchdog_state.lock().await;
-                            if guard.inference_gate.available_permits() == 0 {
-                                // A timed-out blocking worker may still own an
-                                // Arc<Model>. Never drop the state Arc while
-                                // that permit is held: a later request could
-                                // otherwise load a second full model.
-                                idle_remaining = 1;
-                                continue;
+                if activity_rx.recv().await.is_none() {
+                    break;
+                }
+                while activity_rx.try_recv().is_ok() {}
+
+                let timeout = watchdog_state.lock().await.idle_timeout_secs;
+                // 0 = never unload. Don't run the countdown at all; just go back
+                // to waiting for the next activity ping (which we drain above).
+                if timeout == 0 {
+                    continue;
+                }
+                let mut idle_remaining = timeout;
+                loop {
+                    tokio::select! {
+                        _ = tokio::time::sleep(Duration::from_secs(1)) => {
+                            idle_remaining = idle_remaining.saturating_sub(1);
+                            if idle_remaining == 0 {
+                                let mut guard = watchdog_state.lock().await;
+                                if guard.inference_gate.available_permits() == 0 {
+                                    // A timed-out blocking worker may still own an
+                                    // Arc<Model>. Never drop the state Arc while
+                                    // that permit is held: a later request could
+                                    // otherwise load a second full model.
+                                    idle_remaining = 1;
+                                    continue;
+                                }
+                                if guard.model.is_some() {
+                                    info!("model idle for {timeout}s, unloading to free memory");
+                                    guard.model = None;
+                                    drop(guard);
+                                    // SAFETY: zero requests release of unused allocator pages.
+                                    unsafe { libc::malloc_trim(0); }
+                                    metrics::RSS_AFTER_UNLOAD_BYTES
+                                        .store(rss_bytes(), Ordering::Relaxed);
+                                }
+                                break;
                             }
-                            if guard.model.is_some() {
-                                info!("model idle for {timeout}s, unloading to free memory");
-                                guard.model = None;
-                                drop(guard);
-                                // SAFETY: zero requests release of unused allocator pages.
-                                unsafe { libc::malloc_trim(0); }
-                                metrics::RSS_AFTER_UNLOAD_BYTES
-                                    .store(rss_bytes(), Ordering::Relaxed);
+                        }
+                        result = activity_rx.recv() => {
+                            if result.is_none() {
+                                return;
                             }
-                            break;
+                            while activity_rx.try_recv().is_ok() {}
+                            idle_remaining = timeout;
                         }
-                    }
-                    result = activity_rx.recv() => {
-                        if result.is_none() {
-                            return;
-                        }
-                        while activity_rx.try_recv().is_ok() {}
-                        idle_remaining = timeout;
                     }
                 }
             }
-        }
-    }));
+        }));
 
-    // Spawn the single background indexing worker. It owns `job_rx` and
-    // drains the queue serially for the daemon's lifetime, reusing the exact
-    // synchronous `handle_index_file` path (so background and foreground
-    // indexing are byte-for-byte identical). `recv()` returns `None` only
-    // once every `job_tx` clone is dropped (process teardown), at which point
-    // the loop exits cleanly. Jobs are owned `IndexFileRequest` values, so the
-    // future is `Send + 'static`.
-    let worker_state = state.clone();
-    let worker_activity_tx = activity_tx.clone();
-    let worker_queue_budget = queue_budget.clone();
-    let worker_job_tx = job_tx.clone();
-    tasks.push(tokio::spawn(async move {
+        // Spawn the single background indexing worker. It owns `job_rx` and
+        // drains the queue serially for the daemon's lifetime, reusing the exact
+        // synchronous `handle_index_file` path (so background and foreground
+        // indexing are byte-for-byte identical). `recv()` returns `None` only
+        // once every `job_tx` clone is dropped (process teardown), at which point
+        // the loop exits cleanly. Jobs are owned `IndexFileRequest` values, so the
+        // future is `Send + 'static`.
+        let worker_state = state.clone();
+        let worker_activity_tx = activity_tx.clone();
+        let worker_queue_budget = queue_budget.clone();
+        let worker_job_tx = job_tx.clone();
+        tasks.push(tokio::spawn(async move {
         while let Some(mut job) = job_rx.recv().await {
             let path = job.req.path.clone();
             let queue_us = job.enqueued.elapsed().as_micros() as u64;
@@ -1042,13 +1076,19 @@ impl Engine {
         info!("background indexing worker exiting (job queue closed)");
     }));
 
-        Ok(Self { state, activity_tx, tasks })
+        Ok(Self {
+            state,
+            activity_tx,
+            tasks,
+        })
     }
 }
 
 impl Drop for Engine {
     fn drop(&mut self) {
-        for task in &self.tasks { task.abort(); }
+        for task in &self.tasks {
+            task.abort();
+        }
     }
 }
 
@@ -1067,12 +1107,27 @@ mod tests {
     }
 
     async fn cache(engine: &Engine, text: &str, prefix: &str, value: f32) {
-        engine.state.lock().await.embed_cache.store(text, prefix, vec![value; EMBEDDING_DIM]);
+        engine
+            .state
+            .lock()
+            .await
+            .embed_cache
+            .store(text, prefix, vec![value; EMBEDDING_DIM]);
     }
 
     async fn seed(engine: &Engine, text: &str, metadata: &str, value: f32) -> i64 {
         let state = engine.state.lock().await;
-        match state.db.store_revalidated(&[Some(vec![value; EMBEDDING_DIM])], &[None], &[text.into()], "doc", &[metadata.into()]).unwrap() {
+        match state
+            .db
+            .store_revalidated(
+                &[Some(vec![value; EMBEDDING_DIM])],
+                &[None],
+                &[text.into()],
+                "doc",
+                &[metadata.into()],
+            )
+            .unwrap()
+        {
             StoreAttempt::Committed { ids, .. } => ids[0],
             _ => panic!("seed deferred"),
         }
@@ -1084,18 +1139,35 @@ mod tests {
         let old = seed(&engine, "old", "{}", 0.0).await;
         let active = seed(&engine, "active", r#"{"domain":"mixos"}"#, 1.0).await;
         let other = seed(&engine, "other", r#"{"domain":"other"}"#, 0.5).await;
-        assert_eq!(engine.supersede(json!({"old_id": old, "new_id": active, "reason": "newer"})).await["updated"], 1);
+        assert_eq!(
+            engine
+                .supersede(json!({"old_id": old, "new_id": active, "reason": "newer"}))
+                .await["updated"],
+            1
+        );
         cache(&engine, "query", "search_query: ", 0.0).await;
         let response = engine.search(json!({"query":"query", "limit":1, "metadata_filter":[{"field":"domain","op":"eq","value":"mixos"}]})).await;
         assert_eq!(response["results"].as_array().unwrap().len(), 1);
         assert_eq!(response["results"][0]["id"], active);
         assert!(response["results"][0]["metadata"].is_string());
         let response = engine.search(json!({"query":"query", "limit":10})).await;
-        let ids: Vec<_> = response["results"].as_array().unwrap().iter().map(|v| v["id"].as_i64().unwrap()).collect();
+        let ids: Vec<_> = response["results"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v["id"].as_i64().unwrap())
+            .collect();
         assert_eq!(ids, [other, active]);
         let state = engine.state.lock().await;
-        let counts: Vec<(i64, i64)> = state.db.conn.prepare("SELECT id, retrieval_count FROM chunks ORDER BY id").unwrap()
-            .query_map([], |r| Ok((r.get(0)?, r.get(1)?))).unwrap().collect::<rusqlite::Result<_>>().unwrap();
+        let counts: Vec<(i64, i64)> = state
+            .db
+            .conn
+            .prepare("SELECT id, retrieval_count FROM chunks ORDER BY id")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
         assert_eq!(counts, [(old, 0), (active, 2), (other, 1)]);
         drop(state);
         drop(engine);
@@ -1107,20 +1179,35 @@ mod tests {
         let (engine, dir) = engine("json-contract");
         let metadata = r#"{"path":"/srv/project/a.md","section":"A","domain":"mixos","type":"doc","date":"2026-10-20"}"#;
         cache(&engine, "text", "search_document: ", 0.0).await;
-        let stored = engine.store(json!({"texts":["text"], "metadata":[metadata]})).await;
+        let stored = engine
+            .store(json!({"texts":["text"], "metadata":[metadata]}))
+            .await;
         let id = stored["ids"][0].as_i64().unwrap();
         assert_eq!(stored["stored"], 1);
-        let duplicate = engine.store(json!({"texts":["text"], "metadata":[metadata]})).await;
+        let duplicate = engine
+            .store(json!({"texts":["text"], "metadata":[metadata]}))
+            .await;
         assert_eq!(duplicate["duplicates"], 1);
         assert_eq!(duplicate["ids"][0], id);
         let listed = engine.list(json!({"limit":10,"offset":0})).await;
         assert_eq!(listed["total"], 1);
         assert_eq!(listed["items"][0]["metadata"], metadata);
         assert!(listed["items"][0]["created"].is_string());
-        assert_eq!(engine.update(json!({"id":id,"metadata":"{\"new\":true}"})).await, json!({"updated":true,"re_embedded":false}));
+        assert_eq!(
+            engine
+                .update(json!({"id":id,"metadata":"{\"new\":true}"}))
+                .await,
+            json!({"updated":true,"re_embedded":false})
+        );
         cache(&engine, "changed", "search_document: ", 0.2).await;
-        assert_eq!(engine.update(json!({"id":id,"content":"changed"})).await, json!({"updated":true,"re_embedded":true}));
-        assert_eq!(engine.feedback(json!({"id":id,"useful":true})).await["feedback_score"], 1);
+        assert_eq!(
+            engine.update(json!({"id":id,"content":"changed"})).await,
+            json!({"updated":true,"re_embedded":true})
+        );
+        assert_eq!(
+            engine.feedback(json!({"id":id,"useful":true})).await["feedback_score"],
+            1
+        );
         let stale = engine.stale(json!({"never_retrieved_age_days":-1,"low_value_min_retrievals":3,"long_dormant_days":180,"per_bucket_limit":10})).await;
         assert_eq!(stale["total_chunks"], 1);
         assert_eq!(stale["never_retrieved_old"][0]["id"], id);
@@ -1131,8 +1218,17 @@ mod tests {
         assert_eq!(stats["model_loaded"], false);
         assert!(stats["db_size_bytes"].is_u64());
         assert!(stats["by_source"].is_array());
-        assert_eq!(engine.embed(json!({"texts":["text"]})).await["embeddings"][0].as_array().unwrap().len(), EMBEDDING_DIM);
-        assert_eq!(engine.delete(json!({"ids":[id]})).await, json!({"deleted":1}));
+        assert_eq!(
+            engine.embed(json!({"texts":["text"]})).await["embeddings"][0]
+                .as_array()
+                .unwrap()
+                .len(),
+            EMBEDDING_DIM
+        );
+        assert_eq!(
+            engine.delete(json!({"ids":[id]})).await,
+            json!({"deleted":1})
+        );
         assert!(engine.store(json!({"texts":[],"metadata":[{}]})).await["error"].is_string());
         assert_eq!(engine.stats(json!({})).await["total_vectors"], 0);
         drop(engine);
@@ -1144,12 +1240,22 @@ mod tests {
         let (engine, dir) = engine("index-failure");
         let metadata = r#"{"path":"/srv/project/file.md","date":"2026-10-20"}"#;
         let id = seed(&engine, "previous content", metadata, 0.0).await;
-        let response = engine.index_file(json!({"path":"/srv/project/file.md","content":"new content ".repeat(20)})).await;
-        assert!(response["error"].is_string(), "missing local tokenizer must fail: {response}");
+        let response = engine
+            .index_file(json!({"path":"/srv/project/file.md","content":"new content ".repeat(20)}))
+            .await;
+        assert!(
+            response["error"].is_string(),
+            "missing local tokenizer must fail: {response}"
+        );
         let listed = engine.list(json!({})).await;
         assert_eq!(listed["items"][0]["id"], id);
         assert_eq!(listed["items"][0]["content"], "previous content");
-        assert_eq!(engine.index_file(json!({"path":"/srv/project/file.md","content":""})).await["sections"], 0);
+        assert_eq!(
+            engine
+                .index_file(json!({"path":"/srv/project/file.md","content":""}))
+                .await["sections"],
+            0
+        );
         assert_eq!(engine.list(json!({})).await["total"], 0);
         drop(engine);
         std::fs::remove_dir_all(dir).unwrap();
@@ -1160,18 +1266,30 @@ mod tests {
         let dir = temp_dir("index-success");
         let mut config = Config::default();
         config.service.vectors_db = dir.join("vectors.db").to_string_lossy().into_owned();
-        config.source_types.insert("journal".into(), SourceTypeSpec {
-            required: vec!["path".into(), "domain".into(), "date".into()],
-            date_field: Some("date".into()),
-        });
-        config.domains.map.insert("/srv/project".into(), "parent".into());
-        config.domains.map.insert("/srv/project/deep".into(), "child".into());
+        config.source_types.insert(
+            "journal".into(),
+            SourceTypeSpec {
+                required: vec!["path".into(), "domain".into(), "date".into()],
+                date_field: Some("date".into()),
+            },
+        );
+        config
+            .domains
+            .map
+            .insert("/srv/project".into(), "parent".into());
+        config
+            .domains
+            .map
+            .insert("/srv/project/deep".into(), "child".into());
         let engine = Engine::open(config).unwrap();
         let tokenizer = tokenizers::models::wordlevel::WordLevel::builder()
             .vocab([("[UNK]".to_string(), 0)].into_iter().collect())
-            .unk_token("[UNK]".into()).build().unwrap();
+            .unk_token("[UNK]".into())
+            .build()
+            .unwrap();
         engine.state.lock().await.chunk_tokenizer = Some(Arc::new(ChunkTokenizer {
-            tokenizer: Tokenizer::new(tokenizer), max_seq_len: 2048,
+            tokenizer: Tokenizer::new(tokenizer),
+            max_seq_len: 2048,
         }));
         let path = "/srv/project/deep/_journal/2026-10-20-entry.md";
         let old = seed(&engine, "obsolete", &json!({"path":path}).to_string(), 1.0).await;
@@ -1188,13 +1306,18 @@ mod tests {
         for item in listed["items"].as_array().unwrap() {
             assert_ne!(item["id"], old);
             assert_eq!(item["source"], "journal");
-            let metadata: serde_json::Value = serde_json::from_str(item["metadata"].as_str().unwrap()).unwrap();
+            let metadata: serde_json::Value =
+                serde_json::from_str(item["metadata"].as_str().unwrap()).unwrap();
             assert_eq!(metadata["date"], "2026-10-20");
             assert_eq!(metadata["domain"], "child");
             assert_eq!(metadata["path"], path);
         }
         assert_eq!(engine.index_file(body).await["sections"], 2);
-        assert_eq!(engine.list(json!({})).await, listed, "unchanged reindex preserves IDs and metadata");
+        assert_eq!(
+            engine.list(json!({})).await,
+            listed,
+            "unchanged reindex preserves IDs and metadata"
+        );
         drop(engine);
         std::fs::remove_dir_all(dir).unwrap();
     }

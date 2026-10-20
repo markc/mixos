@@ -60,7 +60,11 @@ impl CheckpointOwed {
 }
 
 impl VectorDb {
-    pub(crate) fn open(path: &str, vindex_dtype: vindex::VectorDtype, journal_size_limit_bytes: u64) -> Result<Self> {
+    pub(crate) fn open(
+        path: &str,
+        vindex_dtype: vindex::VectorDtype,
+        journal_size_limit_bytes: u64,
+    ) -> Result<Self> {
         // SAFETY: sqlite3_vec_init implements the SQLite extension entry ABI;
         // auto_extension records this static function pointer for future connections.
         unsafe {
@@ -76,7 +80,10 @@ impl VectorDb {
             )));
         }
 
-        if let Some(parent) = std::path::Path::new(path).parent().filter(|p| !p.as_os_str().is_empty()) {
+        if let Some(parent) = std::path::Path::new(path)
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+        {
             std::fs::create_dir_all(parent)?;
         }
 
@@ -268,7 +275,11 @@ impl VectorDb {
     /// Read-only optimistic duplicate probe. This deliberately does not update
     /// metadata: no durable side effect may precede successful inference and
     /// the final IMMEDIATE transaction.
-    pub(crate) fn preflight_duplicate_ids(&self, texts: &[String], source: &str) -> Result<Vec<Option<i64>>> {
+    pub(crate) fn preflight_duplicate_ids(
+        &self,
+        texts: &[String],
+        source: &str,
+    ) -> Result<Vec<Option<i64>>> {
         let mut stmt = self
             .conn
             .prepare("SELECT id FROM chunks WHERE content_hash = ?1")?;
@@ -1077,8 +1088,11 @@ mod compatibility_tests {
 
     fn schema(conn: &Connection) -> Vec<(String, String)> {
         conn.prepare("SELECT name, sql FROM sqlite_master WHERE sql IS NOT NULL ORDER BY name")
-            .unwrap().query_map([], |r| Ok((r.get(0)?, r.get(1)?))).unwrap()
-            .collect::<rusqlite::Result<_>>().unwrap()
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap()
     }
 
     #[test]
@@ -1110,7 +1124,11 @@ mod compatibility_tests {
         let metadata = r#"{"path":"/srv/project/journal.md","date":"2026-10-18","extra":{"a":1}}"#;
         conn.execute("INSERT INTO chunks (id, content, source, metadata, content_hash, created, feedback_score, retrieval_count, last_retrieved, superseded_by) VALUES (42, 'original', 'journal', ?1, ?2, '2026-10-18 21:11:00', 7, 19, '2026-10-19 07:11:00', 43)", rusqlite::params![metadata, content_hash("original", "journal")]).unwrap();
         let original_blob = vec_to_blob(&vec![0.125; EMBEDDING_DIM]);
-        conn.execute("INSERT INTO vec_chunks(rowid, embedding) VALUES (42, ?1)", [&original_blob]).unwrap();
+        conn.execute(
+            "INSERT INTO vec_chunks(rowid, embedding) VALUES (42, ?1)",
+            [&original_blob],
+        )
+        .unwrap();
         let before_schema = schema(&conn);
         let before_row: String = conn.query_row("SELECT json_array(id, content, source, metadata, hex(content_hash), created, feedback_score, retrieval_count, last_retrieved, superseded_by) FROM chunks WHERE id=42", [], |r| r.get(0)).unwrap();
         drop(conn);
@@ -1119,16 +1137,35 @@ mod compatibility_tests {
         assert_eq!(schema(&db.conn), before_schema);
         let after_row: String = db.conn.query_row("SELECT json_array(id, content, source, metadata, hex(content_hash), created, feedback_score, retrieval_count, last_retrieved, superseded_by) FROM chunks WHERE id=42", [], |r| r.get(0)).unwrap();
         assert_eq!(after_row, before_row);
-        let blob: Vec<u8> = db.conn.query_row("SELECT embedding FROM vec_chunks WHERE rowid=42", [], |r| r.get(0)).unwrap();
+        let blob: Vec<u8> = db
+            .conn
+            .query_row("SELECT embedding FROM vec_chunks WHERE rowid=42", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
         assert_eq!(blob, original_blob);
-        assert_eq!(db.list("journal", 10, 0, 1024 * 1024).unwrap().0[0].metadata, metadata);
-        let inserted = db.store_revalidated(&[Some(vec![0.25; EMBEDDING_DIM])], &[None], &["new".into()], "doc", &["{}".into()]).unwrap();
-        let StoreAttempt::Committed { ids, .. } = inserted else { panic!("expected insert") };
+        assert_eq!(
+            db.list("journal", 10, 0, 1024 * 1024).unwrap().0[0].metadata,
+            metadata
+        );
+        let inserted = db
+            .store_revalidated(
+                &[Some(vec![0.25; EMBEDDING_DIM])],
+                &[None],
+                &["new".into()],
+                "doc",
+                &["{}".into()],
+            )
+            .unwrap();
+        let StoreAttempt::Committed { ids, .. } = inserted else {
+            panic!("expected insert")
+        };
         assert_eq!(ids, vec![43]);
         assert_eq!(db.feedback(42, false).unwrap(), 6);
         assert_eq!(db.delete(&ids).unwrap(), 1);
         drop(db);
-        let reopened = VectorDb::open(path.to_str().unwrap(), vindex::VectorDtype::F32, 65536).unwrap();
+        let reopened =
+            VectorDb::open(path.to_str().unwrap(), vindex::VectorDtype::F32, 65536).unwrap();
         assert_eq!(reopened.search_index.read().unwrap().len(), 1);
         drop(reopened);
         std::fs::remove_dir_all(dir).unwrap();

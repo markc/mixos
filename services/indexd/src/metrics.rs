@@ -32,8 +32,7 @@ pub struct ReqTiming {
     pub work: u64,
 }
 
-/// Who sent the request, resolved once per connection (unix) or per
-/// command (Bus). `peer` is best-effort display data, never authority.
+/// Request origin. `peer` is best-effort display data, never authority.
 pub struct RequestContext {
     pub transport: &'static str,
     pub peer: String,
@@ -48,10 +47,7 @@ struct Counters {
     invalid: u64,
     bytes: u64,
     cold_loads: u64,
-    /// Embed cache full hits (embed/search buckets); for
-    /// `internal.corpus_reconcile` this counts DISCARDED reconciles
-    /// (aggregate succeeded but a concurrent mutation nudge was
-    /// fresher, so the swap was skipped).
+    /// Embed cache full hits (embed/search buckets).
     cache_hits: u64,
     work: u64,
     elapsed_us: u64,

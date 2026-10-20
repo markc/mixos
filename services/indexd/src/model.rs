@@ -209,7 +209,11 @@ impl EmbedModel {
         let tokenizer_path = model_dir.join("tokenizer.json");
         let weights_path = model_dir.join("model.safetensors");
         for path in [&config_path, &tokenizer_path, &weights_path] {
-            anyhow::ensure!(path.is_file(), "missing local model file {}", path.display());
+            anyhow::ensure!(
+                path.is_file(),
+                "missing local model file {}",
+                path.display()
+            );
         }
         info!("loading model with {dtype:?} precision...");
         let config: nomic_bert::Config = serde_json::from_str(
@@ -781,7 +785,6 @@ pub(crate) async fn acquire_inference_permit(
 pub(crate) async fn record_embed_failure(state: &Arc<Mutex<AppState>>, t: &mut ReqTiming) {
     lock_timed(state, t).await.embed_breaker.record_failure();
 }
-
 
 #[cfg(test)]
 mod tests {
