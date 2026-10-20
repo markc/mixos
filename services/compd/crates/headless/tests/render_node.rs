@@ -113,7 +113,7 @@ fn render_and_check(gles: &mut GlesRenderer, label: &str) -> Vec<u8> {
     }
     let framebuffer = gles.bind(&mut target).expect("rebind target");
     let mapping = gles
-        .copy_framebuffer(&framebuffer, full, Fourcc::Abgr8888)
+        .copy_framebuffer(&framebuffer, Rectangle::from_size((W, H).into()), Fourcc::Abgr8888)
         .unwrap_or_else(|error| panic!("{label}: copy framebuffer: {error:?}"));
     drop(framebuffer);
     let pixels = gles.map_texture(&mapping).expect("map readback").to_vec();
