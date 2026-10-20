@@ -81,9 +81,14 @@ impl Transport {
         // once they own the serial bridge, regardless of preceding requests.
         let mut bridge = if let Self::Ssh { state, .. } = self {
             Some(
-                tokio::time::timeout(Duration::from_secs(30), state.lock())
+                tokio::time::timeout(limit, state.lock())
                     .await
-                    .context("indexd bridge queue wait exceeded 30s; request not delivered")?,
+                    .with_context(|| {
+                        format!(
+                            "indexd bridge queue wait exceeded {}s; request not delivered",
+                            limit.as_secs()
+                        )
+                    })?,
             )
         } else {
             None
@@ -736,6 +741,31 @@ mod tests {
             .await
             .unwrap();
         drop(bridge);
+    }
+
+    #[tokio::test]
+    async fn ssh_queue_wait_uses_configured_call_budget() {
+        let Some((client, dir)) = fake_with_timeout(1) else {
+            return;
+        };
+        let Transport::Ssh { state, .. } = &client else {
+            unreachable!()
+        };
+        let guard = state.lock().await;
+        let error = tokio::time::timeout(
+            Duration::from_secs(2),
+            client.call("indexd.feedback", &json!({})),
+        )
+        .await
+        .expect("queue wait must respect the configured budget")
+        .unwrap_err()
+        .to_string();
+        assert!(error.contains("queue wait exceeded 1s; request not delivered"), "{error}");
+        assert!(!dir.path().join("starts").exists());
+        drop(guard);
+        client.call("indexd.stats", &json!({})).await.unwrap();
+        assert_eq!(starts(&dir), 1);
+        client.shutdown().await;
     }
 
     #[tokio::test]
