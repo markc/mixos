@@ -105,6 +105,13 @@ fn spawn_options(
         .env("MIXOS_RUN", root.join("run"))
         .env("MIXOS_NODED_URL", bus.unwrap_or("ws://127.0.0.1:1"))
         .env("COMPD_HEADLESS_REFRESH_HZ", refresh)
+        .env("COMPD_FRAME_TRACE", "1")
+        .env("COMPD_FRAME_TRACE_FILE", root.join("frames.log"))
+        .env("COMPD_FRAME_TRACE_LIMIT", "0")
+        // Fixed built-in 24px arrow: no host theme or cursor animation.
+        .env("XCURSOR_PATH", root.join("cursors"))
+        .env("XCURSOR_THEME", "headless-test")
+        .env("XCURSOR_SIZE", "24")
         // Deliberately request XWayland: --headless must keep it off.
         .env("COMPD_XWAYLAND", "1")
         .env_remove("NOTIFY_SOCKET")

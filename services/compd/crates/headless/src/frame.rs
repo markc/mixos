@@ -3,7 +3,7 @@
 //! On-demand software presentation. No timer remains armed on an idle output.
 
 use smithay::backend::renderer::{
-    Bind, Offscreen,
+    Bind, Offscreen, Texture,
     damage::OutputDamageTracker,
     gles::{GlesRenderer, GlesTexture},
 };
@@ -17,8 +17,6 @@ use std::{
 };
 use world::state::Loop;
 
-const INTERVAL: Duration = Duration::from_nanos(1_000_000_000 / 60);
-
 #[derive(Default)]
 struct Retry {
     delay: Duration,
@@ -27,8 +25,8 @@ struct Retry {
 
 impl Retry {
     /// Back off every failure, but emit at most one warning per five seconds.
-    fn failed(&mut self, now: Instant) -> bool {
-        self.delay = (self.delay * 2).clamp(INTERVAL, Duration::from_secs(1));
+    fn failed(&mut self, now: Instant, interval: Duration) -> bool {
+        self.delay = (self.delay * 2).clamp(interval, Duration::from_secs(1));
         if self
             .warned
             .is_none_or(|last| now.duration_since(last) >= Duration::from_secs(5))
@@ -45,6 +43,7 @@ pub(crate) struct Context {
     output: Output,
     renderer: GlesRenderer,
     targets: [GlesTexture; 2],
+    cursor: Option<GlesTexture>,
     next: usize,
     tracker: OutputDamageTracker,
     last: Option<Instant>,
@@ -66,6 +65,7 @@ impl Context {
             output,
             renderer,
             targets,
+            cursor: None,
             next: 0,
             tracker,
             last: None,
@@ -138,7 +138,7 @@ fn draw(state: &mut Loop, ctx: &mut Context) {
         Err(error) => {
             let now = Instant::now();
             ctx.last = Some(now);
-            if ctx.retry.failed(now) {
+            if ctx.retry.failed(now, ctx.interval) {
                 warn!(
                     "headless: frame failed (retry in {:?}): {error}",
                     ctx.retry.delay
@@ -230,14 +230,21 @@ fn compose(
             .sync
             .wait()?;
     }
-    let mut cursor = if due.cursor || screencopy::file::pending_picture(&ctx.output, true) {
-        let mut texture = Offscreen::<GlesTexture>::create_buffer(
-            &mut ctx.renderer,
-            smithay::backend::allocator::Fourcc::Abgr8888,
-            (size.w, size.h).into(),
-        )?;
+    // Service may coalesce accumulated damage into a box that makes a waiting
+    // copy due. Once drawing, offer the cursor for every pending cursor copy.
+    let cursor_needed = screencopy::cursor_pending(&ctx.output)
+        || screencopy::file::pending_picture(&ctx.output, true);
+    if cursor_needed {
+        let texture_size = (size.w, size.h).into();
+        if ctx.cursor.as_ref().is_none_or(|texture| texture.size() != texture_size) {
+            ctx.cursor = Some(Offscreen::<GlesTexture>::create_buffer(
+                &mut ctx.renderer,
+                smithay::backend::allocator::Fourcc::Abgr8888,
+                texture_size,
+            )?);
+        }
         {
-            let mut target = ctx.renderer.bind(&mut texture)?;
+            let mut target = ctx.renderer.bind(ctx.cursor.as_mut().expect("cursor texture"))?;
             OutputDamageTracker::from_output(&ctx.output)
                 .render_output(
                     &mut ctx.renderer,
@@ -249,12 +256,10 @@ fn compose(
                 .sync
                 .wait()?;
         }
-        Some(texture)
-    } else {
-        None
-    };
-    let cursor_target = cursor
+    }
+    let cursor_target = ctx.cursor
         .as_mut()
+        .filter(|_| cursor_needed)
         .map(|texture| ctx.renderer.bind(texture))
         .transpose()?;
     let target = ctx.renderer.bind(&mut ctx.targets[ctx.next])?;
@@ -303,6 +308,9 @@ fn compose(
             true,
         );
     }
+    // finish() and file::service above synchronously map their readbacks;
+    // GLES map_texture blocks on each copy (including file::read_pixels).
+    // All reads complete before targets rotate or the cached cursor is reused.
     captures.finish(&mut ctx.renderer);
     ctx.next ^= 1;
     // A capture of unchanged content is not a new presentation.
@@ -342,18 +350,19 @@ mod tests {
     fn persistent_errors_back_off_and_warnings_are_throttled() {
         let mut retry = Retry::default();
         let now = Instant::now();
-        assert!(retry.failed(now));
-        assert_eq!(retry.delay, INTERVAL);
-        assert!(!retry.failed(now + INTERVAL));
-        assert_eq!(retry.delay, INTERVAL * 2);
+        let interval = Duration::from_nanos(1_000_000_000 / 30);
+        assert!(retry.failed(now, interval));
+        assert_eq!(retry.delay, interval);
+        assert!(!retry.failed(now + interval, interval));
+        assert_eq!(retry.delay, interval * 2);
         for _ in 0..10 {
-            assert!(!retry.failed(now + Duration::from_secs(1)));
+            assert!(!retry.failed(now + Duration::from_secs(1), interval));
         }
         assert_eq!(retry.delay, Duration::from_secs(1));
-        assert!(retry.failed(now + Duration::from_secs(5)));
+        assert!(retry.failed(now + Duration::from_secs(5), interval));
         // A good frame clears the delay; warning throttling survives recovery.
         retry.delay = Duration::ZERO;
-        assert!(!retry.failed(now + Duration::from_secs(6)));
-        assert_eq!(retry.delay, INTERVAL);
+        assert!(!retry.failed(now + Duration::from_secs(6), interval));
+        assert_eq!(retry.delay, interval);
     }
 }

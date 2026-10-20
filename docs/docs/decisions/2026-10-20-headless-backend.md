@@ -35,3 +35,9 @@ fails its capture rather than substituting another cursor policy. Capturing
 unchanged content does not count as a new presentation.
 Deployment units, slices and session services are deferred;
 this decision introduces no installed headless session.
+
+The Phase 2 plain Wayland EGL client probe (`weston-simple-egl`, with
+`WAYLAND_DEBUG=client`) created its first `wl_buffer` through `wl_shm_pool`.
+Its rendered pixels survived composition and screencopy, but this was a
+`wl_shm` fallback. Client DMA-BUF negotiation remains unproven; this probe
+does not establish the GPU-client DMA-BUF path.

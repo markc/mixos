@@ -71,6 +71,9 @@ impl Dispatch<wl_output::WlOutput, ()> for OutputState {
 
 #[path = "support/process.rs"]
 mod process;
+#[path = "support/pattern.rs"]
+#[allow(dead_code)] // Shared client; this target exercises only callback pacing.
+mod pattern;
 use process::spawn;
 
 fn boot(scale: i32, explicit_node: bool) {
@@ -197,7 +200,21 @@ fn lower_refresh_sets_the_virtual_mode() {
     queue.roundtrip(&mut state).unwrap();
     queue.roundtrip(&mut state).unwrap();
     assert_eq!(state.mode, Some((1280, 720, 30_000)));
-    println!("headless virtual output and timer configured for 30 Hz");
+    let stream = UnixStream::connect(process.root.join("wayland-headless-test")).unwrap();
+    let mut pattern = pattern::Pattern::new(stream);
+    pattern.wait_callback(0);
+    let start = Instant::now();
+    let before = pattern.state.callbacks;
+    while start.elapsed() < Duration::from_secs(2) {
+        let previous = pattern.state.callbacks;
+        pattern.commit(true);
+        pattern.wait_callback(previous);
+    }
+    let elapsed = start.elapsed();
+    let callbacks = pattern.state.callbacks - before;
+    let hz = callbacks as f64 / elapsed.as_secs_f64();
+    assert!((25.5..=34.5).contains(&hz), "30 Hz pacing: {callbacks} callbacks in {elapsed:?} = {hz:.2} Hz");
+    println!("headless virtual output 30 Hz; {callbacks} damage callbacks in {elapsed:?} = {hz:.2} Hz");
 }
 
 fn refuses_node(node: &str, label: &str, reason: &str) {

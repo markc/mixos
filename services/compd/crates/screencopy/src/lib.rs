@@ -438,12 +438,26 @@ pub fn wants_full_frame(output: &Output) -> bool {
     })
 }
 
+/// Whether any submitted copy on this output wants the cursor, including a
+/// damage copy waiting for changes. Does not request or schedule a frame.
+/// Backends with strict sources can use this once they decide to render:
+/// service may coalesce damage into a bounding box that makes another copy due.
+pub fn cursor_pending(output: &Output) -> bool {
+    let name = output.name();
+    REGISTRY.with_borrow(|r| {
+        r.records.iter().any(|record| {
+            record.output == name && record.overlay_cursor && record.pending.is_some()
+        })
+    })
+}
+
 /// Which pictures a frame of `output` that damaged `damage` must offer
 /// [`service`]: one WITH the cursor and drag icon (a copy with
 /// `overlay_cursor = 1`) and one WITHOUT them (`overlay_cursor = 0`, what grim
 /// asks by default). Asked after the frame's own render, with its damage, so it
-/// answers exactly what [`service`] will serve; a backend renders a picture only
-/// when it is due, so frames that serve no copy pay nothing.
+/// checks individual rectangles. Service can also serve copies made due by
+/// bounding-box coalescing past the accumulator cap. Strict backends should
+/// use [`cursor_pending`] when deciding whether to offer a cursor picture.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct SourcesDue {
     pub cursor: bool,

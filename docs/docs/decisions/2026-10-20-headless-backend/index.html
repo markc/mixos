@@ -260,6 +260,11 @@ fails its capture rather than substituting another cursor policy. Capturing
 unchanged content does not count as a new presentation.
 Deployment units, slices and session services are deferred;
 this decision introduces no installed headless session.</p>
+<p>The Phase 2 plain Wayland EGL client probe (<code>weston-simple-egl</code>, with
+<code>WAYLAND_DEBUG=client</code>) created its first <code>wl_buffer</code> through <code>wl_shm_pool</code>.
+Its rendered pixels survived composition and screencopy, but this was a
+<code>wl_shm</code> fallback. Client DMA-BUF negotiation remains unproven; this probe
+does not establish the GPU-client DMA-BUF path.</p>
         </article>
         <p class="doc-source"><a href="/docs/decisions/2026-10-20-headless-backend.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
     </div>
