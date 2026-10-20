@@ -104,6 +104,7 @@ pub(crate) fn append_metadata_filters(
             // cross-type comparisons cannot broaden a destructive predicate.
             let types = match &filter.value {
                 serde_json::Value::String(_) => "= 'text'",
+                serde_json::Value::Number(n) if n.is_f64() => "= 'real'",
                 serde_json::Value::Number(_) => "IN ('integer','real')",
                 serde_json::Value::Bool(_) => "IN ('true','false')",
                 _ => unreachable!("delete value validated above"),
@@ -123,7 +124,17 @@ pub(crate) fn append_metadata_filters(
             params.push(Box::new(format!("%{escaped}%")));
         } else {
             match &filter.value {
-                serde_json::Value::Number(n) => params.push(Box::new(n.as_f64().unwrap_or(0.0))),
+                serde_json::Value::Number(n) => {
+                    if let Some(value) = n.as_i64() {
+                        params.push(Box::new(value));
+                    } else if let Some(value) = n.as_u64() {
+                        let value = i64::try_from(value)
+                            .context("metadata filter integer exceeds SQLite i64 range")?;
+                        params.push(Box::new(value));
+                    } else {
+                        params.push(Box::new(n.as_f64().expect("JSON real number")));
+                    }
+                }
                 serde_json::Value::String(s) => params.push(Box::new(s.clone())),
                 serde_json::Value::Bool(b) => params.push(Box::new(*b)),
                 other => params.push(Box::new(other.to_string())),
@@ -1185,6 +1196,130 @@ mod tests {
         }
         assert_eq!(db.stats("").unwrap().total_vectors, 1);
         assert_eq!(db.search_index.read().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn large_integer_equality_matches_search_and_delete_exactly() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("integers.db");
+        let path = path.to_str().unwrap();
+        let db = VectorDb::open(path, vindex::VectorDtype::F32, 65536).unwrap();
+        let values = [9007199254740992_i64, 9007199254740993, i64::MIN, i64::MAX];
+        let texts: Vec<String> = values.iter().map(ToString::to_string).collect();
+        let metadata: Vec<String> = values
+            .iter()
+            .map(|value| serde_json::json!({"n":value}).to_string())
+            .collect();
+        let StoreAttempt::Committed { ids, .. } = db
+            .store_revalidated(
+                &vec![Some(vec![1.0; EMBEDDING_DIM]); values.len()],
+                &vec![None; values.len()],
+                &texts,
+                "doc",
+                &metadata,
+            )
+            .unwrap()
+        else {
+            panic!("unexpected race")
+        };
+        for (deleted, i) in [1, 0, 2, 3].into_iter().enumerate() {
+            let filters: Vec<MetadataFilter> = serde_json::from_value(serde_json::json!([
+                {"field":"n","op":"eq","value":values[i]}
+            ]))
+            .unwrap();
+            let fallback = db
+                .search(&vec![1.0; EMBEDDING_DIM], 10, "", &filters, BUS_BODY_LIMIT)
+                .unwrap();
+            let (exact, _) = search_exact(
+                path,
+                &db.search_index,
+                &vec![1.0; EMBEDDING_DIM],
+                10,
+                "",
+                &filters,
+                BUS_BODY_LIMIT,
+            )
+            .unwrap();
+            for results in [fallback, exact] {
+                assert_eq!(results.len(), 1, "{}", values[i]);
+                assert_eq!(results[0].id, ids[i]);
+            }
+            assert_eq!(db.delete_filtered(&[], &filters).unwrap(), 1);
+            assert_eq!(
+                db.search_index.read().unwrap().len(),
+                values.len() - deleted - 1
+            );
+        }
+        assert_eq!(db.stats("").unwrap().total_vectors, 0);
+    }
+
+    #[test]
+    fn real_delete_does_not_round_onto_integer_rows() {
+        let db = test_vector_db();
+        db.store_revalidated(
+            &vec![Some(vec![1.0; EMBEDDING_DIM]); 3],
+            &[None; 3],
+            &["first integer".into(), "second integer".into(), "real".into()],
+            "doc",
+            &[
+                r#"{"n":9007199254740992}"#.into(),
+                r#"{"n":9007199254740993}"#.into(),
+                r#"{"n":9007199254740992.0}"#.into(),
+            ],
+        )
+        .unwrap();
+        let filters: Vec<MetadataFilter> = serde_json::from_value(serde_json::json!([
+            {"field":"n","op":"eq","value":9007199254740992.0}
+        ]))
+        .unwrap();
+        assert_eq!(db.delete_filtered(&[], &filters).unwrap(), 1);
+        let (remaining, _) = db.list("", 10, 0, BUS_BODY_LIMIT).unwrap();
+        assert_eq!(remaining.len(), 2);
+        assert!(remaining.iter().all(|row| row.content.ends_with("integer")));
+        assert_eq!(db.search_index.read().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn oversized_unsigned_integer_filters_are_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("unsigned.db");
+        let path = path.to_str().unwrap();
+        let db = VectorDb::open(path, vindex::VectorDtype::F32, 65536).unwrap();
+        db.store_revalidated(
+            &[Some(vec![1.0; EMBEDDING_DIM])],
+            &[None],
+            &["keep".into()],
+            "doc",
+            &[r#"{"n":9223372036854775808}"#.into()],
+        )
+        .unwrap();
+        for value in [(i64::MAX as u64) + 1, u64::MAX] {
+            let filters: Vec<MetadataFilter> = serde_json::from_value(serde_json::json!([
+                {"field":"n","op":"eq","value":value}
+            ]))
+            .unwrap();
+            let errors = [
+                db.delete_filtered(&[], &filters).unwrap_err(),
+                db.search(&vec![1.0; EMBEDDING_DIM], 10, "", &filters, BUS_BODY_LIMIT)
+                    .unwrap_err(),
+                search_exact(
+                    path,
+                    &db.search_index,
+                    &vec![1.0; EMBEDDING_DIM],
+                    10,
+                    "",
+                    &filters,
+                    BUS_BODY_LIMIT,
+                )
+                .err()
+                .unwrap(),
+            ];
+            for error in errors {
+                assert!(error.to_string().contains("exceeds SQLite i64 range"));
+            }
+            assert_eq!(db.stats("").unwrap().total_vectors, 1);
+            assert_eq!(db.search_index.read().unwrap().len(), 1);
+        }
     }
 
     #[test]
