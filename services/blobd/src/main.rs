@@ -12,12 +12,12 @@ use blobd::refusal;
 
 #[derive(Parser)]
 #[command(
-    name = "cosmix-blobd",
+    name = "blobd",
     version,
     about = "Node blob store: content-addressed bytes, owner pins, quotas, GC"
 )]
 struct Cli {
-    /// Flat `key: value` configuration file (see docs/cos/cosmix-blobd).
+    /// Flat `key: value` configuration file (see docs/blobd).
     #[arg(long, short = 'c')]
     config: Option<PathBuf>,
 }
@@ -37,7 +37,7 @@ fn main() -> anyhow::Result<()> {
     let _log_guard = logging::init(
         &logging::LogOpts::default(),
         &logging::StatsOpts::default(),
-        logging::LogDefaults::daemon("cosmix-blobd").with_stats(false),
+        logging::LogDefaults::daemon("blobd").with_stats(false),
     )
     .expect("logging init failed");
     tokio::runtime::Builder::new_multi_thread()

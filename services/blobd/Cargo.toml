@@ -7,7 +7,6 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 publish = false
-# The daemon binary is added with the main port; until then the crate is a library.
 autobins = false
 
 [package.metadata.mixos]
@@ -23,6 +22,10 @@ mod_module_files = "deny"
 name = "blobd"
 path = "src/lib.rs"
 
+[[bin]]
+name = "blobd"
+path = "src/main.rs"
+
 [dependencies]
 mds = { path = "../../libs/mds" }
 props = { path = "../../libs/props", features = ["bus"] }
@@ -34,6 +37,7 @@ rusqlite.workspace = true
 tracing.workspace = true
 serde_json.workspace = true
 anyhow.workspace = true
+clap = { workspace = true }
 # flock on <root>/.blobd.lock — one GC owner per root.
 libc.workspace = true
 uuid.workspace = true
