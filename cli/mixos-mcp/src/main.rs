@@ -969,13 +969,16 @@ impl MixosMcp {
     }
 
     async fn indexd(&self) -> Result<crate::skills::IndexdClient, String> {
-        let mut cached = self.indexd_client.lock().await;
-        if let Some(client) = cached.as_ref().filter(|c| c.is_connected()) {
+        if let Some(client) = self.indexd_client.lock().await.as_ref().filter(|c| c.is_connected()) {
             return Ok(client.clone());
         }
         let client = crate::skills::IndexdClient::from_config()
             .await
             .map_err(|e| format!("indexd connect failed: {e}. Ensure indexd is running."))?;
+        let mut cached = self.indexd_client.lock().await;
+        if let Some(existing) = cached.as_ref().filter(|c| c.is_connected()) {
+            return Ok(existing.clone());
+        }
         *cached = Some(client.clone());
         Ok(client)
     }

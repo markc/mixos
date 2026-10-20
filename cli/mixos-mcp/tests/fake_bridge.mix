@@ -9,6 +9,18 @@ while true
     if $line == "" then break end
     $request = json_parse($line)
     $mode = $request.body.mode ?? "normal"
+    if $mode == "delay" then sleep(0.7) end
+    if $mode == "flood" then
+        for $i = 1 to 4096
+            eprint("fixture stderr flood: 01234567890123456789012345678901234567890123456789")
+        end
+        eprint("fixture flood tail")
+        exit(7)
+    end
+    if $mode == "bridge_timeout" then
+        print(json_encode({id: $request.id, rc: -1, kind: "timeout", error: "fixture deadline"}))
+        continue
+    end
     if $mode == "failure" or ($mode == "die_once" and $starts == 1) then
         eprint("fixture child failure")
         exit(7)
@@ -18,9 +30,10 @@ while true
         print(json_encode({id: $request.id, rc: -1, error: "fixture Bus closed"}))
         exit(1)
     end
-    $reply_body = if $mode == "error" then {error: "fixture refusal"} else {echo: $request.body, verb: $request.verb} end
+    $reply_body = if $mode == "error" then {error: "fixture refusal"} else {echo: $request.body, verb: $request.verb, timeout_secs: $request.timeout_secs} end
     $reply_rc = if $mode == "rc" then 10 else 0 end
     $reply_id = if $mode == "wrong_id" then $request.id + 1 else $request.id end
     print(json_encode({id: $reply_id, rc: $reply_rc, body: $reply_body}))
+    if $mode == "exit_after_reply" then exit(0) end
 end
 write_file($state_file .. ".eof", "closed")

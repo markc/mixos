@@ -724,7 +724,7 @@ profile: [desktop](desktop.md) and [server](server.md). This page describes the 
 | [mimedb](../mimedb/README.md) | lib | none (library) | [`libs/mimedb`](https://github.com/markc/mixos/tree/main/libs/mimedb) | A library that reads the freedesktop shared-mime-info database and decides a file's type from its name and content the way GLib does, so MixOS names a file's type as the desktop does. |
 | [mix](../mix/README.md) · [changelog](../mix/changelog.md) | lib | none (library) | [`libs/mix`](https://github.com/markc/mixos/tree/main/libs/mix) |  |
 | [mix-shell](../mix-shell/README.md) · [changelog](../mix-shell/changelog.md) | cli | unclassified | [`cli/mix-shell`](https://github.com/markc/mixos/tree/main/cli/mix-shell) | The Mix shell library, holding the interactive line editor, the command classifier, the native-session bootstrap and the Bus citizen runtime that the mix binary runs. |
-| [mixos-mcp](../mixos-mcp/README.md) | cli | base | [`cli/mixos-mcp`](https://github.com/markc/mixos/tree/main/cli/mixos-mcp) | MCP stdio access to the native MixOS Bus. |
+| [mixos-mcp](../mixos-mcp/README.md) · [changelog](../mixos-mcp/changelog.md) | cli | base | [`cli/mixos-mcp`](https://github.com/markc/mixos/tree/main/cli/mixos-mcp) | MCP stdio access to the native MixOS Bus. |
 | [mixtrayd](../mixtrayd/README.md) | service | unclassified | [`services/mixtrayd`](https://github.com/markc/mixos/tree/main/services/mixtrayd) |  |
 | [monitor](../monitor/README.md) | app | desktop | [`apps/monitor`](https://github.com/markc/mixos/tree/main/apps/monitor) | Monitor is the MixOS task manager, showing the processes and performance that monitord reports for this node or any node on the mesh, with End task and Kill for this node's processes. |
 | [monitord](../monitord/README.md) · [changelog](../monitord/changelog.md) | service | base | [`services/monitord`](https://github.com/markc/mixos/tree/main/services/monitord) | How monitord samples a host's CPU, memory, disks, network and processes, keeps history in memory and SQLite, and answers read verbs on the Bus, so any node's load can be read from anywhere on the… |
@@ -32753,6 +32753,21 @@ Initial MixOS shell transplant. Language semantics retain the source version.
 Application transport is native ABP through noded. Runtime directories use the
 shared config rule; installed manuals are available offline. Cross-process
 native-session handoff bytes retain the frozen compatibility contract.
+
+---
+
+<!-- page: https://mixos.dev/mixos-mcp/changelog/ (source: https://mixos.dev/mixos-mcp/changelog.md) -->
+
+# Changelog
+
+> Mirrored from [`cli/mixos-mcp/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/cli/mixos-mcp/CHANGELOG.md), where releases update it. The component's page is [mixos-mcp](README.md). This page describes the current `main` branch of MixOS.
+
+## Unreleased
+
+- The indexd Bus-mode call timeout is now 120 seconds by default, previously
+  the Bus library's 60 seconds. SSH bridge requests carry the configured timeout.
+- Retry bridge failures once before delivery for every verb; after delivery,
+  retry only idempotent verbs. Feedback and timeouts report an unknown outcome.
 
 ---
 
