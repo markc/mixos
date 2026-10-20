@@ -281,6 +281,13 @@ own quota, so the slice does not need a per-instance name.
 1..=120 Hz. It defaults to 30, preserving console sessions; a headless desk
 can request 60 through its portal unit drop-in. This ceiling does not change
 the compositor's refresh rate. These templates do not provision or start a desk.</p>
+<p>Phase 4b acceptance measures presentation cadence: <code>presented_hz</code> is the
+presented-frame count divided by the paced probe's elapsed time, and
+<code>cadence_missed</code> counts presentation gaps greater than 1.5 requested intervals.
+Captured-frame uniqueness is measured from the probe's pixel frame IDs.
+The client-deadline <code>missed</code> count remains a regression guard only: two
+free-running 60 Hz clocks beat against that deadline without establishing
+a compositor cadence defect.</p>
 <p>The Phase 2 plain Wayland EGL client probe (<code>weston-simple-egl</code>, with
 <code>WAYLAND_DEBUG=client</code>) created its first <code>wl_buffer</code> through <code>wl_shm_pool</code>.
 Its rendered pixels survived composition and screencopy, but this was a

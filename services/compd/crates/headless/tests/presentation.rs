@@ -61,6 +61,16 @@ fn measurement(process: &mut process::Process, stalled: bool) -> (f64, usize) {
     assert_eq!(value("stalls="), if stalled { "120" } else { "0" });
     let achieved: f64 = value("achieved_hz=").parse().unwrap();
     assert!((achieved / 60.0 - 1.0).abs() <= 0.01, "{summary}");
+    if !stalled {
+        let presented: usize = value("presented=").parse().unwrap();
+        let presented_hz: f64 = value("presented_hz=").parse().unwrap();
+        let cadence_missed: usize = value("cadence_missed=").parse().unwrap();
+        assert!(presented >= 3540, "{summary}");
+        assert!((presented_hz / 60.0 - 1.0).abs() <= 0.02, "{summary}");
+        // At most 1% of the 3600-frame run may have a presentation gap
+        // greater than 1.5 intervals. Injected stalls are checked separately.
+        assert!(cadence_missed <= 36, "{summary}");
+    }
     (achieved, value("missed=").parse().unwrap())
 }
 
@@ -86,9 +96,9 @@ fn independent_60hz_and_stall_control() {
     );
     // Optimised 60 s calibration: 395 strict misses with millisecond waits
     // and frame tracing; 328 with ppoll and tracing off. Retain the largest
-    // observed count as an empirical regression guard. This 11% guard is
-    // not a low-miss acceptance target: that remains unproven with the
-    // current free-running headless timer and a one-interval deadline.
+    // observed count as an empirical regression guard only. Two free-running
+    // 60 Hz clocks beat against this client-deadline metric; presentation
+    // cadence above is the acceptance metric for compositor lateness.
     const OBSERVED_MISSED_BOUND: usize = 395;
     assert!(
         clean <= OBSERVED_MISSED_BOUND,

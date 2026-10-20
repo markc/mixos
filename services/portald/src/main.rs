@@ -36,7 +36,7 @@ enum Command {
         #[arg(long, default_value = "prompt")]
         screencast_consent: portald::screencast::consent::Policy,
         /// Frame-rate ceiling offered to ScreenCast consumers (1..=120).
-        #[arg(long, default_value = "30", allow_hyphen_values = true)]
+        #[arg(long, default_value_t = portald::screencast::MaxFramerate::default())]
         screencast_max_framerate: portald::screencast::MaxFramerate,
     },
 }
@@ -106,7 +106,7 @@ mod tests {
                 .is_ok()
             );
         }
-        for rate in ["0", "121", "-1", "invalid"] {
+        for rate in ["0", "121", "invalid"] {
             let error = Cli::try_parse_from([
                 "portald",
                 "serve",
@@ -120,6 +120,29 @@ mod tests {
             .to_string();
             assert!(error.contains("screencast-max-framerate"), "{error}");
         }
+        let negative = Cli::try_parse_from([
+            "portald",
+            "serve",
+            "--instance",
+            "test",
+            "--screencast-max-framerate",
+            "-1",
+        ])
+        .err()
+        .unwrap();
+        assert_eq!(negative.kind(), clap::error::ErrorKind::UnknownArgument);
+        assert!(negative.to_string().contains("'-1'"), "{negative}");
+        let missing = Cli::try_parse_from([
+            "portald",
+            "serve",
+            "--screencast-max-framerate",
+            "--instance",
+            "test",
+        ])
+        .err()
+        .unwrap();
+        assert_eq!(missing.kind(), clap::error::ErrorKind::InvalidValue);
+        assert!(missing.to_string().contains("a value is required"), "{missing}");
         assert!(
             "0".parse::<portald::screencast::MaxFramerate>()
                 .unwrap_err()

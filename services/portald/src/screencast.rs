@@ -51,6 +51,12 @@ impl Default for MaxFramerate {
     }
 }
 
+impl std::fmt::Display for MaxFramerate {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 impl std::str::FromStr for MaxFramerate {
     type Err = String;
     fn from_str(value: &str) -> Result<Self, Self::Err> {

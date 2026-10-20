@@ -13,7 +13,7 @@ try
       end
     end
     write_file($file, $pixels)
-    $result = run_argv_must(["/opt/mixos/bin/mix", dirname(realpath($0)) .. "/frame_ids.mix", $file, "--size", "256x16"])
+    $result = run_argv_must([realpath("/proc/self/exe"), dirname(realpath($0)) .. "/frame_ids.mix", $file, "--size", "256x16"])
     if to_number(trim($result)) != $id then raise("TEST", "CLI frame ID round-trip failed") end
     buffer_set($pixels, (4 * 256 + 4) * 4, 127)
     $rejected = false
