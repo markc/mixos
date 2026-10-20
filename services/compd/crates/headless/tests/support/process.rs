@@ -35,12 +35,17 @@ impl Drop for Process {
 }
 
 pub fn spawn(scale: i32, explicit_node: Option<&str>, label: &str, bus: Option<&str>) -> Process {
-    spawn_options(scale, explicit_node, label, bus, "60")
+    spawn_options(scale, explicit_node, label, bus, "60", None)
+}
+
+#[allow(dead_code)]
+pub fn spawn_service(label: &str, bus: &str, service: &str) -> Process {
+    spawn_options(1, None, label, Some(bus), "60", Some(service))
 }
 
 #[allow(dead_code)] // Used only by boot.rs; each integration target shares this module.
 pub fn spawn_at_refresh(refresh: &str) -> Process {
-    spawn_options(1, None, "refresh", None, refresh)
+    spawn_options(1, None, "refresh", None, refresh, None)
 }
 
 fn spawn_options(
@@ -49,6 +54,7 @@ fn spawn_options(
     label: &str,
     bus: Option<&str>,
     refresh: &str,
+    service: Option<&str>,
 ) -> Process {
     let binary = std::env::var_os("COMPD_TEST_BINARY")
         .map(PathBuf::from)
@@ -123,6 +129,9 @@ fn spawn_options(
     }
     if scale != 1 {
         command.args(["--scale", &scale.to_string()]);
+    }
+    if let Some(service) = service {
+        command.args(["--bus-service", service]);
     }
     let child = command.spawn().expect("start compd");
     let pid = child.id();

@@ -134,6 +134,24 @@ pub fn wire(
     let handle = state.state.output.display_handle.clone();
     let damage_tracker =
         scenegraph::state::lifecycle::lifecycle::initialize(state, &output, &handle, &mut contract);
+    // No physical input sources. Keep the human seat global, but advertise no
+    // capabilities. This runs before the event loop serves any client.
+    state.state.seat.seat.remove_pointer();
+    state.state.seat.seat.remove_keyboard();
+    state.state.seat.seat.remove_touch();
+    state.inner.comp.injection.backend = world::comp::injection::BackendInput::Headless;
+    // Host Space is centre-anchored: world (0,0) projects to the mode's
+    // centre at every scale, just like the initial human cursor placement.
+    let centre = smithay::utils::Point::from((0.0, 0.0));
+    state.inner.comp.injection.agent_pointer = Some((centre.x, centre.y));
+    if let Some(pointer) = state.state.seat.agent.as_ref().and_then(|seat| seat.get_pointer()) {
+        pointer.motion(&mut state.state, None, &smithay::input::pointer::MotionEvent {
+            location: centre,
+            serial: smithay::utils::SERIAL_COUNTER.next_serial(),
+            time: 0,
+        });
+        pointer.frame(&mut state.state);
+    }
     let formats = state
         .inner
         .kernel

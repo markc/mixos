@@ -1,0 +1,220 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
+//! Real agent input and service isolation on a private broker. Build compd,
+//! noded and testkit-input-probe before running the ignored render-node tests.
+#[path = "support/bus.rs"]
+mod bus;
+#[path = "support/process.rs"]
+mod process;
+
+use bus::{Bus, binary};
+use serde_json::{Value, json};
+use std::{fs, path::PathBuf, process::{Child, Command, Stdio}, thread, time::{Duration, Instant}};
+use world::comp::injection::BackendInput;
+
+const SERVICE: &str = "comp-headless";
+
+struct Probe { child: Child, log: PathBuf }
+impl Drop for Probe {
+    fn drop(&mut self) {
+        if thread::panicking() { eprintln!("probe log: {}", self.text()); }
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+impl Probe {
+    fn start(process: &mut process::Process, app: &str) -> Self {
+        let deadline = Instant::now() + Duration::from_secs(20);
+        while !process.root.join("wayland-headless-test").exists() {
+            assert!(process.child.try_wait().unwrap().is_none(), "compd exited");
+            assert!(Instant::now() < deadline, "socket timeout");
+            thread::sleep(Duration::from_millis(10));
+        }
+        let log = process.root.join("probe.log");
+        let file = fs::File::create(&log).unwrap();
+        let child = Command::new(binary("testkit-input-probe"))
+            .args(["--seats", "--size", "400x240", "--seconds", "35", "--app-id", app])
+            .env("XDG_RUNTIME_DIR", &process.root)
+            .env("WAYLAND_DISPLAY", "wayland-headless-test")
+            .stdout(Stdio::from(file.try_clone().unwrap())).stderr(file)
+            .spawn().unwrap();
+        let mut probe = Self { child, log };
+        probe.wait_for("PROBE seats_ready");
+        probe.wait_for("PROBE presented 1");
+        probe
+    }
+    fn text(&self) -> String { fs::read_to_string(&self.log).unwrap() }
+    fn wait_for(&mut self, line: &str) {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            if self.text().lines().any(|entry| entry == line) { return; }
+            assert!(self.child.try_wait().unwrap().is_none(), "probe exited: {}", self.text());
+            assert!(Instant::now() < deadline, "missing {line}: {}", self.text());
+            thread::sleep(Duration::from_millis(10));
+        }
+    }
+    fn no_human_input(&self) {
+        for line in self.text().lines().filter(|line| line.starts_with("PROBE seat \"seat0\" ")) {
+            assert!(line.contains(" bound keyboard=0 pointer=0 "), "human input: {line}");
+        }
+    }
+}
+
+fn window(bus: &Bus, service: &str, app: &str) -> Value {
+    let reply = bus.call(service, "comp.windows.list", json!({}));
+    let rows = reply["windows"].as_array().unwrap();
+    assert_eq!(rows.len(), 1, "{service}: {reply}");
+    assert_eq!(rows[0]["app_id"], app, "{reply}");
+    rows[0].clone()
+}
+
+fn target(row: &Value) -> Value { json!({"id":row["id"],"generation":row["generation"]}) }
+
+#[test]
+fn backend_authority_and_coordinate_bounds_preserve_session_rules() {
+    assert!(BackendInput::Headless.agent_authoritative(true));
+    assert!(BackendInput::Headless.agent_authoritative(false));
+    assert!(BackendInput::Session.agent_authoritative(false));
+    assert!(!BackendInput::Session.agent_authoritative(true));
+    assert_eq!(BackendInput::default(), BackendInput::Session);
+    for (x, y, expected) in [(-20.0, 900.0, (0.0, 719.0)), (1280.0, -1.0, (1279.0, 0.0)), (10.25, 20.5, (10.25, 20.5))] {
+        assert_eq!(BackendInput::Headless.output_position(x, y, 1280, 720), Some(expected));
+    }
+    assert_eq!(BackendInput::Session.output_position(-1.0, 0.0, 1280, 720), None);
+    assert_eq!(BackendInput::Session.output_position(1280.0, 0.0, 1280, 720), None);
+    assert_eq!(BackendInput::Session.output_position(1279.5, 719.5, 1280, 720), Some((1279.5, 719.5)));
+}
+
+#[test]
+#[ignore = "needs a GPU render node and built compd, noded and testkit-input-probe"]
+fn agent_sequence_types_into_a_probe_window() {
+    let bus = Bus::start("input");
+    let mut process = process::spawn(1, None, "input", Some(&bus.url));
+    let mut probe = Probe::start(&mut process, "headless-input");
+    bus.ready(SERVICE);
+    let row = window(&bus, SERVICE, "headless-input");
+    // Read the initial pointer before moving it; world (0,0) is mode centre.
+    let seats = bus.call(SERVICE, "comp.props.get", json!({"path":"input.seats"}));
+    println!("initial seats: {seats}");
+    assert_eq!(seats["agent"]["pointer"]["output"], "headless-0");
+    assert_eq!(seats["agent"]["pointer"]["x"], 640.0);
+    assert_eq!(seats["agent"]["pointer"]["y"], 360.0);
+    let reply = bus.call(SERVICE, "comp.input.sequence", json!({"seat":"agent","steps":[
+        {"verb":"comp.input.pointer.move","args":{"window":target(&row),"x":40,"y":50}},
+        {"verb":"comp.input.pointer.button","args":{"button":"left","action":"click"}},
+        {"verb":"comp.input.key","args":{"window":target(&row),"text":"abc"}}
+    ]}));
+    assert_eq!(reply["steps"].as_array().unwrap().len(), 3, "{reply}");
+    for line in ["enter 40 50", "button 272 1 40 50", "button 272 0 40 50", "keyboard_enter", "key 30 1", "key 30 0", "key 48 1", "key 48 0", "key 46 1", "key 46 0"] {
+        probe.wait_for(&format!("PROBE seat \"agent\" {line}"));
+    }
+    // The single-step output-name path must project to the same window
+    // point as the window-local path. The probe is centred at world (-200,-120).
+    let moved = bus.call(SERVICE, "comp.input.pointer.move", json!({"seat":"agent","output":"headless-0","x":481,"y":291}));
+    assert_eq!(moved["pointer"]["x"], 481.0);
+    probe.wait_for("PROBE seat \"agent\" motion 41 51");
+    bus.call(SERVICE, "comp.input.pointer.button", json!({"seat":"agent","action":"click"}));
+    bus.call(SERVICE, "comp.input.key", json!({"seat":"agent","key":"d"}));
+    bus.call(SERVICE, "comp.input.key", json!({"seat":"agent","text":"e"}));
+    probe.wait_for("PROBE seat \"agent\" key 32 0");
+    probe.wait_for("PROBE seat \"agent\" key 18 0");
+    for (x, y, expected_x, expected_y) in [(-100, 900, 0.0, 719.0), (9000, -20, 1279.0, 0.0)] {
+        let reply = bus.call(SERVICE, "comp.input.pointer.move", json!({"seat":"agent","output":"headless-0","x":x,"y":y}));
+        assert_eq!(reply["pointer"]["x"], expected_x, "{reply}");
+        assert_eq!(reply["pointer"]["y"], expected_y, "{reply}");
+    }
+    let unknown = bus.request(SERVICE, "comp.input.pointer.move", json!({"output":"unknown-0","x":0,"y":0}));
+    assert_eq!(unknown["body"]["error"], "unknown_output", "{unknown}");
+    probe.no_human_input();
+    println!("sequence + single verbs: agent-only enter/motion/button/text; headless-0 bounds clamped");
+}
+
+#[test]
+#[ignore = "needs a GPU render node and built compd, noded and testkit-input-probe"]
+fn agent_runs_survive_without_a_vt() {
+    let bus = Bus::start("yield");
+    let mut process = process::spawn(1, None, "yield", Some(&bus.url));
+    let mut probe = Probe::start(&mut process, "headless-yield");
+    bus.ready(SERVICE);
+    let row = window(&bus, SERVICE, "headless-yield");
+    // 200 taps inject 400 events, crossing SEQUENCE_YIELD_EVENTS (256).
+    // A delayed final step also crosses a calloop timer dispatch.
+    let mut steps = vec![json!({"verb":"comp.input.key","args":{"window":target(&row),"key":"a"}}); 200];
+    steps.push(json!({"verb":"comp.input.key","args":{"key":"b"},"delay_ms":50}));
+    let reply = bus.call(SERVICE, "comp.input.sequence", json!({"seat":"agent","steps":steps}));
+    assert_eq!(reply["steps"].as_array().unwrap().len(), 201, "{reply}");
+    assert!(reply.get("input_cleared").is_none());
+    assert!(reply.get("error").is_none(), "{reply}");
+    probe.wait_for("PROBE seat \"agent\" key 48 0");
+    assert_eq!(probe.text().lines().filter(|line| *line == "PROBE seat \"agent\" key 30 1").count(), 200);
+    probe.no_human_input();
+    assert!(process.child.try_wait().unwrap().is_none());
+    println!("201 steps / 402 key events completed without a VT, through yield and delay; no input_cleared");
+}
+
+#[test]
+#[ignore = "needs a GPU render node and built compd, noded and testkit-input-probe"]
+fn two_instances_register_distinct_services() {
+    let bus = Bus::start("two");
+    let mut first = process::spawn(1, None, "two-a", Some(&bus.url));
+    let mut second = process::spawn_service("two-b", &bus.url, "comp-rec");
+    let mut a = Probe::start(&mut first, "headless-first");
+    let b = Probe::start(&mut second, "headless-second");
+    for service in [SERVICE, "comp-rec"] { bus.ready(service); }
+    let row_a = window(&bus, SERVICE, "headless-first");
+    let row_b = window(&bus, "comp-rec", "headless-second");
+    let info_a = bus.call(SERVICE, "comp.info", json!({}));
+    let info_b = bus.call("comp-rec", "comp.info", json!({}));
+    assert_eq!(info_a["service"], SERVICE);
+    assert_eq!(info_b["service"], "comp-rec");
+    assert_ne!(info_a["instance"], info_b["instance"]);
+    // The transport namespaces every observation with the registered service.
+    // Query the actual broker topic registry after both focus streams publish.
+    let topics = bus.call("noded", "topic.list", json!({}));
+    println!("broker topics: {topics}");
+    let topics = topics.to_string();
+    assert!(topics.contains("comp-headless.focus.changed"));
+    assert!(topics.contains("comp-rec.focus.changed"));
+    bus.call(SERVICE, "comp.input.key", json!({"window":target(&row_a),"text":"a"}));
+    a.wait_for("PROBE seat \"agent\" key 30 0");
+    assert!(!b.text().contains("PROBE seat \"agent\" key "));
+    let before_b = bus.call("comp-rec", "comp.window.stats", target(&row_b));
+    bus.call(SERVICE, "comp.window.stats.reset", target(&row_a));
+    let after_b = bus.call("comp-rec", "comp.window.stats", target(&row_b));
+    // The other process's input mark is unaffected by the first's reset.
+    assert_eq!(before_b["input"], after_b["input"]);
+    window(&bus, SERVICE, "headless-first");
+    window(&bus, "comp-rec", "headless-second");
+    assert!(first.child.try_wait().unwrap().is_none());
+    assert!(second.child.try_wait().unwrap().is_none());
+    println!("comp-headless and comp-rec: distinct instance/focus topics, windows and input; both alive");
+}
+
+#[test]
+#[ignore = "needs a GPU render node and built compd, noded and testkit-input-probe"]
+fn human_seat_has_no_sources() {
+    let bus = Bus::start("human");
+    let mut process = process::spawn(1, None, "human", Some(&bus.url));
+    let probe = Probe::start(&mut process, "headless-seats");
+    bus.ready(SERVICE);
+    let text = probe.text();
+    assert!(text.contains("PROBE seat \"seat0\" bound keyboard=0 pointer=0 "), "{text}");
+    assert!(text.contains("PROBE seat \"agent\" bound keyboard=1 pointer=1 "), "{text}");
+    for (verb, args) in [
+        ("comp.input.pointer.move", json!({"seat":"human","output":"headless-0","x":20,"y":20})),
+        ("comp.input.pointer.button", json!({"seat":"human","action":"click"})),
+        ("comp.input.key", json!({"seat":"human","key":"a"})),
+        ("comp.input.key", json!({"seat":"human","text":"abc"})),
+        ("comp.input.pointer.scroll", json!({"seat":"human","dy":10})),
+    ] {
+        let reply = bus.request(SERVICE, verb, args);
+        assert_ne!(reply["rc"], 0, "{reply}");
+        assert_eq!(reply["body"]["error"], "seat_unavailable", "{reply}");
+        assert_eq!(reply["body"]["seat"], "human", "{reply}");
+        assert_eq!(reply["body"]["reason"], "no_sources", "{reply}");
+    }
+    probe.no_human_input();
+    assert!(process.child.try_wait().unwrap().is_none());
+    bus.call(SERVICE, "comp.windows.list", json!({}));
+    println!("seat0: no pointer/keyboard; agent: both; five human verbs refused seat_unavailable and compd stayed up");
+}

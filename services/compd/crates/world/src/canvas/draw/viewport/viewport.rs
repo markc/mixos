@@ -13,8 +13,11 @@ where
     R: smithay::backend::renderer::Renderer + ImportAll + ImportMem,
     R::TextureId: Texture + Clone + Send + 'static,
 {
-    let pointer = state.state.seat.seat.get_pointer().unwrap();
-    let cursor_logical = pointer.current_location();
+    // A headless human seat has no pointer. Canvas context still exists;
+    // its neutral cursor must not depend on an absent input source.
+    let cursor_logical = state.state.seat.seat.get_pointer()
+        .map(|pointer| pointer.current_location())
+        .unwrap_or_default();
 
     let logical_w = size.w as f64 / state.inner.camera_mut().transform.zoom();
     let logical_h = size.h as f64 / state.inner.camera_mut().transform.zoom();

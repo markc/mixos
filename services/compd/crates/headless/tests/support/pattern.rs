@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! Shm test client: four opaque quadrants and a controlled 16x16 cyan cursor.
+//! Shm test client: four opaque quadrants. Cursor tests use the agent arrow.
 use std::{
     fs::File,
     os::{
@@ -11,14 +11,14 @@ use std::{
     time::{Duration, Instant},
 };
 use wayland_client::{
-    Connection, Dispatch, EventQueue, QueueHandle, delegate_noop,
+    Connection, Dispatch, EventQueue, QueueHandle, WEnum, delegate_noop,
     protocol::{
         wl_buffer::WlBuffer,
         wl_callback::{self, WlCallback},
         wl_compositor::WlCompositor,
-        wl_pointer::{self, WlPointer},
+        wl_pointer::WlPointer,
         wl_registry::{self, WlRegistry},
-        wl_seat::WlSeat,
+        wl_seat::{self, WlSeat},
         wl_shm::{self, WlShm},
         wl_shm_pool::WlShmPool,
         wl_surface::WlSurface,
@@ -37,14 +37,13 @@ use wayland_protocols::{
 };
 
 pub const COLOURS: [u32; 4] = [0xffd02030, 0xff20d040, 0xff3040d0, 0xffe0d020];
-pub const CURSOR: [u8; 3] = [0, 255, 255];
 
 #[derive(Default)]
 pub struct State {
     globals: Vec<(u32, String, u32)>,
     configured: bool,
+    pointers: Vec<WlPointer>,
     pub size: (i32, i32),
-    cursor: Option<WlSurface>,
     pub callbacks: u64,
     pub presented: u64,
     pub discarded: u64,
@@ -92,15 +91,8 @@ impl Pattern {
         let top = xdg.get_toplevel(&qh, ());
         top.set_app_id("headless-pattern".into());
         top.set_fullscreen(None);
-        let cursor = compositor.create_surface(&qh, ());
-        let cursor_buffer = buffer(&shm, &qh, 16, 16, |_, _| 0xff00ffff);
-        cursor.attach(Some(&cursor_buffer), 0, 0);
-        cursor.damage_buffer(0, 0, 16, 16);
-        cursor.commit();
-        state.cursor = Some(cursor);
         for (n, _, v) in state.globals.iter().filter(|(_, i, _)| i == "wl_seat") {
-            let seat: WlSeat = registry.bind(*n, (*v).min(7), &qh, ());
-            let _ = seat.get_pointer(&qh, ());
+            let _: WlSeat = registry.bind(*n, (*v).min(7), &qh, ());
         }
         surface.commit();
         let deadline = Instant::now() + Duration::from_secs(10);
@@ -257,20 +249,6 @@ impl Dispatch<XdgToplevel, ()> for State {
         }
     }
 }
-impl Dispatch<WlPointer, ()> for State {
-    fn event(
-        state: &mut Self,
-        pointer: &WlPointer,
-        event: wl_pointer::Event,
-        _: &(),
-        _: &Connection,
-        _: &QueueHandle<Self>,
-    ) {
-        if let wl_pointer::Event::Enter { serial, .. } = event {
-            pointer.set_cursor(serial, state.cursor.as_ref(), 0, 0);
-        }
-    }
-}
 impl Dispatch<WlCallback, ()> for State {
     fn event(
         state: &mut Self,
@@ -282,6 +260,15 @@ impl Dispatch<WlCallback, ()> for State {
     ) {
         if let wl_callback::Event::Done { .. } = event {
             state.callbacks += 1;
+        }
+    }
+}
+impl Dispatch<WlSeat, ()> for State {
+    fn event(state: &mut Self, seat: &WlSeat, event: wl_seat::Event, _: &(), _: &Connection, qh: &QueueHandle<Self>) {
+        if let wl_seat::Event::Capabilities { capabilities: WEnum::Value(caps) } = event
+            && caps.contains(wl_seat::Capability::Pointer)
+        {
+            state.pointers.push(seat.get_pointer(qh, ()));
         }
     }
 }
@@ -336,4 +323,4 @@ delegate_noop!(State: ignore WlSurface);
 delegate_noop!(State: ignore WlShm);
 delegate_noop!(State: WlShmPool);
 delegate_noop!(State: ignore WlBuffer);
-delegate_noop!(State: ignore WlSeat);
+delegate_noop!(State: ignore WlPointer);

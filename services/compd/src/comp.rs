@@ -172,7 +172,7 @@ fn refresh_scene_surfaces(lp: &mut Loop) {
 }
 
 /// The service name: `--bus-service`, else the default (`comp` on KMS,
-/// `comp-nested` nested).
+/// `comp-nested` nested, `comp-headless` headless).
 pub fn service_name(backend: Backend, requested: Option<&str>) -> String {
     match (requested, backend) {
         (Some(name), _) => name.to_string(),
@@ -492,7 +492,8 @@ impl Bus {
         if lock_ended {
             policy_host::input::retarget_pointer(lp);
         }
-        if (paused && !self.paused) || lock_began {
+        let agent_paused = !lp.inner.comp.injection.backend.agent_authoritative(paused);
+        if (agent_paused && !self.paused) || lock_began {
             self.context.clear_agent();
             self.sequences.clear_agent(lp);
             policy_host::input::clear_agent(lp);

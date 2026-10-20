@@ -11,9 +11,10 @@ if $a[0] == "start" then
 elif $a[0] == "stop" then
   $pb.stop(json_parse(read_file($record)))
 elif $a[0] == "ready" then
+  $service = if len($a) > 2 then $a[2] else "comp-headless" end
   $deadline = monotonic() + 15
   while monotonic() < $deadline
-    send comp-headless comp.windows.list timeout=1 body="{}"
+    send $service comp.windows.list timeout=1 body="{}"
     if $rc == 0 then exit(0) end
     sleep(0.1)
   end
@@ -21,6 +22,7 @@ elif $a[0] == "ready" then
 else
   $verb = $a[2]
   $body = $a[3]
-  send comp-headless $verb timeout=5 body=$body
+  $service = if len($a) > 4 then $a[4] else "comp-headless" end
+  send $service $verb timeout=10 body=$body
   print(json_encode({rc: $rc, body: $result}))
 end
