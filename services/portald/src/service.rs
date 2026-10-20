@@ -38,6 +38,11 @@ pub fn manifest() -> Vec<bus::VerbDescriptor> {
             .iter()
             .map(|verb| bus::VerbDescriptor::new(verb, &[], "Settings portal status", true)),
     )
+    .chain(
+        crate::screencast::consent::VERBS
+            .iter()
+            .map(|(verb, description, read_only)| bus::VerbDescriptor::new(verb, &[], description, *read_only)),
+    )
     .collect()
 }
 
@@ -409,6 +414,9 @@ fn handle_event(
                     report["settings_generation"] = json!(consumer.generation());
                     (0, report)
                 }
+                verb if verb.starts_with("portald.screencast.") => {
+                    crate::screencast::consent::handle_verb(&command)
+                }
                 other => (10, json!({"status": "not_served", "verb": other})),
             };
             let body = serde_json::to_string(&value)?;
@@ -480,6 +488,8 @@ pub async fn feed(
     status: Shared,
 ) -> anyhow::Result<()> {
     let (client, incoming) = connect(&noded_url)?;
+    // The ScreenCast consent prompt posts its questions through this client.
+    crate::screencast::consent::set_client(client.clone());
     run(binding, client, incoming, projections, status).await
 }
 

@@ -7,6 +7,7 @@
 use crate::appearance::{NAMESPACE, Values};
 use crate::cache;
 use crate::portal::{self, Portal, PortalSignals};
+use crate::screencast::consent::{self, Consent, Policy};
 use crate::screencast::{self, ScreenCast, session::Sessions};
 use crate::status::{self, Origin, Shared};
 use settings::appearance::AppearanceProjection;
@@ -21,8 +22,9 @@ pub struct Config {
     pub address: String,
     pub state_dir: Option<PathBuf>,
     pub binding: Binding,
-    /// Also serve `org.freedesktop.portal.ScreenCast` from compd screencopy.
-    pub screencast: bool,
+    /// Also serve `org.freedesktop.portal.ScreenCast` from compd screencopy,
+    /// deciding each Start with this consent policy. `None`: not served.
+    pub screencast: Option<Policy>,
 }
 
 /// The evidence identity of the values held. Ordering within one incarnation
@@ -156,7 +158,8 @@ pub async fn serve(
     let sessions = Sessions::default();
     let mut builder = zbus::connection::Builder::address(config.address.as_str())?
         .serve_at(portal::OBJECT_PATH, Portal::new(values.clone()))?;
-    if config.screencast {
+    if let Some(policy) = config.screencast {
+        consent::install(Consent::new(policy));
         builder = builder.serve_at(portal::OBJECT_PATH, ScreenCast::new(sessions.clone()))?;
     }
     let connection = builder.build().await?;
@@ -170,8 +173,8 @@ pub async fn serve(
         _ => anyhow::bail!("{} is owned by another service", portal::BUS_NAME),
     }
     status::update(&status, |s| s.name_owned = true);
-    tracing::info!(origin = ?state.origin(), screencast = config.screencast, "serving {}", portal::BUS_NAME);
-    let owners = config.screencast.then(|| {
+    tracing::info!(origin = ?state.origin(), screencast = ?config.screencast, "serving {}", portal::BUS_NAME);
+    let owners = config.screencast.is_some().then(|| {
         let connection = connection.clone();
         let sessions = sessions.clone();
         tokio::spawn(async move {

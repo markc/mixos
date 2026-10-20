@@ -6,11 +6,14 @@
 //! Scope of this first cut, deliberately narrow:
 //! - **Monitor sources only**, one stream per session: the first output with a
 //!   current mode. `multiple` is accepted and ignored.
-//! - **No consent dialog.** The session's callers are trusted and
-//!   unsandboxed; every grant is logged with its caller and output.
+//! - **Consent** ([`consent`]): every Start is granted by policy, a
+//!   standing grant, or the person answering a notifyd question; an agent can
+//!   answer or pre-grant over the Bus (`portald.screencast.*`, local callers
+//!   only).
 //! - **No restore tokens**: `persist_mode` is accepted and ignored.
 //! - **shm frames**, copied twice (screencopy buffer, PipeWire buffer).
 pub mod capture;
+pub mod consent;
 pub mod handle;
 pub mod remote;
 pub mod request;
@@ -273,6 +276,13 @@ struct Target {
     owner: String,
 }
 
+/// The caller's process id, for naming it in the prompt and matching grants.
+async fn caller_pid(connection: &Connection, owner: &str) -> Option<u32> {
+    let proxy = zbus::fdo::DBusProxy::new(connection).await.ok()?;
+    let name = zbus::names::BusName::try_from(owner.to_owned()).ok()?;
+    proxy.get_connection_unix_process_id(name).await.ok()
+}
+
 /// Sets `starting` on the session if it is still the same session.
 fn set_starting(sessions: &Sessions, path: &str, epoch: u64, starting: bool) {
     sessions.with(|map| {
@@ -310,10 +320,18 @@ async fn start_cast(connection: Connection, sessions: Sessions, target: Target, 
     let Target {
         session, owner, ..
     } = &target;
-    tracing::info!(
-        %owner, %session, output = %output.name,
-        "granting monitor screencast (trusted session, no prompt)"
-    );
+    let Some(consent) = consent::installed() else {
+        return refuse(&connection, &sessions, &target, "no consent state").await;
+    };
+    let app = consent::app_name(caller_pid(&connection, owner).await);
+    let decision = consent::decide_start(consent, target.request.as_str(), &app, owner, &output.name).await;
+    if !decision.granted() {
+        tracing::info!(%owner, %session, %app, output = %output.name, ?decision, "screencast refused");
+        set_starting(&sessions, session.as_str(), target.epoch, false);
+        request::respond(&connection, &target.request, owner, request::CANCELLED, HashMap::new()).await;
+        return;
+    }
+    tracing::info!(%owner, %session, %app, output = %output.name, ?decision, "screencast granted");
     let source = output.clone();
     let cast = match tokio::task::spawn_blocking(move || {
         stream::start(source, cursor_mode == CURSOR_EMBEDDED, MAX_FRAMERATE)

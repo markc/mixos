@@ -30,6 +30,11 @@ enum Command {
         /// with zwlr_screencopy_manager_v1 and a PipeWire session).
         #[arg(long)]
         screencast: bool,
+        /// How screen-share requests are decided: `prompt` asks the person
+        /// (or an agent over the Bus); `allow` grants every request, for
+        /// headless and test sessions only.
+        #[arg(long, default_value = "prompt")]
+        screencast_consent: portald::screencast::consent::Policy,
     },
 }
 
@@ -44,6 +49,7 @@ fn main() -> anyhow::Result<()> {
         profile,
         state_dir,
         screencast,
+        screencast_consent,
     } = Cli::parse().command;
     let binding = Binding { instance, profile };
     binding
@@ -57,7 +63,7 @@ fn main() -> anyhow::Result<()> {
         .worker_threads(2)
         .enable_all()
         .build()?;
-    let result = runtime.block_on(portald::run(binding, address, state_dir, screencast));
+    let result = runtime.block_on(portald::run(binding, address, state_dir, screencast.then_some(screencast_consent)));
     // A blocking task stuck on a wedged compositor (ScreenCast) must not hold
     // up exit: give the rest a moment, then leave.
     runtime.shutdown_timeout(std::time::Duration::from_secs(2));

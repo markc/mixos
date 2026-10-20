@@ -22,7 +22,7 @@ pub async fn run(
     binding: Binding,
     address: String,
     state_dir: Option<PathBuf>,
-    screencast: bool,
+    screencast: Option<screencast::consent::Policy>,
 ) -> anyhow::Result<()> {
     let (projections, received) = mpsc::channel(8);
     let status = status::shared();

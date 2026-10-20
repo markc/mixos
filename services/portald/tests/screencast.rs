@@ -179,7 +179,7 @@ async fn screencast_contract() {
                 instance: "host".into(),
                 profile: "default".into(),
             },
-            screencast: true,
+            screencast: Some(portald::screencast::consent::Policy::Prompt),
         },
         received,
         status::shared(),
