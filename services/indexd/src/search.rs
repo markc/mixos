@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-// Ported from cosmix-indexd/src/main.rs.
+// Ported from the predecessor indexd's src/main.rs.
 
 use crate::*;
 
@@ -213,7 +213,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn feedback_implicit_negative_and_staleness_keep_cosmix_weights() {
+    fn feedback_implicit_negative_and_staleness_keep_legacy_weights() {
         let mut result = SearchResult {
             id: 1,
             content: String::new(),

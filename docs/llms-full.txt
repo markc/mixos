@@ -29901,14 +29901,38 @@ Each name below is exposed as `mcp__mixos__<name>` in Claude Code.
 - `bus_call`, `bus_list_services`, `bus_node_info`, `bus_list_peers`, `noded_ping`
 - `term_list`, `term_snapshot`, `term_type`, `term_tab`, `term_pane`
 - `log_tail`, `log_search`
-- `app_describe`, `app_controls_list`, `app_control_get`, `app_control_set`,
-  `app_actions_list`, `app_action_invoke`, `app_control_wait`
+- `app_describe`, `app_commands`, `app_execute`
 - `desktop_windows`, `desktop_window_wait`
 - `context_search`, `index_workspace`, `knowledge_digest`, `knowledge_brief`
 - `skills_retrieve`, `skills_store`, `skills_refine`, `skills_graduate`,
   `skills_list`, `skills_delete`
 - `docs_feedback`, `journal_feedback`, `memory_feedback`, `journal_supersede`
 - `mix_execute`, `mcp_status`
+
+### Application commands
+
+`app_describe {service}` calls `app.describe` on that Bus service.
+`app_commands {service}` calls `<service>.commands`. Its `result` contains
+the application's command rows unchanged: `id`, `label`, `menu`, `shortcut`,
+`more` (when present), `enabled` and `checked`, plus any further metadata.
+
+`app_execute {service, id, params?}` calls `<service>.execute` once with
+`{id}` or `{id, params}`. `service` is a Bus service name such as
+`"busviewer"`, `id` is a dotted command id such as `"file.refresh"`, and
+`params` is an optional JSON object. Parameters are forwarded unchanged as
+a sibling of `id`; the application owns validation and may refuse unsupported
+parameters. Successful calls return `{service, command, result}`; application
+error messages from the Bus client pass through unchanged as tool errors.
+The same error-text pass-through and prefix removal apply to `app_describe`,
+`desktop_windows` and `desktop_window_wait` through their shared native helper.
+
+Retired tools: `app_actions_list`, `app_action_invoke`, `app_controls_list`,
+`app_control_get`, `app_control_set` and `app_control_wait` have been removed
+without aliases. Use `app_commands` and `app_execute` for registry commands,
+and `app_describe` to discover an application's state verbs. These retired
+tool names must not be reused.
+
+### Knowledge tools
 
 Knowledge tools retain their ranking, indexing, feedback and skill-learning
 behaviour. By default they send `indexd.<action>` requests to `indexd` on
@@ -29975,6 +29999,8 @@ default; `RUST_LOG=mixos_mcp=trace` explicitly enables full arguments.
 Package tests cover parameter translation, target guards, output schemas,
 redaction and provider decoding. The stdio integration test uses the real
 fixture broker, including verified Unix ingress and lazy reconnection.
+An in-process fake application checks command listing, execute request bodies
+with and without parameters, and unchanged application error messages.
 It also checks configured knowledge targets, paginated re-indexing and
 absolute file metadata. SSH client tests use a local Mix fake bridge through
 a test-only command hook; no SSH connection or indexd process is required.
@@ -32595,8 +32621,8 @@ written in Mix on `tcp_listen`.
 ## 0.2.0
 
 Transplant the `edit.*` buffer contract and retained golden fixtures from
-cosmix `e0297242305f3a3c3de09f1ca01e8faa771768da`. Resolve broker discovery
-and recovery directories through the isolated MixOS environment.
+the predecessor repository at revision
+`e0297242305f3a3c3de09f1ca01e8faa771768da`. Resolve broker discovery and recovery directories through the isolated MixOS environment.
 
 ---
 
@@ -32659,16 +32685,16 @@ and recovery directories through the isolated MixOS environment.
 
 ## Unreleased — ported into MixOS
 
-- Moved from cosmix into MixOS as `cli/mesh-sign` (package and binary
-  `mesh-sign`). Behaviour is unchanged.
+- Moved from the predecessor repository into MixOS as `cli/mesh-sign`
+  (package and binary `mesh-sign`). Behaviour is unchanged.
 - The verify report keeps its `cosmix-mesh-sign.verify.v1` format string: it
   is a frozen wire constant.
 - Reads the authored inventory with `mix::parse_data_file` (the MixOS
-  equivalent of `cosmix_config::load_mix_data`).
+  equivalent of the predecessor's `load_mix_data`).
 - The shared canonicaliser and verifier come from `services/noded/crates/mesh-trust`.
 - `wg-gen` and `wg-pubkey` use only the key part of the WireGuard code
   (X25519, standard base64, clamping), on `curve25519-dalek`. The rest of
-  cosmix-lib-wg is not ported.
+  the predecessor's WireGuard library is not ported.
 
 ## 0.7.3 — 2026-08-16
 
@@ -32762,10 +32788,10 @@ and recovery directories through the isolated MixOS environment.
 ### Changed
 
 - The default remote mix binary is now `/opt/mixos/bin/mix` (was the legacy
-  `/opt/cosmix/bin/mix`). It applies to `ssh_mix`, `ssh_mix_many`, `ssh_exec`,
+  install path's mix). It applies to `ssh_mix`, `ssh_mix_many`, `ssh_exec`,
   `ssh_run`'s `env_transport: "mix"` and `send_mail`'s `host` hop whenever
   neither `mix_bin` nor `MIX_REMOTE_BIN` is set. For a host still on
-  `/opt/cosmix`, pass `mix_bin` or set `MIX_REMOTE_BIN=/opt/cosmix/bin/mix`.
+  the old install path, pass `mix_bin` or set `MIX_REMOTE_BIN` to its mix.
 
 ### Fixed
 
@@ -32803,7 +32829,7 @@ and recovery directories through the isolated MixOS environment.
   remote mix (`ssh_mix`, `ssh_mix_many`, `ssh_exec`, `ssh_run`'s
   `env_transport: "mix"`, `send_mail`'s `host` hop) resolves it in one
   place: the `mix_bin` option, else the local env var `MIX_REMOTE_BIN`
-  (empty counts as unset), else `/opt/cosmix/bin/mix`, the unchanged
+  (empty counts as unset), else the old install path's mix, the unchanged
   default. The value is interpolated into the remote command string, so
   it must be an absolute path or a bare name using only `[A-Za-z0-9_./+-]`;
   anything else raises `OPTION_INVALID` locally before ssh runs. A host with
@@ -32968,7 +32994,7 @@ and recovery directories through the isolated MixOS environment.
 Initial MixOS transplant of the current language library and regression corpus.
 Language syntax, builtin contracts and evaluator behaviour retain the source
 version. Environment and project roots use MixOS names. SSH helpers retain the
-installed Mix path used by existing Cosmix nodes during the migration.
+installed Mix path used by existing predecessor nodes during the migration.
 
 ---
 
@@ -33008,7 +33034,7 @@ installed Mix path used by existing Cosmix nodes during the migration.
 
 - Released with mix 0.116.0: the remote mix binary for `ssh_mix` and the
   other remote-mix builtins comes from the `mix_bin` option, else
-  `MIX_REMOTE_BIN`, else `/opt/cosmix/bin/mix` (`mix man remote`).
+  `MIX_REMOTE_BIN`, else the old install path's mix (`mix man remote`).
 
 ## 0.115.0
 
@@ -33111,6 +33137,12 @@ native-session handoff bytes retain the frozen compatibility contract.
 
 ## Unreleased
 
+- Replace the unserved application action/control tools with `app_commands`
+  and `app_execute`, using the application's registry Bus verbs. Forward optional
+  command parameters unchanged and preserve application error messages.
+- Error-text pass-through without the old `application rc=` prefix also applies
+  to `app_describe`, `desktop_windows` and `desktop_window_wait` through their
+  shared native helper.
 - The indexd Bus-mode call timeout is now 120 seconds by default, previously
   the Bus library's 60 seconds. SSH bridge requests carry the configured timeout.
 - Retry bridge failures once before delivery for every verb; after delivery,

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-// Ported from cosmix-indexd/src/main.rs.
+// Ported from the predecessor indexd's src/main.rs.
 
 use crate::*;
 
@@ -149,7 +149,7 @@ pub(crate) struct IndexFileRequest {
     /// Source type: "doc" or "journal". Auto-detected from path if omitted.
     #[serde(default)]
     pub(crate) source: String,
-    /// Domain name (e.g. "cosmix"). Auto-detected from path if omitted.
+    /// Domain name (e.g. "mixos"). Auto-detected from path if omitted.
     #[serde(default)]
     pub(crate) domain: String,
     /// Opt-in fire-and-forget mode. When `true`, `index_file` enqueues the

@@ -3,7 +3,7 @@
 
 //! Semantic desktop tools are translations of existing owning-service Bus
 //! contracts. Explicit service targets are never resolved by caption or focus.
-//! Admission, canonicalisation and effects stay in CTK/compositor services.
+//! Admission, canonicalisation and effects stay in the owning services.
 
 use bus::PortReply;
 use rmcp::{
@@ -28,33 +28,21 @@ pub(crate) struct NativeObservation {
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ServiceTarget {
-    /// Exact process-scoped service, optionally including native Bus routing.
+    /// Bus service name, for example "busviewer".
     service: String,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct ControlTarget {
+pub(crate) struct CommandInvocation {
+    /// Bus service name, for example "busviewer".
     service: String,
-    target: String,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ControlWrite {
-    service: String,
-    target: String,
-    /// Native domain value; CTK validates type, bounds, disabled/busy state.
-    value: Value,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ActionInvocation {
-    service: String,
+    /// Dotted command id from app_commands, for example "file.refresh".
     id: String,
+    /// Optional command parameters, forwarded unchanged to the application.
     #[serde(default)]
-    args: serde_json::Map<String, Value>,
+    #[schemars(with = "serde_json::Map<String, Value>")]
+    params: Option<serde_json::Map<String, Value>>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -101,16 +89,6 @@ pub(crate) struct WindowWait {
     timeout_ms: u64,
 }
 
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ControlWait {
-    service: String,
-    target: String,
-    /// Expected domain value, compared with the owning-service get reply's value.
-    value: Value,
-    timeout_ms: u64,
-}
-
 fn exact_target(value: &str, field: &str) -> Result<(), String> {
     if value.is_empty()
         || value.len() > 255
@@ -149,7 +127,10 @@ impl MixosMcp {
         let result = match noded.call_typed(&service, command, args).await {
             Ok(PortReply::Ok { value, .. }) => value,
             Ok(PortReply::AppError { rc, message }) => {
-                return Err(format!("application rc={rc}: {message}"));
+                if message.trim().is_empty() {
+                    return Err(format!("rc={rc}: unknown error"));
+                }
+                return Err(message);
             }
             Err(error) => {
                 return Err(format!(
@@ -174,7 +155,7 @@ impl MixosMcp {
 
 #[tool_router(router = native_tool_router, vis = "pub(crate)")]
 impl MixosMcp {
-    /// Describe one explicitly targeted CTK application and its native verbs.
+    /// Describe one explicitly targeted application and its native verbs.
     #[tool(annotations(
         read_only_hint = true,
         destructive_hint = false,
@@ -188,91 +169,53 @@ impl MixosMcp {
             .await
     }
 
-    /// List semantic controls from an explicit CTK service. This is control
-    /// metadata, not a complete accessibility tree or screen geometry snapshot.
+    /// List an application's registry commands, preserving each row's metadata.
     #[tool(annotations(
         read_only_hint = true,
         destructive_hint = false,
         idempotent_hint = true
     ))]
-    async fn app_controls_list(
+    async fn app_commands(
         &self,
         Parameters(p): Parameters<ServiceTarget>,
     ) -> Result<Json<NativeObservation>, String> {
-        self.native_observation(p.service, "app.controls.list", json!({}))
+        exact_target(&p.service, "service")?;
+        if p.service.contains(['@', '.']) {
+            return Err(format!(
+                "service must be a plain Bus service name (no '@' or '.'): {}",
+                p.service
+            ));
+        }
+        let command = format!("{}.commands", p.service);
+        self.native_observation(p.service, &command, json!({}))
             .await
     }
 
-    /// Read the native domain value of one explicitly named application control.
-    #[tool(annotations(
-        read_only_hint = true,
-        destructive_hint = false,
-        idempotent_hint = true
-    ))]
-    async fn app_control_get(
-        &self,
-        Parameters(p): Parameters<ControlTarget>,
-    ) -> Result<Json<NativeObservation>, String> {
-        exact_target(&p.target, "target")?;
-        self.native_observation(p.service, "app.controls.get", json!({"target": p.target}))
-            .await
-    }
-
-    /// Drive a semantic CTK control. CTK owns admission, canonical values and
-    /// busy/disabled checks. A successful reply means local dispatch, not
-    /// downstream completion. Read or wait for the resulting state to verify.
+    /// Execute a registry command once. The application checks enablement and
+    /// parameters; its reply does not establish downstream completion.
     #[tool(annotations(
         read_only_hint = false,
         destructive_hint = true,
         idempotent_hint = false
     ))]
-    async fn app_control_set(
+    async fn app_execute(
         &self,
-        Parameters(p): Parameters<ControlWrite>,
+        Parameters(p): Parameters<CommandInvocation>,
     ) -> Result<Json<NativeObservation>, String> {
-        exact_target(&p.target, "target")?;
-        self.native_observation(
-            p.service,
-            "app.controls.set",
-            json!({"target": p.target, "value": p.value}),
-        )
-        .await
-    }
-
-    /// List actions on an exact application service. Existing CTK caller
-    /// admission applies to action discovery as well as invocation.
-    #[tool(annotations(
-        read_only_hint = true,
-        destructive_hint = false,
-        idempotent_hint = true
-    ))]
-    async fn app_actions_list(
-        &self,
-        Parameters(p): Parameters<ServiceTarget>,
-    ) -> Result<Json<NativeObservation>, String> {
-        self.native_observation(p.service, "actions.list", json!({}))
-            .await
-    }
-
-    /// Invoke a semantic action once on the explicit application service.
-    /// CTK validates enabled state, modal barriers, source and argument schema.
-    /// accepted:true is an acknowledgement, not proof the action completed.
-    #[tool(annotations(
-        read_only_hint = false,
-        destructive_hint = true,
-        idempotent_hint = false
-    ))]
-    async fn app_action_invoke(
-        &self,
-        Parameters(p): Parameters<ActionInvocation>,
-    ) -> Result<Json<NativeObservation>, String> {
+        exact_target(&p.service, "service")?;
+        if p.service.contains(['@', '.']) {
+            return Err(format!(
+                "service must be a plain Bus service name (no '@' or '.'): {}",
+                p.service
+            ));
+        }
         exact_target(&p.id, "id")?;
-        self.native_observation(
-            p.service,
-            "action.invoke",
-            json!({"id": p.id, "args": p.args}),
-        )
-        .await
+        let command = format!("{}.execute", p.service);
+        let mut args = json!({"id": p.id});
+        if let Some(params) = p.params {
+            args["params"] = Value::Object(params);
+        }
+        self.native_observation(p.service, &command, args).await
     }
 
     /// Observe compositor windows and their logical geometry/generations.
@@ -327,47 +270,6 @@ impl MixosMcp {
         )
         .await
     }
-
-    /// Poll one semantic control for a concrete native value. Bounded, read-only
-    /// and cancellable between observations; never replays the preceding action.
-    #[tool(annotations(
-        read_only_hint = true,
-        destructive_hint = false,
-        idempotent_hint = true
-    ))]
-    async fn app_control_wait(
-        &self,
-        Parameters(p): Parameters<ControlWait>,
-    ) -> Result<Json<NativeObservation>, String> {
-        exact_target(&p.target, "target")?;
-        let deadline = tokio::time::Instant::now() + wait_bound(p.timeout_ms)?;
-        loop {
-            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
-            let observation = tokio::time::timeout(
-                remaining,
-                self.native_observation(
-                    p.service.clone(),
-                    "app.controls.get",
-                    json!({"target": p.target}),
-                ),
-            )
-            .await
-            .map_err(|_| {
-                "control wait deadline elapsed; desired value was not observed".to_string()
-            })??;
-            if observation.0.result.get("value") == Some(&p.value) {
-                return Ok(observation);
-            }
-            if tokio::time::Instant::now() >= deadline {
-                return Err("control wait deadline elapsed; desired value was not observed".into());
-            }
-            tokio::time::sleep(
-                std::time::Duration::from_millis(250)
-                    .min(deadline.saturating_duration_since(tokio::time::Instant::now())),
-            )
-            .await;
-        }
-    }
 }
 
 #[cfg(test)]
@@ -376,7 +278,7 @@ mod tests {
 
     #[test]
     fn explicit_targets_and_waits_are_bounded() {
-        assert!(exact_target("mixer-ctk-123", "service").is_ok());
+        assert!(exact_target("busviewer", "service").is_ok());
         for target in ["", " ", "app\n", "app\0"] {
             assert!(exact_target(target, "service").is_err());
         }
@@ -388,10 +290,35 @@ mod tests {
     #[test]
     fn semantic_inputs_reject_unknown_fields() {
         assert!(
-            serde_json::from_value::<ControlWrite>(json!({
-                "service":"app-123", "target":"volume", "value":0.5, "focus":true
+            serde_json::from_value::<ServiceTarget>(json!({
+                "service":"busviewer", "id":"file.refresh"
             }))
             .is_err()
         );
+        assert!(
+            serde_json::from_value::<CommandInvocation>(json!({
+                "service":"busviewer", "id":"file.refresh", "focus":true
+            }))
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn command_invocation_distinguishes_empty_params_from_absent_or_null() {
+        let absent: CommandInvocation = serde_json::from_value(json!({
+            "service":"busviewer", "id":"file.refresh"
+        }))
+        .unwrap();
+        assert_eq!(absent.params, None);
+        let empty: CommandInvocation = serde_json::from_value(json!({
+            "service":"busviewer", "id":"file.refresh", "params":{}
+        }))
+        .unwrap();
+        assert_eq!(empty.params, Some(serde_json::Map::new()));
+        let null: CommandInvocation = serde_json::from_value(json!({
+            "service":"busviewer", "id":"file.refresh", "params":null
+        }))
+        .unwrap();
+        assert_eq!(null.params, None);
     }
 }

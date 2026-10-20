@@ -10,16 +10,16 @@ generated: by docs/_build/gen-site.mix from cli/mesh-sign/CHANGELOG.md; do not e
 
 ## Unreleased — ported into MixOS
 
-- Moved from cosmix into MixOS as `cli/mesh-sign` (package and binary
-  `mesh-sign`). Behaviour is unchanged.
+- Moved from the predecessor repository into MixOS as `cli/mesh-sign`
+  (package and binary `mesh-sign`). Behaviour is unchanged.
 - The verify report keeps its `cosmix-mesh-sign.verify.v1` format string: it
   is a frozen wire constant.
 - Reads the authored inventory with `mix::parse_data_file` (the MixOS
-  equivalent of `cosmix_config::load_mix_data`).
+  equivalent of the predecessor's `load_mix_data`).
 - The shared canonicaliser and verifier come from `services/noded/crates/mesh-trust`.
 - `wg-gen` and `wg-pubkey` use only the key part of the WireGuard code
   (X25519, standard base64, clamping), on `curve25519-dalek`. The rest of
-  cosmix-lib-wg is not ported.
+  the predecessor's WireGuard library is not ported.
 
 ## 0.7.3 — 2026-08-16
 

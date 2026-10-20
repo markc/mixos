@@ -8,7 +8,7 @@ import org.kde.plasma.components as PlasmaComponents3
 
 import "components"
 
-// MIX: the installed mix binary. Scripts, runs and trash are cosmix hub
+// MIX: the installed mix binary. Scripts, runs and trash are predecessor hub
 // features with no MixOS source yet, so they are not shown here.
 Item {
     id: root

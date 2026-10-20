@@ -12,6 +12,188 @@ fn result(result: rmcp::model::CallToolResult) -> Value {
 }
 
 #[tokio::test]
+async fn application_tools_round_trip_the_registry_contract() {
+    let broker = test_broker::Broker::start();
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("node.conf.mix");
+    std::fs::write(&config, "node: \"fixture\"\nnoded: {port: 4200}\n").unwrap();
+    let mut command = Command::new(env!("CARGO_BIN_EXE_mixos-mcp"));
+    command
+        .env("MIXOS_NODED_URL", &broker.url)
+        .env("MIXOS_BUS_SOCKET", &broker.endpoint)
+        .env("MIXOS_BROKER_ACCOUNT", std::env::var("USER").unwrap())
+        .env("MIXOS_NODE_CONFIG", &config)
+        .env("MIXOS_ETC", dir.path())
+        .env("HOME", dir.path())
+        .env("MIXOS_LOG", dir.path().join("logs"))
+        .current_dir(dir.path());
+    let service = ().serve(TokioChildProcess::new(command).unwrap()).await.unwrap();
+    let tools = service.list_tools(None).await.unwrap().tools;
+    for name in ["app_commands", "app_execute"] {
+        let tool = tools.iter().find(|tool| tool.name == name).unwrap();
+        let schema = serde_json::to_value(&tool.input_schema).unwrap();
+        assert_eq!(schema["type"], "object");
+        assert_eq!(schema["properties"]["service"]["type"], "string");
+        assert_eq!(schema["additionalProperties"], false);
+        if name == "app_execute" {
+            assert_eq!(schema["properties"]["id"]["type"], "string");
+            assert_eq!(schema["properties"]["params"]["type"], "object");
+            assert_eq!(schema["required"], json!(["service", "id"]));
+        } else {
+            assert_eq!(schema["required"], json!(["service"]));
+        }
+    }
+
+    let rows = json!([
+        {"id":"file.refresh", "label":"Refresh", "menu":"File", "shortcut":"F5",
+         "more":["Ctrl+R"], "enabled":true, "checked":null},
+        {"id":"view.filter", "label":"Filter", "menu":"View", "shortcut":null,
+         "enabled":false, "checked":true, "schema":{"type":"object"}}
+    ]);
+    let listed = rows.clone();
+    let owner = NodedClient::connect("registry-fixture", &broker.url)
+        .await
+        .unwrap();
+    let mut incoming = owner.incoming_async().await.unwrap();
+    let deliveries = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let count = deliveries.clone();
+    let task = tokio::spawn(async move {
+        while let Some(command) = incoming.recv().await {
+            count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let args: Value = serde_json::from_str(&command.body).unwrap();
+            let (rc, reply) = match command.command.as_str() {
+                "registry-fixture.commands" => {
+                    assert_eq!(args, json!({}));
+                    (0, listed.to_string())
+                }
+                "registry-fixture.execute" if args["id"] == "missing.command" => {
+                    (10, "unknown command: missing.command".to_string())
+                }
+                "registry-fixture.execute" if args["id"] == "missing.structured" => (
+                    10,
+                    json!({
+                        "error_code":"UNKNOWN_COMMAND", "message":"unknown command: missing.structured"
+                    })
+                    .to_string(),
+                ),
+                "registry-fixture.execute" => (0, args.to_string()),
+                "app.describe" => (10, "fixture describe refusal".to_string()),
+                _ => panic!("unexpected application request: {}", command.command),
+            };
+            owner.respond(&command, rc, &reply).await.unwrap();
+        }
+    });
+    let call = |name, args: Value| {
+        CallToolRequestParams::new(name).with_arguments(args.as_object().unwrap().clone())
+    };
+    for target in ["busviewer@mesh.example", "a.b"] {
+        for name in ["app_commands", "app_execute"] {
+            let mut args = json!({"service":target});
+            if name == "app_execute" {
+                args["id"] = json!("file.refresh");
+            }
+            let refused = service.call_tool(call(name, args)).await.unwrap();
+            assert_eq!(refused.is_error, Some(true));
+            assert_eq!(refused.content.len(), 1);
+            assert_eq!(
+                refused.content[0].as_text().unwrap().text,
+                format!("service must be a plain Bus service name (no '@' or '.'): {target}")
+            );
+            assert_eq!(deliveries.load(std::sync::atomic::Ordering::SeqCst), 0);
+        }
+    }
+    let rejected = service
+        .call_tool(call(
+            "app_commands",
+            json!({"service":"registry-fixture", "id":"file.refresh"}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(rejected.is_error, Some(true));
+    assert!(
+        rejected.content[0]
+            .as_text()
+            .unwrap()
+            .text
+            .contains("unknown field `id`"),
+        "{rejected:?}"
+    );
+    assert_eq!(deliveries.load(std::sync::atomic::Ordering::SeqCst), 0);
+    // No native connection has even been opened by the refused requests.
+    let status = result(
+        service
+            .call_tool(call("mcp_status", json!({})))
+            .await
+            .unwrap(),
+    );
+    assert_eq!(status["broker_connected"], false);
+    let observed = result(
+        service
+            .call_tool(call("app_commands", json!({"service":"registry-fixture"})))
+            .await
+            .unwrap(),
+    );
+    assert_eq!(
+        observed,
+        json!({
+            "service":"registry-fixture", "command":"registry-fixture.commands", "result":rows
+        })
+    );
+    for body in [
+        json!({"id":"file.refresh"}),
+        json!({"id":"view.filter", "params":{}}),
+        json!({"id":"view.filter", "params":{
+            "id":"nested.id", "service":"nested-service", "query":"errors",
+            "options":{"enabled":false, "values":[1, null, "two"]}
+        }}),
+    ] {
+        let mut args = body.clone();
+        args["service"] = json!("registry-fixture");
+        let observed = result(service.call_tool(call("app_execute", args)).await.unwrap());
+        assert_eq!(
+            observed,
+            json!({
+                "service":"registry-fixture", "command":"registry-fixture.execute", "result":body
+            })
+        );
+    }
+    let observed = result(
+        service
+            .call_tool(call(
+                "app_execute",
+                json!({"service":"registry-fixture", "id":"file.refresh", "params":null}),
+            ))
+            .await
+            .unwrap(),
+    );
+    assert_eq!(observed["result"], json!({"id":"file.refresh"}));
+    for (name, args, message) in [
+        (
+            "app_execute",
+            json!({"service":"registry-fixture", "id":"missing.command"}),
+            "unknown command: missing.command",
+        ),
+        (
+            "app_execute",
+            json!({"service":"registry-fixture", "id":"missing.structured"}),
+            "UNKNOWN_COMMAND: unknown command: missing.structured",
+        ),
+        (
+            "app_describe",
+            json!({"service":"registry-fixture"}),
+            "fixture describe refusal",
+        ),
+    ] {
+        let refused = service.call_tool(call(name, args)).await.unwrap();
+        assert_eq!(refused.is_error, Some(true));
+        assert_eq!(refused.content.len(), 1);
+        assert_eq!(refused.content[0].as_text().unwrap().text, message);
+    }
+    task.abort();
+    service.cancel().await.unwrap();
+}
+
+#[tokio::test]
 async fn stdio_tools_use_the_real_fixture_bus_and_reconnect_without_replay() {
     let mut broker = test_broker::Broker::start();
     let dir = tempfile::tempdir().unwrap();
@@ -41,13 +223,9 @@ async fn stdio_tools_use_the_real_fixture_bus_and_reconnect_without_replay() {
     assert_eq!(
         names,
         [
-            "app_action_invoke",
-            "app_actions_list",
-            "app_control_get",
-            "app_control_set",
-            "app_control_wait",
-            "app_controls_list",
+            "app_commands",
             "app_describe",
+            "app_execute",
             "bus_call",
             "bus_list_peers",
             "bus_list_services",

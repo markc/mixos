@@ -2,7 +2,7 @@
 
 Upstream: `microsoft/edit`, revision
 `826b4c097b6f14ba0a846dc56f2f0223a3aaf73a`, MIT, Microsoft Corporation.
-Imported through frozen cosmix revision
+Imported through the frozen predecessor repository revision
 `e0297242305f3a3c3de09f1ca01e8faa771768da`.
 
 The inherited buffer changes make memory commit failures all-or-nothing,

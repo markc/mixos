@@ -60,7 +60,7 @@ pub fn peer_list(value: Value) -> Value {
 }
 
 /// MIX: the installed mix binary and its version. Scripts, runs and trash are
-/// cosmix hub features with no MixOS source yet, so they are not reported.
+/// predecessor hub features with no MixOS source yet, so they are not reported.
 async fn tab_mix() -> Value {
     let result = tokio::task::spawn_blocking(|| {
         let path = PathBuf::from(MIX_BIN);

@@ -5,8 +5,8 @@
 | upstream | `https://github.com/microsoft/edit` |
 | commit | `826b4c097b6f14ba0a846dc56f2f0223a3aaf73a` (2026-08-27) |
 | licence | MIT, Copyright (c) Microsoft Corporation — `LICENSE` in this directory, verbatim |
-| pristine import | cosmix commit `403eba59` (byte-for-byte, not wired), before MixOS |
-| patch | the cosmix commit that follows it ("ced E1 Stage S: patch and wire vendored msedit") |
+| pristine import | predecessor repository commit `403eba59` (byte-for-byte, not wired), before MixOS |
+| patch | the predecessor repository commit that follows it ("ced E1 Stage S: patch and wire vendored msedit") |
 
 The two upstream crates are kept **as their own path crates** so their
 sources compile unmodified: library names stay `lsh` and `stdext`, package

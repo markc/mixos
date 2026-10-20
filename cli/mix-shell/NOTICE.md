@@ -1,7 +1,7 @@
 # Bundled manual provenance
 
-Each file below was cleared as project-authored text from cosmix commit
-`e0297242305f3a3c3de09f1ca01e8faa771768da`, under the repository's
+Each file below was cleared as project-authored text from the predecessor
+repository at revision `e0297242305f3a3c3de09f1ca01e8faa771768da`, under its
 MIT OR Apache-2.0 annotation. The offline bundle contains Markdown only;
 website-generated HTML is not installed. Runtime names and examples were
 updated for MixOS; frozen native-session markers are retained. The pages

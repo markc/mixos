@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-// Ported from cosmix-indexd/src/main.rs.
+// Ported from the predecessor indexd's src/main.rs.
 
 use crate::*;
 
@@ -1684,12 +1684,12 @@ mod compatibility_tests {
     }
 
     #[test]
-    fn cosmix_schema_and_migrations_open_without_rewriting_data_or_schema() {
+    fn legacy_schema_and_migrations_open_without_rewriting_data_or_schema() {
         // Register sqlite-vec, then create the production schema independently
-        // of VectorDb::open. These statements are the exact cosmix base and
+        // of VectorDb::open. These statements are the exact predecessor base and
         // completed ad-hoc migrations (including the partial unique index).
         let _registration = VectorDb::open(":memory:", vindex::VectorDtype::F32, 65536).unwrap();
-        let dir = temp_dir("cosmix-schema");
+        let dir = temp_dir("legacy-schema");
         let path = dir.join("vectors.db");
         let conn = Connection::open(&path).unwrap();
         conn.execute_batch(&format!(

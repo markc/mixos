@@ -74,7 +74,7 @@ rcgen = { version = "0.13", default-features = false, features = ["crypto", "pem
 rusqlite = { version = "0.38", features = ["bundled"] }
 rustc-hash = "2"
 # indexd's embedding stack (_plan/2026-10-20-indexd-port.md D3–D5): crates.io
-# candle, not git. 0.10.2's nomic_bert.rs is byte-identical to cosmix's pin
+# candle, not git. 0.10.2's nomic_bert.rs is byte-identical to the predecessor's pin
 # 09b9145. candle-core itself requires tokenizers 0.22 with `onig` on every
 # non-wasm target, so indexd matches it exactly, giving ONE tokenizers. onig (C)
 # stays because candle needs it. Without `esaxx_fast`, esaxx-rs builds without C++.
