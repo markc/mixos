@@ -238,11 +238,20 @@
 <h1 id="decision--verb-classes">Decision — verb classes</h1>
 <p>Status: accepted 2026-10-11. Amends AGENTS.md §5 (Bus verbs are wire
 contracts).</p>
+<p>Amended 2026-10-20 by <a href="/docs/decisions/2026-10-20-commands-take-parameters/">commands take parameters and return results</a>.
+Registry schema 4 adds a trailing <code>schema</code> field to every verb and family:
+<code>none</code> for no body or an empty object, <code>pending</code> through 2026-11-30 inclusive
+in UTC, or a Rust serde request type deriving <code>JsonSchema</code>. Type paths match
+<code>^[a-z][a-z0-9_]*(::[A-Za-z][A-Za-z0-9_]*)+$</code>, such as
+<code>command::ExecuteRequest</code>. The gate accepts schema 2, 3 or 4 for fixtures;
+the repository registry must be 4. It refuses <code>schema</code> below version 4,
+missing or malformed body schemas at version 4, and expired <code>pending</code>
+placeholders, naming each expired verb or family. <code>--today YYYY-MM-DD</code>
+overrides the UTC date for tests.</p>
 <h2 id="the-decision">The decision</h2>
-<p>Amended 2026-10-20 by <a href="/docs/decisions/2026-10-20-commands-take-parameters/">commands take parameters and return results</a>. Registry schema 4 adds a trailing <code>schema</code> field to every verb and family.</p>
 <ul>
 <li>
-<p><strong>The verb registry uses schema 4.</strong> Every entry in
+<p><strong>The verb registry moves to schema 2.</strong> Every entry in
 <code>docs/docs/spec/bus/verbs.conf.mix</code> gains a <code>class</code>, one of:</p>
 <table><thead><tr><th>class</th><th>Meaning</th><th>Examples</th></tr></thead><tbody>
 <tr><td><code>intent</code></td><td>Changes what an application or service holds, or what another caller would see, at someone's request</td><td><code>&lt;app&gt;.open</code>, <code>&lt;app&gt;.execute</code>, <code>&lt;app&gt;.refresh</code>, <code>settings.apply</code>, <code>releases.notes</code> (it fetches when nothing is cached), <code>&lt;app&gt;.quit</code>, <code>&lt;app&gt;.window</code></td></tr>
@@ -266,20 +275,9 @@ application's registry test checks this. The reverse need not hold:
 query.</p>
 </li>
 <li>
-<p><strong>Every row names its body schema.</strong> <code>schema</code> is <code>none</code> for no body or an
-empty object, <code>pending</code> during migration through 2026-11-30 inclusive, or a
-Rust serde request type deriving <code>JsonSchema</code>. Type paths match
-<code>^[a-z][a-z0-9_]*(::[A-Za-z][A-Za-z0-9_]*)+$</code>, such as
-<code>command::ExecuteRequest</code>. The field is last in canonical rows, after <code>class</code>.</p>
-</li>
-<li>
 <p><strong>The registry gate</strong> (<code>tools/verb_registry.mix</code>) refuses:</p>
 <ul>
-<li>a schema other than 2, 3 or 4 (the repository file must be 4);</li>
-<li>a <code>schema</code> field below version 4, or a missing one at version 4;</li>
-<li>a body schema outside the grammar above, or <code>pending</code> after 2026-11-30,
-naming each expired verb or family (<code>--today YYYY-MM-DD</code> overrides the
-date for tests);</li>
+<li>a schema other than 2;</li>
 <li>an entry that is not in the canonical one-line form;</li>
 <li>an unknown or missing field;</li>
 <li>a bad name, owner, status or version;</li>

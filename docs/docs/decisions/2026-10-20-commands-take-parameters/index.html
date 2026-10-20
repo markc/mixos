@@ -244,7 +244,7 @@
 <li><strong>The registry is UI-free</strong> (<code>libs/command</code>). Engine crates own their command tables; the egui crate renders menus, shortcuts and the palette from them.</li>
 <li><strong>One path.</strong> UI, shortcuts, palette, macros, Bus and headless all dispatch through the registry. A verb that performs an action a command defines is refused in review.</li>
 <li><strong>Executed events carry <code>params</code> and <code>result</code></strong> (<code>v: 2</code>); a value above 4 KiB is replaced by <code>{ bytes, sha256 }</code>.</li>
-<li><strong>Every registered verb names its body schema</strong> (registry schema 4): a request type, <code>none</code>, or <code>pending</code> until 2026-11-30.</li>
+<li><strong>Every registered verb names its body schema</strong> (registry schema 4): a request type, <code>none</code>, or <code>pending</code> through 2026-11-30 inclusive in UTC.</li>
 </ul>
 <h2 id="why">Why</h2>
 <p>An action's id alone cannot express the choices needed to run it again.
