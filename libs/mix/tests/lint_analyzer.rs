@@ -1941,6 +1941,9 @@ fn the_null_fix_is_offered_only_where_the_word_is_surely_a_value() {
         "print([1, null])\n",
         "print([null])\n",
         "print([[null]])\n",
+        "for $x in [null]\nprint($x)\nend\n",
+        "print(if true then [null] else [] end)\n",
+        "print(if true then [] else [null] end)\n",
         "print(contains([], [null]))\n",
         "print({a: [null]})\n",
         "$x = [null]\nprint($x)\n",
@@ -1974,6 +1977,16 @@ fn the_null_fix_is_offered_only_where_the_word_is_surely_a_value() {
         "$m = {return: {null: 7}}\nprint($m.return[null])\n",
         "$m = {and: {null: 7}}\nprint($m.and[null])\n",
         "$list = [7]\nprint($list[null])\n",
+        "$m = {}\n$k = nil\nprint($m[$k ?? null])\n",
+        "$m = {}\n$k = nil\nprint($m[null ?? $k])\n",
+        "$m = {}\n$k = nil\nprint($m[$k == null])\n",
+        "$m = {}\n$k = nil\nprint($m[null == $k])\n",
+        "$m = {in: {}}\n$k = nil\nprint($m.in[$k ?? null])\n",
+        "$m = {then: {}}\n$k = nil\nprint($m.then[null == $k])\n",
+        "$m = {else: {}}\nprint($m.else[null])\n",
+        "$m = [{}]\nprint($m[0][nil ?? null])\n",
+        "$m = {}\nprint(($m)[nil == null])\n",
+        "$m = {}\nprint($m[contains([null], 1)])\n",
     ] {
         assert_eq!(fixes(src), vec![false], "{src:?}");
     }

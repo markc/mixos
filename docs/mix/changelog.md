@@ -35,7 +35,6 @@ generated: by docs/_build/gen-site.mix from libs/mix/CHANGELOG.md; do not edit
   missing name. Warnings in this release, while the check is new.
 - The parser names the fix for `let i = 0`, `var`/`const`, and a bareword
   `i = …` ("Mix has no `let`: write `$i = …`").
-
 - Add the `archive` feature with the `tar_list`, `tar_unpack` and `tar_pack`
   builtins. Archives use zstd (default), gzip or no codec. `tar_unpack`
   validates every member, extracts into a staging directory and renames it
@@ -124,7 +123,6 @@ generated: by docs/_build/gen-site.mix from libs/mix/CHANGELOG.md; do not edit
   An unknown mode used to open read-only, so `"rwc"` could not create a
   database. A read-only open of a missing file raises `SQL_NO_DATABASE`
   naming `"rwc"`.
-
 - A member call `$m.name(...)` on a map holding a function member calls
   that member in every mode, `--serve` included; an extension (the shell's
   `context()`) no longer wins there.
@@ -139,7 +137,9 @@ generated: by docs/_build/gen-site.mix from libs/mix/CHANGELOG.md; do not edit
 ### Fixed
 
 - A `send` after a failed Bus connection retries within its timeout,
-  re-reading `MIXOS_NODED_URL` and node configuration. A stale probe cannot
+  re-reading `MIXOS_NODED_URL` and node configuration. Without `timeout=`,
+  each lane's connect is bounded by 5 seconds (up to 10 seconds if both the
+  verified Unix and anonymous TCP lanes stall). A stale probe cannot
   replace a newer connection, and reconnecting does not hold the state lock.
 - SIGINT still ends a non-interactive evaluation when a `catch` keeps
   computing: after a cleanup grace the interrupt becomes standing. Nested

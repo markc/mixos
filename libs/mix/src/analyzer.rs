@@ -6510,6 +6510,26 @@ fn in_bus_words(before: &[crate::token::SpannedToken]) -> bool {
 /// `print("a") && null`, where `null` may dispatch a function, the warning
 /// stands without a fix.
 fn unambiguous_value(before: &[crate::token::SpannedToken], next: Option<&Token>) -> bool {
+    // Everything inside an index is key context, including comparison and
+    // coalescing operands, nested lists and calls. Skip closed brackets, but
+    // inspect every still-open bracket that encloses this word.
+    let mut depth = 0usize;
+    for (i, tok) in before.iter().enumerate().rev() {
+        match tok.token {
+            Token::RBracket => depth += 1,
+            Token::LBracket if depth > 0 => depth -= 1,
+            Token::LBracket => {
+                let prev = i.checked_sub(1).map(|j| &before[j].token);
+                let field = i.checked_sub(2).map(|j| &before[j].token);
+                if matches!(prev, Some(Token::Variable(_) | Token::RBracket | Token::RParen))
+                    || matches!(field, Some(Token::Dot))
+                {
+                    return false;
+                }
+            }
+            _ => {}
+        }
+    }
     let comparison = |tok: &Token| {
         matches!(
             tok,
@@ -6559,6 +6579,9 @@ fn unambiguous_value(before: &[crate::token::SpannedToken], next: Option<&Token>
                         | Token::Colon
                         | Token::Assign
                         | Token::Return
+                        | Token::In
+                        | Token::Then
+                        | Token::Else
                         | Token::Eq
                         | Token::NotEq
                         | Token::Lt

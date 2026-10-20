@@ -734,7 +734,7 @@ fn report_json(
             "column": d.column,
             "message": d.message,
             "hint": d.hint,
-            // Additive under schema 2: present (null) on every diagnostic.
+            // Additive under schema 3: present (null) on every diagnostic.
             "fix": d.fix.as_ref().map(|f| serde_json::json!({
                 "line": f.line,
                 "column": f.column,

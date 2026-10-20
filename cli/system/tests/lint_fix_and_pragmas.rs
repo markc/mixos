@@ -64,7 +64,7 @@ fn json_reports_the_fix() {
 
 #[test]
 fn pragmas_make_an_injected_body_and_a_generator_lint_clean() {
-    // The two ~/.mix/_bin shapes the entry named: a remote body whose caller
+    // The two operator-script shapes: a remote body whose caller
     // binds $sha, and a generator whose heredoc is literal Mix source.
     let body = write_temp(
         "body",

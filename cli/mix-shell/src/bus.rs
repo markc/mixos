@@ -11,6 +11,8 @@ use mix::evaluator::{BusHandler, IncomingEvent, RC_UNAVAILABLE};
 use mix::value::Value;
 use tokio::sync::mpsc::UnboundedReceiver;
 
+const PROBE_CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
 /// Lazy-probe state machine for the pre-noded discovery path.
 /// Distinguishes bare-host (silent nil from `send`/`emit`) from
 /// configured-mesh-outage (loud `mesh unavailable` from
@@ -505,7 +507,7 @@ impl MixBusHandler {
         options: &::bus::native_client::UnixConnectOptions,
     ) -> Option<::bus::native_client::VerifiedConnection> {
         match tokio::time::timeout(
-            std::time::Duration::from_secs(5),
+            PROBE_CONNECT_TIMEOUT,
             ::bus::native_client::NodedClient::connect_unix("", url, options, None),
         )
         .await
@@ -671,10 +673,7 @@ impl MixBusHandler {
         let test_url = self.test_probe_url.borrow().clone();
         #[cfg(test)]
         if let Some(url) = test_url {
-            return ::bus::native_client::NodedClient::connect_anonymous(&url)
-                .await
-                .ok()
-                .map(|client| std::sync::Arc::new(Lane::Anonymous(client)));
+            return Self::probe_anonymous(&url).await;
         }
         let url = crate::node_config::resolve_noded_url();
         // Verified FIRST. This is what makes a plain `send` reach a local
@@ -690,10 +689,18 @@ impl MixBusHandler {
         if let Some(connection) = Self::connect_verified(&url).await {
             return Some(std::sync::Arc::new(Lane::Verified(connection)));
         }
-        ::bus::native_client::NodedClient::connect_anonymous(&url)
-            .await
-            .ok()
-            .map(|client| std::sync::Arc::new(Lane::Anonymous(client)))
+        Self::probe_anonymous(&url).await
+    }
+
+    async fn probe_anonymous(url: &str) -> Option<std::sync::Arc<Lane>> {
+        tokio::time::timeout(
+            PROBE_CONNECT_TIMEOUT,
+            ::bus::native_client::NodedClient::connect_anonymous(url),
+        )
+        .await
+        .ok()
+        .and_then(Result::ok)
+        .map(|client| std::sync::Arc::new(Lane::Anonymous(client)))
     }
 
     /// Transition `Connected → Lost`, but only if the cached state is
@@ -2750,6 +2757,34 @@ mod tests {
             )
         );
         // A failed retry leaves the latch where it was.
+        assert_eq!(h.test_state_label().await, "NeverPresent");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn an_untimed_send_bounds_a_stalled_retry_handshake() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let h = MixBusHandler::new();
+        *h.test_probe_url.borrow_mut() = Some(format!("ws://127.0.0.1:{port}/ws"));
+        h.test_force_state(MeshState::NeverPresent).await;
+        let held = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            std::future::pending::<()>().await;
+            drop(socket);
+        });
+        // No per-send timeout: only the probe's own connect bound applies.
+        let bound = PROBE_CONNECT_TIMEOUT + std::time::Duration::from_secs(1);
+        let started = std::time::Instant::now();
+        let result = tokio::time::timeout(
+            bound,
+            h.send("svc.example", "do_something", &Value::Nil),
+        )
+        .await;
+        held.abort();
+        let (rc, _) = result.expect("send exceeded the connect bound").unwrap();
+        assert_eq!(rc, RC_UNAVAILABLE);
+        assert!(started.elapsed() >= PROBE_CONNECT_TIMEOUT);
+        assert!(started.elapsed() < bound);
         assert_eq!(h.test_state_label().await, "NeverPresent");
     }
 
