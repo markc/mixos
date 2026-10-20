@@ -50,6 +50,7 @@ pub(crate) struct Context {
     last: Option<Instant>,
     armed: bool,
     retry: Retry,
+    interval: Duration,
 }
 
 impl Context {
@@ -59,6 +60,8 @@ impl Context {
         targets: [GlesTexture; 2],
         tracker: OutputDamageTracker,
     ) -> Self {
+        let refresh = output.current_mode().expect("headless mode").refresh;
+        let interval = Duration::from_nanos(1_000_000_000_000 / refresh as u64);
         Self {
             output,
             renderer,
@@ -68,6 +71,7 @@ impl Context {
             last: None,
             armed: false,
             retry: Retry::default(),
+            interval,
         }
     }
 }
@@ -79,7 +83,7 @@ pub(crate) fn arm(state: &mut Loop, context: &Rc<RefCell<Context>>) {
         return;
     }
     let at = ctx.last.map_or_else(Instant::now, |last| {
-        (last + INTERVAL.max(ctx.retry.delay)).max(Instant::now())
+        (last + ctx.interval.max(ctx.retry.delay)).max(Instant::now())
     });
     let context = Rc::clone(context);
     state

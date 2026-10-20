@@ -27,6 +27,15 @@ impl Drop for Process {
 }
 
 pub fn spawn(scale: i32, explicit_node: Option<&str>, label: &str, bus: Option<&str>) -> Process {
+    spawn_options(scale, explicit_node, label, bus, "60")
+}
+
+#[allow(dead_code)] // Used only by boot.rs; each integration target shares this module.
+pub fn spawn_at_refresh(refresh: &str) -> Process {
+    spawn_options(1, None, "refresh", None, refresh)
+}
+
+fn spawn_options(scale: i32, explicit_node: Option<&str>, label: &str, bus: Option<&str>, refresh: &str) -> Process {
     let binary = std::env::var_os("COMPD_TEST_BINARY")
         .map(PathBuf::from)
         .unwrap_or_else(|| {
@@ -81,6 +90,7 @@ pub fn spawn(scale: i32, explicit_node: Option<&str>, label: &str, bus: Option<&
         .env("MIXOS_VAR", root.join("var"))
         .env("MIXOS_RUN", root.join("run"))
         .env("MIXOS_NODED_URL", bus.unwrap_or("ws://127.0.0.1:1"))
+        .env("COMPD_HEADLESS_REFRESH_HZ", refresh)
         // Deliberately request XWayland: --headless must keep it off.
         .env("COMPD_XWAYLAND", "1")
         .env_remove("NOTIFY_SOCKET")

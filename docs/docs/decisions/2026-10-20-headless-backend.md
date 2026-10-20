@@ -19,6 +19,8 @@ is `headless-0`; mode and scale are explicit. Two offscreen GLES textures
 alternate, with full repaints after scene damage. A one-shot software timer
 caps frames at 60 Hz and stops while idle. Software presentation uses
 CLOCK_MONOTONIC and claims no hardware completion or vblank.
+`COMPD_HEADLESS_REFRESH_HZ` may select a lower rate from 30 through 60 Hz;
+the virtual mode and frame timer use the same rate. The default is 60 Hz.
 
 The binding profile is `headless`; the default Bus service is
 `comp-headless`, with `comp-<name>` available through `--bus-service` for

@@ -180,6 +180,26 @@ fn boot_config_render_node_and_default_scale() {
     boot(1, false);
 }
 
+#[test]
+#[ignore = "needs a GPU render node and a built compd with backend-headless"]
+fn lower_refresh_sets_the_virtual_mode() {
+    let mut process = process::spawn_at_refresh("30");
+    let deadline = Instant::now() + Duration::from_secs(25);
+    let stream = loop {
+        if let Ok(stream) = UnixStream::connect(process.root.join("wayland-headless-test")) {break stream;}
+        assert!(process.child.try_wait().unwrap().is_none(), "compd exited");
+        assert!(Instant::now() < deadline, "startup timed out");
+        thread::sleep(Duration::from_millis(10));
+    };
+    let conn = Connection::from_socket(stream).unwrap();
+    let mut queue = conn.new_event_queue::<OutputState>();
+    let _registry = conn.display().get_registry(&queue.handle(), ());
+    let mut state = OutputState::default();
+    queue.roundtrip(&mut state).unwrap();queue.roundtrip(&mut state).unwrap();
+    assert_eq!(state.mode, Some((1280,720,30_000)));
+    println!("headless virtual output and timer configured for 30 Hz");
+}
+
 fn refuses_node(node: &str, label: &str, reason: &str) {
     let mut process = spawn(1, Some(node), label, None);
     let deadline = Instant::now() + Duration::from_secs(30);

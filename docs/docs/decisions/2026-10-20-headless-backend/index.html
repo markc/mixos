@@ -245,7 +245,9 @@ DRM device, master, connector, libseat, udev or libinput. The virtual output
 is <code>headless-0</code>; mode and scale are explicit. Two offscreen GLES textures
 alternate, with full repaints after scene damage. A one-shot software timer
 caps frames at 60 Hz and stops while idle. Software presentation uses
-CLOCK_MONOTONIC and claims no hardware completion or vblank.</p>
+CLOCK_MONOTONIC and claims no hardware completion or vblank.
+<code>COMPD_HEADLESS_REFRESH_HZ</code> may select a lower rate from 30 through 60 Hz;
+the virtual mode and frame timer use the same rate. The default is 60 Hz.</p>
 <p>The binding profile is <code>headless</code>; the default Bus service is
 <code>comp-headless</code>, with <code>comp-&lt;name&gt;</code> available through <code>--bus-service</code> for
 instances. Headless never requests realtime priority or negative nice,
