@@ -339,11 +339,21 @@ selected node. The default Bus name is <code>comp-headless</code>, overridden wi
 interception chords. XWayland is disabled. Startup preserves inherited
 scheduling and nice values and does not publish desktop session variables.</p>
 <p>Frames repaint into alternating offscreen textures only when the scene
-changes, capped at 60 Hz. Completion is waited on before frame callbacks
-and software presentation feedback. This initial backend does not yet
-service screencopy, Bus capture or cursor capture.</p>
+changes or a capture is due, capped at 60 Hz. <code>COMPD_HEADLESS_REFRESH_HZ</code>
+selects 30–60 Hz (default 60) for both the virtual mode and timer.
+Completion is waited on before screencopy, frame callbacks and software
+presentation feedback. Both <code>zwlr_screencopy</code> and <code>comp.capture.frame</code> work
+on idle outputs. Captures choose cursor inclusion individually: the normal
+frame excludes cursor elements, and a second pass runs only for captures
+requesting them. Callback-only commits and unchanged captures do not
+increase the window's <code>presentation.presented</code> counter.</p>
 <p>The ignored <code>headless</code> GPU tests need a built <code>compd</code> with this feature
-beside the test binaries, or selected by <code>COMPD_TEST_BINARY</code>.</p>
+beside the test binaries, or selected by <code>COMPD_TEST_BINARY</code>. The capture
+tests also need built <code>noded</code> and <code>testkit-screenshot</code> binaries beside them;
+they start an owned private broker, without using a running desktop's Bus.
+The plain EGL client probe needs <code>weston-simple-egl</code> (override its path with
+<code>COMPD_TEST_EGL_CLIENT</code>); it records the first buffer's actual creation
+request and checks captured pixels.</p>
 <p><code>cursor_sensitivity</code> in <code>preferences.json</code> is a speed multiplier on top of
 the output scale: compd multiplies each relative pointer delta by both, so
 <code>1.0</code> moves the cursor at the same logical speed at every scale. Clients

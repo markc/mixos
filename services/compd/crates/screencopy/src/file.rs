@@ -147,6 +147,8 @@ pub fn fail_windows(reason: &str) {
 
 /// Read once for all callers, normalise to top-down RGB, then encode. Mapping
 /// may change the current GL target; nested restores its EGL surface afterwards.
+/// read_pixels maps synchronously, blocking on the copy before this returns;
+/// the backend may then rotate or reuse the source texture.
 pub fn service<R: ExportMem>(
     renderer: &mut R,
     source: Source<'_, '_, R>,

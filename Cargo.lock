@@ -3787,10 +3787,13 @@ dependencies = [
  "protocols",
  "render-gles",
  "scenegraph",
+ "screencopy",
  "serde_json",
  "slots",
  "smithay",
+ "testkit",
  "wayland-client",
+ "wayland-protocols",
  "world",
 ]
 
@@ -8454,6 +8457,8 @@ dependencies = [
  "protocols",
  "serde_json",
  "smithay",
+ "testkit",
+ "wayland-client",
 ]
 
 [[package]]

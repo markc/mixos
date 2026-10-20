@@ -19,13 +19,25 @@ is `headless-0`; mode and scale are explicit. Two offscreen GLES textures
 alternate, with full repaints after scene damage. A one-shot software timer
 caps frames at 60 Hz and stops while idle. Software presentation uses
 CLOCK_MONOTONIC and claims no hardware completion or vblank.
+`COMPD_HEADLESS_REFRESH_HZ` may select a lower rate from 30 through 60 Hz;
+the virtual mode and frame timer use the same rate. The default is 60 Hz.
 
 The binding profile is `headless`; the default Bus service is
 `comp-headless`, with `comp-<name>` available through `--bus-service` for
 instances. Headless never requests realtime priority or negative nice,
 starts no XWayland, and leaves the desktop session environment alone.
 
-Screencopy, Bus capture and cursor capture follow in a separate phase.
-Cursor inclusion will be chosen per capture, including mixed requests in
-one frame. Deployment units, slices and session services are deferred;
+Screencopy and Bus captures run after completed offscreen rendering, including
+on idle outputs. The normal picture excludes cursor elements; a second pass
+is made only when a capture requests them. Cursor inclusion is chosen per
+capture, including mixed requests in one frame, and an unavailable picture
+fails its capture rather than substituting another cursor policy. Capturing
+unchanged content does not count as a new presentation.
+Deployment units, slices and session services are deferred;
 this decision introduces no installed headless session.
+
+The Phase 2 plain Wayland EGL client probe (`weston-simple-egl`, with
+`WAYLAND_DEBUG=client`) created its first `wl_buffer` through `wl_shm_pool`.
+Its rendered pixels survived composition and screencopy, but this was a
+`wl_shm` fallback. Client DMA-BUF negotiation remains unproven; this probe
+does not establish the GPU-client DMA-BUF path.

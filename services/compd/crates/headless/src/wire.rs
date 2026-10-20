@@ -94,9 +94,20 @@ pub fn wire(
     }
     info!("headless: EGL device = {}", reported.display());
     let renderer = render_gles::context::egl::egl::create(&display)?;
+    let refresh = match std::env::var("COMPD_HEADLESS_REFRESH_HZ") {
+        Ok(value) => value
+            .parse::<i32>()
+            .ok()
+            .filter(|hz| (30..=60).contains(hz))
+            .ok_or("headless-refresh-invalid: COMPD_HEADLESS_REFRESH_HZ must be 30..=60")?,
+        Err(std::env::VarError::NotPresent) => 60,
+        Err(_) => {
+            return Err("headless-refresh-invalid: COMPD_HEADLESS_REFRESH_HZ is not UTF-8".into());
+        }
+    };
     let mode = Mode {
         size: options.size,
-        refresh: 60_000,
+        refresh: refresh * 1000,
     };
     let output = Output::new(
         "headless-0".into(),
@@ -169,8 +180,7 @@ pub fn wire(
         })?;
     state.state.redraw.set_ping(ping);
     first.ping();
-    // TODO(Phase 2): advertise and service screencopy, Bus captures and
-    // per-capture cursor sources together, after GPU completion.
+    screencopy::create_global(&state.state.output.display_handle);
     info!(
         "headless: headless-0 {}x{} at scale {} wired",
         mode.size.w, mode.size.h, options.scale
