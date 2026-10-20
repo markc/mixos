@@ -29,6 +29,9 @@ pub mod value;
 #[cfg(feature = "archive")]
 mod archive;
 
+#[cfg(feature = "dns")]
+mod dns;
+
 #[cfg(feature = "crypto")]
 mod jwt;
 

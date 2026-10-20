@@ -223,6 +223,7 @@
                         <a href="#posix-record-locks--fcntl_lock-fcntl_unlock-v0710" class="toc-h3">POSIX record locks — fcntl_lock, fcntl_unlock (v0.71.0)</a>
                         <a href="#copying--removing--copy-copy_tree-remove-remove_dir">Copying &amp; removing — copy, copy_tree, remove, remove_dir</a>
                         <a href="#atomic-replace--rename">Atomic replace — rename</a>
+                        <a href="#durability--fsync-v01170">Durability — fsync (v0.117.0)</a>
                         <a href="#symbolic-links--symlink-read_link">Symbolic links — symlink, read_link</a>
                         <a href="#permissions--ownership--chmod-chown">Permissions &amp; ownership — chmod, chown</a>
                         <a href="#inspecting-metadata--stat">Inspecting metadata — stat</a>
@@ -736,8 +737,9 @@ the options map flips the defaults:</p>
 <li><code>max_depth</code> (number, default unlimited) — nesting depth relative to <code>dir</code>; <code>max_depth: 0</code> returns only the direct children.</li>
 <li><code>include_dirs</code> (bool, default <code>false</code>) — include directory entries too.</li>
 <li><code>follow_symlinks</code> (bool, default <code>false</code>) — follow symlink dirs (loop-safe; the walker tracks visited inodes).</li>
+<li><code>strict</code> (bool, default <code>false</code>) — raise instead of skipping what cannot be read (below).</li>
 </ul>
-<p>The two boolean options take a real <code>bool</code> only — <code>"false"</code>, <code>0</code>, <code>nil</code> and the
+<p>The boolean options take a real <code>bool</code> only — <code>"false"</code>, <code>0</code>, <code>nil</code> and the
 like raise <code>TYPE_MISMATCH</code> before traversal starts rather than being read as a
 truthiness.</p>
 <p><code>max_depth</code> accepts a number or numeric string. If the option is present but
@@ -748,6 +750,22 @@ best-effort: an unreadable directory is silently skipped — even the top-level
 one (it exists, so the walk proceeds and simply finds nothing, returning <code>[]</code>) —
 and so is an individual entry that fails to stat. One bad file deep in a subtree
 shouldn't abort the whole walk.</p>
+<p>A gate cannot tell "no matches" from "could not look" that way, so it passes
+<code>strict: true</code>. Then the first directory that cannot be read (the top-level one
+included, a <code>dir</code> that cannot even be stat'ed, or a <code>dir</code> that is a file) or
+entry that cannot be stat'ed raises
+<code>WALK_UNREADABLE</code>; <code>details.path</code> names it and <code>details.error</code> says why. An
+entry or directory that vanished since it was listed, or a dangling symlink under
+<code>follow_symlinks</code>, is still skipped: it was looked at, and nothing is there.</p>
+<pre><code>try
+  $files = walk("/srv/repo", {strict: true})
+catch $msg, $e
+  if $e.code == "WALK_UNREADABLE" then
+    die("cannot audit " .. $e.details.path)
+  end
+  raise($e.code, $msg, $e.details)
+end
+</code></pre>
 <pre><code class="language-mix">print("--- files only, full depth ---")
 for each $p in walk("/tmp/io")
   print($p)
@@ -827,10 +845,17 @@ false
 <pre><code>flock(path)                              exclusive, non-blocking
 flock(path, {shared: true})              shared, non-blocking
 flock(path, {wait: 2.5})                 wait for up to 2.5 seconds
+flock(path, {create: false})             refuse a missing lock file
 funlock(path)                            release this process's lock
 </code></pre>
-<p><code>flock</code> opens the file read/write, creating it with mode <code>0644</code> (subject to the
-process umask), then takes a kernel advisory lock with <code>flock(2)</code>. The default is
+<p><code>flock</code> opens the file, creating it with mode <code>0644</code> (subject to the process
+umask) when it is missing, then takes a kernel advisory lock with <code>flock(2)</code>. An
+exclusive lock opens the file read/write. A <strong>shared</strong> lock opens an existing
+file <strong>read-only</strong>, so a read-only diagnostic can share-lock a lock file it
+cannot write (root-owned, or on a read-only image). <code>create: false</code> never
+creates the file: a missing one raises <code>LOCK_FILE_MISSING</code> and nothing is
+written, which a diagnostic wants on a host where the lock file should already
+exist. A directory raises either way. The default is
 exclusive and non-blocking: <code>true</code> means acquired and <code>false</code> means another
 process currently holds an incompatible lock. Contention is normal control flow,
 not an exception. A positive <code>wait</code> retries without busy-spinning until the
@@ -865,7 +890,7 @@ both processes proceed. Leave the lock file in place permanently; only acquire
 and release its kernel lock.</p>
 <h3 id="posix-record-locks--fcntl_lock-fcntl_unlock-v0710">POSIX record locks — <code>fcntl_lock</code>, <code>fcntl_unlock</code> (v0.71.0)</h3>
 <pre><code>fcntl_lock(path)                         exclusive, non-blocking
-fcntl_lock(path, {shared: true, wait: 2.5})
+fcntl_lock(path, {shared: true, wait: 2.5, create: false})
 fcntl_unlock(path)                       release this process's record lock
 </code></pre>
 <p>Linux keeps <strong>two separate advisory-lock families</strong> that never see each
@@ -876,7 +901,9 @@ can. <strong>Pick the family the other side of the coordination uses</strong>; f
 Mix-to-Mix locking either works, and <code>flock</code> is the established default.</p>
 <p>The caller contract is identical to <code>flock</code>/<code>funlock</code> in every respect:
 exclusive + non-blocking by default, contention returns <code>false</code>, real errors
-raise, repeated acquisition in one process is idempotent-<code>true</code> by canonical
+raise, a shared lock opens an existing file read-only (a read lock needs only
+read access), <code>create: false</code> refuses a missing file with <code>LOCK_FILE_MISSING</code>,
+repeated acquisition in one process is idempotent-<code>true</code> by canonical
 path, the fd lives in a process-global registry and the kernel cleans up on
 exit, and the do-not-delete-a-live-lock-file rule applies unchanged. The
 lock always covers the <strong>whole file</strong>.</p>
@@ -953,6 +980,28 @@ rename($tmp, $live)
 <p>Also note <code>rename</code> reports the <em>client's</em> view. On NFS a client can be told the
 rename failed after a server crash even though the server performed it, so
 "raised" is not proof the old file survived; re-read the target if you must know.</p>
+<h2 id="durability--fsync-v01170">Durability — <code>fsync</code> (v0.117.0)</h2>
+<pre><code>fsync(path)                      a file's data, or a directory's entries
+fsync(dir, {recursive: true})    every file and directory beneath, then dir
+</code></pre>
+<p>A <code>rename</code>, <code>remove</code> or new file is atomic but not durable: after a power loss
+it can be gone, or be there without the journal entry written just before it.
+<code>fsync</code> asks the kernel to put it on disk and returns how many inodes it synced.
+On a <strong>file</strong> it syncs the file's data and metadata. On a <strong>directory</strong> it syncs
+the directory itself, which is what persists the entries created, renamed or
+removed in it (sync the directory after a <code>rename</code> into it, and after a
+<code>remove</code> from it). <code>recursive: true</code> syncs every regular file and directory
+beneath, children first, then <code>dir</code> itself: a tree built with <code>copy_tree</code> is
+durable when it returns. Inside the tree symlinks are never followed, and
+symlinks and special files are not opened (their directory's sync persists the
+entry); the <code>path</code> argument itself follows a symlink, as elsewhere.</p>
+<p><code>write_atomic(path, data, {durability: "full"})</code> already does this for one file
+and its directory. <code>fsync</code> is the general form, without <code>sync -f</code>'s flush of the
+whole filesystem. A failure raises <code>FSYNC_FAILED</code>; <code>details.path</code> names what
+could not be synced (a missing path, an unreadable directory in the tree).</p>
+<pre><code>rename("/srv/app/.next", "/srv/app/current")
+fsync("/srv/app")                                -- the rename is now durable
+</code></pre>
 <h2 id="symbolic-links--symlink-read_link">Symbolic links — <code>symlink</code>, <code>read_link</code></h2>
 <pre><code>symlink(target, linkpath)   symlink(2) — creates linkpath pointing at target
 read_link(path) -&gt; string   readlink(2) — the target exactly as stored
@@ -985,9 +1034,15 @@ the other question — <code>exists(path, {follow_symlinks: false})</code> — w
 <h2 id="permissions--ownership--chmod-chown">Permissions &amp; ownership — <code>chmod</code>, <code>chown</code></h2>
 <pre><code>chmod(path, mode)            mode as octal literal 0o755 or string "0755"
 chown(path, uid, gid)        numeric uid/gid only; follows symlinks
+chown(path, uid, gid, {follow_symlinks: false})   the link itself (lchown)
 </code></pre>
 <p>Native syscalls — don't <code>run("chmod …")</code>. Both follow symlinks (the mode/owner is
-applied to the link's <em>target</em>, standard shell semantics). <code>chmod</code>'s mode is the
+applied to the link's <em>target</em>, standard shell semantics). <code>chown</code> with
+<code>{follow_symlinks: false}</code> changes the symlink itself, as <code>lchown(2)</code> does and
+as <code>stat</code>/<code>exists</code> read it: a root script that makes links in another user's
+tree can hand the links to that user too. It works on a dangling link, which
+the following form cannot chown. (Linux has no <code>lchmod</code>, and a link's mode is
+never used, so <code>chmod</code> has no such option.) <code>chmod</code>'s mode is the
 <strong>value</strong> (<code>0o755</code>, range <code>0..=0o7777</code>); a number out of range or with a fraction
 is rejected. <code>chown</code> takes numeric uid/gid only — no name resolution — and
 requires real <code>Number</code> arguments (a bool or numeric string is refused, so
@@ -1483,8 +1538,10 @@ should be "unified".</p>
 <h2 id="sqlite--sqlopen-sqlexec-sqlclose">SQLite — <code>sqlopen</code>, <code>sqlexec</code>, <code>sqlclose</code></h2>
 <p>The io category includes an embedded SQLite client (feature-gated <code>sqlite</code>; the
 <code>mix</code> binary turns it on). Handles are plain numbers:</p>
-<pre><code>sqlopen(path)              open READ-ONLY               -&gt; numeric handle
-sqlopen(path, "rw")        open read-write (WAL mode, 5s busy timeout)
+<p>The full reference, with modes and examples, is <code>mix man sqlopen</code>.</p>
+<pre><code>sqlopen(path)              open READ-ONLY; the file must exist -&gt; numeric handle
+sqlopen(path, "rwc")       open read-write, creating a missing file (WAL mode,
+                           5s busy timeout); "rw" is the same mode
 sqlexec(h, sql[, params])  run one statement            -&gt; rows or {affected}
 sqlclose(h)                close the handle (errors on an unknown handle)
 </code></pre>

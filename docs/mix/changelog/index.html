@@ -318,14 +318,60 @@ token and, on request, the <code>#</code> and <code>--</code> comments. A tool t
 source no longer re-derives the grammar. Source that does not lex raises
 <code>MIX_SOURCE_LEX</code> with <code>details {line, col}</code>. Backed by the new
 <code>Lexer::source_tokens</code>. See <code>mix man syntax</code>.</li>
+<li><code>fsync(path[, {recursive}])</code> makes a file, a directory (its entries, after a
+<code>rename</code> or <code>remove</code>) or a whole tree durable, without <code>sync -f</code>'s flush of
+the whole filesystem. It returns the number of inodes synced; a failure
+raises <code>FSYNC_FAILED</code> naming the path.</li>
+<li><code>dns_query(name, type[, {server, port, timeout, tcp, recurse}])</code> asks one
+DNS server one question and returns the rcode, the <code>aa</code>/<code>ra</code>/<code>tc</code> flags and
+every section with TTLs. Timeouts and unreachable servers come back as
+<code>{ok: false, error_code}</code>. It is the new <code>dns</code> feature (hickory-proto, the
+version mail-auth already uses); the <code>mix</code> binary turns it on.</li>
+<li><code>walk(dir, {strict: true})</code> raises <code>WALK_UNREADABLE</code>, naming the first
+directory it cannot read or entry it cannot stat, instead of skipping it.</li>
+<li><code>chown(path, uid, gid, {follow_symlinks: false})</code> changes a symlink itself
+(<code>lchown</code>).</li>
+<li><code>flock</code> and <code>fcntl_lock</code> take <code>create: false</code>, which refuses a missing lock
+file with <code>LOCK_FILE_MISSING</code> and creates nothing.</li>
+<li><code>tar_unpack</code> and <code>tar_list</code> accept GNU tar's <code>./</code> member prefix (<code>tar -C dir .</code>); a <code>./</code> directory entry's metadata is applied to <code>dest</code>. Relative
+symlinks may climb with leading <code>..</code> while they stay inside <code>dest</code>, judged
+from the link's own directory (<code>demo/lib/alias -&gt; ../bin/demo</code>). Gzip input
+may have several members, as <code>pigz</code> and <code>cat a.gz b.gz</code> write.</li>
+<li><code>mix man sqlopen</code> documents the SQLite builtins and their modes.</li>
 </ul>
 <h3 id="changed">Changed</h3>
 <ul>
-<li>The default remote mix binary is now <code>/opt/mixos/bin/mix</code> (was the legacy
+<li>
+<p><code>tar_unpack</code>'s <code>numeric_owner</code> now defaults to <code>true</code> only for root, as GNU
+tar does. An ordinary user's unpacked files keep their own uid and gid; a
+non-root chown could still give a file any of the caller's groups. Pass
+<code>numeric_owner: true</code> for the old behaviour. A setuid/setgid bit or
+capability is now kept only where the file ends up with the owner the
+archive named, also when owners are not restored.</p>
+</li>
+<li>
+<p>A symlink target may no longer pass through another symlink the archive
+creates, in either order, and <code>..</code> may only lead a target: <code>a/../b</code> is
+refused.</p>
+</li>
+<li>
+<p>A shared <code>flock</code> or <code>fcntl_lock</code> opens an existing file read-only, so it no
+longer needs write access to the lock file.</p>
+</li>
+<li>
+<p><code>sqlopen</code> raises <code>OPTION_INVALID</code> for a mode other than <code>"ro"</code>, <code>"rw"</code> or
+<code>"rwc"</code> (<code>"rwc"</code> is new: read-write, creating the file, the same as <code>"rw"</code>).
+An unknown mode used to open read-only, so <code>"rwc"</code> could not create a
+database. A read-only open of a missing file raises <code>SQL_NO_DATABASE</code>
+naming <code>"rwc"</code>.</p>
+</li>
+<li>
+<p>The default remote mix binary is now <code>/opt/mixos/bin/mix</code> (was the legacy
 install path's mix). It applies to <code>ssh_mix</code>, <code>ssh_mix_many</code>, <code>ssh_exec</code>,
 <code>ssh_run</code>'s <code>env_transport: "mix"</code> and <code>send_mail</code>'s <code>host</code> hop whenever
 neither <code>mix_bin</code> nor <code>MIX_REMOTE_BIN</code> is set. For a host still on
-the old install path, pass <code>mix_bin</code> or set <code>MIX_REMOTE_BIN</code> to its mix.</li>
+the old install path, pass <code>mix_bin</code> or set <code>MIX_REMOTE_BIN</code> to its mix.</p>
+</li>
 </ul>
 <h3 id="fixed">Fixed</h3>
 <ul>

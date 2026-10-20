@@ -64,8 +64,46 @@ generated: by docs/_build/gen-site.mix from libs/mix/CHANGELOG.md; do not edit
   source no longer re-derives the grammar. Source that does not lex raises
   `MIX_SOURCE_LEX` with `details {line, col}`. Backed by the new
   `Lexer::source_tokens`. See `mix man syntax`.
+- `fsync(path[, {recursive}])` makes a file, a directory (its entries, after a
+  `rename` or `remove`) or a whole tree durable, without `sync -f`'s flush of
+  the whole filesystem. It returns the number of inodes synced; a failure
+  raises `FSYNC_FAILED` naming the path.
+- `dns_query(name, type[, {server, port, timeout, tcp, recurse}])` asks one
+  DNS server one question and returns the rcode, the `aa`/`ra`/`tc` flags and
+  every section with TTLs. Timeouts and unreachable servers come back as
+  `{ok: false, error_code}`. It is the new `dns` feature (hickory-proto, the
+  version mail-auth already uses); the `mix` binary turns it on.
+- `walk(dir, {strict: true})` raises `WALK_UNREADABLE`, naming the first
+  directory it cannot read or entry it cannot stat, instead of skipping it.
+- `chown(path, uid, gid, {follow_symlinks: false})` changes a symlink itself
+  (`lchown`).
+- `flock` and `fcntl_lock` take `create: false`, which refuses a missing lock
+  file with `LOCK_FILE_MISSING` and creates nothing.
+- `tar_unpack` and `tar_list` accept GNU tar's `./` member prefix (`tar -C
+  dir .`); a `./` directory entry's metadata is applied to `dest`. Relative
+  symlinks may climb with leading `..` while they stay inside `dest`, judged
+  from the link's own directory (`demo/lib/alias -> ../bin/demo`). Gzip input
+  may have several members, as `pigz` and `cat a.gz b.gz` write.
+- `mix man sqlopen` documents the SQLite builtins and their modes.
 
 ### Changed
+
+- `tar_unpack`'s `numeric_owner` now defaults to `true` only for root, as GNU
+  tar does. An ordinary user's unpacked files keep their own uid and gid; a
+  non-root chown could still give a file any of the caller's groups. Pass
+  `numeric_owner: true` for the old behaviour. A setuid/setgid bit or
+  capability is now kept only where the file ends up with the owner the
+  archive named, also when owners are not restored.
+- A symlink target may no longer pass through another symlink the archive
+  creates, in either order, and `..` may only lead a target: `a/../b` is
+  refused.
+- A shared `flock` or `fcntl_lock` opens an existing file read-only, so it no
+  longer needs write access to the lock file.
+- `sqlopen` raises `OPTION_INVALID` for a mode other than `"ro"`, `"rw"` or
+  `"rwc"` (`"rwc"` is new: read-write, creating the file, the same as `"rw"`).
+  An unknown mode used to open read-only, so `"rwc"` could not create a
+  database. A read-only open of a missing file raises `SQL_NO_DATABASE`
+  naming `"rwc"`.
 
 - The default remote mix binary is now `/opt/mixos/bin/mix` (was the legacy
   install path's mix). It applies to `ssh_mix`, `ssh_mix_many`, `ssh_exec`,
