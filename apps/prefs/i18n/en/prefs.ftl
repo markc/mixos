@@ -329,5 +329,6 @@ uncertain = The change to { $app } may or may not have happened ({ $message }). 
 settled = The list shows the current state of { $app } again.
 all-apps = the installed applications
 unknown-command = Unknown Prefs command
+command-denied = That command was denied
 command-disabled = That command is not available right now
 about-body = Prefs holds MixOS's preference editors, in the spirit of the AmigaOS Prefs drawer. Applications follows upstream releases through the releases service: installs are per user, verified against their published checksums, and the previous version is kept for rolling back. Appearance sets the session's colour scheme, style, mode, contrast and window frame through the settings service; each change applies to the whole session as you make it. App Settings holds settings that belong to one application, starting with Email's accounts and mail options; passwords go to Email itself, never to the settings service.

@@ -49,5 +49,6 @@ expand = Expand { $name }
 collapse = Collapse { $name }
 toggle-mode = Light or dark interface
 unknown-command = Unknown BusViewer command
+command-denied = That command was denied
 command-disabled = That command is not available right now
 about-body = Browse native ABP services, inspect verb descriptions and mesh membership, and send a JSON body once. Replies retain their return code and plain-text errors.

@@ -42,6 +42,7 @@ about-settings-disconnected = Settings source: settingsd not connected
 keys-title = Keyboard Shortcuts
 close = Close
 unknown-command = Unknown Terminal command
+command-denied = That command was denied
 command-disabled = That command is not available right now
 paste-too-large = Paste exceeds 16 MiB limit
 paste-timed-out = The clipboard did not answer in time

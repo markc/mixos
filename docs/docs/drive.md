@@ -268,6 +268,10 @@ keymap chords, with modifiers in Ctrl, Alt, Shift order. Key names follow the
 keymaps grammar (`ArrowLeft` or `Left`, `=`, `-`, `/`), so reported chords can
 be used in keymap overrides without translating display labels.
 
+Command execution returns `DENIED` for an authorisation refusal and
+`DISABLED` when the command cannot run in the current state. Authorisation
+is checked first.
+
 BusViewer browses the services and verbs on a node and calls one verb with
 a JSON body. Everything in its window is also a Bus verb.
 

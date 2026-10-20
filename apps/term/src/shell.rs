@@ -303,6 +303,10 @@ impl Shell {
                 self.app.target_pane = None;
                 match run {
                     Ok(()) => (0, json!({"executed": id})),
+                    Err(CommandError::Denied(_)) => (
+                        10,
+                        json!({"error_code":"DENIED","message":crate::label("command-denied")}),
+                    ),
                     Err(CommandError::Unknown(_)) => (
                         10,
                         json!({"error_code":"UNKNOWN_COMMAND","message":crate::label("unknown-command")}),

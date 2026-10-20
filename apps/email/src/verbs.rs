@@ -1071,6 +1071,9 @@ fn dispatch(
             let command = required(args, "id")?;
             match commands.execute(&command, state, Origin::Bus) {
                 Ok(()) => state.reply(id, 0, json!({ "executed": command })),
+                Err(CommandError::Denied(_)) => {
+                    return Err(Bad(code::DENIED, crate::label("command-denied")));
+                }
                 Err(CommandError::Unknown(_)) => {
                     return Err(Bad(code::UNKNOWN_COMMAND, crate::label("unknown-command")));
                 }

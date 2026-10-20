@@ -502,6 +502,9 @@ every request it has accepted gets an answer:</p>
 keymap chords, with modifiers in Ctrl, Alt, Shift order. Key names follow the
 keymaps grammar (<code>ArrowLeft</code> or <code>Left</code>, <code>=</code>, <code>-</code>, <code>/</code>), so reported chords can
 be used in keymap overrides without translating display labels.</p>
+<p>Command execution returns <code>DENIED</code> for an authorisation refusal and
+<code>DISABLED</code> when the command cannot run in the current state. Authorisation
+is checked first.</p>
 <p>BusViewer browses the services and verbs on a node and calls one verb with
 a JSON body. Everything in its window is also a Bus verb.</p>
 <h3 id="reading">Reading</h3>

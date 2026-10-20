@@ -104,6 +104,10 @@ pub fn settle(engine: &mut Engine, commands: &Registry<Engine>, strings: &String
                 Effect::Execute { id, command } => {
                     let (rc, body) = match commands.execute(&command, engine, Origin::Bus) {
                         Ok(()) => (0, json!({ "executed": command })),
+                        Err(CommandError::Denied(_)) => (
+                            10,
+                            json!({"error_code":"DENIED","message":label("command-denied")}),
+                        ),
                         Err(CommandError::Unknown(_)) => (
                             10,
                             json!({"error_code":"UNKNOWN_COMMAND","message":label("unknown-command")}),
