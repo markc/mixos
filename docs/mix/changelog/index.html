@@ -441,6 +441,16 @@ the old install path, pass <code>mix_bin</code> or set <code>MIX_REMOTE_BIN</cod
 </ul>
 <h3 id="fixed">Fixed</h3>
 <ul>
+<li>A <code>send</code> after a failed Bus connection retries within its timeout,
+re-reading <code>MIXOS_NODED_URL</code> and node configuration. A stale probe cannot
+replace a newer connection, and reconnecting does not hold the state lock.</li>
+<li>SIGINT still ends a non-interactive evaluation when a <code>catch</code> keeps
+computing: after a cleanup grace the interrupt becomes standing. Nested
+catches and <code>finally</code> control flow cannot swallow it. A served citizen
+keeps its graceful deregistration and exit status 0.</li>
+<li><code>read_file</code>, <code>write_file</code> and <code>append_file</code> yield while waiting on a FIFO,
+so served citizens still answer other verbs and <code>QUIT</code>. Reads honour the
+string limit, and the FIFO path keeps the normal builtin arity rules.</li>
 <li><code>fs_watch</code> recovery (after a lost or overflowed event stream) re-arms each
 directory watch in place instead of unwatching and watching it again, so a
 change that lands during the repair (the close-write of a save racing the

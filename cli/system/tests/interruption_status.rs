@@ -96,18 +96,47 @@ fn assert_sigint_error_frame(path: &std::path::Path) {
     assert!(!payload.contains_key("value"), "unexpected value: {text}");
 }
 
+/// What the code that catches the SIGINT does next.
+#[derive(Clone, Copy, PartialEq)]
+enum Cleanup {
+    /// Returns at once.
+    Returns,
+    /// A catch body that keeps computing and never yields.
+    LoopingCatch,
+    /// A finally body that keeps computing and never yields.
+    LoopingFinally,
+}
+
 fn assert_caught_sigint(mode: &str, framed: bool) {
+    assert_sigint_after_cleanup(mode, framed, Cleanup::Returns);
+}
+
+fn assert_sigint_after_cleanup(mode: &str, framed: bool, cleanup: Cleanup) {
     let dir = tempfile::tempdir().unwrap();
     let ready = dir.path().join("ready");
     let caught = dir.path().join("caught");
+    let ready_q = serde_json::to_string(ready.to_str().unwrap()).unwrap();
+    let caught_q = serde_json::to_string(caught.to_str().unwrap()).unwrap();
     // No await that yields to the runtime: the catch returns a successful
-    // value in the same poll that consumes the evaluator's interrupt flag.
-    let body = format!(
-        "try\nwrite_file({}, \"ready\")\n$n=0\nwhile true\n$n=$n+1\nend\n\
-         catch $err\nwrite_file({}, \"caught\")\nreturn 42\nend\n",
-        serde_json::to_string(ready.to_str().unwrap()).unwrap(),
-        serde_json::to_string(caught.to_str().unwrap()).unwrap(),
-    );
+    // value in the same poll that consumes the evaluator's interrupt flag,
+    // or (the looping shapes) never yields at all, so only a standing
+    // interrupt can end it.
+    let body = match cleanup {
+        Cleanup::Returns => format!(
+            "try\nwrite_file({ready_q}, \"ready\")\n$n=0\nwhile true\n$n=$n+1\nend\n\
+             catch $err\nwrite_file({caught_q}, \"caught\")\nreturn 42\nend\n"
+        ),
+        Cleanup::LoopingCatch => format!(
+            "try\nwrite_file({ready_q}, \"ready\")\n$n=0\nwhile true\n$n=$n+1\nend\n\
+             catch $err\nwrite_file({caught_q}, \"caught\")\n$m=0\nwhile true\n$m=$m+1\nend\n\
+             end\n"
+        ),
+        Cleanup::LoopingFinally => format!(
+            "try\nwrite_file({ready_q}, \"ready\")\n$n=0\nwhile true\n$n=$n+1\nend\n\
+             catch $err\nwrite_file({caught_q}, \"caught\")\n\
+             finally\n$m=0\nwhile true\n$m=$m+1\nend\nend\n"
+        ),
+    };
     let result_path = dir.path().join("result");
     let result_file = framed.then(|| std::fs::File::create(&result_path).unwrap());
     let mut cmd = command(dir.path());
@@ -196,6 +225,29 @@ fn caught_sigint_exits_130_for_function_command() {
 #[test]
 fn caught_sigint_exits_130_and_emits_error_frame_for_result_fd() {
     assert_caught_sigint("command", true);
+}
+
+// TODO-mix 2026-10-09: a catch (or finally) that keeps computing after the
+// SIGINT used to hold the runtime thread for ever. The interrupt now stands
+// after a short cleanup grace, in every non-interactive mode.
+
+#[test]
+fn a_looping_catch_after_sigint_still_exits_130() {
+    for mode in ["command", "file", "function"] {
+        assert_sigint_after_cleanup(mode, false, Cleanup::LoopingCatch);
+    }
+}
+
+#[test]
+fn a_looping_finally_after_sigint_still_exits_130() {
+    for mode in ["command", "file", "function"] {
+        assert_sigint_after_cleanup(mode, false, Cleanup::LoopingFinally);
+    }
+}
+
+#[test]
+fn a_looping_catch_after_sigint_emits_an_error_frame() {
+    assert_sigint_after_cleanup("command", true, Cleanup::LoopingCatch);
 }
 
 #[test]

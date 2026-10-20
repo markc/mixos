@@ -12,6 +12,8 @@ mod desktop_events;
 pub mod error;
 pub mod evaluator;
 pub mod fd_hygiene;
+#[cfg(unix)]
+mod fifo_io;
 mod fs_watch;
 pub mod interrupt;
 pub mod lexer;

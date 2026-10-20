@@ -780,10 +780,11 @@ end
 The handler uses a **lazy probe** with a small state machine, so Bus forms behave
 predictably on a host that may or may not have a broker:
 
-- **Never had a broker (`NeverPresent`).** `send` returns `nil` with `$rc = -3` (RC_UNAVAILABLE — "Bus unavailable before delivery"), `emit` is silently dropped, `port_exists` returns `false` — **no raise**, and subsequent Bus forms don't re-probe (no per-call boot cost). The same binary becomes mesh-viable the moment a broker appears.
+- **Never had a broker (`NeverPresent`).** `send` returns `nil` with `$rc = -3` (RC_UNAVAILABLE — "Bus unavailable before delivery"; `$result` names the URL it tried), `emit` is silently dropped, `port_exists` returns `false` — **no raise**. `emit` and `port_exists` don't re-probe (no per-call boot cost).
 - **Had a broker, lost the connection (`Lost`).** `send` returns `nil` with `$rc = -1` (RC_TRANSPORT) and `emit` is silently dropped — both **non-fatal**, so a mesh script survives a broker blip instead of crashing. `port_exists` **raises** `mesh unavailable: … (call bus_reconnect() to retry the probe)`.
+- **`send` retries.** In either state a `send` dials again before it answers, re-reading `MIXOS_NODED_URL` and the node config, bounded by its own `timeout=`. A script that sent before its broker listened, that changed `MIXOS_NODED_URL`, or that outlived a broker restart recovers on its next `send` (since 0.117.0; before, every send answered `-3` until `bus_reconnect()`). A failed retry leaves the state as it was.
 - **`subscribe`/`unsubscribe`/`reply`** raise in *both* states — these can't be faked; a script must know they didn't happen.
-- **`bus_reconnect()`** resets the probe to `Unprobed` so the next Bus form re-dials — the recovery primitive after installing a broker or after a broker bounce.
+- **`bus_reconnect()`** resets the probe to `Unprobed` so the next Bus form re-dials — the recovery primitive for `emit`, `port_exists` and the serve forms after installing a broker or after a broker bounce.
 
 This is deliberate: `send`/`emit` stay **non-fatal in every state** (a bare host
 reads `$rc = -3`, a lost broker `-1`), so a script isn't forced to guard Bus it

@@ -130,6 +130,16 @@
 
 ### Fixed
 
+- A `send` after a failed Bus connection retries within its timeout,
+  re-reading `MIXOS_NODED_URL` and node configuration. A stale probe cannot
+  replace a newer connection, and reconnecting does not hold the state lock.
+- SIGINT still ends a non-interactive evaluation when a `catch` keeps
+  computing: after a cleanup grace the interrupt becomes standing. Nested
+  catches and `finally` control flow cannot swallow it. A served citizen
+  keeps its graceful deregistration and exit status 0.
+- `read_file`, `write_file` and `append_file` yield while waiting on a FIFO,
+  so served citizens still answer other verbs and `QUIT`. Reads honour the
+  string limit, and the FIFO path keeps the normal builtin arity rules.
 - `fs_watch` recovery (after a lost or overflowed event stream) re-arms each
   directory watch in place instead of unwatching and watching it again, so a
   change that lands during the repair (the close-write of a save racing the

@@ -13494,7 +13494,11 @@ fn builtin_read_lines(args: Vec<Value>) -> MixResult<Option<Value>> {
 /// to_string instead of the old silent stringification (write_file used
 /// to stringify anything, which turned a wrong value into a silently
 /// wrong file).
-fn with_write_payload<R>(caller: &str, v: &Value, f: impl FnOnce(&[u8]) -> R) -> MixResult<R> {
+pub(crate) fn with_write_payload<R>(
+    caller: &str,
+    v: &Value,
+    f: impl FnOnce(&[u8]) -> R,
+) -> MixResult<R> {
     match v {
         Value::String(s) => Ok(f(s.as_bytes())),
         Value::Bytes(b) => Ok(f(b.as_slice())),
