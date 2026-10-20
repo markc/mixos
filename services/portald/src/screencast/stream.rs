@@ -235,6 +235,10 @@ fn serve(
             *pw::keys::MEDIA_TYPE => "Video",
             *pw::keys::MEDIA_CATEGORY => "Capture",
             *pw::keys::MEDIA_ROLE => "Screen",
+            // A Video/Source, not a Stream/Output/Video: the session manager
+            // links capture streams only to sources, as it does for cameras.
+            *pw::keys::MEDIA_CLASS => "Video/Source",
+            *pw::keys::NODE_NAME => "portald-screencast",
             *pw::keys::NODE_DESCRIPTION => description.as_str(),
         },
     )?;
