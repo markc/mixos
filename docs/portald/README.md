@@ -76,7 +76,7 @@ Chromium `getDisplayMedia()`, OBS.
 
 ```text
 compd   --zwlr_screencopy_manager_v1 (shm, damage copies)-->  portald
-portald --PipeWire Video/Source node (BGRx, up to 30 fps)-->  the caller
+portald --PipeWire Video/Source node (BGRx, default ceiling 30 fps)--> the caller
 ```
 
 | Property | Value |
@@ -201,6 +201,7 @@ it keeps `DBUS_SESSION_BUS_ADDRESS`. The unit passes `--screencast`.
 
 ```text
 portald serve --instance <name> [--profile default] [--state-dir DIR] [--screencast]
+    [--screencast-consent prompt|allow] [--screencast-max-framerate 30]
 ```
 
 It needs `DBUS_SESSION_BUS_ADDRESS`. `--state-dir` defaults to
@@ -208,6 +209,11 @@ It needs `DBUS_SESSION_BUS_ADDRESS`. `--state-dir` defaults to
 `--screencast` it also needs `WAYLAND_DISPLAY` and `XDG_RUNTIME_DIR` for the
 compositor, and `PIPEWIRE_RUNTIME_DIR` / `PIPEWIRE_REMOTE` (or
 `XDG_RUNTIME_DIR`) for PipeWire. The binary links the system `libpipewire-0.3`.
+
+`--screencast-max-framerate N` sets the frame-rate ceiling offered to cast
+consumers, from 1 through 120 Hz; invalid values are refused with
+`SCREENCAST_MAX_FRAMERATE`. The default stays 30. A headless desk may pass 60
+in a unit drop-in; its own PipeWire and compositor refresh must support it.
 
 ## Status for agents
 

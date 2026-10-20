@@ -1,0 +1,22 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Decode the unscaled, origin-aligned marker documented in the probe header.
+fn decode($pixels, $width, $height)
+  if $width < 256 or $height < 16 or len($pixels) != $width * $height * 4 then
+    raise("FRAME_ID_SIZE", "expected tightly packed RGBA, at least 256x16")
+  end
+  $values = []
+  for $row = 0 to 1
+    $value = 0
+    for $bit = 0 to 31
+      $at = (($row * 8 + 4) * $width + $bit * 8 + 4) * 4
+      $rgb = [$pixels[$at], $pixels[$at + 1], $pixels[$at + 2]]
+      if not (all($rgb, fn($v) = $v <= 32) or all($rgb, fn($v) = $v >= 223)) then
+        raise("FRAME_ID_PIXEL", "marker block is neither black nor white")
+      end
+      if $pixels[$at] >= 223 then $value = $value + pow(2, $bit) end
+    end
+    push($values, $value)
+  end
+  if $values[0] != 0xA55AA55A then raise("FRAME_ID_SYNC", "sync pattern missing at image origin") end
+  return $values[1]
+end

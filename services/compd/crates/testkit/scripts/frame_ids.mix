@@ -1,0 +1,14 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Usage: mix frame_ids.mix FILE.rgba --size WxH
+-- Raw RGBA only: the installed Mix has no PNG/image decoder builtin.
+-- Crop to the client content origin and undo scaling before using this tool.
+$decoder = require("lib/frame_ids.mix")
+$g = getopt(args(), {size: {arg: true}})
+if len($g.errors) > 0 or len($g.rest) != 1 or $g.opts.size == nil then
+  raise("FRAME_ID_ARGS", "frame_ids.mix FILE.rgba --size WxH (PNG is not supported)")
+end
+$size = split($g.opts.size, "x")
+if len($size) != 2 or not all($size, fn($v) = re_match($v, "^[1-9][0-9]*$")) then
+  raise("FRAME_ID_SIZE", "--size expects positive WxH")
+end
+print($decoder.decode(read_file_bytes($g.rest[0]), to_number($size[0]), to_number($size[1])))

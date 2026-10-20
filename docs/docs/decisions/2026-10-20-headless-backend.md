@@ -40,8 +40,27 @@ is made only when a capture requests them. Cursor inclusion is chosen per
 capture, including mixed requests in one frame, and an unavailable picture
 fails its capture rather than substituting another cursor policy. Capturing
 unchanged content does not count as a new presentation.
-Deployment units, slices and session services are deferred;
-this decision introduces no installed headless session.
+
+## Deployment and recording
+
+An instance is a headless desk: its own nspawn machine, noded, session bus,
+PipeWire and portald, with only the GPU render node bound and no VT, tty or
+seatd. `compd-headless@.service` uses the session slot `%i`, just as `compd@`
+does: a console desk uses a VT number; a headless desk can use `rec`. Both
+read `/etc/mixos/session/%i.env`. Inside the desk, the compositor's Bus service
+is `comp`; each desk has its own node. The standalone CLI default remains
+`comp-headless`.
+
+The component owns `mixos-headless.slice` with `CPUQuota=200%`; the desk's
+compositor runs there at nice 10. Desk provisioning places its portal,
+PipeWire, WirePlumber and encoder in that slice too. The container has its
+own quota, so the slice does not need a per-instance name.
+`COMPD_HEADLESS_REFRESH_HZ` passes through the session environment file.
+
+portald's `serve --screencast-max-framerate N` sets the cast ceiling in
+1..=120 Hz. It defaults to 30, preserving console sessions; a headless desk
+can request 60 through its portal unit drop-in. This ceiling does not change
+the compositor's refresh rate. These templates do not provision or start a desk.
 
 The Phase 2 plain Wayland EGL client probe (`weston-simple-egl`, with
 `WAYLAND_DEBUG=client`) created its first `wl_buffer` through `wl_shm_pool`.

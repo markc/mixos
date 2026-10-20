@@ -82,7 +82,12 @@ impl Bus {
         let text = String::from_utf8_lossy(&output.stdout);
         let mut reply: Value =
             serde_json::from_str(text.lines().last().expect("Bus reply")).unwrap();
-        if let Some(body) = reply["body"].as_str() {
+        // A service still registering returns an error string. Keep it for
+        // readiness callers, which inspect rc and retry; only success has a
+        // JSON response body.
+        if reply["rc"] == 0
+            && let Some(body) = reply["body"].as_str()
+        {
             reply["body"] = serde_json::from_str(body).unwrap();
         }
         reply

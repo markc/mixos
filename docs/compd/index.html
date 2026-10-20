@@ -354,6 +354,23 @@ they start an owned private broker, without using a running desktop's Bus.
 The plain EGL client probe needs <code>weston-simple-egl</code> (override its path with
 <code>COMPD_TEST_EGL_CLIENT</code>); it records the first buffer's actual creation
 request and checks captured pixels.</p>
+<p><code>compd-headless@.service</code> runs inside a headless desk with its own noded,
+session bus, PipeWire and portald. <code>%i</code> is the session slot (for example
+<code>rec</code>), with settings in <code>/etc/mixos/session/%i.env</code> and Bus service <code>comp</code>
+inside that desk. It uses the render group, no seatd or tty, nice 10 and
+<code>mixos-headless.slice</code> (<code>CPUQuota=200%</code>). Provisioning places the desk's
+capture services and encoder in the same slice. Both units are owned by
+<code>services/compd/units/</code>; they do not create the desk.</p>
+<p><code>testkit-presentation-probe --rate 60 --hold-s 60</code> measures independent
+commit pacing and presentation misses. Add <code>--stall-every 30 --stall-ms 50</code>
+for a positive control. Its header documents the pixel frame ID marker;
+<code>services/compd/crates/testkit/scripts/frame_ids.mix FILE.rgba --size WxH</code>
+decodes unscaled raw RGBA client content (PNG is not supported).
+Run timing assertions with an optimised compositor, built with
+<code>--profile release-fast</code> and selected through <code>COMPD_TEST_BINARY</code>; the test
+harness and probe can remain debug builds. Report the binary profile with
+the measured rates and misses. Debug compositor overhead is part of its
+measured presentation latency and can dominate a one-interval deadline.</p>
 <p><code>cursor_sensitivity</code> in <code>preferences.json</code> is a speed multiplier on top of
 the output scale: compd multiplies each relative pointer delta by both, so
 <code>1.0</code> moves the cursor at the same logical speed at every scale. Clients

@@ -25,6 +25,7 @@ pub struct Config {
     /// Also serve `org.freedesktop.portal.ScreenCast` from compd screencopy,
     /// deciding each Start with this consent policy. `None`: not served.
     pub screencast: Option<Policy>,
+    pub screencast_max_framerate: screencast::MaxFramerate,
 }
 
 /// The evidence identity of the values held. Ordering within one incarnation
@@ -160,7 +161,10 @@ pub async fn serve(
         .serve_at(portal::OBJECT_PATH, Portal::new(values.clone()))?;
     if let Some(policy) = config.screencast {
         consent::install(Consent::new(policy));
-        builder = builder.serve_at(portal::OBJECT_PATH, ScreenCast::new(sessions.clone()))?;
+        builder = builder.serve_at(
+            portal::OBJECT_PATH,
+            ScreenCast::with_max_framerate(sessions.clone(), config.screencast_max_framerate),
+        )?;
     }
     let connection = builder.build().await?;
     // Interfaces are exported before the name, and an existing owner is refused

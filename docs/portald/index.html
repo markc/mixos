@@ -296,7 +296,7 @@ actually changed.</p>
 Video calls and browsers use it to share the screen: Zoom, Firefox and
 Chromium <code>getDisplayMedia()</code>, OBS.</p>
 <pre><code class="language-text">compd   --zwlr_screencopy_manager_v1 (shm, damage copies)--&gt;  portald
-portald --PipeWire Video/Source node (BGRx, up to 30 fps)--&gt;  the caller
+portald --PipeWire Video/Source node (BGRx, default ceiling 30 fps)--&gt; the caller
 </code></pre>
 <table><thead><tr><th>Property</th><th>Value</th></tr></thead><tbody>
 <tr><td><code>AvailableSourceTypes</code></td><td>1: monitors only</td></tr>
@@ -404,12 +404,17 @@ never sent back to settingsd.</li>
 <code>settingsd@&lt;instance&gt;</code>. It runs as <code>mixos</code> with the session environment file, so
 it keeps <code>DBUS_SESSION_BUS_ADDRESS</code>. The unit passes <code>--screencast</code>.</p>
 <pre><code class="language-text">portald serve --instance &lt;name&gt; [--profile default] [--state-dir DIR] [--screencast]
+    [--screencast-consent prompt|allow] [--screencast-max-framerate 30]
 </code></pre>
 <p>It needs <code>DBUS_SESSION_BUS_ADDRESS</code>. <code>--state-dir</code> defaults to
 <code>$STATE_DIRECTORY</code>, which systemd sets from <code>StateDirectory=portald</code>. With
 <code>--screencast</code> it also needs <code>WAYLAND_DISPLAY</code> and <code>XDG_RUNTIME_DIR</code> for the
 compositor, and <code>PIPEWIRE_RUNTIME_DIR</code> / <code>PIPEWIRE_REMOTE</code> (or
 <code>XDG_RUNTIME_DIR</code>) for PipeWire. The binary links the system <code>libpipewire-0.3</code>.</p>
+<p><code>--screencast-max-framerate N</code> sets the frame-rate ceiling offered to cast
+consumers, from 1 through 120 Hz; invalid values are refused with
+<code>SCREENCAST_MAX_FRAMERATE</code>. The default stays 30. A headless desk may pass 60
+in a unit drop-in; its own PipeWire and compositor refresh must support it.</p>
 <h2 id="status-for-agents">Status for agents</h2>
 <p><code>HELP</code> returns the verb manifest. The bus verb <code>portald.status</code> is read-only. It reports the origin of the held
 values (defaults, cache or settingsd), whether the name is owned, the identity
