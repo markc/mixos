@@ -820,12 +820,24 @@ dependencies = [
 name = "blobd"
 version = "0.1.1"
 dependencies = [
+ "anyhow",
+ "axum",
  "blake3",
+ "buildinfo",
+ "bus",
+ "config",
+ "futures-util",
+ "http-body-util",
  "libc",
+ "logging",
  "mds",
+ "props",
+ "reqwest",
  "rusqlite",
  "serde_json",
  "tempfile",
+ "tokio",
+ "tokio-util",
  "tracing",
  "uuid",
 ]
