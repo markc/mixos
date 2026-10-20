@@ -29,12 +29,24 @@ PlasmoidItem {
 
     readonly property bool snapReady: Object.keys(root.snap).length > 0
 
+    // Bumped for every command started, see run().
+    property int runs: 0
+
+    // Starts one command on an executable DataSource. The engine keys each
+    // source by its command text and can answer a repeated text from its
+    // cache without running it again, which froze the popup on its first
+    // snapshot. A trailing shell comment makes every command text unique.
+    function run(source: var, command: string): void {
+        root.runs += 1;
+        source.connectSource(command + " #" + root.runs);
+    }
+
     function refresh(): void {
         if (exec.connectedSources.length > 0) {
             return;
         }
         root.loading = true;
-        exec.connectSource(root.mixtrayd + " snapshot");
+        root.run(exec, root.mixtrayd + " snapshot");
     }
 
     // Keep one wait running while the popup is open, from the revision the
@@ -46,7 +58,7 @@ PlasmoidItem {
         if (watcher.connectedSources.length > 0) {
             return;
         }
-        watcher.connectSource(root.mixtrayd + " wait " + root.snap.rev);
+        root.run(watcher, root.mixtrayd + " wait " + root.snap.rev);
     }
 
     function control(unit: string, action: string): void {
@@ -56,7 +68,7 @@ PlasmoidItem {
         root.acting = true;
         root.actionMessage = "";
         root.actionError = "";
-        ctl.connectSource(root.mixtrayd + " control " + unit + " " + action);
+        root.run(ctl, root.mixtrayd + " control " + root.shq(unit) + " " + root.shq(action));
     }
 
     // The executable engine runs each source through sh, so every word that
@@ -74,19 +86,19 @@ PlasmoidItem {
         root.acting = words[0] !== "probe";
         root.actionMessage = "";
         root.actionError = "";
-        sshCtl.connectSource(root.mixtrayd + " ssh " + words.map(w => root.shq(w)).join(" "));
+        root.run(sshCtl, root.mixtrayd + " ssh " + words.map(w => root.shq(w)).join(" "));
     }
 
     function openLogs(unit: string): void {
-        launch.connectSource("konsole -e journalctl -u " + root.shq(unit) + " -n 200 -f");
+        root.run(launch, "konsole -e journalctl -u " + root.shq(unit) + " -n 200 -f");
     }
 
     function connectHost(id: string): void {
-        launch.connectSource("konsole -e ssh " + root.shq(id));
+        root.run(launch, "konsole -e ssh " + root.shq(id));
     }
 
     function editHost(path: string): void {
-        launch.connectSource("xdg-open " + root.shq(path));
+        root.run(launch, "xdg-open " + root.shq(path));
     }
 
     function unitCount(): string {
