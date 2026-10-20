@@ -278,9 +278,10 @@ pub fn settle(
                         Err(Error::BadParams { msg, .. }) => {
                             (10, json!({"error_code":"ARGUMENT", "message":msg}))
                         }
-                        Err(Error::Failed(msg)) => {
-                            (10, json!({"error_code":if alias { "ARGUMENT" } else { "FAILED" }, "message":msg}))
-                        }
+                        Err(Error::Failed(msg)) => (
+                            10,
+                            json!({"error_code":if alias { "ARGUMENT" } else { "FAILED" }, "message":msg}),
+                        ),
                     };
                     out.push(Effect::Reply { id, rc, body });
                 }

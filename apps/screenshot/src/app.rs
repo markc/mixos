@@ -2008,11 +2008,7 @@ mod tests {
         ));
         assert_eq!(r, vec![(1, 0, info)]);
         assert!(commands.borrow().take_executed().0.is_empty());
-        a.command(
-            2,
-            "screenshot.execute",
-            &json!({"id":command}).to_string(),
-        );
+        a.command(2, "screenshot.execute", &json!({"id":command}).to_string());
         let r = replies(&crate::jobs::settle(
             &mut a,
             &commands.borrow(),
@@ -2063,7 +2059,10 @@ mod tests {
             assert!(commands.borrow().take_executed().0.is_empty());
         }
         a.add_shape(rect());
-        assert_eq!(a.status, format!("{}: annotation limit reached", a.label("error")));
+        assert_eq!(
+            a.status,
+            format!("{}: annotation limit reached", a.label("error"))
+        );
     }
 
     #[test]
@@ -2073,12 +2072,7 @@ mod tests {
         assert_eq!(a.status, format!("{}: nothing to undo", a.label("error")));
         let mut shape = rect();
         shape.width = 0.0;
-        let message = a
-            .document
-            .as_mut()
-            .unwrap()
-            .add(shape.clone())
-            .unwrap_err();
+        let message = a.document.as_mut().unwrap().add(shape.clone()).unwrap_err();
         a.add_shape(shape);
         assert_eq!(a.status, format!("{}: {message}", a.label("error")));
     }

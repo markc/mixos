@@ -208,13 +208,9 @@ async fn agent_capture_annotate_save_recent_export_cancel_and_quit() {
         .unwrap_err();
     assert!(refused.contains("UNSAVED"), "{refused}");
     let crop = json!({"x":10,"y":10,"width":80,"height":60});
-    let cropped = call(
-        &client,
-        "screenshot.crop",
-        json!({"crop":crop}),
-    )
-    .await
-    .unwrap();
+    let cropped = call(&client, "screenshot.crop", json!({"crop":crop}))
+        .await
+        .unwrap();
     let run = next_on(&mut incoming, &format!("{SERVICE}.command.executed")).await;
     assert_eq!(run["v"], 2);
     assert_eq!(run["id"], "edit.crop");
