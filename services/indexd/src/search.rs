@@ -59,43 +59,15 @@ pub(crate) fn search_exact(
 
     // Candidate preselection — the SAME predicate semantics the old
     // path applied post-KNN (json_extract comparisons, LIKE contains),
-    // now applied BEFORE distance selection. Sequential `?` binding.
+    // now applied BEFORE distance selection.
     let t0 = Instant::now();
-    let mut sql = String::from("SELECT id FROM chunks WHERE superseded_by IS NULL");
+    let mut sql = String::from("SELECT c.id FROM chunks c WHERE c.superseded_by IS NULL");
     let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
     if !source_filter.is_empty() {
         sql.push_str(" AND source = ?");
         params.push(Box::new(source_filter.to_string()));
     }
-    for filter in metadata_filters {
-        let json_path = format!("$.{}", filter.field);
-        let op_str = match filter.op {
-            FilterOp::Eq => "=",
-            FilterOp::Gt => ">",
-            FilterOp::Lt => "<",
-            FilterOp::Gte => ">=",
-            FilterOp::Lte => "<=",
-            FilterOp::Contains => "LIKE",
-        };
-        sql.push_str(&format!(" AND json_extract(metadata, ?) {op_str} ?"));
-        params.push(Box::new(json_path));
-        if matches!(filter.op, FilterOp::Contains) {
-            let pattern = format!("%{}%", filter.value.as_str().unwrap_or(""));
-            params.push(Box::new(pattern));
-        } else {
-            match &filter.value {
-                serde_json::Value::Number(n) => {
-                    if let Some(f) = n.as_f64() {
-                        params.push(Box::new(f));
-                    } else {
-                        params.push(Box::new(n.as_i64().unwrap_or(0)));
-                    }
-                }
-                serde_json::Value::String(s) => params.push(Box::new(s.clone())),
-                other => params.push(Box::new(other.to_string())),
-            }
-        }
-    }
+    append_metadata_filters(&mut sql, &mut params, metadata_filters, false)?;
     let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
     let mut stmt = tx.prepare(&sql)?;
     let candidates: Vec<i64> = stmt

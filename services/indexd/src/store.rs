@@ -59,12 +59,24 @@ impl CheckpointOwed {
     }
 }
 
-fn append_metadata_filters(
+pub(crate) fn append_metadata_filters(
     sql: &mut String,
     params: &mut Vec<Box<dyn rusqlite::types::ToSql>>,
     filters: &[MetadataFilter],
-) {
+    for_delete: bool,
+) -> Result<()> {
     for filter in filters {
+        if for_delete {
+            anyhow::ensure!(
+                !matches!(filter.op, FilterOp::Contains),
+                "delete metadata filters do not allow contains"
+            );
+            anyhow::ensure!(
+                matches!(filter.value, serde_json::Value::String(_) | serde_json::Value::Number(_))
+                    || (matches!(filter.op, FilterOp::Eq) && filter.value.is_boolean()),
+                "delete metadata filter requires a non-null string or number (or boolean for eq)"
+            );
+        }
         let idx = params.len() + 1;
         let op = match filter.op {
             FilterOp::Eq => "=",
@@ -80,18 +92,23 @@ fn append_metadata_filters(
         ));
         params.push(Box::new(format!("$.{}", filter.field)));
         if matches!(filter.op, FilterOp::Contains) {
-            params.push(Box::new(format!(
-                "%{}%",
-                filter.value.as_str().unwrap_or("")
-            )));
+            let value = filter.value.as_str().filter(|s| !s.is_empty());
+            let value = value.ok_or_else(|| {
+                anyhow::anyhow!("contains metadata filter requires a non-empty string")
+            })?;
+            let escaped = value.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
+            sql.push_str(" ESCAPE '\\'");
+            params.push(Box::new(format!("%{escaped}%")));
         } else {
             match &filter.value {
                 serde_json::Value::Number(n) => params.push(Box::new(n.as_f64().unwrap_or(0.0))),
                 serde_json::Value::String(s) => params.push(Box::new(s.clone())),
+                serde_json::Value::Bool(b) if for_delete => params.push(Box::new(*b)),
                 other => params.push(Box::new(other.to_string())),
             }
         }
     }
+    Ok(())
 }
 
 impl VectorDb {
@@ -495,7 +512,7 @@ impl VectorDb {
             params.push(Box::new(source_filter.to_string()));
         }
 
-        append_metadata_filters(&mut sql, &mut params, metadata_filters);
+        append_metadata_filters(&mut sql, &mut params, metadata_filters, false)?;
 
         sql.push_str(" ORDER BY v.distance");
 
@@ -795,7 +812,7 @@ impl VectorDb {
                     .map(|id| Box::new(*id) as Box<dyn rusqlite::types::ToSql>),
             );
         }
-        append_metadata_filters(&mut sql, &mut params, filters);
+        append_metadata_filters(&mut sql, &mut params, filters, true)?;
         let refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
         let selected = tx
             .prepare(&sql)?
@@ -1028,6 +1045,60 @@ mod tests {
                 vindex::VectorDtype::F32,
             ))),
             checkpoint_owed: CheckpointOwed::default(),
+        }
+    }
+
+    #[test]
+    fn delete_refuses_contains_and_invalid_comparison_values() {
+        let db = test_vector_db();
+        db.conn.execute("INSERT INTO chunks(content, metadata) VALUES ('keep', '{}')", []).unwrap();
+        for raw in [
+            serde_json::json!({"field":"path","op":"contains","value":"a"}),
+            serde_json::json!({"field":"path","op":"eq"}),
+            serde_json::json!({"field":"path","op":"eq","value":null}),
+            serde_json::json!({"field":"path","op":"eq","value":[]}),
+            serde_json::json!({"field":"path","op":"eq","value":{}}),
+            serde_json::json!({"field":"path","op":"gt","value":true}),
+        ] {
+            let filter: MetadataFilter = serde_json::from_value(raw).unwrap();
+            let error = db.delete_filtered(&[], &[filter]).unwrap_err().to_string();
+            assert!(error.contains("delete metadata filter"), "{error}");
+            assert_eq!(db.stats("").unwrap().total_vectors, 1);
+        }
+    }
+
+    #[test]
+    fn search_contains_matches_literal_metacharacters_on_both_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("contains.db");
+        let path = path.to_str().unwrap();
+        let db = VectorDb::open(path, vindex::VectorDtype::F32, 65536).unwrap();
+        let texts: Vec<String> = ["a_b", "axb", "a%b", "a\\b"].into_iter().map(String::from).collect();
+        let metadata: Vec<String> = texts.iter().map(|text| serde_json::json!({"path":text}).to_string()).collect();
+        db.store_revalidated(
+            &vec![Some(vec![1.0; EMBEDDING_DIM]); texts.len()],
+            &vec![None; texts.len()],
+            &texts,
+            "doc",
+            &metadata,
+        ).unwrap();
+        for needle in ["a_b", "a%b", "a\\b"] {
+            let filters: Vec<MetadataFilter> = serde_json::from_value(serde_json::json!([
+                {"field":"path","op":"contains","value":needle}
+            ])).unwrap();
+            let fallback = db.search(&vec![1.0; EMBEDDING_DIM], 10, "", &filters, BUS_BODY_LIMIT).unwrap();
+            let (exact, _) = search_exact(path, &db.search_index, &vec![1.0; EMBEDDING_DIM], 10, "", &filters, BUS_BODY_LIMIT).unwrap();
+            for results in [fallback, exact] {
+                assert_eq!(results.len(), 1, "{needle}");
+                assert_eq!(results[0].content, needle);
+            }
+        }
+        for value in [serde_json::json!(""), serde_json::json!(7), serde_json::Value::Null] {
+            let filters: Vec<MetadataFilter> = serde_json::from_value(serde_json::json!([
+                {"field":"path","op":"contains","value":value}
+            ])).unwrap();
+            assert!(db.search(&vec![1.0; EMBEDDING_DIM], 10, "", &filters, BUS_BODY_LIMIT).is_err());
+            assert!(search_exact(path, &db.search_index, &vec![1.0; EMBEDDING_DIM], 10, "", &filters, BUS_BODY_LIMIT).is_err());
         }
     }
 
