@@ -1070,3 +1070,82 @@ mod tests {
         assert_eq!(count, 2);
     }
 }
+
+#[cfg(test)]
+mod compatibility_tests {
+    use super::*;
+    use crate::test_support::temp_dir;
+
+    fn schema(conn: &Connection) -> Vec<(String, String)> {
+        conn.prepare("SELECT name, sql FROM sqlite_master WHERE sql IS NOT NULL ORDER BY name")
+            .unwrap().query_map([], |r| Ok((r.get(0)?, r.get(1)?))).unwrap()
+            .collect::<rusqlite::Result<_>>().unwrap()
+    }
+
+    #[test]
+    fn cosmix_schema_and_migrations_open_without_rewriting_data_or_schema() {
+        // Register sqlite-vec, then create the production schema independently
+        // of VectorDb::open. These statements are the exact cosmix base and
+        // completed ad-hoc migrations (including the partial unique index).
+        let _registration = VectorDb::open(":memory:", vindex::VectorDtype::F32, 65536).unwrap();
+        let dir = temp_dir("cosmix-schema");
+        let path = dir.join("vectors.db");
+        let conn = Connection::open(&path).unwrap();
+        conn.execute_batch(&format!(
+            "CREATE TABLE chunks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                content TEXT NOT NULL,
+                source TEXT NOT NULL DEFAULT '',
+                metadata TEXT NOT NULL DEFAULT '',
+                content_hash BLOB,
+                created TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            CREATE VIRTUAL TABLE vec_chunks USING vec0(embedding float[{EMBEDDING_DIM}]);
+            ALTER TABLE chunks ADD COLUMN feedback_score INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE chunks ADD COLUMN retrieval_count INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE chunks ADD COLUMN last_retrieved TEXT;
+            ALTER TABLE chunks ADD COLUMN superseded_by INTEGER DEFAULT NULL;
+            CREATE UNIQUE INDEX idx_chunks_content_hash ON chunks(content_hash) WHERE content_hash IS NOT NULL;
+            CREATE INDEX idx_chunks_active_source ON chunks(source, id) WHERE superseded_by IS NULL;"
+        )).unwrap();
+        let metadata = r#"{"path":"/srv/project/journal.md","date":"2026-10-18","extra":{"a":1}}"#;
+        conn.execute("INSERT INTO chunks (id, content, source, metadata, content_hash, created, feedback_score, retrieval_count, last_retrieved, superseded_by) VALUES (42, 'original', 'journal', ?1, ?2, '2026-10-18 21:11:00', 7, 19, '2026-10-19 07:11:00', 43)", rusqlite::params![metadata, content_hash("original", "journal")]).unwrap();
+        let original_blob = vec_to_blob(&vec![0.125; EMBEDDING_DIM]);
+        conn.execute("INSERT INTO vec_chunks(rowid, embedding) VALUES (42, ?1)", [&original_blob]).unwrap();
+        let before_schema = schema(&conn);
+        let before_row: String = conn.query_row("SELECT json_array(id, content, source, metadata, hex(content_hash), created, feedback_score, retrieval_count, last_retrieved, superseded_by) FROM chunks WHERE id=42", [], |r| r.get(0)).unwrap();
+        drop(conn);
+
+        let db = VectorDb::open(path.to_str().unwrap(), vindex::VectorDtype::F32, 65536).unwrap();
+        assert_eq!(schema(&db.conn), before_schema);
+        let after_row: String = db.conn.query_row("SELECT json_array(id, content, source, metadata, hex(content_hash), created, feedback_score, retrieval_count, last_retrieved, superseded_by) FROM chunks WHERE id=42", [], |r| r.get(0)).unwrap();
+        assert_eq!(after_row, before_row);
+        let blob: Vec<u8> = db.conn.query_row("SELECT embedding FROM vec_chunks WHERE rowid=42", [], |r| r.get(0)).unwrap();
+        assert_eq!(blob, original_blob);
+        assert_eq!(db.list("journal", 10, 0, 1024 * 1024).unwrap().0[0].metadata, metadata);
+        let inserted = db.store_revalidated(&[Some(vec![0.25; EMBEDDING_DIM])], &[None], &["new".into()], "doc", &["{}".into()]).unwrap();
+        let StoreAttempt::Committed { ids, .. } = inserted else { panic!("expected insert") };
+        assert_eq!(ids, vec![43]);
+        assert_eq!(db.feedback(42, false).unwrap(), 6);
+        assert_eq!(db.delete(&ids).unwrap(), 1);
+        drop(db);
+        let reopened = VectorDb::open(path.to_str().unwrap(), vindex::VectorDtype::F32, 65536).unwrap();
+        assert_eq!(reopened.search_index.read().unwrap().len(), 1);
+        drop(reopened);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn legacy_table_without_hash_accepts_all_ad_hoc_migrations() {
+        let _registration = VectorDb::open(":memory:", vindex::VectorDtype::F32, 65536).unwrap();
+        let dir = temp_dir("old-schema");
+        let path = dir.join("vectors.db");
+        let conn = Connection::open(&path).unwrap();
+        conn.execute_batch(&format!("CREATE TABLE chunks (id INTEGER PRIMARY KEY AUTOINCREMENT, content TEXT NOT NULL, source TEXT NOT NULL DEFAULT '', metadata TEXT NOT NULL DEFAULT '', created TEXT NOT NULL DEFAULT (datetime('now'))); CREATE VIRTUAL TABLE vec_chunks USING vec0(embedding float[{EMBEDDING_DIM}]);")).unwrap();
+        drop(conn);
+        let db = VectorDb::open(path.to_str().unwrap(), vindex::VectorDtype::F32, 65536).unwrap();
+        db.conn.prepare("SELECT content_hash, feedback_score, retrieval_count, last_retrieved, superseded_by FROM chunks").unwrap();
+        drop(db);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+}

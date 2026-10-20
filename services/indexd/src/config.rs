@@ -239,71 +239,40 @@ mod tests {
 }
 
 #[cfg(test)]
-mod tests {
+mod path_tests {
     use super::*;
     use crate::test_support::temp_dir;
+
     #[test]
-    fn system_none_when_dir_empty() {
-        let dir = temp_dir("empty");
-        assert!(load_system_config(&dir).unwrap().is_none());
-        let _ = std::fs::remove_dir_all(&dir);
+    fn tilde_expands_only_a_leading_home_slash() {
+        assert_eq!(expand_home_with("~/x~y", Some("/home/user")), "/home/user/x~y");
+        for path in ["/srv/~archive/file", "~other/file", "~", "x~/y"] {
+            assert_eq!(expand_home_with(path, Some("/home/user")), path);
+        }
+        assert_eq!(expand_home_with("~/file", None), "~/file");
     }
 
     #[test]
-    fn system_reads_conf_mix() {
-        let dir = temp_dir("prefer");
-        std::fs::write(
-            dir.join("config.conf.mix"),
-            "schema_version: 7\nservice: { model_dir: \"/srv/model\" }\n",
-        )
-        .unwrap();
-        let (path, cfg) = load_system_config(&dir).unwrap().expect("some");
-        assert_eq!(path, dir.join("config.conf.mix"));
-        assert_eq!(cfg.schema_version, 7);
-        assert_eq!(cfg.service.model_dir, "/srv/model");
-        assert_eq!(cfg.service.max_sequence_tokens, 2048);
-        assert_eq!(cfg.service.max_forward_tokens, 4096);
-        assert_eq!(cfg.service.vindex_dtype, "f32");
-        assert_eq!(cfg.service.inference_admission_timeout_secs, 30);
-        assert_eq!(cfg.service.max_prefix_bytes, 4096);
-        assert_eq!(cfg.service.max_response_bytes, 20 * 1024 * 1024);
-        assert_eq!(cfg.service.background_retry_max_attempts, 5);
-        let _ = std::fs::remove_dir_all(&dir);
+    fn snapshot_resolution_requires_one_directory() {
+        let dir = temp_dir("snapshots");
+        assert_eq!(resolve_snapshot(&dir), dir);
+        std::fs::create_dir(dir.join("rev-a")).unwrap();
+        std::fs::write(dir.join("not-a-snapshot"), "x").unwrap();
+        assert_eq!(resolve_snapshot(&dir), dir.join("rev-a"));
+        std::fs::create_dir(dir.join("rev-b")).unwrap();
+        assert_eq!(resolve_snapshot(&dir), dir, "ambiguous snapshots require explicit model_dir");
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
-    fn configured_memory_bounds_override_individually() {
-        let cfg: Config = ::config::from_conf_mix_str(
-            "service: { max_sequence_tokens: 1024, max_forward_tokens: 4096, \
-             max_request_text_bytes: 12345 }\n",
-        )
-        .unwrap();
-        assert_eq!(cfg.service.max_sequence_tokens, 1024);
-        assert_eq!(cfg.service.max_forward_tokens, 4096);
-        assert_eq!(cfg.service.max_request_text_bytes, 12_345);
-        assert_eq!(cfg.service.max_file_bytes, 16 * 1024 * 1024);
-    }
-    #[test]
-    fn system_legacy_toml_is_ignored() {
-        // C11: the TOML fallback is gone. A lone legacy config.toml is
-        // never read — resolution reports "no config" (None).
-        let dir = temp_dir("legacy");
-        std::fs::write(
-            dir.join("config.toml"),
-            "schema_version = 3\n[service]\nmodel_dir = \"/run/legacy.sock\"\n",
-        )
-        .unwrap();
-        assert!(load_system_config(&dir).unwrap().is_none());
-        assert!(!dir.join("config.conf.mix").exists());
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn system_bad_conf_mix_is_hard_error() {
-        let dir = temp_dir("badparse");
-        // An unparseable .conf.mix must hard-fail.
-        std::fs::write(dir.join("config.conf.mix"), "schema_version: $oops\n").unwrap();
-        assert!(load_system_config(&dir).is_err());
-        let _ = std::fs::remove_dir_all(&dir);
+    fn domains_use_longest_component_prefix() {
+        let domains = Domains { map: [("/srv/project", "project"), ("/srv/project/deep", "deep")]
+            .into_iter().map(|(k,v)| (k.into(), v.into())).collect() };
+        assert_eq!(domains.resolve(Path::new("/srv/project/deep/a.md")).as_deref(), Some("deep"));
+        assert_eq!(domains.resolve(Path::new("/srv/project/a.md")).as_deref(), Some("project"));
+        assert_eq!(domains.resolve(Path::new("/srv/project-other/a.md")), None);
+        let defaults = Domains::default();
+        assert_eq!(defaults.map.get("~/Projects/mixos").unwrap(), "mixos");
+        assert_eq!(defaults.map.get("~/.mix").unwrap(), "mix");
     }
 }

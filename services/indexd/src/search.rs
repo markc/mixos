@@ -170,6 +170,8 @@ pub(crate) fn search_exact(
             .unwrap_or(std::cmp::Ordering::Equal)
     });
     Ok((results, phases))
+}
+
 pub(crate) fn days_since_epoch_utc() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

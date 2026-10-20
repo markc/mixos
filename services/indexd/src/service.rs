@@ -1049,3 +1049,107 @@ impl Drop for Engine {
         for task in &self.tasks { task.abort(); }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::temp_dir;
+    use serde_json::json;
+
+    fn engine(tag: &str) -> (Engine, PathBuf) {
+        let dir = temp_dir(tag);
+        let mut config = Config::default();
+        config.service.vectors_db = dir.join("vectors.db").to_string_lossy().into_owned();
+        config.service.model_dir = dir.join("no-model").to_string_lossy().into_owned();
+        (Engine::open(config).unwrap(), dir)
+    }
+
+    async fn cache(engine: &Engine, text: &str, prefix: &str, value: f32) {
+        engine.state.lock().await.embed_cache.store(text, prefix, vec![value; EMBEDDING_DIM]);
+    }
+
+    async fn seed(engine: &Engine, text: &str, metadata: &str, value: f32) -> i64 {
+        let state = engine.state.lock().await;
+        match state.db.store_revalidated(&[Some(vec![value; EMBEDDING_DIM])], &[None], &[text.into()], "doc", &[metadata.into()]).unwrap() {
+            StoreAttempt::Committed { ids, .. } => ids[0],
+            _ => panic!("seed deferred"),
+        }
+    }
+
+    #[tokio::test]
+    async fn superseded_filter_precedes_top_k_and_retrieval_count_increments() {
+        let (engine, dir) = engine("superseded-search");
+        let old = seed(&engine, "old", "{}", 0.0).await;
+        let active = seed(&engine, "active", r#"{"domain":"mixos"}"#, 1.0).await;
+        let other = seed(&engine, "other", r#"{"domain":"other"}"#, 0.5).await;
+        assert_eq!(engine.supersede(json!({"old_id": old, "new_id": active, "reason": "newer"})).await["updated"], 1);
+        cache(&engine, "query", "search_query: ", 0.0).await;
+        let response = engine.search(json!({"query":"query", "limit":1, "metadata_filter":[{"field":"domain","op":"eq","value":"mixos"}]})).await;
+        assert_eq!(response["results"].as_array().unwrap().len(), 1);
+        assert_eq!(response["results"][0]["id"], active);
+        assert!(response["results"][0]["metadata"].is_string());
+        let response = engine.search(json!({"query":"query", "limit":10})).await;
+        let ids: Vec<_> = response["results"].as_array().unwrap().iter().map(|v| v["id"].as_i64().unwrap()).collect();
+        assert_eq!(ids, [other, active]);
+        let state = engine.state.lock().await;
+        let counts: Vec<(i64, i64)> = state.db.conn.prepare("SELECT id, retrieval_count FROM chunks ORDER BY id").unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?))).unwrap().collect::<rusqlite::Result<_>>().unwrap();
+        assert_eq!(counts, [(old, 0), (active, 2), (other, 1)]);
+        drop(state);
+        drop(engine);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn json_verbs_keep_metadata_strings_and_do_not_require_a_model_for_reads() {
+        let (engine, dir) = engine("json-contract");
+        let metadata = r#"{"path":"/srv/project/a.md","section":"A","domain":"mixos","type":"doc","date":"2026-10-20"}"#;
+        cache(&engine, "text", "search_document: ", 0.0).await;
+        let stored = engine.store(json!({"texts":["text"], "metadata":[metadata]})).await;
+        let id = stored["ids"][0].as_i64().unwrap();
+        assert_eq!(stored["stored"], 1);
+        let duplicate = engine.store(json!({"texts":["text"], "metadata":[metadata]})).await;
+        assert_eq!(duplicate["duplicates"], 1);
+        assert_eq!(duplicate["ids"][0], id);
+        let listed = engine.list(json!({"limit":10,"offset":0})).await;
+        assert_eq!(listed["total"], 1);
+        assert_eq!(listed["items"][0]["metadata"], metadata);
+        assert!(listed["items"][0]["created"].is_string());
+        assert_eq!(engine.update(json!({"id":id,"metadata":"{\"new\":true}"})).await, json!({"updated":true,"re_embedded":false}));
+        cache(&engine, "changed", "search_document: ", 0.2).await;
+        assert_eq!(engine.update(json!({"id":id,"content":"changed"})).await, json!({"updated":true,"re_embedded":true}));
+        assert_eq!(engine.feedback(json!({"id":id,"useful":true})).await["feedback_score"], 1);
+        let stale = engine.stale(json!({"never_retrieved_age_days":-1,"low_value_min_retrievals":3,"long_dormant_days":180,"per_bucket_limit":10})).await;
+        assert_eq!(stale["total_chunks"], 1);
+        assert_eq!(stale["never_retrieved_old"][0]["id"], id);
+        assert!(stale["low_value"].is_array());
+        assert!(stale["long_dormant"].is_array());
+        let stats = engine.stats(json!({})).await;
+        assert_eq!(stats["total_vectors"], 1);
+        assert_eq!(stats["model_loaded"], false);
+        assert!(stats["db_size_bytes"].is_u64());
+        assert!(stats["by_source"].is_array());
+        assert_eq!(engine.embed(json!({"texts":["text"]})).await["embeddings"][0].as_array().unwrap().len(), EMBEDDING_DIM);
+        assert_eq!(engine.delete(json!({"ids":[id]})).await, json!({"deleted":1}));
+        assert!(engine.store(json!({"texts":[],"metadata":[{}]})).await["error"].is_string());
+        assert_eq!(engine.stats(json!({})).await["total_vectors"], 0);
+        drop(engine);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn index_file_keeps_old_chunks_if_new_chunks_fail() {
+        let (engine, dir) = engine("index-failure");
+        let metadata = r#"{"path":"/srv/project/file.md","date":"2026-10-20"}"#;
+        let id = seed(&engine, "previous content", metadata, 0.0).await;
+        let response = engine.index_file(json!({"path":"/srv/project/file.md","content":"new content ".repeat(20)})).await;
+        assert!(response["error"].is_string(), "missing local tokenizer must fail: {response}");
+        let listed = engine.list(json!({})).await;
+        assert_eq!(listed["items"][0]["id"], id);
+        assert_eq!(listed["items"][0]["content"], "previous content");
+        assert_eq!(engine.index_file(json!({"path":"/srv/project/file.md","content":""})).await["sections"], 0);
+        assert_eq!(engine.list(json!({})).await["total"], 0);
+        drop(engine);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+}
