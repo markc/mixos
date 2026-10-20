@@ -49,6 +49,15 @@ PlasmoidItem {
         root.run(exec, root.mixtrayd + " snapshot");
     }
 
+    // The Refresh button: drop any snapshot or wait still outstanding, read
+    // everything again (mixtrayd rereads every unit, host and key file for
+    // each snapshot), and start following afresh from the new revision.
+    function reload(): void {
+        exec.connectedSources.forEach(s => exec.disconnectSource(s));
+        watcher.connectedSources.forEach(s => watcher.disconnectSource(s));
+        root.refresh();
+    }
+
     // Keep one wait running while the popup is open, from the revision the
     // current snapshot was read at.
     function follow(): void {
@@ -230,7 +239,7 @@ PlasmoidItem {
         acting: root.acting
         actionMessage: root.actionMessage
         actionError: root.actionError
-        onRefreshRequested: root.refresh()
+        onRefreshRequested: root.reload()
         onControlRequested: (unit, action) => root.control(unit, action)
         onLogsRequested: unit => root.openLogs(unit)
         onSshRequested: words => root.sshAction(words)
@@ -240,7 +249,7 @@ PlasmoidItem {
 
     onExpandedChanged: {
         if (root.expanded) {
-            root.refresh();
+            root.reload();
         }
     }
 }
