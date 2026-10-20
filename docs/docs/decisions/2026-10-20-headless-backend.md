@@ -25,7 +25,11 @@ The binding profile is `headless`; the default Bus service is
 instances. Headless never requests realtime priority or negative nice,
 starts no XWayland, and leaves the desktop session environment alone.
 
-Screencopy, Bus capture and cursor capture follow in a separate phase.
-Cursor inclusion will be chosen per capture, including mixed requests in
-one frame. Deployment units, slices and session services are deferred;
+Screencopy and Bus captures run after completed offscreen rendering, including
+on idle outputs. The normal picture excludes cursor elements; a second pass
+is made only when a capture requests them. Cursor inclusion is chosen per
+capture, including mixed requests in one frame, and an unavailable picture
+fails its capture rather than substituting another cursor policy. Capturing
+unchanged content does not count as a new presentation.
+Deployment units, slices and session services are deferred;
 this decision introduces no installed headless session.

@@ -1,0 +1,18 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- The same owned, throwaway broker used by the compositor's Mix gates.
+$pb = require("../../../../../../tests/lib/private_bus.mix")
+$a = args()
+$record = $a[1] .. "/bus.json"
+if $a[0] == "start" then
+  $bus = $pb.start({dir: $a[1], name: "headless-test", noded: $a[2], export: false})
+  write_file($record, json_encode($bus))
+  print(json_encode($bus))
+elif $a[0] == "stop" then
+  $pb.stop(json_parse(read_file($record)))
+else
+  $verb = $a[2]
+  $body = $a[3]
+  send comp-headless $verb timeout=5 body=$body
+  print(json_encode({rc: $rc, body: $result}))
+end
