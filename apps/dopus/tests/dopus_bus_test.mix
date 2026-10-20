@@ -451,7 +451,6 @@ try
   check(deep_eq($ids, $expected),"executed ids " .. json_encode($ids) .. ", wanted " .. json_encode($expected))
   for each $k in range(0, length($runs) - 1)
     $row = $runs[$k]
-    if $k == 0 then print("executed v2: " .. json_encode($row)) end
     check($row.v == 2 and has_key($row, "params") and $row.params == nil
       and has_key($row, "result") and $row.result == nil
       and $row.origin == "bus" and $row.seq == $k + 1 and $row.dropped == 0

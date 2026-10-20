@@ -14,7 +14,7 @@ Status: accepted 2026-10-20. Amends [egui applications](2026-10-09-egui-applicat
 - **The registry is UI-free** (`libs/command`). Engine crates own their command tables; the egui crate renders menus, shortcuts and the palette from them.
 - **One path.** UI, shortcuts, palette, macros, Bus and headless all dispatch through the registry. A verb that performs an action a command defines is refused in review.
 - **Executed events carry `params` and `result`** (`v: 2`); a value above 4 KiB is replaced by `{ bytes, sha256 }`.
-- **Every registered verb names its body schema** (registry schema 4): a request type, `none`, or `pending` until 2026-11-30.
+- **Every registered verb names its body schema** (registry schema 4): a request type, `none`, or `pending` through 2026-11-30 inclusive in UTC.
 
 ## Why
 

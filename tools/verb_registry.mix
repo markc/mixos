@@ -5,15 +5,19 @@
 --
 -- - schema 2, 3 or 4 (the repository must use 4);
 -- - schema 4 adds a trailing schema string to every verb and family: none,
---   pending (through 2026-11-30), or a Rust request type path deriving JsonSchema;
--- - verbs: every entry is a map of exactly name, owner, version, status and
---   class, all strings; names are unique and well formed, owners are
+--   pending (through 2026-11-30 inclusive in UTC), or a Rust request type path
+--   deriving JsonSchema, matching ^[a-z][a-z0-9_]*(::[A-Za-z][A-Za-z0-9_]*)+$;
+--   time() and date_parse are UTC. --today YYYY-MM-DD overrides the test date;
+-- - verbs in schema 4: every entry is a map of exactly name, owner, version,
+--   status, class and schema, all strings (schema 2/3 omit schema);
+--   names are unique and well formed, owners are
 --   component names, versions are release versions (MAJOR.MINOR.PATCH, no
 --   leading zeros), statuses and classes come from their fixed sets
 --   (classes: docs/docs/decisions/2026-10-11-verb-classes.md);
 -- - families (schema 3 and 4; docs/docs/decisions/2026-10-13-instance-verb-families.md):
---   each is a map of exactly pattern, owner, members, version, status and
---   class. pattern is <app>.<suffix> and unique; members is "instances" (the
+--   each is a map of exactly pattern, owner, members, version, status, class
+--   and schema (schema 3 omits schema). pattern is <app>.<suffix> and unique;
+--   members is "instances" (the
 --   runtime members are instances, not listed) or a nonempty list of unique
 --   Bus service names. A listed member may be shared by families of one owner
 --   only. It may equal a concrete verb prefix only when every concrete verb
@@ -36,16 +40,16 @@
 -- Bus name rule, the reserved names and the registry's collisions. Neither
 -- check reads a config's contents or a token, or touches the network.
 --
---   mix tools/verb_registry.mix [FILE] [--source ROOT] [--instances DIR]
+--   mix tools/verb_registry.mix [FILE] [--source ROOT] [--instances DIR] [--today YYYY-MM-DD]
 --
--- With no FILE the repository registry is checked, and its source is checked
+-- With no FILE the repository registry must be schema 4, and its source is checked
 -- against the repository root unless --source names another root. With an
 -- explicit FILE and no --source the check is data only. Exit 0 when clean,
 -- 1 when any check fails, 2 on a usage error.
 $root = dirname(dirname(realpath($0)))
 $src = require("lib/verb_registry_source.mix")
 
-$USAGE = "usage: mix tools/verb_registry.mix [FILE] [--source ROOT] [--instances DIR] [--today YYYY-MM-DD]\n  FILE: the registry (default docs/docs/spec/bus/verbs.conf.mix)\n  --source ROOT: check the component sources under ROOT (default with no FILE: the repository)\n  --instances DIR: check the instance config names in DIR against the registry\n  --today YYYY-MM-DD: override today's date for the pending cutoff\n  --help: this text"
+$USAGE = "usage: mix tools/verb_registry.mix [FILE] [--source ROOT] [--instances DIR] [--today YYYY-MM-DD]\n  FILE: the registry (default docs/docs/spec/bus/verbs.conf.mix; repository must be schema 4)\n  schema 4: trailing schema field is none, pending, or a Rust request type path matching ^[a-z][a-z0-9_]*(::[A-Za-z][A-Za-z0-9_]*)+$\n  --source ROOT: check the component sources under ROOT (default with no FILE: the repository)\n  --instances DIR: check the instance config names in DIR against the registry\n  --today YYYY-MM-DD: override today's UTC date for the pending cutoff (2026-11-30 inclusive)\n  --help: this text"
 -- A listed family member is a Bus service name, as the instance names are.
 $_MEMBER = "^[a-z][a-z0-9-]{1,30}$"
 

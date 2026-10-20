@@ -9,7 +9,8 @@
 --
 -- Schema 4 adds `schema` to every verb and family, last: a serde request
 -- type deriving JsonSchema (crate::Type), none (no body or {}), or pending
--- through 2026-11-30 inclusive. The gate refuses pending after that date.
+-- through 2026-11-30 inclusive in UTC. The gate refuses pending after that date.
+-- A row may name command::ExecuteRequest only when its verb body is exactly {id, params?}; term and the bridged family migrate in later steps.
 --
 -- Schema 2 added `class` (docs/docs/decisions/2026-10-11-verb-classes.md):
 -- intent (changes what a service holds or another caller sees), query
@@ -91,8 +92,8 @@
     {name:"busviewer.refresh", owner:"busviewer", version:"0.1.1", status:"accepted", class:"intent", schema:"pending"},
     {name:"busviewer.select", owner:"busviewer", version:"0.1.1", status:"accepted", class:"intent", schema:"pending"},
     {name:"busviewer.call", owner:"busviewer", version:"0.1.1", status:"accepted", class:"intent", schema:"pending"},
-    {name:"busviewer.commands", owner:"busviewer", version:"0.1.1", status:"accepted", class:"query", schema:"pending"},
-    {name:"busviewer.execute", owner:"busviewer", version:"0.1.1", status:"accepted", class:"intent", schema:"command::ExecuteRequest"},
+    {name:"busviewer.commands", owner:"busviewer", version:"0.2.0", status:"accepted", class:"query", schema:"pending"},
+    {name:"busviewer.execute", owner:"busviewer", version:"0.2.0", status:"accepted", class:"intent", schema:"command::ExecuteRequest"},
     {name:"busviewer.quit", owner:"busviewer", version:"0.1.1", status:"accepted", class:"intent", schema:"pending"},
     {name:"busviewer.tree", owner:"busviewer", version:"0.1.1", status:"accepted", class:"query", schema:"pending"},
     {name:"busviewer.reply", owner:"busviewer", version:"0.1.1", status:"accepted", class:"query", schema:"pending"},
@@ -120,8 +121,8 @@
     {name:"monitor.info", owner:"monitor", version:"0.1.0", status:"draft", class:"query", schema:"pending"},
     {name:"monitor.show", owner:"monitor", version:"0.1.0", status:"draft", class:"system", schema:"none"},
     {name:"monitor.refresh", owner:"monitor", version:"0.1.0", status:"draft", class:"intent", schema:"pending"},
-    {name:"monitor.commands", owner:"monitor", version:"0.1.0", status:"draft", class:"query", schema:"pending"},
-    {name:"monitor.execute", owner:"monitor", version:"0.1.0", status:"draft", class:"intent", schema:"command::ExecuteRequest"},
+    {name:"monitor.commands", owner:"monitor", version:"0.2.0", status:"draft", class:"query", schema:"pending"},
+    {name:"monitor.execute", owner:"monitor", version:"0.2.0", status:"draft", class:"intent", schema:"command::ExecuteRequest"},
     {name:"monitor.quit", owner:"monitor", version:"0.1.0", status:"draft", class:"intent", schema:"pending"},
     {name:"monitor.node", owner:"monitor", version:"0.1.0", status:"draft", class:"intent", schema:"pending"},
     {name:"monitor.tab", owner:"monitor", version:"0.1.0", status:"draft", class:"intent", schema:"pending"},
@@ -171,8 +172,8 @@
     {name:"prefs.ping", owner:"prefs", version:"0.1.0", status:"accepted", class:"query", schema:"pending"},
     {name:"prefs.info", owner:"prefs", version:"0.1.1", status:"accepted", class:"query", schema:"pending"},
     {name:"prefs.show", owner:"prefs", version:"0.1.0", status:"accepted", class:"system", schema:"none"},
-    {name:"prefs.commands", owner:"prefs", version:"0.1.0", status:"accepted", class:"query", schema:"pending"},
-    {name:"prefs.execute", owner:"prefs", version:"0.1.1", status:"accepted", class:"intent", schema:"command::ExecuteRequest"},
+    {name:"prefs.commands", owner:"prefs", version:"0.2.0", status:"accepted", class:"query", schema:"pending"},
+    {name:"prefs.execute", owner:"prefs", version:"0.2.0", status:"accepted", class:"intent", schema:"command::ExecuteRequest"},
     {name:"prefs.quit", owner:"prefs", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
     {name:"prefs.panel", owner:"prefs", version:"0.1.1", status:"accepted", class:"intent", schema:"pending"},
     {name:"prefs.section", owner:"prefs", version:"0.1.2", status:"accepted", class:"intent", schema:"pending"},
@@ -252,7 +253,7 @@
     {name:"dopus.window.state", owner:"dopus", version:"0.1.1", status:"accepted", class:"query", schema:"pending"},
     {name:"email.ping", owner:"email", version:"0.1.0", status:"accepted", class:"query", schema:"pending"},
     {name:"email.info", owner:"email", version:"0.1.0", status:"accepted", class:"query", schema:"pending"},
-    {name:"email.commands", owner:"email", version:"0.1.0", status:"accepted", class:"query", schema:"pending"},
+    {name:"email.commands", owner:"email", version:"0.2.0", status:"accepted", class:"query", schema:"pending"},
     {name:"email.accounts", owner:"email", version:"0.1.0", status:"accepted", class:"query", schema:"pending"},
     {name:"email.mailboxes", owner:"email", version:"0.1.0", status:"accepted", class:"query", schema:"pending"},
     {name:"email.list", owner:"email", version:"0.1.0", status:"accepted", class:"query", schema:"pending"},
@@ -266,7 +267,7 @@
     {name:"email.contact.get", owner:"email", version:"0.1.0", status:"accepted", class:"query", schema:"pending"},
     {name:"email.show", owner:"email", version:"0.1.0", status:"accepted", class:"system", schema:"none"},
     {name:"email.quit", owner:"email", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
-    {name:"email.execute", owner:"email", version:"0.1.0", status:"accepted", class:"intent", schema:"command::ExecuteRequest"},
+    {name:"email.execute", owner:"email", version:"0.2.0", status:"accepted", class:"intent", schema:"command::ExecuteRequest"},
     {name:"email.mode", owner:"email", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
     {name:"email.refresh", owner:"email", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
     {name:"email.account.set", owner:"email", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
@@ -329,8 +330,8 @@
     {name:"screenshot.save", owner:"screenshot", version:"0.2.0", status:"accepted", class:"intent", schema:"pending"},
     {name:"screenshot.recent", owner:"screenshot", version:"0.1.1", status:"accepted", class:"query", schema:"pending"},
     {name:"screenshot.select", owner:"screenshot", version:"0.1.1", status:"accepted", class:"intent", schema:"pending"},
-    {name:"screenshot.commands", owner:"screenshot", version:"0.1.1", status:"accepted", class:"query", schema:"pending"},
-    {name:"screenshot.execute", owner:"screenshot", version:"0.1.1", status:"accepted", class:"intent", schema:"command::ExecuteRequest"},
+    {name:"screenshot.commands", owner:"screenshot", version:"0.2.0", status:"accepted", class:"query", schema:"pending"},
+    {name:"screenshot.execute", owner:"screenshot", version:"0.2.0", status:"accepted", class:"intent", schema:"command::ExecuteRequest"},
     {name:"screenshot.show", owner:"screenshot", version:"0.1.1", status:"accepted", class:"system", schema:"none"},
     {name:"screenshot.quit", owner:"screenshot", version:"0.1.1", status:"accepted", class:"intent", schema:"pending"},
     {name:"screenshot.theme", owner:"screenshot", version:"0.1.1", status:"accepted", class:"intent", schema:"pending"},
@@ -457,8 +458,8 @@
     {name:"term.scroll", owner:"term", version:"0.3.5", status:"accepted", class:"intent", schema:"pending"},
     {name:"term.type", owner:"term", version:"0.3.5", status:"accepted", class:"input", schema:"pending"},
     {name:"term.props.watch", owner:"term", version:"0.3.5", status:"accepted", class:"intent", schema:"pending"},
-    {name:"term.commands", owner:"term", version:"0.4.0", status:"accepted", class:"query", schema:"pending"},
-    {name:"term.execute", owner:"term", version:"0.4.0", status:"accepted", class:"intent", schema:"command::ExecuteRequest"},
+    {name:"term.commands", owner:"term", version:"0.5.0", status:"accepted", class:"query", schema:"pending"},
+    {name:"term.execute", owner:"term", version:"0.5.0", status:"accepted", class:"intent", schema:"pending"},
     {name:"term.ui.tree", owner:"term", version:"0.4.0", status:"accepted", class:"query", schema:"pending"},
     {name:"term.ui.click", owner:"term", version:"0.4.0", status:"accepted", class:"input", schema:"pending"},
     {name:"term.ui.pointer", owner:"term", version:"0.4.0", status:"accepted", class:"input", schema:"pending"},
@@ -514,7 +515,7 @@
   families: [
     {pattern:"<app>.call", owner:"bridged", members:"instances", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
     {pattern:"<app>.commands", owner:"bridged", members:"instances", version:"0.1.0", status:"accepted", class:"query", schema:"pending"},
-    {pattern:"<app>.execute", owner:"bridged", members:"instances", version:"0.1.0", status:"accepted", class:"intent", schema:"command::ExecuteRequest"},
+    {pattern:"<app>.execute", owner:"bridged", members:"instances", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
     {pattern:"<app>.inspect", owner:"bridged", members:"instances", version:"0.1.0", status:"accepted", class:"query", schema:"pending"},
     {pattern:"<app>.screenshot", owner:"bridged", members:"instances", version:"0.1.0", status:"accepted", class:"intent", schema:"pending"},
     {pattern:"<app>.status", owner:"bridged", members:"instances", version:"0.1.0", status:"accepted", class:"query", schema:"pending"}

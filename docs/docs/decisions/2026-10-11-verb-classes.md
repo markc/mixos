@@ -8,11 +8,20 @@ description: Every registered Bus verb declares a class (intent, query, input or
 Status: accepted 2026-10-11. Amends AGENTS.md §5 (Bus verbs are wire
 contracts).
 
+Amended 2026-10-20 by [commands take parameters and return results](2026-10-20-commands-take-parameters.md).
+Registry schema 4 adds a trailing `schema` field to every verb and family:
+`none` for no body or an empty object, `pending` through 2026-11-30 inclusive
+in UTC, or a Rust serde request type deriving `JsonSchema`. Type paths match
+`^[a-z][a-z0-9_]*(::[A-Za-z][A-Za-z0-9_]*)+$`, such as
+`command::ExecuteRequest`. The gate accepts schema 2, 3 or 4 for fixtures;
+the repository registry must be 4. It refuses `schema` below version 4,
+missing or malformed body schemas at version 4, and expired `pending`
+placeholders, naming each expired verb or family. `--today YYYY-MM-DD`
+overrides the UTC date for tests.
+
 ## The decision
 
-Amended 2026-10-20 by [commands take parameters and return results](2026-10-20-commands-take-parameters.md). Registry schema 4 adds a trailing `schema` field to every verb and family.
-
-- **The verb registry uses schema 4.** Every entry in
+- **The verb registry moves to schema 2.** Every entry in
   `docs/docs/spec/bus/verbs.conf.mix` gains a `class`, one of:
 
   | class | Meaning | Examples |
@@ -30,17 +39,8 @@ Amended 2026-10-20 by [commands take parameters and return results](2026-10-20-c
   application's registry test checks this. The reverse need not hold:
   `.ui.capture` writes a file, so it is not read-only, but it is still a
   query.
-- **Every row names its body schema.** `schema` is `none` for no body or an
-  empty object, `pending` during migration through 2026-11-30 inclusive, or a
-  Rust serde request type deriving `JsonSchema`. Type paths match
-  `^[a-z][a-z0-9_]*(::[A-Za-z][A-Za-z0-9_]*)+$`, such as
-  `command::ExecuteRequest`. The field is last in canonical rows, after `class`.
 - **The registry gate** (`tools/verb_registry.mix`) refuses:
-  - a schema other than 2, 3 or 4 (the repository file must be 4);
-  - a `schema` field below version 4, or a missing one at version 4;
-  - a body schema outside the grammar above, or `pending` after 2026-11-30,
-    naming each expired verb or family (`--today YYYY-MM-DD` overrides the
-    date for tests);
+  - a schema other than 2;
   - an entry that is not in the canonical one-line form;
   - an unknown or missing field;
   - a bad name, owner, status or version;
