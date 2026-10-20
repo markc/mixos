@@ -51,7 +51,9 @@ async fn application_tools_round_trip_the_registry_contract() {
          "enabled":false, "checked":true, "schema":{"type":"object"}}
     ]);
     let listed = rows.clone();
-    let owner = NodedClient::connect("registry-fixture", &broker.url).await.unwrap();
+    let owner = NodedClient::connect("registry-fixture", &broker.url)
+        .await
+        .unwrap();
     let mut incoming = owner.incoming_async().await.unwrap();
     let task = tokio::spawn(async move {
         while let Some(command) = incoming.recv().await {
@@ -79,9 +81,12 @@ async fn application_tools_round_trip_the_registry_contract() {
             .await
             .unwrap(),
     );
-    assert_eq!(observed, json!({
-        "service":"registry-fixture", "command":"registry-fixture.commands", "result":rows
-    }));
+    assert_eq!(
+        observed,
+        json!({
+            "service":"registry-fixture", "command":"registry-fixture.commands", "result":rows
+        })
+    );
     for body in [
         json!({"id":"file.refresh"}),
         json!({"id":"view.filter", "params":{}}),
@@ -93,14 +98,20 @@ async fn application_tools_round_trip_the_registry_contract() {
         let mut args = body.clone();
         args["service"] = json!("registry-fixture");
         let observed = result(service.call_tool(call("app_execute", args)).await.unwrap());
-        assert_eq!(observed, json!({
-            "service":"registry-fixture", "command":"registry-fixture.execute", "result":body
-        }));
+        assert_eq!(
+            observed,
+            json!({
+                "service":"registry-fixture", "command":"registry-fixture.execute", "result":body
+            })
+        );
     }
     let refused = service
-        .call_tool(call("app_execute", json!({
-            "service":"registry-fixture", "id":"missing.command"
-        })))
+        .call_tool(call(
+            "app_execute",
+            json!({
+                "service":"registry-fixture", "id":"missing.command"
+            }),
+        ))
         .await
         .unwrap();
     assert_eq!(refused.is_error, Some(true));
