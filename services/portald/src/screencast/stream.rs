@@ -168,7 +168,36 @@ fn buffers(stride: u32, height: u32) -> anyhow::Result<Vec<u8>> {
     })
 }
 
+/// Process-path counters, logged while streaming.
+#[derive(Default)]
+struct Stats {
+    triggered: Cell<u64>,
+    trigger_failed: Cell<u64>,
+    processed: Cell<u64>,
+    no_frame: Cell<u64>,
+    no_buffer: Cell<u64>,
+    unmapped: Cell<u64>,
+    queued: Cell<u64>,
+}
+
+fn bump(cell: &Cell<u64>) {
+    cell.set(cell.get() + 1);
+}
+
+fn trigger(stream: &pw::stream::Stream, stats: &Stats) {
+    match stream.trigger_process() {
+        Ok(()) => bump(&stats.triggered),
+        Err(error) => {
+            if stats.trigger_failed.get() == 0 {
+                tracing::warn!(%error, "process not triggered");
+            }
+            bump(&stats.trigger_failed);
+        }
+    }
+}
+
 struct Data {
+    stats: Rc<Stats>,
     latest: Rc<RefCell<Option<Arc<Frame>>>>,
     sent: Rc<Cell<Option<Instant>>>,
     ready: Option<mpsc::Sender<anyhow::Result<u32>>>,
@@ -212,10 +241,12 @@ fn serve(
 
     let latest: Rc<RefCell<Option<Arc<Frame>>>> = Rc::new(RefCell::new(None));
     let sent: Rc<Cell<Option<Instant>>> = Rc::new(Cell::new(None));
+    let stats: Rc<Stats> = Rc::new(Stats::default());
     let _listener = stream
         .add_local_listener_with_user_data(Data {
             latest: latest.clone(),
             sent: sent.clone(),
+            stats: stats.clone(),
             ready: Some(ready),
             stride: width * 4,
             height,
@@ -224,11 +255,8 @@ fn serve(
             tracing::info!(?old, ?new, node = stream.node_id(), "screencast stream state");
             // A consumer just attached: give it the newest frame now rather
             // than waiting for the screen to change.
-            if matches!(new, pw::stream::StreamState::Streaming)
-                && data.latest.borrow().is_some()
-                && let Err(error) = stream.trigger_process()
-            {
-                tracing::debug!(%error, "process not triggered");
+            if matches!(new, pw::stream::StreamState::Streaming) && data.latest.borrow().is_some() {
+                trigger(stream, &data.stats);
             }
             if matches!(new, pw::stream::StreamState::Paused | pw::stream::StreamState::Streaming)
                 && let Some(ready) = data.ready.take()
@@ -243,6 +271,7 @@ fn serve(
             if id != spa::param::ParamType::Format.as_raw() || param.is_none() {
                 return;
             }
+            tracing::info!(stride = data.stride, height = data.height, "format negotiated; offering buffers");
             match buffers(data.stride, data.height) {
                 Ok(bytes) => {
                     if let Some(pod) = Pod::from_bytes(&bytes)
@@ -255,10 +284,13 @@ fn serve(
             }
         })
         .process(|stream, data| {
+            bump(&data.stats.processed);
             let Some(frame) = data.latest.borrow().clone() else {
+                bump(&data.stats.no_frame);
                 return;
             };
             let Some(mut buffer) = stream.dequeue_buffer() else {
+                bump(&data.stats.no_buffer);
                 return;
             };
             let datas = buffer.datas_mut();
@@ -269,7 +301,10 @@ fn serve(
             if let Some(slice) = block.data() {
                 written = slice.len().min(frame.data.len());
                 slice[..written].copy_from_slice(&frame.data[..written]);
+            } else {
+                bump(&data.stats.unmapped);
             }
+            bump(&data.stats.queued);
             let chunk = block.chunk_mut();
             *chunk.offset_mut() = 0;
             *chunk.stride_mut() = frame.stride as i32;
@@ -309,6 +344,7 @@ fn serve(
         let mainloop = mainloop.clone();
         let stream = stream.clone();
         let latest = latest.clone();
+        let stats = stats.clone();
         let first_frame = Cell::new(true);
         move |message| match message {
             Message::Frame(frame) => {
@@ -316,10 +352,8 @@ fn serve(
                     tracing::info!(width = frame.width, height = frame.height, "screencast first frame captured");
                 }
                 *latest.borrow_mut() = Some(frame);
-                if matches!(stream.state(), pw::stream::StreamState::Streaming)
-                    && let Err(error) = stream.trigger_process()
-                {
-                    tracing::debug!(%error, "process not triggered");
+                if matches!(stream.state(), pw::stream::StreamState::Streaming) {
+                    trigger(&stream, &stats);
                 }
             }
             Message::CaptureEnded | Message::Quit => mainloop.quit(),
@@ -330,14 +364,25 @@ fn serve(
         let stream = stream.clone();
         let latest = latest.clone();
         let sent = sent.clone();
+        let stats = stats.clone();
         move |_| {
+            let streaming = matches!(stream.state(), pw::stream::StreamState::Streaming);
+            if !streaming {
+                return;
+            }
+            tracing::info!(
+                triggered = stats.triggered.get(),
+                trigger_failed = stats.trigger_failed.get(),
+                processed = stats.processed.get(),
+                no_frame = stats.no_frame.get(),
+                no_buffer = stats.no_buffer.get(),
+                unmapped = stats.unmapped.get(),
+                queued = stats.queued.get(),
+                "screencast process path"
+            );
             let stale = sent.get().is_none_or(|at| at.elapsed() >= KEEPALIVE);
-            if stale
-                && latest.borrow().is_some()
-                && matches!(stream.state(), pw::stream::StreamState::Streaming)
-                && let Err(error) = stream.trigger_process()
-            {
-                tracing::debug!(%error, "keepalive not triggered");
+            if stale && latest.borrow().is_some() {
+                trigger(&stream, &stats);
             }
         }
     });
