@@ -17,6 +17,12 @@ Environment=LIBSEAT_BACKEND=seatd MIXOS_CONTAIN_CHILDREN=1
 Environment=MIXOS_VT=%i
 RuntimeDirectory=mixos/session/%i/desktop
 RuntimeDirectoryMode=0700
+# The session bus is found at $XDG_RUNTIME_DIR/bus by anything started without
+# DBUS_SESSION_BUS_ADDRESS (apps@ unsets it). The bus socket lives in its own
+# runtime directory, so link it into this one; systemd removes the link with
+# the directory when compd stops. Dangling until the session bus starts.
+# Non-fatal (-): a missing link must never keep the compositor down.
+ExecStartPre=-/usr/bin/ln -sfn /run/mixos/session/%i/dbus/bus /run/mixos/session/%i/desktop/bus
 ExecStart=/opt/mixos/bin/compd kms-live --socket ${WAYLAND_DISPLAY} --scale ${MIXOS_OUTPUT_SCALE} --config-file ${MIXOS_COMPD_CONFIG} --bus-service comp --scene-service shell
 TTYPath=/dev/tty%i
 StandardInput=tty
