@@ -101,7 +101,7 @@ checked separately by the layering gate.
 | [term-render](https://github.com/markc/mixos/blob/main/apps/term/crates/term-render/Cargo.toml) | term | app | desktop | none | 0.1.1 |
 | [tray](https://github.com/markc/mixos/blob/main/apps/tray/Cargo.toml) | tray | app | desktop | none | 0.1.1 |
 | [mesh-sign](https://github.com/markc/mixos/blob/main/cli/mesh-sign/Cargo.toml) | mesh-sign | cli | core | none | 0.1.1 |
-| [mix-shell](https://github.com/markc/mixos/blob/main/cli/mix-shell/Cargo.toml) | mix-shell | cli | mix | public | 0.116.0 |
+| [mix-shell](https://github.com/markc/mixos/blob/main/cli/mix-shell/Cargo.toml) | mix-shell | cli | mix | public | 0.117.0 |
 | [mixos-mcp](https://github.com/markc/mixos/blob/main/cli/mixos-mcp/Cargo.toml) | mixos-mcp | cli | core | none | 0.1.1 |
 | [system](https://github.com/markc/mixos/blob/main/cli/system/Cargo.toml) | system | cli | core | none | 0.1.1 |
 | [assets](https://github.com/markc/mixos/blob/main/libs/assets/Cargo.toml) | assets | lib | core | public | 0.1.1 |

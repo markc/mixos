@@ -5645,7 +5645,7 @@ dependencies = [
 
 [[package]]
 name = "mix-shell"
-version = "0.116.0"
+version = "0.117.0"
 dependencies = [
  "blake3",
  "buildinfo",

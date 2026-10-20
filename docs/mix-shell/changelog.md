@@ -8,7 +8,7 @@ generated: by docs/_build/gen-site.mix from cli/mix-shell/CHANGELOG.md; do not e
 
 > Mirrored from [`cli/mix-shell/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/cli/mix-shell/CHANGELOG.md), where releases update it. The component's page is [mix-shell](README.md). This page describes the current `main` branch of MixOS.
 
-## Unreleased
+## 0.117.0
 
 ### Changed
 
