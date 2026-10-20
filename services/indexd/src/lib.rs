@@ -4,6 +4,8 @@
 //! Uses the system allocator so idle model unload can return pages to the OS.
 
 pub mod config;
+pub mod bus;
+pub mod bridge;
 mod index_file;
 mod limits;
 mod metrics;

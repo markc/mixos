@@ -817,7 +817,7 @@ pub(crate) struct AppState {
 /// Transport-independent service. Construct inside a Tokio runtime.
 /// Each verb accepts its original JSON body and returns its original JSON reply.
 pub struct Engine {
-    state: Arc<EngineState>,
+    pub(crate) state: Arc<EngineState>,
     activity_tx: tokio::sync::mpsc::Sender<()>,
     tasks: Vec<tokio::task::JoinHandle<()>>,
 }
@@ -835,11 +835,18 @@ impl Engine {
         embed, store, search, update, delete, list, feedback, supersede, stale, stats, index_file
     );
 
-    async fn call(&self, action: &str, body: serde_json::Value) -> serde_json::Value {
+    pub async fn call(&self, verb: &str, body: serde_json::Value) -> serde_json::Value {
+        let action = verb.strip_prefix("indexd.").unwrap_or(verb);
+        if !crate::bus::verb_manifest().iter().any(|v| v.name == format!("indexd.{action}")) {
+            return serde_json::json!({"error": format!("unknown verb: {verb}")});
+        }
         let mut object = match body {
             serde_json::Value::Object(object) => object,
             _ => return serde_json::json!({"error": "request body must be an object"}),
         };
+        if object.get("action").is_some_and(|v| v.as_str() != Some(action)) {
+            return serde_json::json!({"error":"action does not match verb"});
+        }
         object.insert("action".into(), action.into());
         let ctx = RequestContext {
             transport: "engine",
