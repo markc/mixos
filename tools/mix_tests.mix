@@ -45,6 +45,7 @@ $bin = realpath($bin)
 
 $scripts = [
   "tests/component_install_test.mix",
+  "tests/layering_gate_test.mix",
   "tests/verb_registry_test.mix",
   "tests/verb_registry_families_test.mix",
   "tests/webd_lint_test.mix",

@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Copyright 2026 Mark Constable <mc@mixos.dev>
--- layering_gate.mix — compd crate layering gate.
--- version: 0.1.0
+-- layering_gate.mix — component or cross-component crate layering gate.
+-- version: 0.2.0
 --
 -- Purpose: map every workspace package to its layer from
 --   services/compd/layers.conf.mix
@@ -16,7 +16,10 @@
 --   mix tools/layering_gate.mix (--manifest-path <Cargo.toml> | --metadata-file <json>)
 --       [--layers <conf>] [--allow-unlisted] [--include-dev] [--require]
 --       [--offline] [--locked] [--frozen]
+--       [--across-components]
 --     --manifest-path   workspace manifest; runs cargo metadata --no-deps.
+--                       With --across-components, resolves external packages
+--                       too so their transitive dependency paths are checked.
 --     --metadata-file   pre-saved `cargo metadata --format-version 1` JSON
 --                       (with or without --no-deps).
 --     --layers          layer table (default: services/compd/layers.conf.mix
@@ -25,7 +28,17 @@
 --                       table; their edges are not checked.
 --     --include-dev     also check dev-dependency edges (default: normal+build;
 --                       cargo permits dev-dependency cycles).
---     --require         fail when no listed crate is in the workspace yet.
+--     --across-components select listed workspace crates regardless of owner;
+--                       check dependency paths through unlisted packages too,
+--                       including edges to listed external GUI dependencies.
+--                       Cargo metadata enables all workspace features.
+--                       --no-deps metadata covers all workspace paths and their
+--                       declared external edges; resolved metadata additionally
+--                       covers paths through external packages. Workspace
+--                       optional deps are checked even when their features are
+--                       off; external edges follow Cargo's resolved features.
+--     --require         fail when no listed crate or any core_crates entry is
+--                       missing from the workspace.
 --     --offline/--locked/--frozen  passed through to cargo metadata.
 --
 -- Exit codes:
@@ -35,7 +48,7 @@
 
 fn usage_die($msg)
   eprint("layering_gate: " .. $msg)
-  eprint("usage: mix tools/layering_gate.mix (--manifest-path <Cargo.toml> | --metadata-file <json>) [--layers <conf>] [--allow-unlisted] [--include-dev] [--require] [--offline] [--locked] [--frozen]")
+  eprint("usage: mix tools/layering_gate.mix (--manifest-path <Cargo.toml> | --metadata-file <json>) [--layers <conf>] [--across-components] [--allow-unlisted] [--include-dev] [--require] [--offline] [--locked] [--frozen]")
   exit(2)
 end
 
@@ -50,6 +63,7 @@ $manifest = nil
 $meta_file = nil
 $allow_unlisted = false
 $include_dev = false
+$across = false
 $require = false
 $passthrough = []
 $av = args()
@@ -74,6 +88,8 @@ while $i < len($av)
     $allow_unlisted = true
   elif $a == "--include-dev" then
     $include_dev = true
+  elif $a == "--across-components" then
+    $across = true
   elif $a == "--require" then
     $require = true
   elif $a == "--offline" or $a == "--locked" or $a == "--frozen" then
@@ -120,7 +136,9 @@ else
   if !is_file($manifest) then
     usage_die("manifest not found: " .. $manifest)
   end
-  $argv = concat(["cargo", "metadata", "--format-version", "1", "--no-deps", "--manifest-path", $manifest], $passthrough)
+  $argv = ["cargo", "metadata", "--format-version", "1"]
+  if $across then push($argv, "--all-features") else push($argv, "--no-deps") end
+  $argv = concat($argv, ["--manifest-path", $manifest], $passthrough)
   $r = run_argv($argv, {timeout: 600, max_output: 536870912})
   if !$r.ok or $r.stdout_truncated then
     eprint("layering_gate: cargo metadata failed" .. if $r.stdout_truncated then " (stdout truncated)" else "" end)
@@ -147,10 +165,35 @@ end
 -- (shared libs, other components) sits outside it and is not checked here.
 $component = $conf.component ?? nil
 $ws = {}
+$graph = {}
+$id_names = {}
 for each $p in $meta.packages ?? []
+  $id_names[$p.id] = $p.name
+end
+-- External packages can declare inactive GUI tooling (for example a GPU
+-- allocator's optional visualiser). Follow their resolved feature edges,
+-- rather than treating every feature in their manifest as enabled.
+$resolved = {}
+for each $node in ($meta.resolve ?? {}).nodes ?? []
+  $deps = []
+  for each $edge in $node.deps ?? []
+    for each $kind in $edge.dep_kinds ?? [{kind: nil}]
+      push($deps, {name: $id_names[$edge.pkg], kind: $kind.kind})
+    end
+  end
+  $resolved[$node.id] = $deps
+end
+for each $p in $meta.packages ?? []
+  -- Multiple external versions may share a name. Union their declarations
+  -- conservatively instead of overwriting one version's edges.
+  $deps = $p.dependencies ?? []
+  if $member_ids[$p.id] == nil and $resolved[$p.id] != nil then
+    $deps = $resolved[$p.id]
+  end
+  $graph[$p.name] = concat($graph[$p.name] ?? [], $deps)
   if $member_ids[$p.id] != nil then
     $owner = (($p.metadata ?? {}).mixos ?? {}).component ?? nil
-    if $component == nil or $owner == $component then
+    if ($across and $layers[$p.name] != nil) or (!$across and ($component == nil or $owner == $component)) then
       $ws[$p.name] = $p
     end
   end
@@ -160,6 +203,13 @@ $listed = filter($names, fn($n) = $layers[$n] != nil)
 $unlisted = filter($names, fn($n) = $layers[$n] == nil)
 
 print("layering gate: " .. len($names) .. " workspace packages, " .. len($listed) .. " in the layer table, " .. len($unlisted) .. " unlisted")
+if $require then
+  $missing = filter($conf.core_crates, fn($n) = $ws[$n] == nil)
+  if len($missing) > 0 then
+    eprint("FAIL: listed engine crate(s) missing from workspace: " .. join(sort($missing), ", "))
+    exit(1)
+  end
+end
 if len($listed) == 0 then
   if $require then
     eprint("FAIL: nothing to check — no crate from " .. $layers_path .. " is in this workspace (--require)")
@@ -174,6 +224,27 @@ $up = []
 $to_unlisted = 0
 $checked = 0
 for each $n in $listed
+  if $across then
+    $pending = [{name: $n, path: $n}]
+    $seen = {}
+    while len($pending) > 0
+      $next = $pending[0]
+      $pending = slice($pending, 1, len($pending))
+      if $seen[$next.name] != nil then continue end
+      $seen[$next.name] = true
+      for each $d in $graph[$next.name] ?? []
+        if $d.kind == "dev" and !$include_dev then continue end
+        $checked = $checked + 1
+        $path = $next.path .. " -> " .. $d.name
+        if $layers[$d.name] != nil and $layers[$d.name] > $layers[$n] then
+          push($up, $path .. " (" .. $layers[$n] .. " -> " .. $layers[$d.name] .. ") [" .. kind_label($d.kind) .. "]")
+        elif $graph[$d.name] != nil and $seen[$d.name] == nil then
+          push($pending, {name: $d.name, path: $path})
+        end
+      end
+    end
+    continue
+  end
   $p = $ws[$n]
   for each $d in $p.dependencies ?? []
     if $ws[$d.name] == nil then

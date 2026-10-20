@@ -9,12 +9,8 @@
 //! The person's bindings come from the desktop profile
 //! (`settings::keymap`); [`crate::Registry::rebind`] applies them.
 
+pub use ::command::keymap::Overrides;
 use egui::{Key, KeyboardShortcut, Modifiers};
-use std::collections::BTreeMap;
-
-/// One app's bindings as the profile stores them: action id to chords; an
-/// empty list unbinds.
-pub type Overrides = BTreeMap<String, Vec<String>>;
 
 /// The shortcut `text` names, or `None` when it is not a chord egui has.
 pub fn parse_chord(text: &str) -> Option<KeyboardShortcut> {
@@ -55,8 +51,8 @@ pub fn chord_text(shortcut: &KeyboardShortcut) -> String {
     let m = shortcut.modifiers;
     for (on, name) in [
         (m.command || m.ctrl || m.mac_cmd, "Ctrl+"),
-        (m.alt, "Alt+"),
         (m.shift, "Shift+"),
+        (m.alt, "Alt+"),
     ] {
         if on {
             out.push_str(name);
@@ -112,6 +108,15 @@ mod tests {
         assert_eq!(parse_chord("Ctrl+1").unwrap().logical_key, Key::Num1);
         for bad in ["", "Ctrl+", "Hyper+X", "Ctrl+Ctrl+B", "Ctrl+Nope"] {
             assert!(parse_chord(bad).is_none(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn every_egui_key_round_trips_through_the_adapter_cache() {
+        for &key in Key::ALL {
+            let shortcut = KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::SHIFT, key);
+            let text = chord_text(&shortcut);
+            assert_eq!(parse_chord(&text), Some(shortcut), "{text}");
         }
     }
 }

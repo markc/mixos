@@ -13,6 +13,14 @@ An app keeps its behaviour in a headless engine and its UI state in one
 serialisable struct. The toolkit draws the window around that state and
 routes every action through one command registry.
 
+The UI-free registry and Fluent `Strings` now live in
+[`command`](../command/README.md). Toolkit keeps the egui adapter and its
+existing nullary command API, with the moved data types re-exported.
+Core `describe()` emits stored chord grammar (`Ctrl+=`, `ArrowLeft`), while
+the toolkit wrapper keeps egui NAMES spelling for today's consumers; plan
+step 2 switches `<app>.commands` to core spelling as part of the
+describe/schema contract change.
+
 It gives each app:
 
 - the resolved [design](../design/README.md) as an egui style, plus the

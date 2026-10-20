@@ -87,6 +87,7 @@ serde = { version = "=1.0.229", features = ["derive", "rc"] }
 # serde_json must never gain `preserve_order` (indexmap): frozen wire formats
 # rely on BTreeMap key order.
 serde_json = { version = "=1.0.151" }
+schemars = { version = "=1.2.3" }
 sha2 = { version = "=0.10.9" }
 tempfile = "=3.27.0"
 thiserror = { version = "=2.0.20" }
@@ -119,6 +120,7 @@ buildinfo = { path = "libs/buildinfo" }
 davproto = { path = "libs/davproto" }
 bus = { path = "libs/bus", default-features = false }
 config = { path = "libs/config" }
+command = { path = "libs/command" }
 daemon = { path = "libs/daemon" }
 files = { path = "libs/files" }
 design = { path = "libs/design" }

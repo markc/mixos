@@ -15,9 +15,10 @@ pub use crate::executed::Origin;
 use crate::icons::Icon;
 use crate::menu::{self, Entry, Menu, Row};
 use crate::strings::Strings;
+pub use ::command::{Call, Class, Described, Error, ParamSpec, Place, Scope};
+pub use ::command::{Command as EngineCommand, Registry as EngineRegistry};
 use egui::{KeyboardShortcut, ModifierNames};
-use serde::Serialize;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::HashMap;
 use std::fmt;
 
 /// The message `key` from the app's catalogue, else from the toolkit's own
@@ -31,7 +32,14 @@ pub fn label_text(strings: &Strings, key: &str) -> String {
     }
 }
 
-/// One action.
+struct ToolkitLabels<'a>(&'a Strings);
+impl ::command::Labels for ToolkitLabels<'_> {
+    fn label(&self, key: &str) -> String {
+        label_text(self.0, key)
+    }
+}
+
+/// One legacy nullary action. New engine tables use `command::Command`.
 pub struct Command<S> {
     /// Stable dotted id, e.g. `bus.refresh`. Never reused once published.
     pub id: &'static str,
@@ -77,66 +85,18 @@ impl fmt::Display for CommandError {
 
 impl std::error::Error for CommandError {}
 
-/// A command as the Bus and the palette describe it.
-#[derive(Clone, Debug, PartialEq, Serialize)]
-pub struct Described {
-    pub id: &'static str,
-    pub label: String,
-    pub menu: Option<String>,
-    pub shortcut: Option<String>,
-    /// Further chords that run it too, outside the menus.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub more: Vec<String>,
-    pub enabled: bool,
-    /// A choice command's tick; `None` for an ordinary command.
-    pub checked: Option<bool>,
-}
-
-/// Where a command's shortcut may fire.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum Scope {
-    /// Wherever the keyboard is.
-    #[default]
-    Anywhere,
-    /// Only while no text field has the keyboard: for bare keys and editing
-    /// keys (S, M, Delete) that a field typing them must keep.
-    Browsing,
-}
-
-/// Runs a choice command: a closure, so it can carry its choice.
-type ChoiceRun<S> = Box<dyn Fn(&mut S)>;
-
-/// A command's label key for the current state.
-type Relabel<S> = Box<dyn Fn(&S) -> &'static str>;
-
-/// A command's chords: its own shortcut and the further ones.
-type Bound = (Option<KeyboardShortcut>, Vec<KeyboardShortcut>);
-
-/// Whether a choice command is the current choice.
-type ChoiceChecked<S> = Box<dyn Fn(&S) -> bool>;
-
 /// The application's commands, in menu order.
 pub struct Registry<S> {
     commands: Vec<Command<S>>,
     /// Fluent key of the menu that opens with a search field (§3.5).
     search_menu: Option<&'static str>,
-    /// Choice commands ([`Registry::add_choice`]): their runs and ticks,
-    /// by command id. Their [`Command`] entries carry everything else.
-    choice_runs: HashMap<&'static str, ChoiceRun<S>>,
-    choice_checks: HashMap<&'static str, ChoiceChecked<S>>,
-    /// Each command's chords after its own `shortcut`: they run it too,
-    /// outside the menus.
+    /// The UI-free registry owns dispatch, choices, labels and binding policy.
+    core: ::command::Registry<S>,
+    /// Parsed accelerator cache, refreshed only when bindings change.
     extras: HashMap<&'static str, Vec<KeyboardShortcut>>,
-    /// Commands whose shortcuts fire only in a [`Scope`] narrower than
-    /// anywhere.
-    scopes: HashMap<&'static str, Scope>,
-    /// Commands whose label follows the state ([`Registry::relabel`]).
-    labels: HashMap<&'static str, Relabel<S>>,
-    /// Every command's chords as built, kept by the first
-    /// [`Registry::rebind`] so each later one starts from them.
-    defaults: Option<HashMap<&'static str, Bound>>,
-    /// The runs waiting to be published on `<app>.command.executed`.
-    journal: std::cell::RefCell<crate::executed::Journal>,
+    /// Original parsed chords retain explicit Ctrl versus platform-command
+    /// flags. Their wire names alone cannot express that distinction.
+    parsed_defaults: HashMap<&'static str, Vec<KeyboardShortcut>>,
 }
 
 impl<S> Default for Registry<S> {
@@ -144,26 +104,11 @@ impl<S> Default for Registry<S> {
         Self {
             commands: Vec::new(),
             search_menu: None,
-            choice_runs: HashMap::new(),
-            choice_checks: HashMap::new(),
+            core: ::command::Registry::new(),
             extras: HashMap::new(),
-            scopes: HashMap::new(),
-            labels: HashMap::new(),
-            defaults: None,
-            journal: std::cell::RefCell::new(crate::executed::Journal::default()),
+            parsed_defaults: HashMap::new(),
         }
     }
-}
-
-/// Where a choice command sits and what it shows: a [`Command`]'s fields
-/// less its `run` and `enabled` (a choice can always be chosen).
-#[derive(Clone, Copy, Debug)]
-pub struct Place {
-    pub id: &'static str,
-    pub label: &'static str,
-    pub menu: Option<&'static str>,
-    pub submenu: Option<&'static str>,
-    pub group: u8,
 }
 
 /// A choice command's own run does nothing: the registry runs its closure.
@@ -192,6 +137,30 @@ impl<S> Registry<S> {
                 command.id
             );
         }
+        #[allow(deprecated)] // Transitional nullary wrapper, removed in plan step 7.
+        self.core.add_nullary(
+            ::command::Command {
+                id: command.id,
+                label: command.label,
+                menu: command.menu,
+                submenu: command.submenu,
+                group: command.group,
+                shortcut: None,
+                icon: command.icon.map(Icon::name),
+                enabled: ::command::always,
+                run: |_, _| Ok(serde_json::Value::Null),
+                params: None,
+                class: Class::Intent,
+            },
+            command.enabled,
+            command.run,
+        );
+        self.core.set_shortcut(
+            command.id,
+            command.shortcut.map(|s| crate::keymap::chord_text(&s)),
+        );
+        self.parsed_defaults
+            .insert(command.id, command.shortcut.into_iter().collect());
         self.commands.push(command);
         self
     }
@@ -227,8 +196,8 @@ impl<S> Registry<S> {
             enabled: always,
             run: choose,
         });
-        self.choice_runs.insert(id, Box::new(run));
-        self.choice_checks.insert(id, Box::new(checked));
+        // Replace the temporary nullary entry with its choice closure in core.
+        self.core.set_choice(id, run, checked);
         self
     }
 
@@ -245,7 +214,7 @@ impl<S> Registry<S> {
     ) -> &mut Self {
         let id = command.id;
         self.add(command);
-        self.choice_checks.insert(id, Box::new(checked));
+        self.core.check(id, checked);
         self
     }
 
@@ -254,17 +223,13 @@ impl<S> Registry<S> {
     /// # Panics
     /// When there is no command `id`.
     pub fn scope(&mut self, id: &str, scope: Scope) -> &mut Self {
-        let id = self
-            .get(id)
-            .unwrap_or_else(|| panic!("no command {id:?}"))
-            .id;
-        self.scopes.insert(id, scope);
+        self.core.scope(id, scope);
         self
     }
 
     /// Where command `id`'s shortcuts fire.
     pub fn scope_of(&self, id: &str) -> Scope {
-        self.scopes.get(id).copied().unwrap_or_default()
+        self.core.scope_of(id)
     }
 
     /// Give command `id` a label that follows the state ("Mark as Read"
@@ -274,27 +239,18 @@ impl<S> Registry<S> {
     /// # Panics
     /// When there is no command `id`.
     pub fn relabel(&mut self, id: &str, label: impl Fn(&S) -> &'static str + 'static) -> &mut Self {
-        let id = self
-            .get(id)
-            .unwrap_or_else(|| panic!("no command {id:?}"))
-            .id;
-        self.labels.insert(id, Box::new(label));
+        self.core.relabel(id, label);
         self
     }
 
     /// Command `id`'s label key in `state`.
     pub fn label_of(&self, id: &str, state: &S) -> Option<&'static str> {
-        let command = self.get(id)?;
-        Some(
-            self.labels
-                .get(id)
-                .map_or(command.label, |label| label(state)),
-        )
+        self.core.label_of(id, state)
     }
 
     /// Whether command `id` is a choice, and if so whether it is ticked.
     pub fn checked(&self, id: &str, state: &S) -> Option<bool> {
-        self.choice_checks.get(id).map(|checked| checked(state))
+        self.core.checked(id, state)
     }
 
     /// Open the menu `menu` (a Fluent menu key, usually Help) with a field
@@ -334,11 +290,14 @@ impl<S> Registry<S> {
             .get(id)
             .unwrap_or_else(|| panic!("no command {id:?}"))
             .id;
-        for shortcut in shortcuts {
-            if !self.taken(shortcut) {
-                self.extras.entry(id).or_default().push(shortcut);
-            }
-        }
+        let shortcuts: Vec<_> = shortcuts.into_iter().filter(|s| !self.taken(*s)).collect();
+        self.parsed_defaults
+            .entry(id)
+            .or_default()
+            .extend(&shortcuts);
+        self.core
+            .add_shortcuts(id, shortcuts.iter().map(crate::keymap::chord_text));
+        self.refresh_shortcuts();
         self
     }
 
@@ -391,101 +350,62 @@ impl<S> Registry<S> {
     ///
     /// Returns a note for each thing skipped, for the app's log.
     pub fn rebind(&mut self, overrides: &crate::keymap::Overrides) -> Vec<String> {
-        if self.defaults.is_none() {
-            let built = self
-                .commands
-                .iter()
-                .map(|c| {
-                    let more = self.extras.get(c.id).cloned().unwrap_or_default();
-                    (c.id, (c.shortcut, more))
-                })
-                .collect();
-            self.defaults = Some(built);
-        }
-        let defaults = self.defaults.clone().unwrap_or_default();
-        let mut notes = Vec::new();
-        let mut chosen: Vec<(&'static str, Bound)> = Vec::new();
-        let mut claimed = BTreeSet::new();
-        for (action, chords) in overrides {
-            let Some(id) = self.get(action).map(|c| c.id) else {
-                notes.push(format!("{action}: no such command"));
-                continue;
-            };
-            // Parse first: a list with no key the app knows (a typo) keeps
-            // the defaults; only an empty list unbinds.
-            let mut parsed: Vec<KeyboardShortcut> = Vec::new();
-            for text in chords {
-                match crate::keymap::parse_chord(text) {
-                    None => notes.push(format!("{action}: {text:?} is not a key")),
-                    Some(s) if parsed.contains(&s) => {
-                        notes.push(format!("{action}: {text:?} is listed twice"));
-                    }
-                    Some(s) => parsed.push(s),
-                }
-            }
-            if !chords.is_empty() && parsed.is_empty() {
-                notes.push(format!(
-                    "{action}: no key it names is known; the defaults stay"
-                ));
-                continue;
-            }
-            let mut list = Vec::new();
-            for s in parsed {
-                if claimed.insert(crate::keymap::chord_text(&s)) {
-                    list.push(s);
-                } else {
-                    let text = crate::keymap::chord_text(&s);
-                    notes.push(format!("{action}: {text:?} is bound to another command"));
-                }
-            }
-            let mut list = list.into_iter();
-            chosen.push((id, (list.next(), list.collect())));
-        }
-        let listed: BTreeSet<&str> = chosen.iter().map(|(id, _)| *id).collect();
-        let free = |s: &KeyboardShortcut| !claimed.contains(&crate::keymap::chord_text(s));
-        // A default that lost its accelerator promotes its next chord.
-        let mut bound: HashMap<&'static str, Bound> = defaults
-            .into_iter()
-            .filter(|(id, _)| !listed.contains(id))
-            .map(|(id, (own, mut more))| {
-                more.retain(free);
-                let own = match own {
-                    Some(s) if free(&s) => Some(s),
-                    Some(_) if !more.is_empty() => Some(more.remove(0)),
-                    _ => None,
-                };
-                (id, (own, more))
-            })
-            .collect();
-        bound.extend(chosen);
-        self.extras.clear();
-        for command in &mut self.commands {
-            let (own, more) = bound.remove(command.id).unwrap_or_default();
-            command.shortcut = own;
-            if !more.is_empty() {
-                self.extras.insert(command.id, more);
-            }
-        }
+        let notes = self.core.rebind(overrides, |text| {
+            crate::keymap::parse_chord(text).map(|s| crate::keymap::chord_text(&s))
+        });
+        self.refresh_shortcuts();
         notes
     }
 
+    fn refresh_shortcuts(&mut self) {
+        self.extras.clear();
+        let mut seen = Vec::new();
+        for c in &mut self.commands {
+            let defaults = self.parsed_defaults.get(c.id);
+            let overridden = self.core.shortcuts_overridden(c.id);
+            let (own, more) = self.core.bound_of(c.id);
+            let has_own = own.is_some();
+            let chords: Vec<_> = own
+                .into_iter()
+                .chain(more)
+                .map(|s| {
+                    defaults
+                        .filter(|_| !overridden)
+                        .and_then(|keys| {
+                            keys.iter().find(|key| crate::keymap::chord_text(key) == s)
+                        })
+                        .copied()
+                        .or_else(|| crate::keymap::parse_chord(&s))
+                        .unwrap_or_else(|| panic!("invalid shortcut {s:?} on {:?}", c.id))
+                })
+                .collect();
+            for chord in &chords {
+                assert!(!seen.contains(chord), "duplicate shortcut on {:?}", c.id);
+                seen.push(*chord);
+            }
+            let mut chords = chords.into_iter();
+            c.shortcut = if has_own { chords.next() } else { None };
+            let more: Vec<_> = chords.collect();
+            if !more.is_empty() {
+                self.extras.insert(c.id, more);
+            }
+        }
+    }
     /// Run the command `id` against `state`: the one dispatch path for the
     /// UI, the command line and the Bus. `origin` says how it was reached;
     /// an accepted run is recorded for `<app>.command.executed` once the
     /// handler returns, and a refused one is not.
     pub fn execute(&self, id: &str, state: &mut S, origin: Origin) -> Result<(), CommandError> {
-        let command = self
-            .get(id)
-            .ok_or_else(|| CommandError::Unknown(id.to_owned()))?;
-        if !(command.enabled)(state) {
-            return Err(CommandError::Disabled(command.id));
-        }
-        match self.choice_runs.get(command.id) {
-            Some(run) => run(state),
-            None => (command.run)(state),
-        }
-        self.journal.borrow_mut().record(command.id, origin);
-        Ok(())
+        self.core
+            .execute(id, state, serde_json::Value::Null, origin)
+            .map(|_| ())
+            .map_err(|err| match err {
+                Error::Unknown(id) => CommandError::Unknown(id),
+                Error::Disabled { id, .. } => CommandError::Disabled(id),
+                Error::BadParams { .. } | Error::Failed(_) => CommandError::Disabled(
+                    "legacy nullary dispatch: invalid parameters or handler failure",
+                ),
+            })
     }
 
     /// Record a run of `id` that the application performed itself instead
@@ -493,36 +413,37 @@ impl<S> Registry<S> {
     /// state, an action the editor or the Bus ran), so it is published like
     /// any other. Record only an accepted run, once.
     pub fn note(&self, id: &str, origin: Origin) {
-        self.journal.borrow_mut().record(id, origin);
+        self.core.note(id, origin);
     }
 
     /// The runs recorded since the last call, oldest first, and how many
     /// were dropped before them, for the application's Bus connection to
     /// publish ([`crate::executed`]).
     pub fn take_executed(&self) -> (Vec<Executed>, u64) {
-        self.journal.borrow_mut().take()
+        self.core.take_executed()
     }
 
     /// Every command with its current enablement, for `<app>.commands`.
     pub fn describe(&self, state: &S, strings: &Strings) -> Vec<Described> {
-        self.commands
-            .iter()
-            .map(|c| Described {
-                id: c.id,
-                label: label_text(strings, self.label_of(c.id, state).unwrap_or(c.label)),
-                menu: c.menu.map(|m| label_text(strings, m)),
-                shortcut: c.shortcut.map(|s| s.format(&ModifierNames::NAMES, false)),
-                more: self
-                    .extras
-                    .get(c.id)
-                    .into_iter()
-                    .flatten()
-                    .map(|s| s.format(&ModifierNames::NAMES, false))
-                    .collect(),
-                enabled: (c.enabled)(state),
-                checked: self.checked(c.id, state),
-            })
-            .collect()
+        let mut rows = self.core.describe(state, &ToolkitLabels(strings));
+        // Keep the established egui ModifierNames::NAMES wire spelling
+        // byte for byte.
+        for row in &mut rows {
+            let Some(command) = self.get(row.id) else {
+                continue;
+            };
+            row.shortcut = command
+                .shortcut
+                .map(|s| s.format(&ModifierNames::NAMES, false));
+            row.more = self
+                .extras
+                .get(row.id)
+                .into_iter()
+                .flatten()
+                .map(|s| s.format(&ModifierNames::NAMES, false))
+                .collect();
+        }
+        rows
     }
 
     /// Ids of the enabled commands whose shortcut was pressed this frame, in
@@ -547,7 +468,7 @@ impl<S> Registry<S> {
                 .retain(|event| match self.hit(event, held, clipboard) {
                     // A browsing chord is the text field's while one types.
                     Some(command) if typing && self.scope_of(command.id) == Scope::Browsing => true,
-                    Some(command) if (command.enabled)(state) => {
+                    Some(command) if self.core.enabled(command.id, state).is_ok() => {
                         fired.push(command.id);
                         false
                     }
@@ -562,7 +483,7 @@ impl<S> Registry<S> {
     /// input around the shortcuts asks this.
     pub fn takes(&self, event: &egui::Event, state: &S) -> bool {
         self.hit(event, egui::Modifiers::NONE, false)
-            .is_some_and(|c| (c.enabled)(state))
+            .is_some_and(|c| self.core.enabled(c.id, state).is_ok())
     }
 
     /// The command whose shortcut `event` presses, modifiers exactly.
@@ -726,7 +647,7 @@ impl<S> Registry<S> {
         let row = |c: &Command<S>| {
             let shortcut = c.shortcut.map(|s| ctx.format_shortcut(&s));
             let label = label_text(strings, self.label_of(c.id, state).unwrap_or(c.label));
-            let enabled = (c.enabled)(state);
+            let enabled = self.core.enabled(c.id, state).is_ok();
             Entry::Row(match self.checked(c.id, state) {
                 Some(checked) => Row::choice(c.id, label, shortcut, enabled, checked),
                 None => Row::command(c.id, label, shortcut, enabled),
@@ -786,7 +707,7 @@ impl<S> Registry<S> {
         self.commands
             .iter()
             .filter(|c| {
-                (c.enabled)(state)
+                self.core.enabled(c.id, state).is_ok()
                     && label_text(strings, self.label_of(c.id, state).unwrap_or(c.label))
                         .to_lowercase()
                         .contains(&query)
@@ -831,6 +752,150 @@ fn context_entries(ui: &mut egui::Ui, entries: &[Entry]) -> Option<&'static str>
     chosen
 }
 
+/// The egui view of an engine-owned command table. Shortcuts and icons are
+/// resolved once on construction and after rebinding. Dispatch and enablement
+/// always use the original engine registry; no handlers live in this adapter.
+/// Commands with `params: Some(_)` are excluded from menus, shortcuts and the
+/// palette, which dispatch nullary actions. They remain describable and can be
+/// run through `execute` with explicit parameters.
+pub struct EngineAdapter<S> {
+    ui: Registry<S>,
+}
+
+impl<S> EngineAdapter<S> {
+    pub fn new(core: EngineRegistry<S>) -> Self {
+        // Private UI rows use the legacy metadata shape so both table formats
+        // share the same rendering and exact-modifier input code. The dummy
+        // callbacks are never exposed or dispatched: core owns every handler.
+        let commands = core
+            .iter()
+            .filter(|c| c.params.is_none())
+            .map(|c| Command {
+                id: c.id,
+                label: c.label,
+                menu: c.menu,
+                submenu: c.submenu,
+                group: c.group,
+                shortcut: None,
+                icon: c
+                    .icon
+                    .and_then(|name| Icon::ALL.iter().copied().find(|i| i.name() == name)),
+                enabled: always,
+                run: choose,
+            })
+            .collect();
+        let mut ui = Registry {
+            commands,
+            search_menu: None,
+            core,
+            extras: HashMap::new(),
+            parsed_defaults: HashMap::new(),
+        };
+        ui.refresh_shortcuts();
+        Self { ui }
+    }
+
+    pub fn registry(&self) -> &EngineRegistry<S> {
+        &self.ui.core
+    }
+    pub fn into_registry(self) -> EngineRegistry<S> {
+        self.ui.core
+    }
+    pub fn execute(
+        &self,
+        id: &str,
+        state: &mut S,
+        params: serde_json::Value,
+        origin: Origin,
+    ) -> Result<serde_json::Value, Error> {
+        self.ui.core.execute(id, state, params, origin)
+    }
+    pub fn note(&self, id: &str, origin: Origin) {
+        self.ui.note(id, origin);
+    }
+    pub fn take_executed(&self) -> (Vec<Executed>, u64) {
+        self.ui.take_executed()
+    }
+    pub fn describe(&self, state: &S, strings: &Strings) -> Vec<Described> {
+        self.ui.describe(state, strings)
+    }
+    pub fn search<'a>(
+        &'a self,
+        query: &str,
+        state: &S,
+        strings: &Strings,
+    ) -> Vec<&'a EngineCommand<S>> {
+        self.ui
+            .search(query, state, strings)
+            .into_iter()
+            .filter_map(|c| self.ui.core.get(c.id))
+            .collect()
+    }
+    pub fn icon(&self, id: &str) -> Option<Icon> {
+        self.ui.get(id).and_then(|c| c.icon)
+    }
+    pub fn search_menu(&mut self, menu: &'static str) -> &mut Self {
+        self.ui.search_menu(menu);
+        self
+    }
+    pub fn rebind(&mut self, overrides: &crate::keymap::Overrides) -> Vec<String> {
+        self.ui.rebind(overrides)
+    }
+    pub fn shortcuts_of(&self, id: &str) -> Vec<KeyboardShortcut> {
+        self.ui.shortcuts_of(id)
+    }
+    pub fn shortcuts(&self, ctx: &egui::Context, state: &S) -> Vec<&'static str> {
+        self.ui.shortcuts(ctx, state)
+    }
+    pub fn takes(&self, event: &egui::Event, state: &S) -> bool {
+        self.ui.takes(event, state)
+    }
+    pub fn shortcut_grid(&self, ui: &mut egui::Ui, strings: &Strings) {
+        self.ui.shortcut_grid(ui, strings);
+    }
+    pub fn model(&self, ctx: &egui::Context, state: &S, strings: &Strings) -> Vec<Menu> {
+        self.ui.model(ctx, state, strings)
+    }
+    pub fn menu_bar(
+        &self,
+        ui: &mut egui::Ui,
+        state: &S,
+        strings: &Strings,
+    ) -> Vec<(&'static str, Origin)> {
+        self.ui.menu_bar(ui, state, strings)
+    }
+    pub fn menus(
+        &self,
+        ui: &mut egui::Ui,
+        state: &S,
+        strings: &Strings,
+    ) -> Vec<(&'static str, Origin)> {
+        self.ui.menus(ui, state, strings)
+    }
+    pub fn context_menu(
+        &self,
+        response: &egui::Response,
+        menu: &str,
+        state: &S,
+        strings: &Strings,
+    ) -> Option<&'static str> {
+        self.ui.context_menu(response, menu, state, strings)
+    }
+    #[allow(clippy::too_many_arguments)] // Mirrors the legacy context-menu API.
+    pub fn context_menu_over(
+        &self,
+        ui: &egui::Ui,
+        rect: egui::Rect,
+        id: egui::Id,
+        menu: &str,
+        state: &S,
+        strings: &Strings,
+    ) -> Option<&'static str> {
+        self.ui
+            .context_menu_over(ui, rect, id, menu, state, strings)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -844,6 +909,321 @@ mod tests {
     }
 
     const FTL: &str = "menu-edit = Edit\ncmd-bump = Bump\ncmd-reset = Reset\n";
+
+    #[test]
+    fn extras_without_an_accelerator_keep_description_and_menu_shape() {
+        let mut r = registry();
+        let chord = KeyboardShortcut::new(Modifiers::COMMAND, Key::U);
+        r.add_shortcuts("count.reset", [chord]);
+        r.rebind(&BTreeMap::new());
+        let state = Counter::default();
+        let strings = Strings::new(FTL);
+        let row = serde_json::to_value(&r.describe(&state, &strings)[1]).unwrap();
+        assert_eq!(row["shortcut"], serde_json::Value::Null);
+        assert_eq!(
+            row["more"],
+            serde_json::json!([chord.format(&ModifierNames::NAMES, false)])
+        );
+        assert!(
+            r.model(&egui::Context::default(), &state, &strings)[0].entries[1]
+                .row()
+                .unwrap()
+                .shortcut
+                .is_none()
+        );
+        let press = egui::Event::Key {
+            key: Key::U,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: chord.modifiers,
+        };
+        assert!(r.takes(&press, &state));
+        assert_eq!(fired_key(&r, &state, chord), ["count.reset"]);
+    }
+
+    #[test]
+    fn legacy_execute_dispatches_and_returns_errors_directly() {
+        let mut r = registry();
+        let mut state = Counter::default();
+        r.execute("count.bump", &mut state, Origin::Bus).unwrap();
+        assert_eq!(state.n, 1);
+        state.locked = true;
+        assert_eq!(
+            r.execute("count.bump", &mut state, Origin::Bus),
+            Err(CommandError::Disabled("count.bump"))
+        );
+        assert_eq!(
+            r.execute("absent", &mut state, Origin::Bus),
+            Err(CommandError::Unknown("absent".into()))
+        );
+        let mut failed = ::command::nullary!("failed", "Failed", |_: &mut Counter| {});
+        failed.run = |_, _| Err(Error::Failed("handler failed".into()));
+        r.core.add(failed);
+        assert!(
+            matches!(r.execute("failed", &mut state, Origin::Bus), Err(CommandError::Disabled(message)) if message.contains("handler failure"))
+        );
+        let mut bad = ::command::nullary!("bad", "Bad", |_: &mut Counter| {});
+        bad.run = |_, _| {
+            Err(Error::BadParams {
+                id: "bad",
+                msg: "invalid".into(),
+            })
+        };
+        r.core.add(bad);
+        assert!(
+            matches!(r.execute("bad", &mut state, Origin::Bus), Err(CommandError::Disabled(message)) if message.contains("invalid parameters"))
+        );
+    }
+
+    #[test]
+    fn typed_engine_commands_execute_but_are_absent_from_nullary_ui() {
+        let mut core = EngineRegistry::new();
+        let mut c = ::command::nullary!("count.set", "Set", |_: &mut Counter| {});
+        c.params = Some(ParamSpec {
+            type_name: "Count",
+            schema: || serde_json::from_value(serde_json::json!({"type": "object"})).unwrap(),
+        });
+        c.menu = Some("menu-edit");
+        c.shortcut = Some("Ctrl+B");
+        c.run = |s, params| {
+            let n: u32 =
+                serde_json::from_value(params["n"].clone()).map_err(|e| Error::BadParams {
+                    id: "count.set",
+                    msg: e.to_string(),
+                })?;
+            s.n = n;
+            Ok(serde_json::json!({"n": n}))
+        };
+        core.add(c);
+        let ui = EngineAdapter::new(core);
+        let mut state = Counter::default();
+        let strings = Strings::new(FTL);
+        assert!(
+            ui.model(&egui::Context::default(), &state, &strings)
+                .is_empty()
+        );
+        assert!(ui.search("", &state, &strings).is_empty());
+        assert!(ui.shortcuts_of("count.set").is_empty());
+        let press = egui::Event::Key {
+            key: Key::B,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: Modifiers::COMMAND,
+        };
+        assert!(!ui.takes(&press, &state));
+        assert!(ui.describe(&state, &strings)[0].schema.is_some());
+        assert!(matches!(
+            ui.execute(
+                "count.set",
+                &mut state,
+                serde_json::Value::Null,
+                Origin::Bus
+            ),
+            Err(Error::BadParams { .. })
+        ));
+        assert_eq!(
+            ui.execute(
+                "count.set",
+                &mut state,
+                serde_json::json!({"n": 42}),
+                Origin::Bus
+            )
+            .unwrap(),
+            serde_json::json!({"n": 42})
+        );
+        assert_eq!(state.n, 42);
+        assert_eq!(ui.take_executed().0.len(), 1);
+    }
+
+    #[test]
+    fn engine_adapter_reads_canonical_modifier_order() {
+        let mut core = EngineRegistry::new();
+        let mut c = ::command::nullary!("one", "One", |_: &mut Counter| {});
+        c.shortcut = Some("Alt+Shift+Ctrl+B");
+        core.add(c);
+        core.add_shortcuts("one", ["Ctrl+Shift+Alt+B".into()]);
+        let ui = EngineAdapter::new(core);
+        assert_eq!(
+            ui.shortcuts_of("one"),
+            [KeyboardShortcut::new(
+                Modifiers::COMMAND | Modifiers::SHIFT | Modifiers::ALT,
+                Key::B
+            )]
+        );
+    }
+
+    #[test]
+    #[should_panic(
+        expected = "duplicate shortcut \"Ctrl+B\" on \"command\" (chord text decides duplicates)"
+    )]
+    fn ctrl_and_command_duplicates_are_decided_by_chord_text() {
+        let mut r: Registry<Counter> = Registry::new();
+        for (id, modifiers) in [("ctrl", Modifiers::CTRL), ("command", Modifiers::COMMAND)] {
+            r.add(Command {
+                id,
+                label: id,
+                menu: None,
+                submenu: None,
+                group: 0,
+                shortcut: Some(KeyboardShortcut::new(modifiers, Key::B)),
+                icon: None,
+                enabled: always,
+                run: |_| {},
+            });
+        }
+    }
+
+    #[test]
+    fn legacy_describe_golden_locks_egui_names() {
+        let mut r: Registry<Counter> = Registry::new();
+        for (id, key) in [
+            ("left", Key::ArrowLeft),
+            ("right", Key::ArrowRight),
+            ("up", Key::ArrowUp),
+            ("down", Key::ArrowDown),
+            ("equals", Key::Equals),
+            ("minus", Key::Minus),
+        ] {
+            r.add(Command {
+                id,
+                label: id,
+                menu: None,
+                submenu: None,
+                group: 0,
+                shortcut: Some(KeyboardShortcut::new(Modifiers::COMMAND, key)),
+                icon: None,
+                enabled: always,
+                run: |_| {},
+            });
+        }
+        r.add_shortcuts(
+            "equals",
+            [KeyboardShortcut::new(Modifiers::ALT, Key::ArrowLeft)],
+        );
+        let rows =
+            serde_json::to_value(r.describe(&Counter::default(), &Strings::new(FTL))).unwrap();
+        let golden = [
+            "Ctrl+Left",
+            "Ctrl+Right",
+            "Ctrl+Up",
+            "Ctrl+Down",
+            "Ctrl+Equals",
+            "Ctrl+Minus",
+        ];
+        for (row, shortcut) in rows.as_array().unwrap().iter().zip(golden) {
+            let id = row["id"].as_str().unwrap();
+            let mut expected = serde_json::json!({"id": id, "label": id, "menu": null, "shortcut": shortcut,
+                "enabled": true, "checked": null, "reason": null, "class": "intent", "schema": null});
+            if id == "equals" {
+                expected["more"] = serde_json::json!(["Alt+Left"]);
+            }
+            assert_eq!(row, &expected);
+        }
+    }
+
+    #[test]
+    fn explicit_ctrl_defaults_survive_extras_rebinding_and_restoration() {
+        let raw = KeyboardShortcut::new(Modifiers::CTRL, Key::B);
+        let mut r: Registry<Counter> = Registry::new();
+        r.add(Command {
+            id: "raw",
+            label: "cmd-bump",
+            menu: None,
+            submenu: None,
+            group: 0,
+            shortcut: Some(raw),
+            icon: None,
+            enabled: always,
+            run: |_| {},
+        });
+        r.add_shortcuts("raw", [KeyboardShortcut::new(Modifiers::CTRL, Key::U)]);
+        assert_eq!(r.shortcuts_of("raw")[0], raw);
+        let press = egui::Event::Key {
+            key: Key::B,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: Modifiers::CTRL,
+        };
+        assert!(r.takes(&press, &Counter::default()));
+        r.rebind(&BTreeMap::new());
+        assert_eq!(r.shortcuts_of("raw")[0], raw);
+        assert!(r.takes(&press, &Counter::default()));
+        r.rebind(&[("raw".to_owned(), vec!["Ctrl+B".to_owned()])].into());
+        assert_eq!(r.shortcuts_of("raw")[0].modifiers, Modifiers::COMMAND);
+        r.rebind(&BTreeMap::new());
+        assert_eq!(r.shortcuts_of("raw")[0], raw);
+        assert!(r.takes(&press, &Counter::default()));
+    }
+
+    #[test]
+    fn engine_owned_tables_use_the_same_input_rendering_and_dispatch() {
+        let mut core = EngineRegistry::new();
+        let mut c = ::command::nullary!("count.bump", "cmd-bump", |s: &mut Counter| s.n += 1);
+        c.shortcut = Some("Ctrl+Shift+B");
+        c.icon = Some("plus"); // Unshipped icon names have no image.
+        c.menu = Some("menu-edit");
+        c.enabled = |s| if s.locked { Err("locked") } else { Ok(()) };
+        core.add(c);
+        let ui = EngineAdapter::new(core);
+        let mut s = Counter::default();
+        let key = KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::SHIFT, Key::B);
+        assert_eq!(ui.shortcuts_of("count.bump"), [key]);
+        let press = egui::Event::Key {
+            key: Key::B,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: key.modifiers,
+        };
+        assert!(ui.takes(&press, &s));
+        assert_eq!(
+            ui.search("bump", &s, &Strings::new(FTL))[0].id,
+            "count.bump"
+        );
+        assert_eq!(ui.icon("count.bump"), None);
+        assert_eq!(
+            ui.execute(
+                "count.bump",
+                &mut s,
+                serde_json::Value::Null,
+                Origin::Shortcut
+            )
+            .unwrap(),
+            serde_json::Value::Null
+        );
+        assert_eq!(s.n, 1);
+        assert_eq!(ui.take_executed().0[0].origin, Origin::Shortcut);
+        s.locked = true;
+        assert!(!ui.takes(&press, &s));
+        assert_eq!(
+            ui.describe(&s, &Strings::new(FTL))[0].reason,
+            Some("locked")
+        );
+        assert!(
+            !ui.model(&egui::Context::default(), &s, &Strings::new(FTL))[0].entries[0]
+                .row()
+                .unwrap()
+                .enabled
+        );
+    }
+
+    #[test]
+    fn legacy_description_fields_keep_their_wire_values() {
+        let r = registry();
+        let row =
+            serde_json::to_value(&r.describe(&Counter::default(), &Strings::new(FTL))[0]).unwrap();
+        assert_eq!(
+            row,
+            serde_json::json!({
+                "id": "count.bump", "label": "Bump", "menu": "Edit",
+                "shortcut": KeyboardShortcut::new(Modifiers::COMMAND, Key::B).format(&ModifierNames::NAMES, false),
+                "enabled": true, "checked": null, "reason": null, "class": "intent", "schema": null
+            })
+        );
+    }
 
     fn registry() -> Registry<Counter> {
         let mut r = Registry::new();

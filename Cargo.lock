@@ -1435,6 +1435,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "command"
+version = "0.1.0"
+dependencies = [
+ "fluent-bundle",
+ "schemars",
+ "serde",
+ "serde_json",
+ "uuid",
+]
+
+[[package]]
 name = "comp-model"
 version = "0.1.1"
 dependencies = [
@@ -9915,13 +9926,13 @@ name = "toolkit"
 version = "0.1.1"
 dependencies = [
  "assets",
+ "command",
  "config",
  "design",
  "egui",
  "egui-wgpu",
  "egui_extras",
  "egui_kittest",
- "fluent-bundle",
  "futures",
  "image",
  "png 0.18.1",
@@ -9933,7 +9944,6 @@ dependencies = [
  "smithay-client-toolkit 0.19.2",
  "tempfile",
  "thumbs",
- "uuid",
  "wayland-backend",
  "wgpu",
  "xkbcommon 0.7.0",
