@@ -45,6 +45,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     slots::sdnotify::init();
     let cli = cli::parse(&buildinfo::build_info!().line());
     let backend = cli::resolve(&cli);
+    if backend == cli::Backend::Headless {
+        // SAFETY: before logging or any other threads are started. Also makes
+        // the configured XWayland props agree with this backend's policy.
+        unsafe { std::env::set_var("COMPD_XWAYLAND", "0") };
+    }
     if let Some(node) = cli.render_node.clone() {
         model::environment::config::base::override_render_node(node);
     }

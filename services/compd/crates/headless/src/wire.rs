@@ -7,6 +7,7 @@ use std::{cell::RefCell, fs::OpenOptions, os::fd::OwnedFd, rc::Rc};
 use outputs::render_contract::contract::{DisplayBackend, RenderContract, RendererId};
 use smithay::backend::allocator::{Fourcc, dmabuf::Dmabuf, format::FormatSet, gbm::GbmDevice};
 use smithay::backend::egl::{EGLDevice, EGLDisplay};
+use smithay::backend::drm::{DrmNode, NodeType};
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
 use smithay::backend::renderer::{ImportDma, ImportEgl, Offscreen};
 use smithay::output::{Mode, Output, PhysicalProperties, Scale, Subpixel};
@@ -58,6 +59,9 @@ impl RenderContract for Contract {
 
 pub fn wire(state: &mut Loop, event_loop: &mut EventLoop<Loop>, options: Options<'_>) -> Result<(), Box<dyn std::error::Error>> {
     // No DrmDevice, seat, udev or input backend: GBM holds only this render fd.
+    if DrmNode::from_path(options.render_node)?.node_type() != NodeType::Render {
+        return Err("headless requires a DRM render node, not a primary or control node".into());
+    }
     let file = OpenOptions::new().read(true).write(true).open(options.render_node)?;
     let gbm = GbmDevice::new(DeviceFd::from(OwnedFd::from(file)))?;
     let display = unsafe { EGLDisplay::new(gbm) }?;

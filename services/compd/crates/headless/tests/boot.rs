@@ -47,6 +47,9 @@ struct Process {
 
 impl Drop for Process {
     fn drop(&mut self) {
+        if thread::panicking() {
+            eprintln!("compd log: {}", fs::read_to_string(self.root.join("compd.log")).unwrap_or_default());
+        }
         let _ = self.stop.send(());
         if let Some(watchdog) = self.watchdog.take() { let _ = watchdog.join(); }
         let _ = self.child.kill();
@@ -81,6 +84,10 @@ fn boot(scale: i32, explicit_node: bool) {
         .env("XDG_DATA_HOME", root.join("data"))
         .env("XDG_CACHE_HOME", root.join("cache"))
         .env("HOME", &root)
+        .env("MIXOS_ETC", root.join("etc"))
+        .env("MIXOS_VAR", root.join("var"))
+        .env("MIXOS_RUN", root.join("run"))
+        .env("MIXOS_NODED_URL", "ws://127.0.0.1:1")
         // Deliberately request XWayland: --headless must keep it off.
         .env("COMPD_XWAYLAND", "1")
         .env_remove("NOTIFY_SOCKET")
@@ -117,6 +124,11 @@ fn boot(scale: i32, explicit_node: bool) {
     assert_eq!(state.name.as_deref(), Some("headless-0"));
     assert_eq!(state.mode, Some((1280, 720, 60_000)));
     assert_eq!(state.scale, Some(scale));
+    while !fs::read_to_string(&log).unwrap().contains("headless: first offscreen frame completed") {
+        assert!(Instant::now() < deadline, "first frame timed out: {}", fs::read_to_string(&log).unwrap());
+        assert!(process.child.try_wait().unwrap().is_none(), "compd died before first frame");
+        thread::sleep(Duration::from_millis(20));
+    }
     let stat = fs::read_to_string(format!("/proc/{pid}/stat")).unwrap();
     let fields: Vec<_> = stat.rsplit_once(')').unwrap().1.split_whitespace().collect();
     assert_eq!(fields[15], "20", "stat field 18: normal priority");

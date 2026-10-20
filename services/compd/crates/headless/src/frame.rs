@@ -59,7 +59,9 @@ fn draw(state: &mut Loop, ctx: &mut Context) {
             state.state.redraw.frame(&key, false);
             present(state, &ctx.output, &visible);
             model::stats::registry::base::present(&key);
-            slots::sdnotify::ready_once("first frame presented (headless)");
+            if slots::sdnotify::ready_once("first frame presented (headless)") {
+                info!("headless: first offscreen frame completed");
+            }
         }
         Ok(false) => {
             state.state.redraw.frame(&key, true);

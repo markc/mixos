@@ -341,3 +341,19 @@ fn chords_and_ids_are_unique_and_spelled_as_comp_spells_them() {
     assert_eq!(kms.table[0].chord, "Ctrl+Alt+F1");
     assert_eq!(kms.table[0].action, "SwitchVt");
 }
+#[test]
+fn headless_profile_has_no_vt_host_or_exit_actions() {
+    let profile = super::BindingProfile::from_name("headless");
+    assert_eq!(profile.name(), "headless");
+    let state = super::BindingState::for_profile(profile, true);
+    let snapshot = state.snapshot();
+    assert_eq!(snapshot.profile, "headless");
+    assert!(!snapshot.table.is_empty());
+    for binding in &state.table.bindings {
+        assert!(!matches!(binding.action,
+            super::BindingAction::SwitchVt(_) |
+            super::BindingAction::ToggleInterception |
+            super::BindingAction::ExitNestedCompositor));
+    }
+}
+
