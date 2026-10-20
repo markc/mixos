@@ -53,12 +53,7 @@ where
                 }
                 Err(error) => Err(anyhow::anyhow!(error.to_string())),
             } {
-                Ok((rc, body, _)) => match serde_json::from_str::<Value>(&body) {
-                    Ok(body) => json!({"id":request.id,"rc":rc,"body":body}),
-                    Err(error) => {
-                        json!({"id":request.id,"rc":-1,"error":format!("invalid Bus reply JSON: {error}")})
-                    }
-                },
+                Ok((rc, body, _)) => bus_reply(request.id, rc, &body),
                 Err(error) => {
                     transport_failed = true;
                     json!({"id":request.id,"rc":-1,"error":error.to_string()})
@@ -78,4 +73,21 @@ where
         anyhow::ensure!(!transport_failed, "bridge Bus connection failed");
     }
     Ok(())
+}
+
+fn bus_reply(id: Value, rc: i32, body: &str) -> Value {
+    let body = serde_json::from_str::<Value>(body)
+        .unwrap_or_else(|_| json!({"error":body}));
+    json!({"id":id,"rc":rc,"body":body})
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn plain_text_bus_error_preserves_rc_and_body() {
+        assert_eq!(bus_reply(json!(7), 42, "service unavailable"),
+            json!({"id":7,"rc":42,"body":{"error":"service unavailable"}}));
+    }
 }
