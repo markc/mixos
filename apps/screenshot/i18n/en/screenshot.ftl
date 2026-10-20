@@ -131,3 +131,5 @@ open-button = Open
 save-title = Save PNG
 save-button = Save
 path = File
+
+move = Move annotation

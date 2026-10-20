@@ -68,7 +68,8 @@ $scripts = [
   "services/releasesd/tests/releasesd_test.mix",
   "services/notifyd/tests/notify_test.mix",
   "services/notifyd/tests/notifyd_test.mix",
-  "apps/dopus/tests/dopus_bus_test.mix"
+  "apps/dopus/tests/dopus_bus_test.mix",
+  "apps/screenshot/tests/edit_path_test.mix"
 ]
 if len($only) > 0 then
   $scripts = filter($scripts, fn($s) = any($only, fn($n) = contains($s, $n)))
@@ -82,6 +83,7 @@ $env = {
   MIXOS_TEST_NODED: $bin .. "/noded",
   MIXOS_TEST_EDITD: $bin .. "/editd",
   MIXOS_TEST_DOPUS: $bin .. "/dopus",
+  MIXOS_TEST_SCREENSHOT: $bin .. "/screenshot",
   -- Pinned so a host's SCENES_FIRST_RUN=0 cannot leak into scenes_test.mix.
   SCENES_FIRST_RUN: "1",
   TZ: "UTC"

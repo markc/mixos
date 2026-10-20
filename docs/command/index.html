@@ -208,7 +208,7 @@
                 <div class="panel-title">On this page</div>
                 <div class="panel-content">
                     <nav id="toc-nav">
-                        <div class="toc-empty">No sections on this page</div>
+                        <a href="#history">History</a>
                     </nav>
                 </div>
             </div>
@@ -237,7 +237,7 @@
 <h1 id="command">Command</h1>
 <p><code>command</code> is the shared, UI-free registry for application engines. It owns
 <code>Command&lt;S&gt;</code>, <code>Registry&lt;S&gt;</code>, <code>Described</code>, <code>Error</code>, <code>Scope</code>, <code>Origin</code>,
-<code>Executed</code>, <code>Journal</code> and Fluent <code>Strings</code>. Its public contract is 0.2.0.
+<code>Executed</code>, <code>Journal</code> and Fluent <code>Strings</code>. Its public contract is 0.3.0.
 There are no egui or windowing dependencies.</p>
 <p><code>Registry::execute(id, state, params, origin)</code> looks up the command, calls
 the optional <code>authorize</code> hook, checks enablement, refuses parameters on
@@ -288,6 +288,18 @@ grammar, in Ctrl, Alt, Shift order. Keys preserve the stored spelling, such as
 dependency paths from reaching GUI crates, including through another workspace
 library. Unit and integration tests cover dispatch, schema reporting, journals
 and the toolkit shortcut behaviour.</p>
+<h2 id="history">History</h2>
+<p><code>command::History&lt;D&gt;</code> holds bounded <code>Arc&lt;D&gt;</code> snapshots for a cloneable,
+comparable document state. <code>History::new(initial, history::Budget { max_entries, max_bytes, bytes })</code> bounds retained undo and redo snapshots;
+the current state and saved checkpoint are retained separately. The byte
+function measures one snapshot, conservatively counting shared allocations.
+Edits clone the current state and commit only on success. Failed edits leave
+the state, checkpoint and both stacks untouched. New edits clear redo.</p>
+<p><code>edit(label, closure)</code> starts an undo step; consecutive
+<code>edit_coalesced(key, closure)</code> calls with the same key share a step. An ordinary
+edit, undo, redo or <code>mark_saved()</code> ends the coalescing group. <code>current()</code>,
+<code>can_undo()</code>, <code>can_redo()</code>, <code>depth()</code> and <code>labels()</code> expose state without mutation.
+<code>mark_saved()</code> records a checkpoint; <code>dirty()</code> compares document values.</p>
         </article>
         <p class="doc-source"><a href="/command/README.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
     </div>

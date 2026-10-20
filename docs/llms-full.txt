@@ -797,7 +797,7 @@ checked separately by the layering gate.
 | [buildinfo](https://github.com/markc/mixos/blob/main/libs/buildinfo/Cargo.toml) | buildinfo | lib | core | none | 0.1.1 |
 | [bus](https://github.com/markc/mixos/blob/main/libs/bus/Cargo.toml) | bus | lib | core | none | 0.1.1 |
 | [citizen](https://github.com/markc/mixos/blob/main/libs/citizen/Cargo.toml) | citizen | lib | core | none | 0.1.1 |
-| [command](https://github.com/markc/mixos/blob/main/libs/command/Cargo.toml) | command | lib | core | public | 0.2.0 |
+| [command](https://github.com/markc/mixos/blob/main/libs/command/Cargo.toml) | command | lib | core | public | 0.3.0 |
 | [config](https://github.com/markc/mixos/blob/main/libs/config/Cargo.toml) | config | lib | core | none | 0.1.1 |
 | [daemon](https://github.com/markc/mixos/blob/main/libs/daemon/Cargo.toml) | daemon | lib | core | none | 0.1.1 |
 | [davproto](https://github.com/markc/mixos/blob/main/libs/davproto/Cargo.toml) | davproto | lib | core | none | 0.1.1 |
@@ -2112,7 +2112,7 @@ The source is [`libs/citizen`](https://github.com/markc/mixos/tree/main/libs/cit
 
 `command` is the shared, UI-free registry for application engines. It owns
 `Command<S>`, `Registry<S>`, `Described`, `Error`, `Scope`, `Origin`,
-`Executed`, `Journal` and Fluent `Strings`. Its public contract is 0.2.0.
+`Executed`, `Journal` and Fluent `Strings`. Its public contract is 0.3.0.
 There are no egui or windowing dependencies.
 
 `Registry::execute(id, state, params, origin)` looks up the command, calls
@@ -2172,6 +2172,22 @@ The application layering table (`apps/layers.conf.mix`) prevents engine
 dependency paths from reaching GUI crates, including through another workspace
 library. Unit and integration tests cover dispatch, schema reporting, journals
 and the toolkit shortcut behaviour.
+
+## History
+
+`command::History<D>` holds bounded `Arc<D>` snapshots for a cloneable,
+comparable document state. `History::new(initial, history::Budget {
+max_entries, max_bytes, bytes })` bounds retained undo and redo snapshots;
+the current state and saved checkpoint are retained separately. The byte
+function measures one snapshot, conservatively counting shared allocations.
+Edits clone the current state and commit only on success. Failed edits leave
+the state, checkpoint and both stacks untouched. New edits clear redo.
+
+`edit(label, closure)` starts an undo step; consecutive
+`edit_coalesced(key, closure)` calls with the same key share a step. An ordinary
+edit, undo, redo or `mark_saved()` ends the coalescing group. `current()`,
+`can_undo()`, `can_redo()`, `depth()` and `labels()` expose state without mutation.
+`mark_saved()` records a checkpoint; `dirty()` compares document values.
 
 ---
 
@@ -31884,15 +31900,16 @@ Screenshot answers on the Bus as `screenshot` (schema `screenshot.v1`).
 | `screenshot.take` | `mode`, `window`, `comp` | as Print Screen: starts at once, or brings the window forward and asks about unsaved work at once; refused (`COMPOSITOR`) when `comp` names another compositor |
 | `screenshot.cancel` | | cancels a capture during its delay |
 | `screenshot.open` | `path` | opens an image; refused while unsaved annotations exist |
-| `screenshot.annotate` | `kind`, `points`, `colour`, `width`, and `text`, `size`, `number` for text and markers | the new annotation's id |
-| `screenshot.move`, `screenshot.delete` | `id` (and `dx`, `dy`) | the document |
-| `screenshot.crop` | `crop` `{x, y, width, height}`, or null | the document |
-| `screenshot.undo`, `screenshot.redo` | | the document |
+| `screenshot.annotate` (deprecated) | `kind`, `points`, `colour`, `width`, and `text`, `size`, `number` for text and markers | the document plus the new annotation's `id` |
+| `screenshot.move`, `screenshot.delete` (deprecated) | `id` (and `dx`, `dy`) | the document |
+| `screenshot.crop` (deprecated) | `crop` `{x, y, width, height}`, or null | the document |
+| `screenshot.undo`, `screenshot.redo` (deprecated) | | the document, including when history is empty |
 | `screenshot.save` | | saves into the screenshots folder as `YYYYMMDD_HHMMSS.png` (`_2`, `_3`… when taken); publishes `screenshot.saved` |
 | `screenshot.export` | `path` | Save As to a new file |
 | `screenshot.recent` | `limit` (1–100) | the newest saved shots |
 | `screenshot.select` | `tool`, `mode`, `window`, `output` | the UI state |
-| `screenshot.commands`, `screenshot.execute` | `id` | every command, or runs one as its menu item would |
+| `screenshot.commands` | | every command with parameter schemas, labels, shortcuts and enablement |
+| `screenshot.execute` | `id`, optional `params` | runs a command; answers `{executed, result, status, dialog, job}` |
 | `screenshot.theme` | `scheme`, `mode` | this window's look |
 | `screenshot.show`, `screenshot.quit` | | brings the window forward; closes it (refused with unsaved work) |
 
@@ -31904,12 +31921,45 @@ is refused rather than allowed to discard a person's unsaved annotations
 (`UNSAVED`), and is refused while a dialog is open (`DIALOG`) or another job
 runs (`BUSY`).
 
+### Parameterised document edits
+
+The headless `annotation` engine owns `edit.annotate` (the Shape body),
+`edit.move {id, dx, dy}`, `edit.delete {id}`, `edit.crop {crop}` (null resets),
+and nullary `edit.undo` / `edit.redo`. Dispatch through
+`screenshot.execute {id, params}`; its reply includes the command's `result`
+alongside status, dialog and job. Annotate returns document info plus the
+new object's `id`; the other edits return document info. Unknown fields in
+the execute body are refused with `ARGUMENT`.
+
+Pointer strokes, text, number markers, completed object drags, crops, menus,
+shortcuts and Bus calls all reach the same `command::Registry::execute`.
+A drag commits on release, making one undo step and one executed event.
+Delete selection is the nullary shell command `edit.delete_selected`; it
+dispatches `edit.delete` with the selected id. Keymap overrides that named
+the old nullary `edit.delete` must move to `edit.delete_selected`.
+Uncrop dispatches `edit.crop`. The shell's dialog/job checks compose with
+the engine's enablement.
+
+The six `screenshot.annotate`, `screenshot.move`, `screenshot.delete`,
+`screenshot.crop`, `screenshot.undo` and `screenshot.redo` verbs remain
+deprecated aliases of execute and preserve their old reply bodies and
+argument error codes at document limits. Alias undo/redo with empty history
+return the document without executing or publishing an event; the command
+and `screenshot.execute` remain disabled. Undo/redo use the shared
+`command::History`; its byte budget counts undo and redo snapshots. Raster
+workers receive a fresh history without old edits.
+
 The window is drivable like every MixOS app, including its menus: see
 [driving an app](../docs/drive.md) (`screenshot.ui.*`, `screenshot.window`). The
 verbs are registered in `docs/docs/spec/bus/verbs.conf.mix`. Each command run
 from a menu, a key, the toolbar or `screenshot.execute` is published on
-`screenshot.command.executed`
+`screenshot.command.executed` v2 with accepted `params` and returned `result`,
+including successful edits reached by hand or through the deprecated aliases
 ([executed commands](../docs/decisions/2026-10-11-executed-commands.md)).
+Edit › Delete and Edit › Uncrop each publish two executed events: first the
+inner `edit.delete` / `edit.crop` with parameters, then the nullary wrapper
+`edit.delete_selected` / `edit.uncrop`. The wrapper records the gesture;
+the inner command records the document edit.
 
 `screenshot --headless` runs the same verbs with no window, for agents and
 tests, registered under the headless names above so Print Screen never
@@ -33067,6 +33117,17 @@ written in Mix on `tcp_listen`.
 
 <!-- SPDX-License-Identifier: MIT OR Apache-2.0 -->
 # Changelog
+
+## 0.3.0 — 2026-10-21
+
+- Add bounded transactional `History<D>` snapshots, explicit coalescing,
+  undo/redo labels and saved checkpoints for application engines.
+- Count retained redo snapshots as well as undo in the history byte budget.
+- Route Screenshot document edits through parameterised commands. The
+  `screenshot.execute` body rejects unknown fields (`deny_unknown_fields`).
+- Rename Screenshot's nullary Delete selection command from `edit.delete`
+  to `edit.delete_selected`; keymap overrides naming the old command must
+  move to `edit.delete_selected`. `edit.delete {id}` now deletes one object.
 
 ## 0.2.0 — 2026-10-21
 

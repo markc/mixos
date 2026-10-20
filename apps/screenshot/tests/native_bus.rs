@@ -39,7 +39,8 @@ async fn next_on(
     tokio::time::timeout(Duration::from_secs(10), async {
         loop {
             match incoming.recv().await {
-                Some(BoundedIncomingEvent::Command(cmd)) if cmd.topic() == Some(topic) => {
+                Some(BoundedIncomingEvent::Command(cmd)) if cmd.topic().is_some() => {
+                    assert_eq!(cmd.topic(), Some(topic), "unexpected event: {}", cmd.body);
                     return serde_json::from_str(&cmd.body).unwrap();
                 }
                 Some(_) => {}
@@ -169,24 +170,53 @@ async fn agent_capture_annotate_save_recent_export_cancel_and_quit() {
         0o600,
         "the raw capture is private"
     );
-    call(
+    let params = json!({"kind":"redact","points":[{"x":10,"y":10},{"x":50,"y":40}],"colour":[0,0,0,1],"width":2});
+    let edit = call(
         &client,
-        "screenshot.annotate",
-        json!({"kind":"redact","points":[{"x":10,"y":10},{"x":50,"y":40}],"colour":[0,0,0,1],"width":2}),
+        "screenshot.execute",
+        json!({"id":"edit.annotate", "params":params}),
     )
     .await
     .unwrap();
+    let alias = call(&client, "screenshot.annotate", params.clone())
+        .await
+        .unwrap();
+    call(&client, "screenshot.execute", json!({"id":"edit.undo"}))
+        .await
+        .unwrap();
+    let info = call(&client, "screenshot.info", json!({})).await.unwrap();
+    assert_eq!(info["document"]["objects"].as_array().unwrap().len(), 1);
+    assert_eq!(info["document"]["undo"], 1);
+    for (id, object_id) in [
+        ("edit.annotate", edit["result"]["id"].clone()),
+        ("edit.annotate", alias["id"].clone()),
+        ("edit.undo", Value::Null),
+    ] {
+        let event = next_on(&mut incoming, &format!("{SERVICE}.command.executed")).await;
+        assert_eq!(event["v"], 2);
+        assert_eq!(event["id"], id);
+        assert_eq!(event["origin"], "bus");
+        if id == "edit.annotate" {
+            assert_eq!(event["params"], params);
+            assert_eq!(event["result"]["id"], object_id);
+        } else {
+            assert!(event["params"].is_null());
+        }
+    }
     let refused = call(&client, "screenshot.open", json!({"path": source}))
         .await
         .unwrap_err();
     assert!(refused.contains("UNSAVED"), "{refused}");
-    call(
-        &client,
-        "screenshot.crop",
-        json!({"crop":{"x":10,"y":10,"width":80,"height":60}}),
-    )
-    .await
-    .unwrap();
+    let crop = json!({"x":10,"y":10,"width":80,"height":60});
+    let cropped = call(&client, "screenshot.crop", json!({"crop":crop}))
+        .await
+        .unwrap();
+    let run = next_on(&mut incoming, &format!("{SERVICE}.command.executed")).await;
+    assert_eq!(run["v"], 2);
+    assert_eq!(run["id"], "edit.crop");
+    assert_eq!(run["origin"], "bus");
+    assert_eq!(run["params"], json!({"crop":crop}));
+    assert_eq!(run["result"], cropped);
 
     assert_eq!(
         std::fs::read(&source).unwrap(),
@@ -199,6 +229,9 @@ async fn agent_capture_annotate_save_recent_export_cancel_and_quit() {
     assert!(path.starts_with(&shots), "{path:?}");
     let name = path.file_name().unwrap().to_string_lossy().into_owned();
     assert!(annotation::library::is_shot_name(&name), "{name}");
+    let run = next_on(&mut incoming, &format!("{SERVICE}.command.executed")).await;
+    assert_eq!(run["id"], "file.save");
+    assert_eq!(run["origin"], "bus");
     let heard = next_on(&mut incoming, &format!("{SERVICE}.saved")).await;
     assert_eq!(heard["path"], json!(path));
     assert_eq!(heard["annotated"], true);
@@ -226,6 +259,8 @@ async fn agent_capture_annotate_save_recent_export_cancel_and_quit() {
     call(&client, "screenshot.export", json!({"path": export}))
         .await
         .unwrap();
+    let heard = next_on(&mut incoming, &format!("{SERVICE}.saved")).await;
+    assert_eq!(heard["path"], json!(export));
     let exported = std::fs::read(&export).unwrap();
     assert!(
         call(&client, "screenshot.export", json!({"path": export}))
@@ -242,6 +277,8 @@ async fn agent_capture_annotate_save_recent_export_cancel_and_quit() {
         .await
         .unwrap();
     assert_eq!(executed["executed"], "file.save");
+    let run = next_on(&mut incoming, &format!("{SERVICE}.command.executed")).await;
+    assert_eq!(run["id"], "edit.annotate");
     let run = next_on(&mut incoming, &format!("{SERVICE}.command.executed")).await;
     assert_eq!(run["id"], "file.save");
     assert_eq!(run["origin"], "bus");

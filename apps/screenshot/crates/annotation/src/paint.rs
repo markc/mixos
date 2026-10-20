@@ -69,7 +69,7 @@ impl Document {
             }
             to[3] = from[3];
         }
-        for object in &self.state.objects {
+        for object in &self.history.current().objects {
             paint(&mut pixmap, &object.shape, face)?;
         }
         let mut bytes = pixmap.take();
@@ -82,7 +82,7 @@ impl Document {
             }
         }
         let image = RgbaImage::from_raw(w, h, bytes).ok_or("image layout mismatch")?;
-        Ok(if let Some(c) = self.state.crop {
+        Ok(if let Some(c) = self.history.current().crop {
             image::imageops::crop_imm(&image, c.x, c.y, c.width, c.height).to_image()
         } else {
             image

@@ -108,7 +108,7 @@ checked separately by the layering gate.
 | [buildinfo](https://github.com/markc/mixos/blob/main/libs/buildinfo/Cargo.toml) | buildinfo | lib | core | none | 0.1.1 |
 | [bus](https://github.com/markc/mixos/blob/main/libs/bus/Cargo.toml) | bus | lib | core | none | 0.1.1 |
 | [citizen](https://github.com/markc/mixos/blob/main/libs/citizen/Cargo.toml) | citizen | lib | core | none | 0.1.1 |
-| [command](https://github.com/markc/mixos/blob/main/libs/command/Cargo.toml) | command | lib | core | public | 0.2.0 |
+| [command](https://github.com/markc/mixos/blob/main/libs/command/Cargo.toml) | command | lib | core | public | 0.3.0 |
 | [config](https://github.com/markc/mixos/blob/main/libs/config/Cargo.toml) | config | lib | core | none | 0.1.1 |
 | [daemon](https://github.com/markc/mixos/blob/main/libs/daemon/Cargo.toml) | daemon | lib | core | none | 0.1.1 |
 | [davproto](https://github.com/markc/mixos/blob/main/libs/davproto/Cargo.toml) | davproto | lib | core | none | 0.1.1 |

@@ -15,6 +15,7 @@
 //! The session theme is the look settingsd holds for the desktop profile,
 //! followed through a [`settings::follow::Follower`]; without it, the theme
 //! file's. The window's own choice (View › Theme) lays over either.
+use crate::app::SharedCommands;
 use crate::app::{App, Effect, Pending};
 use crate::capture::{Comp, CompBus, Mode, Target};
 use crate::jobs::{self, Done};
@@ -29,7 +30,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex, mpsc};
 use std::task::Poll;
 use toolkit::command::Origin;
-use toolkit::{Registry, Strings, Theme, drive};
+use toolkit::{Strings, Theme, drive};
 
 /// What finished off the UI thread.
 pub enum Event {
@@ -92,7 +93,7 @@ const LOOK_BUDGET: std::time::Duration = std::time::Duration::from_secs(30);
 
 pub struct Shell {
     app: App,
-    commands: Registry<App>,
+    commands: SharedCommands,
     strings: Strings,
     /// The session theme, and the theme file's (the fallback).
     base: Theme,
@@ -182,8 +183,8 @@ impl Shell {
             service: comp.clone(),
         });
         let mut shell = Self {
+            commands: app.commands.clone(),
             app,
-            commands: crate::commands::registry(),
             strings: strings(),
             base: theme.clone(),
             file_theme: theme.clone(),
@@ -313,7 +314,7 @@ impl Shell {
 
     fn settle(&mut self) {
         loop {
-            let effects = jobs::settle(&mut self.app, &self.commands, &self.strings, true);
+            let effects = jobs::settle(&mut self.app, &self.commands.borrow(), &self.strings, true);
             if effects.is_empty() {
                 break;
             }
@@ -327,7 +328,7 @@ impl Shell {
     /// Publish the commands run since the last call on
     /// `<service>.command.executed`.
     fn publish_executed(&self) {
-        let (runs, lost) = self.commands.take_executed();
+        let (runs, lost) = self.commands.borrow().take_executed();
         if runs.is_empty() && lost == 0 {
             return;
         }
@@ -547,7 +548,7 @@ impl Shell {
         if keymap == self.keymap {
             return;
         }
-        for note in self.commands.rebind(&keymap) {
+        for note in self.commands.borrow_mut().rebind(&keymap) {
             eprintln!("screenshot: keymap: {note}");
         }
         self.keymap = keymap;
@@ -637,7 +638,7 @@ impl Shell {
             ui.ctx().memory(|m| m.focused().is_some()) && ui.ctx().egui_wants_keyboard_input();
         let mut events: Vec<UiEvent> = Vec::new();
         if !typing && !toolkit::menu::is_open(ui.ctx()) && !self.app.modal() {
-            let fired = self.commands.shortcuts(ui.ctx(), &self.app);
+            let fired = self.commands.borrow().shortcuts(ui.ctx(), &self.app);
             let cancelled = fired.contains(&"capture.cancel");
             events.extend(
                 fired
@@ -658,13 +659,13 @@ impl Shell {
         events.extend(view(
             ui,
             &self.app,
-            &self.commands,
+            &self.commands.borrow(),
             &self.strings,
             stroke,
             self.preview.as_ref(),
             &mut self.drag,
         ));
-        apply(&mut self.app, &self.commands, events);
+        apply(&mut self.app, &self.commands.borrow(), events);
         self.settle();
         self.release();
         if self.installed != Some(self.app.theme) {

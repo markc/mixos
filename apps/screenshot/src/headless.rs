@@ -27,10 +27,10 @@ pub fn run(service: &str, url: &str, comp: &str, path: Option<PathBuf>) -> Resul
         handle: handle.clone(),
         service: comp_service.clone(),
     });
-    let commands = crate::commands::registry();
     let strings = crate::strings();
     let face = crate::face();
     let mut app = App::new(crate::label, crate::ink::inks(), true);
+    let commands = app.commands.clone();
     app.comp = comp_service;
     jobs::prune();
     if let Some(path) = path {
@@ -41,7 +41,7 @@ pub fn run(service: &str, url: &str, comp: &str, path: Option<PathBuf>) -> Resul
         let mut cancel: Option<tokio::sync::watch::Sender<bool>> = None;
         loop {
             let mut exit = false;
-            for effect in jobs::settle(&mut app, &commands, &strings, false) {
+            for effect in jobs::settle(&mut app, &commands.borrow(), &strings, false) {
                 match effect {
                     Effect::Reply { id, rc, body } => handle.reply(id, rc, body),
                     Effect::Publish { suffix, body } => {
@@ -96,7 +96,7 @@ pub fn run(service: &str, url: &str, comp: &str, path: Option<PathBuf>) -> Resul
                     | Effect::Recent { .. } => {}
                 }
             }
-            publish_executed(&handle, &commands);
+            publish_executed(&handle, &commands.borrow());
             // Effects a refusal just queued (a copy, a show) are settled
             // before waiting again.
             if !exit && app.has_effects() {
@@ -129,7 +129,7 @@ pub fn run(service: &str, url: &str, comp: &str, path: Option<PathBuf>) -> Resul
 }
 
 /// Publish the commands run since the last call.
-fn publish_executed(handle: &citizen::Handle, commands: &toolkit::Registry<App>) {
+fn publish_executed(handle: &citizen::Handle, commands: &crate::app::Commands) {
     let (runs, lost) = commands.take_executed();
     if runs.is_empty() && lost == 0 {
         return;
