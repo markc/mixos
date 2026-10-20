@@ -5215,6 +5215,7 @@ dependencies = [
  "anyhow",
  "bus",
  "futures",
+ "notify",
  "serde",
  "serde_json",
  "tokio",
