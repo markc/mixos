@@ -2308,12 +2308,22 @@ interception chords. XWayland is disabled. Startup preserves inherited
 scheduling and nice values and does not publish desktop session variables.
 
 Frames repaint into alternating offscreen textures only when the scene
-changes, capped at 60 Hz. Completion is waited on before frame callbacks
-and software presentation feedback. This initial backend does not yet
-service screencopy, Bus capture or cursor capture.
+changes or a capture is due, capped at 60 Hz. `COMPD_HEADLESS_REFRESH_HZ`
+selects 30–60 Hz (default 60) for both the virtual mode and timer.
+Completion is waited on before screencopy, frame callbacks and software
+presentation feedback. Both `zwlr_screencopy` and `comp.capture.frame` work
+on idle outputs. Captures choose cursor inclusion individually: the normal
+frame excludes cursor elements, and a second pass runs only for captures
+requesting them. Callback-only commits and unchanged captures do not
+increase the window's `presentation.presented` counter.
 
 The ignored `headless` GPU tests need a built `compd` with this feature
-beside the test binaries, or selected by `COMPD_TEST_BINARY`.
+beside the test binaries, or selected by `COMPD_TEST_BINARY`. The capture
+tests also need built `noded` and `testkit-screenshot` binaries beside them;
+they start an owned private broker, without using a running desktop's Bus.
+The plain EGL client probe needs `weston-simple-egl` (override its path with
+`COMPD_TEST_EGL_CLIENT`); it records the first buffer's actual creation
+request and checks captured pixels.
 
 `cursor_sensitivity` in `preferences.json` is a speed multiplier on top of
 the output scale: compd multiplies each relative pointer delta by both, so
