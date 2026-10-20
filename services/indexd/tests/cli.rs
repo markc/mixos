@@ -7,7 +7,9 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
 struct Child(tokio::process::Child);
 impl Drop for Child {
-    fn drop(&mut self) { let _ = self.0.start_kill(); }
+    fn drop(&mut self) {
+        let _ = self.0.start_kill();
+    }
 }
 
 fn fixture() -> (tempfile::TempDir, std::path::PathBuf) {
@@ -18,7 +20,12 @@ fn fixture() -> (tempfile::TempDir, std::path::PathBuf) {
         std::fs::write(model.join(name), "invalid fixture: never loaded").unwrap();
     }
     let path = dir.path().join("config.conf.mix");
-    std::fs::write(&path, json!({"service":{"vectors_db":dir.path().join("vectors.db"),"model_dir":model}}).to_string()).unwrap();
+    std::fs::write(
+        &path,
+        json!({"service":{"vectors_db":dir.path().join("vectors.db"),"model_dir":model}})
+            .to_string(),
+    )
+    .unwrap();
     (dir, path)
 }
 
@@ -27,7 +34,9 @@ async fn ready(url: &str) {
         if let Ok(client) = ::bus::native_client::NodedClient::connect_anonymous(url).await {
             let reply = client.call("indexd", "indexd.stats", json!({})).await;
             client.close().await;
-            if reply.is_ok() { return; }
+            if reply.is_ok() {
+                return;
+            }
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
@@ -39,59 +48,139 @@ async fn serve_reconnect_bridge_flush_eof_and_sigterm() {
     let mut broker = test_broker::Broker::start();
     let (_dir, config) = fixture();
     let node_config = _dir.path().join("node.conf.mix");
-    let port = broker.url.strip_prefix("ws://127.0.0.1:").unwrap().strip_suffix("/ws").unwrap().parse::<u16>().unwrap();
-    std::fs::write(&node_config, json!({"wg_ip":"127.0.0.1","noded":{"port":port}}).to_string()).unwrap();
-    let mut daemon = Child(tokio::process::Command::new(env!("CARGO_BIN_EXE_indexd"))
-        .args(["-c", config.to_str().unwrap(), "serve"])
-        .env_remove("MIXOS_NODED_URL").env("MIXOS_NODE_CONFIG", &node_config)
-        .stdout(Stdio::null()).spawn().unwrap());
+    let port = broker
+        .url
+        .strip_prefix("ws://127.0.0.1:")
+        .unwrap()
+        .strip_suffix("/ws")
+        .unwrap()
+        .parse::<u16>()
+        .unwrap();
+    std::fs::write(
+        &node_config,
+        json!({"wg_ip":"127.0.0.1","noded":{"port":port}}).to_string(),
+    )
+    .unwrap();
+    let mut daemon = Child(
+        tokio::process::Command::new(env!("CARGO_BIN_EXE_indexd"))
+            .args(["-c", config.to_str().unwrap(), "serve"])
+            .env_remove("MIXOS_NODED_URL")
+            .env("MIXOS_NODE_CONFIG", &node_config)
+            .stdout(Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
     ready(&broker.url).await;
     broker.bounce();
     // Broker::start uses an ephemeral port; refresh config before reconnect.
-    let port = broker.url.strip_prefix("ws://127.0.0.1:").unwrap().strip_suffix("/ws").unwrap().parse::<u16>().unwrap();
-    std::fs::write(&node_config, json!({"wg_ip":"127.0.0.1","noded":{"port":port}}).to_string()).unwrap();
+    let port = broker
+        .url
+        .strip_prefix("ws://127.0.0.1:")
+        .unwrap()
+        .strip_suffix("/ws")
+        .unwrap()
+        .parse::<u16>()
+        .unwrap();
+    std::fs::write(
+        &node_config,
+        json!({"wg_ip":"127.0.0.1","noded":{"port":port}}).to_string(),
+    )
+    .unwrap();
     ready(&broker.url).await;
-    let mut bridge = Child(tokio::process::Command::new(env!("CARGO_BIN_EXE_indexd"))
-        .arg("bridge").env_remove("MIXOS_NODED_URL").env("MIXOS_NODE_CONFIG", &node_config)
-        .stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().unwrap());
+    let mut bridge = Child(
+        tokio::process::Command::new(env!("CARGO_BIN_EXE_indexd"))
+            .arg("bridge")
+            .env_remove("MIXOS_NODED_URL")
+            .env("MIXOS_NODE_CONFIG", &node_config)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap(),
+    );
     let mut input = bridge.0.stdin.take().unwrap();
     let mut lines = BufReader::new(bridge.0.stdout.take().unwrap()).lines();
     for (id, verb, body, rc) in [
-        (json!({"correlation":[1,"x"]}), "indexd.stats", json!({"action":"stats"}), 0),
-        (json!(null), "indexd.store", json!({"texts":["x"],"metadata":[{}]}), 10),
+        (
+            json!({"correlation":[1,"x"]}),
+            "indexd.stats",
+            json!({"action":"stats"}),
+            0,
+        ),
+        (
+            json!(null),
+            "indexd.store",
+            json!({"texts":["x"],"metadata":[{}]}),
+            10,
+        ),
         (json!(3), "indexd.unknown", json!({}), 10),
     ] {
-        input.write_all(format!("{}\n", json!({"id":id,"verb":verb,"body":body})).as_bytes()).await.unwrap();
+        input
+            .write_all(format!("{}\n", json!({"id":id,"verb":verb,"body":body})).as_bytes())
+            .await
+            .unwrap();
         input.flush().await.unwrap();
-        let line = tokio::time::timeout(Duration::from_secs(5), lines.next_line()).await.unwrap().unwrap().unwrap();
+        let line = tokio::time::timeout(Duration::from_secs(5), lines.next_line())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
         let response: Value = serde_json::from_str(&line).unwrap();
         assert_eq!(response["id"], id);
         assert_eq!(response["rc"], rc);
-        if rc == 10 { assert!(response["body"]["error"].is_string()); }
-        else { assert_eq!(response["body"]["total_vectors"], 0); }
+        if rc == 10 {
+            assert!(response["body"]["error"].is_string());
+        } else {
+            assert_eq!(response["body"]["total_vectors"], 0);
+        }
     }
     // Keep the bridge connection open while stopping the service and broker.
     // SAFETY: signal only this test's child process.
-    assert_eq!(unsafe { libc::kill(daemon.0.id().unwrap() as i32, libc::SIGTERM) }, 0);
-    assert!(tokio::time::timeout(Duration::from_secs(5), daemon.0.wait()).await.unwrap().unwrap().success());
+    assert_eq!(
+        unsafe { libc::kill(daemon.0.id().unwrap() as i32, libc::SIGTERM) },
+        0
+    );
+    assert!(
+        tokio::time::timeout(Duration::from_secs(5), daemon.0.wait())
+            .await
+            .unwrap()
+            .unwrap()
+            .success()
+    );
     broker.stop();
-    input.write_all(b"{\"id\":4,\"verb\":\"indexd.stats\",\"body\":{}}\n").await.unwrap();
-    let line = tokio::time::timeout(Duration::from_secs(5), lines.next_line()).await.unwrap().unwrap().unwrap();
+    input
+        .write_all(b"{\"id\":4,\"verb\":\"indexd.stats\",\"body\":{}}\n")
+        .await
+        .unwrap();
+    let line = tokio::time::timeout(Duration::from_secs(5), lines.next_line())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
     let response: Value = serde_json::from_str(&line).unwrap();
     assert_eq!(response["id"], 4);
     assert_eq!(response["rc"], -1);
     assert!(response["error"].is_string());
     drop(input);
-    assert!(tokio::time::timeout(Duration::from_secs(5), bridge.0.wait()).await.unwrap().unwrap().success());
+    assert!(
+        tokio::time::timeout(Duration::from_secs(5), bridge.0.wait())
+            .await
+            .unwrap()
+            .unwrap()
+            .success()
+    );
     assert!(lines.next_line().await.unwrap().is_none());
 }
 
 #[test]
 fn call_is_in_process_and_uses_explicit_config() {
     let (_dir, config) = fixture();
-    let run = |verb: &str, body: &str| std::process::Command::new(env!("CARGO_BIN_EXE_indexd"))
-        .args(["--config", config.to_str().unwrap(), "call", verb, body])
-        .env("MIXOS_NODED_URL", "ws://127.0.0.1:1/ws").output().unwrap();
+    let run = |verb: &str, body: &str| {
+        std::process::Command::new(env!("CARGO_BIN_EXE_indexd"))
+            .args(["--config", config.to_str().unwrap(), "call", verb, body])
+            .env("MIXOS_NODED_URL", "ws://127.0.0.1:1/ws")
+            .output()
+            .unwrap()
+    };
     let stats = run("indexd.stats", "{}");
     assert!(stats.status.success());
     let reply: Value = serde_json::from_slice(&stats.stdout).unwrap();
@@ -105,8 +194,17 @@ fn call_is_in_process_and_uses_explicit_config() {
 fn desktop_package_carries_indexd_and_owned_units() {
     let mix = std::env::var("MIXOS_TEST_MIX").unwrap_or_else(|_| "/opt/mixos/bin/mix".into());
     let output = std::process::Command::new(mix)
-        .args([concat!(env!("CARGO_MANIFEST_DIR"), "/tests/package_test.mix"), env!("CARGO_BIN_EXE_indexd")])
-        .output().unwrap();
-    assert!(output.status.success(), "{}\n{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+        .args([
+            concat!(env!("CARGO_MANIFEST_DIR"), "/tests/package_test.mix"),
+            env!("CARGO_BIN_EXE_indexd"),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
     println!("{}", String::from_utf8_lossy(&output.stdout));
 }

@@ -115,7 +115,9 @@ pub(crate) async fn chunk_tokenizer(
     })
     .await
     .map_err(|e| format!("chunk tokenizer worker failed: {e}"))
-    .and_then(|result| result.map_err(|e| format!("loading tokenizer for index_file chunking: {e:#}")));
+    .and_then(|result| {
+        result.map_err(|e| format!("loading tokenizer for index_file chunking: {e:#}"))
+    });
     let tokenizer = match result {
         Ok(tokenizer) => tokenizer,
         Err(error) => {
@@ -295,7 +297,10 @@ pub(crate) fn read_file_bounded(path: &Path, max_bytes: usize) -> Result<String,
 
 pub(crate) fn validate_file_path(path: &str) -> Result<(), String> {
     if path.starts_with('~') {
-        return Err("path must be absolute (daemon runs as system user indexd; \"~\" has no meaning here)".into());
+        return Err(
+            "path must be absolute (daemon runs as system user indexd; \"~\" has no meaning here)"
+                .into(),
+        );
     }
     if !Path::new(path).is_absolute() {
         return Err("path must be absolute".into());

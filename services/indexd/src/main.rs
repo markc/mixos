@@ -38,13 +38,20 @@ fn main() -> Result<()> {
         logging::LogDefaults::daemon("indexd").with_stats(false),
     )?;
     let runtime = tokio::runtime::Builder::new_multi_thread()
-                .enable_all()
-                .build()?;
+        .enable_all()
+        .build()?;
     if matches!(cli.command, Command::Bridge) {
         return runtime.block_on(async {
             let client = ::bus::client_helpers::connect_anonymous_default().await;
-            let result = indexd::bridge::run(tokio::io::BufReader::new(tokio::io::stdin()), tokio::io::stdout(), &client).await;
-            if let Ok(client) = client { client.close().await; }
+            let result = indexd::bridge::run(
+                tokio::io::BufReader::new(tokio::io::stdin()),
+                tokio::io::stdout(),
+                &client,
+            )
+            .await;
+            if let Ok(client) = client {
+                client.close().await;
+            }
             result
         });
     }
@@ -67,7 +74,8 @@ fn main() -> Result<()> {
                 let (stop_tx, stop_rx) = tokio::sync::watch::channel(false);
                 let service = indexd::bus::run(engine.clone(), stop_rx);
                 tokio::pin!(service);
-                let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
+                let mut term =
+                    tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
                 tokio::select! {
                     _ = &mut service => {},
                     _ = term.recv() => { let _ = stop_tx.send(true); service.await; },
@@ -78,7 +86,9 @@ fn main() -> Result<()> {
             Command::Call { verb, json_body } => {
                 let reply = engine.call(&verb, serde_json::from_str(&json_body)?).await;
                 println!("{reply}");
-                if reply.get("error").is_some() { anyhow::bail!("indexd call failed"); }
+                if reply.get("error").is_some() {
+                    anyhow::bail!("indexd call failed");
+                }
                 Ok(())
             }
             Command::Bridge | Command::CheckConfig => unreachable!(),

@@ -568,7 +568,11 @@ pub(crate) fn rss_bytes() -> u64 {
 /// Background indexing job envelope. Carries the origin context so the
 /// worker's CPU is attributed to the requester that queued it — the
 /// foreground `index_file` ack is near-zero cost, the real work lands
-pub(crate) async fn ensure_model(state: &Arc<EngineState>, lease: Arc<InferenceLease>, t: &mut ReqTiming) -> Result<Arc<EmbedModel>> {
+pub(crate) async fn ensure_model(
+    state: &Arc<EngineState>,
+    lease: Arc<InferenceLease>,
+    t: &mut ReqTiming,
+) -> Result<Arc<EmbedModel>> {
     let mut guard = lock_timed(state, t).await;
     if let Some(model) = &guard.model {
         return Ok(model.clone());
@@ -588,14 +592,16 @@ pub(crate) async fn ensure_model(state: &Arc<EngineState>, lease: Arc<InferenceL
         let _lease = lease;
         metrics::RSS_BEFORE_LOAD_BYTES.store(rss_bytes(), Ordering::Relaxed);
         let model = EmbedModel::load(
-        dtype,
-        &svc.model_dir,
-        svc.max_sequence_tokens,
-        svc.max_forward_tokens,
+            dtype,
+            &svc.model_dir,
+            svc.max_sequence_tokens,
+            svc.max_forward_tokens,
         );
         metrics::RSS_AFTER_LOAD_BYTES.store(rss_bytes(), Ordering::Relaxed);
         model
-    }).await.context("model loader worker failed")?;
+    })
+    .await
+    .context("model loader worker failed")?;
     let mut guard = lock_timed(state, t).await;
     match loaded {
         Ok(model) => {
@@ -681,11 +687,11 @@ pub(crate) async fn compute_embeddings(
     let load_t0 = Instant::now();
     let load_res = ensure_model(state, inference_lease.clone(), t).await;
     if was_cold {
-            // Commit BEFORE checking the result: a slow FAILED load is
-            // exactly the burn this instrumentation must expose, not
-            // unexplained elapsed time with cold_model=false.
-            t.cold_model = true;
-            t.model_load_us += load_t0.elapsed().as_micros() as u64;
+        // Commit BEFORE checking the result: a slow FAILED load is
+        // exactly the burn this instrumentation must expose, not
+        // unexplained elapsed time with cold_model=false.
+        t.cold_model = true;
+        t.model_load_us += load_t0.elapsed().as_micros() as u64;
     }
     let model = load_res.map_err(|e| format!("model load failed: {e}"))?;
 

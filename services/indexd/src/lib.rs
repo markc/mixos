@@ -3,9 +3,9 @@
 //! Local semantic indexing engine. The transport is added separately.
 //! Uses the system allocator so idle model unload can return pages to the OS.
 
-pub mod config;
-pub mod bus;
 pub mod bridge;
+pub mod bus;
+pub mod config;
 mod index_file;
 mod limits;
 mod metrics;

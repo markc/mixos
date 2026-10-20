@@ -260,22 +260,23 @@ pub(crate) async fn release_background_reservation(
     if drained_at_completion && queue_budget.is_empty() {
         let state = state.clone();
         let _ = tokio::task::spawn_blocking(move || {
-        if LONG_READERS.load(Ordering::Acquire) == 0 {
-            let guard = state.blocking_lock();
-            if let Err(e) = guard.db.checkpoint_truncate() {
-                guard.db.mark_checkpoint_owed();
-                tracing::debug!("background-drain WAL checkpoint skipped: {e}");
+            if LONG_READERS.load(Ordering::Acquire) == 0 {
+                let guard = state.blocking_lock();
+                if let Err(e) = guard.db.checkpoint_truncate() {
+                    guard.db.mark_checkpoint_owed();
+                    tracing::debug!("background-drain WAL checkpoint skipped: {e}");
+                }
+            } else {
+                state.blocking_lock().db.mark_checkpoint_owed();
             }
-        } else {
-            state.blocking_lock().db.mark_checkpoint_owed();
-        }
-        // Bulk indexing can leave freed allocator spans resident; trim once
-        // at the queue-empty transition, never per job.
-        // SAFETY: malloc_trim accepts zero and only releases unused glibc pages.
-        unsafe {
-            libc::malloc_trim(0);
-        }
-        }).await;
+            // Bulk indexing can leave freed allocator spans resident; trim once
+            // at the queue-empty transition, never per job.
+            // SAFETY: malloc_trim accepts zero and only releases unused glibc pages.
+            unsafe {
+                libc::malloc_trim(0);
+            }
+        })
+        .await;
     }
 }
 
@@ -423,5 +424,4 @@ mod tests {
             "validation failed: bad metadata"
         )));
     }
-
 }

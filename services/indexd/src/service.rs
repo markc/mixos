@@ -842,14 +842,20 @@ impl Engine {
 
     pub async fn call(&self, verb: &str, body: serde_json::Value) -> serde_json::Value {
         let action = verb.strip_prefix("indexd.").unwrap_or(verb);
-        if !crate::bus::verb_manifest().iter().any(|v| v.name == format!("indexd.{action}")) {
+        if !crate::bus::verb_manifest()
+            .iter()
+            .any(|v| v.name == format!("indexd.{action}"))
+        {
             return serde_json::json!({"error": format!("unknown verb: {verb}")});
         }
         let mut object = match body {
             serde_json::Value::Object(object) => object,
             _ => return serde_json::json!({"error": "request body must be an object"}),
         };
-        if object.get("action").is_some_and(|v| v.as_str() != Some(action)) {
+        if object
+            .get("action")
+            .is_some_and(|v| v.as_str() != Some(action))
+        {
             return serde_json::json!({"error":"action does not match verb"});
         }
         object.insert("action".into(), action.into());
@@ -862,9 +868,16 @@ impl Engine {
         let runtime = tokio::runtime::Handle::current();
         // SQLite, file IO and chunk tokenisation are synchronous. Poll the
         // request on the blocking pool, leaving runtime workers free for Bus IO.
-        let response = tokio::task::spawn_blocking(move || runtime.block_on(process_request(
-            &serde_json::Value::Object(object).to_string(), &state, &activity_tx, &ctx,
-        ))).await.unwrap_or_else(|e| json_error(&format!("request worker failed: {e}")));
+        let response = tokio::task::spawn_blocking(move || {
+            runtime.block_on(process_request(
+                &serde_json::Value::Object(object).to_string(),
+                &state,
+                &activity_tx,
+                &ctx,
+            ))
+        })
+        .await
+        .unwrap_or_else(|e| json_error(&format!("request worker failed: {e}")));
         serde_json::from_str(&response).expect("handlers produce JSON")
     }
 
@@ -887,21 +900,22 @@ impl Engine {
             config: Arc::new(config),
             chunk_tokenizer: Mutex::new(TokenizerCache::default()),
             inner: Mutex::new(AppState {
-            model: None,
-            dtype: if svc.dtype == "f32" {
-                DType::F32
-            } else {
-                DType::F16
-            },
-            db,
-            db_path,
-            model_breaker: CircuitBreaker::new(2, Duration::from_secs(60)),
-            embed_breaker: CircuitBreaker::new(3, Duration::from_secs(30)),
-            embed_cache: EmbeddingCache::new(),
-            inference_gate: Arc::new(tokio::sync::Semaphore::new(1)),
-            job_tx: job_tx.clone(),
-            queue_budget: queue_budget.clone(),
-        })});
+                model: None,
+                dtype: if svc.dtype == "f32" {
+                    DType::F32
+                } else {
+                    DType::F16
+                },
+                db,
+                db_path,
+                model_breaker: CircuitBreaker::new(2, Duration::from_secs(60)),
+                embed_breaker: CircuitBreaker::new(3, Duration::from_secs(30)),
+                embed_cache: EmbeddingCache::new(),
+                inference_gate: Arc::new(tokio::sync::Semaphore::new(1)),
+                job_tx: job_tx.clone(),
+                queue_budget: queue_budget.clone(),
+            }),
+        });
         let (activity_tx, mut activity_rx) = tokio::sync::mpsc::channel::<()>(16);
         let background_retry_max_attempts = svc.background_retry_max_attempts.max(1);
         let background_retry_initial_backoff_secs =
@@ -920,12 +934,13 @@ impl Engine {
                     }
                     let state = checkpoint_state.clone();
                     let _ = tokio::task::spawn_blocking(move || {
-                    let guard = state.blocking_lock();
-                    if let Err(e) = guard.db.checkpoint_truncate() {
-                        guard.db.mark_checkpoint_owed();
-                        tracing::debug!("WAL checkpoint retry failed: {e}");
-                    }
-                    }).await;
+                        let guard = state.blocking_lock();
+                        if let Err(e) = guard.db.checkpoint_truncate() {
+                            guard.db.mark_checkpoint_owed();
+                            tracing::debug!("WAL checkpoint retry failed: {e}");
+                        }
+                    })
+                    .await;
                 }
             }
         }));
@@ -1154,9 +1169,16 @@ mod tests {
     #[tokio::test]
     async fn index_file_rejects_tilde_even_with_content() {
         let (engine, dir) = engine("tilde");
-        let reply = engine.index_file(json!({"path":"~/doc.md", "content":""})).await;
-        assert_eq!(reply["error"], "path must be absolute (daemon runs as system user indexd; \"~\" has no meaning here)");
-        let queued = engine.index_file(json!({"path":"~/doc.md", "content":"", "background":true})).await;
+        let reply = engine
+            .index_file(json!({"path":"~/doc.md", "content":""}))
+            .await;
+        assert_eq!(
+            reply["error"],
+            "path must be absolute (daemon runs as system user indexd; \"~\" has no meaning here)"
+        );
+        let queued = engine
+            .index_file(json!({"path":"~/doc.md", "content":"", "background":true}))
+            .await;
         assert_eq!(queued, reply, "background must reject before acknowledging");
         drop(engine);
         std::fs::remove_dir_all(dir).unwrap();
@@ -1166,11 +1188,14 @@ mod tests {
     async fn tokenizer_loading_lock_does_not_block_stats_and_failures_have_cooldown() {
         let (engine, dir) = engine("tokenizer-cooldown");
         let held = engine.state.chunk_tokenizer.lock().await;
-        let stats = tokio::time::timeout(Duration::from_secs(1), engine.stats(json!({}))).await.unwrap();
+        let stats = tokio::time::timeout(Duration::from_secs(1), engine.stats(json!({})))
+            .await
+            .unwrap();
         assert_eq!(stats["total_vectors"], 0);
         drop(held);
         let first = chunk_tokenizer(&engine.state).await.err().unwrap();
-        std::fs::remove_file(Path::new(&engine.state.config.service.model_dir).join("config.json")).unwrap();
+        std::fs::remove_file(Path::new(&engine.state.config.service.model_dir).join("config.json"))
+            .unwrap();
         let second = chunk_tokenizer(&engine.state).await.err().unwrap();
         assert_eq!(first, second, "failed load is memoised during cooldown");
         drop(engine);

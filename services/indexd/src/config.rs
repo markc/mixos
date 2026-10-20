@@ -154,10 +154,17 @@ impl Config {
         );
         for name in ["config.json", "tokenizer.json", "model.safetensors"] {
             let path = Path::new(&self.service.model_dir).join(name);
-            anyhow::ensure!(path.is_file(), "missing local model file {}", path.display());
+            anyhow::ensure!(
+                path.is_file(),
+                "missing local model file {}",
+                path.display()
+            );
         }
         for prefix in self.domains.map.keys() {
-            anyhow::ensure!(Path::new(prefix).is_absolute(), "domains.map prefixes must be absolute: {prefix}");
+            anyhow::ensure!(
+                Path::new(prefix).is_absolute(),
+                "domains.map prefixes must be absolute: {prefix}"
+            );
         }
         Ok(())
     }
@@ -312,7 +319,12 @@ mod path_tests {
         let dir = temp_dir("validate");
         let mut cfg = Config::default();
         cfg.service.model_dir = dir.join("snapshot").to_string_lossy().into_owned();
-        assert!(cfg.validate().unwrap_err().to_string().contains("config.json"));
+        assert!(
+            cfg.validate()
+                .unwrap_err()
+                .to_string()
+                .contains("config.json")
+        );
         std::fs::create_dir(dir.join("snapshot")).unwrap();
         std::fs::write(dir.join("blob"), "fixture").unwrap();
         for name in ["config.json", "tokenizer.json", "model.safetensors"] {
@@ -320,7 +332,12 @@ mod path_tests {
         }
         cfg.validate().unwrap();
         cfg.domains.map.insert("~/project".into(), "project".into());
-        assert!(cfg.validate().unwrap_err().to_string().contains("must be absolute"));
+        assert!(
+            cfg.validate()
+                .unwrap_err()
+                .to_string()
+                .contains("must be absolute")
+        );
         std::fs::remove_file(dir.join("blob")).unwrap();
         assert!(cfg.validate().is_err(), "broken symlinks must fail");
         std::fs::remove_dir_all(dir).unwrap();
