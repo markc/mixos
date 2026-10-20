@@ -39,12 +39,11 @@ impl Dispatch<wl_registry::WlRegistry, ()> for OutputState {
             interface,
             version,
         } = event
+            && interface == "wl_output"
         {
-            if interface == "wl_output" {
-                state
-                    .outputs
-                    .push(registry.bind(name, version.min(4), qh, ()));
-            }
+            state
+                .outputs
+                .push(registry.bind(name, version.min(4), qh, ()));
         }
     }
 }

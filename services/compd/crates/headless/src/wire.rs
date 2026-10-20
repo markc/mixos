@@ -69,7 +69,7 @@ pub fn wire(
     options: Options<'_>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // No DrmDevice, seat, udev or input backend: GBM holds only this render fd.
-    if DrmNode::from_path(options.render_node)?.node_type() != NodeType::Render {
+    if DrmNode::from_path(options.render_node)?.ty() != NodeType::Render {
         return Err("headless requires a DRM render node, not a primary or control node".into());
     }
     let file = OpenOptions::new()
