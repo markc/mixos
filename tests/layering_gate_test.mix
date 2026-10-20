@@ -17,7 +17,8 @@ end
 
 fn check_case($name, $deps, $bridge, $expected, $flags)
   $file = $tmp .. "/metadata.json"
-  write_file($file, json_encode({workspace_members: ["engine", "bridge", "toolkit"], packages: [
+  $members = if starts_with($name, "external") then ["engine", "toolkit"] else ["engine", "bridge", "toolkit"] end
+  write_file($file, json_encode({workspace_members: $members, packages: [
     package_row("engine", "one-app", $deps),
     package_row("bridge", "another-owner", $bridge),
     package_row("toolkit", "toolkit", [dep("egui", nil)])
@@ -40,6 +41,7 @@ try
   check_case("dev edge excluded", [dep("egui", "dev")], [], 0, [])
   check_case("dev edge included", [dep("egui", "dev")], [], 1, ["--include-dev"])
   check_case("cycles terminate", [dep("bridge", nil)], [dep("engine", nil)], 0, [])
+  check_case("external GUI dependency path", [dep("bridge", nil)], [dep("egui", nil)], 1, [])
 finally
   remove_dir($tmp)
 end

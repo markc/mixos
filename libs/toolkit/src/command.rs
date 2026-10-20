@@ -158,7 +158,8 @@ impl<S> Registry<S> {
             command.id,
             command.shortcut.map(|s| crate::keymap::chord_text(&s)),
         );
-        self.parsed_defaults.insert(command.id, command.shortcut.into_iter().collect());
+        self.parsed_defaults
+            .insert(command.id, command.shortcut.into_iter().collect());
         self.commands.push(command);
         self
     }
@@ -289,8 +290,12 @@ impl<S> Registry<S> {
             .unwrap_or_else(|| panic!("no command {id:?}"))
             .id;
         let shortcuts: Vec<_> = shortcuts.into_iter().filter(|s| !self.taken(*s)).collect();
-        self.parsed_defaults.entry(id).or_default().extend(&shortcuts);
-        self.core.add_shortcuts(id, shortcuts.iter().map(crate::keymap::chord_text));
+        self.parsed_defaults
+            .entry(id)
+            .or_default()
+            .extend(&shortcuts);
+        self.core
+            .add_shortcuts(id, shortcuts.iter().map(crate::keymap::chord_text));
         self.refresh_shortcuts();
         self
     }
@@ -364,7 +369,9 @@ impl<S> Registry<S> {
                 .map(|s| {
                     defaults
                         .filter(|_| !overridden)
-                        .and_then(|keys| keys.iter().find(|key| crate::keymap::chord_text(key) == s))
+                        .and_then(|keys| {
+                            keys.iter().find(|key| crate::keymap::chord_text(key) == s)
+                        })
                         .copied()
                         .or_else(|| crate::keymap::parse_chord(&s))
                         .unwrap_or_else(|| panic!("invalid shortcut {s:?} on {:?}", c.id))
@@ -897,13 +904,24 @@ mod tests {
         let raw = KeyboardShortcut::new(Modifiers::CTRL, Key::B);
         let mut r: Registry<Counter> = Registry::new();
         r.add(Command {
-            id: "raw", label: "cmd-bump", menu: None, submenu: None, group: 0,
-            shortcut: Some(raw), icon: None, enabled: always, run: |_| {},
+            id: "raw",
+            label: "cmd-bump",
+            menu: None,
+            submenu: None,
+            group: 0,
+            shortcut: Some(raw),
+            icon: None,
+            enabled: always,
+            run: |_| {},
         });
         r.add_shortcuts("raw", [KeyboardShortcut::new(Modifiers::CTRL, Key::U)]);
         assert_eq!(r.shortcuts_of("raw")[0], raw);
         let press = egui::Event::Key {
-            key: Key::B, physical_key: None, pressed: true, repeat: false, modifiers: Modifiers::CTRL,
+            key: Key::B,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: Modifiers::CTRL,
         };
         assert!(r.takes(&press, &Counter::default()));
         r.rebind(&BTreeMap::new());

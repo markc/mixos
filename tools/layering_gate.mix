@@ -18,6 +18,8 @@
 --       [--offline] [--locked] [--frozen]
 --       [--across-components]
 --     --manifest-path   workspace manifest; runs cargo metadata --no-deps.
+--                       With --across-components, resolves external packages
+--                       too so their transitive dependency paths are checked.
 --     --metadata-file   pre-saved `cargo metadata --format-version 1` JSON
 --                       (with or without --no-deps).
 --     --layers          layer table (default: services/compd/layers.conf.mix
@@ -131,7 +133,9 @@ else
   if !is_file($manifest) then
     usage_die("manifest not found: " .. $manifest)
   end
-  $argv = concat(["cargo", "metadata", "--format-version", "1", "--no-deps", "--manifest-path", $manifest], $passthrough)
+  $argv = ["cargo", "metadata", "--format-version", "1"]
+  if !$across then push($argv, "--no-deps") end
+  $argv = concat($argv, ["--manifest-path", $manifest], $passthrough)
   $r = run_argv($argv, {timeout: 600, max_output: 536870912})
   if !$r.ok or $r.stdout_truncated then
     eprint("layering_gate: cargo metadata failed" .. if $r.stdout_truncated then " (stdout truncated)" else "" end)
