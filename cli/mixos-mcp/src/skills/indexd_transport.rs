@@ -245,7 +245,8 @@ impl Bridge {
     async fn call(&mut self, verb: &str, body: &Value) -> Result<Value> {
         self.next_id = self.next_id.wrapping_add(1);
         let id = self.next_id;
-        let request = json!({"id":id, "verb":verb, "body":body, "timeout_secs":self.settings.call_timeout_secs}).to_string() + "\n";
+        let timeout_secs = self.settings.call_timeout_secs.saturating_sub(10).max(1);
+        let request = json!({"id":id, "verb":verb, "body":body, "timeout_secs":timeout_secs}).to_string() + "\n";
         for attempt in 0..2 {
             // Owning the session across await is deliberate: cancellation or timeout
             // drops/kills it, so a late reply cannot be consumed by the next call.
@@ -417,6 +418,10 @@ mod tests {
     use super::*;
 
     fn fake() -> Option<(Transport, tempfile::TempDir)> {
+        fake_with_timeout(1)
+    }
+
+    fn fake_with_timeout(call_timeout_secs: u64) -> Option<(Transport, tempfile::TempDir)> {
         let mix = std::env::var_os("MIXOS_TEST_MIX")
             .map(std::path::PathBuf::from)
             .or_else(|| {
@@ -433,6 +438,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let settings = IndexdSettings {
             transport: IndexdTransport::Ssh,
+            call_timeout_secs,
             ssh_command: vec![
                 mix.to_string_lossy().into_owned(),
                 format!("{}/tests/fake_bridge.mix", env!("CARGO_MANIFEST_DIR")),
@@ -445,7 +451,7 @@ mod tests {
         Some((
             Transport::Ssh {
                 state: Arc::new(tokio::sync::Mutex::new(bridge)),
-                timeout: Duration::from_secs(1),
+                timeout: Duration::from_secs(call_timeout_secs),
             },
             dir,
         ))
@@ -471,11 +477,11 @@ mod tests {
         );
         assert_eq!(
             first.unwrap(),
-            json!({"echo":a, "verb":"indexd.stats", "timeout_secs":120})
+            json!({"echo":a, "verb":"indexd.stats", "timeout_secs":1})
         );
         assert_eq!(
             second.unwrap(),
-            json!({"echo":b, "verb":"indexd.search", "timeout_secs":120})
+            json!({"echo":b, "verb":"indexd.search", "timeout_secs":1})
         );
         assert_eq!(starts(&dir), 1);
         client.shutdown().await;
@@ -553,7 +559,7 @@ mod tests {
             error,
             bus::BusMessage::new()
                 .with_body(
-                    &json!({"echo":body, "verb":"indexd.search", "timeout_secs":120}).to_string()
+                    &json!({"echo":body, "verb":"indexd.search", "timeout_secs":1}).to_string()
                 )
                 .error_message()
         );
@@ -657,6 +663,30 @@ mod tests {
         }
         client.call("indexd.stats", &json!({})).await.unwrap();
         assert_eq!(starts(&dir), 1);
+        client.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn ssh_bridge_deadline_precedes_client_deadline_and_reuses_session() {
+        let Some((client, dir)) = fake_with_timeout(2) else {
+            return;
+        };
+        let error = client
+            .call("indexd.feedback", &json!({"mode":"delayed_bridge_timeout"}))
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("indexd bridge timeout"), "{error}");
+        let reply = client.call("indexd.stats", &json!({})).await.unwrap();
+        assert_eq!(reply["timeout_secs"], 1);
+        assert_eq!(starts(&dir), 1);
+        client.shutdown().await;
+
+        let Some((client, _dir)) = fake_with_timeout(120) else {
+            return;
+        };
+        let reply = client.call("indexd.stats", &json!({})).await.unwrap();
+        assert_eq!(reply["timeout_secs"], 110);
         client.shutdown().await;
     }
 

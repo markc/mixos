@@ -17,7 +17,8 @@ while true
         eprint("fixture flood tail")
         exit(7)
     end
-    if $mode == "bridge_timeout" then
+    if $mode == "delayed_bridge_timeout" then sleep(1.7) end
+    if $mode == "bridge_timeout" or $mode == "delayed_bridge_timeout" then
         print(json_encode({id: $request.id, rc: -1, kind: "timeout", error: "fixture deadline"}))
         continue
     end
