@@ -3,7 +3,7 @@
 Description=MixOS headless compositor for session %i
 Wants=noded@%i.service
 After=noded@%i.service
-PartOf=session@%i.target
+PartOf=session-headless@%i.target
 
 [Service]
 Type=simple
