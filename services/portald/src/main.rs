@@ -142,7 +142,10 @@ mod tests {
         .err()
         .unwrap();
         assert_eq!(missing.kind(), clap::error::ErrorKind::InvalidValue);
-        assert!(missing.to_string().contains("a value is required"), "{missing}");
+        assert!(
+            missing.to_string().contains("a value is required"),
+            "{missing}"
+        );
         assert!(
             "0".parse::<portald::screencast::MaxFramerate>()
                 .unwrap_err()
