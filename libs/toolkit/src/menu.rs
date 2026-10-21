@@ -1500,25 +1500,54 @@ mod tests {
     fn menu_speed_moves_its_area_without_changing_other_scroll_areas() {
         let sample = |speed: f64, menu: bool| {
             let mut overlay = crate::theme::Overlay::default();
-            overlay.style.insert("menu_scroll_speed".into(), design::StyleValueSource::Number(speed));
+            overlay.style.insert(
+                "menu_scroll_speed".into(),
+                design::StyleValueSource::Number(speed),
+            );
             let ctx = egui::Context::default();
-            crate::install(&ctx, &crate::Theme::embedded().with_overlay(overlay).unwrap());
+            crate::install(
+                &ctx,
+                &crate::Theme::embedded().with_overlay(overlay).unwrap(),
+            );
             let mut offset = 0.0;
             for (frame, time) in [0.0, 0.025, 0.05].into_iter().enumerate() {
-                let _ = ctx.run(egui::RawInput { time: Some(time), screen_rect: Some(Rect::from_min_size(Pos2::ZERO, egui::vec2(300.0, 200.0))), ..Default::default() }, |ctx| {
-                    egui::CentralPanel::default().show(ctx, |ui| {
-                        ui.scope(|ui| {
-                            if menu { configure_scroll(ui, &Chrome::of(ctx)); }
-                            let out = ScrollArea::vertical().max_height(100.0).show(ui, |ui| {
-                                let (_, rect) = ui.allocate_space(egui::vec2(200.0, 400.0));
-                                if frame == 0 { ui.scroll_to_rect(Rect::from_min_size(rect.min + egui::vec2(0.0, 200.0), egui::vec2(10.0, 10.0)), None); }
+                let _ = ctx.run(
+                    egui::RawInput {
+                        time: Some(time),
+                        screen_rect: Some(Rect::from_min_size(
+                            Pos2::ZERO,
+                            egui::vec2(300.0, 200.0),
+                        )),
+                        ..Default::default()
+                    },
+                    |ctx| {
+                        egui::CentralPanel::default().show(ctx, |ui| {
+                            ui.scope(|ui| {
+                                if menu {
+                                    configure_scroll(ui, &Chrome::of(ctx));
+                                }
+                                let out = ScrollArea::vertical().max_height(100.0).show(ui, |ui| {
+                                    let (_, rect) = ui.allocate_space(egui::vec2(200.0, 400.0));
+                                    if frame == 0 {
+                                        ui.scroll_to_rect(
+                                            Rect::from_min_size(
+                                                rect.min + egui::vec2(0.0, 200.0),
+                                                egui::vec2(10.0, 10.0),
+                                            ),
+                                            None,
+                                        );
+                                    }
+                                });
+                                offset = out.state.offset.y;
                             });
-                            offset = out.state.offset.y;
                         });
-                    });
-                });
+                    },
+                );
             }
-            assert_eq!(ctx.global_style().scroll_animation, egui::style::ScrollAnimation::default());
+            assert_eq!(
+                ctx.global_style().scroll_animation,
+                egui::style::ScrollAnimation::default()
+            );
             offset
         };
         let slow = sample(100.0, true);

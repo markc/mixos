@@ -113,13 +113,29 @@ pub fn table() -> &'static Table {
 
 /// Human-readable diagnostics generated from structured table provenance.
 pub(crate) fn diagnostics(defaulted: &BTreeMap<String, String>) -> Vec<crate::DesignDiagnostic> {
-    defaulted.iter().map(|(path, version)| {
-        let code = if path.contains(".terminal.") { "defaulted-terminal" }
-            else if path.contains(".schemes.") { "defaulted-scheme" }
-            else if path.rsplit(".styles.").next().is_some_and(|name| name.contains('.')) { "defaulted-style-token" }
-            else { "defaulted-style" };
-        crate::DesignDiagnostic::info(code, path.clone(), format!("defaulted from compatibility {version}"))
-    }).collect()
+    defaulted
+        .iter()
+        .map(|(path, version)| {
+            let code = if path.contains(".terminal.") {
+                "defaulted-terminal"
+            } else if path.contains(".schemes.") {
+                "defaulted-scheme"
+            } else if path
+                .rsplit(".styles.")
+                .next()
+                .is_some_and(|name| name.contains('.'))
+            {
+                "defaulted-style-token"
+            } else {
+                "defaulted-style"
+            };
+            crate::DesignDiagnostic::info(
+                code,
+                path.clone(),
+                format!("defaulted from compatibility {version}"),
+            )
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -173,6 +189,12 @@ mod tests {
             assert_eq!(value, &StyleValueSource::Number(expected));
             assert_eq!(version, "v3");
         }
-        assert_eq!(table.token("field_height", "all", Some("pro"), "studio").unwrap().1, "v2");
+        assert_eq!(
+            table
+                .token("field_height", "all", Some("pro"), "studio")
+                .unwrap()
+                .1,
+            "v2"
+        );
     }
 }

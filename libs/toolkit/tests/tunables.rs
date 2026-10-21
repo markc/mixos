@@ -49,7 +49,10 @@ fn distinct_roles_under_the_pair_renderer() {
             |ui, text| {
                 gallery(ui, text);
                 ui.add(toolkit::text::role("Canvas dots", "canvas_dot"));
-                ui.add(toolkit::text::role("Independent selected row", "row_selected"));
+                ui.add(toolkit::text::role(
+                    "Independent selected row",
+                    "row_selected",
+                ));
             },
             "Context colours".into(),
         );
@@ -151,7 +154,10 @@ fn an_invalid_overlay_is_refused_before_the_installed_look_changes() {
         ("canvas_dot_pitch", design::StyleValueSource::Number(0.001)),
         ("scrub_rate", design::StyleValueSource::Number(0.0)),
         ("resize_edge", design::StyleValueSource::Number(13.0)),
-        ("field_focus_role", design::StyleValueSource::Name("missing".into())),
+        (
+            "field_focus_role",
+            design::StyleValueSource::Name("missing".into()),
+        ),
         ("unknown", design::StyleValueSource::Number(1.0)),
     ] {
         let mut overlay = toolkit::theme::Overlay::default();
@@ -161,7 +167,10 @@ fn an_invalid_overlay_is_refused_before_the_installed_look_changes() {
         assert_eq!(toolkit::chrome::Chrome::of(&ctx), before_chrome);
     }
     let mut overlay = toolkit::theme::Overlay::default();
-    overlay.chrome.insert("unknown".into(), design::family::style::StyleColour([255; 4]));
+    overlay.chrome.insert(
+        "unknown".into(),
+        design::family::style::StyleColour([255; 4]),
+    );
     assert!(base.with_overlay(overlay).is_err());
 }
 
@@ -170,12 +179,22 @@ fn a_dialog_button_grows_when_its_installed_label_padding_grows() {
     use egui_kittest::kittest::Queryable;
     let button_width = |padding: f64| {
         let mut overlay = toolkit::theme::Overlay::default();
-        overlay.style.insert("button_push_padding".into(), design::StyleValueSource::Number(padding));
-        let mut h = Harness::builder().with_size(vec2(500.0, 240.0)).build_ui(|ui| {
-            toolkit::dialog::Dialog::new("padding", "Document")
-                .buttons(vec![toolkit::dialog::Choice::new("Apply document settings", toolkit::dialog::Role::Default)])
-                .show(ui.ctx(), |ui| { ui.label("Settings"); });
-        });
+        overlay.style.insert(
+            "button_push_padding".into(),
+            design::StyleValueSource::Number(padding),
+        );
+        let mut h = Harness::builder()
+            .with_size(vec2(500.0, 240.0))
+            .build_ui(|ui| {
+                toolkit::dialog::Dialog::new("padding", "Document")
+                    .buttons(vec![toolkit::dialog::Choice::new(
+                        "Apply document settings",
+                        toolkit::dialog::Role::Default,
+                    )])
+                    .show(ui.ctx(), |ui| {
+                        ui.label("Settings");
+                    });
+            });
         toolkit::install(&h.ctx, &theme().with_overlay(overlay).unwrap());
         h.run();
         h.get_by_label("Apply document settings").rect().width()
@@ -213,7 +232,8 @@ fn field_focus_width_is_drawn_from_the_installed_style() {
                 mode: design::Mode::Light,
                 ..Default::default()
             })
-            .with_overlay(overlay).unwrap();
+            .with_overlay(overlay)
+            .unwrap();
             let mut h = Harness::builder()
                 .with_size(vec2(300.0, 90.0))
                 .wgpu()

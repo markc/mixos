@@ -355,11 +355,17 @@ impl Theme {
     pub fn with_overlay(mut self, overlay: Overlay) -> Result<Self, Error> {
         for role in overlay.chrome.keys() {
             if !design::family::chrome::ROLES.contains(&role.as_str()) {
-                return Err(Error::Selection { field: "chrome role", value: role.clone() });
+                return Err(Error::Selection {
+                    field: "chrome role",
+                    value: role.clone(),
+                });
             }
         }
         self.overlay_style = None;
-        let style = self.style().with_values(&overlay.style).map_err(Error::Compile)?;
+        let style = self
+            .style()
+            .with_values(&overlay.style)
+            .map_err(Error::Compile)?;
         self.overlay = overlay;
         self.overlay_style = Some(style);
         Ok(self)
@@ -586,18 +592,22 @@ mod tests {
             session,
             "no choice: the session theme itself, unchanged"
         );
-        let forest = session.with_choice(&Choice {
-            scheme: Some(Scheme::Forest),
-            ..Choice::default()
-        }).unwrap();
+        let forest = session
+            .with_choice(&Choice {
+                scheme: Some(Scheme::Forest),
+                ..Choice::default()
+            })
+            .unwrap();
         assert_eq!(
             (forest.scheme(), forest.mode(), forest.contrast()),
             (Scheme::Forest, Mode::Dark, Contrast::High)
         );
-        let light = session.with_choice(&Choice {
-            mode: Some(Mode::Light),
-            ..Choice::default()
-        }).unwrap();
+        let light = session
+            .with_choice(&Choice {
+                mode: Some(Mode::Light),
+                ..Choice::default()
+            })
+            .unwrap();
         assert_eq!(
             (light.scheme(), light.mode(), light.contrast()),
             (Scheme::Pro, Mode::Light, Contrast::High)
@@ -614,10 +624,12 @@ mod tests {
             mode: Mode::Light,
             ..DesignContext::default()
         });
-        let studio = session.with_choice(&Choice {
-            style: Some(Some(design::Style::Studio)),
-            ..Choice::default()
-        }).unwrap();
+        let studio = session
+            .with_choice(&Choice {
+                style: Some(Some(design::Style::Studio)),
+                ..Choice::default()
+            })
+            .unwrap();
         assert_eq!(
             (studio.scheme(), studio.mode(), studio.style_axis()),
             (Scheme::Forest, Mode::Light, Some(design::Style::Studio))
@@ -630,16 +642,20 @@ mod tests {
             })
             .style()
         );
-        let own = studio.with_choice(&Choice {
-            style: Some(None),
-            ..Choice::default()
-        }).unwrap();
+        let own = studio
+            .with_choice(&Choice {
+                style: Some(None),
+                ..Choice::default()
+            })
+            .unwrap();
         assert_eq!(own.style(), session.style(), "the scheme's own style again");
-        let framed = session.with_choice(&Choice {
-            decorations: Some(Decorations::Server),
-            captions: Some(CaptionSide::Left),
-            ..Choice::default()
-        }).unwrap();
+        let framed = session
+            .with_choice(&Choice {
+                decorations: Some(Decorations::Server),
+                captions: Some(CaptionSide::Left),
+                ..Choice::default()
+            })
+            .unwrap();
         assert_eq!(
             (framed.decorations(), framed.captions()),
             (Decorations::Server, CaptionSide::Left)
@@ -649,10 +665,12 @@ mod tests {
             session.dictionary(),
             "the design is the session's"
         );
-        let kept = framed.with_choice(&Choice {
-            scheme: Some(Scheme::Ocean),
-            ..Choice::default()
-        }).unwrap();
+        let kept = framed
+            .with_choice(&Choice {
+                scheme: Some(Scheme::Ocean),
+                ..Choice::default()
+            })
+            .unwrap();
         assert_eq!(
             (kept.decorations(), kept.captions()),
             (Decorations::Server, CaptionSide::Left),
