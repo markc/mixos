@@ -1,0 +1,64 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Synthetic metadata only: no account provisioning, chown, namespace or service.
+$targets = require("../_lib/targets.mix")
+$identity = require("../_lib/broker_identity.mix")
+fn check($ok,$message)
+  if not $ok then raise("BROKER_IDENTITY_TEST",$message) end
+end
+fn refuses($action)
+  try $action(); return false catch $failure return true end
+end
+$raw = {node:"desk-a",host:"host-a",kind:"desk",machine:"desk-a",profile:"/var/lib/example/broker-a",session:3,client_account:"desktop",broker_account:"noded",admission:"enforce",mesh_open:true}
+$doc = {schema_version:2,project:"example",targets:[$raw]}
+$t = $targets.parse_targets($doc).targets[0]
+check($t.account=="desktop" and $t.client_account=="desktop" and $t.broker_account=="noded","principal split lost")
+check($t.run=="/run/example/session/3" and $t.broker_endpoint=="/run/example/broker/3/noded/bus.sock","runtime separation lost")
+check(not $targets.plan($t).mutation_supported,"preview enabled mutation")
+check(refuses(fn()=$targets.checked_target({identity_schema:2})),"incomplete normalized identity accepted")
+check(refuses(fn()=$targets.require_system_mutation($doc)),"separate target enabled mutation")
+$ids = {client:{uid:1000,gid:1000,groups:[1000]},broker:{uid:999,gid:999,groups:[999]}}
+$layout = $identity.layout($t,$ids)
+check($identity.verify_layout($t,$ids,$layout).validated,"valid synthetic layout refused")
+for $path in keys($layout)
+  $bad = $layout
+  $bad[$path].uid = $ids.client.uid
+  check(refuses(fn()=$identity.verify_layout($t,$ids,$bad)),"desktop-owned authority/runtime ancestor accepted")
+  $bad = $layout
+  $bad[$path].perm = 0o777
+  check(refuses(fn()=$identity.verify_layout($t,$ids,$bad)),"writable authority/runtime ancestor accepted")
+  $bad = $layout
+  $bad[$path].is_symlink = true
+  check(refuses(fn()=$identity.verify_layout($t,$ids,$bad)),"symlink authority/runtime ancestor accepted")
+end
+$shared = $doc
+$other = $raw
+$other.node = "desk-b"
+$other.profile = "/var/lib/example/broker-b"
+$other.session = 4
+$shared.targets = push($shared.targets,$other)
+check(refuses(fn()=$targets.parse_targets($shared)),"shared broker account across desks accepted")
+$other.broker_account = "broker-b"
+$other.client_account = "noded"
+$shared.targets = [$raw,$other]
+check(refuses(fn()=$targets.parse_targets($shared)),"broker reused as another desktop account")
+for $bad_ids in [{client:{uid:999,gid:1000,groups:[1000]},broker:$ids.broker},{client:{uid:1000,gid:1000,groups:[1000,999]},broker:$ids.broker},{client:$ids.client,broker:{uid:0,gid:999,groups:[999]}}]
+  check(refuses(fn()=$identity.layout($t,$bad_ids)),"shared or privileged principal accepted")
+end
+for $bad_raw in [{client_account:"desktop",broker_account:"desktop"},{client_account:"desktop",broker_account:"root"},{client_account:"root",broker_account:"noded"},{account:"desktop"}]
+  $bad = $doc
+  for $key in keys($bad_raw) $bad.targets[0][$key]=$bad_raw[$key] end
+  check(refuses(fn()=$targets.parse_targets($bad)),"invalid explicit identity accepted")
+end
+$broker = {node:"desk-a",mesh:"example.internal",wg_ip:"192.0.2.14",noded:{port:4200,unix_socket:$t.broker_endpoint}}
+$client = $broker
+check($identity.node_configs($t,$broker,$client).endpoint==$t.broker_endpoint,"explicit endpoint mismatch")
+$bad = $client
+$bad.noded.unix_socket = $t.run .. "/noded/bus.sock"
+check(refuses(fn()=$identity.node_configs($t,$broker,$bad)),"desktop-owned endpoint accepted")
+$bad = $client
+$bad.secret = "synthetic-seed"
+check(refuses(fn()=$identity.node_configs($t,$broker,$bad)),"private client config accepted")
+$job = $targets.stdin_job($t,"print(1)",{},"citizen","/opt/example/bin/mix")
+check(contains($job.argv,"--uid=desktop") and contains($job.stdin,"EXAMPLE_BROKER_ACCOUNT") and contains($job.stdin,"noded") and contains($job.stdin,"client.conf.mix"),"citizen native launch identity/config split lost")
+check(not contains($job.stdin,"EXAMPLE_VAR"),"citizen inherited private broker VAR")
+print("PASS synthetic separate broker/client IDs, protected ancestry, explicit config and mutation refusal; no OS ownership proof")

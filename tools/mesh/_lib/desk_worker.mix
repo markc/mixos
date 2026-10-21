@@ -115,6 +115,7 @@ end
 
 fn namespace_context($request)
   $t = $request.target
+  if $t.identity_schema == 2 then refuse("separate-principal transactions are not implemented; target preview only") end
   if type($t) != "map" or $t.kind != "desk" or not plain($t.project) or not plain($t.node) or not plain($t.account) or $t.account == "root" then refuse("invalid desk identity") end
   if type($t.session) != "number" or floor($t.session) != $t.session or $t.session < 1 or $t.session > 6 then refuse("invalid session") end
   if not re_match($t.profile,"^/var/lib/" .. $t.project .. "/[a-z][a-z0-9-]{0,31}$") then refuse("invalid profile") end

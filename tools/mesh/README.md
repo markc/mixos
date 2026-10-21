@@ -62,6 +62,48 @@ read-only probes remain available. Never use a path-only override to provision
 a desk. The guard must stay closed until the complete integration is reviewed.
 Run `mix tests/targets_test.mix` for the hermetic model checks.
 
+### Separate broker principal preview (schema 2)
+
+Schema 1 retains the existing single-account description. Schema 2 is an
+opt-in, read-only identity contract: desk entries use `client_account` and
+`broker_account` instead of `account`. Both must be unprivileged and different.
+The desktop account remains the citizen execution identity. The broker account
+is resolved independently by native clients; it is never inferred from the
+socket's owner. System entries retain their existing description and transport.
+
+```mix
+{schema_version:2,project:"example",targets:[
+  {node:"desk-a",host:"host-a",kind:"desk",machine:"desk-a",
+   profile:"/var/lib/example/broker-a",session:3,
+   client_account:"desktop",broker_account:"noded",
+   admission:"enforce",mesh_open:true}
+]}
+```
+
+The desktop runtime remains `/run/example/session/3`. The explicit broker
+endpoint is `/run/example/broker/3/noded/bus.sock`, reached through root-owned
+ancestors and a broker-owned 0711 leaf. The broker's private witness directory
+is owned by its dedicated UID with mode 0700. The desktop must not share that
+UID or its private group. The public `etc/client.conf.mix` contains only node,
+mesh, WireGuard address, broker port and explicit Unix endpoint; the private
+broker node configuration and seed are separate. A citizen job sets the public
+client config and broker account, and does not set the broker's private VAR.
+Existing application state/runtime environment is not migrated by this model.
+
+`_lib/broker_identity.mix` validates resolved identity metadata, exact protected
+directory snapshots and matching broker/public-client configurations without
+performing I/O. `tests/broker_identity_test.mix` uses synthetic distinct IDs;
+it is not an OS ownership or monotonic-witness isolation test. Schema 2 remains
+`mutation_supported:false` and the remote worker explicitly refuses it. No
+account, unit override, endpoint or profile is provisioned by this source.
+
+Activation still requires separate UID/group provisioning, a dedicated effective
+broker environment and unit contract, native namespace ownership/adversarial
+replay tests, the independently reviewed Bus server-PID pin, and one complete
+reviewed distributor path. Existing system units and single-account desks are
+unchanged. Neither this preview nor schema 1 establishes resistance to a
+compromised desktop account until those isolation gates pass.
+
 `_bin/name_gate.mix` fails when a project or site name appears as a literal in
 this tree. Run it before a merge.
 
