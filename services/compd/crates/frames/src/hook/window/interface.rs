@@ -7,11 +7,7 @@ use protocols::window::ident;
 use protocols::window::shell;
 use smithay::desktop::Window;
 use smithay::utils::{Logical, Point, Size};
-use smithay::wayland::compositor::with_states;
 use smithay::wayland::seat::WaylandFocus;
-use smithay::wayland::shell::xdg::{
-    SurfaceCachedState,
-};
 use uuid::Uuid;
 use world::camera::transform::translate::slot;
 use world::state::Loop;
@@ -558,30 +554,3 @@ fn _reform(state: &mut Loop, window: Window, transform_update: TransformUpdate, 
 //         }).unwrap();
 //     }
 // }
-
-fn force_window_geometry(
-    window: &Window,
-    new_geom: (Option<Point<i32, Logical>>, Option<Size<i32, Logical>>),
-) {
-    let Some(surface) = window.wl_surface() else {
-        return;
-    };
-
-    with_states(&surface, |states| {
-        let mut cached = states.cached_state.get::<SurfaceCachedState>();
-        let current = cached.current();
-        let Some(mut geom) = current.geometry else {
-            return;
-        };
-
-        if let Some(position) = new_geom.0 {
-            geom.loc = position;
-        }
-
-        if let Some(size) = new_geom.1 {
-            geom.size = size;
-        }
-
-        current.geometry = Some(geom);
-    });
-}
