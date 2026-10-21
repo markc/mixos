@@ -76,6 +76,36 @@ Its rendered pixels survived composition and screencopy, but this was a
 `wl_shm` fallback. Client DMA-BUF negotiation remains unproven; this probe
 does not establish the GPU-client DMA-BUF path.
 
+Phase 5b publishes the validated headless render node in the kernel registry
+as the composite device for backends without a scanout binding. The DMA-BUF
+advertiser uses the native GPU binding first, as before, otherwise this node,
+otherwise the v3 flat format list (nested). Headless therefore advertises
+`zwp_linux_dmabuf_v1` v5-capable feedback with `main_device` equal to the render
+node's `dev_t`, using the existing narrowed import format set. Mesa can select its
+hardware EGL driver from that feedback without a legacy `wl_drm` global.
+The GPU acceptance tests read the default feedback on a real Wayland client,
+compare its main device against the selected node's `st_rdev`, and require a
+tranche carrying valid format-table indices. The plain EGL client must create
+linux-dmabuf buffers and pass the existing rendered-pixel readback checks;
+this establishes GPU EGL client allocation, import and composition. The ced
+probe continues to record its actual wgpu adapter and attached buffer type.
+This does not establish hardware Vulkan WSI on the build workers: their only
+Vulkan ICD is llvmpipe and they lack `vulkan-intel`. On a headless desk with
+`vulkan-intel` installed, ced chose Vulkan on the Intel GPU and presented
+through linux-dmabuf even against the earlier v3 global (2026-10-21,
+recorded in the private journal); the Vulkan path depends on the ICD being
+in the desk image, which the image builder now includes.
+
+The Phase 5b Intel render-node run observed a version 6 global from the current
+Smithay feedback helper. Mesa bound version 4. Default feedback named
+`0xe280`, equal to the selected node's (`/dev/dri/renderD128`) `st_rdev`, with
+one tranche of 224 format indices.
+`weston-simple-egl` created linux-dmabuf buffers; screencopy retained its dark
+background and bright bar. Ced chose `Gl`, `IntegratedGpu`,
+`Mesa Intel(R) Iris(R) Xe Graphics (RPL-P)`, Mesa 26.2.4, and attached
+linux-dmabuf buffers. Idle SSIM was 1.0 and typed SSIM 0.980828380141, with
+exact Bus text readback. No console reference was supplied for this run.
+
 Phase 5 uses ced's real egui/wgpu window with a private noded and editd, so
 `ced.state {text:true}` can confirm agent-seat typing independently of pixels.
 The reference helper `services/compd/crates/testkit/scripts/app_reference.mix`
@@ -102,8 +132,10 @@ the console comparison. SSIM at 0.99 tolerates uniform brightness drift: a
 a brightness regression is within the threshold by design and must be
 caught elsewhere. The tested artefact is the test-only launcher, which
 compiles the shipped entry point from the same source; drift is a compile
-error, never silent. The first run chose a software Vulkan adapter
-(llvmpipe) with `wl_shm`: forcing a hardware wgpu adapter on the render node
-is an open follow-up, as are the test's fixed post-typing sleep (retry once
-on an unchanged capture), the helper's leftover `.session` directory on
+error, never silent. The first Phase 5 run chose a software Vulkan adapter
+(llvmpipe) with `wl_shm`; Phase 5b's device feedback enables the hardware GL
+path recorded above. Hardware Vulkan WSI is unproven on the workers and
+observed on a desk with the Intel ICD. Open follow-ups
+are the test's fixed post-typing sleep (retry once on an unchanged capture),
+the helper's leftover `.session` directory on
 failure, and its reliance on `spawn` merging the parent environment.

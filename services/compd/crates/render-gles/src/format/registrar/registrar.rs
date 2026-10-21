@@ -111,6 +111,13 @@ slots::define_storage!(pub KERNEL, KERNEL_MUT: Kernel);
 pub static FORMATS: slots::storage::token::base::Token<Registrar> =
     slots::storage::token::base::Token::new();
 
+/// Validated composite device published by a backend without a scanout binding.
+/// `None` leaves device selection to the GPU binding, or flat v3 advertisement.
+pub static COMPOSITE_NODE: slots::storage::token::base::Token<Option<DrmNode>> =
+    slots::storage::token::base::Token::new();
+pub static COMPOSITE_NODE_MUT: slots::storage::token::base::TokenMut<Option<DrmNode>> =
+    slots::storage::token::base::TokenMut::new(&COMPOSITE_NODE);
+
 /// WHAT A COMPLETE REGISTRAR LOOKS LIKE: every role there is. `format.answer`
 /// will not answer anything until all of them have registered.
 ///
