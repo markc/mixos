@@ -555,6 +555,25 @@ fn sink_info_to_state(info: &pulse::context::introspect::SinkInfo) -> AudioState
 
 #[cfg(feature = "desktop-dbus")]
 pub mod media;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_audio_watch_coalesces_pings_and_deregisters_on_drop() {
+        let watchers = Arc::new(Mutex::new(Watchers::default()));
+        let (tx, rx) = sync_channel(1);
+        watchers.lock().unwrap().subs.push((7, tx.clone()));
+        let watch = AudioWatch { id: 7, rx, watchers: Arc::clone(&watchers) };
+        tx.try_send(()).unwrap();
+        assert!(tx.try_send(()).is_err());
+        assert!(watch.pinged());
+        assert!(!watch.pinged());
+        drop(watch);
+        assert!(watchers.lock().unwrap().subs.is_empty());
+    }
+}
 #[cfg(not(feature = "desktop-dbus"))]
 #[path = "interface/media_unavailable.rs"]
 pub mod media;

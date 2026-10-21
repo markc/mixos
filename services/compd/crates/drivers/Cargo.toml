@@ -24,7 +24,7 @@ slots = { workspace = true }
 libpulse-binding = { workspace = true }
 mpris = { workspace = true, optional = true }
 smithay = { workspace = true }
-zbus = { workspace = true, optional = true }
+zbus = { workspace = true, optional = true, features = ["blocking-api"] }
 
 [features]
 desktop-dbus = ["dep:mpris", "dep:zbus"]

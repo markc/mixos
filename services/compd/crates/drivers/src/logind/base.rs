@@ -9,8 +9,11 @@ use slots::storage::token::base::{Token, TokenMut};
 #[cfg(feature = "desktop-dbus")]
 use zbus::blocking::{Connection, Proxy};
 
+#[cfg(feature = "desktop-dbus")]
 const DEST: &str = "org.freedesktop.login1";
+#[cfg(feature = "desktop-dbus")]
 const PATH: &str = "/org/freedesktop/login1";
+#[cfg(feature = "desktop-dbus")]
 const MANAGER: &str = "org.freedesktop.login1.Manager";
 
 /// A live logind connection. Cheap to construct lazily; `None` in the token
