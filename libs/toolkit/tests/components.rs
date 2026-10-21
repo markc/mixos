@@ -1132,7 +1132,8 @@ fn a_double_click_resets_but_two_distant_clicks_do_not() {
 
 #[test]
 fn the_right_hand_group_gives_way_link_first_then_icons_and_the_combo_shrinks() {
-    use toolkit::titlebar::{COMBO_WIDTH, Slot, fit};
+    use toolkit::titlebar::{Slot, combo_width_of, fit};
+    let combo_width = combo_width_of(&egui::Context::default());
     let slots = [
         Slot::Combo,
         Slot::Fixed(28.0),
@@ -1140,11 +1141,11 @@ fn the_right_hand_group_gives_way_link_first_then_icons_and_the_combo_shrinks() 
         Slot::Link(70.0),
     ];
     // Everything, the combo at its widest: 130 + 34 + 34 + 76, plus 120 left free.
-    assert_eq!(fit(1000.0, &slots), (COMBO_WIDTH.max, 4));
+    assert_eq!(fit(1000.0, &slots), (combo_width.max, 4));
     // The link needs 360 (with the combo at 90 and 120 left free).
     assert_eq!(
         fit(300.0, &slots),
-        (COMBO_WIDTH.max, 3),
+        (combo_width.max, 3),
         "the link goes first"
     );
     // 150: combo and search (96 + 34) fit, the theme toggle (34 more) does not;

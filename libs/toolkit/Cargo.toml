@@ -58,5 +58,7 @@ layer = ["dep:smithay-client-toolkit", "dep:wayland-backend", "dep:raw-window-ha
 [dev-dependencies]
 anyhow.workspace = true
 libc.workspace = true
+strict.workspace = true
+uuid.workspace = true
 egui_kittest.workspace = true
 tempfile.workspace = true

@@ -6,10 +6,14 @@
 #[path = "../../../services/settingsd/src/store.rs"]
 mod store;
 
+#[allow(dead_code, reason = "the owning store calls its native snapshot validator")]
+#[path = "../../../services/settingsd/src/authority.rs"]
+mod authority;
+
 #[test]
 fn a_copied_sealed_profile_keeps_its_format_and_digests() {
     let source = include_str!("../../design/tests/fixtures/sealed-profile.conf.mix");
-    let mut record: store::Accepted = config::parse(source).unwrap();
+    let mut record: store::Accepted = strict::from_str(source).unwrap();
     if std::env::var_os("UPDATE_PROFILE_FIXTURE").is_some() {
         record.effective_digest = settings::digest(
             &settings::resolve_with_embedded(&record.desktop, &record.embedded_source).unwrap(),
@@ -30,7 +34,7 @@ fn a_copied_sealed_profile_keeps_its_format_and_digests() {
     assert_eq!(opened.content_digest, record.content_digest);
     assert_eq!(opened.effective_digest, record.effective_digest);
     assert_eq!(std::fs::read(path).unwrap(), before);
-    let theme = toolkit::Theme::from_source_in(design::SourceIdentity::new("sealed-profile"),
+    let theme = toolkit::Theme::from_source_in("sealed-profile",
         &record.embedded_source, design::DesignContext::default()).unwrap();
     assert!(!theme.dictionary().defaulted.is_empty());
 }

@@ -14,7 +14,8 @@ fn gallery(ui: &mut Ui, text: &mut String) {
     toolkit::selectable(ui, true, "Selected row");
     let rect = Rect::from_min_size(ui.next_widget_position(), vec2(260.0, 130.0));
     canvas::surround(ui, rect);
-    canvas::scrollbars(ui, Id::new("canvas"), rect, vec2(900.0, 700.0), &mut egui::Vec2::ZERO);
+    let mut offset = egui::Vec2::ZERO;
+    canvas::scrollbars(ui, Id::new("canvas"), rect, vec2(900.0, 700.0), &mut offset);
     ui.allocate_rect(rect, egui::Sense::hover());
 }
 
