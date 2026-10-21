@@ -92,6 +92,7 @@ fn call($base, $operation, $extra, $program, $executor)
   if type($reply) != "map" or $reply.ok != true then
     fail("native " .. $operation .. " refused [" .. to_string($reply.error ?? "INVALID_REPLY") .. "]: " .. ($reply.reason ?? "invalid reply"))
   end
+  if not has_key($reply,"value") or $reply.value == nil then fail("native " .. $operation .. " returned no operation evidence") end
   return $reply.value
 end
 
@@ -104,12 +105,17 @@ fn payload($kind, $bytes)
 end
 
 fn stable_after($before, $after, $payloads)
+  if type($before) != "map" or type($after) != "map" or type($before.states) != "map" or type($after.states) != "map" then fail("native preflight evidence lacks state maps") end
+  if len(keys($before.states)) != len(keys($after.states)) then fail("authority state schema changed during rollout") end
+  for $kind in keys($after.states)
+    if not has_key($before.states,$kind) then fail("unexpected authority state appeared during rollout") end
+  end
   for $key in ["target","uid","gid","writer","dirs","binding","config","paths","binary","interpreter"]
     if not deep_eq($before[$key],$after[$key]) then fail("profile, namespace, unit or binary changed during rollout") end
   end
   for $entry in $payloads
     $state = $after.states[$entry.kind]
-    if not $state.present or $state.sha256 != $entry.sha256 or $state.uid != 0 or $state.gid != $after.gid or $state.perm != 0o640 then fail("placed payload evidence differs") end
+    if type($state) != "map" or $state.present != true or $state.sha256 != $entry.sha256 or $state.uid != 0 or $state.gid != $after.gid or $state.perm != 0o640 then fail("placed payload evidence differs") end
   end
   $changed = map($payloads,fn($entry)=$entry.kind)
   for $kind in keys($before.states)
@@ -156,8 +162,10 @@ print(json_encode({info:$info,inventory:{rc:$rc,value:$result}}))
   catch $bad_reply
     fail("fresh citizen authority reply malformed")
   end
+  if type($reply) != "map" or type($reply.info) != "map" or type($reply.inventory) != "map" then fail("fresh citizen authority reply lacks result maps") end
   $i = $reply.info
   $a = $reply.inventory
+  if type($i.value) != "map" or type($a.value) != "map" then fail("fresh citizen authority reply lacks value maps") end
   if $i.rc != 0 or $a.rc != 0 or $i.value.node != $base.target.node or $i.value.wg_ip != $base.ip or $a.value.posture != "verified" or $a.value.mesh != $base.mesh or $a.value.epoch != $epoch or $a.value.hash != $hash then fail("fresh citizen authority identity, mesh, epoch or hash mismatch") end
   return {node:$base.target.node,mesh:$base.mesh,epoch:$epoch,hash:$hash,verified:true}
 end

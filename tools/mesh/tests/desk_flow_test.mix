@@ -17,6 +17,15 @@ fn refused($action)
   end
 end
 
+fn distributor_refused($action)
+  try
+    $action()
+    return false
+  catch $failure, $detail
+    return $detail.code == "DESK_DISTRIBUTOR"
+  end
+end
+
 fn simulated($job,$path)
   $state = json_parse(read_file($path))
   check(not contains(json_encode($job.argv),"synthetic-secret"),"private fixture reached argv")
@@ -87,6 +96,22 @@ $fault = $state
 $fault.hash = "wrong-canonical"
 write_file($path,json_encode($fault))
 check(refused(fn()=flow($base,$program,$execute)),"stale authority hash accepted")
+
+-- Parseable but incomplete native evidence must produce the owning refusal,
+-- rather than an incidental nil-field runtime error.
+$empty_success = fn($job)={ok:true,stdout:'{"ok":true}',stdout_truncated:false,stderr_truncated:false}
+check(distributor_refused(fn()=$ops.preflight($base,$program,$empty_success)),"empty native success escaped owning refusal")
+for $reply in ['{}','{"info":{},"inventory":{}}','[]']
+  $bad_authority = fn($job)={ok:true,stdout:$reply,stdout_truncated:false,stderr_truncated:false}
+  check(distributor_refused(fn()=$ops.verify_authority($base,7,"canonical-fixture",$bad_authority)),"malformed authority escaped owning refusal")
+end
+$missing_state = $ctx
+$missing_state.states.seed = nil
+check(distributor_refused(fn()=$ops.stable_after($ctx,$missing_state,[$ops.payload("seed","synthetic-secret")])),"missing payload state escaped owning refusal")
+$new_state = $ctx
+$new_state.states.unexpected = {present:false}
+check(distributor_refused(fn()=$ops.stable_after($ctx,$new_state,[])),"unexpected authority state accepted")
+check(distributor_refused(fn()=$ops.stable_after($ctx,nil,[])),"missing preflight map escaped owning refusal")
 
 -- Target configuration is complete, explicit and cannot omit a rostered node.
 $config_path = $root .. "/targets.conf.mix"
