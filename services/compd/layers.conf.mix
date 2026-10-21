@@ -84,6 +84,8 @@ layers: {
 
   # 7 — the binary
   "compd": 7,
+  # 7 — wlcs C ABI test adapter, owns a headless compd child.
+  "wlcs": 7,
 }
 
 # The binary package.
@@ -93,7 +95,7 @@ binary: "compd"
 headless_crates: ["model", "surfaces", "ledger", "comp-model", "policy", "edges", "motion", "comp-service"]
 
 # Must reach neither bevy nor ash, in every feature configuration.
-core_crates: ["model", "slots", "surfaces", "ledger", "comp-model", "policy", "edges", "motion", "kms", "render-gles", "graphics", "protocols", "dispatcher", "x11-wm", "effects", "drivers", "world", "seat", "scenegraph", "ui", "screencopy", "decor", "frames", "native", "nested", "headless", "recorder", "outputs", "policy-host", "scene-host", "comp-service", "compd"]
+core_crates: ["model", "slots", "surfaces", "ledger", "comp-model", "policy", "edges", "motion", "kms", "render-gles", "graphics", "protocols", "dispatcher", "x11-wm", "effects", "drivers", "world", "seat", "scenegraph", "ui", "screencopy", "decor", "frames", "native", "nested", "headless", "recorder", "outputs", "policy-host", "scene-host", "comp-service", "wlcs", "compd"]
 
 # The only crates allowed to reach bevy. None today.
 effects_crates: []

@@ -5,6 +5,7 @@ use super::{
 
 mod wm_base;
 pub use wm_base::XdgWmBaseUserData;
+pub(crate) use wm_base::validate_xdg_surface_attach;
 
 mod positioner;
 pub use positioner::XdgPositionerUserData;
