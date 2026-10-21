@@ -422,7 +422,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             kms::output::physical::set_scale(
                 cli::output_scale(&cli, cli::Backend::Kms).unwrap_or(1.0),
             );
-            let backend_handles = native::wire::entry::entry::wire(
+            let backend_handles = native::wire::entry::wire(
                 &mut state,
                 wayland_socket_name_default_subprocess,
                 &mut event_loop,
@@ -657,7 +657,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // once only), so it never rests in a hot corner at startup.
         world::camera::pin::centre_pointer_once(state);
         #[cfg(feature = "backend-native")]
-        if native::render::execute::execute::frames_parked(state) {
+        if native::render::execute::frames_parked(state) {
             comp::refresh_placement_geometry(state);
             frames::hook::window::interface::drain_lifecycle(state);
         }
@@ -723,7 +723,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // straight back, 6,600 times a second. What waits is drained by the frame
         // resume (or DPMS-on, or output recovery) requests anyway.
         #[cfg(feature = "backend-native")]
-        let parked = native::render::execute::execute::frames_parked(state);
+        let parked = native::render::execute::frames_parked(state);
         #[cfg(not(feature = "backend-native"))]
         let parked = false;
         // Parked frames still owe clients their callbacks. Armed here, on
@@ -734,7 +734,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // event-driven; the timer itself re-arms only while something waits.
         #[cfg(feature = "backend-native")]
         if parked {
-            frames::draw::present::parked::arm(state, native::render::execute::execute::frames_parked);
+            frames::draw::present::parked::arm(state, native::render::execute::frames_parked);
         }
         // Presenting, a window that is hidden (minimised or on another
         // workspace) still owes its client callbacks, at the occluded

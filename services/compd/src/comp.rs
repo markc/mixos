@@ -149,7 +149,7 @@ fn refresh_scene_reserved(lp: &mut Loop) {
 pub(crate) fn reconcile_scene_geometry(lp: &mut Loop) {
     refresh_placement_geometry(lp);
     #[cfg(feature = "backend-native")]
-    let parked = native::render::execute::execute::frames_parked(lp);
+    let parked = native::render::execute::frames_parked(lp);
     #[cfg(not(feature = "backend-native"))]
     let parked = false;
     if !parked && lp.inner.comp.input_geometry_dirty() {
