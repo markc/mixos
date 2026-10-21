@@ -80,7 +80,7 @@ pub fn manager(
         allocator,
         exporter,
         gbm,
-        render_gles::format::catalog::catalog::scanout_ladder(ten_bit),
+        render_gles::format::catalog::scanout_ladder(ten_bit),
         render_formats,
     )
 }
@@ -175,8 +175,8 @@ pub fn format_info(
     output: &NativeDrmOutput,
 ) -> (Fourcc, smithay::backend::allocator::Modifier, Vec<String>) {
     let mut got = (
-        render_gles::format::catalog::catalog::FLOOR,
-        render_gles::format::rule::rule::UNKNOWN,
+        render_gles::format::catalog::FLOOR,
+        render_gles::format::rule::UNKNOWN,
         Vec::new(),
     );
     output.with_compositor(|comp| {
@@ -186,7 +186,7 @@ pub fn format_info(
             comp.modifiers()
                 .first()
                 .copied()
-                .unwrap_or(render_gles::format::rule::rule::UNKNOWN),
+                .unwrap_or(render_gles::format::rule::UNKNOWN),
             all,
         );
     });

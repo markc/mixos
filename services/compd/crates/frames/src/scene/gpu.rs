@@ -79,7 +79,7 @@ fn build(state: &mut Loop, renderer: &mut GlesRenderer) {
     let formats = state
         .inner
         .kernel
-        .get(&render_gles::format::registrar::registrar::FORMATS)
+        .get(&render_gles::format::registrar::FORMATS)
         .clone();
     let ctx: Arc<WgpuGlContext> = match create_wgpu_gl_context(&formats, renderer) {
         Ok(ctx) => ctx.into_arc(),

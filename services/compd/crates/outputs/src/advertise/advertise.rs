@@ -13,9 +13,9 @@
 //! phase boundary something a reader trips over rather than something they have
 //! to already know.
 
-use render_gles::format::answer::answer;
-use render_gles::format::registrar::registrar;
-use render_gles::format::role::role::Role;
+use render_gles::format::answer;
+use render_gles::format::registrar;
+use render_gles::format::role::Role;
 use smithay::wayland::dmabuf::DmabufFeedbackBuilder;
 use world::state::Loop;
 
@@ -29,7 +29,7 @@ pub fn advertise_dmabuf(_loop: &mut Loop) {
     let formats = _loop
         .inner
         .kernel
-        .get(&render_gles::format::registrar::registrar::FORMATS)
+        .get(&render_gles::format::registrar::FORMATS)
         .clone();
     // The baseline for the log below, read back from the registrar rather than
     // threaded through from `bind_display` — it is the same set, and the layer is

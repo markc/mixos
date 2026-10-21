@@ -68,7 +68,7 @@ pub fn register(
         .insert_source(watch, move |event, _, state| {
             let decoded = kms::udev::loop_::event::event::decode(event);
             info!("udev event received: {decoded:?}");
-            let rank = render_gles::preference::gpu::rank::rank::get();
+            let rank = render_gles::preference::gpu::rank::get();
             let reconcile = crate::plugin::route::route::route(
                 decoded,
                 &mut registry.borrow_mut(),

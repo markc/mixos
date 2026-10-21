@@ -500,9 +500,9 @@ impl WireTrait for Orchestrator {
             // This does NOT punish the gles path: it publishes its EGL set, which carries an
             // INVALID entry per fourcc, so an implicit buffer still passes there. One rule,
             // no renderer detection — the published set answers for whoever is compositing.
-            if !render_gles::format::resolve::resolve::importable_pair(
+            if !render_gles::format::resolve::importable_pair(
                 self.kernel
-                    .get(&render_gles::format::registrar::registrar::FORMATS),
+                    .get(&render_gles::format::registrar::FORMATS),
                 code,
                 modifier,
             ) {
@@ -540,7 +540,7 @@ impl WireTrait for Orchestrator {
         // `single_renderer` enumerates on demand and returns `NoDevice` for a node
         // it cannot reach, which falls through to the default import below. So a
         // node without a usable GL driver degrades rather than rejecting clients.
-        let node = render_gles::format::registrar::registrar::composite_node(*primary);
+        let node = render_gles::format::registrar::composite_node(*primary);
         let mut renderer = match gpus.single_renderer(&node) {
             Ok(r) => r,
             Err(err) => {

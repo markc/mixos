@@ -9,7 +9,7 @@ use drivers::output::base::{
     ApplyResult, ModeInfo, OUTPUT_MODE_REQUEST_MUT, OUTPUT_MODE_RESULT_MUT, OUTPUT_MODES_SNAPSHOT,
     OUTPUT_MODES_SNAPSHOT_MUT, OUTPUTS_SNAPSHOT_MUT, OutputModeRequest,
 };
-use render_gles::element::wrap::wrap::GlesElementWrapper;
+use render_gles::element::wrap::GlesElementWrapper;
 use scenegraph::scene::element::element::SceneElement;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::reexports::calloop::RegistrationToken;

@@ -8,7 +8,7 @@
 
 use kms::connector::diff::diff::ConnectorSnapshot;
 use kms::edid::identity::identity::MonitorIdentity;
-use render_gles::preference::output::profile::profile::ModeRequest;
+use render_gles::preference::output::profile::ModeRequest;
 use smithay::backend::allocator::gbm::GbmDevice;
 use smithay::backend::drm::{DrmDevice, DrmDeviceFd, DrmDeviceNotifier, DrmNode};
 use smithay::backend::session::Session;
@@ -55,7 +55,7 @@ pub struct DisplayAssembly {
     pub hdr: kms::edid::parse::parse::HdrInfo,
 }
 
-pub fn assemble(formats: &render_gles::format::registrar::registrar::Registrar) -> DisplayAssembly {
+pub fn assemble(formats: &render_gles::format::registrar::Registrar) -> DisplayAssembly {
     info!("Init native backend (assemble.display)");
 
     // 1. Session via libseat.
@@ -70,7 +70,7 @@ pub fn assemble(formats: &render_gles::format::registrar::registrar::Registrar) 
     //    where the render engine and the display engine are separate DRM
     //    devices (Raspberry Pi: `v3d` has the render node and no CRTCs, `vc4`
     //    has the connectors and no render node).
-    let rank = render_gles::preference::gpu::rank::rank::get();
+    let rank = render_gles::preference::gpu::rank::get();
     let candidates = kms::udev::enumerate::gpu::gpu::all(&seat_name);
     let configured = model::environment::config::base::get().scanout_node.clone();
     let selected_path = if configured.is_empty() {
@@ -199,7 +199,7 @@ pub fn assemble(formats: &render_gles::format::registrar::registrar::Registrar) 
         .map(|(_, path)| path)
         .expect("Could not find any usable DRM devices! Check seat configuration.");
 
-    render_gles::format::audit::audit::node(
+    render_gles::format::audit::node(
         "scanout + client import (GLES GpuManager, GBM)",
         &format!("{:?}", primary_gpu.dev_path()),
     );
@@ -214,7 +214,7 @@ pub fn assemble(formats: &render_gles::format::registrar::registrar::Registrar) 
     //    connected). `profiles` are priority-ordered; the first is the default.
     let res = kms::connector::scan::scan::resources(&drm);
     let connectors = kms::connector::scan::scan::connectors(&drm, &res);
-    let profiles = render_gles::preference::output::profile::profile::get();
+    let profiles = render_gles::preference::output::profile::get();
     let initial_snapshot = ConnectorSnapshot::take(&connectors);
     let connector = kms::connector::select::select::select(&drm, connectors, &profiles)
         .expect("No connected monitor found");
@@ -290,7 +290,7 @@ pub fn assemble(formats: &render_gles::format::registrar::registrar::Registrar) 
     let output = kms::output::physical::physical::create(&connector, &identity);
     let mode = Mode::from(drm_mode);
     let position =
-        render_gles::preference::layout::output::output::position_for(Some(&identity.key()), 0);
+        render_gles::preference::layout::output::position_for(Some(&identity.key()), 0);
     kms::output::physical::physical::apply_initial_state(
         &output,
         mode,
@@ -343,11 +343,11 @@ pub fn assemble(formats: &render_gles::format::registrar::registrar::Registrar) 
 /// still be un-scanoutable. No answer intersects against it yet, so this changes
 /// nothing today beyond making the set visible to the layer that will use it.
 fn register_plane_formats(
-    formats: &render_gles::format::registrar::registrar::Registrar,
+    formats: &render_gles::format::registrar::Registrar,
     drm: &DrmDevice,
     pipe: crtc::Handle,
 ) {
-    use render_gles::format::role::role::Role;
+    use render_gles::format::role::Role;
     let Ok(planes) = drm.planes(&pipe) else {
         warn!("could not enumerate planes for {pipe:?} — IN_FORMATS unknown");
         formats.absent(Role::Plane, "drm (planes unenumerable)");
@@ -359,7 +359,7 @@ fn register_plane_formats(
         return;
     };
     formats.register(
-        render_gles::format::registrar::registrar::Device::UNSPECIFIED,
+        render_gles::format::registrar::Device::UNSPECIFIED,
         Role::Plane,
         primary.formats.iter().copied().collect(),
         "drm primary plane (IN_FORMATS)",
@@ -391,9 +391,9 @@ fn register_plane_formats(
 /// it, and a request without both is a configuration error — panic.
 fn resolve_mode(
     connector: &connector::Info,
-    profile: Option<&render_gles::preference::output::profile::profile::OutputProfile>,
+    profile: Option<&render_gles::preference::output::profile::OutputProfile>,
 ) -> DrmMode {
-    use render_gles::preference::output::profile::profile::OutputProfile;
+    use render_gles::preference::output::profile::OutputProfile;
     match profile.and_then(|p| p.mode.as_ref()) {
         Some(ModeRequest::Cvt { .. }) | Some(ModeRequest::Modeline(_)) => {
             synthesize_mode(profile.unwrap())
@@ -407,7 +407,7 @@ fn resolve_mode(
         // advertised request inside mode.select falls back to default policy too.
         None => {
             let dm =
-                render_gles::preference::output::profile::profile::default_mode().map(|mode| {
+                render_gles::preference::output::profile::default_mode().map(|mode| {
                     OutputProfile {
                         identity: None,
                         mode: Some(mode),
@@ -422,11 +422,11 @@ fn resolve_mode(
 
 #[cfg(feature = "mode-synthesize")]
 fn synthesize_mode(
-    profile: &render_gles::preference::output::profile::profile::OutputProfile,
+    profile: &render_gles::preference::output::profile::OutputProfile,
 ) -> DrmMode {
     use kms::mode::synthesize::synthesize;
     assert!(
-        render_gles::preference::enable::safety::safety::get().mode_synthesize,
+        render_gles::preference::enable::safety::get().mode_synthesize,
         "mode synthesis requested by a profile but SafetyEnable::mode_synthesize is off"
     );
     let timing = match profile.mode.as_ref().unwrap() {
@@ -451,7 +451,7 @@ fn synthesize_mode(
 
 #[cfg(not(feature = "mode-synthesize"))]
 fn synthesize_mode(
-    _profile: &render_gles::preference::output::profile::profile::OutputProfile,
+    _profile: &render_gles::preference::output::profile::OutputProfile,
 ) -> DrmMode {
     abort!(
         "an output profile requests mode synthesis but the backend was built without the \

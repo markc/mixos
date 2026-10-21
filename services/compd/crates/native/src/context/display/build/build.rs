@@ -9,7 +9,7 @@
 use drivers::output::base::ModeInfo;
 use kms::edid::parse::parse::HdrInfo;
 use kms::scanout::surface::output::output::{NativeDrmOutput, NativeDrmOutputManager};
-use render_gles::element::wrap::wrap::GlesElementWrapper;
+use render_gles::element::wrap::GlesElementWrapper;
 use scenegraph::scene::element::element::SceneElement;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::output::{Mode, Output};
@@ -58,7 +58,7 @@ fn pick_mode(target: &connector::Info, requested: Option<ModeInfo>) -> Result<Dr
 /// `Err` (leaving the active pipe untouched) on no free CRTC / no mode / modeset
 /// failure, so the caller can report a clean `Failed` with no state change.
 pub fn build(
-    formats: &render_gles::format::registrar::registrar::Registrar,
+    formats: &render_gles::format::registrar::Registrar,
     manager: &Rc<RefCell<NativeDrmOutputManager>>,
     gpu_binding: &Rc<RefCell<StateDRMBinding>>,
     output: &Output,
@@ -168,7 +168,7 @@ pub fn build(
         kms::scanout::surface::output::output::format_info(&drm_output);
     formats.set_scanout_fourcc(u32::from(pipe) as u64, fourcc);
     {
-        use render_gles::format::rule::rule;
+        use render_gles::format::rule;
         model::stats::registry::base::set_device_format(
             "scanout",
             &format!("{fourcc:?}"),

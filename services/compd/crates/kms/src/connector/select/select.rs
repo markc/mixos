@@ -8,7 +8,7 @@
 
 use crate::edid::identity::identity;
 use crate::edid::parse::parse;
-use render_gles::preference::output::profile::profile::OutputProfile;
+use render_gles::preference::output::profile::OutputProfile;
 use smithay::backend::drm::DrmDevice;
 use smithay::reexports::drm::control::connector;
 use std::sync::OnceLock;

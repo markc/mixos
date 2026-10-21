@@ -9,7 +9,7 @@
 use drivers::output::base::{DisplayInfo, ModeInfo, OutputsSnapshot};
 use kms::edid::identity::identity;
 use kms::edid::parse::parse;
-use render_gles::preference::output::profile::profile::{self, ModeRequest};
+use render_gles::preference::output::profile::{self, ModeRequest};
 use smithay::backend::drm::DrmDevice;
 use smithay::reexports::drm::control::{Mode as DrmMode, connector};
 
@@ -83,7 +83,7 @@ pub fn enumerate(
             .map(|(_, m)| *m);
         let preferred = preferred_mode(&edid_key);
         // User enable/disable (the settings "Inactive" toggle); profile-less → enabled.
-        let enabled = render_gles::preference::output::profile::profile::active(&edid_key);
+        let enabled = render_gles::preference::output::profile::active(&edid_key);
         displays.push(DisplayInfo {
             edid_key,
             name: label,

@@ -8,7 +8,7 @@
 
 use frames::draw::plan::tap::tap::TapSubscriptions;
 use kms::scanout::surface::output::output::{NativeDrmOutput, NativeDrmOutputManager};
-use render_gles::preference::enable::safety::safety::SafetyEnable;
+use render_gles::preference::enable::safety::SafetyEnable;
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::output::{Mode, Output};
 use smithay::reexports::calloop::RegistrationToken;
@@ -150,7 +150,7 @@ pub struct NativeRenderContext {
     pub tap_subscriptions: TapSubscriptions,
     // No `vulkan_mode` or `VulkanRenderer`: GLES composes and scans out.
     /// Law-7 enablement, live: seeded from
-    /// `render_gles::preference::enable::safety::safety::get()` at wiring,
+    /// `render_gles::preference::enable::safety::get()` at wiring,
     /// runtime-updated through `device.interface` (the integration surface).
     pub safety: SafetyEnable,
     /// Raw DRM fd for the one-time HDR property commit (smithay's DrmCompositor

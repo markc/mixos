@@ -10,7 +10,7 @@
 use crate::assemble::display::display::DisplayAssembly;
 use kms::scanout::surface::output::output::{NativeDrmOutput, NativeDrmOutputManager};
 use outputs::render_contract::contract::{RenderContract, RendererId};
-use render_gles::element::wrap::wrap::GlesElementWrapper;
+use render_gles::element::wrap::GlesElementWrapper;
 use scenegraph::scene::element::element::SceneElement;
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::allocator::format::FormatSet;
@@ -31,7 +31,7 @@ pub struct RendererAssembly {
 
 /// The assembly (GLES; the only renderer).
 pub fn assemble(
-    formats: &render_gles::format::registrar::registrar::Registrar,
+    formats: &render_gles::format::registrar::Registrar,
     display: &mut DisplayAssembly,
 ) -> RendererAssembly {
     assemble_gles(formats, display)
@@ -39,7 +39,7 @@ pub fn assemble(
 
 /// The gles arm (the original path, with the mode fallback chain made real).
 fn assemble_gles(
-    formats: &render_gles::format::registrar::registrar::Registrar,
+    formats: &render_gles::format::registrar::Registrar,
     display: &mut DisplayAssembly,
 ) -> RendererAssembly {
     // Native scanout machine validation (reinstated de-delegation crates):
@@ -53,8 +53,8 @@ fn assemble_gles(
     }
 
     // GpuManager with the High-priority EGL factory; register the node.
-    let mut gpus = render_gles::multigpu::factory::factory::create();
-    render_gles::multigpu::factory::factory::add_node(
+    let mut gpus = render_gles::multigpu::factory::create();
+    render_gles::multigpu::factory::add_node(
         &mut gpus,
         display.primary_gpu,
         display.gbm.clone(),
@@ -67,14 +67,14 @@ fn assemble_gles(
     // Render formats from the primary's EGL context, narrowed by the Law-7
     // modifier filter when its double gate is satisfied.
     let mut renderer =
-        render_gles::multigpu::factory::factory::single_renderer(&mut gpus, &display.primary_gpu);
+        render_gles::multigpu::factory::single_renderer(&mut gpus, &display.primary_gpu);
     // Register the scanout device's own answer, then ASK the format layer. This
     // crate no longer intersects anything: it hands over a capability and takes a
     // decision.
     formats.set_split_device(display.split_device);
     formats.register(
-        render_gles::format::registrar::registrar::Device::of(&display.primary_gpu),
-        render_gles::format::role::role::Role::ScanoutEgl,
+        render_gles::format::registrar::Device::of(&display.primary_gpu),
+        render_gles::format::role::Role::ScanoutEgl,
         filter_formats(
             renderer
                 .as_mut()
@@ -100,8 +100,8 @@ fn assemble_gles(
     // `egl_context().dmabuf_texture_formats()`. The re-registration that follows in
     // `wire.entry` therefore sees an identical set and is a silent no-op.
     formats.register(
-        render_gles::format::registrar::registrar::Device::UNSPECIFIED,
-        render_gles::format::role::role::Role::GlesSample,
+        render_gles::format::registrar::Device::UNSPECIFIED,
+        render_gles::format::role::Role::GlesSample,
         smithay::backend::renderer::ImportDma::dmabuf_formats(&renderer),
         "egl (dmabuf_formats)",
     );
@@ -115,12 +115,12 @@ fn assemble_gles(
     // device lookup failed: nothing registered, and this fills in.
     if formats
         .view()
-        .set(render_gles::format::role::role::Role::Sample)
+        .set(render_gles::format::role::Role::Sample)
         .is_none()
     {
         formats.register(
-            render_gles::format::registrar::registrar::Device::of(&display.primary_gpu),
-            render_gles::format::role::role::Role::Sample,
+            render_gles::format::registrar::Device::of(&display.primary_gpu),
+            render_gles::format::role::Role::Sample,
             renderer
                 .as_mut()
                 .egl_context()
@@ -219,7 +219,7 @@ fn assemble_gles(
             .modifiers()
             .first()
             .copied()
-            .unwrap_or(render_gles::format::rule::rule::UNKNOWN);
+            .unwrap_or(render_gles::format::rule::UNKNOWN);
         // Print the WHOLE offered set, not just the head. Logging only the first turned out
         // to be useless in the one case that matters: `modifier=Invalid (2 offered)` says we
         // are on the implicit/driver-negotiated path but hides what the alternative was, so it
@@ -231,7 +231,7 @@ fn assemble_gles(
              ({offered} offered: {})",
             all.join(", ")
         );
-        use render_gles::format::rule::rule;
+        use render_gles::format::rule;
         // The achieved depth, for producers that should match it rather than
         // render 8-bit into a 10-bit pipeline (the background worker does).
         formats.set_scanout_fourcc(u32::from(display.pipe) as u64, fourcc);
@@ -283,7 +283,7 @@ fn assemble_gles(
 
 #[cfg(feature = "modifier-fallback")]
 fn filter_formats(formats: FormatSet) -> FormatSet {
-    if render_gles::preference::enable::safety::safety::get().modifier_fallback {
+    if render_gles::preference::enable::safety::get().modifier_fallback {
         kms::scanout::framebuffer::modifier::modifier::filter_legacy(formats)
     } else {
         formats
@@ -308,9 +308,9 @@ fn filter_formats(formats: FormatSet) -> FormatSet {
 /// a composite on the scanout device itself. Failing at startup beats a session
 /// that renders undefined pixels and freezes later — which is what the old
 /// widen-back-to-EGL fallback did.
-fn scanout_formats(formats: &render_gles::format::registrar::registrar::Registrar) -> FormatSet {
-    use render_gles::format::answer::answer;
-    use render_gles::format::rule::rule::Outcome;
+fn scanout_formats(formats: &render_gles::format::registrar::Registrar) -> FormatSet {
+    use render_gles::format::answer;
+    use render_gles::format::rule::Outcome;
     let answer::Answer::Set { set, outcome } =
         answer::available(formats, answer::Consumer::ScanoutSwapchain)
     else {
@@ -370,8 +370,8 @@ fn native_scanout_self_test(display: &DisplayAssembly) -> String {
     let mut swapchain = slot::create(
         allocator,
         (w, h),
-        render_gles::format::catalog::catalog::FLOOR,
-        vec![render_gles::format::rule::rule::UNKNOWN],
+        render_gles::format::catalog::FLOOR,
+        vec![render_gles::format::rule::UNKNOWN],
     );
     let buffer_slot = acquire::acquire(&mut swapchain);
     let fb =
@@ -457,7 +457,7 @@ impl outputs::render_contract::contract::DisplayBackend for NativeContract {
         let mut binding = self.gpu_binding.borrow_mut();
         let StateDRMBinding { gpus, primary } = &mut *binding;
         let primary = *primary;
-        render_gles::multigpu::bind::bind::bind(gpus, &primary, display_handle)
+        render_gles::multigpu::bind::bind(gpus, &primary, display_handle)
     }
 }
 
@@ -477,21 +477,21 @@ impl RenderContract for NativeContract {
         let mut binding = self.gpu_binding.borrow_mut();
         let StateDRMBinding { gpus, primary } = &mut *binding;
         let primary = *primary;
-        render_gles::multigpu::bind::bind::texture_formats(gpus, &primary)
+        render_gles::multigpu::bind::texture_formats(gpus, &primary)
     }
 
     fn import_dmabuf(&mut self, dmabuf: &Dmabuf) -> bool {
         let mut binding = self.gpu_binding.borrow_mut();
         let StateDRMBinding { gpus, primary } = &mut *binding;
         let primary = *primary;
-        render_gles::multigpu::bind::bind::import_dmabuf(gpus, &primary, dmabuf)
+        render_gles::multigpu::bind::import_dmabuf(gpus, &primary, dmabuf)
     }
 
     fn early_import(&mut self, surface: &WlSurface) {
         let mut binding = self.gpu_binding.borrow_mut();
         let StateDRMBinding { gpus, primary } = &mut *binding;
         let primary = *primary;
-        render_gles::multigpu::bind::bind::early_import(gpus, &primary, surface);
+        render_gles::multigpu::bind::early_import(gpus, &primary, surface);
     }
 
     fn sync_capable(&self) -> bool {

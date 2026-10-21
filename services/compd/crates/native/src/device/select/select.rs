@@ -5,7 +5,7 @@
 //! decision is Register vs Ignore (multi-GPU activation left the project's
 //! current scope — a registered device is bookkept, not driven).
 
-use render_gles::preference::gpu::rank::rank::GpuRank;
+use render_gles::preference::gpu::rank::GpuRank;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -390,9 +390,9 @@ impl RegistryInner {
             });
         }
 
-        let (fourcc, mods) = render_gles::format::answer::answer::producer_formats(
+        let (fourcc, mods) = render_gles::format::answer::producer_formats(
             &self.wgpu_ctx.formats,
-            render_gles::format::answer::answer::Consumer::CaptureEntry,
+            render_gles::format::answer::Consumer::CaptureEntry,
         );
         let dmabuf =
             allocate_dmabuf_negotiated(render_node, size.w as u32, size.h as u32, fourcc, &mods)?;
@@ -436,9 +436,9 @@ impl RegistryInner {
         let source = entry.source;
         let refcount = entry.refcount;
 
-        let (fourcc, mods) = render_gles::format::answer::answer::producer_formats(
+        let (fourcc, mods) = render_gles::format::answer::producer_formats(
             &self.wgpu_ctx.formats,
-            render_gles::format::answer::answer::Consumer::CaptureEntry,
+            render_gles::format::answer::Consumer::CaptureEntry,
         );
         let dmabuf = allocate_dmabuf_negotiated(
             render_node,

@@ -17,7 +17,7 @@ use drivers::output::base::{
     ModeInfo, OUTPUT_MODES_SNAPSHOT_MUT, OUTPUT_RECONCILE_REQUEST, OUTPUT_RECONCILE_REQUEST_MUT,
     OUTPUTS_SNAPSHOT_MUT, OutputModesSnapshot, OutputsSnapshot,
 };
-use render_gles::preference::output::profile::profile::{self, ModeRequest};
+use render_gles::preference::output::profile::{self, ModeRequest};
 use smithay::backend::drm::DrmDevice;
 use smithay::output::Mode;
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
@@ -147,7 +147,7 @@ fn bring_up(
         state
             .inner
             .kernel
-            .get(&render_gles::format::registrar::registrar::FORMATS),
+            .get(&render_gles::format::registrar::FORMATS),
         &ctx.drm_output_manager,
         &ctx.gpu_binding,
         &output,
@@ -331,7 +331,7 @@ fn add_output(
         state
             .inner
             .kernel
-            .get(&render_gles::format::registrar::registrar::FORMATS),
+            .get(&render_gles::format::registrar::FORMATS),
         &ctx.drm_output_manager,
         &ctx.gpu_binding,
         &output,
@@ -446,7 +446,7 @@ pub fn reconcile(state: &mut Loop, ctx_rc: &Ctx) -> Option<OutputChange> {
     // The set to DRIVE: connected monitors the user has left active. If none are
     // active, fall back to the preferred (first-in-prefs) connected monitor — else the
     // first connected — so we never go dark just because everything was deactivated.
-    let profiles = render_gles::preference::output::profile::profile::get();
+    let profiles = render_gles::preference::output::profile::get();
     let is_active = |key: &str| {
         profiles
             .iter()

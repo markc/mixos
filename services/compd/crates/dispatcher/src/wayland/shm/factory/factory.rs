@@ -28,7 +28,7 @@ where
         // The extras beyond the protocol's mandatory Argb/Xrgb, from the format
         // layer. Advertising one the renderer cannot upload is a client that gets
         // nothing — which is what `Bgr888` did here for as long as it was listed.
-        render_gles::format::answer::answer::shm_extra(),
+        render_gles::format::answer::shm_extra(),
     );
 
     SHMState { state: shm_state }

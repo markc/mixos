@@ -28,7 +28,7 @@ use dispatcher::frame::frame::{ElementMeta, SceneDispatch};
 use frames::draw::plan::frame::frame::{FramePass, plan};
 use frames::draw::plan::tap::tap::POST_SCENE;
 use graphics::capture::registry::{CaptureRegistry, OutputId};
-use render_gles::element::wrap::wrap::GlesElementWrapper;
+use render_gles::element::wrap::GlesElementWrapper;
 use smithay::backend::renderer::element::{Element, Id, Kind, RenderElement, UnderlyingStorage};
 use smithay::backend::renderer::utils::{CommitCounter, DamageSet, OpaqueRegions};
 use smithay::backend::renderer::{Bind, RendererSuper};

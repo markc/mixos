@@ -16,7 +16,7 @@ pub fn filter_legacy(
 ) -> smithay::backend::allocator::format::FormatSet {
     let filtered: Vec<_> = formats
         .iter()
-        .filter(|f| render_gles::format::rule::rule::legacy(f.modifier))
+        .filter(|f| render_gles::format::rule::legacy(f.modifier))
         .copied()
         .collect();
     warn!(

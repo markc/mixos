@@ -4,7 +4,7 @@
 //! lexicographic. Consumes preference values when a profile requests an
 //! advertised mode; otherwise unchanged default policy.
 
-use render_gles::preference::output::profile::profile::{ModeRequest, OutputProfile};
+use render_gles::preference::output::profile::{ModeRequest, OutputProfile};
 use smithay::reexports::drm::control::{Mode as DrmMode, ModeFlags, ModeTypeFlags, connector};
 
 /// Whether `m` is interlaced. An interlaced mode must never be chosen over a

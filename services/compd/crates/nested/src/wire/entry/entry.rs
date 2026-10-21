@@ -153,10 +153,10 @@ pub fn wire(_loop: &mut Loop, _wayland_socket_name: OsString, event_loop: &mut E
         _loop
             .inner
             .kernel
-            .get(&render_gles::format::registrar::registrar::FORMATS)
+            .get(&render_gles::format::registrar::FORMATS)
             .register(
-                render_gles::format::registrar::registrar::Device::UNSPECIFIED,
-                render_gles::format::role::role::Role::Sample,
+                render_gles::format::registrar::Device::UNSPECIFIED,
+                render_gles::format::role::Role::Sample,
                 formats,
                 "winit renderer",
             );
@@ -173,11 +173,11 @@ pub fn wire(_loop: &mut Loop, _wayland_socket_name: OsString, event_loop: &mut E
     // dropped either way) and differs only in that the layer can now tell "there
     // is none" from "it has not arrived yet".
     {
-        use render_gles::format::role::role::Role;
+        use render_gles::format::role::Role;
         let formats = _loop
             .inner
             .kernel
-            .get(&render_gles::format::registrar::registrar::FORMATS);
+            .get(&render_gles::format::registrar::FORMATS);
         formats.absent(Role::ScanoutEgl, "winit (nested: no scanout device)");
         formats.absent(
             Role::Render,

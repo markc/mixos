@@ -4,7 +4,7 @@
 //! Consumes ranked plain values (Law 3): exclusion first, then preference
 //! order, then the provided default heuristic result, then first survivor.
 
-use render_gles::preference::gpu::rank::rank::GpuRank;
+use render_gles::preference::gpu::rank::GpuRank;
 use std::path::PathBuf;
 
 pub fn select(

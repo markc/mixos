@@ -218,9 +218,9 @@ fn make_copy_snapshot(
 
     // Allocate the fresh dmabuf + imports. The GLES import is kept only so the
     // SnapshotData stays well-formed; the copy below goes through wgpu.
-    let (fourcc, mods) = render_gles::format::answer::answer::producer_formats(
+    let (fourcc, mods) = render_gles::format::answer::producer_formats(
         &wgpu_ctx.formats,
-        render_gles::format::answer::answer::Consumer::CaptureSnapshot,
+        render_gles::format::answer::Consumer::CaptureSnapshot,
     );
     let dmabuf = crate::surface::allocate_dmabuf_negotiated(
         render_node,

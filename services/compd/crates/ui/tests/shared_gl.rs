@@ -109,7 +109,7 @@ fn egui_paints_into_the_shared_context_and_smithay_composites_it() {
     let context = EGLContext::new(&display).expect("EGL context");
     let mut gles = unsafe { GlesRenderer::new(context) }.expect("GLES renderer");
 
-    let registrar = render_gles::format::registrar::registrar::Registrar::new();
+    let registrar = render_gles::format::registrar::Registrar::new();
     let wgpu = graphics::surface::create_wgpu_gl_context(&registrar, &mut gles)
         .expect("wgpu on the GL context");
     let size: Size<i32, Physical> = (W, H).into();
@@ -264,7 +264,7 @@ fn two_painters_alternate_with_smithay_draws() {
     let display = unsafe { EGLDisplay::new(gbm) }.expect("EGL display");
     let context = EGLContext::new(&display).expect("EGL context");
     let mut gles = unsafe { GlesRenderer::new(context) }.expect("GLES renderer");
-    let registrar = render_gles::format::registrar::registrar::Registrar::new();
+    let registrar = render_gles::format::registrar::Registrar::new();
     let wgpu = graphics::surface::create_wgpu_gl_context(&registrar, &mut gles).expect("wgpu");
     let size: Size<i32, Physical> = (W, H).into();
     let gpu = || ui::engine::Gpu {
@@ -412,7 +412,7 @@ fn a_texture_dropped_in_its_own_pass_still_draws() {
     let display = unsafe { EGLDisplay::new(gbm) }.expect("EGL display");
     let context = EGLContext::new(&display).expect("EGL context");
     let mut gles = unsafe { GlesRenderer::new(context) }.expect("GLES renderer");
-    let registrar = render_gles::format::registrar::registrar::Registrar::new();
+    let registrar = render_gles::format::registrar::Registrar::new();
     let wgpu = graphics::surface::create_wgpu_gl_context(&registrar, &mut gles).expect("wgpu");
     let size: Size<i32, Physical> = (W, H).into();
     let gpu = ui::engine::Gpu {

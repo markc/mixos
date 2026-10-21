@@ -98,8 +98,8 @@ pub fn wire(
     *state
         .inner
         .kernel
-        .get_mut(&render_gles::format::registrar::registrar::COMPOSITE_NODE_MUT) = Some(node);
-    let renderer = render_gles::context::egl::egl::create(&display)?;
+        .get_mut(&render_gles::format::registrar::COMPOSITE_NODE_MUT) = Some(node);
+    let renderer = render_gles::context::egl::create(&display)?;
     let refresh = match std::env::var("COMPD_HEADLESS_REFRESH_HZ") {
         Ok(value) => value
             .parse::<i32>()
@@ -175,7 +175,7 @@ pub fn wire(
     let formats = state
         .inner
         .kernel
-        .get(&render_gles::format::registrar::registrar::FORMATS);
+        .get(&render_gles::format::registrar::FORMATS);
     use render_gles::format::{registrar::registrar::Device, role::role::Role};
     formats.register(
         Device::UNSPECIFIED,

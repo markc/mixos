@@ -62,7 +62,7 @@ pub struct WgpuGlContext {
     pub queue: Queue,
     /// The kernel's format registrar, carried for the producers (capture) that
     /// allocate through this context.
-    pub formats: render_gles::format::registrar::registrar::Registrar,
+    pub formats: render_gles::format::registrar::Registrar,
     /// The vertex array wgpu's passes run on (see the module docs); `None` on
     /// a context without vertex arrays, where the default one is all there is.
     vertex_array: Option<glow::VertexArray>,
@@ -173,7 +173,7 @@ pub fn make_current(gles: &mut GlesRenderer) {
 /// the context current, so this runs the first time the scene's GLES phase has
 /// the renderer in hand, not on a worker.
 pub fn create_wgpu_gl_context(
-    formats: &render_gles::format::registrar::registrar::Registrar,
+    formats: &render_gles::format::registrar::Registrar,
     gles: &mut GlesRenderer,
 ) -> Result<WgpuGlContext, WgpuContextError> {
     make_current(gles);
@@ -206,7 +206,7 @@ pub fn create_wgpu_gl_context(
         "wgpu-gl: adapter over the compositor's EGL context: {} ({:?}, backend={:?})",
         info.name, info.device_type, info.backend
     );
-    render_gles::format::audit::audit::node(
+    render_gles::format::audit::node(
         "UI wgpu (compositor GL context)",
         &format!("{} ({:?})", info.name, info.device_type),
     );

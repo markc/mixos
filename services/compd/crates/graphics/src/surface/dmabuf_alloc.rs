@@ -54,7 +54,7 @@ impl std::fmt::Debug for AllocatedDmabuf {
 /// identity function. The list itself lives in `format.universe` — one place, not
 /// two byte-identical copies that a fix to one would never reach.
 fn gbm_format(fourcc: Fourcc) -> Option<GbmFormat> {
-    render_gles::format::catalog::catalog::allocatable(fourcc).then_some(fourcc)
+    render_gles::format::catalog::allocatable(fourcc).then_some(fourcc)
 }
 
 /// Explicit-modifier bridge allocation — the ONLY way to allocate here. The BO is
@@ -143,7 +143,7 @@ fn allocate_with_modifiers(
             BufferObjectFlags::RENDERING,
         )
         .map_err(AllocError::CreateBo)?;
-    render_gles::format::audit::audit::allocation(
+    render_gles::format::audit::allocation(
         "UI surface",
         &render_node.display().to_string(),
         fourcc,
@@ -178,7 +178,7 @@ fn allocate_with_modifiers(
 
 /// Record the post-determined format for the developer "GPU formats" panel.
 fn publish_stats(kind: &str, fourcc: Fourcc, modifier: Modifier, plane_count: u32) {
-    use render_gles::format::rule::rule;
+    use render_gles::format::rule;
     model::stats::registry::gpu::set_device_format(
         kind,
         &format!("{fourcc:?}"),

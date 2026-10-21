@@ -22,7 +22,7 @@ use crate::context::topology::topology::Topology;
 use kms::connector::diff::diff;
 use kms::gpu::registry::node::node::NodeRegistry;
 use kms::udev::loop_::event::event::DeviceEvent;
-use render_gles::preference::gpu::rank::rank::GpuRank;
+use render_gles::preference::gpu::rank::GpuRank;
 use std::cell::RefCell;
 use std::rc::Rc;
 

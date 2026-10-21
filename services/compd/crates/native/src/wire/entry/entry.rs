@@ -36,8 +36,8 @@ fn absent(_loop: &mut Loop, why: &'static str) {
     _loop
         .inner
         .kernel
-        .get(&render_gles::format::registrar::registrar::FORMATS)
-        .absent(render_gles::format::role::role::Role::Render, why);
+        .get(&render_gles::format::registrar::FORMATS)
+        .absent(render_gles::format::role::Role::Render, why);
 }
 
 pub fn wire(
@@ -54,7 +54,7 @@ pub fn wire(
         _loop
             .inner
             .kernel
-            .get(&render_gles::format::registrar::registrar::FORMATS),
+            .get(&render_gles::format::registrar::FORMATS),
     );
     // The composite is GLES only. GLES consults no Vulkan device, so the `Render`
     // role has no renderable set to publish — SAY so rather than leaving it silent:
@@ -65,7 +65,7 @@ pub fn wire(
         _loop
             .inner
             .kernel
-            .get(&render_gles::format::registrar::registrar::FORMATS),
+            .get(&render_gles::format::registrar::FORMATS),
         &mut display,
     );
 
@@ -121,17 +121,17 @@ pub fn wire(
             let mut binding = renderer.gpu_binding.borrow_mut();
             let world::state::state::StateDRMBinding { gpus, primary } = &mut *binding;
             let primary = *primary;
-            render_gles::multigpu::bind::bind::texture_formats(gpus, &primary)
+            render_gles::multigpu::bind::texture_formats(gpus, &primary)
         };
         _loop
             .inner
             .kernel
-            .get(&render_gles::format::registrar::registrar::FORMATS)
+            .get(&render_gles::format::registrar::FORMATS)
             .register(
-                render_gles::format::registrar::registrar::Device::of(
-                    &render_gles::format::registrar::registrar::composite_node(display.primary_gpu),
+                render_gles::format::registrar::Device::of(
+                    &render_gles::format::registrar::composite_node(display.primary_gpu),
                 ),
-                render_gles::format::role::role::Role::Sample,
+                render_gles::format::role::Role::Sample,
                 formats,
                 "gles (texture_formats)",
             );
@@ -148,7 +148,7 @@ pub fn wire(
     _loop
         .inner
         .kernel
-        .get(&render_gles::format::registrar::registrar::FORMATS)
+        .get(&render_gles::format::registrar::FORMATS)
         .set_color_managed(hdr_active);
     // A split configuration is legal but only half-supported, and it is invisible
     // from the client side: what gets advertised is the SCANOUT device, while the
@@ -273,7 +273,7 @@ pub fn wire(
         gpu_binding: renderer.gpu_binding.clone(),
         libinput_context,
         tap_subscriptions: frames::draw::plan::tap::tap::TapSubscriptions::new(),
-        safety: render_gles::preference::enable::safety::safety::get(),
+        safety: render_gles::preference::enable::safety::get(),
         drm_fd: display.drm_fd.clone(),
         watchdog: None,
     }));

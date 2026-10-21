@@ -275,7 +275,7 @@ impl Orchestrator {
         // GPU driver: DRM binding slot, populated post-init by the backend.
         kernel_data.insert(&GPU_BINDING, None);
         kernel_data.insert(
-            &render_gles::format::registrar::registrar::COMPOSITE_NODE,
+            &render_gles::format::registrar::COMPOSITE_NODE,
             None,
         );
         // Resume driver: vblank-seen flag + resume watchdog.

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Horizontal width-tiling of global-space output positions.
-use render_gles::preference::layout::output::output::{OutputPosition, tile_positions};
+use render_gles::preference::layout::output::{OutputPosition, tile_positions};
 
 #[test]
 fn tiles_left_to_right_by_width() {

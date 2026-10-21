@@ -272,8 +272,8 @@ fn arrow_pixels_filled(size: u32, fill: [u8; 4]) -> Vec<u8> {
 
 fn arrow_cursor(size: u32, fill: [u8; 4]) -> Cursor {
     let dimensions = Size::from((size as i32, size as i32));
-    let (format, _) = render_gles::format::answer::answer::constant(
-        render_gles::format::answer::answer::Consumer::CursorImage,
+    let (format, _) = render_gles::format::answer::constant(
+        render_gles::format::answer::Consumer::CursorImage,
     );
     Cursor {
         frames: vec![CursorFrame {
@@ -300,8 +300,8 @@ fn image_to_frame(img: &Image) -> CursorFrame {
 
     // XCursor pixels are ARGB by specification; the layer states it so this crate
     // does not have to name a format.
-    let (cursor_fourcc, _) = render_gles::format::answer::answer::constant(
-        render_gles::format::answer::answer::Consumer::CursorImage,
+    let (cursor_fourcc, _) = render_gles::format::answer::constant(
+        render_gles::format::answer::Consumer::CursorImage,
     );
     let buffer = MemoryRenderBuffer::from_slice(
         &img.pixels_rgba,

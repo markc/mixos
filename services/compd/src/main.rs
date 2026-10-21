@@ -245,7 +245,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // device capability or asks for one, and the handle is what travels: into the
     // wgpu init thread below (which registers what each adapter can import) and
     // into the kernel store further down, for everything on the compositor thread.
-    let formats = render_gles::format::registrar::registrar::Registrar::new();
+    let formats = render_gles::format::registrar::Registrar::new();
 
     // The injection point: the loader assembles the world set and
     // hands it to the orchestrator. KernelData is populated after Loop::new.
@@ -336,7 +336,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // registers a capability, and inserted here for everything on the
         // compositor thread. Producers hold their own clone.
         state.inner.kernel.insert(
-            &render_gles::format::registrar::registrar::FORMATS,
+            &render_gles::format::registrar::FORMATS,
             formats.clone(),
         );
     }
