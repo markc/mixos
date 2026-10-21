@@ -2207,8 +2207,12 @@ mod tests {
             panic!("matching pin must use verified Unix");
         };
         assert_eq!(first.server_peer_credentials().pid, pid);
-        assert_eq!(first.server_peer_credentials().uid, unsafe { libc::geteuid() });
-        assert_eq!(first.server_peer_credentials().gid, unsafe { libc::getegid() });
+        assert_eq!(first.server_peer_credentials().uid, unsafe {
+            libc::geteuid()
+        });
+        assert_eq!(first.server_peer_credentials().gid, unsafe {
+            libc::getegid()
+        });
         first.client().close().await;
 
         // A new dial is not allowed to inherit the earlier verified result.
