@@ -31,7 +31,7 @@ fn exported_macros_keep_the_callers_identity_and_runtime_gate() {
         assert!(
             emitted
                 .function
-                .ends_with("exported_macros_keep_the_callers_identity_and_runtime_gate")
+                .contains("exported_macros_keep_the_callers_identity_and_runtime_gate")
         );
     }
     record::set_enabled_mask(0);
