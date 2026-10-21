@@ -174,3 +174,59 @@ fn a_reopened_store_serves_the_same_accent() {
     let mut reopened = Authority::new(store, accepted).unwrap();
     assert_eq!(accent(&mut reopened), FOREST_DARK_ACCENT);
 }
+
+#[test]
+fn breeze_and_adwaita_choices_apply_and_survive_a_sealed_reopen() {
+    let dir = tempfile::tempdir().unwrap();
+    drop(authority(dir.path()));
+
+    let described = settings::describe();
+    for choice in ["breeze", "adwaita"] {
+        for field in ["appearance.scheme", "appearance.style"] {
+            let choices = described["fields"][field]["enum"].as_array().unwrap();
+            assert!(choices.iter().any(|value| value == choice), "{field}: {choice}");
+        }
+    }
+
+    for (scheme, style, operation) in [
+        ("breeze", "adwaita", "modern-choice-1"),
+        ("adwaita", "breeze", "modern-choice-2"),
+    ] {
+        let (store, accepted) = Store::open(dir.path(), &binding()).unwrap();
+        let mut authority = Authority::new(store, accepted).unwrap();
+        let request = ApplyRequest {
+            binding: binding(),
+            expected_incarnation: authority.accepted.incarnation.clone(),
+            expected_revision: authority.accepted.revision,
+            operation_id: operation.into(),
+            changes: BTreeMap::from([
+                ("appearance.scheme".into(), json!(scheme)),
+                ("appearance.style".into(), json!(style)),
+            ]),
+            reset: vec![],
+            request_digest: None,
+        };
+        assert_eq!(authority.apply(request).unwrap()["status"], "changed");
+        drop(authority);
+
+        let (_, reopened) = Store::open(dir.path(), &binding()).unwrap();
+        assert_eq!(reopened.desktop.appearance.scheme, scheme);
+        assert_eq!(reopened.desktop.appearance.style.as_deref(), Some(style));
+        reopened.effective().unwrap();
+    }
+
+    let before = std::fs::read(dir.path().join("desktop.conf.mix")).unwrap();
+    let (store, accepted) = Store::open(dir.path(), &binding()).unwrap();
+    let mut authority = Authority::new(store, accepted).unwrap();
+    let invalid = ApplyRequest {
+        binding: binding(),
+        expected_incarnation: authority.accepted.incarnation.clone(),
+        expected_revision: authority.accepted.revision,
+        operation_id: "unknown-modern-choice".into(),
+        changes: BTreeMap::from([("appearance.style".into(), json!("unknown"))]),
+        reset: vec![],
+        request_digest: None,
+    };
+    assert_eq!(authority.apply(invalid).unwrap_err()["status"], "validation_failed");
+    assert_eq!(std::fs::read(dir.path().join("desktop.conf.mix")).unwrap(), before);
+}
