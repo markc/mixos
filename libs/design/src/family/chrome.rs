@@ -882,9 +882,26 @@ mod tests {
                     assert!(crate::contrast_ratio(color(text), color(surface)) >= floor,
                         "{mode:?}: {text} on {surface}");
                 }
+                let tinted = crate::colour_model::derivation::composite(
+                    color("accent_soft"), color(surface),
+                ).rendered();
+                for text in ["text", "text_dim", "text_faint", "accent_text"] {
+                    assert!(crate::contrast_ratio(color(text), tinted) >= 4.5,
+                        "{mode:?}: {text} on tinted {surface}");
+                }
+                for text in ["danger", "warning"] {
+                    assert!(crate::contrast_ratio(color(text), tinted) >= 3.0,
+                        "{mode:?}: {text} on tinted {surface}");
+                }
             }
             assert!(crate::contrast_ratio(color("caption_close_text"), color("caption_close")) >= 4.5);
             assert!(crate::contrast_ratio(color("primary_text"), color("primary_bg")) >= 4.5);
+            for alpha in [0.93, 0.85] {
+                let button = crate::LinearRgba { alpha, ..color("primary_bg") };
+                let background = crate::colour_model::derivation::composite(button, color("chrome")).rendered();
+                assert!(crate::contrast_ratio(color("primary_text"), background) >= 4.5,
+                    "{mode:?}: primary button at {alpha}");
+            }
             assert_eq!(color("canvas"), color("canvas_dot"));
             let contrasts: Vec<_> = ["text", "text_dim", "text_faint"].map(|text| crate::contrast_ratio(color(text), color("card"))).into();
             assert!(contrasts[0] > contrasts[1] && contrasts[1] > contrasts[2]);

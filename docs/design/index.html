@@ -237,7 +237,13 @@
 <p>The MixOS design-token system. A design source is a strict-data document
 (<code>theme.conf.mix</code>) holding OKLCH colour primitives, metrics, type scales,
 semantic text pairs and the button family's mapping rules, plus modifier
-blocks per scheme and mode. The compiler flattens it for one
+blocks per scheme and mode. Breeze and Adwaita each provide light and dark
+chrome palettes and a Studio-based style; scheme and style remain independent.
+The append-only compatibility table supplies both palettes, styles and terminal
+defaults to older sources with <code>defaulted-scheme</code> provenance. An authored
+scheme binding retains its source colours. Missing bindings for the original
+nine schemes remain errors.</p>
+<p>The compiler flattens it for one
 <code>DesignContext</code> (scheme, mode, contrast, optional app) into a resolved
 design: gamut-mapped colours with WCAG contrast checked, resolved metrics
 and typography, and a total button table keyed by variant, size,

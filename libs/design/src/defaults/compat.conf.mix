@@ -236,97 +236,6 @@
             "color_space": "oklch",
             "h": 100.93357858,
             "l": 0.910489041
-          },
-          "palette.accent.default": {
-            "alpha": 1,
-            "c": 0,
-            "color_space": "oklch",
-            "h": 0,
-            "l": 0.85
-          },
-          "palette.accent.hover": {
-            "alpha": 1,
-            "c": 0,
-            "color_space": "oklch",
-            "h": 0,
-            "l": 0.92
-          },
-          "palette.background.1": {
-            "alpha": 1,
-            "c": 0,
-            "color_space": "oklch",
-            "h": 0,
-            "l": 0.1
-          },
-          "palette.background.2": {
-            "alpha": 1,
-            "c": 0,
-            "color_space": "oklch",
-            "h": 0,
-            "l": 0.15
-          },
-          "palette.background.3": {
-            "alpha": 1,
-            "c": 0,
-            "color_space": "oklch",
-            "h": 0,
-            "l": 0.22
-          },
-          "palette.background.elevated": {
-            "alpha": 1,
-            "c": 0,
-            "color_space": "oklch",
-            "h": 0,
-            "l": 0.34
-          },
-          "palette.background.muted": {
-            "alpha": 1,
-            "c": 0,
-            "color_space": "oklch",
-            "h": 0,
-            "l": 0.26
-          },
-          "palette.foreground.default": {
-            "alpha": 1,
-            "c": 0,
-            "color_space": "oklch",
-            "h": 0,
-            "l": 0.95
-          },
-          "palette.foreground.muted": {
-            "alpha": 1,
-            "c": 0,
-            "color_space": "oklch",
-            "h": 0,
-            "l": 0.61
-          },
-          "palette.foreground.quiet": {
-            "alpha": 1,
-            "c": 0,
-            "color_space": "oklch",
-            "h": 0,
-            "l": 0.65
-          },
-          "status.danger": {
-            "alpha": 1,
-            "c": 0.18,
-            "color_space": "oklch",
-            "h": 25,
-            "l": 0.7
-          },
-          "status.success": {
-            "alpha": 1,
-            "c": 0.15,
-            "color_space": "oklch",
-            "h": 145,
-            "l": 0.7
-          },
-          "status.warning": {
-            "alpha": 1,
-            "c": 0.15,
-            "color_space": "oklch",
-            "h": 85,
-            "l": 0.8
           }
         },
         "light": {
@@ -546,7 +455,104 @@
             "color_space": "oklch",
             "h": 79.383980238,
             "l": 0.570802497
+          }
+        }
+      },
+      "primitives": {
+        "dark": {
+          "palette.accent.default": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.85
           },
+          "palette.accent.hover": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.92
+          },
+          "palette.background.1": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.1
+          },
+          "palette.background.2": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.15
+          },
+          "palette.background.3": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.22
+          },
+          "palette.background.elevated": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.34
+          },
+          "palette.background.muted": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.26
+          },
+          "palette.foreground.default": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.95
+          },
+          "palette.foreground.muted": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.61
+          },
+          "palette.foreground.quiet": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.65
+          },
+          "status.danger": {
+            "alpha": 1,
+            "c": 0.18,
+            "color_space": "oklch",
+            "h": 25,
+            "l": 0.7
+          },
+          "status.success": {
+            "alpha": 1,
+            "c": 0.15,
+            "color_space": "oklch",
+            "h": 145,
+            "l": 0.7
+          },
+          "status.warning": {
+            "alpha": 1,
+            "c": 0.15,
+            "color_space": "oklch",
+            "h": 85,
+            "l": 0.8
+          }
+        },
+        "light": {
           "palette.accent.default": {
             "alpha": 1,
             "c": 0,
@@ -840,97 +846,6 @@
             "color_space": "oklch",
             "h": 51.72175908,
             "l": 0.704661441
-          },
-          "palette.accent.default": {
-            "alpha": 1,
-            "c": 0,
-            "color_space": "oklch",
-            "h": 0,
-            "l": 0.85
-          },
-          "palette.accent.hover": {
-            "alpha": 1,
-            "c": 0,
-            "color_space": "oklch",
-            "h": 0,
-            "l": 0.92
-          },
-          "palette.background.1": {
-            "alpha": 1,
-            "c": 0,
-            "color_space": "oklch",
-            "h": 0,
-            "l": 0.1
-          },
-          "palette.background.2": {
-            "alpha": 1,
-            "c": 0,
-            "color_space": "oklch",
-            "h": 0,
-            "l": 0.15
-          },
-          "palette.background.3": {
-            "alpha": 1,
-            "c": 0,
-            "color_space": "oklch",
-            "h": 0,
-            "l": 0.22
-          },
-          "palette.background.elevated": {
-            "alpha": 1,
-            "c": 0,
-            "color_space": "oklch",
-            "h": 0,
-            "l": 0.34
-          },
-          "palette.background.muted": {
-            "alpha": 1,
-            "c": 0,
-            "color_space": "oklch",
-            "h": 0,
-            "l": 0.26
-          },
-          "palette.foreground.default": {
-            "alpha": 1,
-            "c": 0,
-            "color_space": "oklch",
-            "h": 0,
-            "l": 0.95
-          },
-          "palette.foreground.muted": {
-            "alpha": 1,
-            "c": 0,
-            "color_space": "oklch",
-            "h": 0,
-            "l": 0.61
-          },
-          "palette.foreground.quiet": {
-            "alpha": 1,
-            "c": 0,
-            "color_space": "oklch",
-            "h": 0,
-            "l": 0.65
-          },
-          "status.danger": {
-            "alpha": 1,
-            "c": 0.18,
-            "color_space": "oklch",
-            "h": 25,
-            "l": 0.7
-          },
-          "status.success": {
-            "alpha": 1,
-            "c": 0.15,
-            "color_space": "oklch",
-            "h": 145,
-            "l": 0.7
-          },
-          "status.warning": {
-            "alpha": 1,
-            "c": 0.15,
-            "color_space": "oklch",
-            "h": 85,
-            "l": 0.8
           }
         },
         "light": {
@@ -1150,7 +1065,104 @@
             "color_space": "oklch",
             "h": 51.556969974,
             "l": 0.496320419
+          }
+        }
+      },
+      "primitives": {
+        "dark": {
+          "palette.accent.default": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.85
           },
+          "palette.accent.hover": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.92
+          },
+          "palette.background.1": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.1
+          },
+          "palette.background.2": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.15
+          },
+          "palette.background.3": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.22
+          },
+          "palette.background.elevated": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.34
+          },
+          "palette.background.muted": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.26
+          },
+          "palette.foreground.default": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.95
+          },
+          "palette.foreground.muted": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.61
+          },
+          "palette.foreground.quiet": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.65
+          },
+          "status.danger": {
+            "alpha": 1,
+            "c": 0.18,
+            "color_space": "oklch",
+            "h": 25,
+            "l": 0.7
+          },
+          "status.success": {
+            "alpha": 1,
+            "c": 0.15,
+            "color_space": "oklch",
+            "h": 145,
+            "l": 0.7
+          },
+          "status.warning": {
+            "alpha": 1,
+            "c": 0.15,
+            "color_space": "oklch",
+            "h": 85,
+            "l": 0.8
+          }
+        },
+        "light": {
           "palette.accent.default": {
             "alpha": 1,
             "c": 0,

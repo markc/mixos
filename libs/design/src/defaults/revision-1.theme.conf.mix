@@ -556,7 +556,7 @@ design: {
             "chrome.caption_close": { color_space: "oklch", l: 0.576370190, c: 0.197679800, h: 23.397124905, alpha: 1.000000000 },
             "chrome.caption_close_text": { color_space: "oklch", l: 0.999999993, c: 0.000000037, h: 89.875563096, alpha: 1.000000000 },
             "chrome.scrim": { color_space: "oklch", l: 0.000000000, c: 0.000000000, h: 0.000000000, alpha: 0.431372549 },
-      } } },
+      } }, semantics: { pairs: { muted: { surface: "palette.background.muted", foreground: "palette.foreground.quiet" } } } },
       { when: { scheme: "breeze", mode: "dark" }, primitives: { colors: {
             "palette.accent.default": {"alpha":1,"c":0,"color_space":"oklch","h":0,"l":0.85},
             "palette.accent.hover": {"alpha":1,"c":0,"color_space":"oklch","h":0,"l":0.92},

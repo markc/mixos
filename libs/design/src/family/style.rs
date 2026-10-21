@@ -982,7 +982,7 @@ mod tests {
         let v2 = crate::compat::table();
         let mut v3 = v2.clone();
         v3.versions.insert(
-            "v3".into(),
+            "v4".into(),
             crate::compat::Version {
                 tokens: BTreeMap::from([(
                     "future_token".into(),
@@ -1132,7 +1132,7 @@ mod tests {
             .remove("canvas_dot_pitch")
             .unwrap();
         later.versions.insert(
-            "v3".into(),
+            "v4".into(),
             crate::compat::Version {
                 tokens: BTreeMap::from([("canvas_dot_pitch".into(), values)]),
                 ..Default::default()
@@ -1141,7 +1141,7 @@ mod tests {
         let origins = default_provenance(&source.v1, &later);
         assert_eq!(
             origins["design.v1.families.style.styles.all.canvas_dot_pitch"],
-            "v3"
+            "v4"
         );
         assert_eq!(
             origins["design.v1.families.style.styles.all.field_radius"],
@@ -1151,7 +1151,7 @@ mod tests {
         assert!(
             diagnostics
                 .iter()
-                .any(|d| d.path.ends_with("all.canvas_dot_pitch") && d.message.ends_with("v3"))
+                .any(|d| d.path.ends_with("all.canvas_dot_pitch") && d.message.ends_with("v4"))
         );
     }
 
@@ -1567,9 +1567,31 @@ mod tests {
                         assert_eq!(old.candidate.dictionary().chrome, today.candidate.dictionary().chrome);
                         assert!(old.diagnostics.iter().any(|d| d.code == "defaulted-scheme"));
                         assert!(old.candidate.dictionary().terminal.is_some());
+                        let provenance = old.candidate.provenance().value(&crate::DesignValueId::ColourPrimitive("chrome.chrome".into())).unwrap();
+                        assert!(provenance.value_origin_rule.starts_with("compat.v3.schemes."));
+                        assert_eq!(old.candidate.dictionary().defaulted["design.v1.primitives.colors.chrome.chrome"], "v3");
                     }
                 }
             }
         }
+    }
+
+    #[test]
+    fn an_authored_modern_binding_keeps_its_palette() {
+        let mut document = embedded();
+        for modifier in &mut document.v1.modifiers {
+            if modifier.when.scheme.as_deref() == Some("breeze") {
+                let color = modifier.primitives.colors["chrome.dock"];
+                modifier.primitives.colors.insert("chrome.chrome".into(), color);
+            }
+        }
+        let crate::DesignCompileResult::Success(result) = crate::compile_design(&document, DesignContext {
+            scheme: Scheme::Breeze, ..Default::default()
+        }) else { panic!("authored Breeze compiles"); };
+        let chrome = result.candidate.dictionary().chrome.as_ref().unwrap();
+        assert_eq!(chrome.get("chrome"), chrome.get("dock"));
+        assert!(!result.candidate.dictionary().defaulted.contains_key("design.v1.primitives.colors.chrome.chrome"));
+        let provenance = result.candidate.provenance().value(&crate::DesignValueId::ColourPrimitive("chrome.chrome".into())).unwrap();
+        assert!(provenance.value_origin_rule.starts_with("design.v1.modifiers["));
     }
 }

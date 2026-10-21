@@ -42,6 +42,7 @@ pub struct SchemePalette {
     pub style: String,
     /// Mode to primitive name to colour; both modes are explicit.
     pub chrome: BTreeMap<String, BTreeMap<String, crate::OklchSource>>,
+    pub primitives: BTreeMap<String, BTreeMap<String, crate::OklchSource>>,
 }
 
 impl Scheme {
@@ -102,9 +103,12 @@ impl Table {
                         return Err(format!("compatibility scheme `{name}` needs exactly dark and light palettes"));
                     }
                     for colors in palette.chrome.values() {
-                        if crate::family::chrome::ROLES.iter().any(|role| !colors.contains_key(&format!("chrome.{role}"))) {
+                        if colors.len() != crate::family::chrome::ROLES.len() || crate::family::chrome::ROLES.iter().any(|role| !colors.contains_key(&format!("chrome.{role}"))) {
                             return Err(format!("compatibility scheme `{name}` is missing a chrome role"));
                         }
+                    }
+                    if palette.primitives.keys().ne(palette.chrome.keys()) || palette.primitives.values().any(|colors| colors.keys().any(|name| !matches!(name.as_str(), "palette.accent.default" | "palette.accent.hover" | "palette.background.1" | "palette.background.2" | "palette.background.3" | "palette.background.elevated" | "palette.background.muted" | "palette.foreground.default" | "palette.foreground.muted" | "palette.foreground.quiet" | "status.danger" | "status.success" | "status.warning"))) {
+                        return Err(format!("compatibility scheme `{name}` has invalid semantic primitives"));
                     }
                 }
             }
@@ -157,7 +161,7 @@ pub(crate) fn diagnostics(defaulted: &BTreeMap<String, String>) -> Vec<crate::De
         .map(|(path, version)| {
             let code = if path.contains(".terminal.") {
                 "defaulted-terminal"
-            } else if path.contains(".schemes.") {
+            } else if path.contains(".schemes.") || path.contains(".primitives.colors.") {
                 "defaulted-scheme"
             } else if path
                 .rsplit(".styles.")

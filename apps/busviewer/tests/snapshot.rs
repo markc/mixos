@@ -149,6 +149,26 @@ fn window_classic() {
     window(chrome(Scheme::Classic, Mode::Light), "window_classic");
 }
 
+#[test]
+fn window_breeze_light() {
+    window(chrome(Scheme::Breeze, Mode::Light), "window_breeze_light");
+}
+
+#[test]
+fn window_breeze_dark() {
+    window(chrome(Scheme::Breeze, Mode::Dark), "window_breeze_dark");
+}
+
+#[test]
+fn window_adwaita_light() {
+    window(chrome(Scheme::Adwaita, Mode::Light), "window_adwaita_light");
+}
+
+#[test]
+fn window_adwaita_dark() {
+    window(chrome(Scheme::Adwaita, Mode::Dark), "window_adwaita_dark");
+}
+
 /// About as a modal dialog over the undimmed window.
 #[test]
 fn about_pro_light() {

@@ -102,19 +102,30 @@ fn compile_flat_source(
     context: DesignContext,
 ) -> DesignCompileResult {
     let mut completed_source = flattened.source.clone();
-    let mut authored = flattened.authored_colours();
+    let mut authored_colors = flattened.authored_colours();
+    let mut palette_origins = BTreeMap::new();
     // Only absent, post-freeze scheme bindings take the compatibility
     // palette. An authored binding keeps its own source colours.
     if completed_source.families.style.as_ref().is_some_and(|family| {
         !family.schemes.contains_key(context.scheme.name())
     }) {
-        for entries in crate::compat::table().versions.values() {
+        for (version, entries) in &crate::compat::table().versions {
             if let Some(crate::compat::Scheme::Palette(palette)) =
                 entries.schemes.get(context.scheme.name())
             {
                 if let Some(colors) = palette.chrome.get(context.mode.name()) {
+                    let mut colors = colors.clone();
+                    if let Some(primitives) = palette.primitives.get(context.mode.name()) {
+                        colors.extend(primitives.clone());
+                    }
                     completed_source.primitives.colors.extend(colors.clone());
-                    authored.extend(colors.keys().cloned());
+                    authored_colors.extend(colors.keys().cloned());
+                    for name in colors.keys() {
+                        palette_origins.insert(name.clone(), (version.clone(), format!(
+                            "compat.{version}.schemes.{}.{}.{}.{name}",
+                            context.scheme.name(), if name.starts_with("chrome.") { "chrome" } else { "primitives" }, context.mode.name()
+                        )));
+                    }
                 }
             }
         }
@@ -135,7 +146,7 @@ fn compile_flat_source(
         source,
         &crate::family::chrome::Inputs {
             colours: &colours.value,
-            authored: &authored,
+            authored: &authored_colors,
         },
     ) {
         Ok(compiled) => compiled,
@@ -163,6 +174,9 @@ fn compile_flat_source(
 
     let terminal_name = format!("{}.{}", context.scheme.name(), context.mode.name());
     let mut defaulted = crate::family::style::default_provenance(source, crate::compat::table());
+    for (name, (version, _)) in &palette_origins {
+        defaulted.insert(format!("design.v1.primitives.colors.{name}"), version.clone());
+    }
     let terminal = source
         .families
         .terminal
@@ -197,6 +211,9 @@ fn compile_flat_source(
         };
 
     let mut provenance = dictionary_provenance(&colours.value, &mapping.value, origins);
+    for (name, (_, rule)) in palette_origins {
+        provenance.insert(DesignValueId::ColourPrimitive(name), authored(rule, Vec::new()));
+    }
     provenance.extend(mapping.value.provenance.clone());
     let mut diagnostics = colours.diagnostics;
     diagnostics.extend(chrome_warnings);
