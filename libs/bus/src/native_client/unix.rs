@@ -26,7 +26,7 @@ pub struct BrokerAccount {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ServerPeerCredentials {
     /// None when the kernel API supplies no usable positive PID. An explicit
-    /// PID pin always rejects that case before establishing a connection.
+    /// PID pin rejects that case after Unix connect and before WebSocket setup.
     pub pid: Option<u32>,
     pub uid: u32,
     pub gid: u32,
@@ -285,10 +285,7 @@ impl NodedClient {
         provenance: Option<crate::RegisterProvenance>,
     ) -> Result<UnixConnectOutcome, ConnectError> {
         let mut resolved = options.clone();
-        if resolved.endpoint.is_none()
-            && resolved.configured_endpoint.is_none()
-            && resolved.expected_server_pid.is_none()
-        {
+        if should_discover_endpoint(&resolved) {
             resolved.configured_endpoint = discover_endpoint(tcp_url).await;
         }
         match connect_verified(service_name, &resolved, provenance.clone()).await {
@@ -306,6 +303,12 @@ impl NodedClient {
             Err(error) => Err(error),
         }
     }
+}
+
+fn should_discover_endpoint(options: &UnixConnectOptions) -> bool {
+    options.endpoint.is_none()
+        && options.configured_endpoint.is_none()
+        && options.expected_server_pid.is_none()
 }
 
 /// TCP discovery supplies a locator only, never authority. Every discovered
@@ -491,6 +494,16 @@ mod tests {
         for pid in [None, Some(-1), Some(0)] {
             assert_eq!(verified_server_pid(pid, None).unwrap(), None);
         }
+    }
+    #[test]
+    fn pinned_connection_never_uses_tcp_endpoint_discovery() {
+        let mut options = UnixConnectOptions::new(BrokerAccount { uid: 123, gid: 123 });
+        assert!(should_discover_endpoint(&options));
+        options.expected_server_pid = Some(42);
+        assert!(!should_discover_endpoint(&options));
+        options.expected_server_pid = None;
+        options.configured_endpoint = Some("/run/example/bus.sock".into());
+        assert!(!should_discover_endpoint(&options));
     }
     #[test]
     fn principal_duplicates_are_detected_before_compatibility_parse() {
