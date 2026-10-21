@@ -6,7 +6,7 @@ use smithay::input::{SeatHandler, SeatState};
 use smithay::reexports::input::Device as InputDevice;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point};
-use smithay::wayland::pointer_constraints::{PointerConstraintsState, with_pointer_constraint};
+use smithay::wayland::pointer_constraints::PointerConstraintsState;
 use smithay::wayland::pointer_gestures::PointerGesturesState;
 use smithay::wayland::relative_pointer::RelativePointerManagerState;
 use smithay::wayland::seat::WaylandFocus;

@@ -3,7 +3,7 @@
 use smithay::desktop::{Space, Window};
 use smithay::output::{Output, Scale};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::utils::{Logical, Physical, Point, Rectangle, Size};
+use smithay::utils::{Logical, Physical, Point, Rectangle};
 use smithay::wayland::seat::WaylandFocus;
 
 pub struct SpaceState {
@@ -43,7 +43,6 @@ impl SpaceState {
 
     pub fn default_scale(&self) -> Scale {
         let compositor_output = self.state.outputs().next().unwrap();
-        let compositor_output_geometry = self.state.output_geometry(compositor_output).unwrap();
 
         compositor_output.current_scale()
     }
@@ -60,7 +59,6 @@ impl SpaceState {
 
     pub fn default_scale_logical(&self) -> f64 {
         let compositor_output = self.state.outputs().next().unwrap();
-        let compositor_output_geometry = self.state.output_geometry(compositor_output).unwrap();
 
         let scale = compositor_output.current_scale();
         scale.fractional_scale()

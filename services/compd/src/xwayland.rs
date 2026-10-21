@@ -400,7 +400,7 @@ fn died(state: &mut Loop) {
     let count = gone.len();
     for surface in gone {
         state.state.deferred.push(Deferred::WindowDestroyed {
-            window: Shell::X11(surface),
+            window: Shell::X11(Box::new(surface)),
             drag_discard: false,
         });
     }

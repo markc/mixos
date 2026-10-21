@@ -285,10 +285,12 @@ impl ForeignToplevel {
             })
             .collect();
 
-        let mut seen: HashMap<WlSurface, ()> = HashMap::with_capacity(current.len());
+        // Keep resource identity intact, including the owning client. This short
+        // membership list needs no hash key with mutable resource internals.
+        let mut seen = Vec::with_capacity(current.len());
 
         for (surface, title, app_id, states, outputs) in current {
-            seen.insert(surface.clone(), ());
+            seen.push(surface.clone());
             match self.toplevels.get_mut(&surface) {
                 None => {
                     // New toplevel: announce on every wlr manager + create the ext handle.
@@ -378,7 +380,7 @@ impl ForeignToplevel {
         let gone: Vec<WlSurface> = self
             .toplevels
             .keys()
-            .filter(|s| !seen.contains_key(*s))
+            .filter(|s| !seen.contains(*s))
             .cloned()
             .collect();
         for surface in gone {

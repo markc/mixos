@@ -83,7 +83,7 @@ where
 #[derive(Debug, Clone, PartialEq)]
 pub enum Shell {
     Xdg(smithay::wayland::shell::xdg::ToplevelSurface),
-    X11(X11Surface),
+    X11(Box<X11Surface>),
 }
 
 /// The mapped window a queued [`Shell`] event refers to.

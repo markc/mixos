@@ -311,7 +311,7 @@ where
 /// `get_xdg_toplevel_drag` — one drag per `wl_data_source`, else `invalid_source`.
 pub fn dispatch_manager<D>(
     state: &mut ToplevelDragState,
-    manager: &XdgToplevelDragManagerV1,
+    _manager: &XdgToplevelDragManagerV1,
     request: xdg_toplevel_drag_manager_v1::Request,
     di: &mut DataInit<'_, D>,
 ) where

@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-use smithay::reexports::wayland_server::DisplayHandle;
-use smithay::wayland::shell::xdg::ToplevelSurface;
-use smithay::wayland::shell::xdg::decoration::{XdgDecorationHandler, XdgDecorationState};
+use smithay::wayland::shell::xdg::decoration::XdgDecorationState;
 
 //A quick summary of how this integrates with the Compositor lifecycle:
 // Setup: Decoration::new puts the capability onto the Wayland Display.

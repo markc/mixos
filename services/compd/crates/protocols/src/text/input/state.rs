@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-use smithay::reexports::wayland_server::DisplayHandle;
 use smithay::wayland::input_method::InputMethodManagerState;
 use smithay::wayland::text_input::TextInputManagerState;
 use smithay::wayland::virtual_keyboard::VirtualKeyboardManagerState;

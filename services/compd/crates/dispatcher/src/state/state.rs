@@ -2935,7 +2935,7 @@ pub mod xwm_impls {
             // Nothing to un-index: the surface→X11 mapping the focus path reads lives
             // on the wl_surface itself (`xwayland_focus::indexed`) and goes away with it.
             self.deferred.push(Deferred::WindowDestroyed {
-                window: Shell::X11(window),
+                window: Shell::X11(Box::new(window)),
                 drag_discard: false,
             });
             self.schedule_redraw(RedrawReason::Unmap);
@@ -3042,7 +3042,7 @@ pub mod xwm_impls {
 
         fn fullscreen_request(&mut self, _xwm: XwmId, window: X11Surface) {
             self.deferred.push(Deferred::WindowFullscreen {
-                window: Shell::X11(window),
+                window: Shell::X11(Box::new(window)),
                 on: true,
             });
             self.schedule_redraw(RedrawReason::WindowState);
@@ -3050,7 +3050,7 @@ pub mod xwm_impls {
 
         fn unfullscreen_request(&mut self, _xwm: XwmId, window: X11Surface) {
             self.deferred.push(Deferred::WindowFullscreen {
-                window: Shell::X11(window),
+                window: Shell::X11(Box::new(window)),
                 on: false,
             });
             self.schedule_redraw(RedrawReason::WindowState);

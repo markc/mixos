@@ -2,9 +2,8 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 use std::collections::HashSet;
 
-use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::reexports::wayland_server::backend::ObjectId;
-use smithay::wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportNotifier};
+use smithay::wayland::dmabuf::{DmabufGlobal, DmabufState};
 use smithay::wayland::drm_syncobj::DrmSyncobjState;
 
 pub struct DMABufState {

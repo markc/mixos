@@ -11,7 +11,7 @@
 
 use std::io::BufRead;
 use std::os::unix::process::CommandExt;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::sync::atomic::{AtomicI32, AtomicU64, Ordering};
 
 use smithay::reexports::wayland_server::{Client, DisplayHandle};
