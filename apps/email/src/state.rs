@@ -5604,7 +5604,11 @@ impl State {
                     return;
                 };
                 if compose.set_body(&body) {
-                    compose.reply.as_mut().expect("reply is still present").position = position;
+                    compose
+                        .reply
+                        .as_mut()
+                        .expect("reply is still present")
+                        .position = position;
                     compose.revision += 1;
                 }
             }
@@ -6695,7 +6699,10 @@ pub(crate) mod tests {
     fn round2_successful_replacement_clears_the_refusal() {
         let mut state = connected();
         typed(&mut state);
-        state.apply_ui(UiEvent::ComposeField(ComposeField::Body, "x".repeat(65 * 1024 * 1024)));
+        state.apply_ui(UiEvent::ComposeField(
+            ComposeField::Body,
+            "x".repeat(65 * 1024 * 1024),
+        ));
         assert!(state.compose.as_ref().unwrap().error.is_some());
         state.apply_ui(UiEvent::ComposeField(ComposeField::Body, "Accepted".into()));
         let compose = state.compose.as_ref().unwrap();
@@ -6741,13 +6748,19 @@ pub(crate) mod tests {
         store.save(&saved).unwrap();
         state.offer_drafts(vec![saved.clone()]);
         state.apply_ui(UiEvent::RestoreDraft(DraftChoice::Keep));
-        state.apply_ui(UiEvent::ComposeField(ComposeField::Subject, "Edited".into()));
+        state.apply_ui(UiEvent::ComposeField(
+            ComposeField::Subject,
+            "Edited".into(),
+        ));
         state.save_draft();
         state.store_draft(true);
         state.request_quit();
         state.apply_ui(UiEvent::CloseCompose);
         keep(&mut state, &mut store);
-        assert!(store.list()[0].body == saved.body, "stored body was overwritten");
+        assert!(
+            store.list()[0].body == saved.body,
+            "stored body was overwritten"
+        );
         assert!(state.compose.is_none());
         assert_eq!(state.restore, vec![saved]);
         assert!(!state.status.is_empty());
@@ -6804,7 +6817,10 @@ pub(crate) mod tests {
         state.save_draft();
         state.take_draft_ops();
         let before = state.compose.as_ref().unwrap().revision;
-        state.apply_ui(UiEvent::ComposeField(ComposeField::Body, "x".repeat(65 * 1024 * 1024)));
+        state.apply_ui(UiEvent::ComposeField(
+            ComposeField::Body,
+            "x".repeat(65 * 1024 * 1024),
+        ));
         assert_eq!(state.compose.as_ref().unwrap().revision, before);
         assert!(state.draft_unsaved().is_none());
         state.save_draft();
@@ -6815,14 +6831,19 @@ pub(crate) mod tests {
     fn round2_refused_quote_move_keeps_position_and_revisions() {
         use crate::quote::Position;
         let mut state = connected();
-        state.open_compose(Some("a"), Composed {
-            body: format!("q{}", "x".repeat(64 * 1024 * 1024 - 1)),
-            ..Composed::default()
-        });
+        state.open_compose(
+            Some("a"),
+            Composed {
+                body: format!("q{}", "x".repeat(64 * 1024 * 1024 - 1)),
+                ..Composed::default()
+            },
+        );
         let compose = state.compose.as_mut().unwrap();
         assert!(compose.error.is_none());
         compose.reply = Some(ReplyQuote {
-            quote: "q".into(), signature: String::new(), position: Position::Above,
+            quote: "q".into(),
+            signature: String::new(),
+            position: Position::Above,
         });
         let before = (compose.revision, compose.body.revision);
         state.apply_ui(UiEvent::ComposeReplyPosition(Position::Below));
@@ -6914,7 +6935,10 @@ pub(crate) mod tests {
             &json!({"account":"a", "body":huge}).to_string(),
         );
         assert!(state.compose.is_none());
-        assert_eq!(state.take_replies()[0].body["error_code"], code::INVALID_ARGUMENT);
+        assert_eq!(
+            state.take_replies()[0].body["error_code"],
+            code::INVALID_ARGUMENT
+        );
 
         let mut email = serde_json::to_value(unread_email("E1")).unwrap();
         email["bodyValues"] = json!({"p1":{"value":huge}});

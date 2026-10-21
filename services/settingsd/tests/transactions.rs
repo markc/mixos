@@ -43,15 +43,28 @@ fn round2_old_composer_family_loads_and_allows_later_writes() {
     assert_eq!(data.desktop.email.composer.font.family, None);
     data.check(&binding()).unwrap();
     let mut state = Authority::new(store, data).unwrap();
-    state.apply(request(&state, "after-font-reset", "light")).unwrap();
+    state
+        .apply(request(&state, "after-font-reset", "light"))
+        .unwrap();
     for (id, path, value) in [
         ("bad-font", "email.composer.font.family", json!("Inter")),
-        ("bad-surface", "email.composer", json!({"font":{"family":"Inter"}})),
-        ("bad-group", "email", json!({"composer":{"font":{"family":"Inter"}}})),
+        (
+            "bad-surface",
+            "email.composer",
+            json!({"font":{"family":"Inter"}}),
+        ),
+        (
+            "bad-group",
+            "email",
+            json!({"composer":{"font":{"family":"Inter"}}}),
+        ),
     ] {
         let mut edit = request(&state, id, "dark");
         edit.changes = BTreeMap::from([(path.into(), value)]);
-        assert_eq!(state.apply(edit).unwrap_err()["status"], "validation_failed");
+        assert_eq!(
+            state.apply(edit).unwrap_err()["status"],
+            "validation_failed"
+        );
     }
     drop(state);
     let (_, reopened) = Store::open(dir.path(), &binding()).unwrap();

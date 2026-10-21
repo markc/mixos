@@ -102,8 +102,12 @@ impl Accepted {
         // resolved design is unchanged, so its revision stays as it was.
         let reset = self.desktop.email.reset_legacy_composer_family();
         if reset {
-            self.revision = Revision(self.revision.0.checked_add(1)
-                .ok_or_else(|| anyhow::anyhow!("accepted revision exhausted"))?);
+            self.revision = Revision(
+                self.revision
+                    .0
+                    .checked_add(1)
+                    .ok_or_else(|| anyhow::anyhow!("accepted revision exhausted"))?,
+            );
         }
         if self.format == FORMAT && !reset {
             return Ok((self, false));
