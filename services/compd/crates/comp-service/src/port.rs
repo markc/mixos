@@ -78,6 +78,74 @@ const PORT_SHUTDOWN_GRACE: Duration = Duration::from_millis(300);
 const CLIENT_SHUTDOWN_BUDGET: Duration = Duration::from_millis(250);
 const DEREGISTER_BUDGET: Duration = Duration::from_millis(200);
 const CLOSE_BUDGET: Duration = Duration::from_millis(50);
+/// Outbound fires waiting for the worker. A full queue drops the new fire.
+const FIRE_CAPACITY: usize = 64;
+/// A fire older than this when the worker reaches it (queued while the
+/// broker was away) is dropped: a key press is not replayed late.
+const FIRE_TTL: Duration = Duration::from_secs(2);
+const FIRE_SEND_TIMEOUT: Duration = Duration::from_secs(2);
+
+/// One verb compd sends to another service, fire-and-forget: a user key's
+/// binding (world's user-key layer) whose service is not `comp`.
+#[derive(Debug)]
+pub struct OutboundFire {
+    service: String,
+    command: String,
+    body: Value,
+    queued: std::time::Instant,
+}
+
+/// The engine half of the outbound fires: [`FireSender::fire`] queues a
+/// send for the worker, which sends it once connected.
+#[derive(Clone, Debug)]
+pub struct FireSender(tokio_mpsc::Sender<OutboundFire>);
+
+type FireReceiver = tokio_mpsc::Receiver<OutboundFire>;
+
+impl FireSender {
+    /// Queue `command` with `body` for `service`. False when the queue is
+    /// full or the worker has gone; the fire is then dropped.
+    pub fn fire(&self, service: &str, command: &str, body: Value) -> bool {
+        self.0
+            .try_send(OutboundFire {
+                service: service.to_owned(),
+                command: command.to_owned(),
+                body,
+                queued: std::time::Instant::now(),
+            })
+            .is_ok()
+    }
+}
+
+fn fire_channel() -> (FireSender, FireReceiver) {
+    let (sender, receiver) = tokio_mpsc::channel(FIRE_CAPACITY);
+    (FireSender(sender), receiver)
+}
+
+/// Send each queued fire in order. Nobody waits for a reply: a verb nobody
+/// answers simply does not route.
+async fn fire_loop<C: WorkerClient>(client: Arc<C>, mut fires: FireReceiver) {
+    while let Some(fire) = fires.recv().await {
+        if fire.queued.elapsed() > FIRE_TTL {
+            tracing::debug!(command = %fire.command, service = %fire.service, "stale fire dropped");
+            continue;
+        }
+        match tokio::time::timeout(
+            FIRE_SEND_TIMEOUT,
+            client.send(&fire.service, &fire.command, fire.body),
+        )
+        .await
+        {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => {
+                tracing::warn!(%error, command = %fire.command, service = %fire.service, "fire failed")
+            }
+            Err(_) => {
+                tracing::warn!(command = %fire.command, service = %fire.service, "fire timed out")
+            }
+        }
+    }
+}
 
 /// The broker URL when the caller names none: `MIXOS_NODED_URL`, else the
 /// node config (`node.conf.mix`), else the loopback broker.
@@ -499,12 +567,15 @@ pub struct PortWiring {
     /// Offer observation records here (`offer_next`).
     pub observation_producer: ObservationProducer,
     pub context: Arc<PortContext>,
+    /// Queue fire-and-forget verbs to other services here.
+    pub fires: FireSender,
 }
 
 pub struct PortStarter {
     service: String,
     noded_url: String,
     ingress: PortIngress,
+    fires: FireReceiver,
     broker: Arc<AtomicU8>,
     reply_timeouts: Arc<AtomicU64>,
     publish_timeouts: Arc<AtomicU64>,
@@ -583,16 +654,19 @@ fn wire(
     let reply_timeouts = Arc::clone(&context.reply_timeouts);
     let publish_timeouts = Arc::clone(&context.publish_timeouts);
     let lost_count = Arc::clone(&context.lost_count);
+    let (fire_sender, fires) = fire_channel();
     (
         PortWiring {
             service: PortService::new(source, Arc::clone(&context), waker),
             observation_producer,
             context,
+            fires: fire_sender,
         },
         PortStarter {
             service,
             noded_url,
             ingress,
+            fires,
             broker,
             reply_timeouts,
             publish_timeouts,
@@ -642,6 +716,7 @@ impl PortStarter {
         let observations = self.observations;
         let observation_notifier = self.observation_notifier;
         let lost_count = self.lost_count;
+        let fires = self.fires;
         let thread = thread::Builder::new()
             .name("compd-port".into())
             .spawn(move || {
@@ -667,6 +742,7 @@ impl PortStarter {
                     observations,
                     observation_notifier,
                     lost_count,
+                    fires,
                     shutdown_rx,
                     move || {
                         let service = connect_service.clone();
@@ -830,6 +906,13 @@ trait WorkerClient: Send + Sync + 'static {
     fn close(&self) -> WorkerFuture<'_, ()>;
     /// Subscribe once; the supervised client replays it on every reconnect.
     fn subscribe_topic<'a>(&'a self, topic: &'a str) -> WorkerFuture<'a, Result<(), String>>;
+    /// A request nobody waits on (`type: request`, no reply read).
+    fn send<'a>(
+        &'a self,
+        to: &'a str,
+        command: &'a str,
+        body: Value,
+    ) -> WorkerFuture<'a, Result<(), String>>;
 }
 
 impl WorkerClient for SupervisedClient {
@@ -900,6 +983,19 @@ impl WorkerClient for SupervisedClient {
                 .map_err(|error| error.to_string())
         })
     }
+
+    fn send<'a>(
+        &'a self,
+        to: &'a str,
+        command: &'a str,
+        body: Value,
+    ) -> WorkerFuture<'a, Result<(), String>> {
+        Box::pin(async move {
+            SupervisedClient::send(self, to, command, body)
+                .await
+                .map_err(|error| error.to_string())
+        })
+    }
 }
 
 struct PendingReply {
@@ -935,6 +1031,7 @@ async fn worker_loop<F, Fut, C>(
     observations: ObservationOutbox,
     observation_notifier: Arc<tokio::sync::Notify>,
     lost_count: Arc<AtomicU64>,
+    fires: FireReceiver,
     mut shutdown: watch::Receiver<bool>,
     connector: F,
 ) where
@@ -980,6 +1077,7 @@ async fn worker_loop<F, Fut, C>(
         Arc::clone(&publish_timeouts),
         shutdown.clone(),
     ));
+    let fire_task = tokio::spawn(fire_loop(Arc::clone(&client), fires));
     // Holder cleanup on Bus departure. The supervised client replays a
     // subscription once it has succeeded; until then every (re)connect tries
     // again. Best effort: the liveness probe bounds what a missed departure
@@ -1060,6 +1158,8 @@ async fn worker_loop<F, Fut, C>(
     // may be abandoned rather than extending compositor teardown indefinitely.
     publisher_task.abort();
     let _ = publisher_task.await;
+    fire_task.abort();
+    let _ = fire_task.await;
     graceful_client_shutdown(client.as_ref()).await;
 }
 

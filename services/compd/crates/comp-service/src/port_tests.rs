@@ -12,8 +12,15 @@ use comp_model::observation::PropValue;
 use comp_model::request::SequenceStep;
 
 type PublishedMessages = Arc<Mutex<Vec<(BTreeMap<String, String>, String)>>>;
+type SentMessages = Arc<Mutex<Vec<(String, String, Value)>>>;
+
+/// A fire receiver whose sender is gone: the worker's fire task ends at once.
+fn no_fires() -> FireReceiver {
+    fire_channel().1
+}
 
 struct FakeClient {
+    sent: SentMessages,
     incoming: Mutex<Option<tokio_mpsc::UnboundedReceiver<bus::IncomingCommand>>>,
     states: watch::Sender<ConnState>,
     hang_replies: bool,
@@ -40,6 +47,7 @@ impl FakeClient {
         let (states, _) = watch::channel(initial_state);
         (
             Self {
+                sent: Arc::new(Mutex::new(Vec::new())),
                 incoming: Mutex::new(Some(incoming)),
                 states: states.clone(),
                 hang_replies,
@@ -125,6 +133,78 @@ impl WorkerClient for FakeClient {
     fn subscribe_topic<'a>(&'a self, _topic: &'a str) -> WorkerFuture<'a, Result<(), String>> {
         Box::pin(future::ready(Ok(())))
     }
+
+    fn send<'a>(
+        &'a self,
+        to: &'a str,
+        command: &'a str,
+        body: Value,
+    ) -> WorkerFuture<'a, Result<(), String>> {
+        self.sent
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .push((to.to_owned(), command.to_owned(), body));
+        Box::pin(future::ready(Ok(())))
+    }
+}
+
+/// A queued fire reaches the broker as a plain request once the worker is
+/// connected; a stale one (queued longer than the TTL) is dropped.
+#[tokio::test]
+async fn worker_sends_queued_fires_and_drops_stale_ones() {
+    let (ingress, _source, _) = test_ingress();
+    let broker = Arc::new(AtomicU8::new(BROKER_RETRYING));
+    let (publish_timeouts, observations, lost_count) = test_observation_args();
+    let (shutdown_tx, shutdown) = watch::channel(false);
+    let (client, _commands, _states) = FakeClient::new(ConnState::Connected, false);
+    let sent = Arc::clone(&client.sent);
+    let mut client = Some(client);
+    let (fires, receiver) = fire_channel();
+    fires
+        .0
+        .try_send(OutboundFire {
+            service: "term".into(),
+            command: "term.stale".into(),
+            body: json!({}),
+            queued: std::time::Instant::now() - FIRE_TTL - Duration::from_millis(1),
+        })
+        .unwrap();
+    assert!(fires.fire("term", "term.tab.next", json!({"n": 1})));
+    let worker = tokio::spawn(worker_loop(
+        "comp-nested".into(),
+        ingress,
+        Arc::clone(&broker),
+        Arc::new(AtomicU64::new(0)),
+        publish_timeouts,
+        observations,
+        Arc::new(tokio::sync::Notify::new()),
+        lost_count,
+        receiver,
+        shutdown,
+        move || future::ready(Ok(client.take().expect("one connection attempt"))),
+    ));
+    wait_for_broker(&broker, BROKER_CONNECTED).await;
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while sent.lock().unwrap().is_empty() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("the fire is sent");
+    assert_eq!(
+        *sent.lock().unwrap(),
+        vec![(
+            "term".to_owned(),
+            "term.tab.next".to_owned(),
+            json!({"n": 1})
+        )]
+    );
+    shutdown_tx.send_replace(true);
+    worker.await.expect("worker exits cleanly");
+    assert!(
+        !fires.fire("term", "term.late", json!({})),
+        "the worker has gone"
+    );
 }
 
 fn test_ingress() -> (PortIngress, CommandSource, Arc<AtomicUsize>) {
@@ -252,6 +332,7 @@ async fn complete_worker_loop_tracks_state_edges_without_polling() {
         observations,
         Arc::new(tokio::sync::Notify::new()),
         lost_count,
+        no_fires(),
         shutdown,
         move || future::ready(Ok(client.take().expect("one connection attempt"))),
     ));
@@ -283,6 +364,7 @@ async fn complete_worker_loop_terminates_on_fatal_reconnect_collision() {
         observations,
         Arc::new(tokio::sync::Notify::new()),
         lost_count,
+        no_fires(),
         shutdown,
         move || future::ready(Ok(client.take().expect("one connection attempt"))),
     ));
@@ -313,6 +395,7 @@ async fn complete_worker_loop_terminates_on_registration_rejection_without_renam
         observations,
         Arc::new(tokio::sync::Notify::new()),
         lost_count,
+        no_fires(),
         shutdown,
         move || {
             attempts_for_connector.fetch_add(1, Ordering::Relaxed);
@@ -1473,6 +1556,7 @@ async fn failed_idle_gap_retries_on_broker_reconnect_without_a_new_record() {
         receiver,
         notifier,
         Arc::clone(&lost),
+        no_fires(),
         shutdown,
         move || future::ready(Ok(client.take().expect("one connection attempt"))),
     ));
@@ -2147,6 +2231,7 @@ async fn stalled_publisher_does_not_block_commands_and_worker_shutdown_is_bounde
         observations,
         notifier,
         lost,
+        no_fires(),
         shutdown,
         move || future::ready(Ok(client.take().expect("one connection attempt"))),
     ));
@@ -2200,6 +2285,7 @@ async fn completed_responders_are_reaped_and_seventeenth_command_is_admitted() {
         observations,
         Arc::new(tokio::sync::Notify::new()),
         lost_count,
+        no_fires(),
         shutdown,
         move || future::ready(Ok(client.take().expect("one connection attempt"))),
     ));
@@ -2260,6 +2346,7 @@ async fn worker_loop_abandons_black_holed_replies_and_stays_responsive() {
         observations,
         Arc::new(tokio::sync::Notify::new()),
         lost_count,
+        no_fires(),
         shutdown,
         move || future::ready(Ok(client.take().expect("one connection attempt"))),
     ));

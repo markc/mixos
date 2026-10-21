@@ -19,10 +19,14 @@ pub fn release_held_keys(loop_: &mut Loop) {
     };
     // smithay seat callback now sees `&mut Dispatch` (D = Dispatch).
     // Collect the non-modifier held keycodes (the lock is released before we re-enter `input`).
+    // A user key the user-key layer swallowed is skipped: the client never
+    // saw its press, so it must not see a release either.
+    let user = &loop_.inner.comp.bindings.user;
     let to_release: Vec<Keycode> = keyboard.with_pressed_keysyms(|syms| {
         syms.iter()
             .filter(|h| !is_modifier_keysym(h.modified_sym().raw()))
             .map(|h| h.raw_code())
+            .filter(|code| !user.is_swallowed(code.raw()))
             .collect()
     });
     if to_release.is_empty() {

@@ -17,6 +17,9 @@ contract = "none"
 [dependencies]
 surfaces.workspace = true
 comp-model.workspace = true
+# The user-key rule, the keymap.v1 rows and the press-latched disposition,
+# shared with inputd so there is one classifier.
+inputd-core.workspace = true
 serde_json.workspace = true
 
 [lints.clippy]

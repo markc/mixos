@@ -33,6 +33,7 @@ pub mod service;
 pub use channel::{Waker, no_waker};
 pub use outbox::{ObservationOutbox, ObservationProducer};
 pub use port::{
-    PortIdentity, PortStarter, PortWiring, PortWorker, QueueFull, default_noded_url, prepare,
+    FireSender, OutboundFire, PortIdentity, PortStarter, PortWiring, PortWorker, QueueFull,
+    default_noded_url, prepare,
 };
 pub use service::{CompEngine, LongReply, PortContext, PortService};

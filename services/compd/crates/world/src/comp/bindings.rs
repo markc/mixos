@@ -16,16 +16,56 @@
 //! and run by the same Bus pass through the comp verbs' code
 //! (`policy_host::control::apply_bindings`), so a chord and its verb share
 //! one primitive.
+//!
+//! The user keys come first ([`policy::user_keys`], §6.0): bare F1–F12 and
+//! Right Ctrl/Alt/Shift + arrows, matched side-exact on the evdev code. A
+//! user key fires the user's binding, goes on when the user bound it
+//! passthrough, and is otherwise swallowed; it never reaches the table
+//! below or a client. A `comp` verb runs in the Bus pass through the comp
+//! verbs' own parser and code; any other verb is sent over the comp port's
+//! Bus client, fire-and-forget. The keymap is the session user's keymap.v1
+//! file ([`user_keymap_path`]), followed live by an inotify watch.
+
+use std::collections::VecDeque;
+use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 use policy::bindings::{
     BindingAction, BindingProfile, BindingState, KeyDisposition, Modifiers, ScreenshotLaunch,
 };
+use policy::user_keys::{UserFire, UserKeys, parse_keymap};
 use smithay::input::keyboard::ModifiersState;
 
 use crate::state::Loop;
 
+/// Overrides the user keymap's path (tests, a second session).
+pub const USER_KEYMAP_ENV: &str = "MIXOS_USER_KEYMAP";
+
+/// The user keys' auto-repeat, which compd runs itself for a row with
+/// `repeat: allow` (the client never sees the key to repeat it). The same
+/// delay and rate the seat advertises (`dispatcher` seat factory: 600 ms,
+/// 25 per second).
+const REPEAT_DELAY: Duration = Duration::from_millis(600);
+const REPEAT_INTERVAL: Duration = Duration::from_millis(40);
+
+/// Bus fires waiting for the comp port. With no port nothing drains them,
+/// so the queue is bounded and the oldest goes first.
+const MAX_BUS_FIRES: usize = 32;
+/// A Bus fire older than this when the port drains it is dropped.
+const BUS_FIRE_TTL: Duration = Duration::from_secs(2);
+
 #[derive(Debug, Default)]
 pub struct Bindings {
+    /// The user-key layer, ahead of the table.
+    pub user: UserKeys,
+    /// User-key verbs fired since start, and the last one.
+    pub user_fired: u64,
+    pub user_last: Option<&'static str>,
+    user_keymap: Option<UserKeymap>,
+    /// `comp` verbs waiting for the Bus pass.
+    comp_fires: Vec<UserFire>,
+    /// Other services' verbs waiting for the comp port.
+    bus_fires: VecDeque<(Instant, UserFire)>,
     state: Option<BindingState>,
     /// Window/workspace actions waiting for the Bus pass.
     pending: Vec<BindingAction>,
@@ -78,6 +118,206 @@ impl Bindings {
     pub fn take_launches(&mut self) -> Vec<ScreenshotLaunch> {
         std::mem::take(&mut self.launches)
     }
+
+    /// Queue a user key's verb: a `comp` verb for the Bus pass, any other
+    /// for the comp port.
+    pub fn queue_user_fire(&mut self, fire: UserFire) {
+        self.user_fired = self.user_fired.saturating_add(1);
+        self.user_last = Some(fire.verb);
+        if fire.is_comp() {
+            self.comp_fires.push(fire);
+            return;
+        }
+        if self.bus_fires.len() >= MAX_BUS_FIRES {
+            self.bus_fires.pop_front();
+        }
+        self.bus_fires.push_back((Instant::now(), fire));
+    }
+
+    /// The queued `comp` verbs, oldest first.
+    pub fn take_comp_fires(&mut self) -> Vec<UserFire> {
+        std::mem::take(&mut self.comp_fires)
+    }
+
+    /// The queued verbs for other services, oldest first; any queued
+    /// longer than [`BUS_FIRE_TTL`] is dropped.
+    pub fn take_bus_fires(&mut self) -> Vec<UserFire> {
+        let now = Instant::now();
+        self.bus_fires
+            .drain(..)
+            .filter(|(queued, _)| now.duration_since(*queued) <= BUS_FIRE_TTL)
+            .map(|(_, fire)| fire)
+            .collect()
+    }
+
+    /// Read the user keymap at `path` into the layer. A missing file means
+    /// no bindings (every user key swallowed); an unreadable or invalid one
+    /// keeps the keymap in force. Returns whether the rows changed.
+    pub fn reload_user_keymap(&mut self, path: &Path) -> bool {
+        let rows = match std::fs::read_to_string(path) {
+            Ok(text) => match parse_keymap(&text) {
+                Ok(loaded) => {
+                    for dropped in &loaded.dropped {
+                        warn!("user keymap {}: {dropped}", path.display());
+                    }
+                    loaded.rows
+                }
+                Err(reason) => {
+                    warn!(
+                        "user keymap {}: {reason}; keeping the keymap in force",
+                        path.display()
+                    );
+                    return false;
+                }
+            },
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+            Err(error) => {
+                warn!(
+                    "user keymap {}: {error}; keeping the keymap in force",
+                    path.display()
+                );
+                return false;
+            }
+        };
+        let count = rows.len();
+        let changed = self.user.replace(rows);
+        if changed {
+            info!("user keymap {}: {count} user-key bindings", path.display());
+        }
+        changed
+    }
+}
+
+/// The keymap file and the watch on its directory (kept alive here).
+struct UserKeymap {
+    path: PathBuf,
+    _watcher: Option<notify::RecommendedWatcher>,
+}
+
+impl std::fmt::Debug for UserKeymap {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("UserKeymap")
+            .field("path", &self.path)
+            .field("watched", &self._watcher.is_some())
+            .finish()
+    }
+}
+
+/// The session user's keymap.v1 file: `$MIXOS_USER_KEYMAP`, else
+/// `inputd/keymap.json` in the MixOS etc dir (for a user,
+/// `$XDG_CONFIG_HOME/mixos/inputd/keymap.json`).
+pub fn user_keymap_path() -> PathBuf {
+    std::env::var_os(USER_KEYMAP_ENV)
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            config::path(config::Dir::Etc)
+                .join("inputd")
+                .join("keymap.json")
+        })
+}
+
+/// Load the user keymap and watch it. Called once, before the first key.
+pub fn start_user_keys(lp: &mut Loop) {
+    let path = user_keymap_path();
+    lp.inner.comp.bindings.reload_user_keymap(&path);
+    info!(
+        "user keys: keymap {} ({} bindings)",
+        path.display(),
+        lp.inner.comp.bindings.user.rows().len()
+    );
+    let watcher = watch_user_keymap(lp, &path);
+    lp.inner.comp.bindings.user_keymap = Some(UserKeymap {
+        path,
+        _watcher: watcher,
+    });
+}
+
+/// An inotify watch on the keymap's directory (an editor's save replaces
+/// the file), delivered to the loop through a channel: each create, write,
+/// rename or removal of the file reloads it. Our own reads are access
+/// events and are ignored, so a reload never triggers another.
+fn watch_user_keymap(lp: &mut Loop, path: &Path) -> Option<notify::RecommendedWatcher> {
+    use notify::{EventKind, RecursiveMode, Watcher};
+    use smithay::reexports::calloop::channel::{Event, channel};
+    let (Some(dir), Some(name)) = (path.parent(), path.file_name()) else {
+        warn!("user keymap {}: no directory to watch", path.display());
+        return None;
+    };
+    // The directory may not exist yet on a fresh account: make it, so a
+    // keymap written later is seen.
+    if let Err(error) = std::fs::create_dir_all(dir) {
+        warn!("user keymap {}: {error}; not followed live", dir.display());
+        return None;
+    }
+    let (sender, source) = channel::<()>();
+    let reload = path.to_path_buf();
+    let inserted = lp
+        .loop_handle
+        .insert_source(source, move |event, _, lp: &mut Loop| {
+            if let Event::Msg(()) = event
+                && lp.inner.comp.bindings.reload_user_keymap(&reload)
+            {
+                lp.inner.comp.settings_changed("bindings", "bindings.user");
+            }
+        });
+    if let Err(error) = inserted {
+        warn!("user keymap watch source: {error}");
+        return None;
+    }
+    let name = name.to_os_string();
+    let watcher = notify::recommended_watcher(move |result: notify::Result<notify::Event>| {
+        let Ok(event) = result else { return };
+        if matches!(event.kind, EventKind::Access(_)) {
+            return;
+        }
+        if event
+            .paths
+            .iter()
+            .any(|changed| changed.file_name() == Some(name.as_os_str()))
+        {
+            let _ = sender.send(());
+        }
+    });
+    let mut watcher = match watcher {
+        Ok(watcher) => watcher,
+        Err(error) => {
+            warn!("user keymap watch: {error}; not followed live");
+            return None;
+        }
+    };
+    if let Err(error) = watcher.watch(dir, RecursiveMode::NonRecursive) {
+        warn!("user keymap {}: {error}; not followed live", dir.display());
+        return None;
+    }
+    Some(watcher)
+}
+
+/// Repeat a user key whose row allows it, while it stays held: one timer,
+/// armed at the press, re-armed each tick, dropped when the layer says the
+/// repeat is over (the key went up, another was pressed, a pause) or a
+/// session lock began.
+fn arm_repeat(lp: &mut Loop, token: u64) {
+    use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
+    let armed = lp.loop_handle.insert_source(
+        Timer::from_duration(REPEAT_DELAY),
+        move |_, _, lp: &mut Loop| {
+            if super::session_lock::active(lp) {
+                return TimeoutAction::Drop;
+            }
+            let bindings = &mut lp.inner.comp.bindings;
+            match bindings.user.repeat(token) {
+                Some(fire) => {
+                    bindings.queue_user_fire(fire);
+                    TimeoutAction::ToDuration(REPEAT_INTERVAL)
+                }
+                None => TimeoutAction::Drop,
+            }
+        },
+    );
+    if let Err(error) = armed {
+        warn!("user-key repeat timer: {error}");
+    }
 }
 
 /// One human key edge, after xkb. `keysym` is the layout-agnostic symbol
@@ -116,6 +356,21 @@ pub fn key(
             .get_keyboard()
             .and_then(|keyboard| keyboard.current_focus())
             .is_some_and(|surface| super::session_lock::is_lock_surface(lp, &surface));
+    // The user keys first: the user's binding, the user's passthrough, or
+    // swallowed. Under a lock every user key is swallowed and nothing fires.
+    let user = user_key(
+        &mut lp.inner.comp.bindings,
+        keycode,
+        pressed,
+        locked,
+        modifier,
+    );
+    if user.took {
+        if let Some(token) = user.repeat {
+            arm_repeat(lp, token);
+        }
+        return true;
+    }
     let bindings = &mut lp.inner.comp.bindings;
     bindings.last_edge = Some(KeyEdge {
         took: false,
@@ -159,7 +414,7 @@ pub fn key(
             lp.inner.loader.loop_signal.stop();
         }
         // The F9 Bus key is opt-in by configuration; compd's table never
-        // carries it.
+        // carries it, and bare F9 is a user key the layer above takes first.
         BindingAction::SendBusKey => {}
         // Print Screen: the window holding the keyboard is read here, at the
         // key press, before any later input or queued action can move focus.
@@ -173,6 +428,31 @@ pub fn key(
         action => bindings.pending.push(action),
     }
     true
+}
+
+/// The user-key half of [`key`], on the comp state alone (the headless
+/// harness drives it as the seat does): the layer's decision for one edge,
+/// with its verb queued and the edge recorded for the injector. When it
+/// took the edge, the caller arms `repeat` and stops: no later layer and no
+/// client sees the key.
+pub fn user_key(
+    bindings: &mut Bindings,
+    keycode: u32,
+    pressed: bool,
+    locked: bool,
+    modifier: bool,
+) -> policy::user_keys::UserKeyEdge {
+    let mut edge = bindings.user.edge(keycode, pressed, locked);
+    if edge.took {
+        bindings.last_edge = Some(KeyEdge {
+            took: true,
+            modifier,
+        });
+        if let Some(fire) = edge.fire.take() {
+            bindings.queue_user_fire(fire);
+        }
+    }
+    edge
 }
 
 /// The window holding the human keyboard (its root, for a popup), as

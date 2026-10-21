@@ -19,6 +19,9 @@ pub const MOD_KEYCODES: &[u32] = &[50, 62, 37, 105, 64, 108, 133, 134];
 /// Force-release held modifiers and clear the surface registry's notion of
 /// held modifiers. Safe to call on any focus-loss or session-pause boundary.
 pub fn clear_held_modifiers(state: &mut Loop) {
+    // The user-key layer tracks the physical keys itself: forget them too,
+    // or a Right Ctrl held across the switch would chord every later F-key.
+    state.inner.comp.bindings.user.reset();
     let Some(keyboard) = state.state.seat.seat.get_keyboard() else {
         trace!("clear_held_modifiers: no keyboard on seat; nothing to clear");
         return;

@@ -77,7 +77,7 @@ use comp_model::snapshot::{
     CompSnapshot, ReadScopes, SessionSnapshot, project_window_row, surface_key,
 };
 use comp_service::{
-    CompEngine, LongReply, ObservationProducer, PortContext, PortService, PortWorker,
+    CompEngine, FireSender, LongReply, ObservationProducer, PortContext, PortService, PortWorker,
 };
 use motion::{Glide, Point, Route, Timeline};
 use outputs::render_contract::contract::RendererId;
@@ -305,6 +305,8 @@ pub struct Bus {
     port: PortService,
     /// The outbox the publisher task drains (dropping it ends the outbox).
     producer: ObservationProducer,
+    /// The user keys' verbs for other services, sent by the worker.
+    fires: FireSender,
     edges: policy_host::Edges,
     context: Arc<PortContext>,
     binding_profile: &'static str,
@@ -425,6 +427,7 @@ impl Bus {
         Ok(Self {
             port: wiring.service,
             producer: wiring.observation_producer,
+            fires: wiring.fires,
             edges: policy_host::Edges::new(),
             context: wiring.context,
             binding_profile: match backend {
@@ -577,6 +580,17 @@ impl Bus {
         // input in this dispatch, or by a `comp.input.*` key the port just ran
         // (after it, so an injected chord lands in this pass, not the next).
         policy_host::control::apply_bindings(lp);
+        // The user keys' verbs for other services, fire-and-forget, with the
+        // row's args as the body (inputd's rule).
+        for fire in lp.inner.comp.bindings.take_bus_fires() {
+            if !self.fires.fire(&fire.service, fire.verb, fire.body) {
+                model::warn!(
+                    "user key: {} for {} dropped (fire queue full or no worker)",
+                    fire.verb,
+                    fire.service
+                );
+            }
+        }
         // X11's EWMH desktops and HIDDEN after any state change this pass
         // (E1): after the port and the chords, so a verb's change lands now.
         policy_host::x11::sync_if_changed(lp);

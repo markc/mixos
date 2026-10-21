@@ -32,6 +32,9 @@ render-gles = { workspace = true }
 slots = { workspace = true }
 protocols = { workspace = true }
 bitflags = { workspace = true }
+# The user keymap's path (the MixOS etc dir) and its live reload.
+config = { workspace = true }
+notify = { workspace = true }
 # The compositor's own UIs (capture overlays and dialogs, notifications,
 # the frame-rate overlay) are egui programs on the MixOS look; strings come
 # from services/compd/i18n.

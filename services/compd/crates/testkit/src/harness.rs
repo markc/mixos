@@ -406,6 +406,76 @@ impl Harness {
         serial
     }
 
+    /// Give the primary seat's keyboard to `surface`.
+    pub fn focus_keyboard(&mut self, surface: &WlSurface) {
+        use smithay::utils::SERIAL_COUNTER;
+        let server: ServerSurface = self
+            .server_client
+            .object_from_protocol_id(&self.display.handle(), protocol_id(surface))
+            .expect("the server knows this surface");
+        let keyboard = self
+            .wire
+            .state
+            .seat
+            .seat
+            .get_keyboard()
+            .expect("the primary seat has a keyboard");
+        keyboard.set_focus(
+            &mut self.wire.state,
+            Some(server),
+            SERIAL_COUNTER.next_serial(),
+        );
+        self.roundtrip();
+    }
+
+    /// One human key edge (`keycode` in xkb space, evdev + 8) through the
+    /// primary seat's keyboard as compd's seat path runs it: xkb first
+    /// (`input_intercept`), then the user-key layer
+    /// (`world::comp::bindings::user_key`, the same call `bindings::key`
+    /// makes), then, if the layer did not take it, the focused client
+    /// (`input_forward`). compd's own binding table and shortcuts need the
+    /// whole loop and are not run. Returns whether the layer took the edge.
+    pub fn key(&mut self, keycode: u32, pressed: bool, locked: bool) -> bool {
+        use smithay::backend::input::KeyState;
+        use smithay::utils::SERIAL_COUNTER;
+        let keyboard = self
+            .wire
+            .state
+            .seat
+            .seat
+            .get_keyboard()
+            .expect("the primary seat has a keyboard");
+        let state = if pressed {
+            KeyState::Pressed
+        } else {
+            KeyState::Released
+        };
+        let code = smithay::input::keyboard::Keycode::new(keycode);
+        let (modifier, mods_changed) =
+            keyboard.input_intercept(&mut self.wire.state, code, state, |_, _, handle| {
+                handle.modified_sym().is_modifier_key()
+            });
+        let edge = world::comp::bindings::user_key(
+            &mut self.wire.inner.comp.bindings,
+            keycode,
+            pressed,
+            locked,
+            modifier,
+        );
+        if !edge.took {
+            keyboard.input_forward(
+                &mut self.wire.state,
+                code,
+                state,
+                SERIAL_COUNTER.next_serial(),
+                0,
+                mods_changed,
+            );
+        }
+        self.roundtrip();
+        edge.took
+    }
+
     /// The registry record behind `handle`, if it has one.
     pub fn record(&self, handle: &SurfaceHandle) -> Option<&SurfaceRecord<SurfaceHandle>> {
         let registry = &self.comp().registry;

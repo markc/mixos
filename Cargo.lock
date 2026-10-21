@@ -7063,6 +7063,7 @@ name = "policy"
 version = "0.1.1"
 dependencies = [
  "comp-model",
+ "inputd-core",
  "serde_json",
  "surfaces",
 ]
@@ -9608,6 +9609,7 @@ dependencies = [
 name = "testkit"
 version = "0.1.1"
 dependencies = [
+ "comp-model",
  "dispatcher",
  "image",
  "libc",
@@ -11931,6 +11933,7 @@ name = "world"
 version = "0.1.1"
 dependencies = [
  "bitflags 2.13.1",
+ "config",
  "decor",
  "dispatcher",
  "drivers",
@@ -11938,6 +11941,7 @@ dependencies = [
  "graphics",
  "ledger",
  "model",
+ "notify",
  "policy",
  "protocols",
  "render-gles",

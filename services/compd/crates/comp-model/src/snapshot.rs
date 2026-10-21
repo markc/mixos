@@ -367,12 +367,35 @@ pub struct BindingsSnapshot {
     pub enabled: bool,
     pub profile: &'static str,
     pub table: Vec<BindingRowSnapshot>,
+    /// The user's own bindings on the user keys (bare F1–F12, Right
+    /// Ctrl/Alt/Shift + arrows), from the session user's keymap.v1 file.
+    /// A user key with no row here is swallowed.
+    pub user: Vec<UserKeyRowSnapshot>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct BindingRowSnapshot {
     pub chord: String,
     pub action: &'static str,
+}
+
+/// One user-key row: the side-exact stroke (`RightCtrl+Right`, `F5`) and
+/// what it does.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct UserKeyRowSnapshot {
+    pub chord: String,
+    /// The Bus verb fired on press.
+    pub action: &'static str,
+    /// The registered service the verb is sent to; absent means the verb's
+    /// first dot-segment.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub service: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub args: Option<Value>,
+    /// `ignore` or `allow`.
+    pub repeat: &'static str,
+    /// The stroke goes to the focused client instead of firing.
+    pub passthrough: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -810,7 +833,7 @@ impl FocusSnapshot {
     }
 }
 flat_snapshot!(DecorationSnapshot, enabled, style);
-flat_snapshot!(BindingsSnapshot, enabled, profile, table);
+flat_snapshot!(BindingsSnapshot, enabled, profile, table, user);
 flat_snapshot!(
     PortSnapshot,
     level,
@@ -1755,6 +1778,11 @@ pub static DESCRIPTORS: &[DescribeEntry] = &[
         &[L("bindings"), L("table")],
         List,
         "Compiled keybinding chord/action rows"
+    ),
+    descriptor!(
+        &[L("bindings"), L("user")],
+        List,
+        "The user's own user-key rows (keymap.v1, side-exact)"
     ),
     descriptor!(
         &[L("input"), L("corners"), L("holders")],

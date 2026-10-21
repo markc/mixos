@@ -63,6 +63,7 @@ fn snapshot(context: &PortContext) -> CompSnapshot {
             enabled: true,
             profile: "nested",
             table: Vec::new(),
+            user: Vec::new(),
         },
         input: InputSnapshot {
             seats: None,

@@ -108,6 +108,13 @@ pub fn collect_snapshot_diff(
         PropValue::BindingRows(new.bindings.table.clone()),
         cause,
     );
+    queue_prop_change(
+        pending,
+        "bindings.user".into(),
+        PropValue::UserKeyRows(old.bindings.user.clone()),
+        PropValue::UserKeyRows(new.bindings.user.clone()),
+        cause,
+    );
     diff_corners(old, new, cause, pending);
     diff_workspaces(old, new, cause, pending);
     #[cfg(feature = "xwayland")]

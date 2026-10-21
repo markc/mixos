@@ -203,6 +203,10 @@ surfaces = { path = "services/compd/crates/surfaces" }
 ui = { path = "services/compd/crates/ui" }
 world = { path = "services/compd/crates/world" }
 
+# inputd's pure crates (services/inputd/crates/): compd's user-key layer
+# reuses the classifier and the latch.
+inputd-core = { path = "services/inputd/crates/inputd-core" }
+
 # noded private crates (services/noded/crates/).
 mesh = { path = "services/noded/crates/mesh" }
 mesh-trust = { path = "services/noded/crates/mesh-trust" }

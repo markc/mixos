@@ -21,6 +21,8 @@
 //!   `comp.input.sequence` run model, `release_all`);
 //! - [`pointer`]: the `comp.pointer.watch` lease;
 //! - [`bindings`]: the key-binding filter and its tables;
+//! - [`user_keys`]: the user-key layer ahead of it (bare F1–F12, Right
+//!   Ctrl/Alt/Shift + arrows), over inputd's classifier and latch;
 //! - [`x11`]: the X11 decoration rule and Motif interpretation.
 
 pub mod agent;
@@ -29,6 +31,7 @@ pub mod corner;
 pub mod effect;
 pub mod panel;
 pub mod pointer;
+pub mod user_keys;
 pub mod window;
 pub mod workspaces;
 pub mod x11;
