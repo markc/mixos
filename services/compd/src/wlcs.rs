@@ -30,8 +30,8 @@ use std::{
     sync::Arc,
 };
 use surfaces::SeatKind;
-use world::state::Loop;
 use world::state::CoordinateTrait;
+use world::state::Loop;
 
 type Pending = Rc<RefCell<Vec<(Value, Option<UnixStream>)>>>;
 pub struct Adapter {
