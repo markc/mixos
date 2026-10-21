@@ -13,8 +13,6 @@
 //! phase boundary something a reader trips over rather than something they have
 //! to already know.
 
-use std::os::unix::raw::dev_t;
-
 use render_gles::format::answer::answer;
 use render_gles::format::registrar::registrar;
 use render_gles::format::role::role::Role;
@@ -106,7 +104,7 @@ pub fn advertise_dmabuf(_loop: &mut Loop) {
         });
     _loop.state.dmabuf.global = Some(match node {
         Some((node, source)) => {
-            let main_device: dev_t = node.dev_id();
+            let main_device = node.dev_id();
             let feedback = DmabufFeedbackBuilder::new(main_device, dma_formats)
                 .build()
                 .unwrap_or_else(|e| abort!("Failed to build dmabuf feedback: {e:?}"));
