@@ -23,7 +23,7 @@ use world::state::Loop;
 use world::state::{Loader, Orchestrator as State};
 // App-launch executor (kernel.execution driver) — all worker/reaper/channel
 // wiring is encapsulated behind `install`.
-use crate::execution::driver::executor::install::install as launch_executor;
+use crate::execution::driver::executor::install as launch_executor;
 
 /// compd's semver (the package version). The full provenance line — sha, dirty
 /// bit, build time — comes from `buildinfo::build_info!()`.
@@ -536,7 +536,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // compositor runs without a Bus port rather than not at all.
     let comp_service = comp::service_name(backend, cli.bus_service.as_deref());
     // Print Screen's launches capture through this compositor, by name.
-    crate::execution::driver::executor::executor::set_comp_service(&comp_service);
+    crate::execution::driver::executor::set_comp_service(&comp_service);
     let mut bus = match comp::Bus::start(comp_service, backend, &event_loop.handle()) {
         Ok(bus) => Some(bus),
         Err(err) => {
@@ -583,7 +583,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // created from here on, the IME below and every launched client included,
     // start at default scheduling.
     if backend != cli::Backend::Headless {
-        crate::priority::arm::arm::arm(&model::environment::config::base::get().priority);
+        crate::priority::arm::arm(&model::environment::config::base::get().priority);
     }
 
     // Launch the compositor-owned input method configured in `preferences.json`
@@ -671,7 +671,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         policy_host::control::apply_bindings(state);
         // Print Screen presses, queued by the chords above or by a Bus
         // pass's injected key, start (or hand off to) the screenshot app.
-        crate::execution::driver::executor::executor::launch_screenshots(state);
+        crate::execution::driver::executor::launch_screenshots(state);
         // The session lock's policy, with or without a Bus port.
         // Held keys are released to their client first, while it still has the
         // keyboard (once `service` enters the lock, focus is gone).

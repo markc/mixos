@@ -136,7 +136,7 @@ pub fn teardown(state: &mut Loop, nested: bool) {
     if let Some(executor) = state
         .inner
         .kernel
-        .get(&crate::execution::driver::executor::executor::EXECUTOR)
+        .get(&crate::execution::driver::executor::EXECUTOR)
         .as_ref()
     {
         executor.shutdown();
