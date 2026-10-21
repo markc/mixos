@@ -402,10 +402,41 @@ impl Theme {
 
     /// The chrome's forms and lengths (the design's style family).
     pub fn style(&self) -> ResolvedStyle {
+        let mut style = self.style;
+        if self.dictionary().style.is_none() && style.widgets == design::family::style::Widgets::Pairs {
+            // Sources predating style families keep deriving pair geometry
+            // from their own design metrics before an overlay is applied.
+            let dictionary = self.dictionary();
+            let step = |index: usize| dictionary.scales.get("spacing").and_then(|s| s.get(index)).copied();
+            if let (Some(xs), Some(sm)) = (step(1), step(2)) {
+                style.item_spacing_x = sm;
+                style.item_spacing_y = xs.max(sm * 0.75);
+            }
+            if let (Some(sm), Some(md)) = (step(2), step(4)) {
+                style.button_padding_x = md + sm / 2.0;
+                style.button_padding_y = sm;
+                style.window_margin = md.round();
+                style.menu_margin = (md * 0.75).round();
+            }
+            if let Some(xl) = step(9) {
+                style.interact = xl;
+            }
+            let px = |name: &str| dictionary.metrics.get(name)
+                .filter(|metric| metric.kind == design::ResolvedMetricKind::Px)
+                .map(|metric| metric.value);
+            if let Some(radius) = px("radius") {
+                style.radius_sm = radius.round() as u8;
+                style.radius = (radius * 2.0 / 3.0).round() as u8;
+                style.radius_lg = (radius * 2.0).round() as u8;
+            }
+            if let Some(width) = px("button.border_width") {
+                style.hairline_width = width;
+            }
+        }
         if self.overlay.style.is_empty() {
-            self.style
+            style
         } else {
-            self.style
+            style
                 .with_values(&self.overlay.style)
                 .expect("validated style overlay")
         }
