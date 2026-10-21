@@ -1142,5 +1142,13 @@ fn quoted_reply_compose_studio_dark() {
         .unwrap();
     let mut h = window(state, &theme(Scheme::Studio, Mode::Dark));
     h.run();
+    let send = h.get_by_label(&label("send")).rect();
+    let cancel = h.get_by_label(&label("cancel")).rect();
+    let toggle = h.get_by_label(&label("reply-below-quote")).rect();
+    let screen = h.ctx.content_rect();
+    for rect in [send, cancel, toggle] {
+        assert!(screen.contains_rect(rect), "composer footer stays on screen: {rect:?}");
+    }
+    assert!(toggle.bottom() < send.top());
     h.snapshot("quoted_reply_compose_studio_dark");
 }
