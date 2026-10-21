@@ -6664,6 +6664,108 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn round2_oversized_restore_cannot_overwrite_the_kept_body() {
+        let mut state = connected();
+        typed(&mut state);
+        let mut saved = state.compose.take().unwrap().saved_draft();
+        saved.body = "x".repeat(65 * 1024 * 1024);
+        let mut store = MemoryStore::default();
+        store.save(&saved).unwrap();
+        state.offer_drafts(vec![saved.clone()]);
+        state.apply_ui(UiEvent::RestoreDraft(DraftChoice::Keep));
+        state.apply_ui(UiEvent::ComposeField(ComposeField::Subject, "Edited".into()));
+        state.save_draft();
+        state.store_draft(true);
+        state.request_quit();
+        state.apply_ui(UiEvent::CloseCompose);
+        keep(&mut state, &mut store);
+        assert!(store.list()[0].body == saved.body, "stored body was overwritten");
+        assert!(state.compose.is_none());
+        assert_eq!(state.restore, vec![saved]);
+        assert!(!state.status.is_empty());
+    }
+
+    #[test]
+    fn round2_oversized_compose_returns_invalid_and_closes() {
+        let mut state = connected();
+        crate::verbs::command(
+            &mut state,
+            &crate::commands::registry(),
+            &crate::strings(),
+            1,
+            "email.compose",
+            &json!({"account":"a", "body":"x".repeat(65 * 1024 * 1024)}).to_string(),
+        );
+        let replies = state.take_replies();
+        assert_eq!(replies.len(), 1);
+        assert_eq!(replies[0].body["error_code"], code::INVALID);
+        assert!(state.compose.is_none());
+        state.save_draft();
+        assert!(state.take_draft_ops().is_empty());
+    }
+
+    fn oversized_quote_is_invalid(then: Then) {
+        let mut state = connected();
+        let mut email = serde_json::to_value(unread_email("E1")).unwrap();
+        email["bodyValues"] = json!({"p1":{"value":"x".repeat(65 * 1024 * 1024)}});
+        email["textBody"] = json!([{"partId":"p1", "type":"text/plain"}]);
+        let tag = tag(&state, "a");
+        state.apply(Event::Account(tag, Done::Answered(1, then, Ok(email))));
+        let replies = state.take_replies();
+        assert_eq!(replies.len(), 1);
+        assert_eq!(replies[0].body["error_code"], code::INVALID);
+        assert!(state.compose.is_none());
+        state.save_draft();
+        assert!(state.take_draft_ops().is_empty());
+    }
+
+    #[test]
+    fn round2_oversized_reply_returns_invalid_and_closes() {
+        oversized_quote_is_invalid(Then::Reply(false, Some(true)));
+    }
+
+    #[test]
+    fn round2_oversized_forward_returns_invalid_and_closes() {
+        oversized_quote_is_invalid(Then::Forward("bob@example.invalid".into()));
+    }
+
+    #[test]
+    fn round2_refused_body_does_not_dirty_the_draft() {
+        let mut state = connected();
+        typed(&mut state);
+        state.save_draft();
+        state.take_draft_ops();
+        let before = state.compose.as_ref().unwrap().revision;
+        state.apply_ui(UiEvent::ComposeField(ComposeField::Body, "x".repeat(65 * 1024 * 1024)));
+        assert_eq!(state.compose.as_ref().unwrap().revision, before);
+        assert!(state.draft_unsaved().is_none());
+        state.save_draft();
+        assert!(state.take_draft_ops().is_empty());
+    }
+
+    #[test]
+    fn round2_refused_quote_move_keeps_position_and_revisions() {
+        use crate::quote::Position;
+        let mut state = connected();
+        state.open_compose(Some("a"), Composed {
+            body: format!("q{}", "x".repeat(64 * 1024 * 1024 - 1)),
+            ..Composed::default()
+        });
+        let compose = state.compose.as_mut().unwrap();
+        assert!(compose.error.is_none());
+        compose.reply = Some(ReplyQuote {
+            quote: "q".into(), signature: String::new(), position: Position::Above,
+        });
+        let before = (compose.revision, compose.body.revision);
+        state.apply_ui(UiEvent::ComposeReplyPosition(Position::Below));
+        let compose = state.compose.as_ref().unwrap();
+        assert!(compose.error.is_some());
+        assert_eq!(compose.reply.as_ref().unwrap().position, Position::Above);
+        assert_eq!((compose.revision, compose.body.revision), before);
+        assert!(compose.body.contents().starts_with('q'));
+    }
+
+    #[test]
     fn editor_body_is_the_only_text_saved_reported_and_sent() {
         let mut state = connected();
         typed(&mut state);

@@ -236,6 +236,15 @@ mod tests {
     use super::*;
 
     #[test]
+    fn round2_composer_offers_only_the_monospace_family() {
+        assert_eq!(Surface::EmailComposer.families(), &[MONO_FAMILY]);
+        assert_eq!(Setting::Family(Surface::EmailComposer, Some("Inter".into())).refusal(), Some("text-family-refused"));
+        assert_eq!(Setting::Family(Surface::EmailComposer, Some(MONO_FAMILY.into())).refusal(), None);
+        assert_eq!(Setting::Family(Surface::EmailComposer, None).refusal(), None);
+        assert!(Surface::EmailReader.families().contains(&"Inter"));
+    }
+
+    #[test]
     fn interface_font_edits_name_the_appearance_fields() {
         assert_eq!(
             InterfaceEdit::Weight(Some(500)).edit(),
