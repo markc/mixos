@@ -4,14 +4,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="mixos-lib-mix is the embeddable Rust implementation of the Mix language: it tokenises, parses, analyses, and evaluates Mix source, exposes the Mix value and…">
+    <meta name="description" content="mix is the embeddable Rust implementation of the Mix language at libs/mix. It tokenises, parses, analyses and evaluates Mix source, exposes the Mix value and…">
     <!-- Favicons from share/brand: the SVG follows the visitor's light/dark preference. -->
     <link rel="icon" href="/favicon.ico?v=400d5816f3" sizes="any">
     <link rel="icon" type="image/svg+xml" href="/_web/favicon.svg?v=4eb2d64677">
     <link rel="icon" type="image/png" sizes="32x32" href="/_web/brand/favicon-32-light.png?v=adbeaa7141" media="(prefers-color-scheme: light)">
     <link rel="icon" type="image/png" sizes="32x32" href="/_web/brand/favicon-32-dark.png?v=adbeaa7141" media="(prefers-color-scheme: dark)">
     <link rel="apple-touch-icon" sizes="180x180" href="/_web/brand/apple-touch-icon.png?v=edebfa3825">
-    <title>mixos-lib-mix — MixOS</title>
+    <title>Mix language library — MixOS</title>
     <link rel="canonical" href="https://mixos.dev/mix/lib/">
     <link rel="alternate" type="text/markdown" href="/mix/lib/README.md" title="Markdown source">
     <meta name="mixos-build" content="0e230d24c4f9">
@@ -243,11 +243,17 @@
 <main id="content" tabindex="-1">
     <div id="doc-view" class="content-section">
         <article id="content-doc" class="prose" data-pagefind-body>
-<h1 id="mixos-lib-mix">mixos-lib-mix</h1>
-<p><code>mixos-lib-mix</code> is the embeddable Rust implementation of the Mix language: it tokenises, parses, analyses, and evaluates Mix source, exposes the Mix value and error models, and supplies host seams for Bus and other mediated services. In the <code>bus &lt;- mix &lt;- cos</code> dependency chain it is the Mix execution layer: Bus-facing behaviour enters through injected traits, while higher-level Cos components can embed the evaluator without moving protocol or daemon dependencies into this crate.</p>
-<p>The Cargo package is <code>mixos-lib-mix</code>. The Rust library name is <code>mixos_mix</code>.</p>
+<h1 id="mix-language-library">Mix language library</h1>
+<p><code>mix</code> is the embeddable Rust implementation of the Mix language at
+<a href="https://github.com/markc/mixos/tree/main/libs/mix"><code>libs/mix</code></a>. It tokenises,
+parses, analyses and evaluates Mix source, exposes the Mix value and error
+models, and supplies host interfaces for Bus and other mediated services.
+Bus-facing behaviour enters through injected traits, so embedders can use
+the evaluator without moving protocol or daemon dependencies into this crate.</p>
+<p>The Cargo package and Rust library are both named <code>mix</code>. The shell is the
+separate <code>mix-shell</code> library, and the <code>system</code> package builds its executable.</p>
 <h2 id="synopsis">Synopsis</h2>
-<pre><code class="language-rust">use mixos_mix::{MixResult, run_capturing};
+<pre><code class="language-rust">use mix::{MixResult, run_capturing};
 
 async fn evaluate() -&gt; MixResult&lt;()&gt; {
     let (_value, stdout, stderr) =
@@ -259,7 +265,7 @@ async fn evaluate() -&gt; MixResult&lt;()&gt; {
 }
 </code></pre>
 <p>For strict Mix data:</p>
-<pre><code class="language-rust">use mixos_mix::{MixResult, parse_data};
+<pre><code class="language-rust">use mix::{MixResult, parse_data};
 
 fn load_data() -&gt; MixResult&lt;String&gt; {
     let value = parse_data(r#"{service: "alpha", retries: 3}"#)?;

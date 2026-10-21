@@ -1,13 +1,19 @@
-# mixos-lib-mix
+# Mix language library
 
-`mixos-lib-mix` is the embeddable Rust implementation of the Mix language: it tokenises, parses, analyses, and evaluates Mix source, exposes the Mix value and error models, and supplies host seams for Bus and other mediated services. In the `bus <- mix <- cos` dependency chain it is the Mix execution layer: Bus-facing behaviour enters through injected traits, while higher-level Cos components can embed the evaluator without moving protocol or daemon dependencies into this crate.
+`mix` is the embeddable Rust implementation of the Mix language at
+[`libs/mix`](https://github.com/markc/mixos/tree/main/libs/mix). It tokenises,
+parses, analyses and evaluates Mix source, exposes the Mix value and error
+models, and supplies host interfaces for Bus and other mediated services.
+Bus-facing behaviour enters through injected traits, so embedders can use
+the evaluator without moving protocol or daemon dependencies into this crate.
 
-The Cargo package is `mixos-lib-mix`. The Rust library name is `mixos_mix`.
+The Cargo package and Rust library are both named `mix`. The shell is the
+separate `mix-shell` library, and the `system` package builds its executable.
 
 ## Synopsis
 
 ```rust
-use mixos_mix::{MixResult, run_capturing};
+use mix::{MixResult, run_capturing};
 
 async fn evaluate() -> MixResult<()> {
     let (_value, stdout, stderr) =
@@ -22,7 +28,7 @@ async fn evaluate() -> MixResult<()> {
 For strict Mix data:
 
 ```rust
-use mixos_mix::{MixResult, parse_data};
+use mix::{MixResult, parse_data};
 
 fn load_data() -> MixResult<String> {
     let value = parse_data(r#"{service: "alpha", retries: 3}"#)?;

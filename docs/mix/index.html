@@ -320,9 +320,13 @@ rot. <code>mix man syntax</code> is the mental model; gotchas is the corrections
 </ul>
 <h2 id="where-mix-lives">Where Mix lives</h2>
 <p>Mix is the MixOS shell and scripting language. The interpreter lives in the
-<code>mix</code> library; <code>cli/mix-shell</code> owns the interactive shell and native ABP
-citizen runtime, and <code>cli/system</code> builds the <code>mix</code> binary. The current language
-version is 0.116.0 and the shell source version is 0.116.0.</p>
+<code>mix</code> library at <code>libs/mix</code>; <code>cli/mix-shell</code> owns the interactive shell and
+native ABP citizen runtime, and <code>cli/system</code> builds the <code>mix</code> binary.
+The source versions are declared in
+<a href="https://github.com/markc/mixos/blob/main/libs/mix/Cargo.toml"><code>libs/mix/Cargo.toml</code></a>
+and <a href="https://github.com/markc/mixos/blob/main/cli/mix-shell/Cargo.toml"><code>cli/mix-shell/Cargo.toml</code></a>.
+Use <code>mix --version</code> to identify the installed binary, which can differ from
+the current source.</p>
 <p>Use <code>mix builtins --names</code> to discover valid builtin names, and <code>mix builtins &lt;name&gt;</code> for their contracts. <code>mix man overview</code> and <code>mix man syntax</code> explain the
 language and command classifier. Discovery should inspect process status rather
 than stop a sequence when a lookup is invalid.</p>
@@ -362,9 +366,12 @@ A caught interrupt still takes precedence over the evaluation's result;
 Script-defined error codes do not impersonate OS signals; <code>--serve</code> retains
 its graceful shutdown behaviour.</p>
 <h2 id="design-docs--specs">Design docs &amp; specs</h2>
-<p>Design docs, background rationale, and the formal specs (04 language
-reference, 18 citizen runtime) all live in the operator control repo since
-2026-07-23; this manual is the complete public reference.</p>
+<p>Public contracts and accepted decisions live under
+<a href="https://github.com/markc/mixos/tree/main/docs/docs/spec"><code>docs/docs/spec</code></a> and
+<a href="https://github.com/markc/mixos/tree/main/docs/docs/decisions"><code>docs/docs/decisions</code></a>.
+Private deployment records are not part of the public manual. Accepted
+decisions can describe staged work; check the current implementation and
+installed binary when a feature's availability matters.</p>
 <h2 id="the-library">The library</h2>
 <p>The <code>mix</code> component is the language library
 (<a href="https://github.com/markc/mixos/tree/main/libs/mix"><code>libs/mix</code></a>): lexer,

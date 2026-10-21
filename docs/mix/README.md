@@ -77,9 +77,13 @@ rot. `mix man syntax` is the mental model; gotchas is the corrections.
 ## Where Mix lives
 
 Mix is the MixOS shell and scripting language. The interpreter lives in the
-`mix` library; `cli/mix-shell` owns the interactive shell and native ABP
-citizen runtime, and `cli/system` builds the `mix` binary. The current language
-version is 0.116.0 and the shell source version is 0.116.0.
+`mix` library at `libs/mix`; `cli/mix-shell` owns the interactive shell and
+native ABP citizen runtime, and `cli/system` builds the `mix` binary.
+The source versions are declared in
+[`libs/mix/Cargo.toml`](https://github.com/markc/mixos/blob/main/libs/mix/Cargo.toml)
+and [`cli/mix-shell/Cargo.toml`](https://github.com/markc/mixos/blob/main/cli/mix-shell/Cargo.toml).
+Use `mix --version` to identify the installed binary, which can differ from
+the current source.
 
 Use `mix builtins --names` to discover valid builtin names, and `mix builtins
 <name>` for their contracts. `mix man overview` and `mix man syntax` explain the
@@ -132,9 +136,13 @@ Script-defined error codes do not impersonate OS signals; `--serve` retains
 its graceful shutdown behaviour.
 
 ## Design docs & specs
-Design docs, background rationale, and the formal specs (04 language
-reference, 18 citizen runtime) all live in the operator control repo since
-2026-07-23; this manual is the complete public reference.
+
+Public contracts and accepted decisions live under
+[`docs/docs/spec`](https://github.com/markc/mixos/tree/main/docs/docs/spec) and
+[`docs/docs/decisions`](https://github.com/markc/mixos/tree/main/docs/docs/decisions).
+Private deployment records are not part of the public manual. Accepted
+decisions can describe staged work; check the current implementation and
+installed binary when a feature's availability matters.
 
 ## The library
 
