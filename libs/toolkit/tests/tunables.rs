@@ -83,8 +83,35 @@ fn motion_and_input_options_are_installed_without_a_settings_wire_change() {
     assert_eq!(ctx.global_style().scroll_animation.duration, defaults.duration);
 }
 
-#[derive(Default)]
 struct CanvasState { offset: egui::Vec2, thumb: Rect }
+
+impl Default for CanvasState {
+    fn default() -> Self {
+        Self { offset: egui::Vec2::ZERO, thumb: Rect::NOTHING }
+    }
+}
+
+#[test]
+fn field_focus_width_is_drawn_from_the_installed_style() {
+    for style in design::Style::ALL {
+        for width in [0.0, 2.0] {
+            let mut overlay = toolkit::theme::Overlay::default();
+            overlay.style.insert("field_focus_width".into(), design::StyleValueSource::Number(width));
+            let theme = Theme::for_context(design::DesignContext {
+                scheme: design::Scheme::Ocean, style: Some(style), mode: design::Mode::Light,
+                ..Default::default()
+            }).with_overlay(overlay);
+            let mut h = Harness::builder().with_size(vec2(300.0, 90.0)).wgpu()
+                .build_ui_state(|ui, text| {
+                    ui.add(field::text_edit(text, "Name", 240.0).id(Id::new("focus-field")));
+                }, "Focused field".into());
+            toolkit::install(&h.ctx, &theme);
+            h.ctx.memory_mut(|memory| memory.request_focus(Id::new("focus-field")));
+            h.run();
+            h.snapshot(format!("field_focus_{}_{width}", style.name()));
+        }
+    }
+}
 
 #[test]
 fn the_canvas_hot_distance_repaints_under_an_idle_pointer() {

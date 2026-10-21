@@ -223,6 +223,15 @@ fn components_in_every_chrome_theme() {
 }
 
 #[test]
+fn components_in_the_pair_style() {
+    let mut results = egui_kittest::SnapshotResults::new();
+    for (id, mode) in [("plain_light", Mode::Light), ("plain_dark", Mode::Dark)] {
+        let mut h = window(Scheme::Ocean, mode, false);
+        results.add(h.try_snapshot(format!("components_{id}")));
+    }
+}
+
+#[test]
 fn dialogs_in_pro_medium_studio_and_classic() {
     let mut results = egui_kittest::SnapshotResults::new();
     for (id, scheme, mode) in [
