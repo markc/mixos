@@ -583,9 +583,17 @@ mod tests {
 
         fn popup_with_mapped_parent(&mut self) -> u32 {
             let parent_xdg = self.new_id();
-            self.send(WM_BASE, XDG_WM_BASE_GET_XDG_SURFACE, &words(&[parent_xdg, PARENT]));
+            self.send(
+                WM_BASE,
+                XDG_WM_BASE_GET_XDG_SURFACE,
+                &words(&[parent_xdg, PARENT]),
+            );
             self.get_toplevel(parent_xdg);
-            self.send(parent_xdg, XDG_SURFACE_SET_WINDOW_GEOMETRY, &words(&[0, 0, 100, 100]));
+            self.send(
+                parent_xdg,
+                XDG_SURFACE_SET_WINDOW_GEOMETRY,
+                &words(&[0, 0, 100, 100]),
+            );
             self.send(PARENT, WL_SURFACE_COMMIT, &[]);
             self.roundtrip();
             assert_eq!(self.error(), None, "parent initial commit setup failed");
@@ -607,13 +615,29 @@ mod tests {
             let positioner = self.new_id();
             self.send(WM_BASE, XDG_WM_BASE_CREATE_POSITIONER, &words(&[positioner]));
             self.send(positioner, XDG_POSITIONER_SET_SIZE, &words(&[10, 10]));
-            self.send(positioner, XDG_POSITIONER_SET_ANCHOR_RECT, &words(&[0, 0, 100, 100]));
+            self.send(
+                positioner,
+                XDG_POSITIONER_SET_ANCHOR_RECT,
+                &words(&[0, 0, 100, 100]),
+            );
 
             let child_xdg = self.new_id();
-            self.send(WM_BASE, XDG_WM_BASE_GET_XDG_SURFACE, &words(&[child_xdg, SURFACE]));
+            self.send(
+                WM_BASE,
+                XDG_WM_BASE_GET_XDG_SURFACE,
+                &words(&[child_xdg, SURFACE]),
+            );
             let popup = self.new_id();
-            self.send(child_xdg, XDG_SURFACE_GET_POPUP, &words(&[popup, parent_xdg, positioner]));
-            self.send(child_xdg, XDG_SURFACE_SET_WINDOW_GEOMETRY, &words(&[0, 0, 10, 10]));
+            self.send(
+                child_xdg,
+                XDG_SURFACE_GET_POPUP,
+                &words(&[popup, parent_xdg, positioner]),
+            );
+            self.send(
+                child_xdg,
+                XDG_SURFACE_SET_WINDOW_GEOMETRY,
+                &words(&[0, 0, 10, 10]),
+            );
             self.commit();
             self.roundtrip();
             assert_eq!(self.error(), None, "popup setup failed");
