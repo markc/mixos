@@ -40,7 +40,7 @@ mod view;
 
 pub use detect::looks_like_markdown;
 pub use preview::Preview;
-pub use view::show;
+pub use view::{first_heading_baseline, show};
 
 /// A parsed Markdown text: its blocks in order.
 #[derive(Clone, Debug, Default, PartialEq)]

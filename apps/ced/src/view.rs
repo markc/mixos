@@ -405,6 +405,22 @@ fn document(
         ui.add_enabled_ui(editable, |ui| {
             let mut out = None;
             toolkit::content::surface(ui, &app.editor_style, |ui| {
+                if mode == PreviewMode::Split
+                    && let Some(baseline) = preview.as_ref().and_then(|document| {
+                        toolkit::markdown::first_heading_baseline(ui, document)
+                    })
+                {
+                    let font = egui::FontId::monospace(f32::from(app.ui.font_px));
+                    let galley = ui.painter().layout_no_wrap("M".into(), font, palette.text);
+                    if let Some(row) = galley.rows.first()
+                        && let Some(glyph) = row.glyphs.first()
+                    {
+                        // Both panes keep the same card and baseline inset; the
+                        // source row reserves the opening heading's extra ascent.
+                        ui.painter().rect_filled(ui.available_rect_before_wrap(), 0.0, palette.background);
+                        ui.add_space((baseline - row.pos.y - glyph.pos.y).max(0.0));
+                    }
+                }
                 out = Some(editor::show(
                     ui,
                     ("ced.editor", tab.id),
