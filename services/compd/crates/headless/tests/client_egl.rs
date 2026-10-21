@@ -94,7 +94,10 @@ fn egl_client_buffer_type_and_rendered_frame() {
         panic!("unrecognised buffer request: {creation}")
     };
     println!("plain EGL client negotiated {kind}; first buffer: {creation}");
-    assert_eq!(kind, "linux-dmabuf", "EGL must use GPU buffers; WAYLAND_DEBUG trace:\n{trace}");
+    assert_eq!(
+        kind, "linux-dmabuf",
+        "EGL must use GPU buffers; WAYLAND_DEBUG trace:\n{trace}"
+    );
     for line in trace.lines().filter(|line| {
         line.contains("wl_registry")
             && (line.contains("wl_shm") || line.contains("wl_drm") || line.contains("linux_dmabuf"))

@@ -6,7 +6,10 @@ mod process;
 
 use std::{
     fs::{self, File},
-    os::unix::{fs::{FileExt, MetadataExt}, net::UnixStream},
+    os::unix::{
+        fs::{FileExt, MetadataExt},
+        net::UnixStream,
+    },
     thread,
     time::{Duration, Instant},
 };
@@ -37,11 +40,18 @@ impl Dispatch<wl_registry::WlRegistry, ()> for Feedback {
         _: &Connection,
         qh: &QueueHandle<Self>,
     ) {
-        if let wl_registry::Event::Global { name, interface, version } = event
+        if let wl_registry::Event::Global {
+            name,
+            interface,
+            version,
+        } = event
             && interface == "zwp_linux_dmabuf_v1"
         {
             state.version = Some(version);
-            assert!(version >= 4, "headless needs device feedback, got v{version}");
+            assert!(
+                version >= 4,
+                "headless needs device feedback, got v{version}"
+            );
             let dmabuf: ZwpLinuxDmabufV1 = registry.bind(name, version.min(5), qh, ());
             state.feedback = Some(dmabuf.get_default_feedback(qh, ()));
             state.dmabuf = Some(dmabuf);
@@ -50,8 +60,15 @@ impl Dispatch<wl_registry::WlRegistry, ()> for Feedback {
 }
 
 impl Dispatch<ZwpLinuxDmabufV1, ()> for Feedback {
-    fn event(_: &mut Self, _: &ZwpLinuxDmabufV1, _: zwp_linux_dmabuf_v1::Event,
-        _: &(), _: &Connection, _: &QueueHandle<Self>) {}
+    fn event(
+        _: &mut Self,
+        _: &ZwpLinuxDmabufV1,
+        _: zwp_linux_dmabuf_v1::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+    }
 }
 
 impl Dispatch<ZwpLinuxDmabufFeedbackV1, ()> for Feedback {
@@ -74,8 +91,11 @@ impl Dispatch<ZwpLinuxDmabufFeedbackV1, ()> for Feedback {
             }
             Event::TrancheFormats { indices } => {
                 assert_eq!(indices.len() % 2, 0);
-                state.tranche.extend(indices.chunks_exact(2)
-                    .map(|index| u16::from_ne_bytes([index[0], index[1]])));
+                state.tranche.extend(
+                    indices
+                        .chunks_exact(2)
+                        .map(|index| u16::from_ne_bytes([index[0], index[1]])),
+                );
             }
             Event::TrancheDone => state.tranches.push(std::mem::take(&mut state.tranche)),
             Event::Done => state.done = true,
@@ -87,8 +107,8 @@ impl Dispatch<ZwpLinuxDmabufFeedbackV1, ()> for Feedback {
 #[test]
 #[ignore = "needs a GPU render node and built compd with backend-headless"]
 fn default_feedback_names_render_device_and_offers_formats() {
-    let node = std::env::var("COMPD_TEST_RENDER_NODE")
-        .unwrap_or_else(|_| "/dev/dri/renderD128".into());
+    let node =
+        std::env::var("COMPD_TEST_RENDER_NODE").unwrap_or_else(|_| "/dev/dri/renderD128".into());
     let expected = fs::metadata(&node).unwrap().rdev();
     // Exercise explicit selection too: the process helper deliberately writes
     // an invalid configured node when an explicit node is supplied.
@@ -116,14 +136,27 @@ fn default_feedback_names_render_device_and_offers_formats() {
     let indices: Vec<_> = state.tranches.iter().flatten().collect();
     assert!(!indices.is_empty(), "no tranche carrying formats");
     for index in &indices {
-        assert!(usize::from(**index) < state.table.len() / 16, "invalid format index");
+        assert!(
+            usize::from(**index) < state.table.len() / 16,
+            "invalid format index"
+        );
     }
     println!(
         "DMABUF_FEEDBACK v{} main_device={:#x} expected={expected:#x} node={node}; {} tranches, {} format indices, {} table entries",
-        state.version.unwrap(), state.main_device.unwrap(), state.tranches.len(), indices.len(), state.table.len() / 16
+        state.version.unwrap(),
+        state.main_device.unwrap(),
+        state.tranches.len(),
+        indices.len(),
+        state.table.len() / 16
     );
     let log = fs::read_to_string(process.root.join("compd.log")).unwrap();
-    let selection = log.lines().find(|line| line.contains("dmabuf global v5")).unwrap();
-    assert!(selection.contains("from backend composite node"), "{selection}");
+    let selection = log
+        .lines()
+        .find(|line| line.contains("dmabuf global v5"))
+        .unwrap();
+    assert!(
+        selection.contains("from backend composite node"),
+        "{selection}"
+    );
     println!("{selection}");
 }
