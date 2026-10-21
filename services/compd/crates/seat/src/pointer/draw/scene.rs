@@ -5,7 +5,6 @@ use smithay::backend::renderer::element::surface::render_elements_from_surface_t
 use smithay::backend::renderer::element::{AsRenderElements, Kind};
 use smithay::backend::renderer::{ImportAll, ImportMem, Texture};
 use smithay::utils::{Logical, Physical, Point, Rectangle, Scale, Size};
-use std::os::linux::raw::stat;
 use world::seat::pointer::element::PointerRenderElement;
 use world::state::CoordinateTrait;
 use world::state::{Loop, Transform};
@@ -13,7 +12,7 @@ use world::state::{Loop, Transform};
 pub fn element<R>(
     state: &mut Loop,
     renderer: &mut R,
-    size: Size<i32, Physical>,
+    _size: Size<i32, Physical>,
 ) -> Vec<PointerRenderElement<R>>
 where
     R: smithay::backend::renderer::Renderer + ImportAll + ImportMem,

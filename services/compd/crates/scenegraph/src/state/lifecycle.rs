@@ -4,15 +4,15 @@ use crate::display::output::backend::Backend;
 use crate::display::output;
 use smithay::backend::input::{InputBackend, InputEvent};
 use smithay::backend::renderer::damage::OutputDamageTracker;
-use smithay::output::{Mode, Output, PhysicalProperties, Subpixel};
+use smithay::output::{Mode, Output};
 use smithay::reexports::wayland_server::DisplayHandle;
-use smithay::utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Size, Transform};
+use smithay::utils::{Physical, Size};
 use world::state::Loop;
 
 pub fn initialize(
     _loop: &mut Loop,
     output: &Output,
-    display_handle: &DisplayHandle,
+    _display_handle: &DisplayHandle,
     backend: &mut dyn Backend,
 ) -> OutputDamageTracker {
     // Create the backend. This creates a winit/udev instance

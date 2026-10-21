@@ -15,7 +15,7 @@
 
 use crate::pointer::input::tablet::{client, coords, cursor, hand_active, select_active, tip};
 use dispatcher::wire::tablet::Stroke;
-use smithay::backend::input::{Event, InputBackend, TabletToolAxisEvent, TabletToolEvent};
+use smithay::backend::input::{Event, InputBackend, TabletToolEvent};
 use smithay::input::tablet::TabletDescriptor;
 use smithay::utils::SERIAL_COUNTER;
 use world::state::Loop;

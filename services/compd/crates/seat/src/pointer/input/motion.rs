@@ -3,11 +3,9 @@
 use crate::pointer::input::constraint::apply_pointer_constraint;
 use crate::pointer::input::extent;
 use crate::pointer::input::native_motion;
-use smithay::backend::input::{AbsolutePositionEvent, Event, InputBackend, PointerMotionEvent};
+use smithay::backend::input::{AbsolutePositionEvent, InputBackend, PointerMotionEvent};
 use smithay::utils::{Logical, Physical, Point};
-use std::ops::Deref;
 use world::camera::transform::translate::transform::Transform;
-use world::camera::transform::translate;
 use world::state::CoordinateTrait;
 use world::state::Loop;
 

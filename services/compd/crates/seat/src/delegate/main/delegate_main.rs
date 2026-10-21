@@ -2,7 +2,7 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 use crate::pointer::input::touch;
 use smithay::backend::input::{
-    AbsolutePositionEvent, ButtonState, InputBackend, InputEvent, KeyboardKeyEvent,
+    InputBackend, InputEvent, KeyboardKeyEvent,
     PointerButtonEvent, Switch, SwitchState, SwitchToggleEvent,
 };
 use world::state::Loop;

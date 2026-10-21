@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 use smithay::backend::input::{
-    Axis, AxisSource, Event, InputBackend, KeyState, KeyboardKeyEvent, PointerAxisEvent,
+    Event, InputBackend, KeyState, KeyboardKeyEvent,
 };
 use smithay::desktop::layer_map_for_output;
 use smithay::input::keyboard::{FilterResult, Keycode, Keysym};
-use smithay::input::pointer::{AxisFrame, PointerHandle};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::SERIAL_COUNTER;
 use smithay::wayland::shell::wlr_layer::{KeyboardInteractivity, Layer};

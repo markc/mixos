@@ -21,7 +21,6 @@ pub mod render;
 use dispatcher::state::RedrawReason;
 use std::collections::HashSet;
 use std::path::PathBuf;
-use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
 
 use smithay::backend::renderer::gles::GlesRenderer;

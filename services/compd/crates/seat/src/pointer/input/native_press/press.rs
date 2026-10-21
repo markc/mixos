@@ -2,7 +2,7 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 use dispatcher::state::Dispatch;
 use smithay::backend::input::{ButtonState, Event, InputBackend, PointerButtonEvent};
-use smithay::desktop::{Window, WindowSurfaceType, layer_map_for_output};
+use smithay::desktop::{WindowSurfaceType, layer_map_for_output};
 use smithay::input::keyboard::KeyboardHandle;
 use smithay::input::pointer::{ButtonEvent, PointerHandle};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;

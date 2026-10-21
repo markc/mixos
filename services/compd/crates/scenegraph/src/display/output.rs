@@ -5,13 +5,11 @@ pub mod backend {
     pub use crate::display::backend::*;
 }
 
-use std::os::unix::raw::dev_t;
 
 use crate::display::backend::Backend;
-use render_gles::format::answer;
 use render_gles::format::registrar;
 use render_gles::format::role::Role;
-use smithay::{output::Output, wayland::dmabuf::DmabufFeedbackBuilder};
+use smithay::output::Output;
 use world::state::Loop;
 
 pub fn register(_loop: &mut Loop, output: &Output) {
