@@ -443,6 +443,25 @@ recorded for later work; Phase 6 does not change compositor policy to fix them.<
 complete JSON report; no case hit the gate's process deadline. Unsupported
 protocols use wlcs's <code>wlcs-skip-test</code> JSON property, even though gtest also
 records an exception for them. These are skips, alongside disabled cases.</p>
+<p>After the shim review, a fresh recording from <code>ab43adf4</code> on 2026-10-21 produced
+the same inventory and outcomes. The expectation file was removed before
+recording; its data was regenerated rather than preserving any exemptions.</p>
+<table><thead><tr><th>Outcome or failure class</th><th style="text-align: right">Before review</th><th style="text-align: right">Fresh recording</th></tr></thead><tbody>
+<tr><td>Passed</td><td style="text-align: right">361</td><td style="text-align: right">361</td></tr>
+<tr><td>Failed</td><td style="text-align: right">563</td><td style="text-align: right">563</td></tr>
+<tr><td>Skipped</td><td style="text-align: right">304</td><td style="text-align: right">304</td></tr>
+<tr><td>Flaky</td><td style="text-align: right">0</td><td style="text-align: right">0</td></tr>
+<tr><td><code>xdg_surface</code> 3, <code>unconfigured_buffer</code></td><td style="text-align: right">319</td><td style="text-align: right">319</td></tr>
+<tr><td><code>zwlr_layer_surface_v1</code> 0, <code>invalid_surface_state</code></td><td style="text-align: right">79</td><td style="text-align: right">79</td></tr>
+<tr><td>Input-region assertions</td><td style="text-align: right">58</td><td style="text-align: right">58</td></tr>
+</tbody></table>
+<p>Every one of the 1,228 cases produced complete JSON; none hit a process deadline,
+terminated by signal or reported an adapter error. <strong>237 cases passed the
+surface-origin self-check.</strong> Unchanged outcomes do not validate the old shim:
+the named stable <code>touch_and_drag_on_surface_seen</code> and
+<code>touch_drag_outside_of_surface_and_back_not_lost</code> cases still fail with
+<code>unconfigured_buffer</code> before reaching input injection, so they cannot prove
+touch continuity until the runtime configure defect is fixed.</p>
 <p>The original three largest classes were xdg unconfigured-buffer errors (319),
 layer-surface invalid-state errors (79), and input-region assertions (58).
 The remaining original classes were 38 event timeouts, 24 missing-notification
@@ -478,6 +497,11 @@ assignment there would be a compd defect, but the original logs contain
 <li><strong>Input-region targeting and coordinates:</strong> the shim's surface placement
 and screen/world conversion are corrected above. Remaining input-region
 assertions exercise compd's native hit testing and are <strong>compd defects</strong>;
+for example, <code>MultiRectEdges/RegionSurfaceInputCombinations.input_inside_region_seen/8</code>
+verifies surface origin <code>[64, 49]</code>, completes absolute motion, then reports
+<code>no_pointer_target</code> on the button operation. Its paired touch case reports
+<code>touch_no_target</code> on down. These are native hit misses after verified placement,
+not silently successful adapter deliveries. No protocol error code is raised.
 start at <code>services/compd/crates/world/src/surface/interface/core/hit.rs:478</code>
 (fitted surface coordinates) and <code>vendor/smithay/src/desktop/wayland/window.rs</code>
 (<code>surface_under</code>). The two stable geometry-offset assertions instead retain

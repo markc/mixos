@@ -241,6 +241,28 @@ complete JSON report; no case hit the gate's process deadline. Unsupported
 protocols use wlcs's `wlcs-skip-test` JSON property, even though gtest also
 records an exception for them. These are skips, alongside disabled cases.
 
+After the shim review, a fresh recording from `ab43adf4` on 2026-10-21 produced
+the same inventory and outcomes. The expectation file was removed before
+recording; its data was regenerated rather than preserving any exemptions.
+
+| Outcome or failure class | Before review | Fresh recording |
+| --- | ---: | ---: |
+| Passed | 361 | 361 |
+| Failed | 563 | 563 |
+| Skipped | 304 | 304 |
+| Flaky | 0 | 0 |
+| `xdg_surface` 3, `unconfigured_buffer` | 319 | 319 |
+| `zwlr_layer_surface_v1` 0, `invalid_surface_state` | 79 | 79 |
+| Input-region assertions | 58 | 58 |
+
+Every one of the 1,228 cases produced complete JSON; none hit a process deadline,
+terminated by signal or reported an adapter error. **237 cases passed the
+surface-origin self-check.** Unchanged outcomes do not validate the old shim:
+the named stable `touch_and_drag_on_surface_seen` and
+`touch_drag_outside_of_surface_and_back_not_lost` cases still fail with
+`unconfigured_buffer` before reaching input injection, so they cannot prove
+touch continuity until the runtime configure defect is fixed.
+
 The original three largest classes were xdg unconfigured-buffer errors (319),
 layer-surface invalid-state errors (79), and input-region assertions (58).
 The remaining original classes were 38 event timeouts, 24 missing-notification
@@ -276,6 +298,11 @@ The interface name is part of every protocol error's identity:
 - **Input-region targeting and coordinates:** the shim's surface placement
   and screen/world conversion are corrected above. Remaining input-region
   assertions exercise compd's native hit testing and are **compd defects**;
+  for example, `MultiRectEdges/RegionSurfaceInputCombinations.input_inside_region_seen/8`
+  verifies surface origin `[64, 49]`, completes absolute motion, then reports
+  `no_pointer_target` on the button operation. Its paired touch case reports
+  `touch_no_target` on down. These are native hit misses after verified placement,
+  not silently successful adapter deliveries. No protocol error code is raised.
   start at `services/compd/crates/world/src/surface/interface/core/hit.rs:478`
   (fitted surface coordinates) and `vendor/smithay/src/desktop/wayland/window.rs`
   (`surface_under`). The two stable geometry-offset assertions instead retain
