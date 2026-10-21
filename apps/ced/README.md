@@ -9,6 +9,9 @@ default shortcut. Each tab starts in Source and keeps its choice for this
 session. Split gives the editor and read-only, selectable preview half the
 document area each. Both panes use the editor's saved content style. Links
 open through the desktop's web or mail handler.
+The preview shares the editor palette's field fill and gutter inset. In
+Split, the source's first row reserves an opening heading's extra ascent
+so their baselines line up.
 
 `ced.action` accepts `view.markdown.source`, `view.markdown.split` and
 `view.markdown.preview`. They are disabled for other languages and when no

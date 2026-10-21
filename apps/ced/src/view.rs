@@ -417,7 +417,11 @@ fn document(
                     {
                         // Both panes keep the same card and baseline inset; the
                         // source row reserves the opening heading's extra ascent.
-                        ui.painter().rect_filled(ui.available_rect_before_wrap(), 0.0, palette.background);
+                        ui.painter().rect_filled(
+                            ui.available_rect_before_wrap(),
+                            0.0,
+                            palette.background,
+                        );
                         ui.add_space((baseline - row.pos.y - glyph.pos.y).max(0.0));
                     }
                 }

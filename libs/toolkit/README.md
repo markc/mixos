@@ -12,6 +12,9 @@ views that prepare it before drawing; `clear()` forgets it. The cache is
 plain data, with no egui state, and clones share the document.
 `cached_for(&key, revision)` borrows a matching document so callers can skip
 preparing their source text on a hit.
+`first_heading_baseline(ui, document)` measures the opening heading with
+the renderer's font and line height, for adjacent source panes to align
+their first row without copying the heading style constants.
 
 Shells call `markdown::open_links(ctx, app_name)` after drawing to take
 egui's OpenUrl requests and hand allowed web and mail links to `xdg-open`

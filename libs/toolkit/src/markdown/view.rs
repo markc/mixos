@@ -80,11 +80,15 @@ pub fn first_heading_baseline(ui: &Ui, document: &Document) -> Option<f32> {
     };
     let base = View::new(ui).heading_base(ui, *level);
     let mut job = LayoutJob::default();
-    job.append("M", 0.0, TextFormat {
-        font_id: base.font,
-        line_height: Some(base.line),
-        ..TextFormat::default()
-    });
+    job.append(
+        "M",
+        0.0,
+        TextFormat {
+            font_id: base.font,
+            line_height: Some(base.line),
+            ..TextFormat::default()
+        },
+    );
     let galley = ui.painter().layout_job(job);
     let row = galley.rows.first()?;
     Some(row.pos.y + row.glyphs.first()?.pos.y)
@@ -156,7 +160,11 @@ impl View {
         Base {
             font: font.clone(),
             strong: font,
-            color: if level >= 6 { self.palette.text_dim } else { self.color },
+            color: if level >= 6 {
+                self.palette.text_dim
+            } else {
+                self.color
+            },
             line: size * HEADING_LINE,
             wrap: true,
         }
