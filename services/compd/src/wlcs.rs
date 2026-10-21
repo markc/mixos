@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
+// Client/surface lookup adapted from Smithay 0.7 wlcs_anvil (MIT),
+// Copyright (c) 2017 Victor Berger, Victoria Brekenfeld and contributors.
+// Reference and licence: vendor/smithay/wlcs_anvil, vendor/smithay/LICENSE.txt.
 //! Test-only wlcs adapter. The inherited socket is private to the owned child;
 //! it is never a listening control service or a replacement for the Bus.
 

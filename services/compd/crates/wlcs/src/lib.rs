@@ -2,8 +2,9 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 // Callback structure informed by Smithay 0.7 wlcs_anvil (MIT),
 // Copyright (c) 2017 Victor Berger, Victoria Brekenfeld and contributors.
-// No source translated: fixed-point /256 follows Wayland's 24.8 ABI;
-// touch_destroy's auto-up is local device-lifetime handling (Anvil has none).
+// Client/surface lookup in the compd adapter follows that reference. The C ABI
+// shim and owned-child lifecycle are implemented for compd; fixed-point /256
+// follows Wayland's 24.8 ABI. touch_destroy's auto-up is local handling.
 // Reference and licence: vendor/smithay/wlcs_anvil, vendor/smithay/LICENSE.txt.
 //! wlcs runs the real compd binary as an owned child. This isolates its global
 //! configuration, logging and GPU lifetime between tests, unlike Anvil's thread.

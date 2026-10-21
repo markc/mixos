@@ -5498,10 +5498,12 @@ The baseline pins **v1.8.1**, commit
 The private `wlcs` crate produces `libcompd_wlcs.so`. It implements the C ABI
 independently, with the callback structure informed by
 [Smithay 0.7's wlcs_anvil](https://github.com/Smithay/smithay/tree/v0.7.0/wlcs_anvil).
-No source was translated. The `/256` conversion implements Wayland's signed
-24.8 fixed-point ABI; `touch_destroy` auto-up is local lifetime handling
-(wlcs_anvil's touch destroy is empty). The file header and `NOTICE` credit the
-reference; its MIT licence remains in `vendor/smithay/LICENSE.txt`.
+Small client/surface lookup fragments in the compd adapter follow that reference.
+The C ABI shim and owned-child lifecycle were implemented for compd. The `/256`
+conversion implements Wayland's signed 24.8 fixed-point ABI; `touch_destroy`
+auto-up is local lifetime handling (wlcs_anvil's touch destroy is empty).
+Both source headers and `NOTICE` credit the reference; its MIT licence remains
+in `vendor/smithay/LICENSE.txt`.
 It owns a fresh `compd --headless` child for each server, isolating process-global
 configuration, logging and GPU resources across tests. An inherited socket carries
 test requests and client descriptors directly to compd's event loop. That control
@@ -5536,9 +5538,27 @@ describes the window's left/top; both `pointer_respects_window_geom_offset` and
 `input - placement + geometry_offset`, which positions the **window geometry**
 origin. They use offset `(35, 12)` and input delta `(20, 30)`, expecting
 `(55, 42)`. Under the explicitly selected surface-origin convention, the correct
-local point is `(20, 30)`. Those assertions cannot establish a compd coordinate
-defect under this convention; they are a wlcs/shim contract mismatch. No test
-source or normal compositor behaviour is changed to conceal the discrepancy.
+local point would be `(20, 30)`. Smithay's reference adapter also uses the geometry
+origin: `vendor/smithay/wlcs_anvil/src/main_loop.rs:213` maps the element at the
+wlcs location without adding the geometry offset. The pinned tests and that
+reference agree; this adapter's selected surface-origin convention differs.
+This contract mismatch is established from source, not inferred from a failed
+run. No test source or normal compositor behaviour is changed to conceal it.
+
+The fresh recording reports the four named cases as follows (coordinates below
+are pixels, converted from Wayland 24.8 values):
+
+| Case | Observed result |
+| --- | --- |
+| `XdgToplevelStableTest.pointer_respects_window_geom_offset` | Fails the coordinate assertion: `(2.5, 24)` observed, `(55, 42)` expected by wlcs. Placement self-check reports `(200, 280)`. |
+| `XdgToplevelStableTest.touch_respects_window_geom_offset` | `touch_down` refuses `touch_no_target`; the touched-window assertion sees NULL, before the coordinate assertion. Placement self-check reports `(200, 280)`. |
+| `XdgToplevelV6Test.pointer_respects_window_geom_offset` | Skipped: missing `zxdg_shell_v6 >= 1`. |
+| `XdgToplevelV6Test.touch_respects_window_geom_offset` | Skipped: missing `zxdg_shell_v6 >= 1`. |
+
+The stable pointer result also differs from `(20, 30)`, so the convention mismatch
+alone does not explain that failure. The native coordinate/focus path still needs
+tracing; the stable touch case stops at native hit testing. Neither stable case
+reports `unconfigured_buffer` in this recording, and neither v6 case tests input.
 
 Build on a GPU worker, keeping wlcs outside the MixOS checkout:
 
@@ -5630,7 +5650,7 @@ The interface name is part of every protocol error's identity:
   `ForeignToplevelManagerTest.detects_toplevel_closed`, yet fails to emit it in
   `XdgSurfaceStableTest.attaching_buffer_to_unconfigured_xdg_surface_is_an_error`
   (the report says the expected error was not received). This is a **compd
-  defect: the configure/buffer check is misplaced**, for a later phase.
+  configure-state defect** for a later phase; its root cause has not been traced.
   Start at `vendor/smithay/src/wayland/shell/xdg/mod.rs:1673` (toplevel
   pre-commit check, posted at `1721`), and `2067` (popup, posted at `2116`).
   The hooks are installed by `xdg/handlers/surface.rs:130,208`.
@@ -5659,8 +5679,9 @@ The interface name is part of every protocol error's identity:
   not silently successful adapter deliveries. No protocol error code is raised.
   Start at `services/compd/crates/world/src/surface/interface/core/hit.rs:478`
   (fitted surface coordinates) and `vendor/smithay/src/desktop/wayland/window.rs`
-  (`surface_under`). The two stable geometry-offset assertions instead retain
-  the documented **wlcs/shim placement-contract mismatch**.
+  (`surface_under`). The stable geometry-offset cases have the observed native
+  coordinate/hit failures recorded above, in addition to the source-level
+  **wlcs/shim placement-contract mismatch**.
 - **Event timeouts, missing notifications and keyboard focus:** these are
   **compd conformance gaps** in the native event, constraints, layout and focus
   paths. They have no protocol error code unless the individual report names
@@ -5670,7 +5691,8 @@ The interface name is part of every protocol error's identity:
 - **Other assertions or protocol errors:** retained per case, including
   missing mandated errors for invalid buffers and unconfigured surfaces,
   popup placement/lifecycle and output metadata assertions. These are compd
-  conformance defects, apart from the stated geometry-offset contract mismatch.
+  conformance defects; the geometry-offset cases also have the stated contract
+  mismatch, which does not fully explain their observed failures.
   They are not evidence of a protocol-permitted refusal of a valid client.
 
 All failed cases remain in the expectation file; this phase fixes the shim and
