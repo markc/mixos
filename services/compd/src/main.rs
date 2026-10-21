@@ -9,9 +9,9 @@ mod event_loop;
 mod scenes;
 mod shutdown;
 mod wayland;
-mod xwayland;
 #[cfg(feature = "wlcs")]
 mod wlcs;
+mod xwayland;
 
 use model::{info, trace, warn};
 

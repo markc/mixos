@@ -944,7 +944,8 @@ pub fn wlcs_world_point(lp: &Loop, x: f64, y: f64) -> Point<f64, Logical> {
     let transform: Transform = (
         Point::<f64, smithay::utils::Physical>::from((x * context.scale, y * context.scale)),
         context,
-    ).into();
+    )
+        .into();
     transform.into_storage_point_f64()
 }
 
@@ -970,7 +971,9 @@ pub fn agent_touch(
     let serial = SERIAL_COUNTER.next_serial();
     let slot = Some(slot).into();
     if phase != "touch_down"
-        && touch.grab_start_data().and_then(|start| start.focus)
+        && touch
+            .grab_start_data()
+            .and_then(|start| start.focus)
             .is_none_or(|(surface, _)| !surface.is_alive())
     {
         return Err(agent_refusal("touch_focus_lost"));
@@ -982,8 +985,8 @@ pub fn agent_touch(
         let point = wlcs_world_point(lp, x, y);
         let position = (point.x, point.y);
         if phase == "touch_down" {
-            let focus = agent_hit(lp, None, position)?
-                .ok_or_else(|| agent_refusal("touch_no_target"))?;
+            let focus =
+                agent_hit(lp, None, position)?.ok_or_else(|| agent_refusal("touch_no_target"))?;
             touch.down(
                 &mut lp.state,
                 Some(focus),

@@ -233,16 +233,56 @@ complete JSON report; no case hit the gate's process deadline. Unsupported
 protocols use wlcs's `wlcs-skip-test` JSON property, even though gtest also
 records an exception for them. These are skips, alongside disabled cases.
 
-The largest reported failure classes were `xdg_surface` protocol error 3
-(319 cases, for example `ForeignToplevelManagerTest.detects_toplevel_closed`),
-layer-surface protocol error 0 (79 cases, for example
-`Layer/LayerSurfaceLayerTest.surface_on_lower_layer_is_initially_placed_below/0`),
-and input-region targeting or coordinate assertions (58 cases, for example
-`MultiRectEdges/RegionSurfaceInputCombinations.input_inside_region_seen/8`).
-There were also 38 event timeouts, 24 missing-notification cases, 7 keyboard-focus
-cases and 38 other assertions or protocol errors. These group the observed
-messages, rather than establishing root causes. For example,
-`Anchor/LayerSurfaceLayoutTest.maximized_xdg_toplevel_is_shrunk_for_exclusive_zone/0`
-timed out waiting for a condition, and
-`PointerConstraints.when_surface_is_reselected_persistent_locked_pointer_gets_notifications`
-missed its expected notifications. The failed cases remain in the expectation file.
+The original three largest classes were xdg unconfigured-buffer errors (319),
+layer-surface invalid-state errors (79), and input-region assertions (58).
+The remaining original classes were 38 event timeouts, 24 missing-notification
+cases, 7 keyboard-focus cases and 38 other assertions or protocol errors.
+The interface name is part of every protocol error's identity:
+
+- **`xdg_surface`, error 3 = `unconfigured_buffer`.** Stable
+  [xdg-shell.xml](https://gitlab.freedesktop.org/wayland/wayland-protocols/-/blob/main/stable/xdg-shell/xdg-shell.xml)
+  starts this enum at 1: `not_constructed`, `already_constructed`,
+  `unconfigured_buffer`, `invalid_serial`, `invalid_size`. Compd emits error 3
+  on correctly configured wlcs surfaces, for example
+  `ForeignToplevelManagerTest.detects_toplevel_closed`, yet fails to emit it in
+  `XdgSurfaceStableTest.attaching_buffer_to_unconfigured_xdg_surface_is_an_error`
+  (the report says the expected error was not received). This is a **compd
+  defect: the configure/buffer check is misplaced**, for a later phase.
+  Start at `vendor/smithay/src/wayland/shell/xdg/mod.rs:1673` (toplevel
+  pre-commit check, posted at `1721`), and `2067` (popup, posted at `2116`).
+  The hooks are installed by `xdg/handlers/surface.rs:130,208`.
+- **`zwlr_layer_surface_v1`, error 0 = `invalid_surface_state`.** The 79-case
+  baseline class is on this interface, not `zwlr_layer_shell_v1`:
+  `Layer/LayerSurfaceLayerTest.surface_on_lower_layer_is_initially_placed_below/0`
+  reports `must ack the initial configure before attaching buffer`. This is
+  another **compd configure-state defect**, raised in
+  `vendor/smithay/src/wayland/shell/wlr_layer/mod.rs:576`.
+  [Layer-shell XML](https://gitlab.freedesktop.org/wlroots/wlr-protocols/-/blob/master/unstable/wlr-layer-shell-unstable-v1.xml)
+  defines **`zwlr_layer_shell_v1`, error 0 = `role`** separately: another role
+  is already assigned. That check is at
+  `vendor/smithay/src/wayland/shell/wlr_layer/handlers.rs:84,85`, with the
+  sticky role stamp in `wayland/compositor/tree.rs:170`. Premature or sticky
+  assignment there would be a compd defect, but the original logs contain
+  **zero** failures with that interface/error pair. Calling the observed
+  79 failures role errors would misattribute the protocol object.
+- **Input-region targeting and coordinates:** the shim's surface placement
+  and screen/world conversion are corrected above. Remaining input-region
+  assertions exercise compd's native hit testing and are **compd defects**;
+  start at `services/compd/crates/world/src/surface/interface/core/hit.rs:478`
+  (fitted surface coordinates) and `vendor/smithay/src/desktop/wayland/window.rs`
+  (`surface_under`). The two stable geometry-offset assertions instead retain
+  the documented **wlcs/shim placement-contract mismatch**.
+- **Event timeouts, missing notifications and keyboard focus:** these are
+  **compd conformance gaps** in the native event, constraints, layout and focus
+  paths. They have no protocol error code unless the individual report names
+  one. In particular, pointer constraints miss expected locked/unlocked events;
+  exclusive-zone layout can time out. The adapter's device refusals are explicit
+  in the case logs and must be considered when tracing each case.
+- **Other assertions or protocol errors:** retained per case, including
+  missing mandated errors for invalid buffers and unconfigured surfaces,
+  popup placement/lifecycle and output metadata assertions. These are compd
+  conformance defects, apart from the stated geometry-offset contract mismatch.
+  They are not evidence of a protocol-permitted refusal of a valid client.
+
+All failed cases remain in the expectation file; this phase fixes the shim and
+attributes runtime conformance work rather than changing normal compd policy.

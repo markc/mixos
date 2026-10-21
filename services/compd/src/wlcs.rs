@@ -9,6 +9,7 @@ use dispatcher::wire::trait_::surface_event::SurfaceHandle;
 use dispatcher::wire::trait_::wire_trait::WireTrait;
 use protocols::wayland::connection::record::record::WaylandClientSession;
 use serde_json::{Value, json};
+use smithay::wayland::seat::WaylandFocus;
 use smithay::{
     reexports::{
         calloop::{EventLoop, Interest, Mode, PostAction, generic::Generic},
@@ -26,7 +27,6 @@ use std::{
     sync::Arc,
 };
 use surfaces::SeatKind;
-use smithay::wayland::seat::WaylandFocus;
 use world::state::Loop;
 use world::state::state::CoordinateTrait;
 
@@ -170,26 +170,53 @@ impl Adapter {
                     && let Some(record) = state.inner.comp.registry.get(id)
                 {
                     let generation = record.generation();
-                    let origin = policy_host::input::wlcs_world_point(state, number("x"), number("y"));
+                    let origin =
+                        policy_host::input::wlcs_world_point(state, number("x"), number("y"));
                     policy_host::control::wlcs_place_surface(state, id, origin.to_i32_round());
                     // Read the same window row exposed on the Bus. Check both
                     // the native world origin and its screen projection.
-                    let snapshot = policy_host::project::project(state, policy_host::project::Identity {
-                        service: "compd".into(), version: env!("CARGO_PKG_VERSION").into(),
-                        backend: "headless", engine: "wlcs", instance: "wlcs".into(),
-                        binding_profile: "nested", port: PortSnapshot {
-                            level: "test", event_seq: 0, lost_count: 0, queue_depth: 0,
-                            reply_timeouts: 0, publish_timeouts: 0, slug_collisions: 0, broker: "test",
+                    let snapshot = policy_host::project::project(
+                        state,
+                        policy_host::project::Identity {
+                            service: "compd".into(),
+                            version: env!("CARGO_PKG_VERSION").into(),
+                            backend: "headless",
+                            engine: "wlcs",
+                            instance: "wlcs".into(),
+                            binding_profile: "nested",
+                            port: PortSnapshot {
+                                level: "test",
+                                event_seq: 0,
+                                lost_count: 0,
+                                queue_depth: 0,
+                                reply_timeouts: 0,
+                                publish_timeouts: 0,
+                                slug_collisions: 0,
+                                broker: "test",
+                            },
                         },
-                    }, &ReadScopes::Paths(vec!["windows".into()]));
-                    let row = snapshot.windows.values().find(|row| row.id == id.0 && row.generation == generation);
-                    let Some(row) = row else { return json!({"error": "placed_window_row_missing"}); };
+                        &ReadScopes::Paths(vec!["windows".into()]),
+                    );
+                    let row = snapshot
+                        .windows
+                        .values()
+                        .find(|row| row.id == id.0 && row.generation == generation);
+                    let Some(row) = row else {
+                        return json!({"error": "placed_window_row_missing"});
+                    };
                     let transform: world::camera::transform::translate::transform::Transform = (
-                        smithay::utils::Point::<f64, smithay::utils::Logical>::from((f64::from(row.x), f64::from(row.y))),
+                        smithay::utils::Point::<f64, smithay::utils::Logical>::from((
+                            f64::from(row.x),
+                            f64::from(row.y),
+                        )),
                         state.size_ctx_all(),
-                    ).into();
-                    let screen: smithay::utils::Point<f64, smithay::utils::Logical> = transform.into();
-                    if (screen.x - number("x")).abs() > 0.01 || (screen.y - number("y")).abs() > 0.01 {
+                    )
+                        .into();
+                    let screen: smithay::utils::Point<f64, smithay::utils::Logical> =
+                        transform.into();
+                    if (screen.x - number("x")).abs() > 0.01
+                        || (screen.y - number("y")).abs() > 0.01
+                    {
                         return json!({"error": "surface_origin_mismatch", "requested": [number("x"), number("y")], "actual": [screen.x, screen.y]});
                     }
                     return json!({"ok": true, "surface_origin": [screen.x, screen.y]});
@@ -199,13 +226,22 @@ impl Adapter {
             "absolute" | "relative" | "button" => {
                 let op = match r["op"].as_str().unwrap() {
                     "absolute" => {
-                        let point = policy_host::input::wlcs_world_point(state, number("x"), number("y"));
-                        let previous = state.inner.comp.injection.agent_pointer.unwrap_or((0.0, 0.0));
+                        let point =
+                            policy_host::input::wlcs_world_point(state, number("x"), number("y"));
+                        let previous = state
+                            .inner
+                            .comp
+                            .injection
+                            .agent_pointer
+                            .unwrap_or((0.0, 0.0));
                         InputOp::PointerMove {
-                            target: PointerMoveTarget::Relative { dx: point.x - previous.0, dy: point.y - previous.1 },
+                            target: PointerMoveTarget::Relative {
+                                dx: point.x - previous.0,
+                                dy: point.y - previous.1,
+                            },
                             corners: false,
                         }
-                    },
+                    }
                     "relative" => InputOp::PointerMove {
                         target: PointerMoveTarget::Relative {
                             dx: number("x"),
@@ -237,13 +273,9 @@ impl Adapter {
                 if self.touch_slots.contains(&slot) == (phase == "touch_down") {
                     return json!({"error": "invalid_touch_slot_state", "slot": slot});
                 }
-                if let Err(reply) = policy_host::input::agent_touch(
-                    state,
-                    slot,
-                    phase,
-                    number("x"),
-                    number("y"),
-                ) {
+                if let Err(reply) =
+                    policy_host::input::agent_touch(state, slot, phase, number("x"), number("y"))
+                {
                     return json!({"error": format!("{reply:?}")});
                 }
                 if phase == "touch_down" {

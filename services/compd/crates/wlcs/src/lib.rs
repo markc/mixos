@@ -84,18 +84,26 @@ impl Control {
                 if reply.get("error").is_some() {
                     // A device can target empty space or a destroyed surface.
                     // Preserve the explicit refusal; wlcs checks client events.
-                    eprintln!("wlcs-control-refusal: {reply}; compositor log: {}", self.1.display());
+                    eprintln!(
+                        "wlcs-control-refusal: {reply}; compositor log: {}",
+                        self.1.display()
+                    );
                 }
                 if let Some(origin) = reply.get("surface_origin") {
                     eprintln!("wlcs-placement-check: surface origin verified {origin}");
                 }
-                if reply["error"] == "surface_origin_mismatch" || reply["error"] == "placed_window_row_missing" {
+                if reply["error"] == "surface_origin_mismatch"
+                    || reply["error"] == "placed_window_row_missing"
+                {
                     eprintln!("wlcs-adapter-error: placement self-check failed");
                     std::process::abort();
                 }
             }
             Err(error) => {
-                eprintln!("wlcs-adapter-error: {error}; compositor log: {}", self.1.display());
+                eprintln!(
+                    "wlcs-adapter-error: {error}; compositor log: {}",
+                    self.1.display()
+                );
                 std::process::abort();
             }
         }
@@ -187,7 +195,10 @@ impl Process {
         drop(child_socket);
         let process = Self {
             child,
-            control: Control(Arc::new(Mutex::new(parent)), Arc::new(root.join("compd.log"))),
+            control: Control(
+                Arc::new(Mutex::new(parent)),
+                Arc::new(root.join("compd.log")),
+            ),
             root,
         };
         let mut ready = [0u8; 32];

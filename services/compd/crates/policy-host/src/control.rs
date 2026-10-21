@@ -744,7 +744,9 @@ fn place(lp: &mut Loop, spec: &comp_model::request::PlaceSpec) -> ControlReply {
 /// Test-only placement of a wl_surface origin in the native world Space.
 #[cfg(feature = "wlcs")]
 pub fn wlcs_place_surface(lp: &mut Loop, id: SurfaceId, origin: Point<i32, Logical>) {
-    let Some(window) = window_of(lp, id) else { return; };
+    let Some(window) = window_of(lp, id) else {
+        return;
+    };
     // wlcs may deliberately put the window partly or wholly off the output.
     // Use the native placement executor without the operator verb's clipping.
     place_window(lp, id, origin + window.geometry().loc, None);
