@@ -17,8 +17,9 @@ use serde_json::Value;
 pub const PADDINGS: [u32; 5] = [1, 2, 4, 8, 16];
 pub const FONT_SIZE_MIN: f64 = 6.0;
 pub const FONT_SIZE_MAX: f64 = 48.0;
-/// The bundled families a surface may choose. None is the design's UI face
-/// (Inter), so an unset family follows the design.
+/// The bundled families a surface may choose. The composer and Ced editor
+/// accept only [`MONO_FAMILY`]; their unset family is also that face.
+/// Other surfaces use the design's UI face (Inter) when unset.
 pub const FAMILIES: [&str; 2] = ["Inter", "JetBrains Mono"];
 
 fn is_default<T: Default + PartialEq>(value: &T) -> bool {
@@ -76,7 +77,7 @@ impl Content {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct ContentFont {
-    /// One of [`FAMILIES`], or None for the design's UI face.
+    /// One of [`FAMILIES`], or None for the surface's default face.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub family: Option<String>,
     /// Logical pixels, [`FONT_SIZE_MIN`] to [`FONT_SIZE_MAX`].
@@ -134,7 +135,7 @@ pub fn validate(content: &Content, path: &str) -> Result<(), Diagnostic> {
 
 /// The `describe()` entries for one surface, under `path`.
 pub fn describe(path: &str) -> Value {
-    let monospace = matches!(path, "email.composer" | CED_EDITOR);
+    let monospace = path == "email.composer";
     let families = if monospace {
         &FAMILIES[1..]
     } else {
