@@ -385,8 +385,8 @@ fn add_output(
 }
 
 /// Dark the PRIMARY pipe (`outputs[0]`) — the always-present anchor kept even when
-/// no monitor is connected (the `outputs` non-empty invariant). Mirrors `go_dark`
-/// but leaves any secondary pipes to the caller's prune step.
+/// no monitor is connected (the `outputs` non-empty invariant). Secondary pipes
+/// are left to the reconciliation prune step.
 fn go_dark_primary(state: &mut Loop, ctx: &mut NativeRenderContext) {
     ctx.outputs[0].drm_output = None;
     // The anchor keeps its `wl_output` global AND its Space mapping, deliberately.
