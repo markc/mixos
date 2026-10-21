@@ -1624,7 +1624,12 @@ mod tests {
     fn an_authored_modern_binding_keeps_its_palette() {
         let mut document = embedded();
         for modifier in &mut document.v1.modifiers {
-            if modifier.when.get(&crate::source::ModifierAxis::Scheme).map(String::as_str) == Some("breeze") {
+            if modifier
+                .when
+                .get(&crate::source::ModifierAxis::Scheme)
+                .map(String::as_str)
+                == Some("breeze")
+            {
                 let color = modifier.primitives.colors["chrome.dock"];
                 modifier
                     .primitives
@@ -1668,12 +1673,39 @@ mod tests {
     fn modern_palette_defaults_without_a_style_family() {
         let mut document = embedded();
         document.v1.families.style = None;
-        document.v1.modifiers.retain(|modifier| modifier.when.get(&crate::source::ModifierAxis::Scheme).is_none_or(|scheme| scheme != "breeze"));
-        let crate::DesignCompileResult::Success(result) = crate::compile_design(&document, DesignContext {
-            scheme: Scheme::Breeze, ..Default::default()
-        }) else { panic!("a source without a style family takes the palette"); };
+        document.v1.modifiers.retain(|modifier| {
+            modifier
+                .when
+                .get(&crate::source::ModifierAxis::Scheme)
+                .is_none_or(|scheme| scheme != "breeze")
+        });
+        let crate::DesignCompileResult::Success(result) = crate::compile_design(
+            &document,
+            DesignContext {
+                scheme: Scheme::Breeze,
+                ..Default::default()
+            },
+        ) else {
+            panic!("a source without a style family takes the palette");
+        };
         assert!(result.candidate.dictionary().style.is_none());
-        assert!(result.diagnostics.iter().any(|diagnostic| diagnostic.code == "defaulted-scheme"));
-        assert_eq!(result.candidate.dictionary().chrome.as_ref().unwrap().get("chrome").unwrap().to_srgba8(), [38, 42, 48, 255]);
+        assert!(
+            result
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.code == "defaulted-scheme")
+        );
+        assert_eq!(
+            result
+                .candidate
+                .dictionary()
+                .chrome
+                .as_ref()
+                .unwrap()
+                .get("chrome")
+                .unwrap()
+                .to_srgba8(),
+            [38, 42, 48, 255]
+        );
     }
 }

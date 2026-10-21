@@ -876,11 +876,22 @@ mod tests {
             let alpha = (f64::from(top[3]) * factor).round() / 255.0;
             let channel = |index: usize| {
                 let premultiplied = (f64::from(top[index]) * f64::from(top[3]) / 255.0).round();
-                let byte = ((premultiplied * factor).round() + f64::from(under[index]) * (1.0 - alpha)).round();
+                let byte = ((premultiplied * factor).round()
+                    + f64::from(under[index]) * (1.0 - alpha))
+                    .round();
                 let srgb = byte / 255.0;
-                if srgb <= 0.04045 { srgb / 12.92 } else { ((srgb + 0.055) / 1.055).powf(2.4) }
+                if srgb <= 0.04045 {
+                    srgb / 12.92
+                } else {
+                    ((srgb + 0.055) / 1.055).powf(2.4)
+                }
             };
-            crate::LinearRgba { red: channel(0), green: channel(1), blue: channel(2), alpha: 1.0 }
+            crate::LinearRgba {
+                red: channel(0),
+                green: channel(1),
+                blue: channel(2),
+                alpha: 1.0,
+            }
         };
         let document = embedded();
         for mode in crate::Mode::ALL {
@@ -921,7 +932,8 @@ mod tests {
                 for text in ["text", "text_dim", "text_faint", "accent_text"] {
                     assert!(
                         crate::contrast_ratio(color(text), tinted) >= 4.5,
-                        "{mode:?}: {text} on tinted {surface}: {}", crate::contrast_ratio(color(text), tinted)
+                        "{mode:?}: {text} on tinted {surface}: {}",
+                        crate::contrast_ratio(color(text), tinted)
                     );
                 }
                 for text in ["danger", "warning"] {
@@ -937,11 +949,12 @@ mod tests {
             assert!(crate::contrast_ratio(color("primary_text"), color("primary_bg")) >= 4.5);
             for alpha in [0.93, 0.85] {
                 for surface in ["chrome", "canvas", "dock", "card", "field"] {
-                let background = composite(color("primary_bg"), color(surface), alpha);
-                assert!(
-                    crate::contrast_ratio(color("primary_text"), background) >= 4.5,
-                    "{mode:?}: primary button at {alpha} on {surface}: {}", crate::contrast_ratio(color("primary_text"), background)
-                );
+                    let background = composite(color("primary_bg"), color(surface), alpha);
+                    assert!(
+                        crate::contrast_ratio(color("primary_text"), background) >= 4.5,
+                        "{mode:?}: primary button at {alpha} on {surface}: {}",
+                        crate::contrast_ratio(color("primary_text"), background)
+                    );
                 }
             }
             assert_eq!(color("canvas"), color("canvas_dot"));
