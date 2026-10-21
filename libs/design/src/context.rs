@@ -50,7 +50,10 @@ impl Scheme {
 
     /// The schemes drawn from the chrome family.
     pub const fn is_chrome_scheme(self) -> bool {
-        matches!(self, Self::Pro | Self::Studio | Self::Classic | Self::Breeze | Self::Adwaita)
+        matches!(
+            self,
+            Self::Pro | Self::Studio | Self::Classic | Self::Breeze | Self::Adwaita
+        )
     }
 
     pub const fn name(self) -> &'static str {
@@ -137,7 +140,14 @@ pub enum Style {
 }
 
 impl Style {
-    pub const ALL: [Self; 6] = [Self::Plain, Self::Pro, Self::Studio, Self::Classic, Self::Breeze, Self::Adwaita];
+    pub const ALL: [Self; 6] = [
+        Self::Plain,
+        Self::Pro,
+        Self::Studio,
+        Self::Classic,
+        Self::Breeze,
+        Self::Adwaita,
+    ];
 
     pub const fn name(self) -> &'static str {
         match self {

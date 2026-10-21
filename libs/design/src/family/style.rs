@@ -777,7 +777,9 @@ fn complete_family(
         }
         for (scheme, style) in &entries.schemes {
             if Scheme::from_name(scheme).is_some() && !family.schemes.contains_key(scheme) {
-                family.schemes.insert(scheme.clone(), style.style().to_owned());
+                family
+                    .schemes
+                    .insert(scheme.clone(), style.style().to_owned());
                 provenance.insert(format!("{PATH}.schemes.{scheme}"), version.clone());
             }
         }
@@ -1244,11 +1246,19 @@ mod tests {
     }
 
     fn breeze() -> ResolvedStyle {
-        ResolvedStyle { radius_sm: 5, radius: 5, radius_lg: 6, ..studio() }
+        ResolvedStyle {
+            radius_sm: 5,
+            radius: 5,
+            radius_lg: 6,
+            ..studio()
+        }
     }
 
     fn adwaita() -> ResolvedStyle {
-        ResolvedStyle { radius: 9, ..studio() }
+        ResolvedStyle {
+            radius: 9,
+            ..studio()
+        }
     }
 
     fn pro() -> ResolvedStyle {
@@ -1490,7 +1500,13 @@ mod tests {
                         panic!("today's design compiles");
                     };
                     if matches!(scheme, Scheme::Breeze | Scheme::Adwaita) && style.is_none() {
-                        assert!(old.candidate.dictionary().defaulted.keys().any(|path| path.ends_with(scheme.name())));
+                        assert!(
+                            old.candidate
+                                .dictionary()
+                                .defaulted
+                                .keys()
+                                .any(|path| path.ends_with(scheme.name()))
+                        );
                         continue;
                     }
                     assert_eq!(
@@ -1552,24 +1568,50 @@ mod tests {
         let before = crate::parse_design_source(
             SourceIdentity::new("before-modern-schemes"),
             include_str!("../../tests/fixtures/revision-1-before-axes.theme.conf.mix"),
-        ).unwrap();
+        )
+        .unwrap();
         for scheme in Scheme::ALL {
             for style in Style::ALL {
                 for mode in Mode::ALL {
-                    let context = DesignContext { scheme, mode, style: Some(style), ..Default::default() };
-                    let crate::DesignCompileResult::Success(today) = crate::compile_design(&document, context.clone()) else {
+                    let context = DesignContext {
+                        scheme,
+                        mode,
+                        style: Some(style),
+                        ..Default::default()
+                    };
+                    let crate::DesignCompileResult::Success(today) =
+                        crate::compile_design(&document, context.clone())
+                    else {
                         panic!("{scheme:?}/{style:?}/{mode:?} must compile");
                     };
                     if matches!(scheme, Scheme::Breeze | Scheme::Adwaita) {
-                        let crate::DesignCompileResult::Success(old) = crate::compile_design(&before, context) else {
+                        let crate::DesignCompileResult::Success(old) =
+                            crate::compile_design(&before, context)
+                        else {
                             panic!("old source must compile in {scheme:?}/{style:?}/{mode:?}");
                         };
-                        assert_eq!(old.candidate.dictionary().chrome, today.candidate.dictionary().chrome);
+                        assert_eq!(
+                            old.candidate.dictionary().chrome,
+                            today.candidate.dictionary().chrome
+                        );
                         assert!(old.diagnostics.iter().any(|d| d.code == "defaulted-scheme"));
                         assert!(old.candidate.dictionary().terminal.is_some());
-                        let provenance = old.candidate.provenance().value(&crate::DesignValueId::ColourPrimitive("chrome.chrome".into())).unwrap();
-                        assert!(provenance.value_origin_rule.starts_with("compat.v3.schemes."));
-                        assert_eq!(old.candidate.dictionary().defaulted["design.v1.primitives.colors.chrome.chrome"], "v3");
+                        let provenance = old
+                            .candidate
+                            .provenance()
+                            .value(&crate::DesignValueId::ColourPrimitive(
+                                "chrome.chrome".into(),
+                            ))
+                            .unwrap();
+                        assert!(
+                            provenance
+                                .value_origin_rule
+                                .starts_with("compat.v3.schemes.")
+                        );
+                        assert_eq!(
+                            old.candidate.dictionary().defaulted["design.v1.primitives.colors.chrome.chrome"],
+                            "v3"
+                        );
                     }
                 }
             }
@@ -1582,16 +1624,41 @@ mod tests {
         for modifier in &mut document.v1.modifiers {
             if modifier.when.scheme.as_deref() == Some("breeze") {
                 let color = modifier.primitives.colors["chrome.dock"];
-                modifier.primitives.colors.insert("chrome.chrome".into(), color);
+                modifier
+                    .primitives
+                    .colors
+                    .insert("chrome.chrome".into(), color);
             }
         }
-        let crate::DesignCompileResult::Success(result) = crate::compile_design(&document, DesignContext {
-            scheme: Scheme::Breeze, ..Default::default()
-        }) else { panic!("authored Breeze compiles"); };
+        let crate::DesignCompileResult::Success(result) = crate::compile_design(
+            &document,
+            DesignContext {
+                scheme: Scheme::Breeze,
+                ..Default::default()
+            },
+        ) else {
+            panic!("authored Breeze compiles");
+        };
         let chrome = result.candidate.dictionary().chrome.as_ref().unwrap();
         assert_eq!(chrome.get("chrome"), chrome.get("dock"));
-        assert!(!result.candidate.dictionary().defaulted.contains_key("design.v1.primitives.colors.chrome.chrome"));
-        let provenance = result.candidate.provenance().value(&crate::DesignValueId::ColourPrimitive("chrome.chrome".into())).unwrap();
-        assert!(provenance.value_origin_rule.starts_with("design.v1.modifiers["));
+        assert!(
+            !result
+                .candidate
+                .dictionary()
+                .defaulted
+                .contains_key("design.v1.primitives.colors.chrome.chrome")
+        );
+        let provenance = result
+            .candidate
+            .provenance()
+            .value(&crate::DesignValueId::ColourPrimitive(
+                "chrome.chrome".into(),
+            ))
+            .unwrap();
+        assert!(
+            provenance
+                .value_origin_rule
+                .starts_with("design.v1.modifiers[")
+        );
     }
 }

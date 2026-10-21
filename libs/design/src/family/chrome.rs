@@ -868,42 +868,77 @@ mod tests {
     fn breeze_text_and_action_colours_keep_their_contrast_contract() {
         let document = embedded();
         for mode in crate::Mode::ALL {
-            let chrome = compiled(&document, crate::DesignContext {
-                scheme: crate::Scheme::Breeze, mode, ..Default::default()
-            }).dictionary().chrome.clone().unwrap();
+            let chrome = compiled(
+                &document,
+                crate::DesignContext {
+                    scheme: crate::Scheme::Breeze,
+                    mode,
+                    ..Default::default()
+                },
+            )
+            .dictionary()
+            .chrome
+            .clone()
+            .unwrap();
             let color = |name| chrome.get(name).unwrap().rendered();
-            for surface in ["chrome", "canvas", "dock", "card", "field", "hover", "pressed"] {
+            for surface in [
+                "chrome", "canvas", "dock", "card", "field", "hover", "pressed",
+            ] {
                 for text in ["text", "text_dim", "text_faint", "accent_text"] {
-                    assert!(crate::contrast_ratio(color(text), color(surface)) >= 4.5,
-                        "{mode:?}: {text} on {surface}");
+                    assert!(
+                        crate::contrast_ratio(color(text), color(surface)) >= 4.5,
+                        "{mode:?}: {text} on {surface}"
+                    );
                 }
                 for text in ["danger", "warning"] {
-                    let floor = if matches!(surface, "hover" | "pressed") { 3.0 } else { 4.5 };
-                    assert!(crate::contrast_ratio(color(text), color(surface)) >= floor,
-                        "{mode:?}: {text} on {surface}");
+                    let floor = if matches!(surface, "hover" | "pressed") {
+                        3.0
+                    } else {
+                        4.5
+                    };
+                    assert!(
+                        crate::contrast_ratio(color(text), color(surface)) >= floor,
+                        "{mode:?}: {text} on {surface}"
+                    );
                 }
                 let tinted = crate::colour_model::derivation::composite(
-                    color("accent_soft"), color(surface),
-                ).rendered();
+                    color("accent_soft"),
+                    color(surface),
+                )
+                .rendered();
                 for text in ["text", "text_dim", "text_faint", "accent_text"] {
-                    assert!(crate::contrast_ratio(color(text), tinted) >= 4.5,
-                        "{mode:?}: {text} on tinted {surface}");
+                    assert!(
+                        crate::contrast_ratio(color(text), tinted) >= 4.5,
+                        "{mode:?}: {text} on tinted {surface}"
+                    );
                 }
                 for text in ["danger", "warning"] {
-                    assert!(crate::contrast_ratio(color(text), tinted) >= 3.0,
-                        "{mode:?}: {text} on tinted {surface}");
+                    assert!(
+                        crate::contrast_ratio(color(text), tinted) >= 3.0,
+                        "{mode:?}: {text} on tinted {surface}"
+                    );
                 }
             }
-            assert!(crate::contrast_ratio(color("caption_close_text"), color("caption_close")) >= 4.5);
+            assert!(
+                crate::contrast_ratio(color("caption_close_text"), color("caption_close")) >= 4.5
+            );
             assert!(crate::contrast_ratio(color("primary_text"), color("primary_bg")) >= 4.5);
             for alpha in [0.93, 0.85] {
-                let button = crate::LinearRgba { alpha, ..color("primary_bg") };
-                let background = crate::colour_model::derivation::composite(button, color("chrome")).rendered();
-                assert!(crate::contrast_ratio(color("primary_text"), background) >= 4.5,
-                    "{mode:?}: primary button at {alpha}");
+                let button = crate::LinearRgba {
+                    alpha,
+                    ..color("primary_bg")
+                };
+                let background =
+                    crate::colour_model::derivation::composite(button, color("chrome")).rendered();
+                assert!(
+                    crate::contrast_ratio(color("primary_text"), background) >= 4.5,
+                    "{mode:?}: primary button at {alpha}"
+                );
             }
             assert_eq!(color("canvas"), color("canvas_dot"));
-            let contrasts: Vec<_> = ["text", "text_dim", "text_faint"].map(|text| crate::contrast_ratio(color(text), color("card"))).into();
+            let contrasts: Vec<_> = ["text", "text_dim", "text_faint"]
+                .map(|text| crate::contrast_ratio(color(text), color("card")))
+                .into();
             assert!(contrasts[0] > contrasts[1] && contrasts[1] > contrasts[2]);
         }
     }

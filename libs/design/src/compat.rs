@@ -95,20 +95,70 @@ impl Table {
                 return Err(format!("invalid compatibility version `{version}`"));
             }
             for (name, scheme) in &entries.schemes {
-                if matches!(name.as_str(), "ocean" | "crimson" | "stone" | "forest" | "sunset" | "mono" | "pro" | "studio" | "classic") {
-                    return Err(format!("original scheme `{name}` cannot have a compatibility binding"));
+                if matches!(
+                    name.as_str(),
+                    "ocean"
+                        | "crimson"
+                        | "stone"
+                        | "forest"
+                        | "sunset"
+                        | "mono"
+                        | "pro"
+                        | "studio"
+                        | "classic"
+                ) {
+                    return Err(format!(
+                        "original scheme `{name}` cannot have a compatibility binding"
+                    ));
                 }
                 if let Scheme::Palette(palette) = scheme {
-                    if palette.chrome.keys().map(String::as_str).collect::<Vec<_>>() != ["dark", "light"] {
-                        return Err(format!("compatibility scheme `{name}` needs exactly dark and light palettes"));
+                    if palette
+                        .chrome
+                        .keys()
+                        .map(String::as_str)
+                        .collect::<Vec<_>>()
+                        != ["dark", "light"]
+                    {
+                        return Err(format!(
+                            "compatibility scheme `{name}` needs exactly dark and light palettes"
+                        ));
                     }
                     for colors in palette.chrome.values() {
-                        if colors.len() != crate::family::chrome::ROLES.len() || crate::family::chrome::ROLES.iter().any(|role| !colors.contains_key(&format!("chrome.{role}"))) {
-                            return Err(format!("compatibility scheme `{name}` is missing a chrome role"));
+                        if colors.len() != crate::family::chrome::ROLES.len()
+                            || crate::family::chrome::ROLES
+                                .iter()
+                                .any(|role| !colors.contains_key(&format!("chrome.{role}")))
+                        {
+                            return Err(format!(
+                                "compatibility scheme `{name}` is missing a chrome role"
+                            ));
                         }
                     }
-                    if palette.primitives.keys().ne(palette.chrome.keys()) || palette.primitives.values().any(|colors| colors.keys().any(|name| !matches!(name.as_str(), "palette.accent.default" | "palette.accent.hover" | "palette.background.1" | "palette.background.2" | "palette.background.3" | "palette.background.elevated" | "palette.background.muted" | "palette.foreground.default" | "palette.foreground.muted" | "palette.foreground.quiet" | "status.danger" | "status.success" | "status.warning"))) {
-                        return Err(format!("compatibility scheme `{name}` has invalid semantic primitives"));
+                    if palette.primitives.keys().ne(palette.chrome.keys())
+                        || palette.primitives.values().any(|colors| {
+                            colors.keys().any(|name| {
+                                !matches!(
+                                    name.as_str(),
+                                    "palette.accent.default"
+                                        | "palette.accent.hover"
+                                        | "palette.background.1"
+                                        | "palette.background.2"
+                                        | "palette.background.3"
+                                        | "palette.background.elevated"
+                                        | "palette.background.muted"
+                                        | "palette.foreground.default"
+                                        | "palette.foreground.muted"
+                                        | "palette.foreground.quiet"
+                                        | "status.danger"
+                                        | "status.success"
+                                        | "status.warning"
+                                )
+                            })
+                        })
+                    {
+                        return Err(format!(
+                            "compatibility scheme `{name}` has invalid semantic primitives"
+                        ));
                     }
                 }
             }
