@@ -263,6 +263,13 @@ the named stable `touch_and_drag_on_surface_seen` and
 `unconfigured_buffer` before reaching input injection, so they cannot prove
 touch continuity until the runtime configure defect is fixed.
 
+Two subsequent complete gate runs against committed baseline `de856d52` passed
+the name-by-name outcome comparison. Each again recorded **361 passed, 563 failed,
+304 skipped, 0 flaky**, with 237 successful placement checks and complete JSON
+for all 1,228 cases. Neither run hit a process deadline, terminated by signal or
+reported an adapter error. The expectation data and both observed inventories
+were also compared structurally and matched exactly.
+
 The original three largest classes were xdg unconfigured-buffer errors (319),
 layer-surface invalid-state errors (79), and input-region assertions (58).
 The remaining original classes were 38 event timeouts, 24 missing-notification
@@ -291,8 +298,9 @@ The interface name is part of every protocol error's identity:
   defines **`zwlr_layer_shell_v1`, error 0 = `role`** separately: another role
   is already assigned. That check is at
   `vendor/smithay/src/wayland/shell/wlr_layer/handlers.rs:84,85`, with the
-  sticky role stamp in `wayland/compositor/tree.rs:170`. Premature or sticky
-  assignment there would be a compd defect, but the original logs contain
+  role stamp in `wayland/compositor/tree.rs:170`. An erroneous early or stale
+  assignment on a fresh surface would be a compd defect, but the original logs
+  contain
   **zero** failures with that interface/error pair. Calling the observed
   79 failures role errors would misattribute the protocol object.
 - **Input-region targeting and coordinates:** the shim's surface placement
@@ -303,7 +311,7 @@ The interface name is part of every protocol error's identity:
   `no_pointer_target` on the button operation. Its paired touch case reports
   `touch_no_target` on down. These are native hit misses after verified placement,
   not silently successful adapter deliveries. No protocol error code is raised.
-  start at `services/compd/crates/world/src/surface/interface/core/hit.rs:478`
+  Start at `services/compd/crates/world/src/surface/interface/core/hit.rs:478`
   (fitted surface coordinates) and `vendor/smithay/src/desktop/wayland/window.rs`
   (`surface_under`). The two stable geometry-offset assertions instead retain
   the documented **wlcs/shim placement-contract mismatch**.

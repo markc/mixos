@@ -462,6 +462,12 @@ the named stable <code>touch_and_drag_on_surface_seen</code> and
 <code>touch_drag_outside_of_surface_and_back_not_lost</code> cases still fail with
 <code>unconfigured_buffer</code> before reaching input injection, so they cannot prove
 touch continuity until the runtime configure defect is fixed.</p>
+<p>Two subsequent complete gate runs against committed baseline <code>de856d52</code> passed
+the name-by-name outcome comparison. Each again recorded <strong>361 passed, 563 failed,
+304 skipped, 0 flaky</strong>, with 237 successful placement checks and complete JSON
+for all 1,228 cases. Neither run hit a process deadline, terminated by signal or
+reported an adapter error. The expectation data and both observed inventories
+were also compared structurally and matched exactly.</p>
 <p>The original three largest classes were xdg unconfigured-buffer errors (319),
 layer-surface invalid-state errors (79), and input-region assertions (58).
 The remaining original classes were 38 event timeouts, 24 missing-notification
@@ -490,8 +496,9 @@ another <strong>compd configure-state defect</strong>, raised in
 defines <strong><code>zwlr_layer_shell_v1</code>, error 0 = <code>role</code></strong> separately: another role
 is already assigned. That check is at
 <code>vendor/smithay/src/wayland/shell/wlr_layer/handlers.rs:84,85</code>, with the
-sticky role stamp in <code>wayland/compositor/tree.rs:170</code>. Premature or sticky
-assignment there would be a compd defect, but the original logs contain
+role stamp in <code>wayland/compositor/tree.rs:170</code>. An erroneous early or stale
+assignment on a fresh surface would be a compd defect, but the original logs
+contain
 <strong>zero</strong> failures with that interface/error pair. Calling the observed
 79 failures role errors would misattribute the protocol object.</li>
 <li><strong>Input-region targeting and coordinates:</strong> the shim's surface placement
@@ -502,7 +509,7 @@ verifies surface origin <code>[64, 49]</code>, completes absolute motion, then r
 <code>no_pointer_target</code> on the button operation. Its paired touch case reports
 <code>touch_no_target</code> on down. These are native hit misses after verified placement,
 not silently successful adapter deliveries. No protocol error code is raised.
-start at <code>services/compd/crates/world/src/surface/interface/core/hit.rs:478</code>
+Start at <code>services/compd/crates/world/src/surface/interface/core/hit.rs:478</code>
 (fitted surface coordinates) and <code>vendor/smithay/src/desktop/wayland/window.rs</code>
 (<code>surface_under</code>). The two stable geometry-offset assertions instead retain
 the documented <strong>wlcs/shim placement-contract mismatch</strong>.</li>
