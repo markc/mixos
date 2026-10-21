@@ -111,7 +111,9 @@ impl Session {
     ) -> fdo::Result<()> {
         let sender = header.sender().map(|name| name.as_str()).unwrap_or("");
         if sender != self.owner {
-            return Err(fdo::Error::AccessDenied("not the owner of this session".into()));
+            return Err(fdo::Error::AccessDenied(
+                "not the owner of this session".into(),
+            ));
         }
         let Some(path) = header.path() else {
             return Err(fdo::Error::Failed("no object path".into()));
@@ -125,7 +127,10 @@ impl Session {
     }
 
     #[zbus(signal, name = "Closed")]
-    async fn closed(emitter: &SignalEmitter<'_>, details: HashMap<&str, Value<'_>>) -> zbus::Result<()>;
+    async fn closed(
+        emitter: &SignalEmitter<'_>,
+        details: HashMap<&str, Value<'_>>,
+    ) -> zbus::Result<()>;
 }
 
 /// Ends a session from the portal's side (owner gone, capture lost) and

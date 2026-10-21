@@ -13,10 +13,10 @@ use mail_auth::common::crypto::RsaKey;
 use mail_auth::common::headers::HeaderWriter;
 use mail_auth::dkim::DkimSigner;
 
-use maild_auth::{Error as MailAuthError, Signer};
-use mds::Mds;
 use ::props::RecordKey;
 use ::props::store::StoreError;
+use maild_auth::{Error as MailAuthError, Signer};
+use mds::Mds;
 
 use super::SmtpState;
 use super::headers::from_header_domain;
@@ -1230,9 +1230,7 @@ mod dkim_dispatch_tests {
     //! `&SmtpState` argument up to `&SmtpConfig`.
 
     use super::*;
-    use maild_auth::{
-        Canon, DkimAlgorithm, DkimSignerConfig, Domain, HeaderSpec, MailAuthSigner,
-    };
+    use maild_auth::{Canon, DkimAlgorithm, DkimSignerConfig, Domain, HeaderSpec, MailAuthSigner};
     use std::sync::Arc;
 
     // Mirrors the mail-auth published RSA-2048 test key embedded in

@@ -2163,9 +2163,7 @@ fn find_or_new_thread_id_in_tx(
                 |row| row.get::<_, String>(0),
             )
             .optional()
-            .map_err(|e| {
-                mds::Error::Other(format!("find_or_new_thread_id_in_tx lookup: {e}"))
-            })?;
+            .map_err(|e| mds::Error::Other(format!("find_or_new_thread_id_in_tx lookup: {e}")))?;
         if let Some(tid) = row {
             return Ok(tid);
         }
@@ -2413,9 +2411,7 @@ impl MailStore for SqliteMailStore {
                         |r| r.get(0),
                     )
                     .map_err(|e| {
-                        mds::Error::Other(format!(
-                            "special_use uniqueness probe failed: {e}"
-                        ))
+                        mds::Error::Other(format!("special_use uniqueness probe failed: {e}"))
                     })?;
                 if n > 0 {
                     return Err(mds::Error::Other(format!(
@@ -2426,9 +2422,7 @@ impl MailStore for SqliteMailStore {
             tx.create_container_named(parent.as_ref(), name, &attrs)
         }) {
             Ok(id) => Ok(id),
-            Err(mds::Error::ContainerNotFound(p)) => {
-                Err(anyhow!("mailbox parent not found: {p}"))
-            }
+            Err(mds::Error::ContainerNotFound(p)) => Err(anyhow!("mailbox parent not found: {p}")),
             Err(mds::Error::ContainerAlreadyExists { .. }) => {
                 Err(anyhow!("mailbox already exists: {name}"))
             }
@@ -2473,9 +2467,7 @@ impl MailStore for SqliteMailStore {
             tx.rename_container(&id, new_parent.as_ref(), new_name)
         }) {
             Ok(()) => Ok(()),
-            Err(mds::Error::SetNotFound(_)) => {
-                Err(anyhow!("mailbox not found: {id}", id = id.0))
-            }
+            Err(mds::Error::SetNotFound(_)) => Err(anyhow!("mailbox not found: {id}", id = id.0)),
             // `rename_container_in_tx` surfaces both "source missing"
             // and "new_parent missing" as `ContainerNotFound`. The
             // missing id distinguishes them. Source-id wins on
@@ -2657,9 +2649,7 @@ impl MailStore for SqliteMailStore {
             Ok(())
         }) {
             Ok(()) => Ok(()),
-            Err(mds::Error::SetNotFound(_)) => {
-                Err(anyhow!("mailbox not found: {id}", id = id.0))
-            }
+            Err(mds::Error::SetNotFound(_)) => Err(anyhow!("mailbox not found: {id}", id = id.0)),
             Err(mds::Error::ContainerNotFound(missing)) => {
                 Err(anyhow!("mailbox not found: {missing}"))
             }
@@ -2778,10 +2768,8 @@ impl MailStore for SqliteMailStore {
             //  §"Trait
             // surface change").
             if attrs_change_requested {
-                let mut attrs: ContainerAttrs =
-                    serde_json::from_str(&cur_attrs_raw).map_err(|e| {
-                        mds::Error::Other(format!("decode container attrs: {e}"))
-                    })?;
+                let mut attrs: ContainerAttrs = serde_json::from_str(&cur_attrs_raw)
+                    .map_err(|e| mds::Error::Other(format!("decode container attrs: {e}")))?;
                 if let Some(r_opt) = role {
                     attrs.special_use = r_opt.map(|r| r.as_special_use().to_string());
                 }
@@ -2813,9 +2801,7 @@ impl MailStore for SqliteMailStore {
             Ok(())
         }) {
             Ok(()) => Ok(()),
-            Err(mds::Error::SetNotFound(_)) => {
-                Err(anyhow!("mailbox not found: {id}", id = id.0))
-            }
+            Err(mds::Error::SetNotFound(_)) => Err(anyhow!("mailbox not found: {id}", id = id.0)),
             Err(mds::Error::ContainerNotFound(missing)) => {
                 // `rename_container_in_tx` surfaces both source-missing
                 // and parent-missing as ContainerNotFound. Disambiguate
@@ -3169,9 +3155,7 @@ impl MailStore for SqliteMailStore {
             Err(mds::Error::SetNotFound(_)) => Err(anyhow!(
                 "mailbox not found: account {account} unprovisioned"
             )),
-            Err(mds::Error::Other(s)) if s.starts_with("mailbox not found") => {
-                Err(anyhow!(s))
-            }
+            Err(mds::Error::Other(s)) if s.starts_with("mailbox not found") => Err(anyhow!(s)),
             Err(other) => Err(anyhow!(other)),
         }
     }
@@ -3196,8 +3180,7 @@ impl MailStore for SqliteMailStore {
         // surfaces the error rather than masquerading as zero rows.
         match self.mds.container_status(&set, &mailbox) {
             Ok(_) => {}
-            Err(mds::Error::SetNotFound(_))
-            | Err(mds::Error::ContainerNotFound(_)) => {
+            Err(mds::Error::SetNotFound(_)) | Err(mds::Error::ContainerNotFound(_)) => {
                 return Err(anyhow!("mailbox not found: {id}", id = mailbox.0));
             }
             Err(e) => return Err(anyhow!(e)),
@@ -3397,8 +3380,7 @@ impl MailStore for SqliteMailStore {
         if let Some(mb) = filter.in_mailbox {
             match self.mds.container_status(&set, &mb) {
                 Ok(_) => {}
-                Err(mds::Error::SetNotFound(_))
-                | Err(mds::Error::ContainerNotFound(_)) => {
+                Err(mds::Error::SetNotFound(_)) | Err(mds::Error::ContainerNotFound(_)) => {
                     return Err(anyhow!("mailbox not found: {id}", id = mb.0));
                 }
                 Err(e) => return Err(anyhow!(e)),
@@ -3467,8 +3449,7 @@ impl MailStore for SqliteMailStore {
                     .map_err(|e| mds::Error::Other(format!("query email page: {e}")))?;
                 let mut ids = Vec::new();
                 for row in rows {
-                    let s =
-                        row.map_err(|e| mds::Error::Other(format!("row email page: {e}")))?;
+                    let s = row.map_err(|e| mds::Error::Other(format!("row email page: {e}")))?;
                     let uuid = uuid::Uuid::parse_str(&s)
                         .map_err(|e| mds::Error::Other(format!("item id {s:?}: {e}")))?;
                     ids.push(ItemId(uuid));
@@ -3545,9 +3526,7 @@ impl MailStore for SqliteMailStore {
                             },
                         )
                         .optional()
-                        .map_err(|e| {
-                            mds::Error::Other(format!("read mail_envelopes: {e}"))
-                        })?;
+                        .map_err(|e| mds::Error::Other(format!("read mail_envelopes: {e}")))?;
                     let (
                         from,
                         to_json,
@@ -3703,20 +3682,19 @@ impl MailStore for SqliteMailStore {
             // `add_staging_item` takes the size as input — the
             // primitive itself does not stat the file.
             let blob_size = mds.blob_size(&blob).map_err(|e| match e {
-                mds::Error::BlobNotFound(_) => {
-                    mds::Error::BlobNotFound(blob::hex(&blob))
-                }
+                mds::Error::BlobNotFound(_) => mds::Error::BlobNotFound(blob::hex(&blob)),
                 other => other,
             })?;
 
-            let (item_id, placement) =
-                tx.add_staging_item(&mailbox, &blob, blob_size, initial_keywords, &initial_tags)
-                    .map_err(|e| match e {
-                        mds::Error::ContainerNotFound(_) => mds::Error::Other(
-                            format!("mailbox not found: {mailbox}", mailbox = mailbox.0),
-                        ),
-                        other => other,
-                    })?;
+            let (item_id, placement) = tx
+                .add_staging_item(&mailbox, &blob, blob_size, initial_keywords, &initial_tags)
+                .map_err(|e| match e {
+                    mds::Error::ContainerNotFound(_) => mds::Error::Other(format!(
+                        "mailbox not found: {mailbox}",
+                        mailbox = mailbox.0
+                    )),
+                    other => other,
+                })?;
 
             // Defensive re-stat after `add_staging_item`. If a GC Pass
             // 2 ran between our entry and `add_blob_ref_in_tx`, it
@@ -3865,9 +3843,7 @@ impl MailStore for SqliteMailStore {
             Err(mds::Error::SetNotFound(_)) => {
                 Err(anyhow!("mailbox not found: {mailbox}", mailbox = mailbox.0))
             }
-            Err(mds::Error::Other(s)) if s.starts_with("mailbox not found") => {
-                Err(anyhow!(s))
-            }
+            Err(mds::Error::Other(s)) if s.starts_with("mailbox not found") => Err(anyhow!(s)),
             Err(other) => Err(anyhow!(other)),
         }
     }
@@ -3933,9 +3909,7 @@ impl MailStore for SqliteMailStore {
             // below), then re-stat after the writes to catch the case
             // where Pass 2 ran in the gap.
             let blob_size = mds.blob_size(&blob).map_err(|e| match e {
-                mds::Error::BlobNotFound(_) => {
-                    mds::Error::BlobNotFound(blob::hex(&blob))
-                }
+                mds::Error::BlobNotFound(_) => mds::Error::BlobNotFound(blob::hex(&blob)),
                 other => other,
             })?;
 
@@ -4082,9 +4056,7 @@ impl MailStore for SqliteMailStore {
                 // non-empty above so [0] is safe.
                 Err(anyhow!("mailbox not found: {cid}", cid = mailboxes[0].0))
             }
-            Err(mds::Error::Other(s)) if s.starts_with("mailbox not found") => {
-                Err(anyhow!(s))
-            }
+            Err(mds::Error::Other(s)) if s.starts_with("mailbox not found") => Err(anyhow!(s)),
             Err(other) => Err(anyhow!(other)),
         }
     }
@@ -4147,9 +4119,7 @@ impl MailStore for SqliteMailStore {
 
         match result {
             Ok(uids) => Ok(uids),
-            Err(mds::Error::SetNotFound(_)) => {
-                Err(anyhow!("email not found: {id}", id = id.0))
-            }
+            Err(mds::Error::SetNotFound(_)) => Err(anyhow!("email not found: {id}", id = id.0)),
             Err(mds::Error::Other(s))
                 if s.starts_with("email not found")
                     || s.starts_with("mailbox not found")
@@ -4242,31 +4212,30 @@ impl MailStore for SqliteMailStore {
         bits: Flags,
     ) -> Result<Flags> {
         let set = account_id_to_setid(account);
-        let result: std::result::Result<Flags, mds::Error> =
-            self.mds.with_set_tx(&set, |tx| {
-                // Read-modify-write under the per-set transaction so
-                // any peer session's intervening STORE is honoured
-                // rather than clobbered.
-                let memberships = tx.item_memberships(&id)?;
-                let cur = memberships
-                    .iter()
-                    .find(|(m, _, _)| *m == mailbox)
-                    .map(|(_, f, _)| *f)
-                    .ok_or_else(|| {
-                        mds::Error::Other(format!(
-                            "membership {id}/{mb} not present",
-                            id = id.0,
-                            mb = mailbox.0
-                        ))
-                    })?;
-                let merged = Flags(cur.0 | bits.0);
-                if merged == cur {
-                    // Idempotent no-op — skip the notifier wakeup.
-                    return Ok(cur);
-                }
-                tx.store_flags(&id, &mailbox, merged)?;
-                Ok(merged)
-            });
+        let result: std::result::Result<Flags, mds::Error> = self.mds.with_set_tx(&set, |tx| {
+            // Read-modify-write under the per-set transaction so
+            // any peer session's intervening STORE is honoured
+            // rather than clobbered.
+            let memberships = tx.item_memberships(&id)?;
+            let cur = memberships
+                .iter()
+                .find(|(m, _, _)| *m == mailbox)
+                .map(|(_, f, _)| *f)
+                .ok_or_else(|| {
+                    mds::Error::Other(format!(
+                        "membership {id}/{mb} not present",
+                        id = id.0,
+                        mb = mailbox.0
+                    ))
+                })?;
+            let merged = Flags(cur.0 | bits.0);
+            if merged == cur {
+                // Idempotent no-op — skip the notifier wakeup.
+                return Ok(cur);
+            }
+            tx.store_flags(&id, &mailbox, merged)?;
+            Ok(merged)
+        });
 
         match result {
             Ok(f) => Ok(f),
@@ -4470,9 +4439,7 @@ impl MailStore for SqliteMailStore {
                         |r| Ok((r.get::<_, i64>(0)? as u64, r.get::<_, i64>(1)? as u64)),
                     )
                     .optional()
-                    .map_err(|e| {
-                        mds::Error::Other(format!("read set_state head/floor: {e}"))
-                    })?
+                    .map_err(|e| mds::Error::Other(format!("read set_state head/floor: {e}")))?
                     .unwrap_or((0, 0));
                 if since_state > head {
                     return Err(mds::Error::Other(format!(
@@ -4507,9 +4474,7 @@ impl MailStore for SqliteMailStore {
                         |r| r.get::<_, String>(0),
                     )
                     .optional()
-                    .map_err(|e| {
-                        mds::Error::Other(format!("staging container lookup: {e}"))
-                    })?
+                    .map_err(|e| mds::Error::Other(format!("staging container lookup: {e}")))?
                     .and_then(|s| Uuid::parse_str(&s).ok())
                     .map(ContainerId);
 
@@ -4670,9 +4635,7 @@ impl MailStore for SqliteMailStore {
                     |r| r.get(0),
                 )
                 .optional()
-                .map_err(|e| {
-                    mds::Error::Other(format!("read container_change_set head: {e}"))
-                })?
+                .map_err(|e| mds::Error::Other(format!("read container_change_set head: {e}")))?
                 .flatten();
             // Pull the lifecycle floor alongside the set_change head;
             // after `prune_changelog(ContainerChangeSet, 0)` deletes
@@ -5096,9 +5059,7 @@ impl MailStore for SqliteMailStore {
             // valid first-sync call and returns an empty delta. Any
             // non-zero half against an unprovisioned set is a
             // future-state error.
-            Err(mds::Error::SetNotFound(_))
-                if since_lifecycle == 0 && since_set_change == 0 =>
-            {
+            Err(mds::Error::SetNotFound(_)) if since_lifecycle == 0 && since_set_change == 0 => {
                 Ok(MailboxChangeSet {
                     new_state: "0:0".to_string(),
                     has_more_changes: false,
@@ -5131,31 +5092,31 @@ impl MailStore for SqliteMailStore {
 
     fn list_thread(&self, account: AccountId, thread_id: ThreadId) -> Result<Vec<ItemId>> {
         let set = account_id_to_setid(account);
-        let result = self.mds.with_set_tx(
-            &set,
-            |tx| -> std::result::Result<Vec<ItemId>, mds::Error> {
-                // LEFT JOIN `mail_envelopes` so items predating 's
-                // create_email (no envelope row) still surface. The
-                // `CASE WHEN e.date_ts IS NULL THEN 1 ELSE 0 END` guard
-                // partitions the result into two ordered buckets — bucket 0
-                // for envelope-bearing rows (sort by `date_ts`), bucket 1
-                // for bare items (sort by `received_at`). The two columns
-                // are never compared against each other, so the unit
-                // mismatch between `date_ts` (seconds) and `received_at`
-                // (milliseconds) is irrelevant to correctness. Tie-break on
-                // `item.id` (TEXT) to keep the order deterministic across
-                // identical timestamps within a bucket. The INNER JOIN on
-                // `item` is load-bearing for the `i.received_at` ordering
-                // and the `i.id` tie-break. As of v1.8 it no longer
-                // *filters* any row: `mail_threads.item_id` carries
-                // `REFERENCES item(id) ON DELETE CASCADE`, so dangling rows
-                // are reaped on item delete rather than skipped here. The
-                // `#[cfg(debug_assertions)]` probe below pins that
-                // invariant — the joined result must equal the raw count.
-                let mut stmt = tx
-                    .tx()
-                    .prepare(
-                        "SELECT mt.item_id \
+        let result =
+            self.mds
+                .with_set_tx(&set, |tx| -> std::result::Result<Vec<ItemId>, mds::Error> {
+                    // LEFT JOIN `mail_envelopes` so items predating 's
+                    // create_email (no envelope row) still surface. The
+                    // `CASE WHEN e.date_ts IS NULL THEN 1 ELSE 0 END` guard
+                    // partitions the result into two ordered buckets — bucket 0
+                    // for envelope-bearing rows (sort by `date_ts`), bucket 1
+                    // for bare items (sort by `received_at`). The two columns
+                    // are never compared against each other, so the unit
+                    // mismatch between `date_ts` (seconds) and `received_at`
+                    // (milliseconds) is irrelevant to correctness. Tie-break on
+                    // `item.id` (TEXT) to keep the order deterministic across
+                    // identical timestamps within a bucket. The INNER JOIN on
+                    // `item` is load-bearing for the `i.received_at` ordering
+                    // and the `i.id` tie-break. As of v1.8 it no longer
+                    // *filters* any row: `mail_threads.item_id` carries
+                    // `REFERENCES item(id) ON DELETE CASCADE`, so dangling rows
+                    // are reaped on item delete rather than skipped here. The
+                    // `#[cfg(debug_assertions)]` probe below pins that
+                    // invariant — the joined result must equal the raw count.
+                    let mut stmt = tx
+                        .tx()
+                        .prepare(
+                            "SELECT mt.item_id \
                      FROM mail_threads mt \
                      JOIN item i ON i.id = mt.item_id \
                      LEFT JOIN mail_envelopes e ON e.item_id = mt.item_id \
@@ -5165,46 +5126,43 @@ impl MailStore for SqliteMailStore {
                          e.date_ts ASC, \
                          i.received_at ASC, \
                          i.id ASC",
-                    )
-                    .map_err(|e| mds::Error::Other(format!("prepare list_thread: {e}")))?;
-                let rows = stmt
-                    .query_map(params![account, thread_id.0], |r| r.get::<_, String>(0))
-                    .map_err(|e| mds::Error::Other(format!("query list_thread: {e}")))?;
-                let mut out = Vec::new();
-                for row in rows {
-                    let s =
-                        row.map_err(|e| mds::Error::Other(format!("row list_thread: {e}")))?;
-                    let uuid = Uuid::parse_str(&s).map_err(|e| {
-                        mds::Error::Other(format!("invalid item_id in mail_threads: {e}"))
-                    })?;
-                    out.push(ItemId(uuid));
-                }
-                #[cfg(debug_assertions)]
-                {
-                    // Post-v1.8 invariant: the FK cascade reaps dangling
-                    // `mail_threads` rows on item delete, so the `JOIN item`
-                    // above must drop nothing — the raw row count for this
-                    // (account, thread) equals the joined result length.
-                    let raw: i64 = tx
-                        .tx()
-                        .query_row(
-                            "SELECT COUNT(*) FROM mail_threads \
-                         WHERE account_id = ?1 AND thread_id = ?2",
-                            params![account, thread_id.0],
-                            |r| r.get(0),
                         )
-                        .map_err(|e| {
-                            mds::Error::Other(format!("count mail_threads: {e}"))
+                        .map_err(|e| mds::Error::Other(format!("prepare list_thread: {e}")))?;
+                    let rows = stmt
+                        .query_map(params![account, thread_id.0], |r| r.get::<_, String>(0))
+                        .map_err(|e| mds::Error::Other(format!("query list_thread: {e}")))?;
+                    let mut out = Vec::new();
+                    for row in rows {
+                        let s =
+                            row.map_err(|e| mds::Error::Other(format!("row list_thread: {e}")))?;
+                        let uuid = Uuid::parse_str(&s).map_err(|e| {
+                            mds::Error::Other(format!("invalid item_id in mail_threads: {e}"))
                         })?;
-                    debug_assert_eq!(
-                        raw as usize,
-                        out.len(),
-                        "mail_threads dangling rows after v1.8 cascade"
-                    );
-                }
-                Ok(out)
-            },
-        );
+                        out.push(ItemId(uuid));
+                    }
+                    #[cfg(debug_assertions)]
+                    {
+                        // Post-v1.8 invariant: the FK cascade reaps dangling
+                        // `mail_threads` rows on item delete, so the `JOIN item`
+                        // above must drop nothing — the raw row count for this
+                        // (account, thread) equals the joined result length.
+                        let raw: i64 = tx
+                            .tx()
+                            .query_row(
+                                "SELECT COUNT(*) FROM mail_threads \
+                         WHERE account_id = ?1 AND thread_id = ?2",
+                                params![account, thread_id.0],
+                                |r| r.get(0),
+                            )
+                            .map_err(|e| mds::Error::Other(format!("count mail_threads: {e}")))?;
+                        debug_assert_eq!(
+                            raw as usize,
+                            out.len(),
+                            "mail_threads dangling rows after v1.8 cascade"
+                        );
+                    }
+                    Ok(out)
+                });
 
         match result {
             Ok(items) => Ok(items),
@@ -5249,8 +5207,7 @@ impl MailStore for SqliteMailStore {
                     .map_err(|e| mds::Error::Other(format!("query list_threads: {e}")))?;
                 let mut out = Vec::new();
                 for row in rows {
-                    let s = row
-                        .map_err(|e| mds::Error::Other(format!("row list_threads: {e}")))?;
+                    let s = row.map_err(|e| mds::Error::Other(format!("row list_threads: {e}")))?;
                     out.push(ThreadId(s));
                 }
                 Ok(out)
@@ -5287,8 +5244,7 @@ impl MailStore for SqliteMailStore {
         // other mailbox-parametric MailStore method.
         match self.mds.subscribe_existing(&set, &mailbox) {
             Ok(rx) => Ok(rx),
-            Err(mds::Error::SetNotFound(_))
-            | Err(mds::Error::ContainerNotFound(_)) => {
+            Err(mds::Error::SetNotFound(_)) | Err(mds::Error::ContainerNotFound(_)) => {
                 Err(anyhow!("mailbox not found: {id}", id = mailbox.0))
             }
             Err(e) => Err(anyhow!(e)),
@@ -5485,22 +5441,17 @@ fn collect_aged_items_in_container(
              WHERE container_id = ?1 AND added_at < ?2 \
              ORDER BY added_at ASC, item_id LIMIT ?3",
         )
-        .map_err(|e| {
-            mds::Error::Other(format!("prepare collect_aged_items_in_container: {e}"))
-        })?;
+        .map_err(|e| mds::Error::Other(format!("prepare collect_aged_items_in_container: {e}")))?;
     let rows = stmt
         .query_map(
             params![container.0.to_string(), cutoff_ms, limit as i64],
             |row| row.get::<_, String>(0),
         )
-        .map_err(|e| {
-            mds::Error::Other(format!("query collect_aged_items_in_container: {e}"))
-        })?;
+        .map_err(|e| mds::Error::Other(format!("query collect_aged_items_in_container: {e}")))?;
     let mut out = Vec::new();
     for r in rows {
-        let s = r.map_err(|e| {
-            mds::Error::Other(format!("row collect_aged_items_in_container: {e}"))
-        })?;
+        let s =
+            r.map_err(|e| mds::Error::Other(format!("row collect_aged_items_in_container: {e}")))?;
         let uuid = Uuid::parse_str(&s).map_err(|e| {
             mds::Error::Other(format!("membership.item_id {s:?} is not a UUID: {e}"))
         })?;
@@ -5520,9 +5471,7 @@ fn collect_items_in_container(
 ) -> std::result::Result<Vec<ItemId>, mds::Error> {
     let mut stmt = tx
         .prepare("SELECT item_id FROM membership WHERE container_id = ?1")
-        .map_err(|e| {
-            mds::Error::Other(format!("prepare collect_items_in_container: {e}"))
-        })?;
+        .map_err(|e| mds::Error::Other(format!("prepare collect_items_in_container: {e}")))?;
     let rows = stmt
         .query_map(params![container.0.to_string()], |row| {
             row.get::<_, String>(0)
@@ -5530,9 +5479,7 @@ fn collect_items_in_container(
         .map_err(|e| mds::Error::Other(format!("query collect_items_in_container: {e}")))?;
     let mut out = Vec::new();
     for r in rows {
-        let s = r.map_err(|e| {
-            mds::Error::Other(format!("row collect_items_in_container: {e}"))
-        })?;
+        let s = r.map_err(|e| mds::Error::Other(format!("row collect_items_in_container: {e}")))?;
         let uuid = Uuid::parse_str(&s).map_err(|e| {
             mds::Error::Other(format!("membership.item_id {s:?} is not a UUID: {e}"))
         })?;
@@ -5611,8 +5558,7 @@ fn lookup_special_use_container(
             )));
         }
     };
-    let uuid = Uuid::parse_str(&id_str).map_err(|e| {
-        mds::Error::Other(format!("container.id {id_str:?} is not a UUID: {e}"))
-    })?;
+    let uuid = Uuid::parse_str(&id_str)
+        .map_err(|e| mds::Error::Other(format!("container.id {id_str:?} is not a UUID: {e}")))?;
     Ok(Some(ContainerId(uuid)))
 }

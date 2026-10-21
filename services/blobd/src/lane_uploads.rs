@@ -348,12 +348,18 @@ mod tests {
     fn names_decode_rfc3986_and_reject_controls_and_bad_utf8() {
         let mut h = HeaderMap::new();
         h.insert("x-mixos-name", "caf%C3%A9+%20100%25.txt".parse().unwrap());
-        assert_eq!(string_header(&h, "x-mixos-name").unwrap().as_deref(), Some("café+ 100%.txt"));
+        assert_eq!(
+            string_header(&h, "x-mixos-name").unwrap().as_deref(),
+            Some("café+ 100%.txt")
+        );
         for value in ["%", "%GG", "%FF", "%00", "%0A", "%7F", "%C2%85"] {
             h.insert("x-mixos-name", value.parse().unwrap());
             assert!(string_header(&h, "x-mixos-name").is_err(), "{value}");
         }
-        h.insert("x-mixos-mime", axum::http::HeaderValue::from_bytes("text/café".as_bytes()).unwrap());
+        h.insert(
+            "x-mixos-mime",
+            axum::http::HeaderValue::from_bytes("text/café".as_bytes()).unwrap(),
+        );
         assert!(string_header(&h, "x-mixos-mime").is_err());
     }
 
@@ -363,23 +369,54 @@ mod tests {
         let client = reqwest::Client::new();
         let name = "café+ 100%.txt";
         let encoded = encoded_name(name);
-        let response = client.post(format!("http://{addr}/blob")).header("X-Mixos-Name", &encoded).body("v1").send().await.unwrap();
+        let response = client
+            .post(format!("http://{addr}/blob"))
+            .header("X-Mixos-Name", &encoded)
+            .body("v1")
+            .send()
+            .await
+            .unwrap();
         assert_eq!(response.status(), 201);
-        assert_eq!(response.json::<serde_json::Value>().await.unwrap()["name"], name);
+        assert_eq!(
+            response.json::<serde_json::Value>().await.unwrap()["name"],
+            name
+        );
         let base = format!("http://{addr}/blob/uploads");
-        let response = client.post(&base).header("X-Mixos-Owner", "tester").header("X-Mixos-Size", "0").header("X-Mixos-Name", &encoded).send().await.unwrap();
+        let response = client
+            .post(&base)
+            .header("X-Mixos-Owner", "tester")
+            .header("X-Mixos-Size", "0")
+            .header("X-Mixos-Name", &encoded)
+            .send()
+            .await
+            .unwrap();
         assert_eq!(response.status(), 201);
         let session: serde_json::Value = response.json().await.unwrap();
         assert_eq!(session["name"], name);
         let id = session["upload"].as_str().unwrap();
         let head = client.head(format!("{base}/{id}")).send().await.unwrap();
         assert_eq!(head.headers()["x-mixos-name"], encoded);
-        let committed = client.post(format!("{base}/{id}/commit")).send().await.unwrap();
+        let committed = client
+            .post(format!("{base}/{id}/commit"))
+            .send()
+            .await
+            .unwrap();
         assert_eq!(committed.status(), 201);
-        assert_eq!(committed.json::<serde_json::Value>().await.unwrap()["name"], name);
+        assert_eq!(
+            committed.json::<serde_json::Value>().await.unwrap()["name"],
+            name
+        );
         assert_eq!(store.upload_status(id).unwrap().name.as_deref(), Some(name));
         for route in [format!("http://{addr}/blob"), base] {
-            let response = client.post(route).header("X-Mixos-Owner", "tester").header("X-Mixos-Size", "0").header("X-Mixos-Name", "%0A").body("").send().await.unwrap();
+            let response = client
+                .post(route)
+                .header("X-Mixos-Owner", "tester")
+                .header("X-Mixos-Size", "0")
+                .header("X-Mixos-Name", "%0A")
+                .body("")
+                .send()
+                .await
+                .unwrap();
             assert_eq!(response.status(), 400);
         }
     }
@@ -476,7 +513,11 @@ mod tests {
         let (_dir, _store, addr) = test_lane(options()).await;
         let client = reqwest::Client::new();
         let base = format!("http://{addr}/blob/uploads");
-        for url in [base.clone(), format!("{base}/00000000-0000-0000-0000-000000000001"), format!("{base}/00000000-0000-0000-0000-000000000001/commit")] {
+        for url in [
+            base.clone(),
+            format!("{base}/00000000-0000-0000-0000-000000000001"),
+            format!("{base}/00000000-0000-0000-0000-000000000001/commit"),
+        ] {
             let response = client.get(url).send().await.unwrap();
             assert_eq!(response.status(), 405);
             assert_eq!(response.headers()["cache-control"], "no-store");

@@ -44,14 +44,14 @@ use std::collections::{BTreeMap, HashMap};
 use std::net::SocketAddr;
 use std::time::Duration;
 
-use anyhow::{Result, anyhow};
-use maild::config::{Config, DkimDomainConfig, DkimSubsection, ListenSpec, TlsConfig};
-use maild::runtime::{BuiltMaild, RuntimeOpts, build_runtime};
-use mds::Mds;
 use ::props::record::{Actor, RecordKey, Version};
 use ::props::runtime::SetOpts;
 use ::props::store::MergeMode;
 use ::props::value::PropValue;
+use anyhow::{Result, anyhow};
+use maild::config::{Config, DkimDomainConfig, DkimSubsection, ListenSpec, TlsConfig};
+use maild::runtime::{BuiltMaild, RuntimeOpts, build_runtime};
+use mds::Mds;
 use tempfile::TempDir;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
@@ -487,10 +487,7 @@ async fn seed_domain_row(built: &BuiltMaild, domain: &str, helo_identity: &str) 
         "helo_identity".into(),
         PropValue::String(helo_identity.into()),
     );
-    let key = RecordKey::collection(
-        maild::props::domains::namespace_name(),
-        domain.to_string(),
-    );
+    let key = RecordKey::collection(maild::props::domains::namespace_name(), domain.to_string());
     built
         .app_state
         .domains_runtime

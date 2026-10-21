@@ -36,10 +36,10 @@ use super::config::Config;
 use super::mime;
 use super::reference::Reference;
 
-#[path = "uploads.rs"]
-mod uploads;
 #[path = "ingest.rs"]
 mod ingest;
+#[path = "uploads.rs"]
+mod uploads;
 pub use uploads::{UploadCreate, UploadLimits, UploadSession};
 
 /// Name of the exclusive instance lock inside the mds root.
@@ -645,7 +645,12 @@ impl Store {
         self.put_after_canonical(src, opts, |_| {})
     }
 
-    fn put_after_canonical(&self, src: &Path, opts: &PutOptions<'_>, after_canonical: impl FnOnce(&Path)) -> Result<PutOutcome> {
+    fn put_after_canonical(
+        &self,
+        src: &Path,
+        opts: &PutOptions<'_>,
+        after_canonical: impl FnOnce(&Path),
+    ) -> Result<PutOutcome> {
         let (mut file, _resolved) = self.ingest_root.source(src, after_canonical)?;
         if opts.mode == PutMode::HardLink && !opts.immutable {
             return Err(StoreError::BadRequest(
@@ -905,7 +910,12 @@ impl Store {
                 .optional()
                 .map_err(db_err)?
         };
-        let (mime, origin, first_put, name): (Option<String>, Option<String>, Option<i64>, Option<String>) = self
+        let (mime, origin, first_put, name): (
+            Option<String>,
+            Option<String>,
+            Option<i64>,
+            Option<String>,
+        ) = self
             .db
             .lock()
             .unwrap()
@@ -1562,7 +1572,15 @@ fn pin_with_cap(
     total_limit: u64,
     reserved: &BTreeMap<String, u64>,
 ) -> Result<bool> {
-    if !check_pin_capacity(tx, hash_hex, owner, size, owner_limit, total_limit, reserved)? {
+    if !check_pin_capacity(
+        tx,
+        hash_hex,
+        owner,
+        size,
+        owner_limit,
+        total_limit,
+        reserved,
+    )? {
         return Ok(false);
     }
     let sql_size = sql_int(size)?;
@@ -2757,10 +2775,21 @@ mod tests {
         }
         apply_blobd_migrations(&mut conn).unwrap();
         for id in ["active", "committing", "complete"] {
-            let (state, dev, ino): (String, Option<String>, Option<String>) = conn.query_row(
-                "SELECT state,staging_dev,staging_ino FROM upload_sessions WHERE id=?1", [id], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?)),
-            ).unwrap();
-            assert_eq!(state, if id == "complete" { "complete" } else { "failed" });
+            let (state, dev, ino): (String, Option<String>, Option<String>) = conn
+                .query_row(
+                    "SELECT state,staging_dev,staging_ino FROM upload_sessions WHERE id=?1",
+                    [id],
+                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+                )
+                .unwrap();
+            assert_eq!(
+                state,
+                if id == "complete" {
+                    "complete"
+                } else {
+                    "failed"
+                }
+            );
             assert!(dev.is_none() && ino.is_none());
         }
     }
@@ -2773,7 +2802,10 @@ mod tests {
         std::os::unix::fs::symlink(&target, &alias).unwrap();
         let outcome = store.put(&alias, &PutOptions::new("tester")).unwrap();
         assert_eq!(outcome.reference.mime, "application/pdf");
-        assert_eq!(blob::get(&store.blobs_root(), &outcome.reference.hash).unwrap(), b"PDF bytes");
+        assert_eq!(
+            blob::get(&store.blobs_root(), &outcome.reference.hash).unwrap(),
+            b"PDF bytes"
+        );
     }
 
     #[test]
@@ -2784,12 +2816,20 @@ mod tests {
         fs::write(&staging, b"staged").unwrap();
         let alias = dir.path().join("root-alias");
         std::os::unix::fs::symlink(store.root(), &alias).unwrap();
-        for source in [store.root().join("blobd.sqlite"), staging, blob::blob_path(&store.blobs_root(), &hash), alias.join("blobd.sqlite")] {
+        for source in [
+            store.root().join("blobd.sqlite"),
+            staging,
+            blob::blob_path(&store.blobs_root(), &hash),
+            alias.join("blobd.sqlite"),
+        ] {
             for mode in [PutMode::Copy, PutMode::Reflink, PutMode::HardLink] {
                 let mut opts = PutOptions::new("tester");
                 opts.mode = mode;
                 opts.immutable = true;
-                assert!(matches!(store.put(&source, &opts), Err(StoreError::SourceInsideStore)));
+                assert!(matches!(
+                    store.put(&source, &opts),
+                    Err(StoreError::SourceInsideStore)
+                ));
             }
         }
     }

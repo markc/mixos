@@ -28,9 +28,6 @@
 
 use std::sync::{Arc, OnceLock};
 
-use anyhow::{Context, Result};
-use maild_rules::AccountOverrides;
-use maild_rules::glob_match::validate_sender_glob;
 use ::props::bus::mutation::PropsRouter;
 use ::props::capability::{Capability, CapabilitySet};
 use ::props::hooks::{HookCtx, HookError, HookFuture, HookHandler, Hooks};
@@ -43,6 +40,9 @@ use ::props::runtime::Runtime;
 use ::props::sqlite::{JsonValuesMapping, SqliteStore};
 use ::props::store::StoreError;
 use ::props::value::PropValue;
+use anyhow::{Context, Result};
+use maild_rules::AccountOverrides;
+use maild_rules::glob_match::validate_sender_glob;
 
 /// Unqualified namespace name; fully qualified is `maild.account_overrides`.
 pub const NAMESPACE: &str = "account_overrides";

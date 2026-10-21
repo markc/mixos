@@ -62,8 +62,6 @@ use std::collections::BTreeMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, OnceLock};
 
-use anyhow::{Context, Result};
-use maild_rules::{DefaultRuleEngine, EngineConfig, MailAuthHardFailKind};
 use ::props::bus::mutation::PropsRouter;
 use ::props::capability::{Capability, CapabilitySet};
 use ::props::hooks::{HookCtx, HookError, HookFuture, HookHandler, Hooks};
@@ -76,6 +74,8 @@ use ::props::runtime::Runtime;
 use ::props::sqlite::{JsonValuesMapping, SqliteStore};
 use ::props::store::{MergeMode, PropertyStore, StoreError};
 use ::props::value::PropValue;
+use anyhow::{Context, Result};
+use maild_rules::{DefaultRuleEngine, EngineConfig, MailAuthHardFailKind};
 use tokio::sync::Mutex;
 
 /// Unqualified namespace name; fully qualified is `maild.engine_config`.
@@ -1799,8 +1799,8 @@ mod tests {
 
     // ── integration: after_set → engine.set_config wiring ──────
 
-    use maild_rules::DefaultRuleEngine;
     use ::props::runtime::SetOpts;
+    use maild_rules::DefaultRuleEngine;
 
     /// Build a registered engine_config runtime + the live engine the
     /// after_set hook reconfigures. Returned tuple: (runtime, engine).

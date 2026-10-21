@@ -109,10 +109,7 @@ pub fn sweep_blocking(mds: &SqliteCasMds, now: i64) -> Result<u64> {
     Ok(total)
 }
 
-fn sweep_set(
-    tx: &mut mds::SqliteSetTx<'_>,
-    now: i64,
-) -> std::result::Result<u64, mds::Error> {
+fn sweep_set(tx: &mut mds::SqliteSetTx<'_>, now: i64) -> std::result::Result<u64, mds::Error> {
     let expired: Vec<(String, Option<String>)> = {
         let mut stmt = tx
             .tx()
@@ -172,9 +169,7 @@ fn sweep_set(
 
             if let Some(c) = container_str {
                 let c_uuid = uuid::Uuid::parse_str(&c).map_err(|e| {
-                    mds::Error::Other(format!(
-                        "membership.container_id {c:?} not a UUID: {e}"
-                    ))
+                    mds::Error::Other(format!("membership.container_id {c:?} not a UUID: {e}"))
                 })?;
                 tx.remove_membership(&item_id, &ContainerId(c_uuid))?;
             }

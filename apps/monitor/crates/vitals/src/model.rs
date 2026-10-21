@@ -359,7 +359,8 @@ mod tests {
         assert_eq!(s.host, "alpha");
         assert_eq!(s.cpu.per_core[0].mhz, None);
         assert!(s.load.is_none());
-        let p: Process = serde_json::from_value(json!({"pid": 7, "read_bps": null, "write_bps": 4.0})).unwrap();
+        let p: Process =
+            serde_json::from_value(json!({"pid": 7, "read_bps": null, "write_bps": 4.0})).unwrap();
         assert_eq!(p.io(), Some(4.0));
         assert_eq!(Process::default().io(), None);
     }
@@ -367,7 +368,9 @@ mod tests {
     #[test]
     fn peers_leave_out_this_node_and_bad_names() {
         assert_eq!(
-            peers(&json!({"node":"alpha","peers":[{"name":"alpha"},{"name":"beta"},{"name":"bad.name"}]})),
+            peers(
+                &json!({"node":"alpha","peers":[{"name":"alpha"},{"name":"beta"},{"name":"bad.name"}]})
+            ),
             vec!["beta"]
         );
     }
@@ -375,11 +378,20 @@ mod tests {
     #[test]
     fn sections_follow_the_snapshot() {
         let s = Snapshot {
-            disks: vec![Disk { name: "sda".into(), ..Disk::default() }],
-            net: vec![Interface { name: "eth0".into(), ..Interface::default() }],
+            disks: vec![Disk {
+                name: "sda".into(),
+                ..Disk::default()
+            }],
+            net: vec![Interface {
+                name: "eth0".into(),
+                ..Interface::default()
+            }],
             ..Snapshot::default()
         };
-        assert_eq!(sections(Some(&s)), ["cpu", "memory", "disk:sda", "net:eth0"]);
+        assert_eq!(
+            sections(Some(&s)),
+            ["cpu", "memory", "disk:sda", "net:eth0"]
+        );
         assert_eq!(sections(None), ["cpu", "memory"]);
     }
 }

@@ -70,7 +70,9 @@ fn bucket(points: impl Iterator<Item = Point>, step: u64) -> Vec<Point> {
     let mut out: BTreeMap<u64, (f64, usize, f64, f64)> = BTreeMap::new();
     for [t, avg, min, max] in points {
         let key = (t as u64 / step) * step;
-        let e = out.entry(key).or_insert((0.0, 0, f64::INFINITY, f64::NEG_INFINITY));
+        let e = out
+            .entry(key)
+            .or_insert((0.0, 0, f64::INFINITY, f64::NEG_INFINITY));
         e.0 += avg;
         e.1 += 1;
         e.2 = e.2.min(min);
@@ -259,7 +261,9 @@ impl Store {
             .execute("INSERT OR IGNORE INTO series (name) VALUES (?1)", [name])?;
         let id = self
             .conn
-            .query_row("SELECT id FROM series WHERE name = ?1", [name], |r| r.get(0))?;
+            .query_row("SELECT id FROM series WHERE name = ?1", [name], |r| {
+                r.get(0)
+            })?;
         self.ids.insert(name.to_owned(), id);
         Ok(id)
     }
@@ -300,10 +304,19 @@ impl Store {
 
     /// Points of one tier (`minute` or `hour`) in `[from, to]`, in buckets
     /// of `step` seconds.
-    pub fn query(&self, tier: Tier, name: &str, from: u64, to: u64, step: u64) -> anyhow::Result<Vec<Point>> {
+    pub fn query(
+        &self,
+        tier: Tier,
+        name: &str,
+        from: u64,
+        to: u64,
+        step: u64,
+    ) -> anyhow::Result<Vec<Point>> {
         let Some(id) = self
             .conn
-            .query_row("SELECT id FROM series WHERE name = ?1", [name], |r| r.get::<_, i64>(0))
+            .query_row("SELECT id FROM series WHERE name = ?1", [name], |r| {
+                r.get::<_, i64>(0)
+            })
             .optional()?
         else {
             return Ok(Vec::new());
@@ -317,12 +330,7 @@ impl Store {
         let mut stmt = self.conn.prepare_cached(&sql)?;
         let points = stmt
             .query_map(params![id, from as i64, to as i64, step], |r| {
-                Ok([
-                    r.get::<_, i64>(0)? as f64,
-                    r.get(1)?,
-                    r.get(2)?,
-                    r.get(3)?,
-                ])
+                Ok([r.get::<_, i64>(0)? as f64, r.get(1)?, r.get(2)?, r.get(3)?])
             })?
             .collect::<Result<_, _>>()?;
         Ok(points)
@@ -419,15 +427,33 @@ mod tests {
         let mut store = Store::open(&dir.path().join("h.db"), Retention::default()).unwrap();
         let t0 = 7200.0; // an hour boundary
         store.add(t0, &[v("cpu.busy", 10.0)]).unwrap();
-        store.add(t0 + 1.0, &[v("cpu.busy", 30.0), ("cpu.core.0.busy".into(), 1.0, false)]).unwrap();
-        assert!(store.query(Tier::Minute, "cpu.busy", 0, 99_999, 60).unwrap().is_empty());
+        store
+            .add(
+                t0 + 1.0,
+                &[v("cpu.busy", 30.0), ("cpu.core.0.busy".into(), 1.0, false)],
+            )
+            .unwrap();
+        assert!(
+            store
+                .query(Tier::Minute, "cpu.busy", 0, 99_999, 60)
+                .unwrap()
+                .is_empty()
+        );
         store.add(t0 + 60.0, &[v("cpu.busy", 50.0)]).unwrap();
-        let minutes = store.query(Tier::Minute, "cpu.busy", 0, 99_999, 60).unwrap();
+        let minutes = store
+            .query(Tier::Minute, "cpu.busy", 0, 99_999, 60)
+            .unwrap();
         assert_eq!(minutes, vec![[7200.0, 20.0, 10.0, 30.0]]);
-        assert_eq!(store.names().unwrap(), vec!["cpu.busy".to_owned()], "per-core stays in memory");
+        assert_eq!(
+            store.names().unwrap(),
+            vec!["cpu.busy".to_owned()],
+            "per-core stays in memory"
+        );
         // The next hour starts: the finished one is rolled up.
         store.add(t0 + 3600.0, &[v("cpu.busy", 0.0)]).unwrap();
-        let hours = store.query(Tier::Hour, "cpu.busy", 0, 99_999, 3600).unwrap();
+        let hours = store
+            .query(Tier::Hour, "cpu.busy", 0, 99_999, 3600)
+            .unwrap();
         assert_eq!(hours, vec![[7200.0, 35.0, 10.0, 50.0]]);
     }
 

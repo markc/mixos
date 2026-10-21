@@ -1216,9 +1216,7 @@ mod tests {
         assert!(
             store
                 .finish_upload_commit_using(&s, |_, _, _| {
-                    Err(mds::Error::Io(io::Error::from_raw_os_error(
-                        libc::EIO,
-                    )))
+                    Err(mds::Error::Io(io::Error::from_raw_os_error(libc::EIO)))
                 })
                 .is_err()
         );

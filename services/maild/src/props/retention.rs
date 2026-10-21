@@ -38,7 +38,6 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use anyhow::{Context, Result};
 use ::props::bus::mutation::PropsRouter;
 use ::props::capability::{Capability, CapabilitySet};
 use ::props::hooks::{HookCtx, HookError, HookFuture, HookHandler, Hooks};
@@ -51,6 +50,7 @@ use ::props::runtime::Runtime;
 use ::props::sqlite::{JsonValuesMapping, SqliteStore};
 use ::props::store::StoreError;
 use ::props::value::PropValue;
+use anyhow::{Context, Result};
 
 /// Unqualified namespace name; fully qualified is `maild.retention`.
 pub const NAMESPACE: &str = "retention";

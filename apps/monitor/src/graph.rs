@@ -60,7 +60,11 @@ fn x_of(rect: Rect, i: usize, n: usize) -> f32 {
 }
 
 fn y_of(rect: Rect, value: f64, max: f64) -> f32 {
-    let f = if max > 0.0 { (value / max).clamp(0.0, 1.0) } else { 0.0 };
+    let f = if max > 0.0 {
+        (value / max).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
     rect.bottom() - f as f32 * rect.height()
 }
 
@@ -95,7 +99,10 @@ fn frame(ui: &Ui, rect: Rect, grid: bool) {
     let painter = ui.painter_at(rect);
     painter.rect_filled(rect, 0.0, v.extreme_bg_color);
     if grid {
-        let line = Stroke::new(1.0, v.widgets.noninteractive.bg_stroke.color.gamma_multiply(0.5));
+        let line = Stroke::new(
+            1.0,
+            v.widgets.noninteractive.bg_stroke.color.gamma_multiply(0.5),
+        );
         for i in 1..4 {
             let y = rect.top() + rect.height() * i as f32 / 4.0;
             painter.hline(rect.x_range(), y, line);
@@ -137,7 +144,12 @@ pub fn lines(ui: &mut Ui, size: Vec2, series: &[(&[f64], Kind)], max: f64) -> Re
             painter.add(area(rect.shrink(1.0), &line, colour.gamma_multiply(0.22)));
             painter.add(Shape::line(line, Stroke::new(1.5, colour)));
         } else {
-            painter.add(Shape::dashed_line(&line, Stroke::new(1.25, colour), 4.0, 3.0));
+            painter.add(Shape::dashed_line(
+                &line,
+                Stroke::new(1.25, colour),
+                4.0,
+                3.0,
+            ));
         }
     }
     response
@@ -154,7 +166,12 @@ pub fn meter(ui: &mut Ui, width: f32, fraction: f64, kind: Kind) -> Response {
         let mut filled = rect;
         filled.set_width(rect.width() * fraction.clamp(0.0, 1.0) as f32);
         painter.rect_filled(filled, 2.0, tint(ui, kind).gamma_multiply(0.7));
-        painter.rect_stroke(rect, 2.0, v.widgets.noninteractive.bg_stroke, egui::StrokeKind::Inside);
+        painter.rect_stroke(
+            rect,
+            2.0,
+            v.widgets.noninteractive.bg_stroke,
+            egui::StrokeKind::Inside,
+        );
     }
     response
 }

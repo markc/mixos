@@ -75,7 +75,9 @@ pub fn parse_stat(text: &str) -> Stat {
             "procs_blocked" => stat.blocked = first(),
             "btime" => stat.boot_time = first(),
             _ => {
-                let Some(index) = key.strip_prefix("cpu").and_then(|n| n.parse::<usize>().ok())
+                let Some(index) = key
+                    .strip_prefix("cpu")
+                    .and_then(|n| n.parse::<usize>().ok())
                 else {
                     continue;
                 };

@@ -28,11 +28,11 @@
 use std::net::IpAddr;
 use std::sync::Arc;
 
+use ::bus::native_client::IncomingCommand;
+use ::props::runtime::Runtime;
 #[cfg(test)]
 use base64::Engine as _;
-use ::bus::native_client::IncomingCommand;
 use maild_rules::{AccountId, AccountOverrides, DefaultRuleEngine, RuleContext, RuleEngine};
-use ::props::runtime::Runtime;
 
 use crate::db;
 use crate::props::account_overrides::{ResolvedOverrides, resolve_account_overrides_by_email};
@@ -499,9 +499,9 @@ fn err_body(msg: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use maild_rules::EngineConfig;
     use ::props::memory::MemoryStore;
     use ::props::store::PropertyStore;
+    use maild_rules::EngineConfig;
     use rusqlite::Connection;
     use std::sync::Mutex;
     use tempfile::tempdir;

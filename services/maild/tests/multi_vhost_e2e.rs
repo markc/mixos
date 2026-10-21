@@ -57,14 +57,14 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{Result, anyhow};
 use ::bus::native_client::IncomingCommand;
-use maild::config::{Config, ListenSpec, TlsConfig, TlsIdentityConfig};
-use maild::runtime::{BuiltMaild, RuntimeOpts, build_runtime};
 use ::props::record::{Actor, RecordKey, Version};
 use ::props::runtime::SetOpts;
 use ::props::store::MergeMode;
 use ::props::value::PropValue;
+use anyhow::{Result, anyhow};
+use maild::config::{Config, ListenSpec, TlsConfig, TlsIdentityConfig};
+use maild::runtime::{BuiltMaild, RuntimeOpts, build_runtime};
 use rcgen::CertifiedKey;
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
@@ -396,10 +396,7 @@ async fn seed_domain_row(
             None => PropValue::Null,
         },
     );
-    let key = RecordKey::collection(
-        maild::props::domains::namespace_name(),
-        domain.to_string(),
-    );
+    let key = RecordKey::collection(maild::props::domains::namespace_name(), domain.to_string());
     built
         .app_state
         .domains_runtime

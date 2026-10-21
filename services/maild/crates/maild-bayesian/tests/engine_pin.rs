@@ -38,8 +38,7 @@ fn resolved_spamlite_is_the_git_pin_not_a_patch() {
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     // The dependency is inherited from the workspace; verify the declaration
     // that actually owns its pin as well as Cargo's resolved source below.
-    let manifest =
-        std::fs::read_to_string(manifest_dir.join("../../../../Cargo.toml")).unwrap();
+    let manifest = std::fs::read_to_string(manifest_dir.join("../../../../Cargo.toml")).unwrap();
     let rev = pinned_rev(&manifest);
     assert!(
         rev.len() >= 7 && rev.chars().all(|c| c.is_ascii_hexdigit()),

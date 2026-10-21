@@ -29,7 +29,15 @@ pub const VERBS: &[Verb] = &[
     },
     Verb {
         name: "monitord.processes",
-        args: &["sort", "reverse", "limit", "filter", "user", "tree", "kernel_threads"],
+        args: &[
+            "sort",
+            "reverse",
+            "limit",
+            "filter",
+            "user",
+            "tree",
+            "kernel_threads",
+        ],
         summary: "The process table with CPU share, memory and I/O; sorted, filtered, limited, or as a tree",
     },
     Verb {
@@ -50,13 +58,18 @@ pub const VERBS: &[Verb] = &[
 ];
 
 pub fn manifest() -> Vec<bus::VerbDescriptor> {
-    std::iter::once(bus::VerbDescriptor::new("HELP", &[], "List served verbs", true))
-        .chain(
-            VERBS
-                .iter()
-                .map(|v| bus::VerbDescriptor::new(v.name, v.args, v.summary, true)),
-        )
-        .collect()
+    std::iter::once(bus::VerbDescriptor::new(
+        "HELP",
+        &[],
+        "List served verbs",
+        true,
+    ))
+    .chain(
+        VERBS
+            .iter()
+            .map(|v| bus::VerbDescriptor::new(v.name, v.args, v.summary, true)),
+    )
+    .collect()
 }
 
 fn bad(error: impl std::fmt::Display) -> Value {
@@ -177,7 +190,11 @@ fn history(engine: &Engine, q: HistoryQuery) -> Result<Value, Value> {
         Some(Value::String(s)) => vec![s],
         Some(Value::Array(list)) => list
             .into_iter()
-            .map(|v| v.as_str().map(str::to_owned).ok_or_else(|| bad("series must be strings")))
+            .map(|v| {
+                v.as_str()
+                    .map(str::to_owned)
+                    .ok_or_else(|| bad("series must be strings"))
+            })
             .collect::<Result<_, _>>()?,
         _ => return Err(bad("series is required: a name or a list of names")),
     };
@@ -205,12 +222,17 @@ fn history(engine: &Engine, q: HistoryQuery) -> Result<Value, Value> {
     }
     names.dedup();
     if names.len() > MAX_SERIES {
-        return Err(bad(format!("{} series asked for; at most {MAX_SERIES}", names.len())));
+        return Err(bad(format!(
+            "{} series asked for; at most {MAX_SERIES}",
+            names.len()
+        )));
     }
     let mut series = serde_json::Map::new();
     let mut used = None;
     for name in names {
-        let (tier, step, points) = engine.history(&name, from, to, max_points).map_err(failed)?;
+        let (tier, step, points) = engine
+            .history(&name, from, to, max_points)
+            .map_err(failed)?;
         used = Some((tier, step));
         series.insert(name, json!(points));
     }

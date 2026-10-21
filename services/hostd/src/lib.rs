@@ -5,7 +5,6 @@
 pub mod bus_loop;
 pub mod caller;
 pub mod desk;
-pub mod unit;
 pub mod frame;
 pub mod freeze;
 pub mod info;
@@ -18,6 +17,7 @@ pub mod policy;
 pub mod receipt;
 pub mod service;
 pub mod txn;
+pub mod unit;
 pub mod varlink;
 pub mod wg;
 pub mod wgnl;

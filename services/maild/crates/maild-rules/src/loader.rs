@@ -78,8 +78,8 @@ struct MatchSpec {
 /// Parse a `.conf.mix` rule-pack string and compile it. Returns the
 /// compiled `RuleSet` and the (possibly empty) list of per-rule failures.
 pub(crate) fn load_pack_str(conf_mix_text: &str) -> Result<(RuleSet, Vec<(RuleId, String)>)> {
-    let pack: PackFile = mix::from_conf_mix_str(conf_mix_text)
-        .map_err(|e| Error::PackParse(e.to_string()))?;
+    let pack: PackFile =
+        mix::from_conf_mix_str(conf_mix_text).map_err(|e| Error::PackParse(e.to_string()))?;
     Ok(compile_pack(pack))
 }
 

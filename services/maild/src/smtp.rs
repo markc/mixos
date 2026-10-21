@@ -17,11 +17,11 @@ use std::sync::Arc;
 use anyhow::Result;
 use tokio::net::TcpListener;
 
+use ::props::runtime::Runtime;
 use arc_swap::ArcSwap;
 use maild_auth::{MailAuthSigner, MailAuthVerifier};
 use maild_bayesian::DefaultClassifier;
 use maild_rules::DefaultRuleEngine;
-use ::props::runtime::Runtime;
 use tokio::sync::broadcast;
 
 use crate::bus::verdict::VerdictEvent;

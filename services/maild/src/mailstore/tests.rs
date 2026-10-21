@@ -9284,9 +9284,7 @@ mod retrain_drain {
                 .fail_next
                 .swap(false, std::sync::atomic::Ordering::SeqCst)
             {
-                return Err(maild_bayesian::Error::Storage(
-                    "synthetic transient".into(),
-                ));
+                return Err(maild_bayesian::Error::Storage("synthetic transient".into()));
             }
             self.inner.record_label(stamp_id, tokens, label, cap).await
         }
@@ -9297,9 +9295,7 @@ mod retrain_drain {
         ) -> maild_bayesian::Result<Option<maild_bayesian::Label>> {
             self.inner.forget_label(stamp_id, tokens).await
         }
-        async fn stats(
-            &self,
-        ) -> maild_bayesian::Result<maild_bayesian::AccountStats> {
+        async fn stats(&self) -> maild_bayesian::Result<maild_bayesian::AccountStats> {
             self.inner.stats().await
         }
         async fn totals(&self) -> maild_bayesian::Result<(u64, u64)> {

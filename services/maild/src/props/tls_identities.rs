@@ -40,7 +40,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
-use anyhow::{Context, Result};
 use ::props::bus::mutation::PropsRouter;
 use ::props::capability::{Capability, CapabilitySet};
 use ::props::hooks::{HookCtx, HookError, HookFuture, HookHandler, Hooks};
@@ -53,6 +52,7 @@ use ::props::runtime::{DeleteOpts, Runtime, SetOpts};
 use ::props::sqlite::{JsonValuesMapping, SqliteStore};
 use ::props::store::MergeMode;
 use ::props::value::PropValue;
+use anyhow::{Context, Result};
 
 use crate::config::TlsIdentityConfig;
 

@@ -6,6 +6,7 @@
 use std::net::IpAddr;
 
 use anyhow::Result;
+use mail_parser::{HeaderValue, MessageParser};
 use maild_auth::{
     ArcChainValidation, ArcResult, AuthResultsHeader, DkimAggregate, DkimOutcome, DmarcDisposition,
     DmarcOutcome, DmarcPolicy, DmarcReportRecord, DmarcResult, IprevOutcome, IprevResult, SpfCheck,
@@ -17,7 +18,6 @@ use maild_rules::{
     RuleVerdict, VerdictShape,
 };
 use mds::{Flags, Mds, Tags};
-use mail_parser::{HeaderValue, MessageParser};
 
 use super::SmtpState;
 use crate::bus::verdict::{self, VerdictEvent};
@@ -1089,20 +1089,14 @@ async fn run_inbound_filter(
             eval.set_global("TO", mix::value::Value::String(to));
             eval.set_global("SUBJECT", mix::value::Value::String(subject));
             eval.set_global("HEADER_FROM", mix::value::Value::String(header_from));
-            eval.set_global(
-                "SPAM_VERDICT",
-                mix::value::Value::String(spam_verdict),
-            );
+            eval.set_global("SPAM_VERDICT", mix::value::Value::String(spam_verdict));
             eval.set_global("SPAM_SCORE", mix::value::Value::Number(spam_score));
 
             // vtoken context (Rust did the parse/lookup/PIN-validation; the
             // filter only reads the verdict — it never touches the registry).
             eval.set_global("VTOKEN_VALID", mix::value::Value::Bool(vtoken_valid));
             eval.set_global("VTOKEN_USER", mix::value::Value::String(vtoken_user));
-            eval.set_global(
-                "VTOKEN_SERVICE",
-                mix::value::Value::String(vtoken_service),
-            );
+            eval.set_global("VTOKEN_SERVICE", mix::value::Value::String(vtoken_service));
 
             // F3 caps inputs: attachment count + received message size (bytes).
             // Whole-number i64 → an exact JSON-integer-clean Mix Number.

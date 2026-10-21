@@ -17,9 +17,7 @@ use anyhow::Result;
 use maild::db::Db;
 use maild::imap::config::ImapConfig;
 use maild::imap::session::{AccountSlots, handle_connection};
-use maild::mailstore::{
-    EmailEnvelope, ListOpts, MailStore, MailboxRole, SortKey, SqliteMailStore,
-};
+use maild::mailstore::{EmailEnvelope, ListOpts, MailStore, MailboxRole, SortKey, SqliteMailStore};
 use mds::types::ContainerAttrs;
 use mds::{Flags, Mds, SqliteCasMds, Tags};
 use rusqlite::params;

@@ -8,9 +8,9 @@
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
-use anyhow::{Result, bail};
 use ::props::store::StoreError;
 use ::props::{RecordKey, Runtime};
+use anyhow::{Result, bail};
 use rusqlite::Connection;
 use rustls::server::ServerConfig;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};

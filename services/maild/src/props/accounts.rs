@@ -39,8 +39,6 @@
 
 use std::sync::{Arc, Mutex, OnceLock};
 
-use anyhow::Result;
-use mds::Mds;
 use ::props::bus::mutation::PropsRouter;
 use ::props::capability::{Capability, CapabilitySet};
 use ::props::hooks::{HookCtx, HookError, HookFuture, HookHandler, Hooks};
@@ -53,6 +51,8 @@ use ::props::runtime::{DeleteOpts, Runtime, RuntimeError};
 use ::props::sqlite::{SqliteStore, SqliteTableMapping};
 use ::props::store::StoreError;
 use ::props::value::PropValue;
+use anyhow::Result;
+use mds::Mds;
 use rusqlite::{Connection, OptionalExtension, params};
 use uuid::Uuid;
 
@@ -1380,8 +1380,7 @@ mod tests {
         conn.execute_batch(crate::db::SCHEMA).unwrap();
         let db_conn = Arc::new(Mutex::new(conn));
         let mds_dir = tempfile::tempdir().unwrap();
-        let mds =
-            Arc::new(mds::SqliteCasMds::open(mds_dir.path().to_str().unwrap()).unwrap());
+        let mds = Arc::new(mds::SqliteCasMds::open(mds_dir.path().to_str().unwrap()).unwrap());
         let mailstore = Arc::new(SqliteMailStore::new(mds));
 
         // Minimal overrides runtime backed by an in-memory store so

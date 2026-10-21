@@ -1920,7 +1920,8 @@ impl State {
         // settingsd came back: the status bar stops saying it is missing,
         // also in the "Accounts not saved: …" form a refused write left.
         // (The look's own status, if any, was set above and stands.)
-        if self.source == Source::Missing && self.status.contains(&crate::label("settings-missing")) {
+        if self.source == Source::Missing && self.status.contains(&crate::label("settings-missing"))
+        {
             self.status = crate::label("settings-back");
         }
         self.settings = email;
@@ -8128,7 +8129,8 @@ pub(crate) mod tests {
     fn send_as_new_copies_the_open_email_as_a_fresh_compose() {
         let mut state = reading();
         let mut email: serde_json::Value = serde_json::to_value(unread_email("E1")).unwrap();
-        email["bodyValues"] = json!({ "p1": { "value": "Lunch at one?\n-- \nBob", "partId": "p1" } });
+        email["bodyValues"] =
+            json!({ "p1": { "value": "Lunch at one?\n-- \nBob", "partId": "p1" } });
         email["textBody"] = json!([{ "partId": "p1", "type": "text/plain" }]);
         state.account_mut("a").unwrap().mail.open = Some(serde_json::from_value(email).unwrap());
         registry_run(&mut state, "mail.send_as_new");
@@ -8136,7 +8138,10 @@ pub(crate) mod tests {
         assert_eq!(compose.draft.subject, "Hello", "no Re: or Fwd:");
         assert_eq!(compose.to_text, "ann@a.example.invalid, cy@example.invalid");
         assert_eq!(compose.cc_text, "dee@example.invalid");
-        assert_eq!(compose.draft.body, "Lunch at one?\n-- \nBob", "as it was, not re-signed");
+        assert_eq!(
+            compose.draft.body, "Lunch at one?\n-- \nBob",
+            "as it was, not re-signed"
+        );
         assert_eq!(compose.draft.in_reply_to, None, "a new thread");
         assert!(compose.reply.is_none());
     }
@@ -8211,9 +8216,15 @@ pub(crate) mod tests {
         assert_eq!(reply_to(&state).as_deref(), Some("help@a.example.invalid"));
         // Untouched: the identity's Reply-To follows the identity.
         state.choose_sender("a".into(), Some("sales".into()));
-        assert_eq!(reply_to(&state).as_deref(), Some("orders@a.example.invalid"));
+        assert_eq!(
+            reply_to(&state).as_deref(),
+            Some("orders@a.example.invalid")
+        );
         // Typed: it stays.
-        state.apply_ui(UiEvent::ComposeField(ComposeField::ReplyTo, "me@x.invalid".into()));
+        state.apply_ui(UiEvent::ComposeField(
+            ComposeField::ReplyTo,
+            "me@x.invalid".into(),
+        ));
         state.choose_sender("a".into(), Some("ann".into()));
         assert_eq!(reply_to(&state).as_deref(), Some("me@x.invalid"));
     }
@@ -8224,17 +8235,32 @@ pub(crate) mod tests {
         assert!(state.open_compose(Some("a"), Composed::default()));
         let shows = |state: &State, f| state.compose.as_ref().unwrap().shows(f);
         assert!(!shows(&state, ComposeField::Cc));
-        state.apply_ui(UiEvent::ComposeField(ComposeField::Cc, "x@y.invalid".into()));
+        state.apply_ui(UiEvent::ComposeField(
+            ComposeField::Cc,
+            "x@y.invalid".into(),
+        ));
         state.apply_ui(UiEvent::ComposeField(ComposeField::Cc, String::new()));
-        assert!(shows(&state, ComposeField::Cc), "cleared to retype: still open");
+        assert!(
+            shows(&state, ComposeField::Cc),
+            "cleared to retype: still open"
+        );
         // The button closes it again.
         state.apply_ui(UiEvent::ComposeShow(ComposeField::Cc));
         assert!(!shows(&state, ComposeField::Cc));
         // Reply-To must be one address.
-        state.apply_ui(UiEvent::ComposeField(ComposeField::To, "bob@example.invalid".into()));
-        state.apply_ui(UiEvent::ComposeField(ComposeField::ReplyTo, "a@x.invalid, b@x.invalid".into()));
+        state.apply_ui(UiEvent::ComposeField(
+            ComposeField::To,
+            "bob@example.invalid".into(),
+        ));
+        state.apply_ui(UiEvent::ComposeField(
+            ComposeField::ReplyTo,
+            "a@x.invalid, b@x.invalid".into(),
+        ));
         assert!(parse_recipients(state.compose.as_ref().unwrap()).is_err());
-        state.apply_ui(UiEvent::ComposeField(ComposeField::ReplyTo, "Help <help@x.invalid>".into()));
+        state.apply_ui(UiEvent::ComposeField(
+            ComposeField::ReplyTo,
+            "Help <help@x.invalid>".into(),
+        ));
         assert!(parse_recipients(state.compose.as_ref().unwrap()).is_ok());
         // Cleared: no Reply-To at all.
         state.apply_ui(UiEvent::ComposeField(ComposeField::ReplyTo, "  ".into()));
@@ -8258,7 +8284,11 @@ pub(crate) mod tests {
         let tag = tag(&state, "a");
         state.apply(Event::Account(
             tag,
-            Done::Opened(ticket, None, Box::new(Err(jmap::Error::Protocol("gone".into())))),
+            Done::Opened(
+                ticket,
+                None,
+                Box::new(Err(jmap::Error::Protocol("gone".into()))),
+            ),
         ));
         assert!(
             (registry.get("mail.reply").unwrap().enabled)(&state),

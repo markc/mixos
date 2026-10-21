@@ -110,7 +110,9 @@ pub fn advertise_dmabuf(_loop: &mut Loop) {
                 .unwrap_or_else(|e| abort!("Failed to build dmabuf feedback: {e:?}"));
             // The protocol version is smithay's (v6 at 0.7); what matters here
             // is that default feedback names a main device.
-            info!("dmabuf global with default feedback, main_device {main_device:#x} from {source}");
+            info!(
+                "dmabuf global with default feedback, main_device {main_device:#x} from {source}"
+            );
             _loop
                 .state
                 .dmabuf

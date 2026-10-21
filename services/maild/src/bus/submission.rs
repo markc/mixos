@@ -6,10 +6,10 @@
 
 use std::sync::Arc;
 
-use anyhow::{Result, ensure};
 use ::bus::native_client::IncomingCommand;
-use mds::{Flags, Mds, Tags};
 use ::props::runtime::Runtime;
+use anyhow::{Result, ensure};
+use mds::{Flags, Mds, Tags};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};

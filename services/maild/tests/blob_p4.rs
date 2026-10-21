@@ -94,9 +94,7 @@ async fn orphan_legacy_rows_advance_without_provisioning_or_copy() {
             state
                 .mailstore
                 .mds()
-                .with_set_tx(&maild::mailstore::account_id_to_setid(999), |_| Ok(
-                    ()
-                )),
+                .with_set_tx(&maild::mailstore::account_id_to_setid(999), |_| Ok(())),
             Err(mds::Error::SetNotFound(_))
         ));
         assert!(
@@ -214,12 +212,9 @@ async fn migrate_over_port(f: &Fixture, args: Value) -> (u8, Value) {
         let mut bytes = Vec::new();
         socket.read_to_end(&mut bytes).await.unwrap();
         let request = ::bus::bus::parse(std::str::from_utf8(&bytes).unwrap()).unwrap();
-        let (rc, body) = maild::bus::blobs::migrate(
-            &db,
-            &ms,
-            serde_json::from_str(&request.body).unwrap(),
-        )
-        .await;
+        let (rc, body) =
+            maild::bus::blobs::migrate(&db, &ms, serde_json::from_str(&request.body).unwrap())
+                .await;
         let mut reply = ::bus::bus::BusMessage::new();
         reply.set("rc", &rc.to_string());
         reply.body = body;
@@ -709,10 +704,9 @@ async fn mime_projection_has_one_part_scheme_and_honours_properties() {
                 .unwrap()
                 .contains("hello")
         );
-        let blob = maild::attachments::PartBlobId::parse(
-            email[kind][0]["blobId"].as_str().unwrap(),
-        )
-        .unwrap();
+        let blob =
+            maild::attachments::PartBlobId::parse(email[kind][0]["blobId"].as_str().unwrap())
+                .unwrap();
         assert_eq!(blob.part, path);
         assert_eq!(blob.item, id);
     }
@@ -866,11 +860,7 @@ async fn migration_pages_and_refusals_keep_bad_rows_untouched() {
     assert_eq!(last["accounts"]["1"]["planned"], 1);
     assert_eq!(item_count(&f), 0);
     let two = mds::blob::hash_bytes(b"two");
-    std::fs::write(
-        mds::blob::blob_path(&state.db.blob_dir, &two),
-        b"bad",
-    )
-    .unwrap();
+    std::fs::write(mds::blob::blob_path(&state.db.blob_dir, &two), b"bad").unwrap();
     let three = mds::blob::hash_bytes(b"three");
     std::fs::remove_file(mds::blob::blob_path(&state.db.blob_dir, &three)).unwrap();
     let (rc, failed) = migrate(&f, json!({"apply": true})).await;

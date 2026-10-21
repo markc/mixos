@@ -254,7 +254,11 @@ pub fn series(s: &Snapshot) -> Vec<(String, f64, bool)> {
     put("cpu.iowait".into(), Some(u.iowait), true);
     put("cpu.steal".into(), Some(u.steal), true);
     for core in &s.cpu.per_core {
-        put(format!("cpu.core.{}.busy", core.cpu), Some(core.usage.busy), false);
+        put(
+            format!("cpu.core.{}.busy", core.cpu),
+            Some(core.usage.busy),
+            false,
+        );
         put(
             format!("cpu.core.{}.mhz", core.cpu),
             core.mhz.map(|m| m as f64),
@@ -262,7 +266,11 @@ pub fn series(s: &Snapshot) -> Vec<(String, f64, bool)> {
         );
     }
     put("mem.used".into(), Some(s.memory.used as f64), true);
-    put("mem.available".into(), Some(s.memory.available as f64), true);
+    put(
+        "mem.available".into(),
+        Some(s.memory.available as f64),
+        true,
+    );
     put("mem.cached".into(), Some(s.memory.cached as f64), true);
     put("swap.used".into(), Some(s.swap.used as f64), true);
     if let Some(load) = s.load {

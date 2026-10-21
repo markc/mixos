@@ -44,7 +44,10 @@ impl PrivateBus {
         let mut line = String::new();
         BufReader::new(stdout).read_line(&mut line)?;
         let address = line.trim().to_owned();
-        anyhow::ensure!(address.starts_with("unix:"), "dbus-daemon printed no address");
+        anyhow::ensure!(
+            address.starts_with("unix:"),
+            "dbus-daemon printed no address"
+        );
         Ok(Self {
             child,
             address,
@@ -69,7 +72,9 @@ async fn client(address: &str) -> Connection {
 }
 
 async fn wait_for_owner(connection: &Connection) {
-    let proxy = zbus::fdo::DBusProxy::new(connection).await.expect("dbus proxy");
+    let proxy = zbus::fdo::DBusProxy::new(connection)
+        .await
+        .expect("dbus proxy");
     let deadline = Instant::now() + TIMEOUT;
     while !proxy
         .name_has_owner(BUS_NAME.try_into().expect("name"))
@@ -91,11 +96,17 @@ fn segment(connection: &Connection) -> String {
 }
 
 fn request_path(connection: &Connection, token: &str) -> String {
-    format!("/org/freedesktop/portal/desktop/request/{}/{token}", segment(connection))
+    format!(
+        "/org/freedesktop/portal/desktop/request/{}/{token}",
+        segment(connection)
+    )
 }
 
 fn session_path(connection: &Connection, token: &str) -> String {
-    format!("/org/freedesktop/portal/desktop/session/{}/{token}", segment(connection))
+    format!(
+        "/org/freedesktop/portal/desktop/session/{}/{token}",
+        segment(connection)
+    )
 }
 
 /// Subscribes to `Response` on `path` before the call that will answer it.
@@ -192,9 +203,24 @@ async fn screencast_contract() {
     let proxy = zbus::Proxy::new(&alice, BUS_NAME, OBJECT_PATH, INTERFACE)
         .await
         .expect("proxy");
-    assert_eq!(proxy.get_property::<u32>("version").await.expect("version"), VERSION);
-    assert_eq!(proxy.get_property::<u32>("AvailableSourceTypes").await.expect("types"), 1);
-    assert_eq!(proxy.get_property::<u32>("AvailableCursorModes").await.expect("cursors"), 3);
+    assert_eq!(
+        proxy.get_property::<u32>("version").await.expect("version"),
+        VERSION
+    );
+    assert_eq!(
+        proxy
+            .get_property::<u32>("AvailableSourceTypes")
+            .await
+            .expect("types"),
+        1
+    );
+    assert_eq!(
+        proxy
+            .get_property::<u32>("AvailableCursorModes")
+            .await
+            .expect("cursors"),
+        3
+    );
 
     // CreateSession answers with the session handle at the predicted paths.
     let session = session_path(&alice, "s1");
@@ -213,7 +239,9 @@ async fn screencast_contract() {
     let (code, results) = next_response(&mut created).await;
     assert_eq!(code, 0);
     assert_eq!(
-        results["session_handle"].downcast_ref::<&str>().expect("string"),
+        results["session_handle"]
+            .downcast_ref::<&str>()
+            .expect("string"),
         session
     );
     assert!(session_alive(&alice, &session).await);
@@ -223,11 +251,18 @@ async fn screencast_contract() {
     let early = call(
         &alice,
         "Start",
-        &(&session_object, "", options(&[("handle_token", Value::from("e1"))])),
+        &(
+            &session_object,
+            "",
+            options(&[("handle_token", Value::from("e1"))]),
+        ),
     )
     .await
     .expect_err("Start before SelectSources");
-    assert_eq!(error_name(&early), "org.freedesktop.portal.Error.InvalidArgument");
+    assert_eq!(
+        error_name(&early),
+        "org.freedesktop.portal.Error.InvalidArgument"
+    );
 
     // Unoffered source types and cursor modes are refused.
     let windows = call(
@@ -237,15 +272,24 @@ async fn screencast_contract() {
     )
     .await
     .expect_err("window sources");
-    assert_eq!(error_name(&windows), "org.freedesktop.portal.Error.InvalidArgument");
+    assert_eq!(
+        error_name(&windows),
+        "org.freedesktop.portal.Error.InvalidArgument"
+    );
     let metadata = call(
         &alice,
         "SelectSources",
-        &(&session_object, options(&[("cursor_mode", Value::from(4u32))])),
+        &(
+            &session_object,
+            options(&[("cursor_mode", Value::from(4u32))]),
+        ),
     )
     .await
     .expect_err("metadata cursor");
-    assert_eq!(error_name(&metadata), "org.freedesktop.portal.Error.InvalidArgument");
+    assert_eq!(
+        error_name(&metadata),
+        "org.freedesktop.portal.Error.InvalidArgument"
+    );
 
     // Another caller cannot use or close Alice's session.
     let mallory = client(&bus.address).await;
@@ -258,10 +302,19 @@ async fn screencast_contract() {
     .expect_err("foreign session");
     assert_eq!(error_name(&stolen), "org.freedesktop.portal.Error.NotFound");
     let closed = mallory
-        .call_method(Some(BUS_NAME), session.as_str(), Some("org.freedesktop.portal.Session"), "Close", &())
+        .call_method(
+            Some(BUS_NAME),
+            session.as_str(),
+            Some("org.freedesktop.portal.Session"),
+            "Close",
+            &(),
+        )
         .await
         .expect_err("foreign Close");
-    assert_eq!(error_name(&closed), "org.freedesktop.DBus.Error.AccessDenied");
+    assert_eq!(
+        error_name(&closed),
+        "org.freedesktop.DBus.Error.AccessDenied"
+    );
 
     // SelectSources answers success.
     let mut selected = responses(&alice, &request_path(&alice, "p1")).await;
@@ -287,12 +340,19 @@ async fn screencast_contract() {
     call(
         &alice,
         "Start",
-        &(&session_object, "", options(&[("handle_token", Value::from("g1"))])),
+        &(
+            &session_object,
+            "",
+            options(&[("handle_token", Value::from("g1"))]),
+        ),
     )
     .await
     .expect("Start");
     assert_eq!(next_response(&mut started).await.0, 2);
-    assert!(session_alive(&alice, &session).await, "a failed Start keeps the session");
+    assert!(
+        session_alive(&alice, &session).await,
+        "a failed Start keeps the session"
+    );
 
     // A remote is only handed out for a started session.
     let remote = alice
@@ -305,11 +365,20 @@ async fn screencast_contract() {
         )
         .await
         .expect_err("remote before start");
-    assert_eq!(error_name(&remote), "org.freedesktop.portal.Error.InvalidArgument");
+    assert_eq!(
+        error_name(&remote),
+        "org.freedesktop.portal.Error.InvalidArgument"
+    );
 
     // The owner closes its session.
     alice
-        .call_method(Some(BUS_NAME), session.as_str(), Some("org.freedesktop.portal.Session"), "Close", &())
+        .call_method(
+            Some(BUS_NAME),
+            session.as_str(),
+            Some("org.freedesktop.portal.Session"),
+            "Close",
+            &(),
+        )
         .await
         .expect("owner Close");
     assert!(!session_alive(&alice, &session).await);

@@ -60,9 +60,9 @@ use std::os::fd::AsRawFd;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+use ::bus::native_client::IncomingCommand;
 #[cfg(test)]
 use base64::Engine as _;
-use ::bus::native_client::IncomingCommand;
 use maild_bayesian::{
     ClassifyContext, DefaultClassifier, Label, RetrainOutcome, RetrainRequest,
     classifier::Classifier,

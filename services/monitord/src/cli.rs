@@ -158,9 +158,13 @@ pub fn snapshot(json_out: bool) -> anyhow::Result<()> {
 pub fn ps(query: Query, json_out: bool) -> anyhow::Result<()> {
     let engine = local_engine();
     let reply = runtime()?.block_on(async {
-        service::dispatch(&engine, "monitord.processes", &serde_json::to_value(QueryBody::from(&query))?)
-            .await
-            .map_err(|e| anyhow::anyhow!("{}", e["error"].as_str().unwrap_or("failed")))
+        service::dispatch(
+            &engine,
+            "monitord.processes",
+            &serde_json::to_value(QueryBody::from(&query))?,
+        )
+        .await
+        .map_err(|e| anyhow::anyhow!("{}", e["error"].as_str().unwrap_or("failed")))
     })?;
     if json_out {
         println!("{}", serde_json::to_string_pretty(&reply)?);
@@ -196,10 +200,16 @@ impl From<&Query> for QueryBody {
     }
 }
 
-pub fn history(series: Vec<String>, since: f64, max_points: usize, db: Option<PathBuf>, json_out: bool) -> anyhow::Result<()> {
+pub fn history(
+    series: Vec<String>,
+    since: f64,
+    max_points: usize,
+    db: Option<PathBuf>,
+    json_out: bool,
+) -> anyhow::Result<()> {
     let path = db.unwrap_or_else(default_db);
-    let store = Store::open_read_only(&path)
-        .map_err(|e| anyhow::anyhow!("{}: {e}", path.display()))?;
+    let store =
+        Store::open_read_only(&path).map_err(|e| anyhow::anyhow!("{}: {e}", path.display()))?;
     let now = sampler::now_unix();
     let from = now - since;
     let mut tier = Tier::for_range(from, now, Retention::default());
@@ -211,7 +221,11 @@ pub fn history(series: Vec<String>, since: f64, max_points: usize, db: Option<Pa
     let mut out = serde_json::Map::new();
     for name in series {
         let names: Vec<String> = match name.strip_suffix('*') {
-            Some(prefix) => known.iter().filter(|k| k.starts_with(prefix)).cloned().collect(),
+            Some(prefix) => known
+                .iter()
+                .filter(|k| k.starts_with(prefix))
+                .cloned()
+                .collect(),
             None => vec![name],
         };
         for name in names {
@@ -241,7 +255,8 @@ pub fn history(series: Vec<String>, since: f64, max_points: usize, db: Option<Pa
 }
 
 pub fn signal(pid: u32, name: &str) -> anyhow::Result<()> {
-    let number = action::signal_number(name).ok_or_else(|| anyhow::anyhow!("unknown signal {name:?}"))?;
+    let number =
+        action::signal_number(name).ok_or_else(|| anyhow::anyhow!("unknown signal {name:?}"))?;
     action::signal(pid, number).map_err(|e| anyhow::anyhow!("signal {pid}: {e}"))
 }
 
@@ -268,7 +283,9 @@ pub fn bytes(n: f64) -> String {
 }
 
 fn num(v: &Value) -> String {
-    v.as_f64().map(|f| format!("{f:.2}")).unwrap_or_else(|| "-".into())
+    v.as_f64()
+        .map(|f| format!("{f:.2}"))
+        .unwrap_or_else(|| "-".into())
 }
 
 /// `HH:MM` in UTC; the command line has no time zone database.
@@ -321,18 +338,34 @@ pub fn render_snapshot(s: &sampler::Snapshot) -> String {
         "Memory {} of {} ({:.1}%)  cached {}",
         bytes(m.used as f64),
         bytes(m.total as f64),
-        if m.total > 0 { m.used as f64 * 100.0 / m.total as f64 } else { 0.0 },
+        if m.total > 0 {
+            m.used as f64 * 100.0 / m.total as f64
+        } else {
+            0.0
+        },
         bytes(m.cached as f64)
     );
     if s.swap.total > 0 {
-        let _ = writeln!(out, "Swap   {} of {}", bytes(s.swap.used as f64), bytes(s.swap.total as f64));
+        let _ = writeln!(
+            out,
+            "Swap   {} of {}",
+            bytes(s.swap.used as f64),
+            bytes(s.swap.total as f64)
+        );
     }
     let p = &s.pressure;
     if p.cpu.is_some() || p.memory.is_some() || p.io.is_some() {
         let f = |r: Option<crate::kernel::pressure::Resource>| {
-            r.map(|r| format!("{:.1}", r.some.avg10)).unwrap_or_else(|| "-".into())
+            r.map(|r| format!("{:.1}", r.some.avg10))
+                .unwrap_or_else(|| "-".into())
         };
-        let _ = writeln!(out, "Stall  cpu {}%  memory {}%  io {}%  (10 s)", f(p.cpu), f(p.memory), f(p.io));
+        let _ = writeln!(
+            out,
+            "Stall  cpu {}%  memory {}%  io {}%  (10 s)",
+            f(p.cpu),
+            f(p.memory),
+            f(p.io)
+        );
     }
     for d in &s.disks {
         let _ = writeln!(
@@ -341,7 +374,9 @@ pub fn render_snapshot(s: &sampler::Snapshot) -> String {
             d.name,
             bytes(d.read_bps.unwrap_or(0.0)),
             bytes(d.write_bps.unwrap_or(0.0)),
-            d.busy.map(|b| format!("{b:.1}")).unwrap_or_else(|| "-".into()),
+            d.busy
+                .map(|b| format!("{b:.1}"))
+                .unwrap_or_else(|| "-".into()),
             d.model.as_deref().unwrap_or("")
         );
     }

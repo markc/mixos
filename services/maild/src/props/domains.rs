@@ -31,7 +31,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
-use anyhow::Result;
 use ::props::bus::mutation::PropsRouter;
 use ::props::capability::{Capability, CapabilitySet};
 use ::props::hooks::{HookCtx, HookError, HookFuture, HookHandler, Hooks};
@@ -44,6 +43,7 @@ use ::props::runtime::Runtime;
 use ::props::sqlite::{JsonValuesMapping, SqliteStore};
 use ::props::store::{MergeMode, PropertyStore};
 use ::props::value::PropValue;
+use anyhow::Result;
 
 /// Unqualified namespace name; fully qualified is `maild.domains`.
 pub const NAMESPACE: &str = "domains";

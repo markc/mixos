@@ -77,7 +77,8 @@ mod tests {
 
     #[test]
     fn an_old_kernel_estimates_available() {
-        let (mem, _) = parse("MemTotal: 1000 kB\nMemFree: 100 kB\nBuffers: 50 kB\nCached: 150 kB\n");
+        let (mem, _) =
+            parse("MemTotal: 1000 kB\nMemFree: 100 kB\nBuffers: 50 kB\nCached: 150 kB\n");
         assert_eq!(mem.available, 300 * 1024);
     }
 }

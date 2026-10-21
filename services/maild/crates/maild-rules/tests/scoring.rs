@@ -6,9 +6,7 @@
 
 mod common;
 
-use maild_rules::{
-    AccountId, AccountOverrides, DefaultRuleEngine, EngineConfig, RuleEngine,
-};
+use maild_rules::{AccountId, AccountOverrides, DefaultRuleEngine, EngineConfig, RuleEngine};
 
 use common::*;
 

@@ -78,7 +78,10 @@ pub enum Decision {
 
 impl Decision {
     pub fn granted(self) -> bool {
-        matches!(self, Self::Policy | Self::Grant | Self::Allowed | Self::AnsweredAllow)
+        matches!(
+            self,
+            Self::Policy | Self::Grant | Self::Allowed | Self::AnsweredAllow
+        )
     }
 }
 
@@ -165,11 +168,15 @@ impl Consent {
         if let Some(app) = &app
             && (app.is_empty() || app.len() > MAX_APP_NAME)
         {
-            return Err(format!("app must be 1 to {MAX_APP_NAME} bytes (a process name)"));
+            return Err(format!(
+                "app must be 1 to {MAX_APP_NAME} bytes (a process name)"
+            ));
         }
         self.with(|state| {
             let now = Instant::now();
-            state.grants.retain(|grant| grant.expires > now && grant.remaining > 0);
+            state
+                .grants
+                .retain(|grant| grant.expires > now && grant.remaining > 0);
             if state.grants.len() >= MAX_GRANTS {
                 return Err(format!("at most {MAX_GRANTS} grants at once"));
             }
@@ -191,7 +198,9 @@ impl Consent {
     pub fn revoke(&self, id: Option<u64>) -> usize {
         self.with(|state| {
             let before = state.grants.len();
-            state.grants.retain(|grant| id.is_some_and(|id| grant.id != id));
+            state
+                .grants
+                .retain(|grant| id.is_some_and(|id| grant.id != id));
             before - state.grants.len()
         })
     }
@@ -199,7 +208,9 @@ impl Consent {
     pub fn grants(&self) -> Vec<Grant> {
         self.with(|state| {
             let now = Instant::now();
-            state.grants.retain(|grant| grant.expires > now && grant.remaining > 0);
+            state
+                .grants
+                .retain(|grant| grant.expires > now && grant.remaining > 0);
             state.grants.clone()
         })
     }
@@ -210,9 +221,16 @@ impl Consent {
     pub fn take_grant(&self, app: Option<&str>) -> Option<u64> {
         self.with(|state| {
             let now = Instant::now();
-            state.grants.retain(|grant| grant.expires > now && grant.remaining > 0);
+            state
+                .grants
+                .retain(|grant| grant.expires > now && grant.remaining > 0);
             let index = app
-                .and_then(|app| state.grants.iter().position(|grant| grant.app.as_deref() == Some(app)))
+                .and_then(|app| {
+                    state
+                        .grants
+                        .iter()
+                        .position(|grant| grant.app.as_deref() == Some(app))
+                })
                 .or_else(|| state.grants.iter().position(|grant| grant.app.is_none()))?;
             let grant = &mut state.grants[index];
             grant.remaining -= 1;
@@ -240,10 +258,15 @@ impl Consent {
                 return Err(format!("{request} is already waiting"));
             }
             if state.pending.len() >= MAX_PENDING {
-                return Err(format!("{MAX_PENDING} screen-share requests are already waiting"));
+                return Err(format!(
+                    "{MAX_PENDING} screen-share requests are already waiting"
+                ));
             }
-            if state.pending.values().filter(|p| p.owner == owner).count() >= MAX_PENDING_PER_OWNER {
-                return Err(format!("{owner} already has a screen-share request waiting"));
+            if state.pending.values().filter(|p| p.owner == owner).count() >= MAX_PENDING_PER_OWNER
+            {
+                return Err(format!(
+                    "{owner} already has a screen-share request waiting"
+                ));
             }
             state.pending.insert(
                 request.to_owned(),
@@ -349,14 +372,33 @@ pub fn set_client(client: Arc<SupervisedClient>) {
 }
 
 fn client() -> Option<Arc<SupervisedClient>> {
-    CLIENT.lock().unwrap_or_else(PoisonError::into_inner).clone()
+    CLIENT
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone()
 }
 
 pub const VERBS: &[(&str, &str, bool)] = &[
-    ("portald.screencast.pending", "Screen-share requests waiting for consent, and the standing grants", true),
-    ("portald.screencast.answer", "Allow or deny a waiting screen-share request: {request, allow}", false),
-    ("portald.screencast.grant", "Allow screen sharing without asking: {app?, count?, ttl_ms?}", false),
-    ("portald.screencast.revoke", "Withdraw one grant {id} or all grants {}", false),
+    (
+        "portald.screencast.pending",
+        "Screen-share requests waiting for consent, and the standing grants",
+        true,
+    ),
+    (
+        "portald.screencast.answer",
+        "Allow or deny a waiting screen-share request: {request, allow}",
+        false,
+    ),
+    (
+        "portald.screencast.grant",
+        "Allow screen sharing without asking: {app?, count?, ttl_ms?}",
+        false,
+    ),
+    (
+        "portald.screencast.revoke",
+        "Withdraw one grant {id} or all grants {}",
+        false,
+    ),
 ];
 
 /// rc 13: the caller is not on this node.
@@ -382,7 +424,10 @@ fn optional_u64(body: &serde_json::Value, key: &str, default: u64) -> Result<u64
 }
 
 fn usage(message: impl Into<String>) -> (u8, serde_json::Value) {
-    (10, json!({"error_code": "USAGE", "message": message.into()}))
+    (
+        10,
+        json!({"error_code": "USAGE", "message": message.into()}),
+    )
 }
 
 /// Serves one `portald.screencast.*` verb. Synchronous: the feed calls it
@@ -390,11 +435,17 @@ fn usage(message: impl Into<String>) -> (u8, serde_json::Value) {
 /// granting is granting capture of the whole screen.
 pub fn handle_verb(command: &IncomingCommand) -> (u8, serde_json::Value) {
     let Some(consent) = installed() else {
-        return (10, json!({"status": "not_served", "verb": command.command, "message": "portald runs without --screencast"}));
+        return (
+            10,
+            json!({"status": "not_served", "verb": command.command, "message": "portald runs without --screencast"}),
+        );
     };
     if command.header("broker_origin") != Some("local") {
         tracing::warn!(verb = %command.command, origin = ?command.header("broker_origin"), "screencast consent verb refused: not a local caller");
-        return (FORBIDDEN, json!({"error_code": "FORBIDDEN", "message": "screen-share consent is answered on this node only"}));
+        return (
+            FORBIDDEN,
+            json!({"error_code": "FORBIDDEN", "message": "screen-share consent is answered on this node only"}),
+        );
     }
     let caller = command.from.clone();
     let body = match args(command) {
@@ -417,7 +468,11 @@ pub fn handle_verb(command: &IncomingCommand) -> (u8, serde_json::Value) {
             let Some(allow) = body.get("allow").and_then(|v| v.as_bool()) else {
                 return usage("answer needs {request, allow}");
             };
-            let decision = if allow { Decision::AnsweredAllow } else { Decision::AnsweredDeny };
+            let decision = if allow {
+                Decision::AnsweredAllow
+            } else {
+                Decision::AnsweredDeny
+            };
             match consent.decide(request, decision) {
                 Ok(notification) => {
                     tracing::info!(%caller, %request, allow, "screencast consent answered over the Bus");
@@ -438,10 +493,15 @@ pub fn handle_verb(command: &IncomingCommand) -> (u8, serde_json::Value) {
             let Ok(count) = optional_u64(&body, "count", 1) else {
                 return usage("count must be a whole number");
             };
-            let Ok(ttl_ms) = optional_u64(&body, "ttl_ms", DEFAULT_GRANT_TTL.as_millis() as u64) else {
+            let Ok(ttl_ms) = optional_u64(&body, "ttl_ms", DEFAULT_GRANT_TTL.as_millis() as u64)
+            else {
                 return usage("ttl_ms must be a whole number");
             };
-            match consent.grant(app, u32::try_from(count).unwrap_or(0), Duration::from_millis(ttl_ms)) {
+            match consent.grant(
+                app,
+                u32::try_from(count).unwrap_or(0),
+                Duration::from_millis(ttl_ms),
+            ) {
                 Ok(grant) => {
                     tracing::info!(%caller, id = grant.id, app = ?grant.app, count, ttl_ms, "screencast grant added");
                     (0, serde_json::to_value(grant).unwrap_or_default())
@@ -470,7 +530,10 @@ pub fn handle_verb(command: &IncomingCommand) -> (u8, serde_json::Value) {
 fn withdraw(id: u64) {
     if let Some(client) = client() {
         tokio::spawn(async move {
-            if let Err(error) = client.call("notify", "notify.close", json!({"id": id})).await {
+            if let Err(error) = client
+                .call("notify", "notify.close", json!({"id": id}))
+                .await
+            {
                 tracing::debug!(id, %error, "consent question not withdrawn; it expires on its own");
             }
         });
@@ -568,7 +631,12 @@ where
             return Decision::Denied;
         }
     };
-    tokio::spawn(ask(consent.clone(), request.to_owned(), shown.to_owned(), output.to_owned()));
+    tokio::spawn(ask(
+        consent.clone(),
+        request.to_owned(),
+        shown.to_owned(),
+        output.to_owned(),
+    ));
     let deadline = tokio::time::Instant::now() + PROMPT_TIMEOUT + Duration::from_secs(5);
     loop {
         tokio::select! {
@@ -601,7 +669,9 @@ mod tests {
     fn grants_prefer_the_named_app_and_run_out() {
         let consent = Consent::new(Policy::Prompt);
         let any = consent.grant(None, 1, DEFAULT_GRANT_TTL).unwrap();
-        let firefox = consent.grant(Some("firefox".into()), 2, DEFAULT_GRANT_TTL).unwrap();
+        let firefox = consent
+            .grant(Some("firefox".into()), 2, DEFAULT_GRANT_TTL)
+            .unwrap();
         assert_eq!(consent.take_grant(Some("firefox")), Some(firefox.id));
         assert_eq!(consent.take_grant(Some("zoom")), Some(any.id));
         assert_eq!(consent.take_grant(Some("zoom")), None);
@@ -613,24 +683,44 @@ mod tests {
     #[test]
     fn an_unnamed_app_needs_a_grant_for_any_app() {
         let consent = Consent::new(Policy::Prompt);
-        consent.grant(Some("obs".into()), 1, DEFAULT_GRANT_TTL).unwrap();
+        consent
+            .grant(Some("obs".into()), 1, DEFAULT_GRANT_TTL)
+            .unwrap();
         assert_eq!(consent.take_grant(None), None);
         let any = consent.grant(None, 1, DEFAULT_GRANT_TTL).unwrap();
         assert_eq!(consent.take_grant(None), Some(any.id));
         // A name the kernel can never report is refused at grant time.
-        assert!(consent.grant(Some("obs-studio-portal".into()), 1, DEFAULT_GRANT_TTL).is_err());
-        assert!(consent.grant(Some("a".repeat(MAX_APP_NAME)), 1, DEFAULT_GRANT_TTL).is_ok());
+        assert!(
+            consent
+                .grant(Some("obs-studio-portal".into()), 1, DEFAULT_GRANT_TTL)
+                .is_err()
+        );
+        assert!(
+            consent
+                .grant(Some("a".repeat(MAX_APP_NAME)), 1, DEFAULT_GRANT_TTL)
+                .is_ok()
+        );
     }
 
     #[test]
     fn waiting_requests_are_bounded() {
         let consent = Consent::new(Policy::Prompt);
         let _first = consent.wait("/r/a1", "x", ":1.1", "o").unwrap();
-        assert!(consent.wait("/r/a2", "x", ":1.1", "o").is_err(), "one per caller");
+        assert!(
+            consent.wait("/r/a2", "x", ":1.1", "o").is_err(),
+            "one per caller"
+        );
         let _rest: Vec<_> = (2..=MAX_PENDING)
-            .map(|n| consent.wait(&format!("/r/{n}"), "x", &format!(":1.{n}"), "o").unwrap())
+            .map(|n| {
+                consent
+                    .wait(&format!("/r/{n}"), "x", &format!(":1.{n}"), "o")
+                    .unwrap()
+            })
             .collect();
-        assert!(consent.wait("/r/over", "x", ":1.99", "o").is_err(), "at most MAX_PENDING");
+        assert!(
+            consent.wait("/r/over", "x", ":1.99", "o").is_err(),
+            "at most MAX_PENDING"
+        );
     }
 
     #[test]
@@ -649,10 +739,17 @@ mod tests {
             let consent = consent.clone();
             let wanted = wanted.clone();
             async move {
-                decide_start(&consent, "/r/gone", Some("firefox"), ":1.3", "HDMI-A-1", || {
-                    let wanted = wanted.clone();
-                    async move { wanted.load(std::sync::atomic::Ordering::SeqCst) }
-                })
+                decide_start(
+                    &consent,
+                    "/r/gone",
+                    Some("firefox"),
+                    ":1.3",
+                    "HDMI-A-1",
+                    || {
+                        let wanted = wanted.clone();
+                        async move { wanted.load(std::sync::atomic::Ordering::SeqCst) }
+                    },
+                )
                 .await
             }
         });
@@ -662,7 +759,10 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
         wanted.store(false, std::sync::atomic::Ordering::SeqCst);
-        let decision = tokio::time::timeout(Duration::from_secs(5), waiting).await.unwrap().unwrap();
+        let decision = tokio::time::timeout(Duration::from_secs(5), waiting)
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(decision, Decision::Abandoned);
         assert!(!decision.granted());
         assert!(!consent.is_pending("/r/gone"));
@@ -731,24 +831,50 @@ mod tests {
             Some("local"),
         ));
         assert_eq!(rc, 0, "{grant}");
-        let (_, listed) = handle_verb(&command("portald.screencast.pending", json!({}), Some("local")));
+        let (_, listed) = handle_verb(&command(
+            "portald.screencast.pending",
+            json!({}),
+            Some("local"),
+        ));
         assert_eq!(listed["grants"].as_array().map(Vec::len), Some(1));
         assert_eq!(
-            decide_start(&consent, "/r/obs", Some("obs"), ":1.9", "HDMI-A-1", || async { true }).await,
+            decide_start(
+                &consent,
+                "/r/obs",
+                Some("obs"),
+                ":1.9",
+                "HDMI-A-1",
+                || async { true }
+            )
+            .await,
             Decision::Grant
         );
 
         // Without a grant the Start waits; an agent answers it.
         let waiting = tokio::spawn({
             let consent = consent.clone();
-            async move { decide_start(&consent, "/r/ff", Some("firefox"), ":1.10", "HDMI-A-1", || async { true }).await }
+            async move {
+                decide_start(
+                    &consent,
+                    "/r/ff",
+                    Some("firefox"),
+                    ":1.10",
+                    "HDMI-A-1",
+                    || async { true },
+                )
+                .await
+            }
         });
         let deadline = Instant::now() + Duration::from_secs(5);
         while !consent.is_pending("/r/ff") {
             assert!(Instant::now() < deadline, "the Start never waited");
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
-        let (_, listed) = handle_verb(&command("portald.screencast.pending", json!({}), Some("local")));
+        let (_, listed) = handle_verb(&command(
+            "portald.screencast.pending",
+            json!({}),
+            Some("local"),
+        ));
         assert_eq!(listed["pending"][0]["app"], "firefox");
         let (rc, _) = handle_verb(&command(
             "portald.screencast.answer",
@@ -765,7 +891,11 @@ mod tests {
             Some("local"),
         ));
         assert_eq!(rc, 14);
-        let (rc, _) = handle_verb(&command("portald.screencast.answer", json!({"request": "/r/x"}), Some("local")));
+        let (rc, _) = handle_verb(&command(
+            "portald.screencast.answer",
+            json!({"request": "/r/x"}),
+            Some("local"),
+        ));
         assert_eq!(rc, 10);
 
         // A body that is not JSON is refused, never read as an any-app grant.
@@ -774,18 +904,42 @@ mod tests {
         assert_eq!(handle_verb(&garbage).0, 10);
 
         // Wrongly typed fields are refused, never read as their defaults.
-        let (rc, _) = handle_verb(&command("portald.screencast.grant", json!({"count": "5"}), Some("local")));
+        let (rc, _) = handle_verb(&command(
+            "portald.screencast.grant",
+            json!({"count": "5"}),
+            Some("local"),
+        ));
         assert_eq!(rc, 10);
-        let (rc, _) = handle_verb(&command("portald.screencast.grant", json!({"ttl_ms": -1}), Some("local")));
+        let (rc, _) = handle_verb(&command(
+            "portald.screencast.grant",
+            json!({"ttl_ms": -1}),
+            Some("local"),
+        ));
         assert_eq!(rc, 10);
 
         // Revoke clears grants; a malformed id revokes nothing.
-        handle_verb(&command("portald.screencast.grant", json!({}), Some("local")));
-        let (rc, _) = handle_verb(&command("portald.screencast.revoke", json!({"id": "5"}), Some("local")));
+        handle_verb(&command(
+            "portald.screencast.grant",
+            json!({}),
+            Some("local"),
+        ));
+        let (rc, _) = handle_verb(&command(
+            "portald.screencast.revoke",
+            json!({"id": "5"}),
+            Some("local"),
+        ));
         assert_eq!(rc, 10);
-        let (_, listed) = handle_verb(&command("portald.screencast.pending", json!({}), Some("local")));
+        let (_, listed) = handle_verb(&command(
+            "portald.screencast.pending",
+            json!({}),
+            Some("local"),
+        ));
         assert_eq!(listed["grants"].as_array().map(Vec::len), Some(1));
-        let (_, revoked) = handle_verb(&command("portald.screencast.revoke", json!({}), Some("local")));
+        let (_, revoked) = handle_verb(&command(
+            "portald.screencast.revoke",
+            json!({}),
+            Some("local"),
+        ));
         assert_eq!(revoked["revoked"], 1);
     }
 

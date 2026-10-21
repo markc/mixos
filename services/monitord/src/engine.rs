@@ -210,7 +210,11 @@ impl Engine {
             }
             // A scan from before the sampler went idle would average CPU
             // over minutes: start again.
-            if procs.scan.as_ref().is_some_and(|(at, _)| at.elapsed() >= fresh) {
+            if procs
+                .scan
+                .as_ref()
+                .is_some_and(|(at, _)| at.elapsed() >= fresh)
+            {
                 procs.scan = None;
             }
         }
@@ -287,13 +291,16 @@ impl Engine {
         }
         let step = history::step(from, to, tier, max_points);
         let points = match (tier, &self.store) {
-            (history::Tier::Live, _) | (_, None) => self.live.lock().unwrap().query(name, from, to, step),
-            (tier, Some(store)) => {
-                store
-                    .lock()
-                    .unwrap()
-                    .query(tier, name, from.max(0.0) as u64, to.max(0.0) as u64, step)?
+            (history::Tier::Live, _) | (_, None) => {
+                self.live.lock().unwrap().query(name, from, to, step)
             }
+            (tier, Some(store)) => store.lock().unwrap().query(
+                tier,
+                name,
+                from.max(0.0) as u64,
+                to.max(0.0) as u64,
+                step,
+            )?,
         };
         Ok((tier, step, points))
     }

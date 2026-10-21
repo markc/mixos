@@ -8,8 +8,8 @@
 //! own raw buffer and therefore their own offset space.
 
 use crate::mailstore::{MailStore, SqliteMailStore, parse_hash};
-use mds::{BlobHash, ItemId, Mds, blob};
 use mail_parser::{Message, MessageParser, MessagePart, MimeHeaders, PartType};
+use mds::{BlobHash, ItemId, Mds, blob};
 use std::{fmt, io::Read};
 use uuid::Uuid;
 

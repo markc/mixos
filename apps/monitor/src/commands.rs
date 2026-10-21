@@ -200,8 +200,17 @@ mod tests {
         let strings = crate::strings();
         let known = |key: &str| toolkit::command::label_text(&strings, key) != key;
         for command in registry().iter() {
-            assert!(known(command.label), "{} label {:?}", command.id, command.label);
-            assert!(command.menu.is_none_or(|m| strings.has(m)), "{} menu", command.id);
+            assert!(
+                known(command.label),
+                "{} label {:?}",
+                command.id,
+                command.label
+            );
+            assert!(
+                command.menu.is_none_or(|m| strings.has(m)),
+                "{} menu",
+                command.id
+            );
             assert!(command.submenu.is_none_or(known), "{} submenu", command.id);
         }
     }
@@ -222,10 +231,16 @@ mod tests {
         let mut e = Engine::new(crate::label);
         r.execute("view.performance", &mut e, Origin::Bus).unwrap();
         assert_eq!(e.ui.tab, Tab::Performance);
-        assert!(r.execute("view.tree", &mut e, Origin::Bus).is_err(), "only on the processes page");
+        assert!(
+            r.execute("view.tree", &mut e, Origin::Bus).is_err(),
+            "only on the processes page"
+        );
         r.execute("view.processes", &mut e, Origin::Bus).unwrap();
         r.execute("view.tree", &mut e, Origin::Bus).unwrap();
         assert!(e.ui.tree);
-        assert!(r.execute("process.end", &mut e, Origin::Bus).is_err(), "nothing selected");
+        assert!(
+            r.execute("process.end", &mut e, Origin::Bus).is_err(),
+            "nothing selected"
+        );
     }
 }

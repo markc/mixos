@@ -80,7 +80,11 @@ struct State {
     copy: Copy,
 }
 
-fn connect() -> anyhow::Result<(EventQueue<State>, State, wayland_client::globals::GlobalList)> {
+fn connect() -> anyhow::Result<(
+    EventQueue<State>,
+    State,
+    wayland_client::globals::GlobalList,
+)> {
     let connection = Connection::connect_to_env()
         .map_err(|error| anyhow::anyhow!("no compositor connection: {error}"))?;
     let (globals, mut queue) = registry_queue_init::<State>(&connection)?;
@@ -89,9 +93,10 @@ fn connect() -> anyhow::Result<(EventQueue<State>, State, wayland_client::global
     for global in globals.contents().clone_list() {
         if global.interface == "wl_output" {
             let index = state.outputs.len();
-            let proxy: WlOutput = globals
-                .registry()
-                .bind(global.name, global.version.min(4), &qh, index);
+            let proxy: WlOutput =
+                globals
+                    .registry()
+                    .bind(global.name, global.version.min(4), &qh, index);
             state.outputs.push(Output {
                 proxy,
                 info: OutputInfo {
@@ -121,7 +126,11 @@ fn connect() -> anyhow::Result<(EventQueue<State>, State, wayland_client::global
 /// The outputs compd advertises now, in advertisement order.
 pub fn outputs() -> anyhow::Result<Vec<OutputInfo>> {
     let (_queue, state, _globals) = connect()?;
-    Ok(state.outputs.into_iter().map(|output| output.info).collect())
+    Ok(state
+        .outputs
+        .into_iter()
+        .map(|output| output.info)
+        .collect())
 }
 
 /// Dispatches until `done` holds. Returns false when `stop` was raised first.
@@ -176,7 +185,11 @@ struct ShmBuffer {
 }
 
 impl ShmBuffer {
-    fn new(shm: &WlShm, qh: &QueueHandle<State>, layout: (u32, u32, u32, u32)) -> anyhow::Result<Self> {
+    fn new(
+        shm: &WlShm,
+        qh: &QueueHandle<State>,
+        layout: (u32, u32, u32, u32),
+    ) -> anyhow::Result<Self> {
         let (format, width, height, stride) = layout;
         let len = stride as usize * height as usize;
         // SAFETY: a fresh anonymous file; the descriptor is owned by `file`.
@@ -204,7 +217,15 @@ impl ShmBuffer {
         let pool = shm.create_pool(file.as_fd(), len as i32, qh, ());
         let format = wl_shm::Format::try_from(format)
             .map_err(|_| anyhow::anyhow!("unknown shm format {format:#x}"))?;
-        let buffer = pool.create_buffer(0, width as i32, height as i32, stride as i32, format, qh, ());
+        let buffer = pool.create_buffer(
+            0,
+            width as i32,
+            height as i32,
+            stride as i32,
+            format,
+            qh,
+            (),
+        );
         Ok(Self {
             layout,
             _file: file,
@@ -272,9 +293,9 @@ pub fn run(
         .map(|output| output.proxy.clone())
         .ok_or_else(|| anyhow::anyhow!("output {output_name} is gone"))?;
     let shm: WlShm = globals.bind(&qh, 1..=1, ())?;
-    let manager: ZwlrScreencopyManagerV1 = globals
-        .bind(&qh, 3..=3, ())
-        .map_err(|error| anyhow::anyhow!("compd offers no zwlr_screencopy_manager_v1 v3: {error}"))?;
+    let manager: ZwlrScreencopyManagerV1 = globals.bind(&qh, 3..=3, ()).map_err(|error| {
+        anyhow::anyhow!("compd offers no zwlr_screencopy_manager_v1 v3: {error}")
+    })?;
     let interval = Duration::from_secs(1) / max_fps.max(1);
     let mut shm_buffer: Option<ShmBuffer> = None;
     let mut frames: Vec<Arc<Frame>> = Vec::new();
@@ -285,7 +306,9 @@ pub fn run(
         let asked = Instant::now();
         state.copy = Copy::default();
         let frame = manager.capture_output(i32::from(overlay_cursor), &output, &qh, ());
-        if !pump(&mut queue, &mut state, stop, |s| s.copy.buffer_done || s.copy.failed)? {
+        if !pump(&mut queue, &mut state, stop, |s| {
+            s.copy.buffer_done || s.copy.failed
+        })? {
             frame.destroy();
             break;
         }
@@ -320,7 +343,9 @@ pub fn run(
         } else {
             frame.copy_with_damage(&buffer.buffer);
         }
-        if !pump(&mut queue, &mut state, stop, |s| s.copy.ready || s.copy.failed)? {
+        if !pump(&mut queue, &mut state, stop, |s| {
+            s.copy.ready || s.copy.failed
+        })? {
             frame.destroy();
             break;
         }

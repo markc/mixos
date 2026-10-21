@@ -6,13 +6,13 @@
 use std::sync::Arc;
 
 use anyhow::Result;
+use mail_parser::HeaderValue;
 use maild_bayesian::{
     DefaultClassifier,
     types::{Label, RetrainRequest},
 };
 use maild_rules::AccountId;
 use mds::{BlobHash, ContainerId, Flags, ItemId, Mds, Tags};
-use mail_parser::HeaderValue;
 use uuid::Uuid;
 
 use super::types::*;
@@ -787,40 +787,43 @@ pub async fn query(
     };
 
     let ms = mailstore.clone();
-    let (page_ids, total) =
-        match tokio::task::spawn_blocking(move || ms.query_emails_page(account_id, filter, sort, opts))
-            .await?
-        {
-            Ok(v) => v,
-            Err(e) => {
-                // Storage-layer "mailbox not found" is a JMAP-level
-                // `invalidArguments`, not `serverFail` — the client passed
-                // an `inMailbox` id that does not exist in the account's
-                // mailbox set (RFC 8621 §4.4.2). `query_emails` returns
-                // this case as a bare `anyhow!("mailbox not found:...")`
-                // (`mailstore/mod.rs:1530`); we re-raise it as a typed
-                // method error so the dispatcher emits the correct error
-                // triple. The classification by message-prefix mirrors the
-                // existing convention in `email::get` (see the doc comment
-                // around `email not found` / `email envelope missing` at
-                // line ~145) — a future `MailStoreError` enum subsumes
-                // both sites.
-                let msg = format!("{e}");
-                if msg.starts_with("mailbox not found") {
-                    return Err(JmapMethodError {
-                        error_type: "invalidArguments".into(),
-                        description: Some(msg),
-                    }
-                    .into());
+    let (page_ids, total) = match tokio::task::spawn_blocking(move || {
+        ms.query_emails_page(account_id, filter, sort, opts)
+    })
+    .await?
+    {
+        Ok(v) => v,
+        Err(e) => {
+            // Storage-layer "mailbox not found" is a JMAP-level
+            // `invalidArguments`, not `serverFail` — the client passed
+            // an `inMailbox` id that does not exist in the account's
+            // mailbox set (RFC 8621 §4.4.2). `query_emails` returns
+            // this case as a bare `anyhow!("mailbox not found:...")`
+            // (`mailstore/mod.rs:1530`); we re-raise it as a typed
+            // method error so the dispatcher emits the correct error
+            // triple. The classification by message-prefix mirrors the
+            // existing convention in `email::get` (see the doc comment
+            // around `email not found` / `email envelope missing` at
+            // line ~145) — a future `MailStoreError` enum subsumes
+            // both sites.
+            let msg = format!("{e}");
+            if msg.starts_with("mailbox not found") {
+                return Err(JmapMethodError {
+                    error_type: "invalidArguments".into(),
+                    description: Some(msg),
                 }
-                return Err(e);
+                .into());
             }
-        };
+            return Err(e);
+        }
+    };
 
     // A position past the end yields an empty page; report the clamped
     // position so the client sees where the list actually ends.
     let total_usize = usize::try_from(total).unwrap_or(usize::MAX);
-    let start = usize::try_from(position).unwrap_or(usize::MAX).min(total_usize);
+    let start = usize::try_from(position)
+        .unwrap_or(usize::MAX)
+        .min(total_usize);
 
     let resp = QueryResponse {
         account_id: acct,

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Typed calls to a local Bus port over a Unix socket.
+use crate::{PortReply, RC_ERROR, bus};
 use anyhow::Result;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use crate::{bus, PortReply, RC_ERROR};
 
 /// Call a local port, preserving application return codes separately from transport errors.
 pub async fn call_port_typed(
@@ -137,5 +137,4 @@ mod call_port_typed_tests {
         let r = call_port_typed(path.to_str().unwrap(), "x", serde_json::Value::Null).await;
         assert!(r.is_err(), "a missing socket must be a transport Err");
     }
-
 }

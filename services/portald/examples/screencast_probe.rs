@@ -9,11 +9,11 @@
 //!
 //! Needs DBUS_SESSION_BUS_ADDRESS for a session whose portald serves
 //! ScreenCast.
+use futures_util::StreamExt;
 use std::collections::HashMap;
 use std::time::Duration;
-use futures_util::StreamExt;
-use zbus::{Connection, MessageStream};
 use zbus::zvariant::{OwnedFd, OwnedObjectPath, OwnedValue, Value};
+use zbus::{Connection, MessageStream};
 use zbus::{MatchRule, message};
 
 const BUS: &str = "org.freedesktop.portal.Desktop";
@@ -39,7 +39,10 @@ async fn request<F>(
 where
     F: std::future::Future<Output = zbus::Result<zbus::Message>>,
 {
-    let path = format!("/org/freedesktop/portal/desktop/request/{}/{token}", segment(connection));
+    let path = format!(
+        "/org/freedesktop/portal/desktop/request/{}/{token}",
+        segment(connection)
+    );
     let rule = MatchRule::builder()
         .msg_type(message::Type::Signal)
         .interface("org.freedesktop.portal.Request")?
@@ -69,11 +72,20 @@ async fn main() -> anyhow::Result<()> {
         .unwrap_or(20);
     let connection = Connection::session().await?;
 
-    let created = request(&connection, "probe_create", "CreateSession", |mut options| {
-        options.insert("session_handle_token", Value::from("probe"));
-        let connection = connection.clone();
-        async move { connection.call_method(Some(BUS), PATH, Some(CAST), "CreateSession", &(options,)).await }
-    })
+    let created = request(
+        &connection,
+        "probe_create",
+        "CreateSession",
+        |mut options| {
+            options.insert("session_handle_token", Value::from("probe"));
+            let connection = connection.clone();
+            async move {
+                connection
+                    .call_method(Some(BUS), PATH, Some(CAST), "CreateSession", &(options,))
+                    .await
+            }
+        },
+    )
     .await?;
     let session = OwnedObjectPath::try_from(
         created["session_handle"]
@@ -83,22 +95,48 @@ async fn main() -> anyhow::Result<()> {
     )?;
     println!("session {session}");
 
-    request(&connection, "probe_select", "SelectSources", |mut options| {
-        options.insert("types", Value::from(1u32));
-        options.insert("cursor_mode", Value::from(2u32));
-        let connection = connection.clone();
-        let session = session.clone();
-        async move { connection.call_method(Some(BUS), PATH, Some(CAST), "SelectSources", &(&session, options)).await }
-    })
+    request(
+        &connection,
+        "probe_select",
+        "SelectSources",
+        |mut options| {
+            options.insert("types", Value::from(1u32));
+            options.insert("cursor_mode", Value::from(2u32));
+            let connection = connection.clone();
+            let session = session.clone();
+            async move {
+                connection
+                    .call_method(
+                        Some(BUS),
+                        PATH,
+                        Some(CAST),
+                        "SelectSources",
+                        &(&session, options),
+                    )
+                    .await
+            }
+        },
+    )
     .await?;
 
     let started = request(&connection, "probe_start", "Start", |options| {
         let connection = connection.clone();
         let session = session.clone();
-        async move { connection.call_method(Some(BUS), PATH, Some(CAST), "Start", &(&session, "", options)).await }
+        async move {
+            connection
+                .call_method(
+                    Some(BUS),
+                    PATH,
+                    Some(CAST),
+                    "Start",
+                    &(&session, "", options),
+                )
+                .await
+        }
     })
     .await?;
-    let streams: Vec<(u32, HashMap<String, OwnedValue>)> = started["streams"].try_clone()?.try_into()?;
+    let streams: Vec<(u32, HashMap<String, OwnedValue>)> =
+        started["streams"].try_clone()?.try_into()?;
     for (node, properties) in &streams {
         let mut keys: Vec<_> = properties.iter().collect();
         keys.sort_by(|a, b| a.0.cmp(b.0));
@@ -124,7 +162,13 @@ async fn main() -> anyhow::Result<()> {
     println!("holding the session for {hold}s");
     tokio::time::sleep(Duration::from_secs(hold)).await;
     connection
-        .call_method(Some(BUS), session.as_str(), Some("org.freedesktop.portal.Session"), "Close", &())
+        .call_method(
+            Some(BUS),
+            session.as_str(),
+            Some("org.freedesktop.portal.Session"),
+            "Close",
+            &(),
+        )
         .await?;
     println!("closed");
     Ok(())

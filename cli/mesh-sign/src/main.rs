@@ -28,13 +28,13 @@ use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as B64;
 use chrono::{Duration, SecondsFormat, Utc};
 use clap::{Parser, Subcommand};
+use ed25519_dalek::{Signer, SigningKey};
 use mesh_trust::inventory::{
     ALG_ED25519, CANONICAL_ENCODING_V1, InvSignature, InventoryPayload, KeyStatus, NodeTrustState,
     SIGNER_OWNED_FIELDS, SignedInventory, TrustedKey, authoring_blake3_for_value,
 };
 use mesh_trust::routing::{RoutingMember, strict_routing_view};
 use mix::value::Value;
-use ed25519_dalek::{Signer, SigningKey};
 use rand::rngs::OsRng;
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::{Value as Json, json};
@@ -1079,8 +1079,7 @@ fn check_authored_unsigned(obj: &serde_json::Map<String, Json>) -> Result<()> {
 /// [`authoring_blake3_for_value`] owns its removal for hashing, while `cmd_sign`
 /// removes it before constructing the signed payload.
 fn load_authored_inventory_json(path: &Path) -> Result<Json> {
-    let mix =
-        mix::parse_data_file(path).map_err(|e| anyhow!("parse {}: {e}", path.display()))?;
+    let mix = mix::parse_data_file(path).map_err(|e| anyhow!("parse {}: {e}", path.display()))?;
     let inner = mix_get(&mix, "inventory").ok_or_else(|| {
         anyhow!(
             "{} has no top-level `inventory:` key (is it the strict-data form?)",

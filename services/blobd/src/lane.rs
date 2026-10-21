@@ -32,9 +32,9 @@ use axum::extract::{ConnectInfo, Path as AxumPath, State};
 use axum::http::{HeaderMap, Method, StatusCode, header};
 use axum::response::Response;
 use axum::routing::{get, post};
+use http_body_util::BodyExt;
 use mds::blob;
 use mds::types::BlobHash;
-use http_body_util::BodyExt;
 use tokio::net::TcpListener;
 use tokio::sync::{Semaphore, mpsc};
 use tokio_util::io::ReaderStream;
@@ -158,11 +158,14 @@ fn lane_router(lane: Arc<Lane>) -> Router {
         .route("/blob/uploads/{id}/commit", post(uploads::commit))
         // Layer the router (including method fallbacks), not just handler
         // responses: generated 405s and extractor refusals must not be cached.
-        .layer(axum::middleware::map_response(|response: Response| async move {
-            uploads::no_store(response)
-        }));
+        .layer(axum::middleware::map_response(
+            |response: Response| async move { uploads::no_store(response) },
+        ));
     Router::new()
-        .route("/blob/{hex}", get(get_blob).put(put_upload).post(post_upload))
+        .route(
+            "/blob/{hex}",
+            get(get_blob).put(put_upload).post(post_upload),
+        )
         .route("/blob", post(post_upload))
         .merge(sessions)
         .with_state(lane)
@@ -511,8 +514,8 @@ impl Lane {
             Ok(mime) => mime,
             Err(error) => return lane_error(StatusCode::BAD_REQUEST, &error.to_string()),
         }
-            .or_else(|| name.as_deref().map(mime::sniff).map(str::to_string))
-            .unwrap_or_else(|| "application/octet-stream".to_string());
+        .or_else(|| name.as_deref().map(mime::sniff).map(str::to_string))
+        .unwrap_or_else(|| "application/octet-stream".to_string());
         let expected_hex = expected.map(|h| blob::hex(&h));
         debug!(
             peer = %peer,
@@ -805,11 +808,18 @@ fn lane_owner(headers: &HeaderMap, peer: SocketAddr) -> String {
         .unwrap_or_else(|| format!("lane:{}", peer.ip()))
 }
 
-fn string_header(headers: &HeaderMap, name: &str) -> std::result::Result<Option<String>, StoreError> {
+fn string_header(
+    headers: &HeaderMap,
+    name: &str,
+) -> std::result::Result<Option<String>, StoreError> {
     let invalid = || StoreError::BadRequest(format!("invalid {name}"));
     let mut values = headers.get_all(name).iter();
-    let Some(value) = values.next() else { return Ok(None); };
-    if values.next().is_some() { return Err(invalid()); }
+    let Some(value) = values.next() else {
+        return Ok(None);
+    };
+    if values.next().is_some() {
+        return Err(invalid());
+    }
     let value = value.to_str().map_err(|_| invalid())?;
     let decoded = if name == "x-mixos-name" {
         // RFC 3986: '+' is literal, never form-encoded whitespace.
@@ -817,13 +827,23 @@ fn string_header(headers: &HeaderMap, name: &str) -> std::result::Result<Option<
         let mut out = Vec::with_capacity(value.len());
         while let Some(byte) = bytes.next() {
             if byte == b'%' {
-                let hi = bytes.next().and_then(|b| (b as char).to_digit(16)).ok_or_else(invalid)?;
-                let lo = bytes.next().and_then(|b| (b as char).to_digit(16)).ok_or_else(invalid)?;
+                let hi = bytes
+                    .next()
+                    .and_then(|b| (b as char).to_digit(16))
+                    .ok_or_else(invalid)?;
+                let lo = bytes
+                    .next()
+                    .and_then(|b| (b as char).to_digit(16))
+                    .ok_or_else(invalid)?;
                 out.push((hi * 16 + lo) as u8);
-            } else { out.push(byte); }
+            } else {
+                out.push(byte);
+            }
         }
         String::from_utf8(out).map_err(|_| invalid())?
-    } else { value.to_owned() };
+    } else {
+        value.to_owned()
+    };
     let limit = if name == "x-mixos-name" { 1024 } else { 256 };
     if decoded.is_empty() || decoded.len() > limit || decoded.chars().any(char::is_control) {
         return Err(invalid());
@@ -836,7 +856,9 @@ fn encoded_name(name: &str) -> String {
     for byte in name.bytes() {
         if byte.is_ascii_alphanumeric() || b"-._~".contains(&byte) {
             out.push(char::from(byte));
-        } else { out.push_str(&format!("%{byte:02X}")); }
+        } else {
+            out.push_str(&format!("%{byte:02X}"));
+        }
     }
     out
 }
@@ -941,7 +963,10 @@ pub(crate) mod test_support {
         (dir, store, addr, lane)
     }
 
-    pub(crate) async fn serve_store(store: Arc<Store>, upload_deadline: Duration) -> (SocketAddr, Arc<Lane>) {
+    pub(crate) async fn serve_store(
+        store: Arc<Store>,
+        upload_deadline: Duration,
+    ) -> (SocketAddr, Arc<Lane>) {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         let lane = Arc::new(Lane::new(Arc::clone(&store), 4, upload_deadline));

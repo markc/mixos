@@ -114,7 +114,9 @@ mod tests {
             uid: 1002,
             gid: 1002,
             pid: Some(1),
-            cgroup: Some("/user.slice/user-1002.slice/user@1002.service/app.slice/mixtrayd.service".into()),
+            cgroup: Some(
+                "/user.slice/user-1002.slice/user@1002.service/app.slice/mixtrayd.service".into(),
+            ),
             verified: true,
             host_ns: false,
         })

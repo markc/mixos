@@ -24,9 +24,9 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use ::props::runtime::Runtime;
 use anyhow::Result;
 use mds::Mds;
-use ::props::runtime::Runtime;
 use tokio::task::JoinHandle;
 use tokio::time::interval;
 use tracing::{debug, info, warn};
@@ -285,13 +285,13 @@ mod tests {
     use super::*;
     use std::collections::BTreeMap;
 
-    use mds::{Flags, Mds, Membership, SqliteCasMds};
     use ::props::bus::mutation::PropsRouter;
     use ::props::record::{Actor, RecordKey};
     use ::props::runtime::SetOpts;
     use ::props::sqlite::SqliteStore;
     use ::props::store::MergeMode;
     use ::props::value::PropValue;
+    use mds::{Flags, Mds, Membership, SqliteCasMds};
     use rusqlite::Connection;
     use tempfile::TempDir;
 

@@ -45,9 +45,9 @@ use std::time::Duration;
 
 use bus::PortReply;
 use bus::native_client::NodedClient;
+use futures_util::StreamExt;
 use mds::blob;
 use mds::types::BlobHash;
-use futures_util::StreamExt;
 use serde_json::{Value, json};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc};
 use tracing::{debug, warn};
@@ -2560,7 +2560,8 @@ mod tests {
                 loop {
                     let gauges = fetcher.gauges();
                     peak.fetch_max(gauges.in_flight, Ordering::SeqCst);
-                    if gauges.in_flight == 1 && gauges.queued == 1
+                    if gauges.in_flight == 1
+                        && gauges.queued == 1
                         && let Some(sampled_tx) = sampled_tx.take()
                     {
                         // The admitted slot held behind `release_rx`: tell the

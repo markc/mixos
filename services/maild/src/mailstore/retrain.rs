@@ -610,8 +610,7 @@ impl RetrainOutboxWorker {
 
         let message = match bytes {
             Ok(Ok(m)) => m,
-            Ok(Err(mds::Error::ItemNotFound(_)))
-            | Ok(Err(mds::Error::BlobNotFound(_))) => {
+            Ok(Err(mds::Error::ItemNotFound(_))) | Ok(Err(mds::Error::BlobNotFound(_))) => {
                 // Accepted best-effort gap: the message was deleted
                 // (last membership gone, blob GC'd) before we drained.
                 return Finalise::DeadLetter("message gone before drain".to_string());

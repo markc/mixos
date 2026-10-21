@@ -464,7 +464,10 @@ mod tests {
             "BEGIN:VCARD\r\nVERSION:4.0\r\nFN:T\r\nTEL;TYPE=cell:+61400000000\r\nEND:VCARD\r\n",
         )
         .unwrap();
-        assert_eq!(primary_phone(&p.data).unwrap().as_deref(), Some("+61400000000"));
+        assert_eq!(
+            primary_phone(&p.data).unwrap().as_deref(),
+            Some("+61400000000")
+        );
         assert_eq!(p.data["phones"]["default"]["number"], "+61400000000"); // also structured
         // emit builds a TEL from data.phones for a non-raw contact.
         let data = serde_json::json!({"phones":{"x":{"number":"123"}}});

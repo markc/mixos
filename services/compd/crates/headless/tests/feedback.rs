@@ -128,11 +128,19 @@ fn default_feedback_names_render_device_and_offers_formats() {
         let found = fs::read_to_string(process.root.join("compd.log"))
             .unwrap_or_default()
             .lines()
-            .find_map(|line| line.split("headless: EGL device = ").nth(1).map(str::trim).map(String::from));
+            .find_map(|line| {
+                line.split("headless: EGL device = ")
+                    .nth(1)
+                    .map(str::trim)
+                    .map(String::from)
+            });
         if let Some(path) = found {
             break path;
         }
-        assert!(Instant::now() < deadline, "compd never logged its EGL device");
+        assert!(
+            Instant::now() < deadline,
+            "compd never logged its EGL device"
+        );
         thread::sleep(Duration::from_millis(10));
     };
     let expected = fs::metadata(&selected).unwrap().rdev();

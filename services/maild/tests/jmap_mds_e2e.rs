@@ -27,14 +27,14 @@
 use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
 
-use anyhow::{Result, anyhow};
-use base64::Engine;
-use maild::config::{Config, ListenSpec};
-use maild::runtime::{RuntimeOpts, build_runtime};
 use ::props::record::{Actor, RecordKey, Version};
 use ::props::runtime::SetOpts;
 use ::props::store::MergeMode;
 use ::props::value::PropValue;
+use anyhow::{Result, anyhow};
+use base64::Engine;
+use maild::config::{Config, ListenSpec};
+use maild::runtime::{RuntimeOpts, build_runtime};
 use serde_json::{Value, json};
 use tempfile::TempDir;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};

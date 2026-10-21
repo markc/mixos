@@ -27,11 +27,11 @@
 //! rotation transition tolerates a stale retired selector whose key
 //! file has been cleaned away).
 
+use ::props::runtime::Runtime;
 use anyhow::{Context, Result, bail};
 use maild_auth::{
     Canon, DkimSignerConfig, Domain, MailAuthSigner, default_signed_headers, detect_algorithm,
 };
-use ::props::runtime::Runtime;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -162,13 +162,13 @@ pub async fn rebuild_signer_from_substrate(
 mod tests {
     use super::*;
     use crate::props::domains::{defaults_value, register as register_domains};
-    use maild_auth::{DkimAlgorithm, HeaderSpec, keygen};
     use ::props::MergeMode;
     use ::props::bus::mutation::PropsRouter;
     use ::props::record::{Actor, Version};
     use ::props::runtime::SetOpts;
     use ::props::sqlite::SqliteStore;
     use ::props::value::PropValue;
+    use maild_auth::{DkimAlgorithm, HeaderSpec, keygen};
     use rusqlite::Connection;
 
     // ---- helpers ----

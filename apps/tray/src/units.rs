@@ -149,7 +149,10 @@ mod tests {
     fn watched_units_are_plain_service_names() {
         for (name, _) in WATCHED {
             assert!(name.ends_with(".service"), "{name}");
-            assert!(!name.contains('@'), "templated units need an instance: {name}");
+            assert!(
+                !name.contains('@'),
+                "templated units need an instance: {name}"
+            );
         }
     }
 }

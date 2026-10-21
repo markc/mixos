@@ -141,13 +141,9 @@ async fn async_main() -> anyhow::Result<()> {
             let max_uploads = cfg.lane_max_uploads;
             let upload_deadline = std::time::Duration::from_secs(cfg.lane_upload_deadline_secs);
             tokio::spawn(async move {
-                if let Err(error) = blobd::lane::serve_lane(
-                    listener,
-                    lane_store,
-                    max_uploads,
-                    upload_deadline,
-                )
-                .await
+                if let Err(error) =
+                    blobd::lane::serve_lane(listener, lane_store, max_uploads, upload_deadline)
+                        .await
                 {
                     error!("byte lane stopped: {error}");
                 }

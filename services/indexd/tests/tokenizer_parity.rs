@@ -26,10 +26,9 @@ fn tokenizer_ids_match_predecessor_golden() {
         })
         .collect();
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/tokenizer_golden.json");
-    let golden: Vec<Vec<u32>> =
-        serde_json::from_str(&std::fs::read_to_string(path).expect(
-            "stage 7 must generate tests/tokenizer_golden.json with pinned predecessor token IDs",
-        ))
-        .expect("golden is a JSON array of token-ID arrays");
+    let golden: Vec<Vec<u32>> = serde_json::from_str(&std::fs::read_to_string(path).expect(
+        "stage 7 must generate tests/tokenizer_golden.json with pinned predecessor token IDs",
+    ))
+    .expect("golden is a JSON array of token-ID arrays");
     assert_eq!(actual, golden, "tokenizer ID parity changed");
 }

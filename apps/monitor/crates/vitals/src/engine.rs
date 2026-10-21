@@ -485,7 +485,10 @@ impl Engine {
     }
 
     pub fn set_section(&mut self, section: &str) -> Result<(), String> {
-        if !model::sections(self.snapshot.as_ref()).iter().any(|s| s == section) {
+        if !model::sections(self.snapshot.as_ref())
+            .iter()
+            .any(|s| s == section)
+        {
             return Err(self.label("invalid-section"));
         }
         self.ui.section = section.to_owned();
@@ -701,7 +704,11 @@ impl Engine {
         }
         if let Some(id) = reply {
             match result {
-                Ok(value) => self.effects.push(Effect::Reply { id, rc: 0, body: value }),
+                Ok(value) => self.effects.push(Effect::Reply {
+                    id,
+                    rc: 0,
+                    body: value,
+                }),
                 Err(error) => self.error(id, "ACTIVATION", &error),
             }
         }
@@ -866,8 +873,10 @@ impl Engine {
                 Ok(json!({"node": self.ui.node, "target": self.target()}))
             }
             "monitor.tab" => {
-                let tab = Tab::from_name(&text("tab")?)
-                    .ok_or(("ARGUMENT", "tab must be processes or performance".to_owned()))?;
+                let tab = Tab::from_name(&text("tab")?).ok_or((
+                    "ARGUMENT",
+                    "tab must be processes or performance".to_owned(),
+                ))?;
                 self.set_tab(tab);
                 Ok(json!({"tab": self.ui.tab}))
             }
@@ -1013,8 +1022,16 @@ mod tests {
     fn ready() -> Engine {
         let mut e = Engine::new(label);
         let f = fetches(&mut e);
-        e.fetched(Fetch::Snapshot, f[&Fetch::Snapshot].0, Ok(snapshot("alpha", 25.0)));
-        e.fetched(Fetch::Processes, f[&Fetch::Processes].0, Ok(table(&[1, 42])));
+        e.fetched(
+            Fetch::Snapshot,
+            f[&Fetch::Snapshot].0,
+            Ok(snapshot("alpha", 25.0)),
+        );
+        e.fetched(
+            Fetch::Processes,
+            f[&Fetch::Processes].0,
+            Ok(table(&[1, 42])),
+        );
         e
     }
 
@@ -1023,7 +1040,15 @@ mod tests {
         let mut e = Engine::new(label);
         let f = fetches(&mut e);
         let kinds: Vec<Fetch> = f.keys().copied().collect();
-        assert_eq!(kinds, [Fetch::Snapshot, Fetch::Processes, Fetch::History, Fetch::Peers]);
+        assert_eq!(
+            kinds,
+            [
+                Fetch::Snapshot,
+                Fetch::Processes,
+                Fetch::History,
+                Fetch::Peers
+            ]
+        );
         assert_eq!(f[&Fetch::Snapshot].1, "monitord");
         assert_eq!(f[&Fetch::Peers].1, "noded");
         assert_eq!(f[&Fetch::Processes].2["sort"], "cpu");
@@ -1055,9 +1080,17 @@ mod tests {
         e.set_node(Some("beta".into())).unwrap();
         let new = fetches(&mut e);
         assert_eq!(new[&Fetch::Snapshot].1, "monitord.beta.bus");
-        e.fetched(Fetch::Snapshot, old[&Fetch::Snapshot].0, Ok(snapshot("alpha", 99.0)));
+        e.fetched(
+            Fetch::Snapshot,
+            old[&Fetch::Snapshot].0,
+            Ok(snapshot("alpha", 99.0)),
+        );
         assert!(e.snapshot.is_none(), "alpha's answer must not land on beta");
-        e.fetched(Fetch::Snapshot, new[&Fetch::Snapshot].0, Ok(snapshot("beta", 1.0)));
+        e.fetched(
+            Fetch::Snapshot,
+            new[&Fetch::Snapshot].0,
+            Ok(snapshot("beta", 1.0)),
+        );
         assert_eq!(e.host(), "beta");
         assert!(e.set_node(Some("bad.name".into())).is_err());
     }
@@ -1101,7 +1134,10 @@ mod tests {
         e.kill_selected();
         assert_eq!(
             e.take_effects(),
-            [Effect::Signal { pid: 42, signal: Signal::Kill }]
+            [Effect::Signal {
+                pid: 42,
+                signal: Signal::Kill
+            }]
         );
         assert!(e.select(Some(7)).is_err());
         e.set_node(Some("beta".into())).unwrap();
@@ -1123,7 +1159,11 @@ mod tests {
     fn an_unreachable_node_says_why() {
         let mut e = Engine::new(label);
         let f = fetches(&mut e);
-        e.fetched(Fetch::Snapshot, f[&Fetch::Snapshot].0, Err("Service 'monitord' not found".into()));
+        e.fetched(
+            Fetch::Snapshot,
+            f[&Fetch::Snapshot].0,
+            Err("Service 'monitord' not found".into()),
+        );
         assert_eq!(e.status, "unreachable");
         assert!(e.error.as_deref().unwrap().contains("not found"));
     }
@@ -1143,21 +1183,53 @@ mod tests {
     #[test]
     fn bus_verbs_edit_the_same_state() {
         let mut e = ready();
-        assert_eq!(reply(&mut e, "monitor.tab", json!({"tab": "performance"})).0, 0);
+        assert_eq!(
+            reply(&mut e, "monitor.tab", json!({"tab": "performance"})).0,
+            0
+        );
         assert_eq!(e.ui.tab, Tab::Performance);
-        assert_eq!(reply(&mut e, "monitor.section", json!({"section": "disk:sda"})).0, 0);
-        assert_eq!(reply(&mut e, "monitor.section", json!({"section": "disk:nope"})).0, 10);
-        assert_eq!(reply(&mut e, "monitor.sort", json!({"column": "pid", "reverse": true})).0, 0);
+        assert_eq!(
+            reply(&mut e, "monitor.section", json!({"section": "disk:sda"})).0,
+            0
+        );
+        assert_eq!(
+            reply(&mut e, "monitor.section", json!({"section": "disk:nope"})).0,
+            10
+        );
+        assert_eq!(
+            reply(
+                &mut e,
+                "monitor.sort",
+                json!({"column": "pid", "reverse": true})
+            )
+            .0,
+            0
+        );
         assert_eq!((e.ui.sort, e.ui.reverse), (Column::Pid, true));
         assert_eq!(reply(&mut e, "monitor.select", json!({"pid": 42})).0, 0);
         let (rc, rows) = reply(&mut e, "monitor.rows", json!({}));
         assert_eq!(rc, 0);
         assert_eq!(rows["rows"][1]["selected"], true);
-        assert_eq!(reply(&mut e, "monitor.node", json!({"node": "beta"})).1["target"], "monitord.beta.bus");
-        assert_eq!(reply(&mut e, "monitor.dialog", json!({"open": "about"})).0, 0);
-        assert_eq!(reply(&mut e, "monitor.tab", json!({"tab": "processes"})).1["error_code"], "BUSY");
-        assert_eq!(reply(&mut e, "monitor.bogus", json!({})).1["error_code"], "UNKNOWN_VERB");
-        assert_eq!(reply(&mut e, "monitor.theme", json!({"mode": "dark"})).1["mode"], "dark");
+        assert_eq!(
+            reply(&mut e, "monitor.node", json!({"node": "beta"})).1["target"],
+            "monitord.beta.bus"
+        );
+        assert_eq!(
+            reply(&mut e, "monitor.dialog", json!({"open": "about"})).0,
+            0
+        );
+        assert_eq!(
+            reply(&mut e, "monitor.tab", json!({"tab": "processes"})).1["error_code"],
+            "BUSY"
+        );
+        assert_eq!(
+            reply(&mut e, "monitor.bogus", json!({})).1["error_code"],
+            "UNKNOWN_VERB"
+        );
+        assert_eq!(
+            reply(&mut e, "monitor.theme", json!({"mode": "dark"})).1["mode"],
+            "dark"
+        );
     }
 
     #[test]
@@ -1165,6 +1237,8 @@ mod tests {
         let mut e = Engine::new(label);
         e.take_effects();
         e.command(5, "monitor.ui.tree", "{}");
-        assert!(matches!(&e.take_effects()[..], [Effect::Drive { id: 5, verb, .. }] if verb == "ui.tree"));
+        assert!(
+            matches!(&e.take_effects()[..], [Effect::Drive { id: 5, verb, .. }] if verb == "ui.tree")
+        );
     }
 }

@@ -253,9 +253,8 @@ pub fn table(
                 }
                 _ => 0.0,
             };
-            let io_rate = |now: Option<u64>, then: Option<u64>| {
-                crate::kernel::rate(then?, now?, dt)
-            };
+            let io_rate =
+                |now: Option<u64>, then: Option<u64>| crate::kernel::rate(then?, now?, dt);
             Process {
                 pid: r.pid,
                 ppid: r.ppid,
@@ -329,7 +328,10 @@ pub fn select(
 ) -> Result<(Vec<Process>, usize), String> {
     let sort = query.sort.as_deref().unwrap_or("cpu");
     if !SORTS.contains(&sort) {
-        return Err(format!("unknown sort {sort:?}; one of {}", SORTS.join(", ")));
+        return Err(format!(
+            "unknown sort {sort:?}; one of {}",
+            SORTS.join(", ")
+        ));
     }
     let uid = match &query.user {
         Some(user) => Some(
@@ -429,7 +431,13 @@ fn tree(
 }
 
 /// One process in full, for `monitord.process`.
-pub fn detail(root: &Root, pid: u32, units: Units, users: &Users, boot_time: u64) -> Option<serde_json::Value> {
+pub fn detail(
+    root: &Root,
+    pid: u32,
+    units: Units,
+    users: &Users,
+    boot_time: u64,
+) -> Option<serde_json::Value> {
     let raw = read(root, pid, usize::MAX)?;
     let dir = root.join(&format!("proc/{pid}"));
     let status = std::fs::read_to_string(dir.join("status")).unwrap_or_default();
@@ -522,15 +530,22 @@ mod tests {
 
     #[test]
     fn the_kernel_thread_flag_is_read() {
-        let text = "2 (kthreadd) S 0 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 1 0 0 18446744073709551615";
+        let text =
+            "2 (kthreadd) S 0 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 1 0 0 18446744073709551615";
         assert!(parse_stat(text).unwrap().kernel_thread);
     }
 
     #[test]
     fn cgroups_name_their_unit() {
-        let path = parse_cgroup("0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-firefox-99.scope\n").unwrap();
+        let path = parse_cgroup(
+            "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-firefox-99.scope\n",
+        )
+        .unwrap();
         assert_eq!(unit(&path).as_deref(), Some("app-firefox-99.scope"));
-        assert_eq!(unit("/system.slice/sshd.service/sub").as_deref(), Some("sshd.service"));
+        assert_eq!(
+            unit("/system.slice/sshd.service/sub").as_deref(),
+            Some("sshd.service")
+        );
         assert_eq!(unit("/"), None);
     }
 
@@ -580,14 +595,28 @@ mod tests {
             raw(11, 10, 90, 1),
             raw(20, 1, 70, 1),
         ];
-        let before: Vec<Raw> = after.iter().map(|r| Raw { cpu_ticks: 0, ..r.clone() }).collect();
+        let before: Vec<Raw> = after
+            .iter()
+            .map(|r| Raw {
+                cpu_ticks: 0,
+                ..r.clone()
+            })
+            .collect();
         table(&before, &after, 1.0, 1, 0, UNITS, &users)
     }
 
     #[test]
     fn the_table_sorts_filters_and_limits() {
         let users = Users::default();
-        let (got, total) = select(rows(), &Query { limit: Some(2), ..Query::default() }, &users).unwrap();
+        let (got, total) = select(
+            rows(),
+            &Query {
+                limit: Some(2),
+                ..Query::default()
+            },
+            &users,
+        )
+        .unwrap();
         assert_eq!(total, 4);
         assert_eq!(got.iter().map(|p| p.pid).collect::<Vec<_>>(), [11, 20]);
         let q = Query {
@@ -597,13 +626,31 @@ mod tests {
         };
         let (got, _) = select(rows(), &q, &users).unwrap();
         assert_eq!(got.iter().map(|p| p.pid).collect::<Vec<_>>(), [1, 10, 11]);
-        assert!(select(rows(), &Query { sort: Some("bogus".into()), ..Query::default() }, &users).is_err());
+        assert!(
+            select(
+                rows(),
+                &Query {
+                    sort: Some("bogus".into()),
+                    ..Query::default()
+                },
+                &users
+            )
+            .is_err()
+        );
     }
 
     #[test]
     fn the_tree_puts_parents_first_and_keeps_a_match_path() {
         let users = Users::default();
-        let (got, _) = select(rows(), &Query { tree: true, ..Query::default() }, &users).unwrap();
+        let (got, _) = select(
+            rows(),
+            &Query {
+                tree: true,
+                ..Query::default()
+            },
+            &users,
+        )
+        .unwrap();
         let order: Vec<(u32, u32)> = got.iter().map(|p| (p.pid, p.depth.unwrap())).collect();
         // Siblings 10 and 20 by CPU: 20 (70) before 10 (50).
         assert_eq!(order, [(1, 0), (20, 1), (10, 1), (11, 2)]);

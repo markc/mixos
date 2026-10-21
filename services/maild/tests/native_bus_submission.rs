@@ -9,8 +9,8 @@ use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::time::Duration;
 
-use anyhow::{Context, Result, ensure};
 use ::bus::native_client::NodedClient;
+use anyhow::{Context, Result, ensure};
 use maild::config::Config;
 use maild::mailstore::{ListOpts, MailStore, MailboxRole};
 use maild::runtime::{RuntimeOpts, build_runtime};
@@ -68,10 +68,7 @@ fn native_bus_submission_replays_across_actors_without_duplicate_mail() -> Resul
         .env("MIXOS_NODE_CONFIG", &node_config)
         .env("MIXOS_NATIVE_MAIL_CHILD", "1")
         .env("MIXOS_NATIVE_MAIL_ROOT", &root)
-        .env(
-            "MIXOS_NATIVE_MAIL_URL",
-            format!("ws://127.0.0.1:{port}/ws"),
-        )
+        .env("MIXOS_NATIVE_MAIL_URL", format!("ws://127.0.0.1:{port}/ws"))
         .output()?;
     std::fs::write(root.join("maild-test.stdout"), &output.stdout)?;
     std::fs::write(root.join("maild-test.stderr"), &output.stderr)?;
@@ -203,10 +200,9 @@ async fn run_child() -> Result<()> {
         )?,
     )?;
     ensure!(conflict.is_err(), "conflicting operation was admitted");
-    let local =
-        maild::db::account::get_by_email(&built.app_state.db.conn, "local@example.test")
-            .await?
-            .context("local account")?;
+    let local = maild::db::account::get_by_email(&built.app_state.db.conn, "local@example.test")
+        .await?
+        .context("local account")?;
     let inbox = built
         .app_state
         .mailstore

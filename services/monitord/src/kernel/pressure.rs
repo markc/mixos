@@ -58,7 +58,10 @@ pub fn parse(text: &str) -> Option<Resource> {
 }
 
 pub fn read(root: &Root) -> Pressure {
-    let get = |name: &str| root.read(&format!("proc/pressure/{name}")).and_then(|t| parse(&t));
+    let get = |name: &str| {
+        root.read(&format!("proc/pressure/{name}"))
+            .and_then(|t| parse(&t))
+    };
     Pressure {
         cpu: get("cpu"),
         memory: get("memory"),

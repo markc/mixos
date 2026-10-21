@@ -24,17 +24,17 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use anyhow::{Context, Result, anyhow, bail};
-use arc_swap::ArcSwap;
 use ::bus::native_client::IncomingCommand;
-use maild_auth::{
-    DkimAlgorithm, DkimSignerConfig, Domain, MailAuthSigner,
-    keygen::{self, KeySpec},
-};
 use ::props::MergeMode;
 use ::props::record::{Actor, RecordKey};
 use ::props::runtime::{Runtime, SetOpts};
 use ::props::value::PropValue;
+use anyhow::{Context, Result, anyhow, bail};
+use arc_swap::ArcSwap;
+use maild_auth::{
+    DkimAlgorithm, DkimSignerConfig, Domain, MailAuthSigner,
+    keygen::{self, KeySpec},
+};
 use serde_json::{Value as JsonValue, json};
 use tokio::sync::Mutex;
 
@@ -835,10 +835,7 @@ mod tests {
             selector: "config".into(),
             algorithm: DkimAlgorithm::RsaSha256,
             private_key_pem: Vec::new(),
-            canonicalization: (
-                maild_auth::Canon::Relaxed,
-                maild_auth::Canon::Relaxed,
-            ),
+            canonicalization: (maild_auth::Canon::Relaxed, maild_auth::Canon::Relaxed),
             headers_to_sign: Vec::new(),
             active_for_signing: true,
             allow_body_length_tag: false,

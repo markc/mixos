@@ -41,7 +41,9 @@ pub fn manifest() -> Vec<bus::VerbDescriptor> {
     .chain(
         crate::screencast::consent::VERBS
             .iter()
-            .map(|(verb, description, read_only)| bus::VerbDescriptor::new(verb, &[], description, *read_only)),
+            .map(|(verb, description, read_only)| {
+                bus::VerbDescriptor::new(verb, &[], description, *read_only)
+            }),
     )
     .collect()
 }

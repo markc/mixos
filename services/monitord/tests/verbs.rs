@@ -42,7 +42,11 @@ fn host(root: &Path, busy: u64) {
     );
     write(root, "proc/loadavg", "0.10 0.20 0.30 1/50 999\n");
     write(root, "proc/uptime", "3600.5 7000.0\n");
-    write(root, "proc/pressure/cpu", "some avg10=2.00 avg60=1.00 avg300=0.50 total=1\n");
+    write(
+        root,
+        "proc/pressure/cpu",
+        "some avg10=2.00 avg60=1.00 avg300=0.50 total=1\n",
+    );
     write(
         root,
         "proc/diskstats",
@@ -59,12 +63,32 @@ fn host(root: &Path, busy: u64) {
     // The fixture files belong to whoever runs the test.
     // SAFETY: getuid has no preconditions.
     let uid = unsafe { libc::getuid() };
-    write(root, "etc/passwd", &format!("root:x:0:0::/root:/bin/sh\ntester:x:{uid}:{uid}::/:/bin/sh\n"));
+    write(
+        root,
+        "etc/passwd",
+        &format!("root:x:0:0::/root:/bin/sh\ntester:x:{uid}:{uid}::/:/bin/sh\n"),
+    );
     for (pid, comm, ppid) in [(1, "init", 0), (100, "shell", 1), (200, "worker (x)", 100)] {
-        write(root, &format!("proc/{pid}/stat"), &stat_line(pid, comm, ppid, busy));
-        write(root, &format!("proc/{pid}/cmdline"), &format!("{comm}\0--flag\0"));
-        write(root, &format!("proc/{pid}/cgroup"), "0::/system.slice/fixture.service\n");
-        write(root, &format!("proc/{pid}/status"), "State:\tS (sleeping)\nVmHWM:\t 2048 kB\n");
+        write(
+            root,
+            &format!("proc/{pid}/stat"),
+            &stat_line(pid, comm, ppid, busy),
+        );
+        write(
+            root,
+            &format!("proc/{pid}/cmdline"),
+            &format!("{comm}\0--flag\0"),
+        );
+        write(
+            root,
+            &format!("proc/{pid}/cgroup"),
+            "0::/system.slice/fixture.service\n",
+        );
+        write(
+            root,
+            &format!("proc/{pid}/status"),
+            "State:\tS (sleeping)\nVmHWM:\t 2048 kB\n",
+        );
     }
 }
 
@@ -106,7 +130,11 @@ async fn snapshot_reports_the_fixture_host() {
     assert_eq!(s["memory"]["used"], 500_000 * 1024);
     assert_eq!(s["load"]["one"], 0.1);
     assert_eq!(s["pressure"]["cpu"]["some"]["avg10"], 2.0);
-    assert_eq!(s["disks"].as_array().unwrap().len(), 1, "loop0 is not a disk");
+    assert_eq!(
+        s["disks"].as_array().unwrap().len(),
+        1,
+        "loop0 is not a disk"
+    );
     assert_eq!(s["disks"][0]["name"], "sda");
     assert_eq!(s["net"][0]["name"], "eth0");
     assert_eq!(s["net"][0]["state"], "up");
@@ -121,7 +149,12 @@ async fn processes_sort_filter_and_tree() {
     assert_eq!(all["rows"][2]["name"], "worker (x)");
     assert_eq!(all["rows"][2]["unit"], "fixture.service");
     assert_eq!(all["rows"][0]["user"], "tester");
-    let tree = ok(&engine, "monitord.processes", json!({"tree": true, "filter": "worker"})).await;
+    let tree = ok(
+        &engine,
+        "monitord.processes",
+        json!({"tree": true, "filter": "worker"}),
+    )
+    .await;
     let path: Vec<(u64, u64)> = tree["rows"]
         .as_array()
         .unwrap()
@@ -155,9 +188,22 @@ async fn history_comes_from_the_live_ring() {
     let dir = tempfile::tempdir().unwrap();
     let engine = engine(dir.path()).await;
     let series = ok(&engine, "monitord.series", json!({})).await;
-    let live: Vec<&str> = series["live"].as_array().unwrap().iter().filter_map(Value::as_str).collect();
-    assert!(live.contains(&"cpu.busy") && live.contains(&"cpu.core.1.busy"), "{live:?}");
-    let h = ok(&engine, "monitord.history", json!({"series": ["cpu.core.*", "mem.used"], "since": 60})).await;
+    let live: Vec<&str> = series["live"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(Value::as_str)
+        .collect();
+    assert!(
+        live.contains(&"cpu.busy") && live.contains(&"cpu.core.1.busy"),
+        "{live:?}"
+    );
+    let h = ok(
+        &engine,
+        "monitord.history",
+        json!({"series": ["cpu.core.*", "mem.used"], "since": 60}),
+    )
+    .await;
     assert_eq!(h["tier"], "live");
     let got = h["series"].as_object().unwrap();
     assert!(got.contains_key("cpu.core.0.busy") && got.contains_key("cpu.core.1.busy"));

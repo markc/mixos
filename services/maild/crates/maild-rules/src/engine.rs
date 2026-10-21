@@ -23,10 +23,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use maild_auth::{
-    DkimOutcome, DmarcOutcome, DmarcPolicy, SpfCheck, SpfResult, VerifyResult,
-};
 use linkify::{LinkFinder, LinkKind};
+use maild_auth::{DkimOutcome, DmarcOutcome, DmarcPolicy, SpfCheck, SpfResult, VerifyResult};
 use tokio::sync::RwLock;
 
 use crate::compiled::{MatchInputs, RuleSet};

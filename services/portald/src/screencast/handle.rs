@@ -20,7 +20,9 @@ pub fn sender_segment(unique: &str) -> String {
 pub fn valid_token(token: &str) -> bool {
     !token.is_empty()
         && token.len() <= 64
-        && token.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+        && token
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_')
 }
 
 fn path(root: &str, sender: &str, token: &str) -> Result<OwnedObjectPath, PortalError> {
@@ -35,7 +37,10 @@ pub fn token(
     counter: &AtomicU64,
 ) -> Result<String, PortalError> {
     match options.get(key) {
-        None => Ok(format!("portald{}", counter.fetch_add(1, Ordering::Relaxed))),
+        None => Ok(format!(
+            "portald{}",
+            counter.fetch_add(1, Ordering::Relaxed)
+        )),
         Some(value) => {
             let token = value
                 .downcast_ref::<&str>()
@@ -89,7 +94,10 @@ mod tests {
     fn tokens_are_validated_or_generated() {
         let counter = AtomicU64::new(3);
         let mut options = HashMap::new();
-        assert_eq!(token(&options, "handle_token", &counter).unwrap(), "portald3");
+        assert_eq!(
+            token(&options, "handle_token", &counter).unwrap(),
+            "portald3"
+        );
         options.insert(
             "handle_token".into(),
             OwnedValue::try_from(Value::from("bad-token")).unwrap(),
@@ -107,6 +115,9 @@ mod tests {
         let path = session_path(":1.7", "s").unwrap();
         assert!(owned_by(path.as_str(), ":1.7"));
         assert!(!owned_by(path.as_str(), ":1.70"));
-        assert!(!owned_by("/org/freedesktop/portal/desktop/request/1_7/s", ":1.7"));
+        assert!(!owned_by(
+            "/org/freedesktop/portal/desktop/request/1_7/s",
+            ":1.7"
+        ));
     }
 }

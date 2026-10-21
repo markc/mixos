@@ -41,7 +41,9 @@ impl Request {
     ) -> fdo::Result<()> {
         let sender = header.sender().map(|name| name.as_str()).unwrap_or("");
         if sender != self.owner {
-            return Err(fdo::Error::AccessDenied("not the owner of this request".into()));
+            return Err(fdo::Error::AccessDenied(
+                "not the owner of this request".into(),
+            ));
         }
         let Some(path) = header.path() else {
             return Err(fdo::Error::Failed("no object path".into()));
@@ -59,13 +61,19 @@ impl Request {
 }
 
 /// Exports a request object for `owner` at `path`.
-pub async fn export(connection: &Connection, path: &OwnedObjectPath, owner: &str) -> zbus::Result<()> {
+pub async fn export(
+    connection: &Connection,
+    path: &OwnedObjectPath,
+    owner: &str,
+) -> zbus::Result<()> {
     if !connection
         .object_server()
         .at(path.clone(), Request::new(owner))
         .await?
     {
-        return Err(zbus::Error::Failure(format!("request {path} already exists")));
+        return Err(zbus::Error::Failure(format!(
+            "request {path} already exists"
+        )));
     }
     Ok(())
 }

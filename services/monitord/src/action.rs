@@ -32,7 +32,9 @@ fn pid(pid: u32) -> std::io::Result<libc::pid_t> {
     libc::pid_t::try_from(pid)
         .ok()
         .filter(|p| *p > 0)
-        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidInput, "pid must be positive"))
+        .ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::InvalidInput, "pid must be positive")
+        })
 }
 
 pub fn signal(target: u32, signal: libc::c_int) -> std::io::Result<()> {

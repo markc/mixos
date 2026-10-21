@@ -17,7 +17,10 @@ const PROCESSES: &str = include_str!("fixtures/monitord-processes.json");
 
 fn present(doc: &Value, pointers: &[&str]) {
     for pointer in pointers {
-        assert!(doc.pointer(pointer).is_some(), "monitord no longer sends {pointer}");
+        assert!(
+            doc.pointer(pointer).is_some(),
+            "monitord no longer sends {pointer}"
+        );
     }
 }
 

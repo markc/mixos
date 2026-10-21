@@ -32,10 +32,10 @@ use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use anyhow::{Result, anyhow, bail};
 use ::bus::native_client::IncomingCommand;
 use ::props::runtime::Runtime;
 use ::props::value::PropValue;
+use anyhow::{Result, anyhow, bail};
 use serde_json::{Value as JsonValue, json};
 use tokio::sync::Mutex;
 

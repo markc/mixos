@@ -41,14 +41,14 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use anyhow::{Result, anyhow};
-use base64::Engine;
-use maild::config::{Config, ListenSpec};
-use maild::runtime::{BuiltMaild, RuntimeOpts, build_runtime};
 use ::props::record::{Actor, RecordKey, Version};
 use ::props::runtime::SetOpts;
 use ::props::store::MergeMode;
 use ::props::value::PropValue;
+use anyhow::{Result, anyhow};
+use base64::Engine;
+use maild::config::{Config, ListenSpec};
+use maild::runtime::{BuiltMaild, RuntimeOpts, build_runtime};
 use rcgen::CertifiedKey;
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};

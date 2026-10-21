@@ -52,8 +52,8 @@
 
 use std::sync::Arc;
 
-use mds::{Flags, Tags};
 use mail_parser::MessageParser;
+use mds::{Flags, Tags};
 
 use crate::imap::mailbox_name::{ResolveResult, resolve};
 use crate::imap::op::list;

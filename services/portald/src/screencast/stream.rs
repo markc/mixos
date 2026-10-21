@@ -38,9 +38,8 @@ struct MetaHeader {
     seq: u64,
 }
 
-const _: () = assert!(
-    std::mem::size_of::<MetaHeader>() == std::mem::size_of::<spa::sys::spa_meta_header>()
-);
+const _: () =
+    assert!(std::mem::size_of::<MetaHeader>() == std::mem::size_of::<spa::sys::spa_meta_header>());
 
 impl spa::buffer::meta::Metadata for MetaHeader {
     const META_TYPE: u32 = spa::sys::SPA_META_Header;
@@ -106,7 +105,15 @@ pub fn start(output: OutputInfo, overlay_cursor: bool, max_fps: u32) -> anyhow::
             .name("portald-cast".into())
             .spawn(move || {
                 let failure = ready.clone();
-                if let Err(error) = serve(&output, overlay_cursor, max_fps, receiver, sender, &stop, ready) {
+                if let Err(error) = serve(
+                    &output,
+                    overlay_cursor,
+                    max_fps,
+                    receiver,
+                    sender,
+                    &stop,
+                    ready,
+                ) {
                     tracing::warn!(%error, output = %output.name, "screencast stream ended");
                     let _ = failure.send(Err(error));
                 }
@@ -211,7 +218,10 @@ fn buffers(stride: u32, height: u32) -> anyhow::Result<Vec<u8>> {
             ),
             Property::new(spa::sys::SPA_PARAM_BUFFERS_blocks, Value::Int(1)),
             Property::new(spa::sys::SPA_PARAM_BUFFERS_size, Value::Int(size)),
-            Property::new(spa::sys::SPA_PARAM_BUFFERS_stride, Value::Int(stride as i32)),
+            Property::new(
+                spa::sys::SPA_PARAM_BUFFERS_stride,
+                Value::Int(stride as i32),
+            ),
             Property::new(
                 spa::sys::SPA_PARAM_BUFFERS_dataType,
                 Value::Choice(ChoiceValue::Int(Choice(
@@ -316,14 +326,21 @@ fn serve(
             height,
         })
         .state_changed(|stream, data, old, new| {
-            tracing::info!(?old, ?new, node = stream.node_id(), "screencast stream state");
+            tracing::info!(
+                ?old,
+                ?new,
+                node = stream.node_id(),
+                "screencast stream state"
+            );
             // A consumer just attached: give it the newest frame now rather
             // than waiting for the screen to change.
             if matches!(new, pw::stream::StreamState::Streaming) && data.latest.borrow().is_some() {
                 trigger(stream, &data.stats);
             }
-            if matches!(new, pw::stream::StreamState::Paused | pw::stream::StreamState::Streaming)
-                && let Some(ready) = data.ready.take()
+            if matches!(
+                new,
+                pw::stream::StreamState::Paused | pw::stream::StreamState::Streaming
+            ) && let Some(ready) = data.ready.take()
             {
                 let _ = ready.send(Ok(stream.node_id()));
             }
@@ -335,7 +352,11 @@ fn serve(
             if id != spa::param::ParamType::Format.as_raw() || param.is_none() {
                 return;
             }
-            tracing::info!(stride = data.stride, height = data.height, "format negotiated; offering buffers");
+            tracing::info!(
+                stride = data.stride,
+                height = data.height,
+                "format negotiated; offering buffers"
+            );
             match buffers(data.stride, data.height) {
                 Ok(bytes) => {
                     if let Some(pod) = Pod::from_bytes(&bytes)
@@ -414,9 +435,16 @@ fn serve(
             .name("portald-capture".into())
             .spawn(move || {
                 let frames = sender.clone();
-                if let Err(error) = capture::run(&name, (width, height), overlay_cursor, max_fps, &stop, |frame| {
-                    let _ = frames.send(Message::Frame(frame));
-                }) {
+                if let Err(error) = capture::run(
+                    &name,
+                    (width, height),
+                    overlay_cursor,
+                    max_fps,
+                    &stop,
+                    |frame| {
+                        let _ = frames.send(Message::Frame(frame));
+                    },
+                ) {
                     tracing::warn!(%error, output = %name, "screencast capture ended");
                 }
                 let _ = sender.send(Message::CaptureEnded);
@@ -432,7 +460,11 @@ fn serve(
         move |message| match message {
             Message::Frame(frame) => {
                 if first_frame.replace(false) {
-                    tracing::info!(width = frame.width, height = frame.height, "screencast first frame captured");
+                    tracing::info!(
+                        width = frame.width,
+                        height = frame.height,
+                        "screencast first frame captured"
+                    );
                 }
                 *latest.borrow_mut() = Some(frame);
                 if matches!(stream.state(), pw::stream::StreamState::Streaming) {
@@ -469,7 +501,9 @@ fn serve(
             }
         }
     });
-    let _ = keepalive.update_timer(Some(KEEPALIVE), Some(KEEPALIVE)).into_sync_result();
+    let _ = keepalive
+        .update_timer(Some(KEEPALIVE), Some(KEEPALIVE))
+        .into_sync_result();
 
     mainloop.run();
     stop.store(true, Ordering::Relaxed);

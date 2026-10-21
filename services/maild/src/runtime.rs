@@ -249,10 +249,8 @@ pub async fn build_runtime(cfg: &Config, opts: RuntimeOpts) -> Result<BuiltMaild
 
     // Inbound DATA filter pipeline (auth → rules → bayesian).
     let resolver = Arc::new(
-        maild_auth::resolver::DnsResolver::new(
-            maild_auth::resolver::ResolverChoice::default(),
-        )
-        .map_err(|e| anyhow::anyhow!("dns resolver init: {e}"))?,
+        maild_auth::resolver::DnsResolver::new(maild_auth::resolver::ResolverChoice::default())
+            .map_err(|e| anyhow::anyhow!("dns resolver init: {e}"))?,
     );
     let auth_cfg = maild_auth::VerifierConfig {
         host_identity: cfg.hostname.clone(),
@@ -464,11 +462,8 @@ pub async fn build_runtime(cfg: &Config, opts: RuntimeOpts) -> Result<BuiltMaild
         maild_rules::DefaultRuleEngine::with_pack_path(engine_cfg, path)
             .map_err(|e| anyhow::anyhow!("rule pack load from {path}: {e}"))?
     } else {
-        maild_rules::DefaultRuleEngine::with_pack_str(
-            engine_cfg,
-            maild_rules::default_pack_str(),
-        )
-        .map_err(|e| anyhow::anyhow!("rule pack load: {e}"))?
+        maild_rules::DefaultRuleEngine::with_pack_str(engine_cfg, maild_rules::default_pack_str())
+            .map_err(|e| anyhow::anyhow!("rule pack load: {e}"))?
     };
     for (id, err) in &rule_failures {
         tracing::warn!(rule = %id, error = %err, "rule pack: rule failed to compile");
@@ -480,9 +475,7 @@ pub async fn build_runtime(cfg: &Config, opts: RuntimeOpts) -> Result<BuiltMaild
     {
         let stats_for_hook = rule_stats.clone();
         let hook: maild_rules::RuleMatchHook =
-            std::sync::Arc::new(move |id: &maild_rules::RuleId| {
-                stats_for_hook.record_rule_hit(id)
-            });
+            std::sync::Arc::new(move |id: &maild_rules::RuleId| stats_for_hook.record_rule_hit(id));
         rule_engine_inner.set_rule_match_hook(Some(hook));
     }
     let rule_engine = Arc::new(rule_engine_inner);
@@ -602,8 +595,9 @@ pub async fn build_runtime(cfg: &Config, opts: RuntimeOpts) -> Result<BuiltMaild
     let subscribe_granter = Arc::new(bus::subscribe_granter::NodedSubscribeGranter::new(
         bus::subscribe_granter::new_broker_handle(),
     ));
-    props_router.set_granter(Arc::clone(&subscribe_granter)
-        as Arc<dyn ::props::subscribe_granter::SubscribeGranter>);
+    props_router.set_granter(
+        Arc::clone(&subscribe_granter) as Arc<dyn ::props::subscribe_granter::SubscribeGranter>
+    );
     let props_router = Arc::new(props_router);
     tracing::info!(
         "property substrate ready: maild.accounts + maild.account_overrides + \

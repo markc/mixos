@@ -1268,9 +1268,7 @@ async fn run_account_overrides_cli(action: AccountOverridesAction) -> Result<()>
             } else {
                 let (code, msg) = parse_error(&resp_body);
                 if code.as_deref() == Some("validation_error")
-                    && msg.starts_with(
-                        crate::props::account_overrides::ACCOUNT_NOT_FOUND_PREFIX,
-                    )
+                    && msg.starts_with(crate::props::account_overrides::ACCOUNT_NOT_FOUND_PREFIX)
                 {
                     return Err(anyhow::anyhow!(
                         "account {email} does not exist — create it with \
@@ -2666,8 +2664,8 @@ mod cli_parser_tests {
 
     #[test]
     fn engine_config_show_parses() {
-        let cli = parse(&["maild", "engine-config", "show"])
-            .expect("engine-config show should parse");
+        let cli =
+            parse(&["maild", "engine-config", "show"]).expect("engine-config show should parse");
         assert!(matches!(
             cli.command,
             Command::EngineConfig {
@@ -2680,8 +2678,7 @@ mod cli_parser_tests {
 
     #[test]
     fn rules_stats_parses_with_default_top_n() {
-        let cli =
-            parse(&["maild", "rules", "stats"]).expect("rules stats should parse bare");
+        let cli = parse(&["maild", "rules", "stats"]).expect("rules stats should parse bare");
         match cli.command {
             Command::Rules {
                 action: RulesAction::Stats { top_n },
@@ -2856,17 +2853,7 @@ mod cli_parser_tests {
             .is_err()
         );
         // Untrain needs a target but no class.
-        assert!(
-            parse(&[
-                "maild",
-                "bayesian",
-                "untrain",
-                "3",
-                "--email-id",
-                "x"
-            ])
-            .is_ok()
-        );
+        assert!(parse(&["maild", "bayesian", "untrain", "3", "--email-id", "x"]).is_ok());
         assert!(parse(&["maild", "bayesian", "untrain", "3"]).is_err());
     }
 

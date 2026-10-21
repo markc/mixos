@@ -6,11 +6,11 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as B64;
+use ed25519_dalek::{Signer as _, SigningKey};
 use mesh_trust::inventory::{
     ALG_ED25519, CANONICAL_ENCODING_V1, InvSignature, InventoryPayload, KeyStatus, SignedInventory,
     VerifyKey,
 };
-use ed25519_dalek::{Signer as _, SigningKey};
 use serde_json::{Value, json};
 
 static NEXT_TEMP: AtomicUsize = AtomicUsize::new(0);
@@ -20,10 +20,8 @@ struct TempDir(PathBuf);
 impl TempDir {
     fn new(tag: &str) -> Self {
         let sequence = NEXT_TEMP.fetch_add(1, Ordering::Relaxed);
-        let path = std::env::temp_dir().join(format!(
-            "mesh-sign-{tag}-{}-{sequence}",
-            std::process::id()
-        ));
+        let path =
+            std::env::temp_dir().join(format!("mesh-sign-{tag}-{}-{sequence}", std::process::id()));
         let _ = std::fs::remove_dir_all(&path);
         std::fs::create_dir_all(&path).unwrap();
         Self(path)

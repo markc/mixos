@@ -37,11 +37,11 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use ::bus::native_client::{IncomingCommand, NodedClient};
-use maild_bayesian::DefaultClassifier;
-use maild_rules::DefaultRuleEngine;
 use ::props::bus::mutation::PropsRouter;
 use ::props::namespace::PeerIdentity;
 use ::props::runtime::Runtime;
+use maild_bayesian::DefaultClassifier;
+use maild_rules::DefaultRuleEngine;
 use tokio::sync::broadcast;
 
 use crate::bus::verdict::VerdictEvent;
@@ -240,8 +240,7 @@ pub async fn run(
                 // via the replay verbs on the affected namespace, so
                 // this matches the "Bus surface degraded, not down"
                 // posture used elsewhere in this module.
-                match ::props::spawn_dispatcher(runtime.clone(), Arc::clone(&publisher)).await
-                {
+                match ::props::spawn_dispatcher(runtime.clone(), Arc::clone(&publisher)).await {
                     Ok(_detached) => {
                         tracing::info!(
                             namespace = %runtime.spec().name.as_str(),
