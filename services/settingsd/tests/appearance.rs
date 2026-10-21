@@ -184,7 +184,10 @@ fn breeze_and_adwaita_choices_apply_and_survive_a_sealed_reopen() {
     for choice in ["breeze", "adwaita"] {
         for field in ["appearance.scheme", "appearance.style"] {
             let choices = described["fields"][field]["enum"].as_array().unwrap();
-            assert!(choices.iter().any(|value| value == choice), "{field}: {choice}");
+            assert!(
+                choices.iter().any(|value| value == choice),
+                "{field}: {choice}"
+            );
         }
     }
 
@@ -227,6 +230,12 @@ fn breeze_and_adwaita_choices_apply_and_survive_a_sealed_reopen() {
         reset: vec![],
         request_digest: None,
     };
-    assert_eq!(authority.apply(invalid).unwrap_err()["status"], "validation_failed");
-    assert_eq!(std::fs::read(dir.path().join("desktop.conf.mix")).unwrap(), before);
+    assert_eq!(
+        authority.apply(invalid).unwrap_err()["status"],
+        "validation_failed"
+    );
+    assert_eq!(
+        std::fs::read(dir.path().join("desktop.conf.mix")).unwrap(),
+        before
+    );
 }
