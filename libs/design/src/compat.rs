@@ -29,12 +29,36 @@ pub struct Terminal {
     pub cursor: String,
 }
 
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(untagged)]
+pub enum Scheme {
+    Legacy(String),
+    Palette(SchemePalette),
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct SchemePalette {
+    pub style: String,
+    /// Mode to primitive name to colour; both modes are explicit.
+    pub chrome: BTreeMap<String, BTreeMap<String, crate::OklchSource>>,
+}
+
+impl Scheme {
+    pub fn style(&self) -> &str {
+        match self {
+            Self::Legacy(style) => style,
+            Self::Palette(palette) => &palette.style,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Version {
     pub tokens: BTreeMap<String, BTreeMap<String, StyleValueSource>>,
     pub styles: BTreeMap<String, BTreeMap<String, StyleValueSource>>,
-    pub schemes: BTreeMap<String, String>,
+    pub schemes: BTreeMap<String, Scheme>,
     pub terminal: BTreeMap<String, Terminal>,
 }
 

@@ -44,3 +44,8 @@ no-matching-commands = No matching commands
 markdown-image = Image: { $alt }
 markdown-image-untitled = Image
 markdown-image-hover = { $url } (not loaded)
+
+toolkit-theme-breeze = Breeze
+toolkit-theme-adwaita = Adwaita
+toolkit-style-breeze = Breeze
+toolkit-style-adwaita = Adwaita

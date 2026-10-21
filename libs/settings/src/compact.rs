@@ -248,7 +248,7 @@ mod tests {
     fn with_no_design_shared_the_overhead_stays_bounded() {
         let mut desktop = Desktop::default();
         let schemes = [
-            "ocean", "crimson", "stone", "forest", "sunset", "mono", "pro", "studio", "classic",
+            "ocean", "crimson", "stone", "forest", "sunset", "mono", "pro", "studio", "classic", "breeze", "adwaita",
         ];
         for i in 0..16 {
             desktop.apps.insert(

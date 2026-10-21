@@ -45,8 +45,8 @@ fn describe_base() -> Value {
         "revision_encoding": "canonical decimal u64 string", "max_receipts": MAX_RECEIPTS,
         "receipt_expiry": "missing receipts are unknown; no ordering of opaque operation IDs",
         "fields": {
-            "appearance.scheme": {"type":"string", "enum":["ocean","crimson","stone","forest","sunset","mono","pro","studio","classic"]},
-            "appearance.style": {"type":"string|null", "enum":["plain","pro","studio","classic"], "null":"the scheme's own style"},
+            "appearance.scheme": {"type":"string", "enum":["ocean","crimson","stone","forest","sunset","mono","pro","studio","classic","breeze","adwaita"]},
+            "appearance.style": {"type":"string|null", "enum":["plain","pro","studio","classic","breeze","adwaita"], "null":"the scheme's own style"},
             "appearance.mode": {"type":"string", "enum":["light","dark"]},
             "appearance.decorations": {"type":"string", "enum":["csd","ssd"]},
             "appearance.caption_side": {"type":"string", "enum":["right","left"]},

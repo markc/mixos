@@ -38,6 +38,8 @@ pub const fn scheme_id(scheme: Scheme) -> &'static str {
         Scheme::Pro => "view.theme.pro",
         Scheme::Studio => "view.theme.studio",
         Scheme::Classic => "view.theme.classic",
+        Scheme::Breeze => "view.theme.breeze",
+        Scheme::Adwaita => "view.theme.adwaita",
     }
 }
 
@@ -52,6 +54,8 @@ const fn scheme_label(scheme: Scheme) -> &'static str {
         Scheme::Pro => "toolkit-theme-pro",
         Scheme::Studio => "toolkit-theme-studio",
         Scheme::Classic => "toolkit-theme-classic",
+        Scheme::Breeze => "toolkit-theme-breeze",
+        Scheme::Adwaita => "toolkit-theme-adwaita",
     }
 }
 
@@ -87,6 +91,8 @@ pub const fn style_id(style: Style) -> &'static str {
         Style::Pro => "view.style.pro",
         Style::Studio => "view.style.studio",
         Style::Classic => "view.style.classic",
+        Style::Breeze => "view.style.breeze",
+        Style::Adwaita => "view.style.adwaita",
     }
 }
 
@@ -96,6 +102,8 @@ const fn style_label(style: Style) -> &'static str {
         Style::Pro => "toolkit-style-pro",
         Style::Studio => "toolkit-style-studio",
         Style::Classic => "toolkit-style-classic",
+        Style::Breeze => "toolkit-style-breeze",
+        Style::Adwaita => "toolkit-style-adwaita",
     }
 }
 

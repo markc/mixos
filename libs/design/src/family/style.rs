@@ -777,7 +777,7 @@ fn complete_family(
         }
         for (scheme, style) in &entries.schemes {
             if Scheme::from_name(scheme).is_some() && !family.schemes.contains_key(scheme) {
-                family.schemes.insert(scheme.clone(), style.clone());
+                family.schemes.insert(scheme.clone(), style.style().to_owned());
                 provenance.insert(format!("{PATH}.schemes.{scheme}"), version.clone());
             }
         }
@@ -1243,6 +1243,14 @@ mod tests {
         }
     }
 
+    fn breeze() -> ResolvedStyle {
+        ResolvedStyle { radius_sm: 5, radius: 5, radius_lg: 6, ..studio() }
+    }
+
+    fn adwaita() -> ResolvedStyle {
+        ResolvedStyle { radius: 9, ..studio() }
+    }
+
     fn pro() -> ResolvedStyle {
         ResolvedStyle {
             body_size: 12.0,
@@ -1335,6 +1343,8 @@ mod tests {
                 Scheme::Pro => pro(),
                 Scheme::Studio => studio(),
                 Scheme::Classic => classic(),
+                Scheme::Breeze => breeze(),
+                Scheme::Adwaita => adwaita(),
                 _ => plain(),
             };
             for mode in Mode::ALL {
@@ -1479,6 +1489,10 @@ mod tests {
                     else {
                         panic!("today's design compiles");
                     };
+                    if matches!(scheme, Scheme::Breeze | Scheme::Adwaita) && style.is_none() {
+                        assert!(old.candidate.dictionary().defaulted.keys().any(|path| path.ends_with(scheme.name())));
+                        continue;
+                    }
                     assert_eq!(
                         old.candidate.dictionary().style,
                         new.candidate.dictionary().style,
@@ -1499,6 +1513,8 @@ mod tests {
             (Style::Pro, pro()),
             (Style::Studio, studio()),
             (Style::Classic, classic()),
+            (Style::Breeze, breeze()),
+            (Style::Adwaita, adwaita()),
         ] {
             for scheme in Scheme::ALL {
                 let context = DesignContext {
@@ -1527,5 +1543,33 @@ mod tests {
             .map(|d| d.code)
             .collect();
         assert_eq!(codes, ["unknown-style-selection"]);
+    }
+
+    #[test]
+    fn modern_schemes_compile_in_every_style_and_old_sources_take_the_palette() {
+        assert_eq!((Scheme::ALL.len(), Style::ALL.len()), (11, 6));
+        let document = embedded();
+        let before = crate::parse_design_source(
+            SourceIdentity::new("before-modern-schemes"),
+            include_str!("../../tests/fixtures/revision-1-before-axes.theme.conf.mix"),
+        ).unwrap();
+        for scheme in Scheme::ALL {
+            for style in Style::ALL {
+                for mode in Mode::ALL {
+                    let context = DesignContext { scheme, mode, style: Some(style), ..Default::default() };
+                    let crate::DesignCompileResult::Success(today) = crate::compile_design(&document, context.clone()) else {
+                        panic!("{scheme:?}/{style:?}/{mode:?} must compile");
+                    };
+                    if matches!(scheme, Scheme::Breeze | Scheme::Adwaita) {
+                        let crate::DesignCompileResult::Success(old) = crate::compile_design(&before, context) else {
+                            panic!("old source must compile in {scheme:?}/{style:?}/{mode:?}");
+                        };
+                        assert_eq!(old.candidate.dictionary().chrome, today.candidate.dictionary().chrome);
+                        assert!(old.diagnostics.iter().any(|d| d.code == "defaulted-scheme"));
+                        assert!(old.candidate.dictionary().terminal.is_some());
+                    }
+                }
+            }
+        }
     }
 }

@@ -101,7 +101,25 @@ fn compile_flat_source(
     flattened: &FlattenedSource,
     context: DesignContext,
 ) -> DesignCompileResult {
-    let source = &flattened.source;
+    let mut completed_source = flattened.source.clone();
+    let mut authored = flattened.authored_colours();
+    // Only absent, post-freeze scheme bindings take the compatibility
+    // palette. An authored binding keeps its own source colours.
+    if completed_source.families.style.as_ref().is_some_and(|family| {
+        !family.schemes.contains_key(context.scheme.name())
+    }) {
+        for entries in crate::compat::table().versions.values() {
+            if let Some(crate::compat::Scheme::Palette(palette)) =
+                entries.schemes.get(context.scheme.name())
+            {
+                if let Some(colors) = palette.chrome.get(context.mode.name()) {
+                    completed_source.primitives.colors.extend(colors.clone());
+                    authored.extend(colors.keys().cloned());
+                }
+            }
+        }
+    }
+    let source = &completed_source;
     let origins = &flattened.origins;
     let colours = match compile_colour_tokens(source, context.clone()) {
         Ok(success) => success,
@@ -117,7 +135,7 @@ fn compile_flat_source(
         source,
         &crate::family::chrome::Inputs {
             colours: &colours.value,
-            authored: &flattened.authored_colours(),
+            authored: &authored,
         },
     ) {
         Ok(compiled) => compiled,

@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-/// The MixOS colour schemes: six hues, and three chrome schemes whose
+/// The MixOS colour schemes: six hues, and five chrome schemes whose
 /// light and dark modes step the brightness (`pro`: Pro and Pro Medium Gray;
-/// `studio`: Studio and Studio Light; `classic`: Classic in both). The
+/// `studio`: Studio and Studio Light; `classic`: Classic in both; Breeze and
+/// Adwaita each have light and dark palettes). The
 /// default is `studio`.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Scheme {
@@ -16,10 +17,12 @@ pub enum Scheme {
     #[default]
     Studio,
     Classic,
+    Breeze,
+    Adwaita,
 }
 
 impl Scheme {
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 11] = [
         Self::Ocean,
         Self::Crimson,
         Self::Stone,
@@ -29,6 +32,8 @@ impl Scheme {
         Self::Pro,
         Self::Studio,
         Self::Classic,
+        Self::Breeze,
+        Self::Adwaita,
     ];
 
     /// The six hue schemes of design revision one. Tests that pin revision
@@ -45,7 +50,7 @@ impl Scheme {
 
     /// The schemes drawn from the chrome family.
     pub const fn is_chrome_scheme(self) -> bool {
-        matches!(self, Self::Pro | Self::Studio | Self::Classic)
+        matches!(self, Self::Pro | Self::Studio | Self::Classic | Self::Breeze | Self::Adwaita)
     }
 
     pub const fn name(self) -> &'static str {
@@ -59,6 +64,8 @@ impl Scheme {
             Self::Pro => "pro",
             Self::Studio => "studio",
             Self::Classic => "classic",
+            Self::Breeze => "breeze",
+            Self::Adwaita => "adwaita",
         }
     }
 
@@ -125,10 +132,12 @@ pub enum Style {
     Pro,
     Studio,
     Classic,
+    Breeze,
+    Adwaita,
 }
 
 impl Style {
-    pub const ALL: [Self; 4] = [Self::Plain, Self::Pro, Self::Studio, Self::Classic];
+    pub const ALL: [Self; 6] = [Self::Plain, Self::Pro, Self::Studio, Self::Classic, Self::Breeze, Self::Adwaita];
 
     pub const fn name(self) -> &'static str {
         match self {
@@ -136,6 +145,8 @@ impl Style {
             Self::Pro => "pro",
             Self::Studio => "studio",
             Self::Classic => "classic",
+            Self::Breeze => "breeze",
+            Self::Adwaita => "adwaita",
         }
     }
 
