@@ -50,7 +50,7 @@ fn harness(engine: Engine) -> Harness<'static, Vec<UiEvent>> {
         .with_size(egui::vec2(980.0, 620.0))
         .build_ui_state(
             move |ui, events: &mut Vec<UiEvent>| {
-                events.extend(view(ui, &engine, &registry, &strings, 2.0))
+                events.extend(view(ui, &engine, &registry, &strings))
             },
             Vec::new(),
         );

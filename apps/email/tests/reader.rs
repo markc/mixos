@@ -222,7 +222,7 @@ fn window(state: State, theme: &Theme) -> Harness<'static, (State, Vec<UiEvent>)
         .with_size(egui::vec2(1180.0, 760.0))
         .build_ui_state(
             move |ui, (state, seen): &mut (State, Vec<UiEvent>)| {
-                let events = view(ui, state, &registry, &strings, 2.0);
+                let events = view(ui, state, &registry, &strings);
                 for event in events {
                     seen.push(event.clone());
                     if let UiEvent::Command(id, origin) = event {
