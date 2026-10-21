@@ -8,7 +8,7 @@ use world::comp::CURRENT_WORKSPACE;
 
 #[test]
 fn retired_surface_ids_are_not_walked_as_live_trees() {
-    use protocols::window::ident::ident::tree_index;
+    use protocols::window::ident::tree_index;
     use smithay::reexports::wayland_server::{Resource, protocol::wl_surface::WlSurface};
 
     let mut h = Harness::new();

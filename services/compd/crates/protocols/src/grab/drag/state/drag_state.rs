@@ -35,7 +35,7 @@ use smithay::wayland::selection::data_device::DataDeviceHandler;
 
 use smithay::wayland::compositor::get_parent;
 
-use crate::dispatch::wire::drag::drag::{
+use crate::dispatch::wire::drag::{
     Attached, ToplevelDragData, ToplevelDragHost, XdgToplevelDragV1,
 };
 

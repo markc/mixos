@@ -53,7 +53,7 @@ pub(crate) fn root_dst(surface: &WlSurface) -> Option<smithay::utils::Size<i32, 
             .map(|v: SurfaceView| v.dst)
     })
 }
-use protocols::window::shell::shell;
+use protocols::window::shell;
 use slots::storage::slot::base::Storage;
 use ui::{HandleId, Transform as UiTransform, UiSpace};
 
@@ -796,7 +796,7 @@ pub fn surface_under_filtered_cx(
         .state
         .elements()
         .filter_map(|w| {
-            if !protocols::window::ident::ident::is_shown(w) {
+            if !protocols::window::ident::is_shown(w) {
                 return None;
             }
             crate::window::interface::record::window::LoopWindow::uuid(w).map(|u| (u, w.clone()))

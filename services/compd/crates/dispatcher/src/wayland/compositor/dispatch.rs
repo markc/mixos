@@ -6,5 +6,5 @@ pub mod wire {
     pub use crate::wayland::compositor::session::{
         apply_commit, awaits_initial_configure, commit, compositor_state,
     };
-    pub use protocols::compositor::client::client::client_compositor_state;
+    pub use protocols::compositor::client::client_compositor_state;
 }

@@ -16,7 +16,7 @@
 use crate::surface::interface::core::hit::surface_under_filtered_cx;
 use crate::surface::system::base::{announce_ui_button, announce_ui_focus};
 use dispatcher::state::state::Dispatch;
-use protocols::window::shell::shell;
+use protocols::window::shell;
 use slots::input::event::base::{InputFlow, Modality};
 use slots::trait_::system::base::SystemCx;
 use smithay::backend::input::{ButtonState, KeyState};

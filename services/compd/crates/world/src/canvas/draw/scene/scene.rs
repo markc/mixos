@@ -5,7 +5,7 @@ use crate::state::Loop;
 use crate::state::state::CoordinateTrait;
 use crate::window::draw::occlude::occlude::{Occluders, Visible};
 use crate::window::interface::record::window::LoopWindow;
-use protocols::window::find::find;
+use protocols::window::find;
 use smithay::backend::renderer::{ImportAll, ImportMem, Renderer, Texture};
 use smithay::desktop::Window;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;

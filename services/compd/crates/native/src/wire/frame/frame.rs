@@ -60,7 +60,7 @@ pub fn register(
     // next commit-driven composite samples the buffer, and the flag survives
     // until the gate lifts and the loop free-runs again.
     graphics::bridge::publish::wake::wake::set_offthread_waker(std::sync::Arc::new(move || {
-        if !protocols::tearing::gate::gate::engaged() {
+        if !protocols::tearing::gate::engaged() {
             redraw_ping.ping();
         }
     }));
@@ -131,14 +131,14 @@ pub fn register(
             // source, and the background sustaining the loop is precisely what
             // that gate exists to stop. Short-circuited, so the flag survives the
             // gate and the publish is not lost when exclusivity lifts.
-            let published = !protocols::tearing::gate::gate::engaged()
+            let published = !protocols::tearing::gate::engaged()
                 && graphics::bridge::publish::wake::wake::take_offthread_published();
             // A publish is a redraw request with no commit behind it, so nothing
             // has moved the epoch: mark the pipes stale or the executor's
             // epoch-current skip would (correctly) find nothing to do.
             if published {
                 state.state.redraw.request_silent_for(
-                    protocols::redraw::schedule::schedule::RedrawReason::Background,
+                    protocols::redraw::schedule::RedrawReason::Background,
                 );
             }
             // No output live: nothing renders, but the control plane must still
@@ -427,7 +427,7 @@ fn process_vblank_inner(
     if !ctx.outputs[idx].props_applied {
         state.state.redraw.request_pipe_silent(
             &key,
-            protocols::redraw::schedule::schedule::RedrawReason::Output,
+            protocols::redraw::schedule::RedrawReason::Output,
         );
     }
     // Phase reference for the tearing policy's "time until the next vblank".

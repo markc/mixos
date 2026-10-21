@@ -42,7 +42,7 @@ struct Observed(Mutex<Option<Shape>>);
 /// Pending synchronised-child state cannot stand in for the applied root.
 pub(crate) fn observe(window: &Window) -> bool {
     let shape = Shape {
-        drawn: protocols::window::ident::ident::is_drawn(window),
+        drawn: protocols::window::ident::is_drawn(window),
         geometry: window.geometry(),
         root_destination: window
             .wl_surface()

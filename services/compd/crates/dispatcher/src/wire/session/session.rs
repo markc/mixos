@@ -106,7 +106,7 @@ use smithay::reexports::wayland_server::{
 use smithay::wayland::shell::xdg::XdgShellSurfaceUserData;
 use uuid::Uuid;
 
-use protocols::session::store::store::{SessionIdentity, SessionStore};
+use protocols::session::store::{SessionIdentity, SessionStore};
 
 pub use protocol::xdg_session_manager_v1::{self, XdgSessionManagerV1};
 pub use protocol::xdg_session_v1::{self, XdgSessionV1};
@@ -123,7 +123,7 @@ use smithay::reexports::wayland_server::Weak;
 use smithay::reexports::wayland_server::backend::ClientId;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 
-use protocols::session::store::store::GrantError;
+use protocols::session::store::GrantError;
 
 /// Protocol version we advertise. Staging is at v1 in both namespaces.
 pub const VERSION: u32 = 1;
@@ -334,7 +334,7 @@ pub fn dispatch_manager<D>(
         // with NULL on every run still gets a stable string back.
         None => {
             let pid = client.get_credentials(dh).map(|c| c.pid).unwrap_or(-1);
-            let minted = protocols::session::claim::claim::resolve(pid)
+            let minted = protocols::session::claim::resolve(pid)
                 .unwrap_or_else(|| Uuid::now_v7().to_string());
             store.open(&minted);
             let session = di.init(
@@ -523,7 +523,7 @@ pub fn dispatch_legacy_manager<D>(
         }
         None => {
             let pid = client.get_credentials(dh).map(|c| c.pid).unwrap_or(-1);
-            let minted = protocols::session::claim::claim::resolve(pid)
+            let minted = protocols::session::claim::resolve(pid)
                 .unwrap_or_else(|| Uuid::now_v7().to_string());
             store.open(&minted);
             let s = di.init(
@@ -725,7 +725,7 @@ fn stamp(surface: Option<&WlSurface>, session_id: &str, name: &str, restored: bo
         warn!("session: toplevel resource with no shell user data — identity dropped");
         return;
     };
-    protocols::session::store::store::set_identity(
+    protocols::session::store::set_identity(
         surface,
         SessionIdentity {
             session_id: session_id.to_string(),

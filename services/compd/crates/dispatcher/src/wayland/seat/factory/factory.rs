@@ -49,9 +49,9 @@ where
     // The seat global is advertised only to clients
     // `visible` accepts.
     let mut seat: Seat<I> = seat_state.new_wl_seat_with_filter(display_handle, name, visible);
-    let layout = protocols::seat::xkb::xkb::load();
-    let csv = protocols::seat::xkb::xkb::layout_csv(&layout);
-    let cfg = protocols::seat::xkb::xkb::checked_config(&layout, &csv);
+    let layout = protocols::seat::xkb::load();
+    let csv = protocols::seat::xkb::layout_csv(&layout);
+    let cfg = protocols::seat::xkb::checked_config(&layout, &csv);
     // Repeat after 600 ms, then 25 a second. At 200 ms a deliberate press of
     // 200 ms or more (common for a space) repeated and typed a second
     // character; the toolkit's own key repeat already uses 600 ms.

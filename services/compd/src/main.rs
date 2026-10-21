@@ -590,7 +590,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // (`ime: { exec, args }`); unset ⇒ none is launched. Must be AFTER WAYLAND_DISPLAY is exported
     // (above) so it connects to OUR socket; the spawned process group is the ONLY client
     // authorized to bind the input-method / virtual-keyboard globals (see `text.input.launch`).
-    protocols::text::input::launch::launch::launch(state.inner.preference.ime.clone());
+    protocols::text::input::launch::launch(state.inner.preference.ime.clone());
 
     // Sampling heartbeat — a sparing, multi-level demo of live developer logs (so the
     // viewer shows activity over time and its level filters can be exercised). Remove when

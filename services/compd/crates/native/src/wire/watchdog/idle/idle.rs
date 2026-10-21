@@ -48,7 +48,7 @@
 //!
 //! It cannot influence pacing: while frames flow it only ever observes.
 
-use protocols::redraw::schedule::schedule::Schedule;
+use protocols::redraw::schedule::Schedule;
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::calloop::{LoopHandle, RegistrationToken};
 use std::cell::RefCell;
@@ -257,7 +257,7 @@ impl IdleRescue {
             state
                 .state
                 .redraw
-                .force_for(protocols::redraw::schedule::schedule::RedrawReason::Rescue);
+                .force_for(protocols::redraw::schedule::RedrawReason::Rescue);
         }
         if keep {
             TimeoutAction::ToDuration(NO_PROGRESS)

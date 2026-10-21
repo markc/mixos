@@ -2,8 +2,8 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 use std::os::fd::OwnedFd;
 
-use crate::clipboard::capture::capture::ClipboardCapture;
-use crate::clipboard::worker::worker::Worker;
+use crate::clipboard::capture::ClipboardCapture;
+use crate::clipboard::worker::Worker;
 use smithay::reexports::wayland_server::Client;
 use smithay::reexports::wayland_server::backend::ClientId;
 use smithay::wayland::selection::data_device::DataDeviceState;

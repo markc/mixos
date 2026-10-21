@@ -4,7 +4,7 @@ use crate::camera::transform::translate::slot;
 use crate::camera::transform::translate::transform::Transform;
 use crate::state::Loop;
 use crate::state::state::CoordinateTrait;
-use protocols::window::shell::shell;
+use protocols::window::shell;
 use smithay::backend::renderer::{ImportAll, ImportMem, Texture};
 use smithay::desktop::Window;
 use smithay::utils::{Logical, Physical, Point, Rectangle, Size};

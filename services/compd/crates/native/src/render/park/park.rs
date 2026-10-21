@@ -56,8 +56,8 @@ impl Holds {
     }
 
     /// The reason the continuation frame is requested for.
-    pub fn reason(&self) -> protocols::redraw::schedule::schedule::RedrawReason {
-        use protocols::redraw::schedule::schedule::RedrawReason;
+    pub fn reason(&self) -> protocols::redraw::schedule::RedrawReason {
+        use protocols::redraw::schedule::RedrawReason;
         if self.resuming {
             RedrawReason::Resume
         } else {
@@ -158,7 +158,7 @@ mod tests {
 
     #[test]
     fn holds_name_themselves_and_pick_a_reason() {
-        use protocols::redraw::schedule::schedule::RedrawReason;
+        use protocols::redraw::schedule::RedrawReason;
         let h = Holds {
             dmabuf_import: true,
             resuming: true,

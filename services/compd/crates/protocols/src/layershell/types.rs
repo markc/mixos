@@ -1,4 +1,15 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-pub mod types;
-pub use types::*;
+#[derive(Debug, Clone)]
+pub struct OverlayPlacement {
+    pub anchor_mode: AnchorMode,
+    pub margin: i32,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum AnchorMode {
+    BottomCenter,
+    TopCenter,
+    FollowCursor { offset_x: i32, offset_y: i32 },
+    Free { x: i32, y: i32 },
+}

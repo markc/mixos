@@ -2,7 +2,7 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 use crate::state::state::DispatchWire;
 use protocols::grab::resize::surface::ResizeEdge;
-use protocols::window::shell::shell;
+use protocols::window::shell;
 use smithay::desktop::Window;
 use smithay::input::pointer::{MotionEvent, PointerInnerHandle};
 use smithay::utils::{Logical, Point, Rectangle, Size};

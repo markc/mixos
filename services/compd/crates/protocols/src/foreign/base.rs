@@ -20,7 +20,7 @@
 
 use std::collections::HashMap;
 
-use crate::window::ident::ident;
+use crate::window::ident;
 use smithay::desktop::{Space, Window};
 use smithay::output::Output;
 use smithay::reexports::wayland_protocols::ext::foreign_toplevel_list::v1::server::{

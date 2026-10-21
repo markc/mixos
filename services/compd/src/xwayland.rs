@@ -26,7 +26,7 @@ use dispatcher::state::deferred::deferred::Deferred;
 use dispatcher::state::state::Dispatch;
 use dispatcher::wire::trait_::wire_trait::WireTrait;
 use model::{error, info, warn};
-use protocols::window::find::find::Shell;
+use protocols::window::find::Shell;
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::calloop::{EventLoop, Interest, LoopHandle, Mode, PostAction};

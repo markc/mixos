@@ -3,8 +3,8 @@
 use crate::state::deferred::deferred::Deferred;
 /// Every redraw names its reason; re-exported so the
 /// crates above reach it through the wrappers' own crate.
-pub use protocols::redraw::schedule::schedule::RedrawReason;
-use protocols::window::shell::shell;
+pub use protocols::redraw::schedule::RedrawReason;
+use protocols::window::shell;
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::desktop::Window;
 use smithay::input::dnd::DndGrabHandler;
@@ -107,16 +107,16 @@ pub struct Dispatch {
     /// which session id (see `mod session_impls`). Only the identity index lives
     /// here — the geometry a session restores to is the placeholder's, and the
     /// durable copy of the identity is persisted with it.
-    pub session: protocols::session::store::store::SessionStore,
+    pub session: protocols::session::store::SessionStore,
     /// Which protocol object currently manages which session id — the
     /// `replaced` / `in_use` half of session management (see `mod session_impls`).
     pub session_live: crate::wire::session::session::SessionLive,
     /// `xdg_toplevel_drag_v1`: which `wl_data_source` owns which drag object.
-    pub toplevel_drag: protocols::dispatch::wire::drag::drag::ToplevelDragState,
+    pub toplevel_drag: protocols::dispatch::wire::drag::ToplevelDragState,
     /// Redraw scheduling, per pipe: request epoch, each output's rendered
     /// epoch and in-flight flag, and the loop wake. The kernel registers pipes
     /// and reports queue/complete; the handlers here only make requests.
-    pub redraw: protocols::redraw::schedule::schedule::Schedule,
+    pub redraw: protocols::redraw::schedule::Schedule,
     /// XWayland: the `xwayland_shell_v1` global, the X11 window manager and the
     /// X11-side outboxes. Present whether or not Xwayland ever starts — the global
     /// has to exist before its first roundtrip (see `xwayland.factory`).
@@ -237,7 +237,7 @@ impl Dispatch {
     /// continuation leaves the old page on screen until unrelated input.
     #[inline]
     pub fn schedule_redraw_post_vblank(&mut self, reason: RedrawReason) {
-        if reason != RedrawReason::Ui && protocols::tearing::gate::gate::engaged() {
+        if reason != RedrawReason::Ui && protocols::tearing::gate::engaged() {
             return;
         }
         self.redraw.request_silent_for(reason);
@@ -498,7 +498,7 @@ impl Dispatch {
         //
         // Answered from the surface alone, since this runs world-free. The RAISE below
         // still happens for popups — stacking is a separate question.
-        if !protocols::window::ident::ident::is_popup_x11_surface(&x11) {
+        if !protocols::window::ident::is_popup_x11_surface(&x11) {
             self.xwayland.map_position_parent_hover = Some(x11.window_id());
         }
         let Some(xwm) = self.xwayland.xwm.as_mut() else {
@@ -717,7 +717,7 @@ impl SeatHandler for Dispatch {
             //
             // Focus still MOVES to the menu; only its use as a placement anchor is
             // refused, which is the same split the hover half already makes.
-            if !protocols::window::ident::ident::is_popup_x11_surface(x11) {
+            if !protocols::window::ident::is_popup_x11_surface(x11) {
                 self.xwayland.map_position_parent_focus = Some(x11.window_id());
             }
         }
@@ -1375,7 +1375,7 @@ mod session_impls {
 // the request logic; the source→drag registry lives on `Dispatch.toplevel_drag`.
 mod drag_impls {
     use super::Dispatch;
-    use protocols::dispatch::wire::drag::drag::{
+    use protocols::dispatch::wire::drag::{
         self, ToplevelDragData, XdgToplevelDragManagerV1, XdgToplevelDragV1,
         xdg_toplevel_drag_manager_v1, xdg_toplevel_drag_v1,
     };
@@ -1551,7 +1551,7 @@ mod handler_impls {
     use smithay::input::{Seat, SeatState};
     use smithay::input::dnd::{DnDGrab, DndGrabHandler, GrabType, Source};
     use smithay::reexports::wayland_server::protocol::wl_data_source::WlDataSource;
-    use protocols::dispatch::wire::drag::drag::{ToplevelDragData, ToplevelDragHost};
+    use protocols::dispatch::wire::drag::{ToplevelDragData, ToplevelDragHost};
     use protocols::grab::drag::state::drag_state::ToplevelDragGrab;
     use smithay::input::pointer::{Focus, PointerHandle};
     use smithay::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1::Mode;
@@ -1569,8 +1569,8 @@ mod handler_impls {
     use smithay::wayland::pointer_constraints::{PointerConstraintsHandler, with_pointer_constraint};
     use smithay::wayland::selection::{SelectionHandler, SelectionSource, SelectionTarget};
     use smithay::wayland::selection::data_device::{DataDeviceHandler, DataDeviceState, WaylandDndGrabHandler};
-    use protocols::clipboard::policy::policy;
-    use protocols::clipboard::pump::pump;
+    use protocols::clipboard::policy;
+    use protocols::clipboard::pump;
     use smithay::wayland::shell::wlr_layer::{Layer, LayerSurface, WlrLayerShellHandler, WlrLayerShellState};
     use smithay::wayland::shell::xdg::{PopupSurface, PositionerState, ToplevelSurface, XdgShellHandler, XdgShellState};
     use smithay::wayland::shell::xdg::decoration::XdgDecorationHandler;
@@ -1583,7 +1583,7 @@ mod handler_impls {
     use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::XdgToplevel;
     use crate::wire::redraw::redraw as rd;
     use protocols::xdg::activation::request::{ActivationDetails};
-    use protocols::wayland::connection::record::record::WaylandClientSession;
+    use protocols::wayland::connection::record::WaylandClientSession;
     use super::Dispatch;
 
     fn unconstrain_popup(popup: &PopupSurface) {
@@ -1763,7 +1763,7 @@ mod handler_impls {
         fn dialog_hint_changed(&mut self, toplevel: ToplevelSurface, hint: ToplevelDialogHint) {
             match hint {
                 ToplevelDialogHint::Modal => {
-                    protocols::ephemeral::mark::mark::mark(toplevel.wl_surface());
+                    protocols::ephemeral::mark::mark(toplevel.wl_surface());
                     trace!("xdg-dialog: toplevel marked modal");
                 }
                 ToplevelDialogHint::Dialog => {
@@ -1791,7 +1791,7 @@ mod handler_impls {
             token_data: XdgActivationTokenData,
             surface: WlSurface,
         ) {
-            protocols::xdg::activation::request::request_activation(surface, token, token_data);
+            protocols::xdg::activation::request_activation(surface, token, token_data);
         }
     }
     impl XdgShellHandler for Dispatch {
@@ -1865,7 +1865,7 @@ mod handler_impls {
             let carried =
                 abandoned.is_some() || self.toplevel_drag.is_carrying(surface.wl_surface());
             self.deferred.push(Deferred::WindowDestroyed {
-                window: protocols::window::find::find::Shell::Xdg(surface),
+                window: protocols::window::find::Shell::Xdg(surface),
                 drag_discard: carried,
             });
             self.schedule_redraw(RedrawReason::Unmap);
@@ -1894,14 +1894,14 @@ mod handler_impls {
         }
         fn fullscreen_request(&mut self, surface: ToplevelSurface, _: Option<WlOutput>) {
             self.deferred.push(Deferred::WindowFullscreen {
-                window: protocols::window::find::find::Shell::Xdg(surface),
+                window: protocols::window::find::Shell::Xdg(surface),
                 on: true,
             });
             self.schedule_redraw(RedrawReason::WindowState);
         }
         fn unfullscreen_request(&mut self, surface: ToplevelSurface) {
             self.deferred.push(Deferred::WindowFullscreen {
-                window: protocols::window::find::find::Shell::Xdg(surface),
+                window: protocols::window::find::Shell::Xdg(surface),
                 on: false,
             });
             self.schedule_redraw(RedrawReason::WindowState);
@@ -2302,7 +2302,7 @@ mod handler_impls {
             &mut self.compositor.state
         }
         fn client_compositor_state<'a>(&self, client: &'a Client) -> &'a CompositorClientState {
-            protocols::compositor::client::client::client_compositor_state(client)
+            protocols::compositor::client::client_compositor_state(client)
         }
         fn new_surface(&mut self, surface: &WlSurface) {
             install_syncobj_blocker_hook(surface);
@@ -2361,8 +2361,8 @@ mod handler_impls {
             // which is what lets you pan away from a pacer that has stopped
             // committing instead of being stuck looking at it.
             {
-                use protocols::tearing::gate::gate;
-                use protocols::tearing::pacer::pacer;
+                use protocols::tearing::gate;
+                use protocols::tearing::pacer;
                 let g = gate::get();
                 if g == gate::Gate::Off {
                     self.schedule_redraw(RedrawReason::Commit);
@@ -2762,7 +2762,7 @@ pub mod xwm_impls {
     use super::Dispatch;
     use super::RedrawReason;
     use crate::state::deferred::deferred::Deferred;
-    use protocols::window::find::find::Shell;
+    use protocols::window::find::Shell;
     use smithay::desktop::Window;
     use smithay::reexports::wayland_server::Resource;
     use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
@@ -2793,10 +2793,10 @@ pub mod xwm_impls {
             // A tearing verdict reached before this moment has been waiting on the
             // `X11Surface` for somewhere to go — see `shell::mark_tearing_target`. This is
             // that moment.
-            protocols::window::shell::shell::promote_tearing_target(&window, &surface);
+            protocols::window::shell::promote_tearing_target(&window, &surface);
             // First association is first drawable, which ends the window's self-sizing
             // period — see `shell::may_self_size`. Latched, so a remap does not reopen it.
-            protocols::window::shell::shell::mark_shown(&window);
+            protocols::window::shell::mark_shown(&window);
             // A popup candidate was NOT queued at map time, because the popup/window
             // decision needs this surface and it did not exist yet (`queue_x11_map`).
             // This is the entry that carries it.
@@ -2807,7 +2807,7 @@ pub mod xwm_impls {
             // there and declined here means nothing ever queues the window. Taking the
             // latch also means an association alone cannot queue a map — it is driven by a
             // client message that checks nothing about map state.
-            if protocols::window::shell::shell::take_held_map(&window) {
+            if protocols::window::shell::take_held_map(&window) {
                 self.deferred.push(Deferred::WindowMapped(
                     crate::state::deferred::deferred::Mapped::X11(window.clone()),
                 ));
@@ -2815,7 +2815,7 @@ pub mod xwm_impls {
             // An activation that found no surface to focus (focus-on-map can run
             // before Xwayland associates one, `activate_window`): focus it now, if
             // it is still the activated window and nothing took the keyboard since.
-            if protocols::window::shell::shell::take_deferred_focus(&window)
+            if protocols::window::shell::take_deferred_focus(&window)
                 && window.is_activated()
                 && let Some(keyboard) = self.seat.seat.get_keyboard()
                 && keyboard.current_focus().is_none()
@@ -2846,9 +2846,9 @@ pub mod xwm_impls {
     /// thing that makes the duplicate harmless.
     fn queue_x11_map(dispatch: &mut Dispatch, window: X11Surface) {
         if window.wl_surface().is_none()
-            && protocols::window::ident::ident::is_popup_x11_surface(&window)
+            && protocols::window::ident::is_popup_x11_surface(&window)
         {
-            protocols::window::shell::shell::hold_map_for_surface(&window);
+            protocols::window::shell::hold_map_for_surface(&window);
             return;
         }
         dispatch.deferred.push(Deferred::WindowMapped(
@@ -2877,7 +2877,7 @@ pub mod xwm_impls {
         fn map_window_request(&mut self, _xwm: XwmId, window: X11Surface) {
             // What the compositor will and will not do for this window, before the client can ask —
             // notably NOT move or resize, which `move_request`/`resize_request` refuse.
-            protocols::window::shell::shell::declare_managed(&window);
+            protocols::window::shell::declare_managed(&window);
             // At the BOTTOM of the X stack: a new window must not take pointer events
             // from whatever the pointer is already on before the pointer reaches it.
             self.lower_new_x11(&window);
@@ -2972,7 +2972,7 @@ pub mod xwm_impls {
             h: Option<u32>,
             reorder: Option<Reorder>,
         ) {
-            use protocols::window::shell::shell;
+            use protocols::window::shell;
             let last = window.last_configure();
             let mut geometry = last;
             // A toplevel's x/y is also honoured BEFORE it is mapped. A pre-map
@@ -3320,7 +3320,7 @@ pub mod xwm_impls {
             if let Some(worker) = self.clipboard.worker.as_ref() {
                 worker.arm(generation);
             }
-            let ordered = protocols::clipboard::policy::policy::ordered(&mime_types);
+            let ordered = protocols::clipboard::policy::ordered(&mime_types);
             let dh = self.output.display_handle.clone();
             let seat = self.seat.seat.clone();
             // The offer goes in BEFORE the capture is queued, and here that ordering is

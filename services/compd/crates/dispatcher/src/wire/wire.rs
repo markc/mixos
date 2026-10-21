@@ -14,9 +14,9 @@ use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::drm::DrmDeviceFd;
 use smithay::desktop::PopupKind;
 use smithay::xwayland::{X11Surface, xwm::X11Window};
-use protocols::window::find::find;
-use protocols::window::ident::ident;
-use protocols::window::shell::shell;
+use protocols::window::find;
+use protocols::window::ident;
+use protocols::window::shell;
 use crate::state::deferred::deferred::Deferred;
 use crate::state::deferred::deferred;
 use smithay::input::dnd::{DndGrabHandler, GrabType, Source};
@@ -109,7 +109,7 @@ impl<A: WireTrait + 'static> Wire<A> {
         // `xdg_toplevel_drag_v1` — browsers bind this to detach a tab into its
         // own window, and Chromium/Firefox only enable that UI when the global
         // is present, so it is advertised unconditionally like the rest.
-        protocols::dispatch::wire::drag::drag::create_global::<Dispatch>(display_handle);
+        protocols::dispatch::wire::drag::create_global::<Dispatch>(display_handle);
         // Both namespaces are advertised: `xdg_` is the current staging name,
         // `xx_` is the pre-rename one GTK 4.22 actually binds — and today GTK is
         // the only shipping client, so without this no real app reaches the
@@ -203,13 +203,13 @@ pub fn new_dispatch(
             display_handle,
         ),
         text_input: crate::wayland::text::input::factory::factory::new::<Dispatch>(display_handle),
-        dnd: protocols::dnd::factory::factory::new(),
+        dnd: protocols::dnd::factory::new(),
         singlepixel: crate::wayland::singlepixel::factory::factory::new::<Dispatch>(display_handle),
         tablet: Default::default(),
         session: Default::default(),
         session_live: Default::default(),
         toplevel_drag: Default::default(),
-        redraw: protocols::redraw::schedule::schedule::Schedule::new(),
+        redraw: protocols::redraw::schedule::Schedule::new(),
         xwayland: crate::xwm::factory::factory::new::<Dispatch>(display_handle),
         protocol_pending: false,
         committed: vec![],
@@ -626,7 +626,7 @@ impl<A: WireTrait + 'static> Wire<A> {
                         // one that can answer for a submenu: its parent is the menu, which is
                         // deliberately kept out of the Space.
                         let popups = &self.state.popup.state;
-                        if let Some(popup) = protocols::window::child::child::as_popup(
+                        if let Some(popup) = protocols::window::child::as_popup(
                             mapped.iter(),
                             &window,
                             fallback,
@@ -762,7 +762,7 @@ impl<A: WireTrait + 'static> Wire<A> {
                             // makes the stored location a CACHE. Unity's submenus showed it —
                             // hover away, hover back, and the submenu reappeared where it was
                             // rather than beside the item that opened it.
-                            if protocols::window::ident::ident::is_ephemeral_x11(&window) {
+                            if protocols::window::ident::is_ephemeral_x11(&window) {
                                 self.inner
                                     .space_of_world_mut(world)
                                     .state

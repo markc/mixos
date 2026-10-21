@@ -5,7 +5,7 @@
 //! geometry evidence, not native pixels or a settings-to-frame timing measure.
 
 use policy_host::geometry::{self, GeometryChange};
-use protocols::window::shell::shell;
+use protocols::window::shell;
 use smithay::desktop::Window;
 use smithay::output::{Mode, Output, PhysicalProperties, Scale, Subpixel};
 use smithay::utils::{Size, Transform};

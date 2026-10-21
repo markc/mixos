@@ -48,7 +48,7 @@ use dispatcher::wire::trait_::wire_trait::{ActivationOrigin, WireTrait};
 use policy::Effect;
 use policy::window::WindowFacts;
 use policy::workspaces::{DefaultOutput, SwitchGates, WorkspaceRefusal, WorkspaceTarget};
-use protocols::window::shell::shell;
+use protocols::window::shell;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::Resource;
 use smithay::reexports::wayland_server::backend::protocol::ProtocolError;
@@ -639,7 +639,7 @@ fn requested(lp: &Loop, id: SurfaceId, state: WindowState) -> bool {
     match state {
         WindowState::Maximized => lp.inner.comp.maximize_restore(id).is_some(),
         WindowState::Fullscreen => window_of(lp, id)
-            .is_some_and(|window| protocols::window::ident::ident::states(&window).fullscreen),
+            .is_some_and(|window| protocols::window::ident::states(&window).fullscreen),
     }
 }
 
@@ -929,7 +929,7 @@ pub fn window_facts(lp: &Loop, id: SurfaceId) -> WindowFacts {
         world::comp::live_window_space(&lp.inner.comp, lp.inner.all_world_spaces(), &window)
             .and_then(|space| space.state.element_location(&window))
             .unwrap_or_default();
-    let fullscreen = protocols::window::ident::ident::states(&window).fullscreen;
+    let fullscreen = protocols::window::ident::states(&window).fullscreen;
     let geometry = window.geometry();
     WindowFacts {
         requested_maximized,
@@ -1396,7 +1396,7 @@ pub fn execute(lp: &mut Loop, effects: Vec<Effect>) {
                             // Already fullscreen and asked again (an `{output}`):
                             // move it there (a re-target); `fullscreen_set` returns early.
                             if enabled
-                                && protocols::window::ident::ident::states(&window).fullscreen
+                                && protocols::window::ident::states(&window).fullscreen
                             {
                                 world::comp::fullscreen::retarget(lp, &window);
                             } else {
@@ -1889,5 +1889,5 @@ fn settle(lp: &mut Loop, prefer: Option<SurfaceId>) {
 
 /// Whether a window would be drawn now (through the draw's own predicate).
 pub fn drawn(lp: &Loop, window: &Window) -> bool {
-    window.visible(lp) && protocols::window::ident::ident::is_drawn(window)
+    window.visible(lp) && protocols::window::ident::is_drawn(window)
 }

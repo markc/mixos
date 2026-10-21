@@ -31,7 +31,7 @@ fn id_of(h: &Harness, surface: &wayland_client::protocol::wl_surface::WlSurface)
 #[test]
 fn foreign_activation_resolves_the_owning_space_before_liveness() {
     use dispatcher::wire::trait_::wire_trait::{ActivationOrigin, WireTrait};
-    use protocols::window::ident::ident;
+    use protocols::window::ident;
     use world::window::lifecycle::event::event::WindowLifecycleEvent;
 
     let mut h = Harness::new();
@@ -51,7 +51,7 @@ fn foreign_activation_resolves_the_owning_space_before_liveness() {
     h.roundtrip();
     let hosted = h.wire.inner.space.state.elements().next().unwrap().clone();
     hosted.set_activated(true);
-    protocols::window::shell::shell::send_pending(&hosted);
+    protocols::window::shell::send_pending(&hosted);
 
     let dock = h.add_client();
     h.extra_clients[dock].bind_foreign_toplevels();
@@ -118,7 +118,7 @@ fn foreign_activation_resolves_the_owning_space_before_liveness() {
 #[test]
 fn placed_fullscreen_requests_survive_an_earlier_cross_world_activation() {
     use dispatcher::wire::trait_::wire_trait::{ActivationOrigin, WireTrait};
-    use protocols::window::ident::ident;
+    use protocols::window::ident;
     use world::camera::transform::translate::slot;
     use world::window::interface::record::window::LoopWindow;
 
@@ -271,7 +271,7 @@ fn parked_retained_fullscreen_cannot_overtake_a_later_unfullscreen() {
         [(uuid, "placed"), (uuid, "fullscreen"), (uuid, "fullscreen"),]
     );
     assert!(!a.is_fullscreen(), "the later exit wins when A returns");
-    assert!(!protocols::window::ident::ident::states(&a).fullscreen);
+    assert!(!protocols::window::ident::states(&a).fullscreen);
     assert_eq!(slot::decided_size(&a), Some((64, 48).into()));
     assert!(h.wire.inner.lifecycle.iter().all(Vec::is_empty));
     assert_eq!(h.tick_frame(), 0);
@@ -421,7 +421,7 @@ fn every_lifecycle_event_tracks_membership_and_waits_behind_its_own_initial_map(
     let mut h = Harness::new();
     let (_, _, _) = h.mapped_toplevel(64, 48);
     let a = h.wire.inner.space.state.elements().next().unwrap().clone();
-    let server = protocols::window::ident::ident::surface(&a).unwrap();
+    let server = protocols::window::ident::surface(&a).unwrap();
     let events = [
         WindowLifecycleEvent::InitialMap(a.clone()),
         WindowLifecycleEvent::Activate(a.clone(), ActivationOrigin::Foreign),

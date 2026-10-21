@@ -21,7 +21,7 @@
 //! alongside the other hand-rolled protocols, since that is where
 //! `delegate_dispatch2!(Dispatch)` makes the bounds provable.
 
-use protocols::tearing::pacer::pacer::TearingTag;
+use protocols::tearing::pacer::TearingTag;
 use smithay::reexports::wayland_protocols::wp::tearing_control::v1::server::{
     wp_tearing_control_manager_v1::{self, WpTearingControlManagerV1},
     wp_tearing_control_v1::{self, PresentationHint, WpTearingControlV1},

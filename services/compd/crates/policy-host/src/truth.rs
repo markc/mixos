@@ -83,7 +83,7 @@ use serde_json::{Value, json};
 use comp_model::snapshot::output_key;
 use dispatcher::wire::trait_::surface_event::SurfaceHandle;
 use dispatcher::wire::trait_::wire_trait::WireTrait;
-use protocols::window::ident::ident;
+use protocols::window::ident;
 use surfaces::SurfaceRole;
 use world::state::Loop;
 

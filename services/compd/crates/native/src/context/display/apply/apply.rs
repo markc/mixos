@@ -79,7 +79,7 @@ fn panel_dpms(state: &mut Loop, ctx_rc: &Rc<RefCell<NativeRenderContext>>, on: b
         *state.inner.kernel.get_mut(&DISPLAY_OFF_MUT) = false;
         state
             .state
-            .schedule_redraw(protocols::redraw::schedule::schedule::RedrawReason::Output);
+            .schedule_redraw(protocols::redraw::schedule::RedrawReason::Output);
     } else {
         // Gate the executor before blanking so no stray flip re-powers it.
         *state.inner.kernel.get_mut(&DISPLAY_OFF_MUT) = true;

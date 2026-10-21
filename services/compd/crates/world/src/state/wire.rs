@@ -10,8 +10,8 @@ use dispatcher::state::state::Dispatch;
 use dispatcher::wayland::xdg::activation::dispatch::wire::ActivationDetails;
 use dispatcher::wire::trait_::wire_trait::{ActivationOrigin, WireTrait};
 use dispatcher::wire::wire::Wire;
-use protocols::window::find::find;
-use protocols::window::ident::ident;
+use protocols::window::find;
+use protocols::window::ident;
 use smithay::backend::renderer::ImportDma;
 use smithay::desktop::{Space, Window};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
@@ -225,7 +225,7 @@ impl WireTrait for Orchestrator {
             // neither is still readable here.
             let discard_placeholder = drag_discard
                 || states.data_map.get::<DiscardPlaceholder>().is_some()
-                || protocols::ephemeral::mark::mark::is_marked(states);
+                || protocols::ephemeral::mark::is_marked(states);
             WindowLifecycleEvent::Destroyed(data, activation_details, discard_placeholder)
         });
         // Routing may inspect a queued DragSettled's surface data. Release this
@@ -276,7 +276,7 @@ impl WireTrait for Orchestrator {
         // mark read from there would be unconditionally absent: every ephemeral X11
         // window would leave a placeholder, and Shift-close would never discard one.
         let discard_placeholder = window.user_data().get::<DiscardPlaceholder>().is_some()
-            || protocols::ephemeral::mark::mark::is_window_marked(&window);
+            || protocols::ephemeral::mark::is_window_marked(&window);
         self.enqueue_window_lifecycle(WindowLifecycleEvent::Destroyed(
             uuid,
             Vec::new(),

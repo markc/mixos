@@ -206,7 +206,7 @@ pub fn draw(state: &mut Loop, context: &mut WinitRenderContext) {
                     state
                         .state
                         .redraw
-                        .request_for(protocols::redraw::schedule::schedule::RedrawReason::Rescue);
+                        .request_for(protocols::redraw::schedule::RedrawReason::Rescue);
                     state.state.redraw.frame(&output_key, true);
                     owe_frames(context, state, visible);
                 }
@@ -254,7 +254,7 @@ pub fn draw(state: &mut Loop, context: &mut WinitRenderContext) {
         state.state.redraw.request_at(
             &handle,
             at,
-            protocols::redraw::schedule::schedule::RedrawReason::Ui,
+            protocols::redraw::schedule::RedrawReason::Ui,
             schedule_of,
         );
     }
@@ -265,14 +265,14 @@ pub fn draw(state: &mut Loop, context: &mut WinitRenderContext) {
         state.state.redraw.request_at(
             &handle,
             at,
-            protocols::redraw::schedule::schedule::RedrawReason::Capture,
+            protocols::redraw::schedule::RedrawReason::Capture,
             schedule_of,
         );
     }
 }
 
 /// Where the redraw schedule lives in the loop data, for its deadline timers.
-fn schedule_of(state: &mut Loop) -> &mut protocols::redraw::schedule::schedule::Schedule {
+fn schedule_of(state: &mut Loop) -> &mut protocols::redraw::schedule::Schedule {
     &mut state.state.redraw
 }
 
@@ -472,7 +472,7 @@ fn compose(
                     state
                         .state
                         .redraw
-                        .request_for(protocols::redraw::schedule::schedule::RedrawReason::Rescue);
+                        .request_for(protocols::redraw::schedule::RedrawReason::Rescue);
                     None
                 }
             };

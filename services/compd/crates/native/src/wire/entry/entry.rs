@@ -397,7 +397,7 @@ pub fn wire(
             state
                 .state
                 .redraw
-                .request_silent_for(protocols::redraw::schedule::schedule::RedrawReason::Resume);
+                .request_silent_for(protocols::redraw::schedule::RedrawReason::Resume);
             let _ = crate::render::execute::execute::execute(
                 ctx,
                 handle,

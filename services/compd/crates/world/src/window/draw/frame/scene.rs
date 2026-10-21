@@ -28,7 +28,7 @@ use crate::window::draw::element::element::{ClampOpaque, Element, ElementWindowS
 use crate::window::draw::occlude::occlude::{Drawn, Occluders};
 use crate::window::interface::draw::visible::DrawWindow;
 use crate::window::interface::record::window::LoopWindow;
-use protocols::window::shell::shell;
+use protocols::window::shell;
 use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::element::solid::SolidColorRenderElement;
 use smithay::backend::renderer::element::surface::{

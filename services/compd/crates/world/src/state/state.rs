@@ -4,8 +4,8 @@ use crate::environment::type_::base::Environment;
 use drivers::world::audio::controller::interface::AudioController;
 use drivers::world::audio::controller::interface::media::MediaController;
 use graphics::capture::registry::CaptureRegistry;
-use protocols::window::find::find;
-use protocols::window::shell::shell;
+use protocols::window::find;
+use protocols::window::shell;
 use smithay::backend::drm::{DrmDeviceFd, DrmNode};
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::multigpu::GpuManager;
@@ -733,7 +733,7 @@ impl Orchestrator {
     /// has. No per-world distinction is needed — worlds are separate canvases, and X space
     /// is not a canvas.
     fn flush_x11_configures(&mut self) {
-        use protocols::window::shell::shell;
+        use protocols::window::shell;
         for window in shell::take_staged() {
             shell::flush_pending(&window);
         }

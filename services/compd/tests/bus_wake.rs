@@ -16,7 +16,7 @@ use comp_model::snapshot::{CompSnapshot, ReadScopes};
 use comp_service::{CompEngine, LongReply, PortService};
 use dispatcher::state::state::{Dispatch, RedrawReason};
 use policy::workspaces::{DefaultOutput, WorkspaceState, service_switch};
-use protocols::tearing::gate::gate::{self, Gate};
+use protocols::tearing::gate::{self, Gate};
 use serde_json::Value;
 use smithay::reexports::calloop::EventLoop;
 use smithay::reexports::calloop::ping::make_ping;

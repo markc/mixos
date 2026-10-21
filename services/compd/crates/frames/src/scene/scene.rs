@@ -963,8 +963,8 @@ where
         })
         .collect();
     for (window, size) in resize_due {
-        protocols::window::shell::shell::stage(&window, size, false);
-        protocols::window::shell::shell::send(&window);
+        protocols::window::shell::stage(&window, size, false);
+        protocols::window::shell::send(&window);
     }
 
     // Return the resulting scene

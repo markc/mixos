@@ -17,7 +17,7 @@
 //! left to prove). Bounded by [`SETTLE`]; a pipe that never flips by then is
 //! logged as a fault, not kicked forever.
 
-use protocols::redraw::schedule::schedule::Schedule;
+use protocols::redraw::schedule::Schedule;
 use smithay::reexports::calloop::LoopHandle;
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use std::sync::Mutex;
@@ -119,7 +119,7 @@ pub fn arm(loop_handle: &LoopHandle<'static, Loop>, schedule: &mut Schedule, key
                 state
                     .state
                     .redraw
-                    .force_for(protocols::redraw::schedule::schedule::RedrawReason::Settle);
+                    .force_for(protocols::redraw::schedule::RedrawReason::Settle);
                 TimeoutAction::ToDuration(PROOF)
             }
         }

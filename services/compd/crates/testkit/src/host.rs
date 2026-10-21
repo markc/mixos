@@ -13,7 +13,7 @@ use dispatcher::state::state::Dispatch;
 use dispatcher::wire::trait_::surface_event::{SurfaceEvent, SurfaceHandle};
 use dispatcher::wire::trait_::wire_trait::{ActivationOrigin, WireTrait};
 use protocols::space::state::SpaceState;
-use protocols::window::ident::ident;
+use protocols::window::ident;
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::desktop::{Space, Window};
 use smithay::output::{Mode, Output, PhysicalProperties, Scale, Subpixel};
@@ -157,7 +157,7 @@ impl TestHost {
                     for space in self.all_world_spaces() {
                         for candidate in space.state.elements() {
                             candidate.set_activated(candidate == &window);
-                            protocols::window::shell::shell::send_pending(candidate);
+                            protocols::window::shell::send_pending(candidate);
                         }
                     }
                     self.serviced_lifecycle
@@ -272,7 +272,7 @@ impl WireTrait for TestHost {
             .other_space
             .state
             .elements()
-            .any(|window| protocols::window::find::find::is_surface(window, surface))
+            .any(|window| protocols::window::find::is_surface(window, surface))
         {
             &self.other_space
         } else {
@@ -284,7 +284,7 @@ impl WireTrait for TestHost {
             .other_space
             .state
             .elements()
-            .any(|window| protocols::window::find::find::is_surface(window, surface))
+            .any(|window| protocols::window::find::is_surface(window, surface))
         {
             &mut self.other_space
         } else {
@@ -351,7 +351,7 @@ impl WireTrait for TestHost {
         ]
         .into_iter()
         .find_map(|(space, owner)| {
-            protocols::window::find::find::by_x11(space.state.elements(), surface)
+            protocols::window::find::by_x11(space.state.elements(), surface)
                 .map(|window| (self.world_ids[owner], window))
         })
     }

@@ -491,7 +491,7 @@ pub fn reconcile(state: &mut Loop, ctx_rc: &Ctx) -> Option<OutputChange> {
                 .state
                 .redraw
                 .remove(&world::state::state::output_key(&removed.output));
-            protocols::tearing::liveness::liveness::remove(&world::state::state::output_key(
+            protocols::tearing::liveness::remove(&world::state::state::output_key(
                 &removed.output,
             ));
             // Every world's Space, not just the hosted one (`unmap_output_everywhere`).
@@ -554,7 +554,7 @@ pub fn reconcile(state: &mut Loop, ctx_rc: &Ctx) -> Option<OutputChange> {
                             .state
                             .redraw
                             .remove(&world::state::state::output_key(&removed.output));
-                        protocols::tearing::liveness::liveness::remove(
+                        protocols::tearing::liveness::remove(
                             &world::state::state::output_key(&removed.output),
                         );
                         // Every world's Space, not just the hosted one
@@ -727,13 +727,13 @@ pub fn reconcile(state: &mut Loop, ctx_rc: &Ctx) -> Option<OutputChange> {
         state
             .state
             .redraw
-            .force_for(protocols::redraw::schedule::schedule::RedrawReason::Output);
+            .force_for(protocols::redraw::schedule::RedrawReason::Output);
         let handle = state.loop_handle.clone();
         crate::wire::watchdog::settle::settle::arm(&handle, &mut state.state.redraw, activated);
     } else {
         state
             .state
-            .schedule_redraw(protocols::redraw::schedule::schedule::RedrawReason::Output);
+            .schedule_redraw(protocols::redraw::schedule::RedrawReason::Output);
     }
     if !any_live {
         Some(OutputChange::WentDark)

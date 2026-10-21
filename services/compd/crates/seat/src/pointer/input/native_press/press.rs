@@ -11,8 +11,8 @@ use smithay::wayland::shell::wlr_layer::{KeyboardInteractivity, Layer};
 use world::state::Loop;
 use world::surface::interface::hit::SurfaceHit;
 // Trait import: provides `uuid()` / `is_fullscreen()` on `Window` below.
-use protocols::window::ident::ident;
-use protocols::window::shell::shell;
+use protocols::window::ident;
+use protocols::window::shell;
 use world::window::interface::record::window::LoopWindow;
 
 // This is only called on presses when there was a surface hit.

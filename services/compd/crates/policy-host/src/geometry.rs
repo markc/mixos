@@ -6,7 +6,7 @@
 
 use std::collections::BTreeMap;
 
-use protocols::window::shell::shell;
+use protocols::window::shell;
 use smithay::desktop::{Space, Window};
 use smithay::output::Output;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
@@ -195,7 +195,7 @@ pub fn refresh_usable(
 
 fn fullscreen_owns(window: &Window) -> bool {
     window.is_fullscreen()
-        || protocols::window::ident::ident::states(window).fullscreen
+        || protocols::window::ident::states(window).fullscreen
         || window.toplevel().is_some_and(|toplevel| {
             toplevel.with_committed_state(|state| {
                 state.is_some_and(|state| state.states.contains(xdg_toplevel::State::Fullscreen))

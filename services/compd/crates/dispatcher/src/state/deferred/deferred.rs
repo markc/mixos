@@ -19,7 +19,7 @@
 //! and whose payloads (`Dmabuf`, `DrmSyncPointSource`) would be paid for by every
 //! element of this `Vec`, since an enum is as large as its widest variant.
 
-use protocols::window::find::find::Shell;
+use protocols::window::find::Shell;
 use smithay::desktop::Window;
 use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;

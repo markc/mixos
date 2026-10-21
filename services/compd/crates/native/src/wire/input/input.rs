@@ -283,7 +283,7 @@ pub fn register(
             if !dark && cursor_before != cursor_after {
                 state
                     .state
-                    .schedule_redraw(protocols::redraw::schedule::schedule::RedrawReason::Cursor);
+                    .schedule_redraw(protocols::redraw::schedule::RedrawReason::Cursor);
             }
         })
         .unwrap();

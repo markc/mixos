@@ -30,7 +30,7 @@ pub fn route(event: &WinitEvent, state: &mut Loop, context: &mut WinitRenderCont
             );
             state
                 .state
-                .schedule_redraw(protocols::redraw::schedule::schedule::RedrawReason::Output);
+                .schedule_redraw(protocols::redraw::schedule::RedrawReason::Output);
         }
         WinitEvent::Input(input_event) => {
             // Per-event logging omitted: input is a high-frequency path.

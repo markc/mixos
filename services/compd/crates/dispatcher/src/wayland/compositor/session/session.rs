@@ -2,8 +2,8 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 use crate::state::state::{Dispatch, DispatchWire};
 use crate::wayland::compositor::place::WindowPlacedMarker;
-use protocols::window::find::find;
-use protocols::window::shell::shell;
+use protocols::window::find;
+use protocols::window::shell;
 use smithay::backend::renderer::utils::on_commit_buffer_handler;
 use smithay::desktop::{Space, Window};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;

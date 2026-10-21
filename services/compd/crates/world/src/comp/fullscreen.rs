@@ -168,8 +168,8 @@ pub fn retarget(lp: &mut Loop, window: &Window) {
         .state
         .map_element(window.clone(), geometry.loc, activate);
     crate::camera::transform::translate::slot::set_expected_size(window, geometry.size);
-    protocols::window::shell::shell::stage(window, geometry.size, false);
-    protocols::window::shell::shell::send(window);
+    protocols::window::shell::stage(window, geometry.size, false);
+    protocols::window::shell::send(window);
     lp.state
         .schedule_redraw(dispatcher::state::state::RedrawReason::WindowState);
 }

@@ -23,8 +23,8 @@
 
 use crate::state::state::Dispatch;
 use crate::state::state::xwm_impls::X11_SELECTION;
-use protocols::clipboard::policy::policy;
-use protocols::clipboard::worker::worker::Worker;
+use protocols::clipboard::policy;
+use protocols::clipboard::worker::Worker;
 use smithay::reexports::calloop::LoopHandle;
 use smithay::reexports::calloop::ping::make_ping;
 use smithay::reexports::rustix;

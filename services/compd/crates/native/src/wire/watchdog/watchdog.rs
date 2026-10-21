@@ -14,8 +14,8 @@
 //! source schedules normally, and a 30Hz timer asking "has anything composited"
 //! is answering a question no one asked.
 
-use protocols::tearing::floor::floor;
-use protocols::tearing::liveness::liveness;
+use protocols::tearing::floor;
+use protocols::tearing::liveness;
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::calloop::{LoopHandle, RegistrationToken};
 use world::state::Loop;
@@ -35,7 +35,7 @@ pub fn arm(loop_handle: &LoopHandle<'static, Loop>, slot: &mut Option<Registrati
     match loop_handle.insert_source(
         Timer::from_duration(floor::get()),
         |_, _, state: &mut Loop| {
-            if !protocols::tearing::gate::gate::engaged() {
+            if !protocols::tearing::gate::engaged() {
                 return TimeoutAction::ToDuration(floor::get());
             }
             if let Some(remaining) = liveness::until_due() {
@@ -52,7 +52,7 @@ pub fn arm(loop_handle: &LoopHandle<'static, Loop>, slot: &mut Option<Registrati
             state
                 .state
                 .redraw
-                .force_for(protocols::redraw::schedule::schedule::RedrawReason::Watchdog);
+                .force_for(protocols::redraw::schedule::RedrawReason::Watchdog);
             TimeoutAction::ToDuration(floor::get())
         },
     ) {

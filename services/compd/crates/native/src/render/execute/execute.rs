@@ -127,7 +127,7 @@ fn discard_unsubmitted_render(pipe: &crate::context::render::render::OutputPipe)
 }
 
 /// Where the redraw schedule lives in the loop data, for its deadline timers.
-fn schedule_of(state: &mut Loop) -> &mut protocols::redraw::schedule::schedule::Schedule {
+fn schedule_of(state: &mut Loop) -> &mut protocols::redraw::schedule::Schedule {
     &mut state.state.redraw
 }
 
@@ -379,7 +379,7 @@ pub fn execute(
     // moment any selector is armed, including on a desktop that is merely waiting
     // for a target and never tears.
     let mut frame_flags =
-        kms::scanout::plane::direct::direct::flags(protocols::tearing::gate::gate::tearing());
+        kms::scanout::plane::direct::direct::flags(protocols::tearing::gate::tearing());
     // Pre-emptive rendering: never let a frame be reported empty, so the loop
     // flips every pass instead of parking — the tail of this function re-arms the
     // redraw latch only after a non-empty result. Default `Engaged` applies that
@@ -392,7 +392,7 @@ pub fn execute(
     // nothing but whether the prepared frame may be called empty.
     let preemptive = model::environment::tearing::config::get()
         .preemptive
-        .forces(protocols::tearing::gate::gate::governed());
+        .forces(protocols::tearing::gate::governed());
     if preemptive {
         frame_flags |= smithay::backend::drm::compositor::FrameFlags::FORCE_PRESENT;
     }
@@ -868,7 +868,7 @@ pub fn execute(
                     }
                     if frame.number < 3 {
                         state.state.redraw.request_gated(
-                            protocols::redraw::schedule::schedule::RedrawReason::Rearm,
+                            protocols::redraw::schedule::RedrawReason::Rearm,
                         );
                     }
                 }
@@ -1125,7 +1125,7 @@ pub fn execute(
                 state
                     .state
                     .redraw
-                    .request_gated(protocols::redraw::schedule::schedule::RedrawReason::Rearm);
+                    .request_gated(protocols::redraw::schedule::RedrawReason::Rearm);
             }
         } else {
             let output = ctx_ref.outputs[output_idx].output.clone();
@@ -1261,7 +1261,7 @@ pub fn execute(
         state.state.redraw.request_at(
             &handle,
             at,
-            protocols::redraw::schedule::schedule::RedrawReason::Ui,
+            protocols::redraw::schedule::RedrawReason::Ui,
             schedule_of,
         );
     }
@@ -1272,7 +1272,7 @@ pub fn execute(
         state.state.redraw.request_at(
             &handle,
             at,
-            protocols::redraw::schedule::schedule::RedrawReason::Capture,
+            protocols::redraw::schedule::RedrawReason::Capture,
             schedule_of,
         );
     }
@@ -1318,9 +1318,9 @@ fn present(
     // is no latched state to get stuck in.
     let active = {
         use model::environment::tearing::select::{Exclusivity, Scene};
-        use protocols::tearing::gate::gate;
-        use protocols::tearing::liveness::liveness;
-        use protocols::tearing::pacer::pacer;
+        use protocols::tearing::gate;
+        use protocols::tearing::liveness;
+        use protocols::tearing::pacer;
         use smithay::wayland::seat::WaylandFocus;
 
         // Both halves of the tag live on the SURFACE, and both are gathered over the
@@ -1438,7 +1438,7 @@ fn present(
         // The watchdog floor is a rate like any other, so it is resolved against
         // this output's refresh here — the layer that owns the timer knows
         // nothing about modes.
-        protocols::tearing::floor::floor::set(cfg.floor_interval(refresh));
+        protocols::tearing::floor::set(cfg.floor_interval(refresh));
         // Published for the next frame's pre-emptive decision, beside the plane
         // one below and for the same reason — both are read before a scene exists.
         gate::set_governed(!matches!(
@@ -1490,7 +1490,7 @@ fn present(
         // the flags are still from the previous resolution, so this yields one
         // ordinary vsync'd frame rather than a rejected commit.
         let tear =
-            active.tear_now(until_vblank, refresh) && protocols::tearing::gate::gate::tearing();
+            active.tear_now(until_vblank, refresh) && protocols::tearing::gate::tearing();
         pipe.last_tear = tear;
         tear
     };

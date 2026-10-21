@@ -148,7 +148,7 @@ fn apply(state: &mut Loop, ctx_rc: &Ctx, edid_key: &str, w: u16, h: u16, mhz: u3
     drop(ctx);
     state
         .state
-        .schedule_redraw(protocols::redraw::schedule::schedule::RedrawReason::Output);
+        .schedule_redraw(protocols::redraw::schedule::RedrawReason::Output);
     // Arm the per-pipe confirm/revert watchdog. `idx` is still valid — no hotplug can
     // interleave this synchronous drain; the watchdog itself re-resolves by key.
     let token = arm(state, ctx_rc, edid_key.to_string(), baseline);
@@ -174,7 +174,7 @@ fn finish(state: &mut Loop, ctx_rc: &Ctx, revert: bool) {
         drop(ctx);
         state
             .state
-            .schedule_redraw(protocols::redraw::schedule::schedule::RedrawReason::Output);
+            .schedule_redraw(protocols::redraw::schedule::RedrawReason::Output);
         set_result(state, ApplyResult::Reverted);
     } else {
         let cur = mode_info(ctx.outputs[idx].current_drm_mode);
@@ -201,7 +201,7 @@ fn arm(state: &mut Loop, ctx_rc: &Ctx, edid_key: String, baseline: DrmMode) -> R
                     }
                     drop(c);
                     state.state.schedule_redraw(
-                        protocols::redraw::schedule::schedule::RedrawReason::Output,
+                        protocols::redraw::schedule::RedrawReason::Output,
                     );
                     set_result(state, ApplyResult::Reverted);
                 }

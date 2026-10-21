@@ -148,7 +148,7 @@ fn draw(state: &mut Loop, ctx: &mut Context) {
             state
                 .state
                 .redraw
-                .request_for(protocols::redraw::schedule::schedule::RedrawReason::Rescue);
+                .request_for(protocols::redraw::schedule::RedrawReason::Rescue);
         }
     }
     frames::draw::present::callbacks::callbacks::housekeeping(state);
@@ -159,7 +159,7 @@ fn draw(state: &mut Loop, ctx: &mut Context) {
         state.state.redraw.request_at(
             &handle,
             at,
-            protocols::redraw::schedule::schedule::RedrawReason::Ui,
+            protocols::redraw::schedule::RedrawReason::Ui,
             |s| &mut s.state.redraw,
         );
     }

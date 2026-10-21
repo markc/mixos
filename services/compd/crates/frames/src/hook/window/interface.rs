@@ -2,9 +2,9 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 use dispatcher::state::state::RedrawReason;
 use dispatcher::wire::trait_::wire_trait::WireTrait;
-use protocols::window::find::find;
-use protocols::window::ident::ident;
-use protocols::window::shell::shell;
+use protocols::window::find;
+use protocols::window::ident;
+use protocols::window::shell;
 use smithay::desktop::Window;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
@@ -80,7 +80,7 @@ fn activate_window(_loop: &mut Loop, window: Window) {
     if surface.is_none()
         && let Some(x11) = window.x11_surface()
     {
-        protocols::window::shell::shell::defer_focus_until_associated(x11);
+        protocols::window::shell::defer_focus_until_associated(x11);
     }
     if let Some(keyboard) = _loop.state.seat.seat.get_keyboard() {
         let serial = smithay::utils::SERIAL_COUNTER.next_serial();
@@ -350,7 +350,7 @@ fn _initial_mapped(state: &mut Loop, window: Window) {
         .is_none()
         .then(|| {
             let space = &state.inner.space_state().state;
-            let (parent, offset) = protocols::window::child::child::parent_offset(
+            let (parent, offset) = protocols::window::child::parent_offset(
                 space.elements(),
                 &window,
                 fallback,

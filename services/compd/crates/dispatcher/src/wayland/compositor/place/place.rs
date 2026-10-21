@@ -67,7 +67,7 @@ pub fn reassert_size_if_diverged(window: &Window) -> Option<Size<i32, Logical>> 
         return None;
     }
     // `shell::configured_size`, not `geometry()`: it documents why they differ for X11.
-    let cur = protocols::window::shell::shell::configured_size(window);
+    let cur = protocols::window::shell::configured_size(window);
     if cur == g.last_seen {
         return None;
     }

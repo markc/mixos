@@ -2,7 +2,7 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 use crate::window::interface::data::data::{WindowData, WindowFullscreen};
 use dispatcher::wayland::xdg::activation::dispatch::wire::ActivationDetails;
-use protocols::window::ident::ident;
+use protocols::window::ident;
 use smithay::desktop::{Space, Window};
 use smithay::reexports::wayland_server::DisplayHandle;
 use smithay::wayland::compositor::with_states;

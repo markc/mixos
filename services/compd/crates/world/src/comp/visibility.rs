@@ -18,7 +18,7 @@ use std::cell::Cell;
 
 use dispatcher::wire::trait_::surface_event::SurfaceHandle;
 use dispatcher::wire::trait_::wire_trait::WireTrait;
-use protocols::window::ident::ident;
+use protocols::window::ident;
 
 use crate::state::Loop;
 

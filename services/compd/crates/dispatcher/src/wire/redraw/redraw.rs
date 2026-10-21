@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 use protocols::fractional::state::NestedCompositorSurface;
-use protocols::window::find::find;
+use protocols::window::find;
 use smithay::desktop::{Space, Window};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Rectangle};

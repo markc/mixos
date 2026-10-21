@@ -11,7 +11,7 @@ use smithay::input::pointer::{
 use crate::state::state::DispatchWire;
 use crate::wayland::grab::resize_impl::motion::on_motion;
 use protocols::grab::resize::surface::{ResizeEdge, ResizeSurfaceState};
-use protocols::window::shell::shell;
+use protocols::window::shell;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Rectangle, Size};
 use smithay::wayland::seat::WaylandFocus;

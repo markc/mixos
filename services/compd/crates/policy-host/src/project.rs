@@ -38,7 +38,7 @@ use comp_model::snapshot::{
 use dispatcher::wire::trait_::surface_event::SurfaceHandle;
 use dispatcher::wire::trait_::wire_trait::WireTrait;
 use surfaces::{SurfaceId, SurfaceRecord, SurfaceRole};
-use protocols::window::ident::ident;
+use protocols::window::ident;
 use world::state::Loop;
 use smithay::backend::renderer::utils::with_renderer_surface_state;
 use smithay::desktop::{PopupKind, PopupManager, Window, layer_map_for_output};
@@ -659,7 +659,7 @@ fn project_surface(
             .and_then(|uuid| lp.inner.draw_sequence(uuid))
             .unwrap_or(0),
         tree_index: wl_surface(lp, record.handle())
-            .and_then(|surface| protocols::window::ident::ident::tree_index(&surface))
+            .and_then(|surface| protocols::window::ident::tree_index(&surface))
             .unwrap_or(0),
         parent: record.parent().map(|parent| parent.0),
         output: placement.output,

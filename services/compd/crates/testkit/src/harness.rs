@@ -9,7 +9,7 @@ use std::time::Duration;
 use dispatcher::state::state::Dispatch;
 use dispatcher::wire::trait_::surface_event::SurfaceHandle;
 use dispatcher::wire::wire::Wire;
-use protocols::wayland::connection::record::record::WaylandClientSession;
+use protocols::wayland::connection::record::WaylandClientSession;
 use smithay::reexports::calloop::EventLoop;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface as ServerSurface;
 use smithay::reexports::wayland_server::{Client, Display};
