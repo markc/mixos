@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Copyright 2026 Mark Constable <mc@mixos.dev>
 -- smithay_guards.mix — run every guard test vendor/smithay/PATCHES.md cites.
--- version: 0.1.5
+-- version: 0.1.6
 --
 --   mix tools/smithay_guards.mix [--reseed] [--locked] [--json]
 --
@@ -18,6 +18,7 @@
 -- shared dependency resolves to the version compd builds. `--reseed`
 -- re-copies it; otherwise an existing one is kept.
 -- --locked refuses any resolution change to the prepared standalone lockfile.
+-- A missing standalone lock is refused unless --reseed is explicit.
 --
 -- Exit codes: 0 every guard passed, 1 a guard failed, is unparsed or missing,
 -- 2 the tests did not build (or setup failed).
@@ -101,6 +102,10 @@ for each $a in $args
 end
 if not is_file("Cargo.lock") or not is_file("vendor/smithay/Cargo.toml") then
   eprint("run from the repo root (Cargo.lock and vendor/smithay/Cargo.toml)")
+  exit(2)
+end
+if $locked and not $reseed and not is_file("vendor/smithay/Cargo.lock") then
+  eprint("--locked requires a prepared vendor/smithay/Cargo.lock; use --reseed explicitly to prepare one")
   exit(2)
 end
 if $reseed or not is_file("vendor/smithay/Cargo.lock") then
