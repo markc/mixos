@@ -135,14 +135,24 @@ fn prose_draws_a_muted_placeholder_only_when_empty_and_can_hide_the_band() {
         };
         let mut output = egui::FullOutput::default();
         for _ in 0..2 {
-            output = ctx.run(egui::RawInput::default(), |ctx| {
-                egui::CentralPanel::default().show(ctx, |ui| {
-                    editor::show(ui, "placeholder", &doc.doc(), &palette, &view);
-                });
+            output = ctx.run_ui(egui::RawInput::default(), |ui| {
+                editor::show(ui, "placeholder", &doc.doc(), &palette, &view);
             });
         }
-        assert_eq!(output.shapes.iter().any(|s| has_text(&s.shape, "Body", palette.gutter_text)), text.is_empty());
-        assert_eq!(output.shapes.iter().any(|s| has_fill(&s.shape, palette.current_line)), current_line);
+        assert_eq!(
+            output
+                .shapes
+                .iter()
+                .any(|s| has_text(&s.shape, "Body", palette.gutter_text)),
+            text.is_empty()
+        );
+        assert_eq!(
+            output
+                .shapes
+                .iter()
+                .any(|s| has_fill(&s.shape, palette.current_line)),
+            current_line
+        );
     }
 }
 

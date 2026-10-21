@@ -135,8 +135,16 @@ pub fn validate(content: &Content, path: &str) -> Result<(), Diagnostic> {
 /// The `describe()` entries for one surface, under `path`.
 pub fn describe(path: &str) -> Value {
     let monospace = matches!(path, "email.composer" | CED_EDITOR);
-    let families = if monospace { &FAMILIES[1..] } else { &FAMILIES[..] };
-    let default_face = if monospace { MONO_FAMILY } else { "the design's UI face" };
+    let families = if monospace {
+        &FAMILIES[1..]
+    } else {
+        &FAMILIES[..]
+    };
+    let default_face = if monospace {
+        MONO_FAMILY
+    } else {
+        "the design's UI face"
+    };
     serde_json::json!({
         format!("{path}.padding"): {"type":"integer", "enum":PADDINGS, "default":DEFAULT_PADDING, "unit":"px"},
         format!("{path}.font.family"): {"type":"string|null", "names":families, "default":null, "null":default_face},
@@ -315,7 +323,10 @@ mod tests {
             }
         }
         let schema = describe("email.composer");
-        assert_eq!(schema["email.composer.font.family"]["names"], json!([MONO_FAMILY]));
+        assert_eq!(
+            schema["email.composer.font.family"]["names"],
+            json!([MONO_FAMILY])
+        );
         assert_eq!(schema["email.composer.font.family"]["null"], MONO_FAMILY);
     }
 

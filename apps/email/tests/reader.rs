@@ -636,7 +636,11 @@ fn focused_body_keeps_letter_chords_before_the_view_runs() {
     h.run();
     h.state_mut().1.clear();
     // Put the key and text in the same platform frame, not separate frames.
-    for (key, text) in [(egui::Key::S, "s"), (egui::Key::M, "m"), (egui::Key::J, "j")] {
+    for (key, text) in [
+        (egui::Key::S, "s"),
+        (egui::Key::M, "m"),
+        (egui::Key::J, "j"),
+    ] {
         h.input_mut().events.extend([
             egui::Event::Key {
                 key,
@@ -650,7 +654,12 @@ fn focused_body_keeps_letter_chords_before_the_view_runs() {
         h.run();
     }
     assert_eq!(h.state().0.compose.as_ref().unwrap().body.contents(), "smj");
-    assert!(!h.state().1.iter().any(|e| matches!(e, UiEvent::Command(..))));
+    assert!(
+        !h.state()
+            .1
+            .iter()
+            .any(|e| matches!(e, UiEvent::Command(..)))
+    );
     assert!(email::view::compose::body_focused(&h.ctx));
 }
 

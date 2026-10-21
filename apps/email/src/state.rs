@@ -680,7 +680,8 @@ impl ComposeState {
             &reply.quote,
             &reply.signature,
             reply.position,
-        ).is_some();
+        )
+        .is_some();
         self.reply_movable.set(Some((self.body.revision, movable)));
         movable
     }
@@ -6750,7 +6751,12 @@ pub(crate) mod tests {
         let mut email = serde_json::to_value(unread_email("E1")).unwrap();
         email["bodyValues"] = json!({"p1":{"value":huge}});
         email["textBody"] = json!([{"partId":"p1", "type":"text/plain"}]);
-        assert!(state.reply_to("a", &serde_json::from_value(email).unwrap(), false, Some(true)));
+        assert!(state.reply_to(
+            "a",
+            &serde_json::from_value(email).unwrap(),
+            false,
+            Some(true)
+        ));
         let compose = state.compose.as_ref().unwrap();
         assert!(compose.error.is_some());
         assert!(compose.body.doc.text().is_empty());
@@ -6758,10 +6764,13 @@ pub(crate) mod tests {
 
     #[test]
     fn refused_replacements_keep_the_body_and_revision() {
-        let mut compose = ComposeState::new("a", Composed {
-            body: "Keep this".into(),
-            ..Composed::default()
-        });
+        let mut compose = ComposeState::new(
+            "a",
+            Composed {
+                body: "Keep this".into(),
+                ..Composed::default()
+            },
+        );
         let revision = compose.body.revision;
         for text in ["x".repeat(65 * 1024 * 1024), "\n".repeat(2_000_000)] {
             compose.error = None;
@@ -6796,9 +6805,15 @@ pub(crate) mod tests {
         state.apply_ui(UiEvent::ComposeEdit(editor::Event::Command(
             editor::EditCommand::Insert("Earlier typing".into()),
         )));
-        state.apply_ui(UiEvent::ComposeField(ComposeField::Body, "Replacement".into()));
+        state.apply_ui(UiEvent::ComposeField(
+            ComposeField::Body,
+            "Replacement".into(),
+        ));
         state.apply_ui(UiEvent::ComposeEdit(editor::Event::Undo));
-        assert_eq!(state.compose.as_ref().unwrap().body.contents(), "Replacement");
+        assert_eq!(
+            state.compose.as_ref().unwrap().body.contents(),
+            "Replacement"
+        );
         assert!(state.compose.as_ref().unwrap().error.is_none());
     }
 
@@ -6813,23 +6828,27 @@ pub(crate) mod tests {
         let registry = crate::commands::registry();
         let strings = crate::strings();
         let frame = |state: &State| {
-            let _ = ctx.run(egui::RawInput::default(), |ctx| {
-                egui::CentralPanel::default().show(ctx, |ui| {
-                    let _ = crate::view::view(ui, state, &registry, &strings, 2.0, &palette);
-                });
+            let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+                let _ = crate::view::view(ui, state, &registry, &strings, 2.0, &palette);
             });
         };
         frame(&state);
         let compose = state.compose.as_ref().unwrap();
         let reads = compose.body.reads.get();
-        for _ in 0..3 { frame(&state); }
+        for _ in 0..3 {
+            frame(&state);
+        }
         assert_eq!(compose.body.reads.get(), reads, "idle frames read no text");
         let edited = compose.body.contents().replace("wrote:", "wrote this:");
         state.apply_ui(UiEvent::ComposeField(ComposeField::Body, edited));
         let compose = state.compose.as_ref().unwrap();
         let reads = compose.body.reads.get();
         frame(&state);
-        assert_eq!(compose.body.reads.get(), reads + 1, "an edit refreshes the check");
+        assert_eq!(
+            compose.body.reads.get(),
+            reads + 1,
+            "an edit refreshes the check"
+        );
         assert!(!compose.reply_movable(), "an edited quote cannot move");
         frame(&state);
         assert_eq!(compose.body.reads.get(), reads + 1);
