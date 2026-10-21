@@ -12,7 +12,10 @@ blocks per scheme and mode. Breeze and Adwaita each provide light and dark
 chrome palettes and a Studio-based style; scheme and style remain independent.
 The append-only compatibility table supplies both palettes, styles and terminal
 defaults to older sources with `defaulted-scheme` provenance. An authored
-scheme binding retains its source colours. Missing bindings for the original
+scheme binding retains its source colours. A scheme modifier without that
+binding is incomplete: the whole compatibility scheme supplies its colours
+and semantic pairs. Authors defining their own new scheme provide both its
+palette and its style binding. Missing bindings for the original
 nine schemes remain errors.
 
 Breeze keeps its surface colours, blue accent and selection opacity. Six

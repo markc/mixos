@@ -43,6 +43,7 @@ pub struct SchemePalette {
     /// Mode to primitive name to colour; both modes are explicit.
     pub chrome: BTreeMap<String, BTreeMap<String, crate::OklchSource>>,
     pub primitives: BTreeMap<String, BTreeMap<String, crate::OklchSource>>,
+    pub pairs: BTreeMap<String, BTreeMap<String, crate::source::PairSource>>,
 }
 
 impl Scheme {
@@ -112,6 +113,12 @@ impl Table {
                     ));
                 }
                 if let Scheme::Palette(palette) = scheme {
+                    if !table.versions.values().any(|entries| entries.styles.contains_key(&palette.style)) {
+                        return Err(format!("compatibility scheme `{name}` names an unknown style"));
+                    }
+                    if palette.pairs.keys().ne(palette.chrome.keys()) || palette.pairs.values().any(|pairs| pairs.keys().any(|name| name != "muted")) {
+                        return Err(format!("compatibility scheme `{name}` has invalid semantic pairs"));
+                    }
                     if palette
                         .chrome
                         .keys()
@@ -135,6 +142,10 @@ impl Table {
                         }
                     }
                     if palette.primitives.keys().ne(palette.chrome.keys())
+                        || palette.primitives.iter().any(|(mode, colors)| {
+                            colors.len() != if mode == "dark" { 13 } else { 10 }
+                                || (mode == "light" && colors.keys().any(|name| name.starts_with("status.")))
+                        })
                         || palette.primitives.values().any(|colors| {
                             colors.keys().any(|name| {
                                 !matches!(
@@ -211,7 +222,7 @@ pub(crate) fn diagnostics(defaulted: &BTreeMap<String, String>) -> Vec<crate::De
         .map(|(path, version)| {
             let code = if path.contains(".terminal.") {
                 "defaulted-terminal"
-            } else if path.contains(".schemes.") || path.contains(".primitives.colors.") {
+            } else if path.contains(".schemes.") || path.contains(".primitives.colors.") || path.contains(".semantics.pairs.") {
                 "defaulted-scheme"
             } else if path
                 .rsplit(".styles.")
@@ -234,6 +245,21 @@ pub(crate) fn diagnostics(defaulted: &BTreeMap<String, String>) -> Vec<crate::De
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn modern_palette_entries_are_complete_and_bounded() {
+        for mutation in [
+            SOURCE.replacen("\"style\": \"breeze\"", "\"style\": \"absent\"", 1),
+            SOURCE.replacen("\"chrome.chrome\"", "\"chrome.extra\"", 1),
+            SOURCE.replacen("\"palette.accent.default\"", "\"palette.extra\"", 1),
+        ] {
+            assert_ne!(mutation, SOURCE);
+            assert!(Table::parse(&mutation).is_err());
+        }
+        let mut raw: serde_json::Value = strict::from_str(SOURCE).unwrap();
+        raw["compat"]["v3"]["schemes"]["breeze"]["primitives"]["light"] = serde_json::json!({});
+        assert!(Table::parse(&raw.to_string()).unwrap_err().contains("invalid semantic primitives"));
+    }
 
     #[test]
     fn previous_entries_are_immutable() {

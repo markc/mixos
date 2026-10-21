@@ -22,3 +22,6 @@ mod_module_files = "deny"
 # hydrates the `#[derive(Deserialize)]` source types.
 strict = { path = "../strict" }
 serde = { version = "=1.0.229", features = ["derive"] }
+
+[dev-dependencies]
+serde_json.workspace = true

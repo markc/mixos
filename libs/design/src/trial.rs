@@ -1420,7 +1420,7 @@ fn artifact_query_obeys_the_compiled_decision_after_dictionary_values_change() {
 }
 
 #[test]
-fn embedded_default_compiles_without_errors_in_all_twelve_contexts() {
+fn embedded_default_compiles_without_errors_in_all_scheme_mode_contexts() {
     let document = parsed_trial("embedded:all-context-gate");
     let mut unsafe_web_accents = BTreeSet::new();
     let mut diagnostic_counts = BTreeMap::<&'static str, usize>::new();

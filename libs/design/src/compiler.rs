@@ -104,6 +104,7 @@ fn compile_flat_source(
     let mut completed_source = flattened.source.clone();
     let mut authored_colors = flattened.authored_colours();
     let mut palette_origins = BTreeMap::new();
+    let mut palette_pair_origins = BTreeMap::new();
     // Only absent, post-freeze scheme bindings take the compatibility
     // palette. An authored binding keeps its own source colours.
     if completed_source
@@ -116,6 +117,12 @@ fn compile_flat_source(
             if let Some(crate::compat::Scheme::Palette(palette)) =
                 entries.schemes.get(context.scheme.name())
             {
+                if let Some(pairs) = palette.pairs.get(context.mode.name()) {
+                    completed_source.semantics.pairs.extend(pairs.clone());
+                    for name in pairs.keys() {
+                        palette_pair_origins.insert(name.clone(), (version.clone(), format!("compat.{version}.schemes.{}.pairs.{}.{name}", context.scheme.name(), context.mode.name())));
+                    }
+                }
                 if let Some(colors) = palette.chrome.get(context.mode.name()) {
                     let mut colors = colors.clone();
                     if let Some(primitives) = palette.primitives.get(context.mode.name()) {
@@ -195,6 +202,9 @@ fn compile_flat_source(
             version.clone(),
         );
     }
+    for (name, (version, _)) in &palette_pair_origins {
+        defaulted.insert(format!("design.v1.semantics.pairs.{name}"), version.clone());
+    }
     let terminal = source
         .families
         .terminal
@@ -234,6 +244,14 @@ fn compile_flat_source(
             DesignValueId::ColourPrimitive(name),
             authored(rule, Vec::new()),
         );
+    }
+    for (name, (_, rule)) in palette_pair_origins {
+        let id = DesignValueId::ColourPair(name);
+        if let Some(mut entry) = provenance.value(&id).cloned() {
+            entry.applied_rule = rule.clone();
+            entry.value_origin_rule = rule;
+            provenance.insert(id, entry);
+        }
     }
     provenance.extend(mapping.value.provenance.clone());
     let mut diagnostics = colours.diagnostics;

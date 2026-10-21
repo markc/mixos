@@ -1502,14 +1502,7 @@ mod tests {
                         panic!("today's design compiles");
                     };
                     if matches!(scheme, Scheme::Breeze | Scheme::Adwaita) && style.is_none() {
-                        assert!(
-                            old.candidate
-                                .dictionary()
-                                .defaulted
-                                .keys()
-                                .any(|path| path.ends_with(scheme.name()))
-                        );
-                        continue;
+                        assert!(old.candidate.dictionary().defaulted.keys().any(|path| path.ends_with(scheme.name())));
                     }
                     assert_eq!(
                         old.candidate.dictionary().style,
@@ -1596,6 +1589,7 @@ mod tests {
                             old.candidate.dictionary().chrome,
                             today.candidate.dictionary().chrome
                         );
+                        assert_eq!(old.candidate.dictionary().colours.pairs, today.candidate.dictionary().colours.pairs);
                         assert!(old.diagnostics.iter().any(|d| d.code == "defaulted-scheme"));
                         assert!(old.candidate.dictionary().terminal.is_some());
                         let provenance = old
@@ -1707,5 +1701,21 @@ mod tests {
                 .to_srgba8(),
             [38, 42, 48, 255]
         );
+    }
+
+    #[test]
+    fn a_scheme_modifier_without_a_binding_takes_the_complete_default_scheme() {
+        let mut document = embedded();
+        document.v1.families.style.as_mut().unwrap().schemes.remove("breeze");
+        for modifier in &mut document.v1.modifiers {
+            if modifier.when.get(&crate::source::ModifierAxis::Scheme).map(String::as_str) == Some("breeze") {
+                modifier.primitives.colors.insert("chrome.chrome".into(), modifier.primitives.colors["chrome.dock"]);
+            }
+        }
+        let crate::DesignCompileResult::Success(result) = crate::compile_design(&document, DesignContext {
+            scheme: Scheme::Breeze, ..Default::default()
+        }) else { panic!("the missing binding selects the complete default scheme"); };
+        assert_eq!(result.candidate.dictionary().chrome.as_ref().unwrap().get("chrome").unwrap().to_srgba8(), [38,42,48,255]);
+        assert_eq!(result.candidate.dictionary().defaulted["design.v1.families.style.schemes.breeze"], "v3");
     }
 }

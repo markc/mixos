@@ -458,6 +458,15 @@
           }
         }
       },
+      "pairs": {
+        "dark": {},
+        "light": {
+          "muted": {
+            "foreground": "palette.foreground.quiet",
+            "surface": "palette.background.muted"
+          }
+        }
+      },
       "primitives": {
         "dark": {
           "palette.accent.default": {
@@ -1065,6 +1074,15 @@
             "color_space": "oklch",
             "h": 51.556969974,
             "l": 0.496320419
+          }
+        }
+      },
+      "pairs": {
+        "dark": {},
+        "light": {
+          "muted": {
+            "foreground": "palette.foreground.quiet",
+            "surface": "palette.background.muted"
           }
         }
       },
