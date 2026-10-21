@@ -338,17 +338,16 @@ pub fn execute(
     scope: RenderScope,
 ) -> FrameOutcome {
     let _ = &loop_handle; // retained for parity with the original signature
-    if matches!(state.inner.status_session, StatusSession::Paused)
-        || *state.inner.kernel.get(&drivers::lid::base::DISPLAY_OFF)
+    if (matches!(state.inner.status_session, StatusSession::Paused)
+        || *state.inner.kernel.get(&drivers::lid::base::DISPLAY_OFF))
+        && let Ok(mut ctx) = ctx_rc.try_borrow_mut()
     {
-        if let Ok(mut ctx) = ctx_rc.try_borrow_mut() {
-            for pipe in &mut ctx.outputs {
-                late_latch::cancel(pipe);
-                state
-                    .state
-                    .redraw
-                    .release(&world::state::output_key(&pipe.output));
-            }
+        for pipe in &mut ctx.outputs {
+            late_latch::cancel(pipe);
+            state
+                .state
+                .redraw
+                .release(&world::state::output_key(&pipe.output));
         }
     }
     capture_windows_offscreen(&ctx_rc, state);
