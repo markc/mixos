@@ -120,7 +120,17 @@ fn compile_flat_source(
                 if let Some(pairs) = palette.pairs.get(context.mode.name()) {
                     completed_source.semantics.pairs.extend(pairs.clone());
                     for name in pairs.keys() {
-                        palette_pair_origins.insert(name.clone(), (version.clone(), format!("compat.{version}.schemes.{}.pairs.{}.{name}", context.scheme.name(), context.mode.name())));
+                        palette_pair_origins.insert(
+                            name.clone(),
+                            (
+                                version.clone(),
+                                format!(
+                                    "compat.{version}.schemes.{}.pairs.{}.{name}",
+                                    context.scheme.name(),
+                                    context.mode.name()
+                                ),
+                            ),
+                        );
                     }
                 }
                 if let Some(colors) = palette.chrome.get(context.mode.name()) {

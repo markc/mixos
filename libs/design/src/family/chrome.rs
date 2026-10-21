@@ -969,17 +969,38 @@ mod tests {
     fn adwaita_keeps_its_text_and_primary_contrast_contract() {
         let document = embedded();
         for mode in crate::Mode::ALL {
-            let chrome = compiled(&document, crate::DesignContext {
-                scheme: crate::Scheme::Adwaita, mode, ..Default::default()
-            }).dictionary().chrome.clone().unwrap();
+            let chrome = compiled(
+                &document,
+                crate::DesignContext {
+                    scheme: crate::Scheme::Adwaita,
+                    mode,
+                    ..Default::default()
+                },
+            )
+            .dictionary()
+            .chrome
+            .clone()
+            .unwrap();
             for surface in ["chrome", "dock", "card", "field"] {
                 for (text, floor) in [("text", 7.0), ("text_dim", 4.5)] {
-                    let ratio = crate::contrast_ratio(chrome.get(text).unwrap().rendered(), chrome.get(surface).unwrap().rendered());
-                    assert!(ratio >= floor, "Adwaita/{mode:?}: {text} on {surface}: {ratio}");
+                    let ratio = crate::contrast_ratio(
+                        chrome.get(text).unwrap().rendered(),
+                        chrome.get(surface).unwrap().rendered(),
+                    );
+                    assert!(
+                        ratio >= floor,
+                        "Adwaita/{mode:?}: {text} on {surface}: {ratio}"
+                    );
                 }
             }
-            let ratio = crate::contrast_ratio(chrome.get("primary_text").unwrap().rendered(), chrome.get("primary_bg").unwrap().rendered());
-            assert!(ratio >= 3.0, "Adwaita/{mode:?}: primary_text on primary_bg: {ratio}");
+            let ratio = crate::contrast_ratio(
+                chrome.get("primary_text").unwrap().rendered(),
+                chrome.get("primary_bg").unwrap().rendered(),
+            );
+            assert!(
+                ratio >= 3.0,
+                "Adwaita/{mode:?}: primary_text on primary_bg: {ratio}"
+            );
         }
     }
 
