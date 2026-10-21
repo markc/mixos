@@ -26,6 +26,8 @@ end
 -- Refuse an existing ced window: never place another session's app.
 $before = call("comp.windows.list", {app_id: "dev.mixos.ced"})
 if len($before.windows) != 0 then raise("APP_REFERENCE_EXISTS", "close existing ced windows before capturing") end
+send ced-reference ced.ping timeout=1 body="{}"
+if $rc == 0 then raise("APP_REFERENCE_EXISTS", "ced-reference service already exists") end
 $pid = nil
 $handed_off = false
 try
@@ -41,7 +43,7 @@ try
   $row = nil
   while monotonic() < $deadline
     $list = call("comp.windows.list", {app_id: "dev.mixos.ced"})
-    if len($list.windows) == 1 then $row = $list.windows[0]; break end
+    if len($list.windows) == 1 and $list.windows[0].pid == $pid then $row = $list.windows[0]; break end
     if not process_alive($pid) then raise("APP_REFERENCE_EXIT", read_file($root .. "/app.log")) end
     sleep(0.05)
   end

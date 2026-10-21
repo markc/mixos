@@ -2341,6 +2341,38 @@ The plain EGL client probe needs `weston-simple-egl` (override its path with
 `COMPD_TEST_EGL_CLIENT`); it records the first buffer's actual creation
 request and checks captured pixels.
 
+The Phase 5 app test also needs `editd`, the testkit binaries (including
+`testkit-ssim`) and `cargo build -p ced --example ced-headless-probe`.
+This test-only launcher adds wgpu adapter logging to ced's normal entry point;
+production apps and backends keep their behaviour. The test runs ced against
+its own Bus and compositor, checks an idle pair at SSIM ≥ 0.99, types through
+the agent seat, requires SSIM < 0.999 and reads the exact text through
+`ced.state`. PNGs and the client trace remain in `headless-app-artifacts`
+beside the built binaries. Supply `COMPD_TEST_APP_REFERENCE=/absolute/ref.png`
+to additionally compare the initial headless window with a console reference
+at the fixed 0.99 threshold; absence is explicitly reported as unmeasured.
+
+Capture that reference in the console session environment with a running
+`editd`, no existing ced window and a scale-1 output:
+
+```text
+/opt/mixos/bin/mix services/compd/crates/testkit/scripts/app_reference.mix /tmp/ced-reference.png --comp comp --output OUTPUT
+```
+
+The same helper launches the headless test window. It gives ced fresh private
+app state, places its geometry at (80,60), waits for 800×560, creates a blank
+document and captures its window without the cursor via `comp.capture.frame`.
+Its last stdout line is JSON containing the PNG path, requested geometry,
+observed window row, scale and capture metadata. It closes its own child after
+capture; the GPU test uses `--keep` to take ownership for input checks. Use the
+same theme, fonts and application build for both references. Session artefacts
+are left beside the PNG in `<path>.session`, which must not already exist.
+`testkit-ssim A.png B.png --threshold 0.99` compares the pair; it also accepts
+`--crop X,Y,WxH`, or tightly packed raw RGBA with `--size WxH`. Its grayscale
+metric uses uniform sliding 8×8 valid windows, population covariance, rounded
+Rec.601 luma, K1=0.01, K2=0.03 and L=255; alpha is ignored. It returns 1 below
+threshold and 2 for invalid arguments or images, including mismatched sizes.
+
 `compd-headless@.service` runs inside a headless desk with its own noded,
 session bus, PipeWire and portald. `%i` is the session slot (for example
 `rec`), with settings in `/etc/mixos/session/%i.env` and Bus service `comp`

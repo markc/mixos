@@ -30,10 +30,10 @@ fn load(path: &Path, raw: Option<(u32, u32)>) -> Result<GrayImage> {
     };
     Ok(GrayImage::from_fn(rgba.width(), rgba.height(), |x, y| {
         let p = rgba.get_pixel(x, y);
-        image::Luma([(0.299 * f64::from(p[0])
-            + 0.587 * f64::from(p[1])
-            + 0.114 * f64::from(p[2]))
-        .round() as u8])
+        image::Luma([
+            (0.299 * f64::from(p[0]) + 0.587 * f64::from(p[1]) + 0.114 * f64::from(p[2])).round()
+                as u8,
+        ])
     }))
 }
 
@@ -61,7 +61,11 @@ fn ssim(a: &GrayImage, b: &GrayImage) -> Result<f64> {
                 }
             }
             let (ma, mb) = (sa / 64.0, sb / 64.0);
-            let (va, vb, cov) = (aa / 64.0 - ma * ma, bb / 64.0 - mb * mb, ab / 64.0 - ma * mb);
+            let (va, vb, cov) = (
+                aa / 64.0 - ma * ma,
+                bb / 64.0 - mb * mb,
+                ab / 64.0 - ma * mb,
+            );
             let (c1, c2) = ((0.01_f64 * 255.0).powi(2), (0.03_f64 * 255.0).powi(2));
             total += ((2.0 * ma * mb + c1) * (2.0 * cov + c2))
                 / ((ma * ma + mb * mb + c1) * (va + vb + c2));
@@ -72,7 +76,9 @@ fn ssim(a: &GrayImage, b: &GrayImage) -> Result<f64> {
 
 fn run() -> Result<bool> {
     let mut args = std::env::args().skip(1);
-    let a = args.next().ok_or("usage: testkit-ssim A B [--threshold T] [--crop X,Y,WxH] [--size WxH]")?;
+    let a = args
+        .next()
+        .ok_or("usage: testkit-ssim A B [--threshold T] [--crop X,Y,WxH] [--size WxH]")?;
     let b = args.next().ok_or("missing B")?;
     let mut threshold = 0.99;
     let mut raw = None;
@@ -84,7 +90,9 @@ fn run() -> Result<bool> {
             "--size" => raw = Some(size(&value)?),
             "--crop" => {
                 let parts: Vec<_> = value.split(',').collect();
-                if parts.len() != 3 { return Err("crop needs X,Y,WxH".into()); }
+                if parts.len() != 3 {
+                    return Err("crop needs X,Y,WxH".into());
+                }
                 let (w, h) = size(parts[2])?;
                 crop = Some((parts[0].parse::<u32>()?, parts[1].parse::<u32>()?, w, h));
             }
@@ -96,10 +104,13 @@ fn run() -> Result<bool> {
     }
     let (mut a, mut b) = (load(Path::new(&a), raw)?, load(Path::new(&b), raw)?);
     // Refuse mismatched originals even if a crop would conceal the mismatch.
-    if a.dimensions() != b.dimensions() { return Err("image dimensions differ".into()); }
+    if a.dimensions() != b.dimensions() {
+        return Err("image dimensions differ".into());
+    }
     if let Some((x, y, w, h)) = crop {
         if x.checked_add(w).is_none_or(|right| right > a.width())
-            || y.checked_add(h).is_none_or(|bottom| bottom > a.height()) {
+            || y.checked_add(h).is_none_or(|bottom| bottom > a.height())
+        {
             return Err("crop lies outside image".into());
         }
         a = image::imageops::crop_imm(&a, x, y, w, h).to_image();
@@ -115,7 +126,10 @@ fn main() {
     match run() {
         Ok(true) => (),
         Ok(false) => std::process::exit(1),
-        Err(error) => { eprintln!("testkit-ssim: {error}"); std::process::exit(2); }
+        Err(error) => {
+            eprintln!("testkit-ssim: {error}");
+            std::process::exit(2);
+        }
     }
 }
 
@@ -124,7 +138,8 @@ mod tests {
     use super::*;
     #[test]
     fn identical() {
-        let image = GrayImage::from_fn(17, 19, |x, y| image::Luma([((x * 31 + y * 7) % 256) as u8]));
+        let image =
+            GrayImage::from_fn(17, 19, |x, y| image::Luma([((x * 31 + y * 7) % 256) as u8]));
         assert_eq!(ssim(&image, &image).unwrap(), 1.0);
     }
     #[test]

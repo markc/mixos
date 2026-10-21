@@ -39,30 +39,52 @@ struct App {
 impl Drop for App {
     fn drop(&mut self) {
         if thread::panicking() {
-            eprintln!("ced log: {}", fs::read_to_string(&self.log).unwrap_or_default());
+            eprintln!(
+                "ced log: {}",
+                fs::read_to_string(&self.log).unwrap_or_default()
+            );
         }
         // SAFETY: the helper handed this test its owned child's PID.
-        unsafe { libc::kill(self.pid, libc::SIGKILL); }
+        unsafe {
+            libc::kill(self.pid, libc::SIGKILL);
+        }
     }
 }
 
 fn compare(a: &Path, b: &Path, threshold: f64, pass: bool) -> f64 {
     let output = Command::new(binary("testkit-ssim"))
-        .arg(a).arg(b).args(["--threshold", &threshold.to_string()])
-        .output().expect("build testkit-ssim first");
+        .arg(a)
+        .arg(b)
+        .args(["--threshold", &threshold.to_string()])
+        .output()
+        .expect("build testkit-ssim first");
     let text = String::from_utf8_lossy(&output.stdout);
     println!("{text}");
-    assert_eq!(output.status.code(), Some(i32::from(!pass)),
-        "SSIM: {text} {}", String::from_utf8_lossy(&output.stderr));
-    text.split_whitespace().find_map(|word| word.strip_prefix("ssim="))
-        .expect("SSIM result").parse().unwrap()
+    assert_eq!(
+        output.status.code(),
+        Some(i32::from(!pass)),
+        "SSIM: {text} {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    text.split_whitespace()
+        .find_map(|word| word.strip_prefix("ssim="))
+        .expect("SSIM result")
+        .parse()
+        .unwrap()
 }
 
 fn capture(bus: &Bus, target: &Value, path: &Path) {
-    let reply = bus.call(COMP, "comp.capture.frame", json!({
-        "window":target,"path":path,"format":"png","cursor":false
-    }));
-    assert_eq!((reply["width"].as_u64(), reply["height"].as_u64()), (Some(800), Some(560)));
+    let reply = bus.call(
+        COMP,
+        "comp.capture.frame",
+        json!({
+            "window":target,"path":path,"format":"png","cursor":false
+        }),
+    );
+    assert_eq!(
+        (reply["width"].as_u64(), reply["height"].as_u64()),
+        (Some(800), Some(560))
+    );
     assert_eq!(reply["source"], "offscreen");
     assert_eq!(reply["scale"], 1.0);
     assert_eq!(reply["window"], *target);
@@ -77,39 +99,69 @@ fn ced_wgpu_agent_typing_and_idle_ssim() {
     bus.ready(COMP);
     let root = &compositor.root;
     let log = fs::File::create(root.join("editd.log")).unwrap();
-    let mut edit = Service(Command::new(binary("editd")).arg("serve")
-        .env("MIXOS_NODED_URL", &bus.url).env("MIXOS_EDIT_RECOVERY", "0")
-        .env("HOME", root).env("XDG_STATE_HOME", root.join("edit-state"))
-        .stdout(Stdio::from(log.try_clone().unwrap())).stderr(log).spawn().unwrap());
+    let mut edit = Service(
+        Command::new(binary("editd"))
+            .arg("serve")
+            .env("MIXOS_NODED_URL", &bus.url)
+            .env("MIXOS_EDIT_RECOVERY", "0")
+            .env("HOME", root)
+            .env("XDG_STATE_HOME", root.join("edit-state"))
+            .stdout(Stdio::from(log.try_clone().unwrap()))
+            .stderr(log)
+            .spawn()
+            .unwrap(),
+    );
     let deadline = Instant::now() + Duration::from_secs(15);
     loop {
         let reply = bus.request("edit", "edit.ping", json!({}));
-        if reply["rc"] == 0 { break; }
+        if reply["rc"] == 0 {
+            break;
+        }
         assert!(edit.0.try_wait().unwrap().is_none(), "editd exited");
         assert!(Instant::now() < deadline, "editd readiness: {reply}");
         thread::sleep(Duration::from_millis(50));
     }
     let before = root.join("before.png");
-    let helper = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../testkit/scripts/app_reference.mix");
-    let output = Command::new(std::env::var_os("MIXOS_TEST_MIX")
-        .unwrap_or_else(|| "/opt/mixos/bin/mix".into()))
-        .arg(helper).arg(&before).args(["--comp", COMP, "--output", "headless-0", "--keep", "--app"])
-        .arg(binary("examples/ced-headless-probe"))
-        .env("MIXOS_NODED_URL", &bus.url).env("XDG_RUNTIME_DIR", root)
-        .env("WAYLAND_DISPLAY", "wayland-headless-test")
-        .output().unwrap();
-    assert!(output.status.success(), "reference helper: {} {}",
-        String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
-    let record: Value = serde_json::from_str(String::from_utf8_lossy(&output.stdout)
-        .lines().last().expect("helper JSON")).unwrap();
-    let _app = App { pid: record["pid"].as_i64().unwrap().try_into().unwrap(),
-        log: record["log"].as_str().unwrap().into() };
+    let helper = Path::new(env!("CARGO_MANIFEST_DIR")).join("../testkit/scripts/app_reference.mix");
+    let output = Command::new(
+        std::env::var_os("MIXOS_TEST_MIX").unwrap_or_else(|| "/opt/mixos/bin/mix".into()),
+    )
+    .arg(helper)
+    .arg(&before)
+    .args(["--comp", COMP, "--output", "headless-0", "--keep", "--app"])
+    .arg(binary("examples/ced-headless-probe"))
+    .env("MIXOS_NODED_URL", &bus.url)
+    .env("XDG_RUNTIME_DIR", root)
+    .env("WAYLAND_DISPLAY", "wayland-headless-test")
+    .output()
+    .unwrap();
+    assert!(
+        output.status.success(),
+        "reference helper: {} {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let record: Value = serde_json::from_str(
+        String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .last()
+            .expect("helper JSON"),
+    )
+    .unwrap();
+    let _app = App {
+        pid: record["pid"].as_i64().unwrap().try_into().unwrap(),
+        log: record["log"].as_str().unwrap().into(),
+    };
     println!("APP_REFERENCE {record}");
     assert_eq!(record["capture"]["source"], "offscreen");
     assert_eq!(record["row"]["window_x"], 80.0);
     assert_eq!(record["row"]["window_y"], 60.0);
     let target = &record["window"];
+    if let Some(reference) = std::env::var_os("COMPD_TEST_APP_REFERENCE") {
+        assert!(compare(Path::new(&reference), &before, IDLE_MIN, true) >= IDLE_MIN);
+    } else {
+        println!("CONSOLE_REFERENCE not supplied; cross-backend SSIM not run");
+    }
     let state = bus.call(CED, "ced.state", json!({"text":true}));
     assert_eq!(state["text"], "");
 
@@ -129,9 +181,13 @@ fn ced_wgpu_agent_typing_and_idle_ssim() {
     capture(&bus, target, &idle);
     assert!(compare(&before, &idle, IDLE_MIN, true) >= IDLE_MIN);
 
-    let reply = bus.call(COMP, "comp.input.sequence", json!({"seat":"agent","steps":[
-        {"verb":"comp.input.key","args":{"window":target,"text":LINE}}
-    ]}));
+    let reply = bus.call(
+        COMP,
+        "comp.input.sequence",
+        json!({"seat":"agent","steps":[
+            {"verb":"comp.input.key","args":{"window":target,"text":LINE}}
+        ]}),
+    );
     assert!(reply.get("error").is_none(), "{reply}");
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
@@ -140,7 +196,10 @@ fn ced_wgpu_agent_typing_and_idle_ssim() {
             println!("CED_READBACK {state}");
             break;
         }
-        assert!(Instant::now() < deadline, "typed text did not settle: {state}");
+        assert!(
+            Instant::now() < deadline,
+            "typed text did not settle: {state}"
+        );
         thread::sleep(Duration::from_millis(50));
     }
     thread::sleep(Duration::from_millis(200));
@@ -149,16 +208,39 @@ fn ced_wgpu_agent_typing_and_idle_ssim() {
     assert!(compare(&before, &typed, TYPED_MAX, false) < TYPED_MAX);
 
     let trace = fs::read_to_string(&_app.log).unwrap();
-    let adapter = trace.lines().filter(|line| line.contains("AdapterInfo") || line.contains("adapter:")).collect::<Vec<_>>();
+    let adapter = trace
+        .lines()
+        .filter(|line| line.contains("AdapterInfo") || line.contains("adapter:"))
+        .collect::<Vec<_>>();
     assert!(!adapter.is_empty(), "wgpu adapter was not logged: {trace}");
-    for line in adapter { println!("CED_WGPU {line}"); }
-    let creation = trace.lines().find(|line| line.contains("new id wl_buffer") &&
-        (line.contains(".create_prime_buffer(") || line.contains(".create_buffer(") || line.contains(".create_immed(")))
+    for line in adapter {
+        println!("CED_WGPU {line}");
+    }
+    let creation = trace
+        .lines()
+        .find(|line| {
+            line.contains("new id wl_buffer")
+                && (line.contains(".create_prime_buffer(")
+                    || line.contains(".create_buffer(")
+                    || line.contains(".create_immed("))
+        })
         .expect("Wayland trace must identify the first actual buffer creation");
-    let kind = if creation.contains("wl_shm_pool") { "wl_shm" }
-        else if creation.contains("wl_drm") { "wl_drm" }
-        else if creation.contains("zwp_linux_buffer_params") { "linux-dmabuf" }
-        else { panic!("unrecognised buffer request: {creation}") };
+    let kind = if creation.contains("wl_shm_pool") {
+        "wl_shm"
+    } else if creation.contains("wl_drm") {
+        "wl_drm"
+    } else if creation.contains("zwp_linux_buffer_params") {
+        "linux-dmabuf"
+    } else {
+        panic!("unrecognised buffer request: {creation}")
+    };
     println!("CED_BUFFER {kind}: {creation}");
     println!("ced: idle >= {IDLE_MIN}, typed < {TYPED_MAX}; exact agent text readback");
+    let artifacts = binary("headless-app-artifacts");
+    fs::create_dir_all(&artifacts).unwrap();
+    for path in [&before, &idle, &typed, &_app.log] {
+        fs::copy(path, artifacts.join(path.file_name().unwrap())).unwrap();
+    }
+    fs::write(artifacts.join("reference.json"), record.to_string()).unwrap();
+    println!("APP_ARTIFACTS {}", artifacts.display());
 }
