@@ -139,3 +139,60 @@ observed on a desk with the Intel ICD. Open follow-ups
 are the test's fixed post-typing sleep (retry once on an unchanged capture),
 the helper's leftover `.session` directory on
 failure, and its reliance on `spawn` merging the parent environment.
+
+## Wayland conformance (Phase 6)
+
+[canonical/wlcs](https://github.com/canonical/wlcs) exercises protocol behaviour:
+buffers, pointer and touch delivery, constraints, clipboard and selection,
+subsurfaces, shell roles and popups, output descriptions and supported extensions.
+It does not establish KMS, physical input or hardware presentation correctness.
+The baseline pins **v1.8.1**, commit
+`2b385328366de5db19521b9b3eef81861430d984`.
+
+The private `wlcs` crate produces `libcompd_wlcs.so`. It implements the C ABI
+independently, following the structure of
+[Smithay 0.7's wlcs_anvil](https://github.com/Smithay/smithay/tree/v0.7.0/wlcs_anvil).
+It owns a fresh `compd --headless` child for each server, isolating process-global
+configuration, logging and GPU resources across tests. An inherited socket carries
+test requests and client descriptors directly to compd's event loop; it has no
+listening endpoint. Pointer events call the agent seat's existing policy-host
+injection path; touch uses that host's agent hit test, output bounds and native
+Smithay touch handles. Window placement calls the same `WindowOp::Place` handler
+as `comp.window.place`. Callbacks wait for completion on the compositor loop.
+The extension descriptor is read from a live Wayland registry, including the
+advertised versions. wlcs requests this before `start`, so that query starts the
+child lazily; the later `start` is idempotent. Stop kills and reaps the owned child,
+and parent death also kills it after a wlcs abort. The adapter is compiled only
+with compd's `wlcs` feature and installed only on the headless backend.
+
+Build on a GPU worker, keeping wlcs outside the MixOS checkout:
+
+```text
+git clone --depth 1 --branch v1.8.1 https://github.com/canonical/wlcs /build/wlcs
+cmake -S /build/wlcs -B /build/wlcs/build -DCMAKE_BUILD_TYPE=Release \
+  -DBOOST_ROOT=/build/wlcs/deps/usr \
+  -DCMAKE_CXX_FLAGS=-Wno-error=deprecated-declarations
+cmake --build /build/wlcs/build --target wlcs -j4
+cargo build -p wlcs --locked
+cargo build -p compd --no-default-features --features wlcs --locked
+/opt/mixos/bin/mix services/compd/tests/wlcs_gate.mix \
+  --wlcs /build/wlcs/build/wlcs \
+  --shim /build/mixos/target/debug/libcompd_wlcs.so \
+  --compd /build/mixos/target/debug/compd \
+  --output-dir /build/wlcs/run-1
+```
+
+Wayland development files, gtest/gmock and Boost headers are required. The first
+build used Boost 1.92.0 unpacked under `deps`, without a system install. The
+compiler flag permits wlcs's deprecated gmock `Invoke` calls with gmock 1.18.0.
+`WLCS` may replace `--wlcs`; `COMPD_TEST_RENDER_NODE` selects the render node.
+
+The gate enumerates every test and runs each in its own process, with a 20-second
+deadline, preserving JSON, process results and compositor logs in the output
+directory. It checks every name and outcome against
+`services/compd/tests/wlcs_expectations.conf.mix`; additions, removals and changed
+outcomes fail with a diff. The first observation uses `--record --expectations
+<new-file>`; recording refuses to overwrite a file. Disabled and unsupported
+tests are recorded as skipped. Explicit `flaky` entries still run and must exist,
+but their outcomes are excluded from the comparison. Conformance failures are
+recorded for later work; Phase 6 does not change compositor policy to fix them.

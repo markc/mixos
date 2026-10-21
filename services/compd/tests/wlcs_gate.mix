@@ -59,12 +59,20 @@ end
 $observed = {passed: [], failed: [], skipped: [], flaky: []}
 $changed = []
 $index = 0
-for $test in $tests
-  $index = $index + 1
+for $batch_start = 0 to len($tests) - 1 step 4
+  $batch = slice($tests, $batch_start, min($batch_start + 4, len($tests)))
+  $jobs = []
+  for $offset = 0 to len($batch) - 1
+    $stem = $out .. "/" .. to_string($batch_start + $offset + 1)
+    push($jobs, {argv: [$wlcs_bin, $shim, "--gtest_color=no", "--gtest_filter=" .. $batch[$offset], "--gtest_output=json:" .. $stem .. ".json"],
+      env: $process_env, timeout: 20, stdout: {file: $stem .. ".log"}, stderr: "stdout"})
+  end
+  $results = run_parallel($jobs, {max: 4})
+  for $offset = 0 to len($batch) - 1
+  $index = $batch_start + $offset + 1
+  $test = $batch[$offset]
+  $r = $results[$offset]
   $stem = $out .. "/" .. to_string($index)
-  $r = run_argv([$wlcs_bin, $shim, "--gtest_color=no", "--gtest_filter=" .. $test, "--gtest_output=json:" .. $stem .. ".json"], {
-    env: $process_env, timeout: 20, stdout: {file: $stem .. ".log"}, stderr: "stdout"
-  })
   write_file($stem .. ".process.conf.mix", data_encode($r) .. "\n")
   $log_text = read_file($stem .. ".log")
   if contains($log_text, "wlcs-adapter-startup-error") or contains($log_text, "wlcs-adapter-error") then
@@ -78,7 +86,7 @@ for $test in $tests
     end
     $case = $report.testsuites[0].testsuite[0]
     if $report.testsuites[0].name .. "." .. $case.name != $test then raise("WLCS_REPORT", "wrong case in report") end
-    if $case.result == "SKIPPED" or $case.result == "SUPPRESSED" then
+    if $case.result == "SKIPPED" or $case.result == "SUPPRESSED" or $case["wlcs-skip-test"] != nil then
       $outcome = "skipped"
     elif $r.ok and len($case.failures ?? []) == 0 then
       $outcome = "passed"
@@ -93,6 +101,7 @@ for $test in $tests
     push($changed, $test .. ": expected " .. to_string($known[$test]) .. ", observed " .. $outcome)
   end
   print(to_string($index) .. "/" .. len($tests) .. " " .. $outcome .. " " .. $test)
+  end
 end
 for $test in keys($known)
   if not contains($tests, $test) then push($changed, $test .. ": missing from wlcs inventory") end
@@ -100,10 +109,10 @@ end
 for $outcome in keys($observed)
   $observed[$outcome] = sort($observed[$outcome])
 end
-write_file($out .. "/observed.conf.mix", data_encode($observed) .. "\n")
+write_file($out .. "/observed.conf.mix", data_encode($observed, true) .. "\n")
 print("total=" .. len($tests) .. " passed=" .. len($observed.passed) .. " failed=" .. len($observed.failed) .. " skipped=" .. len($observed.skipped) .. " flaky=" .. len($observed.flaky))
 if $record then
-  write_file($expected_path, "-- SPDX-License-Identifier: MIT OR Apache-2.0\n-- wlcs v1.8.1; first observed headless outcomes.\n" .. data_encode($observed) .. "\n")
+  write_file($expected_path, "-- SPDX-License-Identifier: MIT OR Apache-2.0\n-- wlcs v1.8.1; first observed headless outcomes.\n" .. data_encode($observed, true) .. "\n")
   print("recorded " .. $expected_path)
 elif len($changed) > 0 then
   print(join($changed, "\n"))
