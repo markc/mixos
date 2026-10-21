@@ -10,14 +10,20 @@
 //! stroke baseline"). That token is part of the default effective map, so the
 //! pinned bytes moved. The store format is unchanged; only the default design
 //! changed.
+//!
+//! Re-pinned 2026-10-21 for the accepted phase-one theming defaults. The
+//! previous pins pass on the Markdown parent and fail on the untouched
+//! theming parent. Only default-design values changed: the JSON byte length
+//! and store format stay unchanged, with old sealed profiles covered by the
+//! compatibility and transaction tests.
 use settings::*;
 
 /// `settings::digest` of the default desktop's effective map.
 const EFFECTIVE_DIGEST_PINNED: &str =
-    "9c04e43bcff473f26c41ebc3f8a3286e0322ca67139f5d5e1a032cf768a48a29";
+    "7cd941ce5897d03a0ec10d4f2431214bfa7b3287fc1513d7d7c2c9bd09344147";
 /// `settings::digest` of the fixed default-desktop `Snapshot`.
 const SNAPSHOT_DIGEST_PINNED: &str =
-    "21c07dbaa05f3ecafec3ce0ee276f87e4292869513df4a9b81b787d5a9b632f5";
+    "5008077faa8a239b06904d9a85f2d1c7528a007df4a7b6ea0677e12a2a09c922";
 /// Serialised byte length of that `Snapshot`.
 const SNAPSHOT_JSON_LEN_PINNED: usize = 529_634;
 
