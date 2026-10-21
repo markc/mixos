@@ -21,7 +21,11 @@ pub(crate) fn cancel(pipe: &mut OutputPipe) {
 }
 
 pub(crate) fn collect_gpu(pipe: &mut OutputPipe) {
-    if let Some(elapsed) = pipe.gpu_completion.as_ref().and_then(|sample| sample.elapsed()) {
+    if let Some(elapsed) = pipe
+        .gpu_completion
+        .as_ref()
+        .and_then(|sample| sample.elapsed())
+    {
         pipe.late_latch.observe(elapsed);
         pipe.gpu_completion = None;
     }

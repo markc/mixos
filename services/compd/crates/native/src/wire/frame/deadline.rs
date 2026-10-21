@@ -17,15 +17,28 @@ pub struct GpuCompletion<D: 'static> {
 }
 
 impl<D: 'static> GpuCompletion<D> {
-    pub fn new(handle: &LoopHandle<'static, D>, fd: std::os::fd::OwnedFd, start: Instant) -> Option<Self> {
-        use smithay::reexports::calloop::{generic::Generic, Interest, Mode, PostAction};
+    pub fn new(
+        handle: &LoopHandle<'static, D>,
+        fd: std::os::fd::OwnedFd,
+        start: Instant,
+    ) -> Option<Self> {
+        use smithay::reexports::calloop::{Interest, Mode, PostAction, generic::Generic};
         let elapsed = Rc::new(Cell::new(None));
         let completed = elapsed.clone();
-        let token = handle.insert_source(Generic::new(fd, Interest::READ, Mode::Level), move |_, _, _| {
-            completed.set(Some(start.elapsed()));
-            Ok(PostAction::Disable)
-        }).ok()?;
-        Some(Self { elapsed, token, handle: handle.clone() })
+        let token = handle
+            .insert_source(
+                Generic::new(fd, Interest::READ, Mode::Level),
+                move |_, _, _| {
+                    completed.set(Some(start.elapsed()));
+                    Ok(PostAction::Disable)
+                },
+            )
+            .ok()?;
+        Some(Self {
+            elapsed,
+            token,
+            handle: handle.clone(),
+        })
     }
 
     pub fn elapsed(&self) -> Option<std::time::Duration> {
@@ -197,9 +210,13 @@ mod tests {
         let timer = DeadlineTimer::new(&event_loop.handle(), "a".into(), fired).unwrap();
         for expected in 1..=2 {
             assert!(timer.arm(Instant::now()));
-            event_loop.dispatch(Some(Duration::ZERO), &mut data).unwrap();
+            event_loop
+                .dispatch(Some(Duration::ZERO), &mut data)
+                .unwrap();
             assert_eq!(data.fires, expected);
-            event_loop.dispatch(Some(Duration::ZERO), &mut data).unwrap();
+            event_loop
+                .dispatch(Some(Duration::ZERO), &mut data)
+                .unwrap();
             assert_eq!(data.fires, expected, "disabled between arms");
         }
     }
@@ -224,7 +241,8 @@ mod tests {
         event_loop.dispatch(Some(Duration::ZERO), &mut ()).unwrap();
 
         let (reader, _writer) = UnixStream::pair().unwrap();
-        let sample = GpuCompletion::new(&event_loop.handle(), reader.into(), Instant::now()).unwrap();
+        let sample =
+            GpuCompletion::new(&event_loop.handle(), reader.into(), Instant::now()).unwrap();
         drop(sample); // reset/prune before completion
         event_loop.dispatch(Some(Duration::ZERO), &mut ()).unwrap();
     }

@@ -811,7 +811,9 @@ pub fn execute(
                 honor_needs_sync(&scene_result);
                 drop(sync_trace);
                 if model::environment::config::base::late_latch_enabled()
-                    && let smithay::backend::drm::compositor::PrimaryPlaneElement::Swapchain(element) = &scene_result.primary_element
+                    && let smithay::backend::drm::compositor::PrimaryPlaneElement::Swapchain(
+                        element,
+                    ) = &scene_result.primary_element
                 {
                     render_fence = element.sync.export();
                 }
@@ -1550,11 +1552,15 @@ fn present(
             let margin = std::time::Duration::from_micros(
                 model::environment::config::base::get().late_latch_margin_us,
             );
-            if let Some(start) = pipe.late_latch.committed(std::time::Instant::now(), margin, modeset)
+            if let Some(start) =
+                pipe.late_latch
+                    .committed(std::time::Instant::now(), margin, modeset)
                 && let Some(fence) = render_fence
             {
                 pipe.gpu_completion = crate::wire::frame::deadline::GpuCompletion::new(
-                    &state.loop_handle, fence, start,
+                    &state.loop_handle,
+                    fence,
+                    start,
                 );
             }
             if ledger::frame_trace::enabled() {

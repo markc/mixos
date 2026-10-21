@@ -220,7 +220,10 @@ mod tests {
         let latch = ready(at);
         let plan = latch.plan(at + Duration::from_millis(4), MARGIN);
         assert_eq!(plan.target.unwrap().vblank, at + PERIOD);
-        assert_eq!(plan.deadline, Some(at + PERIOD - Duration::from_micros(3500)));
+        assert_eq!(
+            plan.deadline,
+            Some(at + PERIOD - Duration::from_micros(3500))
+        );
         assert!(latch.plan(at + PERIOD, MARGIN).deadline.is_none());
         assert!(latch.plan(at, PERIOD).deadline.is_none());
     }
