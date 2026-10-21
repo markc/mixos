@@ -138,6 +138,7 @@ fn prose_draws_a_muted_placeholder_only_when_empty_and_can_hide_the_band() {
             output = ctx.run_ui(egui::RawInput::default(), |ui| {
                 editor::show(ui, "placeholder", &doc.doc(), &palette, &view);
             });
+            output.textures_delta.clear();
         }
         assert_eq!(
             output

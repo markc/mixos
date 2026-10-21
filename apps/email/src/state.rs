@@ -6814,7 +6814,31 @@ pub(crate) mod tests {
             state.compose.as_ref().unwrap().body.contents(),
             "Replacement"
         );
-        assert!(state.compose.as_ref().unwrap().error.is_none());
+        // Undoing the earlier typing overlaps the reload, so the buffer
+        // refuses it rather than bringing the old text back.
+        assert!(state.compose.as_ref().unwrap().error.is_some());
+    }
+
+    #[test]
+    fn undo_to_saved_text_only_saves_the_identical_draft_once() {
+        let mut state = connected();
+        typed(&mut state);
+        state.save_draft();
+        state.take_draft_ops();
+        let saved = state.compose.as_ref().unwrap().body.contents();
+        state.apply_ui(UiEvent::ComposeEdit(editor::Event::Command(
+            editor::EditCommand::Insert("Extra".into()),
+        )));
+        state.apply_ui(UiEvent::ComposeEdit(editor::Event::Undo));
+        assert_eq!(state.compose.as_ref().unwrap().body.contents(), saved);
+        assert!(state.draft_unsaved().is_some());
+        state.save_draft();
+        assert!(
+            matches!(state.take_draft_ops().as_slice(), [DraftOp::Save(draft)] if draft.body == saved)
+        );
+        assert!(state.draft_unsaved().is_none());
+        state.save_draft();
+        assert!(state.take_draft_ops().is_empty());
     }
 
     #[test]
@@ -6828,9 +6852,10 @@ pub(crate) mod tests {
         let registry = crate::commands::registry();
         let strings = crate::strings();
         let frame = |state: &State| {
-            let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
                 let _ = crate::view::view(ui, state, &registry, &strings, 2.0, &palette);
             });
+            output.textures_delta.clear();
         };
         frame(&state);
         let compose = state.compose.as_ref().unwrap();
