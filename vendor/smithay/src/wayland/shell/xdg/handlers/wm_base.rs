@@ -225,19 +225,33 @@ impl XdgSurfaceWrappers {
     }
 
     fn any_live(surface: &WlSurface) -> bool {
-        !Self::live_wrappers(surface).is_empty()
+        crate::wayland::compositor::with_states(surface, |states| {
+            let Some(wrappers) = states.data_map.get::<Self>() else {
+                return false;
+            };
+            let mut guard = wrappers.0.lock().unwrap();
+            guard.retain(|weak| weak.upgrade().is_ok());
+            !guard.is_empty()
+        })
     }
 }
 
 /// Validate xdg's configure acknowledgement before changing pending buffer state.
 /// The role pre-commit checks cannot catch an attach that is never committed.
 pub(crate) fn validate_xdg_surface_attach(surface: &WlSurface) -> bool {
-    let wrappers = XdgSurfaceWrappers::live_wrappers(surface);
-    if wrappers.is_empty() {
-        return true;
-    }
-
     let unconfigured = crate::wayland::compositor::with_states(surface, |states| {
+        let has_live_wrapper = {
+            let Some(wrappers) = states.data_map.get::<XdgSurfaceWrappers>() else {
+                return false;
+            };
+            let mut guard = wrappers.0.lock().unwrap();
+            guard.retain(|weak| weak.upgrade().is_ok());
+            !guard.is_empty()
+        };
+        if !has_live_wrapper {
+            return false;
+        }
+
         let acked = match states.role.as_deref() {
             Some(XDG_TOPLEVEL_ROLE) => states
                 .data_map
@@ -257,6 +271,7 @@ pub(crate) fn validate_xdg_surface_attach(surface: &WlSurface) -> bool {
     });
 
     if unconfigured {
+        let wrappers = XdgSurfaceWrappers::live_wrappers(surface);
         for xdg_surface in wrappers {
             xdg_surface.post_error(
                 xdg_surface::Error::UnconfiguredBuffer,
@@ -376,8 +391,13 @@ mod tests {
     const WL_SURFACE_COMMIT: u16 = 6;
     const WL_SUBCOMPOSITOR_GET_SUBSURFACE: u16 = 1;
     const XDG_WM_BASE_GET_XDG_SURFACE: u16 = 2;
+    const XDG_WM_BASE_CREATE_POSITIONER: u16 = 1;
+    const XDG_POSITIONER_SET_SIZE: u16 = 1;
+    const XDG_POSITIONER_SET_ANCHOR_RECT: u16 = 2;
     const XDG_SURFACE_DESTROY: u16 = 0;
     const XDG_SURFACE_GET_TOPLEVEL: u16 = 1;
+    const XDG_SURFACE_GET_POPUP: u16 = 2;
+    const XDG_SURFACE_SET_WINDOW_GEOMETRY: u16 = 3;
     const XDG_SURFACE_ACK_CONFIGURE: u16 = 4;
     const XDG_TOPLEVEL_DESTROY: u16 = 0;
 
@@ -559,6 +579,46 @@ mod tests {
             let id = self.new_id();
             self.send(xdg_surface, XDG_SURFACE_GET_TOPLEVEL, &words(&[id]));
             id
+        }
+
+        fn popup_with_mapped_parent(&mut self) -> u32 {
+            let parent_xdg = self.new_id();
+            self.send(WM_BASE, XDG_WM_BASE_GET_XDG_SURFACE, &words(&[parent_xdg, PARENT]));
+            self.get_toplevel(parent_xdg);
+            self.send(parent_xdg, XDG_SURFACE_SET_WINDOW_GEOMETRY, &words(&[0, 0, 100, 100]));
+            self.send(PARENT, WL_SURFACE_COMMIT, &[]);
+            self.roundtrip();
+            assert_eq!(self.error(), None, "parent initial commit setup failed");
+
+            let parent_serial = self.state.xdg.toplevel_surfaces()[0].send_configure();
+            self.roundtrip();
+            assert_eq!(self.error(), None, "parent configure failed");
+
+            self.ack_configure(parent_xdg, u32::from(parent_serial));
+            self.roundtrip();
+            assert_eq!(self.error(), None, "parent configure ack failed");
+
+            let parent_buffer = self.buffer();
+            self.send(PARENT, WL_SURFACE_ATTACH, &words(&[parent_buffer, 0, 0]));
+            self.send(PARENT, WL_SURFACE_COMMIT, &[]);
+            self.roundtrip();
+            assert_eq!(self.error(), None, "parent mapping failed");
+
+            let positioner = self.new_id();
+            self.send(WM_BASE, XDG_WM_BASE_CREATE_POSITIONER, &words(&[positioner]));
+            self.send(positioner, XDG_POSITIONER_SET_SIZE, &words(&[10, 10]));
+            self.send(positioner, XDG_POSITIONER_SET_ANCHOR_RECT, &words(&[0, 0, 100, 100]));
+
+            let child_xdg = self.new_id();
+            self.send(WM_BASE, XDG_WM_BASE_GET_XDG_SURFACE, &words(&[child_xdg, SURFACE]));
+            let popup = self.new_id();
+            self.send(child_xdg, XDG_SURFACE_GET_POPUP, &words(&[popup, parent_xdg, positioner]));
+            self.send(child_xdg, XDG_SURFACE_SET_WINDOW_GEOMETRY, &words(&[0, 0, 10, 10]));
+            self.commit();
+            self.roundtrip();
+            assert_eq!(self.error(), None, "popup setup failed");
+
+            child_xdg
         }
 
         fn server_surface(&self) -> WlSurface {
@@ -772,6 +832,44 @@ mod tests {
         h.attach(buffer);
         h.roundtrip();
         assert_eq!(h.error(), None);
+    }
+
+    #[test]
+    fn popup_attach_before_ack_is_unconfigured_buffer() {
+        let mut h = Harness::new();
+        let child_xdg = h.popup_with_mapped_parent();
+
+        h.state.xdg.popup_surfaces()[0].send_configure().unwrap();
+        h.roundtrip();
+        assert_eq!(h.error(), None, "popup configure failed");
+
+        let buffer = h.buffer();
+        h.attach(buffer);
+        h.roundtrip();
+        assert_eq!(
+            h.error(),
+            Some((child_xdg, xdg_surface::Error::UnconfiguredBuffer as u32))
+        );
+    }
+
+    #[test]
+    fn popup_attach_after_ack_is_allowed() {
+        let mut h = Harness::new();
+        let child_xdg = h.popup_with_mapped_parent();
+
+        let serial = h.state.xdg.popup_surfaces()[0].send_configure().unwrap();
+        h.roundtrip();
+        assert_eq!(h.error(), None, "popup configure failed");
+
+        h.ack_configure(child_xdg, u32::from(serial));
+        h.roundtrip();
+        assert_eq!(h.error(), None, "popup configure ack failed");
+
+        let buffer = h.buffer();
+        h.attach(buffer);
+        h.commit();
+        h.roundtrip();
+        assert_eq!(h.error(), None, "acked popup attach+commit must be accepted");
     }
 
     #[test]
