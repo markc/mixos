@@ -595,7 +595,7 @@ design: {
             "chrome.shadow": { color_space: "oklch", l: 0.000000000, c: 0.000000000, h: 0.000000000, alpha: 0.588235294 },
             "chrome.primary_bg": { color_space: "oklch", l: 0.544333113, c: 0.120240955, h: 243.417224276, alpha: 1.000000000 },
             "chrome.primary_text": { color_space: "oklch", l: 0.999999993, c: 0.000000037, h: 89.875563096, alpha: 1.000000000 },
-            "chrome.danger": { color_space: "oklch", l: 0.680749359, c: 0.144382635, h: 15.266470873, alpha: 1.000000000 },
+            "chrome.danger": {"alpha":1,"c":0.1432675642230839,"color_space":"oklch","h":14.98480195932833,"l":0.7052068313908753},
             "chrome.warning": { color_space: "oklch", l: 0.704661441, c: 0.180507263, h: 51.721759080, alpha: 1.000000000 },
             "chrome.tab_strip": { color_space: "oklch", l: 0.000000000, c: 0.000000000, h: 0.000000000, alpha: 0.000000000 },
             "chrome.row_selected": { color_space: "oklch", l: 0.000000000, c: 0.000000000, h: 0.000000000, alpha: 0.000000000 },

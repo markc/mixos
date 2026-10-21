@@ -243,7 +243,7 @@ The append-only compatibility table supplies both palettes, styles and terminal
 defaults to older sources with <code>defaulted-scheme</code> provenance. An authored
 scheme binding retains its source colours. Missing bindings for the original
 nine schemes remain errors.</p>
-<p>Breeze keeps its surface colours, blue accent and selection opacity. Five
+<p>Breeze keeps its surface colours, blue accent and selection opacity. Six
 foreground/action values are adjusted to meet the contrast requirement after
 egui's rounded, premultiplied sRGB blending. Text is checked on all seven
 resting, hovered and pressed surfaces, including their accent-soft tints.
@@ -255,11 +255,13 @@ resting surfaces. The minimum rendered ratios are:</p>
 <tr><td>light / <code>primary_bg</code></td><td><code>#237AB4</code></td><td><code>#0F66A0</code></td><td>4.536:1 at 85% on field</td></tr>
 <tr><td>dark / <code>text_faint</code></td><td><code>#A4AAB1</code></td><td><code>#B8BEC5</code></td><td>4.504:1 on tinted pressed</td></tr>
 <tr><td>dark / <code>accent_text</code></td><td><code>#50B8EE</code></td><td><code>#61C9FF</code></td><td>4.543:1 on tinted pressed</td></tr>
+<tr><td>dark / <code>danger</code></td><td><code>#E36F7B</code></td><td><code>#EB7783</code></td><td>3.013:1 on tinted pressed (3:1 floor)</td></tr>
 </tbody></table>
 <p>The reference inputs measured 4.283:1 and 4.261:1 for light faint/accent text on tinted pressed,
 3.601:1 and 3.789:1 for dark faint/accent text there, and 3.813:1 for the
-light primary button at 85% on chrome. These adjustments preserve the 4.5:1
-requirement rather than importing those failures.</p>
+light primary button at 85% on chrome. Dark danger measured 2.742:1 on tinted
+pressed, below its 3:1 interactive-surface floor. These adjustments preserve
+the contrast requirements rather than importing those failures.</p>
 <p>The compiler flattens it for one
 <code>DesignContext</code> (scheme, mode, contrast, optional app) into a resolved
 design: gamut-mapped colours with WCAG contrast checked, resolved metrics
