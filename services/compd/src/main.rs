@@ -440,7 +440,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         #[cfg(feature = "backend-headless")]
         cli::Backend::Headless => {
-            headless::wire(
+            headless::wire::wire(
                 &mut state,
                 &mut event_loop,
                 headless::wire::Options {
