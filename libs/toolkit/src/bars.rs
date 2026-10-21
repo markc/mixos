@@ -34,16 +34,9 @@ pub struct Sizes {
     pub rail_button: f32,
 }
 
-/// The inset of a horizontal bar's contents from its ends. Undetermined by
-/// the specification (§5.4); the item spacing keeps the first control off
-/// the window edge.
 
-/// The gap between stacked panel control rows (§2.2).
 
-/// The rail's separator stands this far left of the rail (§2.6).
 
-/// A vertical divider's slot width (§3.9), and its height in the options
-/// bar.
 
 fn frame(ui: &Ui, margin: Margin) -> Frame {
     Frame::new()

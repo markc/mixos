@@ -230,11 +230,8 @@ pub fn bevel(painter: &egui::Painter, rect: Rect, raised: bool, palette: &Palett
     );
 }
 
-/// Weak text is the text colour at this opacity (§1.4, egui's default).
 
-/// Disabled widgets draw at this opacity (§1.4, egui's default).
 
-/// A pressed Close caption is `caption_close` at this opacity (§1.4).
 
 /// Chrome geometry, in points: the style's lengths ([`Metrics::of`]) and
 /// the specification's fixed ones (§2, §3.1–3.5).
@@ -298,7 +295,6 @@ pub struct Metrics {
     pub radius_lg: u8,
 }
 
-/// Lengths shared by every style (§2.2, §3.1–3.5).
 
 impl Metrics {
     /// The geometry of `style`: its own lengths, and the specification's
@@ -468,7 +464,6 @@ pub fn install(ctx: &Context, chrome: &Chrome) {
     ctx.data_mut(|d| d.insert_temp(key(), *chrome));
 }
 
-/// Small, Heading and Monospace sizes (§2.1).
 
 /// The complete egui style of chrome widgets (§1.5, §2).
 pub fn style(theme: &Theme) -> Style {
@@ -486,11 +481,11 @@ pub fn style(theme: &Theme) -> Style {
         tokens.button_padding_x as f32,
         tokens.button_padding_y as f32,
     );
-    spacing.interact_size = Vec2::splattokens.interact as f32;
+    spacing.interact_size = Vec2::splat(tokens.interact as f32);
     spacing.slider_width = tokens.slider_width as f32;
     spacing.combo_width = tokens.combo_width as f32;
-    spacing.menu_margin = Margin::sametokens.menu_margin as i8;
-    spacing.window_margin = Margin::sametokens.window_margin as i8;
+    spacing.menu_margin = Margin::same(tokens.menu_margin as i8);
+    spacing.window_margin = Margin::same(tokens.window_margin as i8);
     spacing.icon_width = tokens.icon_width as f32;
     spacing.tooltip_width = tokens.tooltip_width as f32;
     spacing.menu_width = m.menu_min_width;
@@ -508,7 +503,7 @@ pub fn style(theme: &Theme) -> Style {
     let proportional = |size: f32| FontId::new(size, FontFamily::Proportional);
     style
         .text_styles
-        .insert(TextStyle::Small, proportionaltokens.small_size as f32);
+        .insert(TextStyle::Small, proportional(tokens.small_size as f32));
     style
         .text_styles
         .insert(TextStyle::Body, proportional(body));
@@ -517,7 +512,7 @@ pub fn style(theme: &Theme) -> Style {
         .insert(TextStyle::Button, proportional(body));
     style.text_styles.insert(
         TextStyle::Heading,
-        crate::fonts::headingtokens.heading_size as f32,
+        crate::fonts::heading(tokens.heading_size as f32),
     );
     style.text_styles.insert(
         TextStyle::Monospace,

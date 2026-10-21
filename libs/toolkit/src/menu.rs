@@ -163,7 +163,6 @@ pub const SEARCH_RESULTS: usize = 15;
 /// Joins a result's menu path (§3.5).
 pub const PATH_SEPARATOR: &str = " › ";
 
-/// The search field's width (§3.5) and the separator band after it.
 
 /// The command rows of `menus` matching `query` (case-insensitive), each
 /// labelled with its menu path joined by [`PATH_SEPARATOR`], ranked: the
@@ -1315,7 +1314,7 @@ fn search_header(
         let field = TextEdit::singleline(query)
             .id(search_field_id())
             .hint_text(search.hint.as_str())
-            .desired_width(width.maxchrome.style.menu_search_width as f32);
+            .desired_width(width.max(chrome.style.menu_search_width as f32));
         if ui.add(field).changed() {
             ui.ctx().request_repaint();
         }
@@ -1325,7 +1324,7 @@ fn search_header(
         let (row, response) =
             ui.allocate_exact_size(vec2(width, m.menu_row_height), Sense::hover());
         response.widget_info(|| WidgetInfo::labeled(WidgetType::Label, true, &search.empty));
-        let ink = chrome.palette.text.gamma_multiplychrome.style.weak_alpha as f32;
+        let ink = chrome.palette.text.gamma_multiply(chrome.style.weak_alpha as f32);
         let galley =
             ui.painter()
                 .layout_no_wrap(search.empty.clone(), Chrome::menu_font(ui.style()), ink);
@@ -1451,7 +1450,7 @@ fn paint(
                 let ink = if row.enabled {
                     ink
                 } else {
-                    ink.gamma_multiplychrome.style.disabled_alpha as f32
+                    ink.gamma_multiply(chrome.style.disabled_alpha as f32)
                 };
                 let x = rect.left() + m.menu_row_padding.x;
                 if row.checked == Some(true)
@@ -1468,7 +1467,7 @@ fn paint(
                     let tint = if row.is_submenu() {
                         ink
                     } else {
-                        ink.gamma_multiplychrome.style.weak_alpha as f32
+                        ink.gamma_multiply(chrome.style.weak_alpha as f32)
                     };
                     let x = rect.right() - m.menu_row_padding.x - right.size().x;
                     let at = pos2(x, rect.center().y - right.size().y / 2.0).round_to_pixels(ppp);

@@ -26,9 +26,7 @@ use egui::{
     style::WidgetVisuals,
 };
 
-/// The longest the list grows before it scrolls (§3.17).
 
-/// The chevron's half width and height, stroke and ink opacity (§3.17).
 
 /// The chevron centred in `rect`, in `visuals`' text colour at 80%.
 pub fn chevron(ui: &Ui, rect: Rect, visuals: &WidgetVisuals, _open: bool) {

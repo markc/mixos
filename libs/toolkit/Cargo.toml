@@ -56,5 +56,7 @@ xkbcommon = { version = "0.7", default-features = false, optional = true }
 layer = ["dep:smithay-client-toolkit", "dep:wayland-backend", "dep:raw-window-handle", "dep:wgpu", "dep:egui-wgpu", "dep:futures", "dep:xkbcommon"]
 
 [dev-dependencies]
+anyhow.workspace = true
+libc.workspace = true
 egui_kittest.workspace = true
 tempfile.workspace = true

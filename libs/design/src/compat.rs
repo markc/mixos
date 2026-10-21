@@ -133,4 +133,18 @@ mod tests {
                 .contains("duplicate compatibility token `field_height`")
         );
     }
+
+    #[test]
+    fn fallback_order_includes_custom_names() {
+        let table = table();
+        for (style, base, scheme, expected) in [
+            ("pro", Some("classic"), "plain", 3.0),
+            ("custom", Some("pro"), "classic", 3.0),
+            ("custom", None, "classic", 0.0),
+            ("custom", None, "absent", 4.0),
+        ] {
+            assert_eq!(table.token("field_radius", style, base, scheme).unwrap().0,
+                &StyleValueSource::Number(expected));
+        }
+    }
 }

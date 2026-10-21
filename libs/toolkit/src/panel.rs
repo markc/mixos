@@ -40,16 +40,10 @@ use egui::{
     Stroke, StrokeKind, Ui, WidgetInfo, WidgetType, pos2, vec2,
 };
 
-/// Pro strip height, tab text, padding and minimum (§3.10).
 
-/// The Pro panel menu ("hamburger"): hit box, centre from the strip's
-/// right, line length and pitch (§3.10).
 
-/// Studio card (§3.11).
 
-/// Section label size, Inter Medium (§2.1).
 
-/// The drag-drop insertion line's width and end insets (§3.22).
 
 /// A group's view state.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

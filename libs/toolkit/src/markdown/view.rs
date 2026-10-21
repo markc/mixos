@@ -20,29 +20,15 @@ use super::{Block, Document, Inline, Item, Link};
 use crate::chrome::{Chrome, Palette};
 use crate::strings::{own, own_with};
 
-/// Body line height, in multiples of the text size.
 
-/// Heading line height, in multiples of the heading size.
 
-/// Heading sizes for levels 1 to 6, in multiples of the `Heading` style.
 
-/// The widest a text column grows, in multiples of the body size (about
-/// 75 characters of Inter): longer lines are hard to read.
 
-/// Space between blocks, before a heading, and after one, in multiples of
-/// the body size.
 
-/// Space between list items, in multiples of the body size.
 
-/// A list's marker gutter and a quote's indent, in multiples of the body
-/// size.
 
-/// A quote's rule width, and a code block's padding in multiples of the
-/// body size.
 
-/// Inline code runs a little smaller than the text round it.
 
-/// A bullet's radius, in multiples of the body size.
 
 /// Draw `document` into `ui`; returns the link activated this frame. An
 /// [`openable`](super::openable) link has also been handed to

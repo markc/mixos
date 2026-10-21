@@ -31,21 +31,10 @@ use egui::{
     RichText, Sense, Ui, UiKind, Vec2, os::OperatingSystem,
 };
 
-/// Title size, SemiBold (§2.1), and the gaps round the hairline (§3.21).
 
-/// How far below the window's centre a dialog first opens. The
-/// specification says only "centred" (§3.21); the evidence centres every
-/// theme's dialog 1.75 pt low (frames of 282.5 and 284.5 pt both centred
-/// on y 401.75 of 800), as if centred in a window 3.5 pt shorter at the
-/// top. The cause is not determined (§5.4); this matches it.
 
-/// The most of the window a resizable dialog's body may fill.
 
-/// The default width range (§3.21).
 
-/// The gap above the button row, between its buttons, and each button's
-/// least width. Undetermined by the specification (§5.4); the evidence's
-/// OK and Cancel are 84 pt wide and 10 pt apart.
 
 /// What a dialog button does.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

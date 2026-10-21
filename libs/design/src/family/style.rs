@@ -927,6 +927,26 @@ mod tests {
     }
 
     #[test]
+    fn a_custom_style_keeps_its_defaults_when_a_later_table_is_appended() {
+        let source = crate::parse_design_source(SourceIdentity::new("custom"),
+            include_str!("../../tests/fixtures/custom-named-style.theme.conf.mix")).unwrap();
+        let family = source.v1.families.style.as_ref().unwrap();
+        let v2 = crate::compat::table();
+        let mut v3 = v2.clone();
+        v3.versions.insert("v3".into(), crate::compat::Version {
+            tokens: BTreeMap::from([("future_token".into(), BTreeMap::from([("all".into(), StyleValueSource::Number(2.0))]))]),
+            ..Default::default()
+        });
+        let original = &family.styles["custom"];
+        assert_eq!(filled_tokens(family, "custom", original, v2), filled_tokens(family, "custom", original, &v3));
+        assert_eq!(compile_family(family, Scheme::Studio).unwrap(), studio());
+        let DesignCompileResult::Success(compiled) = crate::compile_design(&source,
+            DesignContext { scheme: Scheme::Studio, ..Default::default() }) else { panic!("custom style compiles"); };
+        assert!(compiled.diagnostics.iter().any(|d| d.code == "defaulted-style-token"));
+        assert!(!compiled.candidate.dictionary().defaulted.is_empty());
+    }
+
+    #[test]
     fn unsafe_behaviour_values_and_an_unreachable_corner_are_refused() {
         let style = compile_family(&family(), Scheme::Studio).unwrap();
         for (name, below) in [

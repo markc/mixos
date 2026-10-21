@@ -34,22 +34,12 @@ use egui::{
 };
 use std::ops::RangeInclusive;
 
-/// Row height, least width and the track's inset (§3.18).
 
-/// Track heights and radius (§3.18, §2.4).
 
-/// Knobs (§3.18): Pro's fill and ring are literals of the specification,
-/// not roles.
 
-/// The double-click window (§3.18), and how far apart its two clicks may
-/// be (undetermined, §5.4: egui's own click tolerance, 6 pt).
 
-/// A press held longer than this is no click (egui's own limit).
 
-/// The keyboard step as a share of the range when the caller sets none
-/// (undetermined, §5.4: a hundredth), and Shift's multiple (as the wheel).
 
-/// The gap after a slider row (§3.18) and its value field's width.
 
 /// A horizontal slider.
 #[must_use = "add it with `ui.add`"]

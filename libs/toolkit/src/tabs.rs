@@ -40,25 +40,15 @@ use egui::{
 use std::f32::consts::{FRAC_PI_2, PI};
 use std::sync::Arc;
 
-/// The overflow chevron's width, icon size, hover opacity and hover inset
-/// (§3.10).
 
-/// The chevron popup's least width (§3.10).
 
-/// Pro document strip (§3.12).
 
-/// Studio and Classic document strip (§3.12).
 
-/// The drop-target outline (§3.12).
 
-/// The progress underline of a background job. Its height is undetermined
-/// by the specification (§5.4): 2 pt in `accent`, the drop line's weight.
 
 /// The dirty marker after a document's name, as the window title has it.
 pub const DIRTY: &str = "  •";
 
-/// A status marker's icon side, and the gap between it and the name. Undetermined
-/// by the specification (§5.4): sized to the 11.5 pt Pro title.
 
 /// How a strip's tabs fit: each tab's width, or `None` when it moved into
 /// the chevron menu.

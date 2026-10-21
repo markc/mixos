@@ -39,15 +39,9 @@ use crate::theme::Theme;
 use design::{LinearRgba, Mode, ResolvedColours, TypographyRole};
 use egui::{Color32, CornerRadius, FontFamily, FontId, Margin, Stroke, Style, TextStyle, Visuals};
 
-/// Indices into the design's `spacing` scale for xs, sm, md, lg and xl. On
-/// the shipped scale (0, 2, 4, 6, 8, 10, 12, 16, 20, 24) they are 2, 4, 8,
-/// 16 and 24.
 
-/// How far a hovered button's surface moves toward its foreground.
 
-/// How far a pressed or open button's surface moves toward its foreground.
 
-/// How much of egui's popup shadow strength menus keep.
 
 /// A design colour (linear-light sRGB) as the egui colour it renders as.
 pub fn colour(value: LinearRgba) -> Color32 {
@@ -148,9 +142,9 @@ pub fn pair_style(theme: &Theme) -> Style {
         tokens.button_padding_x as f32,
         tokens.button_padding_y as f32,
     );
-    spacing.interact_size = egui::Vec2::splattokens.interact as f32;
-    spacing.window_margin = Margin::sametokens.window_margin as i8;
-    spacing.menu_margin = Margin::sametokens.menu_margin as i8;
+    spacing.interact_size = egui::Vec2::splat(tokens.interact as f32);
+    spacing.window_margin = Margin::same(tokens.window_margin as i8);
+    spacing.menu_margin = Margin::same(tokens.menu_margin as i8);
     let typography = theme.typography();
     let ui = design::active_typography(Some(typography), TypographyRole::Ui);
     let small = design::active_typography(Some(typography), TypographyRole::Small);
@@ -191,7 +185,7 @@ pub fn pair_style(theme: &Theme) -> Style {
         ],
         blur: tokens.popup_shadow_blur as u8,
         spread: tokens.popup_shadow_spread as u8,
-        color: shadow.color.gamma_multiplytokens.popup_shadow_alpha as f32,
+        color: shadow.color.gamma_multiply(tokens.popup_shadow_alpha as f32),
     };
     for widget in [
         &mut style.visuals.widgets.inactive,

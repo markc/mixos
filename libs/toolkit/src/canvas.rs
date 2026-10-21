@@ -21,10 +21,7 @@
 use crate::chrome::Chrome;
 use egui::{Event, Id, PointerButton, Pos2, Rect, Sense, Stroke, Ui, Vec2, pos2, vec2};
 
-/// Bar thickness, thumb inset, least thumb length and hot distance (§3.19).
 
-/// The dot grid's pitch and dot size. Undetermined by the specification
-/// (§5.4): one point every 16, which the evidence's sparse dots fit.
 
 /// Paint the canvas surround over `rect`.
 pub fn surround(ui: &Ui, rect: Rect) {

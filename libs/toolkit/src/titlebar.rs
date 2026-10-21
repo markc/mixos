@@ -32,7 +32,7 @@
 //! frame so it wins at the borders. Every colour and size comes from the
 //! theme's [`Chrome`].
 
-use crate::button::{ICON_BUTTON, IconButton, Link};
+use crate::button::{IconButton, Link};
 use crate::chrome::Chrome;
 use crate::command::{Origin, Registry};
 use crate::icons::{self, Icon};
@@ -53,7 +53,6 @@ pub const BUTTON_WIDTH: f32 = 46.0;
 pub const EDGE: f32 = 5.0;
 pub const CORNER: f32 = 12.0;
 
-/// The title is elided into the gap only when the gap is wider than this.
 
 fn label(key: &str) -> String {
     crate::strings::own(key)
@@ -107,12 +106,8 @@ pub enum Control<'a> {
     Link { command: &'static str, icon: Icon },
 }
 
-/// The right-hand group's combo width range (§3.1).
 
-/// Spacing within the right-hand group (§3.1): an icon's slot is its 28 pt
-/// plus this, the specified 34.
 
-/// A link shows only while this much of the bar stays free (§3.1).
 
 /// The theme toggle's icon: a sun while the theme is dark, else a moon.
 pub fn theme_icon(dark: bool) -> Icon {
@@ -395,7 +390,7 @@ fn right_group<S>(
         .iter()
         .map(|c| match c {
             Control::Combo { .. } => Slot::Combo,
-            Control::Icon { .. } => Slot::Fixed(ICON_BUTTON),
+            Control::Icon { .. } => Slot::Fixed((Chrome::of(ui.ctx()).style.icon_button as f32)),
             Control::Link { command, .. } => {
                 let label = registry
                     .get(command)
@@ -411,7 +406,7 @@ fn right_group<S>(
     for control in controls.iter_mut().take(shown) {
         let width = match control {
             Control::Combo { .. } => combo_width,
-            Control::Icon { .. } => ICON_BUTTON,
+            Control::Icon { .. } => (Chrome::of(ui.ctx()).style.icon_button as f32),
             Control::Link { command, .. } => {
                 let label = registry
                     .get(command)
@@ -520,9 +515,7 @@ fn caption_button(ui: &mut Ui, rect: Rect, caption: Caption, chrome: &Chrome) {
         Caption::Close if pressed => (
             Some(
                 p.caption_close
-                    .gamma_multiplychrome
-                    .style
-                    .close_pressed_alpha as f32,
+                    .gamma_multiply(chrome.style.close_pressed_alpha as f32),
             ),
             p.caption_close_text,
         ),

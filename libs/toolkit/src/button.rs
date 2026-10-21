@@ -33,22 +33,13 @@ use egui::{
     WidgetType, pos2, vec2,
 };
 
-/// An icon button's side in the title bar (§3.1, §3.8).
 
-/// The icon's share of an icon button's side, rounded to whole points (§3.8).
 
-/// Push-button text size, Inter Medium (§2.1).
 
-/// Push-button width beyond its label (§3.13: 14 pt each side).
 
-/// Width of the Pro secondary outline (§2.3).
 
-/// Focus ring width and its distance outside the button (§2.3, §3.13).
 
-/// The title-bar link's icon and text sizes (§3.1).
 
-/// From the link's icon to its label. Undetermined by the specification
-/// (§5.4); 4 pt matches the evidence's spacing by eye.
 
 /// Which family of icon button (§3.8).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -596,7 +587,7 @@ mod tests {
 
     #[test]
     fn the_icon_is_about_half_the_box() {
-        assert_eq!((ICON_BUTTON * ICON_SHARE).round(), 15.0);
-        assert_eq!((22.0 * ICON_SHARE).round(), 11.0);
+        assert_eq!((crate::style::default_tokens().icon_button as f32 * crate::style::default_tokens().button_icon_share as f32).round(), 15.0);
+        assert_eq!((22.0 * crate::style::default_tokens().button_icon_share as f32).round(), 11.0);
     }
 }

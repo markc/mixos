@@ -67,22 +67,12 @@ impl Style {
     }
 }
 
-/// Field height (§3.14) and the default width of a value field (the slider
-/// row's field, §3.18).
 
-/// Number and unit sizes, JetBrains Mono (§2.1).
 
-/// The number's inset (§3.14).
 
-/// The unit's reserve at the right, and its right inset inside it (§3.14).
 
-/// Scrub rates per point of drag (§3.14).
 
-/// A range this wide or narrower is fine: two decimals, the fine scrub.
 
-/// The search field's icon size, and the room it takes before the text.
-/// Undetermined by the specification (§5.4): the icon matches the
-/// title-bar link's 14 pt, with the field's own 4 pt inset either side.
 
 /// Whether `range` takes two decimals and the fine scrub.
 pub fn is_fine(range: &RangeInclusive<f64>) -> bool {
@@ -255,7 +245,7 @@ impl Widget for ValueField<'_> {
         } = self;
         let chrome = Chrome::of(ui.ctx());
         let field = Style::of(ui.ctx());
-        let width = width.unwrap_orchrome.style.value_width as f32;
+        let width = width.unwrap_or(chrome.style.value_width as f32);
         let p = chrome.palette;
         let fine = range.end() - range.start() <= chrome.style.fine_span;
         // One id for the resting box and its editor, as egui's DragValue

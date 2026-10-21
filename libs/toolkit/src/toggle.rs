@@ -23,13 +23,9 @@ use egui::{
     WidgetType, pos2, vec2,
 };
 
-/// The checkbox's box, its radius and the gap before any label (§3.16).
 
-/// Outline and tick widths (§2.3).
 
-/// The tick and the knob are white in every theme (§3.16).
 
-/// The switch's track, knob radius and the knob centre's inset (§3.16).
 
 /// A checkbox.
 #[must_use = "add it with `ui.add`"]
@@ -142,27 +138,27 @@ pub fn paint_box(
     if checked {
         painter.rect_filled(
             b,
-            (Chrome::of(painter.ctx()).style.toggle_box_radius as f32),
+            Chrome::of(painter.ctx()).style.toggle_box_radius as f32,
             p.accent,
         );
         painter.add(egui::Shape::line(
             tick(b).to_vec(),
             Stroke::new(
-                (Chrome::of(painter.ctx()).style.toggle_tick as f32),
+                Chrome::of(painter.ctx()).style.toggle_tick as f32,
                 crate::style::token_colour(Chrome::of(painter.ctx()).style.toggle_mark),
             ),
         ));
     } else {
         painter.rect_filled(
             b,
-            (Chrome::of(painter.ctx()).style.toggle_box_radius as f32),
+            Chrome::of(painter.ctx()).style.toggle_box_radius as f32,
             p.field,
         );
         painter.rect_stroke(
             b,
-            (Chrome::of(painter.ctx()).style.toggle_box_radius as f32),
+            Chrome::of(painter.ctx()).style.toggle_box_radius as f32,
             Stroke::new(
-                (Chrome::of(painter.ctx()).style.toggle_outline as f32),
+                Chrome::of(painter.ctx()).style.toggle_outline as f32,
                 outline,
             ),
             StrokeKind::Inside,
@@ -311,13 +307,13 @@ mod tests {
 
     #[test]
     fn the_tick_follows_the_specified_path() {
-        let b = Rect::from_min_size(pos2(0.0, 0.0), Vec2::splat(BOX));
+        let b = Rect::from_min_size(pos2(0.0, 0.0), Vec2::splat(crate::style::default_tokens().checkbox_box as f32));
         assert_eq!(tick(b), [pos2(3.0, 7.5), pos2(6.0, 10.5), pos2(11.0, 3.5)]);
     }
 
     #[test]
     fn the_knob_travels_between_its_insets() {
-        let track = Rect::from_min_size(pos2(10.0, 0.0), TRACK);
+        let track = Rect::from_min_size(pos2(10.0, 0.0), vec2(crate::style::default_tokens().switch_track_w as f32, crate::style::default_tokens().switch_track_h as f32));
         assert_eq!(knob_x(track, 0.0), 18.5);
         assert_eq!(knob_x(track, 1.0), 31.5);
     }
