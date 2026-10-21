@@ -566,7 +566,12 @@ impl Controller {
 
     /// Echo Markdown view enablement; older actions keep their Bus contract.
     pub fn set_action_enabled(&mut self, action: ActionId, enabled: bool) {
-        if matches!(action, ActionId::ViewMarkdownSource | ActionId::ViewMarkdownSplit | ActionId::ViewMarkdownPreview) {
+        if matches!(
+            action,
+            ActionId::ViewMarkdownSource
+                | ActionId::ViewMarkdownSplit
+                | ActionId::ViewMarkdownPreview
+        ) {
             self.action_enabled.insert(action, enabled);
         }
     }
@@ -1701,7 +1706,8 @@ impl Controller {
                     m.text().read(range, &mut first);
                 }
                 t.saved_language = Some(edit::lang::detect(
-                    m.meta().path.as_deref().map(std::path::Path::new), &first,
+                    m.meta().path.as_deref().map(std::path::Path::new),
+                    &first,
                 ));
                 t.path.clone_from(&m.meta().path);
             }
@@ -3384,15 +3390,26 @@ mod tests {
         let mut c = ctl();
         live(&mut c);
         let tab = c.active().unwrap();
-        let fx = c.on_action_args(Some(tab), ActionId::FileSaveAs,
-            Some(json!({"path":"/work/notes"})), Intent::ui(tab));
+        let fx = c.on_action_args(
+            Some(tab),
+            ActionId::FileSaveAs,
+            Some(json!({"path":"/work/notes"})),
+            Intent::ui(tab),
+        );
         let (req, _) = sent(&fx, "edit.save");
-        reply(&mut c, req, json!({"buffer":B,"epoch":"0000e1e1","path":"/work/notes",
-            "rev":0,"saved_rev":0,"disk":"clean"}));
+        reply(
+            &mut c,
+            req,
+            json!({"buffer":B,"epoch":"0000e1e1","path":"/work/notes",
+            "rev":0,"saved_rev":0,"disk":"clean"}),
+        );
         assert_eq!(c.tab(tab).unwrap().path.as_deref(), Some("/work/notes"));
         assert_eq!(c.tab(tab).unwrap().saved_language, Some("text"));
         // If language() read the first line again, this shebang would change it.
-        c.on_editor(tab, EditorMsg::Command(EditCommand::Insert("#!/bin/sh\n".into())));
+        c.on_editor(
+            tab,
+            EditorMsg::Command(EditCommand::Insert("#!/bin/sh\n".into())),
+        );
         for _ in 0..2 {
             assert_eq!(c.tab(tab).unwrap().language(), "text");
             c.drive(tab, Step::default(), &mut Vec::new());
@@ -3401,7 +3418,8 @@ mod tests {
             "path":"/work/notes","opened_as":null,"name":"notes","language":"markdown",
             "rev":0,"lines":2,"bytes":12,"eol":"lf","bom":false,"disk":"clean",
             "reopened":true,"created":false,"recovery_id":"5f0c2a9e1b7d4c33",
-            "recovered":false,"recovered_from":null})).unwrap();
+            "recovered":false,"recovered_from":null}))
+        .unwrap();
         c.attach(tab, true, &open, &mut Vec::new());
         assert_eq!(c.tab(tab).unwrap().language(), "markdown");
         assert_eq!(c.tab(tab).unwrap().saved_language, None);

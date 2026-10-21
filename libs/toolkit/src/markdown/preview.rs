@@ -34,9 +34,11 @@ impl<K> Preview<K> {
 impl<K: PartialEq> Preview<K> {
     /// The parsed document only when both the key and revision match.
     pub fn cached_for(&self, key: &K, revision: u64) -> Option<&Arc<Document>> {
-        self.cached.as_ref().and_then(|(cached_key, cached_revision, document)| {
-            (cached_key == key && *cached_revision == revision).then_some(document)
-        })
+        self.cached
+            .as_ref()
+            .and_then(|(cached_key, cached_revision, document)| {
+                (cached_key == key && *cached_revision == revision).then_some(document)
+            })
     }
 
     /// Return the document for `key` and `revision`. Call `source` and
@@ -80,7 +82,10 @@ mod tests {
         let mut preview = Preview::default();
         assert!(preview.cached_for(&Key(1), 1).is_none());
         let document = preview.document(Key(1), 1, || "# First");
-        assert!(Arc::ptr_eq(&document, preview.cached_for(&Key(1), 1).unwrap()));
+        assert!(Arc::ptr_eq(
+            &document,
+            preview.cached_for(&Key(1), 1).unwrap()
+        ));
         assert!(preview.cached_for(&Key(2), 1).is_none());
         assert!(preview.cached_for(&Key(1), 2).is_none());
         preview.clear();

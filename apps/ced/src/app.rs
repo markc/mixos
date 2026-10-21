@@ -245,6 +245,8 @@ pub struct App {
     /// Last echoed inputs. Idle frames compare borrowed values only.
     tab_hints: Vec<TabHint>,
     hint_window: Option<(Option<TabId>, bool)>,
+    #[cfg(test)]
+    hint_syncs: usize,
 }
 
 impl App {
@@ -272,6 +274,8 @@ impl App {
             previews: HashMap::new(),
             tab_hints: Vec::new(),
             hint_window: None,
+            #[cfg(test)]
+            hint_syncs: 0,
         }
     }
 
@@ -349,8 +353,14 @@ impl App {
         preview.source.clear();
         m.text().read(0..m.text().len(), &mut preview.source);
         #[cfg(test)]
-        { preview.reads += 1; }
-        Some(preview.cache.document(tab, m.view_gen(), || &preview.source))
+        {
+            preview.reads += 1;
+        }
+        Some(
+            preview
+                .cache
+                .document(tab, m.view_gen(), || &preview.source),
+        )
     }
 
     /// Refresh the controller's echoes after document or window state changes.
@@ -372,6 +382,10 @@ impl App {
         {
             return false;
         }
+        #[cfg(test)]
+        {
+            self.hint_syncs += 1;
+        }
         let ids: std::collections::HashSet<_> = tabs.iter().map(|t| t.id).collect();
         self.preview_modes.retain(|id, _| ids.contains(id));
         self.previews.retain(|id, _| ids.contains(id));
@@ -390,12 +404,21 @@ impl App {
                 preview.language.clear();
                 preview.language.push_str(language);
             }
-            self.tab_hints.push(TabHint { id: tab.id, language: language.to_owned(), mode });
+            self.tab_hints.push(TabHint {
+                id: tab.id,
+                language: language.to_owned(),
+                mode,
+            });
         }
         for hint in &self.tab_hints {
-            self.ctl.set_view_hint(hint.id, "preview", hint.mode.as_str());
+            self.ctl
+                .set_view_hint(hint.id, "preview", hint.mode.as_str());
         }
-        for action in [ActionId::ViewMarkdownSource, ActionId::ViewMarkdownSplit, ActionId::ViewMarkdownPreview] {
+        for action in [
+            ActionId::ViewMarkdownSource,
+            ActionId::ViewMarkdownSplit,
+            ActionId::ViewMarkdownPreview,
+        ] {
             self.ctl.set_action_enabled(action, self.enabled(action));
         }
         self.hint_window = Some(window);
@@ -1284,10 +1307,12 @@ mod tests {
     fn idle_frames_do_not_write_view_hints_or_enablement() {
         let (mut a, _, one, _) = documents();
         a.action(ActionId::ViewMarkdownSplit);
+        let syncs = a.hint_syncs;
         for _ in 0..2 {
             a.prune();
             a.absorb(Vec::new());
             assert!(!a.sync_view_hints());
+            assert_eq!(a.hint_syncs, syncs, "idle frames do not reach the writes");
         }
         a.dialog = Some(Dialog::About { token: 0 });
         assert!(a.sync_view_hints());

@@ -17,5 +17,12 @@ tab is open. `ced.tabs` rows and `ced.state` include `preview` (`source`,
 Markdown choice stays dormant. Closing the tab drops its choice and parse
 cache. These choices are never saved in the session file.
 
+Preview caches use the tab id and mirror revision. A repaint reads no buffer
+text; a language change clears the cache. Save As detects the interim language
+once, and a fresh open's language metadata takes precedence. View hints use
+static values and are refreshed only when their inputs change. `ced.actions`
+echoes window enablement for the three Markdown actions; all older actions
+keep reporting `enabled: true`.
+
 The headless loop draws no document and has no view state. These actions
 need a window and return `UNAVAILABLE` there; the reported view is `source`.

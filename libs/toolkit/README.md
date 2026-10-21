@@ -10,6 +10,8 @@ closure only on a cache miss; `show(ui, key, revision, source)` draws it
 and returns the activated link. `cached()` borrows the last document for
 views that prepare it before drawing; `clear()` forgets it. The cache is
 plain data, with no egui state, and clones share the document.
+`cached_for(&key, revision)` borrows a matching document so callers can skip
+preparing their source text on a hit.
 
 Shells call `markdown::open_links(ctx, app_name)` after drawing to take
 egui's OpenUrl requests and hand allowed web and mail links to `xdg-open`
