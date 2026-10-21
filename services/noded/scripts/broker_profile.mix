@@ -1,0 +1,141 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- Offline rootfs preparation only. Requiring this module performs no I/O.
+fn refuse($message)
+  raise("BROKER_ROOTFS",$message)
+end
+fn plain_label($value)
+  return type($value)=="string" and re_match($value,"^[a-z][a-z0-9-]{0,31}$")
+end
+fn plan($spec)
+  if type($spec)!="map" or not plain_label($spec.project) or type($spec.client)!="map" or type($spec.broker)!="map" or type($spec.node)!="map" then refuse("incomplete broker rootfs specification") end
+  for $p in [$spec.client,$spec.broker]
+    if not plain_label($p.name) or $p.name=="root" then refuse("unprivileged named principals required") end
+    for $id in [$p.uid,$p.gid]
+      if type($id)!="number" or floor($id)!=$id or $id<1 or $id>60000 then refuse("invalid principal ID") end
+    end
+  end
+  if $spec.client.name==$spec.broker.name or $spec.client.uid==$spec.broker.uid or $spec.client.gid==$spec.broker.gid then refuse("broker principal must be distinct") end
+  if type($spec.session)!="number" or floor($spec.session)!=$spec.session or $spec.session<1 or $spec.session>6 then refuse("invalid session") end
+  if type($spec.profile)!="string" or not re_match($spec.profile,"^/var/lib/" .. $spec.project .. "/[a-z][a-z0-9-]{0,31}$") then refuse("invalid dedicated profile") end
+  $n=$spec.node
+  if not plain_label($n.name) or type($n.mesh)!="string" or not re_match($n.mesh,"^[a-z][a-z0-9.-]{0,127}$") or type($n.ip)!="string" or not re_match($n.ip,"^[0-9]{1,3}(\\.[0-9]{1,3}){3}$") or type($n.port)!="number" or floor($n.port)!=$n.port or $n.port<1 or $n.port>65535 or not contains(["off","observe","enforce"],$n.admission) or type($n.mesh_open)!="bool" then refuse("invalid explicit node configuration") end
+  $p=$spec.profile
+  $run="/run/" .. $spec.project .. "/broker/" .. to_string($spec.session)
+  $config={node:$n.name,mesh:$n.mesh,wg_ip:$n.ip,noded:{port:$n.port,unix_socket:$run .. "/noded/bus.sock",admission:$n.admission,mesh_open:$n.mesh_open}}
+  $client={node:$n.name,mesh:$n.mesh,wg_ip:$n.ip,noded:{port:$n.port,unix_socket:$config.noded.unix_socket}}
+  $prefix=upper($spec.project)
+  $env={PATH:"/opt/" .. $spec.project .. "/bin:/usr/bin:/bin",HOME:"/",USER:$spec.broker.name,LOGNAME:$spec.broker.name}
+  for $pair in [["_ETC",$p .. "/etc"],["_VAR",$p .. "/var"],["_RUN",$run],["_NODE_CONFIG",$p .. "/etc/node.conf.mix"],["_BROKER_ACCOUNT",$spec.broker.name],["_NODED_URL",""]]
+    $env[$prefix .. $pair[0]]=$pair[1]
+  end
+  $env_text=""
+  for $key in sort(keys($env)) $env_text=$env_text .. $key .. "=" .. $env[$key] .. chr(10) end
+  $client_env=$prefix .. "_NODE_CONFIG=" .. $p .. "/etc/client.conf.mix" .. chr(10) .. $prefix .. "_BROKER_ACCOUNT=" .. $spec.broker.name .. chr(10) .. $prefix .. "_NODED_URL=" .. chr(10)
+  $unit="[Service]\nUser=" .. $spec.broker.name .. "\nGroup=" .. $spec.broker.name .. "\nSupplementaryGroups=\nEnvironment=\nEnvironmentFile=\nEnvironmentFile=" .. $p .. "/etc/noded/service.env\nRuntimeDirectory=\nRuntimeDirectory=" .. $spec.project .. "/broker/" .. to_string($spec.session) .. "/noded\nRuntimeDirectoryMode=0711\nUMask=0077\nNoNewPrivileges=yes\nExecStart=\nExecStart=/opt/" .. $spec.project .. "/bin/noded serve --no-monitor --no-log\n"
+  return {spec:$spec,config:$config,client_config:$client,broker_env:$env,broker_env_text:$env_text,client_env_text:$client_env,unit_text:$unit,endpoint:$config.noded.unix_socket,run:$run,mutation_supported:false}
+end
+fn no_links($path)
+  $cursor=$path
+  while $cursor!="/"
+    if exists($cursor,{follow_symlinks:false}) and stat($cursor,{follow_symlinks:false}).is_symlink then refuse("symlink in offline rootfs path") end
+    $cursor=dirname($cursor)
+  end
+end
+fn regular($path)
+  no_links($path)
+  $s=stat($path,{follow_symlinks:false})
+  if not $s.is_file or $s.nlink!=1 or $s.uid!=0 or floor($s.perm/16)%2!=0 or floor($s.perm/2)%2!=0 then refuse("rootfs input must be root-controlled single-link regular file") end
+  return {sha256:hash_file($path,"sha256"),dev:$s.dev,ino:$s.ino}
+end
+fn directory($root,$path,$owner,$group,$perm)
+  $full=$root .. $path
+  no_links($full)
+  if exists($full,{follow_symlinks:false}) then
+    $s=stat($full,{follow_symlinks:false})
+    if not $s.is_dir or $s.uid!=$owner or $s.gid!=$group or $s.perm!=$perm then refuse("existing rootfs directory differs; never recursively chown desktop state") end
+  else
+    mkdir($full)
+    chown($full,$owner,$group)
+    chmod($full,$perm)
+  end
+end
+fn prepare($root,$spec)
+  $p=plan($spec)
+  if uid()!=0 or type($root)!="string" or $root=="/" or realpath($root)!=$root then refuse("namespace root and explicit canonical offline rootfs required") end
+  no_links($root)
+  $root_stat=stat($root,{follow_symlinks:false})
+  if not $root_stat.is_dir or $root_stat.uid!=0 or $root_stat.perm!=0o755 then refuse("offline rootfs must be root-owned0755") end
+  $marker=$root .. "/.broker-rootfs.json"
+  regular($marker)
+  $mark=json_parse(read_file($marker))
+  if $mark.kind!="native-broker-rootfs" or $mark.dev!=$root_stat.dev or $mark.ino!=$root_stat.ino then refuse("offline rootfs marker identity differs") end
+  if not flock($root .. "/.broker-preparation.lock",{wait:0}) then refuse("offline rootfs writer lock contended") end
+  if exists($root .. "/.broker-preparation.json",{follow_symlinks:false}) or exists($root .. $spec.profile,{follow_symlinks:false}) then refuse("fresh dedicated rootfs profile required") end
+  $before={}
+  for $name in ["passwd","group","shadow","gshadow"]
+    $before[$name]=regular($root .. "/etc/" .. $name)
+    if not ends_with(read_file($root .. "/etc/" .. $name),chr(10)) then refuse("rootfs account database needs a complete final line") end
+  end
+  $passwd=read_file($root .. "/etc/passwd")
+  $group=read_file($root .. "/etc/group")
+  $client_seen=false
+  for $line in lines($passwd)
+    $f=split($line,":")
+    if len($f)!=7 then refuse("malformed rootfs passwd") end
+    if $f[0]==$spec.broker.name or $f[2]==to_string($spec.broker.uid) or $f[3]==to_string($spec.broker.gid) then refuse("broker name, UID or primary GID already allocated") end
+    if $f[0]==$spec.client.name then
+      if $client_seen or $f[2]!=to_string($spec.client.uid) or $f[3]!=to_string($spec.client.gid) then refuse("desktop account differs from plan") end
+      $client_seen=true
+    end
+  end
+  if not $client_seen then refuse("existing desktop account required") end
+  for $line in lines($group)
+    $f=split($line,":")
+    if len($f)!=4 then refuse("malformed rootfs group") end
+    if $f[0]==$spec.broker.name or $f[2]==to_string($spec.broker.gid) or contains(split($f[3],","),$spec.broker.name) then refuse("broker group or supplementary membership already allocated") end
+  end
+  for $name in ["shadow","gshadow"]
+    for $line in lines(read_file($root .. "/etc/" .. $name))
+      if split($line,":")[0]==$spec.broker.name then refuse("broker shadow record already allocated") end
+    end
+  end
+  -- All writes remain inside the marked offline rootfs. A preparation receipt
+  -- starts incomplete; an image consumer must refuse it until status prepared.
+  $receipt={status:"incomplete",profile:$spec.profile,broker:$spec.broker.name,baseline_created:false,live_activation:false}
+  write_new($root .. "/.broker-preparation.json",json_encode($receipt),0o600)
+  for $path in ["/etc","/etc/systemd","/etc/systemd/system","/var","/var/lib","/var/lib/" .. $spec.project,$spec.profile,$spec.profile .. "/etc",$spec.profile .. "/var","/run","/run/" .. $spec.project,"/run/" .. $spec.project .. "/broker",$p.run]
+    directory($root,$path,0,0,0o755)
+  end
+  directory($root,$spec.profile .. "/etc/noded",0,$spec.broker.gid,0o750)
+  directory($root,$spec.profile .. "/var/noded",$spec.broker.uid,$spec.broker.gid,0o700)
+  directory($root,$p.run .. "/noded",$spec.broker.uid,$spec.broker.gid,0o711)
+  $drop="/etc/systemd/system/noded@" .. to_string($spec.session) .. ".service.d"
+  directory($root,$drop,0,0,0o755)
+  $files=[{path:$spec.profile .. "/etc/node.conf.mix",text:data_encode($p.config),gid:$spec.broker.gid,perm:0o640},{path:$spec.profile .. "/etc/client.conf.mix",text:data_encode($p.client_config),gid:0,perm:0o644},{path:$spec.profile .. "/etc/noded/service.env",text:$p.broker_env_text,gid:$spec.broker.gid,perm:0o640},{path:$spec.profile .. "/etc/client.env",text:$p.client_env_text,gid:0,perm:0o644},{path:$drop .. "/50-broker-principal.conf",text:$p.unit_text,gid:0,perm:0o644}]
+  for $file in $files
+    no_links($root .. $file.path)
+    write_new($root .. $file.path,$file.text,$file.perm)
+    chown($root .. $file.path,0,$file.gid)
+    fsync($root .. $file.path)
+  end
+  $records={passwd:$passwd .. $spec.broker.name .. ":x:" .. to_string($spec.broker.uid) .. ":" .. to_string($spec.broker.gid) .. ":Native broker:/:/usr/bin/nologin" .. chr(10),group:$group .. $spec.broker.name .. ":x:" .. to_string($spec.broker.gid) .. ":" .. chr(10),shadow:read_file($root .. "/etc/shadow") .. $spec.broker.name .. ":!:0:0:99999:7:::" .. chr(10),gshadow:read_file($root .. "/etc/gshadow") .. $spec.broker.name .. ":!::" .. chr(10)}
+  for $name in keys($records)
+    if not deep_eq(regular($root .. "/etc/" .. $name),$before[$name]) then refuse("rootfs account database changed during preparation") end
+  end
+  for $name in keys($records)
+    $path=$root .. "/etc/" .. $name
+    $mode=if contains(["shadow","gshadow"],$name) then 0o600 else 0o644 end
+    $tmp=$path .. ".broker-new"
+    write_new($tmp,$records[$name],$mode)
+    fsync($tmp)
+    rename($tmp,$path)
+  end
+  $receipt.status="prepared"
+  $receipt.files=map($files,fn($f)={path:$f.path,sha256:hash_sha256($f.text),perm:$f.perm,gid:$f.gid})
+  fsync($root,{recursive:true})
+  write_atomic($root .. "/.broker-preparation.json",json_encode($receipt,true),{durability:"full"})
+  fsync($root .. "/etc")
+  fsync($root)
+  return $receipt
+end

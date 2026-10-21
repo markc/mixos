@@ -439,6 +439,7 @@ fn write_baseline_file(
     hash: &str,
 ) -> std::io::Result<()> {
     use std::io::Write as _;
+    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 
     let parent = path.parent().ok_or_else(|| {
         std::io::Error::new(
@@ -457,14 +458,23 @@ fn write_baseline_file(
 
     let nonce = BASELINE_TMP_NONCE.fetch_add(1, Ordering::Relaxed);
     let tmp = appended_path(path, &format!(".{}.{}.tmp", std::process::id(), nonce));
+    let mut claimed = false;
     let result = (|| {
-        let mut f = std::fs::File::create(&tmp)?;
+        let mut f = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&tmp)?;
+        claimed = true;
+        // The witness belongs to the daemon principal, independently of the
+        // caller's umask or a previous baseline's permissions.
+        f.set_permissions(std::fs::Permissions::from_mode(0o600))?;
         f.write_all(body.as_bytes())?;
         f.sync_all()?; // fsync the data before the rename can expose it
         std::fs::rename(&tmp, path)?;
         sync_directory(parent)
     })();
-    if result.is_err() {
+    if result.is_err() && claimed {
         let _ = std::fs::remove_file(&tmp);
     }
     result
@@ -672,6 +682,19 @@ mod tests {
                 .to_string_lossy()
                 .ends_with(".tmp")
         }));
+    }
+
+    #[test]
+    fn baseline_replacement_is_private_without_a_service_umask() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tmpdir("baseline_private_mode");
+        let path = dir.join("inventory.baseline");
+        write_baseline_file(&path, 7, 0, "first").unwrap();
+        assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+        write_baseline_file(&path, 8, 0, "second").unwrap();
+        assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
     }
 
     #[test]
