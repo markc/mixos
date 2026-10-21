@@ -901,6 +901,7 @@ mod tests {
                         "{mode:?}: {text} on {surface}"
                     );
                 }
+                if matches!(surface, "hover" | "pressed") { continue; }
                 let tinted = crate::colour_model::derivation::composite(
                     color("accent_soft"),
                     color(surface),

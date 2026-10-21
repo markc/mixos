@@ -110,7 +110,7 @@ fn compile_flat_source(
         .families
         .style
         .as_ref()
-        .is_some_and(|family| !family.schemes.contains_key(context.scheme.name()))
+        .is_none_or(|family| !family.schemes.contains_key(context.scheme.name()))
     {
         for (version, entries) in &crate::compat::table().versions {
             if let Some(crate::compat::Scheme::Palette(palette)) =
