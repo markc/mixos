@@ -66,7 +66,8 @@ pub(crate) fn defer(
         || super::diagnostics::enabled()
     {
         Some("kms_latch_capture")
-    } else if protocols::tearing::gate::gate::governed() {
+    } else if pipe.cap_interval.is_some() || protocols::tearing::gate::gate::governed() {
+        // The global flag may describe a neighbouring output's last render.
         Some("kms_latch_policy")
     } else if !pipe.late_latch.following_flip() {
         Some("kms_latch_idle")

@@ -631,6 +631,8 @@ pub fn execute(
                         trace_output,
                         remaining.as_micros() as u64,
                     );
+                    // No frame is queued, so no flip will clear this sample.
+                    ctx_ref.outputs[output_idx].late_latch.abandon();
                     continue;
                 }
             }

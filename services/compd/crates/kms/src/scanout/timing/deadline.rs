@@ -89,9 +89,8 @@ impl LateLatch {
         refresh: Duration,
         pending: bool,
     ) -> Option<bool> {
-        // A rate-capped render may have left an uncommitted sample behind.
-        self.sample_start = None;
-        self.sample_deferred = false;
+        // An uncommitted sample cannot carry over into the next flip cycle.
+        self.abandon();
         let deferred = std::mem::take(&mut self.submitted_deferred);
         if std::mem::take(&mut self.first_flip) {
             // A reset can precede an old-mode flip. Learn no phase from it.
@@ -156,6 +155,12 @@ impl LateLatch {
         self.candidate = None;
         self.following_flip = false;
         self.armed = None;
+        self.abandon();
+    }
+
+    /// A skipped render queues no flip to clear its sample. Keep the phase and
+    /// learned history, but let the next render choose its own sample origin.
+    pub fn abandon(&mut self) {
         self.sample_start = None;
         self.sample_deferred = false;
     }
@@ -435,6 +440,37 @@ mod tests {
             assert_eq!(latch.flipped(Some(at), PERIOD, false), Some(true));
         }
         assert_eq!(latch.floor, floor - Duration::from_micros(50));
+    }
+
+    #[test]
+    fn rate_cap_abandons_a_sample_without_a_flip_before_the_next_render() {
+        let at = Instant::now();
+        let mut latch = ready(at);
+        latch.begin(at, latch.plan(at, MARGIN));
+        assert!(latch.sample_deferred);
+        latch.abandon();
+        assert_eq!(latch.sample_start, None);
+        assert!(!latch.sample_deferred);
+
+        // The rate-cap wait queues nothing: no flip occurs before this retry.
+        let retry = at + PERIOD * 2;
+        let plan = latch.plan(retry, MARGIN);
+        assert_eq!(plan.deadline, None);
+        latch.begin(retry, plan);
+        assert_eq!(latch.sample_start, Some(retry));
+        assert_eq!(
+            latch.committed(retry + Duration::from_millis(2), MARGIN, false),
+            Some(retry)
+        );
+        assert_eq!(latch.budget(MARGIN), Duration::from_micros(3500));
+        // This immediate retry misses the old target, but must not learn a
+        // deferred-frame floor from the abandoned sample's flag.
+        assert_eq!(
+            latch.flipped(Some(at + PERIOD * 3), PERIOD, true),
+            Some(false)
+        );
+        assert_eq!(latch.floor, Duration::ZERO);
+        assert_eq!(latch.budget(MARGIN), Duration::from_micros(3500));
     }
 
     #[test]
