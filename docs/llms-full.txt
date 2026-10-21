@@ -5511,7 +5511,8 @@ policy-host injection path; touch uses that host's agent hit test on down and
 Smithay's held focus for motion and up. Refused delivery returns an explicit error
 on the control socket and is printed with the compositor log path. Window placement
 uses the native policy-host placement executor with a test-only entry point:
-unlike the operator verb, it permits deliberately off-output positions. All new
+it retains redraw, pointer retargeting and interactive-grab completion while
+permitting deliberately off-output positions. All new
 entry points are behind `wlcs`. Callbacks wait for completion on the compositor loop.
 The extension descriptor is read from a live Wayland registry, including the
 advertised versions. Creation probes a short-lived child and reaps it to cache
@@ -5549,6 +5550,9 @@ cmake -S /build/wlcs -B /build/wlcs/build -DCMAKE_BUILD_TYPE=Release \
 cmake --build /build/wlcs/build --target wlcs -j4
 cargo build -p wlcs --locked
 cargo build -p compd --no-default-features --features wlcs --locked
+cargo clippy -p wlcs --all-targets --no-deps --locked -- -D warnings
+cargo --config 'env.COMPD_WLCS_BINARY="/build/mixos/target/debug/compd"' \
+  test -p wlcs --locked -- --ignored --nocapture
 /opt/mixos/bin/mix services/compd/tests/wlcs_gate.mix \
   --wlcs /build/wlcs/build/wlcs \
   --shim /build/mixos/target/debug/libcompd_wlcs.so \
@@ -5560,6 +5564,10 @@ Wayland development files, gtest/gmock and Boost headers are required. The first
 build used Boost 1.92.0 unpacked under `deps`, without a system install. The
 compiler flag permits wlcs's deprecated gmock `Invoke` calls with gmock 1.18.0.
 `WLCS` may replace `--wlcs`; `COMPD_TEST_RENDER_NODE` selects the render node.
+The ignored shim lifecycle test needs an absolute `COMPD_WLCS_BINARY` because
+Cargo runs it from the package directory. It checks cached descriptors before
+start and after stop, including stable backing storage. `--no-deps` scopes
+Clippy's warning gate to the shim rather than inherited legacy dependency lints.
 
 The gate enumerates every test and runs four isolated processes at a time, each with a 20-second
 deadline, preserving JSON, process results and compositor logs in the output

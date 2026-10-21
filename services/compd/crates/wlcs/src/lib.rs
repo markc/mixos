@@ -79,13 +79,14 @@ impl Control {
         Ok(reply)
     }
     fn send(&self, body: Value) {
+        let operation = body["op"].as_str().unwrap_or("unknown").to_owned();
         match self.request(body, None) {
             Ok(reply) => {
                 if reply.get("error").is_some() {
                     // A device can target empty space or a destroyed surface.
                     // Preserve the explicit refusal; wlcs checks client events.
                     eprintln!(
-                        "wlcs-control-refusal: {reply}; compositor log: {}",
+                        "wlcs-control-refusal ({operation}): {reply}; compositor log: {}",
                         self.1.display()
                     );
                 }
@@ -474,7 +475,7 @@ unsafe extern "C" fn touch_destroy(t: *mut abi::Touch) {
 #[cfg(test)]
 mod tests {
     #[test]
-    #[ignore = "needs the built headless compd and a render node"]
+    #[ignore = "needs COMPD_WLCS_BINARY (absolute path) and a render node"]
     fn descriptor_after_stop_is_cached() {
         unsafe {
             let api = super::create(0, std::ptr::null());

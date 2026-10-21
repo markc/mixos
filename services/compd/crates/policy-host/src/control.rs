@@ -748,8 +748,20 @@ pub fn wlcs_place_surface(lp: &mut Loop, id: SurfaceId, origin: Point<i32, Logic
         return;
     };
     // wlcs may deliberately put the window partly or wholly off the output.
-    // Use the native placement executor without the operator verb's clipping.
-    place_window(lp, id, origin + window.geometry().loc, None);
+    // Keep the operator verb's native effects, without its clipping policy.
+    let location = origin + window.geometry().loc;
+    execute(
+        lp,
+        vec![
+            Effect::FinishInteractive(id),
+            Effect::MoveTo {
+                id,
+                x: location.x as f32,
+                y: location.y as f32,
+            },
+            Effect::RetargetPointer,
+        ],
+    );
 }
 
 /// Put a window's geometry origin at `location` (and, with `size`, configure
