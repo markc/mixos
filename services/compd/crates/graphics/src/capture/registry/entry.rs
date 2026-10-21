@@ -18,7 +18,6 @@ pub struct EntryId(pub(crate) u64);
 /// One continuous capture entry — owns the dmabuf, gles texture, wgpu
 /// texture. Lives inside the registry; `CaptureHandle`s reference it by id.
 pub(crate) struct CaptureEntry {
-    pub id: EntryId,
     pub source: CaptureSource,
     pub size: Size<i32, Physical>,
 

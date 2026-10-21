@@ -86,7 +86,7 @@ impl CaptureHandle {
 
         // First, determine sole-owner status under lock.
         let (is_sole_owner, source, size) = {
-            let mut reg = registry.lock().unwrap();
+            let reg = registry.lock().unwrap();
             let entry = reg
                 .entries
                 .get(&self.inner.entry_id)

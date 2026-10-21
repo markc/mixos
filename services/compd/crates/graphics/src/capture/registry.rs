@@ -68,6 +68,13 @@ pub enum BlitErr<B, R> {
     Blit(R),
 }
 
+pub type CaptureFrame = (
+    EntryId,
+    GlesTexture,
+    Size<i32, Physical>,
+    Option<Rectangle<i32, Physical>>,
+);
+
 pub(crate) struct RegistryInner {
     pub entries: HashMap<EntryId, CaptureEntry>,
     next_entry_id: u64,
@@ -98,12 +105,7 @@ impl CaptureRegistry {
     pub fn entries_for_output(
         &self,
         output: OutputId,
-    ) -> Vec<(
-        EntryId,
-        GlesTexture,
-        Size<i32, Physical>,
-        Option<Rectangle<i32, Physical>>,
-    )> {
+    ) -> Vec<CaptureFrame> {
         let inner = self.inner.lock().unwrap();
         inner
             .entries
@@ -301,14 +303,15 @@ impl CaptureRegistry {
             // Region captures copy their sub-rect of the framebuffer; full
             // captures copy the whole framebuffer.
             let src = src_override.unwrap_or_else(|| {
-                Rectangle::<i32, Physical>::from_loc_and_size((0, 0), framebuffer_size)
+                Rectangle::<i32, Physical>::from_size(framebuffer_size)
             });
-            let dst = Rectangle::<i32, Physical>::from_loc_and_size((0, 0), entry_size);
+            let dst = Rectangle::<i32, Physical>::from_size(entry_size);
 
             drop(inner);
             let result: Result<(), smithay::backend::renderer::gles::GlesError> = (|| {
                 let mut target: GlesTarget = gles.bind(&mut entry_tex)?;
-                gles.blit(framebuffer, &mut target, src, dst, TextureFilter::Linear)?;
+                let sync = gles.blit(framebuffer, &mut target, src, dst, TextureFilter::Linear)?;
+                sync.wait().map_err(|_| smithay::backend::renderer::gles::GlesError::SyncInterrupted)?;
                 Ok(())
             })();
             inner = self.inner.lock().unwrap();
@@ -365,9 +368,9 @@ impl CaptureRegistry {
             let entry_size = inner.entries.get(&entry_id).unwrap().size;
             let src_override = inner.entries.get(&entry_id).unwrap().source.src_rect();
             let src = src_override.unwrap_or_else(|| {
-                Rectangle::<i32, Physical>::from_loc_and_size((0, 0), framebuffer_size)
+                Rectangle::<i32, Physical>::from_size(framebuffer_size)
             });
-            let dst = Rectangle::<i32, Physical>::from_loc_and_size((0, 0), entry_size);
+            let dst = Rectangle::<i32, Physical>::from_size(entry_size);
 
             drop(inner);
             if let Err(e) = blit(&mut entry_tex, src, dst) {
@@ -446,7 +449,6 @@ impl RegistryInner {
         self.entries.insert(
             id,
             CaptureEntry {
-                id,
                 source,
                 size,
                 dmabuf,
@@ -493,7 +495,6 @@ impl RegistryInner {
         self.entries.insert(
             entry_id,
             CaptureEntry {
-                id: entry_id,
                 source,
                 size: new_size,
                 dmabuf,

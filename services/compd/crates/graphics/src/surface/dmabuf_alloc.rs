@@ -10,7 +10,7 @@
 //! The returned `Dmabuf` is cheap to clone (it's just plane fds + metadata),
 //! and the `AllocatedDmabuf` wrapper holds the lifetime-critical pieces.
 
-use std::os::fd::{AsRawFd, OwnedFd};
+use std::os::fd::OwnedFd;
 use std::path::Path;
 
 use crate::surface::error::AllocError;
