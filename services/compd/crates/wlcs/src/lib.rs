@@ -1,5 +1,10 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
+// Callback structure informed by Smithay 0.7 wlcs_anvil (MIT),
+// Copyright (c) 2017 Victor Berger, Victoria Brekenfeld and contributors.
+// No source translated: fixed-point /256 follows Wayland's 24.8 ABI;
+// touch_destroy's auto-up is local device-lifetime handling (Anvil has none).
+// Reference and licence: vendor/smithay/wlcs_anvil, vendor/smithay/LICENSE.txt.
 //! wlcs runs the real compd binary as an owned child. This isolates its global
 //! configuration, logging and GPU lifetime between tests, unlike Anvil's thread.
 //! Each callback waits for the compositor-loop acknowledgement. The only test
@@ -39,7 +44,7 @@ pub static wlcs_server_integration: abi::Integration = abi::Integration {
 };
 
 #[derive(Clone)]
-struct Control(Arc<Mutex<UnixDatagram>>);
+struct Control(Arc<Mutex<UnixDatagram>>, Arc<PathBuf>);
 impl Control {
     fn request(&self, body: Value, fd: Option<i32>) -> io::Result<Value> {
         let socket = self.0.lock().unwrap();
@@ -70,16 +75,37 @@ impl Control {
         }
         let mut reply = [0u8; 8192];
         let n = socket.recv(&mut reply)?;
-        Ok(serde_json::from_slice(&reply[..n])?)
+        let reply: Value = serde_json::from_slice(&reply[..n])?;
+        Ok(reply)
     }
     fn send(&self, body: Value) {
-        if let Err(error) = self.request(body, None) {
-            eprintln!("wlcs-adapter-error: {error}");
-            std::process::abort();
+        match self.request(body, None) {
+            Ok(reply) => {
+                if reply.get("error").is_some() {
+                    // A device can target empty space or a destroyed surface.
+                    // Preserve the explicit refusal; wlcs checks client events.
+                    eprintln!("wlcs-control-refusal: {reply}; compositor log: {}", self.1.display());
+                }
+                if let Some(origin) = reply.get("surface_origin") {
+                    eprintln!("wlcs-placement-check: surface origin verified {origin}");
+                }
+                if reply["error"] == "surface_origin_mismatch" || reply["error"] == "placed_window_row_missing" {
+                    eprintln!("wlcs-adapter-error: placement self-check failed");
+                    std::process::abort();
+                }
+            }
+            Err(error) => {
+                eprintln!("wlcs-adapter-error: {error}; compositor log: {}", self.1.display());
+                std::process::abort();
+            }
         }
     }
     fn client(&self) -> io::Result<UnixStream> {
         let (client, server) = UnixStream::pair()?;
+        // libwayland's wl_display_connect_to_fd takes ownership without dup:
+        // wl_display_get_fd must return this exact fd for placement lookup.
+        // FD reuse replaces the old mapping; server-side Client identity still
+        // distinguishes surfaces from a disconnected predecessor.
         self.request(
             json!({"op":"client", "client":client.as_raw_fd()}),
             Some(server.as_raw_fd()),
@@ -110,7 +136,8 @@ impl Process {
             .unwrap_or_else(|_| "/dev/dri/renderD128".into());
         fs::write(root.join("settings.json"), serde_json::to_vec(&settings)?)?;
         let (parent, child_socket) = UnixDatagram::pair()?;
-        parent.set_read_timeout(Some(Duration::from_secs(20)))?;
+        parent.set_read_timeout(Some(Duration::from_secs(10)))?;
+        parent.set_write_timeout(Some(Duration::from_secs(10)))?;
         let fd = child_socket.as_raw_fd();
         let log = fs::File::create(root.join("compd.log"))?;
         let mut command = Command::new(
@@ -160,8 +187,8 @@ impl Process {
         drop(child_socket);
         let process = Self {
             child,
+            control: Control(Arc::new(Mutex::new(parent)), Arc::new(root.join("compd.log"))),
             root,
-            control: Control(Arc::new(Mutex::new(parent))),
         };
         let mut ready = [0u8; 32];
         let n = process.control.0.lock().unwrap().recv(&mut ready)?;
@@ -267,7 +294,7 @@ impl Server {
 }
 
 unsafe extern "C" fn create(_: c_int, _: *const *const c_char) -> *mut abi::DisplayServer {
-    Box::into_raw(Box::new(Server {
+    let mut server = Box::new(Server {
         api: abi::DisplayServer {
             version: 2,
             start,
@@ -286,8 +313,15 @@ unsafe extern "C" fn create(_: c_int, _: *const *const c_char) -> *mut abi::Disp
             count: 0,
             extensions: std::ptr::null(),
         },
-    }))
-    .cast()
+    });
+    // Capability discovery is setup: probe a short-lived owned child, then
+    // reap it. Only the explicit start callback keeps a test mainloop alive.
+    if let Err(error) = server.start() {
+        eprintln!("wlcs-adapter-startup-error: {error}");
+        std::process::abort();
+    }
+    server.process.take();
+    Box::into_raw(server).cast()
 }
 unsafe extern "C" fn destroy(server: *mut abi::DisplayServer) {
     drop(unsafe { Box::from_raw(server.cast::<Server>()) });
@@ -326,9 +360,8 @@ unsafe extern "C" fn place(
         .send(json!({"op":"place", "client":client, "surface":surface, "x":x, "y":y}));
 }
 unsafe extern "C" fn descriptor(server: *const abi::DisplayServer) -> *const abi::Descriptor {
-    // wlcs asks for capabilities before start(). Lazily boot the owned child
-    // here to query its real registry; the subsequent start() is idempotent.
-    unsafe { start(server.cast_mut()) };
+    // The live registry was probed during creation. This is a pure cached read,
+    // including before start and after stop: it must never restart the child.
     &unsafe { &*server.cast::<Server>() }.descriptor
 }
 

@@ -44,6 +44,7 @@ for $line in split($listing.stdout, "\n")
 end
 if len($tests) == 0 or len(unique($tests)) != len($tests) then raise("WLCS_SETUP", "empty or duplicate wlcs inventory") end
 $expected = if $record then {passed: [], failed: [], skipped: [], flaky: []} else load_data($expected_path) end
+if len($expected.flaky ?? []) > 0 then raise("WLCS_FLAKY", "flaky exemptions are forbidden; every outcome must be stable") end
 $known = {}
 for $key in keys($expected)
   if not contains(["passed", "failed", "skipped", "flaky"], $key) then raise("WLCS_EXPECTATIONS", "unknown outcome: " .. $key) end
@@ -59,6 +60,7 @@ end
 $observed = {passed: [], failed: [], skipped: [], flaky: []}
 $changed = []
 $index = 0
+$placement_cases = 0
 for $batch_start = 0 to len($tests) - 1 step 4
   $batch = slice($tests, $batch_start, min($batch_start + 4, len($tests)))
   $jobs = []
@@ -75,6 +77,7 @@ for $batch_start = 0 to len($tests) - 1 step 4
   $stem = $out .. "/" .. to_string($index)
   write_file($stem .. ".process.conf.mix", data_encode($r) .. "\n")
   $log_text = read_file($stem .. ".log")
+  if contains($log_text, "wlcs-placement-check: surface origin verified") then $placement_cases = $placement_cases + 1 end
   if contains($log_text, "wlcs-adapter-startup-error") or contains($log_text, "wlcs-adapter-error") then
     raise("WLCS_ADAPTER", "adapter failed for " .. $test .. "; see " .. $stem .. ".log")
   end
@@ -94,8 +97,6 @@ for $batch_start = 0 to len($tests) - 1 step 4
   elif not contains($log_text, "[ RUN      ] " .. $test) then
     raise("WLCS_REPORT", "test did not start: " .. $test .. "; see " .. $stem .. ".log")
   end
-  -- Flaky exclusions must still exist in the live inventory and run normally.
-  if $known[$test] == "flaky" then $outcome = "flaky" end
   $observed[$outcome] = push($observed[$outcome], $test)
   if not $record and $known[$test] != $outcome then
     push($changed, $test .. ": expected " .. to_string($known[$test]) .. ", observed " .. $outcome)
@@ -111,6 +112,8 @@ for $outcome in keys($observed)
 end
 write_file($out .. "/observed.conf.mix", data_encode($observed, true) .. "\n")
 print("total=" .. len($tests) .. " passed=" .. len($observed.passed) .. " failed=" .. len($observed.failed) .. " skipped=" .. len($observed.skipped) .. " flaky=" .. len($observed.flaky))
+print("placement self-check: " .. $placement_cases .. " cases verified the window row's surface origin")
+if $placement_cases == 0 then raise("WLCS_PLACEMENT", "no placement self-check observed") end
 if $record then
   write_file($expected_path, "-- SPDX-License-Identifier: MIT OR Apache-2.0\n-- wlcs v1.8.1; first observed headless outcomes.\n" .. data_encode($observed, true) .. "\n")
   print("recorded " .. $expected_path)

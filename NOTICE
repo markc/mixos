@@ -8,6 +8,11 @@ enters the tree. Per-file licensing is recorded in REUSE.toml.
 Third-party vendored code under vendor/ keeps its own licence files, and each
 directory records its upstream base and local patches (vendor/README.md).
 
+The wlcs callback structure in services/compd/crates/wlcs/src/lib.rs was informed
+by Smithay 0.7 wlcs_anvil, Victor Berger, Victoria Brekenfeld and contributors,
+MIT (vendor/smithay/LICENSE.txt). No source was translated; the C ABI adapter,
+fixed-point conversion and device-lifetime cleanup are independently implemented.
+
 mail-parser 0.11.5, vendor/mail-parser, Stalwart Labs and contributors,
 Apache-2.0 OR MIT; upstream licence files and copyright notices retained.
 The parser nesting-cap patch is recorded in vendor/mail-parser/PATCHES.md.

@@ -743,6 +743,14 @@ fn place(lp: &mut Loop, spec: &comp_model::request::PlaceSpec) -> ControlReply {
 
 /// Put a window's geometry origin at `location` (and, with `size`, configure
 /// that size: one configure, no Resizing state).
+#[cfg(feature = "wlcs")]
+pub fn wlcs_place_surface(lp: &mut Loop, id: SurfaceId, origin: Point<i32, Logical>) {
+    let Some(window) = window_of(lp, id) else { return; };
+    // wlcs may deliberately put the window partly or wholly off the output.
+    // Use the native placement executor without the operator verb's clipping.
+    place_window(lp, id, origin + window.geometry().loc, None);
+}
+
 fn place_window(
     lp: &mut Loop,
     id: SurfaceId,
