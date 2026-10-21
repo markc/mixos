@@ -1511,7 +1511,7 @@ mod tests {
             );
             let mut offset = 0.0;
             for (frame, time) in [0.0, 0.025, 0.05].into_iter().enumerate() {
-                let _ = ctx.run(
+                let _ = ctx.run_ui(
                     egui::RawInput {
                         time: Some(time),
                         screen_rect: Some(Rect::from_min_size(
@@ -1520,11 +1520,11 @@ mod tests {
                         )),
                         ..Default::default()
                     },
-                    |ctx| {
-                        egui::CentralPanel::default().show(ctx, |ui| {
+                    |ui| {
+                        egui::CentralPanel::default().show(ui, |ui| {
                             ui.scope(|ui| {
                                 if menu {
-                                    configure_scroll(ui, &Chrome::of(ctx));
+                                    configure_scroll(ui, &Chrome::of(&ctx));
                                 }
                                 let out = ScrollArea::vertical().max_height(100.0).show(ui, |ui| {
                                     let (_, rect) = ui.allocate_space(egui::vec2(200.0, 400.0));
