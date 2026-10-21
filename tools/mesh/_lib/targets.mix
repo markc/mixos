@@ -36,7 +36,7 @@ fn parse_targets($document)
       for $key in ["machine", "profile", "session", "account"]
         if has_key($item, $key) then fail("system target cannot carry " .. $key) end
       end
-      push($normal, {project:$project, node:$node, host:$host, kind:$kind, etc:"/etc/" .. $project, var:"/var/lib/" .. $project,
+      push($normal, {project:$project, node:$node, host:$host, kind:$kind, profile:nil, etc:"/etc/" .. $project, var:"/var/lib/" .. $project,
         unit:"noded.service", account:"root", machine:nil, session:nil, run:nil})
     else
       $machine = plain_label($item.machine, "machine")
@@ -46,21 +46,41 @@ fn parse_targets($document)
       if type($session) != "number" or $session < 1 or $session > 6 or floor($session) != $session then fail("session must be an integer from 1 to 6") end
       $profile = $item.profile
       if type($profile) != "string" or not re_match($profile, "^/var/lib/" .. $project .. "/[a-z][a-z0-9-]{0,31}$") then fail("profile must be one direct project state child") end
-      push($normal, {project:$project, node:$node, host:$host, kind:$kind, etc:$profile .. "/etc", var:$profile .. "/var",
+      push($normal, {project:$project, node:$node, host:$host, kind:$kind, profile:$profile, etc:$profile .. "/etc", var:$profile .. "/var",
         unit:"noded@" .. to_string($session) .. ".service", account:$account, machine:$machine, session:$session,
         run:"/run/" .. $project .. "/session/" .. to_string($session)})
     end
   end
   $locations = []
+  $profiles = []
   for $target in $normal
     $location = $target.host .. "/" .. ($target.machine ?? "host") .. "/" .. $target.unit
     if contains($locations, $location) then fail("multiple node identities share one broker target") end
     push($locations, $location)
+    if $target.kind == "desk" then
+      $profile_key = $target.host .. "/" .. $target.machine .. $target.profile
+      if contains($profiles, $profile_key) then fail("multiple node identities share one profile store") end
+      push($profiles, $profile_key)
+    end
   end
   return {schema_version:1, project:$project, targets:$normal}
 end
 
+fn checked_target($target)
+  $raw = {node:$target.node,host:$target.host,kind:$target.kind}
+  if $target.kind == "desk" then
+    $raw.machine = $target.machine
+    $raw.profile = $target.profile
+    $raw.session = $target.session
+    $raw.account = $target.account
+  end
+  $expected = parse_targets({schema_version:1,project:$target.project,targets:[$raw]}).targets[0]
+  if not deep_eq($target, $expected) then fail("target must be the unchanged parsed description") end
+  return $expected
+end
+
 fn plan($target)
+  $target = checked_target($target)
   return {node:$target.node, host:$target.host, kind:$target.kind, machine:$target.machine, account:$target.account,
     unit:$target.unit, genesis:$target.etc .. "/noded/genesis.pub", seed:$target.etc .. "/noded/d2.seed",
     inventory:$target.var .. "/noded/inventory.signed", baseline:$target.var .. "/noded/inventory.baseline",
@@ -81,6 +101,7 @@ end
 -- Describe a native stdin job without executing it. Secret-bearing bindings
 -- stay in stdin; the caller must not substitute stdin into a -c argument.
 fn stdin_job($target, $program, $bindings, $role, $mix_bin)
+  $target = checked_target($target)
   if type($program) != "string" or type($bindings) != "map" then fail("program and bindings have invalid types") end
   if $role != "admin" and $role != "citizen" then fail("role must be admin or citizen") end
   if type($mix_bin) != "string" or not starts_with($mix_bin, "/") or not ends_with($mix_bin, "/mix") then fail("native Mix path must be absolute") end

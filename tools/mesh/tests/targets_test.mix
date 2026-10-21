@@ -49,6 +49,20 @@ $other = $desk
 $other.node = "desk-b"
 $bad.targets = push($document.targets, $other)
 check(refuses($bad), "duplicate broker endpoint refused")
+$bad = $document
+$other = $desk
+$other.node = "desk-b"
+$other.session = 4
+$bad.targets = push($document.targets, $other)
+check(refuses($bad), "duplicate profile store refused across different sessions")
+$bad = $document
+$bad.targets[1].host = "host-a\n"
+check(refuses($bad), "trailing newline refused")
+for $session in [0,7]
+  $bad = $document
+  $bad.targets[1].session = $session
+  check(refuses($bad), "session bounds refused")
+end
 $refused = false
 try
   $targets.require_system_mutation($document)
