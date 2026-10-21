@@ -182,7 +182,7 @@ fn compose(
     // either texture. An unchanged scene submits nothing.
     let damage = ctx
         .tracker
-        .damage_output(1, &scene.Element)?
+        .damage_output(1, &scene.elements)?
         .0
         .filter(|damage| !damage.is_empty())
         .cloned();
@@ -210,7 +210,7 @@ fn compose(
     // occurs unless a protocol or Bus capture explicitly asks for the cursor.
     {
         let elements: Vec<_> = scene
-            .Element
+            .elements
             .iter()
             .filter(|element| !element.is_cursor())
             .collect();
@@ -253,7 +253,7 @@ fn compose(
                     &mut ctx.renderer,
                     &mut target,
                     0,
-                    &scene.Element,
+                    &scene.elements,
                     [0.1, 0.1, 0.1, 1.0],
                 )?
                 .sync

@@ -29,7 +29,7 @@ impl<K: Eq + Hash, V> IdentityMap<K, V> {
         hasher.finish()
     }
 
-    fn get(&self, key: &K) -> Option<&V> {
+    pub fn get(&self, key: &K) -> Option<&V> {
         self.buckets
             .get(&Self::hash(key))?
             .iter()
@@ -37,7 +37,7 @@ impl<K: Eq + Hash, V> IdentityMap<K, V> {
             .map(|(_, value)| value)
     }
 
-    fn insert(&mut self, key: K, value: V) {
+    pub fn insert(&mut self, key: K, value: V) {
         let bucket = self.buckets.entry(Self::hash(&key)).or_default();
         if let Some((_, stored)) = bucket.iter_mut().find(|(stored, _)| *stored == key) {
             *stored = value;
@@ -46,7 +46,15 @@ impl<K: Eq + Hash, V> IdentityMap<K, V> {
         }
     }
 
-    fn values(&self) -> impl Iterator<Item = &V> {
+    pub fn contains_key(&self, key: &K) -> bool {
+        self.get(key).is_some()
+    }
+
+    pub fn into_values(self) -> impl Iterator<Item = V> {
+        self.buckets.into_values().flatten().map(|(_, value)| value)
+    }
+
+    pub fn values(&self) -> impl Iterator<Item = &V> {
         self.buckets.values().flatten().map(|(_, value)| value)
     }
 }
@@ -173,5 +181,10 @@ mod tests {
         assert_eq!(map.get(&Colliding(2)), Some(&2.5));
         assert_eq!(map.get(&Colliding(3)), None);
         assert_eq!(map.values().count(), 2);
+        assert!(map.contains_key(&Colliding(2)));
+        assert!(!map.contains_key(&Colliding(3)));
+        let mut scales: Vec<f64> = map.into_values().collect();
+        scales.sort_by(f64::total_cmp);
+        assert_eq!(scales, [1.75, 2.5]);
     }
 }

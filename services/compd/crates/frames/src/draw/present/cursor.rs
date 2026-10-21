@@ -53,7 +53,7 @@ pub fn send_frames(state: &Loop, output: &Output) {
         return;
     }
     let frame_time = state.inner.start_time.elapsed();
-    let mut send = |surface: &WlSurface| {
+    let send = |surface: &WlSurface| {
         send_frames_surface_tree(surface, output, frame_time, Some(Duration::ZERO), |_, _| {
             Some(output.clone())
         });

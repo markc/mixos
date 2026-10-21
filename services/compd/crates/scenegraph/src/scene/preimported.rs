@@ -44,10 +44,10 @@ impl<R: Renderer> SmithayElement for PreImported<R> {
         self.commit
     }
     fn src(&self) -> Rectangle<f64, Buffer> {
-        Rectangle::from_loc_and_size((0.0, 0.0), (self.size.w as f64, self.size.h as f64))
+        Rectangle::from_size((self.size.w as f64, self.size.h as f64).into())
     }
     fn geometry(&self, _scale: Scale<f64>) -> Rectangle<i32, Physical> {
-        Rectangle::from_loc_and_size(self.location, self.dest_size())
+        Rectangle::new(self.location, self.dest_size())
     }
     fn location(&self, _scale: Scale<f64>) -> Point<i32, Physical> {
         self.location

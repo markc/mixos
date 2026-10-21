@@ -265,7 +265,7 @@ fn capture_offscreen(ctx_rc: &Rc<RefCell<NativeRenderContext>>, state: &mut Loop
         let scene = frames::scene::scene(state, renderer, size, prepared);
         screencopy::offscreen::capture(
             renderer,
-            &scene.Element,
+            &scene.elements,
             |element| element.is_cursor(),
             output,
             size,
@@ -760,10 +760,10 @@ pub fn execute(
 
                 diagnostics::ui_elements(
                     &ctx_ref.outputs[output_idx].output.name(),
-                    &scene.Element,
+                    &scene.elements,
                 );
                 let wrapped: Vec<GlesElementWrapper<_>> =
-                    scene.Element.iter().map(GlesElementWrapper).collect();
+                    scene.elements.iter().map(GlesElementWrapper).collect();
 
                 // ---- render_frame: hold RefMut for the lifetime of scene_result. ----
                 let mut r = gles_renderer.borrow_mut();
@@ -985,11 +985,11 @@ pub fn execute(
                 if screencopy::active() || screencopy::file::pending_picture(output, false) {
                     let output = ctx_ref.outputs[output_idx].output.clone();
                     let scale = output_scale;
-                    let damage = screencopy::frame_damage(&output, size, scale, &scene.Element);
+                    let damage = screencopy::frame_damage(&output, size, scale, &scene.elements);
                     let mut due = screencopy::sources_due(&output, damage.as_deref());
                     due.cursorless |= screencopy::file::pending_picture(&output, false);
                     let cursor_ids: Vec<Id> = scene
-                        .Element
+                        .elements
                         .iter()
                         .filter(|element| element.is_cursor())
                         .map(|element| element.id().clone())
@@ -1008,7 +1008,7 @@ pub fn execute(
                             if !with_pointer && !cursor_separate {
                                 return screencopy::render_offscreen(
                                     r.as_mut(),
-                                    &scene.Element,
+                                    &scene.elements,
                                     |element| !element.is_cursor(),
                                     size,
                                     scale,

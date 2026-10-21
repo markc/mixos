@@ -116,7 +116,7 @@ pub fn capture_offscreen(state: &mut Loop, context: &mut WinitRenderContext) {
     let scene = frames::scene::scene(state, renderer, size, prepared);
     screencopy::offscreen::capture(
         renderer,
-        &scene.Element,
+        &scene.elements,
         |element| element.is_cursor(),
         &context.output,
         size,
@@ -438,7 +438,7 @@ fn compose(
                 gles_renderer,
                 &mut gles_framebuffer,
                 age,
-                &scene.Element,
+                &scene.elements,
                 [0.1, 0.1, 0.1, 1.0],
             ) {
                 Ok(result) => {
@@ -508,7 +508,7 @@ fn compose(
                 offscreen = true;
                 match screencopy::render_offscreen(
                     gles_renderer,
-                    &scene.Element,
+                    &scene.elements,
                     |element| !element.is_cursor(),
                     present_size,
                     context.output.current_scale().fractional_scale(),

@@ -224,7 +224,7 @@ pub fn draw_windows_into<R>(
 {
     let scale_s = Scale::from(scale);
     let built = build_window_elements(renderer, windows, scale_s);
-    let full = Rectangle::from_loc_and_size((0, 0), size);
+    let full = Rectangle::from_size(size);
     let mut fb = match renderer.bind(dmabuf) {
         Ok(fb) => fb,
         Err(e) => {

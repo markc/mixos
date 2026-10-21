@@ -15,7 +15,7 @@ use smithay::backend::renderer::element::solid::SolidColorRenderElement;
 use smithay::backend::renderer::element::surface::{
     WaylandSurfaceRenderElement, render_elements_from_surface_tree,
 };
-use smithay::backend::renderer::element::{Element, Kind};
+use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::{ImportAll, ImportDma, ImportMem, Renderer, Texture};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Physical, Point, Scale};

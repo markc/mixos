@@ -6,13 +6,11 @@ use protocols::window::find;
 use protocols::window::ident;
 use protocols::window::shell;
 use smithay::desktop::Window;
-use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
-use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::utils::{Logical, Point, Rectangle, Size};
+use smithay::utils::{Logical, Point, Size};
 use smithay::wayland::compositor::with_states;
 use smithay::wayland::seat::WaylandFocus;
 use smithay::wayland::shell::xdg::{
-    SurfaceCachedState, ToplevelCachedState, XdgToplevelSurfaceData,
+    SurfaceCachedState,
 };
 use uuid::Uuid;
 use world::camera::transform::translate::slot;

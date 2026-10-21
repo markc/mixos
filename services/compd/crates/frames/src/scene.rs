@@ -7,7 +7,6 @@ pub mod gpu;
 pub mod hooks;
 pub mod layershell;
 
-use crate::scene::hooks;
 use crate::scene::layershell::layershell;
 use dispatcher::frame::SceneDispatch;
 use dispatcher::state::RedrawReason;
@@ -15,15 +14,13 @@ use scenegraph::node::{DrawNode, Plan, SurfaceNode};
 use scenegraph::scene::element::SceneElement;
 use slots::world::frame::base as layer;
 use smithay::backend::renderer::element::solid::SolidColorRenderElement;
-use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
-use smithay::backend::renderer::element::{AsRenderElements, Id, Kind, RenderElement};
+use smithay::backend::renderer::element::{Id, Kind};
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::utils::CommitCounter;
 use smithay::backend::renderer::{ImportAll, ImportDma, ImportMem, Renderer, Texture};
-use smithay::desktop::space::SpaceRenderElements;
-use smithay::desktop::{Window, layer_map_for_output};
+use smithay::desktop::Window;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::utils::{Logical, Physical, Point, Scale, Size};
+use smithay::utils::{Logical, Physical, Point, Size};
 use smithay::wayland::seat::WaylandFocus;
 use smithay::wayland::shell::wlr_layer::Layer as WlrLayer;
 use world::state::CoordinateTrait;
@@ -31,8 +28,8 @@ use world::state::Loop;
 use world::window::interface::record::window::LoopWindow;
 
 pub struct Scene<R: Renderer> {
-    pub Element: Vec<SceneElement<R>>,
-    /// Lockstep with `Element`: per-element metadata (space, …). Consumed by the
+    pub elements: Vec<SceneElement<R>>,
+    /// Lockstep with `elements`: per-element metadata (space, …). Consumed by the
     /// native Vulkan path (wrapped into `VkOutput`) to restrict AA to world
     /// content; ignored by the GLES path.
     pub meta: Vec<dispatcher::frame::ElementMeta>,
@@ -89,10 +86,10 @@ fn update_fractional(state: &mut Loop) {
         .current_output()
         .current_scale()
         .fractional_scale();
-    let mut best: std::collections::HashMap<
+    let mut best: dispatcher::wayland::fractional::dispatch::hook::IdentityMap<
         smithay::reexports::wayland_server::backend::ObjectId,
         (f64, WlSurface),
-    > = std::collections::HashMap::new();
+    > = Default::default();
     let mut max_scale: Option<f64> = None;
     for (key, vps) in &state.inner.output_views().map {
         let output_scale = scale_of.get(key).copied().unwrap_or(current_scale);
@@ -104,14 +101,9 @@ fn update_fractional(state: &mut Loop) {
             let want = protocols::fractional::debounce::published(&cfg, zoom, output_scale);
             max_scale = Some(max_scale.map_or(want, |m| m.max(want)));
             for u in uuids {
-                if let Some(surf) = uuid_surface.get(u) {
-                    best.entry(surf.id())
-                        .and_modify(|e| {
-                            if want > e.0 {
-                                *e = (want, surf.clone());
-                            }
-                        })
-                        .or_insert_with(|| (want, surf.clone()));
+                if let Some(surf) = uuid_surface.get(u)
+                    && best.get(&surf.id()).is_none_or(|entry| want > entry.0) {
+                    best.insert(surf.id(), (want, surf.clone()));
                 }
             }
         }
@@ -143,7 +135,9 @@ fn update_fractional(state: &mut Loop) {
                 .filter_map(|w| w.wl_surface().map(|s| s.into_owned()))
                 .collect();
             for surf in unculled {
-                best.entry(surf.id()).or_insert((max_scale, surf));
+                if !best.contains_key(&surf.id()) {
+                    best.insert(surf.id(), (max_scale, surf));
+                }
             }
         }
     }
@@ -326,10 +320,10 @@ fn border_edges(
         FLOATING_BORDER,
     );
     [
-        smithay::utils::Rectangle::from_loc_and_size((x, y), (w, t)),
-        smithay::utils::Rectangle::from_loc_and_size((x, y + h - t), (w, t)),
-        smithay::utils::Rectangle::from_loc_and_size((x, y), (t, h)),
-        smithay::utils::Rectangle::from_loc_and_size((x + w - t, y), (t, h)),
+        smithay::utils::Rectangle::new((x, y).into(), (w, t).into()),
+        smithay::utils::Rectangle::new((x, y + h - t).into(), (w, t).into()),
+        smithay::utils::Rectangle::new((x, y).into(), (t, h).into()),
+        smithay::utils::Rectangle::new((x + w - t, y).into(), (t, h).into()),
     ]
 }
 
@@ -421,7 +415,7 @@ fn ui_panes(state: &Loop, size: Size<i32, Physical>) -> Vec<ui::PaneView> {
     let vps = state.inner.viewports();
     let computed = world::viewport::layout::compute(
         vps,
-        smithay::utils::Rectangle::from_loc_and_size(Point::from((0, 0)), size),
+        smithay::utils::Rectangle::from_size(size),
     );
     computed
         .regions
@@ -568,8 +562,7 @@ where
     // This output's retrace count + refresh, for the off-thread background's
     // per-pane pacing. Bumped once per output per scene build, which on the
     // native path is once per vblank.
-    let frame_serial = state.inner.next_frame_serial();
-    let refresh = state.inner.current_refresh();
+    let _frame_serial = state.inner.next_frame_serial();
     // Publish the FASTEST panel for the off-thread UI worker, which has no output
     // of its own to ask. Deliberately not `refresh` (this output's): `scene` runs
     // once per output, so publishing the drawing output's value made the global
@@ -585,13 +578,6 @@ where
     // monitor. `render_output == None` = a non-loop pass (winit / single) → draw all.
     let surfaces_screen = prepared.surfaces_screen;
     let render_key = state.inner.render_output.clone();
-    // Hoisted: the background pane key is derived from it once per output pass,
-    // not once per pane per frame.
-    // An `Arc<str>`, not a `String`: every region of this pass binds a pane key
-    // from it, so they share one allocation instead of copying the key each. This
-    // line already cloned a `String`, so the cost is unchanged.
-    let pane_output: std::sync::Arc<str> =
-        std::sync::Arc::from(render_key.clone().unwrap_or_default().as_str());
     let draw_screen = match &render_key {
         None => true,
         Some(key) => {
@@ -639,7 +625,7 @@ where
         plan.push(layer::UI_SCREEN, DrawNode::Solid(lock.blank));
         let (elements, meta) = plan.lower(renderer);
         return Scene {
-            Element: elements,
+            elements,
             meta,
             visible_window: Vec::new(),
         };
@@ -973,7 +959,7 @@ where
 
     // Return the resulting scene
     Scene {
-        Element: elements,
+        elements,
         meta,
         visible_window: canvas_window,
     }

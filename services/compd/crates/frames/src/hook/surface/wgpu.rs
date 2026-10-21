@@ -5,7 +5,7 @@ use smithay::utils::{Physical, Size};
 use world::state::Loop;
 use world::surface::protocol::SurfaceMessageType;
 
-pub fn hook(state: &mut Loop, x: &mut GlesRenderer, size: Size<i32, Physical>) {
+pub fn hook(state: &mut Loop, x: &mut GlesRenderer, _size: Size<i32, Physical>) {
     // Nothing is constructed here. The shared UI GPU context and every world's
     // `UiRegistry` are created by `scene.frame`'s `gpu::begin`, which runs
     // before this hook (on the first frame, over the renderer's own EGL
@@ -15,11 +15,11 @@ pub fn hook(state: &mut Loop, x: &mut GlesRenderer, size: Size<i32, Physical>) {
     load_incoming_buffer(state, x, size);
 }
 
-fn load_incoming_buffer(state: &mut Loop, x: &mut GlesRenderer, size: Size<i32, Physical>) {
+fn load_incoming_buffer(state: &mut Loop, x: &mut GlesRenderer, _size: Size<i32, Physical>) {
     {
         // Drain the channel into the buffer (single slot borrow).
         let surface = state.inner.surface_mut();
-        'drain: while true {
+        'drain: loop {
             if let Ok(ok) = surface.surface_message_buffer_channel.1.try_recv() {
                 info!("Buffer item receive");
                 surface.surface_message_buffer.push(ok);
