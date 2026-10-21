@@ -6700,7 +6700,7 @@ pub(crate) mod tests {
         state.set_settings(legacy);
         assert_eq!(state.settings.composer.font.family, None);
         let entry = state.settings.accounts[0].clone();
-        assert!(crate::writer::plan(&state.settings, &Change::Upsert(entry)).is_ok());
+        assert!(crate::writer::apply(&state.settings, &Change::Upsert(entry)).is_ok());
     }
 
     #[test]
