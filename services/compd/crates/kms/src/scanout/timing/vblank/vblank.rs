@@ -125,23 +125,40 @@ mod deadline_tests {
     fn deadline_accepts_small_future_scanout_timestamps_without_changing_tearing_phase() {
         let observed = Instant::now();
         let now = Duration::from_secs(10);
-        for offset in [Duration::from_micros(300), Duration::from_micros(1500), MAX_FUTURE_OFFSET] {
+        for offset in [
+            Duration::from_micros(300),
+            Duration::from_micros(1500),
+            MAX_FUTURE_OFFSET,
+        ] {
             assert_eq!(
                 trusted_anchor(observed, Some(now + offset), Some(now)),
                 Some(observed + offset)
             );
             assert_eq!(anchor(observed, Some(now + offset), Some(now)), observed);
         }
-        for offset in [MAX_FUTURE_OFFSET + Duration::from_nanos(1), Duration::from_millis(50)] {
-            assert_eq!(trusted_anchor(observed, Some(now + offset), Some(now)), None);
+        for offset in [
+            MAX_FUTURE_OFFSET + Duration::from_nanos(1),
+            Duration::from_millis(50),
+        ] {
+            assert_eq!(
+                trusted_anchor(observed, Some(now + offset), Some(now)),
+                None
+            );
         }
-        assert_eq!(trusted_anchor(observed, Some(now), Some(now)), Some(observed));
+        assert_eq!(
+            trusted_anchor(observed, Some(now), Some(now)),
+            Some(observed)
+        );
         assert_eq!(
             trusted_anchor(observed, Some(now), Some(now + MAX_DISPATCH_DELAY)),
             Some(observed - MAX_DISPATCH_DELAY)
         );
         assert_eq!(
-            trusted_anchor(observed, Some(now), Some(now + MAX_DISPATCH_DELAY + Duration::from_nanos(1))),
+            trusted_anchor(
+                observed,
+                Some(now),
+                Some(now + MAX_DISPATCH_DELAY + Duration::from_nanos(1))
+            ),
             None
         );
     }

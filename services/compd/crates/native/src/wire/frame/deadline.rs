@@ -22,7 +22,12 @@ impl<D: 'static> GpuCompletion<D> {
         fd: std::os::fd::OwnedFd,
         start: Instant,
     ) -> Option<Self> {
-        Self::with_query(handle, fd, start, kms::scanout::fence::completion::signalled_at)
+        Self::with_query(
+            handle,
+            fd,
+            start,
+            kms::scanout::fence::completion::signalled_at,
+        )
     }
 
     fn with_query(
@@ -42,9 +47,8 @@ impl<D: 'static> GpuCompletion<D> {
                     let signal = query(fd.as_fd());
                     let observed = Instant::now();
                     let now = kms::scanout::timing::vblank::vblank::monotonic_now();
-                    completed.set(signal.and_then(|signal| {
-                        elapsed_at(start, observed, now?, signal)
-                    }));
+                    completed
+                        .set(signal.and_then(|signal| elapsed_at(start, observed, now?, signal)));
                     Ok(PostAction::Disable)
                 },
             )
@@ -68,7 +72,9 @@ fn elapsed_at(
     signal: std::time::Duration,
 ) -> Option<std::time::Duration> {
     // A future signal or one before this frame's origin is not a cost sample.
-    observed.checked_duration_since(start)?.checked_sub(now.checked_sub(signal)?)
+    observed
+        .checked_duration_since(start)?
+        .checked_sub(now.checked_sub(signal)?)
 }
 
 impl<D: 'static> Drop for GpuCompletion<D> {
@@ -260,15 +266,19 @@ mod tests {
         // real calloop source with a controlled timestamp query, without a GPU.
         let queries = Rc::new(Cell::new(0));
         let calls = queries.clone();
-        let sample = GpuCompletion::with_query(&event_loop.handle(), reader.into(), start, move |_| {
-            calls.set(calls.get() + 1);
-            Some(signal)
-        }).unwrap();
+        let sample =
+            GpuCompletion::with_query(&event_loop.handle(), reader.into(), start, move |_| {
+                calls.set(calls.get() + 1);
+                Some(signal)
+            })
+            .unwrap();
         event_loop.dispatch(Some(Duration::ZERO), &mut ()).unwrap();
         assert_eq!(sample.elapsed(), None);
         writer.write_all(&[1]).unwrap();
         event_loop.dispatch(Some(Duration::ZERO), &mut ()).unwrap();
-        assert!(sample.elapsed().unwrap().abs_diff(Duration::from_millis(3)) < Duration::from_millis(1));
+        assert!(
+            sample.elapsed().unwrap().abs_diff(Duration::from_millis(3)) < Duration::from_millis(1)
+        );
         let elapsed = sample.elapsed();
         event_loop.dispatch(Some(Duration::ZERO), &mut ()).unwrap();
         assert_eq!(sample.elapsed(), elapsed, "readiness disables the source");
@@ -289,10 +299,24 @@ mod tests {
         let clock_start = Duration::from_secs(10);
         let cost = Duration::from_millis(3);
         for dispatch in [Duration::from_millis(4), Duration::from_millis(50)] {
-            assert_eq!(elapsed_at(start, start + dispatch, clock_start + dispatch, clock_start + cost), Some(cost));
+            assert_eq!(
+                elapsed_at(
+                    start,
+                    start + dispatch,
+                    clock_start + dispatch,
+                    clock_start + cost
+                ),
+                Some(cost)
+            );
         }
-        assert_eq!(elapsed_at(start, start + cost, clock_start + cost, clock_start - cost), None);
-        assert_eq!(elapsed_at(start, start + cost, clock_start, clock_start + cost), None);
+        assert_eq!(
+            elapsed_at(start, start + cost, clock_start + cost, clock_start - cost),
+            None
+        );
+        assert_eq!(
+            elapsed_at(start, start + cost, clock_start, clock_start + cost),
+            None
+        );
     }
 
     #[test]
@@ -301,7 +325,12 @@ mod tests {
         use std::os::unix::net::UnixStream;
         let mut event_loop: EventLoop<'static, ()> = EventLoop::try_new().unwrap();
         let (reader, mut writer) = UnixStream::pair().unwrap();
-        let sample = GpuCompletion::new(&event_loop.handle(), reader.into(), Instant::now() - Duration::from_millis(50)).unwrap();
+        let sample = GpuCompletion::new(
+            &event_loop.handle(),
+            reader.into(),
+            Instant::now() - Duration::from_millis(50),
+        )
+        .unwrap();
         writer.write_all(&[1]).unwrap();
         event_loop.dispatch(Some(Duration::ZERO), &mut ()).unwrap();
         assert_eq!(sample.elapsed(), None);

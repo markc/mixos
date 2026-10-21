@@ -34,7 +34,12 @@ const _: () = assert!(std::mem::size_of::<FenceInfo>() == 80);
 /// One bounded query, no wait or polling. More than 16 constituent fences,
 /// unsupported ioctls, active/error fences and absent timestamps omit a sample.
 pub fn signalled_at(fd: BorrowedFd<'_>) -> Option<Duration> {
-    let mut fences = [FenceInfo { names: [0; 64], status: 0, flags: 0, timestamp_ns: 0 }; 16];
+    let mut fences = [FenceInfo {
+        names: [0; 64],
+        status: 0,
+        flags: 0,
+        timestamp_ns: 0,
+    }; 16];
     let mut info = FileInfo {
         num_fences: fences.len() as u32,
         fences: fences.as_mut_ptr() as u64,
@@ -53,7 +58,10 @@ fn latest(fences: &[FenceInfo]) -> Option<Duration> {
     if fences.iter().any(|f| f.status != 1 || f.timestamp_ns == 0) {
         return None;
     }
-    fences.iter().map(|f| Duration::from_nanos(f.timestamp_ns)).max()
+    fences
+        .iter()
+        .map(|f| Duration::from_nanos(f.timestamp_ns))
+        .max()
 }
 
 #[cfg(test)]
@@ -64,11 +72,26 @@ mod tests {
 
     #[test]
     fn merged_fence_requires_all_successful_timestamps_and_uses_latest() {
-        let good = FenceInfo { names: [0; 64], status: 1, flags: 0, timestamp_ns: 3_000_000 };
-        let later = FenceInfo { timestamp_ns: 4_000_000, ..good };
+        let good = FenceInfo {
+            names: [0; 64],
+            status: 1,
+            flags: 0,
+            timestamp_ns: 3_000_000,
+        };
+        let later = FenceInfo {
+            timestamp_ns: 4_000_000,
+            ..good
+        };
         assert_eq!(latest(&[later, good]), Some(Duration::from_millis(4)));
         assert_eq!(latest(&[]), None);
-        for bad in [FenceInfo { status: 0, ..good }, FenceInfo { status: -5, ..good }, FenceInfo { timestamp_ns: 0, ..good }] {
+        for bad in [
+            FenceInfo { status: 0, ..good },
+            FenceInfo { status: -5, ..good },
+            FenceInfo {
+                timestamp_ns: 0,
+                ..good
+            },
+        ] {
             assert_eq!(latest(&[good, bad]), None);
         }
     }

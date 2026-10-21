@@ -442,11 +442,7 @@ fn process_vblank_inner(
     // different epoch entirely.
     let observed = std::time::Instant::now();
     let kernel_now = kms::scanout::timing::vblank::vblank::monotonic_now();
-    let anchored = kms::scanout::timing::vblank::vblank::trusted_anchor(
-        observed,
-        time,
-        kernel_now,
-    );
+    let anchored = kms::scanout::timing::vblank::vblank::trusted_anchor(observed, time, kernel_now);
     ctx.outputs[idx].last_vblank = Some(kms::scanout::timing::vblank::vblank::anchor(
         observed, time, kernel_now,
     ));

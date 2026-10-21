@@ -256,14 +256,19 @@ mod tests {
         let now = Duration::from_secs(10);
         for offset in [Duration::from_micros(300), Duration::from_micros(1500)] {
             let at = super::super::vblank::vblank::trusted_anchor(
-                observed, Some(now + offset), Some(now),
+                observed,
+                Some(now + offset),
+                Some(now),
             );
             let mut latch = ready(observed);
             latch.flipped(at, PERIOD, true);
             let plan = latch.plan(observed, MARGIN);
             assert_eq!(plan.target.unwrap().vblank, observed + offset + PERIOD);
             assert_eq!(plan.budget, Duration::from_micros(3500));
-            assert_eq!(plan.deadline, Some(observed + offset + PERIOD - plan.budget));
+            assert_eq!(
+                plan.deadline,
+                Some(observed + offset + PERIOD - plan.budget)
+            );
         }
     }
 
