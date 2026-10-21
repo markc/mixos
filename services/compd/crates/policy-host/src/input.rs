@@ -936,9 +936,7 @@ fn agent_motion(
     pointer.frame(&mut lp.state);
 }
 
-/// Native agent touch injection for the optional wlcs adapter. It shares the
-/// agent's output bounds, visible-surface hit test, clock and activity lane.
-/// Touch focus continuity and slot ownership are maintained by Smithay.
+/// Convert wlcs screen coordinates with the compositor's native camera transform.
 #[cfg(feature = "wlcs")]
 pub fn wlcs_world_point(lp: &Loop, x: f64, y: f64) -> Point<f64, Logical> {
     // wlcs uses top-left screen pixels; the native Space is centre-anchored.
@@ -951,6 +949,9 @@ pub fn wlcs_world_point(lp: &Loop, x: f64, y: f64) -> Point<f64, Logical> {
 }
 
 #[cfg(feature = "wlcs")]
+/// Native agent touch injection for the optional wlcs adapter. It shares the
+/// agent's output bounds, visible-surface hit test, clock and activity lane.
+/// Touch focus continuity is maintained by Smithay; the adapter checks slots.
 pub fn agent_touch(
     lp: &mut Loop,
     slot: u32,

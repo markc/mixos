@@ -150,20 +150,48 @@ The baseline pins **v1.8.1**, commit
 `2b385328366de5db19521b9b3eef81861430d984`.
 
 The private `wlcs` crate produces `libcompd_wlcs.so`. It implements the C ABI
-independently, following the structure of
+independently, with the callback structure informed by
 [Smithay 0.7's wlcs_anvil](https://github.com/Smithay/smithay/tree/v0.7.0/wlcs_anvil).
+No source was translated. The `/256` conversion implements Wayland's signed
+24.8 fixed-point ABI; `touch_destroy` auto-up is local lifetime handling
+(wlcs_anvil's touch destroy is empty). The file header and `NOTICE` credit the
+reference; its MIT licence remains in `vendor/smithay/LICENSE.txt`.
 It owns a fresh `compd --headless` child for each server, isolating process-global
 configuration, logging and GPU resources across tests. An inherited socket carries
-test requests and client descriptors directly to compd's event loop; it has no
-listening endpoint. Pointer events call the agent seat's existing policy-host
-injection path; touch uses that host's agent hit test, output bounds and native
-Smithay touch handles. Window placement calls the same `WindowOp::Place` handler
-as `comp.window.place`. Callbacks wait for completion on the compositor loop.
+test requests and client descriptors directly to compd's event loop. That control
+socket has no listening endpoint; the child also listens on `--socket wayland-wlcs`
+inside its private runtime directory. Pointer events call the agent seat's existing
+policy-host injection path; touch uses that host's agent hit test on down and
+Smithay's held focus for motion and up. Refused delivery returns an explicit error
+on the control socket and is printed with the compositor log path. Window placement
+uses the native policy-host placement executor with a test-only entry point:
+unlike the operator verb, it permits deliberately off-output positions. All new
+entry points are behind `wlcs`. Callbacks wait for completion on the compositor loop.
 The extension descriptor is read from a live Wayland registry, including the
-advertised versions. wlcs requests this before `start`, so that query starts the
-child lazily; the later `start` is idempotent. Stop kills and reaps the owned child,
+advertised versions. Creation probes a short-lived child and reaps it to cache
+the descriptor before wlcs asks for it. The descriptor callback only reads the
+cache, including after stop; only explicit start retains a test compositor.
+Stop kills and reaps the owned child,
 and parent death also kills it after a wlcs abort. The adapter is compiled only
 with compd's `wlcs` feature and installed only on the headless backend.
+
+Placement uses the requested **wl_surface origin** at screen `(x, y)`. The shim
+converts through the native camera transform (world `(0, 0)` is screen centre),
+adds the committed xdg geometry offset to obtain the Space element location,
+then reads the public window row and checks that its surface origin projects
+back to `(x, y)`. Successful checks appear in the gate output. Absolute pointer
+and touch coordinates use the same conversion, avoiding a half-screen shift.
+
+There is a contract discrepancy in the pinned wlcs tests. `display_server.h`
+describes the window's left/top; both `pointer_respects_window_geom_offset` and
+`touch_respects_window_geom_offset` in `tests/xdg_toplevel_stable.cpp:131,162`
+(and their v6 equivalents at `103,134`) expect local input coordinates
+`input - placement + geometry_offset`, which positions the **window geometry**
+origin. They use offset `(35, 12)` and input delta `(20, 30)`, expecting
+`(55, 42)`. Under the explicitly selected surface-origin convention, the correct
+local point is `(20, 30)`. Those assertions cannot establish a compd coordinate
+defect under this convention; they are a wlcs/shim contract mismatch. No test
+source or normal compositor behaviour is changed to conceal the discrepancy.
 
 Build on a GPU worker, keeping wlcs outside the MixOS checkout:
 
@@ -193,8 +221,10 @@ directory. It checks every name and outcome against
 `services/compd/tests/wlcs_expectations.conf.mix`; additions, removals and changed
 outcomes fail with a diff. The first observation uses `--record --expectations
 <new-file>`; recording refuses to overwrite a file. Disabled and unsupported
-tests are recorded as skipped. Explicit `flaky` entries still run and must exist,
-but their outcomes are excluded from the comparison. Conformance failures are
+tests are recorded as skipped. The `flaky` list must be empty: exemptions are
+refused, and every observed outcome must match. The control socket's 10-second
+read/write timeout is half the process deadline; transport errors name the
+compositor log before aborting. Conformance failures are
 recorded for later work; Phase 6 does not change compositor policy to fix them.
 
 The first complete observation (2026-10-21) recorded **1,228 tests: 361 passed,

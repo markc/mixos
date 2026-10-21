@@ -741,8 +741,7 @@ fn place(lp: &mut Loop, spec: &comp_model::request::PlaceSpec) -> ControlReply {
     policy::window::place_reply(spec, &placement, placed, placement.requested.is_some())
 }
 
-/// Put a window's geometry origin at `location` (and, with `size`, configure
-/// that size: one configure, no Resizing state).
+/// Test-only placement of a wl_surface origin in the native world Space.
 #[cfg(feature = "wlcs")]
 pub fn wlcs_place_surface(lp: &mut Loop, id: SurfaceId, origin: Point<i32, Logical>) {
     let Some(window) = window_of(lp, id) else { return; };
@@ -751,6 +750,8 @@ pub fn wlcs_place_surface(lp: &mut Loop, id: SurfaceId, origin: Point<i32, Logic
     place_window(lp, id, origin + window.geometry().loc, None);
 }
 
+/// Put a window's geometry origin at `location` (and, with `size`, configure
+/// that size: one configure, no Resizing state).
 fn place_window(
     lp: &mut Loop,
     id: SurfaceId,

@@ -248,6 +248,11 @@ impl Server {
             return Ok(());
         }
         let process = Process::start()?;
+        if !self.names.is_empty() {
+            // Retain the descriptor's backing storage across explicit restarts.
+            self.process = Some(process);
+            return Ok(());
+        }
         let connection =
             Connection::from_socket(process.control.client()?).map_err(io::Error::other)?;
         let mut queue = connection.new_event_queue::<Globals>();
@@ -343,6 +348,7 @@ unsafe extern "C" fn socket(server: *mut abi::DisplayServer) -> c_int {
         .unwrap_or(-1)
 }
 #[link(name = "wayland-client")]
+#[cfg_attr(test, link(name = "wayland-client"))]
 unsafe extern "C" {
     fn wl_display_get_fd(display: *mut c_void) -> i32;
     fn wl_proxy_get_id(proxy: *mut c_void) -> u32;
@@ -453,4 +459,24 @@ unsafe extern "C" fn touch_destroy(t: *mut abi::Touch) {
         unsafe { touch_up(t) };
     }
     drop(unsafe { Box::from_raw(t.cast::<Touch>()) });
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    #[ignore = "needs the built headless compd and a render node"]
+    fn descriptor_after_stop_is_cached() {
+        unsafe {
+            let api = super::create(0, std::ptr::null());
+            let server = &*api.cast::<super::Server>();
+            assert!(server.process.is_none());
+            let extensions = (*super::descriptor(api)).extensions;
+            assert!((*super::descriptor(api)).count > 0);
+            super::start(api);
+            super::stop(api);
+            assert_eq!((*super::descriptor(api)).extensions, extensions);
+            assert!((*api.cast::<super::Server>()).process.is_none());
+            super::destroy(api);
+        }
+    }
 }
