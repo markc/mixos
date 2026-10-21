@@ -21,11 +21,11 @@ use toolkit::theme::Theme;
 pub(crate) const CONTEXT: &str = "desktop";
 
 #[derive(Clone, Debug)]
-pub(crate) struct Look {
+pub struct Look {
     pub theme: Arc<Theme>,
     /// The profile's text scale (`ui.text_scale`), applied to every text style.
     pub text_scale: f32,
-    pub preferences: crate::preferences::Preferences,
+    pub(crate) preferences: crate::preferences::Preferences,
     chrome: Vec<ChromeTheme>,
 }
 

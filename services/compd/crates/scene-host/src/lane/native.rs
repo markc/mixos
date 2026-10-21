@@ -32,6 +32,7 @@ pub type FallbackResult<T> =
 
 pub enum Event<T> {
     Wake,
+    #[cfg(test)]
     Refresh,
     Lost,
     Delivery(Decoded),
@@ -43,6 +44,7 @@ pub enum Event<T> {
         Result<settings::cache::WriteOutcome, Diagnostic>,
     ),
     /// Explicit retry of the latest activated cache capture; no retry timer.
+    #[cfg(test)]
     RetryCache,
 }
 
@@ -125,6 +127,7 @@ impl<T> Session<T> {
     }
     /// `live` is the connection's current sampled state, read on the UI loop.
     /// Queued lifecycle notices cannot authorise an activation after real loss.
+    #[cfg(test)]
     pub fn handle(&mut self, event: Event<T>, live: Option<u64>) -> (Option<ChangePlan>, Jobs) {
         self.handle_with(event, live, |_| {})
     }
@@ -141,6 +144,7 @@ impl<T> Session<T> {
         let mut changed = None;
         match event {
             Event::Wake => {}
+            #[cfg(test)]
             Event::Refresh => {
                 self.host.consumer_mut().refresh();
                 // Failure stays quiescent on ordinary wakes. An explicit
@@ -208,6 +212,7 @@ impl<T> Session<T> {
                     self.cache_fault = result.err();
                 }
             }
+            #[cfg(test)]
             Event::RetryCache => self.retry_save = self.retry_save.wrapping_add(1),
         }
         let now = Instant::now();
@@ -350,14 +355,6 @@ pub struct Worker<T> {
     cache: Option<cache::Lane>,
 }
 impl<T: Send + 'static> Worker<T> {
-    pub fn new(
-        client: Arc<settings::native::Client>,
-        build: impl Fn(&Snapshot) -> Result<T, Diagnostic> + Send + Sync + 'static,
-    ) -> Self {
-        let mut worker = Self::offline(build);
-        worker.client = Some(client);
-        worker
-    }
     /// Resource/fallback jobs may run while the host's existing connection is
     /// still starting. RPCs stay dormant until that same client is attached.
     pub fn offline(

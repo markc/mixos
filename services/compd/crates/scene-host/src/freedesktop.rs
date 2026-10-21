@@ -464,6 +464,7 @@ impl Resolver {
         }
     }
 
+    #[cfg(test)]
     pub fn lookup(&self) -> &Lookup {
         &self.lookup
     }

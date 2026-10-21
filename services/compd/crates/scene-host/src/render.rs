@@ -979,7 +979,7 @@ thread_local! {
 struct EdgePrior {
     scene: String,
     handle: HandleId,
-    UI: Option<HandleId>,
+    ui: Option<HandleId>,
     client: Option<WlSurface>,
 }
 
@@ -988,7 +988,7 @@ thread_local! {
 }
 
 fn grab_edge_keyboard(state: &mut Loop, scene: &str, handle: HandleId) {
-    let UI = state
+    let ui = state
         .inner
         .surface()
         .registry
@@ -1000,14 +1000,14 @@ fn grab_edge_keyboard(state: &mut Loop, scene: &str, handle: HandleId) {
         .and_then(|keyboard| keyboard.current_focus());
     EDGE_PRIOR.with_borrow_mut(|prior| {
         // Moving between edge pages while held preserves the original client.
-        if let Some(prior) = prior.as_mut().filter(|prior| UI == Some(prior.handle)) {
+        if let Some(prior) = prior.as_mut().filter(|prior| ui == Some(prior.handle)) {
             prior.scene = scene.into();
             prior.handle = handle;
         } else {
             *prior = Some(EdgePrior {
                 scene: scene.into(),
                 handle,
-                UI: UI.filter(|id| *id != handle),
+                ui: ui.filter(|id| *id != handle),
                 client,
             });
         }
@@ -1040,9 +1040,9 @@ pub(crate) fn release_edge_keyboard(state: &mut Loop, scene: &str) {
     {
         return;
     }
-    let UI = prior.UI.filter(|id| registry.contains(*id));
-    registry.set_keyboard_focus(UI);
-    if UI.is_none()
+    let ui = prior.ui.filter(|id| registry.contains(*id));
+    registry.set_keyboard_focus(ui);
+    if ui.is_none()
         && let Some(keyboard) = state.state.seat.seat.get_keyboard()
         && keyboard.current_focus().is_none()
         && let Some(client) = prior.client.filter(|client| client.is_alive())

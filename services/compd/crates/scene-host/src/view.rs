@@ -346,11 +346,6 @@ impl SceneUi {
         colour(self.palette().base.surface)
     }
 
-    /// The matching design foreground for text that declares none.
-    pub(crate) fn ink(&self) -> Color32 {
-        colour(self.palette().base.foreground)
-    }
-
     pub(crate) fn apply_appearance(&mut self, look: Arc<Look>) {
         self.look = Some(look);
         self.installed = None;

@@ -113,6 +113,7 @@ pub(crate) struct SceneLayout {
     /// Vertical lists that scroll.
     pub lists: BTreeMap<String, ListBox>,
     /// The page under the scene (below a dialog's title bar).
+    #[cfg(test)]
     pub body: Rect,
     /// The dialog frame's close button, when framed.
     pub close: Option<Rect>,
@@ -125,6 +126,7 @@ impl Default for SceneLayout {
             nodes: BTreeMap::new(),
             instances: BTreeMap::new(),
             lists: BTreeMap::new(),
+            #[cfg(test)]
             body: Rect::NOTHING,
             close: None,
         }
@@ -140,7 +142,6 @@ enum Axis {
 #[derive(Clone, Copy)]
 struct Parent {
     main: Axis,
-    stretch: bool,
 }
 
 /// What a leaf measures as.
@@ -151,7 +152,6 @@ enum Leaf {
         size: f32,
         mono: bool,
         bold: bool,
-        elide: bool,
     },
     Button {
         label: String,
@@ -173,10 +173,15 @@ struct Meta {
     leaf: Option<Leaf>,
 }
 
+struct Origin<'a> {
+    source: &'a Source,
+    key: &'a str,
+    list: Option<&'a str>,
+}
+
 struct Builder<'a> {
     content: &'a Content,
     styles: TextStyles,
-    measure: Measurer<'a>,
     images: &'a crate::images::Prepared,
     tree: TaffyTree<Meta>,
 }
@@ -449,11 +454,10 @@ impl<'a> Builder<'a> {
         nodes: Nodes<'_>,
         id: &str,
         parent: Parent,
-        source: &Source,
-        key: &str,
-        list: Option<&str>,
+        origin: Origin<'_>,
         depth: usize,
     ) -> Option<NodeId> {
+        let Origin { source, key, list } = origin;
         if depth > 64 {
             return None;
         }
@@ -481,11 +485,10 @@ impl<'a> Builder<'a> {
                 let style = self.container_style(nodes, node, style, main);
                 let inner = Parent {
                     main,
-                    stretch: port_text(node, "align") == "stretch",
                 };
                 let kids: Vec<NodeId> = children(node)
                     .filter_map(|child| {
-                        self.element(nodes, child, inner, source, &key, list, depth + 1)
+                        self.element(nodes, child, inner, Origin { source, key: &key, list }, depth + 1)
                     })
                     .collect();
                 let created = self.tree.new_with_children(style, &kids).ok()?;
@@ -501,7 +504,6 @@ impl<'a> Builder<'a> {
                     size,
                     mono,
                     bold: flag(node, "bold"),
-                    elide: flag(node, "elide"),
                 };
                 self.tree
                     .new_leaf_with_context(style, meta(Some(leaf)))
@@ -573,16 +575,13 @@ impl<'a> Builder<'a> {
                 } else {
                     Axis::Vertical
                 },
-                stretch: !horizontal,
             };
             let row_key = format!("{key}#{item_id}");
             let Some(content) = self.element(
                 Nodes::Row(instance),
                 &template,
                 inner,
-                &source,
-                &row_key,
-                Some(id),
+                Origin { source: &source, key: &row_key, list: Some(id) },
                 depth + 1,
             ) else {
                 continue;
@@ -759,7 +758,6 @@ pub(crate) fn layout(
     let mut builder = Builder {
         content,
         styles,
-        measure,
         images,
         tree: TaffyTree::new(),
     };
@@ -776,16 +774,13 @@ pub(crate) fn layout(
         });
     let top_parent = Parent {
         main: Axis::Vertical,
-        stretch: true,
     };
     let root = root_id.and_then(|id| {
         builder.element(
             Nodes::Tree(tree),
             &id,
             top_parent,
-            &Source::Tree,
-            "",
-            None,
+            Origin { source: &Source::Tree, key: "", list: None },
             0,
         )
     });
@@ -803,6 +798,7 @@ pub(crate) fn layout(
     let kids: Vec<NodeId> = root.into_iter().collect();
     let Ok(page) = builder.tree.new_with_children(page_style, &kids) else {
         return SceneLayout {
+            #[cfg(test)]
             body,
             close,
             ..SceneLayout::default()
@@ -829,6 +825,7 @@ pub(crate) fn layout(
         },
     );
     let mut out = SceneLayout {
+        #[cfg(test)]
         body,
         close,
         ..SceneLayout::default()

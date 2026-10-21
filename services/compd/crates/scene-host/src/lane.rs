@@ -4,11 +4,12 @@
 //! prepare captured requests on their existing worker and complete them here.
 //! No transport, runtime, receiver, file I/O, timer or redraw loop is owned.
 use settings::{
-    Diagnostic, Snapshot,
+    Diagnostic,
     consumer::{Consumer, Update},
     domains::ChangePlan,
-    fallback::PresentationKind,
 };
+#[cfg(test)]
+use settings::{Snapshot, fallback::PresentationKind};
 pub mod native;
 
 /// A value taken at most once, by whichever clone gets there first.
@@ -79,6 +80,7 @@ impl<T> Host<T> {
     pub fn presentation(&self) -> Option<&Presentation<T>> {
         self.presentation.as_ref()
     }
+    #[cfg(test)]
     pub fn kind(&self) -> Option<PresentationKind> {
         self.consumer.presentation_kind()
     }
@@ -99,13 +101,6 @@ impl<T> Host<T> {
             context: self.consumer.context().to_owned(),
         })
     }
-    /// Synchronous UI-loop operation. No await or callback can interleave the
-    /// final fence, whole presentation replacement and applied acknowledgement.
-    /// Returns the shared change plan only for a current successful activation.
-    pub fn complete(&mut self, completion: Completion<T>) -> Option<ChangePlan> {
-        self.complete_with(completion, |_| {})
-    }
-
     /// Activate caller-owned, already prepared UI state after the final fence
     /// and before acknowledgement. The callback is synchronous and total: it
     /// must not perform I/O, await, or discover unsupported resources.
@@ -152,6 +147,7 @@ impl Request {
     }
     /// Run on a host worker: build the whole presentation from the captured
     /// snapshot before it can be activated.
+    #[cfg(test)]
     pub fn prepare_registered<T>(
         self,
         content: impl FnOnce(&Snapshot) -> Result<T, Diagnostic>,

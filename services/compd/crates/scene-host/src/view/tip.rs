@@ -378,6 +378,7 @@ impl Hover {
     }
 
     /// The tip currently shown, if any.
+    #[cfg(test)]
     pub fn shown(&self) -> Option<&TipAt> {
         self.sent.as_ref().map(|(_, at)| at)
     }
