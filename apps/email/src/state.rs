@@ -464,23 +464,30 @@ pub struct ContactState {
 pub struct Body {
     pub doc: editor::local::Document,
     pub revision: u64,
+    #[cfg(test)]
+    reads: std::cell::Cell<usize>,
 }
 
 impl Body {
-    pub fn new(text: &str) -> Self {
-        Self {
-            doc: editor::local::Document::new(text, "markdown").expect("valid composer text"),
+    pub fn new(text: &str) -> Result<Self, editor::local::Error> {
+        Ok(Self {
+            doc: editor::local::Document::new(text, "markdown")?,
             revision: 0,
-        }
+            #[cfg(test)]
+            reads: std::cell::Cell::new(0),
+        })
     }
 
     pub fn contents(&self) -> String {
+        #[cfg(test)]
+        self.reads.set(self.reads.get() + 1);
         self.doc.contents()
     }
 
-    pub fn set_body(&mut self, text: &str) {
-        self.doc.set_contents(text).expect("valid composer text");
+    pub fn set_body(&mut self, text: &str) -> Result<(), editor::local::Error> {
+        self.doc.set_contents(text)?;
         self.revision += 1;
+        Ok(())
     }
 }
 
@@ -489,7 +496,8 @@ impl Clone for Body {
     fn clone(&self) -> Self {
         Self {
             revision: self.revision,
-            ..Self::new(&self.contents())
+            // This text has already passed the buffer's limits.
+            ..Self::new(&self.contents()).expect("existing composer text is valid")
         }
     }
 }
@@ -514,6 +522,8 @@ pub struct ComposeState {
     /// The message headers. Its wire body stays empty while composing.
     pub draft: Composed,
     pub body: Body,
+    /// The reply-position check copies text only after a body edit.
+    reply_movable: std::cell::Cell<Option<(u64, bool)>>,
     /// The recipient fields as typed. The draft's lists are parsed from
     /// them, so a separator the user just typed is not lost.
     pub to_text: String,
@@ -651,7 +661,28 @@ pub struct Suggest {
 
 impl ComposeState {
     pub fn set_body(&mut self, text: &str) {
-        self.body.set_body(text);
+        if let Err(error) = self.body.set_body(text) {
+            self.error = Some(error.to_string());
+        }
+    }
+
+    pub fn reply_movable(&self) -> bool {
+        let Some(reply) = &self.reply else {
+            return false;
+        };
+        if let Some((revision, movable)) = self.reply_movable.get()
+            && revision == self.body.revision
+        {
+            return movable;
+        }
+        let movable = crate::quote::moved(
+            &self.body.contents(),
+            &reply.quote,
+            &reply.signature,
+            reply.position,
+        ).is_some();
+        self.reply_movable.set(Some((self.body.revision, movable)));
+        movable
     }
 
     /// The text of recipient field `field` (empty for the others).
@@ -718,15 +749,23 @@ impl ComposeState {
                 .collect::<Vec<_>>()
                 .join(", ")
         };
+        let (body, error) = match Body::new(&std::mem::take(&mut draft.body)) {
+            Ok(body) => (body, None),
+            Err(error) => (
+                Body::new("").expect("empty text is within the buffer's limits"),
+                Some(error.to_string()),
+            ),
+        };
         Self {
             account: account.to_owned(),
-            body: Body::new(&std::mem::take(&mut draft.body)),
+            body,
+            reply_movable: std::cell::Cell::new(None),
             to_text: text(&draft.to),
             cc_text: text(&draft.cc),
             bcc_text: text(&draft.bcc),
             draft,
             busy: false,
-            error: None,
+            error,
             sending: None,
             stale: None,
             suggest: None,
@@ -5121,6 +5160,7 @@ impl State {
         let new = signature_block(&sender.signature);
         let (from_name, reply_to) = from_fields(explicit, &sender);
         if let Some(compose) = &mut self.compose {
+            compose.error = None;
             if compose.body.contents() == old {
                 compose.set_body(&new);
             }
@@ -5135,7 +5175,6 @@ impl State {
             }
             // The new identity's From is its current address.
             compose.stale = None;
-            compose.error = None;
             compose.revision += 1;
         }
     }
@@ -5168,7 +5207,7 @@ impl State {
             self.set_aside_compose();
         }
         let mut compose = ComposeState::new(&account, draft);
-        if compose.body.contents().is_empty() {
+        if compose.error.is_none() && compose.body.doc.text().is_empty() {
             compose.set_body(&self.signed_body(&account));
         }
         compose.draft_id = self.new_draft_id();
@@ -6692,8 +6731,113 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn oversized_bus_compose_and_reply_quote_report_errors_without_panicking() {
+        let mut state = connected();
+        let huge = "x".repeat(65 * 1024 * 1024);
+        crate::verbs::command(
+            &mut state,
+            &crate::commands::registry(),
+            &crate::strings(),
+            1,
+            "email.compose",
+            &json!({"account":"a", "body":huge}).to_string(),
+        );
+        let compose = state.compose.as_ref().unwrap();
+        assert!(compose.error.is_some());
+        assert!(compose.body.doc.text().is_empty());
+        assert!(compose.draft.body.is_empty());
+
+        let mut email = serde_json::to_value(unread_email("E1")).unwrap();
+        email["bodyValues"] = json!({"p1":{"value":huge}});
+        email["textBody"] = json!([{"partId":"p1", "type":"text/plain"}]);
+        assert!(state.reply_to("a", &serde_json::from_value(email).unwrap(), false, Some(true)));
+        let compose = state.compose.as_ref().unwrap();
+        assert!(compose.error.is_some());
+        assert!(compose.body.doc.text().is_empty());
+    }
+
+    #[test]
+    fn refused_replacements_keep_the_body_and_revision() {
+        let mut compose = ComposeState::new("a", Composed {
+            body: "Keep this".into(),
+            ..Composed::default()
+        });
+        let revision = compose.body.revision;
+        for text in ["x".repeat(65 * 1024 * 1024), "\n".repeat(2_000_000)] {
+            compose.error = None;
+            compose.set_body(&text);
+            assert!(compose.error.is_some());
+            assert_eq!(compose.body.contents(), "Keep this");
+            assert_eq!(compose.body.revision, revision);
+        }
+    }
+
+    #[test]
+    fn programmatic_body_edits_wait_while_sending() {
+        let mut state = connected();
+        typed(&mut state);
+        state.apply_ui(UiEvent::SendCompose);
+        let compose = state.compose.as_ref().unwrap();
+        assert!(compose.busy);
+        let text = compose.body.contents();
+        let body_revision = compose.body.revision;
+        let draft_revision = compose.revision;
+        state.apply_ui(UiEvent::ComposeField(ComposeField::Body, "Ignored".into()));
+        let compose = state.compose.as_ref().unwrap();
+        assert_eq!(compose.body.contents(), text);
+        assert_eq!(compose.body.revision, body_revision);
+        assert_eq!(compose.revision, draft_revision);
+    }
+
+    #[test]
+    fn undo_after_set_body_does_not_restore_older_text() {
+        let mut state = connected();
+        state.apply_ui(UiEvent::Compose);
+        state.apply_ui(UiEvent::ComposeEdit(editor::Event::Command(
+            editor::EditCommand::Insert("Earlier typing".into()),
+        )));
+        state.apply_ui(UiEvent::ComposeField(ComposeField::Body, "Replacement".into()));
+        state.apply_ui(UiEvent::ComposeEdit(editor::Event::Undo));
+        assert_eq!(state.compose.as_ref().unwrap().body.contents(), "Replacement");
+        assert!(state.compose.as_ref().unwrap().error.is_none());
+    }
+
+    #[test]
+    fn idle_reply_frames_do_not_copy_the_body() {
+        let mut state = connected();
+        assert!(state.reply_to("a", &unread_email("E1"), false, Some(true)));
+        let ctx = egui::Context::default();
+        let theme = toolkit::Theme::embedded();
+        toolkit::install(&ctx, &theme);
+        let palette = editor::Palette::from_theme(&theme);
+        let registry = crate::commands::registry();
+        let strings = crate::strings();
+        let frame = |state: &State| {
+            let _ = ctx.run(egui::RawInput::default(), |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    let _ = crate::view::view(ui, state, &registry, &strings, 2.0, &palette);
+                });
+            });
+        };
+        frame(&state);
+        let compose = state.compose.as_ref().unwrap();
+        let reads = compose.body.reads.get();
+        for _ in 0..3 { frame(&state); }
+        assert_eq!(compose.body.reads.get(), reads, "idle frames read no text");
+        let edited = compose.body.contents().replace("wrote:", "wrote this:");
+        state.apply_ui(UiEvent::ComposeField(ComposeField::Body, edited));
+        let compose = state.compose.as_ref().unwrap();
+        let reads = compose.body.reads.get();
+        frame(&state);
+        assert_eq!(compose.body.reads.get(), reads + 1, "an edit refreshes the check");
+        assert!(!compose.reply_movable(), "an edited quote cannot move");
+        frame(&state);
+        assert_eq!(compose.body.reads.get(), reads + 1);
+    }
+
+    #[test]
     fn cloning_a_body_keeps_text_and_revision_and_drops_history() {
-        let mut body = Body::new("Initial");
+        let mut body = Body::new("Initial").unwrap();
         body.doc.apply(
             &editor::Event::Command(editor::EditCommand::Insert("Typed ".into())),
             &editor::View::prose(),

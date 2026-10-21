@@ -507,6 +507,7 @@ fn form(
             let view = editor::View {
                 read_only: compose.busy,
                 label: Some(crate::label("body")),
+                placeholder: Some(crate::label("body")),
                 font_size: Some(egui::TextStyle::Body.resolve(ui.style()).size),
                 ..editor::View::prose()
             };
@@ -532,13 +533,7 @@ fn form(
         // A reply's quote can sit above or below the person's text. The
         // switch is off the table once the quote itself was edited.
         if let Some(reply) = &compose.reply {
-            let movable = crate::quote::moved(
-                &compose.body.contents(),
-                &reply.quote,
-                &reply.signature,
-                reply.position,
-            )
-            .is_some();
+            let movable = compose.reply_movable();
             let mut below = reply.position == crate::quote::Position::Below;
             let switch = Toggle::new(&mut below, crate::label("reply-below-quote"));
             if ui.add_enabled(movable, switch).changed() {

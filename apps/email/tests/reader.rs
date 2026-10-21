@@ -626,6 +626,34 @@ fn composer_body_types_undoes_and_keeps_registry_chords() {
     );
 }
 
+#[test]
+fn focused_body_keeps_letter_chords_before_the_view_runs() {
+    let mut state = opened("text/plain", PLAIN);
+    state.compose();
+    // window() runs shortcuts before view(), exactly as Shell::ui does.
+    let mut h = window(state, &theme(Scheme::Pro, Mode::Dark));
+    h.get_by_label("Body").click();
+    h.run();
+    h.state_mut().1.clear();
+    // Put the key and text in the same platform frame, not separate frames.
+    for (key, text) in [(egui::Key::S, "s"), (egui::Key::M, "m"), (egui::Key::J, "j")] {
+        h.input_mut().events.extend([
+            egui::Event::Key {
+                key,
+                physical_key: Some(key),
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::NONE,
+            },
+            egui::Event::Text(text.into()),
+        ]);
+        h.run();
+    }
+    assert_eq!(h.state().0.compose.as_ref().unwrap().body.contents(), "smj");
+    assert!(!h.state().1.iter().any(|e| matches!(e, UiEvent::Command(..))));
+    assert!(email::view::compose::body_focused(&h.ctx));
+}
+
 /// The batched action the state queued last: its ids and change.
 fn last_batch(state: &mut State) -> Option<(Vec<String>, jmap::EmailChange)> {
     state.take_work().into_iter().rev().find_map(|w| match w {

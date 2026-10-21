@@ -31,6 +31,10 @@ soft wrap and the editor's undo and redo. It has no preview. Its document
 is the source of truth; the wire body stays empty until sending, saving a
 draft or reporting state. Cloning a compose keeps the text and drops undo
 history. Registry shortcuts wait while the body has keyboard focus.
+The body stays monospace: the shared editor lays text on a cell grid.
+`email.composer.font.family` accepts only the bundled JetBrains Mono face
+or the default (also JetBrains Mono), the same limit as `ced.editor`.
+Prose hides the current-line band and shows the Body hint while empty.
 
 The reader keeps its Markdown/plain choice per email. Its parsed body is
 cached by `toolkit::markdown::Preview`, using the email id as the key and

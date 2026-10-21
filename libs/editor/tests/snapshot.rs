@@ -106,6 +106,46 @@ fn markdown_wrapped_pro_light() {
     h.snapshot("markdown_wrapped_pro_light");
 }
 
+#[test]
+fn prose_draws_a_muted_placeholder_only_when_empty_and_can_hide_the_band() {
+    fn has_text(shape: &egui::Shape, text: &str, colour: egui::Color32) -> bool {
+        match shape {
+            egui::Shape::Vec(shapes) => shapes.iter().any(|s| has_text(s, text, colour)),
+            egui::Shape::Text(s) => s.galley.job.text == text && s.fallback_color == colour,
+            _ => false,
+        }
+    }
+    fn has_fill(shape: &egui::Shape, colour: egui::Color32) -> bool {
+        match shape {
+            egui::Shape::Vec(shapes) => shapes.iter().any(|s| has_fill(s, colour)),
+            egui::Shape::Rect(s) => s.fill == colour,
+            _ => false,
+        }
+    }
+    let theme = theme(Scheme::Studio, Mode::Dark);
+    let palette = Palette::from_theme(&theme);
+    for (text, current_line) in [("", false), (" ", false), ("Text", false), ("", true)] {
+        let ctx = egui::Context::default();
+        toolkit::install(&ctx, &theme);
+        let doc = Document::new(text, "text").unwrap();
+        let view = View {
+            placeholder: Some("Body".into()),
+            current_line,
+            ..View::prose()
+        };
+        let mut output = egui::FullOutput::default();
+        for _ in 0..2 {
+            output = ctx.run(egui::RawInput::default(), |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    editor::show(ui, "placeholder", &doc.doc(), &palette, &view);
+                });
+            });
+        }
+        assert_eq!(output.shapes.iter().any(|s| has_text(&s.shape, "Body", palette.gutter_text)), text.is_empty());
+        assert_eq!(output.shapes.iter().any(|s| has_fill(&s.shape, palette.current_line)), current_line);
+    }
+}
+
 fn click(h: &mut Harness<'_, App>, at: Pos2) {
     for pressed in [true, false] {
         let input = h.input_mut();
