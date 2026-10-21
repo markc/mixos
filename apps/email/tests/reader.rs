@@ -11,7 +11,7 @@ use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 use email::secrets::Secrets;
 use email::shell::{Done, Event};
-use email::state::{Mode as Surface, SessionInfo, State, Tag, UiState};
+use email::state::{ComposeField, Mode as Surface, SessionInfo, State, Tag, UiState};
 use email::view::{UiEvent, view};
 use email::work::Work;
 use email::{commands, label, strings};
