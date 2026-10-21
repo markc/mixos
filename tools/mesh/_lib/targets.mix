@@ -1,0 +1,130 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Native mesh target descriptions. Pure: this module performs no I/O.
+
+fn fail($message)
+  raise("MESH_TARGET", $message)
+end
+
+fn plain_label($value, $where)
+  if type($value) != "string" or not re_match($value, "^[a-z][a-z0-9-]{0,31}$") then fail($where .. " must be a plain label") end
+  return $value
+end
+
+fn exact_keys($value, $allowed, $where)
+  if type($value) != "map" then fail($where .. " must be a map") end
+  for $key in keys($value)
+    if not contains($allowed, $key) then fail($where .. " has unknown field " .. $key) end
+  end
+end
+
+fn parse_targets($document)
+  exact_keys($document, ["schema_version", "project", "targets"], "mesh targets")
+  if $document.schema_version != 1 then fail("schema_version must be 1") end
+  $project = plain_label($document.project, "project")
+  if type($document.targets) != "list" or len($document.targets) == 0 then fail("targets must be a nonempty list") end
+  $seen = []
+  $normal = []
+  for $item in $document.targets
+    exact_keys($item, ["node", "host", "kind", "machine", "profile", "session", "account"], "target")
+    $node = plain_label($item.node, "node")
+    $host = plain_label($item.host, "host")
+    if contains($seen, $node) then fail("duplicate node " .. $node) end
+    push($seen, $node)
+    $kind = $item.kind
+    if $kind != "system" and $kind != "desk" then fail("kind must be system or desk") end
+    if $kind == "system" then
+      for $key in ["machine", "profile", "session", "account"]
+        if has_key($item, $key) then fail("system target cannot carry " .. $key) end
+      end
+      push($normal, {project:$project, node:$node, host:$host, kind:$kind, profile:nil, etc:"/etc/" .. $project, var:"/var/lib/" .. $project,
+        unit:"noded.service", account:"root", machine:nil, session:nil, run:nil})
+    else
+      $machine = plain_label($item.machine, "machine")
+      $account = plain_label($item.account, "account")
+      if $account == "root" then fail("desk account must be unprivileged") end
+      $session = $item.session
+      if type($session) != "number" or $session < 1 or $session > 6 or floor($session) != $session then fail("session must be an integer from 1 to 6") end
+      $profile = $item.profile
+      if type($profile) != "string" or not re_match($profile, "^/var/lib/" .. $project .. "/[a-z][a-z0-9-]{0,31}$") then fail("profile must be one direct project state child") end
+      push($normal, {project:$project, node:$node, host:$host, kind:$kind, profile:$profile, etc:$profile .. "/etc", var:$profile .. "/var",
+        unit:"noded@" .. to_string($session) .. ".service", account:$account, machine:$machine, session:$session,
+        run:"/run/" .. $project .. "/session/" .. to_string($session)})
+    end
+  end
+  $locations = []
+  $profiles = []
+  for $target in $normal
+    $location = $target.host .. "/" .. ($target.machine ?? "host") .. "/" .. $target.unit
+    if contains($locations, $location) then fail("multiple node identities share one broker target") end
+    push($locations, $location)
+    if $target.kind == "desk" then
+      $profile_key = $target.host .. "/" .. $target.machine .. $target.profile
+      if contains($profiles, $profile_key) then fail("multiple node identities share one profile store") end
+      push($profiles, $profile_key)
+    end
+  end
+  return {schema_version:1, project:$project, targets:$normal}
+end
+
+fn checked_target($target)
+  $raw = {node:$target.node,host:$target.host,kind:$target.kind}
+  if $target.kind == "desk" then
+    $raw.machine = $target.machine
+    $raw.profile = $target.profile
+    $raw.session = $target.session
+    $raw.account = $target.account
+  end
+  $expected = parse_targets({schema_version:1,project:$target.project,targets:[$raw]}).targets[0]
+  if not deep_eq($target, $expected) then fail("target must be the unchanged parsed description") end
+  return $expected
+end
+
+fn plan($target)
+  $target = checked_target($target)
+  return {node:$target.node, host:$target.host, kind:$target.kind, machine:$target.machine, account:$target.account,
+    unit:$target.unit, genesis:$target.etc .. "/noded/genesis.pub", seed:$target.etc .. "/noded/d2.seed",
+    inventory:$target.var .. "/noded/inventory.signed", baseline:$target.var .. "/noded/inventory.baseline",
+    roster:$target.etc .. "/noded/config.conf.mix", node_config:$target.etc .. "/node.conf.mix",
+    session:$target.session, run:$target.run, mutation_supported:false, system_mutation_eligible:$target.kind == "system"}
+end
+
+fn require_system_mutation($document)
+  $parsed = parse_targets($document)
+  for $target in $parsed.targets
+    if $target.kind != "system" then
+      fail("desk mutation is not implemented: profile paths, ownership, namespace and session restart must be wired together")
+    end
+  end
+  return $parsed
+end
+
+-- Describe a native stdin job without executing it. Secret-bearing bindings
+-- stay in stdin; the caller must not substitute stdin into a -c argument.
+fn stdin_job($target, $program, $bindings, $role, $mix_bin)
+  $target = checked_target($target)
+  if type($program) != "string" or type($bindings) != "map" then fail("program and bindings have invalid types") end
+  if $role != "admin" and $role != "citizen" then fail("role must be admin or citizen") end
+  if type($mix_bin) != "string" or not starts_with($mix_bin, "/") or not ends_with($mix_bin, "/mix") then fail("native Mix path must be absolute") end
+  $body = ""
+  for $key in sort(keys($bindings))
+    if not re_match($key, "^[A-Za-z_][A-Za-z0-9_]*$") then fail("invalid binding name") end
+    $body = $body .. "$" .. $key .. " = " .. data_encode($bindings[$key]) .. "\n"
+  end
+  $body = $body .. $program
+  $prefix = upper($target.project)
+  $environment = {}
+  $environment[$prefix .. "_ETC"] = $target.etc
+  $environment[$prefix .. "_VAR"] = $target.var
+  $environment[$prefix .. "_NODE_CONFIG"] = $target.etc .. "/node.conf.mix"
+  if $target.kind == "system" then
+    return {host:$target.host, argv:[$mix_bin,"-"], stdin:$body, env:$environment}
+  end
+  $environment[$prefix .. "_RUN"] = $target.run
+  $environment[$prefix .. "_BROKER_ACCOUNT"] = $target.account
+  $account = if $role == "admin" then "root" else $target.account end
+  -- Native namespace execution uses a pipe, not a terminal or source argv.
+  -- The outer native Mix sets the profile env for the inner stdin process.
+  $wrapper = "$r = run_argv([" .. json_encode($mix_bin) .. ", \"-\"], {stdin: " .. data_encode($body) .. ", env: " .. data_encode($environment) .. ", timeout: 120}); print($r.stdout); if not $r.ok then raise(\"MESH_TARGET_JOB\", \"namespace job failed\") end\n"
+  return {host:$target.host, argv:["sudo","-n","systemd-run","--machine=" .. $target.machine,
+    "--pipe","--wait","--collect","--quiet","--uid=" .. $account,$mix_bin,"-"], stdin:$wrapper, env:{}}
+end

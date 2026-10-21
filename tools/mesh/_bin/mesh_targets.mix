@@ -1,0 +1,28 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- Read-only target preview/probe; never stages keys or restarts a service.
+$targets = require("../_lib/targets.mix")
+$arguments = args()
+if len($arguments) < 1 or len($arguments) > 2 then raise("ARGS", "mesh_targets.mix TARGETS.conf.mix [--probe]") end
+$probe = len($arguments) == 2
+if $probe and $arguments[1] != "--probe" then raise("ARGS", "unknown option") end
+$parsed = $targets.parse_targets(load_data($arguments[0]))
+$mix_bin = env("MESH_MIX", "")
+if $probe and ($mix_bin == "" or not starts_with($mix_bin, "/")) then raise("ARGS", "--probe requires absolute MESH_MIX") end
+$plans = []
+for $target in $parsed.targets
+  $entry = $targets.plan($target)
+  if $probe then
+    $program = 'send noded noded.info timeout=5; $info={rc:$rc,result:$result}; send noded noded.peers timeout=5; print(json_encode({info:$info,peers:{rc:$rc,result:$result}}))'
+    $job = $targets.stdin_job($target, $program, {}, "citizen", $mix_bin)
+    $result = ssh_mix($job.host,
+      '$r=run_argv($command,{stdin:$text,env:$environment,timeout:20}); print($r.stdout); if not $r.ok then raise("MESH_TARGET_PROBE","native target query failed") end',
+      {mix_bin:$mix_bin, bindings:{command:$job.argv,text:$job.stdin,environment:$job.env},timeout:30})
+    if $result.stdout_truncated or $result.stderr_truncated then raise("MESH_TARGET_PROBE", "target output truncated") end
+    $reply = if $result.ok then json_parse($result.stdout) else nil end
+    $identity_matches = $result.ok and $reply.info.rc == 0 and $reply.info.result.node == $target.node
+    $entry.probe = {process_ok:$result.ok, identity_matches:$identity_matches, reply:$reply, stderr:$result.stderr}
+  end
+  push($plans, $entry)
+end
+print(json_encode({project:$parsed.project, targets:$plans, preview:true, deployed:false}, true))
