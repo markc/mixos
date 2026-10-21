@@ -18,6 +18,7 @@ fn identities($ids)
     end
   end
   if $ids.client.uid == $ids.broker.uid or contains($ids.client.groups,$ids.broker.gid) then fail("desktop must not share broker UID or private group") end
+  if not deep_eq($ids.broker.groups,[$ids.broker.gid]) then fail("broker must have only its private primary group") end
   return $ids
 end
 
@@ -25,15 +26,15 @@ fn layout($target,$ids)
   $t = $targets.checked_target($target)
   if $t.kind != "desk" or $t.identity_schema != 2 then fail("separate-principal target required") end
   $ids = identities($ids)
-  $root = {uid:0,gid:0,perm:0o755,is_dir:true}
-  $private = {uid:0,gid:$ids.broker.gid,perm:0o750,is_dir:true}
+  $root = {uid:0,gid:0,perm:0o755,is_dir:true,is_symlink:false}
+  $private = {uid:0,gid:$ids.broker.gid,perm:0o750,is_dir:true,is_symlink:false}
   $out = {}
   for $path in ["/","/var","/var/lib","/var/lib/" .. $t.project,$t.profile,$t.etc,$t.var,"/run","/run/" .. $t.project,"/run/" .. $t.project .. "/broker",$t.broker_run]
     $out[$path] = $root
   end
   $out[$t.etc .. "/noded"] = $private
-  $out[$t.var .. "/noded"] = {uid:$ids.broker.uid,gid:$ids.broker.gid,perm:0o700,is_dir:true}
-  $out[$t.broker_run .. "/noded"] = {uid:$ids.broker.uid,gid:$ids.broker.gid,perm:0o711,is_dir:true}
+  $out[$t.var .. "/noded"] = {uid:$ids.broker.uid,gid:$ids.broker.gid,perm:0o700,is_dir:true,is_symlink:false}
+  $out[$t.broker_run .. "/noded"] = {uid:$ids.broker.uid,gid:$ids.broker.gid,perm:0o711,is_dir:true,is_symlink:false}
   return $out
 end
 
@@ -42,7 +43,7 @@ fn verify_layout($target,$ids,$snapshot)
   if type($snapshot) != "map" or not deep_eq(sort(keys($snapshot)),sort(keys($expected))) then fail("directory snapshot is incomplete or unexpected") end
   for $path in keys($expected)
     $actual = $snapshot[$path]
-    if type($actual) != "map" or $actual.is_symlink == true then fail("directory must not be a symlink") end
+    if type($actual) != "map" or type($actual.is_symlink) != "bool" or $actual.is_symlink != false then fail("directory snapshot must explicitly exclude symlinks") end
     for $key in ["uid","gid","perm","is_dir"]
       if $actual[$key] != $expected[$path][$key] then fail("directory ownership or mode differs from separate-principal contract") end
     end

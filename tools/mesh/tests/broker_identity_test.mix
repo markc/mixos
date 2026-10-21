@@ -29,7 +29,16 @@ for $path in keys($layout)
   $bad = $layout
   $bad[$path].is_symlink = true
   check(refuses(fn()=$identity.verify_layout($t,$ids,$bad)),"symlink authority/runtime ancestor accepted")
+  $bad = $layout
+  $bad[$path].is_symlink = nil
+  check(refuses(fn()=$identity.verify_layout($t,$ids,$bad)),"missing symlink metadata accepted")
+  $bad = $layout
+  $bad[$path].is_symlink = "false"
+  check(refuses(fn()=$identity.verify_layout($t,$ids,$bad)),"untyped symlink metadata accepted")
 end
+$shared_group = $ids
+$shared_group.broker.groups = [999,1000]
+check(refuses(fn()=$identity.layout($t,$shared_group)),"broker inherited desktop supplementary group")
 $shared = $doc
 $other = $raw
 $other.node = "desk-b"
