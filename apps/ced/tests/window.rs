@@ -297,20 +297,69 @@ fn markdown_snapshot(scheme: Scheme, mode: Mode, action: documents::actions::Act
 
 #[test]
 fn markdown_split_studio_dark() {
-    markdown_snapshot(Scheme::Studio, Mode::Dark, documents::actions::ActionId::ViewMarkdownSplit,
-        "markdown_split_studio_dark");
+    markdown_snapshot(
+        Scheme::Studio,
+        Mode::Dark,
+        documents::actions::ActionId::ViewMarkdownSplit,
+        "markdown_split_studio_dark",
+    );
 }
 
 #[test]
 fn markdown_split_pro_light() {
-    markdown_snapshot(Scheme::Pro, Mode::Light, documents::actions::ActionId::ViewMarkdownSplit,
-        "markdown_split_pro_light");
+    markdown_snapshot(
+        Scheme::Pro,
+        Mode::Light,
+        documents::actions::ActionId::ViewMarkdownSplit,
+        "markdown_split_pro_light",
+    );
 }
 
 #[test]
 fn markdown_preview_studio_dark() {
-    markdown_snapshot(Scheme::Studio, Mode::Dark, documents::actions::ActionId::ViewMarkdownPreview,
-        "markdown_preview_studio_dark");
+    markdown_snapshot(
+        Scheme::Studio,
+        Mode::Dark,
+        documents::actions::ActionId::ViewMarkdownPreview,
+        "markdown_preview_studio_dark",
+    );
+}
+
+#[test]
+fn markdown_preview_is_read_only_and_stays_above_the_panels() {
+    use egui_kittest::kittest::Queryable;
+
+    let (mut h, service) = window(
+        theme(Scheme::Studio, Mode::Dark),
+        &[("/work/notes.md", MARKDOWN)],
+        egui::vec2(1000.0, 620.0),
+    );
+    h.run_steps(6);
+    let shell = h.state_mut().shell.as_mut().unwrap();
+    shell.app.action(documents::actions::ActionId::ViewMarkdownPreview);
+    shell.app.action(documents::actions::ActionId::SearchFind);
+    shell.app.ui.problems = true;
+    shell.app.ui.output = true;
+    shell.app.absorb(vec![Effect::Notice {
+        tab: shell.app.active(),
+        notice: editor_model::types::Notice::Message {
+            level: editor_model::types::Level::Warn,
+            text: "A document notice".into(),
+        },
+    }]);
+    h.run_steps(4);
+    let heading = h.get_by_label("Project notes");
+    let rect = heading.rect();
+    assert!(rect.top() > h.get_by_label("A document notice").rect().bottom());
+    assert!(rect.bottom() < h.get_by_label("No problems.").rect().top());
+    assert!(rect.bottom() < h.get_by_label("Nothing has run yet.").rect().top());
+    heading.click();
+    h.run_steps(2);
+    h.input_mut().events.push(Event::Text("changed".into()));
+    h.run_steps(4);
+    let editd = service.editd.borrow();
+    assert_eq!(editd.text(&editd.buffers()[0]), MARKDOWN);
+    assert!(h.state().shell.as_ref().unwrap().app.editor_id.is_none());
 }
 
 #[test]

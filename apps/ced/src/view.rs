@@ -367,7 +367,10 @@ fn document(
     palette: &Palette,
     events: &mut Vec<UiEvent>,
 ) -> Option<(egui::Id, bool)> {
-    let mode = app.active().map(|tab| app.preview_mode(tab)).unwrap_or_default();
+    let mode = app
+        .active()
+        .map(|tab| app.preview_mode(tab))
+        .unwrap_or_default();
     let preview = if mode != PreviewMode::Source {
         app.active().and_then(|tab| app.preview_document(tab))
     } else {
@@ -398,8 +401,8 @@ fn document(
     let editable = app.dialog.is_none();
     // The editor takes its own saved padding and light mode; the rest of the
     // window keeps the global look.
-    let draw_editor = |ui: &mut Ui| ui
-        .add_enabled_ui(editable, |ui| {
+    let draw_editor = |ui: &mut Ui| {
+        ui.add_enabled_ui(editable, |ui| {
             let mut out = None;
             toolkit::content::surface(ui, &app.editor_style, |ui| {
                 out = Some(editor::show(
@@ -412,7 +415,8 @@ fn document(
             });
             out.expect("the surface draws its body")
         })
-        .inner;
+        .inner
+    };
     let draw_preview = |ui: &mut Ui| {
         toolkit::content::surface(ui, &app.editor_style, |ui| {
             for style in [egui::TextStyle::Body, egui::TextStyle::Monospace] {
@@ -442,17 +446,21 @@ fn document(
             let middle = area.center().x;
             let left = egui::Rect::from_min_max(area.min, egui::pos2(middle, area.max.y));
             let right = egui::Rect::from_min_max(egui::pos2(middle, area.min.y), area.max);
-            let out = ui.scope_builder(egui::UiBuilder::new().max_rect(left), |ui| {
-                ui.set_clip_rect(left.intersect(ui.clip_rect()));
-                draw_editor(ui)
-            }).inner;
+            let out = ui
+                .scope_builder(egui::UiBuilder::new().max_rect(left), |ui| {
+                    ui.set_clip_rect(left.intersect(ui.clip_rect()));
+                    draw_editor(ui)
+                })
+                .inner;
             ui.scope_builder(egui::UiBuilder::new().max_rect(right), |ui| {
                 ui.set_clip_rect(right.intersect(ui.clip_rect()));
                 draw_preview(ui);
             });
-            ui.painter().vline(middle, area.y_range(), egui::Stroke::new(
-                1.0, ui.visuals().widgets.noninteractive.bg_stroke.color,
-            ));
+            ui.painter().vline(
+                middle,
+                area.y_range(),
+                egui::Stroke::new(1.0, ui.visuals().widgets.noninteractive.bg_stroke.color),
+            );
             ui.advance_cursor_after_rect(area);
             Some(out)
         }

@@ -317,27 +317,41 @@ impl App {
     }
 
     /// The parsed view text, invalidated by edits and language changes.
-    pub fn preview_document(&mut self, tab: TabId) -> Option<std::sync::Arc<toolkit::markdown::Document>> {
+    pub fn preview_document(
+        &mut self,
+        tab: TabId,
+    ) -> Option<std::sync::Arc<toolkit::markdown::Document>> {
         let t = self.ctl.tabs().iter().find(|t| t.id == tab)?;
         let m = t.mirror.as_ref()?;
         let mut source = String::new();
         m.text().read(0..m.text().len(), &mut source);
         let preview = self.previews.entry(tab).or_default();
         preview.language = t.language().to_owned();
-        Some(preview.cache.document(
-            (tab, preview.language.clone()), m.view_gen(), || &source,
-        ))
+        Some(
+            preview
+                .cache
+                .document((tab, preview.language.clone()), m.view_gen(), || &source),
+        )
     }
 
     /// Refresh the controller's echoes after document or window state changes.
     pub fn sync_view_hints(&mut self) {
-        self.preview_modes.retain(|id, _| self.ctl.tabs().iter().any(|t| t.id == *id));
-        self.previews.retain(|id, _| self.ctl.tabs().iter().any(|t| t.id == *id));
-        let hints: Vec<_> = self.ctl.tabs().iter()
-            .map(|t| (t.id, self.preview_mode(t.id))).collect();
+        self.preview_modes
+            .retain(|id, _| self.ctl.tabs().iter().any(|t| t.id == *id));
+        self.previews
+            .retain(|id, _| self.ctl.tabs().iter().any(|t| t.id == *id));
+        let hints: Vec<_> = self
+            .ctl
+            .tabs()
+            .iter()
+            .map(|t| (t.id, self.preview_mode(t.id)))
+            .collect();
         for (tab, mode) in hints {
             self.ctl.set_view_hint(tab, "preview", mode.as_str());
-            let language = self.tab(tab).map(|t| t.language().to_owned()).unwrap_or_default();
+            let language = self
+                .tab(tab)
+                .map(|t| t.language().to_owned())
+                .unwrap_or_default();
             if let Some(preview) = self.previews.get_mut(&tab)
                 && preview.language != language
             {
@@ -399,7 +413,10 @@ impl App {
     pub fn checked(&self, action: ActionId) -> Option<bool> {
         use ActionId::*;
         if let Some(mode) = PreviewMode::for_action(action) {
-            return Some(self.active().is_some_and(|tab| self.preview_mode(tab) == mode));
+            return Some(
+                self.active()
+                    .is_some_and(|tab| self.preview_mode(tab) == mode),
+            );
         }
         match action {
             ViewWhitespace => Some(self.ui.whitespace),
@@ -1010,7 +1027,9 @@ mod tests {
                         answer.body["language"] = json!(edit::lang::detect(path, ""));
                     }
                     let fx = a.ctl.on_incoming(Incoming::Reply {
-                        req, rc: answer.rc, body: answer.body.to_string(),
+                        req,
+                        rc: answer.rc,
+                        body: answer.body.to_string(),
                     });
                     a.absorb(fx);
                     for event in service.take_events() {
@@ -1033,7 +1052,10 @@ mod tests {
         let mut service = editor_model::fake::FakeEditd::new("0000e1e1");
         service.create(Some("/work/one.md"), "# One\n");
         service.create(Some("/work/two.md"), "# Two\n");
-        let fx = a.ctl.open_paths(&["/work/one.md".into(), "/work/two.md".into()], Intent::ui(0));
+        let fx = a.ctl.open_paths(
+            &["/work/one.md".into(), "/work/two.md".into()],
+            Intent::ui(0),
+        );
         a.absorb(fx);
         settle(&mut a, &mut service);
         let one = a.ctl.tabs()[0].id;
@@ -1043,16 +1065,29 @@ mod tests {
         (a, service, one, two)
     }
 
-    fn bus(a: &mut App, service: &mut editor_model::fake::FakeEditd, verb: &str, body: Value) -> (u8, Value) {
+    fn bus(
+        a: &mut App,
+        service: &mut editor_model::fake::FakeEditd,
+        verb: &str,
+        body: Value,
+    ) -> (u8, Value) {
         a.sync_view_hints();
         let fx = a.ctl.on_bus_command(documents::controller::BusCommand {
-            id: 7, verb: verb.into(), body: body.to_string(), caller_key: "local:test".into(),
+            id: 7,
+            verb: verb.into(),
+            body: body.to_string(),
+            caller_key: "local:test".into(),
         });
         a.absorb(fx);
-        settle(a, service).into_iter().find_map(|effect| match effect {
-            Effect::Respond { rc, body, .. } => Some((rc, serde_json::from_str(&body).unwrap())),
-            _ => None,
-        }).expect("a Bus reply")
+        settle(a, service)
+            .into_iter()
+            .find_map(|effect| match effect {
+                Effect::Respond { rc, body, .. } => {
+                    Some((rc, serde_json::from_str(&body).unwrap()))
+                }
+                _ => None,
+            })
+            .expect("a Bus reply")
     }
 
     #[test]
@@ -1068,8 +1103,16 @@ mod tests {
         a.action(ActionId::ViewMarkdownPreview);
         a.preview_document(two).unwrap();
         assert_eq!(a.preview_mode(two), PreviewMode::Preview);
-        assert!(std::sync::Arc::ptr_eq(&first, &a.preview_document(one).unwrap()));
-        let (rc, _) = bus(&mut a, &mut service, "ced.action", json!({"id":"file.close","tab":one,"args":{"force":true}}));
+        assert!(std::sync::Arc::ptr_eq(
+            &first,
+            &a.preview_document(one).unwrap()
+        ));
+        let (rc, _) = bus(
+            &mut a,
+            &mut service,
+            "ced.action",
+            json!({"id":"file.close","tab":one,"args":{"force":true}}),
+        );
         assert_eq!(rc, 0);
         assert!(!a.preview_modes.contains_key(&one));
         assert!(!a.previews.contains_key(&one));
@@ -1081,54 +1124,114 @@ mod tests {
         let (mut a, mut service, one, _) = documents();
         a.action(ActionId::ViewMarkdownSplit);
         let first = a.preview_document(one).unwrap();
-        assert!(std::sync::Arc::ptr_eq(&first, &a.preview_document(one).unwrap()));
+        assert!(std::sync::Arc::ptr_eq(
+            &first,
+            &a.preview_document(one).unwrap()
+        ));
         let (rc, _) = bus(&mut a, &mut service, "ced.type", json!({"text":"new "}));
         assert_eq!(rc, 0);
         let edited = a.preview_document(one).unwrap();
         assert!(!std::sync::Arc::ptr_eq(&first, &edited));
         let gen_before = a.tab(one).unwrap().mirror.as_ref().unwrap().view_gen();
-        let (rc, _) = bus(&mut a, &mut service, "ced.action", json!({"id":"file.save_as","args":{"path":"/work/one.txt"}}));
+        let (rc, _) = bus(
+            &mut a,
+            &mut service,
+            "ced.action",
+            json!({"id":"file.save_as","args":{"path":"/work/one.txt"}}),
+        );
         assert_eq!(rc, 0);
-        assert_eq!(a.tab(one).unwrap().mirror.as_ref().unwrap().view_gen(), gen_before);
+        assert_eq!(
+            a.tab(one).unwrap().mirror.as_ref().unwrap().view_gen(),
+            gen_before
+        );
         assert_eq!(a.preview_mode(one), PreviewMode::Source);
         assert_eq!(a.preview_modes[&one], PreviewMode::Split);
         assert!(a.previews[&one].cache.cached().is_none());
         let language = a.preview_document(one).unwrap();
         assert!(!std::sync::Arc::ptr_eq(&edited, &language));
-        for action in [ActionId::ViewMarkdownSource, ActionId::ViewMarkdownSplit, ActionId::ViewMarkdownPreview] {
+        for action in [
+            ActionId::ViewMarkdownSource,
+            ActionId::ViewMarkdownSplit,
+            ActionId::ViewMarkdownPreview,
+        ] {
             assert!(!a.enabled(action));
         }
-        assert_eq!(bus(&mut a, &mut service, "ced.state", json!({})).1["preview"], "source");
-        let (rc, _) = bus(&mut a, &mut service, "ced.action", json!({"id":"file.save_as","args":{"path":"/work/one.md"}}));
+        assert_eq!(
+            bus(&mut a, &mut service, "ced.state", json!({})).1["preview"],
+            "source"
+        );
+        let (rc, _) = bus(
+            &mut a,
+            &mut service,
+            "ced.action",
+            json!({"id":"file.save_as","args":{"path":"/work/one.md"}}),
+        );
         assert_eq!(rc, 0);
         assert_eq!(a.preview_mode(one), PreviewMode::Split);
+        assert!(!std::sync::Arc::ptr_eq(&edited, &a.preview_document(one).unwrap()));
     }
 
     #[test]
     fn bus_markdown_action_and_view_hints_match_the_window() {
         let (mut a, mut service, one, _) = documents();
-        let (rc, _) = bus(&mut a, &mut service, "ced.action", json!({"id":"view.markdown.split"}));
+        let (rc, _) = bus(
+            &mut a,
+            &mut service,
+            "ced.action",
+            json!({"id":"view.markdown.split"}),
+        );
         assert_eq!(rc, 0);
         assert_eq!(a.checked(ActionId::ViewMarkdownSplit), Some(true));
-        assert_eq!(bus(&mut a, &mut service, "ced.tabs", json!({})).1["tabs"][0]["preview"], "split");
-        assert_eq!(bus(&mut a, &mut service, "ced.state", json!({})).1["preview"], "split");
-        assert!(a.noted.iter().any(|(id, origin)| id == "view.markdown.split" && *origin == Origin::Bus));
-        bus(&mut a, &mut service, "ced.action", json!({"id":"file.save_as","args":{"path":"/work/one.txt"}}));
-        let (rc, refusal) = bus(&mut a, &mut service, "ced.action", json!({"id":"view.markdown.split","tab":one}));
+        assert_eq!(
+            bus(&mut a, &mut service, "ced.tabs", json!({})).1["tabs"][0]["preview"],
+            "split"
+        );
+        assert_eq!(
+            bus(&mut a, &mut service, "ced.state", json!({})).1["preview"],
+            "split"
+        );
+        assert!(
+            a.noted
+                .iter()
+                .any(|(id, origin)| id == "view.markdown.split" && *origin == Origin::Bus)
+        );
+        bus(
+            &mut a,
+            &mut service,
+            "ced.action",
+            json!({"id":"file.save_as","args":{"path":"/work/one.txt"}}),
+        );
+        let (rc, refusal) = bus(
+            &mut a,
+            &mut service,
+            "ced.action",
+            json!({"id":"view.markdown.split","tab":one}),
+        );
         assert_eq!(rc, 10);
         assert_eq!(refusal["error_code"], "CONFLICT");
         assert_eq!(refusal["reason"], "disabled");
         let actions = bus(&mut a, &mut service, "ced.actions", json!({})).1;
-        let rows: Vec<_> = actions["actions"].as_array().unwrap().iter()
-            .filter(|row| row["id"].as_str().unwrap().starts_with("view.markdown.")).collect();
+        let rows: Vec<_> = actions["actions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|row| row["id"].as_str().unwrap().starts_with("view.markdown."))
+            .collect();
         assert_eq!(rows.len(), 3);
-        assert!(rows.iter().all(|row| row["enabled"] == false && row["keys"] == json!([])));
+        assert!(
+            rows.iter()
+                .all(|row| row["enabled"] == false && row["keys"] == json!([]))
+        );
     }
 
     #[test]
     fn no_tab_disables_markdown_commands_without_panicking() {
         let a = app();
-        for action in [ActionId::ViewMarkdownSource, ActionId::ViewMarkdownSplit, ActionId::ViewMarkdownPreview] {
+        for action in [
+            ActionId::ViewMarkdownSource,
+            ActionId::ViewMarkdownSplit,
+            ActionId::ViewMarkdownPreview,
+        ] {
             assert!(!a.enabled(action));
             assert_eq!(a.checked(action), Some(false));
             assert!(documents::keymap::chords_for(action).is_empty());

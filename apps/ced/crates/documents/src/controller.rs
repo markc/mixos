@@ -62,7 +62,9 @@ pub struct Tab {
 impl Tab {
     /// Save As updates the mirror's path before a fresh open supplies language metadata.
     pub fn language(&self) -> &str {
-        let Some(m) = &self.mirror else { return "text"; };
+        let Some(m) = &self.mirror else {
+            return "text";
+        };
         if m.meta().path != self.path {
             let mut first = String::new();
             if let Some(range) = m.text().line_range(1) {
