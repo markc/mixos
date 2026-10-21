@@ -10,7 +10,7 @@ use drivers::output::base::{
     OUTPUT_MODES_SNAPSHOT_MUT, OUTPUTS_SNAPSHOT_MUT, OutputModeRequest,
 };
 use render_gles::element::wrap::GlesElementWrapper;
-use scenegraph::scene::element::element::SceneElement;
+use scenegraph::scene::element::SceneElement;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::reexports::calloop::RegistrationToken;
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};

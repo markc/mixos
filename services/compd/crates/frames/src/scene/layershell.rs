@@ -4,7 +4,7 @@
 //! each layer's `wl_surface` + physical placement; the backend builds the
 //! `WaylandSurfaceRenderElement`s at lowering time. No renderer here.
 
-use scenegraph::node::node::SurfaceNode;
+use scenegraph::node::SurfaceNode;
 use smithay::desktop::{PopupManager, layer_map_for_output};
 use smithay::utils::{Physical, Size};
 use smithay::wayland::shell::wlr_layer::Layer;

@@ -184,7 +184,7 @@ pub fn wire(
     // second tracker here would never be read. `initialize` is still called for
     // its side effects (output registration + EGL bind/registration); winit does
     // use the return value.
-    let _ = scenegraph::state::lifecycle::lifecycle::initialize(
+    let _ = scenegraph::state::lifecycle::initialize(
         _loop,
         &display.output.clone(),
         &_loop.inner.loader.display_handle.clone(),

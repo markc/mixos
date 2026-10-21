@@ -2,7 +2,7 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Opt-in KMS evidence: COMPD_KMS_DIAG_DIR, three frames per activation/output.
 
-use scenegraph::scene::element::element::SceneElement;
+use scenegraph::scene::element::SceneElement;
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::element::Id;
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};

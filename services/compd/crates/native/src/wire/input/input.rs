@@ -260,7 +260,7 @@ pub fn register(
             let dark = *state.inner.kernel.get(&drivers::lid::base::DISPLAY_OFF)
                 || ctx_rc.borrow().pipe().drm_output.is_none();
             if !dark || matches!(event, InputEvent::Keyboard { .. }) {
-                scenegraph::state::lifecycle::lifecycle::input(state, &event);
+                scenegraph::state::lifecycle::input(state, &event);
             }
             // Display request queues (lid apply, settings mode change, activate/
             // deactivate reconcile) and the lock engage are NOT drained here —

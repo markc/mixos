@@ -106,7 +106,7 @@ pub fn wire(_loop: &mut Loop, _wayland_socket_name: OsString, event_loop: &mut E
         mode,
         winit,
     };
-    let damage_tracker = scenegraph::state::lifecycle::lifecycle::initialize(
+    let damage_tracker = scenegraph::state::lifecycle::initialize(
         _loop,
         &output.clone(),
         &display_handle.clone(),

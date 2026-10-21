@@ -10,7 +10,7 @@ use drivers::output::base::ModeInfo;
 use kms::edid::parse::HdrInfo;
 use kms::scanout::surface::output::{NativeDrmOutput, NativeDrmOutputManager};
 use render_gles::element::wrap::GlesElementWrapper;
-use scenegraph::scene::element::element::SceneElement;
+use scenegraph::scene::element::SceneElement;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::output::{Mode, Output};
 use smithay::reexports::drm::control::{Mode as DrmMode, connector, crtc};

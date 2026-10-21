@@ -104,7 +104,7 @@ pub fn register(event_loop: &mut EventLoop<'static, Loop>) {
                 }
             }
             info!("shutdown signal received; stopping the event loop");
-            scenegraph::state::lifecycle::lifecycle::stop(state);
+            scenegraph::state::lifecycle::stop(state);
             Ok(PostAction::Continue)
         },
     );

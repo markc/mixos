@@ -11,7 +11,7 @@ use crate::assemble::display::display::DisplayAssembly;
 use kms::scanout::surface::output::{NativeDrmOutput, NativeDrmOutputManager};
 use outputs::render_contract::contract::{RenderContract, RendererId};
 use render_gles::element::wrap::GlesElementWrapper;
-use scenegraph::scene::element::element::SceneElement;
+use scenegraph::scene::element::SceneElement;
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::allocator::format::FormatSet;
 use smithay::backend::renderer::ImportEgl;

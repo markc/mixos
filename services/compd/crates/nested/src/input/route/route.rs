@@ -23,7 +23,7 @@ pub fn route(event: &WinitEvent, state: &mut Loop, context: &mut WinitRenderCont
                 "winit(gles): resized {size:?} host-scale {scale_factor} output-scale {} (physical output, fractional scale)",
                 scale.fractional_scale()
             );
-            scenegraph::state::lifecycle::lifecycle::resize(
+            scenegraph::state::lifecycle::resize(
                 context.output.clone(),
                 *size,
                 Some(scale),
@@ -34,7 +34,7 @@ pub fn route(event: &WinitEvent, state: &mut Loop, context: &mut WinitRenderCont
         }
         WinitEvent::Input(input_event) => {
             // Per-event logging omitted: input is a high-frequency path.
-            scenegraph::state::lifecycle::lifecycle::input(state, input_event);
+            scenegraph::state::lifecycle::input(state, input_event);
             // (Lock engage is drained in the control-plane ping source — the lock
             // keybinding calls `ping_control()` — not here, so it never depends on
             // input arriving and doesn't poll per frame.)
@@ -64,7 +64,7 @@ pub fn route(event: &WinitEvent, state: &mut Loop, context: &mut WinitRenderCont
         }
         WinitEvent::CloseRequested => {
             info!("winit: close requested — stopping compositor");
-            scenegraph::state::lifecycle::lifecycle::stop(state);
+            scenegraph::state::lifecycle::stop(state);
         }
         _ => (),
     }

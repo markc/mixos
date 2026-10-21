@@ -139,7 +139,7 @@ pub fn wire(
     };
     let handle = state.state.output.display_handle.clone();
     let damage_tracker =
-        scenegraph::state::lifecycle::lifecycle::initialize(state, &output, &handle, &mut contract);
+        scenegraph::state::lifecycle::initialize(state, &output, &handle, &mut contract);
     // No physical input sources. Keep the human seat global, but advertise no
     // capabilities. This runs before the event loop serves any client.
     state.state.seat.seat.remove_pointer();
