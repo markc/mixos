@@ -85,7 +85,7 @@ fn plan($target)
     unit:$target.unit, genesis:$target.etc .. "/noded/genesis.pub", seed:$target.etc .. "/noded/d2.seed",
     inventory:$target.var .. "/noded/inventory.signed", baseline:$target.var .. "/noded/inventory.baseline",
     roster:$target.etc .. "/noded/config.conf.mix", node_config:$target.etc .. "/node.conf.mix",
-    session:$target.session, run:$target.run, mutation_supported:$target.kind == "system"}
+    session:$target.session, run:$target.run, mutation_supported:false, system_mutation_eligible:$target.kind == "system"}
 end
 
 fn require_system_mutation($document)

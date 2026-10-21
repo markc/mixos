@@ -43,7 +43,11 @@ Both are found through `project_bin()` and `installed_bin()` in `deploy_lib.mix`
 ## Checks
 
 `mix _bin/mesh_targets.mix TARGETS.conf.mix` previews explicit system and
-desk target paths without contacting a host or writing anything. The version1
+desk target paths without contacting a host or writing anything. Optional
+`--probe` uses the existing native SSH/Mix path and a namespace stdin pipe to
+query only noded.info and noded.peers as the session account. It requires an
+absolute `MESH_MIX` path. Process success is reported separately from Bus
+reply codes; neither is an admission or deployment verdict. The version1
 schema has `project` and a nonempty `targets` list. Each target has `node`,
 `host` (an SSH alias) and `kind` (`system` or `desk`). A desk also names its
 `machine`, `account`, integer `session` from1 to6, and `profile` as one direct
