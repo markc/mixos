@@ -95,8 +95,8 @@ where
 
     CalculateBoundResult {
         bounds: geom,
-        world: world,
-        screen: screen,
+        world,
+        screen,
     }
 }
 
@@ -178,7 +178,7 @@ where
 
 //     return CalculateBoundResult {
 //         bounds: window_bbox,
-//         world: world,
+//         world,
 //         screen: Bound {
 //             // top: screen_rect.y() as f64,
 //             // left: screen_rect.x() as f64,

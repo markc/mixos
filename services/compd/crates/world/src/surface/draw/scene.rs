@@ -46,7 +46,7 @@ pub fn scene(
         };
 
         // Requires gles renderer on every frame. Temporary. should store it instead.
-        let res = UI
+        let res = registry
             .render_all(
                 gpu.as_str(),
                 renderer,
@@ -70,7 +70,7 @@ pub fn scene(
         // Capture-dim pass: rendered separately so the scene builder can place
         // it BELOW windows (its own z-slot), unlike the screen-space SCENE pass
         // which sits above them.
-        let dim = UI
+        let dim = registry
             .render_all(
                 gpu.as_str(),
                 renderer,

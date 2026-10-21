@@ -241,7 +241,7 @@ impl TestHost {
         self.active_world ^= 1;
     }
 
-    fn remove_drawable(&mut self, uuid: uuid::Uuid) {
+    fn remove_drawable(&mut self, uuid::Uuid) {
         // Teardown can follow an activation, and Space unmap can precede both.
         world::order::track::base::DrawOrder::remove_from_all(
             world::order::track::base::ComponentId(uuid),
@@ -305,12 +305,12 @@ impl WireTrait for TestHost {
             let uuid = uuid::Uuid::now_v7();
             window
                 .user_data()
-                .insert_if_missing(|| WindowData { uuid: uuid });
+                .insert_if_missing(|| WindowData { uuid });
             self.comp.bind_uuid(&handle, uuid, pid);
             if let Some(surface) = ident::surface(&window) {
                 smithay::wayland::compositor::with_states(&surface, |states| {
                     states.data_map.insert_if_missing_threadsafe(|| {
-                        std::sync::Mutex::new(WindowData { uuid: uuid })
+                        std::sync::Mutex::new(WindowData { uuid })
                     });
                 });
             }

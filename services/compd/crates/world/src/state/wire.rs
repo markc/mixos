@@ -140,7 +140,7 @@ impl WireTrait for Orchestrator {
         // Window basic data ( UUID )
         window
             .user_data()
-            .insert_if_missing_threadsafe(|| WindowData { uuid: uuid });
+            .insert_if_missing_threadsafe(|| WindowData { uuid });
         // The comp registry record took its role earlier this drain; bind the uuid
         // to it (a changed uuid mints a new generation there).
         if let Some(handle) =
@@ -165,7 +165,7 @@ impl WireTrait for Orchestrator {
         with_states(&surface, |states| {
             let inserted = states
                 .data_map
-                .insert_if_missing_threadsafe(|| Mutex::new(WindowData { uuid: uuid }));
+                .insert_if_missing_threadsafe(|| Mutex::new(WindowData { uuid }));
             if !inserted {
                 // CHECK: Its interesting behaviour:
                 // Windows (and their user_data) can completely recreated without a surface re-creation.
@@ -175,7 +175,7 @@ impl WireTrait for Orchestrator {
                 // panic!("Duplication of UUID set in surface.");
                 // Replace the entire value:
                 let slot = states.data_map.get::<Mutex<WindowData>>().unwrap();
-                *slot.lock().unwrap() = WindowData { uuid: uuid };
+                *slot.lock().unwrap() = WindowData { uuid };
             }
         });
 
