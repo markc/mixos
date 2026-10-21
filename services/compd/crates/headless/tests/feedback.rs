@@ -123,11 +123,18 @@ fn default_feedback_names_render_device_and_offers_formats() {
     };
     // The expectation is the node compd SELECTED (its EGL device), read from
     // its log, not the one requested: on a multi-GPU host they may differ.
-    let selected = fs::read_to_string(process.root.join("compd.log"))
-        .unwrap()
-        .lines()
-        .find_map(|line| line.split("headless: EGL device = ").nth(1).map(str::trim).map(String::from))
-        .expect("compd logs its EGL device");
+    // The socket can exist before the backend has logged; wait for the line.
+    let selected = loop {
+        let found = fs::read_to_string(process.root.join("compd.log"))
+            .unwrap_or_default()
+            .lines()
+            .find_map(|line| line.split("headless: EGL device = ").nth(1).map(str::trim).map(String::from));
+        if let Some(path) = found {
+            break path;
+        }
+        assert!(Instant::now() < deadline, "compd never logged its EGL device");
+        thread::sleep(Duration::from_millis(10));
+    };
     let expected = fs::metadata(&selected).unwrap().rdev();
     let connection = Connection::from_socket(stream).unwrap();
     let mut queue = connection.new_event_queue::<Feedback>();
