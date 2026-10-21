@@ -214,4 +214,33 @@ mod tests {
         latch.flipped(None, PERIOD, true);
         assert!(latch.plan(at, MARGIN).deadline.is_none());
     }
+
+    #[test]
+    fn repeated_misses_back_off_to_immediate_and_outputs_have_distinct_targets() {
+        let at = Instant::now();
+        let mut fast = LateLatch::default();
+        let mut slow = LateLatch::default();
+        fast.flipped(Some(at), PERIOD / 2, true);
+        slow.flipped(Some(at), PERIOD, true);
+        assert_ne!(fast.plan(at, MARGIN).deadline, slow.plan(at, MARGIN).deadline);
+        let mut flip = at;
+        for _ in 0..3 {
+            slow.committed(Duration::from_millis(2));
+            flip += PERIOD * 2;
+            assert_eq!(slow.flipped(Some(flip), PERIOD, true), Some(false));
+        }
+        assert!(slow.plan(flip, MARGIN).deadline.is_none());
+        assert!(fast.plan(at, MARGIN).deadline.is_some(), "no global back-off");
+    }
+
+    #[test]
+    fn a_mode_change_or_missing_timestamp_does_not_claim_a_hit() {
+        let at = Instant::now();
+        let mut latch = LateLatch::default();
+        latch.flipped(Some(at), PERIOD, true);
+        latch.committed(Duration::from_millis(1));
+        assert_eq!(latch.flipped(Some(at + PERIOD * 2), PERIOD * 2, true), None);
+        latch.committed(Duration::from_millis(1));
+        assert_eq!(latch.flipped(None, PERIOD * 2, true), None);
+    }
 }

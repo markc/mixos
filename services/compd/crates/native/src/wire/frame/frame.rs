@@ -479,6 +479,9 @@ fn process_vblank_inner(
     // throttle gate above, which is feature-gated off in the shipping build.
     let this_refresh = kms::scanout::timing::vblank::vblank::interval(&ctx.outputs[idx].mode);
     let pipe = &mut ctx.outputs[idx];
+    if let Some(timer) = &pipe.deadline_timer {
+        timer.cancel();
+    }
     let target = pipe.late_latch.submitted_target();
     let budget_used = pipe.late_latch.submitted_budget;
     let hit = pipe.late_latch.flipped(
