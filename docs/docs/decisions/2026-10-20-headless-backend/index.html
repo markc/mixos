@@ -293,6 +293,34 @@ a compositor cadence defect.</p>
 Its rendered pixels survived composition and screencopy, but this was a
 <code>wl_shm</code> fallback. Client DMA-BUF negotiation remains unproven; this probe
 does not establish the GPU-client DMA-BUF path.</p>
+<p>Phase 5b publishes the validated headless render node in the kernel registry
+as the composite device for backends without a scanout binding. The DMA-BUF
+advertiser uses the native GPU binding first, as before, otherwise this node,
+otherwise the v3 flat format list (nested). Headless therefore advertises
+<code>zwp_linux_dmabuf_v1</code> v5-capable feedback with <code>main_device</code> equal to the render
+node's <code>dev_t</code>, using the existing narrowed import format set. Mesa can select its
+hardware EGL driver from that feedback without a legacy <code>wl_drm</code> global.
+The GPU acceptance tests read the default feedback on a real Wayland client,
+compare its main device against the selected node's <code>st_rdev</code>, and require a
+tranche carrying valid format-table indices. The plain EGL client must create
+linux-dmabuf buffers and pass the existing rendered-pixel readback checks;
+this establishes GPU EGL client allocation, import and composition. The ced
+probe continues to record its actual wgpu adapter and attached buffer type.
+This does not establish hardware Vulkan WSI on the build workers: their only
+Vulkan ICD is llvmpipe and they lack <code>vulkan-intel</code>. On a headless desk with
+<code>vulkan-intel</code> installed, ced chose Vulkan on the Intel GPU and presented
+through linux-dmabuf even against the earlier v3 global (2026-10-21,
+recorded in the private journal); the Vulkan path depends on the ICD being
+in the desk image, which the image builder now includes.</p>
+<p>The Phase 5b Intel render-node run observed a version 6 global from the current
+Smithay feedback helper. Mesa bound version 4. Default feedback named
+<code>0xe280</code>, equal to the selected node's (<code>/dev/dri/renderD128</code>) <code>st_rdev</code>, with
+one tranche of 224 format indices.
+<code>weston-simple-egl</code> created linux-dmabuf buffers; screencopy retained its dark
+background and bright bar. Ced chose <code>Gl</code>, <code>IntegratedGpu</code>,
+<code>Mesa Intel(R) Iris(R) Xe Graphics (RPL-P)</code>, Mesa 26.2.4, and attached
+linux-dmabuf buffers. Idle SSIM was 1.0 and typed SSIM 0.980828380141, with
+exact Bus text readback. No console reference was supplied for this run.</p>
 <p>Phase 5 uses ced's real egui/wgpu window with a private noded and editd, so
 <code>ced.state {text:true}</code> can confirm agent-seat typing independently of pixels.
 The reference helper <code>services/compd/crates/testkit/scripts/app_reference.mix</code>
@@ -318,10 +346,12 @@ the console comparison. SSIM at 0.99 tolerates uniform brightness drift: a
 a brightness regression is within the threshold by design and must be
 caught elsewhere. The tested artefact is the test-only launcher, which
 compiles the shipped entry point from the same source; drift is a compile
-error, never silent. The first run chose a software Vulkan adapter
-(llvmpipe) with <code>wl_shm</code>: forcing a hardware wgpu adapter on the render node
-is an open follow-up, as are the test's fixed post-typing sleep (retry once
-on an unchanged capture), the helper's leftover <code>.session</code> directory on
+error, never silent. The first Phase 5 run chose a software Vulkan adapter
+(llvmpipe) with <code>wl_shm</code>; Phase 5b's device feedback enables the hardware GL
+path recorded above. Hardware Vulkan WSI is unproven on the workers and
+observed on a desk with the Intel ICD. Open follow-ups
+are the test's fixed post-typing sleep (retry once on an unchanged capture),
+the helper's leftover <code>.session</code> directory on
 failure, and its reliance on <code>spawn</code> merging the parent environment.</p>
         </article>
         <p class="doc-source"><a href="/docs/decisions/2026-10-20-headless-backend.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
