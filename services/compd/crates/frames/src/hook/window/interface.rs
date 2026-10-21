@@ -7,7 +7,6 @@ use protocols::window::ident;
 use protocols::window::shell;
 use smithay::desktop::Window;
 use smithay::utils::{Logical, Point, Size};
-use smithay::wayland::seat::WaylandFocus;
 use uuid::Uuid;
 use world::camera::transform::translate::slot;
 use world::state::Loop;
