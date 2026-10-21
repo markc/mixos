@@ -215,27 +215,44 @@ fn breeze_and_adwaita_choices_apply_and_survive_a_sealed_reopen() {
         let (_, reopened) = Store::open(dir.path(), &binding()).unwrap();
         assert_eq!(reopened.desktop.appearance.scheme, scheme);
         assert_eq!(reopened.desktop.appearance.style.as_deref(), Some(style));
-        reopened.effective().unwrap();
+        let effective = reopened.effective().unwrap();
+        assert_eq!(effective["desktop"].scheme, scheme);
+        assert_eq!(effective["desktop"].style.as_deref(), Some(style));
     }
 
-    let before = std::fs::read(dir.path().join("desktop.conf.mix")).unwrap();
     let (store, accepted) = Store::open(dir.path(), &binding()).unwrap();
     let mut authority = Authority::new(store, accepted).unwrap();
-    let invalid = ApplyRequest {
-        binding: binding(),
-        expected_incarnation: authority.accepted.incarnation.clone(),
-        expected_revision: authority.accepted.revision,
-        operation_id: "unknown-modern-choice".into(),
-        changes: BTreeMap::from([("appearance.style".into(), json!("unknown"))]),
-        reset: vec![],
-        request_digest: None,
+    let stored_bytes = || {
+        std::fs::read_dir(dir.path())
+            .unwrap()
+            .map(|entry| {
+                let entry = entry.unwrap();
+                (
+                    entry.file_name().to_string_lossy().into_owned(),
+                    std::fs::read(entry.path()).unwrap(),
+                )
+            })
+            .collect::<BTreeMap<_, _>>()
     };
-    assert_eq!(
-        authority.apply(invalid).unwrap_err()["status"],
-        "validation_failed"
-    );
-    assert_eq!(
-        std::fs::read(dir.path().join("desktop.conf.mix")).unwrap(),
-        before
-    );
+    let before = stored_bytes();
+    let revision = authority.accepted.revision;
+    let incarnation = authority.accepted.incarnation.clone();
+    for field in ["appearance.scheme", "appearance.style"] {
+        let invalid = ApplyRequest {
+            binding: binding(),
+            expected_incarnation: incarnation.clone(),
+            expected_revision: revision,
+            operation_id: format!("unknown-{field}"),
+            changes: BTreeMap::from([(field.into(), json!("unknown"))]),
+            reset: vec![],
+            request_digest: None,
+        };
+        assert_eq!(
+            authority.apply(invalid).unwrap_err()["status"],
+            "validation_failed"
+        );
+        assert_eq!(authority.accepted.revision, revision);
+        assert_eq!(authority.accepted.incarnation, incarnation);
+        assert_eq!(stored_bytes(), before);
+    }
 }
