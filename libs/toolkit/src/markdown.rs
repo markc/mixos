@@ -292,7 +292,16 @@ mod tests {
         );
         assert_eq!(
             ignored,
-            ["file", "javascript", "data", "dev.mixos.email", "", "", "FILE", ""]
+            [
+                "file",
+                "javascript",
+                "data",
+                "dev.mixos.email",
+                "",
+                "",
+                "FILE",
+                ""
+            ]
         );
         assert_eq!(commands.len(), 2);
         assert!(matches!(&commands[0], OutputCommand::CopyText(text) if text == "before"));

@@ -336,7 +336,9 @@ fn markdown_preview_is_read_only_and_stays_above_the_panels() {
     );
     h.run_steps(6);
     let shell = h.state_mut().shell.as_mut().unwrap();
-    shell.app.action(documents::actions::ActionId::ViewMarkdownPreview);
+    shell
+        .app
+        .action(documents::actions::ActionId::ViewMarkdownPreview);
     shell.app.action(documents::actions::ActionId::SearchFind);
     shell.app.ui.problems = true;
     shell.app.ui.output = true;

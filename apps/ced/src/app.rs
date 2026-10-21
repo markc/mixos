@@ -1168,7 +1168,10 @@ mod tests {
         );
         assert_eq!(rc, 0);
         assert_eq!(a.preview_mode(one), PreviewMode::Split);
-        assert!(!std::sync::Arc::ptr_eq(&edited, &a.preview_document(one).unwrap()));
+        assert!(!std::sync::Arc::ptr_eq(
+            &edited,
+            &a.preview_document(one).unwrap()
+        ));
     }
 
     #[test]

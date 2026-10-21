@@ -197,7 +197,7 @@ fn tabs(ui: &mut Ui, app: &App, events: &mut Vec<UiEvent>) {
             let name = tab_name(t);
             let mirror = t.mirror.as_ref();
             let opening = mirror.is_none_or(|m| matches!(m.phase(), Phase::Bootstrapping { .. }));
-            let mut meta = t.language().to_owned();
+            let mut meta = mirror.map_or_else(String::new, |_| t.language().to_owned());
             if app.ctl.agent_since_focus(t.id) {
                 meta.push_str(" ◆");
             }
@@ -602,7 +602,7 @@ fn status(ui: &mut Ui, app: &App, stroke: f32, connected: bool) {
         } else {
             label("status-insert")
         });
-        ui.small(&meta.language);
+        ui.small(tab.language());
         let eol = match meta.eol {
             edit::wire::Eol::Crlf => "CRLF",
             _ => "LF",
