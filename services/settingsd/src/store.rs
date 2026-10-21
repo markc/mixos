@@ -77,8 +77,9 @@ impl Accepted {
     /// seal [`Accepted::check`] verified as stored; returns it at [`FORMAT`]
     /// and whether anything changed.
     ///
-    /// An older record keeps everything it authored (the desktop, the pinned
-    /// source, its history). What is derived from them, the effective
+    /// An older record keeps its authored settings, pinned source and history,
+    /// except that a legacy prose composer font resets to the mono default.
+    /// What is derived from them, the effective
     /// interpretation, is never trusted across formats: it is resolved again
     /// from the authored desktop and pinned source, and both digests are
     /// sealed anew at the current format. The store writes the result
