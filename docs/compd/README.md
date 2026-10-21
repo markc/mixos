@@ -128,10 +128,11 @@ the learned floor. Modesets and the first commit and flip after reset do not
 train steady-state cost or phase.
 
 The budget is the larger of that measured maximum and a learned floor, plus
-`late_latch_margin_us` (default 1500). A miss raises the floor to at least the
-submitted budget minus margin plus one eighth of a refresh. The floor shrinks
-by only 50 µs per 100 consecutive target hits; idle or unknown feedback breaks
-that run. The initial estimate is 2 ms. The 1.5 ms margin covers residual jitter
+`late_latch_margin_us` (default 1500). A miss on a deferred frame raises the floor
+to the submitted budget minus margin plus one eighth of a refresh, capped at
+one refresh interval. The floor shrinks by only 50 µs per 100 target hits;
+idle gaps preserve that run. A miss, or unknown feedback on a deferred frame,
+breaks the run. The initial estimate is 2 ms. The 1.5 ms margin covers residual jitter
 and GPU observation error; hardware timing still needs measurement under load.
 
 Set `late_latch:false` in the settings file to disable it, or set the emergency

@@ -15,6 +15,8 @@ pub struct LateLatch {
     first_flip: bool,
     first_commit: bool,
     submitted_margin: Duration,
+    sample_deferred: bool,
+    submitted_deferred: bool,
     pub sample_start: Option<Instant>,
     candidate: Option<Target>,
     submitted: Option<Target>,
@@ -49,6 +51,8 @@ impl Default for LateLatch {
             first_flip: true,
             first_commit: true,
             submitted_margin: Duration::ZERO,
+            sample_deferred: false,
+            submitted_deferred: false,
             sample_start: None,
             candidate: None,
             submitted: None,
@@ -85,6 +89,10 @@ impl LateLatch {
         refresh: Duration,
         pending: bool,
     ) -> Option<bool> {
+        // A rate-capped render may have left an uncommitted sample behind.
+        self.sample_start = None;
+        self.sample_deferred = false;
+        let deferred = std::mem::take(&mut self.submitted_deferred);
         if std::mem::take(&mut self.first_flip) {
             // A reset can precede an old-mode flip. Learn no phase from it.
             self.submitted = None;
@@ -103,17 +111,23 @@ impl LateLatch {
                 } else {
                     // Learn the hidden GPU tail as well as CPU/dispatch cost.
                     // Keep this floor when the windowed CPU maximum expires.
-                    self.floor = self.floor.max(
-                        self.submitted_budget
-                            .saturating_sub(self.submitted_margin)
-                            .saturating_add(refresh / 8),
-                    );
+                    // Immediate frames would have missed without late latch too.
+                    if deferred {
+                        self.floor = self
+                            .floor
+                            .max(
+                                self.submitted_budget
+                                    .saturating_sub(self.submitted_margin)
+                                    .saturating_add(refresh / 8),
+                            )
+                            .min(refresh);
+                    }
                     self.hits = 0;
                 }
                 hit
             })
         });
-        if hit.is_none() {
+        if hit.is_none() && deferred {
             self.hits = 0;
         }
         self.armed = None;
@@ -143,7 +157,7 @@ impl LateLatch {
         self.following_flip = false;
         self.armed = None;
         self.sample_start = None;
-        self.hits = 0;
+        self.sample_deferred = false;
     }
 
     /// Preserve the armed deadline through expiry and executor dispatch. For a
@@ -151,6 +165,7 @@ impl LateLatch {
     pub fn begin(&mut self, now: Instant, plan: Plan) {
         if self.sample_start.is_none() {
             self.sample_start = Some(plan.deadline.unwrap_or(now));
+            self.sample_deferred = plan.deadline.is_some();
             self.budget_used = plan.budget;
         }
     }
@@ -161,10 +176,12 @@ impl LateLatch {
         let first = std::mem::take(&mut self.first_commit);
         if first || modeset {
             self.submitted = None;
+            self.submitted_deferred = false;
             self.park();
             return None;
         }
         let start = self.sample_start.take();
+        self.submitted_deferred = std::mem::take(&mut self.sample_deferred);
         self.submitted = self.candidate.take();
         self.submitted_budget = self.budget_used;
         self.submitted_margin = margin;
@@ -307,7 +324,9 @@ mod tests {
             at += PERIOD;
             latch.flipped(Some(at), PERIOD, true);
         }
-        latch.flipped(None, PERIOD, true); // unknown feedback breaks the hit run
+        submit(&mut latch, at, Duration::from_millis(2));
+        latch.flipped(None, PERIOD, true); // unknown deferred feedback breaks the hit run
+        assert_eq!(latch.hits, 0);
         submit(&mut latch, at, Duration::from_millis(2));
         latch.flipped(Some(at + PERIOD), PERIOD, true);
         assert_eq!(latch.budget(MARGIN), Duration::from_micros(7450));
@@ -371,13 +390,70 @@ mod tests {
         let mut at = Instant::now();
         let fast = ready(at);
         let mut slow = ready(at);
-        for _ in 0..8 {
+        for _ in 0..100 {
             submit(&mut slow, at, Duration::from_millis(2));
             at += PERIOD * 2;
             assert_eq!(slow.flipped(Some(at), PERIOD, true), Some(false));
+            assert!(slow.floor <= PERIOD);
         }
+        assert_eq!(slow.floor, PERIOD);
         assert!(slow.plan(at, MARGIN).deadline.is_none());
         assert_eq!(fast.budget(MARGIN), Duration::from_micros(3500));
+    }
+
+    #[test]
+    fn clamped_misses_do_not_raise_the_floor() {
+        let mut at = Instant::now();
+        let mut latch = ready(at);
+        for _ in 0..100 {
+            let now = at + PERIOD;
+            assert!(latch.plan(now, MARGIN).deadline.is_none());
+            submit(&mut latch, now, Duration::from_millis(2));
+            at += PERIOD * 2;
+            assert_eq!(latch.flipped(Some(at), PERIOD, true), Some(false));
+            assert_eq!(latch.floor, Duration::ZERO);
+        }
+    }
+
+    #[test]
+    fn idle_gaps_and_unsampled_flips_allow_floor_recovery() {
+        let mut at = Instant::now();
+        let mut latch = ready(at);
+        submit(&mut latch, at, Duration::from_millis(2));
+        at += PERIOD * 2;
+        assert_eq!(latch.flipped(Some(at), PERIOD, true), Some(false));
+        let floor = latch.floor;
+        for _ in 0..100 {
+            latch.park();
+            assert_eq!(latch.flipped(None, PERIOD, false), None);
+            // First redraw after idle is immediate and has no submitted target.
+            submit(&mut latch, at, Duration::from_millis(2));
+            at += PERIOD;
+            assert_eq!(latch.flipped(Some(at), PERIOD, true), None);
+            submit(&mut latch, at, Duration::from_millis(2));
+            at += PERIOD;
+            assert_eq!(latch.flipped(Some(at), PERIOD, false), Some(true));
+        }
+        assert_eq!(latch.floor, floor - Duration::from_micros(50));
+    }
+
+    #[test]
+    fn flip_discards_an_uncommitted_sample_before_the_next_render() {
+        let at = Instant::now();
+        let mut latch = ready(at);
+        latch.begin(at, latch.plan(at, MARGIN));
+        assert!(latch.sample_start.is_some());
+        latch.flipped(Some(at + PERIOD), PERIOD, true);
+        assert_eq!(latch.sample_start, None);
+        let plan = latch.plan(at + PERIOD, MARGIN);
+        latch.begin(at + PERIOD, plan);
+        assert_eq!(latch.sample_start, plan.deadline);
+        latch.committed(
+            plan.deadline.unwrap() + Duration::from_millis(2),
+            MARGIN,
+            false,
+        );
+        assert_eq!(latch.budget(MARGIN), Duration::from_micros(3500));
     }
 
     #[test]

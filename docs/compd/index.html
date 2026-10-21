@@ -336,10 +336,11 @@ observation includes dispatch latency; unavailable fences leave GPU tails to
 the learned floor. Modesets and the first commit and flip after reset do not
 train steady-state cost or phase.</p>
 <p>The budget is the larger of that measured maximum and a learned floor, plus
-<code>late_latch_margin_us</code> (default 1500). A miss raises the floor to at least the
-submitted budget minus margin plus one eighth of a refresh. The floor shrinks
-by only 50 µs per 100 consecutive target hits; idle or unknown feedback breaks
-that run. The initial estimate is 2 ms. The 1.5 ms margin covers residual jitter
+<code>late_latch_margin_us</code> (default 1500). A miss on a deferred frame raises the floor
+to the submitted budget minus margin plus one eighth of a refresh, capped at
+one refresh interval. The floor shrinks by only 50 µs per 100 target hits;
+idle gaps preserve that run. A miss, or unknown feedback on a deferred frame,
+breaks the run. The initial estimate is 2 ms. The 1.5 ms margin covers residual jitter
 and GPU observation error; hardware timing still needs measurement under load.</p>
 <p>Set <code>late_latch:false</code> in the settings file to disable it, or set the emergency
 environment switch <code>COMPD_DISABLE_LATE_LATCH</code> (any value). Both take effect at
