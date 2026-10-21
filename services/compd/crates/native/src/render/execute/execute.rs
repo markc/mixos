@@ -810,7 +810,10 @@ pub fn execute(
                 let sync_trace = ledger::frame_trace::span("kms_render_sync", output_id.0);
                 honor_needs_sync(&scene_result);
                 drop(sync_trace);
-                if ctx_ref.outputs[output_idx].late_latch.sample_start.is_some()
+                if ctx_ref.outputs[output_idx]
+                    .late_latch
+                    .sample_start
+                    .is_some()
                     && let smithay::backend::drm::compositor::PrimaryPlaneElement::Swapchain(
                         element,
                     ) = &scene_result.primary_element
