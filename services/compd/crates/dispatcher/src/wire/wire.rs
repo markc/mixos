@@ -9,64 +9,29 @@
 // `delegate_dispatch2!(Dispatch)` is co-located so every `GlobalDispatch`/
 // `Dispatch` bound is provable here — the factory + the bound-requiring
 // dispatcher fns are therefore called from this crate too).
-use std::sync::Mutex;
-use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::drm::DrmDeviceFd;
-use smithay::desktop::PopupKind;
-use smithay::xwayland::{X11Surface, xwm::X11Window};
 use protocols::window::find;
 use protocols::window::ident;
 use protocols::window::shell;
 use crate::state::deferred::deferred::Deferred;
 use crate::state::deferred::deferred;
-use smithay::input::dnd::{DndGrabHandler, GrabType, Source};
-use smithay::input::{Seat, SeatHandler, SeatState};
-use smithay::input::pointer::{MotionEvent, PointerHandle};
+use smithay::input::pointer::MotionEvent;
 use smithay::reexports::calloop::LoopHandle;
-use smithay::reexports::wayland_protocols::wp::color_management::v1::server::{
-    wp_color_management_output_v1::{self, WpColorManagementOutputV1},
-    wp_color_management_surface_feedback_v1::{self, WpColorManagementSurfaceFeedbackV1},
-    wp_color_management_surface_v1::{self, WpColorManagementSurfaceV1},
-    wp_color_manager_v1::{self, WpColorManagerV1},
-    wp_image_description_creator_icc_v1::{self, WpImageDescriptionCreatorIccV1},
-    wp_image_description_creator_params_v1::{self, WpImageDescriptionCreatorParamsV1},
-    wp_image_description_info_v1::WpImageDescriptionInfoV1,
-    wp_image_description_v1::{self, WpImageDescriptionV1},
-};
-use smithay::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1::Mode;
-use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::ResizeEdge;
-use smithay::reexports::wayland_server::{Client, DataInit, Dispatch as WLDispatch, DisplayHandle, GlobalDispatch, New, Resource};
-use smithay::reexports::wayland_server::protocol::{wl_buffer::WlBuffer, wl_output::WlOutput, wl_seat::WlSeat, wl_surface::WlSurface};
-use smithay::utils::{Logical, Point, Rectangle, SERIAL_COUNTER, Serial};
-use smithay::wayland::buffer::BufferHandler;
-use smithay::wayland::drm_syncobj::{DrmSyncobjCachedState, DrmSyncobjHandler, DrmSyncobjState};
-use smithay::wayland::input_method::InputMethodHandler;
-use smithay::wayland::pointer_constraints::{PointerConstraintsHandler, with_pointer_constraint};
+use smithay::reexports::wayland_server::{DisplayHandle, Resource};
+use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
+use smithay::utils::{Logical, Point, SERIAL_COUNTER};
+use smithay::wayland::pointer_constraints::with_pointer_constraint;
 use smithay::wayland::seat::WaylandFocus;
 use smithay::wayland::selection::data_device::set_data_device_focus;
-use smithay::input::tablet::TabletSeatHandler;
-use smithay::wayland::xdg_foreign::XdgForeignHandler;
 use smithay::wayland::compositor;
-use smithay::wayland::compositor::{BufferAssignment, CompositorClientState, CompositorHandler, CompositorState, SurfaceAttributes, add_blocker, add_pre_commit_hook};
-use smithay::wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportNotifier};
-use smithay::wayland::fractional_scale::FractionalScaleHandler;
-use smithay::wayland::output::OutputHandler;
-use smithay::wayland::selection::data_device::{DataDeviceHandler, DataDeviceState, WaylandDndGrabHandler};
-use smithay::wayland::selection::SelectionHandler;
-use smithay::wayland::shell::wlr_layer::{Layer, LayerSurface, WlrLayerShellHandler, WlrLayerShellState};
-use smithay::wayland::shell::xdg::{PopupSurface, PositionerState, ToplevelSurface, XdgShellHandler, XdgShellState};
-use smithay::wayland::shell::xdg::decoration::XdgDecorationHandler;
-use smithay::wayland::shm::{ShmHandler, ShmState};
-use smithay::wayland::xdg_activation::{XdgActivationHandler, XdgActivationState, XdgActivationToken, XdgActivationTokenData};
-use crate::state::state::{Dispatch, DispatchWire};
-use crate::state::bounds::FactoryBounds;
-use crate::wire::color::color::{ImageDescData, ParamsState};
+use smithay::wayland::compositor::CompositorHandler;
+use smithay::wayland::shell::xdg::XdgShellHandler;
+use smithay::wayland::xdg_activation::XdgActivationHandler;
+use crate::state::state::Dispatch;
 use crate::wire::trait_::wire_trait::{ActivationOrigin, WireTrait};
 use crate::wire::trait_::surface_event::{SurfaceEvent, SurfaceHandle};
 use crate::state::state::RedrawReason;
 use crate::wire::color::color as cm;
-use crate::wire::colorsurf::colorsurf as cs;
-use crate::wire::redraw::redraw as rd;
 
 /// Whether a surface's last processed commit carried a buffer: the edge that
 /// tells an xdg toplevel's unmap (attached -> null) from its initial bufferless

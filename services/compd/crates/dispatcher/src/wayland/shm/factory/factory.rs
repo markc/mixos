@@ -2,7 +2,7 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 use crate::state::state::DispatchWire;
 use protocols::shm::state::SHMState;
-use smithay::reexports::wayland_server::protocol::wl_shm::{Format, WlShm};
+use smithay::reexports::wayland_server::protocol::wl_shm::WlShm;
 use smithay::reexports::wayland_server::protocol::wl_shm_pool::WlShmPool;
 use smithay::reexports::wayland_server::{Dispatch, DisplayHandle, GlobalDispatch};
 use smithay::wayland::GlobalData;

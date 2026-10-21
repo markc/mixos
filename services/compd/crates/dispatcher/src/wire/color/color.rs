@@ -7,7 +7,6 @@ use smithay::reexports::wayland_protocols::wp::color_management::v1::server::{
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{DisplayHandle, GlobalDispatch, Resource};
 use smithay::wayland::compositor::with_states;
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 pub static IDENTITY: AtomicU32 = AtomicU32::new(1);

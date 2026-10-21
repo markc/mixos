@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-use crate::state::state::{Dispatch, DispatchWire};
+use crate::state::state::Dispatch;
 use crate::wayland::compositor::place::WindowPlacedMarker;
 use protocols::window::find;
 use protocols::window::shell;

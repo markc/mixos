@@ -46,10 +46,7 @@ pub mod dispatch {
             wayland_protocols::wp::linux_drm_syncobj::v1::server::wp_linux_drm_syncobj_manager_v1::WpLinuxDrmSyncobjManagerV1,
             wayland_server::GlobalDispatch,
         },
-        wayland::{
-            dmabuf::DmabufState,
-            drm_syncobj::{DrmSyncobjGlobalData, DrmSyncobjState, supports_syncobj_eventfd},
-        },
+        wayland::drm_syncobj::{DrmSyncobjGlobalData, DrmSyncobjState, supports_syncobj_eventfd},
     };
 
     pub fn hook_syncobj<WireObject>(dispatch: &mut Dispatch, fd: DrmDeviceFd)

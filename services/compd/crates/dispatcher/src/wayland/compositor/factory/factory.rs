@@ -2,13 +2,12 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 use crate::state::state::DispatchWire;
 use protocols::compositor::state::Compositor;
-use smithay::desktop::PopupManager;
 use smithay::reexports::wayland_server::protocol::wl_compositor::WlCompositor;
 use smithay::reexports::wayland_server::protocol::wl_subcompositor::WlSubcompositor;
-use smithay::reexports::wayland_server::{Dispatch, DisplayHandle, GlobalDispatch, Resource};
+use smithay::reexports::wayland_server::{DisplayHandle, GlobalDispatch};
 use smithay::utils::{Clock, Monotonic};
 use smithay::wayland::compositor::CompositorState;
-use smithay::wayland::{Dispatch2, GlobalData, GlobalDispatch2};
+use smithay::wayland::GlobalData;
 
 pub fn new<I>(display_handle: &DisplayHandle) -> Compositor
 where

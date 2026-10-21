@@ -6,7 +6,7 @@ use smithay::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_de
 use smithay::reexports::wayland_server::{Dispatch, DisplayHandle, GlobalDispatch};
 use smithay::wayland::GlobalData;
 use smithay::wayland::shell::xdg::decoration::{
-    XdgDecorationHandler, XdgDecorationManagerGlobalData, XdgDecorationState,
+    XdgDecorationManagerGlobalData, XdgDecorationState,
 };
 
 /// Initializes the XDG decoration manager.

@@ -12,11 +12,11 @@ use smithay::{
     },
     wayland::{
         dmabuf::DmabufState,
-        drm_syncobj::{DrmSyncobjGlobalData, DrmSyncobjState, supports_syncobj_eventfd},
+        drm_syncobj::DrmSyncobjGlobalData,
     },
 };
 
-pub fn new<I>(display_handle: &DisplayHandle, drm_device: Option<DrmDeviceFd>) -> DMABufState
+pub fn new<I>(_display_handle: &DisplayHandle, _drm_device: Option<DrmDeviceFd>) -> DMABufState
 where
     I: DispatchWire,
     I: GlobalDispatch<WpLinuxDrmSyncobjManagerV1, DrmSyncobjGlobalData>,

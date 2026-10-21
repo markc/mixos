@@ -9,9 +9,8 @@ use protocols::fractional::state::{Fractional, FractionalScaleConfig};
 use smithay::reexports::wayland_server::{Dispatch, DisplayHandle, GlobalDispatch};
 use smithay::wayland::GlobalData;
 use smithay::wayland::fractional_scale::{
-    FractionalScaleData, FractionalScaleHandler, FractionalScaleManagerState, FractionalScaleState,
+    FractionalScaleData, FractionalScaleHandler, FractionalScaleManagerState,
 };
-use smithay::wayland::presentation::{PresentationData, PresentationState};
 
 pub fn new<I>(display_handle: &DisplayHandle) -> Fractional
 where
@@ -22,7 +21,7 @@ where
         + 'static,
     I: FractionalScaleHandler + 'static,
 {
-    let mut fractional_manager_state = FractionalScaleManagerState::new::<I>(display_handle);
+    let fractional_manager_state = FractionalScaleManagerState::new::<I>(display_handle);
     // NOT advertised to Xwayland.
     //
     // `wp_fractional_scale_v1` asks a client to render at a scale the compositor picks.

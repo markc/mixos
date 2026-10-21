@@ -3,7 +3,7 @@
 use crate::state::state::Dispatch;
 use protocols::space::state::SpaceState;
 use smithay::backend::allocator::dmabuf::Dmabuf;
-use smithay::desktop::{Space, Window};
+use smithay::desktop::Window;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Rectangle};
 use smithay::wayland::dmabuf::{DmabufGlobal, ImportNotifier};

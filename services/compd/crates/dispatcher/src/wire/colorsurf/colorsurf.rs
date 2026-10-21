@@ -9,7 +9,7 @@ use smithay::reexports::wayland_protocols::wp::color_management::v1::server::{
         Request as FbReq, WpColorManagementSurfaceFeedbackV1,
     },
     wp_color_management_surface_v1::{Request as SurfReq, WpColorManagementSurfaceV1},
-    wp_color_manager_v1::{Primaries, Request as MgrReq, TransferFunction, WpColorManagerV1},
+    wp_color_manager_v1::{Primaries, Request as MgrReq, TransferFunction},
     wp_image_description_creator_icc_v1::{Request as IccReq, WpImageDescriptionCreatorIccV1},
     wp_image_description_creator_params_v1::{Request as PrReq, WpImageDescriptionCreatorParamsV1},
     wp_image_description_info_v1::WpImageDescriptionInfoV1,

@@ -4,19 +4,13 @@ use crate::state::deferred::deferred::Deferred;
 /// Every redraw names its reason; re-exported so the
 /// crates above reach it through the wrappers' own crate.
 pub use protocols::redraw::schedule::RedrawReason;
-use protocols::window::shell;
 use smithay::backend::allocator::dmabuf::Dmabuf;
-use smithay::desktop::Window;
 use smithay::input::dnd::DndGrabHandler;
 use smithay::input::keyboard::LedState;
 use smithay::input::pointer::CursorImageStatus;
 use smithay::input::{Seat, SeatHandler, SeatState};
-use smithay::reexports::calloop::{self, LoopHandle};
-use smithay::reexports::wayland_server::Client;
 use smithay::reexports::wayland_server::Resource;
 use smithay::reexports::wayland_server::Weak;
-use smithay::reexports::wayland_server::backend::ClientId;
-use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{Dispatch as SmithayDispatch, GlobalDispatch};
 use smithay::utils::{Logical, Point, Rectangle, SERIAL_COUNTER};
@@ -32,13 +26,10 @@ use smithay::wayland::pointer_constraints::with_pointer_constraint;
 use smithay::wayland::selection::SelectionHandler;
 use smithay::wayland::selection::data_device::{DataDeviceHandler, WaylandDndGrabHandler};
 use smithay::wayland::shell::wlr_layer::WlrLayerShellHandler;
-use smithay::wayland::shell::wlr_layer::{Layer as WlrLayer, LayerSurface};
-use smithay::wayland::shell::xdg::ToplevelSurface;
 use smithay::wayland::shell::xdg::XdgShellHandler;
 use smithay::wayland::shell::xdg::decoration::XdgDecorationHandler;
 use smithay::wayland::shm::ShmHandler;
 use smithay::wayland::xdg_activation::XdgActivationHandler;
-use smithay::wayland::xdg_foreign::XdgForeignState;
 use std::collections::HashMap;
 use x11_wm::focus as xwayland_focus;
 
@@ -1543,7 +1534,7 @@ impl DispatchWire for Dispatch {}
 mod handler_impls {
     use super::RedrawReason;
     use crate::state::deferred::deferred::Deferred;
-    use std::sync::Mutex;
+    
     use smithay::reexports::wayland_server::backend::ClientId;
     use smithay::backend::allocator::dmabuf::Dmabuf;
     use smithay::backend::renderer::utils::on_commit_buffer_handler;
@@ -1582,8 +1573,8 @@ mod handler_impls {
     use smithay::wayland::xdg_toplevel_icon::XdgToplevelIconHandler;
     use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::XdgToplevel;
     use crate::wire::redraw::redraw as rd;
-    use protocols::xdg::activation::request::{ActivationDetails};
-    use protocols::wayland::connection::record::WaylandClientSession;
+    
+    
     use super::Dispatch;
 
     fn unconstrain_popup(popup: &PopupSurface) {
@@ -2763,7 +2754,7 @@ pub mod xwm_impls {
     use super::RedrawReason;
     use crate::state::deferred::deferred::Deferred;
     use protocols::window::find::Shell;
-    use smithay::desktop::Window;
+    
     use smithay::reexports::wayland_server::Resource;
     use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
     use smithay::utils::{Logical, Rectangle};

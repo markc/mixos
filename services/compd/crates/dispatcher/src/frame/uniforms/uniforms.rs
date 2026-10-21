@@ -4,7 +4,7 @@ use smithay::backend::renderer::gles::{
     GlesFrame, GlesPixelProgram, GlesRenderer, GlesTexProgram, GlesTexture, Uniform, UniformName,
     UniformType, UniformValue,
 };
-use smithay::backend::renderer::{Frame, Renderer, RendererSuper};
+use smithay::backend::renderer::{Frame, RendererSuper};
 use smithay::utils::{Buffer as BufferCoord, Physical, Rectangle, Size};
 use std::sync::Arc;
 
