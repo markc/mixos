@@ -42,7 +42,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             pkg-config libxkbcommon-dev libwayland-dev libx11-dev libxrandr-dev libxi-dev libxcursor-dev \
             libgl1-mesa-dev libegl-dev libgles-dev libgbm-dev libdrm-dev libinput-dev libudev-dev \
-            libseat-dev libpixman-1-dev libpulse-dev libarchive-tools
+            libseat-dev libpixman-1-dev libpulse-dev libarchive-tools libpipewire-0.3-dev libspa-0.2-dev
 
       # The toolchain and its components come from rust-toolchain.toml.
       - name: Install Rust
