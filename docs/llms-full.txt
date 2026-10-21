@@ -5425,8 +5425,8 @@ Phase 5b publishes the validated headless render node in the kernel registry
 as the composite device for backends without a scanout binding. The DMA-BUF
 advertiser uses the native GPU binding first, as before, otherwise this node,
 otherwise the v3 flat format list (nested). Headless therefore advertises
-`zwp_linux_dmabuf_v1` v5-capable feedback with `main_device` equal to the render node's
-`dev_t`, using the existing narrowed import format set. Mesa can select its
+`zwp_linux_dmabuf_v1` v5-capable feedback with `main_device` equal to the render
+node's `dev_t`, using the existing narrowed import format set. Mesa can select its
 hardware EGL driver from that feedback without a legacy `wl_drm` global.
 The GPU acceptance tests read the default feedback on a real Wayland client,
 compare its main device against the selected node's `st_rdev`, and require a
@@ -5475,9 +5475,9 @@ caught elsewhere. The tested artefact is the test-only launcher, which
 compiles the shipped entry point from the same source; drift is a compile
 error, never silent. The first Phase 5 run chose a software Vulkan adapter
 (llvmpipe) with `wl_shm`; Phase 5b's device feedback enables the hardware GL
-path recorded above. Hardware Vulkan WSI remains unproven, as do the test's
-fixed post-typing sleep (retry once
-on an unchanged capture), the helper's leftover `.session` directory on
+path recorded above. Hardware Vulkan WSI remains unproven. Open follow-ups
+are the test's fixed post-typing sleep (retry once on an unchanged capture),
+the helper's leftover `.session` directory on
 failure, and its reliance on `spawn` merging the parent environment.
 
 ---

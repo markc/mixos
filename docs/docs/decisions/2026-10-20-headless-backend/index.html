@@ -297,8 +297,8 @@ does not establish the GPU-client DMA-BUF path.</p>
 as the composite device for backends without a scanout binding. The DMA-BUF
 advertiser uses the native GPU binding first, as before, otherwise this node,
 otherwise the v3 flat format list (nested). Headless therefore advertises
-<code>zwp_linux_dmabuf_v1</code> v5-capable feedback with <code>main_device</code> equal to the render node's
-<code>dev_t</code>, using the existing narrowed import format set. Mesa can select its
+<code>zwp_linux_dmabuf_v1</code> v5-capable feedback with <code>main_device</code> equal to the render
+node's <code>dev_t</code>, using the existing narrowed import format set. Mesa can select its
 hardware EGL driver from that feedback without a legacy <code>wl_drm</code> global.
 The GPU acceptance tests read the default feedback on a real Wayland client,
 compare its main device against the selected node's <code>st_rdev</code>, and require a
@@ -344,9 +344,9 @@ caught elsewhere. The tested artefact is the test-only launcher, which
 compiles the shipped entry point from the same source; drift is a compile
 error, never silent. The first Phase 5 run chose a software Vulkan adapter
 (llvmpipe) with <code>wl_shm</code>; Phase 5b's device feedback enables the hardware GL
-path recorded above. Hardware Vulkan WSI remains unproven, as do the test's
-fixed post-typing sleep (retry once
-on an unchanged capture), the helper's leftover <code>.session</code> directory on
+path recorded above. Hardware Vulkan WSI remains unproven. Open follow-ups
+are the test's fixed post-typing sleep (retry once on an unchanged capture),
+the helper's leftover <code>.session</code> directory on
 failure, and its reliance on <code>spawn</code> merging the parent environment.</p>
         </article>
         <p class="doc-source"><a href="/docs/decisions/2026-10-20-headless-backend.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
