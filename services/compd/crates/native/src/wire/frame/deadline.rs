@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! One reusable, normally disabled timer per native output. No periodic idle wake.
 
-use smithay::reexports::calloop::{Dispatcher, LoopHandle, RegistrationToken};
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
+use smithay::reexports::calloop::{Dispatcher, LoopHandle, RegistrationToken};
 use std::cell::Cell;
 use std::rc::Rc;
 use std::time::Instant;
@@ -37,7 +37,11 @@ impl<D: 'static> DeadlineTimer<D> {
             handle.remove(token);
             return None;
         }
-        Some(Self { source, token, handle: handle.clone() })
+        Some(Self {
+            source,
+            token,
+            handle: handle.clone(),
+        })
     }
 
     pub fn arm(&self, at: Instant) -> bool {
@@ -64,7 +68,10 @@ mod tests {
     use std::time::Duration;
 
     #[derive(Default)]
-    struct Data { schedule: Schedule, fires: u32 }
+    struct Data {
+        schedule: Schedule,
+        fires: u32,
+    }
 
     fn fired(data: &mut Data, key: &str) {
         data.fires += 1;
@@ -87,9 +94,13 @@ mod tests {
             data.schedule.request_for(RedrawReason::Cursor);
             data.schedule.request_for(RedrawReason::Ui);
             assert!(!data.schedule.pending());
-            event_loop.dispatch(Some(Duration::ZERO), &mut data).unwrap();
+            event_loop
+                .dispatch(Some(Duration::ZERO), &mut data)
+                .unwrap();
             assert!(!data.schedule.pending());
-            event_loop.dispatch(Some(Duration::from_millis(100)), &mut data).unwrap();
+            event_loop
+                .dispatch(Some(Duration::from_millis(100)), &mut data)
+                .unwrap();
             assert!(data.schedule.pending());
             assert!(data.schedule.in_flight("b"));
             data.schedule.rendering("a");
@@ -98,11 +109,15 @@ mod tests {
             assert!(reasons.contains(RedrawReason::Ui));
         }
         assert_eq!(data.fires, 2);
-        event_loop.dispatch(Some(Duration::from_millis(25)), &mut data).unwrap();
+        event_loop
+            .dispatch(Some(Duration::from_millis(25)), &mut data)
+            .unwrap();
         assert_eq!(data.fires, 2, "disabled after firing");
         assert!(timer.arm(Instant::now()));
         timer.cancel();
-        event_loop.dispatch(Some(Duration::ZERO), &mut data).unwrap();
+        event_loop
+            .dispatch(Some(Duration::ZERO), &mut data)
+            .unwrap();
         assert_eq!(data.fires, 2, "cancelled timer stays silent");
     }
 }

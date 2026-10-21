@@ -53,25 +53,37 @@ impl Default for LateLatch {
 }
 
 impl LateLatch {
-    pub fn following_flip(&self) -> bool { self.following_flip }
+    pub fn following_flip(&self) -> bool {
+        self.following_flip
+    }
     pub fn submitted_target(&self) -> Option<Target> {
         self.submitted
     }
 
     pub fn budget(&self, margin: Duration) -> Duration {
-        self.current.max(self.previous).saturating_add(margin).saturating_add(self.backoff)
+        self.current
+            .max(self.previous)
+            .saturating_add(margin)
+            .saturating_add(self.backoff)
     }
 
     /// Only actual, trustworthy flip timestamps create a candidate. An idle
     /// completion parks the pipe; a later request cannot spend this old phase.
     /// Half an interval tolerates timestamp rounding, but detects a flip a full
     /// vblank late. Dispatch delay is absent from both sides of the comparison.
-    pub fn flipped(&mut self, at: Option<Instant>, refresh: Duration, pending: bool) -> Option<bool> {
+    pub fn flipped(
+        &mut self,
+        at: Option<Instant>,
+        refresh: Duration,
+        pending: bool,
+    ) -> Option<bool> {
         let hit = self.submitted.take().and_then(|target| {
             at.filter(|_| target.refresh == refresh).map(|actual| {
                 let hit = actual < target.vblank + refresh / 2;
                 if !hit {
-                    self.backoff = (self.backoff.saturating_mul(2)).max(refresh / 4).min(refresh);
+                    self.backoff = (self.backoff.saturating_mul(2))
+                        .max(refresh / 4)
+                        .min(refresh);
                     self.backoff_left = 100;
                 }
                 hit
@@ -80,17 +92,22 @@ impl LateLatch {
         self.armed = None;
         self.following_flip = pending;
         self.candidate = at.filter(|_| pending && !refresh.is_zero()).and_then(|at| {
-            at.checked_add(refresh).map(|vblank| Target { vblank, refresh })
+            at.checked_add(refresh)
+                .map(|vblank| Target { vblank, refresh })
         });
         hit
     }
 
     pub fn plan(&self, now: Instant, margin: Duration) -> Plan {
         let budget = self.budget(margin);
-        let deadline = self.candidate.and_then(|target| {
-            target.vblank.checked_sub(budget).filter(|at| *at > now)
-        });
-        Plan { target: self.candidate, budget, deadline }
+        let deadline = self
+            .candidate
+            .and_then(|target| target.vblank.checked_sub(budget).filter(|at| *at > now));
+        Plan {
+            target: self.candidate,
+            budget,
+            deadline,
+        }
     }
 
     /// Empty frames, unsafe modes, rebuilds and idle all discard the phase.
@@ -138,7 +155,10 @@ mod tests {
         latch.flipped(Some(at), PERIOD, true);
         let plan = latch.plan(at + Duration::from_millis(4), MARGIN);
         assert_eq!(plan.target.unwrap().vblank, at + PERIOD);
-        assert_eq!(plan.deadline, Some(at + PERIOD - Duration::from_micros(3500)));
+        assert_eq!(
+            plan.deadline,
+            Some(at + PERIOD - Duration::from_micros(3500))
+        );
         assert!(latch.plan(at + PERIOD, MARGIN).deadline.is_none());
         assert!(latch.plan(at, PERIOD).deadline.is_none());
     }
@@ -147,7 +167,9 @@ mod tests {
     fn maximum_expires_within_one_hundred_samples() {
         let mut latch = LateLatch::default();
         latch.committed(Duration::from_millis(8));
-        for _ in 0..98 { latch.committed(Duration::from_millis(1)); }
+        for _ in 0..98 {
+            latch.committed(Duration::from_millis(1));
+        }
         assert_eq!(latch.budget(MARGIN), Duration::from_micros(9500));
         latch.committed(Duration::from_millis(1));
         assert_eq!(latch.budget(MARGIN), Duration::from_micros(2500));
@@ -161,11 +183,18 @@ mod tests {
         latch.committed(Duration::from_millis(2));
         assert_eq!(latch.flipped(Some(at + PERIOD), PERIOD, true), Some(true));
         latch.committed(Duration::from_millis(2));
-        assert_eq!(latch.flipped(Some(at + PERIOD * 3), PERIOD, true), Some(false));
+        assert_eq!(
+            latch.flipped(Some(at + PERIOD * 3), PERIOD, true),
+            Some(false)
+        );
         assert_eq!(latch.budget(MARGIN), Duration::from_micros(7500));
-        for _ in 0..100 { latch.committed(Duration::from_millis(2)); }
+        for _ in 0..100 {
+            latch.committed(Duration::from_millis(2));
+        }
         assert_eq!(latch.budget(MARGIN), Duration::from_micros(7500));
-        for _ in 0..8 { latch.committed(Duration::from_millis(2)); }
+        for _ in 0..8 {
+            latch.committed(Duration::from_millis(2));
+        }
         assert_eq!(latch.budget(MARGIN), Duration::from_micros(3500));
     }
 

@@ -342,7 +342,10 @@ pub fn execute(
     {
         for pipe in &mut ctx_rc.borrow_mut().outputs {
             super::late_latch::cancel(pipe);
-            state.state.redraw.release(&world::state::state::output_key(&pipe.output));
+            state
+                .state
+                .redraw
+                .release(&world::state::state::output_key(&pipe.output));
         }
     }
     capture_windows_offscreen(&ctx_rc, state);
@@ -544,7 +547,11 @@ pub fn execute(
             continue;
         }
         if super::late_latch::defer(
-            &mut ctx_ref.outputs[output_idx], state, &loop_handle, &key, trace_output,
+            &mut ctx_ref.outputs[output_idx],
+            state,
+            &loop_handle,
+            &key,
+            trace_output,
         ) {
             continue;
         }

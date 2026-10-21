@@ -486,7 +486,9 @@ fn process_vblank_inner(
         this_refresh,
         state.state.redraw.needs(&key),
     );
-    if ledger::frame_trace::enabled() && let Some(target) = target {
+    if ledger::frame_trace::enabled()
+        && let Some(target) = target
+    {
         ledger::redraw::trace_deadline(
             match hit {
                 Some(true) => "kms_latch_hit",
@@ -566,9 +568,15 @@ fn process_vblank_inner(
         let mut ctx = ctx_rc.borrow_mut();
         let trace_output = if ledger::frame_trace::enabled() {
             graphics::capture::registry::OutputId::from_key(&key).0
-        } else { 0 };
+        } else {
+            0
+        };
         if crate::render::execute::late_latch::defer(
-            &mut ctx.outputs[idx], state, loop_handle, &key, trace_output,
+            &mut ctx.outputs[idx],
+            state,
+            loop_handle,
+            &key,
+            trace_output,
         ) {
             return;
         }

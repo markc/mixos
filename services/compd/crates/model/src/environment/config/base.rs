@@ -231,8 +231,10 @@ pub fn migrate(root: &mut serde_json::Value) -> bool {
         obj.remove("vk_diag");
     }
     if version < 7 {
-        obj.entry("late_latch").or_insert(serde_json::Value::from(true));
-        obj.entry("late_latch_margin_us").or_insert(serde_json::Value::from(1500));
+        obj.entry("late_latch")
+            .or_insert(serde_json::Value::from(true));
+        obj.entry("late_latch_margin_us")
+            .or_insert(serde_json::Value::from(1500));
     }
     obj.insert("version".into(), serde_json::Value::from(SCHEMA_VERSION));
     true
@@ -421,7 +423,10 @@ mod tests {
         let mut value = serde_json::to_value(super::default_settings()).unwrap();
         value["version"] = 6.into();
         value.as_object_mut().unwrap().remove("late_latch");
-        value.as_object_mut().unwrap().remove("late_latch_margin_us");
+        value
+            .as_object_mut()
+            .unwrap()
+            .remove("late_latch_margin_us");
         assert!(super::migrate(&mut value));
         let env: super::Environment = serde_json::from_value(value.clone()).unwrap();
         assert!(env.late_latch);

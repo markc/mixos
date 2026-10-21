@@ -13,7 +13,9 @@ fn fired(state: &mut Loop, key: &str) {
 }
 
 pub(crate) fn cancel(pipe: &mut OutputPipe) {
-    if let Some(timer) = &pipe.deadline_timer { timer.cancel(); }
+    if let Some(timer) = &pipe.deadline_timer {
+        timer.cancel();
+    }
     pipe.late_latch.park();
 }
 
@@ -33,7 +35,9 @@ pub(crate) fn defer(
     let config = model::environment::config::base::get();
     let margin = Duration::from_micros(config.late_latch_margin_us);
     let plan = pipe.late_latch.plan(now, margin);
-    if pipe.late_latch.armed.is_none() { pipe.late_latch.budget_used = plan.budget; }
+    if pipe.late_latch.armed.is_none() {
+        pipe.late_latch.budget_used = plan.budget;
+    }
     let immediate = if !model::environment::config::base::late_latch_enabled() {
         Some("kms_latch_disabled")
     } else if protocols::tearing::gate::gate::tearing() || pipe.last_tear {
@@ -44,7 +48,11 @@ pub(crate) fn defer(
         Some("kms_latch_vrr")
     } else if screencopy::active()
         || screencopy::file::pending(&pipe.output)
-        || state.inner.kernel.get(&world::driver::capture::base::CAPTURE).is_active()
+        || state
+            .inner
+            .kernel
+            .get(&world::driver::capture::base::CAPTURE)
+            .is_active()
         || super::diagnostics::enabled()
     {
         Some("kms_latch_capture")
@@ -67,18 +75,38 @@ pub(crate) fn defer(
         if pipe.deadline_timer.is_none() {
             pipe.deadline_timer = DeadlineTimer::new(handle, key.to_owned(), fired);
         }
-        if pipe.deadline_timer.as_ref().is_some_and(|timer| timer.arm(at)) {
+        if pipe
+            .deadline_timer
+            .as_ref()
+            .is_some_and(|timer| timer.arm(at))
+        {
             pipe.late_latch.armed = Some(at);
             state.state.redraw.defer(key);
-            ledger::redraw::trace_deadline("kms_latch_deferred", trace_output, plan.target.map(|t| t.vblank), plan.budget);
+            ledger::redraw::trace_deadline(
+                "kms_latch_deferred",
+                trace_output,
+                plan.target.map(|t| t.vblank),
+                plan.budget,
+            );
             return true;
         }
-        ledger::redraw::trace_deadline("kms_latch_timer_failed", trace_output, plan.target.map(|t| t.vblank), plan.budget);
+        ledger::redraw::trace_deadline(
+            "kms_latch_timer_failed",
+            trace_output,
+            plan.target.map(|t| t.vblank),
+            plan.budget,
+        );
         cancel(pipe);
     } else {
         ledger::redraw::trace_deadline(
-            if pipe.late_latch.armed.is_some() { "kms_latch_deadline" } else { "kms_latch_clamped" },
-            trace_output, plan.target.map(|t| t.vblank), plan.budget,
+            if pipe.late_latch.armed.is_some() {
+                "kms_latch_deadline"
+            } else {
+                "kms_latch_clamped"
+            },
+            trace_output,
+            plan.target.map(|t| t.vblank),
+            plan.budget,
         );
         pipe.late_latch.armed = None;
     }

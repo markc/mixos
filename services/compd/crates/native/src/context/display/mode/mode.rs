@@ -63,7 +63,12 @@ fn pipe_of(ctx: &NativeRenderContext, edid_key: &str) -> Option<usize> {
         .position(|p| world::state::state::output_key(&p.output) == edid_key)
 }
 /// Apply `mode` to the pipe at `idx` and propagate to its smithay Output.
-fn set_mode_now(state: &mut Loop, ctx: &mut NativeRenderContext, idx: usize, mode: DrmMode) -> Result<(), String> {
+fn set_mode_now(
+    state: &mut Loop,
+    ctx: &mut NativeRenderContext,
+    idx: usize,
+    mode: DrmMode,
+) -> Result<(), String> {
     let gpu = ctx.gpu_binding.clone();
     let mut binding = gpu.borrow_mut();
     let StateDRMBinding { gpus, primary } = &mut *binding;
@@ -84,7 +89,10 @@ fn set_mode_now(state: &mut Loop, ctx: &mut NativeRenderContext, idx: usize, mod
     crate::render::execute::late_latch::cancel(&mut ctx.outputs[idx]);
     ctx.outputs[idx].late_latch = Default::default();
     ctx.outputs[idx].last_vblank = None;
-    state.state.redraw.release(&world::state::state::output_key(&ctx.outputs[idx].output));
+    state
+        .state
+        .redraw
+        .release(&world::state::state::output_key(&ctx.outputs[idx].output));
     ctx.outputs[idx].current_drm_mode = mode;
     ctx.outputs[idx]
         .output
