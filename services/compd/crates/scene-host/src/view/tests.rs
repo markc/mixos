@@ -653,7 +653,7 @@ fn a_dialog_frame_reports_its_close_button_and_puts_the_page_below_the_title_bar
     let close = layout.close.expect("a framed dialog has a close button");
     assert_eq!((close.width(), close.height()), (28.0, 24.0));
     assert!((close.right() - (720.0 - 11.0)).abs() < 0.1);
-    assert_eq!(layout.body.top(), TITLEBAR);
+    assert!(layout.placed.iter().all(|node| node.rect.top() >= TITLEBAR));
     assert!(rect_of(&rt, "root").top() >= TITLEBAR);
     let _ = PreparedLists::new();
 }

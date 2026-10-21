@@ -102,7 +102,7 @@ pub(crate) struct ListBox {
 }
 
 /// A scene laid out on a surface.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub(crate) struct SceneLayout {
     /// Drawn nodes in paint order (parents before children).
     pub placed: Vec<Placed>,
@@ -119,19 +119,6 @@ pub(crate) struct SceneLayout {
     pub close: Option<Rect>,
 }
 
-impl Default for SceneLayout {
-    fn default() -> Self {
-        Self {
-            placed: Vec::new(),
-            nodes: BTreeMap::new(),
-            instances: BTreeMap::new(),
-            lists: BTreeMap::new(),
-            #[cfg(test)]
-            body: Rect::NOTHING,
-            close: None,
-        }
-    }
-}
 
 #[derive(Clone, Copy, PartialEq)]
 enum Axis {
@@ -798,8 +785,6 @@ pub(crate) fn layout(
     let kids: Vec<NodeId> = root.into_iter().collect();
     let Ok(page) = builder.tree.new_with_children(page_style, &kids) else {
         return SceneLayout {
-            #[cfg(test)]
-            body,
             close,
             ..SceneLayout::default()
         };
@@ -825,8 +810,6 @@ pub(crate) fn layout(
         },
     );
     let mut out = SceneLayout {
-        #[cfg(test)]
-        body,
         close,
         ..SceneLayout::default()
     };
