@@ -57,7 +57,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         model::environment::config::base::override_scanout_node(device);
     }
     if let Some(connector) = cli.connector.clone() {
-        kms::connector::select::select::force(connector);
+        kms::connector::select::force(connector);
     }
     slots::sdnotify::status(&format!("starting ({} backend)", backend.label()));
 
@@ -419,7 +419,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // compositor_kernel_native_device_interface_base): the main project applies
             // runtime device settings through them.
             // KMS: the one process-wide output scale, before any output exists.
-            kms::output::physical::physical::set_scale(
+            kms::output::physical::set_scale(
                 cli::output_scale(&cli, cli::Backend::Kms).unwrap_or(1.0),
             );
             let backend_handles = native::wire::entry::entry::wire(

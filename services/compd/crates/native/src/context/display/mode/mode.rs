@@ -74,7 +74,7 @@ fn set_mode_now(ctx: &mut NativeRenderContext, idx: usize, mode: DrmMode) -> Res
         .drm_output
         .as_mut()
         .ok_or_else(|| "output not live".to_string())?;
-    kms::scanout::surface::reconfigure::reconfigure::set_output_mode::<
+    kms::scanout::surface::reconfigure::set_output_mode::<
         _,
         GlesElementWrapper<SceneElement<GlesRenderer>>,
     >(output, mode, &mut renderer)?;

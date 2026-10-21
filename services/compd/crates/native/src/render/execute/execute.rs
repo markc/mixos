@@ -379,7 +379,7 @@ pub fn execute(
     // moment any selector is armed, including on a desktop that is merely waiting
     // for a target and never tears.
     let mut frame_flags =
-        kms::scanout::plane::direct::direct::flags(protocols::tearing::gate::tearing());
+        kms::scanout::plane::direct::flags(protocols::tearing::gate::tearing());
     // Pre-emptive rendering: never let a frame be reported empty, so the loop
     // flips every pass instead of parking — the tail of this function re-arms the
     // redraw latch only after a non-empty result. Default `Engaged` applies that
@@ -1138,10 +1138,10 @@ pub fn execute(
             // anything that rides on this frame, so it stands in for one.
             let until_vblank = {
                 let pipe = &ctx_ref.outputs[output_idx];
-                let refresh = kms::scanout::timing::vblank::vblank::interval(&pipe.mode);
+                let refresh = kms::scanout::timing::vblank::interval(&pipe.mode);
                 pipe.last_vblank
                     .map(|anchor| {
-                        kms::scanout::timing::vblank::vblank::until_next(
+                        kms::scanout::timing::vblank::until_next(
                             anchor,
                             std::time::Instant::now(),
                             refresh,
@@ -1303,7 +1303,7 @@ fn present(
     output_idx: usize,
     states: Option<&smithay::backend::renderer::element::RenderElementStates>,
 ) -> bool {
-    use kms::scanout::flip::queue::queue::{QueueOutcome, queue};
+    use kms::scanout::flip::queue::{QueueOutcome, queue};
     let trace_output = if ledger::frame_trace::enabled() {
         OutputId::from_key(&world::state::state::output_key(
             &ctx_ref.outputs[output_idx].output,
@@ -1434,7 +1434,7 @@ fn present(
         // Publish for the NEXT frame's plane assignment, and carry this frame's
         // rate ceiling forward for the next frame's cap gate.
         let refresh =
-            kms::scanout::timing::vblank::vblank::interval(&ctx_ref.outputs[output_idx].mode);
+            kms::scanout::timing::vblank::interval(&ctx_ref.outputs[output_idx].mode);
         ctx_ref.outputs[output_idx].cap_interval = active.min_interval(refresh);
         // The watchdog floor is a rate like any other, so it is resolved against
         // this output's refresh here — the layer that owns the timer knows
@@ -1476,13 +1476,13 @@ fn present(
     let tear = {
         let now = std::time::Instant::now();
         let pipe = &mut ctx_ref.outputs[output_idx];
-        let refresh = kms::scanout::timing::vblank::vblank::interval(&pipe.mode);
+        let refresh = kms::scanout::timing::vblank::interval(&pipe.mode);
         // Time left in the current refresh interval, extrapolated from the last
         // anchored retrace. `None` until this pipe has flipped once, which
         // `tear_now` reads as "unknown timing → prefer the clean frame".
         let until_vblank = pipe
             .last_vblank
-            .map(|anchor| kms::scanout::timing::vblank::vblank::until_next(anchor, now, refresh));
+            .map(|anchor| kms::scanout::timing::vblank::until_next(anchor, now, refresh));
         // This frame is going out, so any armed cap wake-up is spent.
         pipe.cap_wake = None;
         // Gated on the SAME value that chose this frame's plane flags. They must

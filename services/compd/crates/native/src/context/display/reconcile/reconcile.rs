@@ -65,9 +65,9 @@ fn mode_info(m: DrmMode) -> ModeInfo {
 /// The EDID identity key ("make model serial") for a connector — the same key the
 /// picker selects with and the settings-editor persists.
 fn identity_key(drm: &DrmDevice, info: &connector::Info) -> String {
-    let raw = kms::edid::parse::parse::read(drm, info);
-    let parsed = raw.as_ref().and_then(kms::edid::parse::parse::parse);
-    kms::edid::identity::identity::identity(
+    let raw = kms::edid::parse::read(drm, info);
+    let parsed = raw.as_ref().and_then(kms::edid::parse::parse);
+    kms::edid::identity::identity(
         parsed.as_ref(),
         &format!("{:?}-{}", info.interface(), info.interface_id()),
     )
@@ -76,8 +76,8 @@ fn identity_key(drm: &DrmDevice, info: &connector::Info) -> String {
 
 /// The connected connector whose EDID identity matches `key`.
 fn find_target(drm: &DrmDevice, key: &str) -> Option<connector::Info> {
-    let res = kms::connector::scan::scan::resources(drm);
-    let infos = kms::connector::scan::scan::connectors(drm, &res);
+    let res = kms::connector::scan::resources(drm);
+    let infos = kms::connector::scan::connectors(drm, &res);
     infos
         .into_iter()
         .find(|i| i.state() == connector::State::Connected && identity_key(drm, i) == key)
@@ -116,9 +116,9 @@ fn bring_up(
     let identity = {
         let mgr = ctx.drm_output_manager.borrow();
         let drm = mgr.device();
-        let raw = kms::edid::parse::parse::read(drm, target);
-        let parsed = raw.as_ref().and_then(kms::edid::parse::parse::parse);
-        kms::edid::identity::identity::identity(
+        let raw = kms::edid::parse::read(drm, target);
+        let parsed = raw.as_ref().and_then(kms::edid::parse::parse);
+        kms::edid::identity::identity(
             parsed.as_ref(),
             &format!("{:?}-{}", target.interface(), target.interface_id()),
         )
@@ -140,7 +140,7 @@ fn bring_up(
     // Built against the `Output` this pipe will actually keep — `build` sizes the
     // primary plane from it to pass the atomic test.
     let output = match replace {
-        true => kms::output::physical::physical::create(target, &identity),
+        true => kms::output::physical::create(target, &identity),
         false => ctx.pipe().output.clone(),
     };
     let built = crate::context::display::build::build::build(
@@ -176,7 +176,7 @@ fn bring_up(
             ctx.display_handle
                 .remove_global::<dispatcher::state::state::Dispatch>(gid);
         }
-        kms::output::physical::physical::apply_initial_state(
+        kms::output::physical::apply_initial_state(
             &output,
             new_mode,
             None,
@@ -317,13 +317,13 @@ fn add_output(
     let output = {
         let mgr = ctx.drm_output_manager.borrow();
         let drm = mgr.device();
-        let raw = kms::edid::parse::parse::read(drm, target);
-        let parsed = raw.as_ref().and_then(kms::edid::parse::parse::parse);
-        let identity = kms::edid::identity::identity::identity(
+        let raw = kms::edid::parse::read(drm, target);
+        let parsed = raw.as_ref().and_then(kms::edid::parse::parse);
+        let identity = kms::edid::identity::identity(
             parsed.as_ref(),
             &format!("{:?}-{}", target.interface(), target.interface_id()),
         );
-        kms::output::physical::physical::create(target, &identity)
+        kms::output::physical::create(target, &identity)
     };
     // Second pipe on a free CRTC (excluding the ones already lit).
     let busy: Vec<crtc::Handle> = ctx.outputs.iter().map(|p| p.crtc).collect();
@@ -352,7 +352,7 @@ fn add_output(
         })
         .sum();
     let mode = Mode::from(built.drm_mode);
-    kms::output::physical::physical::apply_initial_state(&output, mode, None, (x, 0));
+    kms::output::physical::apply_initial_state(&output, mode, None, (x, 0));
     // Keep the GlobalId so the pipe's `wl_output` can be destroyed when this output is
     // pruned (disconnect/deactivate) — otherwise a stale global lingers and re-adding
     // the monitor advertises a duplicate.
@@ -435,8 +435,8 @@ pub fn reconcile(state: &mut Loop, ctx_rc: &Ctx) -> Option<OutputChange> {
     let connected = {
         let mgr = ctx.drm_output_manager.borrow();
         let drm = mgr.device();
-        let res = kms::connector::scan::scan::resources(drm);
-        let infos = kms::connector::scan::scan::connectors(drm, &res);
+        let res = kms::connector::scan::resources(drm);
+        let infos = kms::connector::scan::connectors(drm, &res);
         infos
             .into_iter()
             .filter(|i| i.state() == connector::State::Connected)

@@ -31,5 +31,5 @@ pub fn select_primary(
     default_heuristic: Option<&PathBuf>,
     rank: &GpuRank,
 ) -> Option<PathBuf> {
-    kms::gpu::preference::select::select::select(candidates, default_heuristic, rank)
+    kms::gpu::preference::select::select(candidates, default_heuristic, rank)
 }

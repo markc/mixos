@@ -4,7 +4,7 @@
 //! from day one (single-device today is an instance count, not a shape),
 //! plus the per-device connector snapshot the hotplug diff compares against.
 
-use kms::connector::diff::diff::ConnectorSnapshot;
+use kms::connector::diff::ConnectorSnapshot;
 use smithay::backend::drm::DrmNode;
 use smithay::output::Output;
 use smithay::reexports::drm::control::{connector, crtc};
@@ -13,7 +13,7 @@ use std::collections::HashMap;
 #[derive(Debug, Clone)]
 pub struct ConnectorEntry {
     pub handle: connector::Handle,
-    pub kind: kms::connector::kind::kind::ConnectorKind,
+    pub kind: kms::connector::kind::ConnectorKind,
     pub pipe: Option<crtc::Handle>,
     pub output: Option<Output>,
 }

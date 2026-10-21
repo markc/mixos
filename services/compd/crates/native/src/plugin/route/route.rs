@@ -19,9 +19,9 @@
 
 use crate::context::render::render::NativeRenderContext;
 use crate::context::topology::topology::Topology;
-use kms::connector::diff::diff;
-use kms::gpu::registry::node::node::NodeRegistry;
-use kms::udev::loop_::event::event::DeviceEvent;
+use kms::connector::diff;
+use kms::gpu::registry::node::NodeRegistry;
+use kms::udev::loop_::event::DeviceEvent;
 use render_gles::preference::gpu::rank::GpuRank;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -48,7 +48,7 @@ pub fn route(
                             info!("DRM device preference-excluded; not bookkeeping: {path:?}");
                         }
                         Decision::Register => {
-                            let node = kms::device::node::node::render_node(&path)
+                            let node = kms::device::node::render_node(&path)
                             .unwrap_or_else(|| {
                                 abort!("udev announced a DRM device with no resolvable node: {path:?}")
                             });
@@ -81,8 +81,8 @@ pub fn route(
             let ctx = ctx_rc.borrow();
             let manager = ctx.drm_output_manager.borrow();
             let drm = manager.device();
-            let res = kms::connector::scan::scan::resources(drm);
-            let infos = kms::connector::scan::scan::connectors(drm, &res);
+            let res = kms::connector::scan::resources(drm);
+            let infos = kms::connector::scan::connectors(drm, &res);
             let new_snapshot = diff::ConnectorSnapshot::take(&infos);
             drop(manager);
             drop(ctx);

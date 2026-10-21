@@ -28,7 +28,7 @@ use world::state::state::StatusSession;
 #[cfg(feature = "flip-estimate")]
 type EstimateSlot = Rc<RefCell<Option<smithay::reexports::calloop::RegistrationToken>>>;
 #[cfg(feature = "timing-predict")]
-type PredictClock = Rc<RefCell<kms::scanout::timing::predict::predict::PresentationClock>>;
+type PredictClock = Rc<RefCell<kms::scanout::timing::predict::PresentationClock>>;
 
 pub fn register(
     event_loop: &mut EventLoop<'static, Loop>,
@@ -36,13 +36,13 @@ pub fn register(
     drm_notifier: DrmDeviceNotifier,
     ctx_rc: Rc<RefCell<NativeRenderContext>>,
 ) {
-    let refresh = kms::scanout::timing::vblank::vblank::interval(&ctx_rc.borrow().pipe().mode);
+    let refresh = kms::scanout::timing::vblank::interval(&ctx_rc.borrow().pipe().mode);
 
     #[cfg(feature = "flip-estimate")]
     let estimate_slot: EstimateSlot = Rc::new(RefCell::new(None));
     #[cfg(feature = "timing-predict")]
     let predict_clock: PredictClock = Rc::new(RefCell::new(
-        kms::scanout::timing::predict::predict::PresentationClock::new(refresh),
+        kms::scanout::timing::predict::PresentationClock::new(refresh),
     ));
 
     // ---- Redraw ping: fired by schedule_redraw while the vblank cycle is idle.
@@ -195,12 +195,12 @@ pub fn register(
     let predict_vblank = predict_clock.clone();
     #[cfg(feature = "timing-throttle")]
     let throttle = Rc::new(RefCell::new(
-        kms::scanout::timing::throttle::throttle::VblankThrottle::new(),
+        kms::scanout::timing::throttle::VblankThrottle::new(),
     ));
     event_loop
         .handle()
         .insert_source(drm_notifier, move |event, event_meta, state| {
-            use kms::loop_::notifier::notifier::{DecodedDrmEvent, decode};
+            use kms::loop_::notifier::{DecodedDrmEvent, decode};
 
             match decode(event, event_meta) {
                 DecodedDrmEvent::Error(error) => {
@@ -441,16 +441,16 @@ fn process_vblank_inner(
     // `Instant` reads, which is why the two can be related at all. Note this
     // must NOT use `start_time.elapsed()`: that is a since-launch clock, a
     // different epoch entirely.
-    ctx.outputs[idx].last_vblank = Some(kms::scanout::timing::vblank::vblank::anchor(
+    ctx.outputs[idx].last_vblank = Some(kms::scanout::timing::vblank::anchor(
         std::time::Instant::now(),
         time,
-        kms::scanout::timing::vblank::vblank::monotonic_now(),
+        kms::scanout::timing::vblank::monotonic_now(),
     ));
 
     // 1. Pop presentation feedback for the frame that just hit screen. No output
     //    during a monitor-switch teardown window → nothing to pop.
     let pending_feedback = match ctx.outputs[idx].drm_output.as_mut() {
-        Some(o) => kms::scanout::flip::feedback::feedback::pop(o),
+        Some(o) => kms::scanout::flip::feedback::pop(o),
         None => None,
     };
 
@@ -469,19 +469,19 @@ fn process_vblank_inner(
     let refresh_rate = if tore {
         smithay::wayland::presentation::Refresh::Unknown
     } else {
-        kms::scanout::timing::vblank::vblank::refresh_interval(&ctx.outputs[idx].mode)
+        kms::scanout::timing::vblank::refresh_interval(&ctx.outputs[idx].mode)
     };
     // Per-output refresh interval — the pacing (empty-frame estimate delay) must
     // use the interval of the output that ACTUALLY flipped, not the global primary
     // `refresh`. Otherwise a high-refresh output is paced at a slower neighbour's
     // rate. `refresh` (the primary's, from register()) is retained only for the
     // throttle gate above, which is feature-gated off in the shipping build.
-    let this_refresh = kms::scanout::timing::vblank::vblank::interval(&ctx.outputs[idx].mode);
+    let this_refresh = kms::scanout::timing::vblank::interval(&ctx.outputs[idx].mode);
     // MSC for presentation feedback. The page-flip event's own sequence is the cheap
     // source and is used whenever it carries one; a driver that leaves it 0 is repaired
     // from the CRTC here, while `ctx` still holds the device fd. See
     // `scanout.timing/timing.sequence` for why 0 is the tell and what it costs clients.
-    let sequence = kms::scanout::timing::sequence::sequence::resolve(
+    let sequence = kms::scanout::timing::sequence::resolve(
         ctx.drm_fd.as_fd(),
         crtc.into(),
         sequence,
@@ -492,7 +492,7 @@ fn process_vblank_inner(
         .map(|_| ctx.outputs[idx].output.clone());
     drop(ctx);
 
-    let stamp = kms::scanout::timing::vblank::vblank::interpret(
+    let stamp = kms::scanout::timing::vblank::interpret(
         time,
         sequence,
         state.inner.start_time.elapsed(),
@@ -504,12 +504,12 @@ fn process_vblank_inner(
     // A real vblank supersedes any pending estimated delivery.
     #[cfg(feature = "flip-estimate")]
     if let Some(token) = estimate_slot.borrow_mut().take() {
-        kms::scanout::flip::estimate::estimate::disarm(loop_handle, token);
+        kms::scanout::flip::estimate::disarm(loop_handle, token);
     }
 
     // 2. Fire presentation callbacks for that completed frame.
     if let Some(Some(mut feedback)) = pending_feedback {
-        kms::scanout::flip::feedback::feedback::presented(
+        kms::scanout::flip::feedback::presented(
             &mut feedback,
             stamp.time,
             refresh_rate,
@@ -586,9 +586,9 @@ fn handle_outcome(
 
             let mut slot = estimate_slot.borrow_mut();
             if let Some(token) = slot.take() {
-                kms::scanout::flip::estimate::estimate::disarm(loop_handle, token);
+                kms::scanout::flip::estimate::disarm(loop_handle, token);
             }
-            let token = kms::scanout::flip::estimate::estimate::arm(
+            let token = kms::scanout::flip::estimate::arm(
                 loop_handle,
                 delay,
                 move |state: &mut Loop| {

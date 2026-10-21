@@ -7,8 +7,8 @@
 //! every hotplug) reads their modes/EDID without modesetting the active pipe.
 
 use drivers::output::base::{DisplayInfo, ModeInfo, OutputsSnapshot};
-use kms::edid::identity::identity;
-use kms::edid::parse::parse;
+use kms::edid::identity;
+use kms::edid::parse;
 use render_gles::preference::output::profile::{self, ModeRequest};
 use smithay::backend::drm::DrmDevice;
 use smithay::reexports::drm::control::{Mode as DrmMode, connector};
@@ -52,8 +52,8 @@ pub fn enumerate(
     active: connector::Handle,
     lit: &[(connector::Handle, ModeInfo)],
 ) -> OutputsSnapshot {
-    let res = kms::connector::scan::scan::resources(drm);
-    let infos = kms::connector::scan::scan::connectors(drm, &res);
+    let res = kms::connector::scan::resources(drm);
+    let infos = kms::connector::scan::connectors(drm, &res);
     let mut displays = Vec::new();
     for info in &infos {
         if info.state() != connector::State::Connected {

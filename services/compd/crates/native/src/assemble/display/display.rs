@@ -6,8 +6,8 @@
 //! Failure policy: any step failing here means no display — panic, exactly
 //! as the original's unwraps did.
 
-use kms::connector::diff::diff::ConnectorSnapshot;
-use kms::edid::identity::identity::MonitorIdentity;
+use kms::connector::diff::ConnectorSnapshot;
+use kms::edid::identity::MonitorIdentity;
 use render_gles::preference::output::profile::ModeRequest;
 use smithay::backend::allocator::gbm::GbmDevice;
 use smithay::backend::drm::{DrmDevice, DrmDeviceFd, DrmDeviceNotifier, DrmNode};
@@ -52,14 +52,14 @@ pub struct DisplayAssembly {
     pub identity: MonitorIdentity,
     /// HDR / colorimetry capabilities parsed from EDID (defaults to "no HDR"
     /// when the EDID is unreadable or SDR-only). Consumed by the M5 HDR path.
-    pub hdr: kms::edid::parse::parse::HdrInfo,
+    pub hdr: kms::edid::parse::HdrInfo,
 }
 
 pub fn assemble(formats: &render_gles::format::registrar::Registrar) -> DisplayAssembly {
     info!("Init native backend (assemble.display)");
 
     // 1. Session via libseat.
-    let (mut session, session_notifier) = kms::seat::session::factory::factory::create();
+    let (mut session, session_notifier) = kms::seat::session::factory::create();
     let seat_name = session.seat();
 
     // 2. Primary GPU: an explicit `scanout_node` wins outright; otherwise
@@ -71,10 +71,10 @@ pub fn assemble(formats: &render_gles::format::registrar::Registrar) -> DisplayA
     //    devices (Raspberry Pi: `v3d` has the render node and no CRTCs, `vc4`
     //    has the connectors and no render node).
     let rank = render_gles::preference::gpu::rank::get();
-    let candidates = kms::udev::enumerate::gpu::gpu::all(&seat_name);
+    let candidates = kms::udev::enumerate::gpu::all(&seat_name);
     let configured = model::environment::config::base::get().scanout_node.clone();
     let selected_path = if configured.is_empty() {
-        let heuristic = kms::udev::enumerate::gpu::gpu::primary(&seat_name);
+        let heuristic = kms::udev::enumerate::gpu::primary(&seat_name);
         let picked =
             crate::device::select::select::select_primary(&candidates, heuristic.as_ref(), &rank);
         // Correct the heuristic ONLY on proof. `probe_scanout` reports `capable: false`
@@ -89,7 +89,7 @@ pub fn assemble(formats: &render_gles::format::registrar::Registrar) -> DisplayA
         // picking the first landed on a card that was then rejected at libseat open
         // (EBUSY). Capable-but-unplugged is still accepted as a last resort so a
         // legitimately headless boot behaves as before.
-        let probe = kms::device::node::node::probe_scanout;
+        let probe = kms::device::node::probe_scanout;
         let picked_caps = picked.as_deref().and_then(probe);
         // Keep the pick when it has a monitor ON it. Testing only for capability was too
         // weak: a Raspberry Pi 5 lists vc4's HDMI beside RP1's DSI/DPI/VEC, all of which
@@ -143,7 +143,7 @@ pub fn assemble(formats: &render_gles::format::registrar::Registrar) -> DisplayA
         // devices" panic four steps down, which names neither the setting nor
         // the value. An explicitly configured device that cannot be used is a
         // configuration error, not a reason to fall back to the heuristic.
-        if kms::device::node::node::render_node(&path).is_none() {
+        if kms::device::node::render_node(&path).is_none() {
             abort!("scanout_node={configured:?} (settings.json) is not a usable DRM device node");
         }
         info!("scanout_node={configured:?} configured; udev heuristic bypassed");
@@ -152,7 +152,7 @@ pub fn assemble(formats: &render_gles::format::registrar::Registrar) -> DisplayA
 
     let primary_gpu = selected_path
         .as_deref()
-        .and_then(kms::device::node::node::render_node)
+        .and_then(kms::device::node::render_node)
         .or_else(|| {
             candidates
                 .iter()
@@ -171,8 +171,8 @@ pub fn assemble(formats: &render_gles::format::registrar::Registrar) -> DisplayA
     // blit" on hardware that is not. `route()` cannot tell the two topologies apart, and
     // nothing branches on its result, so the honest thing to print is the fact we actually
     // know: whether the two nodes are the same device.
-    let role = kms::gpu::topology::role::role::assign(primary_gpu, Some(primary_gpu));
-    let render_side = kms::device::node::node::render_node(std::path::Path::new(
+    let role = kms::gpu::topology::role::assign(primary_gpu, Some(primary_gpu));
+    let render_side = kms::device::node::render_node(std::path::Path::new(
         &model::environment::config::base::get().render_node,
     ))
     .unwrap_or(primary_gpu);
@@ -190,11 +190,11 @@ pub fn assemble(formats: &render_gles::format::registrar::Registrar) -> DisplayA
     );
 
     // 3. udev: find the device path whose dev_id matches the selected node.
-    let primary_node = kms::device::node::node::primary_node(primary_gpu);
-    let device_path = kms::udev::enumerate::scan::scan::snapshot(&seat_name)
+    let primary_node = kms::device::node::primary_node(primary_gpu);
+    let device_path = kms::udev::enumerate::scan::snapshot(&seat_name)
         .into_iter()
         .find(|(dev_id, _)| {
-            kms::device::node::node::matches_dev(*dev_id, primary_gpu, primary_node)
+            kms::device::node::matches_dev(*dev_id, primary_gpu, primary_node)
         })
         .map(|(_, path)| path)
         .expect("Could not find any usable DRM devices! Check seat configuration.");
@@ -205,27 +205,27 @@ pub fn assemble(formats: &render_gles::format::registrar::Registrar) -> DisplayA
     );
 
     // 4. Open through the seat; wrap; DRM + GBM devices.
-    let fd = kms::seat::interface::open::open::open(&mut session, &device_path);
-    let drm_fd = kms::device::open::open::wrap_fd(fd);
-    let (drm, drm_notifier) = kms::device::open::open::open(drm_fd.clone());
-    let gbm = kms::gbm::device::device::create(drm_fd.clone());
+    let fd = kms::seat::interface::open::open(&mut session, &device_path);
+    let drm_fd = kms::device::open::wrap_fd(fd);
+    let (drm, drm_notifier) = kms::device::open::open(drm_fd.clone());
+    let gbm = kms::gbm::device::create(drm_fd.clone());
 
     // 5. Connector: scan, select (preference default-output identity, else first
     //    connected). `profiles` are priority-ordered; the first is the default.
-    let res = kms::connector::scan::scan::resources(&drm);
-    let connectors = kms::connector::scan::scan::connectors(&drm, &res);
+    let res = kms::connector::scan::resources(&drm);
+    let connectors = kms::connector::scan::connectors(&drm, &res);
     let profiles = render_gles::preference::output::profile::get();
     let initial_snapshot = ConnectorSnapshot::take(&connectors);
-    let connector = kms::connector::select::select::select(&drm, connectors, &profiles)
+    let connector = kms::connector::select::select(&drm, connectors, &profiles)
         .expect("No connected monitor found");
-    let kind = kms::connector::kind::kind::classify(&connector);
+    let kind = kms::connector::kind::classify(&connector);
     info!("selected connector classified: {kind:?}");
 
     // 6. Pipe claim. Logged with the connector's routable set: an unroutable CRTC
     //    fails every mode/format/modifier in the atomic test identically, and this
     //    line is what tells the two apart.
     let pipe =
-        kms::scanout::pipe::claim::claim::claim(&drm, &connector, &res).expect("no CRTC available");
+        kms::scanout::pipe::claim::claim(&drm, &connector, &res).expect("no CRTC available");
     use smithay::reexports::drm::control::Device as _;
     let routable: Vec<_> = connector
         .encoders()
@@ -241,15 +241,15 @@ pub fn assemble(formats: &render_gles::format::registrar::Registrar) -> DisplayA
     if !routable.is_empty() && !routable.contains(&pipe) {
         warn!("claimed pipe {pipe:?} is NOT in the connector's routable set — modeset will fail");
     }
-    let _assignment = kms::scanout::pipe::assign::assign::assign(connector.handle(), pipe);
+    let _assignment = kms::scanout::pipe::assign::assign(connector.handle(), pipe);
     register_plane_formats(formats, &drm, pipe);
 
     // 7. EDID identity (placeholder identity when unreadable — behavior-
     //    preserving). BEFORE the mode, because the mode is resolved from THIS
     //    monitor's profile and nothing else can say which that is.
-    let raw = kms::edid::parse::parse::read(&drm, &connector);
-    let parsed = raw.as_ref().and_then(kms::edid::parse::parse::parse);
-    let identity = kms::edid::identity::identity::identity(
+    let raw = kms::edid::parse::read(&drm, &connector);
+    let parsed = raw.as_ref().and_then(kms::edid::parse::parse);
+    let identity = kms::edid::identity::identity(
         parsed.as_ref(),
         &format!("{:?}-{}", connector.interface(), connector.interface_id()),
     );
@@ -272,25 +272,25 @@ pub fn assemble(formats: &render_gles::format::registrar::Registrar) -> DisplayA
         .find(|p| p.identity.as_deref() == Some(identity.key().as_str()))
         .or_else(|| profiles.iter().find(|p| p.identity.is_none()));
     let drm_mode = resolve_mode(&connector, profile);
-    kms::mode::select::select::log_selected(&drm_mode);
-    kms::mode::enumerate::enumerate::dump(&connector);
-    let mode_chain = kms::scanout::commit::test::test::fallback_chain(&connector, drm_mode);
+    kms::mode::select::log_selected(&drm_mode);
+    kms::mode::enumerate::dump(&connector);
+    let mode_chain = kms::scanout::commit::test::fallback_chain(&connector, drm_mode);
 
     // 9. Orientation + Output.
     let hdr = raw
         .as_ref()
-        .map(kms::edid::parse::parse::parse_hdr)
+        .map(kms::edid::parse::parse_hdr)
         .unwrap_or_default();
     info!(
         "display HDR caps: pq={} hlg={} bt2020_rgb={} max_lum={:?}",
         hdr.hdr.eotf_pq, hdr.hdr.eotf_hlg, hdr.colorimetry.bt2020_rgb, hdr.hdr.max_luminance
     );
-    let orientation = kms::connector::kind::kind::panel_orientation(&drm, &connector);
+    let orientation = kms::connector::kind::panel_orientation(&drm, &connector);
 
-    let output = kms::output::physical::physical::create(&connector, &identity);
+    let output = kms::output::physical::create(&connector, &identity);
     let mode = Mode::from(drm_mode);
     let position = render_gles::preference::layout::output::position_for(Some(&identity.key()), 0);
-    kms::output::physical::physical::apply_initial_state(
+    kms::output::physical::apply_initial_state(
         &output,
         mode,
         orientation,
@@ -398,7 +398,7 @@ fn resolve_mode(
             synthesize_mode(profile.unwrap())
         }
         Some(ModeRequest::Advertised { .. }) => {
-            kms::mode::select::select::select(connector, profile)
+            kms::mode::select::select(connector, profile)
                 .expect("connector advertises no modes")
         }
         // No per-output mode: try the hand-set default mode (advertised match),
@@ -412,7 +412,7 @@ fn resolve_mode(
                     active: true,
                 }
             });
-            kms::mode::select::select::select(connector, dm.as_ref())
+            kms::mode::select::select(connector, dm.as_ref())
                 .expect("connector advertises no modes")
         }
     }
@@ -420,7 +420,7 @@ fn resolve_mode(
 
 #[cfg(feature = "mode-synthesize")]
 fn synthesize_mode(profile: &render_gles::preference::output::profile::OutputProfile) -> DrmMode {
-    use kms::mode::synthesize::synthesize;
+    use kms::mode::synthesize;
     assert!(
         render_gles::preference::enable::safety::get().mode_synthesize,
         "mode synthesis requested by a profile but SafetyEnable::mode_synthesize is off"

@@ -8,7 +8,7 @@
 //! GLES only: there is no renderer selection and no Vulkan path.
 
 use crate::assemble::display::display::DisplayAssembly;
-use kms::scanout::surface::output::output::{NativeDrmOutput, NativeDrmOutputManager};
+use kms::scanout::surface::output::{NativeDrmOutput, NativeDrmOutputManager};
 use outputs::render_contract::contract::{RenderContract, RendererId};
 use render_gles::element::wrap::GlesElementWrapper;
 use scenegraph::scene::element::element::SceneElement;
@@ -57,8 +57,8 @@ fn assemble_gles(
     render_gles::multigpu::factory::add_node(&mut gpus, display.primary_gpu, display.gbm.clone());
 
     // Allocator + exporter (flag policy in drm.gbm/gbm.alloc).
-    let allocator = kms::gbm::alloc::alloc::allocator(display.gbm.clone());
-    let exporter = kms::gbm::alloc::alloc::exporter(display.gbm.clone(), display.primary_gpu);
+    let allocator = kms::gbm::alloc::allocator(display.gbm.clone());
+    let exporter = kms::gbm::alloc::exporter(display.gbm.clone(), display.primary_gpu);
 
     // Render formats from the primary's EGL context, narrowed by the Law-7
     // modifier filter when its double gate is satisfied.
@@ -142,7 +142,7 @@ fn assemble_gles(
     let deep_color = env.depth == 10;
     let ten_bit = hdr_scanout || deep_color;
     info!("native scanout: hdr={hdr_scanout} deep_color={deep_color} → 10-bit={ten_bit}");
-    let mut drm_output_manager = kms::scanout::surface::output::output::manager(
+    let mut drm_output_manager = kms::scanout::surface::output::manager(
         drm,
         allocator,
         exporter,
@@ -155,8 +155,8 @@ fn assemble_gles(
     // wire.rs pseudocode made real). Chain exhaustion is the panic.
     let chain = display.mode_chain.clone();
     let mut slot: Option<NativeDrmOutput> = None;
-    let chosen = kms::scanout::commit::test::test::try_chain(chain, |mode| {
-        match kms::scanout::surface::output::output::initialize::<
+    let chosen = kms::scanout::commit::test::try_chain(chain, |mode| {
+        match kms::scanout::surface::output::initialize::<
             _,
             GlesElementWrapper<SceneElement<GlesRenderer>>,
         >(
@@ -248,7 +248,7 @@ fn assemble_gles(
     // implementation so a second monitor and a failed-over primary get exactly
     // what the assembly pipe gets.
     let conn = display.connector.handle();
-    let vrr = kms::scanout::surface::output::output::apply_vrr(&drm_output, conn, env.vrr);
+    let vrr = kms::scanout::surface::output::apply_vrr(&drm_output, conn, env.vrr);
     info!(
         "native: VRR requested={} supported={} enabled={}",
         env.vrr, vrr.supported, vrr.enabled
@@ -280,7 +280,7 @@ fn assemble_gles(
 #[cfg(feature = "modifier-fallback")]
 fn filter_formats(formats: FormatSet) -> FormatSet {
     if render_gles::preference::enable::safety::get().modifier_fallback {
-        kms::scanout::framebuffer::modifier::modifier::filter_legacy(formats)
+        kms::scanout::framebuffer::modifier::filter_legacy(formats)
     } else {
         formats
     }
@@ -335,14 +335,14 @@ fn scanout_formats(formats: &render_gles::format::registrar::Registrar) -> Forma
 /// page-flip request -> TEST_ONLY commit -> slot submission/aging.
 #[cfg(feature = "native-scanout")]
 fn native_scanout_self_test(display: &DisplayAssembly) -> String {
-    use kms::scanout::commit::build::build;
-    use kms::scanout::commit::submit::submit;
-    use kms::scanout::swapchain::acquire::acquire;
-    use kms::scanout::swapchain::slot::slot;
+    use kms::scanout::commit::build;
+    use kms::scanout::commit::submit;
+    use kms::scanout::swapchain::acquire;
+    use kms::scanout::swapchain::slot;
     use smithay::backend::allocator::{Buffer, Modifier};
 
     let drm_fd = &display.drm_fd;
-    let res = kms::connector::scan::scan::resources(
+    let res = kms::connector::scan::resources(
         display
             .drm
             .as_ref()
@@ -354,8 +354,8 @@ fn native_scanout_self_test(display: &DisplayAssembly) -> String {
     let props = build::pipeline_props(drm_fd, display.connector.handle(), display.pipe, plane);
 
     // Swapchain over the GL-path allocator; one slot; cached framebuffer.
-    let allocator = kms::gbm::alloc::alloc::allocator(display.gbm.clone());
-    let exporter = kms::gbm::alloc::alloc::exporter(display.gbm.clone(), display.primary_gpu);
+    let allocator = kms::gbm::alloc::allocator(display.gbm.clone());
+    let exporter = kms::gbm::alloc::exporter(display.gbm.clone(), display.primary_gpu);
     let (w, h) = (
         display.drm_mode.size().0 as u32,
         display.drm_mode.size().1 as u32,
@@ -371,9 +371,9 @@ fn native_scanout_self_test(display: &DisplayAssembly) -> String {
     );
     let buffer_slot = acquire::acquire(&mut swapchain);
     let fb =
-        kms::scanout::framebuffer::export::export::framebuffer_for(&exporter, drm_fd, &buffer_slot);
+        kms::scanout::framebuffer::export::framebuffer_for(&exporter, drm_fd, &buffer_slot);
     let _ = buffer_slot.size(); // the slot derefs to the allocator buffer
-    let fb_handle = kms::scanout::framebuffer::export::export::handle(&fb);
+    let fb_handle = kms::scanout::framebuffer::export::handle(&fb);
 
     let frame = build::PlaneFrame {
         fb: fb_handle,
@@ -391,20 +391,20 @@ fn native_scanout_self_test(display: &DisplayAssembly) -> String {
         &display.drm_mode,
         frame,
     );
-    let mut out_slot = kms::scanout::fence::out::out::OutFenceSlot::new();
-    let out_supported = kms::scanout::fence::out::out::OutFenceSlot::supported(&props);
+    let mut out_slot = kms::scanout::fence::out::OutFenceSlot::new();
+    let out_supported = kms::scanout::fence::out::OutFenceSlot::supported(&props);
     if out_supported {
         out_slot.arm(&mut req, display.pipe, &props);
     }
     let in_supported = kms::scanout::fence::in_::r#in::has_in_fence(&props);
     let _held_fence; // must outlive the commit ioctl
     if in_supported {
-        let syncobj = kms::syncobj::device::device::create(drm_fd, true)
+        let syncobj = kms::syncobj::device::create(drm_fd, true)
             .expect("self-test syncobj creation failed");
         let fence = kms::scanout::fence::in_::r#in::from_syncobj(drm_fd, syncobj);
         kms::scanout::fence::in_::r#in::attach(&mut req, plane, &props, &fence);
         _held_fence = Some(fence);
-        kms::syncobj::device::device::destroy(drm_fd, syncobj)
+        kms::syncobj::device::destroy(drm_fd, syncobj)
             .expect("self-test syncobj destroy failed");
     } else {
         _held_fence = None;

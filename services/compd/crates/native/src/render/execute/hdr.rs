@@ -11,7 +11,7 @@
 //! fails (malformed blob, unsupported property, wrong enum) we return an error
 //! and the caller stays SDR — a bad blob can never blank the display.
 
-use kms::edid::parse::parse::HdrInfo;
+use kms::edid::parse::HdrInfo;
 use smithay::backend::drm::DrmDeviceFd;
 use smithay::reexports::drm::control::atomic::AtomicModeReq;
 use smithay::reexports::drm::control::{

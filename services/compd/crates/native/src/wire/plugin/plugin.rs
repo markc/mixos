@@ -7,8 +7,8 @@
 
 use crate::context::render::render::NativeRenderContext;
 use crate::context::topology::topology::Topology;
-use kms::gpu::registry::node::node::NodeRegistry;
-use kms::udev::loop_::watch::watch::UdevWatch;
+use kms::gpu::registry::node::NodeRegistry;
+use kms::udev::loop_::watch::UdevWatch;
 use smithay::reexports::calloop::EventLoop;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -66,7 +66,7 @@ pub fn register(
     event_loop
         .handle()
         .insert_source(watch, move |event, _, state| {
-            let decoded = kms::udev::loop_::event::event::decode(event);
+            let decoded = kms::udev::loop_::event::decode(event);
             info!("udev event received: {decoded:?}");
             let rank = render_gles::preference::gpu::rank::get();
             let reconcile = crate::plugin::route::route::route(

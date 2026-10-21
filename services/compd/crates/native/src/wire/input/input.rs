@@ -6,7 +6,7 @@
 use crate::context::render::render::NativeRenderContext;
 use dispatcher::state::state::Dispatch;
 use dispatcher::wire::tablet::tablet as tbl;
-use kms::input::loop_::libinput::libinput::LibinputSource;
+use kms::input::loop_::libinput::LibinputSource;
 use seat::pointer::restore::restore::TouchCursor;
 use smithay::backend::input::{Event, InputEvent};
 use smithay::input::tablet::TabletDescriptor;
@@ -168,7 +168,7 @@ pub fn register(
             match &event {
                 InputEvent::DeviceAdded { device } => {
                     let mut device = device.clone();
-                    kms::input::libinput::config::config::on_device_added(
+                    kms::input::libinput::config::on_device_added(
                         &mut device,
                         &Default::default(),
                     );

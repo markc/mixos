@@ -7,7 +7,7 @@
 //! (seeded from preference, updated through `device.interface`).
 
 use frames::draw::plan::tap::tap::TapSubscriptions;
-use kms::scanout::surface::output::output::{NativeDrmOutput, NativeDrmOutputManager};
+use kms::scanout::surface::output::{NativeDrmOutput, NativeDrmOutputManager};
 use render_gles::preference::enable::safety::SafetyEnable;
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::output::{Mode, Output};
@@ -38,7 +38,7 @@ pub struct OutputPipe {
     /// every render path treats `None` as "skip this frame".
     pub drm_output: Option<NativeDrmOutput>,
     /// HDR (M5): the display's parsed EDID HDR/colorimetry caps.
-    pub hdr_caps: kms::edid::parse::parse::HdrInfo,
+    pub hdr_caps: kms::edid::parse::HdrInfo,
     /// HDR output path active this session (`COMPOSITOR_HDR` + capable display +
     /// Vulkan). When true the executor signals the connector (BT.2020 + PQ) once
     /// and composites in the HDR working space.

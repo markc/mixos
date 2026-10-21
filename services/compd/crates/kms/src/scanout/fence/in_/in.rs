@@ -17,7 +17,7 @@ pub use gated::*;
 
 #[cfg(feature = "native-scanout")]
 mod gated {
-    use crate::scanout::commit::build::build::PipelineProps;
+    use crate::scanout::commit::build::PipelineProps;
     use smithay::backend::drm::DrmDeviceFd;
     use smithay::reexports::drm::control::atomic::AtomicModeReq;
     use smithay::reexports::drm::control::{Device as ControlDevice, plane, property, syncobj};

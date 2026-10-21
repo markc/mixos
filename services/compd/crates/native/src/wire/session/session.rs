@@ -70,7 +70,7 @@ pub fn register(
                     for p in ctx_ref.outputs.iter() {
                         if let Some(o) = p.drm_output.as_ref()
                             && let Err(e) =
-                                kms::scanout::surface::output::output::clear(o)
+                                kms::scanout::surface::output::clear(o)
                             {
                                 warn!(
                                     "pause: clearing connector={:?} crtc={:?} failed: {e} — its \
@@ -85,9 +85,9 @@ pub fn register(
                     // Pause protocol: display first, then input (seat.lifecycle).
                     let manager = ctx_ref.drm_output_manager.clone();
                     let libinput = &mut ctx_ref.libinput_context;
-                    kms::seat::lifecycle::pause::pause::pause(
+                    kms::seat::lifecycle::pause::pause(
                         || {
-                            kms::scanout::surface::output::output::pause(
+                            kms::scanout::surface::output::pause(
                                 &mut manager.borrow_mut(),
                             )
                         },
@@ -138,15 +138,15 @@ pub fn register(
                         // fields the resume closures capture (libinput, …) borrowable.
                         let pipes = &mut ctx_ref.outputs;
 
-                        kms::seat::lifecycle::resume::resume::resume(
-                            kms::seat::lifecycle::resume::resume::ResumeSteps {
+                        kms::seat::lifecycle::resume::resume(
+                            kms::seat::lifecycle::resume::ResumeSteps {
                                 resume_input: || {
                                     libinput
                                         .resume()
                                         .map_err(|e| format!("libinput resume failed: {e:?}"))
                                 },
                                 activate_display: |force| {
-                                    kms::scanout::surface::output::output::activate(
+                                    kms::scanout::surface::output::activate(
                                         &mut manager.borrow_mut(),
                                         force,
                                     )
@@ -169,7 +169,7 @@ pub fn register(
                                         // rebuilds the pipe.
                                         p.props_applied = false;
                                         if let Some(o) = p.drm_output.as_mut()
-                                            && let Err(e) = kms::scanout::surface::output::output::reset(o) {
+                                            && let Err(e) = kms::scanout::surface::output::reset(o) {
                                                 result = Err(e);
                                             }
                                     }
@@ -224,7 +224,7 @@ pub fn register(
 
                     let ctx = session_context.clone();
                     let kick = render_kick.clone();
-                    let token = kms::seat::lifecycle::resume::resume::watchdog::arm(
+                    let token = kms::seat::lifecycle::resume::watchdog::arm(
                         &session_loop_handle,
                         |state: &mut Loop| (*state.inner.kernel.get(&drivers::resume::base::VBLANK_SEEN)),
                         |state: &mut Loop| {

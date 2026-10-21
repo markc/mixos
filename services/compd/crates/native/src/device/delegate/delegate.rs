@@ -4,7 +4,7 @@
 //! udev watch only carries the DRM subsystem, so everything classifies as a
 //! display/GPU device; the seam exists for the day the watch widens.
 
-use kms::gpu::registry::node::node::NodeRegistry;
+use kms::gpu::registry::node::NodeRegistry;
 use std::path::Path;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -7,8 +7,8 @@
 //! additional connector, over the same validating mode fallback chain.
 
 use drivers::output::base::ModeInfo;
-use kms::edid::parse::parse::HdrInfo;
-use kms::scanout::surface::output::output::{NativeDrmOutput, NativeDrmOutputManager};
+use kms::edid::parse::HdrInfo;
+use kms::scanout::surface::output::{NativeDrmOutput, NativeDrmOutputManager};
 use render_gles::element::wrap::GlesElementWrapper;
 use scenegraph::scene::element::element::SceneElement;
 use smithay::backend::renderer::gles::GlesRenderer;
@@ -44,13 +44,13 @@ fn pick_mode(target: &connector::Info, requested: Option<ModeInfo>) -> Result<Dr
         let hit = target
             .modes()
             .iter()
-            .find(|m| matches(m) && !kms::mode::select::select::is_interlaced(m))
+            .find(|m| matches(m) && !kms::mode::select::is_interlaced(m))
             .or_else(|| target.modes().iter().find(matches));
         if let Some(m) = hit {
             return Ok(*m);
         }
     }
-    kms::mode::select::select::select_default(target)
+    kms::mode::select::select_default(target)
         .ok_or_else(|| "connector advertises no modes".to_string())
 }
 
@@ -76,12 +76,12 @@ pub fn build(
     // Read everything off the device before the mutable `initialize` borrow.
     let (pipe, hdr) = {
         let drm = mgr.device();
-        let res = kms::connector::scan::scan::resources(drm);
-        let pipe = kms::scanout::pipe::claim::free::free::claim_excluding(drm, target, &res, busy)
+        let res = kms::connector::scan::resources(drm);
+        let pipe = kms::scanout::pipe::claim::free::claim_excluding(drm, target, &res, busy)
             .ok_or_else(|| "no free CRTC for switch".to_string())?;
-        let hdr = kms::edid::parse::parse::read(drm, target)
+        let hdr = kms::edid::parse::read(drm, target)
             .as_ref()
-            .map(kms::edid::parse::parse::parse_hdr)
+            .map(kms::edid::parse::parse_hdr)
             .unwrap_or_default();
         (pipe, hdr)
     };
@@ -99,14 +99,14 @@ pub fn build(
         selected.size().1,
         selected.vrefresh()
     );
-    let chain = kms::scanout::commit::test::test::fallback_chain(target, selected);
+    let chain = kms::scanout::commit::test::fallback_chain(target, selected);
     let mut slot: Option<NativeDrmOutput> = None;
-    let chosen = kms::scanout::commit::test::test::try_chain(chain, |mode| {
+    let chosen = kms::scanout::commit::test::try_chain(chain, |mode| {
         // The reused smithay `Output` still carries the OLD mode; `initialize_output`
         // sizes the primary plane from it, so it must match THIS candidate or the
         // plane won't fit the CRTC mode and the atomic test fails with EINVAL.
         output.change_current_state(Some(Mode::from(mode)), None, None, None);
-        match kms::scanout::surface::output::output::initialize::<
+        match kms::scanout::surface::output::initialize::<
             _,
             GlesElementWrapper<SceneElement<GlesRenderer>>,
         >(
@@ -133,7 +133,7 @@ pub fn build(
     // Vulkan renderer that is fatal, not merely slow (Vulkan cannot create an image
     // for an implicit-modifier buffer, so every render_frame fails and all screens
     // stay black). smithay ships the recovery; nothing called it until now.
-    if let Err(e) = kms::scanout::surface::output::output::restore_modifiers::<
+    if let Err(e) = kms::scanout::surface::output::restore_modifiers::<
         _,
         GlesElementWrapper<SceneElement<GlesRenderer>>,
     >(&mut mgr, &mut renderer)
@@ -156,7 +156,7 @@ pub fn build(
     // a second monitor — or the primary after any fail-over/rebuild — silently
     // scans out fixed-refresh while the setting still says VRR is on.
     let vrr =
-        kms::scanout::surface::output::output::apply_vrr(&drm_output, target.handle(), env.vrr);
+        kms::scanout::surface::output::apply_vrr(&drm_output, target.handle(), env.vrr);
     model::stats::registry::base::set_vrr(vrr.supported, vrr.enabled);
 
     // Record the achieved scanout format FOR THIS CRTC. Per-CRTC and not one
@@ -165,7 +165,7 @@ pub fn build(
     // so plugging an 8-bit panel in beside a 10-bit one silently banded the good
     // display. `Registrar::scanout_fourcc` now prefers the deepest live pipe.
     let (fourcc, modifier, offered) =
-        kms::scanout::surface::output::output::format_info(&drm_output);
+        kms::scanout::surface::output::format_info(&drm_output);
     formats.set_scanout_fourcc(u32::from(pipe) as u64, fourcc);
     {
         use render_gles::format::rule;

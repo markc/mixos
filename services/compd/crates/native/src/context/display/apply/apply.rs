@@ -7,7 +7,7 @@
 
 use crate::context::render::render::NativeRenderContext;
 use drivers::lid::base::{DISPLAY_OFF_MUT, DISPLAY_REQUEST_MUT, DisplayRequest};
-use kms::scanout::surface::output::output;
+use kms::scanout::surface::output;
 use std::cell::RefCell;
 use std::rc::Rc;
 use world::state::Loop;

@@ -90,7 +90,7 @@ pub fn wire(
 
     // Hook syncobj impls; the support probe (`drm.syncobj/syncobj.device`)
     // records what the device can do for the explicit-sync path.
-    let syncobj_eventfd = kms::syncobj::device::device::supports_eventfd(&display.drm_fd);
+    let syncobj_eventfd = kms::syncobj::device::supports_eventfd(&display.drm_fd);
     info!("syncobj eventfd support: {syncobj_eventfd}");
     dispatcher::wayland::dmabuf::dispatch::dispatch::hook_syncobj::<
         dispatcher::state::state::Dispatch,
@@ -158,7 +158,7 @@ pub fn wire(
     {
         let cfg = model::environment::config::base::get();
         if let Some(rn) =
-            kms::device::node::node::render_node(std::path::Path::new(&cfg.render_node))
+            kms::device::node::render_node(std::path::Path::new(&cfg.render_node))
             && rn.dev_id() != display.primary_gpu.dev_id()
         {
             warn!(
@@ -199,8 +199,8 @@ pub fn wire(
         display.seat_name
     );
     let libinput_context =
-        kms::input::libinput::factory::factory::create(display.session.clone(), &display.seat_name);
-    let libinput_source = kms::input::loop_::libinput::libinput::source(libinput_context.clone());
+        kms::input::libinput::factory::create(display.session.clone(), &display.seat_name);
+    let libinput_source = kms::input::loop_::libinput::source(libinput_context.clone());
 
     info!("Backend initialization - Native.start()");
 
@@ -312,7 +312,7 @@ pub fn wire(
 
     // ---- Topology bookkeeping for the device authority.
     let registry = Rc::new(RefCell::new(
-        kms::gpu::registry::node::node::NodeRegistry::new(),
+        kms::gpu::registry::node::NodeRegistry::new(),
     ));
     {
         let mut reg = registry.borrow_mut();
@@ -330,7 +330,7 @@ pub fn wire(
             dev_id,
             crate::context::topology::topology::ConnectorEntry {
                 handle: display.connector.handle(),
-                kind: kms::connector::kind::kind::classify(&display.connector),
+                kind: kms::connector::kind::classify(&display.connector),
                 pipe: Some(display.pipe),
                 output: Some(display.output.clone()),
             },
@@ -435,7 +435,7 @@ pub fn wire(
     }
 
     // Retained udev watch (panics internally if udev vanished post-snapshot).
-    let watch = kms::udev::loop_::watch::watch::watch(&display.seat_name);
+    let watch = kms::udev::loop_::watch::watch(&display.seat_name);
     crate::wire::plugin::plugin::register(event_loop, watch, registry, topology, ctx_rc.clone());
 
     // Light up every OTHER connected monitor as an additional output (the primary
