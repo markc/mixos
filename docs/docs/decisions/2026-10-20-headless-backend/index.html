@@ -293,6 +293,21 @@ a compositor cadence defect.</p>
 Its rendered pixels survived composition and screencopy, but this was a
 <code>wl_shm</code> fallback. Client DMA-BUF negotiation remains unproven; this probe
 does not establish the GPU-client DMA-BUF path.</p>
+<p>Phase 5b publishes the validated headless render node in the kernel registry
+as the composite device for backends without a scanout binding. The DMA-BUF
+advertiser uses the native GPU binding first, as before, otherwise this node,
+otherwise the v3 flat format list (nested). Headless therefore advertises
+<code>zwp_linux_dmabuf_v1</code> v5 feedback with <code>main_device</code> equal to the render node's
+<code>dev_t</code>, using the existing narrowed import format set. Mesa can select its
+hardware EGL driver from that feedback without a legacy <code>wl_drm</code> global.
+The GPU acceptance tests read the default feedback on a real Wayland client,
+compare its main device against the selected node's <code>st_rdev</code>, and require a
+tranche carrying valid format-table indices. The plain EGL client must create
+linux-dmabuf buffers and pass the existing rendered-pixel readback checks;
+this establishes GPU EGL client allocation, import and composition. The ced
+probe continues to record its actual wgpu adapter and attached buffer type.
+This does not establish hardware Vulkan WSI on the build workers: their only
+Vulkan ICD is llvmpipe and they lack <code>vulkan-intel</code>.</p>
 <p>Phase 5 uses ced's real egui/wgpu window with a private noded and editd, so
 <code>ced.state {text:true}</code> can confirm agent-seat typing independently of pixels.
 The reference helper <code>services/compd/crates/testkit/scripts/app_reference.mix</code>

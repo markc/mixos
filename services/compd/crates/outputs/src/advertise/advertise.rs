@@ -75,8 +75,8 @@ pub fn advertise_dmabuf(_loop: &mut Loop) {
         );
     }
 
-    // v5 (per-client feedback naming a main_device) when a GPU binding exists,
-    // v3 (a flat format list) when it does not.
+    // v5 when a GPU binding or a backend's validated composite node exists;
+    // v3 (a flat format list) otherwise, including nested.
     //
     // `main_device` is the device that will actually SAMPLE these buffers — the
     // composite node, `render_node` when usable. Advertising the scanout device
@@ -96,14 +96,21 @@ pub fn advertise_dmabuf(_loop: &mut Loop) {
         .kernel
         .get(&world::state::state::GPU_BINDING)
         .as_ref()
-        .map(|b| b.borrow().primary);
+        .map(|b| (registrar::composite_node(b.borrow().primary), "GPU binding"))
+        .or_else(|| {
+            _loop
+                .inner
+                .kernel
+                .get(&registrar::COMPOSITE_NODE)
+                .map(|node| (node, "backend composite node"))
+        });
     _loop.state.dmabuf.global = Some(match node {
-        Some(scanout) => {
-            let main_device: dev_t = registrar::composite_node(scanout).dev_id();
+        Some((node, source)) => {
+            let main_device: dev_t = node.dev_id();
             let feedback = DmabufFeedbackBuilder::new(main_device, dma_formats)
                 .build()
                 .unwrap_or_else(|e| abort!("Failed to build dmabuf feedback: {e:?}"));
-            info!("dmabuf global v5, main_device {main_device:#x}");
+            info!("dmabuf global v5, main_device {main_device:#x} from {source}");
             _loop
                 .state
                 .dmabuf
@@ -111,7 +118,7 @@ pub fn advertise_dmabuf(_loop: &mut Loop) {
                 .create_global_with_default_feedback::<Dispatch>(&handle, &feedback)
         }
         None => {
-            warn!("dmabuf global v3 instead of v5: the primary gpu is not set");
+            warn!("dmabuf global v3 instead of v5: no GPU binding or backend composite node");
             _loop
                 .state
                 .dmabuf

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! Deferred Phase 0 GPU-client probe. Uses Mesa's real Wayland EGL client;
+//! GPU-client probe. Uses Mesa's real Wayland EGL client;
 //! WAYLAND_DEBUG records the first wl_buffer's actual creation request.
 #[path = "support/process.rs"]
 mod process;
@@ -94,6 +94,7 @@ fn egl_client_buffer_type_and_rendered_frame() {
         panic!("unrecognised buffer request: {creation}")
     };
     println!("plain EGL client negotiated {kind}; first buffer: {creation}");
+    assert_eq!(kind, "linux-dmabuf", "EGL must use GPU buffers; WAYLAND_DEBUG trace:\n{trace}");
     for line in trace.lines().filter(|line| {
         line.contains("wl_registry")
             && (line.contains("wl_shm") || line.contains("wl_drm") || line.contains("linux_dmabuf"))

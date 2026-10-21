@@ -94,6 +94,10 @@ pub fn wire(
     }
     info!("headless: EGL device = {}", reported.display());
     let renderer = render_gles::context::egl::egl::create(&display)?;
+    *state
+        .inner
+        .kernel
+        .get_mut(&render_gles::format::registrar::registrar::COMPOSITE_NODE_MUT) = Some(node);
     let refresh = match std::env::var("COMPD_HEADLESS_REFRESH_HZ") {
         Ok(value) => value
             .parse::<i32>()
