@@ -35,7 +35,7 @@ fn answers_after_enter(name: &str) -> Vec<Answer> {
     };
     let mut harness = Harness::new_ui_state(
         |ui, s: &mut State| {
-            let events = view(ui, &s.app, &s.registry, &s.strings, 1.0);
+            let events = view(ui, &s.app, &s.registry, &s.strings);
             s.events.extend(events);
         },
         state,
