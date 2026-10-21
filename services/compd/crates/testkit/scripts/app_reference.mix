@@ -1,0 +1,69 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- version: 0.1.0
+-- Run inside the session environment, with its Bus and editd already running:
+-- mix app_reference.mix /absolute/reference.png [--comp comp] [--output NAME]
+--   [--app /path/to/ced] [--keep]
+-- The optional keep flag hands the owned child to a test (pid in JSON).
+-- No cargo, session changes or host configuration writes. Fresh app state;
+-- the same 800x560 window at (80,60), scale 1, on console and headless.
+$g = getopt(args(), {comp: {arg: true}, output: {arg: true}, app: {arg: true}, keep: {}})
+if len($g.errors) > 0 or len($g.rest) != 1 then
+  raise("APP_REFERENCE_ARGS", "app_reference.mix /absolute/out.png [--comp SERVICE] [--output NAME] [--app CED] [--keep]")
+end
+$path = $g.rest[0]
+if not starts_with($path, "/") then raise("APP_REFERENCE_ARGS", "PNG path must be absolute") end
+$service = $g.opts.comp ?? "comp"
+$app = $g.opts.app ?? "/opt/mixos/bin/ced"
+$root = $path .. ".session"
+if exists($root) then raise("APP_REFERENCE_EXISTS", "session directory already exists: " .. $root) end
+mkdir($root)
+fn call($verb, $body)
+  send $service $verb timeout=15 body=json_encode($body)
+  if $rc != 0 then raise("APP_REFERENCE_BUS", $verb .. ": " .. to_string($result)) end
+  return if type($result) == "string" then json_parse($result) else $result end
+end
+-- Refuse an existing ced window: never place another session's app.
+$before = call("comp.windows.list", {app_id: "dev.mixos.ced"})
+if len($before.windows) != 0 then raise("APP_REFERENCE_EXISTS", "close existing ced windows before capturing") end
+$pid = nil
+$handed_off = false
+try
+  $pid = spawn([$app, "--service", "ced-reference"], {
+    detach: $g.opts.keep,
+    env: {HOME: $root, XDG_CONFIG_HOME: $root .. "/config", XDG_STATE_HOME: $root .. "/state",
+      XDG_DATA_HOME: $root .. "/data", XDG_CACHE_HOME: $root .. "/cache",
+      XDG_SESSION_TYPE: "wayland", WINIT_UNIX_BACKEND: "wayland", DISPLAY: "",
+      DBUS_SESSION_BUS_ADDRESS: "", LC_ALL: "C.UTF-8", WAYLAND_DEBUG: "client"},
+    stdout: $root .. "/stdout.log", stderr: $root .. "/app.log"
+  })
+  $deadline = monotonic() + 25
+  $row = nil
+  while monotonic() < $deadline
+    $list = call("comp.windows.list", {app_id: "dev.mixos.ced"})
+    if len($list.windows) == 1 then $row = $list.windows[0]; break end
+    if not process_alive($pid) then raise("APP_REFERENCE_EXIT", read_file($root .. "/app.log")) end
+    sleep(0.05)
+  end
+  if $row == nil then raise("APP_REFERENCE_TIMEOUT", "ced did not map a window") end
+  $target = {id: $row.id, generation: $row.generation}
+  $place = {id: $row.id, generation: $row.generation, x: 80, y: 60, width: 800, height: 560}
+  if $g.opts.output != nil then $place.output = $g.opts.output end
+  call("comp.window.place", $place)
+  call("comp.window.wait", {match: $target, until: "size", width: 800, height: 560, timeout_ms: 10000})
+  -- ced.new follows the normal controller path and waits for editd.
+  send ced-reference ced.new timeout=10 body="{}"
+  if $rc != 0 then raise("APP_REFERENCE_EDIT", to_string($result)) end
+  -- Bounded settling time is test pacing, not a runtime service poll.
+  sleep(0.5)
+  $frame = call("comp.capture.frame", {window: $target, cursor: false, format: "png", path: $path})
+  if $frame.width != 800 or $frame.height != 560 or $frame.scale != 1 then
+    raise("APP_REFERENCE_GEOMETRY", "reference requires 800x560 at scale 1: " .. json_encode($frame))
+  end
+  $rows = call("comp.windows.list", {app_id: "dev.mixos.ced"})
+  print(json_encode({path: $path, geometry: $place, window: $target, row: $rows.windows[0],
+    capture: $frame, pid: $pid, log: $root .. "/app.log", session: $root}))
+  $handed_off = $g.opts.keep
+finally
+  if $pid != nil and not $handed_off then kill($pid) end
+end

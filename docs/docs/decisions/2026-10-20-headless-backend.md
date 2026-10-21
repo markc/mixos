@@ -75,3 +75,19 @@ The Phase 2 plain Wayland EGL client probe (`weston-simple-egl`, with
 Its rendered pixels survived composition and screencopy, but this was a
 `wl_shm` fallback. Client DMA-BUF negotiation remains unproven; this probe
 does not establish the GPU-client DMA-BUF path.
+
+Phase 5 uses ced's real egui/wgpu window with a private noded and editd, so
+`ced.state {text:true}` can confirm agent-seat typing independently of pixels.
+The reference helper `services/compd/crates/testkit/scripts/app_reference.mix`
+creates a fresh document and places an 800×560 window at (80,60), scale 1,
+in either session; the console-desk reference is captured separately with
+that same helper. Before the first GPU run, the acceptance threshold is fixed
+at grayscale SSIM ≥ 0.99 for repeated idle captures and the console/headless
+comparison, allowing minor rasterisation differences while rejecting material
+layout changes. The known typed line must produce SSIM < 0.999 against the
+blank document, alongside exact Bus text readback. SSIM uses uniform sliding
+8×8 valid windows, population covariance, Rec.601 luma, K1=0.01, K2=0.03 and
+L=255. A test-only ced launcher installs a log subscriber around the unchanged
+entry point to record the chosen wgpu adapter; Wayland client tracing records
+the actual buffer creation request. A shm result is reported as a weaker
+client-buffer claim, even when wgpu renders on a GPU.
