@@ -45,8 +45,13 @@ end
 if len($tests) == 0 or len(unique($tests)) != len($tests) then raise("WLCS_SETUP", "empty or duplicate wlcs inventory") end
 $expected = if $record then {passed: [], failed: [], skipped: [], flaky: []} else load_data($expected_path) end
 $known = {}
+for $key in keys($expected)
+  if not contains(["passed", "failed", "skipped", "flaky"], $key) then raise("WLCS_EXPECTATIONS", "unknown outcome: " .. $key) end
+end
 for $outcome in ["passed", "failed", "skipped", "flaky"]
+  if type($expected[$outcome] ?? []) != "list" then raise("WLCS_EXPECTATIONS", $outcome .. " must be a list") end
   for $test in ($expected[$outcome] ?? [])
+    if type($test) != "string" or $test == "" then raise("WLCS_EXPECTATIONS", "invalid test name") end
     if $known[$test] != nil then raise("WLCS_EXPECTATIONS", "duplicate expectation: " .. $test) end
     $known[$test] = $outcome
   end
@@ -57,9 +62,10 @@ $index = 0
 for $test in $tests
   $index = $index + 1
   $stem = $out .. "/" .. to_string($index)
-  $r = run_argv([$wlcs_bin, $shim, "--gtest_filter=" .. $test, "--gtest_output=json:" .. $stem .. ".json"], {
+  $r = run_argv([$wlcs_bin, $shim, "--gtest_color=no", "--gtest_filter=" .. $test, "--gtest_output=json:" .. $stem .. ".json"], {
     env: $process_env, timeout: 20, stdout: {file: $stem .. ".log"}, stderr: "stdout"
   })
+  write_file($stem .. ".process.conf.mix", data_encode($r) .. "\n")
   $log_text = read_file($stem .. ".log")
   if contains($log_text, "wlcs-adapter-startup-error") or contains($log_text, "wlcs-adapter-error") then
     raise("WLCS_ADAPTER", "adapter failed for " .. $test .. "; see " .. $stem .. ".log")

@@ -25,6 +25,7 @@ use std::{
     sync::Arc,
 };
 use surfaces::SeatKind;
+use smithay::wayland::seat::WaylandFocus;
 use world::state::Loop;
 
 type Pending = Rc<RefCell<Vec<(Value, Option<UnixStream>)>>>;
@@ -44,6 +45,9 @@ pub fn install(
     let fd: i32 = fd.to_str().ok_or("wlcs fd not UTF-8")?.parse()?;
     // SAFETY: the test parent explicitly transfers ownership across exec.
     let socket = Rc::new(unsafe { UnixDatagram::from_raw_fd(fd) });
+    if unsafe { libc::fcntl(fd, libc::F_SETFD, libc::FD_CLOEXEC) } < 0 {
+        return Err(io::Error::last_os_error().into());
+    }
     socket.set_nonblocking(true)?;
     let pending = Pending::default();
     let queue = pending.clone();
