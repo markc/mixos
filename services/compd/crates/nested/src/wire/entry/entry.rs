@@ -123,7 +123,7 @@ pub fn wire(_loop: &mut Loop, _wayland_socket_name: OsString, event_loop: &mut E
         output,
         winit_backend: winit.winit_backend,
         damage_tracker,
-        tap_subscriptions: frames::draw::plan::tap::tap::TapSubscriptions::new(),
+        tap_subscriptions: frames::draw::plan::tap::TapSubscriptions::new(),
         owed_frames: None,
         this: std::rc::Weak::new(),
         swap_failures: 0,

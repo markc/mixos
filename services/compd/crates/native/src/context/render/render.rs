@@ -6,7 +6,7 @@
 //! for active subscribers), and the live Law-7 safety-net enablement set
 //! (seeded from preference, updated through `device.interface`).
 
-use frames::draw::plan::tap::tap::TapSubscriptions;
+use frames::draw::plan::tap::TapSubscriptions;
 use kms::scanout::surface::output::{NativeDrmOutput, NativeDrmOutputManager};
 use render_gles::preference::enable::safety::SafetyEnable;
 use smithay::backend::renderer::damage::OutputDamageTracker;

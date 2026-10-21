@@ -734,7 +734,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // event-driven; the timer itself re-arms only while something waits.
         #[cfg(feature = "backend-native")]
         if parked {
-            frames::draw::present::parked::parked::arm(state, native::render::execute::execute::frames_parked);
+            frames::draw::present::parked::arm(state, native::render::execute::execute::frames_parked);
         }
         // Presenting, a window that is hidden (minimised or on another
         // workspace) still owes its client callbacks, at the occluded
@@ -742,9 +742,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // may follow to arm the trickle; arm it here, on the same event-driven
         // pass. A no-op while armed or while nothing hidden or covered waits.
         if !parked {
-            frames::draw::present::callbacks::callbacks::trickle(state);
+            frames::draw::present::callbacks::trickle(state);
             // The same for a window only a hover thumbnail shows.
-            frames::draw::present::callbacks::callbacks::pace_thumbnails(state);
+            frames::draw::present::callbacks::pace_thumbnails(state);
         }
         // A delivered release lands in the ACTIVE world's registry, presses and
         // frames use the spawn target's (`surface()`, scene.rs). They are one

@@ -6,8 +6,8 @@
 
 use dispatcher::frame::SceneDispatch;
 use frames::draw::plan::frame::{FramePass, plan};
-use frames::draw::plan::tap::tap::{POST_SCENE, TapSubscriptions};
-use frames::scene::scene::Scene;
+use frames::draw::plan::tap::{POST_SCENE, TapSubscriptions};
+use frames::scene::Scene;
 use graphics::capture::registry::{CaptureRegistry, OutputId};
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::renderer::damage::OutputDamageTracker;
@@ -112,8 +112,8 @@ pub fn capture_offscreen(state: &mut Loop, context: &mut WinitRenderContext) {
     let previous_output = state.inner.render_output.clone();
     state.inner.render_output = Some(world::state::output_key(&context.output));
     let renderer = context.winit_backend.renderer();
-    let prepared = frames::scene::scene::prepare(state, renderer, size);
-    let scene = frames::scene::scene::scene(state, renderer, size, prepared);
+    let prepared = frames::scene::prepare(state, renderer, size);
+    let scene = frames::scene::scene(state, renderer, size, prepared);
     screencopy::offscreen::capture(
         renderer,
         &scene.Element,
@@ -292,7 +292,7 @@ fn refresh_of(context: &WinitRenderContext) -> std::time::Duration {
 /// refresh interval later instead, from a one-shot timer that exists only while
 /// callbacks are owed.
 fn owe_frames(context: &mut WinitRenderContext, state: &mut Loop, visible: Vec<Window>) {
-    frames::draw::present::callbacks::callbacks::housekeeping(state);
+    frames::draw::present::callbacks::housekeeping(state);
     if let Some(owed) = context.owed_frames.as_mut() {
         // A timer is already armed: it sends to these too.
         for window in visible {
@@ -313,11 +313,11 @@ fn owe_frames(context: &mut WinitRenderContext, state: &mut Loop, visible: Vec<W
                 let visible = context.owed_frames.take().unwrap_or_default();
                 let output = context.output.clone();
                 drop(context);
-                frames::draw::present::callbacks::callbacks::send_window_frames(
+                frames::draw::present::callbacks::send_window_frames(
                     state, &output, &visible,
                 );
-                frames::draw::present::callbacks::callbacks::send_layer_frames(state, &output);
-                frames::draw::present::cursor::cursor::send_frames(state, &output);
+                frames::draw::present::callbacks::send_layer_frames(state, &output);
+                frames::draw::present::cursor::send_frames(state, &output);
             }
             smithay::reexports::calloop::timer::TimeoutAction::Drop
         },
@@ -326,13 +326,13 @@ fn owe_frames(context: &mut WinitRenderContext, state: &mut Loop, visible: Vec<W
         // Without the timer the callbacks would never go: send them now instead.
         warn!("winit: frame-callback timer not armed ({err}); sending now");
         let visible = context.owed_frames.take().unwrap_or_default();
-        frames::draw::present::callbacks::callbacks::send_window_frames(
+        frames::draw::present::callbacks::send_window_frames(
             state,
             &context.output,
             &visible,
         );
-        frames::draw::present::callbacks::callbacks::send_layer_frames(state, &context.output);
-        frames::draw::present::cursor::cursor::send_frames(state, &context.output);
+        frames::draw::present::callbacks::send_layer_frames(state, &context.output);
+        frames::draw::present::cursor::send_frames(state, &context.output);
     }
 }
 
@@ -430,12 +430,12 @@ fn compose(
     if render_scene {
         // GLES prepare phase (builds UI/bevy/parallax resources) — always on
         // the winit GlesRenderer, regardless of which renderer composes.
-        let prepared = frames::scene::scene::prepare(state, gles_renderer, monitor_size);
+        let prepared = frames::scene::prepare(state, gles_renderer, monitor_size);
 
         // GLES only: there is no Vulkan present path.
         {
             // --- GLES present path ---
-            let scene = frames::scene::scene::scene::<GlesRenderer>(
+            let scene = frames::scene::scene::<GlesRenderer>(
                 state,
                 gles_renderer,
                 monitor_size,
@@ -630,12 +630,12 @@ fn present(context: &mut WinitRenderContext, state: &mut Loop, visible: Vec<Wind
         // `None`: the nested backend composites into the host's surface and never
         // promotes a client buffer to a plane, so no surface here is ever
         // zero-copy. Passing states would be work to derive a constant `false`.
-        let mut feedback = frames::draw::present::callbacks::callbacks::collect_feedback(
+        let mut feedback = frames::draw::present::callbacks::collect_feedback(
             &context.output,
             &visible,
             None,
         );
-        frames::draw::present::software::software::presented_now(&mut feedback, &context.output);
+        frames::draw::present::software::presented_now(&mut feedback, &context.output);
     }
     // Nested presents at submit (no flip event).
     world::comp::presentation::frame_queued(state, &context.output, &visible);
@@ -651,17 +651,17 @@ fn present(context: &mut WinitRenderContext, state: &mut Loop, visible: Vec<Wind
             &context.output,
             now,
             None,
-            frames::draw::present::software::software::software_present_kind().bits(),
+            frames::draw::present::software::software_present_kind().bits(),
         );
     }
-    frames::draw::present::callbacks::callbacks::send_window_frames(
+    frames::draw::present::callbacks::send_window_frames(
         state,
         &context.output,
         &visible,
     );
-    frames::draw::present::callbacks::callbacks::send_layer_frames(state, &context.output);
-    frames::draw::present::cursor::cursor::send_frames(state, &context.output);
-    frames::draw::present::callbacks::callbacks::housekeeping(state);
+    frames::draw::present::callbacks::send_layer_frames(state, &context.output);
+    frames::draw::present::cursor::send_frames(state, &context.output);
+    frames::draw::present::callbacks::housekeeping(state);
     // No unconditional request for the next frame: `draw` asks for
     // one only when a request is still outstanding.
 }

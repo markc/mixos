@@ -398,7 +398,7 @@ fn bus_capture_completes_on_idle_output() {
         let ppm = fs::read(path).unwrap();
         assert!(ppm.starts_with(b"P6\n1280 720\n255\n"));
         assert_eq!(ppm.len(), "P6\n1280 720\n255\n".len() + 1280 * 720 * 3);
-        // frames::scene::scene paints the empty desktop with BACKGROUND_COLOR
+        // frames::scene paints the empty desktop with BACKGROUND_COLOR
         // [0.07, 0.08, 0.10, 1.0], covering the framebuffer's GL clear colour.
         for (i, pixel) in ppm[b"P6\n1280 720\n255\n".len()..]
             .chunks_exact(3)

@@ -514,7 +514,7 @@ fn process_vblank_inner(
             stamp.time,
             refresh_rate,
             stamp.sequence,
-            frames::draw::present::callbacks::callbacks::hw_flip_kind(tore),
+            frames::draw::present::callbacks::hw_flip_kind(tore),
         );
     }
     // compd (integration batch D): that frame reached the screen.
@@ -524,7 +524,7 @@ fn process_vblank_inner(
             &output,
             stamp.time,
             (!tore).then_some(this_refresh),
-            frames::draw::present::callbacks::callbacks::hw_flip_kind(tore).bits(),
+            frames::draw::present::callbacks::hw_flip_kind(tore).bits(),
         );
     }
 
@@ -592,11 +592,11 @@ fn handle_outcome(
                 loop_handle,
                 delay,
                 move |state: &mut Loop| {
-                    frames::draw::present::callbacks::callbacks::send_window_frames(
+                    frames::draw::present::callbacks::send_window_frames(
                         state, &output, &visible,
                     );
-                    frames::draw::present::callbacks::callbacks::send_layer_frames(state, &output);
-                    frames::draw::present::cursor::cursor::send_frames(state, &output);
+                    frames::draw::present::callbacks::send_layer_frames(state, &output);
+                    frames::draw::present::cursor::send_frames(state, &output);
                 },
             );
             *slot = Some(token);

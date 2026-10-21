@@ -26,7 +26,7 @@ use super::diagnostics;
 use crate::context::render::render::NativeRenderContext;
 use dispatcher::frame::{ElementMeta, SceneDispatch};
 use frames::draw::plan::frame::{FramePass, plan};
-use frames::draw::plan::tap::tap::POST_SCENE;
+use frames::draw::plan::tap::POST_SCENE;
 use graphics::capture::registry::{CaptureRegistry, OutputId};
 use render_gles::element::wrap::GlesElementWrapper;
 use smithay::backend::renderer::element::{Element, Id, Kind, RenderElement, UnderlyingStorage};
@@ -207,9 +207,9 @@ fn send_owed(
     output: &smithay::output::Output,
     visible: &[smithay::desktop::Window],
 ) {
-    frames::draw::present::callbacks::callbacks::send_window_frames(state, output, visible);
-    frames::draw::present::callbacks::callbacks::send_layer_frames(state, output);
-    frames::draw::present::cursor::cursor::send_frames(state, output);
+    frames::draw::present::callbacks::send_window_frames(state, output, visible);
+    frames::draw::present::callbacks::send_layer_frames(state, output);
+    frames::draw::present::cursor::send_frames(state, output);
 }
 
 // The GLES path unwraps its render, so there are no `render_frame` failures to
@@ -258,8 +258,8 @@ fn capture_offscreen(ctx_rc: &Rc<RefCell<NativeRenderContext>>, state: &mut Loop
         let key = world::state::output_key(output);
         state.inner.render_output = Some(key.clone());
         state.inner.output_views_mut().ensure(&key);
-        let prepared = frames::scene::scene::prepare(state, renderer, size);
-        let scene = frames::scene::scene::scene(state, renderer, size, prepared);
+        let prepared = frames::scene::prepare(state, renderer, size);
+        let scene = frames::scene::scene(state, renderer, size, prepared);
         screencopy::offscreen::capture(
             renderer,
             &scene.Element,
@@ -750,9 +750,9 @@ pub fn execute(
                 let scene = {
                     let mut r = gles_renderer.borrow_mut();
                     let prepared =
-                        frames::scene::scene::prepare_kms(state, r.as_mut(), size, output_id.0);
+                        frames::scene::prepare_kms(state, r.as_mut(), size, output_id.0);
                     let _assembly = ledger::frame_trace::span("kms_scene_assembly", output_id.0);
-                    let scene = frames::scene::scene::scene(state, r.as_mut(), size, prepared);
+                    let scene = frames::scene::scene(state, r.as_mut(), size, prepared);
                     drop(r);
                     scene
                 };
@@ -1157,7 +1157,7 @@ pub fn execute(
             if ctx_ref.safety.estimate_pacing {
                 // Estimate net active: hold the frame callbacks; `wire.frame`
                 // delivers them at the estimated next vblank.
-                frames::draw::present::callbacks::callbacks::housekeeping(state);
+                frames::draw::present::callbacks::housekeeping(state);
                 deferred = Some(FrameOutcome::EmptyDeferred {
                     output: output.clone(),
                     visible: visible_window.clone(),
@@ -1238,7 +1238,7 @@ pub fn execute(
     drop(ctx);
 
     // Housekeeping runs *every* execute() call, damage or no.
-    frames::draw::present::callbacks::callbacks::housekeeping(state);
+    frames::draw::present::callbacks::housekeeping(state);
     // Finding B: a wake held during the render. In-flight pipes are served by
     // their own vblank whatever happens here; this is about the IDLE pipes behind
     // the epoch. If this pass queued a flip, wake now — a sibling can act and the
@@ -1463,7 +1463,7 @@ fn present(
     };
 
     let current_output = ctx_ref.outputs[output_idx].output.clone();
-    let feedback = frames::draw::present::callbacks::callbacks::collect_feedback(
+    let feedback = frames::draw::present::callbacks::collect_feedback(
         &current_output,
         &window_visible,
         states,
@@ -1549,12 +1549,12 @@ fn present(
 
     // compd (integration batch D): this frame was handed to the display.
     world::comp::presentation::frame_queued(state, &current_output, &window_visible);
-    frames::draw::present::callbacks::callbacks::send_window_frames(
+    frames::draw::present::callbacks::send_window_frames(
         state,
         &current_output,
         &window_visible,
     );
-    frames::draw::present::callbacks::callbacks::send_layer_frames(state, &current_output);
-    frames::draw::present::cursor::cursor::send_frames(state, &current_output);
+    frames::draw::present::callbacks::send_layer_frames(state, &current_output);
+    frames::draw::present::cursor::send_frames(state, &current_output);
     true
 }

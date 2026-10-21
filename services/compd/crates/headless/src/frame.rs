@@ -127,7 +127,7 @@ fn draw(state: &mut Loop, ctx: &mut Context) {
             state.state.redraw.frame(&key, true);
             // Empty frames owe callbacks too. This draw was already paced by
             // the one-shot timer, so no unbounded commit/callback loop arises.
-            let mut feedback = frames::draw::present::callbacks::callbacks::collect_feedback(
+            let mut feedback = frames::draw::present::callbacks::collect_feedback(
                 &ctx.output,
                 &visible,
                 None,
@@ -151,7 +151,7 @@ fn draw(state: &mut Loop, ctx: &mut Context) {
                 .request_for(protocols::redraw::schedule::RedrawReason::Rescue);
         }
     }
-    frames::draw::present::callbacks::callbacks::housekeeping(state);
+    frames::draw::present::callbacks::housekeeping(state);
     state.inner.render_output = None;
     state.state.redraw.end_render();
     if let Some(at) = graphics::bridge::publish::wake::take_deadline() {
@@ -177,8 +177,8 @@ fn compose(
         return Ok(false);
     }
     let size = ctx.output.current_mode().expect("headless mode").size;
-    let prepared = frames::scene::scene::prepare(state, &mut ctx.renderer, size);
-    let scene = frames::scene::scene::scene(state, &mut ctx.renderer, size, prepared);
+    let prepared = frames::scene::prepare(state, &mut ctx.renderer, size);
+    let scene = frames::scene::scene(state, &mut ctx.renderer, size, prepared);
     *visible = scene.visible_window;
     // Track content changes independently of the alternating targets. This
     // age-1 query is only a scene diff; it never assumes preserved pixels in
@@ -325,7 +325,7 @@ fn compose(
 }
 
 fn present(state: &mut Loop, output: &Output, visible: &[Window]) {
-    use frames::draw::present::{callbacks::callbacks, software::software};
+    use frames::draw::present::{callbacks, software};
     let mut feedback = callbacks::collect_feedback(output, visible, None);
     software::presented_now(&mut feedback, output);
     world::comp::presentation::frame_queued(state, output, visible);
@@ -343,10 +343,10 @@ fn present(state: &mut Loop, output: &Output, visible: &[Window]) {
 }
 
 fn send_frames(state: &mut Loop, output: &Output, visible: &[Window]) {
-    use frames::draw::present::callbacks::callbacks;
+    use frames::draw::present::callbacks;
     callbacks::send_window_frames(state, output, visible);
     callbacks::send_layer_frames(state, output);
-    frames::draw::present::cursor::cursor::send_frames(state, output);
+    frames::draw::present::cursor::send_frames(state, output);
 }
 
 #[cfg(test)]

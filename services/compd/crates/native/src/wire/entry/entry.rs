@@ -272,7 +272,7 @@ pub fn wire(
         drm_output_manager: renderer.drm_output_manager,
         gpu_binding: renderer.gpu_binding.clone(),
         libinput_context,
-        tap_subscriptions: frames::draw::plan::tap::tap::TapSubscriptions::new(),
+        tap_subscriptions: frames::draw::plan::tap::TapSubscriptions::new(),
         safety: render_gles::preference::enable::safety::get(),
         drm_fd: display.drm_fd.clone(),
         watchdog: None,
