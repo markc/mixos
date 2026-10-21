@@ -36,7 +36,7 @@ fn parse_targets($document)
       for $key in ["machine", "profile", "session", "account"]
         if has_key($item, $key) then fail("system target cannot carry " .. $key) end
       end
-      push($normal, {node:$node, host:$host, kind:$kind, etc:"/etc/" .. $project, var:"/var/lib/" .. $project,
+      push($normal, {project:$project, node:$node, host:$host, kind:$kind, etc:"/etc/" .. $project, var:"/var/lib/" .. $project,
         unit:"noded.service", account:"root", machine:nil, session:nil, run:nil})
     else
       $machine = plain_label($item.machine, "machine")
@@ -46,7 +46,7 @@ fn parse_targets($document)
       if type($session) != "number" or $session < 1 or $session > 6 or floor($session) != $session then fail("session must be an integer from 1 to 6") end
       $profile = $item.profile
       if type($profile) != "string" or not re_match($profile, "^/var/lib/" .. $project .. "/[a-z][a-z0-9-]{0,31}$") then fail("profile must be one direct project state child") end
-      push($normal, {node:$node, host:$host, kind:$kind, etc:$profile .. "/etc", var:$profile .. "/var",
+      push($normal, {project:$project, node:$node, host:$host, kind:$kind, etc:$profile .. "/etc", var:$profile .. "/var",
         unit:"noded@" .. to_string($session) .. ".service", account:$account, machine:$machine, session:$session,
         run:"/run/" .. $project .. "/session/" .. to_string($session)})
     end
@@ -76,4 +76,34 @@ fn require_system_mutation($document)
     end
   end
   return $parsed
+end
+
+-- Describe a native stdin job without executing it. Secret-bearing bindings
+-- stay in stdin; the caller must not substitute stdin into a -c argument.
+fn stdin_job($target, $program, $bindings, $role, $mix_bin)
+  if type($program) != "string" or type($bindings) != "map" then fail("program and bindings have invalid types") end
+  if $role != "admin" and $role != "citizen" then fail("role must be admin or citizen") end
+  if type($mix_bin) != "string" or not starts_with($mix_bin, "/") or not ends_with($mix_bin, "/mix") then fail("native Mix path must be absolute") end
+  $body = ""
+  for $key in sort(keys($bindings))
+    if not re_match($key, "^[A-Za-z_][A-Za-z0-9_]*$") then fail("invalid binding name") end
+    $body = $body .. "$" .. $key .. " = " .. data_encode($bindings[$key]) .. "\n"
+  end
+  $body = $body .. $program
+  $prefix = upper($target.project)
+  $environment = {}
+  $environment[$prefix .. "_ETC"] = $target.etc
+  $environment[$prefix .. "_VAR"] = $target.var
+  $environment[$prefix .. "_NODE_CONFIG"] = $target.etc .. "/node.conf.mix"
+  if $target.kind == "system" then
+    return {host:$target.host, argv:[$mix_bin,"-"], stdin:$body, env:$environment}
+  end
+  $environment[$prefix .. "_RUN"] = $target.run
+  $environment[$prefix .. "_BROKER_ACCOUNT"] = $target.account
+  $account = if $role == "admin" then "root" else $target.account end
+  -- Native namespace execution uses a pipe, not a terminal or source argv.
+  -- The outer native Mix sets the profile env for the inner stdin process.
+  $wrapper = "$r = run_argv([" .. json_encode($mix_bin) .. ", \"-\"], {stdin: " .. data_encode($body) .. ", env: " .. data_encode($environment) .. ", timeout: 120}); print($r.stdout); if not $r.ok then raise(\"MESH_TARGET_JOB\", \"namespace job failed\") end\n"
+  return {host:$target.host, argv:["sudo","-n","systemd-run","--machine=" .. $target.machine,
+    "--pipe","--wait","--collect","--quiet","--uid=" .. $account,$mix_bin,"-"], stdin:$wrapper, env:{}}
 end

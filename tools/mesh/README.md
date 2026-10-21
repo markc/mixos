@@ -59,3 +59,9 @@ Run `mix tests/targets_test.mix` for the hermetic model checks.
 
 `_bin/name_gate.mix` fails when a project or site name appears as a literal in
 this tree. Run it before a merge.
+
+The pure `stdin_job` helper describes namespace invocation and profile context.
+It separates source/bindings from process argv and distinguishes administrator
+from session-account jobs. It performs no execution and does not enable a
+distributor write path. Its namespace stdin, account and profile boundaries
+are covered by hermetic tests.

@@ -57,4 +57,15 @@ catch $message, $error
 end
 check($refused, "desk mutation must refuse before any I/O")
 check(len($targets.require_system_mutation({schema_version:1,project:"example",targets:[$system]}).targets) == 1, "system mutation policy")
+$marker = "synthetic-private-fixture"
+$job = $targets.stdin_job($parsed.targets[1], "print(uid())", {payload:$marker}, "admin", "/opt/example/bin/mix")
+check(not contains(json_encode($job.argv), $marker), "private fixture must never enter process argv")
+check(contains($job.stdin, $marker), "private fixture travels through stdin")
+check(contains($job.argv, "--machine=desk-a") and contains($job.argv, "--uid=root"), "admin namespace and identity")
+$citizen = $targets.stdin_job($parsed.targets[1], "print(uid())", {}, "citizen", "/opt/example/bin/mix")
+check(contains($citizen.argv, "--uid=user-a"), "citizen runs as session account")
+check(contains($citizen.stdin, "/var/lib/example/profile-a/etc"), "profile environment follows namespace")
+check(contains($citizen.stdin, "/run/example/session/3"), "session runtime follows namespace")
+$system_job = $targets.stdin_job($parsed.targets[0], "print(uid())", {}, "admin", "/opt/example/bin/mix")
+check(deep_eq($system_job.argv, ["/opt/example/bin/mix","-"]), "system dispatch stays direct native stdin")
 print("PASS native mesh target model: paths, identity boundaries and desk mutation refusal")
