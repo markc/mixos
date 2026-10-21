@@ -1,4 +1,5 @@
 #!/usr/bin/env mix
+-- version: 0.1.0
 -- mesh_sync.mix — gated signed-inventory fan-out for every bus+active node.
 --
 -- The authored inventory is frozen once, authorised bytes are selected or
@@ -9,6 +10,8 @@
 -- the canonical fleet cache.
 
 $d = require("../_lib/deploy_lib.mix")
+$desk = require("../_lib/desk_ops.mix")
+$DESK_PROGRAM = $desk.worker_program(dirname(dirname(realpath($0))) .. "/_lib/desk_worker.mix")
 
 $CONF_PATH = $d.hub_root() .. "/_etc/mesh_sync.conf.mix"
 if not is_file($CONF_PATH) then
@@ -91,7 +94,6 @@ fn node_genesis_probe($node, $is_local)
     return $m.anchor_read_local($path)
   end
   $r = ssh_mix($node, '
-$path = $d.etc_root() .. "/noded/genesis.pub"
 if is_file($path) then
   $value = trim(read_file($path))
   if $value == "" then
@@ -102,7 +104,7 @@ if is_file($path) then
 else
   print("__ABSENT__")
 end
-')
+', {mix_bin:$d.mix_bin(),bindings:{path:$path}})
   if not $r["ok"] then
     $why = trim($r["stderr"])
     if $why == "" then
@@ -136,7 +138,6 @@ fn ensure_genesis($node, $is_local, $pub)
         "installing genesis anchor on " .. $node .. ": " .. $installed["value"])
     else
       $created = ssh_mix($node, '
-$path = $d.etc_root() .. "/noded/genesis.pub"
 try
   write_new($path, $pub .. "\n", "0644")
   print("MESH_GENESIS_CREATED " .. $token)
@@ -144,7 +145,7 @@ catch $err
   print("ERROR: create-only anchor install refused: " .. $err)
   exit(1)
 end
-', {bindings: {pub: $pub, token: uuid()}})
+', {mix_bin:$d.mix_bin(),bindings: {path:$d.etc_root() .. "/noded/genesis.pub",pub: $pub, token: uuid()}})
       $d.die_if(not $created["ok"] or not contains($created["stdout"], "MESH_GENESIS_CREATED"),
         "creating genesis anchor on " .. $node ..
         " (it may have appeared concurrently; create-only refuses replacement): " ..
@@ -193,7 +194,7 @@ if read_file($dst) != $bytes then
   fail("installed bytes do not read back byte-identically: " .. $dst)
 end
 print("MESH_INSTALL_OK " .. $token .. " " .. $dst)
-', {bindings: {
+', {mix_bin:$d.mix_bin(),bindings: {
     dst: $dst,
     bytes: $bytes,
     owner_group: $owner_group,
@@ -214,12 +215,12 @@ fn prepare_node($node, $is_local)
     return nil
   end
   $r = ssh_mix($node, '
-mkdir($d.etc_root() .. "/noded", {parents: true})
-mkdir($d.state_root() .. "/noded", {parents: true})
-chmod($d.etc_root() .. "/noded", "0755")
-chmod($d.state_root() .. "/noded", "0755")
+mkdir($etc, {parents: true})
+mkdir($state, {parents: true})
+chmod($etc, "0755")
+chmod($state, "0755")
 print("MESH_DIRS_OK " .. $token)
-', {bindings: {token: uuid()}})
+', {mix_bin:$d.mix_bin(),bindings: {etc:$d.etc_root() .. "/noded",state:$d.state_root() .. "/noded",token: uuid()}})
   $d.die_if(not $r["ok"] or not contains($r["stdout"], "MESH_DIRS_OK"),
     "mkdir on " .. $node .. ": " .. trim($r["stdout"]) .. " " .. trim($r["stderr"]))
 end
@@ -239,7 +240,7 @@ fn restart_noded($node, $is_local)
       "restart " .. $d.unit_name("noded") .. " (local): " .. trim($r["stderr"]))
     return nil
   end
-  $r = ssh_mix($node, 'print(run("systemctl restart ' .. $d.unit_name("noded") .. '"))')
+  $r = ssh_mix($node, 'run_argv_must(["systemctl","restart",$unit])', {mix_bin:$d.mix_bin(),bindings:{unit:$d.unit_name("noded")}})
   $d.die_if(not $r["ok"],
     "restart " .. $d.unit_name("noded") .. " on " .. $node .. ": " .. trim($r["stdout"]) .. " " .. trim($r["stderr"]))
 end
@@ -269,6 +270,7 @@ end
 
 -- ── arguments and private roster ───────────────────────────────────────
 $ROSTER = $d.roster()
+$DESKS = $desk.load_targets($d.hub_root() .. "/_etc/mesh_targets.conf.mix",$d.project(),$ROSTER.all)
 $MESH_ROSTER = {
   mesh: $ROSTER["mesh"], foreign: [], all: $ROSTER["mesh"], order: $ROSTER["order"]
 }
@@ -427,7 +429,26 @@ if $dry then
 end
 print("")
 
-$endpoint_findings = $m.signed_endpoint_preflight($planned)
+$DESK_BASE = {}
+$DESK_BEFORE = {}
+$DESK_GENESIS = ""
+if len(keys($DESKS)) > 0 then
+  $DESK_GENESIS = trim(read_file($m.MESH_GENESIS_PUB))
+end
+$endpoint_mesh = $planned
+$endpoint_mesh.members = []
+for $member in $planned.members
+  if has_key($DESKS,$member.name) and contains($bus_active,$member.name) then
+    $base = $desk.request($DESKS[$member.name],$planned,$DESK_GENESIS,$d.mix_bin())
+    $probe = $desk.preflight($base,$DESK_PROGRAM,nil)
+    $d.die_if(word($probe.binary.version,1) != "noded" or not $m.noded_supports_signed_endpoint(word($probe.binary.version,2)),"desk native noded lacks signed endpoint support")
+    $DESK_BASE[$member.name] = $base
+    $DESK_BEFORE[$member.name] = $probe
+  else
+    $endpoint_mesh.members = push($endpoint_mesh.members,$member)
+  end
+end
+$endpoint_findings = $m.signed_endpoint_preflight($endpoint_mesh)
 if $dry then
   for each $finding in $endpoint_findings
     print("[endpoint] a real run would REFUSE: " .. $finding)
@@ -518,6 +539,7 @@ else
     "mesh-sign pubkey failed: " .. trim($pk["stderr"]))
   $pub = trim($pk["stdout"])
   $d.die_if($pub == "", "mesh-sign pubkey returned empty")
+  $d.die_if(len(keys($DESKS)) > 0 and $pub != $DESK_GENESIS,"signer differs from the preflighted desk genesis anchor")
   print("  selected: " .. $selected)
   print("")
 
@@ -571,6 +593,10 @@ for each $node in $order
   $roster_file = $WORK .. "/roster/" .. $node .. ".conf.mix"
   print("[" .. $node .. "] " .. ($is_local ? "local" : "remote"))
   if $dry then
+    if has_key($DESKS,$node) then
+      print("  desk preflight passed: exact namespace/profile/unit/account; would install, restart and query authority")
+      continue
+    end
     $anchor = node_genesis_probe($node, $is_local)
     if not $anchor["ok"] then
       print("  genesis anchor: UNREADABLE (" .. $anchor["value"] .. ") — real run refuses")
@@ -581,6 +607,21 @@ for each $node in $order
     print("  would atomically install roster + exact signed cache, restart noded, verify epoch+hash")
   else
     $d.die_if(not is_file($roster_file), "missing generated roster " .. $roster_file)
+    if has_key($DESKS,$node) then
+      -- Rebuild identity from authenticated bytes, never just authored input.
+      $base = $desk.request($DESKS[$node],$vi.inventory,$pub,$d.mix_bin())
+      $d.die_if(not deep_eq($base,$DESK_BASE[$node]),"authenticated desk plan differs from preflight")
+      $placed = $desk.place_sync($base,$DESK_BEFORE[$node],read_file($roster_file),read_file($SIGNED_PRIV),$DESK_PROGRAM,nil)
+      $authority = $desk.verify_authority($base,$epoch,$vi.canonical_blake3,nil)
+      print("  desk placement receipt: " .. $placed.placement.receipt)
+      print("  verified desk epoch=" .. to_string($authority.epoch) .. " hash=" .. $authority.hash)
+      if not $floor_raised then
+        $m.mesh_baseline_raise($BASELINE,$vi)
+        $floor_raised = true
+      end
+      push($done,$node)
+      continue
+    end
     prepare_node($node, $is_local)
     -- Anchor is checked before either mutable payload file reaches the node.
     ensure_genesis($node, $is_local, $pub)

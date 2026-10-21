@@ -103,7 +103,7 @@ fn namespace_context($request)
   if not $config_state.present or $config_state.uid != 0 or $config_state.gid != $gid or $config_state.perm != 0o640 then refuse("node configuration ownership mismatch") end
   $config = load_data($config_path)
   if $config.node != $t.node or $config.mesh != $request.mesh or $config.wg_ip != $request.ip or $config.noded.port != $request.port or $config.noded.mesh_config != $t.etc .. "/noded/config.conf.mix" or $config.noded.unix_socket != $t.run .. "/noded/bus.sock" or $config.noded.admission != $request.admission or $config.noded.mesh_open != $request.mesh_open then refuse("node config identity, endpoint or posture differs from authenticated plan") end
-  $paths = {genesis:$t.etc .. "/noded/genesis.pub",seed:$t.etc .. "/noded/d2.seed",roster:$t.etc .. "/noded/config.conf.mix",inventory:$t.var .. "/noded/inventory.signed"}
+  $paths = {genesis:$t.etc .. "/noded/genesis.pub",seed:$t.etc .. "/noded/d2.seed",seed_receipt:$t.etc .. "/noded/d2-receipt.json",roster:$t.etc .. "/noded/config.conf.mix",inventory:$t.var .. "/noded/inventory.signed"}
   $states = {}
   for $key in keys($paths)
     $states[$key] = file_state($paths[$key])
@@ -140,7 +140,7 @@ fn apply_files($ctx, $payloads, $before, $token)
   $receipt = {token:$token,node:$ctx.target.node,status:"snapshot",published:[],inventory_published:false,files:[]}
   $keys = []
   for $entry in $payloads
-    if not contains(["seed","roster","inventory"],$entry.kind) or contains($keys,$entry.kind) then refuse("invalid or repeated payload kind") end
+    if not contains(["seed","seed_receipt","roster","inventory"],$entry.kind) or contains($keys,$entry.kind) then refuse("invalid or repeated payload kind") end
     push($keys,$entry.kind)
     if type($entry.bytes) != "string" or hash_sha256($entry.bytes) != $entry.sha256 then refuse("payload hash mismatch") end
     $path = $ctx.paths[$entry.kind]
@@ -200,7 +200,7 @@ fn restore_files($ctx, $token)
   -- inventory rename and receipt update is detected by the original preimage.
   $restore = []
   for $file in $receipt.files
-    if not contains(["seed","roster","inventory"],$file.kind) then refuse("invalid receipt payload kind") end
+    if not contains(["seed","seed_receipt","roster","inventory"],$file.kind) then refuse("invalid receipt payload kind") end
     $path = $ctx.paths[$file.kind]
     $current = file_state($path)
     if $file.kind == "inventory" then
@@ -270,9 +270,14 @@ fn dispatch($request)
     return {restarted:$ctx.target.unit,live:$live}
   end
   if $request.operation == "seed" then
-    if len($request.payloads) != 1 or $request.payloads[0].kind != "seed" then refuse("seed operation cannot publish authority") end
+    if len($request.payloads) != 2 or $request.payloads[0].kind != "seed" or $request.payloads[1].kind != "seed_receipt" then refuse("seed operation requires seed and provenance receipt only") end
+    $proof = json_parse($request.payloads[1].bytes)
+    if $proof.node != $ctx.target.node or $proof.mesh != $request.mesh or $proof.seed_sha256 != $request.payloads[0].sha256 or not contains($request.d2_keys,$proof.public_key) then refuse("seed provenance is not bound to a current authenticated D2 key") end
   else
     if len($request.payloads) != 2 or $request.payloads[0].kind != "roster" or $request.payloads[1].kind != "inventory" then refuse("sync requires roster before exact signed inventory") end
+    if not $ctx.states.seed.present or not $ctx.states.seed_receipt.present then refuse("stage verified D2 seed provenance before signed inventory") end
+    $proof = json_parse(read_file($ctx.paths.seed_receipt))
+    if $proof.node != $ctx.target.node or $proof.mesh != $request.mesh or $proof.seed_sha256 != $ctx.states.seed.sha256 or not contains($request.d2_keys,$proof.public_key) then refuse("staged D2 seed no longer matches current authenticated identity") end
     if not $ctx.states.genesis.present then
       write_new($ctx.paths.genesis,$request.genesis .. chr(10),0o640)
       chown($ctx.paths.genesis,0,$ctx.gid)

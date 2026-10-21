@@ -1,4 +1,5 @@
 #!/usr/bin/env mix
+-- version: 0.1.0
 -- mesh_d2_seed.mix — stage each selected node's SPEC 13 §9a D2 private seed.
 --
 -- The signed inventory is verified before its current D2 public keys are used.
@@ -13,6 +14,8 @@
 
 $d = require("../_lib/deploy_lib.mix")
 $m = require("../_lib/mesh_lib.mix")
+$desk = require("../_lib/desk_ops.mix")
+$DESK_PROGRAM = $desk.worker_program(dirname(dirname(realpath($0))) .. "/_lib/desk_worker.mix")
 
 $CONF_PATH = $d.hub_root() .. "/_etc/mesh_d2_seed.conf.mix"
 if not is_file($CONF_PATH) then
@@ -229,6 +232,7 @@ end
 
 -- ── selection, signed authority, and rollout order ─────────────────────
 $ROSTER = $d.roster()
+$DESKS = $desk.load_targets($d.hub_root() .. "/_etc/mesh_targets.conf.mix",$d.project(),$ROSTER.all)
 $d.assert_node($ROSTER, $LOCAL)
 for each $node in $ROSTER["all"]
   if not $m.is_valid_label($node) then
@@ -325,6 +329,7 @@ $d.die_if(not is_file($SIGN),
 -- ── local secret and public-key preflight ──────────────────────────────
 $SEEDS = read_seeds($DB, $EXPECTED_MESH, $nodes)
 $HASHES = {}
+$PUBKEYS = {}
 for each $node in $nodes
   $HASHES[$node] = hash_sha256($SEEDS[$node])
   $pub = run_argv([$SIGN, "--secrets-db", $DB, "--mesh", $EXPECTED_MESH,
@@ -332,6 +337,7 @@ for each $node in $nodes
   $d.die_if($pub["exit_code"] != 0,
     "derive D2 public key for " .. $node .. ": " .. trim($pub["stderr"]))
   $public_key = trim($pub["stdout"])
+  $PUBKEYS[$node] = $public_key
   $d.die_if(not $m.is_valid_b64key($public_key),
     "derived D2 public key for " .. $node .. " is not a 44-character base64 key")
   if not $d.is_foreign($ROSTER, $node) then
@@ -356,8 +362,19 @@ $REMOTE = {}
 $BEFORE = {}
 $GIDS = {}
 $READY = {}
+$DESK_BASE = {}
+$DESK_BEFORE = {}
 $reach_token = uuid()
 for each $node in $nodes
+  if has_key($DESKS,$node) then
+    $base = $desk.request($DESKS[$node],$mesh,trim(read_file($m.MESH_GENESIS_PUB)),$d.mix_bin())
+    $probe = $desk.preflight($base,$DESK_PROGRAM,nil)
+    $d.die_if(word($probe.binary.version,1) != "noded" or not $m.noded_supports_signed_endpoint(word($probe.binary.version,2)),"desk native noded lacks signed endpoint support")
+    $DESK_BASE[$node] = $base
+    $DESK_BEFORE[$node] = $probe
+    print("[preflight " .. $node .. "] native desk namespace/profile/account verified")
+    continue
+  end
   if $node == $LOCAL then
     $sudo = run_argv(["sudo", "-n", "true"])
     $d.die_if($sudo["exit_code"] != 0,
@@ -384,9 +401,11 @@ for each $node in $nodes
     $remote = $d.is_foreign($ROSTER, $node) ? $node : "root@" .. $d.mesh_ip($node)
     $REMOTE[$node] = $remote
     $probe = ssh_mix($remote, '
-$gid_text = trim(run("id -g " .. $d.group_name("noded")))
-if $rc != 0 or not re_match($gid_text, "^[0-9]+$") then
-  eprint($d.group_name("noded") .. " group is absent or unparseable")
+$group_record = run_argv(["getent","group",$group_name])
+$group_fields = split(trim($group_record.stdout),":")
+$gid_text = if len($group_fields) >= 3 then $group_fields[2] else "" end
+if not $group_record.ok or not re_match($gid_text, "^[0-9]+$") then
+  eprint("target group is absent or unparseable")
   exit(7)
 end
 $state = "__ABSENT__"
@@ -406,7 +425,7 @@ if exists($dest, {follow_symlinks: false}) then
 end
 $ready = $state == $expected and $uid == 0 and $gid == to_number($gid_text) and $perm == 0o640
 print(json_encode({token: $token, gid: $gid_text, state: $state, ready: $ready}))
-', {bindings: {dest: $DEST, expected: $HASHES[$node], token: $reach_token}, decode: "json",
+', {mix_bin:$d.mix_bin(),bindings: {group_name:$d.group_name("noded"),dest: $DEST, expected: $HASHES[$node], token: $reach_token}, decode: "json",
         connect_timeout: 8, timeout: 15})
     $d.die_if(not $probe["ok"] or $probe["value"]["token"] != $reach_token,
       $node .. " preflight failed: " .. trim($probe["stdout"]) .. " " .. trim($probe["stderr"]))
@@ -430,6 +449,11 @@ $deploy_token = uuid()
 for each $node in $nodes
   $expected = $HASHES[$node]
   print("")
+  if has_key($DESKS,$node) then
+    $placed = $desk.place_seed($DESK_BASE[$node],$DESK_BEFORE[$node],$SEEDS[$node],$PUBKEYS[$node],$DESK_PROGRAM,nil)
+    print("[" .. $node .. "] seed placed and verified; protected receipt " .. $placed.placement.receipt .. " (NO restart)")
+    continue
+  end
   if $READY[$node] then
     print("[" .. $node .. "] unchanged: " .. $DEST .. " integrity=MATCH")
   else
@@ -460,7 +484,7 @@ for each $node in $nodes
       cleanup_local_dir($work)
       if $scp["exit_code"] != 0 then
         $_wipe_partial = ssh_mix($REMOTE[$node], 'remove($staged)', {
-          bindings: {staged: $staged}, connect_timeout: 8, timeout: 10})
+          mix_bin:$d.mix_bin(),bindings: {staged: $staged}, connect_timeout: 8, timeout: 10})
         $d.die_if(true, "scp D2 seed to " .. $node .. ": " .. trim($scp["stderr"]))
       end
 
@@ -495,9 +519,11 @@ end
 if not is_file($staged) or hash_file($staged, "sha256") != $expected then
   fail("transferred seed is not byte-identical to the secrets DB snapshot", 9)
 end
-$gid_text = trim(run("id -g " .. $d.group_name("noded")))
-if $rc != 0 or not re_match($gid_text, "^[0-9]+$") then
-  fail($d.group_name("noded") .. " group disappeared after preflight", 10)
+$group_record = run_argv(["getent","group",$group_name])
+$group_fields = split(trim($group_record.stdout),":")
+$gid_text = if len($group_fields) >= 3 then $group_fields[2] else "" end
+if not $group_record.ok or not re_match($gid_text, "^[0-9]+$") then
+  fail("target group disappeared after preflight", 10)
 end
 mkdir(dirname($dest), {parents: true})
 chmod(dirname($dest), 0o755)
@@ -518,18 +544,17 @@ catch $publish_error
 end
 remove($staged)
 $info = stat($dest, {follow_symlinks: false})
-if hash_file($dest, "sha256") != $expected or $info["uid"] != 0 or
-    $info["gid"] != to_number($gid_text) or $info["perm"] != 0o640 then
+if hash_file($dest, "sha256") != $expected or $info["uid"] != 0 or $info["gid"] != to_number($gid_text) or $info["perm"] != 0o640 then
   fail("installed seed failed hash/ownership/mode verification", 14)
 end
 print(json_encode({token: $token, hash: hash_file($dest, "sha256"),
   gid: $gid_text, perm: $info["perm"]}))
-', {bindings: {staged: $staged, dest: $DEST, expected: $expected,
+', {mix_bin:$d.mix_bin(),bindings: {group_name:$d.group_name("noded"),staged: $staged, dest: $DEST, expected: $expected,
           before: $BEFORE[$node], token: $deploy_token}, decode: "json",
           connect_timeout: 8, timeout: 30})
       if not $installed["ok"] or $installed["value"]["token"] != $deploy_token then
         $_wipe_failed = ssh_mix($REMOTE[$node], 'remove($staged)', {
-          bindings: {staged: $staged}, connect_timeout: 8, timeout: 10})
+          mix_bin:$d.mix_bin(),bindings: {staged: $staged}, connect_timeout: 8, timeout: 10})
         $d.die_if(true, $node .. " D2 seed install failed: " ..
           trim($installed["stdout"]) .. " " .. trim($installed["stderr"]))
       end
@@ -543,7 +568,7 @@ print(json_encode({token: $token, hash: hash_file($dest, "sha256"),
 $info = stat($dest, {follow_symlinks: false})
 print(json_encode({hash: hash_file($dest, "sha256"), uid: $info["uid"],
   gid: $info["gid"], perm: $info["perm"]}))
-', {bindings: {dest: $DEST}, decode: "json", connect_timeout: 8, timeout: 15})
+', {mix_bin:$d.mix_bin(),bindings: {dest: $DEST}, decode: "json", connect_timeout: 8, timeout: 15})
     $d.die_if(not $verified["ok"],
       $node .. " post-install seed verification failed: " ..
       trim($verified["stdout"]) .. " " .. trim($verified["stderr"]))

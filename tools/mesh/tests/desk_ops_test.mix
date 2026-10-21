@@ -69,7 +69,7 @@ check(read_file($root .. "/baseline")=="monotonic-witness","witness changed")
 
 -- The only executable path is typed native stdin, never secret source argv.
 $target = $targets.parse_targets({schema_version:1,project:"example",targets:[{node:"example-desk",host:"example-host",kind:"desk",machine:"example-desk",profile:"/var/lib/example/desk-bus",session:3,account:"desktop",admission:"observe",mesh_open:true}]}).targets[0]
-$base = $ops.request($target,{mesh:"example.internal",members:[{name:"example-desk",status:"active",bus:true,mesh_ip:"192.0.2.14",noded_port:4200}]},"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=","/opt/example/bin/mix")
+$base = $ops.request($target,{mesh:"example.internal",epoch:1,members:[{credentials:[{kind:"d2",from_epoch:1,pubkey:"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="}],name:"example-desk",status:"active",bus:true,mesh_ip:"192.0.2.14",noded_port:4200}]},"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=","/opt/example/bin/mix")
 $job = $targets.stdin_job($target,"print($request)",{request:{secret:"synthetic-private-marker"}},"admin","/opt/example/bin/mix")
 check(not contains(json_encode($job.argv),"synthetic-private-marker"),"secret leaked to argv")
 check(contains($job.stdin,"synthetic-private-marker"),"secret did not travel through stdin")

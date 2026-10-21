@@ -2,6 +2,7 @@
 -- Shared guarded desk path for the signed-inventory and private-seed owners.
 -- Loading this module does not contact a host or read private configuration.
 $targets = require("targets.mix")
+$ROLLOUT_READY = false
 
 fn fail($message)
   raise("DESK_DISTRIBUTOR",$message)
@@ -14,10 +15,14 @@ fn load_targets($path, $project, $roster)
   $out = {}
   for $target in $parsed.targets
     if not contains($roster,$target.node) then fail("target identity is not rostered") end
-    if $target.kind != "desk" then fail("distributor overrides are desk-only; system dispatch stays unchanged") end
+    if $target.kind == "system" then
+      if $target.host != $target.node then fail("system target must preserve its existing node transport") end
+      continue
+    end
     if $target.admission == nil or $target.mesh_open == nil then fail("desk rollout requires explicit admission and mesh_open posture") end
     $out[$target.node] = $target
   end
+  if len($parsed.targets) != len($roster) then fail("configured target set must cover every rostered node exactly once") end
   return $out
 end
 
@@ -32,9 +37,14 @@ fn request($target, $inventory, $genesis, $mix_bin)
   $target = $targets.checked_target($target)
   if $target.kind != "desk" or $target.admission == nil or type($target.mesh_open) != "bool" then fail("desk target lacks explicit policy") end
   $member = member_named($inventory,$target.node)
+  $d2_keys = []
+  for $credential in ($member.credentials ?? [])
+    if $credential.kind == "d2" and $credential.from_epoch <= $inventory.epoch and ($credential.until_epoch == nil or $inventory.epoch < $credential.until_epoch) then push($d2_keys,$credential.pubkey) end
+  end
+  if len($d2_keys) == 0 then fail("desk has no current authenticated D2 identity") end
   if type($genesis) != "string" or not re_match($genesis,"^[A-Za-z0-9+/]{43}=$") then fail("invalid authenticated genesis public key") end
   return {target:$target,mesh:$inventory.mesh,ip:$member.mesh_ip,port:$member.noded_port ?? 4200,
-    admission:$target.admission,mesh_open:$target.mesh_open,genesis:$genesis,mix_bin:$mix_bin}
+    admission:$target.admission,mesh_open:$target.mesh_open,genesis:$genesis,mix_bin:$mix_bin,d2_keys:$d2_keys}
 end
 
 fn worker_program($path)
@@ -48,6 +58,7 @@ end
 end
 
 fn live_execute($job)
+  if not $ROLLOUT_READY then fail("desk distributor integration is not yet released; hermetic fixtures only") end
   return ssh_mix($job.host,
     '$r=run_argv($command,{stdin:$text,env:$environment,timeout:130}); print($r.stdout); if not $r.ok then raise("DESK_TRANSPORT","namespace process refused") end',
     {mix_bin:$job.mix_bin,bindings:{command:$job.argv,text:$job.stdin,environment:$job.env},connect_timeout:8,timeout:145})
@@ -98,8 +109,10 @@ fn stable_after($before, $after, $payloads)
   return $after
 end
 
-fn place_seed($base, $before, $bytes, $program, $executor)
-  $files = [payload("seed",$bytes)]
+fn place_seed($base, $before, $bytes, $public_key, $program, $executor)
+  if not contains($base.d2_keys,$public_key) then fail("seed key differs from authenticated current D2 identity") end
+  $proof = {node:$base.target.node,mesh:$base.mesh,seed_sha256:hash_sha256($bytes),public_key:$public_key}
+  $files = [payload("seed",$bytes),payload("seed_receipt",json_encode($proof,true))]
   $placed = call($base,"seed",{before:$before,payloads:$files,token:uuid()},$program,$executor)
   $after = stable_after($before,preflight($base,$program,$executor),$files)
   return {placement:$placed,verified:$after.states.seed}
