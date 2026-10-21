@@ -57,8 +57,6 @@ pub struct Tab {
     pub diagnostics: Diagnostics,
     /// Path given by the user (kept across reattach).
     pub path: Option<String>,
-    /// Path for which the mirror last supplied language metadata.
-    language_path: Option<String>,
     /// Detected once after Save As, until fresh metadata arrives.
     saved_language: Option<&'static str>,
 }
@@ -69,11 +67,7 @@ impl Tab {
         let Some(m) = &self.mirror else {
             return "text";
         };
-        if m.meta().path != self.language_path {
-            self.saved_language.unwrap_or(&m.meta().language)
-        } else {
-            &m.meta().language
-        }
+        self.saved_language.unwrap_or(&m.meta().language)
     }
 }
 
@@ -949,7 +943,6 @@ impl Controller {
             editor: EditorModel::default(),
             highlight,
             diagnostics: Diagnostics::default(),
-            language_path: path.clone(),
             saved_language: None,
             path,
         });
@@ -1541,7 +1534,6 @@ impl Controller {
             }
         };
         if let Some(t) = self.tab_mut(tab) {
-            t.language_path = open.path.clone();
             t.saved_language = None;
         }
         if let Some(x) = self.x.get_mut(&tab) {
