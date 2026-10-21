@@ -39,12 +39,14 @@ if len($argv)==0 then
   $owned=trim(native(["mktemp","-d","/tmp/mb-XXXXXXXX"]))
   chmod($owned,0o711)
   $before=filter(lines(read_file("/proc/self/mountinfo")),fn($line)=contains($line,$owned))
+  $loopback_before=json_parse(native(["ip","-j","address","show","dev","lo"]))
   $r=run_argv(["unshare","--user","--map-auto","--map-root-user","--mount","--propagation","private","--net","--pid","--fork","/opt/mixos/bin/mix",realpath($0),"--inside",read_link("/proc/self/ns/net"),$owned],{timeout:90,grace:2})
   print($r.stdout)
   check(deep_eq($before,filter(lines(read_file("/proc/self/mountinfo")),fn($line)=contains($line,$owned))),"fixture leaked a parent-namespace mount")
   check(not exists($owned,{follow_symlinks:false}),"fixture did not remove its temporary root")
+  check(deep_eq($loopback_before,json_parse(native(["ip","-j","address","show","dev","lo"]))),"fixture changed parent namespace loopback")
   if not $r.ok then eprint($r.stderr); raise("BROKER_NAMESPACE_TEST","disposable namespace failed") end
-  print("PASS parent namespace mount isolation and temporary-root cleanup")
+  print("PASS parent namespace mount/loopback isolation and temporary-root cleanup")
   exit(0)
 end
 check(len($argv)==3 and $argv[0]=="--inside","invalid fixture arguments")
@@ -130,10 +132,23 @@ try
     $_batch=fs_wait($watch)
   end
   $client_env={PATH:"/opt/mixos/bin:/usr/bin:/bin",MIXOS_NODE_CONFIG:$spec.profile .. "/etc/client.conf.mix",MIXOS_BROKER_ACCOUNT:"noded",MIXOS_NODED_URL:"",MIXOS_RUN:"/run/mixos/session/3"}
-  $query=as_user($root,2000,'send noded noded.inventory timeout=10; print(json_encode({uid:uid(),gid:gid(),rc:$rc,value:$result}))',$client_env)
+  $query_source='send noded noded.info timeout=10
+$info={rc:$rc,value:$result}
+send noded noded.inventory timeout=10
+print(json_encode({uid:uid(),gid:gid(),info:$info,rc:$rc,value:$result}))'
+  $query=as_user($root,2000,$query_source,$client_env)
   check($query.ok,"distinct client native authority query failed")
   $authority=json_parse($query.stdout)
-  check($authority.uid==2000 and $authority.gid==2000 and $authority.rc==0 and $authority.value.posture=="verified" and $authority.value.epoch==7,"native signed authority/UID proof failed")
+  check($authority.uid==2000 and $authority.gid==2000 and $authority.info.rc==0 and $authority.info.value.node=="desk-a" and $authority.rc==0 and $authority.value.posture=="verified" and $authority.value.mesh=="example.internal" and $authority.value.epoch==7,"native signed authority/UID proof failed")
+  -- Force the fresh native query to use Unix. Nothing in the parent namespace
+  -- is changed; the fixture address exists only on this isolated loopback.
+  native(["ip","address","del","192.0.2.14/32","dev","lo"])
+  $tcp=as_user($root,2000,'$h=tcp_connect("192.0.2.14",4200,{timeout:1}); tcp_close($h)',$client_env)
+  check(not $tcp.ok,"isolated TCP path remained reachable")
+  $unix_query=as_user($root,2000,$query_source,$client_env)
+  check($unix_query.ok,"fresh native Unix-only authority query failed")
+  $unix=json_parse($unix_query.stdout)
+  check($unix.info.rc==0 and $unix.info.value.node=="desk-a" and $unix.rc==0 and $unix.value.posture=="verified" and $unix.value.epoch==7 and $unix.value.hash==$authority.value.hash,"Unix-only route did not preserve signed authority")
   $baseline=$var .. "/noded/inventory.baseline"
   $b=stat($baseline,{follow_symlinks:false})
   check($b.uid==1999 and $b.gid==1999 and $b.perm==0o600,"native witness ownership differs")
@@ -151,7 +166,7 @@ try
     $meta=stat(if $path=="/" then $root else $root .. $path end,{follow_symlinks:false})
     push($ancestry,{path:$path,uid:$meta.uid,gid:$meta.gid,perm:$meta.perm,is_symlink:$meta.is_symlink})
   end
-  print(json_encode({proof:"native-disposable-broker-namespace",noded_sha256:hash_file($candidate,"sha256"),client_uid:$authority.uid,client_gid:$authority.gid,broker_uid:$endpoint.uid,baseline_uid:$b.uid,baseline_gid:$b.gid,baseline_mode:$b.perm,baseline_lock_mode:$lock.perm,desktop_write_refused:not $attack.ok,private_var_write_refused:not $private_attack.ok,desktop_state_preserved:true,epoch:$authority.value.epoch,endpoint:$plan.endpoint,ancestry:$ancestry,user_namespace:true,network_namespace:true,pid_namespace:true,live_activation:false,pid_pin_tested:false,systemd_unit_started:false}))
+  print(json_encode({proof:"native-disposable-broker-namespace",noded_sha256:hash_file($candidate,"sha256"),client_uid:$authority.uid,client_gid:$authority.gid,broker_uid:$endpoint.uid,baseline_uid:$b.uid,baseline_gid:$b.gid,baseline_mode:$b.perm,baseline_lock_mode:$lock.perm,desktop_write_refused:not $attack.ok,private_var_write_refused:not $private_attack.ok,desktop_state_preserved:true,signed_authority:true,tcp_unreachable:not $tcp.ok,unix_only_authority:true,epoch:$authority.value.epoch,endpoint:$plan.endpoint,ancestry:$ancestry,user_namespace:true,network_namespace:true,pid_namespace:true,live_activation:false,pid_pin_tested:false,systemd_unit_started:false}))
 finally
   if $watch!=nil then fs_unwatch($watch) end
   if $daemon!=nil then $_killed=kill($daemon,9); run_argv(["pidwait","-p",to_string($daemon)],{timeout:5}) end
