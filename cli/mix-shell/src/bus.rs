@@ -2203,15 +2203,23 @@ mod tests {
         let broker = test_broker::Broker::start();
         let options = broker.options();
         assert!(
-            MixBusHandler::probe_with_pin(&broker.url, Some(OsStr::new("garbage")), Some(options.clone()))
-                .await
-                .is_none()
+            MixBusHandler::probe_with_pin(
+                &broker.url,
+                Some(OsStr::new("garbage")),
+                Some(options.clone())
+            )
+            .await
+            .is_none()
         );
         let wrong = (std::process::id() + 1).to_string();
         assert!(
-            MixBusHandler::probe_with_pin(&broker.url, Some(OsStr::new(&wrong)), Some(options.clone()))
-                .await
-                .is_none()
+            MixBusHandler::probe_with_pin(
+                &broker.url,
+                Some(OsStr::new(&wrong)),
+                Some(options.clone())
+            )
+            .await
+            .is_none()
         );
         assert!(
             MixBusHandler::probe_with_pin(&broker.url, Some(OsStr::new(&wrong)), None)
@@ -2220,17 +2228,17 @@ mod tests {
             "missing verified account cannot make a pinned query use TCP"
         );
         let correct = std::process::id().to_string();
-        let lane = MixBusHandler::probe_with_pin(
-            &broker.url,
-            Some(OsStr::new(&correct)),
-            Some(options),
-        )
-        .await
-        .unwrap();
+        let lane =
+            MixBusHandler::probe_with_pin(&broker.url, Some(OsStr::new(&correct)), Some(options))
+                .await
+                .unwrap();
         let Lane::Verified(connection) = lane.as_ref() else {
             panic!("correct Mix pin must select the verified lane");
         };
-        assert_eq!(connection.server_peer_credentials().pid, Some(std::process::id()));
+        assert_eq!(
+            connection.server_peer_credentials().pid,
+            Some(std::process::id())
+        );
         connection.client().close().await;
     }
 
