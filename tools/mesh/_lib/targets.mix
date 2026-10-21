@@ -1,0 +1,79 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Native mesh target descriptions. Pure: this module performs no I/O.
+
+fn fail($message)
+  raise("MESH_TARGET", $message)
+end
+
+fn plain_label($value, $where)
+  if type($value) != "string" or not re_match($value, "^[a-z][a-z0-9-]{0,31}$") then fail($where .. " must be a plain label") end
+  return $value
+end
+
+fn exact_keys($value, $allowed, $where)
+  if type($value) != "map" then fail($where .. " must be a map") end
+  for $key in keys($value)
+    if not contains($allowed, $key) then fail($where .. " has unknown field " .. $key) end
+  end
+end
+
+fn parse_targets($document)
+  exact_keys($document, ["schema_version", "project", "targets"], "mesh targets")
+  if $document.schema_version != 1 then fail("schema_version must be 1") end
+  $project = plain_label($document.project, "project")
+  if type($document.targets) != "list" or len($document.targets) == 0 then fail("targets must be a nonempty list") end
+  $seen = []
+  $normal = []
+  for $item in $document.targets
+    exact_keys($item, ["node", "host", "kind", "machine", "profile", "session", "account"], "target")
+    $node = plain_label($item.node, "node")
+    $host = plain_label($item.host, "host")
+    if contains($seen, $node) then fail("duplicate node " .. $node) end
+    push($seen, $node)
+    $kind = $item.kind
+    if $kind != "system" and $kind != "desk" then fail("kind must be system or desk") end
+    if $kind == "system" then
+      for $key in ["machine", "profile", "session", "account"]
+        if has_key($item, $key) then fail("system target cannot carry " .. $key) end
+      end
+      push($normal, {node:$node, host:$host, kind:$kind, etc:"/etc/" .. $project, var:"/var/lib/" .. $project,
+        unit:"noded.service", account:"root", machine:nil, session:nil, run:nil})
+    else
+      $machine = plain_label($item.machine, "machine")
+      $account = plain_label($item.account, "account")
+      if $account == "root" then fail("desk account must be unprivileged") end
+      $session = $item.session
+      if type($session) != "number" or $session < 1 or $session > 6 or floor($session) != $session then fail("session must be an integer from 1 to 6") end
+      $profile = $item.profile
+      if type($profile) != "string" or not re_match($profile, "^/var/lib/" .. $project .. "/[a-z][a-z0-9-]{0,31}$") then fail("profile must be one direct project state child") end
+      push($normal, {node:$node, host:$host, kind:$kind, etc:$profile .. "/etc", var:$profile .. "/var",
+        unit:"noded@" .. to_string($session) .. ".service", account:$account, machine:$machine, session:$session,
+        run:"/run/" .. $project .. "/session/" .. to_string($session)})
+    end
+  end
+  $locations = []
+  for $target in $normal
+    $location = $target.host .. "/" .. ($target.machine ?? "host") .. "/" .. $target.unit
+    if contains($locations, $location) then fail("multiple node identities share one broker target") end
+    push($locations, $location)
+  end
+  return {schema_version:1, project:$project, targets:$normal}
+end
+
+fn plan($target)
+  return {node:$target.node, host:$target.host, kind:$target.kind, machine:$target.machine, account:$target.account,
+    unit:$target.unit, genesis:$target.etc .. "/noded/genesis.pub", seed:$target.etc .. "/noded/d2.seed",
+    inventory:$target.var .. "/noded/inventory.signed", baseline:$target.var .. "/noded/inventory.baseline",
+    roster:$target.etc .. "/noded/config.conf.mix", node_config:$target.etc .. "/node.conf.mix",
+    session:$target.session, run:$target.run, mutation_supported:$target.kind == "system"}
+end
+
+fn require_system_mutation($document)
+  $parsed = parse_targets($document)
+  for $target in $parsed.targets
+    if $target.kind != "system" then
+      fail("desk mutation is not implemented: profile paths, ownership, namespace and session restart must be wired together")
+    end
+  end
+  return $parsed
+end

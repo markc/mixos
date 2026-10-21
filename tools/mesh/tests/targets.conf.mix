@@ -1,0 +1,5 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+{schema_version:1, project:"example", targets:[
+  {node:"node-a", host:"host-a", kind:"system"},
+  {node:"desk-a", host:"host-a", kind:"desk", machine:"desk-a", profile:"/var/lib/example/profile-a", session:3, account:"user-a"}
+]}

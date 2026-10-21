@@ -1,0 +1,11 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- Read-only target-model preview; never stages keys or restarts a service.
+$targets = require("../_lib/targets.mix")
+if len(args()) != 1 then raise("ARGS", "mesh_targets.mix TARGETS.conf.mix") end
+$parsed = $targets.parse_targets(load_data(args()[0]))
+$plans = []
+for $target in $parsed.targets
+  push($plans, $targets.plan($target))
+end
+print(json_encode({project:$parsed.project, targets:$plans, preview:true, deployed:false}, true))

@@ -42,5 +42,20 @@ Both are found through `project_bin()` and `installed_bin()` in `deploy_lib.mix`
 
 ## Checks
 
+`mix _bin/mesh_targets.mix TARGETS.conf.mix` previews explicit system and
+desk target paths without contacting a host or writing anything. The version1
+schema has `project` and a nonempty `targets` list. Each target has `node`,
+`host` (an SSH alias) and `kind` (`system` or `desk`). A desk also names its
+`machine`, `account`, integer `session` from1 to6, and `profile` as one direct
+child of `/var/lib/<project>`. See `tests/targets.conf.mix`.
+
+The model distinguishes the host SSH endpoint from the admitted node and the
+container namespace. It derives profile-local genesis, seed, inventory and
+anti-rollback baseline paths and `noded@N.service`. This is a read-only
+foundation: existing distributors do not yet consume desk descriptors. Desk
+mutation is refused until path, namespace, owner, staging, restart and proof
+are integrated together. Never use a path-only override to provision a desk.
+Run `mix tests/targets_test.mix` for the hermetic model checks.
+
 `_bin/name_gate.mix` fails when a project or site name appears as a literal in
 this tree. Run it before a merge.
