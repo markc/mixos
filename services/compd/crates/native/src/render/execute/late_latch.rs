@@ -62,9 +62,10 @@ pub(crate) fn defer(
     let plan = pipe.late_latch.plan(now, margin);
     // Read this pipe's committed CRTC state from the surface used by apply_vrr,
     // not the global preference or the surface's pending VRR request.
-    let vrr_active = pipe.drm_output.as_ref().is_some_and(|output| {
-        output.with_compositor(|comp| comp.surface().vrr_active())
-    });
+    let vrr_active = pipe
+        .drm_output
+        .as_ref()
+        .is_some_and(|output| output.with_compositor(|comp| comp.surface().vrr_active()));
     let sync = sync_reason(
         model::environment::config::base::late_latch_enabled(),
         protocols::tearing::gate::gate::tearing() || pipe.last_tear,
@@ -181,7 +182,9 @@ mod tests {
         latch.begin(now, plan);
         assert!(timer.arm(plan.deadline.unwrap()));
         let mut fired = false;
-        event_loop.dispatch(Some(Duration::ZERO), &mut fired).unwrap();
+        event_loop
+            .dispatch(Some(Duration::ZERO), &mut fired)
+            .unwrap();
         assert!(!fired, "the frame waits for its deadline");
         assert_eq!(
             sync_reason(config.late_latch, false, true),

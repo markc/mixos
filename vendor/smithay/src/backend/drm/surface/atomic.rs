@@ -906,15 +906,7 @@ impl AtomicDrmSurface {
         // page flips work just like commits with fewer parameters..
         let prop_mapping = self.prop_mapping.read().unwrap();
         let vrr = self.state.read().unwrap().vrr;
-        let req = AtomicRequest::build_request(
-            &prop_mapping,
-            self.crtc,
-            None,
-            vrr,
-            [],
-            [],
-            &*planes,
-        )?;
+        let req = AtomicRequest::build_request(&prop_mapping, self.crtc, None, vrr, [], [], &*planes)?;
 
         // .. and without `AtomicCommitFlags::AllowModeset`.
         // If we would set anything here, that would require a modeset, this would fail,
@@ -1191,23 +1183,24 @@ mod test {
     #[test]
     fn committed_vrr_cache_tracks_real_commits_and_readback_only() {
         let source = include_str!("atomic.rs").split("#[cfg(test)]").next().unwrap();
-        let section = |start, end| {
-            source.split_once(start).unwrap().1.split_once(end).unwrap().0
-        };
+        let section = |start, end| source.split_once(start).unwrap().1.split_once(end).unwrap().0;
         assert!(source.contains("vrr_active: AtomicBool::new(state.vrr)"));
-        assert!(section("pub fn vrr_active(", "pub fn set_tearing(")
-            .contains("self.vrr_active.load(Ordering::SeqCst)"));
-        assert!(!section("pub fn use_vrr(", "pub fn commit_pending(")
-            .contains("self.vrr_active"));
+        assert!(
+            section("pub fn vrr_active(", "pub fn set_tearing(")
+                .contains("self.vrr_active.load(Ordering::SeqCst)")
+        );
+        assert!(!section("pub fn use_vrr(", "pub fn commit_pending(").contains("self.vrr_active"));
         assert!(section("pub fn commit<'a>(", "pub fn page_flip<'a>(").contains(
             "if result.is_ok() {\n            self.vrr_active.store(pending.vrr, Ordering::SeqCst);"
         ));
-        assert!(section("pub fn page_flip<'a>(", "pub fn clear_plane(").contains(
-            "if res.is_ok() {\n            self.vrr_active.store(vrr, Ordering::SeqCst);"
-        ));
-        assert!(section("fn clear_state(", "pub(crate) fn reset_state<").contains(
-            "if res.is_ok() {\n            self.vrr_active.store(false, Ordering::SeqCst);"
-        ));
+        assert!(
+            section("pub fn page_flip<'a>(", "pub fn clear_plane(")
+                .contains("if res.is_ok() {\n            self.vrr_active.store(vrr, Ordering::SeqCst);")
+        );
+        assert!(
+            section("fn clear_state(", "pub(crate) fn reset_state<")
+                .contains("if res.is_ok() {\n            self.vrr_active.store(false, Ordering::SeqCst);")
+        );
         assert!(source.contains("self.vrr_active.store(current.vrr, Ordering::SeqCst)"));
         assert_eq!(source.matches("self.vrr_active.store(").count(), 4);
     }
