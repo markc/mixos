@@ -44,7 +44,11 @@ mod tests {
     fn every_appearance_style_has_a_localised_label() {
         for style in design::Style::ALL {
             let key = format!("look-style-{}", style.name());
-            assert_ne!(super::label(&key), key, "{style:?} must not display its message id");
+            assert_ne!(
+                super::label(&key),
+                key,
+                "{style:?} must not display its message id"
+            );
         }
     }
 }
