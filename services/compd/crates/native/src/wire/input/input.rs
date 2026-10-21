@@ -7,7 +7,7 @@ use crate::context::render::render::NativeRenderContext;
 use dispatcher::state::Dispatch;
 use dispatcher::wire::tablet as tbl;
 use kms::input::loop_::libinput::LibinputSource;
-use seat::pointer::restore::restore::TouchCursor;
+use seat::pointer::restore::TouchCursor;
 use smithay::backend::input::{Event, InputEvent};
 use smithay::input::tablet::TabletDescriptor;
 use smithay::reexports::calloop::EventLoop;
@@ -128,7 +128,7 @@ fn dial_zoom(state: &mut Loop, v120: i32) {
         momentum: false,
         from_touch: false,
     };
-    let _ = seat::input::drive::drive::route(state, ev);
+    let _ = seat::input::drive::route(state, ev);
 }
 
 /// Announce a pad event's mode-group mode to the focused client (deduped in the

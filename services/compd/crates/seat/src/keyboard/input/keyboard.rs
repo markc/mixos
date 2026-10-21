@@ -228,7 +228,7 @@ pub fn input_received<I: InputBackend>(event: &I::KeyboardKeyEvent, _loop: &mut 
             pressed: key_state == smithay::backend::input::KeyState::Pressed,
             modifiers: 0,
         };
-        if crate::input::drive::drive::route(_loop, ev)
+        if crate::input::drive::route(_loop, ev)
             == slots::input::event::base::InputFlow::Consume
         {
             return;

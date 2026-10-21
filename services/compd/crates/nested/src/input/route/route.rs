@@ -54,7 +54,7 @@ pub fn route(event: &WinitEvent, state: &mut Loop, context: &mut WinitRenderCont
             if !focused {
                 world::comp::scenes::pointer_motion(state, None);
                 info!("winit: focus lost — clearing held modifiers");
-                seat::modifier::clear::clear::clear_held_modifiers(state);
+                seat::modifier::clear::clear_held_modifiers(state);
                 // A capture released mid-scroll leaves nothing to stop it.
                 seat::pointer::input::extent::release(state);
             }

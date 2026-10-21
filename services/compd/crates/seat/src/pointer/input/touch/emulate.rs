@@ -129,5 +129,5 @@ pub fn pan(_loop: &mut world::state::Loop, dx: f64, dy: f64, momentum: bool) {
         momentum,
         from_touch: true,
     };
-    let _ = crate::input::drive::drive::route(_loop, ev);
+    let _ = crate::input::drive::route(_loop, ev);
 }

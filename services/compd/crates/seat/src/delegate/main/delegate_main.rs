@@ -70,7 +70,7 @@ pub fn process_input_event<I: InputBackend>(_loop: &mut Loop, event: &InputEvent
             if event.switch() == Some(Switch::Lid) {
                 // libinput: switch On == lid closed.
                 let lid_open = event.state() == SwitchState::Off;
-                crate::lid::policy::policy::on_lid_toggle(_loop, lid_open);
+                crate::lid::policy::on_lid_toggle(_loop, lid_open);
             }
         }
         InputEvent::Special(_) => {}

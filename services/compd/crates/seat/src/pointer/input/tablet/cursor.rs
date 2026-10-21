@@ -39,7 +39,7 @@ pub fn follow(
         delta_x: 0.0,
         delta_y: 0.0,
     };
-    if crate::input::drive::drive::route(_loop, ev) == InputFlow::Consume {
+    if crate::input::drive::route(_loop, ev) == InputFlow::Consume {
         return;
     }
     let Some(pointer) = _loop.state.seat.seat.get_pointer() else {

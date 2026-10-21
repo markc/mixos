@@ -193,7 +193,7 @@ pub fn pan(state: &mut Loop, mx: f64, my: f64, pw: f64, ph: f64, dt: f64) -> boo
         return false;
     }
     let (dx, dy) = travel(state, dx, dy);
-    crate::input::drive::drive::route(state, InputEvent::PointerEdgePush { dx, dy });
+    crate::input::drive::route(state, InputEvent::PointerEdgePush { dx, dy });
     true
 }
 
@@ -498,7 +498,7 @@ pub fn tick(state: &mut Loop) {
         return;
     }
     let (dx, dy) = travel(state, hold.vx * dt, hold.vy * dt);
-    crate::input::drive::drive::route(state, InputEvent::PointerEdgePush { dx, dy });
+    crate::input::drive::route(state, InputEvent::PointerEdgePush { dx, dy });
     REPLAYING.with(|r| r.set(true));
     crate::pointer::input::touch::emulate::move_to(state, hold.nx, hold.ny, now_msec());
     REPLAYING.with(|r| r.set(false));

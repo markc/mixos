@@ -193,7 +193,7 @@ pub fn button<I: InputBackend>(event: &<I as InputBackend>::PointerButtonEvent, 
             y: location.y,
             modality: _loop.inner.touch.modality,
         };
-        if crate::input::drive::drive::route(_loop, ev)
+        if crate::input::drive::route(_loop, ev)
             == slots::input::event::base::InputFlow::Consume
         {
             return;

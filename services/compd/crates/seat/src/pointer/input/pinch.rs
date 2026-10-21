@@ -111,5 +111,5 @@ fn pointer_location(loop_: &Loop) -> (f64, f64) {
 }
 
 fn route(loop_: &mut Loop, ev: InputEvent) -> InputFlow {
-    crate::input::drive::drive::route(loop_, ev)
+    crate::input::drive::route(loop_, ev)
 }

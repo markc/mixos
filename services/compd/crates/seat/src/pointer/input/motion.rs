@@ -116,7 +116,7 @@ pub fn absolute<I: InputBackend>(
             delta_x: 0.0,
             delta_y: 0.0,
         };
-        if crate::input::drive::drive::route(_loop, ev)
+        if crate::input::drive::route(_loop, ev)
             == slots::input::event::base::InputFlow::Consume
         {
             return;
@@ -640,7 +640,7 @@ pub fn relative<I: InputBackend>(
             delta_x: dt.x,
             delta_y: dt.y,
         };
-        if crate::input::drive::drive::route(_loop, ev)
+        if crate::input::drive::route(_loop, ev)
             == slots::input::event::base::InputFlow::Consume
         {
             return;

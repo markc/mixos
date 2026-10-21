@@ -43,7 +43,7 @@ pub fn axis<I: InputBackend>(event: &<I as InputBackend>::PointerAxisEvent, _loo
             momentum: true,
             from_touch: false,
         };
-        if crate::input::drive::drive::route(_loop, ev)
+        if crate::input::drive::route(_loop, ev)
             == slots::input::event::base::InputFlow::Consume
         {
             return;

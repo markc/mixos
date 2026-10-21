@@ -44,7 +44,7 @@ pub fn input<I: InputBackend>(_loop: &mut Loop, input_event: &InputEvent<I>) {
         return;
     }
     // return self._loop..process_input_event(input_event);
-    seat::delegate::delegate::process_input_event(_loop, input_event)
+    seat::delegate::process_input_event(_loop, input_event)
 }
 
 pub fn stop(_loop: &mut Loop) {
