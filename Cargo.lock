@@ -2100,6 +2100,7 @@ name = "design"
 version = "0.1.1"
 dependencies = [
  "serde",
+ "serde_json",
  "strict",
 ]
 
