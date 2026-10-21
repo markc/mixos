@@ -50,6 +50,7 @@ end
 check(len($argv)==3 and $argv[0]=="--inside","invalid fixture arguments")
 check(uid()==0 and len(lines(read_file("/proc/self/uid_map")))>=2,"subordinate-ID user namespace required")
 check(read_link("/proc/self/ns/net")!=$argv[1],"network namespace was not isolated")
+check(pid()==1,"fixture requires its own PID namespace init")
 $base=$argv[2]
 check(re_match($base,"^/tmp/mb-[A-Za-z0-9]{8}$") and realpath($base)==$base and stat($base).uid==0,"fixture root is not owned/canonical")
 $root=$base .. "/rootfs"
@@ -68,6 +69,18 @@ try
   $s=stat($root)
   write_new($root .. "/.broker-rootfs.json",json_encode({kind:"native-broker-rootfs",dev:$s.dev,ino:$s.ino}),0o600)
   $spec={project:"mixos",session:3,profile:"/var/lib/mixos/broker-a",client:{name:"desktop",uid:2000,gid:2000},broker:{name:"noded",uid:1999,gid:1999},node:{name:"desk-a",mesh:"example.internal",ip:"192.0.2.14",port:4200,admission:"observe",mesh_open:true}}
+  mkdir($root .. "/var/lib/mixos/desktop-a",{parents:true})
+  write_new($root .. "/var/lib/mixos/desktop-a/settings","preserved-desktop-state",0o600)
+  chown($root .. "/var/lib/mixos/desktop-a/settings",2000,2000)
+  chown($root .. "/var/lib/mixos/desktop-a",2000,2000)
+  chmod($root .. "/var/lib/mixos/desktop-a",0o700)
+  $desktop_before=stat($root .. "/var/lib/mixos/desktop-a/settings")
+  $passwd_before=hash_file($root .. "/etc/passwd","sha256")
+  $bad=$spec
+  $bad.client.uid=2001
+  $refused=false
+  try $prepare.prepare($root,$bad) catch $message,$error $refused=$error.code=="BROKER_ROOTFS" end
+  check($refused and hash_file($root .. "/etc/passwd","sha256")==$passwd_before,"mismatched desktop preflight changed account database")
   $plan=$prepare.plan($spec)
   $receipt=$prepare.prepare($root,$spec)
   check($receipt.status=="prepared" and not $receipt.live_activation,"offline preparation failed")
@@ -75,13 +88,17 @@ try
   check(contains(read_file($root .. $spec.profile .. "/etc/noded/service.env"),"MIXOS_BROKER_ACCOUNT=noded"),"broker effective environment absent")
   check(not contains(read_file($root .. $spec.profile .. "/etc/client.env"),"MIXOS_VAR"),"client environment changed app VAR")
   check(contains($plan.unit_text,"EnvironmentFile=\nEnvironmentFile=") and contains($plan.unit_text,"SupplementaryGroups=\n"),"effective unit does not reset inherited desktop configuration")
+  check(deep_eq(stat($root .. "/var/lib/mixos/desktop-a/settings"),$desktop_before) and read_file($root .. "/var/lib/mixos/desktop-a/settings")=="preserved-desktop-state","preparer changed desktop state or ownership")
   $cache={}
   for $line in lines(native(["ldconfig","-p"]))
     $f=fields($line)
     if len($f)>=4 and contains($line,"x86-64") and not has_key($cache,$f[0]) then $cache[$f[0]]=$f[len($f)-1] end
   end
   copy_elf($root,"/opt/mixos/bin/mix","/opt/mixos/bin/mix",$cache)
-  copy_elf($root,"/opt/mixos/bin/noded","/opt/mixos/bin/noded",$cache)
+  $candidate=env("MIXOS_TEST_NODED","/opt/mixos/bin/noded")
+  check(type($candidate)=="string" and starts_with($candidate,"/") and is_file($candidate),"explicit native noded artifact absent")
+  copy_elf($root,$candidate,"/opt/mixos/bin/noded",$cache)
+  check(hash_file($root .. "/opt/mixos/bin/noded","sha256")==hash_file($candidate,"sha256"),"fixture noded artifact copy differs")
   if has_key($cache,"libnss_files.so.2") then copy_elf($root,$cache["libnss_files.so.2"],$cache["libnss_files.so.2"],$cache) end
   mkdir($root .. "/proc")
   -- Retain the enclosing container's masked proc submounts. A new proc mount
@@ -120,12 +137,21 @@ try
   $baseline=$var .. "/noded/inventory.baseline"
   $b=stat($baseline,{follow_symlinks:false})
   check($b.uid==1999 and $b.gid==1999 and $b.perm==0o600,"native witness ownership differs")
+  $lock=stat($baseline .. ".lock",{follow_symlinks:false})
+  check($lock.uid==1999 and $lock.gid==1999 and $lock.perm==0o600,"native witness lock ownership differs")
   $before=hash_file($baseline,"sha256")
   $attack=as_user($root,2000,'write_file("/var/lib/mixos/broker-a/var/noded/inventory.baseline","forged")',$client_env)
-  check(not $attack.ok and hash_file($baseline,"sha256")==$before,"desktop UID altered the witness")
+  check(not $attack.ok and contains($attack.stderr,"Permission denied") and hash_file($baseline,"sha256")==$before,"desktop UID did not encounter witness write denial")
+  $private_attack=as_user($root,2000,'write_new("/var/lib/mixos/broker-a/var/noded/desktop-touch","forged",0o600)',$client_env)
+  check(not $private_attack.ok and contains($private_attack.stderr,"Permission denied"),"desktop UID could create a file in private broker VAR")
   $endpoint=stat($socket,{follow_symlinks:false})
   check($endpoint.uid==1999 and floor($endpoint.mode/4096)%16==12,"native socket owner/type differs")
-  print(json_encode({proof:"native-disposable-broker-namespace",client_uid:$authority.uid,client_gid:$authority.gid,broker_uid:$endpoint.uid,baseline_uid:$b.uid,baseline_gid:$b.gid,baseline_mode:$b.perm,desktop_write_refused:not $attack.ok,epoch:$authority.value.epoch,endpoint:$plan.endpoint,user_namespace:true,network_namespace:true,live_activation:false,pid_pin_tested:false}))
+  $ancestry=[]
+  for $path in ["/","/run","/run/mixos","/run/mixos/broker","/run/mixos/broker/3","/run/mixos/broker/3/noded"]
+    $meta=stat(if $path=="/" then $root else $root .. $path end,{follow_symlinks:false})
+    push($ancestry,{path:$path,uid:$meta.uid,gid:$meta.gid,perm:$meta.perm,is_symlink:$meta.is_symlink})
+  end
+  print(json_encode({proof:"native-disposable-broker-namespace",noded_sha256:hash_file($candidate,"sha256"),client_uid:$authority.uid,client_gid:$authority.gid,broker_uid:$endpoint.uid,baseline_uid:$b.uid,baseline_gid:$b.gid,baseline_mode:$b.perm,baseline_lock_mode:$lock.perm,desktop_write_refused:not $attack.ok,private_var_write_refused:not $private_attack.ok,desktop_state_preserved:true,epoch:$authority.value.epoch,endpoint:$plan.endpoint,ancestry:$ancestry,user_namespace:true,network_namespace:true,pid_namespace:true,live_activation:false,pid_pin_tested:false,systemd_unit_started:false}))
 finally
   if $watch!=nil then fs_unwatch($watch) end
   if $daemon!=nil then $_killed=kill($daemon,9); run_argv(["pidwait","-p",to_string($daemon)],{timeout:5}) end

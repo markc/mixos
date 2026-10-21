@@ -365,6 +365,8 @@ fn compare_and_ratchet_baseline(
     genesis_pub: &[u8],
     canonical_hash: &str,
 ) -> Result<AcceptedInventory, String> {
+    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+
     let Some(parent) = path.parent() else {
         return Err("baseline path has no parent directory".into());
     };
@@ -377,9 +379,13 @@ fn compare_and_ratchet_baseline(
         .read(true)
         .write(true)
         .truncate(false)
+        .mode(0o600)
         .open(&lock_path)
         .map_err(|e| format!("opening baseline lock {}: {e}", lock_path.display()))?;
     acquire_baseline_lock(&lock_file, &lock_path)?;
+    lock_file
+        .set_permissions(std::fs::Permissions::from_mode(0o600))
+        .map_err(|e| format!("protecting baseline lock {}: {e}", lock_path.display()))?;
 
     let fresh = read_baseline(path)?;
     let accepted = signed
@@ -691,10 +697,36 @@ mod tests {
         let dir = tmpdir("baseline_private_mode");
         let path = dir.join("inventory.baseline");
         write_baseline_file(&path, 7, 0, "first").unwrap();
-        assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
         write_baseline_file(&path, 8, 0, "second").unwrap();
-        assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+    }
+
+    #[test]
+    fn verified_authority_protects_existing_baseline_lock() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tmpdir("authority_private_lock");
+        let paths = paths_in(&dir);
+        let key = SigningKey::from_bytes(&[23u8; 32]);
+        write_signed_inventory(&paths, &key, 7, serde_json::json!([{
+            "name": "beta", "mesh_ip": "192.0.2.5", "bus": true, "status": "active"
+        }]));
+        let lock = appended_path(&paths.baseline, ".lock");
+        std::fs::write(&lock, "").unwrap();
+        std::fs::set_permissions(&lock, std::fs::Permissions::from_mode(0o644)).unwrap();
+        assert!(matches!(load_and_verify(&paths), Posture::Verified(_)));
+        assert_eq!(
+            std::fs::metadata(&lock).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
     }
 
     #[test]
