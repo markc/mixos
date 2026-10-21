@@ -119,5 +119,37 @@ mod tests {
             .dispatch(Some(Duration::ZERO), &mut data)
             .unwrap();
         assert_eq!(data.fires, 2, "cancelled timer stays silent");
+        assert!(timer.arm(Instant::now()));
+        drop(timer);
+        event_loop
+            .dispatch(Some(Duration::ZERO), &mut data)
+            .unwrap();
+        assert_eq!(data.fires, 2, "pruning removes the source");
+    }
+
+    #[test]
+    fn two_deadlines_release_only_their_own_pipe() {
+        let mut event_loop: EventLoop<'static, Data> = EventLoop::try_new().unwrap();
+        let mut data = Data::default();
+        data.schedule.register("a");
+        data.schedule.register("b");
+        data.schedule.defer("a");
+        data.schedule.defer("b");
+        let a = DeadlineTimer::new(&event_loop.handle(), "a".into(), fired).unwrap();
+        let b = DeadlineTimer::new(&event_loop.handle(), "b".into(), fired).unwrap();
+        assert!(a.arm(Instant::now()));
+        assert!(b.arm(Instant::now() + Duration::from_secs(60)));
+        event_loop
+            .dispatch(Some(Duration::ZERO), &mut data)
+            .unwrap();
+        assert_eq!(data.fires, 1);
+        data.schedule.rendering("a");
+        assert!(!data.schedule.pending(), "b still waits for its own deadline");
+        assert!(b.arm(Instant::now()));
+        event_loop
+            .dispatch(Some(Duration::ZERO), &mut data)
+            .unwrap();
+        assert_eq!(data.fires, 2);
+        assert!(data.schedule.pending());
     }
 }

@@ -27,6 +27,7 @@ pub(crate) fn defer(
     handle: &LoopHandle<'static, Loop>,
     key: &str,
     trace_output: u64,
+    trace_immediate: bool,
 ) -> bool {
     let now = Instant::now();
     if pipe.late_latch.armed.is_some_and(|at| now < at) {
@@ -65,6 +66,11 @@ pub(crate) fn defer(
     } else {
         None
     };
+    // The flip handler only arms a wait. An immediate decision is recorded by
+    // the executor when it actually renders, avoiding two decisions per frame.
+    if !trace_immediate && (immediate.is_some() || plan.deadline.is_none()) {
+        return false;
+    }
     if let Some(reason) = immediate {
         ledger::redraw::trace_deadline(reason, trace_output, None, plan.budget);
         cancel(pipe);

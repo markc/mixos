@@ -552,6 +552,7 @@ pub fn execute(
             &loop_handle,
             &key,
             trace_output,
+            true,
         ) {
             continue;
         }

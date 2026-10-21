@@ -580,6 +580,7 @@ fn process_vblank_inner(
             loop_handle,
             &key,
             trace_output,
+            false,
         ) {
             return;
         }

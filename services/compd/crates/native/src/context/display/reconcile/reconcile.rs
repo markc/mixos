@@ -171,6 +171,10 @@ fn bring_up(
     let new_hdr_active = env.hdr && built.hdr.hdr_capable() && false;
     let new_mode = Mode::from(built.drm_mode);
     if replace {
+        state
+            .state
+            .redraw
+            .remove(&world::state::state::output_key(&ctx.pipe().output));
         // Swap the pipe onto the new `Output`. Only reached once `build` has
         // succeeded, so a failed fail-over leaves the old identity in place rather
         // than half-migrating.
