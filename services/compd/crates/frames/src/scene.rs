@@ -86,7 +86,7 @@ fn update_fractional(state: &mut Loop) {
         .current_output()
         .current_scale()
         .fractional_scale();
-    let mut best: dispatcher::wayland::fractional::dispatch::hook::IdentityMap<
+    let mut best: dispatcher::wayland::fractional::dispatch::IdentityMap<
         smithay::reexports::wayland_server::backend::ObjectId,
         (f64, WlSurface),
     > = Default::default();

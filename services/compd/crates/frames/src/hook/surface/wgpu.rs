@@ -12,10 +12,10 @@ pub fn hook(state: &mut Loop, x: &mut GlesRenderer, _size: Size<i32, Physical>) 
     // context).
     // This hook only drains the surface-message buffer into the (asserted-present)
     // registry of the focused world.
-    load_incoming_buffer(state, x, size);
+    load_incoming_buffer(state, x);
 }
 
-fn load_incoming_buffer(state: &mut Loop, x: &mut GlesRenderer, _size: Size<i32, Physical>) {
+fn load_incoming_buffer(state: &mut Loop, x: &mut GlesRenderer) {
     {
         // Drain the channel into the buffer (single slot borrow).
         let surface = state.inner.surface_mut();
