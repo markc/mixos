@@ -37,3 +37,14 @@ pub fn label(key: &str) -> String {
 pub fn label_with(key: &str, args: &[(&str, &str)]) -> String {
     STRINGS.with(|s| s.with(key, args))
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn every_appearance_style_has_a_localised_label() {
+        for style in design::Style::ALL {
+            let key = format!("look-style-{}", style.name());
+            assert_ne!(super::label(&key), key, "{style:?} must not display its message id");
+        }
+    }
+}

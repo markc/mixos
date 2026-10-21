@@ -64,6 +64,11 @@ fn every_slot_keeps_its_old_writer_and_each_role_forwards_only_to_its_slots() {
         owners: std::collections::BTreeMap<String, Vec<String>>,
     }
     let oracle: Oracle = strict::from_str(include_str!("fixtures/role-slots.conf.mix")).unwrap();
+    assert_eq!(
+        oracle.selection_by_style.keys().map(String::as_str).collect::<std::collections::BTreeSet<_>>(),
+        design::Style::ALL.into_iter().map(|style| style.name()).collect(),
+        "each shipped style needs an independently recorded selection owner"
+    );
     assert_eq!(oracle.owners.len(), 31);
     assert_eq!(
         oracle

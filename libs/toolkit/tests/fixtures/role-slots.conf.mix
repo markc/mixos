@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT OR Apache-2.0
 # Pinned ownership from the accepted role-to-slot contract. Changes require review.
 {
-  selection_by_style: { plain: "accent", pro: "accent", studio: "accent_soft", classic: "accent" },
+  selection_by_style: { plain: "accent", pro: "accent", studio: "accent_soft", classic: "accent", breeze: "accent_soft", adwaita: "accent_soft" },
   owners: {
     chrome: ["panel_fill"],
     canvas: [], canvas_dot: [], dock: [], tab_strip: [], text_faint: [], icon: [],
