@@ -59,6 +59,7 @@ pub enum UiEvent {
     /// The compose dialog's From account.
     ComposeAccount(String),
     ComposeField(crate::state::ComposeField, String),
+    ComposeEdit(editor::Event),
     /// The To row's Cc, Bcc or Reply-To button: show or hide that row.
     ComposeShow(crate::state::ComposeField),
     /// Cancel or Escape on the compose: it closes, or (something typed)
@@ -125,6 +126,7 @@ pub fn view(
     state: &State,
     commands: &Registry<State>,
     strings: &Strings,
+    palette: &editor::Palette,
 ) -> Vec<UiEvent> {
     let mut events = Vec::new();
     let dark = ui.visuals().dark_mode;
@@ -180,7 +182,7 @@ pub fn view(
     } else {
         window(ui, state, commands, strings, &mut events);
     }
-    compose::dialog(ui, state, &mut events);
+    compose::dialog(ui, state, palette, &mut events);
     compose::confirm(ui, state, &mut events);
     identities::dialog(ui, state, &mut events);
     compose::restore(ui, state, &mut events);

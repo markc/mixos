@@ -2479,6 +2479,7 @@ dependencies = [
  "egui",
  "egui_kittest",
  "serde",
+ "serde_json",
  "tempfile",
  "toolkit",
 ]
@@ -2665,6 +2666,8 @@ dependencies = [
  "citizen",
  "config",
  "design",
+ "editor",
+ "editor-model",
  "eframe",
  "egui",
  "egui_kittest",

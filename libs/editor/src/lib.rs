@@ -90,12 +90,18 @@ pub struct View {
     pub ambiguous_wide: bool,
     pub wrap: Wrap,
     pub line_numbers: bool,
+    /// Shade the row containing an unselected caret.
+    pub current_line: bool,
     /// Draw `·` for spaces and `→` for tabs.
     pub whitespace: bool,
     /// Draw other origins' carets and selections.
     pub remote_carets: bool,
     /// Accept no editing commands; selection, copy and scrolling still work.
     pub read_only: bool,
+    /// The accessible name, when the owner has one.
+    pub label: Option<String>,
+    /// Muted text drawn only while the document is empty.
+    pub placeholder: Option<String>,
     /// Find highlight-all ranges, ascending and non-overlapping; drawn under
     /// the selection.
     #[serde(skip)]
@@ -111,9 +117,12 @@ impl Default for View {
             ambiguous_wide: false,
             wrap: Wrap::None,
             line_numbers: true,
+            current_line: true,
             whitespace: false,
             remote_carets: true,
             read_only: false,
+            label: None,
+            placeholder: None,
             matches: Vec::new(),
         }
     }
@@ -128,13 +137,34 @@ impl View {
         }
     }
 
-    /// The settings for prose: soft wrap and no line numbers.
+    /// The settings for prose: soft wrap, no line numbers or current-row band.
     pub fn prose() -> Self {
         Self {
             wrap: Wrap::Words,
             line_numbers: false,
+            current_line: false,
             ..Self::default()
         }
+    }
+}
+
+#[cfg(test)]
+mod view_tests {
+    use super::*;
+
+    #[test]
+    fn old_saved_views_keep_the_code_defaults_and_prose_hides_the_band() {
+        let view: View = serde_json::from_str(r#"{"wrap":"words","line_numbers":false}"#).unwrap();
+        assert!(view.current_line, "missing fields use the code default");
+        assert!(view.placeholder.is_none());
+        assert!(!View::prose().current_line);
+        let custom = View {
+            current_line: false,
+            placeholder: Some("Body".into()),
+            ..view
+        };
+        let saved = serde_json::to_string(&custom).unwrap();
+        assert_eq!(serde_json::from_str::<View>(&saved).unwrap(), custom);
     }
 }
 
