@@ -660,10 +660,13 @@ pub struct Suggest {
 }
 
 impl ComposeState {
-    pub fn set_body(&mut self, text: &str) {
+    pub fn set_body(&mut self, text: &str) -> bool {
         if let Err(error) = self.body.set_body(text) {
             self.error = Some(error.to_string());
+            return false;
         }
+        self.error = None;
+        true
     }
 
     pub fn reply_movable(&self) -> bool {
@@ -1581,9 +1584,10 @@ impl State {
         ui: UiState,
         mode: Mode,
         selected: Option<String>,
-        cache: EmailSettings,
+        mut cache: EmailSettings,
         secrets: Secrets,
     ) -> Self {
+        cache.reset_legacy_composer_family();
         let mut state = Self {
             accounts: Vec::new(),
             selected,
@@ -1998,7 +2002,8 @@ impl State {
     /// profile look the same. The views stay, the status line says so, and
     /// the next non-empty read or an explicit removal through Email ends
     /// it. Writes are still computed against what settingsd holds.
-    pub fn set_settings(&mut self, email: EmailSettings) {
+    pub fn set_settings(&mut self, mut email: EmailSettings) {
+        email.reset_legacy_composer_family();
         let page_size = self.settings.mail.page_size;
         let shown = self
             .held
@@ -3338,6 +3343,9 @@ impl State {
             Then::Answer => false,
         };
         if opened {
+            if let Some(error) = self.close_failed_compose() {
+                return self.refuse(reply, code::INVALID_ARGUMENT, &error);
+            }
             let subject = self.compose.as_ref().map(|c| c.draft.subject.clone());
             self.reply(
                 reply,
@@ -3703,15 +3711,16 @@ impl State {
                 self.discard_draft(&draft.id);
             }
             DraftChoice::Keep => {
-                let draft = self.restore.remove(0);
-                self.open_saved(draft);
+                if self.open_saved(self.restore[0].clone()) {
+                    self.restore.remove(0);
+                }
             }
         }
     }
 
     /// Open a kept draft in the compose dialog, as it was typed. Its
     /// account, when it is gone, becomes the default one (with its From).
-    fn open_saved(&mut self, saved: SavedDraft) {
+    fn open_saved(&mut self, saved: SavedDraft) -> bool {
         // A draft whose account is gone is sent from that account's current
         // default instead, so it keeps no identity of its own.
         let (account, from, from_name, reply_to, identity) = match self.account(&saved.account) {
@@ -3748,6 +3757,10 @@ impl State {
             ..Composed::default()
         };
         let mut compose = ComposeState::new(&account, draft);
+        if let Some(error) = compose.error {
+            self.status = error;
+            return false;
+        }
         compose.identity = identity;
         compose.to_text = saved.to;
         compose.cc_text = saved.cc;
@@ -3756,6 +3769,7 @@ impl State {
         compose.restored = true;
         compose.attempt = saved.attempt;
         self.compose = Some(compose);
+        true
     }
 
     /// The window is asked to close: yes at once, unless a draft is open
@@ -5217,6 +5231,14 @@ impl State {
         true
     }
 
+    /// Close a newly opened compose whose body could not be loaded. Bus
+    /// callers must report the refusal instead of claiming it opened.
+    pub fn close_failed_compose(&mut self) -> Option<String> {
+        let error = self.compose.as_ref()?.error.clone()?;
+        self.compose = None;
+        Some(error)
+    }
+
     /// A reply to `account`'s open email (`all`: to everyone it went to).
     /// `quote`: with the original quoted, without it, or (`None`) as the
     /// settings say.
@@ -5495,6 +5517,7 @@ impl State {
                     if compose.body.doc.doc().revision != before {
                         compose.body.revision += 1;
                         compose.revision += 1;
+                        compose.error = None;
                     }
                     if let Some(error) = compose.body.doc.take_refusal() {
                         compose.error = Some(error.to_string());
@@ -5516,7 +5539,11 @@ impl State {
                             compose.draft.reply_to = Some(value).filter(|v| !v.trim().is_empty());
                         }
                         ComposeField::Subject => compose.draft.subject = value,
-                        ComposeField::Body => compose.set_body(&value),
+                        ComposeField::Body => {
+                            if !compose.set_body(&value) {
+                                return;
+                            }
+                        }
                     }
                     compose.revision += 1;
                     // A row being edited stays open, even cleared to retype.
@@ -5560,7 +5587,7 @@ impl State {
                 if compose.busy {
                     return;
                 }
-                let Some(reply) = compose.reply.as_mut() else {
+                let Some(reply) = compose.reply.as_ref() else {
                     return;
                 };
                 if reply.position == position {
@@ -5576,9 +5603,10 @@ impl State {
                 ) else {
                     return;
                 };
-                reply.position = position;
-                compose.set_body(&body);
-                compose.revision += 1;
+                if compose.set_body(&body) {
+                    compose.reply.as_mut().expect("reply is still present").position = position;
+                    compose.revision += 1;
+                }
             }
             UiEvent::ComposeUseNewFrom => {
                 // Only for the account and connection the address came from.
@@ -6885,10 +6913,8 @@ pub(crate) mod tests {
             "email.compose",
             &json!({"account":"a", "body":huge}).to_string(),
         );
-        let compose = state.compose.as_ref().unwrap();
-        assert!(compose.error.is_some());
-        assert!(compose.body.doc.text().is_empty());
-        assert!(compose.draft.body.is_empty());
+        assert!(state.compose.is_none());
+        assert_eq!(state.take_replies()[0].body["error_code"], code::INVALID_ARGUMENT);
 
         let mut email = serde_json::to_value(unread_email("E1")).unwrap();
         email["bodyValues"] = json!({"p1":{"value":huge}});

@@ -50,10 +50,10 @@ impl Surface {
     }
 
     /// The bundled families this surface takes, after the design default.
-    /// The editor lays text on a monospace grid, so it takes only that face.
+    /// The composer and editor lay text on a monospace grid.
     pub fn families(self) -> &'static [&'static str] {
         match self {
-            Surface::CedEditor => &[MONO_FAMILY],
+            Surface::EmailComposer | Surface::CedEditor => &[MONO_FAMILY],
             _ => &FAMILIES,
         }
     }
@@ -64,7 +64,7 @@ impl Surface {
 pub enum Setting {
     Padding(Surface, u32),
     /// None is the design's default face: Inter for prose, the monospace face
-    /// for the editor.
+    /// for the composer and editor.
     Family(Surface, Option<String>),
     Size(Surface, f64),
     Light(Surface, bool),
@@ -278,9 +278,9 @@ mod tests {
                 json!(16),
             ),
             (
-                Setting::Family(Surface::EmailComposer, Some("Inter".into())),
+                Setting::Family(Surface::EmailComposer, Some(MONO_FAMILY.into())),
                 "email.composer.font.family",
-                json!("Inter"),
+                json!(MONO_FAMILY),
             ),
             (
                 Setting::Size(Surface::CedEditor, 14.0),

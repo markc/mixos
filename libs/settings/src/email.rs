@@ -61,6 +61,18 @@ pub struct Email {
 }
 
 impl Email {
+    /// Migrate a stored prose composer face to the shared editor's default.
+    /// Call at load boundaries, after verifying any stored seal; settings
+    /// API candidates still go through `validate` without this reset.
+    pub fn reset_legacy_composer_family(&mut self) -> bool {
+        if matches!(self.composer.font.family.as_deref(), Some(family) if family != crate::content::MONO_FAMILY) {
+            self.composer.font.family = None;
+            eprintln!("settings: reset legacy email.composer.font.family to the monospace default");
+            return true;
+        }
+        false
+    }
+
     pub fn is_default(&self) -> bool {
         is_default(self)
     }
