@@ -106,10 +106,19 @@ mod deadline_tests {
         let observed = Instant::now();
         let stamp = Duration::from_secs(10);
         let delay = Duration::from_millis(5);
-        assert_eq!(trusted_anchor(observed, Some(stamp), Some(stamp + delay)), Some(observed - delay));
+        assert_eq!(
+            trusted_anchor(observed, Some(stamp), Some(stamp + delay)),
+            Some(observed - delay)
+        );
         assert_eq!(trusted_anchor(observed, None, Some(stamp)), None);
         assert_eq!(trusted_anchor(observed, Some(stamp), None), None);
-        assert_eq!(trusted_anchor(observed, Some(stamp), Some(stamp - delay)), None);
-        assert_eq!(trusted_anchor(observed, Some(stamp), Some(stamp + Duration::from_secs(1))), None);
+        assert_eq!(
+            trusted_anchor(observed, Some(stamp), Some(stamp - delay)),
+            None
+        );
+        assert_eq!(
+            trusted_anchor(observed, Some(stamp), Some(stamp + Duration::from_secs(1))),
+            None
+        );
     }
 }

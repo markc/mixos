@@ -222,7 +222,10 @@ mod tests {
         let mut slow = LateLatch::default();
         fast.flipped(Some(at), PERIOD / 2, true);
         slow.flipped(Some(at), PERIOD, true);
-        assert_ne!(fast.plan(at, MARGIN).deadline, slow.plan(at, MARGIN).deadline);
+        assert_ne!(
+            fast.plan(at, MARGIN).deadline,
+            slow.plan(at, MARGIN).deadline
+        );
         let mut flip = at;
         for _ in 0..3 {
             slow.committed(Duration::from_millis(2));
@@ -230,7 +233,10 @@ mod tests {
             assert_eq!(slow.flipped(Some(flip), PERIOD, true), Some(false));
         }
         assert!(slow.plan(flip, MARGIN).deadline.is_none());
-        assert!(fast.plan(at, MARGIN).deadline.is_some(), "no global back-off");
+        assert!(
+            fast.plan(at, MARGIN).deadline.is_some(),
+            "no global back-off"
+        );
     }
 
     #[test]

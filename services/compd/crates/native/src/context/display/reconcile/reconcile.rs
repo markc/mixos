@@ -142,7 +142,10 @@ fn bring_up(
     ctx.pipe_mut().deadline_timer = None;
     ctx.pipe_mut().late_latch = Default::default();
     ctx.pipe_mut().last_vblank = None;
-    state.state.redraw.release(&world::state::state::output_key(&ctx.pipe().output));
+    state
+        .state
+        .redraw
+        .release(&world::state::state::output_key(&ctx.pipe().output));
     ctx.pipe_mut().drm_output = None;
     // Built against the `Output` this pipe will actually keep — `build` sizes the
     // primary plane from it to pass the atomic test.
@@ -304,7 +307,10 @@ fn pick_target(drm: &DrmDevice, connected: &[connector::Info]) -> Option<connect
 /// Tear the display down and idle the render loop until a monitor returns.
 fn go_dark(state: &mut Loop, ctx: &mut NativeRenderContext) {
     crate::render::execute::late_latch::cancel(ctx.pipe_mut());
-    state.state.redraw.release(&world::state::state::output_key(&ctx.pipe().output));
+    state
+        .state
+        .redraw
+        .release(&world::state::state::output_key(&ctx.pipe().output));
     ctx.pipe_mut().drm_output = None;
     *state.inner.kernel.get_mut(&DISPLAY_OFF_MUT) = true;
     *state.inner.kernel.get_mut(&OUTPUT_MODES_SNAPSHOT_MUT) = OutputModesSnapshot::default();
@@ -416,7 +422,10 @@ fn add_output(
 /// but leaves any secondary pipes to the caller's prune step.
 fn go_dark_primary(state: &mut Loop, ctx: &mut NativeRenderContext) {
     crate::render::execute::late_latch::cancel(ctx.pipe_mut());
-    state.state.redraw.release(&world::state::state::output_key(&ctx.pipe().output));
+    state
+        .state
+        .redraw
+        .release(&world::state::state::output_key(&ctx.pipe().output));
     ctx.outputs[0].drm_output = None;
     // The anchor keeps its `wl_output` global AND its Space mapping, deliberately.
     //
