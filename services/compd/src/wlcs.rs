@@ -228,12 +228,14 @@ impl Adapter {
                     "absolute" => {
                         let point =
                             policy_host::input::wlcs_world_point(state, number("x"), number("y"));
-                        let previous = state
+                        // Absolute motion establishes a position even after
+                        // native focus cleanup cleared the previous target.
+                        let previous = *state
                             .inner
                             .comp
                             .injection
                             .agent_pointer
-                            .unwrap_or((0.0, 0.0));
+                            .get_or_insert((0.0, 0.0));
                         InputOp::PointerMove {
                             target: PointerMoveTarget::Relative {
                                 dx: point.x - previous.0,
@@ -273,15 +275,18 @@ impl Adapter {
                 if self.touch_slots.contains(&slot) == (phase == "touch_down") {
                     return json!({"error": "invalid_touch_slot_state", "slot": slot});
                 }
-                if let Err(reply) =
-                    policy_host::input::agent_touch(state, slot, phase, number("x"), number("y"))
-                {
+                let result =
+                    policy_host::input::agent_touch(state, slot, phase, number("x"), number("y"));
+                // An undeliverable release still ends this device's contact.
+                // Otherwise destroying the target would strand the slot.
+                if phase == "touch_up" {
+                    self.touch_slots.remove(&slot);
+                }
+                if let Err(reply) = result {
                     return json!({"error": format!("{reply:?}")});
                 }
                 if phase == "touch_down" {
                     self.touch_slots.insert(slot);
-                } else if phase == "touch_up" {
-                    self.touch_slots.remove(&slot);
                 }
             }
             other => return json!({"error": format!("unknown request {other}")}),
