@@ -415,6 +415,11 @@ fn document(
         .inner;
     let draw_preview = |ui: &mut Ui| {
         toolkit::content::surface(ui, &app.editor_style, |ui| {
+            for style in [egui::TextStyle::Body, egui::TextStyle::Monospace] {
+                if let Some(font) = ui.style_mut().text_styles.get_mut(&style) {
+                    font.size = f32::from(app.ui.font_px);
+                }
+            }
             ui.set_min_size(ui.available_size());
             egui::ScrollArea::both()
                 .id_salt(("ced.preview", tab.id))
@@ -437,8 +442,14 @@ fn document(
             let middle = area.center().x;
             let left = egui::Rect::from_min_max(area.min, egui::pos2(middle, area.max.y));
             let right = egui::Rect::from_min_max(egui::pos2(middle, area.min.y), area.max);
-            let out = ui.scope_builder(egui::UiBuilder::new().max_rect(left), draw_editor).inner;
-            ui.scope_builder(egui::UiBuilder::new().max_rect(right), draw_preview);
+            let out = ui.scope_builder(egui::UiBuilder::new().max_rect(left), |ui| {
+                ui.set_clip_rect(left.intersect(ui.clip_rect()));
+                draw_editor(ui)
+            }).inner;
+            ui.scope_builder(egui::UiBuilder::new().max_rect(right), |ui| {
+                ui.set_clip_rect(right.intersect(ui.clip_rect()));
+                draw_preview(ui);
+            });
             ui.painter().vline(middle, area.y_range(), egui::Stroke::new(
                 1.0, ui.visuals().widgets.noninteractive.bg_stroke.color,
             ));

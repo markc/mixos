@@ -77,6 +77,12 @@ impl PreviewMode {
     }
 }
 
+#[derive(Default)]
+struct TabPreview {
+    language: String,
+    cache: toolkit::markdown::Preview<(TabId, String)>,
+}
+
 /// The find bar.
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct FindBar {
@@ -226,7 +232,7 @@ pub struct App {
     /// View state only: never written to the document session.
     preview_modes: HashMap<TabId, PreviewMode>,
     /// Each tab keeps its own one-slot cache; language is part of its key.
-    previews: HashMap<TabId, toolkit::markdown::Preview<(TabId, String)>>,
+    previews: HashMap<TabId, TabPreview>,
 }
 
 impl App {
@@ -316,8 +322,10 @@ impl App {
         let m = t.mirror.as_ref()?;
         let mut source = String::new();
         m.text().read(0..m.text().len(), &mut source);
-        Some(self.previews.entry(tab).or_default().document(
-            (tab, t.language().to_owned()), m.view_gen(), || &source,
+        let preview = self.previews.entry(tab).or_default();
+        preview.language = t.language().to_owned();
+        Some(preview.cache.document(
+            (tab, preview.language.clone()), m.view_gen(), || &source,
         ))
     }
 
@@ -329,6 +337,13 @@ impl App {
             .map(|t| (t.id, self.preview_mode(t.id))).collect();
         for (tab, mode) in hints {
             self.ctl.set_view_hint(tab, "preview", mode.as_str());
+            let language = self.tab(tab).map(|t| t.language().to_owned()).unwrap_or_default();
+            if let Some(preview) = self.previews.get_mut(&tab)
+                && preview.language != language
+            {
+                preview.cache.clear();
+                preview.language = language;
+            }
         }
         for action in ActionId::all() {
             self.ctl.set_action_enabled(action, self.enabled(action));
@@ -985,6 +1000,11 @@ mod tests {
                 if let Effect::Send { req, out } = effect {
                     let args = serde_json::from_str(&out.body).unwrap();
                     let mut answer = service.handle("local:ced", &out.verb, &args);
+                    // FakeEditd models buffers, not their window holders.
+                    if out.verb == "edit.close" {
+                        answer.rc = 0;
+                        answer.body = json!({});
+                    }
                     if out.verb == "edit.open" && answer.rc == 0 {
                         let path = answer.body["path"].as_str().map(std::path::Path::new);
                         answer.body["language"] = json!(edit::lang::detect(path, ""));
@@ -1072,6 +1092,7 @@ mod tests {
         assert_eq!(a.tab(one).unwrap().mirror.as_ref().unwrap().view_gen(), gen_before);
         assert_eq!(a.preview_mode(one), PreviewMode::Source);
         assert_eq!(a.preview_modes[&one], PreviewMode::Split);
+        assert!(a.previews[&one].cache.cached().is_none());
         let language = a.preview_document(one).unwrap();
         assert!(!std::sync::Arc::ptr_eq(&edited, &language));
         for action in [ActionId::ViewMarkdownSource, ActionId::ViewMarkdownSplit, ActionId::ViewMarkdownPreview] {
