@@ -716,9 +716,14 @@ mod tests {
         let dir = tmpdir("authority_private_lock");
         let paths = paths_in(&dir);
         let key = SigningKey::from_bytes(&[23u8; 32]);
-        write_signed_inventory(&paths, &key, 7, serde_json::json!([{
-            "name": "beta", "mesh_ip": "192.0.2.5", "bus": true, "status": "active"
-        }]));
+        write_signed_inventory(
+            &paths,
+            &key,
+            7,
+            serde_json::json!([{
+                "name": "beta", "mesh_ip": "192.0.2.5", "bus": true, "status": "active"
+            }]),
+        );
         let lock = appended_path(&paths.baseline, ".lock");
         std::fs::write(&lock, "").unwrap();
         std::fs::set_permissions(&lock, std::fs::Permissions::from_mode(0o644)).unwrap();
