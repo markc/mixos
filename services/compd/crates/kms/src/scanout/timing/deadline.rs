@@ -251,6 +251,23 @@ mod tests {
     }
 
     #[test]
+    fn slightly_future_flip_arms_the_next_refresh_with_the_seed_budget() {
+        let observed = Instant::now();
+        let now = Duration::from_secs(10);
+        for offset in [Duration::from_micros(300), Duration::from_micros(1500)] {
+            let at = super::super::vblank::vblank::trusted_anchor(
+                observed, Some(now + offset), Some(now),
+            );
+            let mut latch = ready(observed);
+            latch.flipped(at, PERIOD, true);
+            let plan = latch.plan(observed, MARGIN);
+            assert_eq!(plan.target.unwrap().vblank, observed + offset + PERIOD);
+            assert_eq!(plan.budget, Duration::from_micros(3500));
+            assert_eq!(plan.deadline, Some(observed + offset + PERIOD - plan.budget));
+        }
+    }
+
+    #[test]
     fn deadline_sample_includes_dispatch_and_sibling_render_time() {
         let at = Instant::now();
         let mut a = ready(at);

@@ -122,10 +122,16 @@ flip with pending redraws, each CRTC waits until the next kernel-timestamped
 vblank minus its render budget. Two 50-commit buckets retain the maximum time
 from the armed deadline (or clamped plan instant) to commit return, including
 dispatch delay and sibling rendering. Exportable render fences also contribute
-their completion observation through a non-blocking calloop source. The GPU
-observation includes dispatch latency; unavailable fences leave GPU tails to
-the learned floor. Modesets and the first commit and flip after reset do not
+their kernel signal timestamp through a non-blocking calloop source. GPU
+callback dispatch latency is excluded; unavailable or invalid timestamps leave
+GPU tails to the learned floor. Modesets and the first commit and flip after reset do not
 train steady-state cost or phase.
+
+Deadline anchoring accepts DRM scanout timestamps up to 2 ms ahead of the
+handler's monotonic clock, covering an interrupt delivered during blanking
+before active scanout begins. Larger future offsets and dispatch delays over
+200 ms are rejected. The tearing phase keeps its existing arrival fallback
+for future timestamps.
 
 The budget is the larger of that measured maximum and a learned floor, plus
 `late_latch_margin_us` (default 1500). A miss on a deferred frame raises the floor

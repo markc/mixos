@@ -8,8 +8,8 @@ use std::rc::Rc;
 use std::time::Instant;
 
 /// Readability on an exported sync_file means the GPU fence has signalled.
-/// Record its observation without borrowing the renderer or waiting on the GPU.
-/// The observation includes event dispatch latency, a conservative upper bound.
+/// Read the kernel signal time without borrowing the renderer or waiting on the
+/// GPU. Callback dispatch latency must not train the render budget.
 pub struct GpuCompletion<D: 'static> {
     elapsed: Rc<Cell<Option<std::time::Duration>>>,
     token: RegistrationToken,
@@ -22,14 +22,29 @@ impl<D: 'static> GpuCompletion<D> {
         fd: std::os::fd::OwnedFd,
         start: Instant,
     ) -> Option<Self> {
+        Self::with_query(handle, fd, start, kms::scanout::fence::completion::signalled_at)
+    }
+
+    fn with_query(
+        handle: &LoopHandle<'static, D>,
+        fd: std::os::fd::OwnedFd,
+        start: Instant,
+        query: impl Fn(std::os::fd::BorrowedFd<'_>) -> Option<std::time::Duration> + 'static,
+    ) -> Option<Self> {
         use smithay::reexports::calloop::{Interest, Mode, PostAction, generic::Generic};
+        use std::os::fd::AsFd;
         let elapsed = Rc::new(Cell::new(None));
         let completed = elapsed.clone();
         let token = handle
             .insert_source(
                 Generic::new(fd, Interest::READ, Mode::Level),
-                move |_, _, _| {
-                    completed.set(Some(start.elapsed()));
+                move |_, fd, _| {
+                    let signal = query(fd.as_fd());
+                    let observed = Instant::now();
+                    let now = kms::scanout::timing::vblank::vblank::monotonic_now();
+                    completed.set(signal.and_then(|signal| {
+                        elapsed_at(start, observed, now?, signal)
+                    }));
                     Ok(PostAction::Disable)
                 },
             )
@@ -44,6 +59,16 @@ impl<D: 'static> GpuCompletion<D> {
     pub fn elapsed(&self) -> Option<std::time::Duration> {
         self.elapsed.get()
     }
+}
+
+fn elapsed_at(
+    start: Instant,
+    observed: Instant,
+    now: std::time::Duration,
+    signal: std::time::Duration,
+) -> Option<std::time::Duration> {
+    // A future signal or one before this frame's origin is not a cost sample.
+    observed.checked_duration_since(start)?.checked_sub(now.checked_sub(signal)?)
 }
 
 impl<D: 'static> Drop for GpuCompletion<D> {
@@ -227,16 +252,27 @@ mod tests {
         use std::os::unix::net::UnixStream;
         let mut event_loop: EventLoop<'static, ()> = EventLoop::try_new().unwrap();
         let (reader, mut writer) = UnixStream::pair().unwrap();
-        let start = Instant::now() - Duration::from_millis(3);
-        let sample = GpuCompletion::new(&event_loop.handle(), reader.into(), start).unwrap();
+        let observed = Instant::now();
+        let now = kms::scanout::timing::vblank::vblank::monotonic_now().unwrap();
+        let start = observed - Duration::from_millis(20);
+        let signal = now - Duration::from_millis(17);
+        // Model a 3 ms GPU completion whose callback is 17 ms late. Use the
+        // real calloop source with a controlled timestamp query, without a GPU.
+        let queries = Rc::new(Cell::new(0));
+        let calls = queries.clone();
+        let sample = GpuCompletion::with_query(&event_loop.handle(), reader.into(), start, move |_| {
+            calls.set(calls.get() + 1);
+            Some(signal)
+        }).unwrap();
         event_loop.dispatch(Some(Duration::ZERO), &mut ()).unwrap();
         assert_eq!(sample.elapsed(), None);
         writer.write_all(&[1]).unwrap();
         event_loop.dispatch(Some(Duration::ZERO), &mut ()).unwrap();
-        assert!(sample.elapsed().unwrap() >= Duration::from_millis(3));
+        assert!(sample.elapsed().unwrap().abs_diff(Duration::from_millis(3)) < Duration::from_millis(1));
         let elapsed = sample.elapsed();
         event_loop.dispatch(Some(Duration::ZERO), &mut ()).unwrap();
         assert_eq!(sample.elapsed(), elapsed, "readiness disables the source");
+        assert_eq!(queries.get(), 1);
         drop(sample);
         event_loop.dispatch(Some(Duration::ZERO), &mut ()).unwrap();
 
@@ -244,6 +280,32 @@ mod tests {
         let sample =
             GpuCompletion::new(&event_loop.handle(), reader.into(), Instant::now()).unwrap();
         drop(sample); // reset/prune before completion
+        event_loop.dispatch(Some(Duration::ZERO), &mut ()).unwrap();
+    }
+
+    #[test]
+    fn gpu_cost_excludes_late_dispatch_and_rejects_unrelated_timestamps() {
+        let start = Instant::now();
+        let clock_start = Duration::from_secs(10);
+        let cost = Duration::from_millis(3);
+        for dispatch in [Duration::from_millis(4), Duration::from_millis(50)] {
+            assert_eq!(elapsed_at(start, start + dispatch, clock_start + dispatch, clock_start + cost), Some(cost));
+        }
+        assert_eq!(elapsed_at(start, start + cost, clock_start + cost, clock_start - cost), None);
+        assert_eq!(elapsed_at(start, start + cost, clock_start, clock_start + cost), None);
+    }
+
+    #[test]
+    fn readable_fd_without_a_kernel_signal_timestamp_does_not_train_gpu_cost() {
+        use std::io::Write;
+        use std::os::unix::net::UnixStream;
+        let mut event_loop: EventLoop<'static, ()> = EventLoop::try_new().unwrap();
+        let (reader, mut writer) = UnixStream::pair().unwrap();
+        let sample = GpuCompletion::new(&event_loop.handle(), reader.into(), Instant::now() - Duration::from_millis(50)).unwrap();
+        writer.write_all(&[1]).unwrap();
+        event_loop.dispatch(Some(Duration::ZERO), &mut ()).unwrap();
+        assert_eq!(sample.elapsed(), None);
+        drop(sample);
         event_loop.dispatch(Some(Duration::ZERO), &mut ()).unwrap();
     }
 }

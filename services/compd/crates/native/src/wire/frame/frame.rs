@@ -441,12 +441,15 @@ fn process_vblank_inner(
     // must NOT use `start_time.elapsed()`: that is a since-launch clock, a
     // different epoch entirely.
     let observed = std::time::Instant::now();
+    let kernel_now = kms::scanout::timing::vblank::vblank::monotonic_now();
     let anchored = kms::scanout::timing::vblank::vblank::trusted_anchor(
         observed,
         time,
-        kms::scanout::timing::vblank::vblank::monotonic_now(),
+        kernel_now,
     );
-    ctx.outputs[idx].last_vblank = Some(anchored.unwrap_or(observed));
+    ctx.outputs[idx].last_vblank = Some(kms::scanout::timing::vblank::vblank::anchor(
+        observed, time, kernel_now,
+    ));
 
     // 1. Pop presentation feedback for the frame that just hit screen. No output
     //    during a monitor-switch teardown window → nothing to pop.
