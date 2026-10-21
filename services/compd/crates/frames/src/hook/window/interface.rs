@@ -350,11 +350,8 @@ fn _initial_mapped(state: &mut Loop, window: Window) {
         .is_none()
         .then(|| {
             let space = &state.inner.space_state().state;
-            let (parent, offset) = protocols::window::child::parent_offset(
-                space.elements(),
-                &window,
-                fallback,
-            )?;
+            let (parent, offset) =
+                protocols::window::child::parent_offset(space.elements(), &window, fallback)?;
             space.element_location(&parent).map(|at| at + offset)
         })
         .flatten();

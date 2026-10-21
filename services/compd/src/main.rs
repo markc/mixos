@@ -335,10 +335,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Kernel data, beside GPU_BINDING: created above, before anything that
         // registers a capability, and inserted here for everything on the
         // compositor thread. Producers hold their own clone.
-        state.inner.kernel.insert(
-            &render_gles::format::registrar::FORMATS,
-            formats.clone(),
-        );
+        state
+            .inner
+            .kernel
+            .insert(&render_gles::format::registrar::FORMATS, formats.clone());
     }
 
     // Re-advertise per-world foreign-toplevels when the spawn-target world changes —

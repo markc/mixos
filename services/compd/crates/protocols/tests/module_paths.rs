@@ -17,18 +17,30 @@ fn clipboard_capture_rejects_old_generations_and_keeps_advertised_order() {
     assert_eq!(capture.mime_types(), ["text/plain", "image/png"]);
     assert_eq!(capture.bytes_for("image/png").unwrap().as_slice(), [2, 3]);
     assert_eq!(capture.headroom(4), 1);
-    assert_eq!(policy::ordered(&["image/png".into(), "text/plain".into()])[0].0, 1);
+    assert_eq!(
+        policy::ordered(&["image/png".into(), "text/plain".into()])[0].0,
+        1
+    );
 }
 
 #[test]
 fn session_grants_preserve_ownership_across_rename_and_release() {
     let mut store = SessionStore::default();
     store.grant("session", "editor", 1).unwrap();
-    assert_eq!(store.grant("session", "editor", 2), Err(GrantError::NameInUse));
-    assert_eq!(store.grant("session", "other", 1), Err(GrantError::AlreadyAdded));
+    assert_eq!(
+        store.grant("session", "editor", 2),
+        Err(GrantError::NameInUse)
+    );
+    assert_eq!(
+        store.grant("session", "other", 1),
+        Err(GrantError::AlreadyAdded)
+    );
     store.rename("session", "editor", "renamed").unwrap();
     store.release("session", "renamed", 2);
-    assert_eq!(store.grant("session", "renamed", 2), Err(GrantError::NameInUse));
+    assert_eq!(
+        store.grant("session", "renamed", 2),
+        Err(GrantError::NameInUse)
+    );
     store.release("session", "renamed", 1);
     store.grant("session", "renamed", 2).unwrap();
     assert!(store.knows("session", "renamed"));

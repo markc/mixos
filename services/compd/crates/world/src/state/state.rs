@@ -274,10 +274,7 @@ impl Orchestrator {
         kernel_data.insert(&drivers::audio::base::MEDIA, Some(MediaController::new()));
         // GPU driver: DRM binding slot, populated post-init by the backend.
         kernel_data.insert(&GPU_BINDING, None);
-        kernel_data.insert(
-            &render_gles::format::registrar::COMPOSITE_NODE,
-            None,
-        );
+        kernel_data.insert(&render_gles::format::registrar::COMPOSITE_NODE, None);
         // Resume driver: vblank-seen flag + resume watchdog.
         kernel_data.insert(&drivers::resume::base::VBLANK_SEEN, false);
         kernel_data.insert(&drivers::resume::base::RESUME_WATCHDOG, None);
@@ -433,7 +430,7 @@ impl Orchestrator {
             // Lock never calls this function at all, which is why the session world
             // survives it; the guard covers the rest.
             if previous != self.worlds.active_id() {
-                graphics::bridge::publish::retire::retire::retire_world(previous.as_u128());
+                graphics::bridge::publish::retire::retire_world(previous.as_u128());
                 self.release_world_surfaces(previous);
             }
             self.bus.send(&WORLD_SWITCHED_TX, WorldSwitched);

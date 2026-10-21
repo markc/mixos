@@ -289,8 +289,7 @@ pub fn assemble(formats: &render_gles::format::registrar::Registrar) -> DisplayA
 
     let output = kms::output::physical::physical::create(&connector, &identity);
     let mode = Mode::from(drm_mode);
-    let position =
-        render_gles::preference::layout::output::position_for(Some(&identity.key()), 0);
+    let position = render_gles::preference::layout::output::position_for(Some(&identity.key()), 0);
     kms::output::physical::physical::apply_initial_state(
         &output,
         mode,
@@ -406,14 +405,13 @@ fn resolve_mode(
         // else fall through to the default selection policy. An unmatched
         // advertised request inside mode.select falls back to default policy too.
         None => {
-            let dm =
-                render_gles::preference::output::profile::default_mode().map(|mode| {
-                    OutputProfile {
-                        identity: None,
-                        mode: Some(mode),
-                        active: true,
-                    }
-                });
+            let dm = render_gles::preference::output::profile::default_mode().map(|mode| {
+                OutputProfile {
+                    identity: None,
+                    mode: Some(mode),
+                    active: true,
+                }
+            });
             kms::mode::select::select::select(connector, dm.as_ref())
                 .expect("connector advertises no modes")
         }
@@ -421,9 +419,7 @@ fn resolve_mode(
 }
 
 #[cfg(feature = "mode-synthesize")]
-fn synthesize_mode(
-    profile: &render_gles::preference::output::profile::OutputProfile,
-) -> DrmMode {
+fn synthesize_mode(profile: &render_gles::preference::output::profile::OutputProfile) -> DrmMode {
     use kms::mode::synthesize::synthesize;
     assert!(
         render_gles::preference::enable::safety::get().mode_synthesize,
@@ -450,9 +446,7 @@ fn synthesize_mode(
 }
 
 #[cfg(not(feature = "mode-synthesize"))]
-fn synthesize_mode(
-    _profile: &render_gles::preference::output::profile::OutputProfile,
-) -> DrmMode {
+fn synthesize_mode(_profile: &render_gles::preference::output::profile::OutputProfile) -> DrmMode {
     abort!(
         "an output profile requests mode synthesis but the backend was built without the \
          `mode-synthesize` feature"

@@ -1395,9 +1395,7 @@ pub fn execute(lp: &mut Loop, effects: Vec<Effect>) {
                         if let Some(window) = window_of(lp, id) {
                             // Already fullscreen and asked again (an `{output}`):
                             // move it there (a re-target); `fullscreen_set` returns early.
-                            if enabled
-                                && protocols::window::ident::states(&window).fullscreen
-                            {
+                            if enabled && protocols::window::ident::states(&window).fullscreen {
                                 world::comp::fullscreen::retarget(lp, &window);
                             } else {
                                 world::window::interface::draw::fullscreen::fullscreen_set(

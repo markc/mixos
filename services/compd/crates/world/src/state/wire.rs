@@ -501,8 +501,7 @@ impl WireTrait for Orchestrator {
             // INVALID entry per fourcc, so an implicit buffer still passes there. One rule,
             // no renderer detection — the published set answers for whoever is compositing.
             if !render_gles::format::resolve::importable_pair(
-                self.kernel
-                    .get(&render_gles::format::registrar::FORMATS),
+                self.kernel.get(&render_gles::format::registrar::FORMATS),
                 code,
                 modifier,
             ) {

@@ -200,9 +200,9 @@ fn arm(state: &mut Loop, ctx_rc: &Ctx, edid_key: String, baseline: DrmMode) -> R
                         warn!("auto-revert failed: {e}");
                     }
                     drop(c);
-                    state.state.schedule_redraw(
-                        protocols::redraw::schedule::RedrawReason::Output,
-                    );
+                    state
+                        .state
+                        .schedule_redraw(protocols::redraw::schedule::RedrawReason::Output);
                     set_result(state, ApplyResult::Reverted);
                 }
                 TimeoutAction::Drop

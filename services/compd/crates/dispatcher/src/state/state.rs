@@ -2845,8 +2845,7 @@ pub mod xwm_impls {
     /// instead; the drain's own dedup goes back to being a safety net rather than the
     /// thing that makes the duplicate harmless.
     fn queue_x11_map(dispatch: &mut Dispatch, window: X11Surface) {
-        if window.wl_surface().is_none()
-            && protocols::window::ident::is_popup_x11_surface(&window)
+        if window.wl_surface().is_none() && protocols::window::ident::is_popup_x11_surface(&window)
         {
             protocols::window::shell::hold_map_for_surface(&window);
             return;

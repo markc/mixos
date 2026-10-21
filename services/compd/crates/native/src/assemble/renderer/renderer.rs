@@ -54,11 +54,7 @@ fn assemble_gles(
 
     // GpuManager with the High-priority EGL factory; register the node.
     let mut gpus = render_gles::multigpu::factory::create();
-    render_gles::multigpu::factory::add_node(
-        &mut gpus,
-        display.primary_gpu,
-        display.gbm.clone(),
-    );
+    render_gles::multigpu::factory::add_node(&mut gpus, display.primary_gpu, display.gbm.clone());
 
     // Allocator + exporter (flag policy in drm.gbm/gbm.alloc).
     let allocator = kms::gbm::alloc::alloc::allocator(display.gbm.clone());

@@ -36,9 +36,7 @@ pub const FOURCC: smithay::backend::allocator::Fourcc =
 
 /// The format UI renders through. Kept as a function for the callers that
 /// took the registrar; the answer no longer depends on it.
-pub fn texture_format(
-    _formats: &render_gles::format::registrar::Registrar,
-) -> wgpu::TextureFormat {
+pub fn texture_format(_formats: &render_gles::format::registrar::Registrar) -> wgpu::TextureFormat {
     FORMAT
 }
 

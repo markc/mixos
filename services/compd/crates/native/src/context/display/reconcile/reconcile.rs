@@ -491,9 +491,7 @@ pub fn reconcile(state: &mut Loop, ctx_rc: &Ctx) -> Option<OutputChange> {
                 .state
                 .redraw
                 .remove(&world::state::state::output_key(&removed.output));
-            protocols::tearing::liveness::remove(&world::state::state::output_key(
-                &removed.output,
-            ));
+            protocols::tearing::liveness::remove(&world::state::state::output_key(&removed.output));
             // Every world's Space, not just the hosted one (`unmap_output_everywhere`).
             state.inner.unmap_output_everywhere(&removed.output);
             // Destroy this output's `wl_output` global so re-adding the monitor doesn't
@@ -512,7 +510,7 @@ pub fn reconcile(state: &mut Loop, ctx_rc: &Ctx) -> Option<OutputChange> {
             // so their rings are freed here rather than inferred from a lapse in
             // draw requests. Not the eviction path below — that hands the SAME
             // monitor to another pipe, so its panes stay valid.
-            graphics::bridge::publish::retire::retire::retire_output(
+            graphics::bridge::publish::retire::retire_output(
                 &world::state::state::output_key(&removed.output),
             );
             // `removed.drm_output` drops here → frees its CRTC.
@@ -554,9 +552,9 @@ pub fn reconcile(state: &mut Loop, ctx_rc: &Ctx) -> Option<OutputChange> {
                             .state
                             .redraw
                             .remove(&world::state::state::output_key(&removed.output));
-                        protocols::tearing::liveness::remove(
-                            &world::state::state::output_key(&removed.output),
-                        );
+                        protocols::tearing::liveness::remove(&world::state::state::output_key(
+                            &removed.output,
+                        ));
                         // Every world's Space, not just the hosted one
                         // (`unmap_output_everywhere`).
                         state.inner.unmap_output_everywhere(&removed.output);

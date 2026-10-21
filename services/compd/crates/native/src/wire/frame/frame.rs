@@ -59,7 +59,7 @@ pub fn register(
     // `published` flag itself is still set (`notify_offthread_published`), so the
     // next commit-driven composite samples the buffer, and the flag survives
     // until the gate lifts and the loop free-runs again.
-    graphics::bridge::publish::wake::wake::set_offthread_waker(std::sync::Arc::new(move || {
+    graphics::bridge::publish::wake::set_offthread_waker(std::sync::Arc::new(move || {
         if !protocols::tearing::gate::engaged() {
             redraw_ping.ping();
         }
@@ -132,14 +132,15 @@ pub fn register(
             // that gate exists to stop. Short-circuited, so the flag survives the
             // gate and the publish is not lost when exclusivity lifts.
             let published = !protocols::tearing::gate::engaged()
-                && graphics::bridge::publish::wake::wake::take_offthread_published();
+                && graphics::bridge::publish::wake::take_offthread_published();
             // A publish is a redraw request with no commit behind it, so nothing
             // has moved the epoch: mark the pipes stale or the executor's
             // epoch-current skip would (correctly) find nothing to do.
             if published {
-                state.state.redraw.request_silent_for(
-                    protocols::redraw::schedule::RedrawReason::Background,
-                );
+                state
+                    .state
+                    .redraw
+                    .request_silent_for(protocols::redraw::schedule::RedrawReason::Background);
             }
             // No output live: nothing renders, but the control plane must still
             // move. Pumped here, per request, rather than by a repeating dark tick.
@@ -425,10 +426,10 @@ fn process_vblank_inner(
     // Per pipe: a global silent request would leave idle
     // sibling pipes behind the epoch with nothing to wake them.
     if !ctx.outputs[idx].props_applied {
-        state.state.redraw.request_pipe_silent(
-            &key,
-            protocols::redraw::schedule::RedrawReason::Output,
-        );
+        state
+            .state
+            .redraw
+            .request_pipe_silent(&key, protocols::redraw::schedule::RedrawReason::Output);
     }
     // Phase reference for the tearing policy's "time until the next vblank".
     //

@@ -38,9 +38,7 @@ impl WindowLifecycleEvent {
             | Self::Fullscreen(candidate, _)
             | Self::Activate(candidate, _) => candidate == window,
             Self::Destroyed(uuid, _, _) => window.uuid() == Some(*uuid),
-            Self::DragSettled(surface) => {
-                protocols::window::find::is_surface(window, surface)
-            }
+            Self::DragSettled(surface) => protocols::window::find::is_surface(window, surface),
         }
     }
 

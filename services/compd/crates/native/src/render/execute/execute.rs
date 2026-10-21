@@ -867,9 +867,10 @@ pub fn execute(
                         ),
                     }
                     if frame.number < 3 {
-                        state.state.redraw.request_gated(
-                            protocols::redraw::schedule::RedrawReason::Rearm,
-                        );
+                        state
+                            .state
+                            .redraw
+                            .request_gated(protocols::redraw::schedule::RedrawReason::Rearm);
                     }
                 }
 
@@ -912,7 +913,7 @@ pub fn execute(
                             let src = src_override.unwrap_or(full_src);
                             let result: Result<(), _> = (|| {
                                 let mut entry_fb = r.bind(&mut entry_tex).map_err(
-                                    graphics::capture::registry::registry::BlitErr::Bind,
+                                    graphics::capture::registry::BlitErr::Bind,
                                 )?;
                                 scene_result
                                     .blit_frame_result(
@@ -925,7 +926,7 @@ pub fn execute(
                                         std::iter::empty::<Id>(),
                                     )
                                     .map(|_sync| ())
-                                    .map_err(graphics::capture::registry::registry::BlitErr::Blit)
+                                    .map_err(graphics::capture::registry::BlitErr::Blit)
                             })();
                             if let Err(e) = result {
                                 warn!("capture blit failed: entry_id={entry_id:?} err={e:?}");
@@ -1256,7 +1257,7 @@ pub fn execute(
     // A producer that needs a frame at a later instant (an UI
     // animation's `RedrawRequest::At`) offered it during this frame; one timer
     // requests that frame when it comes, instead of a frame every vblank until then.
-    if let Some(at) = graphics::bridge::publish::wake::wake::take_deadline() {
+    if let Some(at) = graphics::bridge::publish::wake::take_deadline() {
         let handle = state.loop_handle.clone();
         state.state.redraw.request_at(
             &handle,
@@ -1267,7 +1268,7 @@ pub fn execute(
     }
     // Capture's time-based keep-alive: its own deadline, its
     // own reason.
-    if let Some(at) = graphics::bridge::publish::wake::wake::take_capture_deadline() {
+    if let Some(at) = graphics::bridge::publish::wake::take_capture_deadline() {
         let handle = state.loop_handle.clone();
         state.state.redraw.request_at(
             &handle,
@@ -1489,8 +1490,7 @@ fn present(
         // planes and the kernel rejects it. On the frame a target first appears
         // the flags are still from the previous resolution, so this yields one
         // ordinary vsync'd frame rather than a rejected commit.
-        let tear =
-            active.tear_now(until_vblank, refresh) && protocols::tearing::gate::tearing();
+        let tear = active.tear_now(until_vblank, refresh) && protocols::tearing::gate::tearing();
         pipe.last_tear = tear;
         tear
     };
