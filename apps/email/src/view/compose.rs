@@ -334,6 +334,31 @@ fn form(
     palette: &editor::Palette,
     events: &mut Vec<UiEvent>,
 ) {
+    // Leave room below the editor. Otherwise a fill-height editor makes
+    // the resizable dialog grow again on every frame.
+    let spacing = ui.spacing().item_spacing.y;
+    let mut footer = if compose.reply.is_some() {
+        ui.spacing().interact_size.y.max(toolkit::toggle::TRACK.y) + spacing
+    } else {
+        0.0
+    };
+    let text_height = |text: String| {
+        ui.painter()
+            .layout(text, egui::TextStyle::Body.resolve(ui.style()), ui.visuals().text_color(), ui.available_width())
+            .size().y + spacing
+    };
+    if let Some(from) = &compose.stale {
+        footer += text_height(crate::label_with(
+            "compose-from-new",
+            &[("old", &compose.draft.from), ("new", &from.address)],
+        )) + toolkit::chrome::Chrome::of(ui.ctx()).style.metrics.push_height + spacing;
+    }
+    if let Some(error) = &compose.error {
+        footer += text_height(crate::label_with("send-failed", &[("error", error)]));
+    }
+    if compose.busy {
+        footer += text_height(crate::label("sending"));
+    }
     // The label column fits the widest label any row can have, so opening
     // a row never moves the fields sideways.
     let font = egui::TextStyle::Body.resolve(ui.style());
@@ -477,8 +502,8 @@ fn form(
                 font_size: Some(egui::TextStyle::Body.resolve(ui.style()).size),
                 ..editor::View::prose()
             };
-            let height =
-                (ui.text_style_height(&egui::TextStyle::Body) * 8.0).max(ui.available_height());
+            let row_height = (view.font_size.unwrap() * view.line_height).round();
+            let height = (row_height * 8.0).max(ui.available_height() - footer);
             ui.allocate_ui(egui::vec2(ui.available_width(), height), |ui| {
                 let output = editor::show(
                     ui,
