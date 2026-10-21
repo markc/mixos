@@ -1006,6 +1006,9 @@ pub(super) fn window_only(action: ActionId, args: Option<&Value>) -> bool {
         | ActionId::ViewRemoteCarets
         | ActionId::ViewProblems
         | ActionId::ViewOutput
+        | ActionId::ViewMarkdownSource
+        | ActionId::ViewMarkdownSplit
+        | ActionId::ViewMarkdownPreview
         | ActionId::ViewReloadSettings
         | ActionId::HelpKeys
         | ActionId::HelpAbout => true,

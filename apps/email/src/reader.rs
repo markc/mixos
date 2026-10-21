@@ -9,8 +9,8 @@
 //! (an HTML body served as the text body, no body) is plain. The person
 //! can flip it per email (`view.reader.markdown`); flipping back to the
 //! detected format returns to automatic. The parsed document is cached
-//! here, keyed by the email id and a hash of its body, so it is parsed once
-//! per email and never per frame.
+//! by [`toolkit::markdown::Preview`], keyed by the email id and a hash of
+//! its body, so it is parsed once per email and never per frame.
 
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
@@ -18,7 +18,7 @@ use std::sync::Arc;
 use jmap::Email;
 use serde::Serialize;
 use serde_json::{Value, json};
-use toolkit::markdown::{Document, looks_like_markdown};
+use toolkit::markdown::{Document, Preview, looks_like_markdown};
 
 /// How a text body is shown.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
@@ -87,7 +87,7 @@ pub struct Reader {
     /// The person's choice for this email, when it differs from `detected`.
     chosen: Option<Format>,
     /// The parsed body, once it has been shown as Markdown.
-    document: Option<Arc<Document>>,
+    preview: Preview<String>,
 }
 
 impl Reader {
@@ -112,15 +112,15 @@ impl Reader {
             detected: detect(email),
             ..Self::default()
         };
-        self.parse(email);
+        self.cache_document(email);
     }
 
-    fn parse(&mut self, email: &Email) {
+    fn cache_document(&mut self, email: &Email) {
         if self.format() == Format::Markdown
-            && self.document.is_none()
+            && let Some((id, revision)) = &self.key
             && let Some((body, _)) = text_body(email)
         {
-            self.document = Some(Arc::new(Document::parse(body)));
+            self.preview.document(id.clone(), *revision, || body);
         }
     }
 
@@ -142,13 +142,13 @@ impl Reader {
         }
         let next = self.format().other();
         self.chosen = (next != self.detected).then_some(next);
-        self.parse(email);
+        self.cache_document(email);
     }
 
     /// The parsed document, when `email` is shown as Markdown.
     pub fn document(&self, email: &Email) -> Option<&Document> {
         (self.is_for(email) && self.format() == Format::Markdown)
-            .then_some(self.document.as_deref())
+            .then_some(self.preview.cached().map(Arc::as_ref))
             .flatten()
     }
 
@@ -221,16 +221,16 @@ mod tests {
         let a = email("a", Some("text/plain"), MD);
         let mut reader = Reader::default();
         reader.open(&a);
-        let first = reader.document.clone().unwrap();
+        let first = reader.preview.cached().unwrap().clone();
         reader.open(&a);
         assert!(
-            Arc::ptr_eq(&first, reader.document.as_ref().unwrap()),
+            Arc::ptr_eq(&first, reader.preview.cached().unwrap()),
             "not reparsed"
         );
         // A changed body is a new key.
         let edited = email("a", Some("text/plain"), "# Plan\n\n## Two\n");
         reader.open(&edited);
-        assert!(!Arc::ptr_eq(&first, reader.document.as_ref().unwrap()));
+        assert!(!Arc::ptr_eq(&first, reader.preview.cached().unwrap()));
         assert!(reader.document(&a).is_none(), "stale for the old body");
     }
 

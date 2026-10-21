@@ -55,8 +55,20 @@ pub struct Tab {
     pub editor: EditorModel,
     pub highlight: Highlight,
     pub diagnostics: Diagnostics,
-    /// Path given by the user (kept across reattach).
+    /// Path to reopen, updated from the service after Open or Save As.
     pub path: Option<String>,
+    /// Detected once after Save As, until fresh metadata arrives.
+    saved_language: Option<&'static str>,
+}
+
+impl Tab {
+    /// The saved detection during Save As, then the mirror's fresh metadata.
+    pub fn language(&self) -> &str {
+        let Some(m) = &self.mirror else {
+            return "text";
+        };
+        self.saved_language.unwrap_or(&m.meta().language)
+    }
 }
 
 /// A `ced.*` Bus request, as the bus thread hands it over.
@@ -150,6 +162,8 @@ struct OpWait {
 /// Controller-private per-tab state.
 #[derive(Default)]
 struct TabX {
+    /// Opaque session-only view hints supplied by the window.
+    view_hints: HashMap<&'static str, &'static str>,
     recovery_id: Option<String>,
     /// `edit.open` answered (success or failure) at least once.
     opened: bool,
@@ -325,6 +339,8 @@ pub struct Controller {
     /// The keys in force per action id, when the window has applied the
     /// person's bindings; `ced.actions` reports the defaults otherwise.
     keys: Option<HashMap<String, Vec<String>>>,
+    /// The window's current command enablement, for `ced.actions`.
+    action_enabled: HashMap<ActionId, bool>,
 }
 
 fn refusal(code: &str, message: impl Into<String>, reason: Option<&str>) -> String {
@@ -533,12 +549,38 @@ impl Controller {
             op_cmd: None,
             external: external::Store::default(),
             keys: None,
+            action_enabled: HashMap::new(),
         }
     }
 
     /// The keys in force per action id, for `ced.actions`.
     pub fn set_keys(&mut self, keys: HashMap<String, Vec<String>>) {
         self.keys = Some(keys);
+    }
+
+    /// Echo Markdown view enablement; older actions keep their Bus contract.
+    pub fn set_action_enabled(&mut self, action: ActionId, enabled: bool) {
+        if matches!(
+            action,
+            ActionId::ViewMarkdownSource
+                | ActionId::ViewMarkdownSplit
+                | ActionId::ViewMarkdownPreview
+        ) {
+            self.action_enabled.insert(action, enabled);
+        }
+    }
+
+    /// Keep a window's opaque per-tab hint until that tab closes.
+    pub fn set_view_hint(&mut self, tab: TabId, key: &'static str, value: &'static str) {
+        if let Some(x) = self.x.get_mut(&tab)
+            && x.view_hints.get(key).copied() != Some(value)
+        {
+            x.view_hints.insert(key, value);
+        }
+    }
+
+    fn view_hint(&self, tab: TabId, key: &str) -> Option<&str> {
+        self.x.get(&tab)?.view_hints.get(key).copied()
     }
 
     /// Tabs to reopen at [`Controller::start`] (the host loads session.json).
@@ -901,6 +943,7 @@ impl Controller {
             editor: EditorModel::default(),
             highlight,
             diagnostics: Diagnostics::default(),
+            saved_language: None,
             path,
         });
         self.x.insert(id, TabX::default());
@@ -1490,6 +1533,10 @@ impl Controller {
                 }
             }
         };
+        if let Some(t) = self.tab_mut(tab) {
+            t.path.clone_from(&open.path);
+            t.saved_language = None;
+        }
         if let Some(x) = self.x.get_mut(&tab) {
             x.recovery_id = Some(open.recovery_id.clone());
             x.opened = true;
@@ -1646,6 +1693,17 @@ impl Controller {
         };
         let mut resynced = false;
         if let Some(m) = &t.mirror {
+            if m.meta().path != t.path {
+                let mut first = String::new();
+                if let Some(range) = m.text().line_range(1) {
+                    m.text().read(range, &mut first);
+                }
+                t.saved_language = Some(edit::lang::detect(
+                    m.meta().path.as_deref().map(std::path::Path::new),
+                    &first,
+                ));
+                t.path.clone_from(&m.meta().path);
+            }
             for d in &step.deltas {
                 t.editor.apply_delta(d);
                 t.highlight.apply_delta(m.text(), d);
@@ -2560,7 +2618,12 @@ impl Controller {
                                 .map(str::to_string)
                                 .collect(),
                         },
-                        enabled: true,
+                        enabled: self.action_enabled.get(&a).copied().unwrap_or(!matches!(
+                            a,
+                            ActionId::ViewMarkdownSource
+                                | ActionId::ViewMarkdownSplit
+                                | ActionId::ViewMarkdownPreview
+                        )),
                     })
                     .collect();
                 reply(fx, ok_body(&verbs::ActionsReply { actions }));
@@ -2773,7 +2836,8 @@ impl Controller {
             epoch: m.map(|m| m.epoch().to_string()),
             path: t.path.clone(),
             name: self.tab_name(t),
-            language: m.map_or_else(|| "text".into(), |m| m.meta().language.clone()),
+            language: t.language().into(),
+            preview: self.view_hint(t.id, "preview").unwrap_or("source").into(),
             rev: m.map_or(0, Mirror::rev),
             dirty: m.is_some_and(|m| m.meta().dirty),
             disk: m.map_or_else(|| "none".into(), |m| disk_str(m.meta().disk)),
@@ -2819,6 +2883,7 @@ impl Controller {
         let sel = t.editor.sel;
         Ok(verbs::StateReply {
             tab,
+            preview: self.view_hint(tab, "preview").unwrap_or("source").into(),
             buffer: Some(m.buffer().to_string()),
             rev: m.rev(),
             view_gen: m.view_gen(),
@@ -3311,6 +3376,46 @@ mod tests {
                           "next": null, "snapshot": "s1"});
         reply(c, req, page);
         list
+    }
+
+    #[test]
+    fn save_as_keeps_one_detection_until_open_metadata_arrives() {
+        let mut c = ctl();
+        live(&mut c);
+        let tab = c.active().unwrap();
+        let fx = c.on_action_args(
+            Some(tab),
+            ActionId::FileSaveAs,
+            Some(json!({"path":"/work/notes"})),
+            Intent::ui(tab),
+        );
+        let (req, _) = sent(&fx, "edit.save");
+        reply(
+            &mut c,
+            req,
+            json!({"buffer":B,"epoch":"0000e1e1","path":"/work/notes",
+            "rev":0,"saved_rev":0,"file_bytes":12,"disk":"clean","durable":true,"warning":null}),
+        );
+        assert_eq!(c.tab(tab).unwrap().path.as_deref(), Some("/work/notes"));
+        assert_eq!(c.tab(tab).unwrap().saved_language, Some("text"));
+        // If language() read the first line again, this shebang would change it.
+        c.on_editor(
+            tab,
+            EditorMsg::Command(EditCommand::Insert("#!/bin/sh\n".into())),
+        );
+        for _ in 0..2 {
+            assert_eq!(c.tab(tab).unwrap().language(), "text");
+            c.drive(tab, Step::default(), &mut Vec::new());
+        }
+        let open = serde_json::from_value(json!({"buffer":B,"epoch":"0000e1e1",
+            "path":"/work/fresh-notes","opened_as":null,"name":"notes","language":"markdown",
+            "rev":0,"lines":2,"bytes":12,"eol":"lf","bom":false,"disk":"clean",
+            "reopened":true,"created":false,"recovery_id":"5f0c2a9e1b7d4c33",
+            "recovered":false,"recovered_from":null}))
+        .unwrap();
+        c.attach(tab, true, &open, &mut Vec::new());
+        assert_eq!(c.tab(tab).unwrap().language(), "markdown");
+        assert_eq!(c.tab(tab).unwrap().saved_language, None);
     }
 
     fn refused_reply(c: &mut Controller, req: u64, code: &str, reason: &str) -> Vec<Effect> {

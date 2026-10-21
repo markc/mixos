@@ -4,9 +4,10 @@
 //!
 //! [`Document::parse`] turns CommonMark (with GFM tables, strikethrough and
 //! task lists) into plain data, with no egui in it: an app parses a text
-//! once, keeps the [`Document`] in its state, and calls [`show`] every
-//! frame. [`looks_like_markdown`] is the conservative test for plain text
-//! that was written as Markdown (an LLM's reply, a README pasted into mail).
+//! once, keeps the [`Document`] in its state (or uses [`Preview`] to cache
+//! it), and calls [`show`] every frame. [`looks_like_markdown`] is the
+//! conservative test for plain text that was written as Markdown (an
+//! LLM's reply, a README pasted into mail).
 //!
 //! What [`show`] draws, all from the theme:
 //!
@@ -28,15 +29,18 @@
 //! Every run of text is one selectable label, so a person selects and
 //! copies across a paragraph (and, as far as egui allows, across labels).
 //! A link opens with [`egui::Context::open_url`] only when [`openable`]
-//! (http, https or mailto); the app's shell hands those requests to the
-//! desktop. [`show`] also returns the link activated this frame.
+//! (http, https or mailto); the app's shell calls [`open_links`] to hand
+//! those requests to the desktop. [`show`] also returns the link activated
+//! this frame.
 
 mod detect;
 mod parse;
+mod preview;
 mod view;
 
 pub use detect::looks_like_markdown;
-pub use view::show;
+pub use preview::Preview;
+pub use view::{first_heading_baseline, show};
 
 /// A parsed Markdown text: its blocks in order.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -190,9 +194,120 @@ pub fn openable(url: &str) -> bool {
     })
 }
 
+/// Hand the frame's link requests to the desktop's handler, detached.
+/// eframe without its browser launcher leaves these in egui's output;
+/// take every OpenUrl request, but open only http, https and mailto, as
+/// one argument and never through a shell. `app_name` labels errors and
+/// the thread that reaps the child (`<app_name>-xdg-open-reap`).
+/// Dropped requests are logged by scheme only. An app with its own URL
+/// schemes must take those requests out of the output before calling this.
+pub fn open_links(ctx: &egui::Context, app_name: &str) {
+    let urls = ctx.output_mut(|output| {
+        take_open_links(&mut output.commands, |scheme| {
+            eprintln!("{app_name}: ignored link: {scheme}:");
+        })
+    });
+    for url in urls {
+        match std::process::Command::new("xdg-open")
+            .arg(url.trim())
+            .spawn()
+        {
+            Ok(mut child) => {
+                // Reaped off the UI thread, so it never lingers as a zombie.
+                let reaped = std::thread::Builder::new()
+                    .name(format!("{app_name}-xdg-open-reap"))
+                    .spawn(move || drop(child.wait()));
+                if reaped.is_err() {
+                    eprintln!("{app_name}: the link opener's reaper did not start");
+                }
+            }
+            Err(error) => eprintln!("{app_name}: opening a link: {error}"),
+        }
+    }
+}
+
+fn take_open_links(
+    commands: &mut Vec<egui::OutputCommand>,
+    mut ignored: impl FnMut(&str),
+) -> Vec<String> {
+    let mut urls = Vec::new();
+    commands.retain(|command| match command {
+        egui::OutputCommand::OpenUrl(open) => {
+            if openable(&open.url) {
+                urls.push(open.url.clone());
+            } else {
+                let scheme = open
+                    .url
+                    .trim_start()
+                    .split_once(':')
+                    .map(|(scheme, _)| scheme)
+                    .filter(|scheme| {
+                        scheme.starts_with(|c: char| c.is_ascii_alphabetic())
+                            && scheme
+                                .bytes()
+                                .all(|c| c.is_ascii_alphanumeric() || b"+-.".contains(&c))
+                    })
+                    .unwrap_or("");
+                ignored(scheme);
+            }
+            false
+        }
+        _ => true,
+    });
+    urls
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn link_requests_are_taken_and_filtered_without_opening_them() {
+        use egui::{OpenUrl, OutputCommand};
+
+        let mut commands = vec![OutputCommand::CopyText("before".into())];
+        let allowed = [
+            " https://example.invalid/a?one=1&two=2 ",
+            "HTTP://example.invalid",
+            "mailto:ann@example.invalid",
+        ];
+        for url in allowed.into_iter().chain([
+            "file:///home/user/document.md",
+            "javascript:alert(1)",
+            "data:text/html,x",
+            "dev.mixos.email:x",
+            "/relative",
+            "",
+            "  FILE:///home/user/document.md?token=private",
+            "not a scheme:private",
+        ]) {
+            commands.push(OutputCommand::OpenUrl(OpenUrl::new_tab(url)));
+        }
+        commands.push(OutputCommand::CopyText("after".into()));
+
+        let mut ignored = Vec::new();
+        assert_eq!(
+            take_open_links(&mut commands, |scheme| ignored.push(scheme.to_owned())),
+            allowed
+        );
+        assert_eq!(
+            ignored,
+            [
+                "file",
+                "javascript",
+                "data",
+                "dev.mixos.email",
+                "",
+                "",
+                "FILE",
+                ""
+            ]
+        );
+        assert_eq!(commands.len(), 2);
+        assert!(matches!(&commands[0], OutputCommand::CopyText(text) if text == "before"));
+        assert!(matches!(&commands[1], OutputCommand::CopyText(text) if text == "after"));
+        assert!(take_open_links(&mut commands, |_| panic!("no requests left")).is_empty());
+    }
 
     #[test]
     fn only_web_and_mail_links_open() {

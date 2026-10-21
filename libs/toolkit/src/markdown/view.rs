@@ -72,6 +72,28 @@ pub fn show(ui: &mut Ui, document: &Document) -> Option<String> {
     view.clicked
 }
 
+/// Baseline of an opening heading, relative to its row's top. Adjacent
+/// source panes can reserve its ascent without changing the heading size.
+pub fn first_heading_baseline(ui: &Ui, document: &Document) -> Option<f32> {
+    let Block::Heading { level, .. } = document.blocks.first()? else {
+        return None;
+    };
+    let base = View::new(ui).heading_base(ui, *level);
+    let mut job = LayoutJob::default();
+    job.append(
+        "M",
+        0.0,
+        TextFormat {
+            font_id: base.font,
+            line_height: Some(base.line),
+            ..TextFormat::default()
+        },
+    );
+    let galley = ui.painter().layout_job(job);
+    let row = galley.rows.first()?;
+    Some(row.pos.y + row.glyphs.first()?.pos.y)
+}
+
 /// The text a span draws with.
 #[derive(Clone)]
 struct Base {
@@ -131,6 +153,23 @@ impl View {
         }
     }
 
+    fn heading_base(&self, ui: &Ui, level: u8) -> Base {
+        let index = usize::from(level.clamp(1, 6) - 1);
+        let size = self.heading * HEADING_SCALE[index];
+        let font = self.strong(ui, size);
+        Base {
+            font: font.clone(),
+            strong: font,
+            color: if level >= 6 {
+                self.palette.text_dim
+            } else {
+                self.color
+            },
+            line: size * HEADING_LINE,
+            wrap: true,
+        }
+    }
+
     /// `blocks` with the theme's spacing between them; `depth` is the list
     /// nesting, for the bullet shape. Inside a list item the blocks sit as
     /// close as the items do.
@@ -152,21 +191,7 @@ impl View {
     fn block(&mut self, ui: &mut Ui, block: &Block, depth: usize) {
         match block {
             Block::Heading { level, text } => {
-                let index = usize::from((*level).clamp(1, 6) - 1);
-                let size = self.heading * HEADING_SCALE[index];
-                let font = self.strong(ui, size);
-                let color = if *level >= 6 {
-                    self.palette.text_dim
-                } else {
-                    self.color
-                };
-                let base = Base {
-                    font: font.clone(),
-                    strong: font,
-                    color,
-                    line: size * HEADING_LINE,
-                    wrap: true,
-                };
+                let base = self.heading_base(ui, *level);
                 self.inline(ui, text, &base);
             }
             Block::Paragraph(text) => {

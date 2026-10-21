@@ -26,6 +26,11 @@ first, and the default keeps it. A draft is removed only once its message
 is sent or the person discards it; one kept from an earlier run is
 offered at start.
 
+The reader keeps its Markdown/plain choice per email. Its parsed body is
+cached by `toolkit::markdown::Preview`, using the email id as the key and
+the body hash as the revision. The shell hands reader links to
+`toolkit::markdown::open_links`; only web and mail links open.
+
 Sending creates the message in Drafts, submits it, and moves it to Sent
 only once the server confirms the submission, so a failed send never
 shows in Sent. A retry reuses the same server copy (its ids are kept with

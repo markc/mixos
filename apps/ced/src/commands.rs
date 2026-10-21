@@ -174,6 +174,48 @@ pub fn registry() -> Registry<App> {
         ViewProblems => "view.problems", "view-problems", "view", 2;
         ViewOutput => "view.output", "view-output", "view", 2;
     }
+    r.add_toggle(
+        Command {
+            id: "view.markdown.source",
+            label: "view-markdown-source",
+            menu: Some("view"),
+            submenu: Some("markdown"),
+            group: 4,
+            shortcut: None,
+            icon: Some(toolkit::Icon::FileCode),
+            enabled: |a: &App| a.enabled(ActionId::ViewMarkdownSource),
+            run: |a: &mut App| a.action(ActionId::ViewMarkdownSource),
+        },
+        |a: &App| a.checked(ActionId::ViewMarkdownSource) == Some(true),
+    );
+    r.add_toggle(
+        Command {
+            id: "view.markdown.split",
+            label: "view-markdown-split",
+            menu: Some("view"),
+            submenu: Some("markdown"),
+            group: 4,
+            shortcut: None,
+            icon: Some(toolkit::Icon::FileCode),
+            enabled: |a: &App| a.enabled(ActionId::ViewMarkdownSplit),
+            run: |a: &mut App| a.action(ActionId::ViewMarkdownSplit),
+        },
+        |a: &App| a.checked(ActionId::ViewMarkdownSplit) == Some(true),
+    );
+    r.add_toggle(
+        Command {
+            id: "view.markdown.preview",
+            label: "view-markdown-preview",
+            menu: Some("view"),
+            submenu: Some("markdown"),
+            group: 4,
+            shortcut: None,
+            icon: Some(toolkit::Icon::FileCode),
+            enabled: |a: &App| a.enabled(ActionId::ViewMarkdownPreview),
+            run: |a: &mut App| a.action(ActionId::ViewMarkdownPreview),
+        },
+        |a: &App| a.checked(ActionId::ViewMarkdownPreview) == Some(true),
+    );
     for action in ActionId::all() {
         if r.get(&action.id()).is_some() {
             r.add_shortcuts(&action.id(), defaults_for(action).into_iter().skip(1));

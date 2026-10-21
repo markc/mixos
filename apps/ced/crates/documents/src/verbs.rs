@@ -146,6 +146,7 @@ pub enum PhaseW {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TabRow {
     pub tab: u64,
+    pub preview: String,
     pub buffer: Option<String>,
     pub epoch: Option<String>,
     pub path: Option<String>,
@@ -207,6 +208,7 @@ pub struct ConflictRow {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StateReply {
     pub tab: u64,
+    pub preview: String,
     pub buffer: Option<String>,
     pub rev: u64,
     pub view_gen: u64,

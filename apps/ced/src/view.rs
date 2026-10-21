@@ -21,7 +21,7 @@ use toolkit::tabs::DocTab;
 use toolkit::titlebar::{self, Control};
 use toolkit::{Icon, Registry, Strings, bars, icons};
 
-use crate::app::{Answer, App, Dialog};
+use crate::app::{Answer, App, Dialog, PreviewMode};
 use crate::{label, label_with};
 
 /// One interaction from this frame.
@@ -197,7 +197,7 @@ fn tabs(ui: &mut Ui, app: &App, events: &mut Vec<UiEvent>) {
             let name = tab_name(t);
             let mirror = t.mirror.as_ref();
             let opening = mirror.is_none_or(|m| matches!(m.phase(), Phase::Bootstrapping { .. }));
-            let mut meta = mirror.map_or_else(String::new, |m| m.meta().language.clone());
+            let mut meta = mirror.map_or_else(String::new, |_| t.language().to_owned());
             if app.ctl.agent_since_focus(t.id) {
                 meta.push_str(" ◆");
             }
@@ -363,10 +363,19 @@ fn find_bar(ui: &mut Ui, app: &mut App, events: &mut Vec<UiEvent>) {
 /// one is shown.
 fn document(
     ui: &mut Ui,
-    app: &App,
+    app: &mut App,
     palette: &Palette,
     events: &mut Vec<UiEvent>,
 ) -> Option<(egui::Id, bool)> {
+    let mode = app
+        .active()
+        .map(|tab| app.preview_mode(tab))
+        .unwrap_or_default();
+    let preview = if mode != PreviewMode::Source {
+        app.active().and_then(|tab| app.preview_document(tab))
+    } else {
+        None
+    };
     let Some(tab) = app.active_tab() else {
         centred(ui, &label("no-documents"));
         return None;
@@ -392,10 +401,30 @@ fn document(
     let editable = app.dialog.is_none();
     // The editor takes its own saved padding and light mode; the rest of the
     // window keeps the global look.
-    let out = ui
-        .add_enabled_ui(editable, |ui| {
+    let draw_editor = |ui: &mut Ui| {
+        ui.add_enabled_ui(editable, |ui| {
             let mut out = None;
             toolkit::content::surface(ui, &app.editor_style, |ui| {
+                if mode == PreviewMode::Split
+                    && let Some(baseline) = preview.as_ref().and_then(|document| {
+                        toolkit::markdown::first_heading_baseline(ui, document)
+                    })
+                {
+                    let font = egui::FontId::monospace(f32::from(app.ui.font_px));
+                    let galley = ui.painter().layout_no_wrap("M".into(), font, palette.text);
+                    if let Some(row) = galley.rows.first()
+                        && let Some(glyph) = row.glyphs.first()
+                    {
+                        // Both panes keep the same card and baseline inset; the
+                        // source row reserves the opening heading's extra ascent.
+                        ui.painter().rect_filled(
+                            ui.available_rect_before_wrap(),
+                            0.0,
+                            palette.background,
+                        );
+                        ui.add_space((baseline - row.pos.y - glyph.pos.y).max(0.0));
+                    }
+                }
                 out = Some(editor::show(
                     ui,
                     ("ced.editor", tab.id),
@@ -406,9 +435,80 @@ fn document(
             });
             out.expect("the surface draws its body")
         })
-        .inner;
-    let shown = (out.response.id, out.held);
-    events.extend(out.events.into_iter().map(|e| UiEvent::Editor(tab.id, e)));
+        .inner
+    };
+    let draw_preview = |ui: &mut Ui| {
+        toolkit::content::surface(ui, &app.editor_style, |ui| {
+            for style in [egui::TextStyle::Body, egui::TextStyle::Monospace] {
+                if let Some(font) = ui.style_mut().text_styles.get_mut(&style) {
+                    font.size = f32::from(app.ui.font_px);
+                }
+            }
+            ui.set_min_size(ui.available_size());
+            let font = egui::FontId::monospace(f32::from(app.ui.font_px));
+            let metrics = ui.fonts_mut(|fonts| editor::layout::Metrics {
+                cell_w: fonts.glyph_width(&font, '0').max(1.0),
+                row_h: (font.size * view.line_height).round().max(1.0),
+            });
+            let geometry = editor::layout::Geometry::new(
+                ui.available_rect_before_wrap(),
+                metrics,
+                m.text().line_count(),
+                view.line_numbers,
+            );
+            // Use the editor's field fill and text origin, including its gutter.
+            ui.painter()
+                .rect_filled(geometry.bounds, 0.0, palette.background);
+            let top =
+                ui.fonts_mut(|fonts| ((metrics.row_h - fonts.row_height(&font)) / 2.0).round());
+            let mut text_rect = geometry.text_rect();
+            text_rect.min.y += top;
+            ui.scope_builder(egui::UiBuilder::new().max_rect(text_rect), |ui| {
+                egui::ScrollArea::both()
+                    .id_salt(("ced.preview", tab.id))
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        if let Some(document) = &preview {
+                            toolkit::markdown::show(ui, document);
+                        }
+                    });
+            });
+        });
+    };
+    let out = match mode {
+        PreviewMode::Source => Some(draw_editor(ui)),
+        PreviewMode::Preview => {
+            draw_preview(ui);
+            None
+        }
+        PreviewMode::Split => {
+            let area = ui.available_rect_before_wrap();
+            let middle = area.center().x;
+            let left = egui::Rect::from_min_max(area.min, egui::pos2(middle, area.max.y));
+            let right = egui::Rect::from_min_max(egui::pos2(middle, area.min.y), area.max);
+            let out = ui
+                .scope_builder(egui::UiBuilder::new().max_rect(left), |ui| {
+                    ui.set_clip_rect(left.intersect(ui.clip_rect()));
+                    draw_editor(ui)
+                })
+                .inner;
+            ui.scope_builder(egui::UiBuilder::new().max_rect(right), |ui| {
+                ui.set_clip_rect(right.intersect(ui.clip_rect()));
+                draw_preview(ui);
+            });
+            ui.painter().vline(
+                middle,
+                area.y_range(),
+                egui::Stroke::new(1.0, ui.visuals().widgets.noninteractive.bg_stroke.color),
+            );
+            ui.advance_cursor_after_rect(area);
+            Some(out)
+        }
+    };
+    let shown = out.as_ref().map(|out| (out.response.id, out.held));
+    if let Some(out) = out {
+        events.extend(out.events.into_iter().map(|e| UiEvent::Editor(tab.id, e)));
+    }
     if let Phase::Detached {
         reason: DetachReason::OpenFailed { msg },
     } = m.phase()
@@ -418,7 +518,7 @@ fn document(
             &[("name", &name), ("error", msg)],
         ));
     }
-    Some(shown)
+    shown
 }
 
 fn centred(ui: &mut Ui, text: &str) {
@@ -542,7 +642,7 @@ fn status(ui: &mut Ui, app: &App, stroke: f32, connected: bool) {
         } else {
             label("status-insert")
         });
-        ui.small(&meta.language);
+        ui.small(tab.language());
         let eol = match meta.eol {
             edit::wire::Eol::Crlf => "CRLF",
             _ => "LF",
