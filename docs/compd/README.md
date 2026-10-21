@@ -117,6 +117,35 @@ compd waits for its own VT to become active and never switches VT itself.
 `--config-file`, else `~/.config/compd/settings.json`. Preferences are read
 from `preferences.json` beside it.
 
+Native fixed-refresh outputs use late-latch composition by default. After a
+flip with pending redraws, each CRTC waits until the next kernel-timestamped
+vblank minus its render budget. The budget is the maximum render-start to
+commit-return time in two 50-frame buckets, plus `late_latch_margin_us`
+(default 1500). A missed target adds a quarter-refresh back-off for 100
+submitted frames; repeated misses double it up to one refresh, then it decays.
+The initial render estimate is 2 ms. The 1.5 ms margin leaves room for event
+dispatch, scheduling jitter and asynchronous GPU completion; hardware timing
+still needs measurement under load.
+
+Set `late_latch:false` in the settings file to disable it, or set the emergency
+environment switch `COMPD_DISABLE_LATE_LATCH` (any value). Both take effect at
+startup without rebuilding; the margin uses the same settings file. Schema 7
+adds these fields to older files in memory. Startup, the first redraw after
+idle, untrustworthy timestamps, over-budget frames, tearing, governed pacing,
+VRR and active capture retain immediate composition. Nested and headless
+backends keep their existing pacing. Frame callbacks and presentation feedback
+use their existing paths, including empty-frame callback timers.
+
+With `COMPD_FRAME_TRACE=1`, `kms_latch_deferred` and `kms_latch_deadline`
+describe the wait and render; other `kms_latch_*` decision stages name the
+immediate-path reason. `kms_latch_hit`, `kms_latch_miss` or `kms_latch_unknown`
+on completion records the result. These ledger trace events use the same
+output ID as `kms_queue_frame`, a target CLOCK_MONOTONIC timestamp in `detail`
+(microseconds, zero if unavailable), and the budget in `aux` (microseconds).
+The result uses the submitted frame's budget. A hit allows half an interval of
+timestamp tolerance; a full missed vblank is a miss. Tracing off performs no
+extra ID hashing or trace clock reads.
+
 With the `backend-headless` feature, a render node can drive a virtual
 output without a VT, seat, input device or parent compositor:
 

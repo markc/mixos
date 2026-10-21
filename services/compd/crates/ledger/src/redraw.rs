@@ -561,3 +561,26 @@ mod tests {
         assert_eq!(json["unattributed_frames"], 0);
     }
 }
+/// Native scheduling evidence beside the frame reasons. Expensive ID/clock
+/// conversion runs only inside the existing opt-in trace closure. `detail` is
+/// the target CLOCK_MONOTONIC timestamp in microseconds (0 if unknown); `aux`
+/// is the render budget in microseconds. The stage names the decision or hit.
+pub fn trace_deadline(
+    stage: &'static str,
+    output: u64,
+    target: Option<std::time::Instant>,
+    budget: std::time::Duration,
+) {
+    crate::frame_trace::event(stage, || {
+        let now = std::time::Instant::now();
+        let clock = crate::frame_trace::monotonic_us();
+        let target_us = target.map_or(0, |at| {
+            if at >= now {
+                clock.saturating_add(at.duration_since(now).as_micros() as u64)
+            } else {
+                clock.saturating_sub(now.duration_since(at).as_micros() as u64)
+            }
+        });
+        (output, target_us, budget.as_micros() as u64)
+    });
+}

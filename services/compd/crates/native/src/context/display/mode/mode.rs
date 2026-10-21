@@ -63,7 +63,7 @@ fn pipe_of(ctx: &NativeRenderContext, edid_key: &str) -> Option<usize> {
         .position(|p| world::state::state::output_key(&p.output) == edid_key)
 }
 /// Apply `mode` to the pipe at `idx` and propagate to its smithay Output.
-fn set_mode_now(ctx: &mut NativeRenderContext, idx: usize, mode: DrmMode) -> Result<(), String> {
+fn set_mode_now(state: &mut Loop, ctx: &mut NativeRenderContext, idx: usize, mode: DrmMode) -> Result<(), String> {
     let gpu = ctx.gpu_binding.clone();
     let mut binding = gpu.borrow_mut();
     let StateDRMBinding { gpus, primary } = &mut *binding;
@@ -81,6 +81,10 @@ fn set_mode_now(ctx: &mut NativeRenderContext, idx: usize, mode: DrmMode) -> Res
     drop(binding);
     let m = smithay::output::Mode::from(mode);
     ctx.outputs[idx].mode = m;
+    crate::render::execute::late_latch::cancel(&mut ctx.outputs[idx]);
+    ctx.outputs[idx].late_latch = Default::default();
+    ctx.outputs[idx].last_vblank = None;
+    state.state.redraw.release(&world::state::state::output_key(&ctx.outputs[idx].output));
     ctx.outputs[idx].current_drm_mode = mode;
     ctx.outputs[idx]
         .output
@@ -139,9 +143,9 @@ fn apply(state: &mut Loop, ctx_rc: &Ctx, edid_key: &str, w: u16, h: u16, mhz: u3
         }
         None => ctx.outputs[idx].current_drm_mode,
     };
-    if let Err(e) = set_mode_now(&mut ctx, idx, target) {
+    if let Err(e) = set_mode_now(state, &mut ctx, idx, target) {
         warn!("live mode apply failed: {e}");
-        let _ = set_mode_now(&mut ctx, idx, baseline);
+        let _ = set_mode_now(state, &mut ctx, idx, baseline);
         drop(ctx);
         return set_result(state, ApplyResult::Failed);
     }
@@ -168,7 +172,7 @@ fn finish(state: &mut Loop, ctx_rc: &Ctx, revert: bool) {
         .expect("checked is_some");
     state.loop_handle.remove(token);
     if revert {
-        if let Err(e) = set_mode_now(&mut ctx, idx, baseline) {
+        if let Err(e) = set_mode_now(state, &mut ctx, idx, baseline) {
             warn!("revert failed: {e}");
         }
         drop(ctx);
@@ -196,7 +200,7 @@ fn arm(state: &mut Loop, ctx_rc: &Ctx, edid_key: String, baseline: DrmMode) -> R
                 if let Some(idx) = pipe_of(&c, &edid_key)
                     && c.outputs[idx].mode_revert.take().is_some()
                 {
-                    if let Err(e) = set_mode_now(&mut c, idx, baseline) {
+                    if let Err(e) = set_mode_now(state, &mut c, idx, baseline) {
                         warn!("auto-revert failed: {e}");
                     }
                     drop(c);

@@ -70,6 +70,16 @@ pub fn anchor(
     vblank_kernel: Option<Duration>,
     kernel_now: Option<Duration>,
 ) -> Instant {
+    trusted_anchor(observed, vblank_kernel, kernel_now).unwrap_or(observed)
+}
+
+/// Unlike the tearing phase fallback, a composition deadline must never use
+/// event-handler arrival as its anchor when the DRM clock cannot be related.
+pub fn trusted_anchor(
+    observed: Instant,
+    vblank_kernel: Option<Duration>,
+    kernel_now: Option<Duration>,
+) -> Option<Instant> {
     let delay = match (vblank_kernel, kernel_now) {
         (Some(vblank), Some(now)) => now.checked_sub(vblank),
         _ => None,
@@ -77,7 +87,6 @@ pub fn anchor(
     delay
         .filter(|d| *d <= MAX_DISPATCH_DELAY)
         .and_then(|d| observed.checked_sub(d))
-        .unwrap_or(observed)
 }
 
 /// Time remaining until the next retrace, extrapolated from `anchor` by the

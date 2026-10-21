@@ -337,6 +337,14 @@ pub fn execute(
     scope: RenderScope,
 ) -> FrameOutcome {
     let _ = &loop_handle; // retained for parity with the original signature
+    if matches!(state.inner.status_session, StatusSession::Paused)
+        || *state.inner.kernel.get(&drivers::lid::base::DISPLAY_OFF)
+    {
+        for pipe in &mut ctx_rc.borrow_mut().outputs {
+            super::late_latch::cancel(pipe);
+            state.state.redraw.release(&world::state::state::output_key(&pipe.output));
+        }
+    }
     capture_windows_offscreen(&ctx_rc, state);
     if let StatusSession::Paused = state.inner.status_session {
         let _skip = ledger::frame_trace::span("kms_skip_paused", 0);
@@ -533,6 +541,11 @@ pub fn execute(
         // (`force_redraw`, `bump_redraw_epoch`), so rescues are unaffected.
         if !state.state.redraw.needs(&key) {
             let _skip = ledger::frame_trace::span("kms_skip_current_epoch", trace_output);
+            continue;
+        }
+        if super::late_latch::defer(
+            &mut ctx_ref.outputs[output_idx], state, &loop_handle, &key, trace_output,
+        ) {
             continue;
         }
         // Rate cap / pacing gate: with async flips the completion event arrives
@@ -1130,6 +1143,7 @@ pub fn execute(
         } else {
             let output = ctx_ref.outputs[output_idx].output.clone();
             let _skip = ledger::frame_trace::span("kms_skip_empty_damage", output_id.0);
+            super::late_latch::cancel(&mut ctx_ref.outputs[output_idx]);
             let key = world::state::state::output_key(&output);
             // Rendered, nothing to submit: still a frame the ledger accounts for.
             state.state.redraw.frame(&key, true);
@@ -1512,6 +1526,10 @@ fn present(
     };
     match outcome {
         QueueOutcome::Queued => {
+            let pipe = &mut ctx_ref.outputs[output_idx];
+            if let Some(start) = pipe.render_start {
+                pipe.late_latch.committed(start.elapsed());
+            }
             if ledger::frame_trace::enabled() {
                 ctx_ref.outputs[output_idx].flip_trace = Some(ledger::frame_trace::wait_span(
                     "kms_submit_to_flip",
@@ -1528,6 +1546,7 @@ fn present(
             state.state.redraw.frame(&key, false);
         }
         QueueOutcome::DeferredToWatchdog => {
+            super::late_latch::cancel(&mut ctx_ref.outputs[output_idx]);
             let _skip = ledger::frame_trace::span("kms_defer_watchdog", trace_output);
             // Rendered but not submitted: same invariant break as the capture
             // pre-render, so discard the age accounting rather than let it skew.
@@ -1538,6 +1557,7 @@ fn present(
             return false;
         }
         QueueOutcome::Failed => {
+            super::late_latch::cancel(&mut ctx_ref.outputs[output_idx]);
             let _skip = ledger::frame_trace::span("kms_skip_queue_failed", trace_output);
             // Fail-soft: this connector's flip failed → drop its scanout target so
             // the render loop skips it (it goes dark) while other outputs keep

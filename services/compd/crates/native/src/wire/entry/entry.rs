@@ -262,6 +262,8 @@ pub fn wire(
             global: None,
             last_vblank: None,
             render_start: None,
+            late_latch: Default::default(),
+            deadline_timer: None,
             flip_trace: None,
             last_tear: false,
             cap_interval: None,

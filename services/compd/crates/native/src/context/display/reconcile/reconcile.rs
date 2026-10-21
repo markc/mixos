@@ -390,6 +390,8 @@ fn add_output(
             global: Some(global),
             last_vblank: None,
             render_start: None,
+            late_latch: Default::default(),
+            deadline_timer: None,
             flip_trace: None,
             last_tear: false,
             cap_interval: None,

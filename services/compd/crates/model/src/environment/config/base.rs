@@ -30,6 +30,10 @@ pub struct Environment {
     pub depth: u8,
     /// Enable adaptive sync / VRR.
     pub vrr: bool,
+    /// Fixed-refresh native composition deadlines. Restart to apply.
+    pub late_latch: bool,
+    /// Extra time ahead of vblank, added to the recent render/commit maximum.
+    pub late_latch_margin_us: u64,
     /// DRM render node path, e.g. `/dev/dri/renderD128`.
     pub render_node: String,
     /// DRM device to SCAN OUT on, e.g. `/dev/dri/card1`. Empty (the default) =
@@ -102,7 +106,7 @@ pub struct Environment {
 
 /// Current settings-schema version. Bump when adding fields, and teach
 /// [`migrate`] to fill the new fields' defaults for older files.
-pub const SCHEMA_VERSION: u32 = 6;
+pub const SCHEMA_VERSION: u32 = 7;
 
 /// The stored [`Environment::renderer_sync`] for a fresh install. `"infence"`
 /// is the historical spelling and stays the canonical stored form;
@@ -226,6 +230,10 @@ pub fn migrate(root: &mut serde_json::Value) -> bool {
         obj.remove("renderer_fallback");
         obj.remove("vk_diag");
     }
+    if version < 7 {
+        obj.entry("late_latch").or_insert(serde_json::Value::from(true));
+        obj.entry("late_latch_margin_us").or_insert(serde_json::Value::from(1500));
+    }
     obj.insert("version".into(), serde_json::Value::from(SCHEMA_VERSION));
     true
 }
@@ -330,6 +338,13 @@ pub fn get() -> &'static Environment {
         .expect("environment not initialized; call init() first in main()")
 }
 
+/// Read the emergency opt-out once, never from a per-frame environment lookup.
+pub fn late_latch_enabled() -> bool {
+    static DISABLED: OnceLock<bool> = OnceLock::new();
+    get().late_latch
+        && !*DISABLED.get_or_init(|| std::env::var_os("COMPD_DISABLE_LATE_LATCH").is_some())
+}
+
 /// Canonical complete starting settings — the single source of default values shared by
 /// the configuration TOOLS: the settings editor and the installer's seed.
 /// NOT used by the compositor at runtime — [`init`] still requires a fully-populated file
@@ -343,6 +358,8 @@ pub fn default_settings() -> Environment {
         hdr: false,
         depth: 8,
         vrr: false,
+        late_latch: true,
+        late_latch_margin_us: 1500,
         render_node: "/dev/dri/renderD128".to_string(),
         // Empty = the udev heuristic, i.e. the behavior of every release before
         // this field existed.
@@ -399,6 +416,24 @@ pub fn save(env: &Environment) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn late_latch_migrates_old_settings_and_preserves_authored_overrides() {
+        let mut value = serde_json::to_value(super::default_settings()).unwrap();
+        value["version"] = 6.into();
+        value.as_object_mut().unwrap().remove("late_latch");
+        value.as_object_mut().unwrap().remove("late_latch_margin_us");
+        assert!(super::migrate(&mut value));
+        let env: super::Environment = serde_json::from_value(value.clone()).unwrap();
+        assert!(env.late_latch);
+        assert_eq!(env.late_latch_margin_us, 1500);
+        value["version"] = 6.into();
+        value["late_latch"] = false.into();
+        value["late_latch_margin_us"] = 3000.into();
+        super::migrate(&mut value);
+        let env: super::Environment = serde_json::from_value(value).unwrap();
+        assert!(!env.late_latch);
+        assert_eq!(env.late_latch_margin_us, 3000);
+    }
     /// A v1 file (no `version`, no `priority`) migrates to a complete current
     /// Environment with the new fields at their defaults — and the migration
     /// is idempotent.

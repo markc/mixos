@@ -6,3 +6,4 @@ pub mod sequence;
 #[cfg(feature = "timing-throttle")]
 pub mod throttle;
 pub mod vblank;
+pub mod deadline;
