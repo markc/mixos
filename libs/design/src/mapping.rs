@@ -1852,6 +1852,7 @@ mod tests {
             semantics: Default::default(),
             typography: Default::default(),
             families: FamilyMappingsSource {
+                terminal: Default::default(),
                 button: Some(mapping),
                 chrome: None,
                 style: None,

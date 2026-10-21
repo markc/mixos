@@ -83,6 +83,9 @@ pub enum PairOverrideDisposition<'a> {
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ResolvedDictionary {
+    /// Compatibility-filled names and the immutable version that supplied them.
+    pub defaulted: BTreeMap<String, String>,
+    pub terminal: Option<crate::compat::Terminal>,
     pub colours: ResolvedColours,
     pub metrics: BTreeMap<String, ResolvedMetric>,
     pub scales: BTreeMap<String, Vec<f64>>,

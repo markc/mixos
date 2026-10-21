@@ -392,6 +392,9 @@ pub struct TypeRecordSource {
 #[derive(Clone, Debug, Default, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FamilyMappingsSource {
+    /// Terminal defaults per scheme and mode, independent of chrome colours.
+    #[serde(default)]
+    pub terminal: BTreeMap<String, crate::compat::Terminal>,
     #[serde(default)]
     pub button: Option<ButtonMappingSource>,
     /// Exact chrome colours by role (`family::chrome`).

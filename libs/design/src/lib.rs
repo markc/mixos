@@ -40,6 +40,7 @@ mod axis;
 mod colour;
 mod colour_model;
 mod compiler;
+pub mod compat;
 mod context;
 mod design_model;
 mod diagnostic;
@@ -55,6 +56,9 @@ mod state;
 #[cfg(test)]
 mod trial;
 mod typography;
+mod tunable;
+
+pub use tunable::{Tunable, TunableRange, tunables};
 
 pub use accent::{SrgbColour, accent_for, resolved_accent};
 pub use colour::{ColourCompileFailure, compile_colour_tokens};

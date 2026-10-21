@@ -143,6 +143,21 @@ fn compile_flat_source(
         }
     };
 
+    let terminal_name = format!("{}.{}", context.scheme.name(), context.mode.name());
+    let mut compatibility_diagnostics = crate::family::style::default_diagnostics(source);
+    let terminal = source.families.terminal.get(&terminal_name).cloned().or_else(|| {
+        crate::compat::table().versions.iter().find_map(|(version, entries)| {
+            let terminal = entries.terminal.get(&terminal_name)?;
+            compatibility_diagnostics.push(DesignDiagnostic::info(
+                "defaulted-terminal", format!("design.v1.families.terminal.{terminal_name}"),
+                format!("defaulted from compatibility {version}"),
+            ));
+            Some(terminal.clone())
+        })
+    });
+    let defaulted = compatibility_diagnostics.iter().map(|d| (d.path.clone(),
+        d.message.rsplit(' ').next().unwrap_or("v2").to_owned())).collect();
+
     let mapping =
         match crate::mapping::compile_button_mapping_artifacts(source, &colours.value, context) {
             Ok(success) => success,
@@ -161,6 +176,7 @@ fn compile_flat_source(
     let mut diagnostics = colours.diagnostics;
     diagnostics.extend(chrome_warnings);
     diagnostics.extend(mapping.diagnostics);
+    diagnostics.extend(compatibility_diagnostics);
     DesignCompileResult::Success(DesignCompileSuccess {
         candidate: UnstampedResolvedDesign::new(
             identity.clone(),
@@ -168,6 +184,8 @@ fn compile_flat_source(
                 button: mapping.value.table,
             },
             ResolvedDictionary {
+                defaulted,
+                terminal,
                 colours: colours.value,
                 metrics: mapping
                     .value

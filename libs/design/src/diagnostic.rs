@@ -3,6 +3,7 @@
 /// Compiler diagnostic severity.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DiagnosticSeverity {
+    Info,
     Warning,
     Error,
 }
@@ -25,6 +26,19 @@ pub struct CompileSuccess<T> {
 }
 
 impl DesignDiagnostic {
+    pub(crate) fn info(
+        code: &'static str,
+        path: impl Into<String>,
+        message: impl Into<String>,
+    ) -> Self {
+        Self {
+            severity: DiagnosticSeverity::Info,
+            code,
+            path: path.into(),
+            message: message.into(),
+            suggestion: None,
+        }
+    }
     pub(crate) fn error(
         code: &'static str,
         path: impl Into<String>,

@@ -33,6 +33,20 @@ use std::collections::{BTreeMap, BTreeSet};
 
 const PATH: &str = "design.v1.families.style";
 
+/// The original vocabulary. Later tokens default through the compatibility
+/// table; these names remain required in every authored style.
+pub const REQUIRED: [&str; 40] = [
+    "widgets", "faces", "body_size", "bevels", "widget_stroke", "selection",
+    "scroll_bars", "canvas_dots", "toggle", "switch", "knob", "slider_fill",
+    "push_shape", "secondary_button", "push_height", "primary_hover_alpha",
+    "primary_press_alpha", "panel_groups", "document_tabs", "tool_bar_rule",
+    "dock_width", "dock_margin", "options_bar", "status_bar", "tool_bar",
+    "tool_button", "tool_margin", "rail", "rail_button", "title_bar_height",
+    "mark", "menu_title_height", "menu_row_height", "menu_row_padding_x",
+    "menu_row_padding_y", "menu_min_width", "menu_highlight_radius",
+    "radius_sm", "radius", "radius_lg",
+];
+
 /// A closed set of named token values: the variants, their source names, and
 /// lookups both ways. The first variant is the default a refused token
 /// stands in with while the compiler collects every error.
@@ -61,6 +75,14 @@ macro_rules! choice {
         }
 
         impl Token for $name {
+            fn write(&self) -> StyleValueSource {
+                StyleValueSource::Name(self.name().into())
+            }
+
+            fn variants() -> Option<Vec<String>> {
+                Some(Self::ALL.iter().map(|v| v.name().into()).collect())
+            }
+
             fn read(value: &StyleValueSource, _: Range) -> Result<Self, String> {
                 let names = || Self::ALL.iter().map(|v| format!("`{}`", v.name())).collect::<Vec<_>>().join(", ");
                 match value {
@@ -70,6 +92,37 @@ macro_rules! choice {
             }
         }
     };
+}
+
+choice! {
+    /// The colour role for a field's focus outline.
+    FieldFocusRole {
+        AccentText = "accent_text",
+        Accent = "accent",
+        FieldBorder = "field_border",
+    }
+}
+
+/// An exact sRGB colour carried by a style token.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct StyleColour(pub [u8; 4]);
+
+impl Token for StyleColour {
+    fn read(value: &StyleValueSource, Range(min, max): Range) -> Result<Self, String> {
+        let StyleValueSource::Name(value) = value else {
+            return Err("expected a hexadecimal colour".into());
+        };
+        let rgba = crate::parse_legacy_v0_hex_colour(value)?;
+        if rgba.iter().any(|c| !(min..=max).contains(&(f64::from(*c) / 255.0))) {
+            return Err(format!("each colour channel must be between {min} and {max}"));
+        }
+        Ok(Self(rgba))
+    }
+
+    fn write(&self) -> StyleValueSource {
+        let [r, g, b, a] = self.0;
+        StyleValueSource::Name(format!("#{r:02x}{g:02x}{b:02x}{a:02x}"))
+    }
 }
 
 choice! {
@@ -212,9 +265,12 @@ const NONE: Range = Range(0.0, 0.0);
 
 trait Token: Sized + Default {
     fn read(value: &StyleValueSource, range: Range) -> Result<Self, String>;
+    fn write(&self) -> StyleValueSource;
+    fn variants() -> Option<Vec<String>> { None }
 }
 
 impl Token for bool {
+    fn write(&self) -> StyleValueSource { StyleValueSource::Flag(*self) }
     fn read(value: &StyleValueSource, _: Range) -> Result<Self, String> {
         match value {
             StyleValueSource::Flag(flag) => Ok(*flag),
@@ -224,6 +280,7 @@ impl Token for bool {
 }
 
 impl Token for f64 {
+    fn write(&self) -> StyleValueSource { StyleValueSource::Number(*self) }
     fn read(value: &StyleValueSource, Range(min, max): Range) -> Result<Self, String> {
         match value {
             StyleValueSource::Number(n) if n.is_finite() && (min..=max).contains(n) => Ok(*n),
@@ -234,6 +291,7 @@ impl Token for f64 {
 }
 
 impl Token for u8 {
+    fn write(&self) -> StyleValueSource { StyleValueSource::Number(f64::from(*self)) }
     fn read(value: &StyleValueSource, range: Range) -> Result<Self, String> {
         let n = f64::read(value, range)?;
         if n.fract() == 0.0 {
@@ -282,6 +340,32 @@ macro_rules! style {
 
         /// Every style token, in field order.
         pub const TOKENS: &[&str] = &[$(stringify!($field)),+];
+
+        impl ResolvedStyle {
+            /// Exact token values, suitable for introspection or an overlay.
+            pub fn values(&self) -> BTreeMap<String, StyleValueSource> {
+                BTreeMap::from([$( (stringify!($field).into(), self.$field.write()) ),+])
+            }
+
+            /// Validate a complete style after applying a partial overlay.
+            pub fn with_values(self, values: &BTreeMap<String, StyleValueSource>)
+                -> Result<Self, Vec<DesignDiagnostic>>
+            {
+                let mut tokens = self.values();
+                tokens.extend(values.clone());
+                let mut reader = Reader { tokens: &tokens, path: "style".into(), errors: Vec::new() };
+                let value = read(&mut reader);
+                validate_constraints(&value, "style", &mut reader.errors);
+                for name in values.keys().filter(|name| !TOKENS.contains(&name.as_str())) {
+                    reader.errors.push(DesignDiagnostic::error("unknown-style-token", format!("style.{name}"), "unknown style token"));
+                }
+                if reader.errors.is_empty() { Ok(value) } else { Err(reader.errors) }
+            }
+        }
+
+        pub(crate) fn declarations() -> Vec<crate::Tunable> {
+            vec![$( crate::tunable::style_entry(stringify!($field), stringify!($ty), $range.0, $range.1, <$ty as Token>::variants()) ),+]
+        }
 
         fn read(reader: &mut Reader<'_>) -> ResolvedStyle {
             ResolvedStyle { $($field: reader.get(stringify!($field), $range)),+ }
@@ -343,6 +427,251 @@ style! {
     radius_sm: u8 = RADIUS,
     radius: u8 = RADIUS,
     radius_lg: u8 = RADIUS,
+    animation_time: f64 = LENGTH,
+    bar_row_gap: f64 = LENGTH,
+    bars_bar_inset: f64 = LENGTH,
+    bars_rail_rule: f64 = LENGTH,
+    button_icon_share: f64 = LENGTH,
+    button_link_icon: f64 = LENGTH,
+    button_link_size: f64 = LENGTH,
+    button_padding_x: f64 = LENGTH,
+    button_padding_y: f64 = LENGTH,
+    button_pro_outline: f64 = LENGTH,
+    button_push_padding: f64 = LENGTH,
+    canvas_bar: f64 = LENGTH,
+    canvas_dot_pitch: f64 = LENGTH,
+    canvas_dot_size: f64 = LENGTH,
+    canvas_thumb_inset: f64 = LENGTH,
+    canvas_thumb_min: f64 = LENGTH,
+    caption_gap: f64 = LENGTH,
+    caption_glyph: f64 = LENGTH,
+    caption_width: f64 = LENGTH,
+    checkbox_box: f64 = LENGTH,
+    close_pressed_alpha: f64 = ALPHA,
+    combo_chevron_alpha: f64 = ALPHA,
+    combo_chevron_half: f64 = LENGTH,
+    combo_chevron_height: f64 = LENGTH,
+    combo_chevron_stroke: f64 = LENGTH,
+    combo_list_height: f64 = LENGTH,
+    combo_width: f64 = LENGTH,
+    dialog_above_buttons: f64 = LENGTH,
+    dialog_above_rule: f64 = LENGTH,
+    dialog_below_rule: f64 = LENGTH,
+    dialog_button_gap: f64 = LENGTH,
+    dialog_button_min: f64 = LENGTH,
+    dialog_centre_drop: f64 = LENGTH,
+    dialog_max_width: f64 = LENGTH,
+    dialog_min_width: f64 = LENGTH,
+    dialog_resize_max_share: f64 = LENGTH,
+    dialog_title_size: f64 = LENGTH,
+    disabled_alpha: f64 = ALPHA,
+    divider_height: f64 = LENGTH,
+    divider_slot: f64 = LENGTH,
+    double_click_time: f64 = Range(0.1, 1.5),
+    edge_gap: f64 = LENGTH,
+    field_focus_role: FieldFocusRole = NONE,
+    field_focus_width: f64 = Range(0.0, 3.0),
+    field_height: f64 = LENGTH,
+    field_padding_x: f64 = LENGTH,
+    field_padding_y: f64 = LENGTH,
+    field_radius: f64 = LENGTH,
+    fine_scrub_rate: f64 = Range(0.001, 0.5),
+    fine_span: f64 = Range(0.0, 1000.0),
+    focus_offset: f64 = LENGTH,
+    focus_ring: f64 = LENGTH,
+    hairline_width: f64 = LENGTH,
+    heading_size: f64 = LENGTH,
+    hot_distance: f64 = Range(0.0, 12.0),
+    icon_button: f64 = LENGTH,
+    icon_mask: StyleColour = Range(0.1, 1.0),
+    icon_width: f64 = LENGTH,
+    interact: f64 = LENGTH,
+    item_spacing_x: f64 = LENGTH,
+    item_spacing_y: f64 = LENGTH,
+    link_gap: f64 = LENGTH,
+    mark_gap: f64 = LENGTH,
+    md_bullet: f64 = LENGTH,
+    md_code_padding_x: f64 = LENGTH,
+    md_code_padding_y: f64 = LENGTH,
+    md_gap: f64 = LENGTH,
+    md_gap_after_heading: f64 = LENGTH,
+    md_gap_before_heading: f64 = LENGTH,
+    md_gutter: f64 = LENGTH,
+    md_heading_line: f64 = LENGTH,
+    md_heading_scale_1: f64 = LENGTH,
+    md_heading_scale_2: f64 = LENGTH,
+    md_heading_scale_3: f64 = LENGTH,
+    md_heading_scale_4: f64 = LENGTH,
+    md_heading_scale_5: f64 = LENGTH,
+    md_heading_scale_6: f64 = LENGTH,
+    md_inline_code_scale: f64 = LENGTH,
+    md_item_gap: f64 = LENGTH,
+    md_line: f64 = LENGTH,
+    md_measure: f64 = LENGTH,
+    md_quote_indent: f64 = LENGTH,
+    md_quote_rule: f64 = LENGTH,
+    menu_margin: f64 = LENGTH,
+    menu_scroll_speed: f64 = Range(100.0, 3000.0),
+    menu_search_width: f64 = LENGTH,
+    menu_separator_height: f64 = LENGTH,
+    menu_title_padding_x: f64 = LENGTH,
+    menu_title_padding_y: f64 = LENGTH,
+    mono_size: f64 = LENGTH,
+    pair_active_mix: f64 = ALPHA,
+    pair_hover_mix: f64 = ALPHA,
+    panel_card_after: f64 = LENGTH,
+    panel_card_margin_bottom: f64 = LENGTH,
+    panel_card_margin_collapsed: f64 = LENGTH,
+    panel_card_margin_left: f64 = LENGTH,
+    panel_card_margin_right: f64 = LENGTH,
+    panel_card_margin_top: f64 = LENGTH,
+    panel_drag_band: f64 = LENGTH,
+    panel_drop_inset_horizontal: f64 = LENGTH,
+    panel_drop_inset_vertical: f64 = LENGTH,
+    panel_drop_line: f64 = LENGTH,
+    panel_ellipsis: f64 = LENGTH,
+    panel_ellipsis_gap: f64 = LENGTH,
+    panel_header: f64 = LENGTH,
+    panel_header_after: f64 = LENGTH,
+    panel_menu_box_h: f64 = LENGTH,
+    panel_menu_box_w: f64 = LENGTH,
+    panel_menu_from_right: f64 = LENGTH,
+    panel_menu_line: f64 = LENGTH,
+    panel_menu_pitch: f64 = LENGTH,
+    panel_pill_gap: f64 = LENGTH,
+    panel_pill_hover_alpha: f64 = ALPHA,
+    panel_pill_min: f64 = LENGTH,
+    panel_pill_pad: f64 = LENGTH,
+    panel_pill_size: f64 = LENGTH,
+    panel_pro_after: f64 = LENGTH,
+    panel_pro_hover_alpha: f64 = ALPHA,
+    panel_pro_margin: f64 = LENGTH,
+    panel_pro_min: f64 = LENGTH,
+    panel_pro_pad: f64 = LENGTH,
+    panel_pro_radius: f64 = LENGTH,
+    panel_pro_size: f64 = LENGTH,
+    panel_section_size: f64 = LENGTH,
+    panel_strip: f64 = LENGTH,
+    popup_shadow_alpha: f64 = ALPHA,
+    popup_shadow_blur: f64 = LENGTH,
+    popup_shadow_offset_x: f64 = LENGTH,
+    popup_shadow_offset_y: f64 = LENGTH,
+    popup_shadow_spread: f64 = LENGTH,
+    push_label_size: f64 = LENGTH,
+    resize_corner: f64 = Range(2.0, 32.0),
+    resize_edge: f64 = Range(2.0, 16.0),
+    scroll_allocated: f64 = LENGTH,
+    scroll_handle_alpha_active: f64 = ALPHA,
+    scroll_handle_alpha_hot: f64 = ALPHA,
+    scroll_handle_alpha_rest: f64 = ALPHA,
+    scroll_handle_min: f64 = LENGTH,
+    scroll_margin: f64 = LENGTH,
+    scroll_outer_margin: f64 = LENGTH,
+    scroll_track_alpha_active: f64 = ALPHA,
+    scroll_track_alpha_hot: f64 = ALPHA,
+    scroll_track_alpha_rest: f64 = ALPHA,
+    scroll_width: f64 = LENGTH,
+    scroll_width_hot: f64 = LENGTH,
+    scrub_rate: f64 = Range(0.05, 5.0),
+    search_icon: f64 = LENGTH,
+    search_lead: f64 = LENGTH,
+    shortcut_gap: f64 = LENGTH,
+    slider_big_step: f64 = LENGTH,
+    slider_double_click: f64 = LENGTH,
+    slider_double_click_distance: f64 = LENGTH,
+    slider_gradient_track: f64 = LENGTH,
+    slider_halo_radius: f64 = LENGTH,
+    slider_halo_width: f64 = LENGTH,
+    slider_height: f64 = LENGTH,
+    slider_inset: f64 = LENGTH,
+    slider_key_step_share: f64 = LENGTH,
+    slider_knob_classic_h: f64 = LENGTH,
+    slider_knob_classic_w: f64 = LENGTH,
+    slider_knob_pro: f64 = LENGTH,
+    slider_knob_pro_fill: StyleColour = ALPHA,
+    slider_knob_pro_ring: StyleColour = ALPHA,
+    slider_knob_studio: f64 = LENGTH,
+    slider_knob_studio_fill: StyleColour = ALPHA,
+    slider_long_press: f64 = LENGTH,
+    slider_min_width: f64 = LENGTH,
+    slider_plain_track: f64 = LENGTH,
+    slider_row_gap: f64 = LENGTH,
+    slider_shadow: StyleColour = ALPHA,
+    slider_track_radius: f64 = LENGTH,
+    slider_width: f64 = LENGTH,
+    small_size: f64 = LENGTH,
+    space_lg: f64 = LENGTH,
+    space_md: f64 = LENGTH,
+    space_sm: f64 = LENGTH,
+    space_xl: f64 = LENGTH,
+    space_xs: f64 = LENGTH,
+    submenu_gap: f64 = LENGTH,
+    switch_track_h: f64 = LENGTH,
+    switch_track_w: f64 = LENGTH,
+    tabs_chevron: f64 = LENGTH,
+    tabs_chevron_hover_alpha: f64 = ALPHA,
+    tabs_chevron_icon: f64 = LENGTH,
+    tabs_chevron_inset_x: f64 = LENGTH,
+    tabs_chevron_inset_y: f64 = LENGTH,
+    tabs_chevron_menu_width: f64 = LENGTH,
+    tabs_drop_outline: f64 = LENGTH,
+    tabs_marker: f64 = LENGTH,
+    tabs_marker_gap: f64 = LENGTH,
+    tabs_pro_close: f64 = LENGTH,
+    tabs_pro_close_from_right: f64 = LENGTH,
+    tabs_pro_close_icon: f64 = LENGTH,
+    tabs_pro_hover_alpha: f64 = ALPHA,
+    tabs_pro_min: f64 = LENGTH,
+    tabs_pro_pad: f64 = LENGTH,
+    tabs_pro_size: f64 = LENGTH,
+    tabs_pro_title_left: f64 = LENGTH,
+    tabs_progress: f64 = LENGTH,
+    tabs_strip: f64 = LENGTH,
+    tabs_studio_close: f64 = LENGTH,
+    tabs_studio_close_from_right: f64 = LENGTH,
+    tabs_studio_close_icon: f64 = LENGTH,
+    tabs_studio_close_radius: f64 = LENGTH,
+    tabs_studio_gap: f64 = LENGTH,
+    tabs_studio_hover_alpha: f64 = ALPHA,
+    tabs_studio_margin_bottom: f64 = LENGTH,
+    tabs_studio_margin_left: f64 = LENGTH,
+    tabs_studio_margin_right: f64 = LENGTH,
+    tabs_studio_margin_top: f64 = LENGTH,
+    tabs_studio_meta_gap: f64 = LENGTH,
+    tabs_studio_meta_size: f64 = LENGTH,
+    tabs_studio_name_left: f64 = LENGTH,
+    tabs_studio_name_size: f64 = LENGTH,
+    tabs_studio_pad: f64 = LENGTH,
+    title_bar_margin: f64 = LENGTH,
+    title_combo_max_width: f64 = LENGTH,
+    title_combo_min_width: f64 = LENGTH,
+    title_control_spacing: f64 = LENGTH,
+    title_gap: f64 = LENGTH,
+    title_link_room: f64 = LENGTH,
+    title_min_room: f64 = LENGTH,
+    title_size: f64 = LENGTH,
+    toggle_box_radius: f64 = LENGTH,
+    toggle_knob: f64 = LENGTH,
+    toggle_knob_inset: f64 = LENGTH,
+    toggle_label_gap: f64 = LENGTH,
+    toggle_mark: StyleColour = ALPHA,
+    toggle_outline: f64 = LENGTH,
+    toggle_tick: f64 = LENGTH,
+    tooltip_delay: f64 = LENGTH,
+    tooltip_grace: f64 = LENGTH,
+    tooltip_width: f64 = LENGTH,
+    value_number_size: f64 = LENGTH,
+    value_unit_gap: f64 = LENGTH,
+    value_unit_inset: f64 = LENGTH,
+    value_unit_reserve: f64 = LENGTH,
+    value_unit_size: f64 = LENGTH,
+    value_width: f64 = LENGTH,
+    weak_alpha: f64 = ALPHA,
+    window_margin: f64 = LENGTH,
+    window_shadow_blur: f64 = LENGTH,
+    window_shadow_offset_x: f64 = LENGTH,
+    window_shadow_offset_y: f64 = LENGTH,
+    window_shadow_spread: f64 = LENGTH,
 }
 
 /// Tokens earlier designs authored that no longer select anything. They are
@@ -402,12 +731,14 @@ fn compile_styles(
     let mut styles = BTreeMap::new();
     for (name, tokens) in &family.styles {
         let path = format!("{PATH}.styles.{name}");
+        let tokens = filled_tokens(family, name, tokens, crate::compat::table());
         let mut reader = Reader {
-            tokens,
+            tokens: &tokens,
             path: path.clone(),
             errors: Vec::new(),
         };
         let style = read(&mut reader);
+        validate_constraints(&style, &path, &mut reader.errors);
         errors.append(&mut reader.errors);
         let known: BTreeSet<&str> = TOKENS.iter().chain(RETIRED.iter()).copied().collect();
         for token in tokens
@@ -455,10 +786,98 @@ fn compile_styles(
     Ok(styles)
 }
 
+fn filled_tokens(
+    family: &StyleFamilySource,
+    name: &str,
+    tokens: &BTreeMap<String, StyleValueSource>,
+    table: &crate::compat::Table,
+) -> BTreeMap<String, StyleValueSource> {
+    let mut filled = tokens.clone();
+    let base = match tokens.get("base") {
+        Some(StyleValueSource::Name(base)) if Style::from_name(base).is_some() => Some(base.as_str()),
+        _ => None,
+    };
+    let scheme = family.schemes.iter().find_map(|(scheme, bound)| {
+        (bound == name).then(|| Scheme::from_name(scheme)).flatten()
+    }).map(|s| if s.is_chrome_scheme() { s.name() } else { "plain" }).unwrap_or("plain");
+    for token in TOKENS.iter().filter(|token| !REQUIRED.contains(token)) {
+        if !filled.contains_key(*token)
+            && let Some((value, _)) = table.token(token, name, base, scheme)
+        {
+            filled.insert((*token).into(), value.clone());
+        }
+    }
+    filled
+}
+
+fn validate_constraints(style: &ResolvedStyle, path: &str, errors: &mut Vec<DesignDiagnostic>) {
+    let values = style.values();
+    for constraint in &crate::compat::table().constraints {
+        if let (Some(StyleValueSource::Number(a)), Some(StyleValueSource::Number(b))) =
+            (values.get(&constraint.a), values.get(&constraint.b))
+            && constraint.kind == "le" && a > b
+        {
+            errors.push(DesignDiagnostic::error("invalid-style-token", path,
+                format!("`{}` ({a}) must not exceed `{}` ({b})", constraint.a, constraint.b)));
+        }
+    }
+}
+
+pub(crate) fn default_diagnostics(source: &DesignV1Source) -> Vec<DesignDiagnostic> {
+    let Some(family) = &source.families.style else { return Vec::new(); };
+    let mut diagnostics = Vec::new();
+    for (name, tokens) in &family.styles {
+        let filled = filled_tokens(family, name, tokens, crate::compat::table());
+        for token in filled.keys().filter(|token| !tokens.contains_key(*token)) {
+            diagnostics.push(DesignDiagnostic::info("defaulted-style-token",
+                format!("{PATH}.styles.{name}.{token}"), "defaulted from compatibility v2"));
+        }
+    }
+    diagnostics
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::{DesignCompileResult, DesignContext, Mode, SourceIdentity};
+
+    #[test]
+    fn required_names_match_the_frozen_source() {
+        let old = crate::parse_design_source(SourceIdentity::new("frozen"),
+            include_str!("../../tests/fixtures/revision-1-before-axes.theme.conf.mix")).unwrap();
+        let family = old.v1.families.style.unwrap();
+        let names = family.styles["studio"].keys()
+            .filter(|name| !RETIRED.contains(&name.as_str()))
+            .map(String::as_str).collect::<BTreeSet<_>>();
+        assert_eq!(REQUIRED.len(), 40);
+        assert_eq!(REQUIRED.into_iter().collect::<BTreeSet<_>>(), names);
+        assert_eq!(&TOKENS[..40], REQUIRED);
+    }
+
+    #[test]
+    fn unsafe_behaviour_values_and_an_unreachable_corner_are_refused() {
+        let style = compile_family(&family(), Scheme::Studio).unwrap();
+        for (name, below) in [("resize_edge", 1.99), ("resize_corner", 1.99),
+            ("scrub_rate", 0.049), ("fine_scrub_rate", 0.0009), ("fine_span", -0.01),
+            ("hot_distance", -0.01), ("menu_scroll_speed", 99.0), ("double_click_time", 0.099)]
+        {
+            let result = style.with_values(&BTreeMap::from([(name.into(), StyleValueSource::Number(below))]));
+            assert!(result.unwrap_err().iter().any(|e| e.code == "invalid-style-token"), "{name}");
+        }
+        assert!(style.with_values(&BTreeMap::from([("icon_mask".into(), StyleValueSource::Name("#001111".into()))])).is_err());
+        let errors = style.with_values(&BTreeMap::from([("resize_edge".into(), StyleValueSource::Number(13.0))])).unwrap_err();
+        assert!(errors.iter().any(|e| e.message.contains("resize_edge") && e.message.contains("resize_corner")));
+    }
+
+    #[test]
+    fn embedded_tokens_need_no_defaults_and_old_sources_report_them() {
+        assert!(default_diagnostics(&embedded().v1).is_empty());
+        let old = crate::parse_design_source(SourceIdentity::new("old"),
+            include_str!("../../tests/fixtures/revision-1-before-axes.theme.conf.mix")).unwrap();
+        let diagnostics = default_diagnostics(&old.v1);
+        assert!(!diagnostics.is_empty());
+        assert!(diagnostics.iter().all(|d| d.severity == crate::DiagnosticSeverity::Info));
+    }
 
     fn embedded() -> crate::DesignSourceDocument {
         crate::parse_design_source(
@@ -527,6 +946,7 @@ mod tests {
             radius_sm: 6,
             radius: 8,
             radius_lg: 12,
+            ..compile_family(&family(), Scheme::Studio).unwrap()
         }
     }
 
@@ -558,6 +978,7 @@ mod tests {
             menu_row_padding_x: 10.0,
             menu_row_padding_y: 4.0,
             menu_highlight_radius: 3,
+            field_radius: 3.0,
             radius_sm: 3,
             radius: 4,
             radius_lg: 6,
@@ -576,6 +997,9 @@ mod tests {
             knob: Knob::Block,
             slider_fill: SliderFill::Accent,
             menu_highlight_radius: 0,
+            field_radius: 0.0,
+            scroll_width: 6.0,
+            scroll_track_alpha_hot: 0.7,
             radius_sm: 0,
             radius: 0,
             radius_lg: 0,
@@ -586,6 +1010,12 @@ mod tests {
     /// The hue schemes: today's derived look, as data.
     fn plain() -> ResolvedStyle {
         ResolvedStyle {
+            item_spacing_x: 4.0,
+            item_spacing_y: 3.0,
+            window_margin: 8.0,
+            popup_shadow_offset_y: 2.0,
+            popup_shadow_blur: 10.0,
+            popup_shadow_alpha: 0.45,
             widgets: Widgets::Pairs,
             faces: Faces::Typography,
             selection: Selection::Accent,
