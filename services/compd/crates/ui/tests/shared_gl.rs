@@ -195,7 +195,7 @@ fn egui_paints_into_the_shared_context_and_smithay_composites_it() {
             1.0,
         )
         .expect("draw UI texture");
-        frame.finish().expect("finish frame");
+        frame.finish().expect("finish frame").wait().expect("complete frame");
     }
     let framebuffer = gles.bind(&mut target).expect("rebind target");
     let mapping = gles
@@ -345,7 +345,7 @@ fn two_painters_alternate_with_smithay_draws() {
                 1.0,
             )
             .expect("right draw");
-            frame.finish().expect("finish");
+            frame.finish().expect("finish").wait().expect("complete frame");
         }
         let framebuffer = gles.bind(&mut target).expect("rebind");
         let mapping = gles

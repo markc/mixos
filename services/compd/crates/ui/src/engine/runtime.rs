@@ -495,11 +495,6 @@ impl<P: UiProgram> UiRuntime<P> {
         self.scale
     }
 
-    /// Texture changes a headless runtime has not applied (tests).
-    #[cfg(test)]
-    pub(crate) fn unapplied(&self) -> &TexturesDelta {
-        &self.unapplied
-    }
 }
 
 #[cfg(test)]
