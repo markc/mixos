@@ -38,7 +38,7 @@ impl SurfaceHandle {
     /// The record a focused or hovered `wl_surface` belongs to: the X window an
     /// Xwayland-backed surface carries, else the surface itself.
     pub fn resolve(surface: &WlSurface) -> Self {
-        match x11_wm::focus::focus::indexed(surface) {
+        match x11_wm::focus::indexed(surface) {
             Some(x11) => Self::x11(&x11),
             None => Self::wl(surface),
         }

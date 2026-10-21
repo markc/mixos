@@ -37,7 +37,7 @@ use smithay::xwayland::{X11Wm, XWayland, XWaylandEvent};
 use world::environment::interface::lifecycle::lifecycle;
 use world::state::Loop;
 use world::state::state::StatusSession;
-use x11_wm::display::display;
+use x11_wm::display;
 
 /// Spawn the X server and wire both of its sources into `event_loop`.
 ///

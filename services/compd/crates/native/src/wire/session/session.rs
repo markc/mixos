@@ -265,7 +265,7 @@ pub fn register(
                     // reported. Directly-spawned launches were never affected; they read
                     // the same two through `executor.install::base_env`.
                     let wayland_display = state.inner.loader.socket_name.to_string_lossy().into_owned();
-                    let x_display = x11_wm::display::display::get()
+                    let x_display = x11_wm::display::get()
                         .unwrap_or_default();
                     if let Err(err) = lifecycle::push_session_env(&[
                         ("WAYLAND_DISPLAY", wayland_display.as_str()),

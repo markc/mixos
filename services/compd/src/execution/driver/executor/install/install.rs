@@ -97,7 +97,7 @@ fn base_env(state: &Loop) -> BaseEnv {
             // hints compd deliberately does not set.
             (
                 "DISPLAY".into(),
-                x11_wm::display::display::get().unwrap_or_default(),
+                x11_wm::display::get().unwrap_or_default(),
             ),
             ("XDG_SESSION_TYPE".into(), "wayland".into()),
             ("XDG_CURRENT_DESKTOP".into(), desktop.clone()),

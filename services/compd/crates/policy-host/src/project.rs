@@ -265,7 +265,7 @@ pub fn project(lp: &Loop, identity: Identity, scopes: &ReadScopes) -> CompSnapsh
         xwayland: XwaylandSnapshot {
             enabled: crate::xwayland::configured(),
             persist_path: Arc::from(crate::xwayland::persist_path().to_string_lossy().as_ref()),
-            display: x11_wm::display::display::get().map(Arc::from),
+            display: x11_wm::display::get().map(Arc::from),
             state: crate::xwayland::state().name(),
             failures: crate::xwayland::failures(),
         },

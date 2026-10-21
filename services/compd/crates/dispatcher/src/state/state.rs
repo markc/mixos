@@ -40,7 +40,7 @@ use smithay::wayland::shm::ShmHandler;
 use smithay::wayland::xdg_activation::XdgActivationHandler;
 use smithay::wayland::xdg_foreign::XdgForeignState;
 use std::collections::HashMap;
-use x11_wm::focus::focus as xwayland_focus;
+use x11_wm::focus as xwayland_focus;
 
 // 1. Define the trait with your desired traits as bounds (supertraits)
 pub trait DispatchWire:
@@ -2773,7 +2773,7 @@ pub mod xwm_impls {
     use smithay::xwayland::xwm::{Reorder, ResizeEdge, XwmId};
     use smithay::xwayland::{X11Surface, X11Wm, XWaylandClientData, XwmHandler};
     use std::os::fd::OwnedFd;
-    use x11_wm::focus::focus as xwayland_focus;
+    use x11_wm::focus as xwayland_focus;
 
     /// The `SelectionUserData` (a clipboard capture generation everywhere else) that
     /// means "this selection is owned by an X11 client". A paste against it is routed
