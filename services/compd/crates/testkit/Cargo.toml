@@ -23,6 +23,7 @@ mod_module_files = "deny"
 # Dev-only: nothing in compd depends on this crate. It exists to be used from
 # its own tests/ (and later from other crates' dev-dependencies).
 [dependencies]
+image = { workspace = true }
 dispatcher = { workspace = true }
 model = { workspace = true }
 surfaces = { workspace = true }

@@ -178,7 +178,7 @@ fn window(args: &Args, config: Config, paths: Vec<String>) -> Result<(), String>
     .map_err(|e| e.to_string())
 }
 
-fn main() {
+pub(crate) fn main() {
     // First, before any config read or Bus connect: `--version` reports the
     // version and the build hash and does nothing else.
     buildinfo::exit_on_version!();
