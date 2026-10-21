@@ -7045,7 +7045,7 @@ pub(crate) mod tests {
         let strings = crate::strings();
         let frame = |state: &State| {
             let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
-                let _ = crate::view::view(ui, state, &registry, &strings, 2.0, &palette);
+                let _ = crate::view::view(ui, state, &registry, &strings, &palette);
             });
             output.textures_delta.clear();
         };

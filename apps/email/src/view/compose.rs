@@ -338,7 +338,11 @@ fn form(
     // the resizable dialog grow again on every frame.
     let spacing = ui.spacing().item_spacing.y;
     let mut footer = if compose.reply.is_some() {
-        ui.spacing().interact_size.y.max(toolkit::toggle::TRACK.y) + spacing
+        ui.spacing()
+            .interact_size
+            .y
+            .max(toolkit::toggle::track_of(ui.ctx()).y)
+            + spacing
     } else {
         0.0
     };
