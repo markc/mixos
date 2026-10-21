@@ -176,7 +176,7 @@ pub fn wire(
         .inner
         .kernel
         .get(&render_gles::format::registrar::FORMATS);
-    use render_gles::format::{registrar::registrar::Device, role::role::Role};
+    use render_gles::format::{registrar::Device, role::Role};
     formats.register(
         Device::UNSPECIFIED,
         Role::Sample,
