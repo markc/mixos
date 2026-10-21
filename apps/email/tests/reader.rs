@@ -223,10 +223,18 @@ fn window(state: State, theme: &Theme) -> Harness<'static, (State, Vec<UiEvent>)
         .with_size(egui::vec2(1180.0, 760.0))
         .build_ui_state(
             move |ui, (state, seen): &mut (State, Vec<UiEvent>)| {
-                let palette = editor::Palette::from_theme(if state.settings.composer.light { toolkit::content::light_theme() } else { &window_theme });
+                let palette = editor::Palette::from_theme(if state.settings.composer.light {
+                    toolkit::content::light_theme()
+                } else {
+                    &window_theme
+                });
                 let fired = commands::shortcuts(ui.ctx(), state, &registry);
                 let mut events = view(ui, state, &registry, &strings, 2.0, &palette);
-                events.extend(fired.into_iter().map(|id| UiEvent::Command(id, toolkit::command::Origin::Shortcut)));
+                events.extend(
+                    fired
+                        .into_iter()
+                        .map(|id| UiEvent::Command(id, toolkit::command::Origin::Shortcut)),
+                );
                 for event in events {
                     seen.push(event.clone());
                     if let UiEvent::Command(id, origin) = event {
@@ -540,30 +548,57 @@ fn composer_body_types_undoes_and_keeps_registry_chords() {
     assert!(email::view::compose::body_focused(&h.ctx));
     h.get_by_label("Body").type_text("Typed body");
     h.run();
-    assert_eq!(h.state().0.compose.as_ref().unwrap().body.contents(), "Typed body");
+    assert_eq!(
+        h.state().0.compose.as_ref().unwrap().body.contents(),
+        "Typed body"
+    );
     assert!(h.state().0.compose.as_ref().unwrap().draft.body.is_empty());
-    assert!(!h.state().1.iter().any(|e| matches!(e, UiEvent::ComposeField(ComposeField::Body, _))));
+    assert!(
+        !h.state()
+            .1
+            .iter()
+            .any(|e| matches!(e, UiEvent::ComposeField(ComposeField::Body, _)))
+    );
     h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
     h.run();
     assert_eq!(h.state().0.compose.as_ref().unwrap().body.contents(), "");
     h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Y);
     h.run();
-    assert_eq!(h.state().0.compose.as_ref().unwrap().body.contents(), "Typed body");
+    assert_eq!(
+        h.state().0.compose.as_ref().unwrap().body.contents(),
+        "Typed body"
+    );
     h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
     h.run();
-    h.key_press_modifiers(egui::Modifiers::COMMAND.plus(egui::Modifiers::SHIFT), egui::Key::Z);
+    h.key_press_modifiers(
+        egui::Modifiers::COMMAND.plus(egui::Modifiers::SHIFT),
+        egui::Key::Z,
+    );
     h.run();
-    assert_eq!(h.state().0.compose.as_ref().unwrap().body.contents(), "Typed body");
+    assert_eq!(
+        h.state().0.compose.as_ref().unwrap().body.contents(),
+        "Typed body"
+    );
 
     let registry = commands::registry();
     h.state_mut().1.clear();
     for command in registry.iter() {
         for chord in registry.shortcuts_of(command.id) {
-            assert!(!matches!(chord.logical_key, egui::Key::Z | egui::Key::Y), "undo belongs to the editor");
+            assert!(
+                !matches!(chord.logical_key, egui::Key::Z | egui::Key::Y),
+                "undo belongs to the editor"
+            );
             h.key_press_modifiers(chord.modifiers, chord.logical_key);
             h.run();
             assert!(email::view::compose::body_focused(&h.ctx), "{}", command.id);
-            assert!(!h.state().1.iter().any(|e| matches!(e, UiEvent::Command(..))), "{} fired", command.id);
+            assert!(
+                !h.state()
+                    .1
+                    .iter()
+                    .any(|e| matches!(e, UiEvent::Command(..))),
+                "{} fired",
+                command.id
+            );
         }
     }
     // A letter key produces a key event and a text event on the platform.
@@ -573,8 +608,22 @@ fn composer_body_types_undoes_and_keeps_registry_chords() {
     }
     h.get_by_label("Body").type_text("smj");
     h.run();
-    assert!(h.state().0.compose.as_ref().unwrap().body.contents().ends_with("smj"));
-    assert!(!h.state().1.iter().any(|e| matches!(e, UiEvent::Command(..))));
+    assert!(
+        h.state()
+            .0
+            .compose
+            .as_ref()
+            .unwrap()
+            .body
+            .contents()
+            .ends_with("smj")
+    );
+    assert!(
+        !h.state()
+            .1
+            .iter()
+            .any(|e| matches!(e, UiEvent::Command(..)))
+    );
 }
 
 /// The batched action the state queued last: its ids and change.

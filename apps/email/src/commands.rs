@@ -522,7 +522,11 @@ pub fn registry() -> Registry<State> {
 }
 
 /// Registry chords wait while the composer body has the keyboard.
-pub fn shortcuts(ctx: &egui::Context, state: &State, registry: &Registry<State>) -> Vec<&'static str> {
+pub fn shortcuts(
+    ctx: &egui::Context,
+    state: &State,
+    registry: &Registry<State>,
+) -> Vec<&'static str> {
     if state.compose.is_some() && crate::view::compose::body_focused(ctx) {
         Vec::new()
     } else {

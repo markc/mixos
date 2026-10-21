@@ -469,8 +469,7 @@ pub struct Body {
 impl Body {
     pub fn new(text: &str) -> Self {
         Self {
-            doc: editor::local::Document::new(text, "markdown")
-                .expect("valid composer text"),
+            doc: editor::local::Document::new(text, "markdown").expect("valid composer text"),
             revision: 0,
         }
     }
@@ -488,7 +487,10 @@ impl Body {
 impl Clone for Body {
     /// Rebuild from the text. The clone drops undo history.
     fn clone(&self) -> Self {
-        Self { revision: self.revision, ..Self::new(&self.contents()) }
+        Self {
+            revision: self.revision,
+            ..Self::new(&self.contents())
+        }
     }
 }
 
@@ -6423,7 +6425,8 @@ pub(crate) mod tests {
         // An edited quote is left as the person wrote it: the switch does nothing.
         let edited = compose.body.contents().replace("wrote:", "wrote this:");
         assert_ne!(
-            edited, compose.body.contents(),
+            edited,
+            compose.body.contents(),
             "the attribution is in the quote"
         );
         state.apply_ui(UiEvent::ComposeField(ComposeField::Body, edited.clone()));
@@ -6631,7 +6634,10 @@ pub(crate) mod tests {
         let compose = state.compose.as_ref().unwrap();
         assert_eq!(compose.body.contents(), "Typed in the editor");
         assert_eq!(compose.body.revision, revision + 1);
-        assert!(compose.draft.body.is_empty(), "no stale wire body while open");
+        assert!(
+            compose.draft.body.is_empty(),
+            "no stale wire body while open"
+        );
         assert_eq!(compose.body, compose.body.clone());
         assert_eq!(compose.saved_draft().body, "Typed in the editor");
         assert_eq!(state.info()["compose"]["body"], "Typed in the editor");
@@ -6640,10 +6646,14 @@ pub(crate) mod tests {
         keep(&mut state, &mut store);
         assert_eq!(store.list()[0].body, "Typed in the editor");
         state.apply_ui(UiEvent::SendCompose);
-        let sent = state.take_work().into_iter().find_map(|w| match w {
-            Work::Send { draft, .. } => Some(draft),
-            _ => None,
-        }).unwrap();
+        let sent = state
+            .take_work()
+            .into_iter()
+            .find_map(|w| match w {
+                Work::Send { draft, .. } => Some(draft),
+                _ => None,
+            })
+            .unwrap();
         assert_eq!(sent.body, "Typed in the editor");
         let compose = state.compose.as_ref().unwrap();
         assert!(compose.draft.body.is_empty());
@@ -6658,16 +6668,44 @@ pub(crate) mod tests {
     #[test]
     fn programmatic_body_replaces_text_and_advances_revision() {
         let mut state = connected();
-        state.open_compose(Some("a"), Composed { body: "Initial".into(), ..Composed::default() });
+        crate::verbs::command(
+            &mut state,
+            &crate::commands::registry(),
+            &crate::strings(),
+            1,
+            "email.compose",
+            r#"{"account":"a","body":"Initial"}"#,
+        );
         let compose = state.compose.as_ref().unwrap();
         assert_eq!(compose.body.contents(), "Initial");
         assert!(compose.draft.body.is_empty());
         let revision = compose.body.revision;
-        state.apply_ui(UiEvent::ComposeField(ComposeField::Body, "Replacement".into()));
+        state.apply_ui(UiEvent::ComposeField(
+            ComposeField::Body,
+            "Replacement".into(),
+        ));
         let compose = state.compose.as_ref().unwrap();
         assert_eq!(compose.body.contents(), "Replacement");
         assert_eq!(compose.body.revision, revision + 1);
         assert!(compose.draft.body.is_empty());
+    }
+
+    #[test]
+    fn cloning_a_body_keeps_text_and_revision_and_drops_history() {
+        let mut body = Body::new("Initial");
+        body.doc.apply(
+            &editor::Event::Command(editor::EditCommand::Insert("Typed ".into())),
+            &editor::View::prose(),
+        );
+        body.revision += 1;
+        let mut cloned = body.clone();
+        assert_eq!(body, cloned);
+        assert_eq!(body.revision, cloned.revision);
+        cloned.doc.undo().unwrap();
+        assert_eq!(body, cloned, "the clone has no history");
+        body.doc.undo().unwrap();
+        assert_eq!(body.contents(), "Initial");
+        assert_ne!(body, cloned);
     }
 
     #[test]
@@ -6676,7 +6714,10 @@ pub(crate) mod tests {
         state.apply_ui(UiEvent::Compose);
         let revision = state.compose.as_ref().unwrap().revision;
         state.apply_ui(UiEvent::ComposeEdit(editor::Event::Command(
-            editor::EditCommand::Move { to: editor::Motion::DocEnd, extend: false },
+            editor::EditCommand::Move {
+                to: editor::Motion::DocEnd,
+                extend: false,
+            },
         )));
         assert_eq!(state.compose.as_ref().unwrap().revision, revision);
         state.apply_ui(UiEvent::ComposeEdit(editor::Event::Command(
@@ -8274,7 +8315,8 @@ pub(crate) mod tests {
         assert_eq!(compose.to_text, "ann@a.example.invalid, cy@example.invalid");
         assert_eq!(compose.cc_text, "dee@example.invalid");
         assert_eq!(
-            compose.body.contents(), "Lunch at one?\n-- \nBob",
+            compose.body.contents(),
+            "Lunch at one?\n-- \nBob",
             "as it was, not re-signed"
         );
         assert_eq!(compose.draft.in_reply_to, None, "a new thread");
@@ -8524,7 +8566,10 @@ pub(crate) mod tests {
         assert_eq!(compose.draft.subject, "Fwd: Hello");
         assert_eq!(compose.to_text, "x@example.invalid");
         assert!(
-            compose.body.contents().contains("Bob <bob@example.invalid>"),
+            compose
+                .body
+                .contents()
+                .contains("Bob <bob@example.invalid>"),
             "{}",
             compose.body.contents()
         );

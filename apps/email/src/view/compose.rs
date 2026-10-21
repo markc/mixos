@@ -327,7 +327,13 @@ fn row_of<R>(
 /// The rows, labels outside on the left: From (the identity, with
 /// Identities… at the right), To (with the Cc, Bcc and Reply-To buttons at
 /// the right), the optional rows the person opened, and Subject.
-fn form(ui: &mut Ui, compose: &ComposeState, state: &State, palette: &editor::Palette, events: &mut Vec<UiEvent>) {
+fn form(
+    ui: &mut Ui,
+    compose: &ComposeState,
+    state: &State,
+    palette: &editor::Palette,
+    events: &mut Vec<UiEvent>,
+) {
     // The label column fits the widest label any row can have, so opening
     // a row never moves the fields sideways.
     let font = egui::TextStyle::Body.resolve(ui.style());
@@ -471,8 +477,8 @@ fn form(ui: &mut Ui, compose: &ComposeState, state: &State, palette: &editor::Pa
                 font_size: Some(egui::TextStyle::Body.resolve(ui.style()).size),
                 ..editor::View::prose()
             };
-            let height = (ui.text_style_height(&egui::TextStyle::Body) * 8.0)
-                .max(ui.available_height());
+            let height =
+                (ui.text_style_height(&egui::TextStyle::Body) * 8.0).max(ui.available_height());
             ui.allocate_ui(egui::vec2(ui.available_width(), height), |ui| {
                 let output = editor::show(
                     ui,
@@ -481,9 +487,12 @@ fn form(ui: &mut Ui, compose: &ComposeState, state: &State, palette: &editor::Pa
                     palette,
                     &view,
                 );
-                ui.ctx().data_mut(|d| d.insert_temp(
-                    egui::Id::new("email.compose.body.focus"), output.response.id,
-                ));
+                ui.ctx().data_mut(|d| {
+                    d.insert_temp(
+                        egui::Id::new("email.compose.body.focus"),
+                        output.response.id,
+                    )
+                });
                 events.extend(output.events.into_iter().map(UiEvent::ComposeEdit));
             });
         });

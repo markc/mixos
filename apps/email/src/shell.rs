@@ -1576,7 +1576,14 @@ impl Shell {
     pub fn ui(&mut self, ui: &mut egui::Ui) {
         let fired = crate::commands::shortcuts(ui.ctx(), &self.state, &self.commands);
         let stroke = toolkit::icons::stroke_width(&self.theme);
-        let mut events = view(ui, &self.state, &self.commands, &self.strings, stroke, &self.palette);
+        let mut events = view(
+            ui,
+            &self.state,
+            &self.commands,
+            &self.strings,
+            stroke,
+            &self.palette,
+        );
         toolkit::markdown::open_links(ui.ctx(), "email");
         events.extend(
             fired

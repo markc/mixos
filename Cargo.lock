@@ -2665,6 +2665,8 @@ dependencies = [
  "citizen",
  "config",
  "design",
+ "editor",
+ "editor-model",
  "eframe",
  "egui",
  "egui_kittest",
