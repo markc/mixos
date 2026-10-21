@@ -1511,7 +1511,7 @@ mod tests {
             );
             let mut offset = 0.0;
             for (frame, time) in [0.0, 0.025, 0.05].into_iter().enumerate() {
-                let _ = ctx.run_ui(
+                let mut output = ctx.run_ui(
                     egui::RawInput {
                         time: Some(time),
                         screen_rect: Some(Rect::from_min_size(
@@ -1543,6 +1543,7 @@ mod tests {
                         });
                     },
                 );
+                output.textures_delta.clear();
             }
             assert_eq!(
                 ctx.global_style().scroll_animation,
