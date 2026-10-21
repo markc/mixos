@@ -47,5 +47,5 @@ markdown-image-hover = { $url } (not loaded)
 
 toolkit-theme-breeze = Breeze
 toolkit-theme-adwaita = Adwaita
-toolkit-style-breeze = Breeze
-toolkit-style-adwaita = Adwaita
+toolkit-style-breeze = Breeze style
+toolkit-style-adwaita = Adwaita style
