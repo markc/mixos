@@ -1373,7 +1373,7 @@ fn present(
         };
 
         let cfg = model::environment::tearing::config::get();
-        let active = outputs::tearing::resolve::resolve::active(&cfg, scene);
+        let active = outputs::tearing::resolve::active(&cfg, scene);
 
         // Stamp what the scene actually drew, for the gates that ask about
         // visibility. A stamp rather than a flag: the scene knows what it drew,
@@ -1441,7 +1441,7 @@ fn present(
         // one below and for the same reason — both are read before a scene exists.
         gate::set_governed(!matches!(
             active,
-            outputs::tearing::resolve::resolve::Active::Default
+            outputs::tearing::resolve::Active::Default
         ));
         if gate::set_tearing(active.may_tear(refresh)) {
             info!(

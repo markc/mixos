@@ -481,7 +481,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     //
     // Late costs nothing: the event loop has not begun dispatching, so no client
     // has seen the registry.
-    outputs::advertise::advertise::advertise_dmabuf(&mut state);
+    outputs::advertise::advertise_dmabuf(&mut state);
 
     // Initial seat-pointer placement. The cursor renders at the seat's world
     // location (`(0,0)` -> screen center), but the relative-motion accumulator
