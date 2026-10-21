@@ -155,8 +155,8 @@ pub mod dialog;
 
 // handlers for the xdg_shell protocol
 pub(super) mod handlers;
-pub use handlers::{XdgPositionerUserData, XdgShellSurfaceUserData, XdgSurfaceUserData, XdgWmBaseUserData};
 pub(crate) use handlers::validate_xdg_surface_attach;
+pub use handlers::{XdgPositionerUserData, XdgShellSurfaceUserData, XdgSurfaceUserData, XdgWmBaseUserData};
 
 /// The role of an XDG toplevel surface.
 pub const XDG_TOPLEVEL_ROLE: &str = "xdg_toplevel";

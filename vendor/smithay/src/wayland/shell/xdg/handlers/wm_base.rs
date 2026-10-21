@@ -243,13 +243,13 @@ pub(crate) fn validate_xdg_surface_attach(surface: &WlSurface) -> bool {
                 .data_map
                 .get::<XdgToplevelSurfaceData>()
                 .and_then(|data| data.lock().ok())
-                .map(|data| data.last_acked.is_some())
+                .map(|data| data.initial_configure_sent && data.last_acked.is_some())
                 .unwrap_or(false),
             Some(XDG_POPUP_ROLE) => states
                 .data_map
                 .get::<XdgPopupSurfaceData>()
                 .and_then(|data| data.lock().ok())
-                .map(|data| data.last_acked.is_some())
+                .map(|data| data.initial_configure_sent && data.last_acked.is_some())
                 .unwrap_or(false),
             _ => false,
         };
@@ -551,6 +551,10 @@ mod tests {
             self.send(xdg_surface, XDG_SURFACE_ACK_CONFIGURE, &words(&[serial]));
         }
 
+        fn destroy_xdg_surface(&mut self, xdg_surface: u32) {
+            self.send(xdg_surface, XDG_SURFACE_DESTROY, &[]);
+        }
+
         fn get_toplevel(&mut self, xdg_surface: u32) -> u32 {
             let id = self.new_id();
             self.send(xdg_surface, XDG_SURFACE_GET_TOPLEVEL, &words(&[id]));
@@ -817,5 +821,122 @@ mod tests {
             h.error(),
             Some((xdg_surface, xdg_surface::Error::UnconfiguredBuffer as u32))
         );
+    }
+
+    #[test]
+    fn late_ack_for_old_configure_does_not_authorise_attach_after_unmap() {
+        let mut h = Harness::new();
+        let xdg_surface = h.get_xdg_surface(WM_BASE);
+        h.get_toplevel(xdg_surface);
+        h.commit();
+        h.roundtrip();
+        assert_eq!(h.error(), None);
+
+        let first_serial = h.state.xdg.toplevel_surfaces()[0].send_configure();
+        h.roundtrip();
+        assert_eq!(h.error(), None);
+
+        h.ack_configure(xdg_surface, u32::from(first_serial));
+        h.roundtrip();
+        assert_eq!(h.error(), None);
+
+        let buffer = h.buffer();
+        h.attach(buffer);
+        h.commit();
+        h.roundtrip();
+        assert_eq!(h.error(), None);
+
+        let old_serial = h.state.xdg.toplevel_surfaces()[0].send_configure();
+        h.roundtrip();
+        assert_eq!(h.error(), None);
+
+        h.attach(0);
+        h.commit();
+        h.roundtrip();
+        assert_eq!(h.error(), None);
+
+        h.ack_configure(xdg_surface, u32::from(old_serial));
+        h.roundtrip();
+        assert_eq!(h.error(), None);
+
+        let buffer = h.buffer();
+        h.attach(buffer);
+        h.roundtrip();
+        assert_eq!(
+            h.error(),
+            Some((xdg_surface, xdg_surface::Error::UnconfiguredBuffer as u32))
+        );
+    }
+
+    #[test]
+    fn fresh_empty_commit_configure_ack_remap_is_allowed() {
+        let mut h = Harness::new();
+        let xdg_surface = h.get_xdg_surface(WM_BASE);
+        h.get_toplevel(xdg_surface);
+        h.commit();
+        h.roundtrip();
+        assert_eq!(h.error(), None);
+
+        let map_serial = h.state.xdg.toplevel_surfaces()[0].send_configure();
+        h.roundtrip();
+        h.ack_configure(xdg_surface, u32::from(map_serial));
+        h.roundtrip();
+        assert_eq!(h.error(), None);
+
+        let buffer = h.buffer();
+        h.attach(buffer);
+        h.commit();
+        h.roundtrip();
+        assert_eq!(h.error(), None);
+
+        h.attach(0);
+        h.commit();
+        h.roundtrip();
+        assert_eq!(h.error(), None);
+
+        h.commit();
+        h.roundtrip();
+        assert_eq!(h.error(), None);
+
+        let remap_serial = h.state.xdg.toplevel_surfaces()[0].send_configure();
+        h.roundtrip();
+        h.ack_configure(xdg_surface, u32::from(remap_serial));
+        h.roundtrip();
+        assert_eq!(h.error(), None);
+
+        let buffer = h.buffer();
+        h.attach(buffer);
+        h.commit();
+        h.roundtrip();
+        assert_eq!(h.error(), None);
+    }
+
+    #[test]
+    fn destroying_a_roleless_wrapper_allows_a_fresh_wrapper_to_attach() {
+        let mut h = Harness::new();
+        let old_xdg_surface = h.get_xdg_surface(WM_BASE);
+        h.roundtrip();
+        assert_eq!(h.error(), None);
+
+        h.destroy_xdg_surface(old_xdg_surface);
+        h.roundtrip();
+        assert_eq!(h.error(), None);
+
+        let xdg_surface = h.get_xdg_surface(WM_BASE);
+        h.get_toplevel(xdg_surface);
+        h.commit();
+        h.roundtrip();
+        assert_eq!(h.error(), None);
+
+        let serial = h.state.xdg.toplevel_surfaces()[0].send_configure();
+        h.roundtrip();
+        h.ack_configure(xdg_surface, u32::from(serial));
+        h.roundtrip();
+        assert_eq!(h.error(), None);
+
+        let buffer = h.buffer();
+        h.attach(buffer);
+        h.roundtrip();
+        assert_eq!(h.error(), None);
     }
 }
