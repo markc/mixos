@@ -159,6 +159,7 @@ hunk is marked `// compd: …`.
 | xdg: a role from another protocol is refused; xdg role refused only while a live wrapper exists (Qt hide→show) | applied (per-wl_surface wrapper registry) | `wayland/shell/xdg/handlers/{wm_base,surface}.rs` | `destroying_the_xdg_surface_releases_the_wl_surface_for_a_fresh_wrapper`, `a_second_wrapper_while_one_is_live_is_refused`, `a_non_xdg_role_is_refused` |
 | xdg: refuse get_xdg_surface with a buffer attached/committed | applied (`XdgShellHandler::surface_has_buffer` hook) | `wayland/shell/xdg/{mod,handlers/wm_base}.rs` | `…_pending_buffer_is_refused`, `…_committed_buffer_is_refused` |
 | xdg: NULL-attach rule | applied; plus a compd fallback to `RendererSurfaceStateUserData` because compd's commit handler takes `current.buffer` (that fallback is untested) | `wayland/shell/xdg/mod.rs` | `an_uncommitted_null_attach_does_not_release_a_committed_buffer`, `smithay_default_buffer_check_ignores_an_uncommitted_null_attach` |
+| xdg: immediate buffer-attach validation | applied; a non-null attach on a live, unconfigured xdg wrapper posts `unconfigured_buffer` before pending state changes, even without a role or commit; NULL attach and ordinary surfaces remain allowed | `wayland/compositor/handlers.rs`, `wayland/shell/xdg/{mod,handlers,handlers/wm_base}.rs` | `roleless_attach_without_commit_is_unconfigured_buffer`, `attach_after_role_before_initial_configure_is_unconfigured_buffer`, `valid_handshake_allows_subsequent_attach`, `null_attach_after_get_xdg_surface_is_allowed`, `attach_after_committed_unmap_requires_new_configure_ack`, `late_ack_for_old_configure_does_not_authorise_attach_after_unmap`, `fresh_empty_commit_configure_ack_remap_is_allowed`, `destroying_a_roleless_wrapper_allows_a_fresh_wrapper_to_attach`, `popup_attach_before_ack_is_unconfigured_buffer`, `popup_attach_after_ack_is_allowed` |
 | xdg-decoration: destroy hook (chrome, 2026-10-03) | new: `XdgDecorationHandler::decoration_destroyed` (default no-op), called from the toplevel decoration's `Destroy`, so a compositor drawing SSD learns the client went back to CSD | `wayland/shell/xdg/decoration.rs` | `destroy_calls_the_decoration_destroyed_hook` (source shape) |
 | libinput per-turn dispatch budget (opt-in) | applied (the local tablet-pad arm untouched) | `backend/libinput/mod.rs` | `backend::libinput::fairness_tests` (4) |
 | keyboard: focus-to-None calls `focus_changed` | applied | `input/keyboard/mod.rs` | `focus_none_tests` |
@@ -171,6 +172,12 @@ hunk is marked `// compd: …`.
 | libinput touch `seat_slot()` (seat-wide touch ids; two touch devices no longer collide) | applied: all four touch event impls use `seat_slot()` | `backend/libinput/mod.rs` | `backend::libinput::seat_slot_guard::every_touch_event_uses_the_seat_slot` (source guard; a live proof needs two touch devices) |
 
 ### Later patches
+
+**Committed VRR state for fixed-refresh scheduling** (`backend/drm/surface/{atomic,mod}.rs`).
+- `DrmSurface::vrr_active()` reads a per-surface atomic cache of the CRTC's VRR state. It starts from kernel readback and changes only after a successful real modeset/page flip, clear, or state readback on reset. Legacy DRM reports false. It performs no per-frame ioctl.
+- The existing `vrr_enabled()` continues to describe the pending request. `use_vrr()` also changes `state.vrr` after a successful non-modesetting TEST_ONLY ioctl, so reading that field alone would incorrectly treat a tested request as already committed. Failed and test-only commits leave the new cache intact.
+- compd uses this accessor for its per-output late-latch gate, allowing fixed-refresh pipes to defer even when the global VRR preference is on.
+- Guard: `backend::drm::surface::atomic::test::committed_vrr_cache_tracks_real_commits_and_readback_only` checks all cache writers and excludes the test-only path. Real DRM acceptance still needs hardware validation.
 
 **DnD acceptance is withdrawn when its target disappears** (2026-10-06).
 `DnDGrab::drop` requires a live target surface. `WlOfferData::validated`

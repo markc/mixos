@@ -38,6 +38,11 @@ pub fn interval(mode: &Mode) -> Duration {
 /// phase to nonsense.
 const MAX_DISPATCH_DELAY: Duration = Duration::from_millis(200);
 
+// A vblank interrupt can precede the timestamped start of active scanout.
+// Cover that blanking period, but reject clock/epoch errors. 2 ms is well
+// below a 60 Hz refresh (16.67 ms); this is not permission to skip a refresh.
+const MAX_FUTURE_OFFSET: Duration = Duration::from_millis(2);
+
 /// `CLOCK_MONOTONIC` now — the same clock DRM stamps `DrmEventTime::Monotonic`
 /// with, and the same one `Instant` reads on Linux. `std::time::Instant` cannot
 /// expose its raw value, so a direct read is the only way to relate the two.
@@ -70,6 +75,31 @@ pub fn anchor(
     vblank_kernel: Option<Duration>,
     kernel_now: Option<Duration>,
 ) -> Instant {
+    past_anchor(observed, vblank_kernel, kernel_now).unwrap_or(observed)
+}
+
+/// Unlike the tearing phase fallback, a composition deadline must never use
+/// event-handler arrival as its anchor when the DRM clock cannot be related.
+pub fn trusted_anchor(
+    observed: Instant,
+    vblank_kernel: Option<Duration>,
+    kernel_now: Option<Duration>,
+) -> Option<Instant> {
+    let (vblank, now) = (vblank_kernel?, kernel_now?);
+    if vblank > now {
+        let ahead = vblank - now;
+        return (ahead <= MAX_FUTURE_OFFSET)
+            .then(|| observed.checked_add(ahead))
+            .flatten();
+    }
+    past_anchor(observed, Some(vblank), Some(now))
+}
+
+fn past_anchor(
+    observed: Instant,
+    vblank_kernel: Option<Duration>,
+    kernel_now: Option<Duration>,
+) -> Option<Instant> {
     let delay = match (vblank_kernel, kernel_now) {
         (Some(vblank), Some(now)) => now.checked_sub(vblank),
         _ => None,
@@ -77,7 +107,6 @@ pub fn anchor(
     delay
         .filter(|d| *d <= MAX_DISPATCH_DELAY)
         .and_then(|d| observed.checked_sub(d))
-        .unwrap_or(observed)
 }
 
 /// Time remaining until the next retrace, extrapolated from `anchor` by the
@@ -86,4 +115,72 @@ pub fn until_next(anchor: Instant, now: Instant, refresh: Duration) -> Duration 
     let period = refresh.as_nanos().max(1);
     let phase = (now.saturating_duration_since(anchor).as_nanos() % period) as u64;
     refresh.saturating_sub(Duration::from_nanos(phase))
+}
+
+#[cfg(test)]
+mod deadline_tests {
+    use super::*;
+
+    #[test]
+    fn deadline_accepts_small_future_scanout_timestamps_without_changing_tearing_phase() {
+        let observed = Instant::now();
+        let now = Duration::from_secs(10);
+        for offset in [
+            Duration::from_micros(300),
+            Duration::from_micros(1500),
+            MAX_FUTURE_OFFSET,
+        ] {
+            assert_eq!(
+                trusted_anchor(observed, Some(now + offset), Some(now)),
+                Some(observed + offset)
+            );
+            assert_eq!(anchor(observed, Some(now + offset), Some(now)), observed);
+        }
+        for offset in [
+            MAX_FUTURE_OFFSET + Duration::from_nanos(1),
+            Duration::from_millis(50),
+        ] {
+            assert_eq!(
+                trusted_anchor(observed, Some(now + offset), Some(now)),
+                None
+            );
+        }
+        assert_eq!(
+            trusted_anchor(observed, Some(now), Some(now)),
+            Some(observed)
+        );
+        assert_eq!(
+            trusted_anchor(observed, Some(now), Some(now + MAX_DISPATCH_DELAY)),
+            Some(observed - MAX_DISPATCH_DELAY)
+        );
+        assert_eq!(
+            trusted_anchor(
+                observed,
+                Some(now),
+                Some(now + MAX_DISPATCH_DELAY + Duration::from_nanos(1))
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn deadline_anchor_recovers_dispatch_delay_and_refuses_fallback_clocks() {
+        let observed = Instant::now();
+        let stamp = Duration::from_secs(10);
+        let delay = Duration::from_millis(5);
+        assert_eq!(
+            trusted_anchor(observed, Some(stamp), Some(stamp + delay)),
+            Some(observed - delay)
+        );
+        assert_eq!(trusted_anchor(observed, None, Some(stamp)), None);
+        assert_eq!(trusted_anchor(observed, Some(stamp), None), None);
+        assert_eq!(
+            trusted_anchor(observed, Some(stamp), Some(stamp - delay)),
+            None
+        );
+        assert_eq!(
+            trusted_anchor(observed, Some(stamp), Some(stamp + Duration::from_secs(1))),
+            None
+        );
+    }
 }

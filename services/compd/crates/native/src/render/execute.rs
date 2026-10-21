@@ -25,6 +25,7 @@
 pub(crate) mod diagnostics;
 
 pub mod hdr;
+pub(crate) mod late_latch;
 
 use crate::context::render::NativeRenderContext;
 use frames::draw::plan::frame::{FramePass, plan};
@@ -337,6 +338,19 @@ pub fn execute(
     scope: RenderScope,
 ) -> FrameOutcome {
     let _ = &loop_handle; // retained for parity with the original signature
+    if matches!(state.inner.status_session, StatusSession::Paused)
+        || *state.inner.kernel.get(&drivers::lid::base::DISPLAY_OFF)
+    {
+        if let Ok(mut ctx) = ctx_rc.try_borrow_mut() {
+            for pipe in &mut ctx.outputs {
+                late_latch::cancel(pipe);
+                state
+                    .state
+                    .redraw
+                    .release(&world::state::output_key(&pipe.output));
+            }
+        }
+    }
     capture_windows_offscreen(&ctx_rc, state);
     if let StatusSession::Paused = state.inner.status_session {
         let _skip = ledger::frame_trace::span("kms_skip_paused", 0);
@@ -486,6 +500,7 @@ pub fn execute(
     // a held wake when nothing was queued).
     let mut pace: Option<std::time::Duration> = None;
     for output_idx in 0..ctx_ref.outputs.len() {
+        late_latch::collect_gpu(&mut ctx_ref.outputs[output_idx]);
         let trace_output = if ledger::frame_trace::enabled() {
             OutputId::from_key(&world::state::output_key(
                 &ctx_ref.outputs[output_idx].output,
@@ -532,6 +547,16 @@ pub fn execute(
         // (`force_redraw`, `bump_redraw_epoch`), so rescues are unaffected.
         if !state.state.redraw.needs(&key) {
             let _skip = ledger::frame_trace::span("kms_skip_current_epoch", trace_output);
+            continue;
+        }
+        if late_latch::defer(
+            &mut ctx_ref.outputs[output_idx],
+            state,
+            &loop_handle,
+            &key,
+            trace_output,
+            true,
+        ) {
             continue;
         }
         // Rate cap / pacing gate: with async flips the completion event arrives
@@ -606,6 +631,8 @@ pub fn execute(
                         trace_output,
                         remaining.as_micros() as u64,
                     );
+                    // No frame is queued, so no flip will clear this sample.
+                    ctx_ref.outputs[output_idx].late_latch.abandon();
                     continue;
                 }
             }
@@ -732,6 +759,7 @@ pub fn execute(
         }
 
         let mut last_result_empty = true;
+        let mut render_fence = None;
         // THIS frame's per-element render states, kept only so `collect_feedback` can
         // report `ZeroCopy` per surface. Cloned out of the `RenderFrameResult` because
         // that borrows the renderer and is dropped well before `present` runs; the map
@@ -781,6 +809,16 @@ pub fn execute(
                 let sync_trace = ledger::frame_trace::span("kms_render_sync", output_id.0);
                 honor_needs_sync(&scene_result);
                 drop(sync_trace);
+                if ctx_ref.outputs[output_idx]
+                    .late_latch
+                    .sample_start
+                    .is_some()
+                    && let smithay::backend::drm::compositor::PrimaryPlaneElement::Swapchain(
+                        element,
+                    ) = &scene_result.primary_element
+                {
+                    render_fence = element.sync.export();
+                }
 
                 let scene_is_empty = scene_result.is_empty;
 
@@ -1103,6 +1141,7 @@ pub fn execute(
                 visible_window,
                 output_idx,
                 frame_states.as_ref(),
+                render_fence,
             ) {
                 any_queued = true;
             }
@@ -1129,6 +1168,7 @@ pub fn execute(
         } else {
             let output = ctx_ref.outputs[output_idx].output.clone();
             let _skip = ledger::frame_trace::span("kms_skip_empty_damage", output_id.0);
+            late_latch::cancel(&mut ctx_ref.outputs[output_idx]);
             let key = world::state::output_key(&output);
             // Rendered, nothing to submit: still a frame the ledger accounts for.
             state.state.redraw.frame(&key, true);
@@ -1300,6 +1340,7 @@ fn present(
     window_visible: Vec<smithay::desktop::Window>,
     output_idx: usize,
     states: Option<&smithay::backend::renderer::element::RenderElementStates>,
+    render_fence: Option<std::os::fd::OwnedFd>,
 ) -> bool {
     use kms::scanout::flip::queue::{QueueOutcome, queue};
     let trace_output = if ledger::frame_trace::enabled() {
@@ -1494,7 +1535,7 @@ fn present(
 
     let resuming = !(*state.inner.kernel.get(&drivers::resume::base::VBLANK_SEEN));
     // Scope the drm_output borrow so the `Failed` arm can tear the pipe down.
-    let outcome = {
+    let (outcome, modeset) = {
         let Some(drm_output) = ctx_ref.outputs[output_idx].drm_output.as_mut() else {
             return false;
         };
@@ -1502,13 +1543,29 @@ fn present(
         // (the per-pipe `in_flight` guard keeps `pending_frame` empty), so the
         // set-then-queue ordering is race-free.
         drm_output.with_compositor(|c| c.set_tearing(tear));
+        let modeset = drm_output.with_compositor(|c| c.surface().commit_pending());
         let trace = ledger::frame_trace::span("kms_queue_frame", trace_output);
         let outcome = queue(drm_output, Some(feedback), resuming);
         drop(trace);
-        outcome
+        (outcome, modeset)
     };
     match outcome {
         QueueOutcome::Queued => {
+            let pipe = &mut ctx_ref.outputs[output_idx];
+            let margin = std::time::Duration::from_micros(
+                model::environment::config::base::get().late_latch_margin_us,
+            );
+            if let Some(start) =
+                pipe.late_latch
+                    .committed(std::time::Instant::now(), margin, modeset)
+                && let Some(fence) = render_fence
+            {
+                pipe.gpu_completion = crate::wire::frame::deadline::GpuCompletion::new(
+                    &state.loop_handle,
+                    fence,
+                    start,
+                );
+            }
             if ledger::frame_trace::enabled() {
                 ctx_ref.outputs[output_idx].flip_trace = Some(ledger::frame_trace::wait_span(
                     "kms_submit_to_flip",
@@ -1525,6 +1582,7 @@ fn present(
             state.state.redraw.frame(&key, false);
         }
         QueueOutcome::DeferredToWatchdog => {
+            late_latch::cancel(&mut ctx_ref.outputs[output_idx]);
             let _skip = ledger::frame_trace::span("kms_defer_watchdog", trace_output);
             // Rendered but not submitted: same invariant break as the capture
             // pre-render, so discard the age accounting rather than let it skew.
@@ -1535,6 +1593,7 @@ fn present(
             return false;
         }
         QueueOutcome::Failed => {
+            late_latch::cancel(&mut ctx_ref.outputs[output_idx]);
             let _skip = ledger::frame_trace::span("kms_skip_queue_failed", trace_output);
             // Fail-soft: this connector's flip failed → drop its scanout target so
             // the render loop skips it (it goes dark) while other outputs keep

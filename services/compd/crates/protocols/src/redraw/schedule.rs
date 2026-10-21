@@ -42,6 +42,7 @@ struct Pipe {
     key: String,
     rendered: u64,
     in_flight: bool,
+    deferred: bool,
     flips: u64,
 }
 
@@ -118,6 +119,7 @@ impl Schedule {
     pub fn vblank(&mut self, key: &str) {
         let pipe = self.entry(key);
         pipe.in_flight = false;
+        pipe.deferred = false;
         pipe.flips = pipe.flips.wrapping_add(1);
     }
 
@@ -220,7 +222,7 @@ impl Schedule {
     pub fn request_for(&mut self, reason: RedrawReason) {
         self.ledger.note_request(reason, RequestKind::Wake);
         self.epoch = self.epoch.wrapping_add(1);
-        if self.pipes.is_empty() || self.pipes.iter().any(|p| !p.in_flight) {
+        if self.pipes.is_empty() || self.pipes.iter().any(|p| !p.in_flight && !p.deferred) {
             self.wake();
         }
     }
@@ -289,7 +291,7 @@ impl Schedule {
     pub fn pending(&self) -> bool {
         self.pipes
             .iter()
-            .any(|p| !p.in_flight && p.rendered != self.epoch)
+            .any(|p| !p.in_flight && !p.deferred && p.rendered != self.epoch)
     }
     /// Unknown pipes need rendering: a first frame is never gated on bookkeeping.
     pub fn needs(&self, key: &str) -> bool {
@@ -297,6 +299,18 @@ impl Schedule {
     }
     pub fn in_flight(&self, key: &str) -> bool {
         self.get(key).is_some_and(|p| p.in_flight)
+    }
+
+    /// A native pipe owns a deadline timer. Reasons and epochs keep accumulating,
+    /// but requests cannot wake this pipe before that timer releases it.
+    pub fn defer(&mut self, key: &str) {
+        self.entry(key).deferred = true;
+    }
+
+    pub fn release(&mut self, key: &str) {
+        if let Some(pipe) = self.pipes.iter_mut().find(|p| p.key == key) {
+            pipe.deferred = false;
+        }
     }
 
     /// A render begins: the pipe is current as of NOW. A request that arrives
@@ -311,7 +325,9 @@ impl Schedule {
     }
     /// The flip completed — or never can (rebuilt pipe, session resume).
     pub fn completed(&mut self, key: &str) {
-        self.entry(key).in_flight = false;
+        let pipe = self.entry(key);
+        pipe.in_flight = false;
+        pipe.deferred = false;
     }
 
     /// `key` put a frame out: submitted to the display (`empty == false`), or
@@ -340,6 +356,7 @@ impl Schedule {
                     key: key.to_string(),
                     rendered: 0,
                     in_flight: false,
+                    deferred: false,
                     flips: 0,
                 });
                 self.pipes.len() - 1

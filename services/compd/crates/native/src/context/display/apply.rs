@@ -61,6 +61,17 @@ fn panel_dpms(state: &mut Loop, ctx_rc: &Rc<RefCell<NativeRenderContext>>, on: b
     let mut ctx = ctx_rc.borrow_mut();
     let ctx_ref = &mut *ctx;
 
+    // A power transition invalidates the fixed-refresh phase. In particular,
+    // a quick off/on must not leave the first repaint behind an old deadline.
+    for pipe in &mut ctx_ref.outputs {
+        crate::render::execute::late_latch::cancel(pipe);
+        pipe.late_latch = Default::default();
+        state
+            .state
+            .redraw
+            .release(&world::state::output_key(&pipe.output));
+    }
+
     if on {
         // Power on first, then a forced modeset + surface/buffer reset to repaint
         // (same recovery the session-resume path performs).

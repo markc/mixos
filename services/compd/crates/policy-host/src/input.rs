@@ -936,6 +936,86 @@ fn agent_motion(
     pointer.frame(&mut lp.state);
 }
 
+/// Convert wlcs screen coordinates with the compositor's native camera transform.
+#[cfg(feature = "wlcs")]
+pub fn wlcs_world_point(lp: &Loop, x: f64, y: f64) -> Point<f64, Logical> {
+    // wlcs uses top-left screen pixels; the native Space is centre-anchored.
+    let context = lp.size_ctx_all();
+    let transform: Transform = (
+        Point::<f64, smithay::utils::Physical>::from((x * context.scale, y * context.scale)),
+        context,
+    )
+        .into();
+    transform.into_storage_point_f64()
+}
+
+#[cfg(feature = "wlcs")]
+/// Native agent touch injection for the optional wlcs adapter. It shares the
+/// agent's output bounds, visible-surface hit test, clock and activity lane.
+/// Touch focus continuity is maintained by Smithay; the adapter checks slots.
+pub fn agent_touch(
+    lp: &mut Loop,
+    slot: u32,
+    phase: &str,
+    x: f64,
+    y: f64,
+) -> Result<(), ControlReply> {
+    use smithay::input::touch::{DownEvent, MotionEvent as TouchMotion, UpEvent};
+    if world::comp::session_lock::active(lp) {
+        return Err(ControlReply::Locked);
+    }
+    let Some(touch) = lp.state.seat.agent.as_ref().and_then(|s| s.get_touch()) else {
+        return Err(agent_refusal("touch_unavailable"));
+    };
+    let time = now_ms(lp);
+    let serial = SERIAL_COUNTER.next_serial();
+    let slot = Some(slot).into();
+    if phase != "touch_down"
+        && touch
+            .grab_start_data()
+            .and_then(|start| start.focus)
+            .is_none_or(|(surface, _)| !surface.is_alive())
+    {
+        return Err(agent_refusal("touch_focus_lost"));
+    }
+    if phase == "touch_up" {
+        touch.up(&mut lp.state, &UpEvent { slot, serial, time });
+    } else {
+        let (_, _, x, y) = output_row(lp, None, x, y)?;
+        let point = wlcs_world_point(lp, x, y);
+        let position = (point.x, point.y);
+        if phase == "touch_down" {
+            let focus =
+                agent_hit(lp, None, position)?.ok_or_else(|| agent_refusal("touch_no_target"))?;
+            touch.down(
+                &mut lp.state,
+                Some(focus),
+                &DownEvent {
+                    slot,
+                    location: position.into(),
+                    serial,
+                    time,
+                },
+            );
+        } else {
+            touch.motion(
+                &mut lp.state,
+                // Smithay retains each slot's down focus and surface origin.
+                // The motion focus argument is only a possible DnD target.
+                None,
+                &TouchMotion {
+                    slot,
+                    location: position.into(),
+                    time,
+                },
+            );
+        }
+    }
+    touch.frame(&mut lp.state);
+    injected(lp, SeatKind::Agent);
+    Ok(())
+}
+
 /// The agent preflight's facts.
 fn agent_seat_facts(lp: &Loop) -> AgentSeatFacts {
     let Some(agent) = lp.state.seat.agent.as_ref() else {

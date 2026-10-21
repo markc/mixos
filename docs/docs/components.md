@@ -163,6 +163,7 @@ checked separately by the layering gate.
 | [surfaces](https://github.com/markc/mixos/blob/main/services/compd/crates/surfaces/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
 | [testkit](https://github.com/markc/mixos/blob/main/services/compd/crates/testkit/Cargo.toml) | compd | test | desktop | none | 0.1.1 |
 | [ui](https://github.com/markc/mixos/blob/main/services/compd/crates/ui/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
+| [wlcs](https://github.com/markc/mixos/blob/main/services/compd/crates/wlcs/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
 | [world](https://github.com/markc/mixos/blob/main/services/compd/crates/world/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
 | [x11-wm](https://github.com/markc/mixos/blob/main/services/compd/crates/x11-wm/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
 | [dnsd](https://github.com/markc/mixos/blob/main/services/dnsd/Cargo.toml) | dnsd | service | core | public | 0.3.4 |

@@ -12,6 +12,8 @@
 //! - `timing-predict`: refine that estimate with a presentation clock
 //!   (implies `flip-estimate`).
 
+pub mod deadline;
+
 use crate::context::render::NativeRenderContext;
 use crate::render::execute::FrameOutcome;
 use smithay::backend::drm::DrmDeviceNotifier;
@@ -441,10 +443,11 @@ fn process_vblank_inner(
     // `Instant` reads, which is why the two can be related at all. Note this
     // must NOT use `start_time.elapsed()`: that is a since-launch clock, a
     // different epoch entirely.
+    let observed = std::time::Instant::now();
+    let kernel_now = kms::scanout::timing::vblank::monotonic_now();
+    let anchored = kms::scanout::timing::vblank::trusted_anchor(observed, time, kernel_now);
     ctx.outputs[idx].last_vblank = Some(kms::scanout::timing::vblank::anchor(
-        std::time::Instant::now(),
-        time,
-        kms::scanout::timing::vblank::monotonic_now(),
+        observed, time, kernel_now,
     ));
 
     // 1. Pop presentation feedback for the frame that just hit screen. No output
@@ -477,6 +480,32 @@ fn process_vblank_inner(
     // rate. `refresh` (the primary's, from register()) is retained only for the
     // throttle gate above, which is feature-gated off in the shipping build.
     let this_refresh = kms::scanout::timing::vblank::interval(&ctx.outputs[idx].mode);
+    let pipe = &mut ctx.outputs[idx];
+    crate::render::execute::late_latch::collect_gpu(pipe);
+    if let Some(timer) = &pipe.deadline_timer {
+        timer.cancel();
+    }
+    let target = pipe.late_latch.submitted_target();
+    let budget_used = pipe.late_latch.submitted_budget;
+    let hit = pipe.late_latch.flipped(
+        anchored.filter(|_| !tore),
+        this_refresh,
+        state.state.redraw.needs(&key),
+    );
+    if ledger::frame_trace::enabled()
+        && let Some(target) = target
+    {
+        ledger::redraw::trace_deadline(
+            match hit {
+                Some(true) => "kms_latch_hit",
+                Some(false) => "kms_latch_miss",
+                None => "kms_latch_unknown",
+            },
+            graphics::capture::registry::OutputId::from_key(&key).0,
+            Some(target.vblank),
+            budget_used,
+        );
+    }
     // MSC for presentation feedback. The page-flip event's own sequence is the cheap
     // source and is used whenever it carries one; a driver that leaves it 0 is repaired
     // from the CRTC here, while `ctx` still holds the device fd. See
@@ -523,7 +552,8 @@ fn process_vblank_inner(
     }
 
     // 3. If anything has requested a redraw since THIS pipe last rendered, render
-    //    now — but ONLY this output (the one that flipped). Other outputs are
+    //    at its composition deadline (or immediately when unsafe) — ONLY this output.
+    //    Other outputs are
     //    re-rendered on their OWN vblanks, so a fast monitor is never paced by a
     //    slow one.
     //
@@ -533,6 +563,25 @@ fn process_vblank_inner(
     // some unrelated caller re-armed it.)
     let was_needed = state.state.redraw.needs(&key);
     if was_needed {
+        // Arm before entering the executor: scene preparation and input sampling
+        // belong at the deadline, not at flip-handler arrival.
+        let mut ctx = ctx_rc.borrow_mut();
+        let trace_output = if ledger::frame_trace::enabled() {
+            graphics::capture::registry::OutputId::from_key(&key).0
+        } else {
+            0
+        };
+        if crate::render::execute::late_latch::defer(
+            &mut ctx.outputs[idx],
+            state,
+            loop_handle,
+            &key,
+            trace_output,
+            false,
+        ) {
+            return;
+        }
+        drop(ctx);
         let outcome = crate::render::execute::execute(
             ctx_rc.clone(),
             loop_handle.clone(),

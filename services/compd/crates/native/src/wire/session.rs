@@ -45,6 +45,11 @@ pub fn register(
 
             match event {
                 smithay::backend::session::Event::PauseSession => {
+                    for pipe in &mut ctx_ref.outputs {
+                        crate::render::execute::late_latch::cancel(pipe);
+                        pipe.late_latch = Default::default();
+                        state.state.redraw.release(&world::state::output_key(&pipe.output));
+                    }
                     state.inner.status_session = StatusSession::Paused;
                     state.inner.session_edges.push((false, unix_ms()));
                     world::comp::scenes::pointer_motion(state, None);

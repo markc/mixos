@@ -173,6 +173,10 @@ where
     ) {
         match request {
             wl_surface::Request::Attach { buffer, x, y } => {
+                if buffer.is_some() && !crate::wayland::shell::xdg::validate_xdg_surface_attach(surface) {
+                    return;
+                }
+
                 let offset: Point<i32, Client> = (x, y).into();
                 let offset = (x != 0 || y != 0).then_some(offset);
 

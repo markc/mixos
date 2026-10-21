@@ -209,6 +209,8 @@
                 <div class="panel-content">
                     <nav id="toc-nav">
                         <a href="#deployment-and-recording">Deployment and recording</a>
+                        <a href="#wayland-conformance-phase-6">Wayland conformance (Phase 6)</a>
+                        <a href="#native-xdg-attach-validation-follow-up" class="toc-h3">Native xdg attach validation follow-up</a>
                     </nav>
                 </div>
             </div>
@@ -353,6 +355,236 @@ observed on a desk with the Intel ICD. Open follow-ups
 are the test's fixed post-typing sleep (retry once on an unchanged capture),
 the helper's leftover <code>.session</code> directory on
 failure, and its reliance on <code>spawn</code> merging the parent environment.</p>
+<h2 id="wayland-conformance-phase-6">Wayland conformance (Phase 6)</h2>
+<p><a href="https://github.com/canonical/wlcs">canonical/wlcs</a> exercises protocol behaviour:
+buffers, pointer and touch delivery, constraints, clipboard and selection,
+subsurfaces, shell roles and popups, output descriptions and supported extensions.
+It does not establish KMS, physical input or hardware presentation correctness.
+The baseline pins <strong>v1.8.1</strong>, commit
+<code>2b385328366de5db19521b9b3eef81861430d984</code>.</p>
+<p>The private <code>wlcs</code> crate produces <code>libcompd_wlcs.so</code>. It implements the C ABI
+independently, with the callback structure informed by
+<a href="https://github.com/Smithay/smithay/tree/v0.7.0/wlcs_anvil">Smithay 0.7's wlcs_anvil</a>.
+Small client/surface lookup fragments in the compd adapter follow that reference.
+The C ABI shim and owned-child lifecycle were implemented for compd. The <code>/256</code>
+conversion implements Wayland's signed 24.8 fixed-point ABI; <code>touch_destroy</code>
+auto-up is local lifetime handling (wlcs_anvil's touch destroy is empty).
+Both source headers and <code>NOTICE</code> credit the reference; its MIT licence remains
+in <code>vendor/smithay/LICENSE.txt</code>.
+It owns a fresh <code>compd --headless</code> child for each server, isolating process-global
+configuration, logging and GPU resources across tests. An inherited socket carries
+test requests and client descriptors directly to compd's event loop. That control
+socket has no listening endpoint; the child also listens on <code>--socket wayland-wlcs</code>
+inside its private runtime directory. Pointer events call the agent seat's existing
+policy-host injection path; touch uses that host's agent hit test on down and
+Smithay's held focus for motion and up. Refused delivery returns an explicit error
+on the control socket and is printed with the compositor log path. Window placement
+uses the native policy-host placement executor with a test-only entry point:
+it retains redraw, pointer retargeting and interactive-grab completion while
+permitting deliberately off-output positions. All new
+entry points are behind <code>wlcs</code>. Callbacks wait for completion on the compositor loop.
+The extension descriptor is read from a live Wayland registry, including the
+advertised versions. Creation probes a short-lived child and reaps it to cache
+the descriptor before wlcs asks for it. The descriptor callback only reads the
+cache, including after stop; only explicit start retains a test compositor.
+Stop kills and reaps the owned child,
+and parent death also kills it after a wlcs abort. The adapter is compiled only
+with compd's <code>wlcs</code> feature and installed only on the headless backend.</p>
+<p>Placement uses the requested <strong>wl_surface origin</strong> at screen <code>(x, y)</code>. The shim
+converts through the native camera transform (world <code>(0, 0)</code> is screen centre),
+adds the committed xdg geometry offset to obtain the Space element location,
+then reads the public window row and checks that its surface origin projects
+back to <code>(x, y)</code>. Successful checks appear in the gate output. Absolute pointer
+and touch coordinates use the same conversion, avoiding a half-screen shift.</p>
+<p>There is a contract discrepancy in the pinned wlcs tests. <code>display_server.h</code>
+describes the window's left/top; both <code>pointer_respects_window_geom_offset</code> and
+<code>touch_respects_window_geom_offset</code> in <code>tests/xdg_toplevel_stable.cpp:131,162</code>
+(and their v6 equivalents at <code>103,134</code>) expect local input coordinates
+<code>input - placement + geometry_offset</code>, which positions the <strong>window geometry</strong>
+origin. They use offset <code>(35, 12)</code> and input delta <code>(20, 30)</code>, expecting
+<code>(55, 42)</code>. Under the explicitly selected surface-origin convention, the correct
+local point would be <code>(20, 30)</code>. Smithay's reference adapter also uses the geometry
+origin: <code>vendor/smithay/wlcs_anvil/src/main_loop.rs:213</code> maps the element at the
+wlcs location without adding the geometry offset. The pinned tests and that
+reference agree; this adapter's selected surface-origin convention differs.
+This contract mismatch is established from source, not inferred from a failed
+run. No test source or normal compositor behaviour is changed to conceal it.</p>
+<p>The fresh recording reports the four named cases as follows (coordinates below
+are pixels, converted from Wayland 24.8 values):</p>
+<table><thead><tr><th>Case</th><th>Observed result</th></tr></thead><tbody>
+<tr><td><code>XdgToplevelStableTest.pointer_respects_window_geom_offset</code></td><td>Fails the coordinate assertion: <code>(2.5, 24)</code> observed, <code>(55, 42)</code> expected by wlcs. Placement self-check reports <code>(200, 280)</code>.</td></tr>
+<tr><td><code>XdgToplevelStableTest.touch_respects_window_geom_offset</code></td><td><code>touch_down</code> refuses <code>touch_no_target</code>; the touched-window assertion sees NULL, before the coordinate assertion. Placement self-check reports <code>(200, 280)</code>.</td></tr>
+<tr><td><code>XdgToplevelV6Test.pointer_respects_window_geom_offset</code></td><td>Skipped: missing <code>zxdg_shell_v6 &gt;= 1</code>.</td></tr>
+<tr><td><code>XdgToplevelV6Test.touch_respects_window_geom_offset</code></td><td>Skipped: missing <code>zxdg_shell_v6 &gt;= 1</code>.</td></tr>
+</tbody></table>
+<p>The stable pointer result also differs from <code>(20, 30)</code>, so the convention mismatch
+alone does not explain that failure. The native coordinate/focus path still needs
+tracing; the stable touch case stops at native hit testing. Neither stable case
+reports <code>unconfigured_buffer</code> in this recording, and neither v6 case tests input.</p>
+<p>Build on a GPU worker, keeping wlcs outside the MixOS checkout:</p>
+<pre><code class="language-text">git clone --depth 1 --branch v1.8.1 https://github.com/canonical/wlcs /build/wlcs
+cmake -S /build/wlcs -B /build/wlcs/build -DCMAKE_BUILD_TYPE=Release \
+  -DBOOST_ROOT=/build/wlcs/deps/usr \
+  -DCMAKE_CXX_FLAGS=-Wno-error=deprecated-declarations
+cmake --build /build/wlcs/build --target wlcs -j4
+cargo build -p wlcs --locked
+cargo build -p compd --no-default-features --features wlcs --locked
+cargo clippy -p wlcs --all-targets --no-deps --locked -- -D warnings
+cargo --config 'env.COMPD_WLCS_BINARY="/build/mixos/target/debug/compd"' \
+  test -p wlcs --locked -- --ignored --nocapture
+/opt/mixos/bin/mix services/compd/tests/wlcs_gate.mix \
+  --wlcs /build/wlcs/build/wlcs \
+  --shim /build/mixos/target/debug/libcompd_wlcs.so \
+  --compd /build/mixos/target/debug/compd \
+  --output-dir /build/wlcs/run-1
+</code></pre>
+<p>Wayland development files, gtest/gmock and Boost headers are required. The first
+build used Boost 1.92.0 unpacked under <code>deps</code>, without a system install. The
+compiler flag permits wlcs's deprecated gmock <code>Invoke</code> calls with gmock 1.18.0.
+<code>WLCS</code> may replace <code>--wlcs</code>; <code>COMPD_TEST_RENDER_NODE</code> selects the render node.
+The ignored shim lifecycle test needs an absolute <code>COMPD_WLCS_BINARY</code> because
+Cargo runs it from the package directory. It checks cached descriptors before
+start and after stop, including stable backing storage. <code>--no-deps</code> scopes
+Clippy's warning gate to the shim rather than inherited legacy dependency lints.</p>
+<p>The gate enumerates every test and runs four isolated processes at a time, each with a 20-second
+deadline, preserving JSON, process results and compositor logs in the output
+directory. It checks every name and outcome against
+<code>services/compd/tests/wlcs_expectations.conf.mix</code>; additions, removals and changed
+outcomes fail with a diff. The first observation uses <code>--record --expectations &lt;new-file&gt;</code>; recording refuses to overwrite a file. Disabled and unsupported
+tests are recorded as skipped. The <code>flaky</code> list must be empty: exemptions are
+refused, and every observed outcome must match. The control socket's 10-second
+read/write timeout is half the process deadline; transport errors name the
+compositor log before aborting. Conformance failures are
+recorded for later work; Phase 6 does not change compositor policy to fix them.</p>
+<p>The first complete observation (2026-10-21) recorded <strong>1,228 tests: 361 passed,
+563 failed, 304 skipped, 0 classified flaky</strong>. Every failed case produced a
+complete JSON report; no case hit the gate's process deadline. Unsupported
+protocols use wlcs's <code>wlcs-skip-test</code> JSON property, even though gtest also
+records an exception for them. These are skips, alongside disabled cases.</p>
+<p>After the shim review, a fresh recording from <code>ab43adf4</code> on 2026-10-21 produced
+the same inventory and outcomes. The expectation file was removed before
+recording; its data was regenerated rather than preserving any exemptions.</p>
+<table><thead><tr><th>Outcome or failure class</th><th style="text-align: right">Before review</th><th style="text-align: right">Fresh recording</th></tr></thead><tbody>
+<tr><td>Passed</td><td style="text-align: right">361</td><td style="text-align: right">361</td></tr>
+<tr><td>Failed</td><td style="text-align: right">563</td><td style="text-align: right">563</td></tr>
+<tr><td>Skipped</td><td style="text-align: right">304</td><td style="text-align: right">304</td></tr>
+<tr><td>Flaky</td><td style="text-align: right">0</td><td style="text-align: right">0</td></tr>
+<tr><td><code>xdg_surface</code> 3, <code>unconfigured_buffer</code></td><td style="text-align: right">319</td><td style="text-align: right">319</td></tr>
+<tr><td><code>zwlr_layer_surface_v1</code> 0, <code>invalid_surface_state</code></td><td style="text-align: right">79</td><td style="text-align: right">79</td></tr>
+<tr><td>Input-region assertions</td><td style="text-align: right">58</td><td style="text-align: right">58</td></tr>
+</tbody></table>
+<p>Every one of the 1,228 cases produced complete JSON; none hit a process deadline,
+terminated by signal or reported an adapter error. <strong>237 cases passed the
+surface-origin self-check.</strong> Unchanged outcomes do not validate the old shim:
+the named stable <code>touch_and_drag_on_surface_seen</code> and
+<code>touch_drag_outside_of_surface_and_back_not_lost</code> cases still fail with
+<code>unconfigured_buffer</code> before reaching input injection, so they cannot prove
+touch continuity. Fixture source (<code>src/surface_builder.cpp</code>) shows that these
+cases use <code>XdgStableSurfaceBuilder</code>, which assigns the xdg role, sets window
+geometry and calls <code>attach_visible_buffer</code> without the initial bufferless
+commit/configure/ack handshake. Their errors are consistent with enforcing
+that handshake; their current outcomes do not validate touch delivery.</p>
+<p>Two subsequent complete gate runs against committed baseline <code>de856d52</code> passed
+the name-by-name outcome comparison. Each again recorded <strong>361 passed, 563 failed,
+304 skipped, 0 flaky</strong>, with 237 successful placement checks and complete JSON
+for all 1,228 cases. Neither run hit a process deadline, terminated by signal or
+reported an adapter error. The expectation data and both observed inventories
+were also compared structurally and matched exactly.</p>
+<p>The original three largest classes were xdg unconfigured-buffer errors (319),
+layer-surface invalid-state errors (79), and input-region assertions (58).
+The remaining original classes were 38 event timeouts, 24 missing-notification
+cases, 7 keyboard-focus cases and 38 other assertions or protocol errors.
+The interface name is part of every protocol error's identity:</p>
+<ul>
+<li><strong><code>xdg_surface</code>, error 3 = <code>unconfigured_buffer</code>.</strong> Stable
+<a href="https://gitlab.freedesktop.org/wayland/wayland-protocols/-/blob/main/stable/xdg-shell/xdg-shell.xml">xdg-shell.xml</a>
+requires an initial bufferless commit, the first <code>configure</code> event and its
+<code>ack_configure</code> before attaching a buffer; earlier attaches are errors. The
+client trace of <code>ForeignToplevelManagerTest.detects_toplevel_closed</code> shows
+xdg surface/toplevel creation followed directly by buffer attach and commit,
+without that handshake. Compd's error 3 is correct enforcement for this
+fixture, which bypasses <code>create_visible_surface</code>'s handshake. This trace
+does not classify the other 318 cases; per-case traces are required before
+assigning ownership across the class. Separately,
+<code>XdgSurfaceStableTest.attaching_buffer_to_unconfigured_xdg_surface_is_an_error</code>
+attaches after <code>get_xdg_surface</code> without a role or commit; its trace shows
+no error where error 3 is required in the original recording. Smithay's
+role pre-commit checks at
+<code>vendor/smithay/src/wayland/shell/xdg/mod.rs:1673</code> (posted at <code>1721</code>) and
+<code>2067</code> (posted at <code>2116</code>), installed by
+<code>xdg/handlers/surface.rs:130,208</code>, do not cover this attach-only sequence.
+The native follow-up below fixes
+this <strong>missing attach-time validation</strong>; it does not establish a
+configure-state defect.</li>
+<li><strong><code>zwlr_layer_surface_v1</code>, error 0 = <code>invalid_surface_state</code>.</strong> The 79-case
+baseline class is on this interface, not <code>zwlr_layer_shell_v1</code>:
+<code>Layer/LayerSurfaceLayerTest.surface_on_lower_layer_is_initially_placed_below/0</code>
+reports <code>must ack the initial configure before attaching buffer</code>, raised in
+<code>vendor/smithay/src/wayland/shell/wlr_layer/mod.rs:576</code>. Its client trace
+shows <code>get_layer_surface</code> and <code>set_size</code>, then buffer attach, frame and
+commit, without an initial bufferless commit, configure or acknowledgement.
+<a href="https://gitlab.freedesktop.org/wlroots/wlr-protocols/-/blob/master/unstable/wlr-layer-shell-unstable-v1.xml">Layer-shell XML</a>
+requires that handshake before attaching a buffer. The rejection is correct
+for this fixture: its configure listener can acknowledge events, but no
+initial bufferless commit requests one before attachment. The remaining 78
+cases need individual attribution. The XML defines
+<strong><code>zwlr_layer_shell_v1</code>, error 0 = <code>role</code></strong> separately: another role is
+already assigned. That check is at
+<code>vendor/smithay/src/wayland/shell/wlr_layer/handlers.rs:84,85</code>, with the
+role stamp in <code>wayland/compositor/tree.rs:170</code>. An erroneous early or stale
+assignment on a fresh surface would be a compd defect, but the original logs
+contain
+<strong>zero</strong> failures with that interface/error pair. Calling the observed
+79 failures role errors would misattribute the protocol object.</li>
+<li><strong>Input-region targeting and coordinates:</strong> the shim's surface placement
+and screen/world conversion are corrected above. Remaining input-region
+assertions exercise compd's native hit testing and are <strong>compd defects</strong>;
+for example, <code>MultiRectEdges/RegionSurfaceInputCombinations.input_inside_region_seen/8</code>
+verifies surface origin <code>[64, 49]</code>, completes absolute motion, then reports
+<code>no_pointer_target</code> on the button operation. Its paired touch case reports
+<code>touch_no_target</code> on down. These are native hit misses after verified placement,
+not silently successful adapter deliveries. No protocol error code is raised.
+Start at <code>services/compd/crates/world/src/surface/interface/core/hit.rs:478</code>
+(fitted surface coordinates) and <code>vendor/smithay/src/desktop/wayland/window.rs</code>
+(<code>surface_under</code>). The stable geometry-offset cases have the observed native
+coordinate/hit failures recorded above, in addition to the source-level
+<strong>wlcs/shim placement-contract mismatch</strong>.</li>
+<li><strong>Event timeouts, missing notifications and keyboard focus:</strong> these are
+<strong>compd conformance gaps</strong> in the native event, constraints, layout and focus
+paths. They have no protocol error code unless the individual report names
+one. In particular, pointer constraints miss expected locked/unlocked events;
+exclusive-zone layout can time out. The adapter's device refusals are explicit
+in the case logs and must be considered when tracing each case.</li>
+<li><strong>Other assertions or protocol errors:</strong> retained per case, including
+missing mandated errors for invalid buffers and unconfigured surfaces,
+popup placement/lifecycle and output metadata assertions. These are compd
+conformance defects; the geometry-offset cases also have the stated contract
+mismatch, which does not fully explain their observed failures.
+They are not evidence of a protocol-permitted refusal of a valid client.</li>
+</ul>
+<p>All failed cases remain in the expectation file. This phase fixes the shim and
+records evidence for follow-up without changing normal compd policy. Failure
+class counts alone do not establish that every case is a compositor defect.</p>
+<h3 id="native-xdg-attach-validation-follow-up">Native xdg attach validation follow-up</h3>
+<p>The native frontend now checks non-null <code>wl_surface.attach</code> requests before
+changing pending buffer state. A live xdg wrapper must have its initial
+configure sent and acknowledged; otherwise the wrapper receives
+<code>xdg_surface.unconfigured_buffer</code> immediately, including when no role or
+commit follows. The check reads current role state and preserves NULL attaches,
+ordinary surfaces, valid toplevel and popup handshakes, wrapper recreation and
+the existing retention of pending configures across unmap. Healthy attaches
+use one surface-state lock without collecting wrapper handles; errors are
+posted after locks are released.</p>
+<p>Ten raw-wire regression guards cover refusal and acceptance, stale ACKs after
+unmap, proper remapping, wrapper recreation and both popup outcomes. They live
+with the existing xdg wrapper guards in vendored Smithay and are registered in
+<code>tools/smithay_guards.mix</code> and <code>vendor/smithay/PATCHES.md</code>.</p>
+<p>The unchanged canonical v1.8.1 suite now records <strong>362 passed, 562 failed, 304
+skipped, 0 flaky</strong>. Only
+<code>XdgSurfaceStableTest.attaching_buffer_to_unconfigured_xdg_surface_is_an_error</code>
+changed from failed to passed; all other 1,227 outcomes are unchanged. The
+complete run retained 1,228 JSON reports and 237 placement checks, with no
+process deadline or signal. No canonical fixture or exemption was changed.</p>
         </article>
         <p class="doc-source"><a href="/docs/decisions/2026-10-20-headless-backend.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
     </div>

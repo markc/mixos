@@ -6,7 +6,7 @@ use crate::{
     utils::{IsAlive, Serial, alive_tracker::AliveTracker},
     wayland::{
         Dispatch2, GlobalData, GlobalDispatch2,
-        shell::xdg::{XDG_POPUP_ROLE, XDG_TOPLEVEL_ROLE},
+        shell::xdg::{XDG_POPUP_ROLE, XDG_TOPLEVEL_ROLE, XdgPopupSurfaceData, XdgToplevelSurfaceData},
     },
 };
 
@@ -213,15 +213,74 @@ impl XdgSurfaceWrappers {
         });
     }
 
-    fn any_live(surface: &WlSurface) -> bool {
+    fn live_wrappers(surface: &WlSurface) -> Vec<XdgSurface> {
         crate::wayland::compositor::with_states(surface, |states| {
-            states.data_map.get::<Self>().is_some_and(|wrappers| {
-                let mut guard = wrappers.0.lock().unwrap();
-                guard.retain(|weak| weak.upgrade().is_ok());
-                !guard.is_empty()
-            })
+            let Some(wrappers) = states.data_map.get::<Self>() else {
+                return Vec::new();
+            };
+            let mut guard = wrappers.0.lock().unwrap();
+            guard.retain(|weak| weak.upgrade().is_ok());
+            guard.iter().filter_map(|weak| weak.upgrade().ok()).collect()
         })
     }
+
+    fn any_live(surface: &WlSurface) -> bool {
+        crate::wayland::compositor::with_states(surface, |states| {
+            let Some(wrappers) = states.data_map.get::<Self>() else {
+                return false;
+            };
+            let mut guard = wrappers.0.lock().unwrap();
+            guard.retain(|weak| weak.upgrade().is_ok());
+            !guard.is_empty()
+        })
+    }
+}
+
+/// Validate xdg's configure acknowledgement before changing pending buffer state.
+/// The role pre-commit checks cannot catch an attach that is never committed.
+pub(crate) fn validate_xdg_surface_attach(surface: &WlSurface) -> bool {
+    let unconfigured = crate::wayland::compositor::with_states(surface, |states| {
+        let has_live_wrapper = {
+            let Some(wrappers) = states.data_map.get::<XdgSurfaceWrappers>() else {
+                return false;
+            };
+            let mut guard = wrappers.0.lock().unwrap();
+            guard.retain(|weak| weak.upgrade().is_ok());
+            !guard.is_empty()
+        };
+        if !has_live_wrapper {
+            return false;
+        }
+
+        let acked = match states.role.as_deref() {
+            Some(XDG_TOPLEVEL_ROLE) => states
+                .data_map
+                .get::<XdgToplevelSurfaceData>()
+                .and_then(|data| data.lock().ok())
+                .map(|data| data.initial_configure_sent && data.last_acked.is_some())
+                .unwrap_or(false),
+            Some(XDG_POPUP_ROLE) => states
+                .data_map
+                .get::<XdgPopupSurfaceData>()
+                .and_then(|data| data.lock().ok())
+                .map(|data| data.initial_configure_sent && data.last_acked.is_some())
+                .unwrap_or(false),
+            _ => false,
+        };
+        !acked
+    });
+
+    if unconfigured {
+        let wrappers = XdgSurfaceWrappers::live_wrappers(surface);
+        for xdg_surface in wrappers {
+            xdg_surface.post_error(
+                xdg_surface::Error::UnconfiguredBuffer,
+                "wl_surface.attach with a buffer before the initial configure is acknowledged",
+            );
+        }
+    }
+
+    !unconfigured
 }
 
 /*
@@ -249,7 +308,7 @@ mod tests {
     use std::os::unix::net::UnixStream;
     use std::sync::Arc;
 
-    use wayland_protocols::xdg::shell::server::xdg_wm_base;
+    use wayland_protocols::xdg::shell::server::{xdg_surface, xdg_wm_base};
     use wayland_server::backend::{ClientData, ClientId, DisconnectReason};
     use wayland_server::protocol::{
         wl_buffer::{self, WlBuffer},
@@ -332,8 +391,14 @@ mod tests {
     const WL_SURFACE_COMMIT: u16 = 6;
     const WL_SUBCOMPOSITOR_GET_SUBSURFACE: u16 = 1;
     const XDG_WM_BASE_GET_XDG_SURFACE: u16 = 2;
+    const XDG_WM_BASE_CREATE_POSITIONER: u16 = 1;
+    const XDG_POSITIONER_SET_SIZE: u16 = 1;
+    const XDG_POSITIONER_SET_ANCHOR_RECT: u16 = 2;
     const XDG_SURFACE_DESTROY: u16 = 0;
     const XDG_SURFACE_GET_TOPLEVEL: u16 = 1;
+    const XDG_SURFACE_GET_POPUP: u16 = 2;
+    const XDG_SURFACE_SET_WINDOW_GEOMETRY: u16 = 3;
+    const XDG_SURFACE_ACK_CONFIGURE: u16 = 4;
     const XDG_TOPLEVEL_DESTROY: u16 = 0;
 
     fn words(values: &[u32]) -> Vec<u8> {
@@ -502,10 +567,82 @@ mod tests {
             id
         }
 
+        fn ack_configure(&mut self, xdg_surface: u32, serial: u32) {
+            self.send(xdg_surface, XDG_SURFACE_ACK_CONFIGURE, &words(&[serial]));
+        }
+
+        fn destroy_xdg_surface(&mut self, xdg_surface: u32) {
+            self.send(xdg_surface, XDG_SURFACE_DESTROY, &[]);
+        }
+
         fn get_toplevel(&mut self, xdg_surface: u32) -> u32 {
             let id = self.new_id();
             self.send(xdg_surface, XDG_SURFACE_GET_TOPLEVEL, &words(&[id]));
             id
+        }
+
+        fn popup_with_mapped_parent(&mut self) -> u32 {
+            let parent_xdg = self.new_id();
+            self.send(
+                WM_BASE,
+                XDG_WM_BASE_GET_XDG_SURFACE,
+                &words(&[parent_xdg, PARENT]),
+            );
+            self.get_toplevel(parent_xdg);
+            self.send(
+                parent_xdg,
+                XDG_SURFACE_SET_WINDOW_GEOMETRY,
+                &words(&[0, 0, 100, 100]),
+            );
+            self.send(PARENT, WL_SURFACE_COMMIT, &[]);
+            self.roundtrip();
+            assert_eq!(self.error(), None, "parent initial commit setup failed");
+
+            let parent_serial = self.state.xdg.toplevel_surfaces()[0].send_configure();
+            self.roundtrip();
+            assert_eq!(self.error(), None, "parent configure failed");
+
+            self.ack_configure(parent_xdg, u32::from(parent_serial));
+            self.roundtrip();
+            assert_eq!(self.error(), None, "parent configure ack failed");
+
+            let parent_buffer = self.buffer();
+            self.send(PARENT, WL_SURFACE_ATTACH, &words(&[parent_buffer, 0, 0]));
+            self.send(PARENT, WL_SURFACE_COMMIT, &[]);
+            self.roundtrip();
+            assert_eq!(self.error(), None, "parent mapping failed");
+
+            let positioner = self.new_id();
+            self.send(WM_BASE, XDG_WM_BASE_CREATE_POSITIONER, &words(&[positioner]));
+            self.send(positioner, XDG_POSITIONER_SET_SIZE, &words(&[10, 10]));
+            self.send(
+                positioner,
+                XDG_POSITIONER_SET_ANCHOR_RECT,
+                &words(&[0, 0, 100, 100]),
+            );
+
+            let child_xdg = self.new_id();
+            self.send(
+                WM_BASE,
+                XDG_WM_BASE_GET_XDG_SURFACE,
+                &words(&[child_xdg, SURFACE]),
+            );
+            let popup = self.new_id();
+            self.send(
+                child_xdg,
+                XDG_SURFACE_GET_POPUP,
+                &words(&[popup, parent_xdg, positioner]),
+            );
+            self.send(
+                child_xdg,
+                XDG_SURFACE_SET_WINDOW_GEOMETRY,
+                &words(&[0, 0, 10, 10]),
+            );
+            self.commit();
+            self.roundtrip();
+            assert_eq!(self.error(), None, "popup setup failed");
+
+            child_xdg
         }
 
         fn server_surface(&self) -> WlSurface {
@@ -662,6 +799,266 @@ mod tests {
             !surface_has_attached_or_committed_buffer(&surface),
             "only a committed NULL clears it"
         );
+        assert_eq!(h.error(), None);
+    }
+
+    #[test]
+    fn roleless_attach_without_commit_is_unconfigured_buffer() {
+        let mut h = Harness::new();
+        let xdg_surface = h.get_xdg_surface(WM_BASE);
+        h.roundtrip();
+        assert_eq!(h.error(), None);
+
+        let buffer = h.buffer();
+        h.attach(buffer);
+        h.roundtrip();
+        assert_eq!(
+            h.error(),
+            Some((xdg_surface, xdg_surface::Error::UnconfiguredBuffer as u32))
+        );
+    }
+
+    #[test]
+    fn attach_after_role_before_initial_configure_is_unconfigured_buffer() {
+        let mut h = Harness::new();
+        let xdg_surface = h.get_xdg_surface(WM_BASE);
+        h.get_toplevel(xdg_surface);
+        h.roundtrip();
+        assert_eq!(h.error(), None);
+
+        let buffer = h.buffer();
+        h.attach(buffer);
+        h.roundtrip();
+        assert_eq!(
+            h.error(),
+            Some((xdg_surface, xdg_surface::Error::UnconfiguredBuffer as u32))
+        );
+    }
+
+    #[test]
+    fn valid_handshake_allows_subsequent_attach() {
+        let mut h = Harness::new();
+        let xdg_surface = h.get_xdg_surface(WM_BASE);
+        h.get_toplevel(xdg_surface);
+        h.commit();
+        h.roundtrip();
+        assert_eq!(h.error(), None);
+
+        let serial = h.state.xdg.toplevel_surfaces()[0].send_configure();
+        h.roundtrip();
+        assert_eq!(h.error(), None);
+
+        h.ack_configure(xdg_surface, u32::from(serial));
+        h.roundtrip();
+        assert_eq!(h.error(), None);
+
+        let buffer = h.buffer();
+        h.attach(buffer);
+        h.roundtrip();
+        assert_eq!(h.error(), None);
+    }
+
+    #[test]
+    fn popup_attach_before_ack_is_unconfigured_buffer() {
+        let mut h = Harness::new();
+        let child_xdg = h.popup_with_mapped_parent();
+
+        h.state.xdg.popup_surfaces()[0].send_configure().unwrap();
+        h.roundtrip();
+        assert_eq!(h.error(), None, "popup configure failed");
+
+        let buffer = h.buffer();
+        h.attach(buffer);
+        h.roundtrip();
+        assert_eq!(
+            h.error(),
+            Some((child_xdg, xdg_surface::Error::UnconfiguredBuffer as u32))
+        );
+    }
+
+    #[test]
+    fn popup_attach_after_ack_is_allowed() {
+        let mut h = Harness::new();
+        let child_xdg = h.popup_with_mapped_parent();
+
+        let serial = h.state.xdg.popup_surfaces()[0].send_configure().unwrap();
+        h.roundtrip();
+        assert_eq!(h.error(), None, "popup configure failed");
+
+        h.ack_configure(child_xdg, u32::from(serial));
+        h.roundtrip();
+        assert_eq!(h.error(), None, "popup configure ack failed");
+
+        let buffer = h.buffer();
+        h.attach(buffer);
+        h.commit();
+        h.roundtrip();
+        assert_eq!(h.error(), None, "acked popup attach+commit must be accepted");
+    }
+
+    #[test]
+    fn null_attach_after_get_xdg_surface_is_allowed() {
+        let mut h = Harness::new();
+        h.get_xdg_surface(WM_BASE);
+        h.roundtrip();
+        assert_eq!(h.error(), None);
+
+        h.attach(0);
+        h.roundtrip();
+        assert_eq!(h.error(), None);
+    }
+
+    #[test]
+    fn attach_after_committed_unmap_requires_new_configure_ack() {
+        let mut h = Harness::new();
+        let xdg_surface = h.get_xdg_surface(WM_BASE);
+        h.get_toplevel(xdg_surface);
+        h.commit();
+        h.roundtrip();
+        assert_eq!(h.error(), None);
+
+        let serial = h.state.xdg.toplevel_surfaces()[0].send_configure();
+        h.roundtrip();
+        assert_eq!(h.error(), None);
+
+        h.ack_configure(xdg_surface, u32::from(serial));
+        h.roundtrip();
+        assert_eq!(h.error(), None);
+
+        let buffer = h.buffer();
+        h.attach(buffer);
+        h.commit();
+        h.roundtrip();
+        assert_eq!(h.error(), None);
+
+        h.attach(0);
+        h.commit();
+        h.roundtrip();
+        assert_eq!(h.error(), None);
+
+        let buffer = h.buffer();
+        h.attach(buffer);
+        h.roundtrip();
+        assert_eq!(
+            h.error(),
+            Some((xdg_surface, xdg_surface::Error::UnconfiguredBuffer as u32))
+        );
+    }
+
+    #[test]
+    fn late_ack_for_old_configure_does_not_authorise_attach_after_unmap() {
+        let mut h = Harness::new();
+        let xdg_surface = h.get_xdg_surface(WM_BASE);
+        h.get_toplevel(xdg_surface);
+        h.commit();
+        h.roundtrip();
+        assert_eq!(h.error(), None);
+
+        let first_serial = h.state.xdg.toplevel_surfaces()[0].send_configure();
+        h.roundtrip();
+        assert_eq!(h.error(), None);
+
+        h.ack_configure(xdg_surface, u32::from(first_serial));
+        h.roundtrip();
+        assert_eq!(h.error(), None);
+
+        let buffer = h.buffer();
+        h.attach(buffer);
+        h.commit();
+        h.roundtrip();
+        assert_eq!(h.error(), None);
+
+        let old_serial = h.state.xdg.toplevel_surfaces()[0].send_configure();
+        h.roundtrip();
+        assert_eq!(h.error(), None);
+
+        h.attach(0);
+        h.commit();
+        h.roundtrip();
+        assert_eq!(h.error(), None);
+
+        h.ack_configure(xdg_surface, u32::from(old_serial));
+        h.roundtrip();
+        assert_eq!(h.error(), None);
+
+        let buffer = h.buffer();
+        h.attach(buffer);
+        h.roundtrip();
+        assert_eq!(
+            h.error(),
+            Some((xdg_surface, xdg_surface::Error::UnconfiguredBuffer as u32))
+        );
+    }
+
+    #[test]
+    fn fresh_empty_commit_configure_ack_remap_is_allowed() {
+        let mut h = Harness::new();
+        let xdg_surface = h.get_xdg_surface(WM_BASE);
+        h.get_toplevel(xdg_surface);
+        h.commit();
+        h.roundtrip();
+        assert_eq!(h.error(), None);
+
+        let map_serial = h.state.xdg.toplevel_surfaces()[0].send_configure();
+        h.roundtrip();
+        h.ack_configure(xdg_surface, u32::from(map_serial));
+        h.roundtrip();
+        assert_eq!(h.error(), None);
+
+        let buffer = h.buffer();
+        h.attach(buffer);
+        h.commit();
+        h.roundtrip();
+        assert_eq!(h.error(), None);
+
+        h.attach(0);
+        h.commit();
+        h.roundtrip();
+        assert_eq!(h.error(), None);
+
+        h.commit();
+        h.roundtrip();
+        assert_eq!(h.error(), None);
+
+        let remap_serial = h.state.xdg.toplevel_surfaces()[0].send_configure();
+        h.roundtrip();
+        h.ack_configure(xdg_surface, u32::from(remap_serial));
+        h.roundtrip();
+        assert_eq!(h.error(), None);
+
+        let buffer = h.buffer();
+        h.attach(buffer);
+        h.commit();
+        h.roundtrip();
+        assert_eq!(h.error(), None);
+    }
+
+    #[test]
+    fn destroying_a_roleless_wrapper_allows_a_fresh_wrapper_to_attach() {
+        let mut h = Harness::new();
+        let old_xdg_surface = h.get_xdg_surface(WM_BASE);
+        h.roundtrip();
+        assert_eq!(h.error(), None);
+
+        h.destroy_xdg_surface(old_xdg_surface);
+        h.roundtrip();
+        assert_eq!(h.error(), None);
+
+        let xdg_surface = h.get_xdg_surface(WM_BASE);
+        h.get_toplevel(xdg_surface);
+        h.commit();
+        h.roundtrip();
+        assert_eq!(h.error(), None);
+
+        let serial = h.state.xdg.toplevel_surfaces()[0].send_configure();
+        h.roundtrip();
+        h.ack_configure(xdg_surface, u32::from(serial));
+        h.roundtrip();
+        assert_eq!(h.error(), None);
+
+        let buffer = h.buffer();
+        h.attach(buffer);
+        h.roundtrip();
         assert_eq!(h.error(), None);
     }
 }

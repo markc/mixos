@@ -127,6 +127,16 @@ fn bring_up(
 
     // Drop the current output FIRST so its CRTC/bandwidth is free for the target
     // (the atomic modeset of a second simultaneous pipe is rejected).
+    // A rebuilt primary may keep the struct while changing its output key and
+    // CRTC. Retire the old key's timer before either identity changes.
+    crate::render::execute::late_latch::cancel(ctx.pipe_mut());
+    ctx.pipe_mut().deadline_timer = None;
+    ctx.pipe_mut().late_latch = Default::default();
+    ctx.pipe_mut().last_vblank = None;
+    state
+        .state
+        .redraw
+        .release(&world::state::output_key(&ctx.pipe().output));
     ctx.pipe_mut().drm_output = None;
     // Built against the `Output` this pipe will actually keep — `build` sizes the
     // primary plane from it to pass the atomic test.
@@ -152,6 +162,10 @@ fn bring_up(
     let new_hdr_active = env.hdr && built.hdr.hdr_capable() && false;
     let new_mode = Mode::from(built.drm_mode);
     if replace {
+        state
+            .state
+            .redraw
+            .remove(&world::state::output_key(&ctx.pipe().output));
         // Swap the pipe onto the new `Output`. Only reached once `build` has
         // succeeded, so a failed fail-over leaves the old identity in place rather
         // than half-migrating.
@@ -355,29 +369,33 @@ fn add_output(
         x,
         ctx.outputs.len() + 1,
     );
-    ctx.outputs.push(crate::context::render::OutputPipe {
-        crtc: built.crtc,
-        mode,
-        output,
-        drm_output: Some(built.drm_output),
-        hdr_caps: built.hdr,
-        hdr_active,
-        props_applied: false,
-        render_failures: 0,
-        connector: built.connector,
-        current_drm_mode: built.drm_mode,
-        modes: built.modes,
-        mode_revert: None,
-        global: Some(global),
-        last_vblank: None,
-        render_start: None,
-        flip_trace: None,
-        last_tear: false,
-        cap_interval: None,
-        cap_wake: None,
-        settlement: Default::default(),
-        owed_frames: None,
-    });
+    ctx.outputs
+        .push(crate::context::render::OutputPipe {
+            crtc: built.crtc,
+            mode,
+            output,
+            drm_output: Some(built.drm_output),
+            hdr_caps: built.hdr,
+            hdr_active,
+            props_applied: false,
+            render_failures: 0,
+            connector: built.connector,
+            current_drm_mode: built.drm_mode,
+            modes: built.modes,
+            mode_revert: None,
+            global: Some(global),
+            last_vblank: None,
+            render_start: None,
+            late_latch: Default::default(),
+            deadline_timer: None,
+            gpu_completion: None,
+            flip_trace: None,
+            last_tear: false,
+            cap_interval: None,
+            cap_wake: None,
+            settlement: Default::default(),
+            owed_frames: None,
+        });
     Ok(())
 }
 
@@ -385,6 +403,11 @@ fn add_output(
 /// no monitor is connected (the `outputs` non-empty invariant). Secondary pipes
 /// are left to the reconciliation prune step.
 fn go_dark_primary(state: &mut Loop, ctx: &mut NativeRenderContext) {
+    crate::render::execute::late_latch::cancel(ctx.pipe_mut());
+    state
+        .state
+        .redraw
+        .release(&world::state::output_key(&ctx.pipe().output));
     ctx.outputs[0].drm_output = None;
     // The anchor keeps its `wl_output` global AND its Space mapping, deliberately.
     //

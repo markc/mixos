@@ -91,6 +91,11 @@ pub struct OutputPipe {
     /// reference. Measuring from the END of the previous frame would enforce
     /// `min_interval + composite` rather than `min_interval`.
     pub render_start: Option<std::time::Instant>,
+    /// Per-CRTC late-latch history and reusable deadline source. Dropping the
+    /// pipe also removes its timer, including across disconnect/reconnect.
+    pub late_latch: kms::scanout::timing::deadline::LateLatch,
+    pub deadline_timer: Option<crate::wire::frame::deadline::DeadlineTimer<world::state::Loop>>,
+    pub gpu_completion: Option<crate::wire::frame::deadline::GpuCompletion<world::state::Loop>>,
     /// Wall-clock submit-to-event wait. None when tracing is disabled or idle.
     pub flip_trace: Option<ledger::frame_trace::WaitSpan>,
     /// Deadline of the currently-armed rate-cap wake-up timer, if any.
