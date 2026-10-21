@@ -43,7 +43,7 @@ pub enum Mapped {
     /// An xdg toplevel, with the `Window` only its handler could build.
     Xdg(Window),
     /// An X11 window, identified by its surface and resolved at drain.
-    X11(smithay::xwayland::X11Surface),
+    X11(Box<smithay::xwayland::X11Surface>),
 }
 
 /// A world effect a handler recorded, to be applied in the order it arrived.
@@ -64,7 +64,7 @@ pub enum Deferred {
     /// Its IDENTITY is kept instead, off to the side, because withdraw and close are the
     /// same operation in X11 and only a later `DestroyNotify` says which it was. A remap
     /// resolves the same uuid, position and world; a destroy retires them.
-    WindowWithdrawn(smithay::xwayland::X11Surface),
+    WindowWithdrawn(Box<smithay::xwayland::X11Surface>),
     /// A window was destroyed. An X11 UNMAP is deliberately not this — see
     /// [`Self::WindowWithdrawn`]; only `DestroyNotify` and the X server dying queue it.
     ///

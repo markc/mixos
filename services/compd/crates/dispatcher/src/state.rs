@@ -20,9 +20,7 @@ use smithay::input::{Seat, SeatHandler, SeatState};
 use smithay::reexports::wayland_server::Resource;
 use smithay::reexports::wayland_server::Weak;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::reexports::wayland_server::{Dispatch as SmithayDispatch, GlobalDispatch};
 use smithay::utils::{Logical, Point, Rectangle, SERIAL_COUNTER};
-use smithay::wayland::Dispatch2;
 use smithay::wayland::buffer::BufferHandler;
 use smithay::wayland::compositor::CompositorHandler;
 use smithay::wayland::dmabuf::DmabufHandler;
@@ -1587,7 +1585,7 @@ mod handler_impls {
 
     fn unconstrain_popup(popup: &PopupSurface) {
         let infinite_target =
-            Rectangle::from_loc_and_size((-100_000, -100_000), (200_000, 200_000));
+            Rectangle::new((-100_000, -100_000).into(), (200_000, 200_000).into());
         popup.with_pending_state(|state| {
             state.geometry = state.positioner.get_unconstrained_geometry(infinite_target);
         });
@@ -1618,7 +1616,7 @@ mod handler_impls {
             // output and −the offset from the layer down to this popup's immediate
             // parent (non-zero only for nested submenus).
             let offset = get_popup_toplevel_coords(&PopupKind::Xdg(popup.clone()));
-            let target = Rectangle::from_loc_and_size(
+            let target = Rectangle::new(
                 Point::from((0, 0)) - layer_geo.loc - offset,
                 output_geo.size,
             );
@@ -2808,7 +2806,7 @@ pub mod xwm_impls {
             // client message that checks nothing about map state.
             if protocols::window::shell::take_held_map(&window) {
                 self.deferred.push(Deferred::WindowMapped(
-                    crate::state::deferred::Mapped::X11(window.clone()),
+                    crate::state::deferred::Mapped::X11(Box::new(window.clone())),
                 ));
             }
             // An activation that found no surface to focus (focus-on-map can run
@@ -2850,7 +2848,7 @@ pub mod xwm_impls {
             return;
         }
         dispatch.deferred.push(Deferred::WindowMapped(
-            crate::state::deferred::Mapped::X11(window),
+            crate::state::deferred::Mapped::X11(Box::new(window)),
         ));
         dispatch.schedule_redraw(RedrawReason::Map);
     }
@@ -2925,7 +2923,7 @@ pub mod xwm_impls {
             {
                 warn!("x11 unmap failed: {err:?}");
             }
-            self.deferred.push(Deferred::WindowWithdrawn(window));
+            self.deferred.push(Deferred::WindowWithdrawn(Box::new(window)));
             self.schedule_redraw(RedrawReason::Unmap);
         }
 

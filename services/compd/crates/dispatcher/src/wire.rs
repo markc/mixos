@@ -46,8 +46,6 @@ use smithay::wayland::seat::WaylandFocus;
 use smithay::wayland::selection::data_device::set_data_device_focus;
 use smithay::wayland::compositor;
 use smithay::wayland::compositor::CompositorHandler;
-use smithay::wayland::shell::xdg::XdgShellHandler;
-use smithay::wayland::xdg_activation::XdgActivationHandler;
 use crate::state::Dispatch;
 use crate::wire::trait_::wire_trait::{ActivationOrigin, WireTrait};
 use crate::wire::trait_::surface_event::{SurfaceEvent, SurfaceHandle};
@@ -535,7 +533,7 @@ impl<A: WireTrait + 'static> Wire<A> {
                                 if tracked {
                                     continue;
                                 }
-                                smithay::desktop::Window::new_x11_window(x11)
+                                smithay::desktop::Window::new_x11_window(*x11)
                             }
                         },
                     };

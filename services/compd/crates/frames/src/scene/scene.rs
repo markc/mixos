@@ -35,14 +35,11 @@ pub struct Scene<R: Renderer> {
 thread_local! {
     /// Last fractional scale emitted per surface — the dedup so `update_fractional`
     /// only re-sends `wp_fractional_scale` when a window's best-resolution scale
-    /// actually changes, not every frame. Keyed by the surface's protocol id;
+    /// actually changes, not every frame. Retains the full resource identity;
     /// `Published` distinguishes a real scale from the idle sentinel explicitly.
     static FRAC_SENT: std::cell::RefCell<
-        std::collections::HashMap<
-            smithay::reexports::wayland_server::backend::ObjectId,
-            dispatcher::wayland::fractional::dispatch::Published,
-        >,
-    > = std::cell::RefCell::new(std::collections::HashMap::new());
+        dispatcher::wayland::fractional::dispatch::SurfaceScales,
+    > = std::cell::RefCell::new(Default::default());
 }
 
 /// Per-window fractional scale, best-resolution across ALL outputs. A window may be

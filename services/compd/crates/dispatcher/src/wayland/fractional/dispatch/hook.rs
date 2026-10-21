@@ -8,6 +8,46 @@ use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 
+/// Resource identities stay in the values. Only their immutable hash selects a
+/// bucket, and equality resolves collisions within that bucket.
+pub struct IdentityMap<K, V> {
+    buckets: HashMap<u64, Vec<(K, V)>>,
+}
+
+impl<K, V> Default for IdentityMap<K, V> {
+    fn default() -> Self {
+        Self { buckets: HashMap::new() }
+    }
+}
+
+impl<K: Eq + Hash, V> IdentityMap<K, V> {
+    fn hash(key: &K) -> u64 {
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        key.hash(&mut hasher);
+        hasher.finish()
+    }
+
+    fn get(&self, key: &K) -> Option<&V> {
+        self.buckets.get(&Self::hash(key))?.iter()
+            .find(|(stored, _)| stored == key).map(|(_, value)| value)
+    }
+
+    fn insert(&mut self, key: K, value: V) {
+        let bucket = self.buckets.entry(Self::hash(&key)).or_default();
+        if let Some((_, stored)) = bucket.iter_mut().find(|(stored, _)| *stored == key) {
+            *stored = value;
+        } else {
+            bucket.push((key, value));
+        }
+    }
+
+    fn values(&self) -> impl Iterator<Item = &V> {
+        self.buckets.values().flatten().map(|(_, value)| value)
+    }
+}
+
+pub type SurfaceScales = IdentityMap<ObjectId, Published>;
+
 /// One pending entry's contribution to the batch fingerprint. Summed, not chained,
 /// so the value is independent of `HashMap` iteration order.
 fn stamp(id: &ObjectId, want: Published) -> u64 {
@@ -37,7 +77,7 @@ fn stamp(id: &ObjectId, want: Published) -> u64 {
 /// which is what the caller re-states its decided size to.
 pub fn emit_best_per_surface(
     fractional: &mut fractional_base::Fractional,
-    sent: &mut HashMap<ObjectId, Published>,
+    sent: &mut SurfaceScales,
     per_surface: &[(f64, WlSurface)],
     idle: &[WlSurface],
 ) -> Vec<WlSurface> {
@@ -47,8 +87,7 @@ pub fn emit_best_per_surface(
         .map(|(scale, surface)| (surface, Published::visible(*scale)))
         .chain(idle.iter().map(|surface| (surface, Published::IDLE)));
 
-    let mut next: HashMap<ObjectId, Published> =
-        HashMap::with_capacity(per_surface.len() + idle.len());
+    let mut next = SurfaceScales::default();
     let mut batch: Vec<(&WlSurface, Published)> = Vec::new();
     let mut fingerprint: u64 = 0;
 
@@ -105,4 +144,27 @@ pub fn emit_best_per_surface(
     }
     *sent = next;
     emitted
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[derive(PartialEq, Eq)]
+    struct Colliding(u8);
+    impl Hash for Colliding {
+        fn hash<H: Hasher>(&self, state: &mut H) { 0u8.hash(state); }
+    }
+
+    #[test]
+    fn equal_hashes_keep_distinct_identities_and_updates_replace_only_the_owner() {
+        let mut map = IdentityMap::default();
+        map.insert(Colliding(1), 1.25);
+        map.insert(Colliding(2), 2.5);
+        map.insert(Colliding(1), 1.75);
+        assert_eq!(map.get(&Colliding(1)), Some(&1.75));
+        assert_eq!(map.get(&Colliding(2)), Some(&2.5));
+        assert_eq!(map.get(&Colliding(3)), None);
+        assert_eq!(map.values().count(), 2);
+    }
 }

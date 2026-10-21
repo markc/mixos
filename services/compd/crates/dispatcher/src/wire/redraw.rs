@@ -17,7 +17,7 @@ pub fn parent_geometry(space: &Space<Window>, parent: &WlSurface) -> Rectangle<i
     find::in_space(space, parent)
         .map(|w| {
             let loc = space.element_location(&w).unwrap_or_default();
-            Rectangle::from_loc_and_size(loc, w.geometry().size)
+            Rectangle::new(loc, w.geometry().size)
         })
         .unwrap_or_default()
 }
