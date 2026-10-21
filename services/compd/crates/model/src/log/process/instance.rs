@@ -19,5 +19,4 @@ pub fn start(rx: crossbeam_channel::Receiver<record::Record>) {
         .spawn(move || crate::log::process::instance::drain::drain(rx));
 }
 
-
 pub mod drain;

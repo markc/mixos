@@ -2,7 +2,12 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Exercise the public paths retained when model's nested wrappers are dissolved.
 
-#[cfg(all(feature = "error", feature = "warn", feature = "info", feature = "trace"))]
+#[cfg(all(
+    feature = "error",
+    feature = "warn",
+    feature = "info",
+    feature = "trace"
+))]
 #[test]
 fn exported_macros_keep_the_callers_identity_and_runtime_gate() {
     use model::debug::instance::record;
@@ -23,14 +28,23 @@ fn exported_macros_keep_the_callers_identity_and_runtime_gate() {
         assert_eq!(emitted.level, level);
         assert_eq!(emitted.message, text);
         assert_eq!(emitted.crate_name, module_path!());
-        assert!(emitted.function.ends_with("exported_macros_keep_the_callers_identity_and_runtime_gate"));
+        assert!(
+            emitted
+                .function
+                .ends_with("exported_macros_keep_the_callers_identity_and_runtime_gate")
+        );
     }
     record::set_enabled_mask(0);
     model::info!("filtered");
     assert!(rx.try_recv().is_err());
 }
 
-#[cfg(not(any(feature = "error", feature = "warn", feature = "info", feature = "trace")))]
+#[cfg(not(any(
+    feature = "error",
+    feature = "warn",
+    feature = "info",
+    feature = "trace"
+)))]
 #[test]
 fn disabled_macros_do_not_evaluate_their_arguments() {
     model::error!("{}", panic!("disabled error"));
@@ -48,7 +62,9 @@ fn the_log_drain_acknowledges_a_record_through_the_public_entry_point() {
     let mut record = Record::with(Level::Info, "example", "example::drain", "delivered".into());
     record.ack = Some(ack);
     tx.send(record).unwrap();
-    received.recv_timeout(std::time::Duration::from_secs(2)).unwrap();
+    received
+        .recv_timeout(std::time::Duration::from_secs(2))
+        .unwrap();
 }
 
 #[test]
@@ -64,8 +80,14 @@ fn tearing_configuration_keeps_its_serialised_shape() {
         })
     );
     assert!(!config.tearing.selector.matches(Scene::default()));
-    assert!(config.tearing.selector.matches(Scene { target_focused: true, ..Scene::default() }));
-    assert_eq!(Rate::Multiplier(2.0).min_interval(std::time::Duration::from_millis(16)), Some(std::time::Duration::from_millis(8)));
+    assert!(config.tearing.selector.matches(Scene {
+        target_focused: true,
+        ..Scene::default()
+    }));
+    assert_eq!(
+        Rate::Multiplier(2.0).min_interval(std::time::Duration::from_millis(16)),
+        Some(std::time::Duration::from_millis(8))
+    );
 }
 
 #[test]
@@ -73,7 +95,11 @@ fn registry_facade_still_reads_the_published_device_format() {
     use model::stats::registry::base;
     base::set_device_format("module-test", "Argb8888", 0, "linear", 1);
     let snapshot = base::snapshot();
-    let device = snapshot.device_formats.iter().find(|device| device.kind == "module-test").unwrap();
+    let device = snapshot
+        .device_formats
+        .iter()
+        .find(|device| device.kind == "module-test")
+        .unwrap();
     assert_eq!(device.fourcc, "Argb8888");
     assert_eq!(device.modifier, "0x0000000000000000");
     assert!(!device.multiplane);
