@@ -1407,13 +1407,13 @@ impl UiRegistry {
     /// redraw while this is true.
     ///
     /// An animation waiting on a later instant is not "wanting a frame": it is
-    /// offered as a producer deadline (`graphics::bridge::publish::wake::wake::
+    /// offered as a producer deadline (`graphics::bridge::publish::wake::
     /// offer_deadline`) instead, which the backend turns into a one-shot timer
     /// Before, it reported true and the loop re-rasterised
     /// the same frame every vblank until the instant arrived.
     pub fn wants_frame(&self) -> bool {
         if let Some(at) = self.next_deadline() {
-            graphics::bridge::publish::wake::wake::offer_deadline(at);
+            graphics::bridge::publish::wake::offer_deadline(at);
         }
         self.items.iter().any(|i| i.wants_frame())
     }

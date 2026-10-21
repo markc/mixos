@@ -249,7 +249,7 @@ pub fn draw(state: &mut Loop, context: &mut WinitRenderContext) {
     }
     // A producer that needs a frame at a later instant (an UI
     // animation's `RedrawRequest::At`) offered it during this frame.
-    if let Some(at) = graphics::bridge::publish::wake::wake::take_deadline() {
+    if let Some(at) = graphics::bridge::publish::wake::take_deadline() {
         let handle = state.loop_handle.clone();
         state.state.redraw.request_at(
             &handle,
@@ -260,7 +260,7 @@ pub fn draw(state: &mut Loop, context: &mut WinitRenderContext) {
     }
     // Capture's time-based keep-alive (round-1 finding D): its own deadline, its
     // own reason.
-    if let Some(at) = graphics::bridge::publish::wake::wake::take_capture_deadline() {
+    if let Some(at) = graphics::bridge::publish::wake::take_capture_deadline() {
         let handle = state.loop_handle.clone();
         state.state.redraw.request_at(
             &handle,

@@ -154,7 +154,7 @@ fn draw(state: &mut Loop, ctx: &mut Context) {
     frames::draw::present::callbacks::callbacks::housekeeping(state);
     state.inner.render_output = None;
     state.state.redraw.end_render();
-    if let Some(at) = graphics::bridge::publish::wake::wake::take_deadline() {
+    if let Some(at) = graphics::bridge::publish::wake::take_deadline() {
         let handle = state.loop_handle.clone();
         state.state.redraw.request_at(
             &handle,

@@ -20,7 +20,7 @@ use std::sync::Arc;
 
 use crate::engine::{UiProgram, UiRuntime};
 use crate::input::Input;
-use graphics::bridge::publish::attempt::attempt::Attempt;
+use graphics::bridge::publish::attempt::Attempt;
 use graphics::surface::{SurfaceError, UiSurface, WgpuGlContext};
 use smithay::backend::renderer::element::Id;
 use smithay::backend::renderer::gles::GlesRenderer;

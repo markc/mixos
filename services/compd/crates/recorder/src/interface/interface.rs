@@ -1466,13 +1466,13 @@ fn video_keepalive(state: &mut Loop, renderer: &mut GlesRenderer) {
                 spawn_dialog(state, renderer, now + GRACE);
                 // The dialog settles at once on a static screen: ask for the
                 // first countdown tick ourselves.
-                graphics::bridge::publish::wake::wake::offer_capture_deadline(
+                graphics::bridge::publish::wake::offer_capture_deadline(
                     now + std::time::Duration::from_secs(1),
                 );
             } else {
                 // A static recording renders no frames, so ask for
                 // one when the keep-alive falls due.
-                graphics::bridge::publish::wake::wake::offer_capture_deadline(anchor + KEEPALIVE);
+                graphics::bridge::publish::wake::offer_capture_deadline(anchor + KEEPALIVE);
             }
         }
         Some(dl) => {
@@ -1483,7 +1483,7 @@ fn video_keepalive(state: &mut Loop, renderer: &mut GlesRenderer) {
                 let secs = dl.saturating_duration_since(now).as_secs() as u32;
                 set_countdown(state, secs);
                 // The countdown ticks once a second, then the deadline itself.
-                graphics::bridge::publish::wake::wake::offer_capture_deadline(
+                graphics::bridge::publish::wake::offer_capture_deadline(
                     dl.min(now + std::time::Duration::from_secs(1)),
                 );
             }
