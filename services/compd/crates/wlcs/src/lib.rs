@@ -359,7 +359,6 @@ unsafe extern "C" fn socket(server: *mut abi::DisplayServer) -> c_int {
         .unwrap_or(-1)
 }
 #[link(name = "wayland-client")]
-#[cfg_attr(test, link(name = "wayland-client"))]
 unsafe extern "C" {
     fn wl_display_get_fd(display: *mut c_void) -> i32;
     fn wl_proxy_get_id(proxy: *mut c_void) -> u32;
