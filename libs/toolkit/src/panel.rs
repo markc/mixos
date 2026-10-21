@@ -164,7 +164,7 @@ fn pro_group<R>(
     if handle.double_clicked() {
         state.collapsed = !state.collapsed;
     }
-    let r = crate::chrome::Chrome::of(ui.ctx()).style.panel_pro_radius as u8;
+    let r = crate::chrome::Chrome::of(ui.ctx()).style.panel_pro_radius;
     let strip_corners = if state.collapsed {
         CornerRadius::same(r)
     } else {

@@ -384,7 +384,7 @@ fn right_group<S>(
         .iter()
         .map(|c| match c {
             Control::Combo { .. } => Slot::Combo,
-            Control::Icon { .. } => Slot::Fixed((Chrome::of(ui.ctx()).style.icon_button as f32)),
+            Control::Icon { .. } => Slot::Fixed(Chrome::of(ui.ctx()).style.icon_button as f32),
             Control::Link { command, .. } => {
                 let label = registry
                     .get(command)
@@ -400,7 +400,7 @@ fn right_group<S>(
     for control in controls.iter_mut().take(shown) {
         let width = match control {
             Control::Combo { .. } => combo_width,
-            Control::Icon { .. } => (Chrome::of(ui.ctx()).style.icon_button as f32),
+            Control::Icon { .. } => Chrome::of(ui.ctx()).style.icon_button as f32,
             Control::Link { command, .. } => {
                 let label = registry
                     .get(command)
