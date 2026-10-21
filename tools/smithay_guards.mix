@@ -27,6 +27,7 @@ $FEATURES = "backend_drm,backend_egl,backend_gbm,backend_libinput,backend_sessio
 -- substrings, any matching) that selects its tests by path
 -- (`module::…::test_name`).
 $GUARDS = [
+  ["committed VRR state", "committed_vrr_cache_tracks_real_commits_and_readback_only"],
   ["hook 1: filtered seat global", "wayland::seat::filter_tests::"],
   ["hook 2: can_start_drag", "can_start_drag_guard::"],
   ["hook 3: selection source gone", "hook3_guard::"],

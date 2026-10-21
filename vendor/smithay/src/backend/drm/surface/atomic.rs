@@ -172,6 +172,9 @@ pub struct AtomicDrmSurface {
     prop_mapping: Arc<RwLock<PropMapping>>,
     state: RwLock<State>,
     pending: RwLock<State>,
+    /// local patch: VRR from readback or the last successful real commit.
+    /// `use_vrr` can change `state.vrr` after a TEST_ONLY ioctl.
+    vrr_active: AtomicBool,
     /// local patch: issue the next `page_flip` as an async (tearing) commit.
     /// Deliberately NOT part of `State` — `State`'s `PartialEq` drives
     /// `commit_pending()`, so a per-frame toggle there would force a full
@@ -222,6 +225,7 @@ impl AtomicDrmSurface {
             plane,
             used_planes: Mutex::new(HashSet::new()),
             prop_mapping,
+            vrr_active: AtomicBool::new(state.vrr),
             state: RwLock::new(state),
             pending: RwLock::new(pending),
             tearing: AtomicBool::new(false),
@@ -625,6 +629,10 @@ impl AtomicDrmSurface {
         self.pending.read().unwrap().vrr
     }
 
+    pub fn vrr_active(&self) -> bool {
+        self.vrr_active.load(Ordering::SeqCst)
+    }
+
     /// local patch: arm/disarm async (tearing) page flips for subsequent
     /// `page_flip` calls. Unlike `use_vrr` this touches no KMS property and can
     /// never trigger a modeset — it only selects a commit flag.
@@ -867,6 +875,7 @@ impl AtomicDrmSurface {
             });
 
         if result.is_ok() {
+            self.vrr_active.store(pending.vrr, Ordering::SeqCst);
             *current = pending.clone();
             for plane in planes.iter() {
                 if plane.config.is_some() {
@@ -896,15 +905,8 @@ impl AtomicDrmSurface {
 
         // page flips work just like commits with fewer parameters..
         let prop_mapping = self.prop_mapping.read().unwrap();
-        let req = AtomicRequest::build_request(
-            &prop_mapping,
-            self.crtc,
-            None,
-            self.state.read().unwrap().vrr,
-            [],
-            [],
-            &*planes,
-        )?;
+        let vrr = self.state.read().unwrap().vrr;
+        let req = AtomicRequest::build_request(&prop_mapping, self.crtc, None, vrr, [], [], &*planes)?;
 
         // .. and without `AtomicCommitFlags::AllowModeset`.
         // If we would set anything here, that would require a modeset, this would fail,
@@ -964,6 +966,7 @@ impl AtomicDrmSurface {
         });
 
         if res.is_ok() {
+            self.vrr_active.store(vrr, Ordering::SeqCst);
             for plane in planes.iter() {
                 if plane.config.is_some() {
                     used_planes.insert(plane.handle);
@@ -1044,6 +1047,7 @@ impl AtomicDrmSurface {
             });
 
         if res.is_ok() {
+            self.vrr_active.store(false, Ordering::SeqCst);
             self.used_planes.lock().unwrap().clear();
             self.state.write().unwrap().clear();
         }
@@ -1055,11 +1059,14 @@ impl AtomicDrmSurface {
         &self,
         fd: Option<&B>,
     ) -> Result<(), Error> {
-        *self.state.write().unwrap() = if let Some(fd) = fd {
+        let mut current = self.state.write().unwrap();
+        *current = if let Some(fd) = fd {
             State::current_state(fd, self.crtc, &mut self.prop_mapping.write().unwrap())?
         } else {
             State::current_state(&*self.fd, self.crtc, &mut self.prop_mapping.write().unwrap())?
         };
+        self.vrr_active.store(current.vrr, Ordering::SeqCst);
+        drop(current);
 
         // Re-initialize the mode blob which might got lost after suspend/resume
         let mut pending = self.pending.write().unwrap();
@@ -1169,6 +1176,33 @@ mod test {
     #[test]
     fn surface_is_send() {
         is_send::<AtomicDrmSurface>();
+    }
+
+    // A real surface needs a DRM device. Guard every cache writer here so a
+    // TEST_ONLY success or failed commit cannot masquerade as active VRR.
+    #[test]
+    fn committed_vrr_cache_tracks_real_commits_and_readback_only() {
+        let source = include_str!("atomic.rs").split("#[cfg(test)]").next().unwrap();
+        let section = |start, end| source.split_once(start).unwrap().1.split_once(end).unwrap().0;
+        assert!(source.contains("vrr_active: AtomicBool::new(state.vrr)"));
+        assert!(
+            section("pub fn vrr_active(", "pub fn set_tearing(")
+                .contains("self.vrr_active.load(Ordering::SeqCst)")
+        );
+        assert!(!section("pub fn use_vrr(", "pub fn commit_pending(").contains("self.vrr_active"));
+        assert!(section("pub fn commit<'a>(", "pub fn page_flip<'a>(").contains(
+            "if result.is_ok() {\n            self.vrr_active.store(pending.vrr, Ordering::SeqCst);"
+        ));
+        assert!(
+            section("pub fn page_flip<'a>(", "pub fn clear_plane(")
+                .contains("if res.is_ok() {\n            self.vrr_active.store(vrr, Ordering::SeqCst);")
+        );
+        assert!(
+            section("fn clear_state(", "pub(crate) fn reset_state<")
+                .contains("if res.is_ok() {\n            self.vrr_active.store(false, Ordering::SeqCst);")
+        );
+        assert!(source.contains("self.vrr_active.store(current.vrr, Ordering::SeqCst)"));
+        assert_eq!(source.matches("self.vrr_active.store(").count(), 4);
     }
 
     #[test]
