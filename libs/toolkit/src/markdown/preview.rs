@@ -32,6 +32,13 @@ impl<K> Preview<K> {
 }
 
 impl<K: PartialEq> Preview<K> {
+    /// The parsed document only when both the key and revision match.
+    pub fn cached_for(&self, key: &K, revision: u64) -> Option<&Arc<Document>> {
+        self.cached.as_ref().and_then(|(cached_key, cached_revision, document)| {
+            (cached_key == key && *cached_revision == revision).then_some(document)
+        })
+    }
+
     /// Return the document for `key` and `revision`. Call `source` and
     /// parse only when either changes, or the cache is empty.
     pub fn document<'a>(
@@ -40,10 +47,7 @@ impl<K: PartialEq> Preview<K> {
         revision: u64,
         source: impl FnOnce() -> &'a str,
     ) -> Arc<Document> {
-        if let Some((cached_key, cached_revision, document)) = &self.cached
-            && *cached_key == key
-            && *cached_revision == revision
-        {
+        if let Some(document) = self.cached_for(&key, revision) {
             return Arc::clone(document);
         }
         let document = Arc::new(Document::parse(source()));
@@ -70,6 +74,18 @@ mod tests {
     // Default does not need a default key.
     #[derive(Clone, Debug, PartialEq)]
     struct Key(u8);
+
+    #[test]
+    fn cached_for_checks_both_key_and_revision() {
+        let mut preview = Preview::default();
+        assert!(preview.cached_for(&Key(1), 1).is_none());
+        let document = preview.document(Key(1), 1, || "# First");
+        assert!(Arc::ptr_eq(&document, preview.cached_for(&Key(1), 1).unwrap()));
+        assert!(preview.cached_for(&Key(2), 1).is_none());
+        assert!(preview.cached_for(&Key(1), 2).is_none());
+        preview.clear();
+        assert!(preview.cached_for(&Key(1), 1).is_none());
+    }
 
     #[test]
     fn the_same_key_and_revision_parse_once() {

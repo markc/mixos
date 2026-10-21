@@ -80,7 +80,16 @@ impl PreviewMode {
 #[derive(Default)]
 struct TabPreview {
     language: String,
-    cache: toolkit::markdown::Preview<(TabId, String)>,
+    source: String,
+    cache: toolkit::markdown::Preview<TabId>,
+    #[cfg(test)]
+    reads: usize,
+}
+
+struct TabHint {
+    id: TabId,
+    language: String,
+    mode: PreviewMode,
 }
 
 /// The find bar.
@@ -231,8 +240,11 @@ pub struct App {
     pub editor_style: Content,
     /// View state only: never written to the document session.
     preview_modes: HashMap<TabId, PreviewMode>,
-    /// Each tab keeps its own one-slot cache; language is part of its key.
+    /// Each tab keeps its own cache, cleared when its language changes.
     previews: HashMap<TabId, TabPreview>,
+    /// Last echoed inputs. Idle frames compare borrowed values only.
+    tab_hints: Vec<TabHint>,
+    hint_window: Option<(Option<TabId>, bool)>,
 }
 
 impl App {
@@ -258,6 +270,8 @@ impl App {
             editor_style: Content::default(),
             preview_modes: HashMap::new(),
             previews: HashMap::new(),
+            tab_hints: Vec::new(),
+            hint_window: None,
         }
     }
 
@@ -323,45 +337,69 @@ impl App {
     ) -> Option<std::sync::Arc<toolkit::markdown::Document>> {
         let t = self.ctl.tabs().iter().find(|t| t.id == tab)?;
         let m = t.mirror.as_ref()?;
-        let mut source = String::new();
-        m.text().read(0..m.text().len(), &mut source);
         let preview = self.previews.entry(tab).or_default();
-        preview.language = t.language().to_owned();
-        Some(
-            preview
-                .cache
-                .document((tab, preview.language.clone()), m.view_gen(), || &source),
-        )
+        if preview.language != t.language() {
+            preview.cache.clear();
+            preview.language.clear();
+            preview.language.push_str(t.language());
+        }
+        if let Some(document) = preview.cache.cached_for(&tab, m.view_gen()) {
+            return Some(std::sync::Arc::clone(document));
+        }
+        preview.source.clear();
+        m.text().read(0..m.text().len(), &mut preview.source);
+        #[cfg(test)]
+        { preview.reads += 1; }
+        Some(preview.cache.document(tab, m.view_gen(), || &preview.source))
     }
 
     /// Refresh the controller's echoes after document or window state changes.
-    pub fn sync_view_hints(&mut self) {
-        self.preview_modes
-            .retain(|id, _| self.ctl.tabs().iter().any(|t| t.id == *id));
-        self.previews
-            .retain(|id, _| self.ctl.tabs().iter().any(|t| t.id == *id));
-        let hints: Vec<_> = self
-            .ctl
-            .tabs()
-            .iter()
-            .map(|t| (t.id, self.preview_mode(t.id)))
-            .collect();
-        for (tab, mode) in hints {
-            self.ctl.set_view_hint(tab, "preview", mode.as_str());
-            let language = self
-                .tab(tab)
-                .map(|t| t.language().to_owned())
-                .unwrap_or_default();
-            if let Some(preview) = self.previews.get_mut(&tab)
+    pub fn sync_view_hints(&mut self) -> bool {
+        let window = (self.active(), self.dialog.is_some());
+        let mode_for = |tab: &Tab| {
+            if tab.language() == "markdown" {
+                self.preview_modes.get(&tab.id).copied().unwrap_or_default()
+            } else {
+                PreviewMode::Source
+            }
+        };
+        let tabs = self.ctl.tabs();
+        if self.hint_window == Some(window)
+            && tabs.len() == self.tab_hints.len()
+            && tabs.iter().zip(&self.tab_hints).all(|(tab, hint)| {
+                tab.id == hint.id && tab.language() == hint.language && mode_for(tab) == hint.mode
+            })
+        {
+            return false;
+        }
+        let ids: std::collections::HashSet<_> = tabs.iter().map(|t| t.id).collect();
+        self.preview_modes.retain(|id, _| ids.contains(id));
+        self.previews.retain(|id, _| ids.contains(id));
+        self.tab_hints.clear();
+        for tab in self.ctl.tabs() {
+            let language = tab.language();
+            let mode = if language == "markdown" {
+                self.preview_modes.get(&tab.id).copied().unwrap_or_default()
+            } else {
+                PreviewMode::Source
+            };
+            if let Some(preview) = self.previews.get_mut(&tab.id)
                 && preview.language != language
             {
                 preview.cache.clear();
-                preview.language = language;
+                preview.language.clear();
+                preview.language.push_str(language);
             }
+            self.tab_hints.push(TabHint { id: tab.id, language: language.to_owned(), mode });
         }
-        for action in ActionId::all() {
+        for hint in &self.tab_hints {
+            self.ctl.set_view_hint(hint.id, "preview", hint.mode.as_str());
+        }
+        for action in [ActionId::ViewMarkdownSource, ActionId::ViewMarkdownSplit, ActionId::ViewMarkdownPreview] {
             self.ctl.set_action_enabled(action, self.enabled(action));
         }
+        self.hint_window = Some(window);
+        true
     }
 
     fn intent(&self) -> Intent {
@@ -534,13 +572,13 @@ impl App {
 
     /// Cancel the open dialog if its document has gone (each frame).
     pub fn prune(&mut self) {
-        self.sync_view_hints();
         if let Some(dialog) = self.dialog.clone()
             && dialog.tab().is_some_and(|t| !self.tab_exists(t))
         {
             self.cancel(&dialog);
             self.next_dialog();
         }
+        self.sync_view_hints();
     }
 
     /// Quitting: cancel the open and the queued dialogs' actions.
@@ -595,7 +633,6 @@ impl App {
                 return self.done(token, Err(Self::refused(code::CONFLICT, "disabled")));
             }
             self.preview_modes.insert(tab, mode);
-            self.ctl.set_view_hint(tab, "preview", mode.as_str());
             return self.done(token, ok());
         }
         match action {
@@ -1124,10 +1161,12 @@ mod tests {
         let (mut a, mut service, one, _) = documents();
         a.action(ActionId::ViewMarkdownSplit);
         let first = a.preview_document(one).unwrap();
+        let reads = a.previews[&one].reads;
         assert!(std::sync::Arc::ptr_eq(
             &first,
             &a.preview_document(one).unwrap()
         ));
+        assert_eq!(a.previews[&one].reads, reads, "a repaint reads no text");
         let (rc, _) = bus(&mut a, &mut service, "ced.type", json!({"text":"new "}));
         assert_eq!(rc, 0);
         let edited = a.preview_document(one).unwrap();
@@ -1239,6 +1278,38 @@ mod tests {
             assert_eq!(a.checked(action), Some(false));
             assert!(documents::keymap::chords_for(action).is_empty());
         }
+    }
+
+    #[test]
+    fn idle_frames_do_not_write_view_hints_or_enablement() {
+        let (mut a, _, one, _) = documents();
+        a.action(ActionId::ViewMarkdownSplit);
+        for _ in 0..2 {
+            a.prune();
+            a.absorb(Vec::new());
+            assert!(!a.sync_view_hints());
+        }
+        a.dialog = Some(Dialog::About { token: 0 });
+        assert!(a.sync_view_hints());
+        assert!(!a.sync_view_hints());
+        a.dialog = None;
+        assert!(a.sync_view_hints());
+        assert_eq!(a.preview_mode(one), PreviewMode::Split);
+    }
+
+    #[test]
+    fn older_bus_actions_keep_their_enablement_with_a_window_and_dialog() {
+        let (mut a, mut service, _, _) = documents();
+        for dialog in [None, Some(Dialog::About { token: 0 })] {
+            a.dialog = dialog;
+            let actions = bus(&mut a, &mut service, "ced.actions", json!({})).1;
+            for row in actions["actions"].as_array().unwrap() {
+                if !row["id"].as_str().unwrap().starts_with("view.markdown.") {
+                    assert_eq!(row["enabled"], true, "{}", row["id"]);
+                }
+            }
+        }
+        assert!(!a.enabled(ActionId::EditUndo));
     }
 
     /// A search refused because no document is open is not recorded,

@@ -425,6 +425,20 @@ fn document(
                 }
             }
             ui.set_min_size(ui.available_size());
+            let font = egui::FontId::monospace(f32::from(app.ui.font_px));
+            let metrics = ui.fonts_mut(|fonts| editor::layout::Metrics {
+                cell_w: fonts.glyph_width(&font, '0').max(1.0),
+                row_h: (font.size * view.line_height).round().max(1.0),
+            });
+            let geometry = editor::layout::Geometry::new(
+                ui.available_rect_before_wrap(), metrics, m.text().line_count(), view.line_numbers,
+            );
+            // Use the editor's field fill and text origin, including its gutter.
+            ui.painter().rect_filled(geometry.bounds, 0.0, palette.background);
+            let top = ui.fonts_mut(|fonts| ((metrics.row_h - fonts.row_height(&font)) / 2.0).round());
+            egui::Frame::new()
+                .inner_margin(egui::Margin { left: geometry.gutter_w as i8, top: top as i8, ..Default::default() })
+                .show(ui, |ui| {
             egui::ScrollArea::both()
                 .id_salt(("ced.preview", tab.id))
                 .auto_shrink([false, false])
@@ -432,6 +446,7 @@ fn document(
                     if let Some(document) = &preview {
                         toolkit::markdown::show(ui, document);
                     }
+                });
                 });
         });
     };
