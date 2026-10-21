@@ -8,7 +8,7 @@ mod program;
 fn main() {
     tracing_subscriber::fmt()
         .with_writer(std::io::stderr)
-        .with_env_filter("warn,egui_wgpu=info,wgpu_core=info,eframe=info")
+        .with_env_filter("warn,egui_wgpu=debug,wgpu_core=info,eframe=info")
         .with_ansi(false)
         .init();
     program::main();

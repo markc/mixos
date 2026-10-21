@@ -19,7 +19,11 @@ fn size(text: &str) -> Result<(u32, u32)> {
 
 fn load(path: &Path, raw: Option<(u32, u32)>) -> Result<GrayImage> {
     let rgba = if let Some((w, h)) = raw {
-        RgbaImage::from_raw(w, h, std::fs::read(path)?)
+        let bytes = std::fs::read(path)?;
+        if u64::try_from(bytes.len())? != u64::from(w) * u64::from(h) * 4 {
+            return Err("raw input must contain exactly width * height * 4 bytes".into());
+        }
+        RgbaImage::from_raw(w, h, bytes)
             .ok_or("raw input must contain exactly width * height * 4 bytes")?
     } else {
         let reader = ImageReader::open(path)?.with_guessed_format()?;
@@ -156,5 +160,14 @@ mod tests {
     fn mismatched_sizes_refused() {
         assert!(ssim(&GrayImage::new(16, 16), &GrayImage::new(16, 17)).is_err());
         assert!(ssim(&GrayImage::new(7, 8), &GrayImage::new(7, 8)).is_err());
+    }
+
+    #[test]
+    fn inverted_checkerboard_has_negative_covariance() {
+        let a = GrayImage::from_fn(8, 8, |x, y| image::Luma([if (x + y) % 2 == 0 { 0 } else { 255 }]));
+        let b = GrayImage::from_fn(8, 8, |x, y| image::Luma([255 - a.get_pixel(x, y)[0]]));
+        // Equal means; variance = 255^2/4 and covariance = -variance.
+        let expected = (-2.0 * 16256.25 + 58.5225) / (2.0 * 16256.25 + 58.5225);
+        assert!((ssim(&a, &b).unwrap() - expected).abs() < 1e-12);
     }
 }

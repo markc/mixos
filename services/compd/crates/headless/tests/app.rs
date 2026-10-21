@@ -210,12 +210,10 @@ fn ced_wgpu_agent_typing_and_idle_ssim() {
     let trace = fs::read_to_string(&_app.log).unwrap();
     let adapter = trace
         .lines()
-        .filter(|line| line.contains("AdapterInfo") || line.contains("adapter:"))
-        .collect::<Vec<_>>();
-    assert!(!adapter.is_empty(), "wgpu adapter was not logged: {trace}");
-    for line in adapter {
-        println!("CED_WGPU {line}");
-    }
+        .find(|line| line.contains("wgpu adapter:"))
+        .expect("the selected wgpu adapter must be logged");
+    println!("CED_WGPU {adapter}");
+    assert!(adapter.contains("Gpu"), "ced selected a software adapter: {adapter}");
     let creation = trace
         .lines()
         .find(|line| {

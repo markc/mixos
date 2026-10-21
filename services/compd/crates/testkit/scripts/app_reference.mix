@@ -37,7 +37,7 @@ try
       XDG_DATA_HOME: $root .. "/data", XDG_CACHE_HOME: $root .. "/cache",
       XDG_SESSION_TYPE: "wayland", WINIT_UNIX_BACKEND: "wayland", DISPLAY: "",
       DBUS_SESSION_BUS_ADDRESS: "", LC_ALL: "C.UTF-8", WAYLAND_DEBUG: "client"},
-    stdout: $root .. "/stdout.log", stderr: $root .. "/app.log"
+    stdout: {file: $root .. "/stdout.log"}, stderr: {file: $root .. "/app.log"}
   })
   $deadline = monotonic() + 25
   $row = nil
