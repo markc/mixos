@@ -93,6 +93,21 @@ impl Table {
             {
                 return Err(format!("invalid compatibility version `{version}`"));
             }
+            for (name, scheme) in &entries.schemes {
+                if matches!(name.as_str(), "ocean" | "crimson" | "stone" | "forest" | "sunset" | "mono" | "pro" | "studio" | "classic") {
+                    return Err(format!("original scheme `{name}` cannot have a compatibility binding"));
+                }
+                if let Scheme::Palette(palette) = scheme {
+                    if palette.chrome.keys().map(String::as_str).collect::<Vec<_>>() != ["dark", "light"] {
+                        return Err(format!("compatibility scheme `{name}` needs exactly dark and light palettes"));
+                    }
+                    for colors in palette.chrome.values() {
+                        if crate::family::chrome::ROLES.iter().any(|role| !colors.contains_key(&format!("chrome.{role}"))) {
+                            return Err(format!("compatibility scheme `{name}` is missing a chrome role"));
+                        }
+                    }
+                }
+            }
             for (kind, entries) in [
                 ("token", entries.tokens.keys().collect::<Vec<_>>()),
                 ("style", entries.styles.keys().collect()),
@@ -179,7 +194,7 @@ mod tests {
 
     #[test]
     fn duplicate_names_are_refused_across_versions() {
-        let source = SOURCE.replacen("\"v2\":", "v3: { tokens: { field_height: { all: 24 } }, styles: {}, schemes: {}, terminal: {} }, v2:", 1);
+        let source = SOURCE.replacen("\"v2\":", "v4: { tokens: { field_height: { all: 24 } }, styles: {}, schemes: {}, terminal: {} }, v2:", 1);
         assert_ne!(source, SOURCE, "the fixture mutation must occur");
         assert!(
             Table::parse(&source)
@@ -206,12 +221,12 @@ mod tests {
 
     #[test]
     fn a_custom_style_named_all_does_not_capture_the_shared_default() {
-        let source = SOURCE.replacen("\"v2\":", "v3: { tokens: { future_token: { all: 2, pro: 7, plain: 3 } }, styles: {}, schemes: {}, terminal: {} }, v2:", 1);
+        let source = SOURCE.replacen("\"v2\":", "v4: { tokens: { future_token: { all: 2, pro: 7, plain: 3 } }, styles: {}, schemes: {}, terminal: {} }, v2:", 1);
         let table = Table::parse(&source).unwrap();
         for (base, scheme, expected) in [(Some("pro"), "classic", 7.0), (None, "absent", 3.0)] {
             let (value, version) = table.token("future_token", "all", base, scheme).unwrap();
             assert_eq!(value, &StyleValueSource::Number(expected));
-            assert_eq!(version, "v3");
+            assert_eq!(version, "v4");
         }
         assert_eq!(
             table

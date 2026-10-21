@@ -864,6 +864,33 @@ mod tests {
         assert!(failures.is_empty(), "{failures:#?}");
     }
 
+    #[test]
+    fn breeze_text_and_action_colours_keep_their_contrast_contract() {
+        let document = embedded();
+        for mode in crate::Mode::ALL {
+            let chrome = compiled(&document, crate::DesignContext {
+                scheme: crate::Scheme::Breeze, mode, ..Default::default()
+            }).dictionary().chrome.clone().unwrap();
+            let color = |name| chrome.get(name).unwrap().rendered();
+            for surface in ["chrome", "canvas", "dock", "card", "field", "hover", "pressed"] {
+                for text in ["text", "text_dim", "text_faint", "accent_text"] {
+                    assert!(crate::contrast_ratio(color(text), color(surface)) >= 4.5,
+                        "{mode:?}: {text} on {surface}");
+                }
+                for text in ["danger", "warning"] {
+                    let floor = if matches!(surface, "hover" | "pressed") { 3.0 } else { 4.5 };
+                    assert!(crate::contrast_ratio(color(text), color(surface)) >= floor,
+                        "{mode:?}: {text} on {surface}");
+                }
+            }
+            assert!(crate::contrast_ratio(color("caption_close_text"), color("caption_close")) >= 4.5);
+            assert!(crate::contrast_ratio(color("primary_text"), color("primary_bg")) >= 4.5);
+            assert_eq!(color("canvas"), color("canvas_dot"));
+            let contrasts: Vec<_> = ["text", "text_dim", "text_faint"].map(|text| crate::contrast_ratio(color(text), color("card"))).into();
+            assert!(contrasts[0] > contrasts[1] && contrasts[1] > contrasts[2]);
+        }
+    }
+
     /// A chrome colour a scheme's block authors wins over the derivation;
     /// the rest of that scheme's chrome still derives.
     #[test]

@@ -743,6 +743,20 @@
             "h": 247.859300841,
             "l": 0.948159047
           },
+          "chrome.menu_highlight": {
+            "alpha": 1,
+            "c": 0.010408054,
+            "color_space": "oklch",
+            "h": 253.97981691,
+            "l": 0.330973767
+          },
+          "chrome.menu_highlight_text": {
+            "alpha": 1,
+            "c": 0.002858594,
+            "color_space": "oklch",
+            "h": 264.542176219,
+            "l": 0.987890664
+          },
           "chrome.pressed": {
             "alpha": 1,
             "c": 0.012331746,
@@ -826,6 +840,97 @@
             "color_space": "oklch",
             "h": 51.72175908,
             "l": 0.704661441
+          },
+          "palette.accent.default": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.85
+          },
+          "palette.accent.hover": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.92
+          },
+          "palette.background.1": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.1
+          },
+          "palette.background.2": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.15
+          },
+          "palette.background.3": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.22
+          },
+          "palette.background.elevated": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.34
+          },
+          "palette.background.muted": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.26
+          },
+          "palette.foreground.default": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.95
+          },
+          "palette.foreground.muted": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.61
+          },
+          "palette.foreground.quiet": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.65
+          },
+          "status.danger": {
+            "alpha": 1,
+            "c": 0.18,
+            "color_space": "oklch",
+            "h": 25,
+            "l": 0.7
+          },
+          "status.success": {
+            "alpha": 1,
+            "c": 0.15,
+            "color_space": "oklch",
+            "h": 145,
+            "l": 0.7
+          },
+          "status.warning": {
+            "alpha": 1,
+            "c": 0.15,
+            "color_space": "oklch",
+            "h": 85,
+            "l": 0.8
           }
         },
         "light": {
@@ -948,6 +1053,20 @@
             "h": 248.212376855,
             "l": 0.345143136
           },
+          "chrome.menu_highlight": {
+            "alpha": 1,
+            "c": 0.008036217,
+            "color_space": "oklch",
+            "h": 253.855866512,
+            "l": 0.923320818
+          },
+          "chrome.menu_highlight_text": {
+            "alpha": 1,
+            "c": 0.011034317,
+            "color_space": "oklch",
+            "h": 254.030116573,
+            "l": 0.262535885
+          },
           "chrome.pressed": {
             "alpha": 1,
             "c": 0.011656114,
@@ -1031,6 +1150,76 @@
             "color_space": "oklch",
             "h": 51.556969974,
             "l": 0.496320419
+          },
+          "palette.accent.default": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.25
+          },
+          "palette.accent.hover": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.35
+          },
+          "palette.background.1": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.98
+          },
+          "palette.background.2": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.96
+          },
+          "palette.background.3": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.92
+          },
+          "palette.background.elevated": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.85
+          },
+          "palette.background.muted": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.89
+          },
+          "palette.foreground.default": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.2
+          },
+          "palette.foreground.muted": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.5
+          },
+          "palette.foreground.quiet": {
+            "alpha": 1,
+            "c": 0,
+            "color_space": "oklch",
+            "h": 0,
+            "l": 0.45
           }
         }
       },
