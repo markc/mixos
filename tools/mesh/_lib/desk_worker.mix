@@ -36,18 +36,49 @@ fn directory($path, $uid, $gid, $perm)
   return {dev:$s.dev,ino:$s.ino,uid:$s.uid,gid:$s.gid,perm:$s.perm}
 end
 
+fn native_binary($path)
+  $resolved = realpath($path)
+  if $resolved == nil or not starts_with($resolved,"/opt/") then refuse("native binary must resolve inside the installed /opt tree") end
+  $cursor = $resolved
+  while $cursor != "/"
+    $s = stat($cursor,{follow_symlinks:false})
+    if $s.is_symlink or $s.uid != 0 or floor($s.perm / 16) % 2 != 0 or floor($s.perm / 2) % 2 != 0 then refuse("native binary and ancestors must be root-controlled") end
+    $cursor = dirname($cursor)
+  end
+  return hash_file($resolved,"sha256")
+end
+
 fn property($unit, $name)
   return trim(run_argv_must(["systemctl","show",$unit,"--property=" .. $name,"--value"],{timeout:10}))
 end
 
+fn unit_properties($unit)
+  $text = run_argv_must(["systemctl","show",$unit,"--property=User","--property=EnvironmentFiles","--property=UnsetEnvironment","--property=ExecStart","--property=Type","--property=KillMode","--property=RuntimeDirectory","--no-pager"],{timeout:10})
+  $out = {}
+  for $line in lines($text)
+    $key = split($line,"=")[0]
+    if not contains(["User","EnvironmentFiles","UnsetEnvironment","ExecStart","Type","KillMode","RuntimeDirectory"],$key) or has_key($out,$key) then refuse("unexpected or duplicate unit property") end
+    $out[$key] = substr($line,len($key)+1)
+  end
+  if len(keys($out)) != 7 then refuse("unit property reply incomplete") end
+  return $out
+end
+
+fn stable_text($path,$state)
+  $text = read_file($path)
+  if not $state.present or hash_sha256($text) != $state.sha256 then refuse("configuration changed during preflight") end
+  return $text
+end
+
 -- A final, mandatory, root-owned environment file makes the service binding
 -- explicit. The bounded format is literal KEY=value, not arbitrary shell.
-fn service_binding($target, $gid)
+fn validate_service($target, $gid, $s, $properties, $text)
   $path = $target.etc .. "/noded/service.env"
-  $s = file_state($path)
   if not $s.present or $s.uid != 0 or $s.gid != $gid or $s.perm != 0o640 then refuse("dedicated service environment is not root-owned 0640") end
-  if property($target.unit,"User") != $target.account then refuse("session unit account mismatch") end
-  if not ends_with(property($target.unit,"EnvironmentFiles"), $path .. " (ignore_errors=no)") then refuse("dedicated environment must be the final mandatory unit environment file") end
+  if $properties.User != $target.account then refuse("session unit account mismatch") end
+  if $properties.Type != "simple" or $properties.KillMode != "control-group" or $properties.RuntimeDirectory != $target.project .. "/session/" .. to_string($target.session) .. "/noded" then refuse("unit lifecycle or runtime directory differs from native session contract") end
+  $final_file = $path .. " (ignore_errors=no)"
+  if $properties.EnvironmentFiles != $final_file and not ends_with($properties.EnvironmentFiles," " .. $final_file) then refuse("dedicated environment must be the final mandatory unit environment file") end
   $prefix = upper($target.project)
   $expected = {}
   $expected[$prefix .. "_ETC"] = $target.etc
@@ -55,8 +86,9 @@ fn service_binding($target, $gid)
   $expected[$prefix .. "_NODE_CONFIG"] = $target.etc .. "/node.conf.mix"
   $expected[$prefix .. "_RUN"] = $target.run
   $expected[$prefix .. "_BROKER_ACCOUNT"] = $target.account
+  $expected[$prefix .. "_NODED_URL"] = ""
   $actual = {}
-  for $line in lines(read_file($path))
+  for $line in lines($text)
     if trim($line) == "" or starts_with(trim($line),"#") then continue end
     $fields = split($line,"=")
     if len($fields) != 2 or has_key($actual,$fields[0]) then refuse("service environment must contain unique literal assignments") end
@@ -64,11 +96,21 @@ fn service_binding($target, $gid)
   end
   if not deep_eq($expected,$actual) then refuse("service environment differs from target plan") end
   for $key in keys($expected)
-    if contains(property($target.unit,"UnsetEnvironment"),$key) then refuse("unit unsets required profile environment") end
+    if contains($properties.UnsetEnvironment,$key) then refuse("unit unsets required profile environment") end
   end
-  $start = property($target.unit,"ExecStart")
+  $start = $properties.ExecStart
   if contains($start,"--node") or contains($start,"--listen") or contains($start,"--mesh-config") then refuse("unit command overrides profile identity or endpoint") end
-  return {environment:$s,command:$start}
+  $parts = split($start," ; ")
+  if len($parts) < 4 or not starts_with($parts[0],"{ path=") or not starts_with($parts[1],"argv[]=") or $parts[2] != "ignore_errors=no" or len(split($start,"{ path=")) != 2 then refuse("unit must contain one mandatory native start command") end
+  -- ExecStart also carries runtime pid/timestamp/status fields. They change on
+  -- restart and are not part of the immutable executable/argv configuration.
+  return {environment:$s,command:$parts[0] .. " ; " .. $parts[1] .. " ; " .. $parts[2]}
+end
+
+fn service_binding($target,$gid)
+  $path = $target.etc .. "/noded/service.env"
+  $state = file_state($path)
+  return validate_service($target,$gid,$state,unit_properties($target.unit),stable_text($path,$state))
 end
 
 fn namespace_context($request)
@@ -78,30 +120,38 @@ fn namespace_context($request)
   if not re_match($t.profile,"^/var/lib/" .. $t.project .. "/[a-z][a-z0-9-]{0,31}$") then refuse("invalid profile") end
   if $t.etc != $t.profile .. "/etc" or $t.var != $t.profile .. "/var" or $t.run != "/run/" .. $t.project .. "/session/" .. to_string($t.session) or $t.unit != "noded@" .. to_string($t.session) .. ".service" then refuse("inconsistent desk paths") end
   if trim(run_argv_must(["id","-u"])) != "0" then refuse("admin operation requires namespace root") end
+  $uid = to_number(trim(run_argv_must(["id","-u",$t.account])))
+  $gid = to_number(trim(run_argv_must(["id","-g",$t.account])))
+  if $uid == 0 or $gid == 0 then refuse("desk account must have private unprivileged ids") end
   $ancestor = dirname($t.profile)
   while $ancestor != "/"
     no_links($ancestor)
     $a = stat($ancestor,{follow_symlinks:false})
     if not $a.is_dir or $a.uid != 0 or floor($a.perm / 16) % 2 != 0 or floor($a.perm / 2) % 2 != 0 then refuse("profile ancestor must be root-owned and not writable by others") end
+    $traversable = if $a.gid == $gid then floor($a.perm / 8) % 2 == 1 else $a.perm % 2 == 1 end
+    if not $traversable then refuse("profile ancestor is not traversable by the session account") end
     $ancestor = dirname($ancestor)
   end
-  $uid = to_number(trim(run_argv_must(["id","-u",$t.account])))
-  $gid = to_number(trim(run_argv_must(["id","-g",$t.account])))
-  if $uid == 0 or $gid == 0 then refuse("desk account must have private unprivileged ids") end
   $dirs = {}
   for $path in [$t.profile,$t.etc,$t.etc .. "/noded",$t.var]
     $dirs[$path] = directory($path,0,$gid,0o750)
   end
   $dirs[$t.var .. "/noded"] = directory($t.var .. "/noded",$uid,$gid,0o700)
   $binding = service_binding($t,$gid)
+  $mix_hash = native_binary($request.mix_bin)
+  $builtins = lines(run_argv_must([$request.mix_bin,"builtins","--names"],{timeout:10}))
+  for $needed in ["fs_watch","fs_wait","fs_unwatch","flock","write_new","stat","hash_sha256","data_encode","run_argv"]
+    if not contains($builtins,$needed) then refuse("native interpreter lacks a required guarded rollout primitive") end
+  end
+  $interpreter = {sha256:$mix_hash,version:trim(run_argv_must([$request.mix_bin,"--version"],{timeout:10}))}
   $binary = dirname($request.mix_bin) .. "/noded"
   if not contains($binding.command,"path=" .. $binary .. " ;") then refuse("unit does not execute the planned native noded") end
+  $binary_hash = native_binary($binary)
   $version = trim(run_argv_must([$binary,"--version"],{timeout:10}))
-  $binary_hash = hash_file($binary,"sha256")
   $config_path = $t.etc .. "/node.conf.mix"
   $config_state = file_state($config_path)
   if not $config_state.present or $config_state.uid != 0 or $config_state.gid != $gid or $config_state.perm != 0o640 then refuse("node configuration ownership mismatch") end
-  $config = load_data($config_path)
+  $config = data_parse(stable_text($config_path,$config_state))
   if $config.node != $t.node or $config.mesh != $request.mesh or $config.wg_ip != $request.ip or $config.noded.port != $request.port or $config.noded.mesh_config != $t.etc .. "/noded/config.conf.mix" or $config.noded.unix_socket != $t.run .. "/noded/bus.sock" or $config.noded.admission != $request.admission or $config.noded.mesh_open != $request.mesh_open then refuse("node config identity, endpoint or posture differs from authenticated plan") end
   $paths = {genesis:$t.etc .. "/noded/genesis.pub",seed:$t.etc .. "/noded/d2.seed",seed_receipt:$t.etc .. "/noded/d2-receipt.json",roster:$t.etc .. "/noded/config.conf.mix",inventory:$t.var .. "/noded/inventory.signed"}
   $states = {}
@@ -113,7 +163,7 @@ fn namespace_context($request)
   $baseline = file_state($t.var .. "/noded/inventory.baseline")
   if $baseline.present and ($baseline.uid != $uid or $baseline.gid != $gid or $baseline.perm != 0o600) then refuse("existing authority witness ownership mismatch") end
   if $states.genesis.present and trim(read_file($paths.genesis)) != $request.genesis then refuse("different genesis: anchor rotation is forbidden") end
-  return {target:$t,uid:$uid,gid:$gid,writer:0,dirs:$dirs,binding:$binding,config:$config_state,paths:$paths,states:$states,binary:{version:$version,sha256:$binary_hash}}
+  return {target:$t,uid:$uid,gid:$gid,writer:0,dirs:$dirs,binding:$binding,config:$config_state,paths:$paths,states:$states,interpreter:$interpreter,binary:{version:$version,sha256:$binary_hash}}
 end
 
 fn save_receipt($directory, $receipt)
@@ -166,10 +216,10 @@ fn apply_files($ctx, $payloads, $before, $token)
       if not deep_eq(file_state($path),$before[$entry.kind]) then remove($tmp); refuse("destination changed immediately before publication") end
       rename($tmp,$path)
       $staging = nil
-      run_argv_must(["sync",dirname($path)],{timeout:10})
       if $entry.kind == "inventory" then $receipt.inventory_published = true end
       $receipt.published = push($receipt.published,$entry.kind)
       $receipt.status = "partial"
+      run_argv_must(["sync",dirname($path)],{timeout:10})
       save_receipt($backup,$receipt)
       $s = file_state($path)
       if $s.sha256 != $entry.sha256 or $s.uid != $ctx.writer or $s.gid != $ctx.gid or $s.perm != 0o640 then refuse("published bytes or owner differ") end
@@ -199,6 +249,7 @@ fn restore_files($ctx, $token)
   -- Preflight every restore before changing the first file. A crash between
   -- inventory rename and receipt update is detected by the original preimage.
   $restore = []
+  $preimages = {}
   for $file in $receipt.files
     if not contains(["seed","seed_receipt","roster","inventory"],$file.kind) then refuse("invalid receipt payload kind") end
     $path = $ctx.paths[$file.kind]
@@ -209,18 +260,30 @@ fn restore_files($ctx, $token)
       if not $current.present or $current.sha256 != $file.after_sha256 or $current.uid != $ctx.writer or $current.gid != $ctx.gid or $current.perm != 0o640 then refuse("published file changed; rollback refuses concurrent update") end
       if $file.before.present and hash_file($backup .. "/" .. $file.kind,"sha256") != $file.before.sha256 then refuse("backup hash changed") end
       push($restore,$file.kind)
+      $preimages[$file.kind] = $current
     end
   end
   for $file in reverse($receipt.files)
     if contains($restore,$file.kind) then
       $path = $ctx.paths[$file.kind]
+      if not deep_eq(file_state($path),$preimages[$file.kind]) then refuse("restore destination changed immediately before publication") end
       if $file.before.present then
         $tmp = dirname($path) .. "/.mesh-restore-" .. $token
         write_new($tmp,read_file($backup .. "/" .. $file.kind),$file.before.perm)
         chown($tmp,$file.before.uid,$file.before.gid)
+        if hash_file($tmp,"sha256") != $file.before.sha256 then refuse("restored staging bytes differ from backup") end
+        run_argv_must(["sync",$tmp],{timeout:10})
+        if not deep_eq(file_state($path),$preimages[$file.kind]) then refuse("restore destination changed while staging") end
         rename($tmp,$path)
       else
         remove($path)
+      end
+      run_argv_must(["sync",dirname($path)],{timeout:10})
+      $restored = file_state($path)
+      if $file.before.present then
+        if not $restored.present or $restored.sha256 != $file.before.sha256 or $restored.uid != $file.before.uid or $restored.gid != $file.before.gid or $restored.perm != $file.before.perm then refuse("restored bytes or ownership differ from preimage") end
+      elif $restored.present then
+        refuse("originally absent file remains after restore")
       end
     end
   end
@@ -237,10 +300,13 @@ fn live_process($ctx)
   $environment = {}
   for $entry in split(read_file($proc .. "/environ"),chr(0))
     $pair = split($entry,"=")
-    if len($pair) == 2 then $environment[$pair[0]] = $pair[1] end
+    if len($pair) == 2 then
+      if has_key($environment,$pair[0]) then refuse("live environment has duplicate keys") end
+      $environment[$pair[0]] = $pair[1]
+    end
   end
   $prefix = upper($ctx.target.project)
-  for $pair in [["_ETC",$ctx.target.etc],["_VAR",$ctx.target.var],["_NODE_CONFIG",$ctx.target.etc .. "/node.conf.mix"],["_RUN",$ctx.target.run],["_BROKER_ACCOUNT",$ctx.target.account]]
+  for $pair in [["_ETC",$ctx.target.etc],["_VAR",$ctx.target.var],["_NODE_CONFIG",$ctx.target.etc .. "/node.conf.mix"],["_RUN",$ctx.target.run],["_BROKER_ACCOUNT",$ctx.target.account],["_NODED_URL",""]]
     if $environment[$prefix .. $pair[0]] != $pair[1] then refuse("live daemon profile environment mismatch") end
   end
   return {pid:$pid,sha256:$ctx.binary.sha256,uid:$ctx.uid}
@@ -254,6 +320,10 @@ fn dispatch($request)
   if $request.operation == "restore" then return restore_files($ctx,$request.token) end
   if $request.operation == "live" then return live_process($ctx) end
   if $request.operation == "restart" then
+    $lock_root = $ctx.target.profile .. "/.mesh-rollout"
+    directory($lock_root,0,$ctx.gid,0o700)
+    if not flock($lock_root .. "/writer.lock",{wait:0,create:false}) then refuse("desk writer lock contended during restart") end
+    if not deep_eq(namespace_context($request),$request.before) then refuse("target preimage changed before restart") end
     $old_pid = property($ctx.target.unit,"MainPID")
     $socket = $ctx.target.run .. "/noded/bus.sock"
     $watch = fs_watch($ctx.target.run,{recursive:true,events:["created","moved","modified","deleted"]})
@@ -262,6 +332,8 @@ fn dispatch($request)
       while not exists($socket,{follow_symlinks:false})
         $_batch = fs_wait($watch)
       end
+      $socket_state = stat($socket,{follow_symlinks:false})
+      if floor($socket_state.mode / 4096) % 16 != 12 or $socket_state.is_symlink or $socket_state.uid != $ctx.uid then refuse("new broker socket type or ownership mismatch") end
     finally
       fs_unwatch($watch)
     end

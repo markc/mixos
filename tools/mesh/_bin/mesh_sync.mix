@@ -1,4 +1,5 @@
 #!/usr/bin/env mix
+-- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.1.0
 -- mesh_sync.mix — gated signed-inventory fan-out for every bus+active node.
 --
@@ -179,7 +180,7 @@ catch $err
   fail("staging " .. $dst .. ": " .. $err)
 end
 try
-  run("chown " .. $owner_group .. " " .. $tmp)
+  run_argv_must(["chown",$owner_group,$tmp])
 catch $err
   remove($tmp)
   fail("ownership for " .. $dst .. ": " .. $err)
@@ -440,6 +441,10 @@ $endpoint_mesh.members = []
 for $member in $planned.members
   if has_key($DESKS,$member.name) and contains($bus_active,$member.name) then
     $base = $desk.request($DESKS[$member.name],$planned,$DESK_GENESIS,$d.mix_bin())
+    if $dry then
+      $DESK_BASE[$member.name] = $base
+      continue
+    end
     $probe = $desk.preflight($base,$DESK_PROGRAM,nil)
     $d.die_if(word($probe.binary.version,1) != "noded" or not $m.noded_supports_signed_endpoint(word($probe.binary.version,2)),"desk native noded lacks signed endpoint support")
     $DESK_BASE[$member.name] = $base
@@ -594,7 +599,7 @@ for each $node in $order
   print("[" .. $node .. "] " .. ($is_local ? "local" : "remote"))
   if $dry then
     if has_key($DESKS,$node) then
-      print("  desk preflight passed: exact namespace/profile/unit/account; would install, restart and query authority")
+      print("  desk target preview only: no namespace preflight or authority proof; live rollout remains disabled")
       continue
     end
     $anchor = node_genesis_probe($node, $is_local)

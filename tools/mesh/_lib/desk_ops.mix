@@ -9,7 +9,9 @@ fn fail($message)
 end
 
 fn load_targets($path, $project, $roster)
-  if not is_file($path) then return {} end
+  if not exists($path,{follow_symlinks:false}) then return {} end
+  $config_stat = stat($path,{follow_symlinks:false})
+  if not $config_stat.is_file or $config_stat.is_symlink then fail("target config must be a regular non-symlink file") end
   $parsed = $targets.parse_targets(load_data($path))
   if $parsed.project != $project or not re_match($project,"^[a-z][a-z0-9]*$") then fail("target project differs or cannot name native environment") end
   $out = {}
@@ -76,6 +78,9 @@ fn call($base, $operation, $extra, $program, $executor)
   $job = $targets.stdin_job($base.target,$program,{request:$bound},"admin",$base.mix_bin)
   $job.mix_bin = $base.mix_bin
   $job.operation = $operation
+  if $executor == nil and has_key($extra,"token") then
+    print("DESK_TRANSACTION " .. $base.target.node .. " " .. $operation .. " receipt=" .. $base.target.profile .. "/.mesh-rollout/" .. $extra.token .. "/receipt.json")
+  end
   $result = if $executor == nil then live_execute($job) else $executor($job) end
   if not $result.ok or $result.stdout_truncated or $result.stderr_truncated then fail("native " .. $operation .. " transport refused or truncated") end
   $reply = nil
@@ -85,7 +90,7 @@ fn call($base, $operation, $extra, $program, $executor)
     fail("native " .. $operation .. " returned malformed evidence")
   end
   if type($reply) != "map" or $reply.ok != true then
-    fail("native " .. $operation .. " refused: " .. ($reply.reason ?? "invalid reply"))
+    fail("native " .. $operation .. " refused [" .. to_string($reply.error ?? "INVALID_REPLY") .. "]: " .. ($reply.reason ?? "invalid reply"))
   end
   return $reply.value
 end
@@ -99,12 +104,16 @@ fn payload($kind, $bytes)
 end
 
 fn stable_after($before, $after, $payloads)
-  for $key in ["target","uid","gid","writer","dirs","binding","config","paths","binary"]
+  for $key in ["target","uid","gid","writer","dirs","binding","config","paths","binary","interpreter"]
     if not deep_eq($before[$key],$after[$key]) then fail("profile, namespace, unit or binary changed during rollout") end
   end
   for $entry in $payloads
     $state = $after.states[$entry.kind]
     if not $state.present or $state.sha256 != $entry.sha256 or $state.uid != 0 or $state.gid != $after.gid or $state.perm != 0o640 then fail("placed payload evidence differs") end
+  end
+  $changed = map($payloads,fn($entry)=$entry.kind)
+  for $kind in keys($before.states)
+    if not contains($changed,$kind) and not deep_eq($before.states[$kind],$after.states[$kind]) then fail("unrelated authority material changed during rollout") end
   end
   return $after
 end
@@ -121,7 +130,9 @@ end
 fn place_sync($base, $before, $roster, $signed, $program, $executor)
   $files = [payload("roster",$roster),payload("inventory",$signed)]
   $placed = call($base,"sync",{before:$before,payloads:$files,token:uuid()},$program,$executor)
-  $after = stable_after($before,preflight($base,$program,$executor),$files)
+  $expected = $files
+  if not $before.states.genesis.present then push($expected,payload("genesis",$base.genesis .. chr(10))) end
+  $after = stable_after($before,preflight($base,$program,$executor),$expected)
   call($base,"restart",{before:$after},$program,$executor)
   $live_before = stable_after($after,preflight($base,$program,$executor),$files)
   $live = call($base,"live",{before:$live_before},$program,$executor)

@@ -111,7 +111,7 @@ fn stdin_job($target, $program, $bindings, $role, $mix_bin)
   if type($program) != "string" or type($bindings) != "map" then fail("program and bindings have invalid types") end
   if $role != "admin" and $role != "citizen" then fail("role must be admin or citizen") end
   if $target.kind == "system" and $role != "admin" then fail("system target jobs require admin role") end
-  if type($mix_bin) != "string" or not starts_with($mix_bin, "/") or not ends_with($mix_bin, "/mix") then fail("native Mix path must be absolute") end
+  if type($mix_bin) != "string" or not re_match($mix_bin,"^/opt/[a-z][a-z0-9-]{0,31}/bin/mix$") then fail("native Mix must use the installed /opt project binary path") end
   $body = ""
   for $key in sort(keys($bindings))
     if not re_match($key, "^[A-Za-z_][A-Za-z0-9_]*$") then fail("invalid binding name") end
@@ -123,6 +123,9 @@ fn stdin_job($target, $program, $bindings, $role, $mix_bin)
   $environment[$prefix .. "_ETC"] = $target.etc
   $environment[$prefix .. "_VAR"] = $target.var
   $environment[$prefix .. "_NODE_CONFIG"] = $target.etc .. "/node.conf.mix"
+  -- Never inherit another desk or host broker URL. Empty selects the explicit
+  -- profile node config in the native client locator.
+  $environment[$prefix .. "_NODED_URL"] = ""
   if $target.kind == "system" then
     return {host:$target.host, argv:[$mix_bin,"-"], stdin:$body, env:$environment}
   end
@@ -133,5 +136,6 @@ fn stdin_job($target, $program, $bindings, $role, $mix_bin)
   -- The outer native Mix sets the profile env for the inner stdin process.
   $wrapper = "$r = run_argv([" .. json_encode($mix_bin) .. ", \"-\"], {stdin: " .. data_encode($body) .. ", env: " .. data_encode($environment) .. ", timeout: 120}); print($r.stdout); if not $r.ok then raise(\"MESH_TARGET_JOB\", \"namespace job failed\") end\n"
   return {host:$target.host, argv:["sudo","-n","systemd-run","--machine=" .. $target.machine,
-    "--pipe","--wait","--collect","--quiet","--uid=" .. $account,$mix_bin,"-"], stdin:$wrapper, env:{}}
+    "--pipe","--wait","--collect","--quiet","--property=RuntimeMaxSec=135s","--property=TimeoutStopSec=5s",
+    "--property=KillMode=control-group","--uid=" .. $account,$mix_bin,"-"], stdin:$wrapper, env:{}}
 end

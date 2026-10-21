@@ -14,7 +14,8 @@ for $target in $parsed.targets
   $entry = $targets.plan($target)
   if $probe then
     $program = 'send noded noded.info timeout=5; $info={rc:$rc,result:$result}; send noded noded.peers timeout=5; print(json_encode({info:$info,peers:{rc:$rc,result:$result}}))'
-    $job = $targets.stdin_job($target, $program, {}, "citizen", $mix_bin)
+    $role = if $target.kind == "system" then "admin" else "citizen" end
+    $job = $targets.stdin_job($target, $program, {}, $role, $mix_bin)
     $result = ssh_mix($job.host,
       '$r=run_argv($command,{stdin:$text,env:$environment,timeout:20}); print($r.stdout); if not $r.ok then raise("MESH_TARGET_PROBE","native target query failed") end',
       {mix_bin:$mix_bin, bindings:{command:$job.argv,text:$job.stdin,environment:$job.env},timeout:30})

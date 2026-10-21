@@ -1,4 +1,5 @@
 #!/usr/bin/env mix
+-- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.1.0
 -- mesh_d2_seed.mix — stage each selected node's SPEC 13 §9a D2 private seed.
 --
