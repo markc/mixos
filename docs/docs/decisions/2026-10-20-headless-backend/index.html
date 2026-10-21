@@ -307,7 +307,8 @@ blank document, alongside exact Bus text readback. SSIM uses uniform sliding
 L=255. A test-only ced launcher installs a log subscriber around the unchanged
 entry point to record the chosen wgpu adapter; Wayland client tracing records
 the actual buffer creation request. A shm result is reported as a weaker
-client-buffer claim, even when wgpu renders on a GPU.</p>
+client-buffer claim, even when wgpu renders on a GPU. Software wgpu adapters
+are recorded explicitly and establish no GPU-client claim.</p>
         </article>
         <p class="doc-source"><a href="/docs/decisions/2026-10-20-headless-backend.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
     </div>

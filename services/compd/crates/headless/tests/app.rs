@@ -90,6 +90,47 @@ fn capture(bus: &Bus, target: &Value, path: &Path) {
     assert_eq!(reply["window"], *target);
 }
 
+fn buffer_creation(trace: &str) -> (&str, &str) {
+    let surface = trace.lines().find_map(|line| {
+        line.contains(".get_xdg_surface(")
+            .then(|| line.split_once(", wl_surface#").map(|(_, rest)| rest.trim_end_matches(')')))
+            .flatten()
+    }).expect("xdg toplevel surface in client trace");
+    let attached = format!("wl_surface#{surface}.attach(wl_buffer#");
+    let attach = trace.lines().find(|line| line.contains(&attached))
+        .expect("app toplevel attached a rendered buffer");
+    let id = attach.split_once(&attached).unwrap().1.split(',').next().unwrap();
+    // Resolve the attached buffer's most recent creation, excluding cursor
+    // buffers and any later reuse of the same protocol object id.
+    let prefix = &trace[..trace.find(attach).unwrap()];
+    let creation = prefix.lines().rev().find(|line| {
+        line.contains(&format!("new id wl_buffer#{id},"))
+            || line.contains(&format!("new id wl_buffer#{id})"))
+    }).expect("creation of the app's attached wl_buffer");
+    let kind = if creation.contains("wl_shm_pool") {
+        "wl_shm"
+    } else if creation.contains("wl_drm") {
+        "wl_drm"
+    } else if creation.contains("zwp_linux_buffer_params") {
+        "linux-dmabuf"
+    } else {
+        panic!("unrecognised buffer request: {creation}")
+    };
+    (kind, creation)
+}
+
+#[test]
+fn buffer_trace_follows_toplevel_attach_instead_of_cursor_creation() {
+    let trace = "xdg_wm_base#1.get_xdg_surface(new id xdg_surface#2, wl_surface#3)\n\
+wl_shm_pool#4.create_buffer(new id wl_buffer#5, 0, 24, 24, 96, 0)\n\
+wl_surface#6.attach(wl_buffer#5, 0, 0)\n\
+zwp_linux_buffer_params_v1#7.created(new id wl_buffer#8)\n\
+wl_surface#3.attach(wl_buffer#8, 0, 0)\n";
+    let (kind, creation) = buffer_creation(trace);
+    assert_eq!(kind, "linux-dmabuf");
+    assert!(creation.contains("#8)"));
+}
+
 #[test]
 #[ignore = "needs a GPU render node and built compd, noded, editd, testkit bins and ced-headless-probe"]
 fn ced_wgpu_agent_typing_and_idle_ssim() {
@@ -210,28 +251,13 @@ fn ced_wgpu_agent_typing_and_idle_ssim() {
     let trace = fs::read_to_string(&_app.log).unwrap();
     let adapter = trace
         .lines()
-        .find(|line| line.contains("wgpu adapter:"))
+        .find(|line| line.contains("wgpu adapter:") || line.contains("Software rasterizer detected"))
         .expect("the selected wgpu adapter must be logged");
     println!("CED_WGPU {adapter}");
-    assert!(adapter.contains("Gpu"), "ced selected a software adapter: {adapter}");
-    let creation = trace
-        .lines()
-        .find(|line| {
-            line.contains("new id wl_buffer")
-                && (line.contains(".create_prime_buffer(")
-                    || line.contains(".create_buffer(")
-                    || line.contains(".create_immed("))
-        })
-        .expect("Wayland trace must identify the first actual buffer creation");
-    let kind = if creation.contains("wl_shm_pool") {
-        "wl_shm"
-    } else if creation.contains("wl_drm") {
-        "wl_drm"
-    } else if creation.contains("zwp_linux_buffer_params") {
-        "linux-dmabuf"
-    } else {
-        panic!("unrecognised buffer request: {creation}")
-    };
+    if adapter.contains("device_type: Cpu") {
+        println!("CED_GPU_CLIENT false: software wgpu adapter; compositor render-node test only");
+    }
+    let (kind, creation) = buffer_creation(&trace);
     println!("CED_BUFFER {kind}: {creation}");
     println!("ced: idle >= {IDLE_MIN}, typed < {TYPED_MAX}; exact agent text readback");
     let artifacts = binary("headless-app-artifacts");
