@@ -11,19 +11,18 @@
 //! pinned bytes moved. The store format is unchanged; only the default design
 //! changed.
 //!
-//! Re-pinned 2026-10-21 for the accepted phase-one theming defaults. The
-//! previous pins pass on the Markdown parent and fail on the untouched
-//! theming parent. Only default-design values changed: the JSON byte length
-//! and store format stay unchanged, with old sealed profiles covered by the
-//! compatibility and transaction tests.
+//! Re-pinned 2026-10-21 for the final modern-style source. CBC2's exact-head
+//! test on feec5277 produced these effective and snapshot digests; the JSON
+//! byte length and store format stay unchanged. Old sealed profiles remain
+//! covered by the compatibility and transaction tests.
 use settings::*;
 
 /// `settings::digest` of the default desktop's effective map.
 const EFFECTIVE_DIGEST_PINNED: &str =
-    "7cd941ce5897d03a0ec10d4f2431214bfa7b3287fc1513d7d7c2c9bd09344147";
+    "22760b7415943256f98294b8de6286434ee33967447d8107be7585c31c47557d";
 /// `settings::digest` of the fixed default-desktop `Snapshot`.
 const SNAPSHOT_DIGEST_PINNED: &str =
-    "5008077faa8a239b06904d9a85f2d1c7528a007df4a7b6ea0677e12a2a09c922";
+    "2036902834d19d1e3b7b3b1a46bb04711da1b4b26f378aefc1d5962f3459088f";
 /// Serialised byte length of that `Snapshot`.
 const SNAPSHOT_JSON_LEN_PINNED: usize = 529_634;
 
