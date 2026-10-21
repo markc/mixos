@@ -464,14 +464,14 @@ fn document(
             let mut text_rect = geometry.text_rect();
             text_rect.min.y += top;
             ui.scope_builder(egui::UiBuilder::new().max_rect(text_rect), |ui| {
-                    egui::ScrollArea::both()
-                        .id_salt(("ced.preview", tab.id))
-                        .auto_shrink([false, false])
-                        .show(ui, |ui| {
-                            if let Some(document) = &preview {
-                                toolkit::markdown::show(ui, document);
-                            }
-                        });
+                egui::ScrollArea::both()
+                    .id_salt(("ced.preview", tab.id))
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        if let Some(document) = &preview {
+                            toolkit::markdown::show(ui, document);
+                        }
+                    });
             });
         });
     };
