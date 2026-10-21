@@ -243,6 +243,22 @@ The append-only compatibility table supplies both palettes, styles and terminal
 defaults to older sources with <code>defaulted-scheme</code> provenance. An authored
 scheme binding retains its source colours. Missing bindings for the original
 nine schemes remain errors.</p>
+<p>Breeze keeps its surface colours, blue accent and selection opacity. Four
+foreground/action values are adjusted to meet the contrast requirement after
+egui's rounded, premultiplied sRGB blending. Text is checked on all seven
+resting, hovered and pressed surfaces, including their accent-soft tints.
+Primary-button ink is checked at 100%, 93% and 85% opacity on all five
+resting surfaces. The minimum rendered ratios are:</p>
+<table><thead><tr><th>mode / role</th><th>reference</th><th>shipped</th><th>minimum contrast</th></tr></thead><tbody>
+<tr><td>light / <code>text_faint</code></td><td><code>#515A64</code></td><td><code>#4D5660</code></td><td>4.558:1 on tinted pressed</td></tr>
+<tr><td>light / <code>primary_bg</code></td><td><code>#237AB4</code></td><td><code>#0F66A0</code></td><td>4.536:1 at 85% on field</td></tr>
+<tr><td>dark / <code>text_faint</code></td><td><code>#A4AAB1</code></td><td><code>#B8BEC5</code></td><td>4.504:1 on tinted pressed</td></tr>
+<tr><td>dark / <code>accent_text</code></td><td><code>#50B8EE</code></td><td><code>#61C9FF</code></td><td>4.543:1 on tinted pressed</td></tr>
+</tbody></table>
+<p>The reference inputs measured 4.283:1 for light faint text on tinted pressed,
+3.601:1 and 3.789:1 for dark faint/accent text there, and 3.813:1 for the
+light primary button at 85% on chrome. These adjustments preserve the 4.5:1
+requirement rather than importing those failures.</p>
 <p>The compiler flattens it for one
 <code>DesignContext</code> (scheme, mode, contrast, optional app) into a resolved
 design: gamut-mapped colours with WCAG contrast checked, resolved metrics
