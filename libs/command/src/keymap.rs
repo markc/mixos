@@ -28,7 +28,11 @@ fn canonical_chord(text: &str) -> String {
 }
 
 fn is_user_fkey(chord: &str) -> bool {
-    let key = chord.rsplit('+').next().unwrap_or(chord).to_ascii_lowercase();
+    let key = chord
+        .rsplit('+')
+        .next()
+        .unwrap_or(chord)
+        .to_ascii_lowercase();
     matches!(
         key.as_str(),
         "f1" | "f2" | "f3" | "f4" | "f5" | "f6" | "f7" | "f8" | "f9" | "f10" | "f11" | "f12"
@@ -217,7 +221,10 @@ mod tests {
     fn f13_remains_valid_as_default() {
         let mut bindings = Bindings::default();
         bindings.add("cmd.f13", Some("Ctrl+F13".into()));
-        assert_eq!(bindings.shortcuts_of("cmd.f13"), vec!["Ctrl+F13".to_string()]);
+        assert_eq!(
+            bindings.shortcuts_of("cmd.f13"),
+            vec!["Ctrl+F13".to_string()]
+        );
     }
 
     #[test]
@@ -225,10 +232,8 @@ mod tests {
         let mut bindings = Bindings::default();
         bindings.add("cmd.user_fkey", Some("Ctrl+O".into()));
 
-        let overrides = Overrides::from([(
-            "cmd.user_fkey".to_string(),
-            vec!["Ctrl+F1".to_string()],
-        )]);
+        let overrides =
+            Overrides::from([("cmd.user_fkey".to_string(), vec!["Ctrl+F1".to_string()])]);
 
         let notes = bindings.rebind(&overrides, |text| Some(text.to_string()));
 
@@ -246,10 +251,7 @@ mod tests {
         bindings.add("cmd.user_fkey", Some("Ctrl+O".into()));
         bindings.add("cmd.extra_fkey", None);
 
-        let overrides = Overrides::from([(
-            "cmd.user_fkey".to_string(),
-            vec!["F1".to_string()],
-        )]);
+        let overrides = Overrides::from([("cmd.user_fkey".to_string(), vec!["F1".to_string()])]);
         let _ = bindings.rebind(&overrides, |text| Some(text.to_string()));
 
         bindings.add_shortcuts("cmd.extra_fkey", ["F1".to_string()]);
