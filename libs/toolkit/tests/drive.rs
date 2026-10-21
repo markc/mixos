@@ -69,7 +69,6 @@ fn window_with(builder: egui_kittest::HarnessBuilder<App>) -> Harness<'static, A
     let registry = fixture::registry();
     let strings = Strings::new(fixture::FTL);
     let theme = fixture::theme(Scheme::Pro, Mode::Light);
-    let stroke = toolkit::icons::stroke_width(&theme);
     let builder = builder.with_size(egui::vec2(900.0, 500.0));
     let mut harness = builder.build_ui_state(
         move |ui, app: &mut App| {

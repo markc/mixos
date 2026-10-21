@@ -67,7 +67,6 @@ fn panel_with(theme: &Theme, name: &str, open: Option<&str>) {
     let strings = Strings::new(FTL);
     let commands = registry();
     let state = Demo::default();
-    let stroke = icons::stroke_width(theme);
     let mut harness = Harness::builder()
         .with_size(egui::vec2(420.0, 260.0))
         .wgpu()
@@ -91,7 +90,7 @@ fn panel_with(theme: &Theme, name: &str, open: Option<&str>) {
     harness.snapshot(name);
 }
 
-fn contents(ui: &mut egui::Ui, strings: &Strings, stroke: f32) {
+fn contents(ui: &mut egui::Ui, strings: &Strings) {
     {
         ui.heading(strings.get("title"));
         ui.label(strings.get("body"));

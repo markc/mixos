@@ -20,7 +20,7 @@ use std::sync::{Arc, Mutex, mpsc};
 use std::task::Poll;
 use std::time::{Duration, Instant};
 use toolkit::command::{CommandError, Origin};
-use toolkit::{Registry, Strings, Theme, drive, icons};
+use toolkit::{Registry, Strings, Theme, drive};
 use vitals::engine::Signal;
 use vitals::model::{self, APP_ID};
 use vitals::{Effect, Engine, Fetch};

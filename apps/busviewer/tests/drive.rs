@@ -12,7 +12,7 @@ use inspector::model::Verb;
 use inspector::{Effect, Engine, Snapshot};
 use serde_json::{Value, json};
 use toolkit::drive::{self, Answer};
-use toolkit::{Theme, icons};
+use toolkit::{Theme};
 
 struct Window {
     engine: Engine,

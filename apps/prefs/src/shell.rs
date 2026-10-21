@@ -25,7 +25,7 @@ use std::sync::{Arc, Mutex, mpsc};
 use std::task::Poll;
 use std::time::Duration;
 use toolkit::command::{CommandError, Origin};
-use toolkit::{Registry, Strings, Theme, drive, icons};
+use toolkit::{Registry, Strings, Theme, drive};
 
 /// What finished off the UI thread.
 pub enum Event {

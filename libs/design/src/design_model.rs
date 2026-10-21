@@ -590,10 +590,14 @@ pub fn apply_compiled_design(
             }
             let revision = DesignRevision::succeeding(current.map(|artifact| artifact.revision))
                 .expect("design revision space exhausted");
-            let outcome = if success.diagnostics.is_empty() {
-                DesignCompileOutcome::Clean
-            } else {
+            let outcome = if success
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.severity == crate::DiagnosticSeverity::Warning)
+            {
                 DesignCompileOutcome::SucceededWithWarnings
+            } else {
+                DesignCompileOutcome::Clean
             };
             let candidate = success.candidate;
             let attempted_source = candidate.source.clone();

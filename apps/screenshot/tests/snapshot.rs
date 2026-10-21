@@ -14,7 +14,7 @@ use screenshot::app::{App, Dialog, Tool};
 use screenshot::capture::{self, Target, Window};
 use screenshot::view::{Drag, Preview, view};
 use screenshot::{commands, strings};
-use toolkit::{Theme, icons};
+use toolkit::{Theme};
 
 /// A made-up desktop: a backdrop, a window with a title bar and a sidebar,
 /// and lines of "text" (fixture pixels, not UI colours).
