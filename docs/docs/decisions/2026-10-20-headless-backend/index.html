@@ -394,7 +394,7 @@ cargo build -p compd --no-default-features --features wlcs --locked
 build used Boost 1.92.0 unpacked under <code>deps</code>, without a system install. The
 compiler flag permits wlcs's deprecated gmock <code>Invoke</code> calls with gmock 1.18.0.
 <code>WLCS</code> may replace <code>--wlcs</code>; <code>COMPD_TEST_RENDER_NODE</code> selects the render node.</p>
-<p>The gate enumerates every test and runs each in its own process, with a 20-second
+<p>The gate enumerates every test and runs four isolated processes at a time, each with a 20-second
 deadline, preserving JSON, process results and compositor logs in the output
 directory. It checks every name and outcome against
 <code>services/compd/tests/wlcs_expectations.conf.mix</code>; additions, removals and changed
@@ -402,6 +402,24 @@ outcomes fail with a diff. The first observation uses <code>--record --expectati
 tests are recorded as skipped. Explicit <code>flaky</code> entries still run and must exist,
 but their outcomes are excluded from the comparison. Conformance failures are
 recorded for later work; Phase 6 does not change compositor policy to fix them.</p>
+<p>The first complete observation (2026-10-21) recorded <strong>1,228 tests: 361 passed,
+563 failed, 304 skipped, 0 classified flaky</strong>. Every failed case produced a
+complete JSON report; no case hit the gate's process deadline. Unsupported
+protocols use wlcs's <code>wlcs-skip-test</code> JSON property, even though gtest also
+records an exception for them. These are skips, alongside disabled cases.</p>
+<p>The largest reported failure classes were <code>xdg_surface</code> protocol error 3
+(319 cases, for example <code>ForeignToplevelManagerTest.detects_toplevel_closed</code>),
+layer-surface protocol error 0 (79 cases, for example
+<code>Layer/LayerSurfaceLayerTest.surface_on_lower_layer_is_initially_placed_below/0</code>),
+and input-region targeting or coordinate assertions (58 cases, for example
+<code>MultiRectEdges/RegionSurfaceInputCombinations.input_inside_region_seen/8</code>).
+There were also 38 event timeouts, 24 missing-notification cases, 7 keyboard-focus
+cases and 38 other assertions or protocol errors. These group the observed
+messages, rather than establishing root causes. For example,
+<code>Anchor/LayerSurfaceLayoutTest.maximized_xdg_toplevel_is_shrunk_for_exclusive_zone/0</code>
+timed out waiting for a condition, and
+<code>PointerConstraints.when_surface_is_reselected_persistent_locked_pointer_gets_notifications</code>
+missed its expected notifications. The failed cases remain in the expectation file.</p>
         </article>
         <p class="doc-source"><a href="/docs/decisions/2026-10-20-headless-backend.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
     </div>
