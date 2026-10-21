@@ -29,7 +29,11 @@ fn shortcut_macro_and_parser_agree_on_exact_modifiers() {
     let combo = shortcut!(Super + Shift + Right);
     assert_eq!(format::combo_string(&combo), "Super+Shift+Right");
     let parsed = format::parse_combo("Super+Shift+Right").unwrap();
-    let modifiers = ModifiersState { logo: true, shift: true, ..Default::default() };
+    let modifiers = ModifiersState {
+        logo: true,
+        shift: true,
+        ..Default::default()
+    };
     assert!(combo.matches(&modifiers, parsed.key));
     assert!(!combo.matches(&ModifiersState::default(), parsed.key));
     assert!(format::parse_combo("Super+Right+Left").is_none());
@@ -55,5 +59,9 @@ fn launch_resolution_refuses_a_missing_executable() {
 #[cfg(not(feature = "desktop-dbus"))]
 #[test]
 fn scope_adoption_is_explicitly_disabled_without_the_adapter() {
-    assert!(slots::launch::scope::adopt_into_scope(1, "example").unwrap_err().contains("disabled"));
+    assert!(
+        slots::launch::scope::adopt_into_scope(1, "example")
+            .unwrap_err()
+            .contains("disabled")
+    );
 }

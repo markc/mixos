@@ -27,8 +27,6 @@
 //! lock only long enough to reach the value. Writes happen at boot; reads happen
 //! per buffer construction, never per frame.
 
-
-
 use crate::storage::token::base::{Token, TokenMut};
 use std::any::Any;
 use std::sync::RwLock;

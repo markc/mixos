@@ -4,7 +4,6 @@
 //! `"Super+Shift+K"` (used by keybinding.json + the settings Keys tab).
 //! Names match the `Key` enum variant (Debug) names exactly.
 
-
 use crate::library::input::keyboard::combo::KeyCombo;
 use crate::library::input::keyboard::enum_::Key;
 use smithay::input::keyboard::ModifiersState;

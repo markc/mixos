@@ -8,9 +8,7 @@ use smithay::reexports::calloop::{Interest, LoopHandle, Mode, PostAction};
 
 use crate::execution::driver::executor::executor::{BaseEnv, EXECUTOR, Executor};
 use slots::launch::dispatch::LaunchWorker;
-use slots::launch::policy::{
-    LAUNCH_BACKEND, LAUNCH_DISPATCH, LaunchBackend, LaunchDispatch,
-};
+use slots::launch::policy::{LAUNCH_BACKEND, LAUNCH_DISPATCH, LaunchBackend, LaunchDispatch};
 use slots::launch::types::LaunchOutcome;
 use slots::library::process::child::pidfd;
 use world::state::Loop;
@@ -95,10 +93,7 @@ fn base_env(state: &Loop) -> BaseEnv {
             // must be forced back onto Wayland can say so in their own desktop entry
             // (`Exec=env GDK_BACKEND=wayland …`), as they already do for the toolkit
             // hints compd deliberately does not set.
-            (
-                "DISPLAY".into(),
-                x11_wm::display::get().unwrap_or_default(),
-            ),
+            ("DISPLAY".into(), x11_wm::display::get().unwrap_or_default()),
             ("XDG_SESSION_TYPE".into(), "wayland".into()),
             ("XDG_CURRENT_DESKTOP".into(), desktop.clone()),
             ("XDG_SESSION_DESKTOP".into(), desktop),

@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
-
-
 pub use crate::library::input::keyboard::combo::KeyCombo;
 
 pub struct ShortcutHandler<S> {

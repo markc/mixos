@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 
-
-
 use crate::channel::router::base::ChannelRouter;
 use crate::input::event::base::{InputEvent, InputFlow};
 use crate::storage::slot::base::Storage;

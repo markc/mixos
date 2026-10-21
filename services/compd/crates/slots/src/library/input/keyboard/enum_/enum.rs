@@ -184,7 +184,10 @@ impl Key {
             keysyms::KEY_Down => Some(Key::Down),
             keysyms::KEY_Left => Some(Key::Left),
             keysyms::KEY_Right => Some(Key::Right),
-            keysyms::KEY_Super_L | keysyms::KEY_Super_R | keysyms::KEY_Meta_L | keysyms::KEY_Meta_R => Some(Key::Super),
+            keysyms::KEY_Super_L
+            | keysyms::KEY_Super_R
+            | keysyms::KEY_Meta_L
+            | keysyms::KEY_Meta_R => Some(Key::Super),
             keysyms::KEY_Shift_L | keysyms::KEY_Shift_R => Some(Key::Shift),
             keysyms::KEY_Control_L | keysyms::KEY_Control_R => Some(Key::Ctrl),
             keysyms::KEY_Alt_L | keysyms::KEY_Alt_R => Some(Key::Alt),
