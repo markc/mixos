@@ -30,6 +30,12 @@
 //! `missed` counts absent/discarded feedback or presentation later than the
 //! scheduled commit deadline plus one interval, including injected stalls.
 //! `achieved_hz` counts commits over the paced run, excluding feedback drain.
+//! `presented_hz` counts presented commits over that same elapsed time;
+//! `cadence_missed` counts gaps between chronological presentation timestamps
+//! greater than 1.5 requested intervals (the first presentation has no gap).
+//! In callback/burst mode, `missed` instead uses the actual commit time plus
+//! the median observed presentation interval as tolerance; there is no
+//! independently scheduled commit deadline in that mode.
 //!
 //! Pixel IDs (unscaled client buffer, at least 256x16): y=0..7 holds sync
 //! 0xA55AA55A; y=8..15 holds the zero-based u32 commit ID. Each row has 32
@@ -373,6 +379,13 @@ fn missed(outcome: Option<Outcome>, due: Duration, interval: Duration) -> bool {
     !matches!(outcome, Some(Outcome::Presented { time, .. }) if time <= due + interval)
 }
 
+fn cadence_missed(times: &[Duration], interval: Duration) -> usize {
+    times
+        .windows(2)
+        .filter(|pair| pair[1].saturating_sub(pair[0]) > interval.mul_f64(1.5))
+        .count()
+}
+
 fn frame_id(pixels: &mut [u8], width: u32, height: u32, id: u32) {
     if width < 256 || height < 16 {
         return;
@@ -520,11 +533,17 @@ fn run_rate(
         .enumerate()
         .filter(|(commit, slot)| missed(slot.outcome, scheduled(start, *commit, rate), interval))
         .count();
-    let presented = probe
+    let mut presentation_times = probe
         .feedback
         .iter()
-        .filter(|slot| matches!(slot.outcome, Some(Outcome::Presented { .. })))
-        .count();
+        .filter_map(|slot| match slot.outcome {
+            Some(Outcome::Presented { time, .. }) => Some(time),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    presentation_times.sort_unstable();
+    let presented = presentation_times.len();
+    let cadence_missed = cadence_missed(&presentation_times, interval);
     let output_ok = options.expect_output.as_ref().is_none_or(|expected| {
         probe.feedback.iter().all(|slot| match slot.outcome {
             Some(Outcome::Presented {
@@ -555,13 +574,15 @@ fn run_rate(
             .unwrap_or(0)
     };
     println!(
-        "{SUMMARY} {} frames={} commits={} presented={} rate_hz={} achieved_hz={:.6} missed={} stalls={} latency_p50_us={} latency_p99_us={}",
+        "{SUMMARY} {} frames={} commits={} presented={} rate_hz={} achieved_hz={:.6} presented_hz={:.6} cadence_missed={} missed={} stalls={} latency_p50_us={} latency_p99_us={}",
         if pass { "PASS" } else { "FAIL" },
         options.frames,
         options.frames,
         presented,
         rate,
         options.frames as f64 / elapsed,
+        presented as f64 / elapsed,
+        cadence_missed,
         missed,
         stalls,
         latency(50),
@@ -1405,6 +1426,15 @@ mod tests {
         ] {
             assert!(parse(&args).is_err(), "{args:?}");
         }
+    }
+
+    #[test]
+    fn presentation_cadence_counts_only_gaps_over_one_and_a_half_intervals() {
+        let interval = Duration::from_millis(10);
+        let times = [0, 10, 25, 41, 71].map(Duration::from_millis);
+        assert_eq!(cadence_missed(&times, interval), 2);
+        assert_eq!(cadence_missed(&[], interval), 0);
+        assert_eq!(cadence_missed(&times[..1], interval), 0);
     }
 
     #[test]

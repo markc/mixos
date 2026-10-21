@@ -62,6 +62,14 @@ portald's `serve --screencast-max-framerate N` sets the cast ceiling in
 can request 60 through its portal unit drop-in. This ceiling does not change
 the compositor's refresh rate. These templates do not provision or start a desk.
 
+Phase 4b acceptance measures presentation cadence: `presented_hz` is the
+presented-frame count divided by the paced probe's elapsed time, and
+`cadence_missed` counts presentation gaps greater than 1.5 requested intervals.
+Captured-frame uniqueness is measured from the probe's pixel frame IDs.
+The client-deadline `missed` count remains a regression guard only: two
+free-running 60 Hz clocks beat against that deadline without establishing
+a compositor cadence defect.
+
 The Phase 2 plain Wayland EGL client probe (`weston-simple-egl`, with
 `WAYLAND_DEBUG=client`) created its first `wl_buffer` through `wl_shm_pool`.
 Its rendered pixels survived composition and screencopy, but this was a
