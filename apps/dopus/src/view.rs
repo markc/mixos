@@ -116,18 +116,9 @@ pub fn view(
     app: &App,
     commands: &Registry<App>,
     strings: &Strings,
-    stroke: f32,
 ) -> Vec<UiEvent> {
     let mut events = Vec::new();
-    let fired = toolkit::titlebar::show(
-        ui,
-        &title(app),
-        Some(Icon::Folder),
-        stroke,
-        commands,
-        app,
-        strings,
-    );
+    let fired = toolkit::titlebar::show(ui, &title(app), Some(Icon::Folder), commands, app, strings);
     events.extend(
         fired
             .into_iter()
@@ -145,7 +136,7 @@ pub fn view(
             .frame(bars::dock_frame(ui.ctx()))
             .show(ui, |ui| {
                 toolkit::panel::section_label(ui, &Side::Left.title());
-                places_panel(ui, app, stroke, &mut events);
+                places_panel(ui, app, &mut events);
             });
         sidebar_width(
             Sidebar::Places,
@@ -176,9 +167,9 @@ pub fn view(
     egui::CentralPanel::default()
         .frame(bars::dock_frame(ui.ctx()))
         .show(ui, |ui| {
-            panes(ui, app, commands, strings, stroke, &mut events)
+            panes(ui, app, commands, strings, &mut events)
         });
-    drag_preview(ui.ctx(), stroke);
+    drag_preview(ui.ctx());
     dialogs(ui.ctx(), app, commands, strings, &mut events);
     toolkit::titlebar::edges(ui);
     events
@@ -241,7 +232,7 @@ fn toggle_button(
     }
 }
 
-fn places_panel(ui: &mut Ui, app: &App, stroke: f32, events: &mut Vec<UiEvent>) {
+fn places_panel(ui: &mut Ui, app: &App, events: &mut Vec<UiEvent>) {
     let active = &app.core.pane(app.core.active()).path;
     let font = TextStyle::Body.resolve(ui.style());
     ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
@@ -249,7 +240,7 @@ fn places_panel(ui: &mut Ui, app: &App, stroke: f32, events: &mut Vec<UiEvent>) 
             ui.horizontal(|ui| {
                 let icon = crate::icons::place_icon(name);
                 let colour = ui.visuals().weak_text_color();
-                ui.add(icons::image(icon, stroke, ICON, colour));
+                ui.add(icons::image_of(ui.ctx(), icon, ICON, colour));
                 let width = ui.available_width();
                 let text = crate::elide::fit(ui, name, &font, width);
                 let row = toolkit::selectable(ui, active == path, text)
@@ -347,7 +338,6 @@ fn panes(
     app: &App,
     commands: &Registry<App>,
     strings: &Strings,
-    stroke: f32,
     events: &mut Vec<UiEvent>,
 ) {
     let area = ui.available_rect_before_wrap();
@@ -382,7 +372,7 @@ fn panes(
         ui.scope_builder(
             UiBuilder::new().max_rect(rect).id_salt(pane.index()),
             |ui| {
-                pane_view(ui, app, commands, strings, pane, stroke, events);
+                pane_view(ui, app, commands, strings, pane, events);
             },
         );
     }
@@ -394,7 +384,6 @@ fn pane_view(
     commands: &Registry<App>,
     strings: &Strings,
     pane: PaneId,
-    stroke: f32,
     events: &mut Vec<UiEvent>,
 ) {
     let active = app.core.active() == pane;
@@ -434,17 +423,7 @@ fn pane_view(
             .auto_shrink(false)
             .show_rows(ui, row_h, rows.len(), |ui, range| {
                 for index in range {
-                    row(
-                        ui,
-                        app,
-                        commands,
-                        strings,
-                        pane,
-                        &rows[index],
-                        (row_h, show_size, show_modified),
-                        stroke,
-                        events,
-                    );
+                    row(ui, app, commands, strings, pane, &rows[index], (row_h, show_size, show_modified), events);
                 }
             });
     });
@@ -481,7 +460,7 @@ fn location_bar(
     active: bool,
     events: &mut Vec<UiEvent>,
 ) {
-    let height = toolkit::button::ICON_BUTTON.max(ui.spacing().interact_size.y + 4.0);
+    let height = toolkit::button::icon_button_of(ui.ctx()).max(ui.spacing().interact_size.y + 4.0);
     let side = match pane {
         PaneId::Left => Side::Left,
         PaneId::Right => Side::Right,
@@ -495,7 +474,7 @@ fn location_bar(
                 toggle_button(ui, app, commands, strings, side, events);
             }
             let reserve = if side == Side::Right {
-                toolkit::button::ICON_BUTTON + ui.spacing().item_spacing.x + 4.0
+                toolkit::button::icon_button_of(ui.ctx()) + ui.spacing().item_spacing.x + 4.0
             } else {
                 4.0
             };
@@ -662,7 +641,6 @@ fn row(
     pane: PaneId,
     visible: &VisibleRow,
     (row_h, show_size, show_modified): (f32, bool, bool),
-    stroke: f32,
     events: &mut Vec<UiEvent>,
 ) {
     let entry = &visible.entry;
@@ -735,7 +713,7 @@ fn row(
         } else {
             Icon::ChevronRight
         };
-        icons::image(icon, stroke, ICON * 0.8, visuals.weak_text_color())
+        icons::image_of(ui.ctx(), icon, ICON * 0.8, visuals.weak_text_color())
             .paint_at(ui, chevron.shrink(1.0));
         if toggle.clicked() {
             events.push(UiEvent::Toggle {
@@ -754,7 +732,7 @@ fn row(
     } else {
         visuals.weak_text_color()
     };
-    icons::image(file_icon, stroke, ICON, icon_colour).paint_at(ui, icon_rect);
+    icons::image_of(ui.ctx(), file_icon, ICON, icon_colour).paint_at(ui, icon_rect);
     x += ICON + 6.0;
     let font = TextStyle::Body.resolve(ui.style());
     let name = crate::elide::fit(
@@ -902,7 +880,7 @@ fn context_item(
 }
 
 /// The dragged item's name follows the pointer.
-fn drag_preview(ctx: &egui::Context, stroke: f32) {
+fn drag_preview(ctx: &egui::Context) {
     let Some(dragged) = egui::DragAndDrop::payload::<Dragged>(ctx) else {
         return;
     };
@@ -917,7 +895,7 @@ fn drag_preview(ctx: &egui::Context, stroke: f32) {
             egui::Frame::popup(ui.style()).show(ui, |ui| {
                 ui.horizontal(|ui| {
                     let colour = ui.visuals().text_color();
-                    ui.add(icons::image(Icon::File, stroke, ICON, colour));
+                    ui.add(icons::image_of(ui.ctx(), Icon::File, ICON, colour));
                     ui.label(&dragged.name);
                 });
             });

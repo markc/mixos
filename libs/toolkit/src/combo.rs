@@ -27,25 +27,20 @@ use egui::{
 };
 
 /// The longest the list grows before it scrolls (§3.17).
-pub const LIST_HEIGHT: f32 = 420.0;
 
 /// The chevron's half width and height, stroke and ink opacity (§3.17).
-const CHEVRON_HALF: f32 = 3.2;
-const CHEVRON_HEIGHT: f32 = 3.2;
-const CHEVRON_STROKE: f32 = 1.3;
-const CHEVRON_ALPHA: f32 = 0.8;
 
 /// The chevron centred in `rect`, in `visuals`' text colour at 80%.
 pub fn chevron(ui: &Ui, rect: Rect, visuals: &WidgetVisuals, _open: bool) {
     let c = rect.center();
-    let ink = visuals.text_color().gamma_multiply(CHEVRON_ALPHA);
+    let ink = visuals.text_color().gamma_multiply(crate::chrome::Chrome::of(ui.ctx()).style.combo_chevron_alpha as f32);
     let points = vec![
-        pos2(c.x - CHEVRON_HALF, c.y - CHEVRON_HEIGHT / 2.0),
-        pos2(c.x, c.y + CHEVRON_HEIGHT / 2.0),
-        pos2(c.x + CHEVRON_HALF, c.y - CHEVRON_HEIGHT / 2.0),
+        pos2(c.x - crate::chrome::Chrome::of(ui.ctx()).style.combo_chevron_half as f32, c.y - crate::chrome::Chrome::of(ui.ctx()).style.combo_chevron_height as f32 / 2.0),
+        pos2(c.x, c.y + crate::chrome::Chrome::of(ui.ctx()).style.combo_chevron_height as f32 / 2.0),
+        pos2(c.x + crate::chrome::Chrome::of(ui.ctx()).style.combo_chevron_half as f32, c.y - crate::chrome::Chrome::of(ui.ctx()).style.combo_chevron_height as f32 / 2.0),
     ];
     ui.painter()
-        .add(egui::Shape::line(points, Stroke::new(CHEVRON_STROKE, ink)));
+        .add(egui::Shape::line(points, Stroke::new(crate::chrome::Chrome::of(ui.ctx()).style.combo_chevron_stroke as f32, ink)));
 }
 
 /// `selected` in `options`, as a combo `width` wide (egui's `combo_width`,
@@ -92,7 +87,7 @@ pub fn show<T: AsRef<str>>(
     let text = options.get(*selected).map_or("", AsRef::as_ref);
     let mut combo = ComboBox::from_id_salt(id_salt)
         .selected_text(WidgetText::from(text))
-        .height(LIST_HEIGHT)
+        .height(crate::chrome::Chrome::of(ui.ctx()).style.combo_list_height as f32)
         .icon(chevron);
     if let Some(width) = width {
         combo = combo.width(width);
@@ -132,3 +127,6 @@ fn lock_arrows(ui: &Ui, id: Id) {
         )
     });
 }
+
+/// The installed value of the former `LIST_HEIGHT` constant.
+pub fn list_height_of(ctx: &egui::Context) -> f32 { crate::chrome::Chrome::of(ctx).style.combo_list_height as f32 }

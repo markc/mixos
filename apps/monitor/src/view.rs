@@ -48,7 +48,6 @@ pub fn view(
     engine: &Engine,
     commands: &Registry<Engine>,
     strings: &Strings,
-    stroke: f32,
 ) -> Vec<UiEvent> {
     let mut events = Vec::new();
     let dark = ui.visuals().dark_mode;
@@ -69,16 +68,7 @@ pub fn view(
         },
     ];
     let title = format!("{} — {}", label("title"), engine.host());
-    let fired = titlebar::show_with(
-        ui,
-        &title,
-        Some(Icon::Monitor),
-        stroke,
-        commands,
-        engine,
-        strings,
-        &mut controls,
-    );
+    let fired = titlebar::show_with(ui, &title, Some(Icon::Monitor), commands, engine, strings, &mut controls);
     // The toggle goes to the mode opposite the one this frame drew, so a
     // click reported twice cannot flip it back.
     let mut mode_set = false;
@@ -98,8 +88,8 @@ pub fn view(
             events.push(UiEvent::Command(id, origin));
         }
     }
-    status_bar(ui, engine, stroke);
-    tool_bar(ui, engine, commands, strings, stroke, &mut events);
+    status_bar(ui, engine);
+    tool_bar(ui, engine, commands, strings, &mut events);
     egui::CentralPanel::default()
         .frame(bars::dock_frame(ui.ctx()))
         .show(ui, |ui| match engine.ui.tab {
@@ -129,14 +119,14 @@ pub fn view(
     events
 }
 
-fn status_bar(ui: &mut Ui, engine: &Engine, stroke: f32) {
+fn status_bar(ui: &mut Ui, engine: &Engine) {
     bars::status(ui, |ui| {
         let (icon, colour) = if engine.connected && engine.error.is_none() {
             (Icon::Plug, ui.visuals().weak_text_color())
         } else {
             (Icon::Unplug, ui.visuals().error_fg_color)
         };
-        ui.add(icons::image(icon, stroke, ICON, colour));
+        ui.add(icons::image_of(ui.ctx(), icon, ICON, colour));
         ui.small(&engine.status);
         if let Some(error) = &engine.error {
             ui.small(RichText::new(error).color(ui.visuals().error_fg_color));
@@ -160,7 +150,6 @@ fn tool_bar(
     engine: &Engine,
     commands: &Registry<Engine>,
     strings: &Strings,
-    stroke: f32,
     events: &mut Vec<UiEvent>,
 ) {
     bars::options(ui, |ui| {
@@ -170,7 +159,7 @@ fn tool_bar(
             }
         }
         bars::divider(ui, ui.available_height().min(18.0));
-        ui.add(icons::image(Icon::Server, stroke, ICON, ui.visuals().weak_text_color()));
+        ui.add(icons::image_of(ui.ctx(), Icon::Server, ICON, ui.visuals().weak_text_color()));
         let mut options = vec![label("this-node")];
         options.extend(engine.peers.iter().cloned());
         if let Some(node) = &engine.ui.node

@@ -205,6 +205,20 @@ pub fn image(icon: Icon, stroke: f32, size: f32, colour: Color32) -> Image<'stat
     .tint(colour)
 }
 
+/// The installed stroke and mask, resolved for the context being drawn.
+pub fn image_of(ctx: &egui::Context, icon: Icon, size: f32, colour: Color32) -> Image<'static> {
+    let stroke = stroke_of(ctx);
+    let [r, g, b, a] = crate::chrome::Chrome::of(ctx).style.icon_mask.0;
+    let mask = format!("#{r:02x}{g:02x}{b:02x}{a:02x}");
+    let uri = format!("bytes://lucide/{}@{stroke}@{mask}.svg", icon.name());
+    let bytes = icon.svg()
+        .replace("stroke=\"currentColor\"", &format!("stroke=\"{mask}\""))
+        .replace("stroke-width=\"2\"", &format!("stroke-width=\"{stroke}\""))
+        .into_bytes();
+    Image::new(ImageSource::Bytes { uri: Cow::Owned(uri), bytes: bytes.into() })
+        .fit_to_exact_size(Vec2::splat(size)).tint(colour)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -36,11 +36,11 @@
 
 use crate::style::colour;
 use crate::theme::Theme;
-use design::family::style::{ScrollBars, Selection, WidgetStroke, Widgets};
+use design::family::style::{Selection, WidgetStroke, Widgets};
 use design::{CaptionSide, Decorations, Mode, ResolvedChrome, ResolvedStyle};
 use egui::{
     Color32, Context, CornerRadius, FontFamily, FontId, Id, Margin, Rect, Shadow, Stroke, Style,
-    TextStyle, Vec2, Visuals, style::ScrollStyle, vec2,
+    TextStyle, Vec2, Visuals, vec2,
 };
 
 /// Whether egui's dark base palette underlies `theme` (§1.5): for pair
@@ -81,6 +81,14 @@ macro_rules! palette {
                     $(stringify!($role) => Some(self.$role),)+
                     _ => None,
                 }
+            }
+
+            /// Overlay independent canonical roles without reading egui back.
+            pub fn with_roles(mut self, roles: &std::collections::BTreeMap<String, design::family::style::StyleColour>) -> Self {
+                $(if let Some(value) = roles.get(stringify!($role)) {
+                    self.$role = Color32::from_rgba_unmultiplied(value.0[0], value.0[1], value.0[2], value.0[3]);
+                })+
+                self
             }
         }
     };
@@ -202,21 +210,19 @@ pub fn bevel(painter: &egui::Painter, rect: Rect, raised: bool, palette: &Palett
     } else {
         (palette.bevel_dark(), palette.bevel_light())
     };
-    let r = rect.shrink(0.5);
-    painter.line_segment([r.left_bottom(), r.left_top()], Stroke::new(1.0, lit));
-    painter.line_segment([r.left_top(), r.right_top()], Stroke::new(1.0, lit));
-    painter.line_segment([r.right_top(), r.right_bottom()], Stroke::new(1.0, shade));
-    painter.line_segment([r.right_bottom(), r.left_bottom()], Stroke::new(1.0, shade));
+    let style = Chrome::of(painter.ctx()).style;
+    let r = rect.shrink(style.hairline_width as f32 / 2.0);
+    painter.line_segment([r.left_bottom(), r.left_top()], Stroke::new(style.hairline_width as f32, lit));
+    painter.line_segment([r.left_top(), r.right_top()], Stroke::new(style.hairline_width as f32, lit));
+    painter.line_segment([r.right_top(), r.right_bottom()], Stroke::new(style.hairline_width as f32, shade));
+    painter.line_segment([r.right_bottom(), r.left_bottom()], Stroke::new(style.hairline_width as f32, shade));
 }
 
 /// Weak text is the text colour at this opacity (§1.4, egui's default).
-pub const WEAK_ALPHA: f32 = 0.6;
 
 /// Disabled widgets draw at this opacity (§1.4, egui's default).
-pub const DISABLED_ALPHA: f32 = 0.5;
 
 /// A pressed Close caption is `caption_close` at this opacity (§1.4).
-pub const CLOSE_PRESSED_ALPHA: f32 = 0.8;
 
 /// Chrome geometry, in points: the style's lengths ([`Metrics::of`]) and
 /// the specification's fixed ones (§2, §3.1–3.5).
@@ -281,11 +287,6 @@ pub struct Metrics {
 }
 
 /// Lengths shared by every style (§2.2, §3.1–3.5).
-const ITEM_SPACING: Vec2 = vec2(8.0, 6.0);
-const BUTTON_PADDING: Vec2 = vec2(10.0, 4.0);
-const INTERACT: f32 = 24.0;
-const MENU_MARGIN: i8 = 6;
-const WINDOW_MARGIN: i8 = 16;
 
 impl Metrics {
     /// The geometry of `style`: its own lengths, and the specification's
@@ -308,28 +309,28 @@ impl Metrics {
             dock_width: pt(style.dock_width),
             dock_margin: pt(style.dock_margin),
             title_bar_height: pt(style.title_bar_height),
-            title_bar_margin: 10.0,
+            title_bar_margin: pt(style.title_bar_margin),
             mark: pt(style.mark),
-            mark_gap: 14.0,
-            title_gap: 16.0,
-            title_size: 13.0,
-            caption_width: 46.0,
-            caption_glyph: 10.0,
-            caption_gap: 4.0,
-            resize_edge: 5.0,
-            resize_corner: 12.0,
-            menu_title_padding: vec2(6.0, 3.0),
+            mark_gap: pt(style.mark_gap),
+            title_gap: pt(style.title_gap),
+            title_size: pt(style.title_size),
+            caption_width: pt(style.caption_width),
+            caption_glyph: pt(style.caption_glyph),
+            caption_gap: pt(style.caption_gap),
+            resize_edge: pt(style.resize_edge),
+            resize_corner: pt(style.resize_corner),
+            menu_title_padding: vec2(pt(style.menu_title_padding_x), pt(style.menu_title_padding_y)),
             menu_title_height: pt(style.menu_title_height),
             menu_min_width: pt(style.menu_min_width),
             menu_row_height: pt(style.menu_row_height),
             menu_row_padding: vec2(pt(style.menu_row_padding_x), pt(style.menu_row_padding_y)),
             menu_highlight_radius: style.menu_highlight_radius,
-            menu_separator_height: 9.0,
+            menu_separator_height: pt(style.menu_separator_height),
             // §3.5 gives 3.5 from the parent frame's inner edge; outer edge to
             // outer edge the evidence measures 2.5.
-            submenu_gap: 2.5,
-            shortcut_gap: 2.0 * ITEM_SPACING.x,
-            edge_gap: 6.0,
+            submenu_gap: pt(style.submenu_gap),
+            shortcut_gap: pt(style.shortcut_gap),
+            edge_gap: pt(style.edge_gap),
             radius_sm: style.radius_sm,
             radius: style.radius,
             radius_lg: style.radius_lg,
@@ -397,6 +398,7 @@ impl Chrome {
         if let Some(accent) = theme.accent() {
             palette.accent = crate::style::srgb(accent);
         }
+        palette = palette.with_roles(&theme.overlay().chrome);
         let metrics = if theme.dictionary().style.is_none() && style.widgets == Widgets::Pairs {
             Metrics::from_egui(&pairs, &style)
         } else {
@@ -452,48 +454,43 @@ pub fn install(ctx: &Context, chrome: &Chrome) {
 }
 
 /// Small, Heading and Monospace sizes (§2.1).
-pub const SMALL_SIZE: f32 = 10.5;
-pub const HEADING_SIZE: f32 = 15.0;
-pub const MONO_SIZE: f32 = 12.0;
 
 /// The complete egui style of chrome widgets (§1.5, §2).
 pub fn style(theme: &Theme) -> Style {
     let chrome = Chrome::for_theme(theme);
     let m = chrome.metrics;
+    let tokens = chrome.style;
     let mut style = Style {
         visuals: visuals(theme, &chrome),
         ..Style::default()
     };
 
     let spacing = &mut style.spacing;
-    spacing.item_spacing = ITEM_SPACING;
-    spacing.button_padding = BUTTON_PADDING;
-    spacing.interact_size = vec2(INTERACT, INTERACT);
-    spacing.slider_width = 150.0;
-    spacing.combo_width = 120.0;
-    spacing.menu_margin = Margin::same(MENU_MARGIN);
-    spacing.window_margin = Margin::same(WINDOW_MARGIN);
-    spacing.icon_width = 14.0;
-    spacing.tooltip_width = 280.0;
+    spacing.item_spacing = vec2(tokens.item_spacing_x as f32, tokens.item_spacing_y as f32);
+    spacing.button_padding = vec2(tokens.button_padding_x as f32, tokens.button_padding_y as f32);
+    spacing.interact_size = Vec2::splattokens.interact as f32;
+    spacing.slider_width = tokens.slider_width as f32;
+    spacing.combo_width = tokens.combo_width as f32;
+    spacing.menu_margin = Margin::sametokens.menu_margin as i8;
+    spacing.window_margin = Margin::sametokens.window_margin as i8;
+    spacing.icon_width = tokens.icon_width as f32;
+    spacing.tooltip_width = tokens.tooltip_width as f32;
     spacing.menu_width = m.menu_min_width;
     // Thin floating bars, or solid ones (Classic, §3.19). egui's presets
     // carry exactly the specified widths, margins and opacities.
-    spacing.scroll = match chrome.style.scroll_bars {
-        ScrollBars::Thin => ScrollStyle::thin(),
-        ScrollBars::Solid => ScrollStyle::solid(),
-    };
+    spacing.scroll = crate::style::scroll_style(&tokens);
 
     let interaction = &mut style.interaction;
-    interaction.tooltip_delay = 0.35;
-    interaction.tooltip_grace_time = 0.2;
+    interaction.tooltip_delay = tokens.tooltip_delay as f32;
+    interaction.tooltip_grace_time = tokens.tooltip_grace as f32;
     interaction.show_tooltips_only_when_still = true;
-    style.animation_time = 0.2;
+    style.animation_time = tokens.animation_time as f32;
 
     let body = m.body_size;
     let proportional = |size: f32| FontId::new(size, FontFamily::Proportional);
     style
         .text_styles
-        .insert(TextStyle::Small, proportional(SMALL_SIZE));
+        .insert(TextStyle::Small, proportionaltokens.small_size as f32);
     style
         .text_styles
         .insert(TextStyle::Body, proportional(body));
@@ -502,10 +499,10 @@ pub fn style(theme: &Theme) -> Style {
         .insert(TextStyle::Button, proportional(body));
     style
         .text_styles
-        .insert(TextStyle::Heading, crate::fonts::heading(HEADING_SIZE));
+        .insert(TextStyle::Heading, crate::fonts::headingtokens.heading_size as f32);
     style.text_styles.insert(
         TextStyle::Monospace,
-        FontId::new(MONO_SIZE, FontFamily::Monospace),
+        FontId::new(tokens.mono_size as f32, FontFamily::Monospace),
     );
     style
 }
@@ -520,7 +517,7 @@ fn visuals(theme: &Theme, chrome: &Chrome) -> Visuals {
     };
     v.panel_fill = p.chrome;
     v.window_fill = p.card;
-    v.window_stroke = Stroke::new(1.0, p.card_border);
+    v.window_stroke = Stroke::new(style.hairline_width as f32, p.card_border);
     v.extreme_bg_color = p.field;
     v.code_bg_color = p.field;
     v.text_edit_bg_color = Some(p.field);
@@ -529,19 +526,19 @@ fn visuals(theme: &Theme, chrome: &Chrome) -> Visuals {
     v.warn_fg_color = p.warning;
     v.error_fg_color = p.danger;
     v.override_text_color = Some(p.text);
-    v.weak_text_alpha = WEAK_ALPHA;
-    v.disabled_alpha = DISABLED_ALPHA;
+    v.weak_text_alpha = style.weak_alpha as f32;
+    v.disabled_alpha = style.disabled_alpha as f32;
     v.selection.bg_fill = p.selection(style);
-    v.selection.stroke = Stroke::new(1.0, p.accent_text);
+    v.selection.stroke = Stroke::new(style.hairline_width as f32, p.accent_text);
 
     let radius = CornerRadius::same(m.radius_sm);
-    let stroke = |role| Stroke::new(1.0, p.widget_stroke(style, role));
+    let stroke = |role| Stroke::new(style.hairline_width as f32, p.widget_stroke(style, role));
     let w = &mut v.widgets;
     let states = [
         (
             &mut w.noninteractive,
             p.card,
-            Stroke::new(1.0, p.separator),
+            Stroke::new(style.hairline_width as f32, p.separator),
             p.text_dim,
         ),
         (&mut w.inactive, p.field, stroke(p.field_border), p.text),
@@ -561,15 +558,15 @@ fn visuals(theme: &Theme, chrome: &Chrome) -> Visuals {
     v.menu_corner_radius = CornerRadius::same(m.radius);
     // §2.5. A transparent shadow role (Classic) draws nothing.
     v.window_shadow = Shadow {
-        offset: [0, 10],
-        blur: 32,
-        spread: 0,
+        offset: [style.window_shadow_offset_x as i8, style.window_shadow_offset_y as i8],
+        blur: style.window_shadow_blur as u8,
+        spread: style.window_shadow_spread as u8,
         color: p.shadow,
     };
     v.popup_shadow = Shadow {
-        offset: [0, 6],
-        blur: 20,
-        spread: 0,
+        offset: [style.popup_shadow_offset_x as i8, style.popup_shadow_offset_y as i8],
+        blur: style.popup_shadow_blur as u8,
+        spread: style.popup_shadow_spread as u8,
         color: p.shadow,
     };
     v.slider_trailing_fill = true;

@@ -54,7 +54,6 @@ pub fn view(
     commands: &Registry<App>,
     strings: &Strings,
     palette: &Palette,
-    stroke: f32,
     connected: bool,
 ) -> Vec<UiEvent> {
     let mut events = Vec::new();
@@ -62,22 +61,13 @@ pub fn view(
         command: "help.keys",
         icon: Icon::Keyboard,
     }];
-    let fired = titlebar::show_with(
-        ui,
-        &label("title"),
-        Some(Icon::FileText),
-        stroke,
-        commands,
-        &*app,
-        strings,
-        &mut controls,
-    );
+    let fired = titlebar::show_with(ui, &label("title"), Some(Icon::FileText), commands, &*app, strings, &mut controls);
     events.extend(
         fired
             .into_iter()
             .map(|(id, origin)| UiEvent::Command(id, origin)),
     );
-    bars::status(ui, |ui| status(ui, app, stroke, connected));
+    bars::status(ui, |ui| status(ui, app, connected));
     if app.ui.problems {
         egui::Panel::bottom("problems")
             .resizable(true)
@@ -98,7 +88,7 @@ pub fn view(
         .frame(egui::Frame::new())
         .show(ui, |ui| {
             tabs(ui, app, &mut events);
-            notices(ui, app, stroke, &mut events);
+            notices(ui, app, &mut events);
             find_bar(ui, app, &mut events);
             let shown = document(ui, app, palette, &mut events);
             app.editor_id = shown.map(|(id, _)| id);
@@ -229,7 +219,7 @@ fn tabs(ui: &mut Ui, app: &App, events: &mut Vec<UiEvent>) {
 }
 
 /// Warnings and errors, set-aside edits, and a detached document.
-fn notices(ui: &mut Ui, app: &App, stroke: f32, events: &mut Vec<UiEvent>) {
+fn notices(ui: &mut Ui, app: &App, events: &mut Vec<UiEvent>) {
     let tab = app.active_tab();
     let mirror = tab.and_then(|t| t.mirror.as_ref());
     let has_notices = !app.notices.is_empty()
@@ -245,7 +235,7 @@ fn notices(ui: &mut Ui, app: &App, stroke: f32, events: &mut Vec<UiEvent>) {
                         Level::Error => ui.visuals().error_fg_color,
                         _ => ui.visuals().warn_fg_color,
                     };
-                    ui.add(icons::image(Icon::CircleAlert, stroke, ICON, colour));
+                    ui.add(icons::image_of(ui.ctx(), Icon::CircleAlert, ICON, colour));
                     ui.label(&shown.text);
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         if ui.small_button(label("dismiss")).clicked() {
@@ -259,12 +249,7 @@ fn notices(ui: &mut Ui, app: &App, stroke: f32, events: &mut Vec<UiEvent>) {
             };
             for conflict in m.conflicts() {
                 ui.horizontal(|ui| {
-                    ui.add(icons::image(
-                        Icon::Info,
-                        stroke,
-                        ICON,
-                        ui.visuals().warn_fg_color,
-                    ));
+                    ui.add(icons::image_of(ui.ctx(), Icon::Info, ICON, ui.visuals().warn_fg_color));
                     let n = conflict.texts.len().to_string();
                     ui.label(label_with("conflict-notice", &[("n", &n)]));
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -283,12 +268,7 @@ fn notices(ui: &mut Ui, app: &App, stroke: f32, events: &mut Vec<UiEvent>) {
             }
             if m.detached_copy().is_some() {
                 ui.horizontal(|ui| {
-                    ui.add(icons::image(
-                        Icon::Unplug,
-                        stroke,
-                        ICON,
-                        ui.visuals().warn_fg_color,
-                    ));
+                    ui.add(icons::image_of(ui.ctx(), Icon::Unplug, ICON, ui.visuals().warn_fg_color));
                     ui.label(label("detached-notice"));
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         if ui.small_button(label("take-theirs")).clicked() {
@@ -611,14 +591,14 @@ fn count_chars(text: &edit::text::Text, a: usize, b: usize) -> usize {
     n
 }
 
-fn status(ui: &mut Ui, app: &App, stroke: f32, connected: bool) {
+fn status(ui: &mut Ui, app: &App, connected: bool) {
     let weak = ui.visuals().weak_text_color();
     let (icon, colour) = if connected {
         (Icon::Plug, weak)
     } else {
         (Icon::Unplug, ui.visuals().error_fg_color)
     };
-    ui.add(icons::image(icon, stroke, ICON, colour));
+    ui.add(icons::image_of(ui.ctx(), icon, ICON, colour));
     if !connected {
         ui.small(RichText::new(label("not-connected")).color(ui.visuals().error_fg_color));
     }

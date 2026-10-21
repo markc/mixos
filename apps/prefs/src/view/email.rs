@@ -365,7 +365,7 @@ fn password(
                         .password(true)
                         .hint_text(label("email-password-hint"))
                         .desired_width(width)
-                        .min_size(egui::vec2(0.0, field::HEIGHT))
+                        .min_size(egui::vec2(0.0, field::height_of(ui.ctx())))
                         .vertical_align(Align::Center),
                 );
                 if response.changed() {

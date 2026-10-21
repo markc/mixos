@@ -43,7 +43,6 @@ pub fn view(
     engine: &Engine,
     commands: &Registry<Engine>,
     strings: &Strings,
-    stroke: f32,
 ) -> Vec<UiEvent> {
     let mut events = Vec::new();
     // The right-hand group (§3.1): search the services, flip light and
@@ -65,16 +64,7 @@ pub fn view(
             icon: Icon::Keyboard,
         },
     ];
-    let fired = titlebar::show_with(
-        ui,
-        &label("title"),
-        Some(Icon::Server),
-        stroke,
-        commands,
-        engine,
-        strings,
-        &mut controls,
-    );
+    let fired = titlebar::show_with(ui, &label("title"), Some(Icon::Server), commands, engine, strings, &mut controls);
     // The toggle goes to the mode opposite the one this frame drew, so a
     // click reported twice cannot flip it back.
     let mut mode_set = false;
@@ -101,7 +91,7 @@ pub fn view(
         } else {
             (Icon::Unplug, ui.visuals().error_fg_color)
         };
-        ui.add(icons::image(icon, stroke, ICON, colour));
+        ui.add(icons::image_of(ui.ctx(), icon, ICON, colour));
         ui.small(&engine.status);
     });
     let total = ui.available_width();
@@ -109,7 +99,7 @@ pub fn view(
         .resizable(true)
         .default_size(total * engine.ui.split)
         .frame(bars::dock_frame(ui.ctx()))
-        .show(ui, |ui| services(ui, engine, stroke, &mut events));
+        .show(ui, |ui| services(ui, engine, &mut events));
     let split = left.response.rect.width() / total.max(1.0);
     if (split - engine.ui.split).abs() > 0.005 {
         events.push(UiEvent::Split(split));
@@ -142,7 +132,7 @@ pub fn view(
     events
 }
 
-fn services(ui: &mut Ui, engine: &Engine, stroke: f32, events: &mut Vec<UiEvent>) {
+fn services(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
     let title = label("services");
     panel::group(ui, "services", &[title.as_str()], |ui, _| {
         let mut filter = engine.ui.filter.clone();
@@ -156,7 +146,7 @@ fn services(ui: &mut Ui, engine: &Engine, stroke: f32, events: &mut Vec<UiEvent>
         }
         ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
             for row in engine.tree() {
-                tree_row(ui, engine, &row, stroke, events);
+                tree_row(ui, engine, &row, events);
             }
         });
     });
@@ -173,7 +163,7 @@ fn row_name(row: &Row) -> String {
     }
 }
 
-fn tree_row(ui: &mut Ui, engine: &Engine, row: &Row, stroke: f32, events: &mut Vec<UiEvent>) {
+fn tree_row(ui: &mut Ui, engine: &Engine, row: &Row, events: &mut Vec<UiEvent>) {
     let colour = ui.visuals().text_color();
     ui.horizontal(|ui| {
         if row.children.is_empty() {
@@ -185,7 +175,7 @@ fn tree_row(ui: &mut Ui, engine: &Engine, row: &Row, stroke: f32, events: &mut V
                 Icon::ChevronRight
             };
             let toggle = ui
-                .add(egui::Button::image(icons::image(chevron, stroke, ICON, colour)).frame(false));
+                .add(egui::Button::image(icons::image_of(ui.ctx(), chevron, ICON, colour)).frame(false));
             // An image button has no text: name it, with its row's name, for
             // screen readers and click-by-label.
             let name = label_with(
@@ -209,12 +199,7 @@ fn tree_row(ui: &mut Ui, engine: &Engine, row: &Row, stroke: f32, events: &mut V
             RowKind::NoPeers => RichText::new(label("no-peers")).weak(),
         };
         if let RowKind::Service(_) = row.kind {
-            ui.add(icons::image(
-                Icon::Server,
-                stroke,
-                ICON,
-                ui.visuals().weak_text_color(),
-            ));
+            ui.add(icons::image_of(ui.ctx(), Icon::Server, ICON, ui.visuals().weak_text_color()));
         }
         let selected = engine.ui.row_key.as_deref() == Some(row.key.as_str());
         if toolkit::selectable(ui, selected, text).clicked() {
@@ -224,7 +209,7 @@ fn tree_row(ui: &mut Ui, engine: &Engine, row: &Row, stroke: f32, events: &mut V
     if row.expanded {
         ui.indent(&row.key, |ui| {
             for child in &row.children {
-                tree_row(ui, engine, child, stroke, events);
+                tree_row(ui, engine, child, events);
             }
         });
     }

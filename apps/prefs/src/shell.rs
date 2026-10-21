@@ -565,8 +565,7 @@ impl Shell {
     pub fn ui(&mut self, ui: &mut egui::Ui) {
         self.follow_keymap();
         let fired = self.commands.shortcuts(ui.ctx(), &self.engine);
-        let stroke = icons::stroke_width(&self.theme);
-        let mut events = view(ui, &self.engine, &self.commands, &self.strings, stroke);
+        let mut events = view(ui, &self.engine, &self.commands, &self.strings);
         events.extend(
             fired
                 .into_iter()

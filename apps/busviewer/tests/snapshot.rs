@@ -88,12 +88,11 @@ fn window_with(theme: Theme, name: &str, dialog: Option<Dialog>) {
     engine.ui.dialog = dialog;
     let registry = commands::registry();
     let strings = strings();
-    let stroke = icons::stroke_width(&theme);
     let mut harness = Harness::builder()
         .with_size(egui::vec2(980.0, 620.0))
         .wgpu()
         .build_ui(move |ui| {
-            let _ = view(ui, &engine, &registry, &strings, stroke);
+            let _ = view(ui, &engine, &registry, &strings);
         });
     toolkit::install(&harness.ctx, &theme);
     harness.run();

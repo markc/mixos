@@ -21,49 +21,35 @@ use crate::chrome::{Chrome, Palette};
 use crate::strings::{own, own_with};
 
 /// Body line height, in multiples of the text size.
-const LINE: f32 = 1.45;
 
 /// Heading line height, in multiples of the heading size.
-const HEADING_LINE: f32 = 1.25;
 
 /// Heading sizes for levels 1 to 6, in multiples of the `Heading` style.
-const HEADING_SCALE: [f32; 6] = [1.6, 1.3, 1.1, 1.0, 0.9, 0.85];
 
 /// The widest a text column grows, in multiples of the body size (about
 /// 75 characters of Inter): longer lines are hard to read.
-const MEASURE: f32 = 46.0;
 
 /// Space between blocks, before a heading, and after one, in multiples of
 /// the body size.
-const GAP: f32 = 0.75;
-const GAP_BEFORE_HEADING: f32 = 1.2;
-const GAP_AFTER_HEADING: f32 = 0.35;
 
 /// Space between list items, in multiples of the body size.
-const ITEM_GAP: f32 = 0.25;
 
 /// A list's marker gutter and a quote's indent, in multiples of the body
 /// size.
-const GUTTER: f32 = 1.6;
-const QUOTE_INDENT: f32 = 1.0;
 
 /// A quote's rule width, and a code block's padding in multiples of the
 /// body size.
-const QUOTE_RULE: f32 = 3.0;
-const CODE_PADDING: Vec2 = vec2(0.8, 0.6);
 
 /// Inline code runs a little smaller than the text round it.
-const INLINE_CODE_SCALE: f32 = 0.92;
 
 /// A bullet's radius, in multiples of the body size.
-const BULLET: f32 = 0.17;
 
 /// Draw `document` into `ui`; returns the link activated this frame. An
 /// [`openable`](super::openable) link has also been handed to
 /// [`egui::Context::open_url`].
 pub fn show(ui: &mut Ui, document: &Document) -> Option<String> {
     let mut view = View::new(ui);
-    let width = ui.available_width().min(view.body.size * MEASURE);
+    let width = ui.available_width().min(view.body.size * crate::chrome::Chrome::of(ui.ctx()).style.md_measure as f32);
     ui.vertical(|ui| {
         ui.set_max_width(width);
         ui.spacing_mut().item_spacing.y = 0.0;
@@ -148,14 +134,14 @@ impl View {
             font: self.body.clone(),
             strong: self.strong(ui, self.body.size),
             color: self.color,
-            line: self.em(LINE),
+            line: self.em(crate::chrome::Chrome::of(ui.ctx()).style.md_line as f32),
             wrap: true,
         }
     }
 
     fn heading_base(&self, ui: &Ui, level: u8) -> Base {
         let index = usize::from(level.clamp(1, 6) - 1);
-        let size = self.heading * HEADING_SCALE[index];
+        let size = self.heading * [crate::chrome::Chrome::of(ui.ctx()).style.md_heading_scale_1 as f32, crate::chrome::Chrome::of(ui.ctx()).style.md_heading_scale_2 as f32, crate::chrome::Chrome::of(ui.ctx()).style.md_heading_scale_3 as f32, crate::chrome::Chrome::of(ui.ctx()).style.md_heading_scale_4 as f32, crate::chrome::Chrome::of(ui.ctx()).style.md_heading_scale_5 as f32, crate::chrome::Chrome::of(ui.ctx()).style.md_heading_scale_6 as f32][index];
         let font = self.strong(ui, size);
         Base {
             font: font.clone(),
@@ -165,7 +151,7 @@ impl View {
             } else {
                 self.color
             },
-            line: size * HEADING_LINE,
+            line: size * crate::chrome::Chrome::of(ui.ctx()).style.md_heading_line as f32,
             wrap: true,
         }
     }
@@ -177,10 +163,10 @@ impl View {
         for (index, block) in blocks.iter().enumerate() {
             if index > 0 {
                 let gap = match (&blocks[index - 1], block) {
-                    (Block::Heading { .. }, _) => GAP_AFTER_HEADING,
-                    (_, Block::Heading { .. }) => GAP_BEFORE_HEADING,
-                    _ if in_item => ITEM_GAP,
-                    _ => GAP,
+                    (Block::Heading { .. }, _) => crate::chrome::Chrome::of(ui.ctx()).style.md_gap_after_heading as f32,
+                    (_, Block::Heading { .. }) => crate::chrome::Chrome::of(ui.ctx()).style.md_gap_before_heading as f32,
+                    _ if in_item => crate::chrome::Chrome::of(ui.ctx()).style.md_item_gap as f32,
+                    _ => crate::chrome::Chrome::of(ui.ctx()).style.md_gap as f32,
                 };
                 ui.add_space(self.em(gap));
             }
@@ -204,7 +190,7 @@ impl View {
                     font: self.mono.clone(),
                     strong: self.mono.clone(),
                     color: self.palette.text_dim,
-                    line: self.mono.size * LINE,
+                    line: self.mono.size * crate::chrome::Chrome::of(ui.ctx()).style.md_line as f32,
                     wrap: true,
                 };
                 self.plain(ui, text, &base);
@@ -261,7 +247,7 @@ impl View {
             };
             if marks.code {
                 format.font_id =
-                    FontId::new(base.font.size * INLINE_CODE_SCALE, self.mono.family.clone());
+                    FontId::new(base.font.size * crate::chrome::Chrome::of(ui.ctx()).style.md_inline_code_scale as f32, self.mono.family.clone());
                 format.background = self.code_bg;
             }
             if marks.strike {
@@ -335,8 +321,8 @@ impl View {
     /// sideways rather than wrapped.
     fn code(&mut self, ui: &mut Ui, text: &str) {
         let padding = Margin::symmetric(
-            self.em(CODE_PADDING.x).round() as i8,
-            self.em(CODE_PADDING.y).round() as i8,
+            self.em(vec2(crate::chrome::Chrome::of(ui.ctx()).style.md_code_padding_x as f32, crate::chrome::Chrome::of(ui.ctx()).style.md_code_padding_y as f32).x).round() as i8,
+            self.em(vec2(crate::chrome::Chrome::of(ui.ctx()).style.md_code_padding_x as f32, crate::chrome::Chrome::of(ui.ctx()).style.md_code_padding_y as f32).y).round() as i8,
         );
         Frame::new()
             .fill(self.palette.field)
@@ -352,7 +338,7 @@ impl View {
                             font: self.mono.clone(),
                             strong: self.mono.clone(),
                             color: self.palette.text,
-                            line: self.mono.size * LINE,
+                            line: self.mono.size * crate::chrome::Chrome::of(ui.ctx()).style.md_line as f32,
                             wrap: false,
                         };
                         self.plain(ui, text, &base);
@@ -364,7 +350,7 @@ impl View {
     fn quote(&mut self, ui: &mut Ui, blocks: &[Block], depth: usize) {
         let saved = self.color;
         self.color = self.palette.text_dim;
-        let indent = self.em(QUOTE_INDENT);
+        let indent = self.em(crate::chrome::Chrome::of(ui.ctx()).style.md_quote_indent as f32);
         let row = ui.with_layout(Layout::left_to_right(egui::Align::Min), |ui| {
             ui.add_space(indent);
             ui.vertical(|ui| {
@@ -374,17 +360,17 @@ impl View {
         });
         self.color = saved;
         let rect = row.response.rect;
-        let rule = Rect::from_min_size(rect.min, vec2(QUOTE_RULE, rect.height()));
+        let rule = Rect::from_min_size(rect.min, vec2(crate::chrome::Chrome::of(ui.ctx()).style.md_quote_rule as f32, rect.height()));
         ui.painter()
-            .rect_filled(rule, QUOTE_RULE / 2.0, self.palette.text_faint);
+            .rect_filled(rule, crate::chrome::Chrome::of(ui.ctx()).style.md_quote_rule as f32 / 2.0, self.palette.text_faint);
     }
 
     fn list(&mut self, ui: &mut Ui, start: Option<u64>, items: &[Item], depth: usize) {
-        let gutter = self.em(GUTTER);
-        let line = self.em(LINE);
+        let gutter = self.em(crate::chrome::Chrome::of(ui.ctx()).style.md_gutter as f32);
+        let line = self.em(crate::chrome::Chrome::of(ui.ctx()).style.md_line as f32);
         for (index, item) in items.iter().enumerate() {
             if index > 0 {
-                ui.add_space(self.em(ITEM_GAP));
+                ui.add_space(self.em(crate::chrome::Chrome::of(ui.ctx()).style.md_item_gap as f32));
             }
             ui.push_id(index, |ui| {
                 ui.with_layout(Layout::left_to_right(egui::Align::Min), |ui| {
@@ -413,7 +399,7 @@ impl View {
         let painter = ui.painter();
         let ink = self.color;
         if let Some(done) = task {
-            let side = crate::toggle::BOX;
+            let side = crate::toggle::box_of(ui.ctx());
             let b = Rect::from_center_size(
                 pos2(at.left() + side / 2.0, at.center().y),
                 Vec2::splat(side),
@@ -436,7 +422,7 @@ impl View {
                 painter.galley(pos2(x, y), galley, ink);
             }
             None => {
-                let r = self.em(BULLET);
+                let r = self.em(crate::chrome::Chrome::of(ui.ctx()).style.md_bullet as f32);
                 let centre = pos2(at.left() + self.em(0.55), at.center().y);
                 match depth % 3 {
                     0 => painter.circle_filled(centre, r, ink),
@@ -546,6 +532,7 @@ fn hit<'a>(galley: &Arc<Galley>, at: Vec2, links: &[(Range<usize>, &'a Link)]) -
     }
     None
 }
+
 
 #[cfg(test)]
 mod tests {

@@ -263,12 +263,11 @@ fn draw(theme: Theme, name: &str, engine: Engine) {
 fn draw_at_size(theme: Theme, name: &str, engine: Engine, size: egui::Vec2) {
     let registry = commands::registry();
     let strings = strings();
-    let stroke = icons::stroke_width(&theme);
     let mut harness = Harness::builder()
         .with_size(size)
         .wgpu()
         .build_ui(move |ui| {
-            let _ = view(ui, &engine, &registry, &strings, stroke);
+            let _ = view(ui, &engine, &registry, &strings);
         });
     toolkit::install(&harness.ctx, &theme);
     harness.run();
@@ -513,12 +512,11 @@ fn releases_missing_studio_dark() {
     let theme = chrome(Scheme::Studio, Mode::Dark);
     let registry = commands::registry();
     let strings = strings();
-    let stroke = icons::stroke_width(&theme);
     let mut harness = Harness::builder()
         .with_size(egui::vec2(980.0, 640.0))
         .wgpu()
         .build_ui(move |ui| {
-            let _ = view(ui, &engine, &registry, &strings, stroke);
+            let _ = view(ui, &engine, &registry, &strings);
         });
     toolkit::install(&harness.ctx, &theme);
     harness.run();

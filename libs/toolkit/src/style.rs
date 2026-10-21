@@ -20,38 +20,34 @@
 //! | `code_bg_color` | pair `muted` surface |
 //! | weak text | base foreground at egui's `weak_text_alpha` |
 //! | buttons at rest (`inactive`) | pair `secondary` |
-//! | hovered / pressed buttons | `secondary` surface blended toward its foreground by [`HOVER_MIX`] / [`ACTIVE_MIX`] |
+//! | hovered / pressed buttons | `secondary` surface blended toward its foreground by `hover_mix` / `active_mix` |
 //! | `selection` fill / selected text | pair `accent` (the tinted control pair) |
 //! | `hyperlink_color` | pair `primary` surface |
 //! | `error_fg_color` | pair `destructive` surface |
 //! | `warn_fg_color` | primitive `status.warning`, else `destructive` |
 //! | widget and window strokes | non-text `border` |
-//! | `item_spacing`, margins | `spacing` scale, steps [`SPACING_STEPS`] |
+//! | `item_spacing`, margins | `spacing` scale, steps `spacing_steps` |
 //! | `button_padding` / `interact_size` | `md + sm/2` by `sm`; `xl` square (10 x 4, 24 x 24 shipped) |
 //! | corner radii | metric `radius`; menus `radius` x 2/3, windows twice it |
-//! | menu and popup shadow | egui's shadow colour x [`MENU_SHADOW`], offset 0 x 2, blur 10 |
+//! | menu and popup shadow | egui's shadow colour x `menu_shadow`, offset 0 x 2, blur 10 |
 //! | stroke widths | metric `button.border_width` |
 //! | (no egui slot) | non-text `ring`, `input`: egui draws focus with the selection stroke |
 //! | `Body`/`Button` size | typography role `ui`; `Small` role `small`; `Heading` role `ui_display` |
 //! | faces and weights | [`crate::fonts`]: each role's weight selects its static face |
 
 use crate::theme::Theme;
-use design::{LinearRgba, Mode, ResolvedColours, ResolvedMetricKind, TypographyRole};
+use design::{LinearRgba, Mode, ResolvedColours, TypographyRole};
 use egui::{Color32, CornerRadius, FontFamily, FontId, Margin, Stroke, Style, TextStyle, Visuals};
 
 /// Indices into the design's `spacing` scale for xs, sm, md, lg and xl. On
 /// the shipped scale (0, 2, 4, 6, 8, 10, 12, 16, 20, 24) they are 2, 4, 8,
 /// 16 and 24.
-pub const SPACING_STEPS: [usize; 5] = [1, 2, 4, 7, 9];
 
 /// How far a hovered button's surface moves toward its foreground.
-pub const HOVER_MIX: f32 = 0.08;
 
 /// How far a pressed or open button's surface moves toward its foreground.
-pub const ACTIVE_MIX: f32 = 0.16;
 
 /// How much of egui's popup shadow strength menus keep.
-pub const MENU_SHADOW: f32 = 0.45;
 
 /// A design colour (linear-light sRGB) as the egui colour it renders as.
 pub fn colour(value: LinearRgba) -> Color32 {
@@ -76,6 +72,17 @@ pub fn srgb(value: design::SrgbColour) -> Color32 {
     Color32::from_rgba_unmultiplied(r, g, b, a)
 }
 
+/// Defaults for context-free geometry helpers; widgets pass installed values.
+pub(crate) fn default_tokens() -> design::ResolvedStyle {
+    static TOKENS: std::sync::OnceLock<design::ResolvedStyle> = std::sync::OnceLock::new();
+    *TOKENS.get_or_init(|| Theme::embedded().style())
+}
+
+pub fn token_colour(value: design::family::style::StyleColour) -> Color32 {
+    let [r, g, b, a] = value.0;
+    Color32::from_rgba_unmultiplied(r, g, b, a)
+}
+
 /// The rendered halves of a named pair.
 fn pair(colours: &ResolvedColours, name: &str) -> Option<(Color32, Color32)> {
     colours
@@ -94,6 +101,14 @@ pub fn style(theme: &Theme) -> Style {
     } else {
         pair_style(theme)
     };
+    let tokens = theme.style();
+    style.spacing.scroll = scroll_style(&tokens);
+    style.scroll_animation.points_per_second = tokens.menu_scroll_speed as f32;
+    if theme.overlay().reduced_motion {
+        style.animation_time = 0.0;
+        style.scroll_animation = egui::style::ScrollAnimation::none();
+    }
+    apply_role_overlay(&mut style.visuals, theme);
     apply_interface_size(&mut style, theme);
     style
 }
@@ -126,39 +141,13 @@ pub fn pair_style(theme: &Theme) -> Style {
         visuals: pair_visuals(theme),
         ..Style::default()
     };
-    let dictionary = theme.dictionary();
-    let px = |name: &str| {
-        dictionary
-            .metrics
-            .get(name)
-            .filter(|metric| metric.kind == ResolvedMetricKind::Px)
-            .map(|metric| metric.value as f32)
-    };
-    let step = |index: usize| {
-        dictionary
-            .scales
-            .get("spacing")
-            .and_then(|s| s.get(index))
-            .map(|v| *v as f32)
-    };
-    let [xs, sm, md, _lg, xl] = SPACING_STEPS.map(step);
+    let tokens = theme.style();
     let spacing = &mut style.spacing;
-    if let (Some(xs), Some(sm)) = (xs, sm) {
-        spacing.item_spacing = egui::vec2(sm, xs.max(sm * 0.75));
-    }
-    // Controls and menus at desktop proportions: padding md + sm/2 by sm
-    // (10 x 4 on the shipped scale) and xl-square controls (24 x 24).
-    if let (Some(sm), Some(md)) = (sm, md) {
-        spacing.button_padding = egui::vec2(md + sm / 2.0, sm);
-    }
-    if let Some(xl) = xl {
-        spacing.interact_size = egui::vec2(xl, xl);
-    }
-    if let Some(md) = md {
-        spacing.window_margin = Margin::same(md.round() as i8);
-        spacing.menu_margin = Margin::same((md * 0.75).round() as i8);
-    }
-
+    spacing.item_spacing = egui::vec2(tokens.item_spacing_x as f32, tokens.item_spacing_y as f32);
+    spacing.button_padding = egui::vec2(tokens.button_padding_x as f32, tokens.button_padding_y as f32);
+    spacing.interact_size = egui::Vec2::splattokens.interact as f32;
+    spacing.window_margin = Margin::sametokens.window_margin as i8;
+    spacing.menu_margin = Margin::sametokens.menu_margin as i8;
     let typography = theme.typography();
     let ui = design::active_typography(Some(typography), TypographyRole::Ui);
     let small = design::active_typography(Some(typography), TypographyRole::Small);
@@ -180,45 +169,33 @@ pub fn pair_style(theme: &Theme) -> Style {
         FontId::new(mono.font_size as f32, FontFamily::Monospace),
     );
 
-    if let Some(radius) = px("radius") {
-        let small = CornerRadius::same(radius.round() as u8);
-        let large = CornerRadius::same((radius * 2.0).round() as u8);
-        let widgets = &mut style.visuals.widgets;
-        for w in [
-            &mut widgets.noninteractive,
-            &mut widgets.inactive,
-            &mut widgets.hovered,
-            &mut widgets.active,
-            &mut widgets.open,
-        ] {
-            w.corner_radius = small;
-        }
-        // Menus are tight panels (about 4 px on the shipped design); only
-        // windows take the large radius.
-        style.visuals.menu_corner_radius = CornerRadius::same((radius * 2.0 / 3.0).round() as u8);
-        style.visuals.window_corner_radius = large;
+    for widget in [
+        &mut style.visuals.widgets.noninteractive,
+        &mut style.visuals.widgets.inactive,
+        &mut style.visuals.widgets.hovered,
+        &mut style.visuals.widgets.active,
+        &mut style.visuals.widgets.open,
+    ] {
+        widget.corner_radius = CornerRadius::same(tokens.radius_sm);
     }
-    // A soft, close shadow under menus and popups: egui's own shadow colour at
-    // under half strength, barely offset (egui's default sits 6 x 10 away).
+    style.visuals.menu_corner_radius = CornerRadius::same(tokens.radius);
+    style.visuals.window_corner_radius = CornerRadius::same(tokens.radius_lg);
     let shadow = &mut style.visuals.popup_shadow;
     *shadow = egui::Shadow {
-        offset: [0, 2],
-        blur: 10,
-        spread: 0,
-        color: shadow.color.gamma_multiply(MENU_SHADOW),
+        offset: [tokens.popup_shadow_offset_x as i8, tokens.popup_shadow_offset_y as i8],
+        blur: tokens.popup_shadow_blur as u8,
+        spread: tokens.popup_shadow_spread as u8,
+        color: shadow.color.gamma_multiplytokens.popup_shadow_alpha as f32,
     };
-    if let Some(width) = px("button.border_width") {
-        let widgets = &mut style.visuals.widgets;
-        for w in [
-            &mut widgets.inactive,
-            &mut widgets.hovered,
-            &mut widgets.active,
-            &mut widgets.open,
-        ] {
-            w.bg_stroke.width = width;
-        }
-        style.visuals.window_stroke.width = width;
+    for widget in [
+        &mut style.visuals.widgets.inactive,
+        &mut style.visuals.widgets.hovered,
+        &mut style.visuals.widgets.active,
+        &mut style.visuals.widgets.open,
+    ] {
+        widget.bg_stroke.width = tokens.hairline_width as f32;
     }
+    style.visuals.window_stroke.width = tokens.hairline_width as f32;
     style
 }
 
@@ -262,8 +239,8 @@ fn pair_visuals(theme: &Theme) -> Visuals {
         w.inactive.bg_fill = surface;
         w.inactive.weak_bg_fill = surface;
         w.inactive.fg_stroke.color = text;
-        let hovered = mix(surface, text, HOVER_MIX);
-        let active = mix(surface, text, ACTIVE_MIX);
+        let hovered = mix(surface, text, theme.style().pair_hover_mix as f32);
+        let active = mix(surface, text, theme.style().pair_active_mix as f32);
         for (state, fill) in [
             (&mut w.hovered, hovered),
             (&mut w.open, hovered),
@@ -313,10 +290,102 @@ fn pair_visuals(theme: &Theme) -> Visuals {
 /// goes in both egui theme slots: the MixOS theme, not the system
 /// preference, picks the mode.
 pub fn apply(ctx: &egui::Context, theme: &Theme) {
+    ctx.options_mut(|options| {
+        options.input_options.max_double_click_delay = theme.style().double_click_time;
+    });
     ctx.set_global_style(style(theme));
     crate::chrome::install(ctx, &crate::chrome::Chrome::for_theme(theme));
     crate::icons::install(ctx, crate::icons::stroke_width(theme));
     crate::fonts::install(ctx, theme);
+}
+
+/// The bar geometry and state opacities of the installed style.
+pub fn scroll_style(tokens: &design::ResolvedStyle) -> egui::style::ScrollStyle {
+    let solid = tokens.scroll_bars == design::family::style::ScrollBars::Solid;
+    egui::style::ScrollStyle {
+        floating: !solid,
+        bar_width: if solid { tokens.scroll_width } else { tokens.scroll_width_hot } as f32,
+        floating_width: tokens.scroll_width as f32,
+        floating_allocated_width: if solid { 0.0 } else { tokens.scroll_allocated as f32 },
+        handle_min_length: tokens.scroll_handle_min as f32,
+        bar_inner_margin: tokens.scroll_margin as f32,
+        bar_outer_margin: tokens.scroll_outer_margin as f32,
+        foreground_color: true,
+        dormant_background_opacity: tokens.scroll_track_alpha_rest as f32,
+        active_background_opacity: tokens.scroll_track_alpha_active as f32,
+        interact_background_opacity: tokens.scroll_track_alpha_hot as f32,
+        dormant_handle_opacity: tokens.scroll_handle_alpha_rest as f32,
+        active_handle_opacity: tokens.scroll_handle_alpha_active as f32,
+        interact_handle_opacity: tokens.scroll_handle_alpha_hot as f32,
+        ..egui::style::ScrollStyle::solid()
+    }
+}
+
+/// Apply only explicitly overridden roles to their forward-owned egui slots.
+/// Pair surfaces retain their own base writes when no role is overridden.
+fn apply_role_overlay(visuals: &mut Visuals, theme: &Theme) {
+    let tokens = theme.style();
+    let palette = crate::chrome::Chrome::for_theme(theme).palette;
+    for role in theme.overlay().chrome.keys() {
+        let Some(value) = palette.get(role) else { continue; };
+        match role.as_str() {
+            "chrome" => visuals.panel_fill = value,
+            "card" => {
+                visuals.window_fill = value;
+                visuals.faint_bg_color = value;
+                visuals.widgets.noninteractive.bg_fill = value;
+                visuals.widgets.noninteractive.weak_bg_fill = value;
+            }
+            "card_border" => visuals.window_stroke.color = value,
+            "field" => {
+                visuals.extreme_bg_color = value;
+                visuals.code_bg_color = value;
+                visuals.text_edit_bg_color = Some(value);
+                visuals.widgets.inactive.bg_fill = value;
+                visuals.widgets.inactive.weak_bg_fill = value;
+            }
+            "accent" => {
+                visuals.hyperlink_color = value;
+                if tokens.selection == design::family::style::Selection::Accent {
+                    visuals.selection.bg_fill = value;
+                }
+            }
+            "accent_soft" if tokens.selection == design::family::style::Selection::AccentSoft => visuals.selection.bg_fill = value,
+            "accent_text" => visuals.selection.stroke.color = value,
+            "warning" => visuals.warn_fg_color = value,
+            "danger" => visuals.error_fg_color = value,
+            "text" => {
+                visuals.override_text_color = Some(value);
+                for state in [&mut visuals.widgets.inactive, &mut visuals.widgets.hovered,
+                    &mut visuals.widgets.open, &mut visuals.widgets.active] {
+                    state.fg_stroke.color = value;
+                }
+            }
+            "text_dim" => visuals.widgets.noninteractive.fg_stroke.color = value,
+            "separator" => visuals.widgets.noninteractive.bg_stroke.color = value,
+            "hover" => {
+                for state in [&mut visuals.widgets.hovered, &mut visuals.widgets.open] {
+                    state.bg_fill = value;
+                    state.weak_bg_fill = value;
+                }
+            }
+            "pressed" => {
+                visuals.widgets.active.bg_fill = value;
+                visuals.widgets.active.weak_bg_fill = value;
+            }
+            "field_border" => {
+                for state in [&mut visuals.widgets.inactive, &mut visuals.widgets.hovered, &mut visuals.widgets.open] {
+                    state.bg_stroke.color = value;
+                }
+            }
+            "accent_border" => visuals.widgets.active.bg_stroke.color = value,
+            "shadow" => {
+                visuals.window_shadow.color = value;
+                visuals.popup_shadow.color = value;
+            }
+            _ => {}
+        }
+    }
 }
 
 #[cfg(test)]

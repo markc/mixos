@@ -33,15 +33,7 @@ fn harness() -> Harness<'static> {
     let mut harness = Harness::builder()
         .with_size(egui::vec2(640.0, 200.0))
         .build_ui(move |ui| {
-            let _ = titlebar::show(
-                ui,
-                "Demo",
-                Some(Icon::Server),
-                2.0,
-                &registry,
-                &(),
-                &strings,
-            );
+            let _ = titlebar::show(ui, "Demo", Some(Icon::Server), &registry, &(), &strings);
             egui::CentralPanel::default().show(ui, |_| {});
             titlebar::edges(ui);
         });

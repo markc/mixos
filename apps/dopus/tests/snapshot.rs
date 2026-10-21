@@ -134,12 +134,11 @@ fn window(theme: Theme, name: &str, sidebars: bool, dialog: Option<Dialog>) {
     }
     let registry = commands::registry();
     let strings = strings();
-    let stroke = icons::stroke_width(&theme);
     let mut harness = Harness::builder()
         .with_size(egui::vec2(980.0, 640.0))
         .wgpu()
         .build_ui(move |ui| {
-            let _ = view(ui, &app, &registry, &strings, stroke);
+            let _ = view(ui, &app, &registry, &strings);
         });
     toolkit::install(&harness.ctx, &theme);
     harness.run();
@@ -297,7 +296,6 @@ fn preview(name: &str, w: usize, h: usize) {
     let theme = chrome(Scheme::Studio, Mode::Dark);
     let registry = commands::registry();
     let strings = strings();
-    let stroke = icons::stroke_width(&theme);
     let mut harness = Harness::builder()
         .with_size(egui::vec2(980.0, 640.0))
         .wgpu()
@@ -316,7 +314,7 @@ fn preview(name: &str, w: usize, h: usize) {
                     )),
                 });
             }
-            let _ = view(ui, &app, &registry, &strings, stroke);
+            let _ = view(ui, &app, &registry, &strings);
         });
     toolkit::install(&harness.ctx, &theme);
     harness.run();

@@ -125,7 +125,6 @@ pub fn view(
     state: &State,
     commands: &Registry<State>,
     strings: &Strings,
-    stroke: f32,
 ) -> Vec<UiEvent> {
     let mut events = Vec::new();
     let dark = ui.visuals().dark_mode;
@@ -146,16 +145,7 @@ pub fn view(
             icon: Icon::Keyboard,
         },
     ];
-    let fired = titlebar::show_with(
-        ui,
-        &crate::label("title"),
-        Some(Icon::Mail),
-        stroke,
-        commands,
-        state,
-        strings,
-        &mut controls,
-    );
+    let fired = titlebar::show_with(ui, &crate::label("title"), Some(Icon::Mail), commands, state, strings, &mut controls);
     let mut mode_set = false;
     for (id, origin) in fired {
         if id == "view.mode" {
@@ -174,13 +164,13 @@ pub fn view(
             events.push(UiEvent::Command(id, origin));
         }
     }
-    status(ui, state, stroke);
+    status(ui, state);
     if state.accounts.is_empty() {
         egui::CentralPanel::default()
             .frame(bars::dock_frame(ui.ctx()))
             .show(ui, |ui| account::none(ui, &mut events));
     } else {
-        window(ui, state, commands, strings, stroke, &mut events);
+        window(ui, state, commands, strings, &mut events);
     }
     compose::dialog(ui, state, &mut events);
     compose::confirm(ui, state, &mut events);
@@ -225,14 +215,14 @@ pub fn connection(phase: &Phase) -> String {
 /// The status bar: the current account's name and its connection (from
 /// that account's own phase, never another account's news), then the last
 /// operation's word, and a note while the accounts are read-only.
-fn status(ui: &mut egui::Ui, state: &State, stroke: f32) {
+fn status(ui: &mut egui::Ui, state: &State) {
     bars::status(ui, |ui| {
         let current = state.current();
         let (icon, colour) = match current.map(|v| &v.phase) {
             Some(Phase::Ready) => (Icon::Plug, ui.visuals().weak_text_color()),
             _ => (Icon::Unplug, ui.visuals().error_fg_color),
         };
-        ui.add(toolkit::icons::image(icon, stroke, ICON, colour));
+        ui.add(toolkit::icons::image_of(ui.ctx(), icon, ICON, colour));
         let mut line = current
             .map(|v| format!("{} — {}", v.entry.name, connection(&v.phase)))
             .unwrap_or_default();
@@ -325,7 +315,6 @@ fn window(
     state: &State,
     commands: &Registry<State>,
     strings: &Strings,
-    stroke: f32,
     events: &mut Vec<UiEvent>,
 ) {
     let total = ui.available_width();
@@ -335,7 +324,7 @@ fn window(
         .resizable(true)
         .default_size(total * state.ui.places)
         .frame(pane_frame(ui.ctx(), state.pane == Pane::Tree))
-        .show(ui, |ui| tree::show(ui, state, stroke, events));
+        .show(ui, |ui| tree::show(ui, state, events));
     let split = left.response.rect.width() / total.max(1.0);
     if (split - state.ui.places).abs() > 0.005 {
         events.push(UiEvent::SplitPlaces(split));
@@ -348,7 +337,7 @@ fn window(
             .default_size(remaining * state.ui.reader)
             .frame(pane_frame(ui.ctx(), state.pane == Pane::Reader))
             .show(ui, |ui| {
-                reader(ui, state, view, commands, strings, stroke, events)
+                reader(ui, state, view, commands, strings, events)
             });
         let split = right.response.rect.width() / remaining.max(1.0);
         if (split - state.ui.reader).abs() > 0.005 {
@@ -359,7 +348,7 @@ fn window(
         .frame(pane_frame(ui.ctx(), state.pane == Pane::List))
         .show(ui, |ui| match state.current() {
             Some(view) if view.phase == Phase::Ready => {
-                centre(ui, state, view, commands, strings, stroke, events)
+                centre(ui, state, view, commands, strings, events)
             }
             Some(view) => account::pane(ui, view, events),
             None => account::none(ui, events),
@@ -373,13 +362,12 @@ fn centre(
     view: &AccountView,
     commands: &Registry<State>,
     strings: &Strings,
-    stroke: f32,
     events: &mut Vec<UiEvent>,
 ) {
     match state.mode {
-        Mode::Mail => mail::list(ui, state, view, commands, strings, stroke, events),
-        Mode::Calendar => calendar::list(ui, view, stroke, events),
-        Mode::Contacts => contacts::list(ui, view, stroke, events),
+        Mode::Mail => mail::list(ui, state, view, commands, strings, events),
+        Mode::Calendar => calendar::list(ui, view, events),
+        Mode::Contacts => contacts::list(ui, view, events),
     }
 }
 
@@ -390,13 +378,12 @@ fn reader(
     view: &AccountView,
     commands: &Registry<State>,
     strings: &Strings,
-    stroke: f32,
     events: &mut Vec<UiEvent>,
 ) {
     // The mail reader is its own panel: its header holds the actions and the
     // panel menu. The other modes have a single-tab panel.
     if state.mode == Mode::Mail {
-        mail::panel(ui, state, view, commands, strings, stroke, events);
+        mail::panel(ui, state, view, commands, strings, events);
         return;
     }
     let title = crate::label("reader");

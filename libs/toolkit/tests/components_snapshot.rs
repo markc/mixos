@@ -70,7 +70,7 @@ fn gallery(ui: &mut Ui, s: &mut Gallery) {
     bars::options(ui, |ui| {
         ui.add(IconButton::new(Icon::Play).selected(true).tooltip("Brush"));
         ui.add(IconButton::new(Icon::Settings).tooltip("Brush settings (Ctrl+B)"));
-        bars::divider(ui, bars::DIVIDER_HEIGHT);
+        bars::divider(ui, bars::divider_height_of(ui.ctx()));
         ui.label("Opacity:");
         ui.add(
             ValueField::new(&mut s.opacity, 0.0..=100.0)
@@ -83,7 +83,7 @@ fn gallery(ui: &mut Ui, s: &mut Gallery) {
                 .unit("%")
                 .width(64.0),
         );
-        bars::divider(ui, bars::DIVIDER_HEIGHT);
+        bars::divider(ui, bars::divider_height_of(ui.ctx()));
         ui.add(Toggle::new(&mut s.pressure, "Pressure for Size"));
     });
     bars::status(ui, |ui| {

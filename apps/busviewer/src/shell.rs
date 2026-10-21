@@ -631,8 +631,7 @@ impl Shell {
                 .data_mut(|d| d.remove::<egui::containers::panel::PanelState>(panel));
         }
         let fired = self.commands.shortcuts(ui.ctx(), &self.engine);
-        let stroke = icons::stroke_width(&self.theme);
-        let mut events = view(ui, &self.engine, &self.commands, &self.strings, stroke);
+        let mut events = view(ui, &self.engine, &self.commands, &self.strings);
         events.extend(
             fired
                 .into_iter()

@@ -209,16 +209,7 @@ pub fn harness(builder: HarnessBuilder<Fixture>, theme: &Theme) -> Harness<'stat
                     icon: Icon::MessageSquare,
                 },
             ];
-            let title = titlebar::show_with(
-                ui,
-                TITLE,
-                Some(Icon::Square),
-                stroke,
-                &registry,
-                state,
-                &strings,
-                &mut controls,
-            );
+            let title = titlebar::show_with(ui, TITLE, Some(Icon::Square), &registry, state, &strings, &mut controls);
             fired.extend(title);
             state.workspace = workspace;
             egui::CentralPanel::default().show(ui, |_| {});

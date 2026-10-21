@@ -47,7 +47,6 @@ fn window() -> Harness<'static, Window> {
     let registry = commands::registry();
     let strings = strings();
     let theme = Theme::embedded();
-    let stroke = icons::stroke_width(&theme);
     let state = Window {
         engine: engine(),
         inbox: Vec::new(),
@@ -62,7 +61,7 @@ fn window() -> Harness<'static, Window> {
                 }
                 let mut effects = settle(&mut w.engine, &registry, &strings);
                 let fired = registry.shortcuts(ui.ctx(), &w.engine);
-                let mut events = view(ui, &w.engine, &registry, &strings, stroke);
+                let mut events = view(ui, &w.engine, &registry, &strings);
                 events.extend(
                     fired
                         .into_iter()

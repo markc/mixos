@@ -42,58 +42,23 @@ use std::sync::Arc;
 
 /// The overflow chevron's width, icon size, hover opacity and hover inset
 /// (§3.10).
-pub const CHEVRON: f32 = 18.0;
-const CHEVRON_ICON: f32 = 12.0;
-const CHEVRON_HOVER_ALPHA: f32 = 0.6;
-const CHEVRON_INSET: egui::Vec2 = vec2(1.0, 3.0);
 
 /// The chevron popup's least width (§3.10).
-const CHEVRON_MENU_WIDTH: f32 = 140.0;
 
 /// Pro document strip (§3.12).
-pub const STRIP: f32 = 26.0;
-const PRO_SIZE: f32 = 11.5;
-const PRO_PAD: f32 = 42.0;
-const PRO_MIN: f32 = 72.0;
-const PRO_TITLE_LEFT: f32 = 16.0;
-const PRO_CLOSE: f32 = 14.0;
-const PRO_CLOSE_FROM_RIGHT: f32 = 13.0;
-const PRO_CLOSE_ICON: f32 = 10.0;
-const PRO_HOVER_ALPHA: f32 = 0.35;
 
 /// Studio and Classic document strip (§3.12).
-const STUDIO_MARGIN: Margin = Margin {
-    left: 8,
-    right: 8,
-    top: 6,
-    bottom: 4,
-};
-const STUDIO_GAP: f32 = 4.0;
-const STUDIO_NAME_SIZE: f32 = 12.5;
-const STUDIO_META_SIZE: f32 = 10.5;
-const STUDIO_PAD: f32 = 48.0;
-const STUDIO_NAME_LEFT: f32 = 10.0;
-const STUDIO_META_GAP: f32 = 6.0;
-const STUDIO_CLOSE: f32 = 16.0;
-const STUDIO_CLOSE_FROM_RIGHT: f32 = 12.0;
-const STUDIO_CLOSE_ICON: f32 = 11.0;
-const STUDIO_CLOSE_RADIUS: f32 = 4.0;
-const STUDIO_HOVER_ALPHA: f32 = 0.5;
 
 /// The drop-target outline (§3.12).
-const DROP_OUTLINE: f32 = 1.5;
 
 /// The progress underline of a background job. Its height is undetermined
 /// by the specification (§5.4): 2 pt in `accent`, the drop line's weight.
-const PROGRESS: f32 = 2.0;
 
 /// The dirty marker after a document's name, as the window title has it.
 pub const DIRTY: &str = "  •";
 
 /// A status marker's icon side, and the gap between it and the name. Undetermined
 /// by the specification (§5.4): sized to the 11.5 pt Pro title.
-const MARKER: f32 = 11.0;
-const MARKER_GAP: f32 = 5.0;
 
 /// How a strip's tabs fit: each tab's width, or `None` when it moved into
 /// the chevron menu.
@@ -113,6 +78,10 @@ impl Fit {
 /// natural width is less) into `available`, keeping `selected` on the strip
 /// and leaving [`CHEVRON`] for the chevron when any must move (§3.10).
 pub fn fit(naturals: &[f32], minimum: f32, available: f32, selected: Option<usize>) -> Fit {
+    fit_with_chevron(naturals, minimum, available, selected, crate::style::default_tokens().tabs_chevron as f32)
+}
+
+fn fit_with_chevron(naturals: &[f32], minimum: f32, available: f32, selected: Option<usize>, chevron: f32) -> Fit {
     let floors: Vec<f32> = naturals.iter().map(|n| n.min(minimum)).collect();
     let mut shown: Vec<bool> = vec![true; naturals.len()];
     let total = |shown: &[bool], of: &[f32]| {
@@ -125,7 +94,7 @@ pub fn fit(naturals: &[f32], minimum: f32, available: f32, selected: Option<usiz
     };
     let mut room = available;
     if total(&shown, &floors) > available {
-        room = available - CHEVRON;
+        room = available - chevron;
         // The rightmost tabs go first, never the selected one.
         for index in (0..naturals.len()).rev() {
             if total(&shown, &floors) <= room {
@@ -198,20 +167,20 @@ pub fn chevron(ui: &mut Ui, id: Id, rect: Rect, hidden: &[(usize, String)]) -> O
     let hot =
         response.hovered() || Popup::is_id_open(ui.ctx(), Popup::default_response_id(&response));
     if hot {
-        let fill = p.hover.gamma_multiply(CHEVRON_HOVER_ALPHA);
+        let fill = p.hover.gamma_multiply(crate::chrome::Chrome::of(ui.ctx()).style.tabs_chevron_hover_alpha as f32);
         ui.painter()
-            .rect_filled(rect.shrink2(CHEVRON_INSET), chrome.metrics.radius_sm, fill);
+            .rect_filled(rect.shrink2(vec2(crate::chrome::Chrome::of(ui.ctx()).style.tabs_chevron_inset_x as f32, crate::chrome::Chrome::of(ui.ctx()).style.tabs_chevron_inset_y as f32)), chrome.metrics.radius_sm, fill);
     }
     paint_icon(
         ui,
         Icon::ChevronsRight,
         rect.center(),
-        CHEVRON_ICON,
+        crate::chrome::Chrome::of(ui.ctx()).style.tabs_chevron_icon as f32,
         if hot { p.text } else { p.text_dim },
     );
     let mut chosen = None;
     Popup::menu(&response).show(|ui| {
-        ui.set_min_width(CHEVRON_MENU_WIDTH);
+        ui.set_min_width(crate::chrome::Chrome::of(ui.ctx()).style.tabs_chevron_menu_width as f32);
         for (index, name) in hidden {
             if crate::selectable(ui, false, name).clicked() {
                 chosen = Some(*index);
@@ -262,9 +231,9 @@ pub fn split_marker(title: &str) -> (Option<f32>, &str) {
 }
 
 /// The room a tab's marker takes before its name, or zero without one.
-fn marker_room(tab: &DocTab) -> f32 {
+fn marker_room(ui: &Ui, tab: &DocTab) -> f32 {
     if tab.marker.is_some() {
-        MARKER + MARKER_GAP
+        (Chrome::of(ui.ctx()).style.tabs_marker as f32) + (Chrome::of(ui.ctx()).style.tabs_marker_gap as f32)
     } else {
         0.0
     }
@@ -295,12 +264,12 @@ pub fn documents(
     } else {
         Frame::new()
             .fill(chrome.palette.canvas)
-            .inner_margin(STUDIO_MARGIN)
+            .inner_margin(Margin { left: crate::chrome::Chrome::of(ui.ctx()).style.tabs_studio_margin_left as i8, right: crate::chrome::Chrome::of(ui.ctx()).style.tabs_studio_margin_right as i8, top: crate::chrome::Chrome::of(ui.ctx()).style.tabs_studio_margin_top as i8, bottom: crate::chrome::Chrome::of(ui.ctx()).style.tabs_studio_margin_bottom as i8 })
     };
     frame
         .show(ui, |ui| {
             let (strip, _) =
-                ui.allocate_exact_size(vec2(ui.available_width(), STRIP), Sense::hover());
+                ui.allocate_exact_size(vec2(ui.available_width(), crate::chrome::Chrome::of(ui.ctx()).style.tabs_strip as f32), Sense::hover());
             strip_tabs(ui, id, &chrome, strip, tabs, selected, drop_target)
         })
         .inner
@@ -317,16 +286,16 @@ fn strip_tabs(
 ) -> DocEvents {
     let pro = is_strip(chrome);
     let (pad, minimum, gap) = if pro {
-        (PRO_PAD, PRO_MIN, 0.0)
+        (crate::chrome::Chrome::of(ui.ctx()).style.tabs_pro_pad as f32, crate::chrome::Chrome::of(ui.ctx()).style.tabs_pro_min as f32, 0.0)
     } else {
-        (STUDIO_PAD, PRO_MIN, STUDIO_GAP)
+        (crate::chrome::Chrome::of(ui.ctx()).style.tabs_studio_pad as f32, crate::chrome::Chrome::of(ui.ctx()).style.tabs_pro_min as f32, crate::chrome::Chrome::of(ui.ctx()).style.tabs_studio_gap as f32)
     };
     let name_font = if pro {
-        FontId::new(PRO_SIZE, FontFamily::Proportional)
+        FontId::new(crate::chrome::Chrome::of(ui.ctx()).style.tabs_pro_size as f32, FontFamily::Proportional)
     } else {
-        crate::fonts::bound(ui.ctx(), crate::fonts::medium(STUDIO_NAME_SIZE))
+        crate::fonts::bound(ui.ctx(), crate::fonts::medium(crate::chrome::Chrome::of(ui.ctx()).style.tabs_studio_name_size as f32))
     };
-    let meta_font = FontId::new(STUDIO_META_SIZE, FontFamily::Proportional);
+    let meta_font = FontId::new(crate::chrome::Chrome::of(ui.ctx()).style.tabs_studio_meta_size as f32, FontFamily::Proportional);
     let painter = ui.painter();
     let text_width = |text: &str, font: &FontId| {
         painter
@@ -352,12 +321,12 @@ fn strip_tabs(
             let meta = if pro || t.meta.is_empty() {
                 0.0
             } else {
-                STUDIO_META_GAP + text_width(&t.meta, &meta_font)
+                crate::chrome::Chrome::of(ui.ctx()).style.tabs_studio_meta_gap as f32 + text_width(&t.meta, &meta_font)
             };
-            text_width(name, &name_font) + meta + pad + gap + marker_room(t)
+            text_width(name, &name_font) + meta + pad + gap + marker_room(ui, t)
         })
         .collect();
-    let fit = fit(&naturals, minimum + gap, strip.width(), Some(selected));
+    let fit = fit_with_chevron(&naturals, minimum + gap, strip.width(), Some(selected), Chrome::of(ui.ctx()).style.tabs_chevron as f32);
     let mut events = DocEvents::default();
     let mut x = strip.left();
     let mut hidden = Vec::new();
@@ -389,13 +358,13 @@ fn strip_tabs(
             ui.painter().rect_stroke(
                 rect,
                 corner,
-                Stroke::new(DROP_OUTLINE, chrome.palette.accent),
+                Stroke::new(crate::chrome::Chrome::of(ui.ctx()).style.tabs_drop_outline as f32, chrome.palette.accent),
                 StrokeKind::Inside,
             );
         }
     }
     if fit.overflows() {
-        let rect = Rect::from_min_size(pos2(x, strip.top()), vec2(CHEVRON, strip.height()));
+        let rect = Rect::from_min_size(pos2(x, strip.top()), vec2(crate::chrome::Chrome::of(ui.ctx()).style.tabs_chevron as f32, strip.height()));
         if let Some(index) = chevron(ui, id.with("overflow"), rect, &hidden) {
             events.selected = Some(index);
         }
@@ -429,9 +398,9 @@ fn doc_tab(
     response
         .widget_info(|| WidgetInfo::selected(WidgetType::Button, ui.is_enabled(), selected, name));
     let (close_size, close_from_right, close_icon) = if pro {
-        (PRO_CLOSE, PRO_CLOSE_FROM_RIGHT, PRO_CLOSE_ICON)
+        (crate::chrome::Chrome::of(ui.ctx()).style.tabs_pro_close as f32, crate::chrome::Chrome::of(ui.ctx()).style.tabs_pro_close_from_right as f32, crate::chrome::Chrome::of(ui.ctx()).style.tabs_pro_close_icon as f32)
     } else {
-        (STUDIO_CLOSE, STUDIO_CLOSE_FROM_RIGHT, STUDIO_CLOSE_ICON)
+        (crate::chrome::Chrome::of(ui.ctx()).style.tabs_studio_close as f32, crate::chrome::Chrome::of(ui.ctx()).style.tabs_studio_close_from_right as f32, crate::chrome::Chrome::of(ui.ctx()).style.tabs_studio_close_icon as f32)
     };
     let close_rect = Rect::from_center_size(
         pos2(rect.right() - close_from_right, rect.center().y),
@@ -461,18 +430,18 @@ fn doc_tab(
         }
     } else if hovered {
         let alpha = if pro {
-            PRO_HOVER_ALPHA
+            crate::chrome::Chrome::of(ui.ctx()).style.tabs_pro_hover_alpha as f32
         } else {
-            STUDIO_HOVER_ALPHA
+            crate::chrome::Chrome::of(ui.ctx()).style.tabs_studio_hover_alpha as f32
         };
         painter.rect_filled(rect, radius, p.hover.gamma_multiply(alpha));
     }
     let left = if pro {
-        PRO_TITLE_LEFT
+        crate::chrome::Chrome::of(ui.ctx()).style.tabs_pro_title_left as f32
     } else {
-        STUDIO_NAME_LEFT
+        crate::chrome::Chrome::of(ui.ctx()).style.tabs_studio_name_left as f32
     };
-    let lead = marker_room(tab);
+    let lead = marker_room(ui, tab);
     let text_room = close_rect.left() - (rect.left() + left + lead);
     let (galley, cut) = label(ui, name, name_font.clone(), text_room, 0.0);
     let ink = match (pro, selected) {
@@ -483,8 +452,8 @@ fn doc_tab(
     if let Some(turn) = tab.marker {
         // A ring with a solid half-disc inside it, touching the ring's inner edge
         // (no gap). The half is turned in place; the ring never moves.
-        let centre = pos2(rect.left() + left + MARKER / 2.0, rect.center().y).round_to_pixels(ppp);
-        let scale = MARKER / 24.0;
+        let centre = pos2(rect.left() + left + crate::chrome::Chrome::of(ui.ctx()).style.tabs_marker as f32 / 2.0, rect.center().y).round_to_pixels(ppp);
+        let scale = crate::chrome::Chrome::of(ui.ctx()).style.tabs_marker as f32 / 24.0;
         let ring = 10.0 * scale;
         let stroke = 2.0 * scale;
         painter.circle_stroke(centre, ring, Stroke::new(stroke, ink));
@@ -507,9 +476,9 @@ fn doc_tab(
     painter.galley(name_at, galley, ink);
     if !pro && !tab.meta.is_empty() && !cut {
         let meta = painter.layout_no_wrap(tab.meta.clone(), meta_font.clone(), p.text_faint);
-        if name_right + STUDIO_META_GAP + meta.size().x <= close_rect.left() {
+        if name_right + crate::chrome::Chrome::of(ui.ctx()).style.tabs_studio_meta_gap as f32 + meta.size().x <= close_rect.left() {
             let at = pos2(
-                name_right + STUDIO_META_GAP,
+                name_right + crate::chrome::Chrome::of(ui.ctx()).style.tabs_studio_meta_gap as f32,
                 rect.center().y - meta.size().y / 2.0,
             )
             .round_to_pixels(ppp);
@@ -520,12 +489,12 @@ fn doc_tab(
         let x = painter.round_to_pixel_center(rect.right() - 0.5);
         painter.vline(x, rect.y_range(), Stroke::new(1.0, p.separator));
     } else if close.hovered() {
-        painter.rect_filled(close_rect, STUDIO_CLOSE_RADIUS, p.hover);
+        painter.rect_filled(close_rect, crate::chrome::Chrome::of(ui.ctx()).style.tabs_studio_close_radius as f32, p.hover);
     }
     if let Some(progress) = tab.progress {
         let line = Rect::from_min_size(
-            rect.left_bottom() - vec2(0.0, PROGRESS),
-            vec2(rect.width() * progress.clamp(0.0, 1.0), PROGRESS),
+            rect.left_bottom() - vec2(0.0, crate::chrome::Chrome::of(ui.ctx()).style.tabs_progress as f32),
+            vec2(rect.width() * progress.clamp(0.0, 1.0), crate::chrome::Chrome::of(ui.ctx()).style.tabs_progress as f32),
         );
         painter.rect_filled(line, 0.0, p.accent);
     }
@@ -547,6 +516,13 @@ fn doc_tab(
     };
     (response.clicked(), close.clicked())
 }
+
+
+/// The installed value of the former `CHEVRON` constant.
+pub fn chevron_of(ctx: &egui::Context) -> f32 { crate::chrome::Chrome::of(ctx).style.tabs_chevron as f32 }
+
+/// The installed value of the former `STRIP` constant.
+pub fn strip_of(ctx: &egui::Context) -> f32 { crate::chrome::Chrome::of(ctx).style.tabs_strip as f32 }
 
 #[cfg(test)]
 mod tests {
@@ -591,7 +567,7 @@ mod tests {
         assert_eq!(fit.widths.iter().filter(|w| w.is_some()).count(), 2);
         assert!(fit.widths[3].is_some(), "the selected tab stays");
         assert!(fit.widths.iter().flatten().all(|w| *w >= 40.0));
-        assert!(fit.widths.iter().flatten().sum::<f32>() <= 130.0 - CHEVRON + 0.01);
+        assert!(fit.widths.iter().flatten().sum::<f32>() <= 130.0 - crate::style::default_tokens().tabs_chevron as f32 + 0.01);
     }
 
     #[test]

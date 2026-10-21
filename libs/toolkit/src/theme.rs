@@ -86,6 +86,10 @@ impl std::error::Error for Error {
 /// the choices travel beside it, so the design file stays the same.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Overlay {
+    /// Local style overrides. Settings delivery is added separately.
+    pub style: std::collections::BTreeMap<String, design::StyleValueSource>,
+    pub chrome: std::collections::BTreeMap<String, design::family::style::StyleColour>,
+    pub reduced_motion: bool,
     /// The icon stroke on the 24-unit grid.
     pub stroke: Option<f32>,
     /// The interface family, or `None` for the bundled Inter.
@@ -129,6 +133,7 @@ impl Overlay {
             weight,
             size,
             mono: family(&appearance.mono_family),
+            ..Self::default()
         }
     }
 }
@@ -397,7 +402,9 @@ impl Theme {
 
     /// The chrome's forms and lengths (the design's style family).
     pub fn style(&self) -> ResolvedStyle {
-        self.style
+        if self.overlay.style.is_empty() { self.style } else {
+            self.style.with_values(&self.overlay.style).expect("validated style overlay")
+        }
     }
 
     /// The resolved design.

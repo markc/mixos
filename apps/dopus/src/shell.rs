@@ -604,8 +604,7 @@ impl Shell {
             apply(&mut self.app, &self.commands, events);
             self.perform();
         }
-        let stroke = toolkit::icons::stroke_width(&self.theme);
-        let events = view(ui, &self.app, &self.commands, &self.strings, stroke);
+        let events = view(ui, &self.app, &self.commands, &self.strings);
         apply(&mut self.app, &self.commands, events);
         let derived = self.app.core.tick(Instant::now());
         self.app.absorb(derived);

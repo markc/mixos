@@ -86,15 +86,7 @@ fn window_with(builder: egui_kittest::HarnessBuilder<App>) -> Harness<'static, A
                 .into_iter()
                 .map(|id| (id, toolkit::command::Origin::Shortcut))
                 .collect();
-            fired.extend(titlebar::show(
-                ui,
-                fixture::TITLE,
-                Some(Icon::Square),
-                stroke,
-                &registry,
-                &app.fixture,
-                &strings,
-            ));
+            fired.extend(titlebar::show(ui, fixture::TITLE, Some(Icon::Square), &registry, &app.fixture, &strings));
             egui::CentralPanel::default().show(ui, |ui| {
                 ui.add(egui::TextEdit::singleline(&mut app.name).hint_text("Name"));
                 if ui.button("Count").clicked() {

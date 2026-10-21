@@ -107,12 +107,11 @@ fn render(theme: Theme, name: &str, mut engine: Engine, section: Option<&str>, s
     engine.ui.selected = selected;
     let registry = commands::registry();
     let strings = strings();
-    let stroke = icons::stroke_width(&theme);
     let mut harness = Harness::builder()
         .with_size(egui::vec2(1040.0, 680.0))
         .wgpu()
         .build_ui(move |ui| {
-            let _ = view(ui, &engine, &registry, &strings, stroke);
+            let _ = view(ui, &engine, &registry, &strings);
         });
     toolkit::install(&harness.ctx, &theme);
     harness.run();
@@ -176,11 +175,10 @@ fn a_large_table_and_core_grid() {
         let registry = commands::registry();
         let strings = strings();
         let theme = dark();
-        let stroke = icons::stroke_width(&theme);
         let mut harness = Harness::builder()
             .with_size(egui::vec2(1040.0, 680.0))
             .build_ui(move |ui| {
-                let _ = view(ui, &engine, &registry, &strings, stroke);
+                let _ = view(ui, &engine, &registry, &strings);
             });
         toolkit::install(&harness.ctx, &theme);
         harness.run();

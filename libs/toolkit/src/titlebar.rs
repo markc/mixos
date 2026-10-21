@@ -33,7 +33,7 @@
 //! theme's [`Chrome`].
 
 use crate::button::{ICON_BUTTON, IconButton, Link};
-use crate::chrome::{CLOSE_PRESSED_ALPHA, Chrome};
+use crate::chrome::Chrome;
 use crate::command::{Origin, Registry};
 use crate::icons::{self, Icon};
 use crate::strings::Strings;
@@ -54,7 +54,6 @@ pub const EDGE: f32 = 5.0;
 pub const CORNER: f32 = 12.0;
 
 /// The title is elided into the gap only when the gap is wider than this.
-const MIN_TITLE_ROOM: f32 = 80.0;
 
 fn label(key: &str) -> String {
     crate::strings::own(key)
@@ -109,17 +108,11 @@ pub enum Control<'a> {
 }
 
 /// The right-hand group's combo width range (§3.1).
-pub const COMBO_WIDTH: egui::Rangef = egui::Rangef {
-    min: 90.0,
-    max: 130.0,
-};
 
 /// Spacing within the right-hand group (§3.1): an icon's slot is its 28 pt
 /// plus this, the specified 34.
-const CONTROL_SPACING: f32 = 6.0;
 
 /// A link shows only while this much of the bar stays free (§3.1).
-const LINK_ROOM: f32 = 120.0;
 
 /// The theme toggle's icon: a sun while the theme is dark, else a moon.
 pub fn theme_icon(dark: bool) -> Icon {
@@ -141,11 +134,15 @@ pub enum Slot {
 /// the combo shrinks to its minimum before any does, and a link shows only
 /// while [`LINK_ROOM`] stays free besides it.
 pub fn fit(free: f32, slots: &[Slot]) -> (f32, usize) {
+    fit_with_tokens(free, slots, &crate::style::default_tokens())
+}
+
+fn fit_with_tokens(free: f32, slots: &[Slot], tokens: &design::ResolvedStyle) -> (f32, usize) {
     let need = |n: usize, combo: f32| {
         let width: f32 = slots[..n]
             .iter()
             .map(|s| {
-                CONTROL_SPACING
+                tokens.title_control_spacing as f32
                     + match s {
                         Slot::Combo => combo,
                         Slot::Fixed(w) | Slot::Link(w) => *w,
@@ -153,42 +150,35 @@ pub fn fit(free: f32, slots: &[Slot]) -> (f32, usize) {
             })
             .sum();
         let link = slots[..n].iter().any(|s| matches!(s, Slot::Link(_)));
-        width + if link { LINK_ROOM } else { 0.0 }
+        width + if link { tokens.title_link_room as f32 } else { 0.0 }
     };
     let mut shown = slots.len();
-    while shown > 0 && need(shown, COMBO_WIDTH.min) > free {
+    while shown > 0 && need(shown, egui::Rangef { min: tokens.title_combo_min_width as f32, max: tokens.title_combo_max_width as f32 }.min) > free {
         shown -= 1;
     }
-    let combo = (free - need(shown, 0.0)).clamp(COMBO_WIDTH.min, COMBO_WIDTH.max);
+    let combo = (free - need(shown, 0.0)).clamp(egui::Rangef { min: tokens.title_combo_min_width as f32, max: tokens.title_combo_max_width as f32 }.min, egui::Rangef { min: tokens.title_combo_min_width as f32, max: tokens.title_combo_max_width as f32 }.max);
     (combo, shown)
 }
 
 /// Draw the title bar at the top of `ui` and return the ids of commands
-/// chosen from its menus this frame. `icon` is the app's mark; `stroke` its
-/// Lucide stroke width.
+/// chosen from its menus this frame. `icon` is the app's mark.
 pub fn show<S>(
     ui: &mut Ui,
     title: &str,
     icon: Option<Icon>,
-    stroke: f32,
     registry: &Registry<S>,
     state: &S,
     strings: &Strings,
 ) -> Vec<(&'static str, Origin)> {
-    show_with(ui, title, icon, stroke, registry, state, strings, &mut [])
+    show_with(ui, title, icon, registry, state, strings, &mut [])
 }
 
 /// [`show`] with a right-hand group of `controls` before the caption
 /// buttons. The ids of commands run from the controls join the menus'.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "the title bar's inputs, as `show` takes them"
-)]
 pub fn show_with<S>(
     ui: &mut Ui,
     title: &str,
     icon: Option<Icon>,
-    stroke: f32,
     registry: &Registry<S>,
     state: &S,
     strings: &Strings,
@@ -249,7 +239,7 @@ pub fn show_with<S>(
             let at = pos2(start + m.title_bar_margin, bar.center().y - m.mark / 2.0);
             let mark = Rect::from_min_size(at, vec2(m.mark, m.mark))
                 .round_to_pixels(ui.pixels_per_point());
-            icons::image(icon, stroke, m.mark, p.icon).paint_at(ui, mark);
+            icons::image_of(ui.ctx(), icon, m.mark, p.icon).paint_at(ui, mark);
         }
 
         let menus_left = start + m.title_bar_margin + m.mark + m.mark_gap;
@@ -316,22 +306,12 @@ pub fn show_engine_with<S>(
     ui: &mut Ui,
     title: &str,
     icon: Option<Icon>,
-    stroke: f32,
     registry: &crate::command::EngineAdapter<S>,
     state: &S,
     strings: &Strings,
     controls: &mut [Control<'_>],
 ) -> Vec<(&'static str, Origin)> {
-    show_with(
-        ui,
-        title,
-        icon,
-        stroke,
-        &registry.ui,
-        state,
-        strings,
-        controls,
-    )
+    show_with(ui, title, icon, &registry.ui, state, strings, controls)
 }
 
 /// The registry's menus laid out left to right in `room`; their commands
@@ -400,7 +380,7 @@ fn right_group<S>(
             }
         })
         .collect();
-    let (combo_width, shown) = fit(right - left, &slots);
+    let (combo_width, shown) = fit_with_tokens(right - left, &slots, &Chrome::of(ui.ctx()).style);
     let bar = ui.max_rect();
     let mut x = right;
     for control in controls.iter_mut().take(shown) {
@@ -455,9 +435,9 @@ fn right_group<S>(
         if let Some((command, true)) = command {
             fired.push((command.id, Origin::Ui));
         }
-        x -= width + CONTROL_SPACING;
+        x -= width + crate::chrome::Chrome::of(ui.ctx()).style.title_control_spacing as f32;
     }
-    x + CONTROL_SPACING
+    x + crate::chrome::Chrome::of(ui.ctx()).style.title_control_spacing as f32
 }
 
 /// The window title in Inter Medium, `text_dim`: centred on the bar, slid
@@ -478,7 +458,7 @@ fn window_title(ui: &Ui, chrome: &Chrome, title: &str, bar: Rect, left: f32, rig
         // 1280 pt bar with a 10 pt margin).
         let centre = (bar.left() + chrome.metrics.title_bar_margin + bar.right()) / 2.0;
         (centre - width / 2.0).clamp(left, right - width)
-    } else if room > MIN_TITLE_ROOM {
+    } else if room > crate::chrome::Chrome::of(ui.ctx()).style.title_min_room as f32 {
         let mut job = LayoutJob::simple_singleline(title.to_owned(), font, chrome.palette.text_dim);
         job.wrap = TextWrapping::truncate_at_width(room);
         galley = painter.layout_job(job);
@@ -508,7 +488,7 @@ fn caption_button(ui: &mut Ui, rect: Rect, caption: Caption, chrome: &Chrome) {
     // Flat fills, no animation (§3.2, §4).
     let (fill, glyph) = match caption {
         Caption::Close if pressed => (
-            Some(p.caption_close.gamma_multiply(CLOSE_PRESSED_ALPHA)),
+            Some(p.caption_close.gamma_multiplychrome.style.close_pressed_alpha as f32),
             p.caption_close_text,
         ),
         Caption::Close if hovered => (Some(p.caption_close), p.caption_close_text),
@@ -649,3 +629,6 @@ pub fn edges(ui: &mut Ui) {
         }
     }
 }
+
+/// The installed value of the former `COMBO_WIDTH` constant.
+pub fn combo_width_of(ctx: &egui::Context) -> egui::Rangef { egui::Rangef { min: crate::chrome::Chrome::of(ctx).style.title_combo_min_width as f32, max: crate::chrome::Chrome::of(ctx).style.title_combo_max_width as f32 } }

@@ -15,7 +15,7 @@ use super::UiEvent;
 use crate::state::AccountView;
 
 /// The centre pane's event list.
-pub fn list(ui: &mut Ui, view: &AccountView, stroke: f32, events: &mut Vec<UiEvent>) {
+pub fn list(ui: &mut Ui, view: &AccountView, events: &mut Vec<UiEvent>) {
     let title = view
         .calendars
         .calendars
@@ -32,7 +32,7 @@ pub fn list(ui: &mut Ui, view: &AccountView, stroke: f32, events: &mut Vec<UiEve
                 ui.weak(crate::label("empty"));
             }
             for (index, event) in view.calendars.events.iter().enumerate() {
-                row(ui, index, event, view, stroke, events);
+                row(ui, index, event, view, events);
             }
         });
     });
@@ -44,7 +44,6 @@ fn row(
     index: usize,
     event: &CalendarEvent,
     view: &AccountView,
-    stroke: f32,
     events: &mut Vec<UiEvent>,
 ) {
     let selected = view.calendars.open == Some(index);
@@ -52,7 +51,7 @@ fn row(
         ui,
         |ui| {
             let weak = ui.visuals().weak_text_color();
-            ui.add(icons::image(Icon::Calendar, stroke, 12.0, weak));
+            ui.add(icons::image_of(ui.ctx(), Icon::Calendar, 12.0, weak));
             let text = if selected {
                 RichText::new(event.display_title()).strong()
             } else {

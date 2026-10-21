@@ -695,17 +695,8 @@ impl Shell {
             crate::view::apply(&mut self.app, &self.commands, events);
             self.perform();
         }
-        let stroke = toolkit::icons::stroke_width(&self.theme);
         let connected = self.transport.connected();
-        let events = view(
-            ui,
-            &mut self.app,
-            &self.commands,
-            &self.strings,
-            &self.palette,
-            stroke,
-            connected,
-        );
+        let events = view(ui, &mut self.app, &self.commands, &self.strings, &self.palette, connected);
         crate::view::apply(&mut self.app, &self.commands, events);
         toolkit::markdown::open_links(ui.ctx(), "ced");
         self.perform();

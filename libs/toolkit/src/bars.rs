@@ -37,18 +37,13 @@ pub struct Sizes {
 /// The inset of a horizontal bar's contents from its ends. Undetermined by
 /// the specification (§5.4); the item spacing keeps the first control off
 /// the window edge.
-const BAR_INSET: i8 = 8;
 
 /// The gap between stacked panel control rows (§2.2).
-pub const ROW_GAP: f32 = 4.0;
 
 /// The rail's separator stands this far left of the rail (§2.6).
-const RAIL_RULE: f32 = 6.0;
 
 /// A vertical divider's slot width (§3.9), and its height in the options
 /// bar.
-pub const DIVIDER_SLOT: f32 = 9.0;
-pub const DIVIDER_HEIGHT: f32 = 22.0;
 
 fn frame(ui: &Ui, margin: Margin) -> Frame {
     Frame::new()
@@ -71,13 +66,13 @@ fn rule(ui: &Ui, from: egui::Pos2, to: egui::Pos2) {
 /// The options bar: a row of controls, centred vertically.
 pub fn options<R>(ui: &mut Ui, contents: impl FnOnce(&mut Ui) -> R) -> InnerResponse<R> {
     let size = Chrome::of(ui.ctx()).metrics.bars.options;
-    let frame = frame(ui, Margin::symmetric(BAR_INSET, 0));
+    let frame = frame(ui, Margin::symmetric(crate::chrome::Chrome::of(ui.ctx()).style.bars_bar_inset as i8, 0));
     Panel::top("toolkit-options-bar")
         .exact_size(size)
         .show_separator_line(false)
         .frame(frame)
         .show(ui, |ui| {
-            let r = ui.max_rect().expand2(vec2(f32::from(BAR_INSET), 0.0));
+            let r = ui.max_rect().expand2(vec2(f32::from(crate::chrome::Chrome::of(ui.ctx()).style.bars_bar_inset as i8), 0.0));
             rule(
                 ui,
                 pos2(r.left(), r.top() + 0.5),
@@ -96,13 +91,13 @@ pub fn options<R>(ui: &mut Ui, contents: impl FnOnce(&mut Ui) -> R) -> InnerResp
 /// The status bar: a row of controls, centred vertically.
 pub fn status<R>(ui: &mut Ui, contents: impl FnOnce(&mut Ui) -> R) -> InnerResponse<R> {
     let size = Chrome::of(ui.ctx()).metrics.bars.status;
-    let frame = frame(ui, Margin::symmetric(BAR_INSET, 0));
+    let frame = frame(ui, Margin::symmetric(crate::chrome::Chrome::of(ui.ctx()).style.bars_bar_inset as i8, 0));
     Panel::bottom("toolkit-status-bar")
         .exact_size(size)
         .show_separator_line(false)
         .frame(frame)
         .show(ui, |ui| {
-            let r = ui.max_rect().expand2(vec2(f32::from(BAR_INSET), 0.0));
+            let r = ui.max_rect().expand2(vec2(f32::from(crate::chrome::Chrome::of(ui.ctx()).style.bars_bar_inset as i8), 0.0));
             rule(
                 ui,
                 pos2(r.left(), r.top() + 0.5),
@@ -152,8 +147,8 @@ pub fn rail<R>(ui: &mut Ui, contents: impl FnOnce(&mut Ui) -> R) -> InnerRespons
             let r = ui.max_rect().expand(f32::from(inset));
             rule(
                 ui,
-                pos2(r.left() - RAIL_RULE, r.top()),
-                pos2(r.left() - RAIL_RULE, r.bottom()),
+                pos2(r.left() - crate::chrome::Chrome::of(ui.ctx()).style.bars_rail_rule as f32, r.top()),
+                pos2(r.left() - crate::chrome::Chrome::of(ui.ctx()).style.bars_rail_rule as f32, r.bottom()),
             );
             ui.with_layout(Layout::top_down(Align::Center), contents)
                 .inner
@@ -173,7 +168,7 @@ pub fn dock<R>(ui: &mut Ui, contents: impl FnOnce(&mut Ui) -> R) -> InnerRespons
         .frame(dock_frame(ui.ctx()))
         .show(ui, |ui| {
             // Stacked panel rows are 4 pt apart, not egui's 6 (§2.2).
-            ui.spacing_mut().item_spacing.y = ROW_GAP;
+            ui.spacing_mut().item_spacing.y = crate::chrome::Chrome::of(ui.ctx()).style.bar_row_gap as f32;
             contents(ui)
         })
 }
@@ -190,7 +185,7 @@ pub fn dock_frame(ctx: &egui::Context) -> Frame {
 /// A vertical divider in a bar: a 9 pt slot with a centred 1 pt
 /// `separator` line `height` tall ([`DIVIDER_HEIGHT`] in the options bar).
 pub fn divider(ui: &mut Ui, height: f32) {
-    let (rect, _) = ui.allocate_exact_size(vec2(DIVIDER_SLOT, height), Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(vec2(crate::chrome::Chrome::of(ui.ctx()).style.divider_slot as f32, height), Sense::hover());
     let x = ui.painter().round_to_pixel_center(rect.center().x);
     ui.painter().vline(
         x,
@@ -210,6 +205,16 @@ pub fn hairline(ui: &mut Ui) -> Rect {
     );
     rect
 }
+
+
+/// The installed value of the former `ROW_GAP` constant.
+pub fn row_gap_of(ctx: &egui::Context) -> f32 { crate::chrome::Chrome::of(ctx).style.bar_row_gap as f32 }
+
+/// The installed value of the former `DIVIDER_SLOT` constant.
+pub fn divider_slot_of(ctx: &egui::Context) -> f32 { crate::chrome::Chrome::of(ctx).style.divider_slot as f32 }
+
+/// The installed value of the former `DIVIDER_HEIGHT` constant.
+pub fn divider_height_of(ctx: &egui::Context) -> f32 { crate::chrome::Chrome::of(ctx).style.divider_height as f32 }
 
 #[cfg(test)]
 mod tests {

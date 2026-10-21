@@ -72,16 +72,8 @@ fn panel_with(theme: &Theme, name: &str, open: Option<&str>) {
         .with_size(egui::vec2(420.0, 260.0))
         .wgpu()
         .build_ui(move |ui| {
-            let _ = toolkit::titlebar::show(
-                ui,
-                "Demo",
-                Some(Icon::Server),
-                stroke,
-                &commands,
-                &state,
-                &strings,
-            );
-            egui::CentralPanel::default().show(ui, |ui| contents(ui, &strings, stroke));
+            let _ = toolkit::titlebar::show(ui, "Demo", Some(Icon::Server), &commands, &state, &strings);
+            egui::CentralPanel::default().show(ui, |ui| contents(ui, &strings));
         });
     toolkit::install(&harness.ctx, theme);
     harness.run();
@@ -106,7 +98,7 @@ fn contents(ui: &mut egui::Ui, strings: &Strings, stroke: f32) {
                 Icon::Play,
                 Icon::CircleCheck,
             ] {
-                ui.add(icons::image(icon, stroke, 16.0, colour));
+                ui.add(icons::image_of(ui.ctx(), icon, 16.0, colour));
             }
         });
         ui.horizontal(|ui| {

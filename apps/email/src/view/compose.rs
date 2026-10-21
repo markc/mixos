@@ -292,7 +292,7 @@ fn row<R>(
     column: f32,
     add: impl FnOnce(&mut Ui, egui::Id) -> R,
 ) -> R {
-    row_of(ui, text, column, field::HEIGHT, add)
+    row_of(ui, text, column, field::height_of(ui.ctx()), add)
 }
 
 /// [`row`] for a row `height` tall (the From row holds a push button,
@@ -344,7 +344,7 @@ fn form(ui: &mut Ui, compose: &ComposeState, state: &State, events: &mut Vec<UiE
         })
         .fold(0.0_f32, f32::max)
         .ceil();
-    let icon = field::HEIGHT;
+    let icon = field::height_of(ui.ctx());
     // While a send is in flight every field is read-only: the dialog shows
     // exactly what is being sent.
     ui.add_enabled_ui(!compose.busy, |ui| {
@@ -365,7 +365,7 @@ fn form(ui: &mut Ui, compose: &ComposeState, state: &State, events: &mut Vec<UiE
         let height = toolkit::chrome::Chrome::of(ui.ctx())
             .metrics
             .push_height
-            .max(field::HEIGHT);
+            .max(field::height_of(ui.ctx()));
         row_of(ui, &crate::label("from"), column, height, |ui, label| {
             let identities = toolkit::button::PushButton::secondary(crate::label("identities-open"));
             // The button is laid out first from the right, so the identity

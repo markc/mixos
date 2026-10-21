@@ -127,7 +127,6 @@ fn window(theme: Theme, name: &str, app: App) {
 fn window_sized(theme: Theme, name: &str, app: App, size: egui::Vec2) {
     let registry = commands::registry();
     let strings = strings();
-    let stroke = icons::stroke_width(&theme);
     let rendered = app
         .document
         .as_ref()
@@ -153,15 +152,7 @@ fn window_sized(theme: Theme, name: &str, app: App, size: egui::Vec2) {
                     document: app.document_id,
                 });
             }
-            let _ = view(
-                ui,
-                &app,
-                &registry,
-                &strings,
-                stroke,
-                preview.as_ref(),
-                &mut drag,
-            );
+            let _ = view(ui, &app, &registry, &strings, preview.as_ref(), &mut drag);
         });
     toolkit::install(&harness.ctx, &theme);
     harness.run();

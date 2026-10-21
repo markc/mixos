@@ -117,7 +117,8 @@ mod tests {
 
     #[test]
     fn duplicate_names_are_refused_across_versions() {
-        let source = SOURCE.replacen("v2:", "v3: { tokens: { field_height: { all: 24 } }, styles: {}, schemes: {}, terminal: {} }, v2:", 1);
+        let source = SOURCE.replacen("\"v2\":", "v3: { tokens: { field_height: { all: 24 } }, styles: {}, schemes: {}, terminal: {} }, v2:", 1);
+        assert_ne!(source, SOURCE, "the fixture mutation must occur");
         assert!(Table::parse(&source).unwrap_err().contains("duplicate compatibility token `field_height`"));
     }
 }

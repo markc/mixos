@@ -41,49 +41,15 @@ use egui::{
 };
 
 /// Pro strip height, tab text, padding and minimum (§3.10).
-pub const STRIP: f32 = 26.0;
-const PRO_SIZE: f32 = 11.5;
-const PRO_PAD: f32 = 22.0;
-const PRO_MIN: f32 = 40.0;
-const PRO_RADIUS: u8 = 3;
-const PRO_HOVER_ALPHA: f32 = 0.4;
-const PRO_MARGIN: i8 = 8;
-const PRO_AFTER: f32 = 2.0;
 
 /// The Pro panel menu ("hamburger"): hit box, centre from the strip's
 /// right, line length and pitch (§3.10).
-const MENU_BOX: egui::Vec2 = vec2(20.0, 18.0);
-const MENU_FROM_RIGHT: f32 = 14.0;
-const MENU_LINE: f32 = 10.0;
-const MENU_PITCH: f32 = 3.5;
 
 /// Studio card (§3.11).
-const CARD_MARGIN: Margin = Margin {
-    left: 8,
-    right: 8,
-    top: 6,
-    bottom: 10,
-};
-const CARD_MARGIN_COLLAPSED: i8 = 6;
-const CARD_AFTER: f32 = 6.0;
-pub const HEADER: f32 = 24.0;
-const HEADER_AFTER: f32 = 6.0;
-const DRAG_BAND: f32 = 22.0;
-const PILL_SIZE: f32 = 12.5;
-const PILL_PAD: f32 = 20.0;
-const PILL_MIN: f32 = 44.0;
-const PILL_GAP: f32 = 2.0;
-const PILL_HOVER_ALPHA: f32 = 0.6;
-const ELLIPSIS: f32 = 22.0;
-const ELLIPSIS_GAP: f32 = 4.0;
 
 /// Section label size, Inter Medium (§2.1).
-const SECTION_SIZE: f32 = 11.5;
 
 /// The drag-drop insertion line's width and end insets (§3.22).
-const DROP_LINE: f32 = 2.0;
-const DROP_INSET_VERTICAL: f32 = 2.0;
-const DROP_INSET_HORIZONTAL: f32 = 4.0;
 
 /// A group's view state.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -194,11 +160,11 @@ fn pro_group<R>(
 ) -> GroupResponse<R> {
     let p = &chrome.palette;
     let width = ui.available_width();
-    let (strip, handle) = ui.allocate_exact_size(vec2(width, STRIP), Sense::click_and_drag());
+    let (strip, handle) = ui.allocate_exact_size(vec2(width, crate::chrome::Chrome::of(ui.ctx()).style.panel_strip as f32), Sense::click_and_drag());
     if handle.double_clicked() {
         state.collapsed = !state.collapsed;
     }
-    let r = PRO_RADIUS;
+    let r = crate::chrome::Chrome::of(ui.ctx()).style.panel_pro_radius as u8;
     let strip_corners = if state.collapsed {
         CornerRadius::same(r)
     } else {
@@ -212,16 +178,16 @@ fn pro_group<R>(
     ui.painter().rect_filled(strip, strip_corners, p.tab_strip);
 
     let menu_rect = Rect::from_center_size(
-        pos2(strip.right() - MENU_FROM_RIGHT, strip.center().y),
-        MENU_BOX,
+        pos2(strip.right() - crate::chrome::Chrome::of(ui.ctx()).style.panel_menu_from_right as f32, strip.center().y),
+        vec2(crate::chrome::Chrome::of(ui.ctx()).style.panel_menu_box_w as f32, crate::chrome::Chrome::of(ui.ctx()).style.panel_menu_box_h as f32),
     );
-    let font = FontId::new(PRO_SIZE, FontFamily::Proportional);
+    let font = FontId::new(crate::chrome::Chrome::of(ui.ctx()).style.panel_pro_size as f32, FontFamily::Proportional);
     let fit = widths(
         ui,
         tabs,
         &font,
-        PRO_PAD,
-        PRO_MIN,
+        crate::chrome::Chrome::of(ui.ctx()).style.panel_pro_pad as f32,
+        crate::chrome::Chrome::of(ui.ctx()).style.panel_pro_min as f32,
         menu_rect.left() - strip.left(),
         state.selected,
     );
@@ -232,7 +198,7 @@ fn pro_group<R>(
             hidden.push((index, (*name).to_owned()));
             continue;
         };
-        let rect = Rect::from_min_size(pos2(x, strip.top()), vec2(width, STRIP));
+        let rect = Rect::from_min_size(pos2(x, strip.top()), vec2(width, crate::chrome::Chrome::of(ui.ctx()).style.panel_strip as f32));
         x += width;
         let response = ui.interact(rect, id.with(("tab", index)), Sense::click());
         let active = index == state.selected && !state.collapsed;
@@ -242,7 +208,7 @@ fn pro_group<R>(
         let (fill, ink) = if active {
             (Some(p.card), p.text)
         } else if response.hovered() {
-            (Some(p.hover.gamma_multiply(PRO_HOVER_ALPHA)), p.text_dim)
+            (Some(p.hover.gamma_multiply(crate::chrome::Chrome::of(ui.ctx()).style.panel_pro_hover_alpha as f32)), p.text_dim)
         } else {
             (None, p.text_faint)
         };
@@ -257,7 +223,7 @@ fn pro_group<R>(
             };
             ui.painter().rect_filled(rect, corners, fill);
         }
-        let (galley, cut) = tabs::label(ui, name, font.clone(), width, PRO_PAD);
+        let (galley, cut) = tabs::label(ui, name, font.clone(), width, crate::chrome::Chrome::of(ui.ctx()).style.panel_pro_pad as f32);
         let at = (rect.center() - galley.size() / 2.0).round_to_pixels(ui.pixels_per_point());
         ui.painter().galley(at, galley, ink);
         let response = if cut {
@@ -268,7 +234,7 @@ fn pro_group<R>(
         tab_input(&response, index, state);
     }
     if fit.overflows() {
-        let rect = Rect::from_min_size(pos2(x, strip.top()), vec2(tabs::CHEVRON, STRIP));
+        let rect = Rect::from_min_size(pos2(x, strip.top()), vec2(tabs::chevron_of(ui.ctx()), crate::chrome::Chrome::of(ui.ctx()).style.panel_strip as f32));
         if let Some(index) = tabs::chevron(ui, id.with("overflow"), rect, &hidden) {
             state.selected = index;
         }
@@ -276,7 +242,7 @@ fn pro_group<R>(
     if tabs.is_empty() {
         let rect = Rect::from_min_size(
             strip.left_top(),
-            vec2(menu_rect.left() - strip.left(), STRIP),
+            vec2(menu_rect.left() - strip.left(), crate::chrome::Chrome::of(ui.ctx()).style.panel_strip as f32),
         );
         ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| actions(ui));
     }
@@ -292,8 +258,8 @@ fn pro_group<R>(
     for k in [-1.0, 0.0, 1.0] {
         let y = ui
             .painter()
-            .round_to_pixel_center(menu_rect.center().y + k * MENU_PITCH);
-        let half = MENU_LINE / 2.0;
+            .round_to_pixel_center(menu_rect.center().y + k * crate::chrome::Chrome::of(ui.ctx()).style.panel_menu_pitch as f32);
+        let half = crate::chrome::Chrome::of(ui.ctx()).style.panel_menu_line as f32 / 2.0;
         ui.painter().hline(
             menu_rect.center().x - half..=menu_rect.center().x + half,
             y,
@@ -310,14 +276,14 @@ fn pro_group<R>(
                 sw: r,
                 se: r,
             })
-            .inner_margin(Margin::same(PRO_MARGIN))
+            .inner_margin(Margin::same(crate::chrome::Chrome::of(ui.ctx()).style.panel_pro_margin as i8))
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 body(ui, state.selected)
             })
             .inner
     });
-    ui.add_space(PRO_AFTER);
+    ui.add_space(crate::chrome::Chrome::of(ui.ctx()).style.panel_pro_after as f32);
     GroupResponse {
         inner,
         state: *state,
@@ -338,11 +304,11 @@ fn card_group<R>(
     let p = chrome.palette;
     let margin = if state.collapsed {
         Margin {
-            bottom: CARD_MARGIN_COLLAPSED,
-            ..CARD_MARGIN
+            bottom: crate::chrome::Chrome::of(ui.ctx()).style.panel_card_margin_collapsed as i8,
+            ..Margin { left: crate::chrome::Chrome::of(ui.ctx()).style.panel_card_margin_left as i8, right: crate::chrome::Chrome::of(ui.ctx()).style.panel_card_margin_right as i8, top: crate::chrome::Chrome::of(ui.ctx()).style.panel_card_margin_top as i8, bottom: crate::chrome::Chrome::of(ui.ctx()).style.panel_card_margin_bottom as i8 }
         }
     } else {
-        CARD_MARGIN
+        Margin { left: crate::chrome::Chrome::of(ui.ctx()).style.panel_card_margin_left as i8, right: crate::chrome::Chrome::of(ui.ctx()).style.panel_card_margin_right as i8, top: crate::chrome::Chrome::of(ui.ctx()).style.panel_card_margin_top as i8, bottom: crate::chrome::Chrome::of(ui.ctx()).style.panel_card_margin_bottom as i8 }
     };
     let frame = Frame::new()
         .fill(p.card)
@@ -356,21 +322,21 @@ fn card_group<R>(
     let shown = frame.show(ui, |ui| {
         ui.set_width(ui.available_width());
         let width = ui.available_width();
-        let (header, _) = ui.allocate_exact_size(vec2(width, HEADER), Sense::hover());
+        let (header, _) = ui.allocate_exact_size(vec2(width, crate::chrome::Chrome::of(ui.ctx()).style.panel_header as f32), Sense::hover());
         let card_top = header.top() - f32::from(margin.top);
-        let band = Rect::from_x_y_ranges(header.x_range(), card_top..=card_top + DRAG_BAND);
+        let band = Rect::from_x_y_ranges(header.x_range(), card_top..=card_top + crate::chrome::Chrome::of(ui.ctx()).style.panel_drag_band as f32);
         let handle = ui.interact(band, id.with("handle"), Sense::click_and_drag());
         if handle.double_clicked() {
             state.collapsed = !state.collapsed;
         }
-        let font = crate::fonts::bound(ui.ctx(), crate::fonts::medium(PILL_SIZE));
-        let room = width - ELLIPSIS - ELLIPSIS_GAP;
+        let font = crate::fonts::bound(ui.ctx(), crate::fonts::medium(crate::chrome::Chrome::of(ui.ctx()).style.panel_pill_size as f32));
+        let room = width - crate::chrome::Chrome::of(ui.ctx()).style.panel_ellipsis as f32 - crate::chrome::Chrome::of(ui.ctx()).style.panel_ellipsis_gap as f32;
         let fit = widths(
             ui,
             tabs,
             &font,
-            PILL_PAD + PILL_GAP,
-            PILL_MIN + PILL_GAP,
+            crate::chrome::Chrome::of(ui.ctx()).style.panel_pill_pad as f32 + crate::chrome::Chrome::of(ui.ctx()).style.panel_pill_gap as f32,
+            crate::chrome::Chrome::of(ui.ctx()).style.panel_pill_min as f32 + crate::chrome::Chrome::of(ui.ctx()).style.panel_pill_gap as f32,
             room,
             state.selected,
         );
@@ -381,7 +347,7 @@ fn card_group<R>(
                 hidden.push((index, (*name).to_owned()));
                 continue;
             };
-            let rect = Rect::from_min_size(pos2(x, header.top()), vec2(width - PILL_GAP, HEADER));
+            let rect = Rect::from_min_size(pos2(x, header.top()), vec2(width - crate::chrome::Chrome::of(ui.ctx()).style.panel_pill_gap as f32, crate::chrome::Chrome::of(ui.ctx()).style.panel_header as f32));
             x += width;
             let response = ui.interact(rect, id.with(("pill", index)), Sense::click());
             let selected = index == state.selected;
@@ -389,7 +355,7 @@ fn card_group<R>(
                 WidgetInfo::selected(WidgetType::Button, ui.is_enabled(), selected, name)
             });
             pill(ui, chrome, rect, selected, response.hovered());
-            let (galley, cut) = tabs::label(ui, name, font.clone(), rect.width(), PILL_PAD);
+            let (galley, cut) = tabs::label(ui, name, font.clone(), rect.width(), crate::chrome::Chrome::of(ui.ctx()).style.panel_pill_pad as f32);
             let ink = if selected { p.text } else { p.text_dim };
             let at = (rect.center() - galley.size() / 2.0).round_to_pixels(ui.pixels_per_point());
             ui.painter().galley(at, galley, ink);
@@ -401,30 +367,30 @@ fn card_group<R>(
             tab_input(&response, index, state);
         }
         if fit.overflows() {
-            let rect = Rect::from_min_size(pos2(x, header.top()), vec2(tabs::CHEVRON, HEADER));
+            let rect = Rect::from_min_size(pos2(x, header.top()), vec2(tabs::chevron_of(ui.ctx()), crate::chrome::Chrome::of(ui.ctx()).style.panel_header as f32));
             if let Some(index) = tabs::chevron(ui, id.with("overflow"), rect, &hidden) {
                 state.selected = index;
             }
         }
         if tabs.is_empty() {
-            let rect = Rect::from_min_size(header.left_top(), vec2(room, HEADER));
+            let rect = Rect::from_min_size(header.left_top(), vec2(room, crate::chrome::Chrome::of(ui.ctx()).style.panel_header as f32));
             ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| actions(ui));
         }
         let ellipsis = Rect::from_min_size(
             pos2(
-                header.right() - ELLIPSIS,
-                header.center().y - ELLIPSIS / 2.0,
+                header.right() - crate::chrome::Chrome::of(ui.ctx()).style.panel_ellipsis as f32,
+                header.center().y - crate::chrome::Chrome::of(ui.ctx()).style.panel_ellipsis as f32 / 2.0,
             ),
-            vec2(ELLIPSIS, ELLIPSIS),
+            vec2(crate::chrome::Chrome::of(ui.ctx()).style.panel_ellipsis as f32, crate::chrome::Chrome::of(ui.ctx()).style.panel_ellipsis as f32),
         );
         let menu = ui.put(
             ellipsis,
             IconButton::new(Icon::Ellipsis)
-                .size(ELLIPSIS)
+                .size(crate::chrome::Chrome::of(ui.ctx()).style.panel_ellipsis as f32)
                 .tooltip(crate::strings::own("panel-menu")),
         );
         let inner = (!state.collapsed).then(|| {
-            ui.add_space(HEADER_AFTER);
+            ui.add_space(crate::chrome::Chrome::of(ui.ctx()).style.panel_header_after as f32);
             body(ui, state.selected)
         });
         (inner, menu, handle)
@@ -432,7 +398,7 @@ fn card_group<R>(
     if chrome.style.bevels {
         chrome::bevel(ui.painter(), shown.response.rect, true, &p);
     }
-    ui.add_space(CARD_AFTER);
+    ui.add_space(crate::chrome::Chrome::of(ui.ctx()).style.panel_card_after as f32);
     let (inner, menu, handle) = shown.inner;
     GroupResponse {
         inner,
@@ -531,13 +497,13 @@ fn pill(ui: &Ui, chrome: &Chrome, rect: Rect, selected: bool, hovered: bool) {
             );
         }
     } else if hovered {
-        painter.rect_filled(rect, radius, p.hover.gamma_multiply(PILL_HOVER_ALPHA));
+        painter.rect_filled(rect, radius, p.hover.gamma_multiply(crate::chrome::Chrome::of(ui.ctx()).style.panel_pill_hover_alpha as f32));
     }
 }
 
 /// A section label: Inter Medium 11.5 in `text_faint` (§3.22).
 pub fn section_label(ui: &mut Ui, text: &str) -> Response {
-    let font = crate::fonts::bound(ui.ctx(), crate::fonts::medium(SECTION_SIZE));
+    let font = crate::fonts::bound(ui.ctx(), crate::fonts::medium(crate::chrome::Chrome::of(ui.ctx()).style.panel_section_size as f32));
     let ink = Chrome::of(ui.ctx()).palette.text_faint;
     ui.label(egui::RichText::new(text).font(font).color(ink))
 }
@@ -547,15 +513,22 @@ pub fn section_label(ui: &mut Ui, text: &str) -> Response {
 pub fn drop_line(ui: &Ui, a: Pos2, b: Pos2) {
     let vertical = (b.x - a.x).abs() < (b.y - a.y).abs();
     let inset = if vertical {
-        DROP_INSET_VERTICAL
+        crate::chrome::Chrome::of(ui.ctx()).style.panel_drop_inset_vertical as f32
     } else {
-        DROP_INSET_HORIZONTAL
+        crate::chrome::Chrome::of(ui.ctx()).style.panel_drop_inset_horizontal as f32
     };
     let along = (b - a).normalized() * inset;
     let accent = Chrome::of(ui.ctx()).palette.accent;
     ui.painter()
-        .line_segment([a + along, b - along], Stroke::new(DROP_LINE, accent));
+        .line_segment([a + along, b - along], Stroke::new(crate::chrome::Chrome::of(ui.ctx()).style.panel_drop_line as f32, accent));
 }
+
+
+/// The installed value of the former `STRIP` constant.
+pub fn strip_of(ctx: &egui::Context) -> f32 { crate::chrome::Chrome::of(ctx).style.panel_strip as f32 }
+
+/// The installed value of the former `HEADER` constant.
+pub fn header_of(ctx: &egui::Context) -> f32 { crate::chrome::Chrome::of(ctx).style.panel_header as f32 }
 
 #[cfg(test)]
 mod tests {

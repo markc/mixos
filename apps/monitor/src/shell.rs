@@ -608,8 +608,7 @@ impl Shell {
     /// One frame's drawing and interaction.
     pub fn ui(&mut self, ui: &mut egui::Ui) {
         let fired = self.commands.shortcuts(ui.ctx(), &self.engine);
-        let stroke = icons::stroke_width(&self.theme);
-        let mut events = view(ui, &self.engine, &self.commands, &self.strings, stroke);
+        let mut events = view(ui, &self.engine, &self.commands, &self.strings);
         events.extend(
             fired
                 .into_iter()

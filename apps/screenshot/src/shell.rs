@@ -655,16 +655,7 @@ impl Shell {
                 events.push(UiEvent::Command("edit.deselect", Origin::Shortcut));
             }
         }
-        let stroke = toolkit::icons::stroke_width(&self.theme);
-        events.extend(view(
-            ui,
-            &self.app,
-            &self.commands.borrow(),
-            &self.strings,
-            stroke,
-            self.preview.as_ref(),
-            &mut self.drag,
-        ));
+        events.extend(view(ui, &self.app, &self.commands.borrow(), &self.strings, self.preview.as_ref(), &mut self.drag));
         apply(&mut self.app, &self.commands.borrow(), events);
         self.settle();
         self.release();

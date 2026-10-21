@@ -35,7 +35,6 @@ pub fn list(
     view: &AccountView,
     commands: &Registry<State>,
     strings: &Strings,
-    _stroke: f32,
     events: &mut Vec<UiEvent>,
 ) {
     // Escape while "Select all N"'s ids load stops the fetch, before the
@@ -271,7 +270,6 @@ pub fn panel(
     view: &AccountView,
     commands: &Registry<State>,
     strings: &Strings,
-    stroke: f32,
     events: &mut Vec<UiEvent>,
 ) {
     let mut header = Vec::new();
@@ -279,7 +277,7 @@ pub fn panel(
         ui,
         "reader",
         |ui| actions(ui, state, commands, strings, &mut header),
-        |ui, _| reader(ui, state, view, commands, strings, stroke, events),
+        |ui, _| reader(ui, state, view, commands, strings, events),
     );
     events.extend(header);
     crate::view::reader_menu(ui, state, &group.menu, events);
@@ -291,7 +289,6 @@ pub fn reader(
     view: &AccountView,
     commands: &Registry<State>,
     strings: &Strings,
-    stroke: f32,
     events: &mut Vec<UiEvent>,
 ) {
     let area = ui.max_rect();
@@ -322,7 +319,7 @@ pub fn reader(
     // The row is only there when it has something to say; an empty row would
     // still take its height above the subject.
     if toolbar_shown(view) {
-        toolbar(ui, view, stroke, events);
+        toolbar(ui, view, events);
         toolkit::bars::hairline(ui);
     }
     // Only the message body takes the reader's own style (its padding, font
@@ -407,7 +404,7 @@ fn toolbar_shown(view: &AccountView) -> bool {
     several || attached
 }
 
-fn toolbar(ui: &mut Ui, view: &AccountView, stroke: f32, events: &mut Vec<UiEvent>) {
+fn toolbar(ui: &mut Ui, view: &AccountView, events: &mut Vec<UiEvent>) {
     ui.horizontal(|ui| {
         // What Delete, Flag, Mark and Move apply to, when it is several
         // messages from the list: the open email alone needs no note.
@@ -432,7 +429,7 @@ fn toolbar(ui: &mut Ui, view: &AccountView, stroke: f32, events: &mut Vec<UiEven
             if clip.clicked() {
                 events.push(UiEvent::Command("mail.attachments", Origin::Ui));
             }
-            attachments_popup(ui, &clip, view, email, stroke, events);
+            attachments_popup(ui, &clip, view, email, events);
         }
     });
 }
@@ -466,7 +463,6 @@ fn attachments_popup(
     clip: &egui::Response,
     view: &AccountView,
     email: &Email,
-    stroke: f32,
     events: &mut Vec<UiEvent>,
 ) {
     let open = view.mail.attachments_open;
@@ -494,12 +490,7 @@ fn attachments_popup(
                     } else {
                         weak
                     };
-                    ui.add(icons::image(
-                        type_icon(a.content_type.as_deref()),
-                        stroke,
-                        14.0,
-                        ink,
-                    ));
+                    ui.add(icons::image_of(ui.ctx(), type_icon(a.content_type.as_deref()), 14.0, ink));
                     // Fixed name and size columns, so the actions line up.
                     let height = ui.spacing().interact_size.y;
                     ui.allocate_ui(egui::vec2(name_width, height), |ui| {

@@ -102,7 +102,6 @@ pub fn view(
     app: &App,
     commands: &Commands,
     strings: &Strings,
-    stroke: f32,
     preview: Option<&Preview>,
     drag: &mut Drag,
 ) -> Vec<UiEvent> {
@@ -118,16 +117,7 @@ pub fn view(
             icon: Icon::Keyboard,
         },
     ];
-    let fired = titlebar::show_engine_with(
-        ui,
-        &title(app),
-        Some(Icon::Camera),
-        stroke,
-        commands,
-        app,
-        strings,
-        &mut controls,
-    );
+    let fired = titlebar::show_engine_with(ui, &title(app), Some(Icon::Camera), commands, app, strings, &mut controls);
     events.extend(fired.into_iter().map(|(id, o)| UiEvent::Command(id, o)));
     bars::options(ui, |ui| options(ui, app, commands, strings, &mut events));
     bars::status(ui, |ui| status(ui, app));
@@ -257,7 +247,7 @@ fn controls(
     if app.document.is_none() {
         return;
     }
-    bars::divider(ui, bars::DIVIDER_HEIGHT);
+    bars::divider(ui, bars::divider_height_of(ui.ctx()));
     let editable = !app.modal();
     // In a narrow window a group that does not fit whole is left out
     // (Annotate › Colour, Width and Text size still reach it), keeping

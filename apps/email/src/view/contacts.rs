@@ -13,7 +13,7 @@ use super::UiEvent;
 use crate::state::AccountView;
 
 /// The centre pane's contact list, with its filter.
-pub fn list(ui: &mut Ui, view: &AccountView, stroke: f32, events: &mut Vec<UiEvent>) {
+pub fn list(ui: &mut Ui, view: &AccountView, events: &mut Vec<UiEvent>) {
     let title = view
         .contacts
         .books
@@ -40,7 +40,7 @@ pub fn list(ui: &mut Ui, view: &AccountView, stroke: f32, events: &mut Vec<UiEve
                 ui.weak(crate::label("empty"));
             }
             for (index, contact) in view.contacts.contacts.iter().enumerate() {
-                row(ui, index, contact, view, stroke, events);
+                row(ui, index, contact, view, events);
             }
         });
     });
@@ -52,7 +52,6 @@ fn row(
     index: usize,
     contact: &Contact,
     view: &AccountView,
-    stroke: f32,
     events: &mut Vec<UiEvent>,
 ) {
     let selected = view.contacts.open == Some(index);
@@ -60,7 +59,7 @@ fn row(
     egui::Sides::new().show(
         ui,
         |ui| {
-            ui.add(icons::image(Icon::Contact, stroke, 12.0, weak));
+            ui.add(icons::image_of(ui.ctx(), Icon::Contact, 12.0, weak));
             let text = if selected {
                 RichText::new(contact.display_name()).strong()
             } else {

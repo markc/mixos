@@ -38,7 +38,7 @@ pub fn is_focused(ctx: &egui::Context) -> bool {
 }
 
 /// The tree panel.
-pub fn show(ui: &mut Ui, state: &State, stroke: f32, events: &mut Vec<UiEvent>) {
+pub fn show(ui: &mut Ui, state: &State, events: &mut Vec<UiEvent>) {
     let id = tree_id();
     let focused = ui.memory(|m| m.has_focus(id));
     if focused {
@@ -84,14 +84,14 @@ pub fn show(ui: &mut Ui, state: &State, stroke: f32, events: &mut Vec<UiEvent>) 
             .show(ui, |ui| {
                 for row in &rows {
                     let cursor = focused && state.ui.cursor.as_ref() == Some(&row.node);
-                    draw(ui, row, cursor, stroke, events);
+                    draw(ui, row, cursor, events);
                 }
             });
     });
 }
 
 /// One row: indent, disclosure, icon, label, unread count.
-fn draw(ui: &mut Ui, row: &TreeRow, cursor: bool, stroke: f32, events: &mut Vec<UiEvent>) {
+fn draw(ui: &mut Ui, row: &TreeRow, cursor: bool, events: &mut Vec<UiEvent>) {
     let weak = ui.visuals().weak_text_color();
     let error = ui.visuals().error_fg_color;
     let indent = ui.spacing().indent * row.depth as f32;
@@ -107,7 +107,7 @@ fn draw(ui: &mut Ui, row: &TreeRow, cursor: bool, stroke: f32, events: &mut Vec<
                         Icon::ChevronRight
                     };
                     let toggle =
-                        ui.add(icons::image(chevron, stroke, ICON, weak).sense(Sense::click()));
+                        ui.add(icons::image_of(ui.ctx(), chevron, ICON, weak).sense(Sense::click()));
                     if toggle.clicked() {
                         events.push(UiEvent::Expand(row.node.clone(), !row.expanded));
                         ui.memory_mut(|m| m.request_focus(tree_id()));
@@ -127,7 +127,7 @@ fn draw(ui: &mut Ui, row: &TreeRow, cursor: bool, stroke: f32, events: &mut Vec<
                     RowKind::CalendarGroup | RowKind::Calendar => (Icon::Calendar, weak),
                     RowKind::BookGroup | RowKind::Book => (Icon::BookUser, weak),
                 };
-                ui.add(icons::image(icon, stroke, ICON, colour));
+                ui.add(icons::image_of(ui.ctx(), icon, ICON, colour));
                 let root = matches!(row.kind, RowKind::Account(_));
                 let text = if row.selected || root {
                     RichText::new(&row.label).strong()

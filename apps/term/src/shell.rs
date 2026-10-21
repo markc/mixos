@@ -640,8 +640,7 @@ impl Shell {
     /// One frame's drawing and interaction.
     pub fn ui(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
-        let stroke = toolkit::icons::stroke_width(&self.theme);
-        let mut events = view::title_bar(ui, &self.app, &self.commands, &self.strings, stroke);
+        let mut events = view::title_bar(ui, &self.app, &self.commands, &self.strings);
         let canvas = toolkit::chrome::Chrome::of(&ctx).palette.canvas;
         egui::CentralPanel::default()
             .frame(egui::Frame::new().fill(canvas))

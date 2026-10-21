@@ -93,7 +93,6 @@ pub fn view(
     engine: &Engine,
     commands: &Registry<Engine>,
     strings: &Strings,
-    stroke: f32,
 ) -> Vec<UiEvent> {
     let mut events = Vec::new();
     let dark = ui.visuals().dark_mode;
@@ -108,16 +107,7 @@ pub fn view(
             icon: Icon::Keyboard,
         },
     ];
-    let fired = titlebar::show_with(
-        ui,
-        &label("title"),
-        Some(Icon::Settings),
-        stroke,
-        commands,
-        engine,
-        strings,
-        &mut controls,
-    );
+    let fired = titlebar::show_with(ui, &label("title"), Some(Icon::Settings), commands, engine, strings, &mut controls);
     // The toggle goes to the mode opposite the one this frame drew, so a
     // click reported twice cannot flip it back.
     let mut mode_set = false;
@@ -149,7 +139,7 @@ pub fn view(
         } else {
             (Icon::Plug, ui.visuals().weak_text_color())
         };
-        ui.add(icons::image(icon, stroke, ICON, colour));
+        ui.add(icons::image_of(ui.ctx(), icon, ICON, colour));
         if engine.failed {
             ui.small(RichText::new(&engine.status).color(ui.visuals().error_fg_color));
         } else {
@@ -162,7 +152,7 @@ pub fn view(
         .min_size(184.0)
         .max_size(320.0)
         .frame(bars::dock_frame(ui.ctx()))
-        .show(ui, |ui| editors(ui, engine, commands, stroke, &mut events));
+        .show(ui, |ui| editors(ui, engine, commands, &mut events));
     egui::CentralPanel::default()
         .frame(bars::dock_frame(ui.ctx()))
         .show(ui, |ui| match engine.section() {
@@ -199,7 +189,6 @@ fn editors(
     ui: &mut Ui,
     engine: &Engine,
     commands: &Registry<Engine>,
-    stroke: f32,
     events: &mut Vec<UiEvent>,
 ) {
     let title = label("panels");
@@ -244,12 +233,7 @@ fn editors(
                                     let command =
                                         commands.get(section.command()).expect("section command");
                                     ui.horizontal(|ui| {
-                                        ui.add(icons::image(
-                                            command.icon.expect("section icon"),
-                                            stroke,
-                                            ICON,
-                                            ui.visuals().text_color(),
-                                        ));
+                                        ui.add(icons::image_of(ui.ctx(), command.icon.expect("section icon"), ICON, ui.visuals().text_color()));
                                         if toolkit::selectable(
                                             ui,
                                             engine.section() == section,

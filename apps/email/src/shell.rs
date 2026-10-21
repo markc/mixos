@@ -1550,8 +1550,7 @@ impl Shell {
     /// One frame's drawing and interaction.
     pub fn ui(&mut self, ui: &mut egui::Ui) {
         let fired = self.commands.shortcuts(ui.ctx(), &self.state);
-        let stroke = toolkit::icons::stroke_width(&self.theme);
-        let mut events = view(ui, &self.state, &self.commands, &self.strings, stroke);
+        let mut events = view(ui, &self.state, &self.commands, &self.strings);
         toolkit::markdown::open_links(ui.ctx(), "email");
         events.extend(
             fired
