@@ -67,13 +67,6 @@ impl Style {
     }
 }
 
-
-
-
-
-
-
-
 /// Whether `range` takes two decimals and the fine scrub.
 pub fn is_fine(range: &RangeInclusive<f64>) -> bool {
     range.end() - range.start() <= crate::style::default_tokens().fine_span

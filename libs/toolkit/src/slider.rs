@@ -34,13 +34,6 @@ use egui::{
 };
 use std::ops::RangeInclusive;
 
-
-
-
-
-
-
-
 /// A horizontal slider.
 #[must_use = "add it with `ui.add`"]
 pub struct Slider<'a> {
@@ -544,7 +537,11 @@ impl Widget for Slider<'_> {
                 );
                 painter.circle_filled(centre, radius, fill);
                 if let Some(ring) = ring {
-                    painter.circle_stroke(centre, radius, Stroke::new(Chrome::of(ui.ctx()).style.hairline_width as f32, ring));
+                    painter.circle_stroke(
+                        centre,
+                        radius,
+                        Stroke::new(Chrome::of(ui.ctx()).style.hairline_width as f32, ring),
+                    );
                 }
             }
         }

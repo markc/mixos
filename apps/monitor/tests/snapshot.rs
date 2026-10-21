@@ -12,7 +12,7 @@ use design::{DesignContext, Mode, Scheme};
 use egui_kittest::Harness;
 use monitor::{commands, label, strings, view::view};
 use serde_json::{Value, json};
-use toolkit::{Theme};
+use toolkit::Theme;
 use vitals::{Effect, Engine, Fetch, Tab};
 
 /// A deterministic minute: a slow wave per series.

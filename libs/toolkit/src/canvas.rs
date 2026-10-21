@@ -21,8 +21,6 @@
 use crate::chrome::Chrome;
 use egui::{Event, Id, PointerButton, Pos2, Rect, Sense, Stroke, Ui, Vec2, pos2, vec2};
 
-
-
 /// Paint the canvas surround over `rect`.
 pub fn surround(ui: &Ui, rect: Rect) {
     let chrome = Chrome::of(ui.ctx());
@@ -107,7 +105,8 @@ pub fn scrollbars(ui: &mut Ui, id: Id, viewport: Rect, content: Vec2, offset: &m
         viewport.max - Vec2::splat(crate::chrome::Chrome::of(ui.ctx()).style.canvas_bar as f32),
     );
     let corner = Rect::from_min_max(inner.max, viewport.max);
-    ui.painter().rect_filled(corner, Chrome::of(ui.ctx()).style.square_radius, p.chrome);
+    ui.painter()
+        .rect_filled(corner, Chrome::of(ui.ctx()).style.square_radius, p.chrome);
     for axis in [0, 1] {
         let track = if axis == 0 {
             Rect::from_min_max(
@@ -141,7 +140,10 @@ fn bar(ui: &mut Ui, id: Id, axis: usize, track: Rect, view: f32, content: f32, o
     let p = Chrome::of(ui.ctx()).palette;
     let painter = ui.painter();
     painter.rect_filled(track, Chrome::of(ui.ctx()).style.square_radius, p.chrome);
-    let rule = Stroke::new(Chrome::of(ui.ctx()).style.hairline_width as f32, p.separator);
+    let rule = Stroke::new(
+        Chrome::of(ui.ctx()).style.hairline_width as f32,
+        p.separator,
+    );
     if axis == 0 {
         painter.hline(
             track.x_range(),

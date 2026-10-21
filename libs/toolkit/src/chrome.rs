@@ -53,8 +53,6 @@ pub fn dark_base(theme: &Theme) -> bool {
     chrome.is_dark(theme.mode())
 }
 
-
-
 macro_rules! palette {
     ($($role:ident),+ $(,)?) => {
         /// One colour per chrome role, as egui renders it.
@@ -132,21 +130,49 @@ impl Palette {
     pub fn slots(role: &str, style: &ResolvedStyle) -> &'static [&'static str] {
         match role {
             "chrome" => &["panel_fill"],
-            "card" => &["window_fill", "faint_bg_color", "widgets.noninteractive.bg_fill", "widgets.noninteractive.weak_bg_fill"],
+            "card" => &[
+                "window_fill",
+                "faint_bg_color",
+                "widgets.noninteractive.bg_fill",
+                "widgets.noninteractive.weak_bg_fill",
+            ],
             "card_border" => &["window_stroke.color"],
-            "field" => &["extreme_bg_color", "code_bg_color", "text_edit_bg_color", "widgets.inactive.bg_fill", "widgets.inactive.weak_bg_fill"],
-            "accent" if style.selection == Selection::Accent => &["hyperlink_color", "selection.bg_fill"],
+            "field" => &[
+                "extreme_bg_color",
+                "code_bg_color",
+                "text_edit_bg_color",
+                "widgets.inactive.bg_fill",
+                "widgets.inactive.weak_bg_fill",
+            ],
+            "accent" if style.selection == Selection::Accent => {
+                &["hyperlink_color", "selection.bg_fill"]
+            }
             "accent" => &["hyperlink_color"],
             "accent_soft" if style.selection == Selection::AccentSoft => &["selection.bg_fill"],
             "accent_text" => &["selection.stroke.color"],
             "warning" => &["warn_fg_color"],
             "danger" => &["error_fg_color"],
-            "text" => &["override_text_color", "widgets.inactive.fg_stroke.color", "widgets.hovered.fg_stroke.color", "widgets.open.fg_stroke.color", "widgets.active.fg_stroke.color"],
+            "text" => &[
+                "override_text_color",
+                "widgets.inactive.fg_stroke.color",
+                "widgets.hovered.fg_stroke.color",
+                "widgets.open.fg_stroke.color",
+                "widgets.active.fg_stroke.color",
+            ],
             "text_dim" => &["widgets.noninteractive.fg_stroke.color"],
             "separator" => &["widgets.noninteractive.bg_stroke.color"],
-            "hover" => &["widgets.hovered.bg_fill", "widgets.hovered.weak_bg_fill", "widgets.open.bg_fill", "widgets.open.weak_bg_fill"],
+            "hover" => &[
+                "widgets.hovered.bg_fill",
+                "widgets.hovered.weak_bg_fill",
+                "widgets.open.bg_fill",
+                "widgets.open.weak_bg_fill",
+            ],
             "pressed" => &["widgets.active.bg_fill", "widgets.active.weak_bg_fill"],
-            "field_border" => &["widgets.inactive.bg_stroke.color", "widgets.hovered.bg_stroke.color", "widgets.open.bg_stroke.color"],
+            "field_border" => &[
+                "widgets.inactive.bg_stroke.color",
+                "widgets.hovered.bg_stroke.color",
+                "widgets.open.bg_stroke.color",
+            ],
             "accent_border" => &["widgets.active.bg_stroke.color"],
             "shadow" => &["window_shadow.color", "popup_shadow.color"],
             _ => &[],
@@ -254,9 +280,6 @@ pub fn bevel(painter: &egui::Painter, rect: Rect, raised: bool, palette: &Palett
     );
 }
 
-
-
-
 /// Chrome geometry, in points: the style's lengths ([`Metrics::of`]) and
 /// the specification's fixed ones (§2, §3.1–3.5).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -318,7 +341,6 @@ pub struct Metrics {
     pub radius: u8,
     pub radius_lg: u8,
 }
-
 
 impl Metrics {
     /// The geometry of `style`: its own lengths, and the specification's
@@ -492,7 +514,6 @@ impl Chrome {
 pub fn install(ctx: &Context, chrome: &Chrome) {
     ctx.data_mut(|d| d.insert_temp(key(), *chrome));
 }
-
 
 /// The complete egui style of chrome widgets (§1.5, §2).
 pub fn style(theme: &Theme) -> Style {

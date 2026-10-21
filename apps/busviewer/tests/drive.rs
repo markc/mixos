@@ -11,8 +11,8 @@ use egui_kittest::Harness;
 use inspector::model::Verb;
 use inspector::{Effect, Engine, Snapshot};
 use serde_json::{Value, json};
+use toolkit::Theme;
 use toolkit::drive::{self, Answer};
-use toolkit::{Theme};
 
 struct Window {
     engine: Engine,

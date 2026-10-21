@@ -4,10 +4,16 @@
 
 pub use toolkit::{bars, fonts, icons, theme};
 
-#[allow(dead_code, reason = "frozen renderer writers used as the independent baseline")]
+#[allow(
+    dead_code,
+    reason = "frozen renderer writers used as the independent baseline"
+)]
 #[path = "fixtures/chrome_before.rs"]
 mod before_chrome;
-#[allow(dead_code, reason = "frozen renderer writers used as the independent baseline")]
+#[allow(
+    dead_code,
+    reason = "frozen renderer writers used as the independent baseline"
+)]
 #[path = "fixtures/style_before.rs"]
 mod before_style;
 
@@ -55,22 +61,41 @@ fn every_slot_keeps_its_old_writer_and_each_role_forwards_only_to_its_slots() {
     for scheme in design::Scheme::ALL {
         for mode in design::Mode::ALL {
             for style in design::Style::ALL {
-                let theme = toolkit::Theme::for_context(design::DesignContext { scheme, mode, style: Some(style), ..Default::default() });
+                let theme = toolkit::Theme::for_context(design::DesignContext {
+                    scheme,
+                    mode,
+                    style: Some(style),
+                    ..Default::default()
+                });
                 let expected = before_style::style(&theme).visuals;
                 let ctx = egui::Context::default();
                 toolkit::install(&ctx, &theme);
-                assert_eq!(ctx.global_style().visuals, expected, "{scheme:?}/{mode:?}/{style:?}");
+                assert_eq!(
+                    ctx.global_style().visuals,
+                    expected,
+                    "{scheme:?}/{mode:?}/{style:?}"
+                );
                 for role in toolkit::chrome::Palette::ROLES {
                     let mut overlay = toolkit::theme::Overlay::default();
-                    overlay.chrome.insert((*role).into(), design::family::style::StyleColour([41, 117, 203, 255]));
+                    overlay.chrome.insert(
+                        (*role).into(),
+                        design::family::style::StyleColour([41, 117, 203, 255]),
+                    );
                     let tuned = theme.clone().with_overlay(overlay);
                     toolkit::install(&ctx, &tuned);
                     let mut want = expected.clone();
                     for slot in toolkit::chrome::Palette::slots(role, &theme.style()) {
                         write_slot(&mut want, slot, egui::Color32::from_rgb(41, 117, 203));
                     }
-                    assert_eq!(ctx.global_style().visuals, want, "{scheme:?}/{mode:?}/{style:?}/{role}");
-                    assert_eq!(toolkit::chrome::Chrome::of(&ctx).palette.get(role), Some(egui::Color32::from_rgb(41, 117, 203)));
+                    assert_eq!(
+                        ctx.global_style().visuals,
+                        want,
+                        "{scheme:?}/{mode:?}/{style:?}/{role}"
+                    );
+                    assert_eq!(
+                        toolkit::chrome::Chrome::of(&ctx).palette.get(role),
+                        Some(egui::Color32::from_rgb(41, 117, 203))
+                    );
                 }
             }
         }

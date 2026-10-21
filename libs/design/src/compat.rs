@@ -143,8 +143,10 @@ mod tests {
             ("custom", None, "classic", 0.0),
             ("custom", None, "absent", 4.0),
         ] {
-            assert_eq!(table.token("field_radius", style, base, scheme).unwrap().0,
-                &StyleValueSource::Number(expected));
+            assert_eq!(
+                table.token("field_radius", style, base, scheme).unwrap().0,
+                &StyleValueSource::Number(expected)
+            );
         }
     }
 }

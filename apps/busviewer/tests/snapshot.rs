@@ -10,7 +10,7 @@ use egui_kittest::Harness;
 use inspector::bus::Reply;
 use inspector::model::Verb;
 use inspector::{Dialog, Effect, Engine, Selection, Snapshot};
-use toolkit::{Theme};
+use toolkit::Theme;
 
 fn fixture() -> Snapshot {
     let verb = |name: &str, args: &str, description: &str, read_only| Verb {

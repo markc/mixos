@@ -26,8 +26,6 @@ use egui::{
     style::WidgetVisuals,
 };
 
-
-
 /// The chevron centred in `rect`, in `visuals`' text colour at 80%.
 pub fn chevron(ui: &Ui, rect: Rect, visuals: &WidgetVisuals, _open: bool) {
     let c = rect.center();

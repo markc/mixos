@@ -762,24 +762,31 @@ fn select(
     })
 }
 
-fn complete_family(family: &StyleFamilySource, table: &crate::compat::Table)
-    -> (StyleFamilySource, Vec<DesignDiagnostic>)
-{
+fn complete_family(
+    family: &StyleFamilySource,
+    table: &crate::compat::Table,
+) -> (StyleFamilySource, Vec<DesignDiagnostic>) {
     let mut family = family.clone();
     let mut diagnostics = Vec::new();
     for (version, entries) in &table.versions {
         for (name, tokens) in &entries.styles {
             if !family.styles.contains_key(name) {
                 family.styles.insert(name.clone(), tokens.clone());
-                diagnostics.push(DesignDiagnostic::info("defaulted-style", format!("{PATH}.styles.{name}"),
-                    format!("defaulted from compatibility {version}")));
+                diagnostics.push(DesignDiagnostic::info(
+                    "defaulted-style",
+                    format!("{PATH}.styles.{name}"),
+                    format!("defaulted from compatibility {version}"),
+                ));
             }
         }
         for (scheme, style) in &entries.schemes {
             if Scheme::from_name(scheme).is_some() && !family.schemes.contains_key(scheme) {
                 family.schemes.insert(scheme.clone(), style.clone());
-                diagnostics.push(DesignDiagnostic::info("defaulted-scheme", format!("{PATH}.schemes.{scheme}"),
-                    format!("defaulted from compatibility {version}")));
+                diagnostics.push(DesignDiagnostic::info(
+                    "defaulted-scheme",
+                    format!("{PATH}.schemes.{scheme}"),
+                    format!("defaulted from compatibility {version}"),
+                ));
             }
         }
     }
@@ -956,21 +963,45 @@ mod tests {
 
     #[test]
     fn a_custom_style_keeps_its_defaults_when_a_later_table_is_appended() {
-        let source = crate::parse_design_source(SourceIdentity::new("custom"),
-            include_str!("../../tests/fixtures/custom-named-style.theme.conf.mix")).unwrap();
+        let source = crate::parse_design_source(
+            SourceIdentity::new("custom"),
+            include_str!("../../tests/fixtures/custom-named-style.theme.conf.mix"),
+        )
+        .unwrap();
         let family = source.v1.families.style.as_ref().unwrap();
         let v2 = crate::compat::table();
         let mut v3 = v2.clone();
-        v3.versions.insert("v3".into(), crate::compat::Version {
-            tokens: BTreeMap::from([("future_token".into(), BTreeMap::from([("all".into(), StyleValueSource::Number(2.0))]))]),
-            ..Default::default()
-        });
+        v3.versions.insert(
+            "v3".into(),
+            crate::compat::Version {
+                tokens: BTreeMap::from([(
+                    "future_token".into(),
+                    BTreeMap::from([("all".into(), StyleValueSource::Number(2.0))]),
+                )]),
+                ..Default::default()
+            },
+        );
         let original = &family.styles["custom"];
-        assert_eq!(filled_tokens(family, "custom", original, v2), filled_tokens(family, "custom", original, &v3));
+        assert_eq!(
+            filled_tokens(family, "custom", original, v2),
+            filled_tokens(family, "custom", original, &v3)
+        );
         assert_eq!(compile_family(family, Scheme::Studio).unwrap(), studio());
-        let DesignCompileResult::Success(compiled) = crate::compile_design(&source,
-            DesignContext { scheme: Scheme::Studio, ..Default::default() }) else { panic!("custom style compiles"); };
-        assert!(compiled.diagnostics.iter().any(|d| d.code == "defaulted-style-token"));
+        let DesignCompileResult::Success(compiled) = crate::compile_design(
+            &source,
+            DesignContext {
+                scheme: Scheme::Studio,
+                ..Default::default()
+            },
+        ) else {
+            panic!("custom style compiles");
+        };
+        assert!(
+            compiled
+                .diagnostics
+                .iter()
+                .any(|d| d.code == "defaulted-style-token")
+        );
         assert!(!compiled.candidate.dictionary().defaulted.is_empty());
     }
 

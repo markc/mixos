@@ -34,10 +34,6 @@ pub struct Sizes {
     pub rail_button: f32,
 }
 
-
-
-
-
 fn frame(ui: &Ui, margin: Margin) -> Frame {
     Frame::new()
         .fill(Chrome::of(ui.ctx()).palette.chrome)
@@ -214,7 +210,10 @@ pub fn divider(ui: &mut Ui, height: f32) {
     ui.painter().vline(
         x,
         rect.y_range(),
-        Stroke::new(Chrome::of(ui.ctx()).style.hairline_width as f32, Chrome::of(ui.ctx()).palette.separator),
+        Stroke::new(
+            Chrome::of(ui.ctx()).style.hairline_width as f32,
+            Chrome::of(ui.ctx()).palette.separator,
+        ),
     );
 }
 
@@ -225,7 +224,10 @@ pub fn hairline(ui: &mut Ui) -> Rect {
     ui.painter().hline(
         rect.x_range(),
         y,
-        Stroke::new(Chrome::of(ui.ctx()).style.hairline_width as f32, Chrome::of(ui.ctx()).palette.separator),
+        Stroke::new(
+            Chrome::of(ui.ctx()).style.hairline_width as f32,
+            Chrome::of(ui.ctx()).palette.separator,
+        ),
     );
     rect
 }

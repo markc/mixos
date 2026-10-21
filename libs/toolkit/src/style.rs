@@ -39,10 +39,6 @@ use crate::theme::Theme;
 use design::{LinearRgba, Mode, ResolvedColours, TypographyRole};
 use egui::{Color32, CornerRadius, FontFamily, FontId, Margin, Stroke, Style, TextStyle, Visuals};
 
-
-
-
-
 /// A design colour (linear-light sRGB) as the egui colour it renders as.
 pub fn colour(value: LinearRgba) -> Color32 {
     let [r, g, b, a] = value.to_srgba8();
@@ -185,7 +181,9 @@ pub fn pair_style(theme: &Theme) -> Style {
         ],
         blur: tokens.popup_shadow_blur as u8,
         spread: tokens.popup_shadow_spread as u8,
-        color: shadow.color.gamma_multiply(tokens.popup_shadow_alpha as f32),
+        color: shadow
+            .color
+            .gamma_multiply(tokens.popup_shadow_alpha as f32),
     };
     for widget in [
         &mut style.visuals.widgets.inactive,

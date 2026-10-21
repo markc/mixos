@@ -33,14 +33,6 @@ use egui::{
     WidgetType, pos2, vec2,
 };
 
-
-
-
-
-
-
-
-
 /// Which family of icon button (§3.8).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum IconKind {
@@ -134,7 +126,12 @@ impl Widget for IconButton {
                 painter.rect_filled(rect, radius, fill);
             }
             if let Some(outline) = outline {
-                painter.rect_stroke(rect, radius, Stroke::new(Chrome::of(ui.ctx()).style.hairline_width as f32, outline), StrokeKind::Inside);
+                painter.rect_stroke(
+                    rect,
+                    radius,
+                    Stroke::new(Chrome::of(ui.ctx()).style.hairline_width as f32, outline),
+                    StrokeKind::Inside,
+                );
             }
             paint_icon(
                 ui,
@@ -288,7 +285,10 @@ impl Widget for PushButton {
                     painter.rect_stroke(
                         rect,
                         corner,
-                        Stroke::new(Chrome::of(ui.ctx()).style.hairline_width as f32, p.field_border),
+                        Stroke::new(
+                            Chrome::of(ui.ctx()).style.hairline_width as f32,
+                            p.field_border,
+                        ),
                         StrokeKind::Inside,
                     );
                 }
@@ -587,7 +587,15 @@ mod tests {
 
     #[test]
     fn the_icon_is_about_half_the_box() {
-        assert_eq!((crate::style::default_tokens().icon_button as f32 * crate::style::default_tokens().button_icon_share as f32).round(), 15.0);
-        assert_eq!((22.0 * crate::style::default_tokens().button_icon_share as f32).round(), 11.0);
+        assert_eq!(
+            (crate::style::default_tokens().icon_button as f32
+                * crate::style::default_tokens().button_icon_share as f32)
+                .round(),
+            15.0
+        );
+        assert_eq!(
+            (22.0 * crate::style::default_tokens().button_icon_share as f32).round(),
+            11.0
+        );
     }
 }

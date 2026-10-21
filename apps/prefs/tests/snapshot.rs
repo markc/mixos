@@ -15,7 +15,7 @@ use preferences::email::Field;
 use preferences::{Dialog, Effect, Engine, Look, Panel, Section};
 use prefs::{commands, label_with, strings, view::view};
 use serde_json::json;
-use toolkit::{Theme};
+use toolkit::Theme;
 
 /// A `settings.get` reply in the summary view Prefs reads.
 fn summary_reply(revision: &str, appearance: serde_json::Value) -> serde_json::Value {

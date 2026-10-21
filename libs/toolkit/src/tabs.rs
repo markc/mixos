@@ -40,15 +40,8 @@ use egui::{
 use std::f32::consts::{FRAC_PI_2, PI};
 use std::sync::Arc;
 
-
-
-
-
-
-
 /// The dirty marker after a document's name, as the window title has it.
 pub const DIRTY: &str = "  •";
-
 
 /// How a strip's tabs fit: each tab's width, or `None` when it moved into
 /// the chevron menu.
@@ -520,7 +513,10 @@ fn doc_tab(
             painter.rect_stroke(
                 rect,
                 radius,
-                Stroke::new(Chrome::of(ui.ctx()).style.hairline_width as f32, p.card_border),
+                Stroke::new(
+                    Chrome::of(ui.ctx()).style.hairline_width as f32,
+                    p.card_border,
+                ),
                 StrokeKind::Inside,
             );
         }
@@ -604,7 +600,14 @@ fn doc_tab(
     }
     if pro {
         let x = painter.round_to_pixel_center(rect.right() - 0.5);
-        painter.vline(x, rect.y_range(), Stroke::new(Chrome::of(ui.ctx()).style.hairline_width as f32, p.separator));
+        painter.vline(
+            x,
+            rect.y_range(),
+            Stroke::new(
+                Chrome::of(ui.ctx()).style.hairline_width as f32,
+                p.separator,
+            ),
+        );
     } else if close.hovered() {
         painter.rect_filled(
             close_rect,

@@ -23,10 +23,6 @@ use egui::{
     WidgetType, pos2, vec2,
 };
 
-
-
-
-
 /// A checkbox.
 #[must_use = "add it with `ui.add`"]
 pub struct Checkbox<'a> {
@@ -225,7 +221,11 @@ impl Widget for Switch<'_> {
             if chrome.style.switch == SwitchStyle::Block {
                 // Classic's knob is undetermined (§5.4): a raised `card`
                 // block the knob's diameter square, as its slider knob is.
-                painter.rect_filled(track, Chrome::of(ui.ctx()).style.square_radius, if *self.on { p.accent } else { p.field });
+                painter.rect_filled(
+                    track,
+                    Chrome::of(ui.ctx()).style.square_radius,
+                    if *self.on { p.accent } else { p.field },
+                );
                 chrome::bevel(painter, track, false, p);
                 let knob = Rect::from_center_size(
                     centre,
@@ -307,13 +307,22 @@ mod tests {
 
     #[test]
     fn the_tick_follows_the_specified_path() {
-        let b = Rect::from_min_size(pos2(0.0, 0.0), Vec2::splat(crate::style::default_tokens().checkbox_box as f32));
+        let b = Rect::from_min_size(
+            pos2(0.0, 0.0),
+            Vec2::splat(crate::style::default_tokens().checkbox_box as f32),
+        );
         assert_eq!(tick(b), [pos2(3.0, 7.5), pos2(6.0, 10.5), pos2(11.0, 3.5)]);
     }
 
     #[test]
     fn the_knob_travels_between_its_insets() {
-        let track = Rect::from_min_size(pos2(10.0, 0.0), vec2(crate::style::default_tokens().switch_track_w as f32, crate::style::default_tokens().switch_track_h as f32));
+        let track = Rect::from_min_size(
+            pos2(10.0, 0.0),
+            vec2(
+                crate::style::default_tokens().switch_track_w as f32,
+                crate::style::default_tokens().switch_track_h as f32,
+            ),
+        );
         assert_eq!(knob_x(track, 0.0), 18.5);
         assert_eq!(knob_x(track, 1.0), 31.5);
     }

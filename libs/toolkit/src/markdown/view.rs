@@ -20,16 +20,6 @@ use super::{Block, Document, Inline, Item, Link};
 use crate::chrome::{Chrome, Palette};
 use crate::strings::{own, own_with};
 
-
-
-
-
-
-
-
-
-
-
 /// Draw `document` into `ui`; returns the link activated this frame. An
 /// [`openable`](super::openable) link has also been handed to
 /// [`egui::Context::open_url`].
@@ -260,12 +250,14 @@ impl View {
                 format.background = self.code_bg;
             }
             if marks.strike {
-                format.strikethrough = Stroke::new(Chrome::of(ui.ctx()).style.hairline_width as f32, base.color);
+                format.strikethrough =
+                    Stroke::new(Chrome::of(ui.ctx()).style.hairline_width as f32, base.color);
             }
             let text = match &span.link {
                 Some(link) => {
                     format.color = self.link;
-                    format.underline = Stroke::new(Chrome::of(ui.ctx()).style.hairline_width as f32, self.link);
+                    format.underline =
+                        Stroke::new(Chrome::of(ui.ctx()).style.hairline_width as f32, self.link);
                     if link.image {
                         image_label(&span.text)
                     } else {
@@ -345,7 +337,10 @@ impl View {
         );
         Frame::new()
             .fill(self.palette.field)
-            .stroke(Stroke::new(Chrome::of(ui.ctx()).style.hairline_width as f32, self.palette.separator))
+            .stroke(Stroke::new(
+                Chrome::of(ui.ctx()).style.hairline_width as f32,
+                self.palette.separator,
+            ))
             .corner_radius(self.radius)
             .inner_margin(padding)
             .show(ui, |ui| {
@@ -455,7 +450,11 @@ impl View {
                 let centre = pos2(at.left() + self.em(0.55), at.center().y);
                 match depth % 3 {
                     0 => painter.circle_filled(centre, r, ink),
-                    1 => painter.circle_stroke(centre, r, Stroke::new(Chrome::of(ui.ctx()).style.hairline_width as f32, ink)),
+                    1 => painter.circle_stroke(
+                        centre,
+                        r,
+                        Stroke::new(Chrome::of(ui.ctx()).style.hairline_width as f32, ink),
+                    ),
                     _ => {
                         let square = Rect::from_center_size(centre, Vec2::splat(r * 1.8));
                         painter.rect_filled(square, Chrome::of(ui.ctx()).style.square_radius, ink)
@@ -472,7 +471,10 @@ impl View {
     fn table(&mut self, ui: &mut Ui, head: &[Inline], rows: &[Vec<Inline>]) {
         let spacing = vec2(self.em(1.0), self.em(0.35));
         Frame::new()
-            .stroke(Stroke::new(Chrome::of(ui.ctx()).style.hairline_width as f32, self.palette.separator))
+            .stroke(Stroke::new(
+                Chrome::of(ui.ctx()).style.hairline_width as f32,
+                self.palette.separator,
+            ))
             .corner_radius(self.radius)
             .inner_margin(Margin::symmetric(
                 self.em(0.6).round() as i8,
@@ -512,7 +514,10 @@ impl View {
                             ui.painter().hline(
                                 grid.response.rect.x_range(),
                                 y,
-                                Stroke::new(Chrome::of(ui.ctx()).style.hairline_width as f32, self.palette.separator),
+                                Stroke::new(
+                                    Chrome::of(ui.ctx()).style.hairline_width as f32,
+                                    self.palette.separator,
+                                ),
                             );
                         }
                     });

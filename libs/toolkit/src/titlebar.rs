@@ -45,9 +45,6 @@ use egui::{
     UiBuilder, ViewportBuilder, ViewportCommand, WidgetInfo, WidgetType, pos2, vec2,
 };
 
-
-
-
 fn label(key: &str) -> String {
     crate::strings::own(key)
 }
@@ -99,9 +96,6 @@ pub enum Control<'a> {
     /// A frameless text link with a 14 pt icon.
     Link { command: &'static str, icon: Icon },
 }
-
-
-
 
 /// The theme toggle's icon: a sun while the theme is dark, else a moon.
 pub fn theme_icon(dark: bool) -> Icon {
@@ -537,7 +531,12 @@ fn caption_button(ui: &mut Ui, rect: Rect, caption: Caption, chrome: &Chrome) {
                 pos2(b.left(), b.top() + inset),
                 pos2(b.right() - inset, b.bottom()),
             );
-            painter.rect_stroke(front, Chrome::of(ui.ctx()).style.square_radius, line, StrokeKind::Middle);
+            painter.rect_stroke(
+                front,
+                Chrome::of(ui.ctx()).style.square_radius,
+                line,
+                StrokeKind::Middle,
+            );
             let back = [
                 pos2(front.left() + inset, front.top()),
                 pos2(front.left() + inset, b.top()),
@@ -548,7 +547,12 @@ fn caption_button(ui: &mut Ui, rect: Rect, caption: Caption, chrome: &Chrome) {
             painter.add(egui::Shape::line(back.to_vec(), line));
         }
         Caption::Maximize => {
-            painter.rect_stroke(b, Chrome::of(ui.ctx()).style.square_radius, line, StrokeKind::Middle);
+            painter.rect_stroke(
+                b,
+                Chrome::of(ui.ctx()).style.square_radius,
+                line,
+                StrokeKind::Middle,
+            );
         }
         Caption::Close => {
             painter.line_segment([b.left_top(), b.right_bottom()], line);

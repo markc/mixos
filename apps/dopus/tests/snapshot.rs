@@ -19,7 +19,7 @@ use dopus::app::{App, Dialog, PreviewImage};
 use dopus::{commands, strings, view::view};
 use dopus_core::{CoreEvent, DOpusConfig, DopusCore, PaneId, PromptKind};
 use egui_kittest::Harness;
-use toolkit::{Theme};
+use toolkit::Theme;
 
 /// 2026-10-11 09:30 UTC.
 const WHEN: u64 = 1_791_711_000;

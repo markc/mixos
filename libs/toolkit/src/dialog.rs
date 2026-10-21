@@ -31,11 +31,6 @@ use egui::{
     RichText, Sense, Ui, UiKind, Vec2, os::OperatingSystem,
 };
 
-
-
-
-
-
 /// What a dialog button does.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Role {

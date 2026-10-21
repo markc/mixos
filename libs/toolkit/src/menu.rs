@@ -163,7 +163,6 @@ pub const SEARCH_RESULTS: usize = 15;
 /// Joins a result's menu path (§3.5).
 pub const PATH_SEPARATOR: &str = " › ";
 
-
 /// The command rows of `menus` matching `query` (case-insensitive), each
 /// labelled with its menu path joined by [`PATH_SEPARATOR`], ranked: the
 /// label starts with the query, then a word of it does, then the label
@@ -1324,7 +1323,10 @@ fn search_header(
         let (row, response) =
             ui.allocate_exact_size(vec2(width, m.menu_row_height), Sense::hover());
         response.widget_info(|| WidgetInfo::labeled(WidgetType::Label, true, &search.empty));
-        let ink = chrome.palette.text.gamma_multiply(chrome.style.weak_alpha as f32);
+        let ink = chrome
+            .palette
+            .text
+            .gamma_multiply(chrome.style.weak_alpha as f32);
         let galley =
             ui.painter()
                 .layout_no_wrap(search.empty.clone(), Chrome::menu_font(ui.style()), ink);
@@ -1430,7 +1432,11 @@ fn paint(
         match (entry, line) {
             (Entry::Separator, _) => {
                 let y = painter.round_to_pixel_center(rect.center().y);
-                painter.hline(rect.x_range(), y, Stroke::new(chrome.style.hairline_width as f32, p.separator));
+                painter.hline(
+                    rect.x_range(),
+                    y,
+                    Stroke::new(chrome.style.hairline_width as f32, p.separator),
+                );
             }
             (Entry::Row(row), Some((label, right))) => {
                 let lit = highlighted == Some(index) && row.enabled;
