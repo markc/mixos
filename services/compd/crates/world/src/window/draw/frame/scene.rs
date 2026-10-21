@@ -401,7 +401,12 @@ where
         renderer,
         size,
         window,
-        WindowPlacement { ctx, elem_loc, slot_size: slot_size_of(window), crop_output: pane_rect(state, ctx, size) },
+        WindowPlacement {
+            ctx,
+            elem_loc,
+            slot_size: slot_size_of(window),
+            crop_output: pane_rect(state, ctx, size),
+        },
         decoration,
         decor::render::Pass::Presented,
     );
@@ -417,7 +422,11 @@ struct WindowPlacement {
 }
 
 pub type WindowCapture<R> = (Vec<Element<R>>, Size<i32, Physical>);
-pub type FramedWindowCapture<R> = (Vec<Element<R>>, Size<i32, Physical>, Rectangle<i32, Physical>);
+pub type FramedWindowCapture<R> = (
+    Vec<Element<R>>,
+    Size<i32, Physical>,
+    Rectangle<i32, Physical>,
+);
 
 /// The same content/chrome assembly for presentation and window-local captures.
 fn window_elements<R>(
@@ -432,7 +441,12 @@ where
     R: Renderer + ImportAll + ImportMem + dispatcher::frame::SceneDispatch,
     R::TextureId: Texture + Clone + Send + 'static,
 {
-    let WindowPlacement { ctx, elem_loc, slot_size, crop_output } = placement;
+    let WindowPlacement {
+        ctx,
+        elem_loc,
+        slot_size,
+        crop_output,
+    } = placement;
     let bundle_owned = false;
     let output_scale = ctx.scale * ctx.camera_zoom;
     let zoom = ctx.camera_zoom;
@@ -803,11 +817,7 @@ pub fn capture_window(
 /// A single window at output scale, independent of its viewport and occlusion.
 /// The content slot, server-side frame and owned popup trees define its physical
 /// extent; an outlying popup is included without fitting the window to a monitor.
-pub fn capture<R>(
-    renderer: &mut R,
-    window: &Window,
-    scale: f64,
-) -> Result<WindowCapture<R>, String>
+pub fn capture<R>(renderer: &mut R, window: &Window, scale: f64) -> Result<WindowCapture<R>, String>
 where
     R: Renderer + ImportAll + ImportMem + dispatcher::frame::SceneDispatch,
     R::TextureId: Texture + Clone + Send + 'static,
@@ -910,7 +920,12 @@ where
         renderer,
         size,
         window,
-        WindowPlacement { ctx, elem_loc: (0, 0).into(), slot_size: Some(content), crop_output: Rectangle::from_size(size) },
+        WindowPlacement {
+            ctx,
+            elem_loc: (0, 0).into(),
+            slot_size: Some(content),
+            crop_output: Rectangle::from_size(size),
+        },
         Vec::new(),
         decor::render::Pass::Captured,
     );

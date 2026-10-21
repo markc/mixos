@@ -5,7 +5,6 @@ pub mod backend {
     pub use crate::display::backend::*;
 }
 
-
 use crate::display::backend::Backend;
 use render_gles::format::registrar;
 use render_gles::format::role::Role;

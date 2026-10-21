@@ -7,9 +7,9 @@
 use frames::draw::plan::frame::{FramePass, plan};
 use frames::draw::plan::tap::{POST_SCENE, TapSubscriptions};
 use graphics::capture::registry::OutputId;
+use smithay::backend::renderer::Bind;
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::gles::GlesRenderer;
-use smithay::backend::renderer::Bind;
 use smithay::backend::winit::WinitGraphicsBackend;
 use smithay::desktop::Window;
 use smithay::output::Output;
@@ -89,9 +89,7 @@ pub fn capture_offscreen(state: &mut Loop, context: &mut WinitRenderContext) {
         },
     );
     if !screencopy::file::pending_output(&context.output) {
-        if let Err(err) =
-            crate::frame::submit::ensure_surface_current(&mut context.winit_backend)
-        {
+        if let Err(err) = crate::frame::submit::ensure_surface_current(&mut context.winit_backend) {
             warn!("winit: restore window after capture failed ({err})");
         }
         return;
@@ -121,9 +119,7 @@ pub fn capture_offscreen(state: &mut Loop, context: &mut WinitRenderContext) {
     );
     state.inner.render_output = previous_output;
     // The next window frame's age query and swap require its EGL surface.
-    if let Err(err) =
-        crate::frame::submit::ensure_surface_current(&mut context.winit_backend)
-    {
+    if let Err(err) = crate::frame::submit::ensure_surface_current(&mut context.winit_backend) {
         warn!("winit: restore window after capture failed ({err})");
     }
 }
@@ -162,8 +158,7 @@ pub fn draw(state: &mut Loop, context: &mut WinitRenderContext) {
     // A cursorless screencopy render left an offscreen texture current; the swap
     // needs the window surface current again (EGL_BAD_SURFACE otherwise).
     if offscreen
-        && let Err(err) =
-            crate::frame::submit::make_surface_current(&mut context.winit_backend)
+        && let Err(err) = crate::frame::submit::make_surface_current(&mut context.winit_backend)
     {
         warn!("winit: window surface not made current after an offscreen render ({err})");
     }
@@ -364,9 +359,7 @@ fn compose(context: &mut WinitRenderContext, state: &mut Loop) -> ComposedFrame 
     // between frames may have made the context current without it: a commit
     // handler's import or a new surface's setup, screencopy's mapping, startup
     // prewarm. Restore it here, once, for all of them (no GL work when current).
-    if let Err(err) =
-        crate::frame::submit::ensure_surface_current(&mut context.winit_backend)
-    {
+    if let Err(err) = crate::frame::submit::ensure_surface_current(&mut context.winit_backend) {
         warn!("winit: window surface not made current before the frame ({err})");
     }
     let age = if context.swap_failures > 0

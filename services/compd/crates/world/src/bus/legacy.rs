@@ -93,7 +93,9 @@ mod tests {
                 state.bus.send(&EVENT_TX, 2);
             }
         });
-        state.bus.register(&EVENT, |state, value| state.seen.push(value * 10));
+        state
+            .bus
+            .register(&EVENT, |state, value| state.seen.push(value * 10));
         state.bus.send(&EVENT_TX, 1);
         drain(&mut state, |state| &mut state.bus);
         assert_eq!(state.seen, [1, 10, 2, 20]);

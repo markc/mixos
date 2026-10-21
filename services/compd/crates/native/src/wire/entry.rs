@@ -315,9 +315,7 @@ pub fn wire(
         reg.add(display.primary_gpu.dev_id(), display.primary_gpu);
         reg.set_primary(display.primary_gpu);
     }
-    let topology = Rc::new(RefCell::new(
-        crate::context::topology::Topology::new(),
-    ));
+    let topology = Rc::new(RefCell::new(crate::context::topology::Topology::new()));
     {
         let mut topo = topology.borrow_mut();
         let dev_id = display.primary_gpu.dev_id();

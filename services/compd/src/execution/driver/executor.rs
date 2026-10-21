@@ -5,7 +5,6 @@
 //! the off-thread worker), injects the faithful base environment, and posts
 //! every outcome onto a calloop channel for orchestration to broadcast.
 
-
 pub mod install;
 
 use smithay::reexports::calloop::channel::Sender as CalloopSender;

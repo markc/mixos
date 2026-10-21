@@ -83,11 +83,11 @@ where
     let size_f64 = size.to_f64();
 
     let draw_window = |state: &mut Loop,
-                           renderer: &mut R,
-                           window: &Window,
-                           content: &mut Vec<ContentItem<R>>,
-                           visible: &mut Visible,
-                           occ: &mut Occluders| {
+                       renderer: &mut R,
+                       window: &Window,
+                       content: &mut Vec<ContentItem<R>>,
+                       visible: &mut Visible,
+                       occ: &mut Occluders| {
         if !placed(window) {
             return;
         }

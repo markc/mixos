@@ -303,9 +303,7 @@ impl WireTrait for TestHost {
         if let Some(handle) = SurfaceHandle::of_window(&window) {
             let pid = ident::pid(&window, &self.display_handle);
             let uuid = uuid::Uuid::now_v7();
-            window
-                .user_data()
-                .insert_if_missing(|| WindowData { uuid });
+            window.user_data().insert_if_missing(|| WindowData { uuid });
             self.comp.bind_uuid(&handle, uuid, pid);
             if let Some(surface) = ident::surface(&window) {
                 smithay::wayland::compositor::with_states(&surface, |states| {

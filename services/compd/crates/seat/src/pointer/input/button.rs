@@ -155,15 +155,11 @@ pub fn button<I: InputBackend>(event: &<I as InputBackend>::PointerButtonEvent, 
         }
         ButtonState::Released => {
             if _loop.inner.output_views().separator_drag.is_some() {
-                world::viewport::interaction::end_separator(
-                    _loop.inner.output_views_mut(),
-                );
+                world::viewport::interaction::end_separator(_loop.inner.output_views_mut());
                 return;
             }
             if _loop.inner.output_views().floating_drag.is_some() {
-                world::viewport::interaction::end_floating(
-                    _loop.inner.output_views_mut(),
-                );
+                world::viewport::interaction::end_floating(_loop.inner.output_views_mut());
                 return;
             }
         }
@@ -193,9 +189,7 @@ pub fn button<I: InputBackend>(event: &<I as InputBackend>::PointerButtonEvent, 
             y: location.y,
             modality: _loop.inner.touch.modality,
         };
-        if crate::input::drive::route(_loop, ev)
-            == slots::input::event::base::InputFlow::Consume
-        {
+        if crate::input::drive::route(_loop, ev) == slots::input::event::base::InputFlow::Consume {
             return;
         }
     }

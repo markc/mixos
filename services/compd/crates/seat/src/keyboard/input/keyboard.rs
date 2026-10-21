@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-use smithay::backend::input::{
-    Event, InputBackend, KeyState, KeyboardKeyEvent,
-};
+use smithay::backend::input::{Event, InputBackend, KeyState, KeyboardKeyEvent};
 use smithay::desktop::layer_map_for_output;
 use smithay::input::keyboard::{FilterResult, Keycode, Keysym};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
@@ -227,9 +225,7 @@ pub fn input_received<I: InputBackend>(event: &I::KeyboardKeyEvent, _loop: &mut 
             pressed: key_state == smithay::backend::input::KeyState::Pressed,
             modifiers: 0,
         };
-        if crate::input::drive::route(_loop, ev)
-            == slots::input::event::base::InputFlow::Consume
-        {
+        if crate::input::drive::route(_loop, ev) == slots::input::event::base::InputFlow::Consume {
             return;
         }
     }

@@ -75,8 +75,7 @@ pub fn assemble(formats: &render_gles::format::registrar::Registrar) -> DisplayA
     let configured = model::environment::config::base::get().scanout_node.clone();
     let selected_path = if configured.is_empty() {
         let heuristic = kms::udev::enumerate::gpu::primary(&seat_name);
-        let picked =
-            crate::device::select::select_primary(&candidates, heuristic.as_ref(), &rank);
+        let picked = crate::device::select::select_primary(&candidates, heuristic.as_ref(), &rank);
         // Correct the heuristic ONLY on proof. `probe_scanout` reports `capable: false`
         // just for a device the kernel lists with no connectors AND no CRTCs, which no
         // configuration can make scan out; `None` (unprobeable) and any capable device

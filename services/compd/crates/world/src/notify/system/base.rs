@@ -49,10 +49,7 @@ impl System for NotifySystem {
     }
 
     fn update(&mut self, cx: &mut SystemCx, _tick: &FrameTick) {
-        let screen = cx
-            .kernel
-            .get(&crate::smithay_glue::data::SCREEN)
-            .clone();
+        let screen = cx.kernel.get(&crate::smithay_glue::data::SCREEN).clone();
         let next = cx.storage.get(&NOTIFY).queue.front().cloned();
         let (kernel, presenter) = (cx.kernel, &mut self.presenter);
         let (frame, taken) = cx

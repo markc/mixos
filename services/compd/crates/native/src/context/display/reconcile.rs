@@ -74,7 +74,6 @@ fn identity_key(drm: &DrmDevice, info: &connector::Info) -> String {
     .key()
 }
 
-
 /// Tear down the current pipe (freeing its CRTC) and bring `target` up as the primary
 /// output. The smithay `Output` is reused only while `target` is the SAME monitor the
 /// pipe already drove; across a change of monitor it is replaced, because the identity
@@ -285,7 +284,6 @@ fn pick_target(drm: &DrmDevice, connected: &[connector::Info]) -> Option<connect
     connected.first().cloned()
 }
 
-
 /// Bring a NEW connected monitor online as an ADDITIONAL output: build a fresh
 /// smithay `Output` + a second pipe on a free CRTC (validating the second atomic
 /// modeset over the fallback chain — `Err` on no free CRTC / bandwidth / modeset
@@ -357,30 +355,29 @@ fn add_output(
         x,
         ctx.outputs.len() + 1,
     );
-    ctx.outputs
-        .push(crate::context::render::OutputPipe {
-            crtc: built.crtc,
-            mode,
-            output,
-            drm_output: Some(built.drm_output),
-            hdr_caps: built.hdr,
-            hdr_active,
-            props_applied: false,
-            render_failures: 0,
-            connector: built.connector,
-            current_drm_mode: built.drm_mode,
-            modes: built.modes,
-            mode_revert: None,
-            global: Some(global),
-            last_vblank: None,
-            render_start: None,
-            flip_trace: None,
-            last_tear: false,
-            cap_interval: None,
-            cap_wake: None,
-            settlement: Default::default(),
-            owed_frames: None,
-        });
+    ctx.outputs.push(crate::context::render::OutputPipe {
+        crtc: built.crtc,
+        mode,
+        output,
+        drm_output: Some(built.drm_output),
+        hdr_caps: built.hdr,
+        hdr_active,
+        props_applied: false,
+        render_failures: 0,
+        connector: built.connector,
+        current_drm_mode: built.drm_mode,
+        modes: built.modes,
+        mode_revert: None,
+        global: Some(global),
+        last_vblank: None,
+        render_start: None,
+        flip_trace: None,
+        last_tear: false,
+        cap_interval: None,
+        cap_wake: None,
+        settlement: Default::default(),
+        owed_frames: None,
+    });
     Ok(())
 }
 

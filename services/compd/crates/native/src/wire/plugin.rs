@@ -80,8 +80,7 @@ pub fn register(
             // output per preferences (fail over / recover), or go dark + wait. Runs
             // in this udev dispatch (not the vblank callback), so the modeset is safe.
             if reconcile
-                && let Some(change) =
-                    crate::context::display::reconcile::reconcile(state, &ctx_rc)
+                && let Some(change) = crate::context::display::reconcile::reconcile(state, &ctx_rc)
             {
                 apply_output_change(state, change);
             }

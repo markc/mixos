@@ -31,8 +31,8 @@ use frames::draw::plan::frame::{FramePass, plan};
 use frames::draw::plan::tap::POST_SCENE;
 use graphics::capture::registry::OutputId;
 use render_gles::element::wrap::GlesElementWrapper;
-use smithay::backend::renderer::element::{Element, Id};
 use smithay::backend::renderer::Bind;
+use smithay::backend::renderer::element::{Element, Id};
 use smithay::reexports::calloop::LoopHandle;
 use smithay::utils::{Physical, Rectangle, Scale, Transform};
 use std::cell::RefCell;
@@ -736,8 +736,7 @@ pub fn execute(
         // report `ZeroCopy` per surface. Cloned out of the `RenderFrameResult` because
         // that borrows the renderer and is dropped well before `present` runs; the map
         // is one entry per element, so this is cheap next to the frame it describes.
-        let frame_states: Option<smithay::backend::renderer::element::RenderElementStates> =
-            None;
+        let frame_states: Option<smithay::backend::renderer::element::RenderElementStates> = None;
         let mut visible_window: Vec<_> = Vec::new();
 
         // GLES composes and scans out; there is no Vulkan composite path.
@@ -853,7 +852,8 @@ pub fn execute(
                                     std::iter::empty::<Id>(),
                                 )
                                 .map_err(|err| format!("copy KMS diagnostic frame: {err:?}"))?;
-                            sync.wait().map_err(|err| format!("wait KMS diagnostic frame: {err:?}"))?;
+                            sync.wait()
+                                .map_err(|err| format!("wait KMS diagnostic frame: {err:?}"))?;
                         }
                         Ok(texture)
                     })();

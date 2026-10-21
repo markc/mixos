@@ -114,9 +114,7 @@ pub fn absolute<I: InputBackend>(
             delta_x: 0.0,
             delta_y: 0.0,
         };
-        if crate::input::drive::route(_loop, ev)
-            == slots::input::event::base::InputFlow::Consume
-        {
+        if crate::input::drive::route(_loop, ev) == slots::input::event::base::InputFlow::Consume {
             return;
         }
     }
@@ -607,13 +605,12 @@ pub fn relative<I: InputBackend>(
     // Separator / floating drag in progress → apply + move cursor, skip canvas.
     // `position_screen` carries physical values under a Logical marker; re-tag.
     let cursor_phys = Point::<f64, Physical>::from((position_screen.x, position_screen.y));
-    if world::viewport::interaction::update_separator(
-        _loop.inner.output_views_mut(),
-        cursor_phys,
-    ) || world::viewport::interaction::update_floating(
-        _loop.inner.output_views_mut(),
-        cursor_phys,
-    ) {
+    if world::viewport::interaction::update_separator(_loop.inner.output_views_mut(), cursor_phys)
+        || world::viewport::interaction::update_floating(
+            _loop.inner.output_views_mut(),
+            cursor_phys,
+        )
+    {
         native_motion::relative::input_received_normalized::<I>(
             event,
             _loop,
@@ -638,9 +635,7 @@ pub fn relative<I: InputBackend>(
             delta_x: dt.x,
             delta_y: dt.y,
         };
-        if crate::input::drive::route(_loop, ev)
-            == slots::input::event::base::InputFlow::Consume
-        {
+        if crate::input::drive::route(_loop, ev) == slots::input::event::base::InputFlow::Consume {
             return;
         }
     }

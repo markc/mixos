@@ -494,7 +494,6 @@ impl<P: UiProgram> UiRuntime<P> {
     pub fn scale_factor(&self) -> f32 {
         self.scale
     }
-
 }
 
 #[cfg(test)]

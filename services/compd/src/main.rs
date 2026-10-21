@@ -434,10 +434,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         #[cfg(feature = "backend-winit")]
         cli::Backend::Nested => {
             // `--scale` overrides the host window's scale for the nested output.
-            nested::window::factory::set_scale(cli::output_scale(
-                &cli,
-                cli::Backend::Nested,
-            ));
+            nested::window::factory::set_scale(cli::output_scale(&cli, cli::Backend::Nested));
             nested::wire::entry::wire(
                 &mut state,
                 wayland_socket_name_default_subprocess,

@@ -11,7 +11,6 @@ pub mod main;
 use smithay::backend::input::{InputBackend, InputEvent};
 use world::state::Loop;
 
-
 /// Delegation of input events from the compositor seat loop.
 ///
 /// There is no picker or lock-screen route here; the session lock will be

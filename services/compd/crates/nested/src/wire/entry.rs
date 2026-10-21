@@ -92,8 +92,7 @@ impl RenderContract for WinitContract {
 
 pub fn wire(_loop: &mut Loop, _wayland_socket_name: OsString, event_loop: &mut EventLoop<Loop>) {
     info!("Backend initialization - Winit");
-    let winit =
-        crate::window::factory::create().expect("winit backend initialization failed");
+    let winit = crate::window::factory::create().expect("winit backend initialization failed");
 
     info!("Backend initialization - wire backend to renderer and initialize renderer");
 

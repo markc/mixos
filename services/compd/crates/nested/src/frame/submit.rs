@@ -40,7 +40,10 @@ pub fn make_surface_current(
     let size = backend.window_size();
     let (renderer, mut framebuffer) = backend.bind()?;
     let frame = renderer.render(&mut framebuffer, size, Transform::Normal)?;
-    frame.finish()?.wait().map_err(|_| smithay::backend::renderer::gles::GlesError::SyncInterrupted)?;
+    frame
+        .finish()?
+        .wait()
+        .map_err(|_| smithay::backend::renderer::gles::GlesError::SyncInterrupted)?;
     Ok(())
 }
 

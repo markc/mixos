@@ -4,8 +4,8 @@ use dispatcher::state::Dispatch;
 use protocols::window::find;
 use smithay::input::pointer::{MotionEvent, PointerHandle, RelativeMotionEvent};
 use smithay::utils::{Logical, Physical, Point, Serial};
-use world::state::Loop;
 use world::state::CoordinateTrait;
+use world::state::Loop;
 use world::surface::interface::hit::SurfaceHit;
 use world::surface::interface::hit::{self, surface_under_filtered};
 use world::window::interface::draw::visible::DrawWindow;
@@ -58,9 +58,7 @@ pub fn dispatch(
 
     if let Some(under) = under {
         match under {
-            SurfaceHit::UI {
-                ..
-            } => {}
+            SurfaceHit::UI { .. } => {}
             // Letterbox bars. Leaving `under_hit` unset gives the pointer no
             // focus, so smithay sends the previously-focused client a leave —
             // which is the truth: the cursor is over compositor pixels, not over

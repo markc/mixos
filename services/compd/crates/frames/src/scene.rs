@@ -102,7 +102,8 @@ fn update_fractional(state: &mut Loop) {
             max_scale = Some(max_scale.map_or(want, |m| m.max(want)));
             for u in uuids {
                 if let Some(surf) = uuid_surface.get(u)
-                    && best.get(&surf.id()).is_none_or(|entry| want > entry.0) {
+                    && best.get(&surf.id()).is_none_or(|entry| want > entry.0)
+                {
                     best.insert(surf.id(), (want, surf.clone()));
                 }
             }
@@ -413,10 +414,8 @@ pub struct PreparedGles {
 fn ui_panes(state: &Loop, size: Size<i32, Physical>) -> Vec<ui::PaneView> {
     let scale = state.viewport_context().scale;
     let vps = state.inner.viewports();
-    let computed = world::viewport::layout::compute(
-        vps,
-        smithay::utils::Rectangle::from_size(size),
-    );
+    let computed =
+        world::viewport::layout::compute(vps, smithay::utils::Rectangle::from_size(size));
     computed
         .regions
         .iter()
@@ -736,8 +735,7 @@ where
                     );
                     plan.push(bg_layer, DrawNode::Solid(fill));
                 }
-                let (content, vis) =
-                    world::canvas::draw::scene::scene(state, renderer, size);
+                let (content, vis) = world::canvas::draw::scene::scene(state, renderer, size);
                 for item in content {
                     // Per-pane clipping is applied inside the window/decoration/
                     // cursor builders (they read `render_target` and crop to the

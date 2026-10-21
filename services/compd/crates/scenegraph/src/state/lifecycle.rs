@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-use crate::display::output::backend::Backend;
 use crate::display::output;
+use crate::display::output::backend::Backend;
 use smithay::backend::input::{InputBackend, InputEvent};
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::output::{Mode, Output};

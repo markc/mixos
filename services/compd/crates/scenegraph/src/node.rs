@@ -11,11 +11,11 @@
 use crate::scene::element::{PreImported, SceneElement};
 use dispatcher::frame::SceneDispatch;
 use slots::world::frame::base::Layer;
+use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::element::solid::SolidColorRenderElement;
 use smithay::backend::renderer::element::surface::{
     WaylandSurfaceRenderElement, render_elements_from_surface_tree,
 };
-use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::{ImportAll, ImportDma, ImportMem, Renderer, Texture};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Physical, Point, Scale};

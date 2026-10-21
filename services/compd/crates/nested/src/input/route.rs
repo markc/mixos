@@ -23,11 +23,7 @@ pub fn route(event: &WinitEvent, state: &mut Loop, context: &mut WinitRenderCont
                 "winit(gles): resized {size:?} host-scale {scale_factor} output-scale {} (physical output, fractional scale)",
                 scale.fractional_scale()
             );
-            scenegraph::state::lifecycle::resize(
-                context.output.clone(),
-                *size,
-                Some(scale),
-            );
+            scenegraph::state::lifecycle::resize(context.output.clone(), *size, Some(scale));
             state
                 .state
                 .schedule_redraw(protocols::redraw::schedule::RedrawReason::Output);

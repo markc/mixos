@@ -116,7 +116,6 @@ pub(crate) struct SceneLayout {
     pub close: Option<Rect>,
 }
 
-
 #[derive(Clone, Copy, PartialEq)]
 enum Axis {
     Vertical,
@@ -467,12 +466,20 @@ impl<'a> Builder<'a> {
                     Axis::Vertical
                 };
                 let style = self.container_style(nodes, node, style, main);
-                let inner = Parent {
-                    main,
-                };
+                let inner = Parent { main };
                 let kids: Vec<NodeId> = children(node)
                     .filter_map(|child| {
-                        self.element(nodes, child, inner, Origin { source, key: &key, list }, depth + 1)
+                        self.element(
+                            nodes,
+                            child,
+                            inner,
+                            Origin {
+                                source,
+                                key: &key,
+                                list,
+                            },
+                            depth + 1,
+                        )
                     })
                     .collect();
                 let created = self.tree.new_with_children(style, &kids).ok()?;
@@ -565,7 +572,11 @@ impl<'a> Builder<'a> {
                 Nodes::Row(instance),
                 &template,
                 inner,
-                Origin { source: &source, key: &row_key, list: Some(id) },
+                Origin {
+                    source: &source,
+                    key: &row_key,
+                    list: Some(id),
+                },
                 depth + 1,
             ) else {
                 continue;
@@ -764,7 +775,11 @@ pub(crate) fn layout(
             Nodes::Tree(tree),
             &id,
             top_parent,
-            Origin { source: &Source::Tree, key: "", list: None },
+            Origin {
+                source: &Source::Tree,
+                key: "",
+                list: None,
+            },
             0,
         )
     });

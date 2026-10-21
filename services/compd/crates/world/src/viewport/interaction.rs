@@ -177,7 +177,8 @@ pub fn update_floating(views: &mut OutputViews, phys: Point<f64, Physical>) -> b
             (
                 d.start_rect.loc.x + dx.round() as i32,
                 d.start_rect.loc.y + dy.round() as i32,
-            ).into(),
+            )
+                .into(),
             d.start_rect.size,
         );
     }
