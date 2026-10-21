@@ -109,7 +109,6 @@ impl Dispatch<ZwpLinuxDmabufFeedbackV1, ()> for Feedback {
 fn default_feedback_names_render_device_and_offers_formats() {
     let node =
         std::env::var("COMPD_TEST_RENDER_NODE").unwrap_or_else(|_| "/dev/dri/renderD128".into());
-    let expected = fs::metadata(&node).unwrap().rdev();
     // Exercise explicit selection too: the process helper deliberately writes
     // an invalid configured node when an explicit node is supplied.
     let mut process = process::spawn(1, Some(&node), "feedback", None);
@@ -122,6 +121,14 @@ fn default_feedback_names_render_device_and_offers_formats() {
         assert!(Instant::now() < deadline, "headless socket timed out");
         thread::sleep(Duration::from_millis(10));
     };
+    // The expectation is the node compd SELECTED (its EGL device), read from
+    // its log, not the one requested: on a multi-GPU host they may differ.
+    let selected = fs::read_to_string(process.root.join("compd.log"))
+        .unwrap()
+        .lines()
+        .find_map(|line| line.split("headless: EGL device = ").nth(1).map(str::trim).map(String::from))
+        .expect("compd logs its EGL device");
+    let expected = fs::metadata(&selected).unwrap().rdev();
     let connection = Connection::from_socket(stream).unwrap();
     let mut queue = connection.new_event_queue::<Feedback>();
     let _registry = connection.display().get_registry(&queue.handle(), ());
@@ -142,7 +149,7 @@ fn default_feedback_names_render_device_and_offers_formats() {
         );
     }
     println!(
-        "DMABUF_FEEDBACK v{} main_device={:#x} expected={expected:#x} node={node}; {} tranches, {} format indices, {} table entries",
+        "DMABUF_FEEDBACK v{} main_device={:#x} expected={expected:#x} requested={node} selected={selected}; {} tranches, {} format indices, {} table entries",
         state.version.unwrap(),
         state.main_device.unwrap(),
         state.tranches.len(),
@@ -152,7 +159,7 @@ fn default_feedback_names_render_device_and_offers_formats() {
     let log = fs::read_to_string(process.root.join("compd.log")).unwrap();
     let selection = log
         .lines()
-        .find(|line| line.contains("dmabuf global v5"))
+        .find(|line| line.contains("dmabuf global with default feedback"))
         .unwrap();
     assert!(
         selection.contains("from backend composite node"),

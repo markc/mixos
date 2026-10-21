@@ -108,7 +108,9 @@ pub fn advertise_dmabuf(_loop: &mut Loop) {
             let feedback = DmabufFeedbackBuilder::new(main_device, dma_formats)
                 .build()
                 .unwrap_or_else(|e| abort!("Failed to build dmabuf feedback: {e:?}"));
-            info!("dmabuf global v5, main_device {main_device:#x} from {source}");
+            // The protocol version is smithay's (v6 at 0.7); what matters here
+            // is that default feedback names a main device.
+            info!("dmabuf global with default feedback, main_device {main_device:#x} from {source}");
             _loop
                 .state
                 .dmabuf
@@ -116,7 +118,7 @@ pub fn advertise_dmabuf(_loop: &mut Loop) {
                 .create_global_with_default_feedback::<Dispatch>(&handle, &feedback)
         }
         None => {
-            warn!("dmabuf global v3 instead of v5: no GPU binding or backend composite node");
+            warn!("dmabuf global v3 without feedback: no GPU binding or backend composite node");
             _loop
                 .state
                 .dmabuf

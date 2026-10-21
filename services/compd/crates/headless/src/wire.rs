@@ -93,11 +93,13 @@ pub fn wire(
         return Err("EGL device does not match the requested render node".into());
     }
     info!("headless: EGL device = {}", reported.display());
-    let renderer = render_gles::context::egl::egl::create(&display)?;
+    // Published as soon as the node is validated, before anything that can
+    // fail later: the dmabuf advertiser names it as the clients' main device.
     *state
         .inner
         .kernel
         .get_mut(&render_gles::format::registrar::registrar::COMPOSITE_NODE_MUT) = Some(node);
+    let renderer = render_gles::context::egl::egl::create(&display)?;
     let refresh = match std::env::var("COMPD_HEADLESS_REFRESH_HZ") {
         Ok(value) => value
             .parse::<i32>()
