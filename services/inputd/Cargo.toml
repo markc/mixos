@@ -1,0 +1,40 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+[package]
+name = "inputd"
+version = "0.5.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "Input broker: keys become Bus verbs, the user keys stay the user's, and the grab follows the VT"
+
+[package.metadata.mixos]
+component = "inputd"
+kind = "service"
+layer = "core"
+contract = "public"
+
+[lints.clippy]
+mod_module_files = "deny"
+
+[dependencies]
+inputd-core = { path = "crates/inputd-core" }
+inputd-schema = { path = "crates/inputd-schema" }
+bus = { workspace = true, features = ["native"] }
+buildinfo.workspace = true
+config.workspace = true
+tokio = { workspace = true, features = ["rt", "macros", "sync", "time"] }
+libc.workspace = true
+clap.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[build-dependencies]
+buildinfo.workspace = true

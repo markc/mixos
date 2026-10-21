@@ -4361,6 +4361,43 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "36eee07d8e02bd95bf52b2e642cf13d33701b94c6e4b04fbf1d1fb07e9cb19e7"
 
 [[package]]
+name = "inputd"
+version = "0.5.0"
+dependencies = [
+ "anyhow",
+ "buildinfo",
+ "bus",
+ "clap",
+ "config",
+ "inputd-core",
+ "inputd-schema",
+ "libc",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "inputd-core"
+version = "0.1.1"
+dependencies = [
+ "inputd-schema",
+ "serde_json",
+]
+
+[[package]]
+name = "inputd-schema"
+version = "0.1.1"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+]
+
+[[package]]
 name = "inspector"
 version = "0.1.1"
 dependencies = [

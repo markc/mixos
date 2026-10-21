@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+# An operator's drop-in that turns on the grab. Not installed by default.
+# Copy it to /etc/systemd/system/inputd.service.d/grab.conf only after a
+# supervised run from a shell that can kill the daemon, for example:
+#
+#   /opt/mixos/bin/inputd --grab-name "keyd virtual keyboard" --vt 1 --grab-timeout 30
+#
+# --grab-name finds keyd's virtual keyboard by name (its eventN shifts
+# across restarts). --vt 1 holds the grab only while VT1 is the active
+# console: on every other VT, that VT's own compositor reads the keyboard
+# directly. Recovery if the keyboard dies: kill inputd from another login
+# (ssh); the kernel releases the grab when the process exits.
+[Service]
+ExecStart=
+ExecStart=/opt/mixos/bin/inputd --grab-name "keyd virtual keyboard" --vt 1
