@@ -112,9 +112,6 @@ pub(crate) struct SceneLayout {
     pub instances: BTreeMap<String, BTreeMap<String, Rect>>,
     /// Vertical lists that scroll.
     pub lists: BTreeMap<String, ListBox>,
-    /// The page under the scene (below a dialog's title bar).
-    #[cfg(test)]
-    pub body: Rect,
     /// The dialog frame's close button, when framed.
     pub close: Option<Rect>,
 }
