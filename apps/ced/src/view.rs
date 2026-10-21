@@ -21,7 +21,7 @@ use toolkit::tabs::DocTab;
 use toolkit::titlebar::{self, Control};
 use toolkit::{Icon, Registry, Strings, bars, icons};
 
-use crate::app::{Answer, App, Dialog};
+use crate::app::{Answer, App, Dialog, PreviewMode};
 use crate::{label, label_with};
 
 /// One interaction from this frame.
@@ -197,7 +197,7 @@ fn tabs(ui: &mut Ui, app: &App, events: &mut Vec<UiEvent>) {
             let name = tab_name(t);
             let mirror = t.mirror.as_ref();
             let opening = mirror.is_none_or(|m| matches!(m.phase(), Phase::Bootstrapping { .. }));
-            let mut meta = mirror.map_or_else(String::new, |m| m.meta().language.clone());
+            let mut meta = t.language().to_owned();
             if app.ctl.agent_since_focus(t.id) {
                 meta.push_str(" ◆");
             }
@@ -363,10 +363,16 @@ fn find_bar(ui: &mut Ui, app: &mut App, events: &mut Vec<UiEvent>) {
 /// one is shown.
 fn document(
     ui: &mut Ui,
-    app: &App,
+    app: &mut App,
     palette: &Palette,
     events: &mut Vec<UiEvent>,
 ) -> Option<(egui::Id, bool)> {
+    let mode = app.active().map(|tab| app.preview_mode(tab)).unwrap_or_default();
+    let preview = if mode != PreviewMode::Source {
+        app.active().and_then(|tab| app.preview_document(tab))
+    } else {
+        None
+    };
     let Some(tab) = app.active_tab() else {
         centred(ui, &label("no-documents"));
         return None;
@@ -392,7 +398,7 @@ fn document(
     let editable = app.dialog.is_none();
     // The editor takes its own saved padding and light mode; the rest of the
     // window keeps the global look.
-    let out = ui
+    let draw_editor = |ui: &mut Ui| ui
         .add_enabled_ui(editable, |ui| {
             let mut out = None;
             toolkit::content::surface(ui, &app.editor_style, |ui| {
@@ -407,8 +413,43 @@ fn document(
             out.expect("the surface draws its body")
         })
         .inner;
-    let shown = (out.response.id, out.held);
-    events.extend(out.events.into_iter().map(|e| UiEvent::Editor(tab.id, e)));
+    let draw_preview = |ui: &mut Ui| {
+        toolkit::content::surface(ui, &app.editor_style, |ui| {
+            ui.set_min_size(ui.available_size());
+            egui::ScrollArea::both()
+                .id_salt(("ced.preview", tab.id))
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    if let Some(document) = &preview {
+                        toolkit::markdown::show(ui, document);
+                    }
+                });
+        });
+    };
+    let out = match mode {
+        PreviewMode::Source => Some(draw_editor(ui)),
+        PreviewMode::Preview => {
+            draw_preview(ui);
+            None
+        }
+        PreviewMode::Split => {
+            let area = ui.available_rect_before_wrap();
+            let middle = area.center().x;
+            let left = egui::Rect::from_min_max(area.min, egui::pos2(middle, area.max.y));
+            let right = egui::Rect::from_min_max(egui::pos2(middle, area.min.y), area.max);
+            let out = ui.scope_builder(egui::UiBuilder::new().max_rect(left), draw_editor).inner;
+            ui.scope_builder(egui::UiBuilder::new().max_rect(right), draw_preview);
+            ui.painter().vline(middle, area.y_range(), egui::Stroke::new(
+                1.0, ui.visuals().widgets.noninteractive.bg_stroke.color,
+            ));
+            ui.advance_cursor_after_rect(area);
+            Some(out)
+        }
+    };
+    let shown = out.as_ref().map(|out| (out.response.id, out.held));
+    if let Some(out) = out {
+        events.extend(out.events.into_iter().map(|e| UiEvent::Editor(tab.id, e)));
+    }
     if let Phase::Detached {
         reason: DetachReason::OpenFailed { msg },
     } = m.phase()
@@ -418,7 +459,7 @@ fn document(
             &[("name", &name), ("error", msg)],
         ));
     }
-    Some(shown)
+    shown
 }
 
 fn centred(ui: &mut Ui, text: &str) {

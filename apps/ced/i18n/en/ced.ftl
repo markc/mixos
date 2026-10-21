@@ -3,6 +3,7 @@ file = File
 edit = Edit
 search = Search
 view = View
+markdown = Markdown
 tabs = Tabs
 help = Help
 
@@ -46,6 +47,9 @@ view-line-numbers = Line Numbers
 view-remote-carets = Other Origins' Carets
 view-problems = Problems
 view-output = Output
+view-markdown-source = Source
+view-markdown-split = Split
+view-markdown-preview = Preview
 view-clear-markers = Clear Change Markers
 view-reload-settings = Reload Settings
 tabs-next = Next Tab

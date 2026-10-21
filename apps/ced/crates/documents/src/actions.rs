@@ -144,6 +144,9 @@ actions! {
     ViewRemoteCarets => "view.remote_carets", "Other Origins' Carets", View;
     ViewProblems => "view.problems", "Problems", View;
     ViewOutput => "view.output", "Output", View;
+    ViewMarkdownSource => "view.markdown.source", "Source", View;
+    ViewMarkdownSplit => "view.markdown.split", "Split", View;
+    ViewMarkdownPreview => "view.markdown.preview", "Preview", View;
     ViewClearMarkers => "view.clear_markers", "Clear Change Markers", View;
     ViewReloadSettings => "view.reload_settings", "Reload Settings", View;
     TabsNext => "tabs.next", "Next Tab", Tabs;

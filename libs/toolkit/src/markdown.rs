@@ -199,8 +199,12 @@ pub fn openable(url: &str) -> bool {
 /// take every OpenUrl request, but open only http, https and mailto, as
 /// one argument and never through a shell. `app_name` labels errors and
 /// the thread that reaps the child (`<app_name>-xdg-open-reap`).
+/// Dropped requests are logged by scheme only. An app with its own URL
+/// schemes must take those requests out of the output before calling this.
 pub fn open_links(ctx: &egui::Context, app_name: &str) {
-    let urls = ctx.output_mut(|output| take_open_links(&mut output.commands));
+    let urls = ctx.output_mut(|output| take_open_links(&mut output.commands, |scheme| {
+        eprintln!("{app_name}: ignored link: {scheme}:");
+    }));
     for url in urls {
         match std::process::Command::new("xdg-open")
             .arg(url.trim())
@@ -220,12 +224,24 @@ pub fn open_links(ctx: &egui::Context, app_name: &str) {
     }
 }
 
-fn take_open_links(commands: &mut Vec<egui::OutputCommand>) -> Vec<String> {
+fn take_open_links(
+    commands: &mut Vec<egui::OutputCommand>,
+    mut ignored: impl FnMut(&str),
+) -> Vec<String> {
     let mut urls = Vec::new();
     commands.retain(|command| match command {
         egui::OutputCommand::OpenUrl(open) => {
             if openable(&open.url) {
                 urls.push(open.url.clone());
+            } else {
+                let scheme = open.url.trim_start().split_once(':')
+                    .map(|(scheme, _)| scheme)
+                    .filter(|scheme| {
+                        scheme.starts_with(|c: char| c.is_ascii_alphabetic())
+                            && scheme.bytes().all(|c| c.is_ascii_alphanumeric() || b"+-.".contains(&c))
+                    })
+                    .unwrap_or("");
+                ignored(scheme);
             }
             false
         }
@@ -260,11 +276,13 @@ mod tests {
         }
         commands.push(OutputCommand::CopyText("after".into()));
 
-        assert_eq!(take_open_links(&mut commands), allowed);
+        let mut ignored = Vec::new();
+        assert_eq!(take_open_links(&mut commands, |scheme| ignored.push(scheme.to_owned())), allowed);
+        assert_eq!(ignored, ["file", "javascript", "data", "dev.mixos.email", "", ""]);
         assert_eq!(commands.len(), 2);
         assert!(matches!(&commands[0], OutputCommand::CopyText(text) if text == "before"));
         assert!(matches!(&commands[1], OutputCommand::CopyText(text) if text == "after"));
-        assert!(take_open_links(&mut commands).is_empty());
+        assert!(take_open_links(&mut commands, |_| panic!("no requests left")).is_empty());
     }
 
     #[test]

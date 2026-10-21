@@ -311,6 +311,7 @@ impl Shell {
                     }
                 }
                 None => {
+                    self.app.sync_view_hints();
                     let fx = self.app.ctl.on_bus_command(cmd);
                     self.app.absorb(fx);
                     crate::view::record_noted(&mut self.app, &self.commands);
@@ -706,6 +707,7 @@ impl Shell {
             connected,
         );
         crate::view::apply(&mut self.app, &self.commands, events);
+        toolkit::markdown::open_links(ui.ctx(), "ced");
         self.perform();
         self.release();
         self.publish_executed();

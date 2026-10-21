@@ -44,6 +44,24 @@ The editor wraps prose at word boundaries, so a paragraph reads as a \
 paragraph rather than one long line.
 ";
 
+const MARKDOWN: &str = "\
+# Project notes
+
+Read the [guide](https://example.invalid/guide) and try `mix`.
+
+- Write a document
+- Preview the changes
+
+```mix
+print(\"Hello\")
+```
+
+| Mode | View |
+| --- | --- |
+| Split | Source and preview |
+| Preview | Read and select |
+";
+
 /// The fake edit service as a transport. Every request is answered at
 /// once, followed by the events it caused, in order. Timers wait on a fake
 /// clock until the test fires them. Session-look reads, their retries and
@@ -261,6 +279,38 @@ fn an_empty_window_pro_light() {
     );
     h.run_steps(4);
     h.snapshot("empty_pro_light");
+}
+
+fn markdown_snapshot(scheme: Scheme, mode: Mode, action: documents::actions::ActionId, name: &str) {
+    let (mut h, _) = window(
+        theme(scheme, mode),
+        &[("/work/notes.md", MARKDOWN)],
+        egui::vec2(1000.0, 620.0),
+    );
+    h.run_steps(6);
+    let shell = h.state_mut().shell.as_mut().unwrap();
+    assert!(shell.app.enabled(action));
+    shell.app.action(action);
+    h.run_steps(4);
+    h.snapshot(name);
+}
+
+#[test]
+fn markdown_split_studio_dark() {
+    markdown_snapshot(Scheme::Studio, Mode::Dark, documents::actions::ActionId::ViewMarkdownSplit,
+        "markdown_split_studio_dark");
+}
+
+#[test]
+fn markdown_split_pro_light() {
+    markdown_snapshot(Scheme::Pro, Mode::Light, documents::actions::ActionId::ViewMarkdownSplit,
+        "markdown_split_pro_light");
+}
+
+#[test]
+fn markdown_preview_studio_dark() {
+    markdown_snapshot(Scheme::Studio, Mode::Dark, documents::actions::ActionId::ViewMarkdownPreview,
+        "markdown_preview_studio_dark");
 }
 
 #[test]

@@ -59,6 +59,22 @@ pub struct Tab {
     pub path: Option<String>,
 }
 
+impl Tab {
+    /// Save As updates the mirror's path before a fresh open supplies language metadata.
+    pub fn language(&self) -> &str {
+        let Some(m) = &self.mirror else { return "text"; };
+        if m.meta().path != self.path {
+            let mut first = String::new();
+            if let Some(range) = m.text().line_range(1) {
+                m.text().read(range, &mut first);
+            }
+            edit::lang::detect(m.meta().path.as_deref().map(std::path::Path::new), &first)
+        } else {
+            &m.meta().language
+        }
+    }
+}
+
 /// A `ced.*` Bus request, as the bus thread hands it over.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BusCommand {
@@ -150,6 +166,8 @@ struct OpWait {
 /// Controller-private per-tab state.
 #[derive(Default)]
 struct TabX {
+    /// Opaque session-only view hints supplied by the window.
+    view_hints: HashMap<String, String>,
     recovery_id: Option<String>,
     /// `edit.open` answered (success or failure) at least once.
     opened: bool,
@@ -325,6 +343,8 @@ pub struct Controller {
     /// The keys in force per action id, when the window has applied the
     /// person's bindings; `ced.actions` reports the defaults otherwise.
     keys: Option<HashMap<String, Vec<String>>>,
+    /// The window's current command enablement, for `ced.actions`.
+    action_enabled: HashMap<ActionId, bool>,
 }
 
 fn refusal(code: &str, message: impl Into<String>, reason: Option<&str>) -> String {
@@ -533,12 +553,29 @@ impl Controller {
             op_cmd: None,
             external: external::Store::default(),
             keys: None,
+            action_enabled: HashMap::new(),
         }
     }
 
     /// The keys in force per action id, for `ced.actions`.
     pub fn set_keys(&mut self, keys: HashMap<String, Vec<String>>) {
         self.keys = Some(keys);
+    }
+
+    /// Echo the window's command enablement in `ced.actions`.
+    pub fn set_action_enabled(&mut self, action: ActionId, enabled: bool) {
+        self.action_enabled.insert(action, enabled);
+    }
+
+    /// Keep a window's opaque per-tab hint until that tab closes.
+    pub fn set_view_hint(&mut self, tab: TabId, key: &str, value: &str) {
+        if let Some(x) = self.x.get_mut(&tab) {
+            x.view_hints.insert(key.into(), value.into());
+        }
+    }
+
+    fn view_hint(&self, tab: TabId, key: &str) -> Option<&str> {
+        self.x.get(&tab)?.view_hints.get(key).map(String::as_str)
     }
 
     /// Tabs to reopen at [`Controller::start`] (the host loads session.json).
@@ -2560,7 +2597,12 @@ impl Controller {
                                 .map(str::to_string)
                                 .collect(),
                         },
-                        enabled: true,
+                        enabled: self.action_enabled.get(&a).copied().unwrap_or(!matches!(
+                            a,
+                            ActionId::ViewMarkdownSource
+                                | ActionId::ViewMarkdownSplit
+                                | ActionId::ViewMarkdownPreview
+                        )),
                     })
                     .collect();
                 reply(fx, ok_body(&verbs::ActionsReply { actions }));
@@ -2773,7 +2815,8 @@ impl Controller {
             epoch: m.map(|m| m.epoch().to_string()),
             path: t.path.clone(),
             name: self.tab_name(t),
-            language: m.map_or_else(|| "text".into(), |m| m.meta().language.clone()),
+            language: t.language().into(),
+            preview: self.view_hint(t.id, "preview").unwrap_or("source").into(),
             rev: m.map_or(0, Mirror::rev),
             dirty: m.is_some_and(|m| m.meta().dirty),
             disk: m.map_or_else(|| "none".into(), |m| disk_str(m.meta().disk)),
@@ -2819,6 +2862,7 @@ impl Controller {
         let sel = t.editor.sel;
         Ok(verbs::StateReply {
             tab,
+            preview: self.view_hint(tab, "preview").unwrap_or("source").into(),
             buffer: Some(m.buffer().to_string()),
             rev: m.rev(),
             view_gen: m.view_gen(),
