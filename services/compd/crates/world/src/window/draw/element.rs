@@ -174,7 +174,7 @@ where
     /// the renderer began honouring opacity, it surfaced as a see-through band that slid
     /// across each window as the camera panned. Saying the policy directly cannot leak
     /// into rendering that way.
-    fn underlying_storage(&self, renderer: &mut R) -> Option<UnderlyingStorage> {
+    fn underlying_storage(&self, renderer: &mut R) -> Option<UnderlyingStorage<'_>> {
         let geo = self.inner.geometry(Scale::from(1.0));
         let spans_output = geo.loc.x <= 0
             && geo.loc.y <= 0
@@ -281,7 +281,7 @@ where
             .draw(frame, src, dst, damage, opaque_regions, cache)
     }
 
-    fn underlying_storage(&self, renderer: &mut R) -> Option<UnderlyingStorage> {
+    fn underlying_storage(&self, renderer: &mut R) -> Option<UnderlyingStorage<'_>> {
         self.inner.underlying_storage(renderer)
     }
 

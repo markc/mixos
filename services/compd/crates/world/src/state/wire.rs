@@ -1,27 +1,22 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 use crate::camera::transform::translate::transform::Transform;
-use crate::state::Loop;
 use crate::state::{Orchestrator, StateDRMBinding};
 use crate::window::interface::record::data::{DiscardPlaceholder, WindowData};
 use crate::window::lifecycle::event::WindowLifecycleEvent;
-use crate::window::lifecycle::state::lifecycle::WindowLifecycle;
 use dispatcher::state::Dispatch;
-use dispatcher::wayland::xdg::activation::dispatch::wire::ActivationDetails;
-use dispatcher::wire::Wire;
 use dispatcher::wire::trait_::wire_trait::{ActivationOrigin, WireTrait};
 use protocols::window::find;
 use protocols::window::ident;
 use smithay::backend::renderer::ImportDma;
-use smithay::desktop::{Space, Window};
+use smithay::desktop::Window;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::IsAlive;
 use smithay::utils::{Logical, Physical, Point, Rectangle};
 use smithay::wayland::compositor::with_states;
 use smithay::wayland::shell::xdg::ToplevelSurface;
 use smithay::xwayland::X11Surface;
-use std::ops::DerefMut;
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 
 impl WireTrait for Orchestrator {
     fn host_space(&self) -> &protocols::space::state::SpaceState {
@@ -145,7 +140,7 @@ impl WireTrait for Orchestrator {
         // Window basic data ( UUID )
         window
             .user_data()
-            .insert_if_missing_threadsafe(|| WindowData { UUID: uuid });
+            .insert_if_missing_threadsafe(|| WindowData { uuid: uuid });
         // The comp registry record took its role earlier this drain; bind the uuid
         // to it (a changed uuid mints a new generation there).
         if let Some(handle) =
@@ -170,7 +165,7 @@ impl WireTrait for Orchestrator {
         with_states(&surface, |states| {
             let inserted = states
                 .data_map
-                .insert_if_missing_threadsafe(|| Mutex::new(WindowData { UUID: uuid }));
+                .insert_if_missing_threadsafe(|| Mutex::new(WindowData { uuid: uuid }));
             if !inserted {
                 // CHECK: Its interesting behaviour:
                 // Windows (and their user_data) can completely recreated without a surface re-creation.
@@ -180,7 +175,7 @@ impl WireTrait for Orchestrator {
                 // panic!("Duplication of UUID set in surface.");
                 // Replace the entire value:
                 let slot = states.data_map.get::<Mutex<WindowData>>().unwrap();
-                *slot.lock().unwrap() = WindowData { UUID: uuid };
+                *slot.lock().unwrap() = WindowData { uuid: uuid };
             }
         });
 
@@ -211,7 +206,7 @@ impl WireTrait for Orchestrator {
                 .unwrap_or_else(|| abort!("toplevels to have window data"))
                 .lock()
                 .unwrap()
-                .UUID;
+                .uuid;
             info!("destroy_surface_data: {:?}", data);
             // Shift-close mark: surface user data set by the selection toolbar —
             // the placeholder destroy path must not spawn a placeholder for this window.
@@ -388,7 +383,7 @@ impl WireTrait for Orchestrator {
         })
     }
 
-    fn place_window(&mut self, window: Window, geometry: Rectangle<i32, Logical>) {
+    fn place_window(&mut self, window: Window, _geometry: Rectangle<i32, Logical>) {
         // Side effect- because of the dispatcher wiring problem, the place_window returns a location rather than calling map_element.
         // However this function should be treated as if it called the initial space map_element call.
         self.enqueue_window_lifecycle(WindowLifecycleEvent::InitialMap(window));

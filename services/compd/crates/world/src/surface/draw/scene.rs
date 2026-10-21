@@ -34,9 +34,9 @@ pub fn scene(
     // Hoist the camera + GPU reads before the surface-registry borrow: surface_mut()
     // borrows the whole Orchestrator, so other inner fields must be read first.
     let camera_transform = _loop.inner.camera().transform.clone();
-    let gpu = _loop.inner.environment.GPU.clone();
+    let gpu = _loop.inner.environment.gpu.clone();
     let mut wants_frame = false;
-    if let Some(ref mut UI) = _loop.inner.surface_mut().registry {
+    if let Some(ref mut registry) = _loop.inner.surface_mut().registry {
         let transform = ui::Transform {
             zoom: camera_transform.zoom,
             position: Point::new(
@@ -82,7 +82,7 @@ pub fn scene(
         ui_elements_dim.extend(dim);
 
         // Any instance still dirty or mid-animation wants another frame.
-        wants_frame = UI.wants_frame();
+        wants_frame = registry.wants_frame();
     }
 
     // Keep the vblank cycle alive while UI is animating, so time-based

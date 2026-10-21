@@ -305,12 +305,12 @@ impl WireTrait for TestHost {
             let uuid = uuid::Uuid::now_v7();
             window
                 .user_data()
-                .insert_if_missing(|| WindowData { UUID: uuid });
+                .insert_if_missing(|| WindowData { uuid: uuid });
             self.comp.bind_uuid(&handle, uuid, pid);
             if let Some(surface) = ident::surface(&window) {
                 smithay::wayland::compositor::with_states(&surface, |states| {
                     states.data_map.insert_if_missing_threadsafe(|| {
-                        std::sync::Mutex::new(WindowData { UUID: uuid })
+                        std::sync::Mutex::new(WindowData { uuid: uuid })
                     });
                 });
             }

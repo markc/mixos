@@ -6,7 +6,7 @@ use smithay::utils::{Logical, Physical, Point, Size};
 
 pub fn context<R>(
     state: &mut Loop,
-    renderer: &mut R,
+    _renderer: &mut R,
     size: Size<i32, Physical>,
 ) -> crate::canvas::draw::context::Context
 where

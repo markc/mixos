@@ -168,16 +168,16 @@ pub fn update_floating(views: &mut OutputViews, phys: Point<f64, Physical>) -> b
         if d.bottom {
             y1 = (y1 + dy).max(y0 + MIN_FLOAT);
         }
-        *rect = Rectangle::from_loc_and_size(
-            (x0.round() as i32, y0.round() as i32),
-            ((x1 - x0).round() as i32, (y1 - y0).round() as i32),
+        *rect = Rectangle::new(
+            (x0.round() as i32, y0.round() as i32).into(),
+            ((x1 - x0).round() as i32, (y1 - y0).round() as i32).into(),
         );
     } else {
-        *rect = Rectangle::from_loc_and_size(
+        *rect = Rectangle::new(
             (
                 d.start_rect.loc.x + dx.round() as i32,
                 d.start_rect.loc.y + dy.round() as i32,
-            ),
+            ).into(),
             d.start_rect.size,
         );
     }

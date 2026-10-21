@@ -82,7 +82,6 @@ pub fn surface_map(space: &Space<Window>, surface: &WlSurface) -> Option<Surface
     let geom = window.geometry();
 
     // The slot, resolved exactly as `hit.rs` / `window.draw.frame::scene` resolve it.
-    let cfg = model::environment::config::base::get();
     let slot_size = slot::size_of(&window);
 
     let (fit_surf, fit_sx, fit_sy) = match slot_size {

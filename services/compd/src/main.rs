@@ -79,7 +79,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // consumes that signal (`child.pidfd`).
     shutdown::block_signals();
 
-    let environment = world::environment::type_::base::Get();
+    let environment = world::environment::type_::base::get();
     slots::library::debug::client::init_logging();
 
     // Start the developer logging process (fan-in buffer + drain/print + gRPC stream).
@@ -143,7 +143,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     slots::persist::engine::base::init();
     info!(
         "developer log online: gpu={} desktop={}",
-        environment.GPU, environment.DesktopName
+        environment.gpu, environment.desktop_name
     );
 
     info!("Environment: {:?}", environment);
@@ -568,7 +568,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if backend == cli::Backend::Kms {
         world::environment::interface::lifecycle::announce_session(
             wayland_socket_name_default_subprocess_2.to_str().unwrap(),
-            &environment.DesktopName,
+            &environment.desktop_name,
         );
     }
 

@@ -207,10 +207,12 @@ pub fn fit(
 /// scale, where the capture's origin lands, and the fitted frame to crop to.
 /// The shadow and any open popup fall outside the crop, so neither shrinks
 /// the preview.
+pub type ThumbnailPlacement = (f64, Point<i32, Physical>, Rectangle<i32, Physical>);
+
 pub fn place(
     frame: Rectangle<i32, Physical>,
     rect: Rectangle<i32, Physical>,
-) -> Option<(f64, Point<i32, Physical>, Rectangle<i32, Physical>)> {
+) -> Option<ThumbnailPlacement> {
     let (s, frame_at) = fit(frame.size, rect)?;
     // Each corner rounded once, as RescaleRenderElement (and the rounded
     // clip) place the frame: the crop is exactly the frame drawn.
@@ -359,7 +361,7 @@ where
             .draw(frame, src, dst, damage, opaque_regions, cache)
     }
 
-    fn underlying_storage(&self, _renderer: &mut R) -> Option<UnderlyingStorage> {
+    fn underlying_storage(&self, _renderer: &mut R) -> Option<UnderlyingStorage<'_>> {
         None
     }
 

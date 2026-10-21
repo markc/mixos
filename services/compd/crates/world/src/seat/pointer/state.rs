@@ -4,7 +4,6 @@ use std::sync::Arc;
 
 use crate::seat::pointer::element::PointerElement;
 use crate::seat::pointer::texture::pointer_load::CursorThemeCache;
-use smithay::input::pointer::CursorIcon;
 use smithay::utils::{Logical, Point};
 
 pub struct PointerState {

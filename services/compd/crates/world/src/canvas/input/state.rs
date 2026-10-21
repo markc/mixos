@@ -15,14 +15,14 @@ pub enum ActiveOption {
     Moving {
         candidates: ActiveTransformCandidate,
         start_cursor: Point<f64, Logical>,
-        Anchor: Anchor,
+        anchor: Anchor,
         /// Snap targets captured once at grab start (see [`SnapMap`]).
         snap: SnapMap,
     },
     Scaling {
         candidates: ActiveTransformCandidate,
         start_cursor: Point<f64, Logical>,
-        Anchor: Anchor,
+        anchor: Anchor,
         /// Snap targets captured once at grab start (see [`SnapMap`]).
         snap: SnapMap,
     },
@@ -42,12 +42,12 @@ pub enum ActiveTransformCandidate {
 pub enum TargetOption {
     Scale,
     Move,
-    Select { Append: bool },
+    Select { append: bool },
 }
 
 pub struct Anchor {
-    pub Horizontal: bool,
-    pub Vertical: bool,
+    pub horizontal: bool,
+    pub vertical: bool,
 }
 
 /// A snap source captured at grab start: a window's or placeholder's rect plus

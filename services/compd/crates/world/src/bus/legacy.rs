@@ -11,9 +11,11 @@ use std::rc::Rc;
 /// once its state moves into storage, and this module dies with the god object.
 ///
 /// Generic over the loop type so it can live inside it without a dep cycle.
+type Handler<L> = (usize, Rc<dyn Fn(&mut L, &dyn Any)>);
+
 pub struct LegacyBus<L> {
     pub router: ChannelRouter,
-    handlers: Vec<(usize, Rc<dyn Fn(&mut L, &dyn Any)>)>,
+    handlers: Vec<Handler<L>>,
 }
 
 impl<L> Default for LegacyBus<L> {
@@ -66,5 +68,36 @@ pub fn drain<L>(l: &mut L, get: fn(&mut L) -> &mut LegacyBus<L>) {
         for handler in handlers {
             handler(l, message.as_ref());
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    static EVENT: Channel<u32> = Channel::new();
+    static EVENT_TX: ChannelTx<u32> = ChannelTx::new(&EVENT);
+
+    #[derive(Default)]
+    struct State {
+        bus: LegacyBus<Self>,
+        seen: Vec<u32>,
+    }
+
+    #[test]
+    fn handlers_fan_out_and_can_queue_follow_ups_on_the_same_bus() {
+        let mut state = State::default();
+        state.bus.register(&EVENT, |state, value| {
+            state.seen.push(*value);
+            if *value == 1 {
+                state.bus.send(&EVENT_TX, 2);
+            }
+        });
+        state.bus.register(&EVENT, |state, value| state.seen.push(value * 10));
+        state.bus.send(&EVENT_TX, 1);
+        drain(&mut state, |state| &mut state.bus);
+        assert_eq!(state.seen, [1, 10, 2, 20]);
+        drain(&mut state, |state| &mut state.bus);
+        assert_eq!(state.seen, [1, 10, 2, 20]);
     }
 }

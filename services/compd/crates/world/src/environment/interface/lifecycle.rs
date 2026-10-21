@@ -62,6 +62,7 @@ fn systemd_booted() -> bool {
 
 /// One publisher. A non-zero exit is an error like a spawn failure — both mean the
 /// environment did not land.
+#[cfg(feature = "desktop-dbus")]
 fn run(program: &str, leading: &[&str], pairs: &[(&str, &str)]) -> Result<(), String> {
     let mut cmd = command(program);
     cmd.args(leading);

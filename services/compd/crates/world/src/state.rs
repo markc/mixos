@@ -14,27 +14,22 @@ pub use crate::camera::transform::translate::transform::*;
 use crate::environment::type_::base::Environment;
 use drivers::world::audio::controller::interface::AudioController;
 use drivers::world::audio::controller::interface::media::MediaController;
-use graphics::capture::registry::CaptureRegistry;
 use protocols::window::find;
 use protocols::window::shell;
 use smithay::backend::drm::{DrmDeviceFd, DrmNode};
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::multigpu::GpuManager;
 use smithay::backend::renderer::multigpu::gbm::GbmGlesBackend;
-use smithay::desktop::{Window, layer_map_for_output};
+use smithay::desktop::Window;
 
-use crate::camera::state::Camera;
-use crate::canvas::state::CanvasState;
 use crate::seat::gesture::scroll::FingerScrollRamp;
 use crate::seat::pointer::snapshot::CursorSnapshot;
 use dispatcher::wire::Wire;
-use dispatcher::wire::trait_::wire_trait::WireTrait;
-use smithay::reexports::calloop::{EventLoop, LoopSignal, RegistrationToken};
+use smithay::reexports::calloop::LoopSignal;
 use smithay::reexports::wayland_server::DisplayHandle;
 use std::cell::RefCell;
 use std::ffi::OsString;
 use std::rc::Rc;
-use std::time::Instant;
 
 pub struct Loader {
     pub socket_name: OsString,

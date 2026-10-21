@@ -2,11 +2,7 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 use crate::window::draw::element::Element as WindowElement;
 use smithay::backend::renderer::element::solid::SolidColorRenderElement;
-use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
-use smithay::backend::renderer::element::{
-    Element as SmithayElement, Id, RenderElement, UnderlyingStorage,
-};
-use smithay::backend::renderer::{ImportAll, ImportMem, Texture};
+use smithay::backend::renderer::{ImportAll, ImportMem};
 
 use dispatcher::frame::SceneDispatch;
 

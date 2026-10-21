@@ -13,6 +13,6 @@ pub struct Zone {
 }
 
 pub enum ZoneSpecifier {
-    Element { UUID: Vec<Uuid> },
+    Element { uuid: Vec<Uuid> },
     Camera { position: (f64, f64), zoom: f64 },
 }

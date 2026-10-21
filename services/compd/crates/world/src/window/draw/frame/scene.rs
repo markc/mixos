@@ -28,7 +28,6 @@ use crate::window::draw::element::{ClampOpaque, Element, ElementWindowSurface};
 use crate::window::draw::occlude::{Drawn, Occluders};
 use crate::window::interface::draw::visible::DrawWindow;
 use crate::window::interface::record::window::LoopWindow;
-use protocols::window::shell;
 use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::element::solid::SolidColorRenderElement;
 use smithay::backend::renderer::element::surface::{
@@ -402,10 +401,7 @@ where
         renderer,
         size,
         window,
-        ctx,
-        elem_loc,
-        slot_size_of(window),
-        pane_rect(state, ctx, size),
+        WindowPlacement { ctx, elem_loc, slot_size: slot_size_of(window), crop_output: pane_rect(state, ctx, size) },
         decoration,
         decor::render::Pass::Presented,
     );
@@ -413,15 +409,22 @@ where
     (elements, drawn)
 }
 
+struct WindowPlacement {
+    ctx: XformCtx,
+    elem_loc: Point<i32, Logical>,
+    slot_size: Option<Size<i32, Logical>>,
+    crop_output: Rectangle<i32, Physical>,
+}
+
+pub type WindowCapture<R> = (Vec<Element<R>>, Size<i32, Physical>);
+pub type FramedWindowCapture<R> = (Vec<Element<R>>, Size<i32, Physical>, Rectangle<i32, Physical>);
+
 /// The same content/chrome assembly for presentation and window-local captures.
 fn window_elements<R>(
     renderer: &mut R,
     size: Size<i32, Physical>,
     window: &Window,
-    ctx: XformCtx,
-    elem_loc: Point<i32, Logical>,
-    slot_size: Option<Size<i32, Logical>>,
-    crop_output: Rectangle<i32, Physical>,
+    placement: WindowPlacement,
     decoration: Vec<SolidColorRenderElement>,
     pass: decor::render::Pass,
 ) -> (Vec<Element<R>>, Vec<Rectangle<i32, Physical>>)
@@ -429,6 +432,7 @@ where
     R: Renderer + ImportAll + ImportMem + dispatcher::frame::SceneDispatch,
     R::TextureId: Texture + Clone + Send + 'static,
 {
+    let WindowPlacement { ctx, elem_loc, slot_size, crop_output } = placement;
     let bundle_owned = false;
     let output_scale = ctx.scale * ctx.camera_zoom;
     let zoom = ctx.camera_zoom;
@@ -803,7 +807,7 @@ pub fn capture<R>(
     renderer: &mut R,
     window: &Window,
     scale: f64,
-) -> Result<(Vec<Element<R>>, Size<i32, Physical>), String>
+) -> Result<WindowCapture<R>, String>
 where
     R: Renderer + ImportAll + ImportMem + dispatcher::frame::SceneDispatch,
     R::TextureId: Texture + Clone + Send + 'static,
@@ -817,14 +821,7 @@ pub fn capture_framed<R>(
     renderer: &mut R,
     window: &Window,
     scale: f64,
-) -> Result<
-    (
-        Vec<Element<R>>,
-        Size<i32, Physical>,
-        Rectangle<i32, Physical>,
-    ),
-    String,
->
+) -> Result<FramedWindowCapture<R>, String>
 where
     R: Renderer + ImportAll + ImportMem + dispatcher::frame::SceneDispatch,
     R::TextureId: Texture + Clone + Send + 'static,
@@ -913,10 +910,7 @@ where
         renderer,
         size,
         window,
-        ctx,
-        (0, 0).into(),
-        Some(content),
-        Rectangle::from_size(size),
+        WindowPlacement { ctx, elem_loc: (0, 0).into(), slot_size: Some(content), crop_output: Rectangle::from_size(size) },
         Vec::new(),
         decor::render::Pass::Captured,
     );

@@ -62,7 +62,7 @@ impl WindowLifecycleEvent {
                     states
                         .data_map
                         .get::<std::sync::Mutex<crate::window::interface::data::WindowData>>()
-                        .is_some_and(|data| data.lock().unwrap().UUID == *uuid)
+                        .is_some_and(|data| data.lock().unwrap().uuid == *uuid)
                 })
             }
         }

@@ -15,17 +15,12 @@ use smithay::reexports::wayland_server::DisplayHandle;
 /// [`populate`]. Operations needing `&mut D` (e.g. pointer.motion) remain
 /// driver-applied — systems announce intent, the driver performs it.
 pub static DISPLAY: Token<DisplayHandle> = Token::new();
-pub(crate) static DISPLAY_MUT: TokenMut<DisplayHandle> = TokenMut::new(&DISPLAY);
 
 pub static LOOP_HANDLE: Token<LoopHandle<'static, Loop>> = Token::new();
-pub(crate) static LOOP_HANDLE_MUT: TokenMut<LoopHandle<'static, Loop>> =
-    TokenMut::new(&LOOP_HANDLE);
 
 pub static POINTER: Token<PointerHandle<Dispatch>> = Token::new();
-pub(crate) static POINTER_MUT: TokenMut<PointerHandle<Dispatch>> = TokenMut::new(&POINTER);
 
 pub static KEYBOARD: Token<KeyboardHandle<Dispatch>> = Token::new();
-pub(crate) static KEYBOARD_MUT: TokenMut<KeyboardHandle<Dispatch>> = TokenMut::new(&KEYBOARD);
 
 /// Per-frame screen context — the OUTPUT this pass draws: its physical size,
 /// scale and key. Refreshed by the frame driver before every output's systems

@@ -20,7 +20,7 @@ pub fn route(l: &mut Loop, event: InputEvent) -> InputFlow {
     // exists at input time (events arrive outside a render pass), hence `None`.
     // SAFETY: `platform` is scoped to this `input()` call; the rim holds `&mut`
     // l.inner.space_state for the whole call and touches it only through this hatch.
-    let gpu = l.inner.environment.GPU.clone();
+    let gpu = l.inner.environment.gpu.clone();
     let mut platform = unsafe { Platform::new(None, &mut l.inner.space_state_mut().state, &gpu) };
     let worlds = &mut l.inner.worlds;
     let kernel = &l.inner.kernel;

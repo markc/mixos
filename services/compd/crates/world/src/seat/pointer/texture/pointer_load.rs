@@ -142,12 +142,12 @@ impl CursorThemeCache {
 
         let mut file = match std::fs::File::open(&path) {
             Ok(f) => f,
-            Err(e) => {
+            Err(_e) => {
                 return None;
             }
         };
         let mut buf = Vec::new();
-        if let Err(e) = file.read_to_end(&mut buf) {
+        if let Err(_e) = file.read_to_end(&mut buf) {
             return None;
         }
 
@@ -207,6 +207,7 @@ fn alternates(name: &str) -> &'static [&'static str] {
 
 /// Original, source-defined arrow: an opaque dark outline and light fill keep
 /// it visible on both light and dark surfaces. No installed artwork is needed.
+#[cfg(test)]
 fn arrow_pixels(size: u32) -> Vec<u8> {
     arrow_pixels_filled(size, ARROW_FILL)
 }

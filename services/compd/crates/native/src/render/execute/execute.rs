@@ -664,7 +664,7 @@ pub fn execute(
         {
             let mut r = gles_renderer.borrow_mut();
             let _ = registry.set_output_size(
-                state.inner.environment.GPU.as_str(),
+                state.inner.environment.gpu.as_str(),
                 r.as_mut(),
                 output_id,
                 size,

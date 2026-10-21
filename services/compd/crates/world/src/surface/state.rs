@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 use std::sync::mpsc;
-use ui::{HandleId, UiHandle, UiRegistry};
+use ui::UiRegistry;
 
 pub struct SurfaceState {
     // The wgpu GPU context is shared driver data (kernel `UI_CONTEXT`), not

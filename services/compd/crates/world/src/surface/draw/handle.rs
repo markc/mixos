@@ -2,9 +2,8 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 use crate::state::Loop;
 use smithay::backend::renderer::gles::GlesRenderer;
-use smithay::utils::{Logical, Physical, Point, Rectangle, Size};
-use std::sync::{Arc, mpsc};
-use ui::{UiHandle, UiRegistry};
+use smithay::utils::{Physical, Rectangle};
+use ui::UiHandle;
 
 use ui::{UiProgram, UiSnapshot};
 
@@ -22,7 +21,7 @@ pub fn load_snapshot<T: UiSnapshot>(
     space: UiSpace,
     layer: u64,
 ) -> UiHandle<T> {
-    let gpu = state.inner.environment.GPU.clone();
+    let gpu = state.inner.environment.gpu.clone();
     let handle = {
         let registry = state
             .inner
@@ -70,7 +69,7 @@ pub fn load<T: UiProgram>(
     layer: u64,
 ) -> UiHandle<T> {
     // Hoist GPU before the surface-registry borrow (surface_mut borrows all of inner).
-    let gpu = state.inner.environment.GPU.clone();
+    let gpu = state.inner.environment.gpu.clone();
     let registry = state
         .inner
         .surface_mut()

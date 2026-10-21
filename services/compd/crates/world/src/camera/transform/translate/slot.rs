@@ -11,7 +11,6 @@
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use protocols::window::shell;
 use smithay::desktop::{Space, Window};
 use smithay::utils::{Logical, Rectangle, Size};
 

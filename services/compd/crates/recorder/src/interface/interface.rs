@@ -449,7 +449,7 @@ fn begin_active(state: &mut Loop, renderer: &mut GlesRenderer) {
         CaptureTarget::FullScreen => CaptureSource::OutputFramebuffer(output_id),
     };
 
-    let gpu = state.inner.environment.GPU.clone();
+    let gpu = state.inner.environment.gpu.clone();
     let req = state
         .inner
         .kernel
@@ -1400,7 +1400,7 @@ fn update_crop(state: &mut Loop, renderer: &mut GlesRenderer) {
     if matches!(target, CaptureTarget::ScreenRegion(_))
         && let Some(crop) = clamp_rect(indicator, sw, sh)
     {
-        let gpu = state.inner.environment.GPU.clone();
+        let gpu = state.inner.environment.gpu.clone();
         if let Some(reg) = state
             .inner
             .kernel

@@ -286,7 +286,9 @@ fn tty(state: &mut Loop, num: u32) {
 
         // The libseat session is the only authority on VT switching.
         if let Some(ses) = &mut state.state.seat.libseat {
-            ses.change_vt(num as i32);
+            if let Err(err) = ses.change_vt(num as i32) {
+                warn!("could not switch to VT{num}: {err}");
+            }
         }
     });
 }

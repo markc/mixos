@@ -275,7 +275,7 @@ pub fn hit(lp: &Loop, position_world: Point<f64, Logical>) -> Option<Option<Surf
         let (surface, origin) =
             under_from_surface_tree(lock.wl_surface(), local, (0, 0), WindowSurfaceType::ALL)?;
         Some(SurfaceHit::Layer {
-            Ice: Some(true),
+            ice: Some(true),
             layer: Layer::Overlay,
             surface,
             position_space: (geometry.loc + origin).to_f64(),

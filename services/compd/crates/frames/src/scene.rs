@@ -496,7 +496,7 @@ pub fn prepare(
     // panes resolve visibility correctly.
     if dealloc {
         let panes = ui_panes(state, size);
-        let gpu = state.inner.environment.GPU.clone();
+        let gpu = state.inner.environment.gpu.clone();
         // Real compositing z-order (topmost-first) so occlusion follows the
         // DrawOrder authority, not the registry's `items` Vec. World UI ids map
         // reversibly from their drawable uuid (see `surface.draw.handle::load`).
@@ -758,7 +758,7 @@ where
                     // pane rect), where the element geometry is well-defined.
                     match item {
                         world::canvas::draw::scene::ContentItem::Canvas { elem } => {
-                            plan.push(content_layer, DrawNode::Canvas { elem })
+                            plan.push(content_layer, DrawNode::Canvas { elem: *elem })
                         }
                         world::canvas::draw::scene::ContentItem::UI(e) => {
                             // World-space UI surfaces clip to the pane (native +

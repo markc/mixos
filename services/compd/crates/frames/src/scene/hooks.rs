@@ -112,7 +112,7 @@ pub fn world_tick(
         worlds.active_mut().dispatch(kernel);
         worlds.kernel_mut().dispatch(kernel);
     }
-    let gpu = state.inner.environment.GPU.clone();
+    let gpu = state.inner.environment.gpu.clone();
     let mut plan = FramePlan::new();
     {
         // Lend systems the live renderer + window Space via the Platform hatch.

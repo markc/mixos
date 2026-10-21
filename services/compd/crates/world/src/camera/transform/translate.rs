@@ -6,9 +6,6 @@ pub mod map;
 pub mod slot;
 pub mod transform;
 
-use crate::camera::transform::state::Transform;
-use smithay::output::Scale;
-use smithay::utils::{Logical, Point, Size};
 
 // Our world is anchored to center center while smithay logical space is top left.
 // This functions receives logical space. It scales the results which is necessary due to anchor being different

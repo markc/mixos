@@ -592,7 +592,7 @@ fn compose(
                     .get(&world::driver::capture::base::CAPTURE_REGISTRY)
                 {
                     registry.tick(
-                        state.inner.environment.GPU.as_str(),
+                        state.inner.environment.gpu.as_str(),
                         gles_renderer,
                         capture_output,
                         &gles_framebuffer,

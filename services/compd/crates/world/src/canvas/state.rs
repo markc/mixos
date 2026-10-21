@@ -8,7 +8,7 @@ use slots::input::event::base::Modality;
 // Selection -> SelectSystem (SELECT); grouping -> GroupSystem (GROUP). Canvas is
 // being decomposed into per-system slots; only the input Grab remains here.
 pub struct CanvasState {
-    pub Grab: CanvasGrab,
+    pub grab: CanvasGrab,
     /// Pan-in-progress flag: set when a canvas pan starts, cleared on release;
     /// canvas motion gates camera panning on it. Lives here (with the grab) not
     /// in the camera, so the canvas owner can flip it synchronously.
@@ -53,7 +53,7 @@ impl Default for CanvasState {
 impl CanvasState {
     pub fn new() -> Self {
         Self {
-            Grab: CanvasGrab::None,
+            grab: CanvasGrab::None,
             position_updating: false,
             finger_pan: false,
             select_transform: false,
@@ -68,7 +68,7 @@ impl CanvasState {
     /// window between them), so teleport must stay enabled — unlike a screen-surface
     /// drag (settings layout-canvas pan) where it's suppressed.
     pub fn active_grab(&self) -> bool {
-        matches!(self.Grab, CanvasGrab::Active(_))
+        matches!(self.grab, CanvasGrab::Active(_))
     }
 
     /// A select-box (rubber band) drag is in progress. The odd one out among the
@@ -79,7 +79,7 @@ impl CanvasState {
     /// `pointer.input/extent`.
     pub fn select_box(&self) -> bool {
         matches!(
-            self.Grab,
+            self.grab,
             CanvasGrab::Active(ActiveOption::SelectBox { .. })
         )
     }

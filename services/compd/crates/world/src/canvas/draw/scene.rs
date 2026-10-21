@@ -5,10 +5,8 @@ use crate::state::CoordinateTrait;
 use crate::state::Loop;
 use crate::window::draw::occlude::{Occluders, Visible};
 use crate::window::interface::record::window::LoopWindow;
-use protocols::window::find;
 use smithay::backend::renderer::{ImportAll, ImportMem, Renderer, Texture};
 use smithay::desktop::Window;
-use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Physical, Point, Size};
 use std::collections::{HashMap, HashSet};
 use ui::{HandleId, Transform as UiTransform, UiRenderElement, UiSpace};
@@ -18,7 +16,7 @@ use uuid::Uuid;
 /// UI surface. Windows and world UI interleave here by the
 /// renderer-agnostic DrawOrder ("everything interleaves").
 pub enum ContentItem<R: Renderer> {
-    Canvas { elem: Element<R> },
+    Canvas { elem: Box<Element<R>> },
     UI(UiRenderElement),
 }
 
@@ -84,7 +82,7 @@ where
     };
     let size_f64 = size.to_f64();
 
-    let mut draw_window = |state: &mut Loop,
+    let draw_window = |state: &mut Loop,
                            renderer: &mut R,
                            window: &Window,
                            content: &mut Vec<ContentItem<R>>,
@@ -108,7 +106,7 @@ where
         }
         for e in elems {
             content.push(ContentItem::Canvas {
-                elem: Element::Window(e),
+                elem: Box::new(Element::Window(e)),
             });
         }
     };
@@ -179,7 +177,7 @@ where
             crate::canvas::cursor::element::scene::scene(state, renderer, size, &canvas_context)
         {
             content.push(ContentItem::Canvas {
-                elem: Element::SolidBox(e),
+                elem: Box::new(Element::SolidBox(e)),
             });
         }
     }

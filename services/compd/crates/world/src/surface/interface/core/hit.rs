@@ -53,7 +53,6 @@ pub(crate) fn root_dst(surface: &WlSurface) -> Option<smithay::utils::Size<i32, 
             .map(|v: SurfaceView| v.dst)
     })
 }
-use protocols::window::shell;
 use slots::storage::slot::base::Storage;
 use ui::{HandleId, Transform as UiTransform, UiSpace};
 
@@ -206,7 +205,7 @@ pub enum SurfaceHit {
         chrome: Option<decor::window::ChromeHit>,
     },
     Layer {
-        Ice: Option<bool>,
+        ice: Option<bool>,
         layer: Layer,
         surface: WlSurface,
         position_space: Point<f64, Logical>,
@@ -263,7 +262,7 @@ impl SurfaceHit {
 
     pub fn ice(&self) -> Option<bool> {
         match self {
-            Self::Layer { Ice, .. } => *Ice,
+            Self::Layer { ice, .. } => *ice,
             _ => None,
         }
     }
@@ -426,7 +425,6 @@ fn hit_window(
     position_world: Point<f64, Logical>,
     filter: HitFilter,
 ) -> Option<SurfaceHit> {
-    let cfg = model::environment::config::base::get();
     let elem_loc = hcx
         .space_state()
         .state
@@ -718,7 +716,7 @@ pub fn surface_under_filtered_cx(
             // Containment (broad phase) includes popups so a click on a menu off the bar
             // counts — `bbox_with_popups.loc` is negative when a popup extends up/left.
             let popups = layer_surface.bbox_with_popups();
-            let hit_rect = Rectangle::from_loc_and_size(geo.loc + popups.loc, popups.size);
+            let hit_rect = Rectangle::new(geo.loc + popups.loc, popups.size);
 
             if !hit_rect.to_f64().contains(output_pos) {
                 continue;
@@ -741,7 +739,7 @@ pub fn surface_under_filtered_cx(
             let unscaled = position_screen - surface_origin_space;
 
             let hit = SurfaceHit::Layer {
-                Ice: Some(true),
+                ice: Some(true),
                 layer: layer_band,
                 surface: s,
                 position_space: position_world - unscaled,

@@ -2,7 +2,6 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 use crate::scene::identity::SolidBank;
 use smithay::backend::renderer::element::solid::SolidColorRenderElement;
-use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::{ImportAll, ImportMem, Texture};
 
 /// Per-window slot bank for the four border edges. A NEWTYPE, not a bare
@@ -11,7 +10,6 @@ use smithay::backend::renderer::{ImportAll, ImportMem, Texture};
 /// same window (the letterbox bars in `window.draw/draw.frame` do exactly that).
 #[derive(Default)]
 struct Border(SolidBank);
-use crate::camera::transform::translate::transform::Transform;
 use crate::state::CoordinateTrait;
 use crate::state::Loop;
 use crate::window::interface::draw::bound::CalculateBoundResult;
@@ -21,8 +19,8 @@ use smithay::utils::{Physical, Point, Rectangle, Size};
 
 pub fn scene<R>(
     state: &mut Loop,
-    renderer: &mut R,
-    size: Size<i32, Physical>,
+    _renderer: &mut R,
+    _size: Size<i32, Physical>,
     window: &Window,
     context: &crate::canvas::draw::context::Context,
     bound: &CalculateBoundResult,
@@ -83,25 +81,25 @@ where
     // It probably shouldn't scale the border with zoom? check now
     // let bw_screen = scale(&state.inner.camera_mut().transform, bw_logical);
 
-    // let top_rect = smithay::utils::Rectangle::from_loc_and_size(
+    // let top_rect = smithay::utils::Rectangle::new(
     //     (render_with.loc.x, render_with.loc.y - 1.0),
     //     (render_with.size.w, bw_screen),
     // );
 
     let ctx = state.viewport_context();
 
-    // Frame the compositor-decided **slot** (`bound.Screen`, already projected from the slot
+    // Frame the compositor-decided **slot** (`bound.screen`, already projected from the slot
     // rect in `bound::calculate`), NOT `element_geometry`. The slot is the region the window
     // content is letterboxed into and the rect other interfaces key off, so the border must
     // match it exactly regardless of how the client misbehaves.
     let render_with: Rectangle<i32, Physical> = Rectangle::new(
         Point::from((
-            bound.Screen.Left.round() as i32,
-            bound.Screen.Top.round() as i32,
+            bound.screen.left.round() as i32,
+            bound.screen.top.round() as i32,
         )),
         Size::from((
-            bound.Screen.Width.round() as i32,
-            bound.Screen.Height.round() as i32,
+            bound.screen.width.round() as i32,
+            bound.screen.height.round() as i32,
         )),
     );
 
@@ -139,18 +137,18 @@ where
     // right_rect.loc.x += right_rect.size.w;
     // right_rect.size.w = bw_screen.round() as i32;
 
-    // let bottom_rect = smithay::utils::Rectangle::from_loc_and_size(
-    //     (bound.Screen.Left, bound.Screen.Top),
-    //     (bound.Screen.Width, bw_screen),
+    // let bottom_rect = smithay::utils::Rectangle::new(
+    //     (bound.screen.left, bound.screen.top),
+    //     (bound.screen.width, bw_screen),
     // );
 
-    // let left_rect = smithay::utils::Rectangle::from_loc_and_size(
-    //     (bound.Screen.Left - 1.0, bound.Screen.Top),
-    //     (bw_screen, bound.Screen.Height),
+    // let left_rect = smithay::utils::Rectangle::new(
+    //     (bound.screen.left - 1.0, bound.screen.top),
+    //     (bw_screen, bound.screen.height),
     // );
-    // let right_rect = smithay::utils::Rectangle::from_loc_and_size(
-    //     (bound.Screen.Right, bound.Screen.Top),
-    //     (bw_screen, bound.Screen.Height),
+    // let right_rect = smithay::utils::Rectangle::new(
+    //     (bound.screen.right, bound.screen.top),
+    //     (bw_screen, bound.screen.height),
     // );
 
     // When drawing a split/floating viewport pane, clip the borders to the pane's
@@ -191,9 +189,9 @@ where
     }
 
     // // Create a logical bounding box for the trigger zone (sitting right on top of the window)
-    let trigger_zone_world: Rectangle<f64, Physical> = smithay::utils::Rectangle::from_loc_and_size(
-        (bound.World.Left, bound.World.Top - bw_screen),
-        (bound.Box.size.w as f64, bw_screen),
+    let trigger_zone_world: Rectangle<f64, Physical> = smithay::utils::Rectangle::new(
+        (bound.world.left, bound.world.top - bw_screen).into(),
+        (bound.bounds.size.w as f64, bw_screen).into(),
     );
 
     //
@@ -204,10 +202,10 @@ where
     )) {
         // 3. --- RENDER THE HEADER ---
         // Calculate physical placement, just like we did for windows
-        // let world_offset_x = bound.World.Left as f64 - state.inner.camera_mut().position.x;
-        // let world_offset_y = (bound.World.Top as f64 - header_logical_height) - state.inner.camera_mut().position.y;
-        // let world_offset_x = bound.World.Left as f64 - state.inner.camera_mut().position.x;
-        // let world_offset_y = (bound.World.Top as f64 - header_logical_height) - state.inner.camera_mut().position.y;
+        // let world_offset_x = bound.world.left as f64 - state.inner.camera_mut().position.x;
+        // let world_offset_y = (bound.world.top as f64 - header_logical_height) - state.inner.camera_mut().position.y;
+        // let world_offset_x = bound.world.left as f64 - state.inner.camera_mut().position.x;
+        // let world_offset_y = (bound.world.top as f64 - header_logical_height) - state.inner.camera_mut().position.y;
         //
         // let scaled_x = world_offset_x * state.inner.camera_mut().zoom;
         // let scaled_y = world_offset_y * state.inner.camera_mut().zoom;
@@ -217,13 +215,13 @@ where
 
         // Scale the physical dimensions of the header
         // let physical_width =
-        //     bw_screen as i32 + ((bound.Box.size.w) as f64 * state.inner.camera_mut().transform.zoom()) as i32;
+        //     bw_screen as i32 + ((bound.bounds.size.w) as f64 * state.inner.camera_mut().transform.zoom()) as i32;
         // let physical_height = (header_logical_height * state.inner.camera_mut().transform.zoom()) as i32;
         //
-        // let screen_x = bound.Screen.Left;
-        // let screen_y = bound.Screen.Top - physical_height as f64;
+        // let screen_x = bound.screen.left;
+        // let screen_y = bound.screen.top - physical_height as f64;
         //
-        // let header_rect = smithay::utils::Rectangle::from_loc_and_size(
+        // let header_rect = smithay::utils::Rectangle::new(
         //     (screen_x as i32, screen_y as i32),
         //     (physical_width, physical_height),
         // );

@@ -6,7 +6,7 @@ use crate::state::CoordinateTrait;
 use crate::state::{Loop, Transform};
 use smithay::backend::renderer::element::solid::SolidColorRenderElement;
 use smithay::backend::renderer::{ImportAll, ImportMem, Texture};
-use smithay::utils::{Physical, Point, Rectangle, Size};
+use smithay::utils::{Physical, Rectangle, Size};
 
 thread_local! {
     /// One canvas cursor exists, so it gets one identity that outlives the frame.

@@ -78,7 +78,7 @@ fn base_env(state: &Loop) -> BaseEnv {
         .to_string_lossy()
         .into_owned();
     Box::new(move || {
-        let desktop = world::environment::type_::base::Get().DesktopName;
+        let desktop = world::environment::type_::base::get().desktop_name;
         vec![
             ("WAYLAND_DISPLAY".into(), wayland_display.clone()),
             // The X display, once our own XWayland server is up — read live, which is

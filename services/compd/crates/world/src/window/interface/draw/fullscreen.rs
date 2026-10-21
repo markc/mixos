@@ -9,7 +9,6 @@ use dispatcher::wire::trait_::wire_trait::WireTrait;
 use protocols::window::find;
 use protocols::window::shell;
 use smithay::desktop::Window;
-use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::utils::{Logical, Point, Size};
 
 /// Apply (or clear) fullscreen on a window.

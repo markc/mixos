@@ -3,10 +3,7 @@
 use crate::window::interface::data::{WindowData, WindowFullscreen};
 use dispatcher::wayland::xdg::activation::dispatch::wire::ActivationDetails;
 use protocols::window::ident;
-use smithay::desktop::{Space, Window};
-use smithay::reexports::wayland_server::DisplayHandle;
-use smithay::wayland::compositor::with_states;
-use smithay::wayland::seat::WaylandFocus;
+use smithay::desktop::Window;
 use smithay::wayland::xdg_activation::{XdgActivationToken, XdgActivationTokenData};
 use std::cell::RefCell;
 use uuid::Uuid;
@@ -31,7 +28,7 @@ impl LoopWindow for Window {
     }
 
     fn uuid(&self) -> Option<Uuid> {
-        self.window_data().map(|w| w.UUID)
+        self.window_data().map(|w| w.uuid)
     }
 
     fn fullscreen(&self) -> Option<WindowFullscreen> {

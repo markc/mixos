@@ -80,7 +80,7 @@ thread_local! {
 
 /// Top-right rect at the given output size (output-local coords).
 fn fps_rect(size: Size<i32, Physical>) -> Rectangle<i32, Physical> {
-    Rectangle::from_loc_and_size(
+    Rectangle::new(
         Point::from(((size.w - W - MARGIN).max(0), MARGIN)),
         Size::from((W, H)),
     )

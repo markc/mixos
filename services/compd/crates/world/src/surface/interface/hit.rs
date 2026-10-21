@@ -14,11 +14,10 @@ use crate::camera::transform::translate::transform::{Context as XformCtx, Transf
 use crate::state::CoordinateTrait;
 use crate::state::Loop;
 use protocols::window::ident;
-use smithay::desktop::{Window, layer_map_for_output};
-use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
+use smithay::desktop::layer_map_for_output;
 use smithay::utils::{Logical, Physical, Point, Rectangle, Size};
 use smithay::wayland::shell::wlr_layer::Layer;
-use ui::{HandleId, Transform as UiTransform, UiSpace};
+use ui::{Transform as UiTransform, UiSpace};
 
 // The hit type, filter, context, and the `_cx` hit-test entry come from the
 // Loop-free core; re-export so callers keep using `surface_interface_base::hit::*`.
@@ -53,7 +52,7 @@ pub fn surface_under_filtered(
 /// (always in matched pairs for a single call).
 #[inline]
 fn coerce_rect<K1, K2>(r: Rectangle<f64, K1>) -> Rectangle<f64, K2> {
-    Rectangle::from_loc_and_size(
+    Rectangle::new(
         Point::<f64, K2>::from((r.loc.x, r.loc.y)),
         Size::<f64, K2>::from((r.size.w, r.size.h)),
     )
@@ -102,9 +101,9 @@ where
                 continue;
             }
             let item_rect_i = item.screen_rect(&ui_transform, ui_output_size);
-            let item_rect = Rectangle::<f64, Physical>::from_loc_and_size(
-                (item_rect_i.loc.x as f64, item_rect_i.loc.y as f64),
-                (item_rect_i.size.w as f64, item_rect_i.size.h as f64),
+            let item_rect = Rectangle::<f64, Physical>::new(
+                (item_rect_i.loc.x as f64, item_rect_i.loc.y as f64).into(),
+                (item_rect_i.size.w as f64, item_rect_i.size.h as f64).into(),
             );
 
             if callback(coerce_rect(bbox_phys), coerce_rect(item_rect)) {
@@ -150,7 +149,7 @@ where
         };
 
         // bbox relative to the output's top-left, in screen-logical.
-        let output_relative_bbox = Rectangle::from_loc_and_size(
+        let output_relative_bbox = Rectangle::new(
             bbox_screen_logical.loc - output_loc,
             bbox_screen_logical.size,
         );
@@ -161,7 +160,7 @@ where
         // Bottom/Background after — see the call order below). The banding is
         // what protects windows from background/bottom surfaces, so no selection
         // gate is needed for a dock/bar to be reachable.
-        let mut collect_layer = |layer_band: Layer, hits: &mut Vec<SurfaceHit>| {
+        let collect_layer = |layer_band: Layer, hits: &mut Vec<SurfaceHit>| {
             for layer_surface in layer_map.layers_on(layer_band).rev() {
                 // smithay's arranged geometry (honors anchor/margin/exclusive/size); the
                 // interactive rect includes popups so a menu off the bar is reachable.
@@ -169,12 +168,12 @@ where
                     continue;
                 };
                 let popups = layer_surface.bbox_with_popups();
-                let geom = Rectangle::from_loc_and_size(geo.loc + popups.loc, popups.size).to_f64();
+                let geom = Rectangle::new(geo.loc + popups.loc, popups.size).to_f64();
 
                 if callback(output_relative_bbox, geom) {
                     let s = layer_surface.wl_surface().clone();
                     let hit = SurfaceHit::Layer {
-                        Ice: Some(true),
+                        ice: Some(true),
                         layer: layer_band,
                         surface: s,
                         position_space: bbox_world.loc,
@@ -233,9 +232,9 @@ where
                 }
                 let item_loc = item.location();
                 let item_size = item.size();
-                let target_phys = Rectangle::<f64, Physical>::from_loc_and_size(
-                    (item_loc.x as f64, item_loc.y as f64),
-                    (item_size.w as f64, item_size.h as f64),
+                let target_phys = Rectangle::<f64, Physical>::new(
+                    (item_loc.x as f64, item_loc.y as f64).into(),
+                    (item_size.w as f64, item_size.h as f64).into(),
                 );
 
                 if callback(coerce_rect(bbox_phys), coerce_rect(target_phys)) {
