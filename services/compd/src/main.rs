@@ -11,14 +11,11 @@ mod shutdown;
 mod wayland;
 mod xwayland;
 
-use model::{info, trace, warn};
+use model::{info, warn};
 
 use dispatcher::wire::trait_::wire_trait::WireTrait;
-use smithay::reexports::calloop::channel as cl_channel;
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{Interest, Mode, PostAction};
-use smithay::reexports::{calloop::EventLoop, wayland_server::Display};
-use std::time::Instant;
 use world::state::Loop;
 use world::state::{Loader, Orchestrator as State};
 // App-launch executor (kernel.execution driver) — all worker/reaper/channel

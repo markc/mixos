@@ -31,7 +31,6 @@ use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::calloop::{EventLoop, Interest, LoopHandle, Mode, PostAction};
 use smithay::reexports::wayland_server::DisplayHandle;
-use smithay::reexports::wayland_server::Resource;
 use smithay::xwayland::X11Surface;
 use smithay::xwayland::{X11Wm, XWayland, XWaylandEvent};
 use world::environment::interface::lifecycle;

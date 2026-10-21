@@ -85,7 +85,7 @@ pub fn parse(version: &str) -> Cli {
 pub fn parse_from(args: impl Iterator<Item = String>, version: &str) -> Cli {
     let mut cli = Cli::default();
     let mut args = args.peekable();
-    let mut set_backend = |cli: &mut Cli, b: Backend| {
+    let set_backend = |cli: &mut Cli, b: Backend| {
         if cli.backend.is_some_and(|prev| prev != b) {
             refuse("--nested, --kms/kms-live and --headless are mutually exclusive");
         }
