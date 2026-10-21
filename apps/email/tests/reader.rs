@@ -953,6 +953,36 @@ fn button(h: &Harness<'static, (State, Vec<UiEvent>)>, key: &str) -> egui::Rect 
 }
 
 #[test]
+fn composer_uses_taller_padded_fields_without_losing_shared_editor_input() {
+    let mut overlay = toolkit::theme::Overlay::default();
+    for (name, value) in [("field_height", 48.0), ("field_padding_y", 8.0)] {
+        overlay
+            .style
+            .insert(name.into(), design::StyleValueSource::Number(value));
+    }
+    let theme = theme(Scheme::Studio, Mode::Dark)
+        .with_overlay(overlay)
+        .unwrap();
+    let mut state = opened("text/plain", PLAIN);
+    assert!(state.open_compose(Some("home"), Default::default()));
+    let mut h = window(state, &theme);
+    h.run();
+    let to = field(&h, "To").unwrap();
+    let subject = field(&h, "Subject").unwrap();
+    let cc = button(&h, "show-cc");
+    assert!((cc.height() - 48.0).abs() < 1.0, "{cc:?}");
+    assert!((cc.center().y - to.center().y).abs() < 4.0);
+    assert!(subject.top() > to.bottom(), "padded rows do not overlap");
+    h.get_by_label("Body").click();
+    h.get_by_label("Body").type_text("Body with taller fields");
+    h.run();
+    assert_eq!(
+        h.state().0.compose.as_ref().unwrap().body.contents(),
+        "Body with taller fields"
+    );
+}
+
+#[test]
 fn compose_rows_put_labels_outside_and_open_cc_bcc_and_reply_to_from_the_to_row() {
     let mut state = opened("text/plain", PLAIN);
     assert!(state.open_compose(Some("home"), Default::default()));
