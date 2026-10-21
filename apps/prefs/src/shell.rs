@@ -521,7 +521,14 @@ impl Shell {
             }
             None => self.theme.clone(),
         };
-        toolkit::install(&self.ctx, &base.with_choice(&choice));
+        let theme = match base.with_choice(&choice) {
+            Ok(theme) => theme,
+            Err(error) => {
+                eprintln!("toolkit: theme choice refused: {error}");
+                return;
+            }
+        };
+        toolkit::install(&self.ctx, &theme);
         self.engine.session = (base.scheme(), base.mode());
         self.installed = (choice, look);
     }

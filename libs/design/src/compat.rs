@@ -94,10 +94,13 @@ impl Table {
     ) -> Option<(&StyleValueSource, &str)> {
         self.versions.iter().find_map(|(version, entries)| {
             let values = entries.tokens.get(name)?;
-            [Some(style), base, Some(scheme), Some("plain"), Some("all")]
+            // `all` is table metadata, never an authored style-name match.
+            [Some(style), base, Some(scheme), Some("plain")]
                 .into_iter()
                 .flatten()
+                .filter(|name| *name != "all")
                 .find_map(|name| values.get(name))
+                .or_else(|| values.get("all"))
                 .map(|value| (value, version.as_str()))
         })
     }
@@ -106,6 +109,17 @@ impl Table {
 pub fn table() -> &'static Table {
     static TABLE: OnceLock<Table> = OnceLock::new();
     TABLE.get_or_init(|| Table::parse(SOURCE).expect("the shipped compatibility table is valid"))
+}
+
+/// Human-readable diagnostics generated from structured table provenance.
+pub(crate) fn diagnostics(defaulted: &BTreeMap<String, String>) -> Vec<crate::DesignDiagnostic> {
+    defaulted.iter().map(|(path, version)| {
+        let code = if path.contains(".terminal.") { "defaulted-terminal" }
+            else if path.contains(".schemes.") { "defaulted-scheme" }
+            else if path.rsplit(".styles.").next().is_some_and(|name| name.contains('.')) { "defaulted-style-token" }
+            else { "defaulted-style" };
+        crate::DesignDiagnostic::info(code, path.clone(), format!("defaulted from compatibility {version}"))
+    }).collect()
 }
 
 #[cfg(test)]
@@ -148,5 +162,17 @@ mod tests {
                 &StyleValueSource::Number(expected)
             );
         }
+    }
+
+    #[test]
+    fn a_custom_style_named_all_does_not_capture_the_shared_default() {
+        let source = SOURCE.replacen("\"v2\":", "v3: { tokens: { future_token: { all: 2, pro: 7, plain: 3 } }, styles: {}, schemes: {}, terminal: {} }, v2:", 1);
+        let table = Table::parse(&source).unwrap();
+        for (base, scheme, expected) in [(Some("pro"), "classic", 7.0), (None, "absent", 3.0)] {
+            let (value, version) = table.token("future_token", "all", base, scheme).unwrap();
+            assert_eq!(value, &StyleValueSource::Number(expected));
+            assert_eq!(version, "v3");
+        }
+        assert_eq!(table.token("field_height", "all", Some("pro"), "studio").unwrap().1, "v2");
     }
 }

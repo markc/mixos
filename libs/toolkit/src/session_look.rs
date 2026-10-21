@@ -35,11 +35,9 @@ pub fn theme(appearance: &Appearance) -> Option<Theme> {
     let captions = CaptionSide::from_name(&appearance.caption_side)?;
     // The icon and type choices ride on the theme, so every app that installs
     // this look draws with them; a choice left unset keeps the design's value.
-    Some(
-        Theme::for_context(context)
+    Theme::for_context(context)
             .framed(decorations, captions)
-            .with_overlay(Overlay::from_appearance(appearance)),
-    )
+            .with_overlay(Overlay::from_appearance(appearance)).ok()
 }
 
 /// [`theme`], or `session` when the appearance cannot be drawn.

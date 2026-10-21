@@ -93,7 +93,6 @@ pub fn style(theme: &Theme) -> Style {
     };
     let tokens = theme.style();
     style.spacing.scroll = scroll_style(&tokens);
-    style.scroll_animation.points_per_second = tokens.menu_scroll_speed as f32;
     if theme.overlay().reduced_motion {
         style.animation_time = 0.0;
         style.scroll_animation = egui::style::ScrollAnimation::none();

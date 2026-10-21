@@ -1254,6 +1254,7 @@ fn show_level(
                     // and a scroll area alone never grows past its area, so
                     // a long level would scroll in a 400 pt box however tall
                     // the window. Asking for the rows makes the area grow.
+                    configure_scroll(ui, chrome);
                     let out = ScrollArea::vertical()
                         .id_salt(id.with("scroll"))
                         .max_height(max_height)
@@ -1485,9 +1486,46 @@ fn paint(
     }
 }
 
+// The frame's child UI belongs only to this menu level. Its scroll area
+// and rows inherit this animation; other scroll areas keep egui's default.
+fn configure_scroll(ui: &mut Ui, chrome: &Chrome) {
+    ui.style_mut().scroll_animation.points_per_second = chrome.style.menu_scroll_speed as f32;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn menu_speed_moves_its_area_without_changing_other_scroll_areas() {
+        let sample = |speed: f64, menu: bool| {
+            let mut overlay = crate::theme::Overlay::default();
+            overlay.style.insert("menu_scroll_speed".into(), design::StyleValueSource::Number(speed));
+            let ctx = egui::Context::default();
+            crate::install(&ctx, &crate::Theme::embedded().with_overlay(overlay).unwrap());
+            let mut offset = 0.0;
+            for (frame, time) in [0.0, 0.025, 0.05].into_iter().enumerate() {
+                let _ = ctx.run(egui::RawInput { time: Some(time), screen_rect: Some(Rect::from_min_size(Pos2::ZERO, egui::vec2(300.0, 200.0))), ..Default::default() }, |ctx| {
+                    egui::CentralPanel::default().show(ctx, |ui| {
+                        ui.scope(|ui| {
+                            if menu { configure_scroll(ui, &Chrome::of(ctx)); }
+                            let out = ScrollArea::vertical().max_height(100.0).show(ui, |ui| {
+                                let (_, rect) = ui.allocate_space(egui::vec2(200.0, 400.0));
+                                if frame == 0 { ui.scroll_to_rect(Rect::from_min_size(rect.min + egui::vec2(0.0, 200.0), egui::vec2(10.0, 10.0)), None); }
+                            });
+                            offset = out.state.offset.y;
+                        });
+                    });
+                });
+            }
+            assert_eq!(ctx.global_style().scroll_animation, egui::style::ScrollAnimation::default());
+            offset
+        };
+        let slow = sample(100.0, true);
+        let fast = sample(3000.0, true);
+        assert!(fast > slow + 1.0, "menu offsets: slow={slow}, fast={fast}");
+        assert_eq!(sample(100.0, false), sample(3000.0, false));
+    }
 
     fn cmd(id: &'static str, enabled: bool) -> Entry {
         Entry::Row(Row::command(id, id, None, enabled))

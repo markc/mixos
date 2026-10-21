@@ -58,6 +58,14 @@ fn write_slot(v: &mut egui::Visuals, name: &str, colour: egui::Color32) {
 
 #[test]
 fn every_slot_keeps_its_old_writer_and_each_role_forwards_only_to_its_slots() {
+    #[derive(serde::Deserialize)]
+    struct Oracle {
+        selection_by_style: std::collections::BTreeMap<String, String>,
+        owners: std::collections::BTreeMap<String, Vec<String>>,
+    }
+    let oracle: Oracle = strict::from_str(include_str!("fixtures/role-slots.conf.mix")).unwrap();
+    assert_eq!(oracle.owners.len(), 31);
+    assert_eq!(oracle.owners.keys().map(String::as_str).collect::<std::collections::BTreeSet<_>>(), toolkit::chrome::Palette::ROLES.iter().copied().collect());
     for scheme in design::Scheme::ALL {
         for mode in design::Mode::ALL {
             for style in design::Style::ALL {
@@ -81,10 +89,16 @@ fn every_slot_keeps_its_old_writer_and_each_role_forwards_only_to_its_slots() {
                         (*role).into(),
                         design::family::style::StyleColour([41, 117, 203, 255]),
                     );
-                    let tuned = theme.clone().with_overlay(overlay);
+                    let tuned = theme.clone().with_overlay(overlay).unwrap();
                     toolkit::install(&ctx, &tuned);
                     let mut want = expected.clone();
-                    for slot in toolkit::chrome::Palette::slots(role, &theme.style()) {
+                    let mut slots = oracle.owners[*role].clone();
+                    if oracle.selection_by_style[style.name()] == *role {
+                        slots.push("selection.bg_fill".into());
+                    }
+                    let production: std::collections::BTreeSet<_> = toolkit::chrome::Palette::slots(role, &theme.style()).iter().copied().collect();
+                    assert_eq!(production, slots.iter().map(String::as_str).collect());
+                    for slot in &slots {
                         write_slot(&mut want, slot, egui::Color32::from_rgb(41, 117, 203));
                     }
                     assert_eq!(

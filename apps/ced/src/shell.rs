@@ -592,7 +592,13 @@ impl Shell {
 
     fn follow_theme(&mut self) {
         if self.installed != Some(self.app.theme) {
-            self.theme = self.base.with_choice(&self.app.theme);
+            self.theme = match self.base.with_choice(&self.app.theme) {
+                Ok(theme) => theme,
+                Err(error) => {
+                    eprintln!("toolkit: theme choice refused: {error}");
+                    return;
+                }
+            };
             toolkit::install(&self.ctx, &self.theme);
             self.palette = self.editor_palette();
             self.installed = Some(self.app.theme);

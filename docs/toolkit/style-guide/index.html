@@ -352,6 +352,17 @@ session look under server decorations.</p>
 <tr><td>a behaviour value (double-click time, scrub rate, hit tolerance)</td><td><code>Chrome::of(ui.ctx()).style.&lt;token&gt;</code></td></tr>
 </tbody></table>
 <p>Never pass any of these into a function as a parameter.</p>
+<p>Desktop icons share the context's canonical 1.5 stroke on the 24-unit
+icon grid. Use <code>icons::image_of</code> or the toolkit icon widgets. Older test
+fixtures that passed 2.0 explicitly use the canonical default too. The
+existing <code>appearance.icon_stroke</code> session choice remains supported.</p>
+<p>Local style overlays are fallible: handle <code>Theme::with_overlay</code> and
+<code>Theme::with_choice</code> errors before installing a look. A refused overlay
+must leave the installed look intact. <code>canvas_dot_pitch</code> accepts 4 to
+1000 points, preventing zero or impractically dense drawing loops.
+For a colour tunable with a numeric range, the bounds apply to each
+normalised colour component. The value itself remains a hexadecimal
+colour; <code>icon_mask</code> requires every channel to be at least 0.1.</p>
 <pre><code class="language-rust">fn view(ui: &amp;mut egui::Ui, engine: &amp;Engine) {
     let space = toolkit::space::of(ui.ctx());
     let p = Chrome::of(ui.ctx()).palette;

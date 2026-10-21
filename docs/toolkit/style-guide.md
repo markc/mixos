@@ -116,6 +116,19 @@ session look under server decorations.
 
 Never pass any of these into a function as a parameter.
 
+Desktop icons share the context's canonical 1.5 stroke on the 24-unit
+icon grid. Use `icons::image_of` or the toolkit icon widgets. Older test
+fixtures that passed 2.0 explicitly use the canonical default too. The
+existing `appearance.icon_stroke` session choice remains supported.
+
+Local style overlays are fallible: handle `Theme::with_overlay` and
+`Theme::with_choice` errors before installing a look. A refused overlay
+must leave the installed look intact. `canvas_dot_pitch` accepts 4 to
+1000 points, preventing zero or impractically dense drawing loops.
+For a colour tunable with a numeric range, the bounds apply to each
+normalised colour component. The value itself remains a hexadecimal
+colour; `icon_mask` requires every channel to be at least 0.1.
+
 ```rust
 fn view(ui: &mut egui::Ui, engine: &Engine) {
     let space = toolkit::space::of(ui.ctx());

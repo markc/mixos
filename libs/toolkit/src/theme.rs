@@ -147,6 +147,7 @@ pub struct Theme {
     decorations: Decorations,
     captions: CaptionSide,
     overlay: Overlay,
+    overlay_style: Option<ResolvedStyle>,
 }
 
 /// The selection a selection-only file or a full document's legacy record
@@ -308,6 +309,7 @@ impl Theme {
                     decorations: Decorations::default(),
                     captions: CaptionSide::default(),
                     overlay: Overlay::default(),
+                    overlay_style: None,
                 })
             }
             DesignCompileResult::Fatal(failure) => Err(Error::Compile(failure.diagnostics)),
@@ -321,7 +323,7 @@ impl Theme {
     /// the chosen axes (each axis left `None` keeps this theme's), at this
     /// theme's contrast. Decorations and caption side overlay either way.
     /// The session's theme file is never touched.
-    pub fn with_choice(&self, choice: &Choice) -> Self {
+    pub fn with_choice(&self, choice: &Choice) -> Result<Self, Error> {
         let mut theme =
             if choice.scheme.is_none() && choice.style.is_none() && choice.mode.is_none() {
                 self.clone()
@@ -335,12 +337,11 @@ impl Theme {
                 theme.decorations = self.decorations;
                 theme.captions = self.captions;
                 // A rebuilt design drops the session's choices; carry them across.
-                theme.overlay = self.overlay.clone();
-                theme
+                theme.with_overlay(self.overlay.clone())?
             };
         theme.decorations = choice.decorations.unwrap_or(theme.decorations);
         theme.captions = choice.captions.unwrap_or(theme.captions);
-        theme
+        Ok(theme)
     }
 
     /// `self` with `decorations` and `captions`.
@@ -351,9 +352,17 @@ impl Theme {
     }
 
     /// `self` with the session's icon and type choices laid over it.
-    pub fn with_overlay(mut self, overlay: Overlay) -> Self {
+    pub fn with_overlay(mut self, overlay: Overlay) -> Result<Self, Error> {
+        for role in overlay.chrome.keys() {
+            if !design::family::chrome::ROLES.contains(&role.as_str()) {
+                return Err(Error::Selection { field: "chrome role", value: role.clone() });
+            }
+        }
+        self.overlay_style = None;
+        let style = self.style().with_values(&overlay.style).map_err(Error::Compile)?;
         self.overlay = overlay;
-        self
+        self.overlay_style = Some(style);
+        Ok(self)
     }
 
     /// The session's icon and type choices on this theme.
@@ -402,6 +411,9 @@ impl Theme {
 
     /// The chrome's forms and lengths (the design's style family).
     pub fn style(&self) -> ResolvedStyle {
+        if let Some(style) = self.overlay_style {
+            return style;
+        }
         let mut style = self.style;
         if self.dictionary().style.is_none()
             && style.widgets == design::family::style::Widgets::Pairs
@@ -445,13 +457,7 @@ impl Theme {
                 style.hairline_width = width;
             }
         }
-        if self.overlay.style.is_empty() {
-            style
-        } else {
-            style
-                .with_values(&self.overlay.style)
-                .expect("validated style overlay")
-        }
+        style
     }
 
     /// The resolved design.
@@ -576,14 +582,14 @@ mod tests {
             ..DesignContext::default()
         });
         assert_eq!(
-            session.with_choice(&Choice::default()),
+            session.with_choice(&Choice::default()).unwrap(),
             session,
             "no choice: the session theme itself, unchanged"
         );
         let forest = session.with_choice(&Choice {
             scheme: Some(Scheme::Forest),
             ..Choice::default()
-        });
+        }).unwrap();
         assert_eq!(
             (forest.scheme(), forest.mode(), forest.contrast()),
             (Scheme::Forest, Mode::Dark, Contrast::High)
@@ -591,7 +597,7 @@ mod tests {
         let light = session.with_choice(&Choice {
             mode: Some(Mode::Light),
             ..Choice::default()
-        });
+        }).unwrap();
         assert_eq!(
             (light.scheme(), light.mode(), light.contrast()),
             (Scheme::Pro, Mode::Light, Contrast::High)
@@ -611,7 +617,7 @@ mod tests {
         let studio = session.with_choice(&Choice {
             style: Some(Some(design::Style::Studio)),
             ..Choice::default()
-        });
+        }).unwrap();
         assert_eq!(
             (studio.scheme(), studio.mode(), studio.style_axis()),
             (Scheme::Forest, Mode::Light, Some(design::Style::Studio))
@@ -627,13 +633,13 @@ mod tests {
         let own = studio.with_choice(&Choice {
             style: Some(None),
             ..Choice::default()
-        });
+        }).unwrap();
         assert_eq!(own.style(), session.style(), "the scheme's own style again");
         let framed = session.with_choice(&Choice {
             decorations: Some(Decorations::Server),
             captions: Some(CaptionSide::Left),
             ..Choice::default()
-        });
+        }).unwrap();
         assert_eq!(
             (framed.decorations(), framed.captions()),
             (Decorations::Server, CaptionSide::Left)
@@ -646,7 +652,7 @@ mod tests {
         let kept = framed.with_choice(&Choice {
             scheme: Some(Scheme::Ocean),
             ..Choice::default()
-        });
+        }).unwrap();
         assert_eq!(
             (kept.decorations(), kept.captions()),
             (Decorations::Server, CaptionSide::Left),

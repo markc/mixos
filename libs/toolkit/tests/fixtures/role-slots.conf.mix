@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+# Pinned ownership from the accepted role-to-slot contract. Changes require review.
+{
+  selection_by_style: { plain: "accent", pro: "accent", studio: "accent_soft", classic: "accent" },
+  owners: {
+    chrome: ["panel_fill"],
+    canvas: [], canvas_dot: [], dock: [], tab_strip: [], text_faint: [], icon: [],
+    row_selected: [], menu_highlight: [], menu_highlight_text: [], primary_bg: [],
+    primary_text: [], caption_close: [], caption_close_text: [], scrim: [],
+    card: ["window_fill", "faint_bg_color", "widgets.noninteractive.bg_fill", "widgets.noninteractive.weak_bg_fill"],
+    card_border: ["window_stroke.color"],
+    field: ["extreme_bg_color", "code_bg_color", "text_edit_bg_color", "widgets.inactive.bg_fill", "widgets.inactive.weak_bg_fill"],
+    accent: ["hyperlink_color"], accent_soft: [], accent_text: ["selection.stroke.color"],
+    warning: ["warn_fg_color"], danger: ["error_fg_color"],
+    text: ["override_text_color", "widgets.inactive.fg_stroke.color", "widgets.hovered.fg_stroke.color", "widgets.open.fg_stroke.color", "widgets.active.fg_stroke.color"],
+    text_dim: ["widgets.noninteractive.fg_stroke.color"],
+    separator: ["widgets.noninteractive.bg_stroke.color"],
+    hover: ["widgets.hovered.bg_fill", "widgets.hovered.weak_bg_fill", "widgets.open.bg_fill", "widgets.open.weak_bg_fill"],
+    pressed: ["widgets.active.bg_fill", "widgets.active.weak_bg_fill"],
+    field_border: ["widgets.inactive.bg_stroke.color", "widgets.hovered.bg_stroke.color", "widgets.open.bg_stroke.color"],
+    accent_border: ["widgets.active.bg_stroke.color"],
+    shadow: ["window_shadow.color", "popup_shadow.color"]
+  }
+}

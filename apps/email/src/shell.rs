@@ -1484,7 +1484,14 @@ impl Shell {
     /// toggle inverts what is actually drawn.
     fn install_theme(&mut self) {
         let choice = self.choice();
-        toolkit::install(&self.ctx, &self.theme.with_choice(&choice));
+        let theme = match self.theme.with_choice(&choice) {
+            Ok(theme) => theme,
+            Err(error) => {
+                eprintln!("toolkit: theme choice refused: {error}");
+                return;
+            }
+        };
+        toolkit::install(&self.ctx, &theme);
         self.state.set_session_mode(self.theme.mode());
         self.installed = choice;
     }

@@ -20,6 +20,11 @@ Settings contract 0.9.0 (additive), store format 4.
   `toolkit::install` and reads every colour, length, radius, stroke and
   font back from the egui context. Nothing is threaded through view
   functions; no application sets an egui style, visuals or fonts itself.
+- **One canonical icon stroke.** Desktop icons use the context's default
+  stroke of 1.5 on the 24-unit icon grid. A fixture that previously passed
+  2.0 explicitly moves to that canonical default. The existing
+  `appearance.icon_stroke` choice keeps its contract and still owns an
+  explicit session override; views have no independent stroke choice.
 - **Every painted or interacted number is a token, and later tokens are
   data.** The style family's forty original tokens are the required set;
   every later token is defaulted from an append-only compatibility table

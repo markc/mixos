@@ -483,7 +483,7 @@ style! {
     button_pro_outline: f64 = LENGTH,
     button_push_padding: f64 = LENGTH,
     canvas_bar: f64 = LENGTH,
-    canvas_dot_pitch: f64 = LENGTH,
+    canvas_dot_pitch: f64 = Range(4.0, 1000.0),
     canvas_dot_size: f64 = LENGTH,
     canvas_thumb_inset: f64 = LENGTH,
     canvas_thumb_min: f64 = LENGTH,
@@ -765,32 +765,30 @@ fn select(
 fn complete_family(
     family: &StyleFamilySource,
     table: &crate::compat::Table,
-) -> (StyleFamilySource, Vec<DesignDiagnostic>) {
+) -> (StyleFamilySource, BTreeMap<String, String>) {
     let mut family = family.clone();
-    let mut diagnostics = Vec::new();
+    let mut provenance = BTreeMap::new();
     for (version, entries) in &table.versions {
         for (name, tokens) in &entries.styles {
             if !family.styles.contains_key(name) {
                 family.styles.insert(name.clone(), tokens.clone());
-                diagnostics.push(DesignDiagnostic::info(
-                    "defaulted-style",
+                provenance.insert(
                     format!("{PATH}.styles.{name}"),
-                    format!("defaulted from compatibility {version}"),
-                ));
+                    version.clone(),
+                );
             }
         }
         for (scheme, style) in &entries.schemes {
             if Scheme::from_name(scheme).is_some() && !family.schemes.contains_key(scheme) {
                 family.schemes.insert(scheme.clone(), style.clone());
-                diagnostics.push(DesignDiagnostic::info(
-                    "defaulted-scheme",
+                provenance.insert(
                     format!("{PATH}.schemes.{scheme}"),
-                    format!("defaulted from compatibility {version}"),
-                ));
+                    version.clone(),
+                );
             }
         }
     }
-    (family, diagnostics)
+    (family, provenance)
 }
 
 /// The scheme's own style.
@@ -878,7 +876,19 @@ fn filled_tokens(
         }
         _ => None,
     };
-    let scheme = family
+    let scheme = default_scheme(family, name);
+    for token in TOKENS.iter().filter(|token| !REQUIRED.contains(token)) {
+        if !filled.contains_key(*token)
+            && let Some((value, _)) = table.token(token, name, base, scheme)
+        {
+            filled.insert((*token).into(), value.clone());
+        }
+    }
+    filled
+}
+
+fn default_scheme(family: &StyleFamilySource, name: &str) -> &'static str {
+    family
         .schemes
         .iter()
         .find_map(|(scheme, bound)| (bound == name).then(|| Scheme::from_name(scheme)).flatten())
@@ -889,15 +899,7 @@ fn filled_tokens(
                 "plain"
             }
         })
-        .unwrap_or("plain");
-    for token in TOKENS.iter().filter(|token| !REQUIRED.contains(token)) {
-        if !filled.contains_key(*token)
-            && let Some((value, _)) = table.token(token, name, base, scheme)
-        {
-            filled.insert((*token).into(), value.clone());
-        }
-    }
-    filled
+        .unwrap_or("plain")
 }
 
 fn validate_constraints(style: &ResolvedStyle, path: &str, errors: &mut Vec<DesignDiagnostic>) {
@@ -920,22 +922,29 @@ fn validate_constraints(style: &ResolvedStyle, path: &str, errors: &mut Vec<Desi
     }
 }
 
-pub(crate) fn default_diagnostics(source: &DesignV1Source) -> Vec<DesignDiagnostic> {
+#[cfg(test)]
+fn default_diagnostics(source: &DesignV1Source) -> Vec<DesignDiagnostic> {
+    crate::compat::diagnostics(&default_provenance(source, crate::compat::table()))
+}
+
+pub(crate) fn default_provenance(source: &DesignV1Source, table: &crate::compat::Table) -> BTreeMap<String, String> {
     let Some(family) = &source.families.style else {
-        return Vec::new();
+        return BTreeMap::new();
     };
-    let (family, mut diagnostics) = complete_family(family, crate::compat::table());
+    let (family, mut provenance) = complete_family(family, table);
     for (name, tokens) in &family.styles {
-        let filled = filled_tokens(&family, name, tokens, crate::compat::table());
+        let filled = filled_tokens(&family, name, tokens, table);
+        let base = match tokens.get("base") {
+            Some(StyleValueSource::Name(base)) if Style::from_name(base).is_some() => Some(base.as_str()),
+            _ => None,
+        };
         for token in filled.keys().filter(|token| !tokens.contains_key(*token)) {
-            diagnostics.push(DesignDiagnostic::info(
-                "defaulted-style-token",
-                format!("{PATH}.styles.{name}.{token}"),
-                "defaulted from compatibility v2",
-            ));
+            if let Some((_, version)) = table.token(token, name, base, default_scheme(&family, name)) {
+                provenance.insert(format!("{PATH}.styles.{name}.{token}"), version.to_owned());
+            }
         }
     }
-    diagnostics
+    provenance
 }
 
 #[cfg(test)]
@@ -1049,6 +1058,40 @@ mod tests {
                 .iter()
                 .any(|e| e.message.contains("resize_edge") && e.message.contains("resize_corner"))
         );
+    }
+
+    #[test]
+    fn canvas_pitch_refuses_unbounded_paint_density_before_drawing() {
+        let style = compile_family(&family(), Scheme::Studio).unwrap();
+        for value in [f64::NAN, f64::INFINITY, -1.0, 0.0, 0.001, 3.99, 1000.01] {
+            assert!(style.with_values(&BTreeMap::from([("canvas_dot_pitch".into(), StyleValueSource::Number(value))])).is_err(), "{value}");
+        }
+        for value in [4.0, 16.0, 1000.0] {
+            assert_eq!(style.with_values(&BTreeMap::from([("canvas_dot_pitch".into(), StyleValueSource::Number(value))])).unwrap().canvas_dot_pitch, value);
+        }
+        let mut source = embedded();
+        source.v1.families.style.as_mut().unwrap().styles.get_mut("studio").unwrap().insert("canvas_dot_pitch".into(), StyleValueSource::Number(0.001));
+        assert!(matches!(crate::compile_design(&source, DesignContext::default()), DesignCompileResult::Fatal(_)));
+    }
+
+    #[test]
+    fn structured_defaults_keep_the_actual_supplier_version_for_a_style_named_all() {
+        let mut source = crate::parse_design_source(SourceIdentity::new("all"), include_str!("../../tests/fixtures/custom-named-style.theme.conf.mix")).unwrap();
+        let family = source.v1.families.style.as_mut().unwrap();
+        let tokens = family.styles.remove("custom").unwrap();
+        family.styles.insert("all".into(), tokens);
+        for bound in family.schemes.values_mut() {
+            if bound == "custom" { *bound = "all".into(); }
+        }
+        assert!(matches!(crate::compile_design(&source, DesignContext::default()), DesignCompileResult::Success(_)));
+        let mut later = crate::compat::table().clone();
+        let values = later.versions.get_mut("v2").unwrap().tokens.remove("canvas_dot_pitch").unwrap();
+        later.versions.insert("v3".into(), crate::compat::Version { tokens: BTreeMap::from([("canvas_dot_pitch".into(), values)]), ..Default::default() });
+        let origins = default_provenance(&source.v1, &later);
+        assert_eq!(origins["design.v1.families.style.styles.all.canvas_dot_pitch"], "v3");
+        assert_eq!(origins["design.v1.families.style.styles.all.field_radius"], "v2");
+        let diagnostics = crate::compat::diagnostics(&origins);
+        assert!(diagnostics.iter().any(|d| d.path.ends_with("all.canvas_dot_pitch") && d.message.ends_with("v3")));
     }
 
     #[test]

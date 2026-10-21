@@ -55,6 +55,9 @@ fn findings($text)
       push($out, "literal in a style or shadow initialiser")
     end
   end
+  if re_match($source, '\bgalley\.size\(\)\.x\s*\+\s*[0-9]+(?:\.[0-9]+)?(?:f32|f64)?\s*[),;]') then
+    push($out, "literal galley padding; read button_push_padding from the installed style")
+  end
   return $out
 end
 
@@ -63,7 +66,7 @@ if length($options.errors) > 0 or length($options.rest) > 0 then
   raise("STYLE_GATE_ARGS", "usage: style_gate.mix --toolkit [--root DIR] [--self-test]")
 end
 if $options.opts["self-test"] ?? false then
-  for $source in ["const EXTRA: f32 = 4.0;", "Stroke::new(2.0, ink)", "Margin::symmetric(6, 3)", "painter.rect_filled(rect, 4.0, ink)", "Shadow { blur: 10, ..default() }"]
+  for $source in ["const EXTRA: f32 = 4.0;", "Stroke::new(2.0, ink)", "Margin::symmetric(6, 3)", "painter.rect_filled(rect, 4.0, ink)", "Shadow { blur: 10, ..default() }", "(galley.size().x + 28.0).max(tokens.dialog_button_min)"]
     if length(findings($source)) == 0 then raise("STYLE_GATE_TEST", "missed adversarial fixture: " .. $source) end
   end
   if length(findings("Stroke::new(tokens.hairline_width as f32, ink)")) != 0 then raise("STYLE_GATE_TEST", "refused token fixture") end

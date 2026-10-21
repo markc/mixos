@@ -594,7 +594,7 @@ fn the_session_look_follows_settingsd() {
     h.state_mut().shell.as_mut().unwrap().app.theme = light;
     h.run_steps(4);
     assert_eq!(panel(&h), panel_of(Scheme::Forest, Mode::Light));
-    let file_light = toolkit::style::style(&Theme::load().with_choice(&light))
+    let file_light = toolkit::style::style(&Theme::load().with_choice(&light).unwrap())
         .visuals
         .panel_fill;
     // Each case starts from a live, drawable look (a newer revision of

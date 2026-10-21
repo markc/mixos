@@ -430,7 +430,7 @@ mod tests {
                 .unwrap();
         }
         assert_ne!(
-            session.with_choice(&app.choice).dictionary(),
+            session.with_choice(&app.choice).unwrap().dictionary(),
             session.dictionary()
         );
         for id in [
@@ -444,7 +444,7 @@ mod tests {
                 .unwrap();
         }
         assert_eq!(app.choice.style, None);
-        let back = session.with_choice(&app.choice);
+        let back = session.with_choice(&app.choice).unwrap();
         assert_eq!(
             back.dictionary(),
             session.dictionary(),

@@ -144,7 +144,7 @@ fn compile_flat_source(
     };
 
     let terminal_name = format!("{}.{}", context.scheme.name(), context.mode.name());
-    let mut compatibility_diagnostics = crate::family::style::default_diagnostics(source);
+    let mut defaulted = crate::family::style::default_provenance(source, crate::compat::table());
     let terminal = source
         .families
         .terminal
@@ -156,23 +156,14 @@ fn compile_flat_source(
                 .iter()
                 .find_map(|(version, entries)| {
                     let terminal = entries.terminal.get(&terminal_name)?;
-                    compatibility_diagnostics.push(DesignDiagnostic::info(
-                        "defaulted-terminal",
+                    defaulted.insert(
                         format!("design.v1.families.terminal.{terminal_name}"),
-                        format!("defaulted from compatibility {version}"),
-                    ));
+                        version.clone(),
+                    );
                     Some(terminal.clone())
                 })
         });
-    let defaulted = compatibility_diagnostics
-        .iter()
-        .map(|d| {
-            (
-                d.path.clone(),
-                d.message.rsplit(' ').next().unwrap_or("v2").to_owned(),
-            )
-        })
-        .collect();
+    let compatibility_diagnostics = crate::compat::diagnostics(&defaulted);
 
     let mapping =
         match crate::mapping::compile_button_mapping_artifacts(source, &colours.value, context) {

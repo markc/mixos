@@ -287,7 +287,7 @@ fn button_row(ui: &mut Ui, choices: &[Choice], os: OperatingSystem) -> Option<us
                 font.clone(),
                 Color32::PLACEHOLDER,
             );
-            (galley.size().x + 28.0)
+            (galley.size().x + Chrome::of(ui.ctx()).style.button_push_padding as f32)
                 .max(crate::chrome::Chrome::of(ui.ctx()).style.dialog_button_min as f32)
         })
         .collect();

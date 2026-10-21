@@ -592,7 +592,14 @@ impl Shell {
     /// with the window's choice over it. Neither is ever written.
     fn install_theme(&mut self) {
         let choice = self.choice();
-        toolkit::install(&self.ctx, &self.theme.with_choice(&choice));
+        let theme = match self.theme.with_choice(&choice) {
+            Ok(theme) => theme,
+            Err(error) => {
+                eprintln!("toolkit: theme choice refused: {error}");
+                return;
+            }
+        };
+        toolkit::install(&self.ctx, &theme);
         self.engine.session = session_of(&self.theme);
         self.installed = choice;
     }
