@@ -493,8 +493,7 @@ impl EngineConfigHooks {
     ///   body.
     /// - `Some(MergeMode::Patch)` with `ctx.old = None`: rejected at
     ///   the caller; this function is never reached on that branch.
-    /// - `None`: only on delete hooks; not reachable from `before_set`
-    /// after.
+    /// - `None`: only on delete hooks; not reachable from `before_set`.
     fn effective_value(ctx: &HookCtx) -> Result<PropValue, HookError> {
         let merge = ctx.merge.ok_or_else(|| {
             HookError::hook(

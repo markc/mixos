@@ -17,7 +17,7 @@
 //!   continuation per RFC 9051 §6.3.12;
 //! * reads exactly `N` bytes of body via `read_exact`;
 //! * reads the trailing CRLF that terminates the command (which must
-//! be empty for "literal is the final argument" scope —
+//!   be empty for "literal is the final argument" scope —
 //!   embedded mid-command literals are not supported until the full
 //!   imap-codec swap lands).
 //!
@@ -288,7 +288,7 @@ struct LiteralMarker {
 ///   account-scoped cap applies. The session gates on
 ///   `state.is_authenticated()`.
 /// - Verbs that don't accept literal arguments — APPEND is the only
-/// verb that does; everything else is rejected by dispatch
+///   verb that does; everything else is rejected by dispatch
 ///   anyway, so consuming the body wastes bandwidth + RAM.
 ///
 /// On refusal we refuse the literal at the codec layer: sync → no

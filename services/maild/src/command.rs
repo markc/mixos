@@ -2128,7 +2128,7 @@ fn account_selector(account: &str) -> serde_json::Value {
 ///    which the daemon's arg resolver treats the same as `Null`.
 /// 3. No custom headers.
 /// 4. Pre-the props contract error envelope `{"error": "..."}` on `rc != 0`
-/// (not the props contract `{"error_code", "message"}` envelope). The
+///    (not the props contract `{"error_code", "message"}` envelope). The
 ///    renderer falls back `error` → `message` → raw body so a
 ///    future envelope migration is forward-compatible.
 ///

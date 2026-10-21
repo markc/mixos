@@ -8450,8 +8450,8 @@ fn imap_contract_uidvalidity_stable_across_lifecycle() {
 }
 
 /// + (`imap-runway.md`) — UID stability + monotonicity per
-/// mailbox. IMAP non-negotiable invariant 2: UID values are
-/// per-mailbox, monotonically increasing, never reused.
+///   mailbox. IMAP non-negotiable invariant 2: UID values are
+///   per-mailbox, monotonically increasing, never reused.
 ///
 /// The invariant itself is a substrate concern (the
 /// `membership.seq` primitive must never recycle); surfaces

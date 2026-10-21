@@ -2172,8 +2172,8 @@ fn canonical_retrain_stamp(item_id: ItemId) -> String {
 ///
 /// Expected JMAP shape (RFC 8621 §4.5 / §4.6):
 ///
-/// - `blobId` (required) — a UUID returned by `/jmap/upload`. Post
-///, the upload mints a `MailStore::BlobId` alias (a
+/// - `blobId` (required): a UUID returned by `/jmap/upload`.
+///   The upload mints a `MailStore::BlobId` alias (a
 ///   per-account `blob_refs` row tied to a temp item in
 ///   `__upload_staging__`), and this lookup resolves it via
 ///   `MailStore::resolve_blob_ref` → `BlobHash`. Pre-migration

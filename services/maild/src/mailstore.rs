@@ -901,7 +901,7 @@ pub trait MailStore: Send + Sync {
     ///     hasn't been provisioned yet). Maps to JMAP `notFound`.
     ///   * `"email envelope missing"` — the item exists but no
     ///     `mail_envelopes` sidecar row was ever written. Phase A
-    /// transient: items predating 's `create_email` write
+    ///     transient: items predating the `create_email` write
     ///     path will hit this; the JMAP layer maps it to a synthetic
     ///     "skeleton" envelope at serialise time once that path lands.
     fn get_email(&self, account: AccountId, id: ItemId) -> Result<EmailRecord>;

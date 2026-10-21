@@ -972,8 +972,7 @@ fn dmarc_aligned_pass(verify_result: &VerifyResult) -> bool {
 ///   so it counts ONLY when the envelope sender's domain is itself
 ///   aligned (relaxed: equal to or a subdomain of that org domain).
 ///   Without that check an attacker could DMARC-pass their own From
-///   domain while forging a victim MAIL FROM and still farm backscatter
-/// ( catch).
+///   domain while forging a victim MAIL FROM and still farm backscatter.
 ///
 /// A forged MAIL FROM fails both arms. Senders with no SPF and no DMARC
 /// get no auto-reply — the RFC 3834 trade: silence over backscatter.

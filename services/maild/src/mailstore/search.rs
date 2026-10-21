@@ -58,7 +58,7 @@
 //!
 //! - HTML→text body extraction (v1.2+).
 //! - Attachment extraction (PDF/Office text) — explicitly v2+ per
-//!    §5.
+//!   §5.
 
 use super::types::EmailEnvelope;
 

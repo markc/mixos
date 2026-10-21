@@ -813,7 +813,7 @@ fn set_error_invalid_properties(prop: &str, why: &str) -> SetError {
 ///   * `"mailbox parent not found"` → `invalidProperties` (`parentId`)
 ///   * `"mailbox already exists"` → `invalidProperties` (`name`)
 ///   * `"mailbox special-use already in use"` →
-/// `invalidProperties` (`role`) — the storage barrier catches
+///     `invalidProperties` (`role`), as the storage barrier catches
 ///     concurrent-peer wins that the pre-create snapshot scan missed.
 ///   * anything else → `serverFail` (with the error string preserved
 ///     in `description` for operator triage).
