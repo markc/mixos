@@ -15,7 +15,7 @@ use crate::context::render::NativeRenderContext;
 use drivers::lid::base::{DISPLAY_OFF_MUT, DISPLAY_SNAPSHOT_MUT};
 use drivers::output::base::{
     ModeInfo, OUTPUT_MODES_SNAPSHOT_MUT, OUTPUT_RECONCILE_REQUEST, OUTPUT_RECONCILE_REQUEST_MUT,
-    OUTPUTS_SNAPSHOT_MUT, OutputModesSnapshot, OutputsSnapshot,
+    OUTPUTS_SNAPSHOT_MUT, OutputModesSnapshot,
 };
 use render_gles::preference::output::profile::{self, ModeRequest};
 use smithay::backend::drm::DrmDevice;
