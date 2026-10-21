@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-use crate::world::audio::controller::interface::interface::AudioController;
+use crate::world::audio::controller::interface::AudioController;
 use crate::world::audio::controller::interface::media::MediaController;
 use slots::storage::token::base::{Token, TokenMut};
 

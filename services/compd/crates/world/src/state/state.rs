@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 use crate::environment::type_::base::Environment;
-use drivers::world::audio::controller::interface::interface::AudioController;
+use drivers::world::audio::controller::interface::AudioController;
 use drivers::world::audio::controller::interface::media::MediaController;
 use graphics::capture::registry::CaptureRegistry;
 use protocols::window::find::find;
