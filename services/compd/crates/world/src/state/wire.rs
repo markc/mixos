@@ -4,7 +4,7 @@ use crate::camera::transform::translate::transform::Transform;
 use crate::state::Loop;
 use crate::state::{Orchestrator, StateDRMBinding};
 use crate::window::interface::record::data::{DiscardPlaceholder, WindowData};
-use crate::window::lifecycle::event::event::WindowLifecycleEvent;
+use crate::window::lifecycle::event::WindowLifecycleEvent;
 use crate::window::lifecycle::state::lifecycle::WindowLifecycle;
 use dispatcher::state::Dispatch;
 use dispatcher::wayland::xdg::activation::dispatch::wire::ActivationDetails;

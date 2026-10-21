@@ -24,9 +24,9 @@ use smithay::wayland::dmabuf::{DmabufGlobal, ImportNotifier};
 use smithay::wayland::shell::xdg::ToplevelSurface;
 use smithay::xwayland::X11Surface;
 use world::comp::CompState;
-use world::window::interface::data::data::WindowData;
+use world::window::interface::data::WindowData;
 use world::window::interface::record::window::LoopWindow;
-use world::window::lifecycle::event::event::WindowLifecycleEvent;
+use world::window::lifecycle::event::WindowLifecycleEvent;
 
 /// The fake output's mode.
 pub const OUTPUT_SIZE: (i32, i32) = (1920, 1080);

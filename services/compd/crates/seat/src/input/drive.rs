@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 use slots::input::event::base::{InputEvent, InputFlow};
-use world::scene::platform::platform::Platform;
+use world::scene::platform::Platform;
 use world::state::Loop;
 
 /// The input driver: every seat entry point offers the event to the ACTIVE

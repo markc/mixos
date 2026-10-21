@@ -31,13 +31,13 @@ pub fn dark() -> bool {
 /// (`display.reconcile::drain_reconcile`) — so a settings
 /// change that darkens or recovers the display sets [`DARK`] and fires the same
 /// lifecycle event as a hotplug.
-pub fn apply_output_change(state: &mut Loop, change: world::event::output::output::OutputChange) {
-    use world::event::output::output::OutputChange;
+pub fn apply_output_change(state: &mut Loop, change: world::event::output::OutputChange) {
+    use world::event::output::OutputChange;
     // Fire the output-presence lifecycle event (event-driven — once per real
     // transition) on the ACTIVE world's router: that is the world whose systems
     // are dispatched. Background worlds re-read the snapshot token on enable.
     let active = state.inner.worlds.active_id();
-    world::event::output::output::broadcast(state.inner.worlds.get_mut(active).channels(), change);
+    world::event::output::broadcast(state.inner.worlds.get_mut(active).channels(), change);
     match change {
         OutputChange::WentDark => {
             DARK.store(true, std::sync::atomic::Ordering::Relaxed);
@@ -49,7 +49,7 @@ pub fn apply_output_change(state: &mut Loop, change: world::event::output::outpu
             // per-frame dispatch does not run while dark. No-poll law: no repeating
             // timer for the dark window; the per-iteration idle hook dispatches the
             // worlds on every pass.
-            world::pump::dark::dark::pump(state);
+            world::pump::dark::pump(state);
         }
         OutputChange::Recovered => DARK.store(false, std::sync::atomic::Ordering::Relaxed),
         _ => {}

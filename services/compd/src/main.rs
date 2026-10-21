@@ -272,9 +272,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // ONE world: no navigator, no overlay worlds for the lock or the picker,
         // no persisted-world restore. CameraSystem only owns the viewport slot
         // (camera pinned to identity).
-        world::world::manager::manager::WorldManager::new(
+        world::world::manager::WorldManager::new(
             world::kind::build::base::spatial(
-                world::world::manager::manager::MAIN_WORLD,
+                world::world::manager::MAIN_WORLD,
                 "main",
                 vec![
                     Box::new(world::camera::system::base::CameraSystem),
@@ -289,7 +289,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // is active. OVERLAY-class (no Space, never a spawn-target, nothing
             // persisted) and outside the world set — nothing here is per world.
             world::kind::build::base::overlay(
-                world::world::manager::manager::KERNEL,
+                world::world::manager::KERNEL,
                 "kernel",
                 vec![
                     // The notification pill: queued, drawn above everything.
@@ -325,7 +325,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .seat
             .get_keyboard()
             .expect("seat factory adds a keyboard");
-        world::smithay_glue::data::data::populate(
+        world::smithay_glue::data::populate(
             &mut state.inner.kernel,
             display.handle(),
             event_loop.handle(),
@@ -566,7 +566,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // affected, and those wanting a nested session can say so per-invocation
     // (`WAYLAND_DISPLAY=wayland-2 app`) instead of a global mutation nothing unwinds.
     if backend == cli::Backend::Kms {
-        world::environment::interface::lifecycle::lifecycle::announce_session(
+        world::environment::interface::lifecycle::announce_session(
             wayland_socket_name_default_subprocess_2.to_str().unwrap(),
             &environment.DesktopName,
         );

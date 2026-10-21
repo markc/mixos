@@ -127,7 +127,7 @@ pub fn button<I: InputBackend>(event: &<I as InputBackend>::PointerButtonEvent, 
                     smithay::utils::Size::from((pw.round() as i32, ph.round() as i32)),
                 )
             };
-            if world::viewport::interaction::interaction::try_begin_separator(
+            if world::viewport::interaction::try_begin_separator(
                 _loop.inner.output_views_mut(),
                 bounds,
                 cursor_phys,
@@ -144,7 +144,7 @@ pub fn button<I: InputBackend>(event: &<I as InputBackend>::PointerButtonEvent, 
                 _ => None,
             };
             if let Some(resize) = tool
-                && world::viewport::interaction::interaction::try_begin_floating(
+                && world::viewport::interaction::try_begin_floating(
                     _loop.inner.output_views_mut(),
                     cursor_phys,
                     resize,
@@ -155,13 +155,13 @@ pub fn button<I: InputBackend>(event: &<I as InputBackend>::PointerButtonEvent, 
         }
         ButtonState::Released => {
             if _loop.inner.output_views().separator_drag.is_some() {
-                world::viewport::interaction::interaction::end_separator(
+                world::viewport::interaction::end_separator(
                     _loop.inner.output_views_mut(),
                 );
                 return;
             }
             if _loop.inner.output_views().floating_drag.is_some() {
-                world::viewport::interaction::interaction::end_floating(
+                world::viewport::interaction::end_floating(
                     _loop.inner.output_views_mut(),
                 );
                 return;

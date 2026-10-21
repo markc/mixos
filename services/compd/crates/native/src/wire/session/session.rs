@@ -15,7 +15,7 @@ use smithay::reexports::calloop::EventLoop;
 use smithay::utils::{Logical, Point};
 use std::cell::RefCell;
 use std::rc::Rc;
-use world::environment::interface::lifecycle::lifecycle;
+use world::environment::interface::lifecycle;
 use world::state::Loop;
 use world::state::StatusSession;
 

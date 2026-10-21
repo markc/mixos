@@ -28,7 +28,7 @@ use smithay::desktop::Window;
 use smithay::utils::user_data::UserDataMap;
 use smithay::utils::{Buffer, Physical, Point, Rectangle, Scale, Size};
 
-use crate::window::draw::element::element::Element as WindowElement;
+use crate::window::draw::element::Element as WindowElement;
 
 /// One thumbnail to draw: window `{id, generation}` fitted into `rect`
 /// (output physical px) on output `output` (its key).

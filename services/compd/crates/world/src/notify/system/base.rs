@@ -17,9 +17,9 @@
 use std::any::Any;
 
 use crate::notify::present::base::{self as present, NotifyFrame};
-use crate::notify::present::registry::registry::Presenter;
+use crate::notify::present::registry::Presenter;
 use crate::notify::state::base::{NOTIFY, NOTIFY_MUT, NOTIFY_REQUEST, NotifyState};
-use crate::scene::platform::platform::Platform;
+use crate::scene::platform::Platform;
 use slots::define_buffer;
 use slots::trait_::system::base::{BufferCx, System, SystemCx, WorldBuilder};
 use slots::world::frame::base::{self as layer, FramePlan, FrameTick};
@@ -51,7 +51,7 @@ impl System for NotifySystem {
     fn update(&mut self, cx: &mut SystemCx, _tick: &FrameTick) {
         let screen = cx
             .kernel
-            .get(&crate::smithay_glue::data::data::SCREEN)
+            .get(&crate::smithay_glue::data::SCREEN)
             .clone();
         let next = cx.storage.get(&NOTIFY).queue.front().cloned();
         let (kernel, presenter) = (cx.kernel, &mut self.presenter);

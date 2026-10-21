@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-use crate::window::interface::data::data::{WindowData, WindowFullscreen};
+use crate::window::interface::data::{WindowData, WindowFullscreen};
 use dispatcher::wayland::xdg::activation::dispatch::wire::ActivationDetails;
 use protocols::window::ident;
 use smithay::desktop::{Space, Window};

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-use crate::scene::identity::identity::SolidBank;
+use crate::scene::identity::SolidBank;
 use smithay::backend::renderer::element::solid::SolidColorRenderElement;
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::{ImportAll, ImportMem, Texture};
@@ -24,7 +24,7 @@ pub fn scene<R>(
     renderer: &mut R,
     size: Size<i32, Physical>,
     window: &Window,
-    context: &crate::canvas::draw::context::context::Context,
+    context: &crate::canvas::draw::context::Context,
     bound: &CalculateBoundResult,
 ) -> Vec<SolidColorRenderElement>
 where

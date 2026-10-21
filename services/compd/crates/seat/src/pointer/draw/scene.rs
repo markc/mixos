@@ -6,7 +6,7 @@ use smithay::backend::renderer::element::{AsRenderElements, Kind};
 use smithay::backend::renderer::{ImportAll, ImportMem, Texture};
 use smithay::utils::{Logical, Physical, Point, Rectangle, Scale, Size};
 use std::os::linux::raw::stat;
-use world::seat::pointer::element::element::PointerRenderElement;
+use world::seat::pointer::element::PointerRenderElement;
 use world::state::CoordinateTrait;
 use world::state::{Loop, Transform};
 
@@ -53,7 +53,7 @@ where
     // That value carries the gate as well as the position — `None` means no warp
     // is in effect — so neither reader re-derives it. A frame where one warps and
     // the other does not is a cursor that renders away from where it clicks.
-    let true_screen = world::seat::pointer::publish::publish::true_screen();
+    let true_screen = world::seat::pointer::publish::true_screen();
     let cursor_world = match true_screen {
         Some((x, y)) => {
             let ctx = state.focus_pane_context();

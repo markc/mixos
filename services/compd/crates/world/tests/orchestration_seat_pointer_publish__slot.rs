@@ -6,7 +6,7 @@
 //! thread in this binary, so two tests writing concurrently would read each
 //! other's pointer — the same reason `window.set`'s tests are single-function.
 
-use world::seat::pointer::publish::publish as p;
+use world::seat::pointer::publish as p;
 
 const NEVER: f32 = -1.0;
 

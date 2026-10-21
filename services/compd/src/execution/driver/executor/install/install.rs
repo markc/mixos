@@ -46,7 +46,7 @@ pub fn install(state: &mut Loop, handle: &LoopHandle<'static, Loop>) {
         .insert_source(rx, |event, _, state: &mut Loop| {
             if let Event::Msg(outcome) = event {
                 // Hand the focused world's router to the (core-independent) broadcast.
-                world::launch::broadcast::broadcast::broadcast(
+                world::launch::broadcast::broadcast(
                     state.inner.focus_channels(),
                     outcome,
                 );

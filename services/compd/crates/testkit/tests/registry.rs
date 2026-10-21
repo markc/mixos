@@ -367,7 +367,7 @@ fn null_buffer_before_lifecycle_does_not_map_window() {
 fn bufferless_candidate_survives_cross_world_activation() {
     use dispatcher::wire::trait_::surface_event::SurfaceHandle;
     use dispatcher::wire::trait_::wire_trait::{ActivationOrigin, WireTrait};
-    use world::window::lifecycle::event::event::WindowLifecycleEvent;
+    use world::window::lifecycle::event::WindowLifecycleEvent;
 
     // Cover the requested return-then-reattach sequence and a buffer arriving
     // while away: placement policy must wait for the owning world in both.
@@ -539,7 +539,7 @@ fn bufferless_candidate_survives_cross_world_activation() {
 #[test]
 fn bufferless_candidate_defers_only_its_own_lifecycle() {
     use dispatcher::wire::trait_::wire_trait::{ActivationOrigin, WireTrait};
-    use world::window::lifecycle::event::event::WindowLifecycleEvent;
+    use world::window::lifecycle::event::WindowLifecycleEvent;
 
     let mut h = Harness::new();
     let second = h.add_client();

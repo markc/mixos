@@ -4,7 +4,7 @@ use dispatcher::state::Dispatch;
 use protocols::window::find;
 use smithay::input::pointer::{MotionEvent, PointerHandle, RelativeMotionEvent};
 use smithay::utils::{Logical, Physical, Point, Serial};
-use world::camera::transform::translate::translate;
+use world::camera::transform::translate;
 use world::state::Loop;
 use world::state::{CoordinateTrait, Orchestrator as State};
 use world::surface::interface::hit::SurfaceHit;

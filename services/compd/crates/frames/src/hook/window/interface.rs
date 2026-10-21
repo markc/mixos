@@ -18,7 +18,7 @@ use uuid::Uuid;
 use world::camera::transform::translate::slot;
 use world::state::Loop;
 use world::window::interface::record::window::LoopWindow;
-use world::window::lifecycle::event::event::WindowLifecycleEvent;
+use world::window::lifecycle::event::WindowLifecycleEvent;
 /// Activate `window` on behalf of an external request (e.g. a dock via wlr foreign-toplevel
 /// `activate`): raise + activate + give it keyboard focus.
 ///
@@ -143,7 +143,7 @@ pub fn drain_lifecycle(_loop: &mut Loop) {
         }
         processed = true;
         match item {
-            world::window::lifecycle::event::event::WindowLifecycleEvent::InitialMap(window) => {
+            world::window::lifecycle::event::WindowLifecycleEvent::InitialMap(window) => {
                 _initial_mapped(_loop, window);
             }
             WindowLifecycleEvent::Fullscreen(window, fullscreen) => {

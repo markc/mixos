@@ -14,7 +14,7 @@ pub fn process_input_event<I: InputBackend>(_loop: &mut Loop, event: &InputEvent
     // Mirrored into world storage because the camera / canvas systems read storage,
     // not the tracker. A real pointer also dismisses the sticky touch pane; the PEN
     // deliberately does not — it is allowed to operate the pane (touch/pen parity).
-    if let Some(m) = world::seat::gesture::touch::touch::classify::<I>(event) {
+    if let Some(m) = world::seat::gesture::touch::classify::<I>(event) {
         _loop.inner.touch.modality = m;
         _loop.inner.canvas_mut().input_modality = m;
         if !m.is_direct() {

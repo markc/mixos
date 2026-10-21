@@ -21,11 +21,11 @@
 use crate::camera::transform::translate::fit::{WindowFit, window_fit};
 use crate::camera::transform::translate::slot;
 use crate::camera::transform::translate::transform::{Context as XformCtx, Transform};
-use crate::scene::identity::identity::SolidBank;
+use crate::scene::identity::SolidBank;
 use crate::state::CoordinateTrait;
 use crate::state::Loop;
-use crate::window::draw::element::element::{ClampOpaque, Element, ElementWindowSurface};
-use crate::window::draw::occlude::occlude::{Drawn, Occluders};
+use crate::window::draw::element::{ClampOpaque, Element, ElementWindowSurface};
+use crate::window::draw::occlude::{Drawn, Occluders};
 use crate::window::interface::draw::visible::DrawWindow;
 use crate::window::interface::record::window::LoopWindow;
 use protocols::window::shell;
@@ -277,7 +277,7 @@ pub fn scene<R>(
     renderer: &mut R,
     size: Size<i32, Physical>,
     window: &Window,
-    context: &crate::canvas::draw::context::context::Context,
+    context: &crate::canvas::draw::context::Context,
     occluders: &Occluders,
 ) -> (Vec<Element<R>>, Drawn)
 where

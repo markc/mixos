@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-use crate::capture::session::session::CaptureState;
+use crate::capture::session::CaptureState;
 use graphics::capture::registry::CaptureRegistry;
 use slots::storage::token::base::{Token, TokenMut};
 

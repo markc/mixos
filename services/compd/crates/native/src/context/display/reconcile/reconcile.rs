@@ -24,7 +24,7 @@ use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::drm::control::{Mode as DrmMode, connector, crtc};
 use std::cell::RefCell;
 use std::rc::Rc;
-use world::event::output::output::OutputChange;
+use world::event::output::OutputChange;
 use world::state::CoordinateTrait;
 use world::state::Loop;
 

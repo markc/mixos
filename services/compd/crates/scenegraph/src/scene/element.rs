@@ -5,13 +5,13 @@ use smithay::backend::renderer::element::solid::SolidColorRenderElement;
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::{ImportAll, ImportMem};
 use ui::UiRenderElement;
-use world::seat::pointer::element::element::PointerRenderElement;
+use world::seat::pointer::element::PointerRenderElement;
 
 pub use crate::scene::preimported::PreImported;
 
 smithay::render_elements! {
     pub SceneElement<R> where R: ImportAll + ImportMem + SceneDispatch;
-    Canvas = world::canvas::draw::element::element::Element<R>,
+    Canvas = world::canvas::draw::element::Element<R>,
     Layershell = WaylandSurfaceRenderElement<R>,
     Surface = UiRenderElement,
     /// World-space UI surface clipped to a viewport pane (GLES path).
@@ -40,7 +40,7 @@ where
         matches!(
             self,
             SceneElement::Pointer(_)
-                | SceneElement::Canvas(world::canvas::draw::element::element::Element::SolidBox(_))
+                | SceneElement::Canvas(world::canvas::draw::element::Element::SolidBox(_))
         )
     }
 }

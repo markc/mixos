@@ -161,7 +161,7 @@ impl<'a> HitCx<'a> {
             .get(&crate::viewport::state::OUTPUT_VIEWS)
             .current_views();
         let bounds = smithay::utils::Rectangle::new(smithay::utils::Point::from((0, 0)), mode.size);
-        let computed = crate::viewport::layout::layout::compute(viewports, bounds);
+        let computed = crate::viewport::layout::compute(viewports, bounds);
         let rect = computed
             .regions
             .iter()

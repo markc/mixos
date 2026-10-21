@@ -7,7 +7,7 @@ use smithay::backend::input::{AbsolutePositionEvent, Event, InputBackend, Pointe
 use smithay::utils::{Logical, Physical, Point};
 use std::ops::Deref;
 use world::camera::transform::translate::transform::Transform;
-use world::camera::transform::translate::translate;
+use world::camera::transform::translate;
 use world::state::CoordinateTrait;
 use world::state::Loop;
 
@@ -88,10 +88,10 @@ pub fn absolute<I: InputBackend>(
 
     // Separator / floating-pane drag in progress → apply it and move the cursor,
     // but do not route to the canvas/window grab systems.
-    if world::viewport::interaction::interaction::update_separator(
+    if world::viewport::interaction::update_separator(
         _loop.inner.output_views_mut(),
         position_screen,
-    ) || world::viewport::interaction::interaction::update_floating(
+    ) || world::viewport::interaction::update_floating(
         _loop.inner.output_views_mut(),
         position_screen,
     ) {
@@ -507,7 +507,7 @@ pub fn relative<I: InputBackend>(
         // This branch skips `warp_screen` (the world point is already derived), so
         // it has to withdraw the published correction itself — otherwise the last
         // warped frame's position outlives the warp. See `warp_screen`.
-        world::seat::pointer::publish::publish::set_true_screen(None);
+        world::seat::pointer::publish::set_true_screen(None);
         final_world
     };
 
@@ -609,10 +609,10 @@ pub fn relative<I: InputBackend>(
     // Separator / floating drag in progress → apply + move cursor, skip canvas.
     // `position_screen` carries physical values under a Logical marker; re-tag.
     let cursor_phys = Point::<f64, Physical>::from((position_screen.x, position_screen.y));
-    if world::viewport::interaction::interaction::update_separator(
+    if world::viewport::interaction::update_separator(
         _loop.inner.output_views_mut(),
         cursor_phys,
-    ) || world::viewport::interaction::interaction::update_floating(
+    ) || world::viewport::interaction::update_floating(
         _loop.inner.output_views_mut(),
         cursor_phys,
     ) {
@@ -698,7 +698,7 @@ pub(crate) fn publish_pointer(
 ) {
     let (w, h) = ctx.screen_size_physical;
     if w > 0.0 && h > 0.0 {
-        world::seat::pointer::publish::publish::set_position(p.x / w, p.y / h);
+        world::seat::pointer::publish::set_position(p.x / w, p.y / h);
     }
 }
 
@@ -710,7 +710,7 @@ fn warp_screen(
     // compd: no shader warp exists (see `warp_active`), so the corrected
     // position is the position.
     let _ = (state, ctx);
-    world::seat::pointer::publish::publish::set_true_screen(None);
+    world::seat::pointer::publish::set_true_screen(None);
     p
 }
 

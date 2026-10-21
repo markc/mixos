@@ -3,7 +3,7 @@
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::utils::{Physical, Size};
 use world::state::Loop;
-use world::surface::protocol::protocol::SurfaceMessageType;
+use world::surface::protocol::SurfaceMessageType;
 
 pub fn hook(state: &mut Loop, x: &mut GlesRenderer, size: Size<i32, Physical>) {
     // Nothing is constructed here. The shared UI GPU context and every world's

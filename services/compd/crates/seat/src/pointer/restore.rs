@@ -7,8 +7,8 @@
 use smithay::backend::input::{InputBackend, InputEvent};
 use smithay::input::pointer::MotionEvent;
 use smithay::utils::SERIAL_COUNTER;
-use world::seat::pointer::snapshot::snapshot::CursorSnapshot;
-use world::state::{Loop, state::output_key};
+use world::seat::pointer::snapshot::CursorSnapshot;
+use world::state::{Loop, output_key};
 
 /// The single shared cursor "disappears" while a touch sequence owns the active
 /// output, and is restored the instant a real pointer / pen event arrives.

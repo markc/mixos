@@ -7,7 +7,7 @@
 //!   * two+ fingers on the desktop  → compositor gestures (pan/zoom/swipe/fit).
 use super::{client, edge, emulate, geom, gesture};
 use smithay::backend::input::{Event, InputBackend, TouchEvent};
-use world::seat::gesture::touch::touch::{Mode, Role, TouchMode};
+use world::seat::gesture::touch::{Mode, Role, TouchMode};
 use world::state::Loop;
 use world::state::export::{CanvasGrab, TargetOption};
 

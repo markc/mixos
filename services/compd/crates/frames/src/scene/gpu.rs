@@ -113,7 +113,7 @@ fn build(state: &mut Loop, renderer: &mut GlesRenderer) {
     let main = state
         .inner
         .worlds
-        .get_mut(world::world::manager::manager::MAIN_WORLD)
+        .get_mut(world::world::manager::MAIN_WORLD)
         .storage_mut();
     if main
         .try_get_mut(&world::surface::system::base::SURFACE_MUT)

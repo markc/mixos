@@ -20,7 +20,7 @@
 use smithay::utils::{Physical, Point, Rectangle};
 
 use crate::state::{Orchestrator, output_key};
-use crate::viewport::layout::layout::compute;
+use crate::viewport::layout::compute;
 
 /// Put every pane camera of every output at the centre of its own
 /// rectangle (output-logical), zoom 1. Returns whether any camera moved.

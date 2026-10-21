@@ -38,7 +38,7 @@ use ui::{HandleId, UiHandle};
 use world::camera::transform::translate::slot;
 use world::camera::transform::translate::transform::Transform;
 use world::capture::session::message::{CaptureMedia, CaptureMessage, OverlayRect, TargetKind};
-use world::capture::session::session::{ActiveState, CapturePhase, CaptureTarget, PendingSave};
+use world::capture::session::{ActiveState, CapturePhase, CaptureTarget, PendingSave};
 use world::state::CoordinateTrait;
 use world::state::Loop;
 use world::surface::draw::capture::border::RegionBorder;
@@ -49,8 +49,8 @@ use world::surface::draw::capture::errordialog::ErrorDialog;
 use world::surface::draw::capture::hud::StopHud;
 use world::surface::draw::capture::savedialog::SaveDialog;
 use world::surface::draw::capture::setup::SetupOverlay;
-use world::surface::draw::handle::handle::{UiSpace, load, load_snapshot};
-use world::surface::protocol::protocol::{SurfaceMessage, SurfaceMessageType};
+use world::surface::draw::handle::{UiSpace, load, load_snapshot};
+use world::surface::protocol::{SurfaceMessage, SurfaceMessageType};
 use world::window::interface::record::window::LoopWindow;
 
 /// Time a video capture runs before the "still capturing?" prompt appears.

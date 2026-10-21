@@ -5,7 +5,7 @@
 //! one code path: 2 fingers → pinch-zoom + pan, 3 → directional swipe, 4 → fit.
 use super::backend::{PinchEvent, TouchEmu};
 use super::{emulate, geom};
-use world::seat::gesture::touch::touch::{Mode, TouchMode};
+use world::seat::gesture::touch::{Mode, TouchMode};
 use world::state::Loop;
 
 /// 2-finger-tap slop (physical px of centroid drift) and pinch tolerance (|scale-1|)

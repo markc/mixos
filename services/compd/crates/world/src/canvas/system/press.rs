@@ -73,7 +73,7 @@ fn finalize_non_hand(cx: &mut SystemCx, button: u32) {
     if let Some(platform) = cx
         .platform
         .as_deref_mut()
-        .and_then(|p| p.downcast_mut::<crate::scene::platform::platform::Platform>())
+        .and_then(|p| p.downcast_mut::<crate::scene::platform::Platform>())
     {
         for window in platform.space().elements() {
             window.set_activated(false);

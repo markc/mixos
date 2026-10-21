@@ -2,7 +2,7 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Which pen tool is active: the Hand/Select predicates the tablet handlers
 //! branch on. Re-exported from `tablet` so call sites are unchanged.
-use world::seat::gesture::touch::touch::TouchMode;
+use world::seat::gesture::touch::TouchMode;
 use world::state::Loop;
 use world::state::export::{ActiveOption, CanvasGrab};
 

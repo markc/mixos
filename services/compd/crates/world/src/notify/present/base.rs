@@ -15,9 +15,9 @@
 
 use std::time::{Duration, Instant};
 
-use crate::notify::present::registry::registry::{self as registry, Presenter};
+use crate::notify::present::registry::{self as registry, Presenter};
 use crate::scene::layer::base::Layer;
-use crate::smithay_glue::data::data::ScreenContext;
+use crate::smithay_glue::data::ScreenContext;
 use slots::storage::slot::base::Storage;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::utils::Point;

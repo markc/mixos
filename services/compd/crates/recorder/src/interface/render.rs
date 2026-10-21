@@ -25,7 +25,7 @@ use smithay::utils::{Physical, Point, Rectangle, Scale, Size, Transform};
 // compositor.background; a window capture is always the windows on transparent.
 use dispatcher::frame::SceneDispatch;
 use graphics::capture::registry::EntryId;
-use world::capture::session::session::{CapturePhase, CaptureTarget};
+use world::capture::session::{CapturePhase, CaptureTarget};
 use world::state::CoordinateTrait;
 use world::state::Loop;
 use world::window::interface::record::window::LoopWindow;

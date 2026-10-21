@@ -4,7 +4,7 @@
 //!
 //! compd reports what its renderer actually did, not a separate
 //! opaque-coverage model: a window on a pane but not drawn there because
-//! opaque windows in front covered it ([`Drawn`](super::occlude::Drawn):
+//! opaque windows in front covered it ([`Drawn`](super::Drawn):
 //! `on_pane && !visible`) is `opaque-coverage`; one drawn anywhere is
 //! `exposed`; one no pane evaluated this pass (off every output, hidden by
 //! the comp policy, under the lock) is `unknown`: the report fails open.
@@ -22,7 +22,7 @@ use std::collections::{HashMap, HashSet};
 use smithay::desktop::Window;
 use uuid::Uuid;
 
-use super::occlude::Visible;
+use super::Visible;
 use crate::window::interface::record::window::LoopWindow;
 
 /// One window's occlusion decision.

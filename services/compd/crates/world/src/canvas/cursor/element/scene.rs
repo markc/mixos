@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-use crate::canvas::draw::context::context::Context;
-use crate::scene::identity::identity::SolidBank;
+use crate::canvas::draw::context::Context;
+use crate::scene::identity::SolidBank;
 use crate::state::CoordinateTrait;
 use crate::state::{Loop, Transform};
 use smithay::backend::renderer::element::solid::SolidColorRenderElement;

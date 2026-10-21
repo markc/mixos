@@ -37,12 +37,12 @@ pub fn hooks(state: &mut Loop, renderer: &mut GlesRenderer, size: Size<i32, Phys
     crate::hook::surface::wgpu::hook(state, renderer, size);
     recorder::interface::interface::per_frame(state, renderer, size);
     // Debug FPS overlay (top-right): measures the composited-frame rate.
-    world::surface::draw::fps::fps::per_frame(state, renderer, size);
+    world::surface::draw::fps::per_frame(state, renderer, size);
     // The installed hooks (copied out: a hook may itself touch the list).
     for hook in FRAME_HOOKS.with_borrow(Clone::clone) {
         hook(state, renderer, size);
     }
-    world::bus::legacy::legacy::drain(state, |l| &mut l.inner.bus);
+    world::bus::legacy::drain(state, |l| &mut l.inner.bus);
     let ticked = world_tick(state, renderer, size);
 
     // compd: the finger-glide cursor re-seat and the absolute edge-pan tick
@@ -93,9 +93,9 @@ pub fn world_tick(
     {
         let scale = state.size_ctx_all().scale;
         let output = std::sync::Arc::from(state.inner.current_output_key().as_str());
-        world::smithay_glue::data::data::update_screen(
+        world::smithay_glue::data::update_screen(
             &mut state.inner.kernel,
-            world::smithay_glue::data::data::ScreenContext {
+            world::smithay_glue::data::ScreenContext {
                 size,
                 scale,
                 output,
@@ -119,7 +119,7 @@ pub fn world_tick(
         // SAFETY: platform is dropped at the end of this block; the driver does
         // not touch state.inner.space_state() or the renderer during the calls.
         let mut platform = unsafe {
-            world::scene::platform::platform::Platform::new(
+            world::scene::platform::Platform::new(
                 Some(renderer),
                 &mut state.inner.space_state_mut().state,
                 &gpu,

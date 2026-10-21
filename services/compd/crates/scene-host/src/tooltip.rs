@@ -18,7 +18,7 @@ use ui::UiProgram;
 use ui::{HandleId, UiHandle};
 use world::scene::layer::base::Layer;
 use world::state::Loop;
-use world::surface::draw::handle::handle::{UiSpace, load};
+use world::surface::draw::handle::{UiSpace, load};
 
 use crate::view::tip::{self, Tip, TipAt};
 

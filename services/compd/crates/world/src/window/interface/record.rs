@@ -2,5 +2,5 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 pub mod window;
 pub mod data {
-    pub use crate::window::interface::data::data::*;
+    pub use crate::window::interface::data::*;
 }

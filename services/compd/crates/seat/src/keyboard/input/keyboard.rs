@@ -391,7 +391,7 @@ fn should_forward<I: InputBackend>(
 ) -> bool {
     // Shortcut matchers (overlay + canvas) get the layout-agnostic `shortcut_sym`; UI
     // TEXT sinks below get `keysym` (the active-layout char being typed).
-    if world::overlay::interface::keyboard::keyboard::input_received::<I>(
+    if world::overlay::interface::keyboard::input_received::<I>(
         _loop,
         shortcut_sym,
         key_state,

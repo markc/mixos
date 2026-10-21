@@ -4,7 +4,7 @@ use crate::pointer::input::native_motion::dispatch;
 use smithay::backend::input::{Axis, AxisSource, Event, InputBackend, PointerAxisEvent};
 use smithay::input::pointer::{AxisFrame, MotionEvent, PointerHandle};
 use smithay::utils::{Logical, Physical, Point, SERIAL_COUNTER};
-use world::camera::transform::translate::translate;
+use world::camera::transform::translate;
 use world::state::Loop;
 use world::surface::interface::hit;
 use world::surface::interface::hit::SurfaceHit;

@@ -38,11 +38,11 @@ pub struct SurfaceNode {
 pub enum DrawNode<R: Renderer> {
     /// Renderer-agnostic surface tree (lowered to layershell elements).
     Surface(SurfaceNode),
-    Pointer(world::seat::pointer::element::element::PointerRenderElement<R>),
+    Pointer(world::seat::pointer::element::PointerRenderElement<R>),
     Layershell(WaylandSurfaceRenderElement<R>),
     /// Canvas content: a window's surfaces and decorations, the canvas cursor.
     Canvas {
-        elem: world::canvas::draw::element::element::Element<R>,
+        elem: world::canvas::draw::element::Element<R>,
     },
     /// UI UI surface (world or screen); imported via dmabuf on native renderers.
     UI(UI),

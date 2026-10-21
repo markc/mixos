@@ -36,7 +36,7 @@ pub fn calculate<R>(
     renderer: &mut R,
     size: Size<i32, Physical>,
     window: &Window,
-    context: &crate::canvas::draw::context::context::Context,
+    context: &crate::canvas::draw::context::Context,
 ) -> (CalculateBoundResult)
 where
     R: smithay::backend::renderer::Renderer + ImportAll + ImportMem,
@@ -107,7 +107,7 @@ where
 //     renderer: &mut R,
 //     size: Size<i32, Physical>,
 //     window: &Window,
-//     context: &crate::canvas::draw::context::context::Context,
+//     context: &crate::canvas::draw::context::Context,
 // ) -> (CalculateBoundResult)
 // where
 //     R: smithay::backend::renderer::Renderer + ImportAll + ImportMem,

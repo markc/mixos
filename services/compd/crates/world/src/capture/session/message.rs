@@ -9,7 +9,7 @@
 //!   interface to update their drawn state live.
 
 /// What kind of thing the capture targets. Carries no geometry — the concrete
-/// target (with data) is [`crate::capture::session::session::CaptureTarget`].
+/// target (with data) is [`crate::capture::session::CaptureTarget`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TargetKind {
     /// The windows currently selected in the canvas (`canvas.Select`).

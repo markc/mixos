@@ -148,7 +148,7 @@ pub fn register(
                 .try_borrow()
                 .is_ok_and(|ctx| ctx.outputs.iter().all(|p| p.drm_output.is_none()));
             if dark {
-                world::pump::dark::dark::pump(state);
+                world::pump::dark::pump(state);
             }
             // Render iff some pipe is idle and behind the epoch. A wake is a stale
             // signal — it only says a request happened since the last drain — so

@@ -18,7 +18,7 @@ use wayland_protocols::xdg::shell::client::{
 };
 use world::camera::transform::translate::{fit::window_fit, slot};
 use world::comp::usable::Reserved;
-use world::window::interface::data::data::WindowFullscreen;
+use world::window::interface::data::WindowFullscreen;
 use world::window::interface::record::window::LoopWindow;
 
 fn window(h: &Harness, surface: &WlSurface) -> (SurfaceId, Window) {

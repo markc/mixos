@@ -419,7 +419,7 @@ pub struct PreparedGles {
 fn ui_panes(state: &Loop, size: Size<i32, Physical>) -> Vec<ui::PaneView> {
     let scale = state.viewport_context().scale;
     let vps = state.inner.viewports();
-    let computed = world::viewport::layout::layout::compute(
+    let computed = world::viewport::layout::compute(
         vps,
         smithay::utils::Rectangle::from_loc_and_size(Point::from((0, 0)), size),
     );
@@ -487,7 +487,7 @@ pub fn prepare(
     }
 
     let (surfaces, surfaces_screen, surfaces_dim) =
-        world::surface::draw::scene::scene::scene(state, renderer, size);
+        world::surface::draw::scene::scene(state, renderer, size);
 
     // UI backing lifecycle: release the dmabuf of any World surface not
     // actually visible in some pane (fully off-screen or fully obstructed), and
@@ -698,7 +698,7 @@ where
             // being drawn; the canvas/window scene then projects + crops into it.
             // A single default slot yields one full-output region (unchanged path).
             let scale = state.size_ctx_all().scale;
-            let computed = world::viewport::layout::layout::compute(
+            let computed = world::viewport::layout::compute(
                 state.inner.viewports(),
                 smithay::utils::Rectangle::new(Point::from((0, 0)), size),
             );
@@ -751,16 +751,16 @@ where
                     plan.push(bg_layer, DrawNode::Solid(fill));
                 }
                 let (content, vis) =
-                    world::canvas::draw::scene::scene::scene(state, renderer, size);
+                    world::canvas::draw::scene::scene(state, renderer, size);
                 for item in content {
                     // Per-pane clipping is applied inside the window/decoration/
                     // cursor builders (they read `render_target` and crop to the
                     // pane rect), where the element geometry is well-defined.
                     match item {
-                        world::canvas::draw::scene::scene::ContentItem::Canvas { elem } => {
+                        world::canvas::draw::scene::ContentItem::Canvas { elem } => {
                             plan.push(content_layer, DrawNode::Canvas { elem })
                         }
-                        world::canvas::draw::scene::scene::ContentItem::UI(e) => {
+                        world::canvas::draw::scene::ContentItem::UI(e) => {
                             // World-space UI surfaces clip to the pane (native +
                             // GLES paths handled in `DrawNode::lower`).
                             plan.push(

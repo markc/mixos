@@ -6,7 +6,7 @@
 //! today the only wired binding is the LEFT edge near vertical centre swiped
 //! inward → toggle the sticky touch pane.
 use smithay::utils::{Physical, Point};
-use world::seat::gesture::touch::touch::{Role, TouchEdge};
+use world::seat::gesture::touch::{Role, TouchEdge};
 use world::state::CoordinateTrait;
 use world::state::Loop;
 

@@ -32,7 +32,7 @@ fn id_of(h: &Harness, surface: &wayland_client::protocol::wl_surface::WlSurface)
 fn foreign_activation_resolves_the_owning_space_before_liveness() {
     use dispatcher::wire::trait_::wire_trait::{ActivationOrigin, WireTrait};
     use protocols::window::ident;
-    use world::window::lifecycle::event::event::WindowLifecycleEvent;
+    use world::window::lifecycle::event::WindowLifecycleEvent;
 
     let mut h = Harness::new();
     h.wire.state.foreign.set_all_worlds(true);
@@ -214,7 +214,7 @@ fn parked_retained_fullscreen_cannot_overtake_a_later_unfullscreen() {
     use dispatcher::wire::trait_::wire_trait::{ActivationOrigin, WireTrait};
     use world::camera::transform::translate::slot;
     use world::window::interface::record::window::LoopWindow;
-    use world::window::lifecycle::event::event::WindowLifecycleEvent;
+    use world::window::lifecycle::event::WindowLifecycleEvent;
 
     let mut h = Harness::new();
     h.wire.inner.switch_world();
@@ -283,7 +283,7 @@ fn parked_retained_fullscreen_cannot_overtake_a_later_unfullscreen() {
 fn every_later_request_joins_the_parked_windows_retained_tail() {
     use dispatcher::wire::trait_::wire_trait::{ActivationOrigin, WireTrait};
     use world::window::interface::record::window::LoopWindow;
-    use world::window::lifecycle::event::event::WindowLifecycleEvent;
+    use world::window::lifecycle::event::WindowLifecycleEvent;
 
     for request in [
         "map",
@@ -416,7 +416,7 @@ fn teardown_after_cross_world_activation_cleans_the_owning_draw_order() {
 fn every_lifecycle_event_tracks_membership_and_waits_behind_its_own_initial_map() {
     use dispatcher::wire::trait_::wire_trait::{ActivationOrigin, WireTrait};
     use world::window::interface::record::window::LoopWindow;
-    use world::window::lifecycle::event::event::WindowLifecycleEvent;
+    use world::window::lifecycle::event::WindowLifecycleEvent;
 
     let mut h = Harness::new();
     let (_, _, _) = h.mapped_toplevel(64, 48);
