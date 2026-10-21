@@ -3,3 +3,4 @@
 pub(crate) mod diagnostics;
 pub mod execute;
 pub mod hdr;
+pub(crate) mod late_latch;

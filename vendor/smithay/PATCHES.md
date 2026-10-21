@@ -172,6 +172,12 @@ hunk is marked `// compd: …`.
 
 ### Later patches
 
+**Committed VRR state for fixed-refresh scheduling** (`backend/drm/surface/{atomic,mod}.rs`).
+- `DrmSurface::vrr_active()` reads a per-surface atomic cache of the CRTC's VRR state. It starts from kernel readback and changes only after a successful real modeset/page flip, clear, or state readback on reset. Legacy DRM reports false. It performs no per-frame ioctl.
+- The existing `vrr_enabled()` continues to describe the pending request. `use_vrr()` also changes `state.vrr` after a successful non-modesetting TEST_ONLY ioctl, so reading that field alone would incorrectly treat a tested request as already committed. Failed and test-only commits leave the new cache intact.
+- compd uses this accessor for its per-output late-latch gate, allowing fixed-refresh pipes to defer even when the global VRR preference is on.
+- Guard: `backend::drm::surface::atomic::test::committed_vrr_cache_tracks_real_commits_and_readback_only` checks all cache writers and excludes the test-only path. Real DRM acceptance still needs hardware validation.
+
 **DnD acceptance is withdrawn when its target disappears** (2026-10-06).
 `DnDGrab::drop` requires a live target surface. `WlOfferData::validated`
 requires an active offer and at least one live `wl_data_offer` resource.

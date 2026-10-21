@@ -343,6 +343,19 @@ impl DrmSurface {
         }
     }
 
+    /// Returns whether Variable Refresh Rate is enabled in the last successfully
+    /// committed or read-back CRTC state (local patch).
+    ///
+    /// Unlike [`DrmSurface::vrr_enabled`], a pending request or successful
+    /// test-only commit does not change this value. No ioctl is issued here.
+    /// Legacy DRM always returns `false`.
+    pub fn vrr_active(&self) -> bool {
+        match &*self.internal {
+            DrmSurfaceInternal::Atomic(surf) => surf.vrr_active(),
+            DrmSurfaceInternal::Legacy(_) => false,
+        }
+    }
+
     /// Tries to set Variable Refresh Rate (VRR) for the next frame.
     ///
     /// Doing so might cause [`DrmSurface::commit_pending`] to return `true`.

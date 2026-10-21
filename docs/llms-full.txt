@@ -2308,6 +2308,53 @@ compd waits for its own VT to become active and never switches VT itself.
 `--config-file`, else `~/.config/compd/settings.json`. Preferences are read
 from `preferences.json` beside it.
 
+Native fixed-refresh outputs use late-latch composition by default. After a
+flip with pending redraws, each CRTC waits until the next kernel-timestamped
+vblank minus its render budget. Two 50-commit buckets retain the maximum time
+from the armed deadline (or clamped plan instant) to commit return, including
+dispatch delay and sibling rendering. Exportable render fences also contribute
+their kernel signal timestamp through a non-blocking calloop source. GPU
+callback dispatch latency is excluded; unavailable or invalid timestamps leave
+GPU tails to the learned floor. Modesets and the first commit and flip after reset do not
+train steady-state cost or phase.
+
+Deadline anchoring accepts DRM scanout timestamps up to 2 ms ahead of the
+handler's monotonic clock, covering an interrupt delivered during blanking
+before active scanout begins. Larger future offsets and dispatch delays over
+200 ms are rejected. The tearing phase keeps its existing arrival fallback
+for future timestamps.
+
+The budget is the larger of that measured maximum and a learned floor, plus
+`late_latch_margin_us` (default 1500). A miss on a deferred frame raises the floor
+to the submitted budget minus margin plus one eighth of a refresh, capped at
+one refresh interval. The floor shrinks by only 50 µs per 100 target hits;
+idle gaps preserve that run. A miss, or unknown feedback on a deferred frame,
+breaks the run. The initial estimate is 2 ms. The 1.5 ms margin covers residual jitter
+and GPU observation error; hardware timing still needs measurement under load.
+
+Set `late_latch:false` in the settings file to disable it, or set the emergency
+environment switch `COMPD_DISABLE_LATE_LATCH` (any value). Both take effect at
+startup without rebuilding; the margin uses the same settings file. Schema 7
+adds these fields to older files in memory. Startup, the first redraw after
+idle, untrustworthy timestamps, over-budget frames, tearing, governed pacing,
+active VRR on that CRTC and active capture retain immediate composition.
+The VRR preference alone does not disable late latch: unsupported connectors,
+refused requests and VRR-off pipes still use fixed-refresh deadlines. The gate
+reads cached committed DRM state, independently for each output.
+Nested and headless
+backends keep their existing pacing. Frame callbacks and presentation feedback
+use their existing paths, including empty-frame callback timers.
+
+With `COMPD_FRAME_TRACE=1`, `kms_latch_deferred` and `kms_latch_deadline`
+describe the wait and render; other `kms_latch_*` decision stages name the
+immediate-path reason. `kms_latch_hit`, `kms_latch_miss` or `kms_latch_unknown`
+on completion records the result. These ledger trace events use the same
+output ID as `kms_queue_frame`, a target CLOCK_MONOTONIC timestamp in `detail`
+(microseconds, zero if unavailable), and the budget in `aux` (microseconds).
+The result uses the submitted frame's budget. A hit allows half an interval of
+timestamp tolerance; a full missed vblank is a miss. Tracing off performs no
+extra ID hashing or trace clock reads.
+
 With the `backend-headless` feature, a render node can drive a virtual
 output without a VT, seat, input device or parent compositor:
 
