@@ -47,6 +47,10 @@ fn distinct_roles_under_the_pair_renderer() {
         .wgpu()
         .build_ui_state(gallery, "Context colours".into());
     toolkit::install(&h.ctx, &theme().with_overlay(overlay));
+    let chrome = toolkit::chrome::Chrome::of(&h.ctx);
+    assert!(chrome.style.canvas_dots);
+    assert_eq!(chrome.style.canvas_dot_size, 1.0);
+    assert_eq!(chrome.palette.canvas_dot, Color32::from_rgb(50, 185, 132));
     h.run();
     h.snapshot("distinct_roles_plain");
 }
