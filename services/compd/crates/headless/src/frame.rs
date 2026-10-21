@@ -78,7 +78,7 @@ impl Context {
 
 pub(crate) fn arm(state: &mut Loop, context: &Rc<RefCell<Context>>) {
     let mut ctx = context.borrow_mut();
-    let key = world::state::state::output_key(&ctx.output);
+    let key = world::state::output_key(&ctx.output);
     if ctx.armed || !state.state.redraw.needs(&key) {
         return;
     }
@@ -102,7 +102,7 @@ pub(crate) fn arm(state: &mut Loop, context: &Rc<RefCell<Context>>) {
 }
 
 fn draw(state: &mut Loop, ctx: &mut Context) {
-    let key = world::state::state::output_key(&ctx.output);
+    let key = world::state::output_key(&ctx.output);
     if !state.state.redraw.needs(&key) {
         return;
     }
@@ -170,7 +170,7 @@ fn compose(
     ctx: &mut Context,
     visible: &mut Vec<Window>,
 ) -> Result<bool, Box<dyn std::error::Error>> {
-    use frames::draw::plan::frame::frame::{FramePass, plan};
+    use frames::draw::plan::frame::{FramePass, plan};
     let capture =
         screencopy::wants_full_frame(&ctx.output) || screencopy::file::pending(&ctx.output);
     if !plan(&state.inner.status).has_pass(FramePass::Scene) && !capture {

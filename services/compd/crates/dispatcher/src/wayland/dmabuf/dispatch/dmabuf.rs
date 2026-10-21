@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 pub mod wire {
-    use crate::state::state::{Dispatch, DispatchWire};
+    use crate::state::{Dispatch, DispatchWire};
     use smithay::backend::allocator::dmabuf::Dmabuf;
     use smithay::reexports::wayland_protocols::wp::linux_dmabuf::zv1::server::zwp_linux_buffer_params_v1;
     use smithay::reexports::wayland_server::protocol::wl_buffer;
@@ -39,7 +39,7 @@ pub mod wire {
 }
 
 pub mod dispatch {
-    use crate::state::state::{Dispatch, DispatchWire};
+    use crate::state::{Dispatch, DispatchWire};
     use smithay::{
         backend::drm::DrmDeviceFd,
         reexports::{

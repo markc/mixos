@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-use crate::viewport::state::state::{OUTPUT_VIEWS, OutputViews};
+use crate::viewport::state::{OUTPUT_VIEWS, OutputViews};
 use slots::trait_::system::base::{System, WorldBuilder};
 
 // The camera is pinned to identity (`camera::pin`): nothing here moves it (no

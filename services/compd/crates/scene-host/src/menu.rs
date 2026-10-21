@@ -481,7 +481,7 @@ pub(crate) fn reconcile(
             panels.close_menu();
             state
                 .state
-                .schedule_redraw(dispatcher::state::state::RedrawReason::Publish);
+                .schedule_redraw(dispatcher::state::RedrawReason::Publish);
         }
         let gone = surface.world != world
             || !registry.contains(surface.handle)

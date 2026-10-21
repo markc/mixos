@@ -128,7 +128,7 @@ fn refresh_scene_reserved(lp: &mut Loop) {
     use dispatcher::wire::trait_::wire_trait::WireTrait;
     let mut reserved = std::collections::BTreeMap::new();
     for output in lp.inner.host_space().state.outputs() {
-        let zones = scene_host::exclusive_zones(&world::state::state::output_key(output));
+        let zones = scene_host::exclusive_zones(&world::state::output_key(output));
         if zones.is_empty() {
             continue;
         }
@@ -183,7 +183,7 @@ fn refresh_scene_surfaces(lp: &mut Loop) {
             continue;
         };
         let (ox, oy) = (geometry.loc.x as f32, geometry.loc.y as f32);
-        for surface in scene_host::surfaces(&world::state::state::output_key(output)) {
+        for surface in scene_host::surfaces(&world::state::output_key(output)) {
             inputs.push(world::comp::scenes::SceneInput {
                 key: surface.id,
                 output: comp_model::snapshot::output_key(&output.name()),
@@ -466,7 +466,7 @@ impl Bus {
         // resize or a pane split never projects through a stale camera.
         if world::camera::pin::pin(&mut lp.inner) {
             lp.state
-                .schedule_redraw(dispatcher::state::state::RedrawReason::Output);
+                .schedule_redraw(dispatcher::state::RedrawReason::Output);
         }
         // The pointer starts at the output's centre, not in its top-left corner.
         world::camera::pin::centre_pointer_once(lp);
@@ -498,7 +498,7 @@ impl Bus {
         // Losing input authority (a session pause) clears the agent seat.
         let paused = matches!(
             lp.inner.status_session,
-            world::state::state::StatusSession::Paused
+            world::state::StatusSession::Paused
         );
         // Every libseat edge in order (a pause and an activation can share a
         // dispatch), then the current state, which announces the first one.

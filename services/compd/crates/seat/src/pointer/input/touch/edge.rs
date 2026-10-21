@@ -8,7 +8,7 @@
 use smithay::utils::{Physical, Point};
 use world::seat::gesture::touch::touch::{Role, TouchEdge};
 use world::state::Loop;
-use world::state::state::CoordinateTrait;
+use world::state::CoordinateTrait;
 
 /// Distance from a screen edge (physical px) within which the 2-finger centroid
 /// counts as "at the utmost edge".

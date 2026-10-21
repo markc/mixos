@@ -73,7 +73,7 @@ pub fn wire(
     *_loop
         .inner
         .kernel
-        .get_mut(&world::state::state::GPU_BINDING_MUT) = Some(renderer.gpu_binding.clone());
+        .get_mut(&world::state::GPU_BINDING_MUT) = Some(renderer.gpu_binding.clone());
 
     // logind client for lid-close suspend (None if logind is unavailable).
     *_loop
@@ -93,7 +93,7 @@ pub fn wire(
     let syncobj_eventfd = kms::syncobj::device::supports_eventfd(&display.drm_fd);
     info!("syncobj eventfd support: {syncobj_eventfd}");
     dispatcher::wayland::dmabuf::dispatch::dispatch::hook_syncobj::<
-        dispatcher::state::state::Dispatch,
+        dispatcher::state::Dispatch,
     >(&mut _loop.state, display.drm_fd.clone());
 
     // ---- The COMPOSITING renderer, chosen and PUBLISHED here (`Role::Sample`).
@@ -119,7 +119,7 @@ pub fn wire(
     {
         let formats = {
             let mut binding = renderer.gpu_binding.borrow_mut();
-            let world::state::state::StateDRMBinding { gpus, primary } = &mut *binding;
+            let world::state::StateDRMBinding { gpus, primary } = &mut *binding;
             let primary = *primary;
             render_gles::multigpu::bind::texture_formats(gpus, &primary)
         };
@@ -383,7 +383,7 @@ pub fn wire(
     }
 
     // ---- Loop sources.
-    crate::wire::session::session::register(
+    crate::wire::session::register(
         event_loop,
         display.session_notifier,
         ctx_rc.clone(),
@@ -407,7 +407,7 @@ pub fn wire(
         },
     );
 
-    crate::wire::frame::frame::register(event_loop, _loop, display.drm_notifier, ctx_rc.clone());
+    crate::wire::frame::register(event_loop, _loop, display.drm_notifier, ctx_rc.clone());
 
     crate::wire::input::input::register(event_loop, libinput_source, ctx_rc.clone());
 
@@ -449,7 +449,7 @@ pub fn wire(
     {
         let gpu_binding = ctx_rc.borrow().gpu_binding.clone();
         let mut binding = gpu_binding.borrow_mut();
-        let world::state::state::StateDRMBinding { gpus, primary } = &mut *binding;
+        let world::state::StateDRMBinding { gpus, primary } = &mut *binding;
         match gpus.single_renderer(primary) {
             Ok(mut renderer) => {
                 let gles: &mut smithay::backend::renderer::gles::GlesRenderer = renderer.as_mut();

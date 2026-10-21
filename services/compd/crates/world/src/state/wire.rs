@@ -2,14 +2,14 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 use crate::camera::transform::translate::transform::Transform;
 use crate::state::Loop;
-use crate::state::state::{Orchestrator, StateDRMBinding};
+use crate::state::{Orchestrator, StateDRMBinding};
 use crate::window::interface::record::data::{DiscardPlaceholder, WindowData};
 use crate::window::lifecycle::event::event::WindowLifecycleEvent;
 use crate::window::lifecycle::state::lifecycle::WindowLifecycle;
-use dispatcher::state::state::Dispatch;
+use dispatcher::state::Dispatch;
 use dispatcher::wayland::xdg::activation::dispatch::wire::ActivationDetails;
 use dispatcher::wire::trait_::wire_trait::{ActivationOrigin, WireTrait};
-use dispatcher::wire::wire::Wire;
+use dispatcher::wire::Wire;
 use protocols::window::find;
 use protocols::window::ident;
 use smithay::backend::renderer::ImportDma;
@@ -121,7 +121,7 @@ impl WireTrait for Orchestrator {
         space
             .state
             .outputs()
-            .find(|o| crate::state::state::output_key(o) == key)
+            .find(|o| crate::state::output_key(o) == key)
             .or_else(|| space.state.outputs().next())
             .cloned()
     }
@@ -519,7 +519,7 @@ impl WireTrait for Orchestrator {
             }
         }
 
-        let Some(gpu_ref) = self.kernel.get(&crate::state::state::GPU_BINDING).as_ref() else {
+        let Some(gpu_ref) = self.kernel.get(&crate::state::GPU_BINDING).as_ref() else {
             return Some((_dmabuf, notifier));
         };
 

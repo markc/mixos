@@ -79,7 +79,7 @@ pub fn send_window_frames(state: &Loop, output: &Output, visible: &[Window]) {
     // A window this output drew only as a hover thumbnail is not its to
     // pace: the output drawing it in place sends its callbacks, else the
     // thumbnail pacer does.
-    let key = world::state::state::output_key(output);
+    let key = world::state::output_key(output);
     for window in visible {
         if world::window::draw::thumbnail::preview_only_on(&key, window) {
             continue;
@@ -115,7 +115,7 @@ fn thumbnail_targets(state: &Loop) -> Vec<(Window, Output)> {
     let space = &state.inner.space_state().state;
     let live: Vec<String> = space
         .outputs()
-        .map(world::state::state::output_key)
+        .map(world::state::output_key)
         .collect();
     world::window::draw::thumbnail::retain_outputs(&live);
     world::window::draw::thumbnail::paced()
@@ -123,7 +123,7 @@ fn thumbnail_targets(state: &Loop) -> Vec<(Window, Output)> {
         .filter_map(|(window, key)| {
             let output = space
                 .outputs()
-                .find(|o| world::state::state::output_key(o) == key)
+                .find(|o| world::state::output_key(o) == key)
                 .or_else(|| space.outputs().next())?
                 .clone();
             awaits_frame(&window).then_some((window, output))
@@ -255,7 +255,7 @@ fn trickle_candidates(state: &Loop) -> Vec<(Window, Output)> {
                 .find(|o| {
                     outputs
                         .iter()
-                        .any(|key| *key == world::state::state::output_key(o))
+                        .any(|key| *key == world::state::output_key(o))
                 })?
                 .clone();
             awaits_frame(&window).then_some((window, output))
@@ -265,7 +265,7 @@ fn trickle_candidates(state: &Loop) -> Vec<(Window, Output)> {
     let active = state.inner.active_output_key();
     let Some(output) = space
         .outputs()
-        .find(|o| world::state::state::output_key(o) == active)
+        .find(|o| world::state::output_key(o) == active)
         .or_else(|| space.outputs().next())
         .cloned()
     else {

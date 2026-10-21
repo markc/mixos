@@ -279,7 +279,7 @@ fn tty(state: &mut Loop, num: u32) {
     error!("VT switch to {:?}", num);
     state.loop_handle.insert_idle(move |state| {
         // Do not perform the action again when paused.
-        if let crate::state::state::StatusSession::Paused = state.inner.status_session {
+        if let crate::state::StatusSession::Paused = state.inner.status_session {
             error!("VT already paused");
             return;
         }

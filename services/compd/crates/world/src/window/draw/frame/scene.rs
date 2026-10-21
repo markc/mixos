@@ -23,7 +23,7 @@ use crate::camera::transform::translate::slot;
 use crate::camera::transform::translate::transform::{Context as XformCtx, Transform};
 use crate::scene::identity::identity::SolidBank;
 use crate::state::Loop;
-use crate::state::state::CoordinateTrait;
+use crate::state::CoordinateTrait;
 use crate::window::draw::element::element::{ClampOpaque, Element, ElementWindowSurface};
 use crate::window::draw::occlude::occlude::{Drawn, Occluders};
 use crate::window::interface::draw::visible::DrawWindow;
@@ -283,7 +283,7 @@ pub fn scene<R>(
 where
     // SceneDispatch: the chrome's client corner clip compiles and drives its
     // texture program through it (decor `clip`).
-    R: Renderer + ImportAll + ImportMem + dispatcher::frame::frame::SceneDispatch,
+    R: Renderer + ImportAll + ImportMem + dispatcher::frame::SceneDispatch,
     R::TextureId: Texture + Clone + Send + 'static,
 {
     // compd: no shader bundle composites windows (compositor.pipeline is cut),
@@ -426,7 +426,7 @@ fn window_elements<R>(
     pass: decor::render::Pass,
 ) -> (Vec<Element<R>>, Vec<Rectangle<i32, Physical>>)
 where
-    R: Renderer + ImportAll + ImportMem + dispatcher::frame::frame::SceneDispatch,
+    R: Renderer + ImportAll + ImportMem + dispatcher::frame::SceneDispatch,
     R::TextureId: Texture + Clone + Send + 'static,
 {
     let bundle_owned = false;
@@ -805,7 +805,7 @@ pub fn capture<R>(
     scale: f64,
 ) -> Result<(Vec<Element<R>>, Size<i32, Physical>), String>
 where
-    R: Renderer + ImportAll + ImportMem + dispatcher::frame::frame::SceneDispatch,
+    R: Renderer + ImportAll + ImportMem + dispatcher::frame::SceneDispatch,
     R::TextureId: Texture + Clone + Send + 'static,
 {
     capture_framed(renderer, window, scale).map(|(elements, size, _)| (elements, size))
@@ -826,7 +826,7 @@ pub fn capture_framed<R>(
     String,
 >
 where
-    R: Renderer + ImportAll + ImportMem + dispatcher::frame::frame::SceneDispatch,
+    R: Renderer + ImportAll + ImportMem + dispatcher::frame::SceneDispatch,
     R::TextureId: Texture + Clone + Send + 'static,
 {
     if !scale.is_finite() || scale <= 0.0 {

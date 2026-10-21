@@ -55,7 +55,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Duration;
 use world::state::Loop;
-use world::state::state::StatusSession;
+use world::state::StatusSession;
 
 /// How long outstanding work may make no progress (no flip of its own) before
 /// it is rescued.

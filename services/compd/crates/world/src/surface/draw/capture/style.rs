@@ -106,7 +106,7 @@ pub fn restyle(lp: &mut Loop) {
         }
     }
     lp.state
-        .schedule_redraw(dispatcher::state::state::RedrawReason::Capture);
+        .schedule_redraw(dispatcher::state::RedrawReason::Capture);
 }
 
 /// The setup overlay's mask outside the hole: dim, not opaque, so the user can

@@ -362,7 +362,7 @@ fn cursor_output(lp: &Loop) -> Option<(String, f64)> {
     let key = lp.inner.cursor_output.clone();
     let output = space
         .outputs()
-        .find(|output| key.as_ref() == Some(&crate::state::state::output_key(output)))
+        .find(|output| key.as_ref() == Some(&crate::state::output_key(output)))
         .or_else(|| space.outputs().next())?;
     Some((output.name(), output.current_scale().fractional_scale()))
 }

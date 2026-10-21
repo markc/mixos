@@ -4,7 +4,7 @@
 
 use comp_model::capture::CaptureFrameSpec;
 use comp_model::reply::ControlReply;
-use dispatcher::state::state::RedrawReason;
+use dispatcher::state::RedrawReason;
 use dispatcher::wire::trait_::wire_trait::WireTrait;
 use serde_json::json;
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
@@ -55,7 +55,7 @@ pub fn start(
     let pointer = lp.inner.cursor_output.clone().and_then(|key| {
         outputs
             .iter()
-            .position(|o| world::state::state::output_key(o) == key)
+            .position(|o| world::state::output_key(o) == key)
     });
     let window_at = window_output
         .as_ref()

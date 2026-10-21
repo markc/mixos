@@ -12,7 +12,7 @@
 //! size (assumed 1:1 with output pixels, i.e. scale 1.0 — the region rect the
 //! user draws is treated as physical directly).
 
-use dispatcher::state::state::RedrawReason;
+use dispatcher::state::RedrawReason;
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::mpsc::Receiver;
@@ -40,7 +40,7 @@ use world::camera::transform::translate::transform::Transform;
 use world::capture::session::message::{CaptureMedia, CaptureMessage, OverlayRect, TargetKind};
 use world::capture::session::session::{ActiveState, CapturePhase, CaptureTarget, PendingSave};
 use world::state::Loop;
-use world::state::state::CoordinateTrait;
+use world::state::CoordinateTrait;
 use world::surface::draw::capture::border::RegionBorder;
 use world::surface::draw::capture::dialog::ContinueDialog;
 use world::surface::draw::capture::dim::RegionDim;
@@ -1799,7 +1799,7 @@ fn output_sizes(state: &Loop) -> Vec<(String, (i32, i32))> {
         .state
         .outputs()
         .filter_map(|o| {
-            let key = world::state::state::output_key(o);
+            let key = world::state::output_key(o);
             o.current_mode().map(|m| (key, (m.size.w, m.size.h)))
         })
         .collect()

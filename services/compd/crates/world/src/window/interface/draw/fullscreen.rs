@@ -4,7 +4,7 @@ use crate::camera::transform::translate::slot;
 use crate::state::Loop;
 use crate::window::interface::record::data::WindowFullscreen;
 use crate::window::interface::record::window::LoopWindow;
-use dispatcher::state::state::RedrawReason;
+use dispatcher::state::RedrawReason;
 use dispatcher::wire::trait_::wire_trait::WireTrait;
 use protocols::window::find;
 use protocols::window::shell;

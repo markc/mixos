@@ -143,7 +143,7 @@ pub fn frame_queued(lp: &mut Loop, output: &Output, visible: &[Window]) {
         }
     }
     // Keyed as the scene host registers them: the engine's output key.
-    let sources = ui::source::frame(&crate::state::state::output_key(output));
+    let sources = ui::source::frame(&crate::state::output_key(output));
     let comp = &lp.inner.comp;
     let mut listed = HashSet::new();
     let mut shown = Vec::new();

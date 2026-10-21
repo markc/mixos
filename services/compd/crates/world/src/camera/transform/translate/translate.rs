@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-use crate::camera::transform::state::state::Transform;
+use crate::camera::transform::state::Transform;
 use smithay::output::Scale;
 use smithay::utils::{Logical, Point, Size};
 

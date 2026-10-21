@@ -14,7 +14,7 @@
 use slots::input::event::base::{InputEvent, InputFlow};
 use smithay::utils::{Logical, Physical, Point, SERIAL_COUNTER};
 use world::state::Loop;
-use world::state::state::CoordinateTrait;
+use world::state::CoordinateTrait;
 
 pub fn follow(
     _loop: &mut Loop,

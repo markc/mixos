@@ -5,9 +5,9 @@
 //! so the client gets hover (brush preview / hover cursor). Hover is never a pan.
 
 use crate::pointer::input::tablet::{client, coords, cursor, hand_active};
-use dispatcher::state::state::Dispatch;
-use dispatcher::state::state::RedrawReason;
-use dispatcher::wire::tablet::tablet::Stroke;
+use dispatcher::state::Dispatch;
+use dispatcher::state::RedrawReason;
+use dispatcher::wire::tablet::Stroke;
 use smithay::backend::input::{
     Event, InputBackend, ProximityState, TabletToolEvent, TabletToolProximityEvent,
 };

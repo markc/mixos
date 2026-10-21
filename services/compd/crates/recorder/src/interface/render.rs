@@ -23,11 +23,11 @@ use smithay::utils::{Physical, Point, Rectangle, Scale, Size, Transform};
 
 // compd: the parallax backdrop behind captured windows went with
 // compositor.background; a window capture is always the windows on transparent.
-use dispatcher::frame::frame::frame::SceneDispatch;
+use dispatcher::frame::SceneDispatch;
 use graphics::capture::registry::EntryId;
 use world::capture::session::session::{CapturePhase, CaptureTarget};
 use world::state::Loop;
-use world::state::state::CoordinateTrait;
+use world::state::CoordinateTrait;
 use world::window::interface::record::window::LoopWindow;
 
 /// The per-frame "render these windows into this capture entry" job.

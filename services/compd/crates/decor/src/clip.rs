@@ -26,7 +26,7 @@ use smithay::backend::renderer::{ImportAll, ImportMem, Renderer};
 use smithay::utils::user_data::UserDataMap;
 use smithay::utils::{Buffer, Physical, Point, Rectangle, Scale, Transform};
 
-use dispatcher::frame::frame::SceneDispatch;
+use dispatcher::frame::SceneDispatch;
 
 /// The cache key the renderer seam compiles [`SHADER`] under.
 pub const KEY: &str = "decor:rounded-clip";

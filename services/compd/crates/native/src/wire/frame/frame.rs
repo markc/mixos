@@ -23,7 +23,7 @@ use std::os::fd::AsFd;
 use std::rc::Rc;
 use std::time::Duration;
 use world::state::Loop;
-use world::state::state::StatusSession;
+use world::state::StatusSession;
 
 #[cfg(feature = "flip-estimate")]
 type EstimateSlot = Rc<RefCell<Option<smithay::reexports::calloop::RegistrationToken>>>;
@@ -77,7 +77,7 @@ pub fn register(
                 return;
             };
             for pipe in ctx.outputs.iter_mut() {
-                if world::state::state::output_key(&pipe.output) == key
+                if world::state::output_key(&pipe.output) == key
                     && let Some(o) = pipe.drm_output.as_mut()
                 {
                     if in_flight {
@@ -342,7 +342,7 @@ pub fn live_keys(ctx: &NativeRenderContext) -> Vec<String> {
     ctx.outputs
         .iter()
         .filter(|p| p.drm_output.is_some())
-        .map(|p| world::state::state::output_key(&p.output))
+        .map(|p| world::state::output_key(&p.output))
         .collect()
 }
 
@@ -414,7 +414,7 @@ fn process_vblank_inner(
     // (if it lags the epoch) will now redraw THIS output; other pipes still in
     // flight stay skipped until their own vblank, so each output paces to its
     // own refresh.
-    let key = world::state::state::output_key(&ctx.outputs[idx].output);
+    let key = world::state::output_key(&ctx.outputs[idx].output);
     // A real flip: completes the flight AND counts as this pipe's progress
     // (`Schedule::flips`, read by the stall rescue and the settle deadline).
     state.state.redraw.vblank(&key);
@@ -458,7 +458,7 @@ fn process_vblank_inner(
     // completions on THIS pipe (a dropped frame — a vblank with no new buffer —
     // doesn't increment), keyed by output. The overlay samples the delta.
     if matches!(pending_feedback, Some(Some(_))) {
-        let key = world::state::state::output_key(&ctx.outputs[idx].output);
+        let key = world::state::output_key(&ctx.outputs[idx].output);
         model::stats::registry::base::present(&key);
     }
 

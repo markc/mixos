@@ -171,7 +171,7 @@ pub fn retarget(lp: &mut Loop, window: &Window) {
     protocols::window::shell::stage(window, geometry.size, false);
     protocols::window::shell::send(window);
     lp.state
-        .schedule_redraw(dispatcher::state::state::RedrawReason::WindowState);
+        .schedule_redraw(dispatcher::state::RedrawReason::WindowState);
 }
 
 /// The window of record `id`, if one is in a world Space.

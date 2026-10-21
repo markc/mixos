@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 use crate::state::Loop;
-use crate::state::state::CoordinateTrait;
-use dispatcher::state::state::RedrawReason;
+use crate::state::CoordinateTrait;
+use dispatcher::state::RedrawReason;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::utils::{Physical, Point, Size};
 use ui::{UiRenderElement, UiSpace};

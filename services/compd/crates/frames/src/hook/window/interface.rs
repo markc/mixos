@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-use dispatcher::state::state::RedrawReason;
+use dispatcher::state::RedrawReason;
 use dispatcher::wire::trait_::wire_trait::WireTrait;
 use protocols::window::find;
 use protocols::window::ident;

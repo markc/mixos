@@ -9,7 +9,7 @@
 //! camera, placeholders or a renderer stays headless. A second Space lets tests
 //! exercise foreign activation across worlds.
 
-use dispatcher::state::state::Dispatch;
+use dispatcher::state::Dispatch;
 use dispatcher::wire::trait_::surface_event::{SurfaceEvent, SurfaceHandle};
 use dispatcher::wire::trait_::wire_trait::{ActivationOrigin, WireTrait};
 use protocols::space::state::SpaceState;

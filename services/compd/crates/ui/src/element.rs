@@ -23,7 +23,7 @@
 //! old and new screen rects correctly.
 
 use crate::UiSpace;
-use dispatcher::frame::frame::SceneDispatch;
+use dispatcher::frame::SceneDispatch;
 use smithay::backend::renderer::RendererSuper;
 use smithay::backend::renderer::element::{Element, Id, Kind, RenderElement};
 use smithay::backend::renderer::gles::GlesTexture;

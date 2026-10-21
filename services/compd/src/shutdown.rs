@@ -37,7 +37,7 @@ use smithay::reexports::calloop::{EventLoop, Interest, Mode, PostAction};
 use model::{info, warn};
 use world::environment::interface::lifecycle::lifecycle as env_lifecycle;
 use world::state::Loop;
-use world::state::state::StatusSession;
+use world::state::StatusSession;
 use x11_wm::display;
 
 /// Block SIGTERM and SIGINT process-wide, before any thread exists.

@@ -9,7 +9,7 @@ use std::ops::Deref;
 use world::camera::transform::translate::transform::Transform;
 use world::camera::transform::translate::translate;
 use world::state::Loop;
-use world::state::state::CoordinateTrait;
+use world::state::CoordinateTrait;
 
 pub fn absolute<I: InputBackend>(
     event: &<I as InputBackend>::PointerMotionAbsoluteEvent,
@@ -463,10 +463,10 @@ pub fn relative<I: InputBackend>(
             .space_state()
             .state
             .outputs()
-            .any(|o| world::state::state::output_key(o) == *key)
+            .any(|o| world::state::output_key(o) == *key)
     });
     if stale {
-        _loop.inner.cursor_output = Some(world::state::state::output_key(
+        _loop.inner.cursor_output = Some(world::state::output_key(
             _loop.inner.current_output(),
         ));
     }

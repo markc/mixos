@@ -20,7 +20,7 @@ use smithay::reexports::calloop::{Interest, Mode, PostAction};
 use smithay::reexports::{calloop::EventLoop, wayland_server::Display};
 use std::time::Instant;
 use world::state::Loop;
-use world::state::state::{Loader, Orchestrator as State};
+use world::state::{Loader, Orchestrator as State};
 // App-launch executor (kernel.execution driver) — all worker/reaper/channel
 // wiring is encapsulated behind `install`.
 use crate::execution::driver::executor::install::install as launch_executor;
@@ -346,7 +346,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     state
         .inner
         .bus
-        .register(&world::state::state::WORLD_SWITCHED, |l, _event| {
+        .register(&world::state::WORLD_SWITCHED, |l, _event| {
             l.on_world_switched()
         });
 
@@ -446,7 +446,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         #[cfg(feature = "backend-headless")]
         cli::Backend::Headless => {
-            headless::wire::wire(
+            headless::wire(
                 &mut state,
                 &mut event_loop,
                 headless::wire::Options {
@@ -527,7 +527,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     ui::engine::wake::register(&event_loop.handle(), |state: &mut world::state::Loop| {
         state
             .state
-            .schedule_redraw(dispatcher::state::state::RedrawReason::Ui);
+            .schedule_redraw(dispatcher::state::RedrawReason::Ui);
     })?;
 
     // The native `comp` Bus service. Its worker dials noded on
@@ -651,7 +651,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // for every comp-facing coordinate. Here, not only in the Bus pass, so it
         // holds with no Bus port too. Idempotent; true only when a camera moved.
         if world::camera::pin::pin(&mut state.inner) {
-            state.state.schedule_redraw(dispatcher::state::state::RedrawReason::Output);
+            state.state.schedule_redraw(dispatcher::state::RedrawReason::Output);
         }
         // The pointer starts at the first output's centre (a warp, not input;
         // once only), so it never rests in a hot corner at startup.
@@ -760,7 +760,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
         }
         if !parked && state.inner.surface().registry.as_ref().is_some_and(|registry| registry.has_queued()) {
-            state.state.schedule_redraw(dispatcher::state::state::RedrawReason::Ui);
+            state.state.schedule_redraw(dispatcher::state::RedrawReason::Ui);
         }
         // Parked, no frame will tick the UIs: run what their input owes now,
         // so a Bus-driven click on a panel still clicks. Painting waits for

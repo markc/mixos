@@ -4,8 +4,8 @@
 //! callbacks/housekeeping from `frames::draw::present::callbacks`; nothing is
 //! duplicated between backends.
 
-use dispatcher::frame::frame::SceneDispatch;
-use frames::draw::plan::frame::frame::{FramePass, plan};
+use dispatcher::frame::SceneDispatch;
+use frames::draw::plan::frame::{FramePass, plan};
 use frames::draw::plan::tap::tap::{POST_SCENE, TapSubscriptions};
 use frames::scene::scene::Scene;
 use graphics::capture::registry::{CaptureRegistry, OutputId};
@@ -110,7 +110,7 @@ pub fn capture_offscreen(state: &mut Loop, context: &mut WinitRenderContext) {
         return;
     }
     let previous_output = state.inner.render_output.clone();
-    state.inner.render_output = Some(world::state::state::output_key(&context.output));
+    state.inner.render_output = Some(world::state::output_key(&context.output));
     let renderer = context.winit_backend.renderer();
     let prepared = frames::scene::scene::prepare(state, renderer, size);
     let scene = frames::scene::scene::scene(state, renderer, size, prepared);
@@ -145,7 +145,7 @@ pub fn capture_offscreen(state: &mut Loop, context: &mut WinitRenderContext) {
 pub fn draw(state: &mut Loop, context: &mut WinitRenderContext) {
     // Tag the output being drawn so per-output consumers (e.g. the FPS overlay's
     // hook, run inside `compose`) resolve the same key the present bump uses.
-    let output_key = world::state::state::output_key(&context.output);
+    let output_key = world::state::output_key(&context.output);
     if !state.state.redraw.needs(&output_key) {
         return;
     }
@@ -399,7 +399,7 @@ fn compose(
     // the rim's capture requests use (they key off `active_output()` on every
     // backend), so entries match on winit too. A hardcoded `OutputId(0)` here never
     // matched the request's keyed id → capture silently produced nothing.
-    let capture_output = OutputId::from_key(&world::state::state::output_key(&context.output));
+    let capture_output = OutputId::from_key(&world::state::output_key(&context.output));
 
     let (gles_renderer, mut gles_framebuffer) = context.winit_backend.bind().unwrap();
 

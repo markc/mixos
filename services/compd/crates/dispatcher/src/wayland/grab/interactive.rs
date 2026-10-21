@@ -18,7 +18,7 @@ use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, SERIAL_COUNTER, Serial};
 use smithay::wayland::compositor::get_parent;
 
-use crate::state::state::Dispatch;
+use crate::state::Dispatch;
 use crate::wire::trait_::surface_event::{InteractiveOp, SurfaceEvent, SurfaceHandle};
 
 pub struct InteractiveGrab {

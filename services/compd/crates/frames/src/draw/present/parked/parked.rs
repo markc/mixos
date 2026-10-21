@@ -76,7 +76,7 @@ fn target_output(state: &Loop) -> Option<Output> {
     let active = state.inner.active_output_key();
     space
         .outputs()
-        .find(|o| world::state::state::output_key(o) == active)
+        .find(|o| world::state::output_key(o) == active)
         .or_else(|| space.outputs().next())
         .cloned()
 }

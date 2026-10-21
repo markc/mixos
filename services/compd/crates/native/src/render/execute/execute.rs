@@ -24,8 +24,8 @@
 
 use super::diagnostics;
 use crate::context::render::render::NativeRenderContext;
-use dispatcher::frame::frame::{ElementMeta, SceneDispatch};
-use frames::draw::plan::frame::frame::{FramePass, plan};
+use dispatcher::frame::{ElementMeta, SceneDispatch};
+use frames::draw::plan::frame::{FramePass, plan};
 use frames::draw::plan::tap::tap::POST_SCENE;
 use graphics::capture::registry::{CaptureRegistry, OutputId};
 use render_gles::element::wrap::GlesElementWrapper;
@@ -38,7 +38,7 @@ use smithay::utils::{Buffer, Physical, Point, Rectangle, Scale, Transform};
 use std::cell::RefCell;
 use std::rc::Rc;
 use world::state::Loop;
-use world::state::state::{StateDRMBinding, StatusSession};
+use world::state::{StateDRMBinding, StatusSession};
 
 /// Honor `RenderFrameResult::needs_sync()` before queueing to KMS: when smithay
 /// can't hand the atomic commit a GPU fence (device lacks fencing, or the
@@ -255,7 +255,7 @@ fn capture_offscreen(ctx_rc: &Rc<RefCell<NativeRenderContext>>, state: &mut Loop
             screencopy::offscreen::fail_output(output, serve_plain_copies);
             continue;
         }
-        let key = world::state::state::output_key(output);
+        let key = world::state::output_key(output);
         state.inner.render_output = Some(key.clone());
         state.inner.output_views_mut().ensure(&key);
         let prepared = frames::scene::scene::prepare(state, renderer, size);
@@ -488,7 +488,7 @@ pub fn execute(
     let mut pace: Option<std::time::Duration> = None;
     for output_idx in 0..ctx_ref.outputs.len() {
         let trace_output = if ledger::frame_trace::enabled() {
-            OutputId::from_key(&world::state::state::output_key(
+            OutputId::from_key(&world::state::output_key(
                 &ctx_ref.outputs[output_idx].output,
             ))
             .0
@@ -515,7 +515,7 @@ pub fn execute(
         // and burn a CPU render+sync — the coupling that dragged a high-refresh
         // output down to a slower neighbour's rate. Its own vblank clears this and
         // re-renders it. (Single output: its vblank clears it each frame → no skip.)
-        let key = world::state::state::output_key(&ctx_ref.outputs[output_idx].output);
+        let key = world::state::output_key(&ctx_ref.outputs[output_idx].output);
         if state.state.redraw.in_flight(&key) {
             let _skip = ledger::frame_trace::span("kms_defer_pending_flip", trace_output);
             continue;
@@ -641,7 +641,7 @@ pub fn execute(
         // coordinate accessors (`current_output()`) resolve THIS output's mode
         // size/scale. Cleared after the loop so the input path falls back to the
         // cursor's output.
-        let output_key = world::state::state::output_key(&ctx_ref.outputs[output_idx].output);
+        let output_key = world::state::output_key(&ctx_ref.outputs[output_idx].output);
         let output_scale = ctx_ref.outputs[output_idx]
             .output
             .current_scale()
@@ -1131,7 +1131,7 @@ pub fn execute(
         } else {
             let output = ctx_ref.outputs[output_idx].output.clone();
             let _skip = ledger::frame_trace::span("kms_skip_empty_damage", output_id.0);
-            let key = world::state::state::output_key(&output);
+            let key = world::state::output_key(&output);
             // Rendered, nothing to submit: still a frame the ledger accounts for.
             state.state.redraw.frame(&key, true);
             // The estimated next vblank of THIS pipe: no flip is coming to pace
@@ -1305,7 +1305,7 @@ fn present(
 ) -> bool {
     use kms::scanout::flip::queue::{QueueOutcome, queue};
     let trace_output = if ledger::frame_trace::enabled() {
-        OutputId::from_key(&world::state::state::output_key(
+        OutputId::from_key(&world::state::output_key(
             &ctx_ref.outputs[output_idx].output,
         ))
         .0
@@ -1456,7 +1456,7 @@ fn present(
                 }
             );
         }
-        liveness::note_composite(&world::state::state::output_key(
+        liveness::note_composite(&world::state::output_key(
             &ctx_ref.outputs[output_idx].output,
         ));
         active
@@ -1521,7 +1521,7 @@ fn present(
             // In flight: the render loop skips this pipe until its own vblank scans
             // the frame out, decoupling its cadence from the others' — and the
             // schedule wakes the loop for a request only while some pipe is idle.
-            let key = world::state::state::output_key(&ctx_ref.outputs[output_idx].output);
+            let key = world::state::output_key(&ctx_ref.outputs[output_idx].output);
             state.state.redraw.queued(&key);
             cancel_owed_frames(state, &mut ctx_ref.outputs[output_idx]);
             // A submitted frame: the ledger attributes it to what was pending.

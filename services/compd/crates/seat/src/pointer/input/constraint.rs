@@ -9,7 +9,7 @@ use smithay::{
     },
 };
 use world::camera::transform::translate::map;
-use world::canvas::input::state::state::{ActiveOption, CanvasGrab};
+use world::canvas::input::state::{ActiveOption, CanvasGrab};
 use world::state::Loop;
 
 /// The hand tool owns the pointer while it is active: no client lock or confine

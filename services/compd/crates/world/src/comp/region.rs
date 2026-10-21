@@ -41,11 +41,11 @@ use smithay::input::pointer::{CursorIcon, MotionEvent};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Buffer, Logical, Physical, Point, Rectangle, SERIAL_COUNTER, Size};
 
-use dispatcher::state::state::RedrawReason;
+use dispatcher::state::RedrawReason;
 
 use crate::camera::transform::translate::transform::Transform;
 use crate::state::Loop;
-use crate::state::state::CoordinateTrait;
+use crate::state::CoordinateTrait;
 use crate::surface::draw::capture::style as capture_style;
 
 /// How a run ended.
@@ -685,7 +685,7 @@ fn drawn_on(lp: &Loop, output: &str) -> bool {
         .state
         .outputs()
         .find(|candidate| candidate.name() == output)
-        .map(crate::state::state::output_key);
+        .map(crate::state::output_key);
     pass_draws(lp.inner.render_output.as_deref(), selected.as_deref())
 }
 

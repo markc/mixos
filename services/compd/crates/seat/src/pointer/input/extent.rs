@@ -42,11 +42,11 @@
 //! the lock. The extent belongs to the camera only while the camera's world is the
 //! thing being drawn; see [`pans`].
 
-use dispatcher::state::state::RedrawReason;
+use dispatcher::state::RedrawReason;
 use slots::input::event::base::InputEvent;
 use smithay::utils::{Physical, Point};
 use std::time::{Duration, Instant};
-use world::seat::pointer::state::state::{EdgeHold, EdgeSeed};
+use world::seat::pointer::state::{EdgeHold, EdgeSeed};
 use world::state::Loop;
 
 /// How far from an edge an ABSOLUTE pointer starts pulling the canvas, in physical

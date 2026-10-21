@@ -87,12 +87,12 @@ pub fn advertise_dmabuf(_loop: &mut Loop) {
     // negotiates RGB (or converts) instead of handing over a buffer that would
     // never be drawn. Getting them back is ycbcr support in the Vulkan renderer,
     // or a GLES route for what it cannot take; it is NOT re-widening this.
-    type Dispatch = dispatcher::state::state::Dispatch;
+    type Dispatch = dispatcher::state::Dispatch;
     let handle = _loop.state.output.display_handle.clone();
     let node = _loop
         .inner
         .kernel
-        .get(&world::state::state::GPU_BINDING)
+        .get(&world::state::GPU_BINDING)
         .as_ref()
         .map(|b| (registrar::composite_node(b.borrow().primary), "GPU binding"))
         .or_else(|| {

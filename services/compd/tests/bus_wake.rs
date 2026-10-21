@@ -14,7 +14,7 @@ use comp_model::reply::ControlReply;
 use comp_model::request::{InputOp, LongOp, WindowOp, WorkspaceIndex};
 use comp_model::snapshot::{CompSnapshot, ReadScopes};
 use comp_service::{CompEngine, LongReply, PortService};
-use dispatcher::state::state::{Dispatch, RedrawReason};
+use dispatcher::state::{Dispatch, RedrawReason};
 use policy::workspaces::{DefaultOutput, WorkspaceState, service_switch};
 use protocols::tearing::gate::{self, Gate};
 use serde_json::Value;
@@ -103,7 +103,7 @@ fn bus_and_ui_wakes_schedule_frames_without_input_even_when_paced() {
     let mut event_loop: EventLoop<'static, Data> = EventLoop::try_new().unwrap();
     let display: Display<Dispatch> = Display::new().unwrap();
     let mut dispatch =
-        dispatcher::wire::wire::new_dispatch(&display.handle(), None, event_loop.handle());
+        dispatcher::wire::new_dispatch(&display.handle(), None, event_loop.handle());
     let (redraw, source) = make_ping().unwrap();
     dispatch.redraw.set_ping(redraw);
     dispatch.redraw.rendering("o_kms");

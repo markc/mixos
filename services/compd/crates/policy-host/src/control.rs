@@ -41,7 +41,7 @@ use comp_model::observation::{
 use comp_model::reply::ControlReply;
 use comp_model::request::{WindowOp, WindowState};
 use comp_model::snapshot::output_key;
-use dispatcher::state::state::RedrawReason;
+use dispatcher::state::RedrawReason;
 use dispatcher::wire::trait_::surface_event::SurfaceHandle;
 use dispatcher::wire::trait_::surface_event::WindowRequest;
 use dispatcher::wire::trait_::wire_trait::{ActivationOrigin, WireTrait};

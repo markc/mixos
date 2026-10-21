@@ -46,7 +46,7 @@ use comp_model::request::{
 use comp_model::snapshot::{
     OutputSnapshot, SeatFocusSnapshot, SeatPointerSnapshot, SeatSnapshot, output_key,
 };
-use dispatcher::state::state::Dispatch;
+use dispatcher::state::Dispatch;
 use dispatcher::wire::trait_::surface_event::SurfaceHandle;
 use dispatcher::wire::trait_::wire_trait::WireTrait;
 use policy::agent::{
@@ -57,7 +57,7 @@ use policy::agent::{
 use surfaces::{SeatKind, SurfaceId, SurfaceRole};
 use world::camera::transform::translate::transform::Transform;
 use world::state::Loop;
-use world::state::state::CoordinateTrait;
+use world::state::CoordinateTrait;
 use world::surface::interface::hit::{SurfaceHit, surface_under_filtered};
 use world::window::interface::draw::visible::DrawWindow;
 
@@ -179,7 +179,7 @@ pub fn clear_agent(lp: &mut Loop) {
     // A drawn agent arrow goes with it.
     if injection.agent_pointer.take().is_some() {
         lp.state
-            .schedule_redraw(dispatcher::state::state::RedrawReason::AgentInput);
+            .schedule_redraw(dispatcher::state::RedrawReason::AgentInput);
     }
 }
 
@@ -536,7 +536,7 @@ fn move_human_pointer(
                 .state
                 .outputs()
                 .find(|candidate| candidate.name() == name)
-                .map(world::state::state::output_key);
+                .map(world::state::output_key);
             if key.is_some() {
                 lp.inner.cursor_output = key;
             }
@@ -920,7 +920,7 @@ fn agent_motion(
     lp.inner.comp.injection.agent_pointer = Some(position);
     // The agent arrow is drawn at this position (seat `pointer::draw`).
     lp.state
-        .schedule_redraw(dispatcher::state::state::RedrawReason::AgentInput);
+        .schedule_redraw(dispatcher::state::RedrawReason::AgentInput);
     let Some(pointer) = agent_pointer(lp) else {
         return;
     };
@@ -1537,7 +1537,7 @@ fn pointer_position(lp: &Loop, seat: SeatKind) -> Option<(String, String, f64, f
         SeatKind::Human => {
             if matches!(
                 lp.inner.status_session,
-                world::state::state::StatusSession::Paused
+                world::state::StatusSession::Paused
             ) {
                 return None;
             }
@@ -1546,7 +1546,7 @@ fn pointer_position(lp: &Loop, seat: SeatKind) -> Option<(String, String, f64, f
             let space = &lp.inner.space_state().state;
             let output = space
                 .outputs()
-                .find(|output| key.as_ref() == Some(&world::state::state::output_key(output)))
+                .find(|output| key.as_ref() == Some(&world::state::output_key(output)))
                 .or_else(|| space.outputs().next())?;
             let scale = output.current_scale().fractional_scale();
             let motion = lp.inner.pointer().motion;
@@ -1577,7 +1577,7 @@ pub fn human_pointer(lp: &Loop) -> Option<(String, f64, f64)> {
 /// keyboard and pointer focus records, its pointer on an output (by name),
 /// and its last input.
 pub(crate) fn project_seats(lp: &Loop) -> BTreeMap<&'static str, SeatSnapshot> {
-    use dispatcher::wayland::seat::factory::factory::{AGENT_SEAT, PRIMARY_SEAT};
+    use dispatcher::wayland::seat::factory::{AGENT_SEAT, PRIMARY_SEAT};
     let focus = |surface: Option<WlSurface>| {
         surface
             .and_then(|surface| record_of(lp, &surface))

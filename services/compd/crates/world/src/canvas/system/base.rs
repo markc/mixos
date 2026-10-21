@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-use crate::canvas::state::state::CanvasState;
+use crate::canvas::state::CanvasState;
 use crate::surface::system::base::announce_ui_button;
-use dispatcher::state::state::Dispatch;
+use dispatcher::state::Dispatch;
 use slots::define_buffer;
 use slots::input::event::base::{InputEvent, InputFlow};
 use slots::input::layer::base as input_layer;

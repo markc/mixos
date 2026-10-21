@@ -12,7 +12,7 @@ use smithay::utils::{Logical, Point};
 
 use decor::Intent;
 use decor::window::ChromeHit;
-use dispatcher::state::state::RedrawReason;
+use dispatcher::state::RedrawReason;
 use dispatcher::wire::trait_::surface_event::{SurfaceEvent, SurfaceHandle, WindowRequest};
 use world::state::Loop;
 use world::surface::interface::hit::{SurfaceHit, surface_under_filtered};

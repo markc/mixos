@@ -89,7 +89,7 @@ impl<'a> HitCx<'a> {
     fn current_output(&self) -> &smithay::output::Output {
         let key = &self
             .storage
-            .get(&crate::viewport::state::state::OUTPUT_VIEWS)
+            .get(&crate::viewport::state::OUTPUT_VIEWS)
             .current;
         self.space_state()
             .state
@@ -110,14 +110,14 @@ impl<'a> HitCx<'a> {
         format!("{} {} {}", p.make, p.model, p.serial_number)
     }
 
-    fn camera(&self) -> &crate::camera::state::state::Camera {
+    fn camera(&self) -> &crate::camera::state::Camera {
         self.storage
-            .get(&crate::viewport::state::state::OUTPUT_VIEWS)
+            .get(&crate::viewport::state::OUTPUT_VIEWS)
             .current_views()
             .focus_camera()
     }
 
-    fn surface(&self) -> &crate::surface::state::state::SurfaceState {
+    fn surface(&self) -> &crate::surface::state::SurfaceState {
         self.storage.get(&crate::surface::system::base::SURFACE)
     }
 
@@ -158,7 +158,7 @@ impl<'a> HitCx<'a> {
         let scale = output.current_scale().fractional_scale();
         let viewports = self
             .storage
-            .get(&crate::viewport::state::state::OUTPUT_VIEWS)
+            .get(&crate::viewport::state::OUTPUT_VIEWS)
             .current_views();
         let bounds = smithay::utils::Rectangle::new(smithay::utils::Point::from((0, 0)), mode.size);
         let computed = crate::viewport::layout::layout::compute(viewports, bounds);

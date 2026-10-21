@@ -4,8 +4,8 @@
 //! scheduling. (Ex wire.rs `start()` libinput closure.)
 
 use crate::context::render::render::NativeRenderContext;
-use dispatcher::state::state::Dispatch;
-use dispatcher::wire::tablet::tablet as tbl;
+use dispatcher::state::Dispatch;
+use dispatcher::wire::tablet as tbl;
 use kms::input::loop_::libinput::LibinputSource;
 use seat::pointer::restore::restore::TouchCursor;
 use smithay::backend::input::{Event, InputEvent};
@@ -18,7 +18,7 @@ use smithay::reexports::input::{Device, DeviceCapability};
 use std::cell::RefCell;
 use std::rc::Rc;
 use world::state::Loop;
-use world::state::state::StatusSession;
+use world::state::StatusSession;
 
 /// Drive the external `zwp_tablet_pad_v2` senders from a libinput pad event
 /// (delivered via smithay's `SpecialEvent`; see the local smithay patch). Pads are

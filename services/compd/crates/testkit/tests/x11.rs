@@ -46,7 +46,7 @@ fn window(xid: u32) -> X11Surface {
 /// synchronously. Lifecycle service must never remove the readmitted entry.
 #[test]
 fn off_world_unmap_remap_keeps_the_readmitted_draw_order_entry() {
-    use dispatcher::state::deferred::deferred::{Deferred, Mapped};
+    use dispatcher::state::deferred::{Deferred, Mapped};
     use dispatcher::wire::trait_::surface_event::{SurfaceEvent, SurfaceHandle};
     use dispatcher::wire::trait_::wire_trait::WireTrait;
     use smithay::desktop::Window;

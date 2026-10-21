@@ -7,7 +7,7 @@
 //! plan; they do not derive it.
 
 use crate::draw::plan::tap::tap::{POST_SCENE, TapPoint};
-use world::state::state::Status;
+use world::state::Status;
 
 /// A render pass kind. The *meaning* of each kind (which element source feeds
 /// it) is compositor vocabulary; backends only map kinds to element sources.

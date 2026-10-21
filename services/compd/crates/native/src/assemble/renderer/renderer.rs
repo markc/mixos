@@ -21,7 +21,7 @@ use smithay::reexports::wayland_server::DisplayHandle;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use std::cell::RefCell;
 use std::rc::Rc;
-use world::state::state::StateDRMBinding;
+use world::state::StateDRMBinding;
 
 pub struct RendererAssembly {
     pub gpu_binding: Rc<RefCell<StateDRMBinding>>,

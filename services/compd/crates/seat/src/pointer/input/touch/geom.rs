@@ -3,7 +3,7 @@
 //! Touch coordinate helpers: normalized fraction → physical screen point → world
 //! point, using the same projection the pointer's absolute-motion path uses.
 use smithay::utils::{Logical, Physical, Point};
-use world::state::state::CoordinateTrait;
+use world::state::CoordinateTrait;
 use world::state::{Loop, Transform};
 
 /// Physical screen point for a normalized 0..1 touch fraction.

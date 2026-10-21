@@ -22,8 +22,8 @@ use std::os::fd::AsFd;
 use std::process::Stdio;
 use std::time::Duration;
 
-use dispatcher::state::deferred::deferred::Deferred;
-use dispatcher::state::state::Dispatch;
+use dispatcher::state::deferred::Deferred;
+use dispatcher::state::Dispatch;
 use dispatcher::wire::trait_::wire_trait::WireTrait;
 use model::{error, info, warn};
 use protocols::window::find::Shell;
@@ -36,7 +36,7 @@ use smithay::xwayland::X11Surface;
 use smithay::xwayland::{X11Wm, XWayland, XWaylandEvent};
 use world::environment::interface::lifecycle::lifecycle;
 use world::state::Loop;
-use world::state::state::StatusSession;
+use world::state::StatusSession;
 use x11_wm::display;
 
 /// Spawn the X server and wire both of its sources into `event_loop`.
@@ -359,7 +359,7 @@ fn publishes_shared_env(state: &Loop) -> bool {
     let nested = state
         .inner
         .kernel
-        .try_get(&world::storage::state::state::NESTED)
+        .try_get(&world::storage::state::NESTED)
         .copied()
         .unwrap_or(false);
     !nested && matches!(state.inner.status_session, StatusSession::Active)

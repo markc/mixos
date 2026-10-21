@@ -8,7 +8,7 @@ use smithay::backend::renderer::element::{
 };
 use smithay::backend::renderer::{ImportAll, ImportMem, Texture};
 
-use dispatcher::frame::frame::SceneDispatch;
+use dispatcher::frame::SceneDispatch;
 
 smithay::render_elements! {
     // SceneDispatch: the window element's clipped content needs it.

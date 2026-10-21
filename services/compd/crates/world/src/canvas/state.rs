@@ -2,4 +2,4 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 pub mod state;
 
-pub use crate::canvas::input::state::state::*;
+pub use crate::canvas::input::state::*;

@@ -6,7 +6,7 @@
 //! on `OutputViews` (transient, single-active). Keeping this out of the Orchestrator
 //! keeps that struct slim and makes the drag math testable without a `Loop`.
 use crate::viewport::layout::layout;
-use crate::viewport::state::state::{Axis, FloatingDrag, OutputViews, SeparatorDrag, Viewport};
+use crate::viewport::state::{Axis, FloatingDrag, OutputViews, SeparatorDrag, Viewport};
 use smithay::utils::{Physical, Point, Rectangle};
 
 /// Physical "near an edge" margin for starting a floating drag.

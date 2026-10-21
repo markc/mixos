@@ -15,7 +15,7 @@
 
 use smithay::wayland::idle_notify::{IdleNotifierHandler, IdleNotifierState};
 
-use crate::state::state::Dispatch;
+use crate::state::Dispatch;
 
 impl IdleNotifierHandler for Dispatch {
     fn idle_notifier_state(&mut self) -> &mut IdleNotifierState<Self> {

@@ -66,7 +66,7 @@ pub fn start(
             let key = lp.inner.cursor_output.clone();
             space
                 .outputs()
-                .find(|candidate| key.as_ref() == Some(&world::state::state::output_key(candidate)))
+                .find(|candidate| key.as_ref() == Some(&world::state::output_key(candidate)))
                 .or_else(|| space.outputs().next())
                 .cloned()
         }

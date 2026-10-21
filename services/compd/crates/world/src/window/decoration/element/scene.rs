@@ -13,7 +13,7 @@ use smithay::backend::renderer::{ImportAll, ImportMem, Texture};
 struct Border(SolidBank);
 use crate::camera::transform::translate::transform::Transform;
 use crate::state::Loop;
-use crate::state::state::CoordinateTrait;
+use crate::state::CoordinateTrait;
 use crate::window::interface::draw::bound::CalculateBoundResult;
 use crate::window::interface::record::window::LoopWindow;
 use smithay::desktop::Window;

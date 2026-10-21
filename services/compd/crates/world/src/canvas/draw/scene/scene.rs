@@ -2,7 +2,7 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 use crate::canvas::draw::element::element::Element;
 use crate::state::Loop;
-use crate::state::state::CoordinateTrait;
+use crate::state::CoordinateTrait;
 use crate::window::draw::occlude::occlude::{Occluders, Visible};
 use crate::window::interface::record::window::LoopWindow;
 use protocols::window::find;
@@ -54,7 +54,7 @@ pub fn scene<R>(
     size: Size<i32, Physical>,
 ) -> (Vec<ContentItem<R>>, Visible)
 where
-    R: Renderer + ImportAll + ImportMem + dispatcher::frame::frame::SceneDispatch,
+    R: Renderer + ImportAll + ImportMem + dispatcher::frame::SceneDispatch,
     R::TextureId: Texture + Clone + Send + 'static,
 {
     let canvas_context = context(state, renderer, size);

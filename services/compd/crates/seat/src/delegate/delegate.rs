@@ -11,9 +11,9 @@ use crate::delegate::delegate_main;
 /// ext-session-lock, wired with the comp policy's seat rules.
 pub fn process_input_event<I: InputBackend>(_loop: &mut Loop, event: &InputEvent<I>) {
     match _loop.inner.status {
-        world::state::state::Status::Running => {
+        world::state::Status::Running => {
             delegate_main::process_input_event(_loop, event);
         }
-        world::state::state::Status::Terminate => {}
+        world::state::Status::Terminate => {}
     }
 }

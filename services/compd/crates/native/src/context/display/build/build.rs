@@ -16,7 +16,7 @@ use smithay::output::{Mode, Output};
 use smithay::reexports::drm::control::{Mode as DrmMode, connector, crtc};
 use std::cell::RefCell;
 use std::rc::Rc;
-use world::state::state::StateDRMBinding;
+use world::state::StateDRMBinding;
 
 /// The runtime-built pipe plus the metadata the switch gate swaps into the context.
 pub struct BuiltOutput {

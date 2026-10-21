@@ -12,12 +12,12 @@ use smithay::backend::renderer::multigpu::GpuManager;
 use smithay::backend::renderer::multigpu::gbm::GbmGlesBackend;
 use smithay::desktop::{Window, layer_map_for_output};
 
-use crate::camera::state::state::Camera;
-use crate::canvas::state::state::CanvasState;
+use crate::camera::state::Camera;
+use crate::canvas::state::CanvasState;
 use crate::seat::gesture::scroll::scroll::FingerScrollRamp;
 use crate::seat::pointer::snapshot::snapshot::CursorSnapshot;
 use dispatcher::wire::trait_::wire_trait::WireTrait;
-use dispatcher::wire::wire::Wire;
+use dispatcher::wire::Wire;
 use smithay::reexports::calloop::{EventLoop, LoopSignal, RegistrationToken};
 use smithay::reexports::wayland_server::DisplayHandle;
 use std::cell::RefCell;
@@ -42,7 +42,7 @@ pub struct Loader {
 /// through several cameras into several screen regions in one frame.
 #[derive(Clone, Copy)]
 pub struct RenderTarget {
-    pub slot: crate::viewport::state::state::SlotId,
+    pub slot: crate::viewport::state::SlotId,
     /// Region top-left in logical screen pixels.
     pub origin_logical: (f64, f64),
     /// Region size in physical pixels.
@@ -167,7 +167,7 @@ pub struct Orchestrator {
     /// Per-seat touchpad swipe accumulator (libinput Begin→Update*→End spans
     /// multiple input dispatches). World-agnostic raw delta; the swipe
     /// handler turns it into a directional-view action at end-of-swipe.
-    pub gesture: crate::seat::gesture::state::state::GestureAccumulator,
+    pub gesture: crate::seat::gesture::state::GestureAccumulator,
     /// Multi-finger touchscreen session: active contacts + the role/mode the
     /// current touch sequence committed to (client-forward vs pointer-emu vs
     /// canvas gesture). Feeds the same trackpad gesture handlers as `gesture`.
@@ -189,7 +189,7 @@ pub struct Orchestrator {
     /// the whole Loop. Dies with this struct.
     pub bus: crate::bus::legacy::legacy::LegacyBus<crate::state::Loop>,
     pub pilot_tick: u64,
-    pub storage: crate::storage::state::state::Storage,
+    pub storage: crate::storage::state::Storage,
 
     // __gpu_ref is now driver data in `kernel` (GPU_BINDING token, above).
     // capture_registry/capture are now driver data in `kernel`
@@ -293,7 +293,7 @@ impl Orchestrator {
         );
         // Backend kind (nested winit vs udev) mirrored into the kernel store so
         // input/draw systems can read it via `cx.kernel`.
-        kernel_data.insert(&crate::storage::state::state::NESTED, nested);
+        kernel_data.insert(&crate::storage::state::NESTED, nested);
 
         // Output-mode driver: rim-issued mode request + kernel-written advertised
         // modes snapshot and apply result (settings window ↔ DRM, like the lid).
@@ -341,7 +341,7 @@ impl Orchestrator {
             session_edges: Vec::new(),
             gesture: Default::default(),
             touch: Default::default(),
-            storage: crate::storage::state::state::Storage::new(nested),
+            storage: crate::storage::state::Storage::new(nested),
             status: Status::Running,
             start_time,
             loader,
@@ -967,14 +967,14 @@ impl Orchestrator {
     /// focused world, for the CURRENT output — each monitor is its own viewport with
     /// its own camera. Resolves the current output's `Viewports` (render output while
     /// drawing, else cursor output), then the pane within it.
-    pub fn camera(&self) -> &crate::camera::state::state::Camera {
+    pub fn camera(&self) -> &crate::camera::state::Camera {
         let target = self.worlds.spawn_target();
         let key = self.current_output_key();
         let viewports = self
             .worlds
             .get(target)
             .storage()
-            .get(&crate::viewport::state::state::OUTPUT_VIEWS)
+            .get(&crate::viewport::state::OUTPUT_VIEWS)
             .views(&key);
         // Inside the per-region render loop, resolve the pane being drawn; else
         // the focused (active) slot.
@@ -986,7 +986,7 @@ impl Orchestrator {
         }
     }
 
-    pub fn camera_mut(&mut self) -> &mut crate::camera::state::state::Camera {
+    pub fn camera_mut(&mut self) -> &mut crate::camera::state::Camera {
         let target = self.worlds.spawn_target();
         let key = self.current_output_key();
         let render_slot = self.render_target.map(|rt| rt.slot);
@@ -994,7 +994,7 @@ impl Orchestrator {
             .worlds
             .get_mut(target)
             .storage_mut()
-            .get_mut(&crate::viewport::state::state::OUTPUT_VIEWS_MUT)
+            .get_mut(&crate::viewport::state::OUTPUT_VIEWS_MUT)
             .views_mut(&key);
         // Render target may be a floating pane's slot, so search all panes.
         match render_slot.filter(|id| viewports.camera_of(*id).is_some()) {
@@ -1010,58 +1010,58 @@ impl Orchestrator {
     /// monitor. Use it for spawn-time placement (new windows must land on the active
     /// screen, not the one whose render pass happens to be draining the map queue).
     /// Mirrors [`active_output`](Self::active_output) for screen-space surfaces.
-    pub fn active_camera(&self) -> &crate::camera::state::state::Camera {
+    pub fn active_camera(&self) -> &crate::camera::state::Camera {
         let target = self.worlds.spawn_target();
         let key = self.active_output_key();
         self.worlds
             .get(target)
             .storage()
-            .get(&crate::viewport::state::state::OUTPUT_VIEWS)
+            .get(&crate::viewport::state::OUTPUT_VIEWS)
             .views(&key)
             .focus_camera()
     }
 
     /// FOCUS ACCESSOR: the CURRENT output's viewport tree (slots + cameras).
-    pub fn viewports(&self) -> &crate::viewport::state::state::Viewports {
+    pub fn viewports(&self) -> &crate::viewport::state::Viewports {
         let target = self.worlds.spawn_target();
         let key = self.current_output_key();
         self.worlds
             .get(target)
             .storage()
-            .get(&crate::viewport::state::state::OUTPUT_VIEWS)
+            .get(&crate::viewport::state::OUTPUT_VIEWS)
             .views(&key)
     }
 
-    pub fn viewports_mut(&mut self) -> &mut crate::viewport::state::state::Viewports {
+    pub fn viewports_mut(&mut self) -> &mut crate::viewport::state::Viewports {
         let target = self.worlds.spawn_target();
         let key = self.current_output_key();
         self.worlds
             .get_mut(target)
             .storage_mut()
-            .get_mut(&crate::viewport::state::state::OUTPUT_VIEWS_MUT)
+            .get_mut(&crate::viewport::state::OUTPUT_VIEWS_MUT)
             .views_mut(&key)
     }
 
     /// The per-output view map. Used to select/create the current output's view tree
     /// (the render loop ensures each drawn output has its own `Viewports`; the
     /// pointer path points `current` at the cursor's output for the systems).
-    pub fn output_views_mut(&mut self) -> &mut crate::viewport::state::state::OutputViews {
+    pub fn output_views_mut(&mut self) -> &mut crate::viewport::state::OutputViews {
         let target = self.worlds.spawn_target();
         self.worlds
             .get_mut(target)
             .storage_mut()
-            .get_mut(&crate::viewport::state::state::OUTPUT_VIEWS_MUT)
+            .get_mut(&crate::viewport::state::OUTPUT_VIEWS_MUT)
     }
 
     /// Read-only per-output view map — every output's `Viewports` (cameras + visible
     /// sets). Used to derive cross-output state (e.g. a window's best-resolution
     /// fractional scale = highest zoom of any viewport across ALL outputs showing it).
-    pub fn output_views(&self) -> &crate::viewport::state::state::OutputViews {
+    pub fn output_views(&self) -> &crate::viewport::state::OutputViews {
         let target = self.worlds.spawn_target();
         self.worlds
             .get(target)
             .storage()
-            .get(&crate::viewport::state::state::OUTPUT_VIEWS)
+            .get(&crate::viewport::state::OUTPUT_VIEWS)
     }
 
     /// The Space refresh, with `wl_output` membership as the engine actually models it: every
@@ -1151,7 +1151,7 @@ impl Orchestrator {
     }
 
     /// FOCUS ACCESSOR: the focused world's canvas slot (input grab, …).
-    pub fn canvas(&self) -> &crate::canvas::state::state::CanvasState {
+    pub fn canvas(&self) -> &crate::canvas::state::CanvasState {
         let target = self.worlds.spawn_target();
         self.worlds
             .get(target)
@@ -1159,7 +1159,7 @@ impl Orchestrator {
             .get(&crate::canvas::system::base::CANVAS)
     }
 
-    pub fn canvas_mut(&mut self) -> &mut crate::canvas::state::state::CanvasState {
+    pub fn canvas_mut(&mut self) -> &mut crate::canvas::state::CanvasState {
         let target = self.worlds.spawn_target();
         self.worlds
             .get_mut(target)
@@ -1184,7 +1184,7 @@ impl Orchestrator {
     /// surface-message channel). Per-world; the shared UI GPU context being
     /// wired only to the main world is a separate concern (a test world's
     /// registry is None until that lands).
-    pub fn surface(&self) -> &crate::surface::state::state::SurfaceState {
+    pub fn surface(&self) -> &crate::surface::state::SurfaceState {
         let target = self.worlds.spawn_target();
         self.worlds
             .get(target)
@@ -1192,7 +1192,7 @@ impl Orchestrator {
             .get(&crate::surface::system::base::SURFACE)
     }
 
-    pub fn surface_mut(&mut self) -> &mut crate::surface::state::state::SurfaceState {
+    pub fn surface_mut(&mut self) -> &mut crate::surface::state::SurfaceState {
         let target = self.worlds.spawn_target();
         self.worlds
             .get_mut(target)
@@ -1201,7 +1201,7 @@ impl Orchestrator {
     }
 
     /// FOCUS ACCESSOR: the focused world's pointer slot (cursor world coords).
-    pub fn pointer(&self) -> &crate::seat::pointer::state::state::PointerState {
+    pub fn pointer(&self) -> &crate::seat::pointer::state::PointerState {
         let target = self.worlds.spawn_target();
         self.worlds
             .get(target)
@@ -1209,7 +1209,7 @@ impl Orchestrator {
             .get(&crate::seat::system::pointer::base::POINTER)
     }
 
-    pub fn pointer_mut(&mut self) -> &mut crate::seat::pointer::state::state::PointerState {
+    pub fn pointer_mut(&mut self) -> &mut crate::seat::pointer::state::PointerState {
         let target = self.worlds.spawn_target();
         self.worlds
             .get_mut(target)
@@ -1381,7 +1381,7 @@ pub trait CoordinateTrait {
     /// snapping to a pane's extent). Falls back to full-output if the slot is gone.
     fn size_ctx_viewport(
         &self,
-        slot: crate::viewport::state::state::SlotId,
+        slot: crate::viewport::state::SlotId,
     ) -> crate::camera::transform::translate::transform::Context;
 
     /// Per-viewport projection context. Inside the per-region render loop it
@@ -1427,7 +1427,7 @@ impl CoordinateTrait for Loop {
 
     fn size_ctx_viewport(
         &self,
-        slot: crate::viewport::state::state::SlotId,
+        slot: crate::viewport::state::SlotId,
     ) -> crate::camera::transform::translate::transform::Context {
         let (mode_w, mode_h, scale) = {
             let output = self.inner.current_output();

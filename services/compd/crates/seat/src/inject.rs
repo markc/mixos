@@ -20,7 +20,7 @@ use smithay::input::keyboard::Keycode;
 use smithay::utils::{Physical, Point};
 use std::path::PathBuf;
 use world::state::Loop;
-use world::state::state::CoordinateTrait;
+use world::state::CoordinateTrait;
 
 /// Zero-variant marker backend carrying the injected event types.
 pub enum Injected {}

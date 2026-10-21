@@ -26,7 +26,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use world::event::output::output::OutputChange;
 use world::state::Loop;
-use world::state::state::CoordinateTrait;
+use world::state::CoordinateTrait;
 
 type Ctx = Rc<RefCell<NativeRenderContext>>;
 
@@ -123,7 +123,7 @@ fn bring_up(
             &format!("{:?}-{}", target.interface(), target.interface_id()),
         )
     };
-    let replace = identity.key() != world::state::state::output_key(&ctx.pipe().output);
+    let replace = identity.key() != world::state::output_key(&ctx.pipe().output);
     // Keep the anchor where it already sat: a fail-over must not shuffle the
     // placement out from under a surviving secondary.
     let position = state
@@ -174,7 +174,7 @@ fn bring_up(
         let stale = ctx.pipe_mut().global.take();
         if let Some(gid) = stale {
             ctx.display_handle
-                .remove_global::<dispatcher::state::state::Dispatch>(gid);
+                .remove_global::<dispatcher::state::Dispatch>(gid);
         }
         kms::output::physical::apply_initial_state(
             &output,
@@ -183,7 +183,7 @@ fn bring_up(
             (position.x, position.y),
         );
         let global =
-            output.create_global::<dispatcher::state::state::Dispatch>(&ctx.display_handle);
+            output.create_global::<dispatcher::state::Dispatch>(&ctx.display_handle);
         ctx.pipe_mut().global = Some(global);
         state.inner.map_output_everywhere(&output, position);
         info!(
@@ -213,7 +213,7 @@ fn bring_up(
     state
         .state
         .redraw
-        .completed(&world::state::state::output_key(&ctx.pipe().output));
+        .completed(&world::state::output_key(&ctx.pipe().output));
     ctx.pipe()
         .output
         .change_current_state(Some(new_mode), None, None, None);
@@ -356,7 +356,7 @@ fn add_output(
     // Keep the GlobalId so the pipe's `wl_output` can be destroyed when this output is
     // pruned (disconnect/deactivate) — otherwise a stale global lingers and re-adding
     // the monitor advertises a duplicate.
-    let global = output.create_global::<dispatcher::state::state::Dispatch>(&ctx.display_handle);
+    let global = output.create_global::<dispatcher::state::Dispatch>(&ctx.display_handle);
     // Every world's Space, not just the hosted one (`map_output_everywhere`).
     state
         .inner
@@ -490,8 +490,8 @@ pub fn reconcile(state: &mut Loop, ctx_rc: &Ctx) -> Option<OutputChange> {
             state
                 .state
                 .redraw
-                .remove(&world::state::state::output_key(&removed.output));
-            protocols::tearing::liveness::remove(&world::state::state::output_key(&removed.output));
+                .remove(&world::state::output_key(&removed.output));
+            protocols::tearing::liveness::remove(&world::state::output_key(&removed.output));
             // Every world's Space, not just the hosted one (`unmap_output_everywhere`).
             state.inner.unmap_output_everywhere(&removed.output);
             // Destroy this output's `wl_output` global so re-adding the monitor doesn't
@@ -499,7 +499,7 @@ pub fn reconcile(state: &mut Loop, ctx_rc: &Ctx) -> Option<OutputChange> {
             // fresh one each time, so its global must be torn down here).
             if let Some(gid) = removed.global {
                 ctx.display_handle
-                    .remove_global::<dispatcher::state::state::Dispatch>(gid);
+                    .remove_global::<dispatcher::state::Dispatch>(gid);
             }
             info!(
                 "reconcile: removed output {:?} (disconnected or deactivated)",
@@ -511,7 +511,7 @@ pub fn reconcile(state: &mut Loop, ctx_rc: &Ctx) -> Option<OutputChange> {
             // draw requests. Not the eviction path below — that hands the SAME
             // monitor to another pipe, so its panes stay valid.
             graphics::bridge::publish::retire::retire_output(
-                &world::state::state::output_key(&removed.output),
+                &world::state::output_key(&removed.output),
             );
             // `removed.drm_output` drops here → frees its CRTC.
         } else {
@@ -551,8 +551,8 @@ pub fn reconcile(state: &mut Loop, ctx_rc: &Ctx) -> Option<OutputChange> {
                         state
                             .state
                             .redraw
-                            .remove(&world::state::state::output_key(&removed.output));
-                        protocols::tearing::liveness::remove(&world::state::state::output_key(
+                            .remove(&world::state::output_key(&removed.output));
+                        protocols::tearing::liveness::remove(&world::state::output_key(
                             &removed.output,
                         ));
                         // Every world's Space, not just the hosted one
@@ -560,7 +560,7 @@ pub fn reconcile(state: &mut Loop, ctx_rc: &Ctx) -> Option<OutputChange> {
                         state.inner.unmap_output_everywhere(&removed.output);
                         if let Some(gid) = removed.global {
                             ctx.display_handle
-                                .remove_global::<dispatcher::state::state::Dispatch>(gid);
+                                .remove_global::<dispatcher::state::Dispatch>(gid);
                         }
                         info!(
                             "reconcile: evicted secondary {:?} so the primary can take it over",
@@ -589,7 +589,7 @@ pub fn reconcile(state: &mut Loop, ctx_rc: &Ctx) -> Option<OutputChange> {
                 } else {
                     *state.inner.kernel.get_mut(&DISPLAY_OFF_MUT) = false;
                     brought_up = true;
-                    activated.push(world::state::state::output_key(&ctx.outputs[0].output));
+                    activated.push(world::state::output_key(&ctx.outputs[0].output));
                 }
             }
             None => {
@@ -622,7 +622,7 @@ pub fn reconcile(state: &mut Loop, ctx_rc: &Ctx) -> Option<OutputChange> {
                 info!("reconcile: added output {:?}", c.handle());
                 brought_up = true;
                 if let Some(pipe) = ctx.outputs.last() {
-                    activated.push(world::state::state::output_key(&pipe.output));
+                    activated.push(world::state::output_key(&pipe.output));
                 }
             }
             Err(e) => warn!("reconcile: add_output failed for {:?}: {e}", c.handle()),
@@ -642,7 +642,7 @@ pub fn reconcile(state: &mut Loop, ctx_rc: &Ctx) -> Option<OutputChange> {
         .outputs
         .iter()
         .filter(|p| p.drm_output.is_some())
-        .map(|p| world::state::state::output_key(&p.output))
+        .map(|p| world::state::output_key(&p.output))
         .collect();
     drop(ctx);
     // Rebuild the live cursor-teleport map: only active + connected monitors' placements
@@ -681,7 +681,7 @@ pub fn reconcile(state: &mut Loop, ctx_rc: &Ctx) -> Option<OutputChange> {
                 .space_state()
                 .state
                 .outputs()
-                .any(|o| world::state::state::output_key(o) == *k)
+                .any(|o| world::state::output_key(o) == *k)
     });
     if !cursor_mapped {
         // Prefer a live output; fall back to any mapped one (all-dark: the anchor is
@@ -691,9 +691,9 @@ pub fn reconcile(state: &mut Loop, ctx_rc: &Ctx) -> Option<OutputChange> {
                 state.inner.space_state().state.outputs().cloned().collect();
             mapped
                 .iter()
-                .find(|o| live_keys.contains(&world::state::state::output_key(o)))
+                .find(|o| live_keys.contains(&world::state::output_key(o)))
                 .or_else(|| mapped.first())
-                .map(world::state::state::output_key)
+                .map(world::state::output_key)
         };
         state.inner.cursor_output = survivor.clone();
         if let Some(key) = survivor {

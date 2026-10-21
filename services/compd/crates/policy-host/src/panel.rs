@@ -27,7 +27,7 @@ use smithay::utils::Serial;
 use comp_model::observation::PanelRequest;
 use comp_model::reply::ControlReply;
 use comp_model::snapshot::EdgeCounts;
-use dispatcher::state::state::RedrawReason;
+use dispatcher::state::RedrawReason;
 use dispatcher::wire::trait_::surface_event::SurfaceHandle;
 use policy::panel::{
     Claim, ENFORCE_GRACE, Membership, PROBE_TIMEOUT, PanelOp, PointerHold, PopupRestore, Probe,

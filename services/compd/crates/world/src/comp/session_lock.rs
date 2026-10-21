@@ -199,7 +199,7 @@ fn output_for(lp: &Loop, render_key: Option<&str>) -> Option<Output> {
     match render_key {
         Some(key) => space
             .outputs()
-            .find(|output| crate::state::state::output_key(output).as_str() == key)
+            .find(|output| crate::state::output_key(output).as_str() == key)
             .cloned(),
         None => space.outputs().next().cloned(),
     }

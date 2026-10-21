@@ -57,7 +57,7 @@ extern crate model;
 
 use std::cell::RefCell;
 
-use dispatcher::state::state::Dispatch;
+use dispatcher::state::Dispatch;
 use protocols::redraw::schedule::RedrawReason;
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::ExportMem;

@@ -13,7 +13,7 @@ use smithay::backend::renderer::{ImportAll, ImportMem};
 use smithay::utils::user_data::UserDataMap;
 use smithay::utils::{Buffer, Physical, Point, Rectangle, Scale, Size};
 
-use dispatcher::frame::frame::SceneDispatch;
+use dispatcher::frame::SceneDispatch;
 
 smithay::render_elements! {
     // SceneDispatch: `WindowFitClipped` draws through a texture program.

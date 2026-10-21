@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-use crate::canvas::input::state::state::{ActiveOption, CanvasGrab};
+use crate::canvas::input::state::{ActiveOption, CanvasGrab};
 use slots::input::event::base::Modality;
 
 // Selection -> SelectSystem (SELECT); grouping -> GroupSystem (GROUP). Canvas is

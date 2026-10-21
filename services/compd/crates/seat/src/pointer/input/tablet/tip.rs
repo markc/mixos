@@ -14,7 +14,7 @@
 //! Mirrors how `touch/session.rs` maps `TouchMode` onto the same canvas mechanisms.
 
 use crate::pointer::input::tablet::{client, coords, cursor, hand_active, select_active};
-use dispatcher::wire::tablet::tablet::Stroke;
+use dispatcher::wire::tablet::Stroke;
 use smithay::backend::input::{
     Event, InputBackend, TabletToolDescriptor, TabletToolEvent, TabletToolTipEvent,
     TabletToolTipState,

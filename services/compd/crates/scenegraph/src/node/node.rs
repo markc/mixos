@@ -9,7 +9,7 @@
 //! node→element lowering lives in exactly one place.
 
 use crate::scene::element::element::{PreImported, SceneElement};
-use dispatcher::frame::frame::SceneDispatch;
+use dispatcher::frame::SceneDispatch;
 use slots::world::frame::base::Layer;
 use smithay::backend::renderer::element::solid::SolidColorRenderElement;
 use smithay::backend::renderer::element::surface::{
@@ -108,9 +108,9 @@ where
         renderer: &mut R,
     ) -> (
         Vec<SceneElement<R>>,
-        Vec<dispatcher::frame::frame::ElementMeta>,
+        Vec<dispatcher::frame::ElementMeta>,
     ) {
-        use dispatcher::frame::frame::ElementMeta;
+        use dispatcher::frame::ElementMeta;
         self.nodes.sort_by_key(|n| std::cmp::Reverse(n.0));
         let mut elements = Vec::new();
         let mut meta = Vec::new();

@@ -324,7 +324,7 @@ pub(crate) fn source_output_name(lp: &Loop, key: Option<&str>) -> Option<String>
             .host_space()
             .state
             .outputs()
-            .find(|output| world::state::state::output_key(output) == key)
+            .find(|output| world::state::output_key(output) == key)
             .map_or_else(|| key.to_owned(), |output| output.name()),
     )
 }

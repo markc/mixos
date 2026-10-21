@@ -242,7 +242,7 @@ pub fn elements<R>(
     scale: f64,
 ) -> Vec<Thumb<R>>
 where
-    R: Renderer + ImportAll + ImportMem + dispatcher::frame::frame::SceneDispatch,
+    R: Renderer + ImportAll + ImportMem + dispatcher::frame::SceneDispatch,
     R::TextureId: Texture + Clone + Send + 'static,
 {
     let Ok((inner, _, frame)) =

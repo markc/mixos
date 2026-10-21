@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-use dispatcher::state::state::RedrawReason;
+use dispatcher::state::RedrawReason;
 use slots::world::frame::base::FramePlan;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::utils::{Physical, Size};
 use world::notify::present::base::NotifyFrame;
 use world::state::Loop;
-use world::state::state::CoordinateTrait;
+use world::state::CoordinateTrait;
 
 /// What one output's systems tick produced: the active world's remaining draw
 /// plan (the pass bridges what it knows), and the kernel host's notification

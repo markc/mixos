@@ -2,8 +2,8 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 use crate::scene::hooks;
 use crate::scene::layershell::layershell;
-use dispatcher::frame::frame::SceneDispatch;
-use dispatcher::state::state::RedrawReason;
+use dispatcher::frame::SceneDispatch;
+use dispatcher::state::RedrawReason;
 use scenegraph::node::node::{DrawNode, Plan, SurfaceNode};
 use scenegraph::scene::element::element::SceneElement;
 use slots::world::frame::base as layer;
@@ -20,7 +20,7 @@ use smithay::utils::{Logical, Physical, Point, Scale, Size};
 use smithay::wayland::seat::WaylandFocus;
 use smithay::wayland::shell::wlr_layer::Layer as WlrLayer;
 use world::state::Loop;
-use world::state::state::CoordinateTrait;
+use world::state::CoordinateTrait;
 use world::window::interface::record::window::LoopWindow;
 
 pub struct Scene<R: Renderer> {
@@ -28,7 +28,7 @@ pub struct Scene<R: Renderer> {
     /// Lockstep with `Element`: per-element metadata (space, …). Consumed by the
     /// native Vulkan path (wrapped into `VkOutput`) to restrict AA to world
     /// content; ignored by the GLES path.
-    pub meta: Vec<dispatcher::frame::frame::ElementMeta>,
+    pub meta: Vec<dispatcher::frame::ElementMeta>,
     pub visible_window: Vec<Window>,
 }
 
@@ -75,7 +75,7 @@ fn update_fractional(state: &mut Loop) {
         .outputs()
         .map(|o| {
             (
-                world::state::state::output_key(o),
+                world::state::output_key(o),
                 o.current_scale().fractional_scale(),
             )
         })
@@ -598,7 +598,7 @@ where
                     .state
                     .outputs()
                     .next()
-                    .map(world::state::state::output_key)
+                    .map(world::state::output_key)
             });
             active.as_deref() == Some(key.as_str())
         }
@@ -705,7 +705,7 @@ where
             // the first-pushed element is front-most, so iterate in reverse to draw
             // floating panes (and their backgrounds) on top of the tiled root.
             for (region_index, region) in computed.regions.iter().enumerate().rev() {
-                state.inner.render_target = Some(world::state::state::RenderTarget {
+                state.inner.render_target = Some(world::state::RenderTarget {
                     slot: region.slot,
                     origin_logical: (
                         region.rect.loc.x as f64 / scale,
@@ -834,7 +834,7 @@ where
             // Borders around detached (floating) panes — the visible move/resize
             // grab frame. Drawn above content; one id per edge for damage tracking.
             for (fi, v) in state.inner.viewports().floating.iter().enumerate() {
-                if let world::viewport::state::state::Viewport::Floating { rect, .. } = v {
+                if let world::viewport::state::Viewport::Floating { rect, .. } = v {
                     for (ei, edge) in border_edges(*rect).into_iter().enumerate() {
                         let bar = SolidColorRenderElement::new(
                             border_id(fi * 4 + ei),

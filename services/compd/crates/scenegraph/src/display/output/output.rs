@@ -11,7 +11,7 @@ use world::state::Loop;
 
 pub fn register(_loop: &mut Loop, output: &Output) {
     let _global = output
-        .create_global::<dispatcher::state::state::Dispatch>(&_loop.state.output.display_handle);
+        .create_global::<dispatcher::state::Dispatch>(&_loop.state.output.display_handle);
 
     // Every world's Space, not just the hosted one — a world parked when a monitor
     // appears would otherwise never learn about it (`map_output_everywhere`).

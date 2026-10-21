@@ -570,7 +570,7 @@ pub(crate) fn reconcile(
                     .state
                     .outputs()
                     .find(|o| o.name() == target.output)
-                    .map(world::state::state::output_key);
+                    .map(world::state::output_key);
                 ui::source::register(&source_id(name), output);
             }
             if let Some(entry) = store.scene(name) {
@@ -837,7 +837,7 @@ pub(crate) fn reconcile(
             }
             state
                 .state
-                .schedule_redraw(dispatcher::state::state::RedrawReason::Publish);
+                .schedule_redraw(dispatcher::state::RedrawReason::Publish);
         }
         if mapped
             && dialog
@@ -867,7 +867,7 @@ pub(crate) fn reconcile(
             } else {
                 state
                     .state
-                    .schedule_redraw(dispatcher::state::state::RedrawReason::Publish);
+                    .schedule_redraw(dispatcher::state::RedrawReason::Publish);
             }
         }
         if mapped
@@ -879,7 +879,7 @@ pub(crate) fn reconcile(
         {
             state
                 .state
-                .schedule_redraw(dispatcher::state::state::RedrawReason::Publish);
+                .schedule_redraw(dispatcher::state::RedrawReason::Publish);
         }
         surfaces.insert(
             name.clone(),

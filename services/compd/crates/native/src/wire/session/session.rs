@@ -17,7 +17,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use world::environment::interface::lifecycle::lifecycle;
 use world::state::Loop;
-use world::state::state::StatusSession;
+use world::state::StatusSession;
 
 /// Wall-clock milliseconds for a session edge (`session.changed` `since_ms`).
 fn unix_ms() -> u64 {
@@ -238,7 +238,7 @@ pub fn register(
                     // retires on the FIRST real vblank of any pipe; this waits for
                     // each live pipe's own (`watchdog.settle`).
                     {
-                        let keys = crate::wire::frame::frame::live_keys(&session_context.borrow());
+                        let keys = crate::wire::frame::live_keys(&session_context.borrow());
                         crate::wire::watchdog::settle::settle::arm(
                             &session_loop_handle,
                             &mut state.state.redraw,

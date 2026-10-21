@@ -30,7 +30,7 @@ use smithay::wayland::session_lock::{
     LockSurface, LockSurfaceConfigure, SessionLockHandler, SessionLockManagerState, SessionLocker,
 };
 
-use crate::state::state::{Dispatch, RedrawReason};
+use crate::state::{Dispatch, RedrawReason};
 use crate::wire::trait_::surface_event::{SurfaceEvent, SurfaceHandle};
 
 /// `focus.session_lock` (the wire values; `unlocking` is a KMS-gate phase

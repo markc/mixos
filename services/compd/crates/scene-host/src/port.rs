@@ -1413,7 +1413,7 @@ mod tests {
 
     #[test]
     fn page_request_from_worker_wakes_idle_loop_and_schedules_frame() {
-        use dispatcher::state::state::{Dispatch, RedrawReason};
+        use dispatcher::state::{Dispatch, RedrawReason};
         use smithay::reexports::calloop::EventLoop;
         use smithay::reexports::calloop::ping::make_ping;
         use smithay::reexports::wayland_server::Display;
@@ -1426,7 +1426,7 @@ mod tests {
         let mut event_loop: EventLoop<'static, Data> = EventLoop::try_new().unwrap();
         let display: Display<Dispatch> = Display::new().unwrap();
         let mut dispatch =
-            dispatcher::wire::wire::new_dispatch(&display.handle(), None, event_loop.handle());
+            dispatcher::wire::new_dispatch(&display.handle(), None, event_loop.handle());
         let (redraw, source) = make_ping().unwrap();
         dispatch.redraw.set_ping(redraw);
         dispatch.redraw.rendering("kms");

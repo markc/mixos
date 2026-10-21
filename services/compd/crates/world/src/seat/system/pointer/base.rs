@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-use crate::seat::pointer::state::state::PointerState;
+use crate::seat::pointer::state::PointerState;
 use slots::storage::token::base::{Token, TokenMut};
 use slots::trait_::system::base::{System, WorldBuilder};
 

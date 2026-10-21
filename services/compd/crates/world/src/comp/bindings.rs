@@ -199,7 +199,7 @@ pub fn focused_window(lp: &Loop) -> Option<(u64, u64)> {
 /// engine's own VT handler does, and skipped while the session is already paused.
 fn switch_vt(lp: &mut Loop, vt: u8) {
     lp.loop_handle.insert_idle(move |lp| {
-        if let crate::state::state::StatusSession::Paused = lp.inner.status_session {
+        if let crate::state::StatusSession::Paused = lp.inner.status_session {
             return;
         }
         if let Some(session) = &mut lp.state.seat.libseat {

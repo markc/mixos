@@ -19,7 +19,7 @@
 
 use smithay::utils::{Physical, Point, Rectangle};
 
-use crate::state::state::{Orchestrator, output_key};
+use crate::state::{Orchestrator, output_key};
 use crate::viewport::layout::layout::compute;
 
 /// Put every pane camera of every output at the centre of its own
@@ -125,5 +125,5 @@ pub fn centre_pointer_once(lp: &mut crate::state::Loop) {
     }
     lp.inner.comp.pointer_placed = true;
     lp.state
-        .schedule_redraw(dispatcher::state::state::RedrawReason::Cursor);
+        .schedule_redraw(dispatcher::state::RedrawReason::Cursor);
 }

@@ -6,9 +6,9 @@ use std::os::unix::net::UnixStream;
 use std::sync::{Arc, Once};
 use std::time::Duration;
 
-use dispatcher::state::state::Dispatch;
+use dispatcher::state::Dispatch;
 use dispatcher::wire::trait_::surface_event::SurfaceHandle;
-use dispatcher::wire::wire::Wire;
+use dispatcher::wire::Wire;
 use protocols::wayland::connection::record::WaylandClientSession;
 use smithay::reexports::calloop::EventLoop;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface as ServerSurface;
@@ -442,7 +442,7 @@ impl Default for Harness {
 /// per-process directory, once, before anything reads it, and install the
 /// default settings in place of the file compd's `main` would read. `Wire::new`
 /// needs them: it asks `config::base::get().hdr` whether to advertise the
-/// color-management global (`dispatcher::wire::color::color::create_global`).
+/// color-management global (`dispatcher::wire::color::create_global`).
 fn isolate_config() {
     static ONCE: Once = Once::new();
     ONCE.call_once(|| {

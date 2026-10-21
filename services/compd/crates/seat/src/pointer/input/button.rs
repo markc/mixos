@@ -4,7 +4,7 @@ use crate::pointer::input::native_press;
 use smithay::backend::input::{ButtonState, Event, InputBackend, PointerButtonEvent};
 use smithay::input::pointer::ButtonEvent;
 use smithay::utils::{Physical, Point, SERIAL_COUNTER};
-use world::state::state::CoordinateTrait;
+use world::state::CoordinateTrait;
 use world::state::{Loop, Transform};
 use world::surface::interface::hit::surface_under_filtered;
 use world::window::interface::draw::visible::DrawWindow;
@@ -137,7 +137,7 @@ pub fn button<I: InputBackend>(event: &<I as InputBackend>::PointerButtonEvent, 
             // Floating pane move (Super-drag) / resize (Super+Shift-drag) near an
             // edge. The canvas grab "tool" already encodes the held modifier
             // (incl. the nested-winit Super→Ctrl remap): Move vs Scale.
-            use world::canvas::input::state::state::{CanvasGrab, TargetOption};
+            use world::canvas::input::state::{CanvasGrab, TargetOption};
             let tool = match _loop.inner.canvas().Grab {
                 CanvasGrab::Target(TargetOption::Move) => Some(false),
                 CanvasGrab::Target(TargetOption::Scale) => Some(true),

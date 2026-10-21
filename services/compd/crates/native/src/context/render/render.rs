@@ -17,7 +17,7 @@ use smithay::reexports::input::Libinput;
 use smithay::reexports::wayland_server::DisplayHandle;
 use std::cell::RefCell;
 use std::rc::Rc;
-use world::state::state::StateDRMBinding;
+use world::state::StateDRMBinding;
 
 /// One physical output's pipe state: everything scoped to a single monitor (its
 /// smithay `Output`, current mode, damage tracker, live scanout target, connector

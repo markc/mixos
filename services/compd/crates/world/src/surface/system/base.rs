@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-use crate::surface::state::state::SurfaceState;
+use crate::surface::state::SurfaceState;
 use graphics::surface::WgpuGlContext;
 use slots::define_buffer;
 use slots::define_channel;

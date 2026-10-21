@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-use dispatcher::state::state::Dispatch;
+use dispatcher::state::Dispatch;
 use smithay::backend::input::{Axis, AxisSource, Event, InputBackend, PointerAxisEvent};
 use smithay::input::pointer::{AxisFrame, PointerHandle};
 use world::state::Loop;

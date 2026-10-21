@@ -7,7 +7,7 @@ use smithay::backend::renderer::{ImportAll, ImportMem, Texture};
 use smithay::utils::{Logical, Physical, Point, Rectangle, Scale, Size};
 use std::os::linux::raw::stat;
 use world::seat::pointer::element::element::PointerRenderElement;
-use world::state::state::CoordinateTrait;
+use world::state::CoordinateTrait;
 use world::state::{Loop, Transform};
 
 pub fn element<R>(

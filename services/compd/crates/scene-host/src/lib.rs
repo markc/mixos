@@ -19,7 +19,7 @@
 
 use std::cell::RefCell;
 
-use dispatcher::state::state::RedrawReason;
+use dispatcher::state::RedrawReason;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::utils::{Physical, Point, Size};
 use world::state::Loop;

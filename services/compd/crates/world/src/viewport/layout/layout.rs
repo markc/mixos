@@ -3,7 +3,7 @@
 //! Geometry for the viewport tree: turn a `Viewport` tree + an output rect into
 //! the physical rect of every leaf slot (one render region per leaf) and the
 //! separator bars between adjacent split slots.
-use crate::viewport::state::state::{Axis, Slot, SlotId, Viewport, Viewports};
+use crate::viewport::state::{Axis, Slot, SlotId, Viewport, Viewports};
 use smithay::utils::{Physical, Point, Rectangle, Size};
 
 /// Width of the bar drawn between adjacent split slots (physical px).

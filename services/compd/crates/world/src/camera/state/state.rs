@@ -6,8 +6,8 @@
 
 #[derive(Default)]
 pub struct Camera {
-    pub transform: crate::camera::transform::state::state::Transform,
-    pub zone: crate::camera::zone::state::state::CameraZone,
+    pub transform: crate::camera::transform::state::Transform,
+    pub zone: crate::camera::zone::state::CameraZone,
     pub position_previous: smithay::utils::Point<f64, smithay::utils::Logical>,
     /// Momentum-pan state (touchpad two-finger swipe). `pan_accum` collects the
     /// world-space pan delta within a frame; the camera system converts it to a

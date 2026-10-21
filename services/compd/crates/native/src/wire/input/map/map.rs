@@ -11,7 +11,7 @@
 
 use drivers::output::base::{TOUCH_DEVICES_SNAPSHOT_MUT, TouchDeviceInfo, TouchDevicesSnapshot};
 use world::state::Loop;
-use world::state::state::output_key;
+use world::state::output_key;
 // Backend `Device` trait (for `syspath()`); anon import avoids the struct clash.
 use smithay::backend::input::Device as _;
 use smithay::output::Output;

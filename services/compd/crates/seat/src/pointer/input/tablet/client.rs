@@ -3,7 +3,7 @@
 //! Pen hit-testing — the SAME `surface_under_filtered` the pointer/touch paths use,
 //! so canvas-vs-client classification stays consistent across all input types.
 
-use dispatcher::state::state::Dispatch;
+use dispatcher::state::Dispatch;
 use smithay::input::keyboard::KeyboardHandle;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, SERIAL_COUNTER};

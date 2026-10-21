@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-use dispatcher::state::state::Dispatch;
+use dispatcher::state::Dispatch;
 use protocols::window::find;
 use smithay::input::pointer::{MotionEvent, PointerHandle, RelativeMotionEvent};
 use smithay::utils::{Logical, Physical, Point, Serial};
 use world::camera::transform::translate::translate;
 use world::state::Loop;
-use world::state::state::{CoordinateTrait, Orchestrator as State};
+use world::state::{CoordinateTrait, Orchestrator as State};
 use world::surface::interface::hit::SurfaceHit;
 use world::surface::interface::hit::{self, surface_under_filtered};
 use world::window::interface::draw::visible::DrawWindow;

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 use crate::state::Loop;
-use crate::state::state::CoordinateTrait;
+use crate::state::CoordinateTrait;
 use smithay::desktop::LayerSurface;
 use smithay::utils::{Logical, Point, Size};
 

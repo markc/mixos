@@ -28,7 +28,7 @@ pub fn layershell(
         // monitors' bars (at foreign local coords), the duplicated/mispositioned artifact.
         // `None` = winit / single-output pass → gather all (there is only one).
         if let Some(key) = render_key
-            && world::state::state::output_key(output).as_str() != key
+            && world::state::output_key(output).as_str() != key
         {
             continue;
         }

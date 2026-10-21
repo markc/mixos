@@ -2,7 +2,7 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 use crate::canvas::draw::context::context::Context;
 use crate::scene::identity::identity::SolidBank;
-use crate::state::state::CoordinateTrait;
+use crate::state::CoordinateTrait;
 use crate::state::{Loop, Transform};
 use smithay::backend::renderer::element::solid::SolidColorRenderElement;
 use smithay::backend::renderer::{ImportAll, ImportMem, Texture};
