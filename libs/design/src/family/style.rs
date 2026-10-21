@@ -1247,6 +1247,8 @@ mod tests {
 
     fn breeze() -> ResolvedStyle {
         ResolvedStyle {
+            field_radius: 5,
+            menu_highlight_radius: 5,
             radius_sm: 5,
             radius: 5,
             radius_lg: 6,
@@ -1622,7 +1624,7 @@ mod tests {
     fn an_authored_modern_binding_keeps_its_palette() {
         let mut document = embedded();
         for modifier in &mut document.v1.modifiers {
-            if modifier.when.scheme.as_deref() == Some("breeze") {
+            if modifier.when.get(&crate::source::ModifierAxis::Scheme).map(String::as_str) == Some("breeze") {
                 let color = modifier.primitives.colors["chrome.dock"];
                 modifier
                     .primitives

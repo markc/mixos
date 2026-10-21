@@ -2506,7 +2506,7 @@ design: {
             panel_groups: "cards", document_tabs: "cards", tool_bar_rule: false, dock_width: 300.0, dock_margin: 8.0,
             options_bar: 42.0, status_bar: 30.0, tool_bar: 50.0, tool_button: 36.0, tool_margin: 7.0, rail: 44.0, rail_button: 32.0,
             title_bar_height: 38.0, mark: 20.0, menu_title_height: 24.0, menu_row_height: 24.0,
-            menu_row_padding_x: 2.0, menu_row_padding_y: 0.0, menu_min_width: 220.0, menu_highlight_radius: 6,
+            menu_row_padding_x: 2.0, menu_row_padding_y: 0.0, menu_min_width: 220.0, menu_highlight_radius: 5,
             radius_sm: 5, radius: 5, radius_lg: 6
           },
           adwaita: {
