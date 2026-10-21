@@ -992,12 +992,15 @@ $page_by_doc = {}
 for each $pg in $pages
   $page_by_doc[$pg.doc] = $pg
 end
-$l = ["# " .. $cfg.name, "", "> " .. $cfg.llms_summary, "",
+-- The same public guide appears in full in llms-full.txt as a normal page.
+$llms_context = $page_by_doc["docs/dev/2026-10-21-source-and-build-map.md"].md
+$l = ["# " .. $cfg.name, "", $MARKER, "", "> " .. $cfg.llms_summary, "",
   "Every page on " .. $SITE .. " is static HTML at a directory-style URL (`/hostd/`,",
   "`/docs/try/`) and is also published as Markdown at its source path",
   "(`/hostd/README.md`, `/docs/try.md`). The links below point at the Markdown.",
   "Everything here describes the current `main` branch of https://github.com/markc/mixos.",
   "`/llms-full.txt` is the whole manual in one file.", "",
+  $llms_context, "",
   "## Components", "",
   "One line per component with a page: kind, then install profiles. The",
   "[component index](" .. $SITE .. "/docs/components.md) lists every component, with or without a page.", ""]
@@ -1077,7 +1080,7 @@ push($l, "- [The whole manual in one file](" .. $SITE .. "/llms-full.txt)")
 push($l, "- [Sitemap](" .. $SITE .. "/sitemap.xml)")
 push($emits, {path: "llms.txt", from: "the llms.txt index", body: join($l, "\n") .. "\n"})
 
-$f = ["# " .. $cfg.name .. " — the whole manual", "", "> " .. $cfg.llms_summary, "",
+$f = ["# " .. $cfg.name .. " — the whole manual", "", $MARKER, "", "> " .. $cfg.llms_summary, "",
   "Generated from the Markdown pages of " .. $SITE .. "/ in sidebar order. It describes the current `main` branch. Index: " .. $SITE .. "/llms.txt"]
 for each $pg in $ordered
   push($f, "")
