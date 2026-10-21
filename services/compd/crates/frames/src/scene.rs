@@ -26,8 +26,8 @@ use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Physical, Point, Scale, Size};
 use smithay::wayland::seat::WaylandFocus;
 use smithay::wayland::shell::wlr_layer::Layer as WlrLayer;
-use world::state::Loop;
 use world::state::CoordinateTrait;
+use world::state::Loop;
 use world::window::interface::record::window::LoopWindow;
 
 pub struct Scene<R: Renderer> {

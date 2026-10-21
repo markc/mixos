@@ -27,9 +27,7 @@
 //! goes quiet and never refills the burst: the worst case is [`BURST_FRAMES`]
 //! extra frames per [`BURST_QUIET`].
 
-use crate::draw::present::callbacks::{
-    OCCLUDED_TRICKLE, surface_awaits_frame, tree_awaits_frame,
-};
+use crate::draw::present::callbacks::{OCCLUDED_TRICKLE, surface_awaits_frame, tree_awaits_frame};
 use smithay::desktop::layer_map_for_output;
 use smithay::desktop::utils::send_frames_surface_tree;
 use smithay::output::Output;

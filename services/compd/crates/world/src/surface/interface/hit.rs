@@ -11,8 +11,8 @@
 //! `&Loop` wrappers + the bbox path, which still reads `_loop.inner` directly).
 
 use crate::camera::transform::translate::transform::{Context as XformCtx, Transform as Xform};
-use crate::state::Loop;
 use crate::state::CoordinateTrait;
+use crate::state::Loop;
 use protocols::window::ident;
 use smithay::desktop::{Window, layer_map_for_output};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;

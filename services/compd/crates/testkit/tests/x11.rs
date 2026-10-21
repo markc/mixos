@@ -96,7 +96,9 @@ fn off_world_unmap_remap_keeps_the_readmitted_draw_order_entry() {
     h.wire
         .state
         .deferred
-        .push(Deferred::WindowMapped(Mapped::X11(Box::new(surface.clone()))));
+        .push(Deferred::WindowMapped(Mapped::X11(Box::new(
+            surface.clone(),
+        ))));
     h.wire.drain_protocol();
     assert_eq!(
         h.wire.inner.active_world, 1,

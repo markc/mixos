@@ -42,25 +42,22 @@ pub fn route(
                 DeviceClass::KnownGpu => {
                     trace!("device re-announced; ignoring: {device_id:?}");
                 }
-                DeviceClass::NewGpu => {
-                    match decide(&path, rank) {
-                        Decision::Ignore => {
-                            info!("DRM device preference-excluded; not bookkeeping: {path:?}");
-                        }
-                        Decision::Register => {
-                            let node = kms::device::node::render_node(&path)
-                            .unwrap_or_else(|| {
-                                abort!("udev announced a DRM device with no resolvable node: {path:?}")
-                            });
-                            registry.add(device_id, node);
-                            topology.register_device(device_id, node);
-                            info!(
-                                "DRM device registered (single-GPU policy: only the \
-                             primary is driven): {path:?}"
-                            );
-                        }
+                DeviceClass::NewGpu => match decide(&path, rank) {
+                    Decision::Ignore => {
+                        info!("DRM device preference-excluded; not bookkeeping: {path:?}");
                     }
-                }
+                    Decision::Register => {
+                        let node = kms::device::node::render_node(&path).unwrap_or_else(|| {
+                            abort!("udev announced a DRM device with no resolvable node: {path:?}")
+                        });
+                        registry.add(device_id, node);
+                        topology.register_device(device_id, node);
+                        info!(
+                            "DRM device registered (single-GPU policy: only the \
+                             primary is driven): {path:?}"
+                        );
+                    }
+                },
                 DeviceClass::Unknown => {}
             }
             false

@@ -26,8 +26,8 @@ use smithay::utils::{Physical, Point, Rectangle, Scale, Size, Transform};
 use dispatcher::frame::SceneDispatch;
 use graphics::capture::registry::EntryId;
 use world::capture::session::session::{CapturePhase, CaptureTarget};
-use world::state::Loop;
 use world::state::CoordinateTrait;
+use world::state::Loop;
 use world::window::interface::record::window::LoopWindow;
 
 /// The per-frame "render these windows into this capture entry" job.

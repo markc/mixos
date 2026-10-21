@@ -496,10 +496,7 @@ impl Bus {
         // The key-binding table for this profile (built once; batch B).
         lp.inner.comp.bindings.ensure(self.binding_profile);
         // Losing input authority (a session pause) clears the agent seat.
-        let paused = matches!(
-            lp.inner.status_session,
-            world::state::StatusSession::Paused
-        );
+        let paused = matches!(lp.inner.status_session, world::state::StatusSession::Paused);
         // Every libseat edge in order (a pause and an activation can share a
         // dispatch), then the current state, which announces the first one.
         // Libseat's notifier dispatch reaches this pass on both edges, frames

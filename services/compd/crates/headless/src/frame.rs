@@ -127,11 +127,8 @@ fn draw(state: &mut Loop, ctx: &mut Context) {
             state.state.redraw.frame(&key, true);
             // Empty frames owe callbacks too. This draw was already paced by
             // the one-shot timer, so no unbounded commit/callback loop arises.
-            let mut feedback = frames::draw::present::callbacks::collect_feedback(
-                &ctx.output,
-                &visible,
-                None,
-            );
+            let mut feedback =
+                frames::draw::present::callbacks::collect_feedback(&ctx.output, &visible, None);
             feedback.discarded();
             send_frames(state, &ctx.output, &visible);
         }

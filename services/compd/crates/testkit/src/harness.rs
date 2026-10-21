@@ -7,8 +7,8 @@ use std::sync::{Arc, Once};
 use std::time::Duration;
 
 use dispatcher::state::Dispatch;
-use dispatcher::wire::trait_::surface_event::SurfaceHandle;
 use dispatcher::wire::Wire;
+use dispatcher::wire::trait_::surface_event::SurfaceHandle;
 use protocols::wayland::connection::record::WaylandClientSession;
 use smithay::reexports::calloop::EventLoop;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface as ServerSurface;

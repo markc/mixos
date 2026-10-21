@@ -7,8 +7,8 @@
 //! inward → toggle the sticky touch pane.
 use smithay::utils::{Physical, Point};
 use world::seat::gesture::touch::touch::{Role, TouchEdge};
-use world::state::Loop;
 use world::state::CoordinateTrait;
+use world::state::Loop;
 
 /// Distance from a screen edge (physical px) within which the 2-finger centroid
 /// counts as "at the utmost edge".

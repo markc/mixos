@@ -313,9 +313,7 @@ fn owe_frames(context: &mut WinitRenderContext, state: &mut Loop, visible: Vec<W
                 let visible = context.owed_frames.take().unwrap_or_default();
                 let output = context.output.clone();
                 drop(context);
-                frames::draw::present::callbacks::send_window_frames(
-                    state, &output, &visible,
-                );
+                frames::draw::present::callbacks::send_window_frames(state, &output, &visible);
                 frames::draw::present::callbacks::send_layer_frames(state, &output);
                 frames::draw::present::cursor::send_frames(state, &output);
             }
@@ -326,11 +324,7 @@ fn owe_frames(context: &mut WinitRenderContext, state: &mut Loop, visible: Vec<W
         // Without the timer the callbacks would never go: send them now instead.
         warn!("winit: frame-callback timer not armed ({err}); sending now");
         let visible = context.owed_frames.take().unwrap_or_default();
-        frames::draw::present::callbacks::send_window_frames(
-            state,
-            &context.output,
-            &visible,
-        );
+        frames::draw::present::callbacks::send_window_frames(state, &context.output, &visible);
         frames::draw::present::callbacks::send_layer_frames(state, &context.output);
         frames::draw::present::cursor::send_frames(state, &context.output);
     }
@@ -435,12 +429,8 @@ fn compose(
         // GLES only: there is no Vulkan present path.
         {
             // --- GLES present path ---
-            let scene = frames::scene::scene::<GlesRenderer>(
-                state,
-                gles_renderer,
-                monitor_size,
-                prepared,
-            );
+            let scene =
+                frames::scene::scene::<GlesRenderer>(state, gles_renderer, monitor_size, prepared);
             visible_window = scene.visible_window;
 
             sync_tracker(&mut context.damage_tracker, &context.output);
@@ -630,11 +620,8 @@ fn present(context: &mut WinitRenderContext, state: &mut Loop, visible: Vec<Wind
         // `None`: the nested backend composites into the host's surface and never
         // promotes a client buffer to a plane, so no surface here is ever
         // zero-copy. Passing states would be work to derive a constant `false`.
-        let mut feedback = frames::draw::present::callbacks::collect_feedback(
-            &context.output,
-            &visible,
-            None,
-        );
+        let mut feedback =
+            frames::draw::present::callbacks::collect_feedback(&context.output, &visible, None);
         frames::draw::present::software::presented_now(&mut feedback, &context.output);
     }
     // Nested presents at submit (no flip event).
@@ -654,11 +641,7 @@ fn present(context: &mut WinitRenderContext, state: &mut Loop, visible: Vec<Wind
             frames::draw::present::software::software_present_kind().bits(),
         );
     }
-    frames::draw::present::callbacks::send_window_frames(
-        state,
-        &context.output,
-        &visible,
-    );
+    frames::draw::present::callbacks::send_window_frames(state, &context.output, &visible);
     frames::draw::present::callbacks::send_layer_frames(state, &context.output);
     frames::draw::present::cursor::send_frames(state, &context.output);
     frames::draw::present::callbacks::housekeeping(state);

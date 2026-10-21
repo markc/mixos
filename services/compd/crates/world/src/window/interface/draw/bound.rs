@@ -2,8 +2,8 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 use crate::camera::transform::translate::slot;
 use crate::camera::transform::translate::transform::Transform;
-use crate::state::Loop;
 use crate::state::CoordinateTrait;
+use crate::state::Loop;
 use protocols::window::shell;
 use smithay::backend::renderer::{ImportAll, ImportMem, Texture};
 use smithay::desktop::Window;

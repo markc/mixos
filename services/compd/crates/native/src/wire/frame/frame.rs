@@ -481,22 +481,16 @@ fn process_vblank_inner(
     // source and is used whenever it carries one; a driver that leaves it 0 is repaired
     // from the CRTC here, while `ctx` still holds the device fd. See
     // `scanout.timing/timing.sequence` for why 0 is the tell and what it costs clients.
-    let sequence = kms::scanout::timing::sequence::resolve(
-        ctx.drm_fd.as_fd(),
-        crtc.into(),
-        sequence,
-    );
+    let sequence =
+        kms::scanout::timing::sequence::resolve(ctx.drm_fd.as_fd(), crtc.into(), sequence);
     // compd (integration batch D): the output whose queued frame this vblank completes.
     let presented_output = pending_feedback
         .as_ref()
         .map(|_| ctx.outputs[idx].output.clone());
     drop(ctx);
 
-    let stamp = kms::scanout::timing::vblank::interpret(
-        time,
-        sequence,
-        state.inner.start_time.elapsed(),
-    );
+    let stamp =
+        kms::scanout::timing::vblank::interpret(time, sequence, state.inner.start_time.elapsed());
 
     #[cfg(feature = "timing-predict")]
     predict_clock.borrow_mut().presented(stamp.time);
@@ -588,17 +582,12 @@ fn handle_outcome(
             if let Some(token) = slot.take() {
                 kms::scanout::flip::estimate::disarm(loop_handle, token);
             }
-            let token = kms::scanout::flip::estimate::arm(
-                loop_handle,
-                delay,
-                move |state: &mut Loop| {
-                    frames::draw::present::callbacks::send_window_frames(
-                        state, &output, &visible,
-                    );
+            let token =
+                kms::scanout::flip::estimate::arm(loop_handle, delay, move |state: &mut Loop| {
+                    frames::draw::present::callbacks::send_window_frames(state, &output, &visible);
                     frames::draw::present::callbacks::send_layer_frames(state, &output);
                     frames::draw::present::cursor::send_frames(state, &output);
-                },
-            );
+                });
             *slot = Some(token);
         }
     }

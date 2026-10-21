@@ -70,10 +70,8 @@ pub fn wire(
     );
 
     // Bind the RC cell into loop so it can register a DMABuf global.
-    *_loop
-        .inner
-        .kernel
-        .get_mut(&world::state::GPU_BINDING_MUT) = Some(renderer.gpu_binding.clone());
+    *_loop.inner.kernel.get_mut(&world::state::GPU_BINDING_MUT) =
+        Some(renderer.gpu_binding.clone());
 
     // logind client for lid-close suspend (None if logind is unavailable).
     *_loop
@@ -92,9 +90,10 @@ pub fn wire(
     // records what the device can do for the explicit-sync path.
     let syncobj_eventfd = kms::syncobj::device::supports_eventfd(&display.drm_fd);
     info!("syncobj eventfd support: {syncobj_eventfd}");
-    dispatcher::wayland::dmabuf::dispatch::dispatch::hook_syncobj::<
-        dispatcher::state::Dispatch,
-    >(&mut _loop.state, display.drm_fd.clone());
+    dispatcher::wayland::dmabuf::dispatch::dispatch::hook_syncobj::<dispatcher::state::Dispatch>(
+        &mut _loop.state,
+        display.drm_fd.clone(),
+    );
 
     // ---- The COMPOSITING renderer, chosen and PUBLISHED here (`Role::Sample`).
     //      The dmabuf feedback clients negotiate against narrows the EGL set to
@@ -157,8 +156,7 @@ pub fn wire(
     // they do not. Say it once, here, next to the topology line.
     {
         let cfg = model::environment::config::base::get();
-        if let Some(rn) =
-            kms::device::node::render_node(std::path::Path::new(&cfg.render_node))
+        if let Some(rn) = kms::device::node::render_node(std::path::Path::new(&cfg.render_node))
             && rn.dev_id() != display.primary_gpu.dev_id()
         {
             warn!(
@@ -311,9 +309,7 @@ pub fn wire(
     }
 
     // ---- Topology bookkeeping for the device authority.
-    let registry = Rc::new(RefCell::new(
-        kms::gpu::registry::node::NodeRegistry::new(),
-    ));
+    let registry = Rc::new(RefCell::new(kms::gpu::registry::node::NodeRegistry::new()));
     {
         let mut reg = registry.borrow_mut();
         reg.add(display.primary_gpu.dev_id(), display.primary_gpu);

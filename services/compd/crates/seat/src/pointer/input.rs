@@ -18,10 +18,8 @@ pub mod touch;
 /// False retains a pending geometry notification until input can resume.
 pub fn retarget_stationary(lp: &mut world::state::Loop) -> bool {
     use dispatcher::wire::trait_::wire_trait::WireTrait;
-    if matches!(
-        lp.inner.status_session,
-        world::state::StatusSession::Paused
-    ) || world::comp::session_lock::active(lp)
+    if matches!(lp.inner.status_session, world::state::StatusSession::Paused)
+        || world::comp::session_lock::active(lp)
         || WireTrait::active_output(&lp.inner).is_none_or(|output| {
             output
                 .current_mode()

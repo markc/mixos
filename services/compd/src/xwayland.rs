@@ -22,8 +22,8 @@ use std::os::fd::AsFd;
 use std::process::Stdio;
 use std::time::Duration;
 
-use dispatcher::state::deferred::Deferred;
 use dispatcher::state::Dispatch;
+use dispatcher::state::deferred::Deferred;
 use dispatcher::wire::trait_::wire_trait::WireTrait;
 use model::{error, info, warn};
 use protocols::window::find::Shell;

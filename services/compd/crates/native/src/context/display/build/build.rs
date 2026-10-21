@@ -155,8 +155,7 @@ pub fn build(
     // the surface's PENDING state and this is a brand new surface, so without this
     // a second monitor — or the primary after any fail-over/rebuild — silently
     // scans out fixed-refresh while the setting still says VRR is on.
-    let vrr =
-        kms::scanout::surface::output::apply_vrr(&drm_output, target.handle(), env.vrr);
+    let vrr = kms::scanout::surface::output::apply_vrr(&drm_output, target.handle(), env.vrr);
     model::stats::registry::base::set_vrr(vrr.supported, vrr.enabled);
 
     // Record the achieved scanout format FOR THIS CRTC. Per-CRTC and not one
@@ -164,8 +163,7 @@ pub fn build(
     // last monitor built decided the session's colour depth for every producer —
     // so plugging an 8-bit panel in beside a 10-bit one silently banded the good
     // display. `Registrar::scanout_fourcc` now prefers the deepest live pipe.
-    let (fourcc, modifier, offered) =
-        kms::scanout::surface::output::format_info(&drm_output);
+    let (fourcc, modifier, offered) = kms::scanout::surface::output::format_info(&drm_output);
     formats.set_scanout_fourcc(u32::from(pipe) as u64, fourcc);
     {
         use render_gles::format::rule;

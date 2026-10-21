@@ -102,8 +102,7 @@ fn bus_and_ui_wakes_schedule_frames_without_input_even_when_paced() {
     let _restore = RestoreGate(gate::get());
     let mut event_loop: EventLoop<'static, Data> = EventLoop::try_new().unwrap();
     let display: Display<Dispatch> = Display::new().unwrap();
-    let mut dispatch =
-        dispatcher::wire::new_dispatch(&display.handle(), None, event_loop.handle());
+    let mut dispatch = dispatcher::wire::new_dispatch(&display.handle(), None, event_loop.handle());
     let (redraw, source) = make_ping().unwrap();
     dispatch.redraw.set_ping(redraw);
     dispatch.redraw.rendering("o_kms");

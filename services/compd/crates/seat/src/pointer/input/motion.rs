@@ -8,8 +8,8 @@ use smithay::utils::{Logical, Physical, Point};
 use std::ops::Deref;
 use world::camera::transform::translate::transform::Transform;
 use world::camera::transform::translate::translate;
-use world::state::Loop;
 use world::state::CoordinateTrait;
+use world::state::Loop;
 
 pub fn absolute<I: InputBackend>(
     event: &<I as InputBackend>::PointerMotionAbsoluteEvent,
@@ -466,9 +466,7 @@ pub fn relative<I: InputBackend>(
             .any(|o| world::state::output_key(o) == *key)
     });
     if stale {
-        _loop.inner.cursor_output = Some(world::state::output_key(
-            _loop.inner.current_output(),
-        ));
+        _loop.inner.cursor_output = Some(world::state::output_key(_loop.inner.current_output()));
     }
     if let Some(co) = _loop.inner.cursor_output.clone() {
         _loop.inner.output_views_mut().set_current(&co);

@@ -3,7 +3,6 @@
 
 // #![feature(trait_alias)]
 
-
 pub use protocols::fractional::state as fractional_base;
 pub mod bounds;
 pub mod deferred;
@@ -554,9 +553,7 @@ impl Dispatch {
                 smithay::wayland::selection::data_device::current_data_device_selection_userdata::<
                     Dispatch,
                 >(&self.seat.seat);
-            held.is_some_and(|user_data| {
-                *user_data == crate::state::xwm_impls::X11_SELECTION
-            })
+            held.is_some_and(|user_data| *user_data == crate::state::xwm_impls::X11_SELECTION)
         };
         if !mirrored {
             return;
@@ -1540,7 +1537,7 @@ impl DispatchWire for Dispatch {}
 mod handler_impls {
     use super::RedrawReason;
     use crate::state::deferred::Deferred;
-    
+
     use smithay::reexports::wayland_server::backend::ClientId;
     use smithay::backend::allocator::dmabuf::Dmabuf;
     use smithay::backend::renderer::utils::on_commit_buffer_handler;
@@ -1579,8 +1576,7 @@ mod handler_impls {
     use smithay::wayland::xdg_toplevel_icon::XdgToplevelIconHandler;
     use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::XdgToplevel;
     use crate::wire::redraw as rd;
-    
-    
+
     use super::Dispatch;
 
     fn unconstrain_popup(popup: &PopupSurface) {
@@ -1835,11 +1831,10 @@ mod handler_impls {
                     parent: None,
                 },
             );
-            self.deferred.push(Deferred::WindowMapped(
-                crate::state::deferred::Mapped::Xdg(
+            self.deferred
+                .push(Deferred::WindowMapped(crate::state::deferred::Mapped::Xdg(
                     smithay::desktop::Window::new_wayland_window(surface),
-                ),
-            ));
+                )));
             self.schedule_redraw(RedrawReason::Map);
         }
         fn toplevel_destroyed(&mut self, surface: ToplevelSurface) {
@@ -2760,7 +2755,7 @@ pub mod xwm_impls {
     use super::RedrawReason;
     use crate::state::deferred::Deferred;
     use protocols::window::find::Shell;
-    
+
     use smithay::reexports::wayland_server::Resource;
     use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
     use smithay::utils::{Logical, Rectangle};
@@ -2805,9 +2800,10 @@ pub mod xwm_impls {
             // latch also means an association alone cannot queue a map — it is driven by a
             // client message that checks nothing about map state.
             if protocols::window::shell::take_held_map(&window) {
-                self.deferred.push(Deferred::WindowMapped(
-                    crate::state::deferred::Mapped::X11(Box::new(window.clone())),
-                ));
+                self.deferred
+                    .push(Deferred::WindowMapped(crate::state::deferred::Mapped::X11(
+                        Box::new(window.clone()),
+                    )));
             }
             // An activation that found no surface to focus (focus-on-map can run
             // before Xwayland associates one, `activate_window`): focus it now, if
@@ -2847,9 +2843,11 @@ pub mod xwm_impls {
             protocols::window::shell::hold_map_for_surface(&window);
             return;
         }
-        dispatch.deferred.push(Deferred::WindowMapped(
-            crate::state::deferred::Mapped::X11(Box::new(window)),
-        ));
+        dispatch
+            .deferred
+            .push(Deferred::WindowMapped(crate::state::deferred::Mapped::X11(
+                Box::new(window),
+            )));
         dispatch.schedule_redraw(RedrawReason::Map);
     }
 
@@ -2923,7 +2921,8 @@ pub mod xwm_impls {
             {
                 warn!("x11 unmap failed: {err:?}");
             }
-            self.deferred.push(Deferred::WindowWithdrawn(Box::new(window)));
+            self.deferred
+                .push(Deferred::WindowWithdrawn(Box::new(window)));
             self.schedule_redraw(RedrawReason::Unmap);
         }
 

@@ -378,8 +378,7 @@ pub fn execute(
     // that would strip hardware planes (and the hardware cursor with them) the
     // moment any selector is armed, including on a desktop that is merely waiting
     // for a target and never tears.
-    let mut frame_flags =
-        kms::scanout::plane::direct::flags(protocols::tearing::gate::tearing());
+    let mut frame_flags = kms::scanout::plane::direct::flags(protocols::tearing::gate::tearing());
     // Pre-emptive rendering: never let a frame be reported empty, so the loop
     // flips every pass instead of parking — the tail of this function re-arms the
     // redraw latch only after a non-empty result. Default `Engaged` applies that
@@ -749,8 +748,7 @@ pub fn execute(
                 // ---- Build scene: scoped borrow_mut, dropped immediately. ----
                 let scene = {
                     let mut r = gles_renderer.borrow_mut();
-                    let prepared =
-                        frames::scene::prepare_kms(state, r.as_mut(), size, output_id.0);
+                    let prepared = frames::scene::prepare_kms(state, r.as_mut(), size, output_id.0);
                     let _assembly = ledger::frame_trace::span("kms_scene_assembly", output_id.0);
                     let scene = frames::scene::scene(state, r.as_mut(), size, prepared);
                     drop(r);
@@ -912,9 +910,9 @@ pub fn execute(
                             // scene; full captures blit the whole framebuffer.
                             let src = src_override.unwrap_or(full_src);
                             let result: Result<(), _> = (|| {
-                                let mut entry_fb = r.bind(&mut entry_tex).map_err(
-                                    graphics::capture::registry::BlitErr::Bind,
-                                )?;
+                                let mut entry_fb = r
+                                    .bind(&mut entry_tex)
+                                    .map_err(graphics::capture::registry::BlitErr::Bind)?;
                                 scene_result
                                     .blit_frame_result(
                                         entry_size,
@@ -1433,8 +1431,7 @@ fn present(
         }
         // Publish for the NEXT frame's plane assignment, and carry this frame's
         // rate ceiling forward for the next frame's cap gate.
-        let refresh =
-            kms::scanout::timing::vblank::interval(&ctx_ref.outputs[output_idx].mode);
+        let refresh = kms::scanout::timing::vblank::interval(&ctx_ref.outputs[output_idx].mode);
         ctx_ref.outputs[output_idx].cap_interval = active.min_interval(refresh);
         // The watchdog floor is a rate like any other, so it is resolved against
         // this output's refresh here — the layer that owns the timer knows
@@ -1549,11 +1546,7 @@ fn present(
 
     // compd (integration batch D): this frame was handed to the display.
     world::comp::presentation::frame_queued(state, &current_output, &window_visible);
-    frames::draw::present::callbacks::send_window_frames(
-        state,
-        &current_output,
-        &window_visible,
-    );
+    frames::draw::present::callbacks::send_window_frames(state, &current_output, &window_visible);
     frames::draw::present::callbacks::send_layer_frames(state, &current_output);
     frames::draw::present::cursor::send_frames(state, &current_output);
     true

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 use crate::canvas::draw::element::element::Element;
-use crate::state::Loop;
 use crate::state::CoordinateTrait;
+use crate::state::Loop;
 use crate::window::draw::occlude::occlude::{Occluders, Visible};
 use crate::window::interface::record::window::LoopWindow;
 use protocols::window::find;

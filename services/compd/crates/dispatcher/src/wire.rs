@@ -30,27 +30,27 @@ pub mod trait_;
 // `delegate_dispatch2!(Dispatch)` is co-located so every `GlobalDispatch`/
 // `Dispatch` bound is provable here — the factory + the bound-requiring
 // dispatcher fns are therefore called from this crate too).
-use smithay::backend::drm::DrmDeviceFd;
+use crate::state::Dispatch;
+use crate::state::RedrawReason;
+use crate::state::deferred;
+use crate::state::deferred::Deferred;
+use crate::wire::color as cm;
+use crate::wire::trait_::surface_event::{SurfaceEvent, SurfaceHandle};
+use crate::wire::trait_::wire_trait::{ActivationOrigin, WireTrait};
 use protocols::window::find;
 use protocols::window::ident;
 use protocols::window::shell;
-use crate::state::deferred::Deferred;
-use crate::state::deferred;
+use smithay::backend::drm::DrmDeviceFd;
 use smithay::input::pointer::MotionEvent;
 use smithay::reexports::calloop::LoopHandle;
-use smithay::reexports::wayland_server::{DisplayHandle, Resource};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
+use smithay::reexports::wayland_server::{DisplayHandle, Resource};
 use smithay::utils::{Logical, Point, SERIAL_COUNTER};
+use smithay::wayland::compositor;
+use smithay::wayland::compositor::CompositorHandler;
 use smithay::wayland::pointer_constraints::with_pointer_constraint;
 use smithay::wayland::seat::WaylandFocus;
 use smithay::wayland::selection::data_device::set_data_device_focus;
-use smithay::wayland::compositor;
-use smithay::wayland::compositor::CompositorHandler;
-use crate::state::Dispatch;
-use crate::wire::trait_::wire_trait::{ActivationOrigin, WireTrait};
-use crate::wire::trait_::surface_event::{SurfaceEvent, SurfaceHandle};
-use crate::state::RedrawReason;
-use crate::wire::color as cm;
 
 /// Whether a surface's last processed commit carried a buffer: the edge that
 /// tells an xdg toplevel's unmap (attached -> null) from its initial bufferless
@@ -137,22 +137,13 @@ pub fn new_dispatch(
         primary_selection,
         wlr_data_control,
         ext_data_control,
-        xdg_activation: crate::wayland::xdg::activation::factory::new::<Dispatch>(
-            display_handle,
-        ),
-        dmabuf: crate::wayland::dmabuf::factory::new::<Dispatch>(
-            display_handle,
-            drm_device,
-        ),
+        xdg_activation: crate::wayland::xdg::activation::factory::new::<Dispatch>(display_handle),
+        dmabuf: crate::wayland::dmabuf::factory::new::<Dispatch>(display_handle, drm_device),
         clipboard: crate::wayland::clipboard::factory::new::<Dispatch>(display_handle),
         seat: crate::wayland::seat::factory::new::<Dispatch>(display_handle),
         xdg_shell: crate::wayland::xdg::shell::factory::new::<Dispatch>(display_handle),
-        xdg_decoration: crate::wayland::xdg::decoration::factory::new::<Dispatch>(
-            display_handle,
-        ),
-        xdg_foreign_state: crate::wayland::xdg::foreign::factory::new::<Dispatch>(
-            display_handle,
-        ),
+        xdg_decoration: crate::wayland::xdg::decoration::factory::new::<Dispatch>(display_handle),
+        xdg_foreign_state: crate::wayland::xdg::foreign::factory::new::<Dispatch>(display_handle),
         xdg_dialog: crate::wayland::xdg::dialog::factory::new::<Dispatch>(display_handle),
         shm: crate::wayland::shm::factory::new::<Dispatch>(display_handle),
         output: crate::wayland::output::factory::new::<Dispatch>(display_handle),
@@ -167,25 +158,17 @@ pub fn new_dispatch(
             let prefs = model::environment::preference::base::load();
             let enabled = prefs.protocol_foreign == "enabled";
             let all_worlds = prefs.protocol_foreign_all_worlds;
-            crate::wayland::foreign::factory::new::<Dispatch>(
-                display_handle,
-                enabled,
-                all_worlds,
-            )
+            crate::wayland::foreign::factory::new::<Dispatch>(display_handle, enabled, all_worlds)
         },
         compositor: crate::wayland::compositor::factory::new::<Dispatch>(display_handle),
-        presentation: crate::wayland::presentation::factory::new::<Dispatch>(
-            display_handle,
-        ),
+        presentation: crate::wayland::presentation::factory::new::<Dispatch>(display_handle),
         viewporter: crate::wayland::viewporter::factory::new::<Dispatch>(display_handle),
         fractional: crate::wayland::fractional::factory::new::<Dispatch>(display_handle),
         idle_notifier: smithay::wayland::idle_notify::IdleNotifierState::new(
             display_handle,
             idle_timers,
         ),
-        cursor_shape: crate::wayland::cursor::shape::factory::new::<Dispatch>(
-            display_handle,
-        ),
+        cursor_shape: crate::wayland::cursor::shape::factory::new::<Dispatch>(display_handle),
         text_input: crate::wayland::text::input::factory::new::<Dispatch>(display_handle),
         dnd: protocols::dnd::factory::new(),
         singlepixel: crate::wayland::singlepixel::factory::new::<Dispatch>(display_handle),
@@ -1005,11 +988,9 @@ impl<A: WireTrait + 'static> Wire<A> {
         // needs the `loop_handle` the handlers have no access to. Note this runs right
         // after `dispatch_clients`, so a reader abandoned inside
         // `selection_source_destroyed` is unregistered in the same iteration.
-        crate::wire::clipboard::drain(
-            &mut self.state,
-            &self.loop_handle,
-            |wire: &mut Wire<A>| &mut wire.state,
-        );
+        crate::wire::clipboard::drain(&mut self.state, &self.loop_handle, |wire: &mut Wire<A>| {
+            &mut wire.state
+        });
         // `xdg_toplevel_drag_v1` drops: queue the placeholder re-sync so it lands
         // ORDERED behind this same drain's `InitialMap`. A tab torn off and dropped
         // inside one frame produces both, and the record the settle needs does not

@@ -19,8 +19,8 @@ use smithay::backend::input::{
 use smithay::input::keyboard::Keycode;
 use smithay::utils::{Physical, Point};
 use std::path::PathBuf;
-use world::state::Loop;
 use world::state::CoordinateTrait;
+use world::state::Loop;
 
 /// Zero-variant marker backend carrying the injected event types.
 pub enum Injected {}

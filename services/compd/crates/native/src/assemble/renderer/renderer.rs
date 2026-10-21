@@ -370,8 +370,7 @@ fn native_scanout_self_test(display: &DisplayAssembly) -> String {
         vec![render_gles::format::rule::UNKNOWN],
     );
     let buffer_slot = acquire::acquire(&mut swapchain);
-    let fb =
-        kms::scanout::framebuffer::export::framebuffer_for(&exporter, drm_fd, &buffer_slot);
+    let fb = kms::scanout::framebuffer::export::framebuffer_for(&exporter, drm_fd, &buffer_slot);
     let _ = buffer_slot.size(); // the slot derefs to the allocator buffer
     let fb_handle = kms::scanout::framebuffer::export::handle(&fb);
 
@@ -399,13 +398,12 @@ fn native_scanout_self_test(display: &DisplayAssembly) -> String {
     let in_supported = kms::scanout::fence::in_::r#in::has_in_fence(&props);
     let _held_fence; // must outlive the commit ioctl
     if in_supported {
-        let syncobj = kms::syncobj::device::create(drm_fd, true)
-            .expect("self-test syncobj creation failed");
+        let syncobj =
+            kms::syncobj::device::create(drm_fd, true).expect("self-test syncobj creation failed");
         let fence = kms::scanout::fence::in_::r#in::from_syncobj(drm_fd, syncobj);
         kms::scanout::fence::in_::r#in::attach(&mut req, plane, &props, &fence);
         _held_fence = Some(fence);
-        kms::syncobj::device::destroy(drm_fd, syncobj)
-            .expect("self-test syncobj destroy failed");
+        kms::syncobj::device::destroy(drm_fd, syncobj).expect("self-test syncobj destroy failed");
     } else {
         _held_fence = None;
     }

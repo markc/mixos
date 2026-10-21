@@ -44,8 +44,8 @@ use smithay::utils::{Buffer, Logical, Physical, Point, Rectangle, SERIAL_COUNTER
 use dispatcher::state::RedrawReason;
 
 use crate::camera::transform::translate::transform::Transform;
-use crate::state::Loop;
 use crate::state::CoordinateTrait;
+use crate::state::Loop;
 use crate::surface::draw::capture::style as capture_style;
 
 /// How a run ended.

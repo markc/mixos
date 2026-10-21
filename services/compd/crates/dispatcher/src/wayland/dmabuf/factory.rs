@@ -10,10 +10,7 @@ use smithay::{
         wayland_protocols::wp::linux_drm_syncobj::v1::server::wp_linux_drm_syncobj_manager_v1::WpLinuxDrmSyncobjManagerV1,
         wayland_server::{DisplayHandle, GlobalDispatch},
     },
-    wayland::{
-        dmabuf::DmabufState,
-        drm_syncobj::DrmSyncobjGlobalData,
-    },
+    wayland::{dmabuf::DmabufState, drm_syncobj::DrmSyncobjGlobalData},
 };
 
 pub fn new<I>(_display_handle: &DisplayHandle, _drm_device: Option<DrmDeviceFd>) -> DMABufState

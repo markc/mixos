@@ -56,7 +56,6 @@ use smithay::backend::renderer::TextureFilter;
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTarget, GlesTexture};
 use smithay::utils::{Physical, Rectangle, Size};
 
-
 pub struct CaptureRegistry {
     inner: Arc<Mutex<RegistryInner>>,
     wgpu_ctx: Arc<WgpuGlContext>,
@@ -102,10 +101,7 @@ impl CaptureRegistry {
     /// `Some(rect)` for region captures (the sub-rect of the framebuffer to
     /// copy) and `None` for full-output captures (the caller blits the whole
     /// framebuffer). `dst_size` is always the entry/dmabuf size.
-    pub fn entries_for_output(
-        &self,
-        output: OutputId,
-    ) -> Vec<CaptureFrame> {
+    pub fn entries_for_output(&self, output: OutputId) -> Vec<CaptureFrame> {
         let inner = self.inner.lock().unwrap();
         inner
             .entries
@@ -302,16 +298,16 @@ impl CaptureRegistry {
             let src_override = inner.entries.get(&entry_id).unwrap().source.src_rect();
             // Region captures copy their sub-rect of the framebuffer; full
             // captures copy the whole framebuffer.
-            let src = src_override.unwrap_or_else(|| {
-                Rectangle::<i32, Physical>::from_size(framebuffer_size)
-            });
+            let src = src_override
+                .unwrap_or_else(|| Rectangle::<i32, Physical>::from_size(framebuffer_size));
             let dst = Rectangle::<i32, Physical>::from_size(entry_size);
 
             drop(inner);
             let result: Result<(), smithay::backend::renderer::gles::GlesError> = (|| {
                 let mut target: GlesTarget = gles.bind(&mut entry_tex)?;
                 let sync = gles.blit(framebuffer, &mut target, src, dst, TextureFilter::Linear)?;
-                sync.wait().map_err(|_| smithay::backend::renderer::gles::GlesError::SyncInterrupted)?;
+                sync.wait()
+                    .map_err(|_| smithay::backend::renderer::gles::GlesError::SyncInterrupted)?;
                 Ok(())
             })();
             inner = self.inner.lock().unwrap();
@@ -367,9 +363,8 @@ impl CaptureRegistry {
             let mut entry_tex = inner.entries.get(&entry_id).unwrap().gles_tex.clone();
             let entry_size = inner.entries.get(&entry_id).unwrap().size;
             let src_override = inner.entries.get(&entry_id).unwrap().source.src_rect();
-            let src = src_override.unwrap_or_else(|| {
-                Rectangle::<i32, Physical>::from_size(framebuffer_size)
-            });
+            let src = src_override
+                .unwrap_or_else(|| Rectangle::<i32, Physical>::from_size(framebuffer_size));
             let dst = Rectangle::<i32, Physical>::from_size(entry_size);
 
             drop(inner);

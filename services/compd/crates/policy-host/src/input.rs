@@ -56,8 +56,8 @@ use policy::agent::{
 };
 use surfaces::{SeatKind, SurfaceId, SurfaceRole};
 use world::camera::transform::translate::transform::Transform;
-use world::state::Loop;
 use world::state::CoordinateTrait;
+use world::state::Loop;
 use world::surface::interface::hit::{SurfaceHit, surface_under_filtered};
 use world::window::interface::draw::visible::DrawWindow;
 
@@ -1535,10 +1535,7 @@ fn output_row(
 fn pointer_position(lp: &Loop, seat: SeatKind) -> Option<(String, String, f64, f64)> {
     match seat {
         SeatKind::Human => {
-            if matches!(
-                lp.inner.status_session,
-                world::state::StatusSession::Paused
-            ) {
+            if matches!(lp.inner.status_session, world::state::StatusSession::Paused) {
                 return None;
             }
             // The engine's cursor: physical pixels on the cursor's output.

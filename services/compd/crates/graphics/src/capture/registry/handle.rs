@@ -6,9 +6,9 @@ use std::sync::{Arc, Mutex, Weak};
 
 use smithay::backend::renderer::gles::GlesRenderer;
 
+use crate::capture::registry::RegistryInner;
 use crate::capture::registry::entry::{EntryId, SnapshotData};
 use crate::capture::registry::error::CaptureError;
-use crate::capture::registry::RegistryInner;
 use crate::capture::registry::snapshot::SnapshotHandle;
 
 /// Reference to a continuous capture managed by the registry.

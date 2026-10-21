@@ -55,7 +55,6 @@ use smithay::backend::renderer::Offscreen;
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
 use smithay::utils::{Buffer as BufferCoord, Physical, Size};
 
-
 /// One render target, addressable from both wgpu and GLES.
 ///
 /// ## Drop ordering

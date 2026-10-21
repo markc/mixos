@@ -25,8 +25,8 @@ use smithay::reexports::drm::control::{Mode as DrmMode, connector, crtc};
 use std::cell::RefCell;
 use std::rc::Rc;
 use world::event::output::output::OutputChange;
-use world::state::Loop;
 use world::state::CoordinateTrait;
+use world::state::Loop;
 
 type Ctx = Rc<RefCell<NativeRenderContext>>;
 
@@ -182,8 +182,7 @@ fn bring_up(
             None,
             (position.x, position.y),
         );
-        let global =
-            output.create_global::<dispatcher::state::Dispatch>(&ctx.display_handle);
+        let global = output.create_global::<dispatcher::state::Dispatch>(&ctx.display_handle);
         ctx.pipe_mut().global = Some(global);
         state.inner.map_output_everywhere(&output, position);
         info!(
@@ -510,9 +509,9 @@ pub fn reconcile(state: &mut Loop, ctx_rc: &Ctx) -> Option<OutputChange> {
             // so their rings are freed here rather than inferred from a lapse in
             // draw requests. Not the eviction path below — that hands the SAME
             // monitor to another pipe, so its panes stay valid.
-            graphics::bridge::publish::retire::retire_output(
-                &world::state::output_key(&removed.output),
-            );
+            graphics::bridge::publish::retire::retire_output(&world::state::output_key(
+                &removed.output,
+            ));
             // `removed.drm_output` drops here → frees its CRTC.
         } else {
             i += 1;

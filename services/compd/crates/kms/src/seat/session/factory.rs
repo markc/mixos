@@ -23,7 +23,8 @@ pub fn create() -> (LibSeatSession, LibSeatSessionNotifier) {
         if let Some(own) = own_vt
             && !session.is_active()
         {
-            if !matches!(crate::seat::session::vt_wait::active_vt(), Some(active) if active != own) {
+            if !matches!(crate::seat::session::vt_wait::active_vt(), Some(active) if active != own)
+            {
                 panic!(
                     "libseat session opened inactive although VT{own} is active: seatd is bound to a different tty than standard input; check TTYPath/StandardInput"
                 );

@@ -168,10 +168,7 @@ pub fn register(
             match &event {
                 InputEvent::DeviceAdded { device } => {
                     let mut device = device.clone();
-                    kms::input::libinput::config::on_device_added(
-                        &mut device,
-                        &Default::default(),
-                    );
+                    kms::input::libinput::config::on_device_added(&mut device, &Default::default());
                     // A graphics tablet exposes tool and/or pad capabilities on
                     // (usually distinct) evdev nodes; advertise each to clients.
                     // Done first — the keyboard/touch branches below MOVE `device`.

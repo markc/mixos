@@ -16,7 +16,9 @@ pub struct IdentityMap<K, V> {
 
 impl<K, V> Default for IdentityMap<K, V> {
     fn default() -> Self {
-        Self { buckets: HashMap::new() }
+        Self {
+            buckets: HashMap::new(),
+        }
     }
 }
 
@@ -28,8 +30,11 @@ impl<K: Eq + Hash, V> IdentityMap<K, V> {
     }
 
     fn get(&self, key: &K) -> Option<&V> {
-        self.buckets.get(&Self::hash(key))?.iter()
-            .find(|(stored, _)| stored == key).map(|(_, value)| value)
+        self.buckets
+            .get(&Self::hash(key))?
+            .iter()
+            .find(|(stored, _)| stored == key)
+            .map(|(_, value)| value)
     }
 
     fn insert(&mut self, key: K, value: V) {
@@ -153,7 +158,9 @@ mod tests {
     #[derive(PartialEq, Eq)]
     struct Colliding(u8);
     impl Hash for Colliding {
-        fn hash<H: Hasher>(&self, state: &mut H) { 0u8.hash(state); }
+        fn hash<H: Hasher>(&self, state: &mut H) {
+            0u8.hash(state);
+        }
     }
 
     #[test]

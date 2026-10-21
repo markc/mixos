@@ -51,7 +51,6 @@ mod stub;
 #[cfg(feature = "capture-ffmpeg")]
 pub mod thread;
 
-
 pub use capture::*;
 #[cfg(feature = "capture-ffmpeg")]
 pub use nvenc::NvencEncoder;

@@ -6,8 +6,8 @@ use smithay::reexports::wayland_server::protocol::wl_compositor::WlCompositor;
 use smithay::reexports::wayland_server::protocol::wl_subcompositor::WlSubcompositor;
 use smithay::reexports::wayland_server::{DisplayHandle, GlobalDispatch};
 use smithay::utils::{Clock, Monotonic};
-use smithay::wayland::compositor::CompositorState;
 use smithay::wayland::GlobalData;
+use smithay::wayland::compositor::CompositorState;
 
 pub fn new<I>(display_handle: &DisplayHandle) -> Compositor
 where

@@ -193,9 +193,7 @@ pub fn assemble(formats: &render_gles::format::registrar::Registrar) -> DisplayA
     let primary_node = kms::device::node::primary_node(primary_gpu);
     let device_path = kms::udev::enumerate::scan::snapshot(&seat_name)
         .into_iter()
-        .find(|(dev_id, _)| {
-            kms::device::node::matches_dev(*dev_id, primary_gpu, primary_node)
-        })
+        .find(|(dev_id, _)| kms::device::node::matches_dev(*dev_id, primary_gpu, primary_node))
         .map(|(_, path)| path)
         .expect("Could not find any usable DRM devices! Check seat configuration.");
 
@@ -224,8 +222,7 @@ pub fn assemble(formats: &render_gles::format::registrar::Registrar) -> DisplayA
     // 6. Pipe claim. Logged with the connector's routable set: an unroutable CRTC
     //    fails every mode/format/modifier in the atomic test identically, and this
     //    line is what tells the two apart.
-    let pipe =
-        kms::scanout::pipe::claim::claim(&drm, &connector, &res).expect("no CRTC available");
+    let pipe = kms::scanout::pipe::claim::claim(&drm, &connector, &res).expect("no CRTC available");
     use smithay::reexports::drm::control::Device as _;
     let routable: Vec<_> = connector
         .encoders()
@@ -398,8 +395,7 @@ fn resolve_mode(
             synthesize_mode(profile.unwrap())
         }
         Some(ModeRequest::Advertised { .. }) => {
-            kms::mode::select::select(connector, profile)
-                .expect("connector advertises no modes")
+            kms::mode::select::select(connector, profile).expect("connector advertises no modes")
         }
         // No per-output mode: try the hand-set default mode (advertised match),
         // else fall through to the default selection policy. An unmatched

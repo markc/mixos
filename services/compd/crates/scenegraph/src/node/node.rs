@@ -106,10 +106,7 @@ where
     pub fn lower(
         mut self,
         renderer: &mut R,
-    ) -> (
-        Vec<SceneElement<R>>,
-        Vec<dispatcher::frame::ElementMeta>,
-    ) {
+    ) -> (Vec<SceneElement<R>>, Vec<dispatcher::frame::ElementMeta>) {
         use dispatcher::frame::ElementMeta;
         self.nodes.sort_by_key(|n| std::cmp::Reverse(n.0));
         let mut elements = Vec::new();
