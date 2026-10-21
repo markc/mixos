@@ -19,7 +19,9 @@ use zbus::blocking::Connection;
 use zbus::zvariant::Value;
 
 // Every spawn goes through the hygiene wrapper — see `process.child`.
+#[cfg(feature = "desktop-dbus")]
 use crate::library::process::child::hygiene::command;
+#[cfg(feature = "desktop-dbus")]
 use crate::library::process::child::spawn as child_spawn;
 
 /// The slice every app this compositor launches is placed under.
@@ -126,6 +128,7 @@ fn stop_over_bus(slice: &str) -> Result<(), String> {
 
 /// Run `systemctl` and treat a non-zero exit as an error, same as a spawn failure —
 /// both mean the unit was not acted on.
+#[cfg(feature = "desktop-dbus")]
 fn systemctl(args: &[&str]) -> Result<(), String> {
     let mut cmd = command("systemctl");
     cmd.args(args);

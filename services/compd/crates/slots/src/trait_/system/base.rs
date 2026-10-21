@@ -45,11 +45,14 @@ pub trait System: Any {
     }
 }
 
+/// The erased callback invoked for each listener on a channel.
+pub type ReceiverFn = dyn Fn(&mut dyn System, &mut SystemCx, &dyn Any);
+
 /// A bound channel listener; events fan out by reference to every listener.
 pub struct Receiver {
     pub channel_id: usize,
     pub system_index: usize,
-    pub invoke: Box<dyn Fn(&mut dyn System, &mut SystemCx, &dyn Any)>,
+    pub invoke: Box<ReceiverFn>,
 }
 
 /// Collects a world's wiring during `System::register`.

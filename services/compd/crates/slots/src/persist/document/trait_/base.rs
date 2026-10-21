@@ -2,6 +2,9 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 use crate::persist::entry::base::PersistError;
 
+/// A persisted collection entry with its identity and partition keys.
+pub type Row<R> = (String, Vec<(&'static str, String)>, R);
+
 /// Opt a COLLECTION storage slot into the filesystem table store. `Slot` is the
 /// whole collection (e.g. a placeholder map); `Record` is one serializable row.
 /// Pure data — `define_document!` wraps an impl into a type-erased `DocumentEntry`.
@@ -19,7 +22,7 @@ pub trait Document: 'static {
     const WORLD_PARTITIONED: bool = true;
 
     /// `(id, partitions, record)` for every record currently in the slot.
-    fn rows(slot: &Self::Slot) -> Vec<(String, Vec<(&'static str, String)>, Self::Record)>;
+    fn rows(slot: &Self::Slot) -> Vec<Row<Self::Record>>;
     /// Insert/replace a rehydrated record into the slot.
     fn apply(slot: &mut Self::Slot, id: &str, record: Self::Record);
 
