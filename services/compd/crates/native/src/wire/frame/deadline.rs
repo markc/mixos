@@ -144,7 +144,10 @@ mod tests {
             .unwrap();
         assert_eq!(data.fires, 1);
         data.schedule.rendering("a");
-        assert!(!data.schedule.pending(), "b still waits for its own deadline");
+        assert!(
+            !data.schedule.pending(),
+            "b still waits for its own deadline"
+        );
         assert!(b.arm(Instant::now()));
         event_loop
             .dispatch(Some(Duration::ZERO), &mut data)
