@@ -344,14 +344,22 @@ fn form(
     };
     let text_height = |text: String| {
         ui.painter()
-            .layout(text, egui::TextStyle::Body.resolve(ui.style()), ui.visuals().text_color(), ui.available_width())
-            .size().y + spacing
+            .layout(
+                text,
+                egui::TextStyle::Body.resolve(ui.style()),
+                ui.visuals().text_color(),
+                ui.available_width(),
+            )
+            .size()
+            .y
+            + spacing
     };
     if let Some(from) = &compose.stale {
         footer += text_height(crate::label_with(
             "compose-from-new",
             &[("old", &compose.draft.from), ("new", &from.address)],
-        )) + toolkit::chrome::Chrome::of(ui.ctx()).metrics.push_height + spacing;
+        )) + toolkit::chrome::Chrome::of(ui.ctx()).metrics.push_height
+            + spacing;
     }
     if let Some(error) = &compose.error {
         footer += text_height(crate::label_with("send-failed", &[("error", error)]));

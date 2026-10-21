@@ -511,6 +511,7 @@ impl std::fmt::Debug for Body {
 pub struct ComposeState {
     /// The account it sends from.
     pub account: String,
+    /// The message headers. Its wire body stays empty while composing.
     pub draft: Composed,
     pub body: Body,
     /// The recipient fields as typed. The draft's lists are parsed from

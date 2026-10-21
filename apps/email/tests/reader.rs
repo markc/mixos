@@ -1147,7 +1147,10 @@ fn quoted_reply_compose_studio_dark() {
     let toggle = h.get_by_label(&label("reply-below-quote")).rect();
     let screen = h.ctx.content_rect();
     for rect in [send, cancel, toggle] {
-        assert!(screen.contains_rect(rect), "composer footer stays on screen: {rect:?}");
+        assert!(
+            screen.contains_rect(rect),
+            "composer footer stays on screen: {rect:?}"
+        );
     }
     assert!(toggle.bottom() < send.top());
     h.snapshot("quoted_reply_compose_studio_dark");
