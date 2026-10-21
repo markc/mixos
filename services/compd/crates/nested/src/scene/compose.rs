@@ -4,21 +4,17 @@
 //! callbacks/housekeeping from `frames::draw::present::callbacks`; nothing is
 //! duplicated between backends.
 
-use dispatcher::frame::SceneDispatch;
 use frames::draw::plan::frame::{FramePass, plan};
 use frames::draw::plan::tap::{POST_SCENE, TapSubscriptions};
-use frames::scene::Scene;
-use graphics::capture::registry::{CaptureRegistry, OutputId};
-use smithay::backend::allocator::dmabuf::Dmabuf;
+use graphics::capture::registry::OutputId;
 use smithay::backend::renderer::damage::OutputDamageTracker;
-use smithay::backend::renderer::element::{Element, RenderElement};
 use smithay::backend::renderer::gles::GlesRenderer;
-use smithay::backend::renderer::{Bind, Color32F, Frame, ImportDma, Renderer};
+use smithay::backend::renderer::Bind;
 use smithay::backend::winit::WinitGraphicsBackend;
 use smithay::desktop::Window;
 use smithay::output::Output;
 use smithay::reexports::wayland_server::DisplayHandle;
-use smithay::utils::{Physical, Rectangle, Scale, Size, Transform};
+use smithay::utils::{Physical, Rectangle, Transform};
 use world::state::Loop;
 
 /// Keep the damage tracker at the output's current mode and scale, rendering
@@ -330,15 +326,14 @@ fn owe_frames(context: &mut WinitRenderContext, state: &mut Loop, visible: Vec<W
     }
 }
 
-fn compose(
-    context: &mut WinitRenderContext,
-    state: &mut Loop,
-) -> (
+type ComposedFrame = (
     Option<Vec<Rectangle<i32, Physical>>>,
     Vec<Window>,
     Option<screencopy::Captures<GlesRenderer>>,
     bool,
-) {
+);
+
+fn compose(context: &mut WinitRenderContext, state: &mut Loop) -> ComposedFrame {
     // Single source of truth for the output size: the static, scale-1 mode `route.rs` set
     // from the *logical* window size — NOT the raw physical `window_size()`, so the render
     // stays consistent with the compositor's coordinate system and doesn't drift when the
@@ -388,7 +383,6 @@ fn compose(
     // it, so the nested window occupies the whole host window at any host DPI while the
     // compositor stays at the logical scale-1 output. Under a scale-1 host these are equal.
     let present_size = context.winit_backend.window_size();
-    let present_full = Rectangle::<i32, Physical>::from_size(present_size);
     // Stable capture id for this output — the SAME EDID-derived `OutputId::from_key`
     // the rim's capture requests use (they key off `active_output()` on every
     // backend), so entries match on winit too. A hardcoded `OutputId(0)` here never

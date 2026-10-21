@@ -66,6 +66,5 @@ pub fn route(event: &WinitEvent, state: &mut Loop, context: &mut WinitRenderCont
             info!("winit: close requested — stopping compositor");
             scenegraph::state::lifecycle::stop(state);
         }
-        _ => (),
     }
 }
