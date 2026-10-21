@@ -970,7 +970,7 @@ pub fn agent_touch(
     let slot = Some(slot).into();
     if phase != "touch_down"
         && touch.grab_start_data().and_then(|start| start.focus)
-            .is_none_or(|(surface, _)| !surface.alive())
+            .is_none_or(|(surface, _)| !surface.is_alive())
     {
         return Err(agent_refusal("touch_focus_lost"));
     }
