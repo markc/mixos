@@ -193,7 +193,7 @@ pub fn source(icon: Icon, stroke: f32) -> String {
 /// tinted `colour`.
 pub fn image(icon: Icon, stroke: f32, size: f32, colour: Color32) -> Image<'static> {
     let mask = mask_string(crate::style::default_tokens().icon_mask);
-    let uri = format!("bytes://lucide/{}@{stroke}@{mask}.svg", icon.name());
+    let uri = format!("bytes://lucide/{}@{stroke}@{}.svg", icon.name(), mask.trim_start_matches('#'));
     let bytes = source(icon, stroke).into_bytes();
     Image::new(ImageSource::Bytes {
         uri: Cow::Owned(uri),
@@ -207,7 +207,7 @@ pub fn image(icon: Icon, stroke: f32, size: f32, colour: Color32) -> Image<'stat
 pub fn image_of(ctx: &egui::Context, icon: Icon, size: f32, colour: Color32) -> Image<'static> {
     let stroke = stroke_of(ctx);
     let mask = mask_string(crate::chrome::Chrome::of(ctx).style.icon_mask);
-    let uri = format!("bytes://lucide/{}@{stroke}@{mask}.svg", icon.name());
+    let uri = format!("bytes://lucide/{}@{stroke}@{}.svg", icon.name(), mask.trim_start_matches('#'));
     let bytes = icon
         .svg()
         .replace("stroke=\"currentColor\"", &format!("stroke=\"{mask}\""))
@@ -246,6 +246,10 @@ mod tests {
         assert!(svg.contains("stroke-width=\"1.25\""));
         assert!(svg.contains("stroke=\"#ffffffff\""));
         assert!(!svg.contains("currentColor"));
+        let image = image(Icon::Play, 1.25, 16.0, Color32::WHITE);
+        let uri = image.uri().unwrap();
+        assert!(uri.ends_with("@ffffffff.svg"));
+        assert!(!uri.contains('#'), "a URI fragment hides the SVG extension from the loader");
     }
 
     #[test]

@@ -145,6 +145,7 @@ impl Default for CanvasState {
 
 #[test]
 fn field_focus_width_is_drawn_from_the_installed_style() {
+    let mut results = egui_kittest::SnapshotResults::new();
     for style in design::Style::ALL {
         for width in [0.0, 2.0] {
             let mut overlay = toolkit::theme::Overlay::default();
@@ -172,7 +173,7 @@ fn field_focus_width_is_drawn_from_the_installed_style() {
             h.ctx
                 .memory_mut(|memory| memory.request_focus(Id::new("focus-field")));
             h.run();
-            h.snapshot(format!("field_focus_{}_{width}", style.name()));
+            results.add(h.try_snapshot(format!("field_focus_{}_{width}", style.name())));
         }
     }
 }
