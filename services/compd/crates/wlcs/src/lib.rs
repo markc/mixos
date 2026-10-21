@@ -67,7 +67,8 @@ impl Control {
 struct Process { child: Child, root: PathBuf, control: Control }
 impl Process {
     fn start() -> io::Result<Self> {
-        let root = std::env::temp_dir().join(format!("compd-wlcs-{}-{}", std::process::id(), NEXT.fetch_add(1, Ordering::Relaxed)));
+        let base = std::env::var_os("WLCS_LOG_ROOT").map(PathBuf::from).unwrap_or_else(std::env::temp_dir);
+        let root = base.join(format!("compd-wlcs-{}-{}", std::process::id(), NEXT.fetch_add(1, Ordering::Relaxed)));
         fs::create_dir(&root)?;
         fs::set_permissions(&root, fs::Permissions::from_mode(0o700))?;
         let mut settings = model::environment::config::base::default_settings();
@@ -97,6 +98,8 @@ impl Process {
         // SAFETY: only fcntl is called between fork and exec. The parent retains
         // CLOEXEC; the child inherits exactly its test endpoint.
         unsafe { command.pre_exec(move || {
+            // A wlcs assertion can abort the test process before destructors.
+            if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL) < 0 { return Err(io::Error::last_os_error()) }
             if libc::fcntl(fd, libc::F_SETFD, 0) < 0 { return Err(io::Error::last_os_error()) }
             Ok(())
         }); }

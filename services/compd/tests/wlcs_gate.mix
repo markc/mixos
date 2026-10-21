@@ -1,0 +1,107 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- wlcs v1.8.1: isolate each case so a protocol abort cannot hide later tests.
+-- Run from the repository root. This gate never builds or installs anything.
+-- mix services/compd/tests/wlcs_gate.mix --wlcs /build/wlcs/build/wlcs
+--   --shim /build/mixos/target/debug/libcompd_wlcs.so
+--   --compd /build/mixos/target/debug/compd --output-dir /build/wlcs/run-1
+-- First observation only: --record (refuses to overwrite an expectation file).
+$g = getopt(args(), {
+  wlcs: {arg: true}, shim: {arg: true}, compd: {arg: true},
+  "output-dir": {arg: true}, expectations: {arg: true}, record: {}
+})
+if len($g.errors) > 0 or len($g.rest) > 0 then raise("WLCS_ARGS", "invalid wlcs gate arguments") end
+$opts = $g.opts
+$wlcs_bin = $opts.wlcs ?? env("WLCS", "")
+$shim = $opts.shim ?? ""
+$compd_bin = $opts.compd ?? ""
+$out = $opts["output-dir"] ?? ""
+$expected_path = $opts.expectations ?? dirname(realpath($0)) .. "/wlcs_expectations.conf.mix"
+$record = $opts.record ?? false
+for $path in [$wlcs_bin, $shim, $compd_bin]
+  if not is_file($path) then raise("WLCS_SETUP", "missing executable or shim: " .. $path) end
+end
+if $out == "" or not starts_with($out, "/") or is_dir($out) then
+  raise("WLCS_SETUP", "--output-dir must be a new absolute directory")
+end
+if $record and is_file($expected_path) then raise("WLCS_RECORD", "refusing to overwrite " .. $expected_path) end
+if not $record and not is_file($expected_path) then raise("WLCS_SETUP", "missing expectations: " .. $expected_path) end
+mkdir($out, {parents: true})
+$process_env = {COMPD_WLCS_BINARY: $compd_bin, WLCS_LOG_ROOT: $out, WLCS_KEEP_LOGS: "1"}
+$listing = run_argv([$wlcs_bin, $shim, "--gtest_list_tests"], {env: $process_env, timeout: 60})
+write_file($out .. "/list.log", $listing.stdout .. $listing.stderr)
+if not $listing.ok then raise("WLCS_SETUP", "cannot list wlcs tests; see " .. $out .. "/list.log") end
+$tests = []
+$suite = ""
+for $line in split($listing.stdout, "\n")
+  $line = split($line, "#")[0]
+  if trim($line) == "" then continue end
+  if starts_with($line, "  ") and $suite != "" then
+    push($tests, $suite .. trim($line))
+  elif ends_with(trim($line), ".") then
+    $suite = trim($line)
+  end
+end
+if len($tests) == 0 or len(unique($tests)) != len($tests) then raise("WLCS_SETUP", "empty or duplicate wlcs inventory") end
+$expected = if $record then {passed: [], failed: [], skipped: [], flaky: []} else load_data($expected_path) end
+$known = {}
+for $outcome in ["passed", "failed", "skipped", "flaky"]
+  for $test in ($expected[$outcome] ?? [])
+    if $known[$test] != nil then raise("WLCS_EXPECTATIONS", "duplicate expectation: " .. $test) end
+    $known[$test] = $outcome
+  end
+end
+$observed = {passed: [], failed: [], skipped: [], flaky: []}
+$changed = []
+$index = 0
+for $test in $tests
+  $index = $index + 1
+  $stem = $out .. "/" .. to_string($index)
+  $r = run_argv([$wlcs_bin, $shim, "--gtest_filter=" .. $test, "--gtest_output=json:" .. $stem .. ".json"], {
+    env: $process_env, timeout: 20, stdout: {file: $stem .. ".log"}, stderr: "stdout"
+  })
+  $log_text = read_file($stem .. ".log")
+  if contains($log_text, "wlcs-adapter-startup-error") or contains($log_text, "wlcs-adapter-error") then
+    raise("WLCS_ADAPTER", "adapter failed for " .. $test .. "; see " .. $stem .. ".log")
+  end
+  $outcome = "failed"
+  if is_file($stem .. ".json") then
+    $report = json_parse(read_file($stem .. ".json"))
+    if $report.tests != 1 or len($report.testsuites) != 1 or len($report.testsuites[0].testsuite) != 1 then
+      raise("WLCS_REPORT", "unexpected case inventory in " .. $stem .. ".json")
+    end
+    $case = $report.testsuites[0].testsuite[0]
+    if $report.testsuites[0].name .. "." .. $case.name != $test then raise("WLCS_REPORT", "wrong case in report") end
+    if $case.result == "SKIPPED" or $case.result == "SUPPRESSED" then
+      $outcome = "skipped"
+    elif $r.ok and len($case.failures ?? []) == 0 then
+      $outcome = "passed"
+    end
+  elif not contains($log_text, "[ RUN      ] " .. $test) then
+    raise("WLCS_REPORT", "test did not start: " .. $test .. "; see " .. $stem .. ".log")
+  end
+  -- Flaky exclusions must still exist in the live inventory and run normally.
+  if $known[$test] == "flaky" then $outcome = "flaky" end
+  $observed[$outcome] = push($observed[$outcome], $test)
+  if not $record and $known[$test] != $outcome then
+    push($changed, $test .. ": expected " .. to_string($known[$test]) .. ", observed " .. $outcome)
+  end
+  print(to_string($index) .. "/" .. len($tests) .. " " .. $outcome .. " " .. $test)
+end
+for $test in keys($known)
+  if not contains($tests, $test) then push($changed, $test .. ": missing from wlcs inventory") end
+end
+for $outcome in keys($observed)
+  $observed[$outcome] = sort($observed[$outcome])
+end
+write_file($out .. "/observed.conf.mix", data_encode($observed) .. "\n")
+print("total=" .. len($tests) .. " passed=" .. len($observed.passed) .. " failed=" .. len($observed.failed) .. " skipped=" .. len($observed.skipped) .. " flaky=" .. len($observed.flaky))
+if $record then
+  write_file($expected_path, "-- SPDX-License-Identifier: MIT OR Apache-2.0\n-- wlcs v1.8.1; first observed headless outcomes.\n" .. data_encode($observed) .. "\n")
+  print("recorded " .. $expected_path)
+elif len($changed) > 0 then
+  print(join($changed, "\n"))
+  raise("WLCS_CHANGED", to_string(len($changed)) .. " changed or missing outcomes")
+else
+  print("wlcs_gate: every observed outcome matches expectations")
+end
