@@ -163,7 +163,7 @@ pub fn build(
     // last monitor built decided the session's colour depth for every producer —
     // so plugging an 8-bit panel in beside a 10-bit one silently banded the good
     // display. `Registrar::scanout_fourcc` now prefers the deepest live pipe.
-    let (fourcc, modifier, offered) = kms::scanout::surface::output::format_info(&drm_output);
+    let (fourcc, modifier, _offered) = kms::scanout::surface::output::format_info(&drm_output);
     formats.set_scanout_fourcc(u32::from(pipe) as u64, fourcc);
     {
         use render_gles::format::rule;

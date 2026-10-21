@@ -27,17 +27,14 @@ pub(crate) mod diagnostics;
 pub mod hdr;
 
 use crate::context::render::NativeRenderContext;
-use dispatcher::frame::{ElementMeta, SceneDispatch};
 use frames::draw::plan::frame::{FramePass, plan};
 use frames::draw::plan::tap::POST_SCENE;
-use graphics::capture::registry::{CaptureRegistry, OutputId};
+use graphics::capture::registry::OutputId;
 use render_gles::element::wrap::GlesElementWrapper;
-use smithay::backend::renderer::element::{Element, Id, Kind, RenderElement, UnderlyingStorage};
-use smithay::backend::renderer::utils::{CommitCounter, DamageSet, OpaqueRegions};
-use smithay::backend::renderer::{Bind, RendererSuper};
+use smithay::backend::renderer::element::{Element, Id};
+use smithay::backend::renderer::Bind;
 use smithay::reexports::calloop::LoopHandle;
-use smithay::utils::user_data::UserDataMap;
-use smithay::utils::{Buffer, Physical, Point, Rectangle, Scale, Transform};
+use smithay::utils::{Physical, Rectangle, Scale, Transform};
 use std::cell::RefCell;
 use std::rc::Rc;
 use world::state::Loop;
@@ -705,7 +702,6 @@ pub fn execute(
             let want_bpc: u64 = if depth == 10 { 10 } else { 8 };
             let hdr_active = ctx_ref.outputs[output_idx].hdr_active;
             let conn = ctx_ref.outputs[output_idx].connector;
-            let crtc = ctx_ref.outputs[output_idx].crtc;
             match crate::render::execute::hdr::apply_connector_props(
                 &ctx_ref.drm_fd,
                 conn,
@@ -713,11 +709,11 @@ pub fn execute(
                 hdr_active,
                 want_bpc,
             ) {
-                Ok(o) => {
+                Ok(_o) => {
                     ctx_ref.outputs[output_idx].props_applied = true;
                     info!("connector properties applied (colorimetry + max bpc)");
                 }
-                Err(e) => {
+                Err(_e) => {
                     ctx_ref.outputs[output_idx].props_applied = true; // don't retry every frame
                     if hdr_active {
                         ctx_ref.outputs[output_idx].hdr_active = false;
@@ -740,7 +736,7 @@ pub fn execute(
         // report `ZeroCopy` per surface. Cloned out of the `RenderFrameResult` because
         // that borrows the renderer and is dropped well before `present` runs; the map
         // is one entry per element, so this is cheap next to the frame it describes.
-        let mut frame_states: Option<smithay::backend::renderer::element::RenderElementStates> =
+        let frame_states: Option<smithay::backend::renderer::element::RenderElementStates> =
             None;
         let mut visible_window: Vec<_> = Vec::new();
 
@@ -832,7 +828,7 @@ pub fn execute(
                             );
                         }
                         if let Some(frame) = diag_frame.as_ref() {
-                            diagnostics::UI(r.as_mut(), texture, id, dump_id, frame);
+                            diagnostics::ui(r.as_mut(), texture, id, dump_id, frame);
                         }
                     }
                 }
@@ -846,7 +842,7 @@ pub fn execute(
                             let mut target = r
                                 .bind(&mut texture)
                                 .map_err(|err| format!("bind KMS diagnostic target: {err}"))?;
-                            scene_result
+                            let sync = scene_result
                                 .blit_frame_result(
                                     size,
                                     Transform::Normal,
@@ -857,6 +853,7 @@ pub fn execute(
                                     std::iter::empty::<Id>(),
                                 )
                                 .map_err(|err| format!("copy KMS diagnostic frame: {err:?}"))?;
+                            sync.wait().map_err(|err| format!("wait KMS diagnostic frame: {err:?}"))?;
                         }
                         Ok(texture)
                     })();

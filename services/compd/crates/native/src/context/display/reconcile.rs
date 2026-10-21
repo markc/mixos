@@ -74,14 +74,6 @@ fn identity_key(drm: &DrmDevice, info: &connector::Info) -> String {
     .key()
 }
 
-/// The connected connector whose EDID identity matches `key`.
-fn find_target(drm: &DrmDevice, key: &str) -> Option<connector::Info> {
-    let res = kms::connector::scan::resources(drm);
-    let infos = kms::connector::scan::connectors(drm, &res);
-    infos
-        .into_iter()
-        .find(|i| i.state() == connector::State::Connected && identity_key(drm, i) == key)
-}
 
 /// Tear down the current pipe (freeing its CRTC) and bring `target` up as the primary
 /// output. The smithay `Output` is reused only while `target` is the SAME monitor the
@@ -293,13 +285,6 @@ fn pick_target(drm: &DrmDevice, connected: &[connector::Info]) -> Option<connect
     connected.first().cloned()
 }
 
-/// Tear the display down and idle the render loop until a monitor returns.
-fn go_dark(state: &mut Loop, ctx: &mut NativeRenderContext) {
-    ctx.pipe_mut().drm_output = None;
-    *state.inner.kernel.get_mut(&DISPLAY_OFF_MUT) = true;
-    *state.inner.kernel.get_mut(&OUTPUT_MODES_SNAPSHOT_MUT) = OutputModesSnapshot::default();
-    *state.inner.kernel.get_mut(&OUTPUTS_SNAPSHOT_MUT) = OutputsSnapshot::default();
-}
 
 /// Bring a NEW connected monitor online as an ADDITIONAL output: build a fresh
 /// smithay `Output` + a second pipe on a free CRTC (validating the second atomic

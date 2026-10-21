@@ -9,7 +9,6 @@
 use frames::draw::plan::tap::TapSubscriptions;
 use kms::scanout::surface::output::{NativeDrmOutput, NativeDrmOutputManager};
 use render_gles::preference::enable::safety::SafetyEnable;
-use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::output::{Mode, Output};
 use smithay::reexports::calloop::RegistrationToken;
 use smithay::reexports::drm::control::Mode as DrmMode;

@@ -14,7 +14,6 @@ use render_gles::element::wrap::GlesElementWrapper;
 use scenegraph::scene::element::SceneElement;
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::allocator::format::FormatSet;
-use smithay::backend::renderer::ImportEgl;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::output::{Mode, Output};
 use smithay::reexports::wayland_server::DisplayHandle;

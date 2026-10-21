@@ -226,7 +226,7 @@ pub fn register(
                     let kick = render_kick.clone();
                     let token = kms::seat::lifecycle::resume::watchdog::arm(
                         &session_loop_handle,
-                        |state: &mut Loop| (*state.inner.kernel.get(&drivers::resume::base::VBLANK_SEEN)),
+                        |state: &mut Loop| *state.inner.kernel.get(&drivers::resume::base::VBLANK_SEEN),
                         |state: &mut Loop| {
                             *state.inner.kernel.get_mut(&drivers::resume::base::RESUME_WATCHDOG_MUT) = None;
                         },

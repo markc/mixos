@@ -388,7 +388,7 @@ fn process_vblank_inner(
     time: Option<Duration>,
     sequence: u64,
     crtc: smithay::reexports::drm::control::crtc::Handle,
-    refresh: Duration,
+    _refresh: Duration,
     #[cfg(feature = "flip-estimate")] estimate_slot: &EstimateSlot,
     #[cfg(feature = "timing-predict")] predict_clock: &PredictClock,
 ) {

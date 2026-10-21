@@ -146,14 +146,17 @@ fn watching(records: &[(String, PipeRescue)]) -> bool {
         .any(|(_, record)| record.faulted_at.is_none())
 }
 
+type RescuePipe = Box<dyn FnMut(&str, bool)>;
+type OutstandingPipes = Box<dyn Fn(&Loop) -> Vec<String>>;
+
 struct Inner {
     token: Option<RegistrationToken>,
     records: Vec<(String, PipeRescue)>,
     /// Unwedge and fully damage one pipe: drop a lost pending flip (when
     /// `in_flight`) and reset its buffers.
-    rescue_pipe: Box<dyn FnMut(&str, bool)>,
+    rescue_pipe: RescuePipe,
     /// The live pipes owing work right now (behind the epoch or in flight).
-    outstanding: Box<dyn Fn(&Loop) -> Vec<String>>,
+    outstanding: OutstandingPipes,
 }
 
 /// Cloned into every source that renders; one deadline between them.

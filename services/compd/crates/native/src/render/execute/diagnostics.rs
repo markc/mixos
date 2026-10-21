@@ -39,8 +39,8 @@ thread_local! {
 /// it does not turn UI into Texture/TextureCropped (those hold imported dmabufs).
 pub(super) fn ui_texture(element: &SceneElement<GlesRenderer>) -> Option<&GlesTexture> {
     match element {
-        SceneElement::Surface(UI) => Some(&UI.texture),
-        SceneElement::SurfaceCropped(UI) => Some(&UI.element().texture),
+        SceneElement::Surface(ui) => Some(&ui.texture),
+        SceneElement::SurfaceCropped(ui) => Some(&ui.element().texture),
         _ => None,
     }
 }
@@ -116,7 +116,7 @@ pub(super) fn surface(id: &Id, output: usize) -> (usize, bool) {
     })
 }
 
-pub(super) fn UI(
+pub(super) fn ui(
     renderer: &mut GlesRenderer,
     texture: &GlesTexture,
     id: &Id,
