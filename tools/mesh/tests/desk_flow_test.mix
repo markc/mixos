@@ -116,8 +116,10 @@ check(refused(fn()=$w.validate_service($target,1000,{present:true,uid:1000,gid:1
 $source = "$request = {operation: \"invalid-fixture\"}\n" .. $program
 $generated = $root .. "/generated.mix"
 write_file($generated,$source)
-run_argv_must(["/opt/mixos/bin/mix","lint",$generated])
-$rpc = json_parse(run_argv_must(["/opt/mixos/bin/mix",$generated]))
+$native_mix = which("mix")
+check(type($native_mix)=="string" and re_match($native_mix,"^/opt/[a-z][a-z0-9-]{0,31}/bin/mix$"),"native interpreter must be installed under /opt")
+run_argv_must([$native_mix,"lint",$generated])
+$rpc = json_parse(run_argv_must([$native_mix,$generated]))
 check($rpc.ok==false and $rpc.error=="DESK_DISTRIBUTOR","generated native RPC refusal failed")
 print("PASS hermetic desk flow: exact namespace stages, ten fail-stop boundaries, policy, effective unit and generated RPC")
 run_argv_must(["rm","-rf",$root])
