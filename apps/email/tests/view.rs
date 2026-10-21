@@ -463,7 +463,13 @@ fn a_right_click_on_a_row_opens_the_message_menu_for_that_email() {
         })
         .expect("the right-clicked row opens");
     assert_eq!(
-        h.state().state.account("home").unwrap().mail.table.selection,
+        h.state()
+            .state
+            .account("home")
+            .unwrap()
+            .mail
+            .table
+            .selection,
         ["E2"]
     );
     // The menu is up; what acts on the open email waits for E2 to load.
@@ -483,7 +489,11 @@ fn a_right_click_on_a_row_opens_the_message_menu_for_that_email() {
     done(
         &mut h.state_mut().state,
         "home",
-        Done::Opened(ticket, None, Box::new(Ok(serde_json::from_value(e2).unwrap()))),
+        Done::Opened(
+            ticket,
+            None,
+            Box::new(Ok(serde_json::from_value(e2).unwrap())),
+        ),
     );
     h.run();
     assert!(!entry(&h), "enabled once E2 is open");

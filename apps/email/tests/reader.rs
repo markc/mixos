@@ -198,7 +198,6 @@ fn harness(state: State, theme: &Theme) -> Harness<'static, (State, Vec<UiEvent>
                             state.current().unwrap(),
                             &registry,
                             &strings,
-                            2.0,
                             &mut events,
                         );
                     });
@@ -827,10 +826,17 @@ fn compose_rows_put_labels_outside_and_open_cc_bcc_and_reply_to_from_the_to_row(
     assert!(subject.top() > to.bottom(), "Subject under To");
     // Cc, Bcc and Reply-To are buttons at the right of the To row, their
     // rows hidden until asked for.
-    for (row, tip) in [("Cc", "show-cc"), ("Bcc", "show-bcc"), ("Reply-To", "show-reply-to")] {
+    for (row, tip) in [
+        ("Cc", "show-cc"),
+        ("Bcc", "show-bcc"),
+        ("Reply-To", "show-reply-to"),
+    ] {
         assert!(field(&h, row).is_none(), "{row} hidden at first");
         let b = button(&h, tip);
-        assert!((b.center().y - to.center().y).abs() < 4.0, "{tip} on the To row");
+        assert!(
+            (b.center().y - to.center().y).abs() < 4.0,
+            "{tip} on the To row"
+        );
         assert!(b.left() > to.right(), "{tip} right of the field");
     }
     // Identities… is on the row above To (From), ending where the To row's
@@ -838,7 +844,10 @@ fn compose_rows_put_labels_outside_and_open_cc_bcc_and_reply_to_from_the_to_row(
     let identities = button(&h, "identities-open");
     assert!(identities.bottom() <= to.top() + 1.0);
     let last = button(&h, "show-reply-to");
-    assert!((identities.right() - last.right()).abs() < 2.0, "{identities:?} {last:?}");
+    assert!(
+        (identities.right() - last.right()).abs() < 2.0,
+        "{identities:?} {last:?}"
+    );
     // Each button opens its row under To.
     for tip in ["show-cc", "show-bcc", "show-reply-to"] {
         h.get_by_label(&label(tip)).click();
@@ -853,7 +862,10 @@ fn compose_rows_put_labels_outside_and_open_cc_bcc_and_reply_to_from_the_to_row(
     // Labels outside, in one column: every field starts at the same x,
     // well in from the dialog's edge.
     for (name, rect) in [("Cc", cc), ("Reply-To", reply_to), ("Subject", subject)] {
-        assert!((rect.left() - to.left()).abs() < 1.0, "{name} lines up with To");
+        assert!(
+            (rect.left() - to.left()).abs() < 1.0,
+            "{name} lines up with To"
+        );
     }
     // A Reply-To typed here is the draft's, and the button closes an
     // empty row again.
