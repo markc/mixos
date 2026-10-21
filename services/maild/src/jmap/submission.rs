@@ -482,7 +482,79 @@ pub async fn changes(
     Ok(serde_json::to_value(resp)?)
 }
 
-/// Identity/get — list configured sender identities.
+/// Identity/get — list the account and its authorized sender aliases.
+pub async fn identity_get(
+    db: &Db,
+    domains_runtime: std::sync::Arc<::props::Runtime>,
+    aliases_runtime: &Arc<::props::Runtime>,
+    account_id: i32,
+    args: serde_json::Value,
+) -> Result<serde_json::Value> {
+    let mut response = account_identity_get(db, domains_runtime, account_id, args).await?;
+    let Some(primary) = response["list"]
+        .as_array()
+        .and_then(|list| list.first())
+        .cloned()
+    else {
+        return Ok(response);
+    };
+    let account = crate::props::aliases::canon(primary["email"].as_str().unwrap_or_default());
+    let snapshot = match aliases_runtime
+        .store()
+        .list(&crate::props::aliases::namespace_name())
+        .await
+    {
+        Ok(snapshot) => snapshot,
+        Err(error) => {
+            // Preserve the account identity on a store fault, but never
+            // advertise an alias whose authorization cannot be checked.
+            tracing::warn!(%error, "Identity/get could not list sender aliases");
+            return Ok(response);
+        }
+    };
+    let mut addresses = std::collections::BTreeSet::new();
+    for record in snapshot.value {
+        let target = record
+            .value
+            .as_object()
+            .and_then(|value| value.get("target"))
+            .and_then(|value| match value {
+                ::props::value::PropValue::String(target) => Some(target.as_str()),
+                _ => None,
+            });
+        if !target.is_some_and(|target| crate::props::aliases::canon(target) == account) {
+            continue;
+        }
+        let address = crate::props::aliases::canon(&record.key.key);
+        if address != account
+            && crate::props::aliases::sender_authorized(aliases_runtime, &address, &account).await
+        {
+            addresses.insert(address);
+        }
+    }
+    for address in addresses {
+        let mut identity = primary.clone();
+        // JMAP ids use URL-safe characters and must stay short even for
+        // long email addresses. Keep the primary account's existing id.
+        identity["id"] = serde_json::json!(format!(
+            "{account_id}-alias-{}",
+            blake3::hash(address.as_bytes()).to_hex()
+        ));
+        identity["email"] = serde_json::json!(address);
+        response["list"]
+            .as_array_mut()
+            .expect("primary identity list")
+            .push(identity);
+    }
+    response["state"] = serde_json::json!(
+        blake3::hash(serde_json::to_string(&response["list"])?.as_bytes())
+            .to_hex()
+            .to_string()
+    );
+    Ok(response)
+}
+
+/// The account's primary identity under the domain availability policy.
 ///
 /// Phase 3: cross-product the account's row against the
 /// `maild.domains` substrate. The account-domain must be present and
@@ -490,7 +562,7 @@ pub async fn changes(
 /// empty or the substrate read errors, fall back to the legacy
 /// single-identity behavior so an Identity/get failure mid-session
 /// can't lock the user out of submission UI.
-pub async fn identity_get(
+async fn account_identity_get(
     db: &Db,
     domains_runtime: std::sync::Arc<::props::Runtime>,
     account_id: i32,
@@ -637,6 +709,36 @@ mod identity_get_tests {
         ))
     }
 
+    fn build_aliases_runtime() -> Arc<Runtime> {
+        Arc::new(Runtime::new(
+            "maild",
+            crate::props::aliases::spec(Hooks::noop()),
+            Arc::new(MemoryStore::new("maild")),
+        ))
+    }
+
+    async fn seed_alias(runtime: &Arc<Runtime>, address: &str, target: &str, enabled: bool) {
+        let value = PropValue::Object(std::collections::BTreeMap::from([
+            ("address".into(), PropValue::String(address.into())),
+            ("target".into(), PropValue::String(target.into())),
+            ("enabled".into(), PropValue::Bool(enabled)),
+        ]));
+        runtime
+            .set(
+                RecordKey::collection(crate::props::aliases::namespace_name(), address.to_string()),
+                value,
+                SetOpts {
+                    expected_version: Some(Version::zero()),
+                    merge: MergeMode::Replace,
+                    actor: Actor::service("identity-tests").expect("valid actor"),
+                    cause: None,
+                    ts_ms: 0,
+                },
+            )
+            .await
+            .expect("seed alias");
+    }
+
     async fn seed(runtime: &Arc<Runtime>, domain: &str, mutate: impl FnOnce(&mut PropValue)) {
         let mut value = crate::props::domains::defaults_value(domain);
         mutate(&mut value);
@@ -696,9 +798,15 @@ mod identity_get_tests {
         let fx = make_db_fixture().await;
         let id = seed_account(&fx.db, "user@example.com");
         seed(&rt, "example.com", |_| {}).await; // defaults_value: enabled=true
-        let out = identity_get(&fx.db, rt, id, serde_json::json!({}))
-            .await
-            .unwrap();
+        let out = identity_get(
+            &fx.db,
+            rt,
+            &build_aliases_runtime(),
+            id,
+            serde_json::json!({}),
+        )
+        .await
+        .unwrap();
         assert_eq!(list_count(&out), 1);
     }
 
@@ -713,7 +821,9 @@ mod identity_get_tests {
             }
         })
         .await;
-        let out = identity_get(&fx.db, rt, id, serde_json::json!({}))
+        let aliases = build_aliases_runtime();
+        seed_alias(&aliases, "mc@example.com", "user@example.com", true).await;
+        let out = identity_get(&fx.db, rt, &aliases, id, serde_json::json!({}))
             .await
             .unwrap();
         assert_eq!(list_count(&out), 0);
@@ -727,9 +837,15 @@ mod identity_get_tests {
         // Seed a *different* domain so the namespace is non-empty but
         // the account's domain is absent.
         seed(&rt, "other.example", |_| {}).await;
-        let out = identity_get(&fx.db, rt, id, serde_json::json!({}))
-            .await
-            .unwrap();
+        let out = identity_get(
+            &fx.db,
+            rt,
+            &build_aliases_runtime(),
+            id,
+            serde_json::json!({}),
+        )
+        .await
+        .unwrap();
         assert_eq!(list_count(&out), 0);
     }
 
@@ -739,9 +855,15 @@ mod identity_get_tests {
         let fx = make_db_fixture().await;
         let id = seed_account(&fx.db, "user@example.com");
         // Don't seed any rows — namespace is empty.
-        let out = identity_get(&fx.db, rt, id, serde_json::json!({}))
-            .await
-            .unwrap();
+        let out = identity_get(
+            &fx.db,
+            rt,
+            &build_aliases_runtime(),
+            id,
+            serde_json::json!({}),
+        )
+        .await
+        .unwrap();
         assert_eq!(list_count(&out), 1);
     }
 
@@ -750,12 +872,14 @@ mod identity_get_tests {
     struct FaultyStore {
         inner: Arc<dyn PropertyStore>,
         fail_get: AtomicBool,
+        fail_list: AtomicBool,
     }
     impl FaultyStore {
         fn new(inner: Arc<dyn PropertyStore>) -> Arc<Self> {
             Arc::new(Self {
                 inner,
                 fail_get: AtomicBool::new(false),
+                fail_list: AtomicBool::new(false),
             })
         }
         fn set_fail_get(&self, v: bool) {
@@ -775,6 +899,11 @@ mod identity_get_tests {
             &'a self,
             namespace: &'a NamespaceName,
         ) -> StoreFuture<'a, Snapshot<Vec<Record>>> {
+            if self.fail_list.load(Ordering::SeqCst) {
+                return Box::pin(async {
+                    Err(StoreError::storage("FaultyStore: injected list error"))
+                });
+            }
             self.inner.list(namespace)
         }
         fn commit_set<'a>(&'a self, op: SetCommit) -> StoreFuture<'a, (Record, RecordEvent)> {
@@ -829,10 +958,86 @@ mod identity_get_tests {
 
         let fx = make_db_fixture().await;
         let id = seed_account(&fx.db, "user@example.com");
-        let out = identity_get(&fx.db, runtime, id, serde_json::json!({}))
-            .await
-            .unwrap();
+        let out = identity_get(
+            &fx.db,
+            runtime,
+            &build_aliases_runtime(),
+            id,
+            serde_json::json!({}),
+        )
+        .await
+        .unwrap();
         // Best-effort: legacy single identity preserves submission UI.
         assert_eq!(list_count(&out), 1);
+    }
+
+    #[tokio::test]
+    async fn advertises_only_enabled_aliases_for_this_account_with_stable_ids() {
+        let domains = build_runtime();
+        let aliases = build_aliases_runtime();
+        let fx = make_db_fixture().await;
+        let id = seed_account(&fx.db, "user@example.com");
+        seed(&domains, "example.com", |_| {}).await;
+        let before = identity_get(&fx.db, domains.clone(), &aliases, id, serde_json::json!({}))
+            .await
+            .unwrap();
+        seed_alias(&aliases, "mc@example.com", "USER@example.com", true).await;
+        seed_alias(&aliases, "off@example.com", "user@example.com", false).await;
+        seed_alias(&aliases, "other@example.com", "other@example.com", true).await;
+        let out = identity_get(&fx.db, domains.clone(), &aliases, id, serde_json::json!({}))
+            .await
+            .unwrap();
+        let repeated = identity_get(&fx.db, domains, &aliases, id, serde_json::json!({}))
+            .await
+            .unwrap();
+        assert_eq!(out, repeated);
+        assert_eq!(list_count(&out), 2);
+        assert_eq!(out["list"][0]["id"], id.to_string());
+        assert_eq!(out["list"][0]["email"], "user@example.com");
+        assert_eq!(out["list"][1]["email"], "mc@example.com");
+        assert_ne!(out["list"][1]["id"], out["list"][0]["id"]);
+        assert_ne!(out["state"], before["state"]);
+        let alias_id = out["list"][1]["id"].as_str().unwrap();
+        assert!(alias_id.len() <= 255);
+        assert!(
+            alias_id
+                .bytes()
+                .all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_')
+        );
+        // Every advertised address passes the same gate as EmailSubmission/set.
+        for identity in out["list"].as_array().unwrap() {
+            assert!(
+                crate::props::aliases::sender_authorized(
+                    &aliases,
+                    identity["email"].as_str().unwrap(),
+                    "user@example.com"
+                )
+                .await
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn alias_store_faults_never_advertise_an_unverified_sender() {
+        let domains = build_runtime();
+        let faulty = FaultyStore::new(Arc::new(MemoryStore::new("maild")));
+        let aliases = Arc::new(Runtime::new(
+            "maild",
+            crate::props::aliases::spec(Hooks::noop()),
+            faulty.clone() as Arc<dyn PropertyStore>,
+        ));
+        let fx = make_db_fixture().await;
+        let id = seed_account(&fx.db, "user@example.com");
+        seed(&domains, "example.com", |_| {}).await;
+        seed_alias(&aliases, "mc@example.com", "user@example.com", true).await;
+        for fail_list in [false, true] {
+            faulty.set_fail_get(true);
+            faulty.fail_list.store(fail_list, Ordering::SeqCst);
+            let out = identity_get(&fx.db, domains.clone(), &aliases, id, serde_json::json!({}))
+                .await
+                .unwrap();
+            assert_eq!(list_count(&out), 1);
+            assert_eq!(out["list"][0]["email"], "user@example.com");
+        }
     }
 }

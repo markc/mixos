@@ -302,7 +302,14 @@ async fn dispatch(
         "EmailSubmission/changes" => submission::changes(db, account_id, args).await,
 
         "Identity/get" => {
-            submission::identity_get(db, domains_runtime.clone(), account_id, args).await
+            submission::identity_get(
+                db,
+                domains_runtime.clone(),
+                aliases_runtime,
+                account_id,
+                args,
+            )
+            .await
         }
         "EmailSubmission/set" => {
             submission::set(db, mailstore, aliases_runtime, account_id, args).await
