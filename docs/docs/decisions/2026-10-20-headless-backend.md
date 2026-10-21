@@ -312,12 +312,14 @@ The interface name is part of every protocol error's identity:
   assigning ownership across the class. Separately,
   `XdgSurfaceStableTest.attaching_buffer_to_unconfigured_xdg_surface_is_an_error`
   attaches after `get_xdg_surface` without a role or commit; its trace shows
-  no error where error 3 is required. Smithay's role pre-commit checks at
+  no error where error 3 is required in the original recording. Smithay's
+  role pre-commit checks at
   `vendor/smithay/src/wayland/shell/xdg/mod.rs:1673` (posted at `1721`) and
   `2067` (posted at `2116`), installed by
   `xdg/handlers/surface.rs:130,208`, do not cover this attach-only sequence.
-  **Missing attach-time validation** remains native conformance work outside
-  Phase 6; it does not establish a configure-state defect.
+  The native follow-up below fixes
+  this **missing attach-time validation**; it does not establish a
+  configure-state defect.
 - **`zwlr_layer_surface_v1`, error 0 = `invalid_surface_state`.** The 79-case
   baseline class is on this interface, not `zwlr_layer_shell_v1`:
   `Layer/LayerSurfaceLayerTest.surface_on_lower_layer_is_initially_placed_below/0`
@@ -367,3 +369,27 @@ The interface name is part of every protocol error's identity:
 All failed cases remain in the expectation file. This phase fixes the shim and
 records evidence for follow-up without changing normal compd policy. Failure
 class counts alone do not establish that every case is a compositor defect.
+
+### Native xdg attach validation follow-up
+
+The native frontend now checks non-null `wl_surface.attach` requests before
+changing pending buffer state. A live xdg wrapper must have its initial
+configure sent and acknowledged; otherwise the wrapper receives
+`xdg_surface.unconfigured_buffer` immediately, including when no role or
+commit follows. The check reads current role state and preserves NULL attaches,
+ordinary surfaces, valid toplevel and popup handshakes, wrapper recreation and
+the existing retention of pending configures across unmap. Healthy attaches
+use one surface-state lock without collecting wrapper handles; errors are
+posted after locks are released.
+
+Ten raw-wire regression guards cover refusal and acceptance, stale ACKs after
+unmap, proper remapping, wrapper recreation and both popup outcomes. They live
+with the existing xdg wrapper guards in vendored Smithay and are registered in
+`tools/smithay_guards.mix` and `vendor/smithay/PATCHES.md`.
+
+The unchanged canonical v1.8.1 suite now records **362 passed, 562 failed, 304
+skipped, 0 flaky**. Only
+`XdgSurfaceStableTest.attaching_buffer_to_unconfigured_xdg_surface_is_an_error`
+changed from failed to passed; all other 1,227 outcomes are unchanged. The
+complete run retained 1,228 JSON reports and 237 placement checks, with no
+process deadline or signal. No canonical fixture or exemption was changed.

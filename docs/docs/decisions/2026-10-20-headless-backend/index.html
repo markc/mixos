@@ -210,6 +210,7 @@
                     <nav id="toc-nav">
                         <a href="#deployment-and-recording">Deployment and recording</a>
                         <a href="#wayland-conformance-phase-6">Wayland conformance (Phase 6)</a>
+                        <a href="#native-xdg-attach-validation-follow-up" class="toc-h3">Native xdg attach validation follow-up</a>
                     </nav>
                 </div>
             </div>
@@ -507,12 +508,14 @@ does not classify the other 318 cases; per-case traces are required before
 assigning ownership across the class. Separately,
 <code>XdgSurfaceStableTest.attaching_buffer_to_unconfigured_xdg_surface_is_an_error</code>
 attaches after <code>get_xdg_surface</code> without a role or commit; its trace shows
-no error where error 3 is required. Smithay's role pre-commit checks at
+no error where error 3 is required in the original recording. Smithay's
+role pre-commit checks at
 <code>vendor/smithay/src/wayland/shell/xdg/mod.rs:1673</code> (posted at <code>1721</code>) and
 <code>2067</code> (posted at <code>2116</code>), installed by
 <code>xdg/handlers/surface.rs:130,208</code>, do not cover this attach-only sequence.
-<strong>Missing attach-time validation</strong> remains native conformance work outside
-Phase 6; it does not establish a configure-state defect.</li>
+The native follow-up below fixes
+this <strong>missing attach-time validation</strong>; it does not establish a
+configure-state defect.</li>
 <li><strong><code>zwlr_layer_surface_v1</code>, error 0 = <code>invalid_surface_state</code>.</strong> The 79-case
 baseline class is on this interface, not <code>zwlr_layer_shell_v1</code>:
 <code>Layer/LayerSurfaceLayerTest.surface_on_lower_layer_is_initially_placed_below/0</code>
@@ -562,6 +565,26 @@ They are not evidence of a protocol-permitted refusal of a valid client.</li>
 <p>All failed cases remain in the expectation file. This phase fixes the shim and
 records evidence for follow-up without changing normal compd policy. Failure
 class counts alone do not establish that every case is a compositor defect.</p>
+<h3 id="native-xdg-attach-validation-follow-up">Native xdg attach validation follow-up</h3>
+<p>The native frontend now checks non-null <code>wl_surface.attach</code> requests before
+changing pending buffer state. A live xdg wrapper must have its initial
+configure sent and acknowledged; otherwise the wrapper receives
+<code>xdg_surface.unconfigured_buffer</code> immediately, including when no role or
+commit follows. The check reads current role state and preserves NULL attaches,
+ordinary surfaces, valid toplevel and popup handshakes, wrapper recreation and
+the existing retention of pending configures across unmap. Healthy attaches
+use one surface-state lock without collecting wrapper handles; errors are
+posted after locks are released.</p>
+<p>Ten raw-wire regression guards cover refusal and acceptance, stale ACKs after
+unmap, proper remapping, wrapper recreation and both popup outcomes. They live
+with the existing xdg wrapper guards in vendored Smithay and are registered in
+<code>tools/smithay_guards.mix</code> and <code>vendor/smithay/PATCHES.md</code>.</p>
+<p>The unchanged canonical v1.8.1 suite now records <strong>362 passed, 562 failed, 304
+skipped, 0 flaky</strong>. Only
+<code>XdgSurfaceStableTest.attaching_buffer_to_unconfigured_xdg_surface_is_an_error</code>
+changed from failed to passed; all other 1,227 outcomes are unchanged. The
+complete run retained 1,228 JSON reports and 237 placement checks, with no
+process deadline or signal. No canonical fixture or exemption was changed.</p>
         </article>
         <p class="doc-source"><a href="/docs/decisions/2026-10-20-headless-backend.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
     </div>
