@@ -134,7 +134,7 @@ impl Widget for IconButton {
                 painter.rect_filled(rect, radius, fill);
             }
             if let Some(outline) = outline {
-                painter.rect_stroke(rect, radius, Stroke::new(1.0, outline), StrokeKind::Inside);
+                painter.rect_stroke(rect, radius, Stroke::new(Chrome::of(ui.ctx()).style.hairline_width as f32, outline), StrokeKind::Inside);
             }
             paint_icon(
                 ui,
@@ -288,7 +288,7 @@ impl Widget for PushButton {
                     painter.rect_stroke(
                         rect,
                         corner,
-                        Stroke::new(1.0, p.field_border),
+                        Stroke::new(Chrome::of(ui.ctx()).style.hairline_width as f32, p.field_border),
                         StrokeKind::Inside,
                     );
                 }

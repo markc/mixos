@@ -497,7 +497,7 @@ impl Widget for Slider<'_> {
                     ),
                 )
                 .round_to_pixels(ppp);
-                painter.rect_filled(knob, 0.0, p.card);
+                painter.rect_filled(knob, Chrome::of(ui.ctx()).style.square_radius, p.card);
                 chrome::bevel(painter, knob, true, p);
             } else {
                 let (radius, fill, ring) = if chrome.style.knob == Knob::Ringed {
@@ -544,7 +544,7 @@ impl Widget for Slider<'_> {
                 );
                 painter.circle_filled(centre, radius, fill);
                 if let Some(ring) = ring {
-                    painter.circle_stroke(centre, radius, Stroke::new(1.0, ring));
+                    painter.circle_stroke(centre, radius, Stroke::new(Chrome::of(ui.ctx()).style.hairline_width as f32, ring));
                 }
             }
         }

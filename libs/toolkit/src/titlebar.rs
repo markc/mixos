@@ -45,13 +45,7 @@ use egui::{
     UiBuilder, ViewportBuilder, ViewportCommand, WidgetInfo, WidgetType, pos2, vec2,
 };
 
-/// One caption button's width (§3.2).
-pub const BUTTON_WIDTH: f32 = 46.0;
 
-/// Thickness of a resize zone along an edge; corners are [`CORNER`] square
-/// and win where they overlap the edges (§3.1).
-pub const EDGE: f32 = 5.0;
-pub const CORNER: f32 = 12.0;
 
 
 fn label(key: &str) -> String {
@@ -526,11 +520,11 @@ fn caption_button(ui: &mut Ui, rect: Rect, caption: Caption, chrome: &Chrome) {
     };
     let painter = ui.painter();
     if let Some(fill) = fill {
-        painter.rect_filled(rect, 0.0, fill);
+        painter.rect_filled(rect, Chrome::of(ui.ctx()).style.square_radius, fill);
     }
     let size = chrome.metrics.caption_glyph;
     let b = Rect::from_center_size(rect.center(), vec2(size, size));
-    let line = Stroke::new(1.0, glyph);
+    let line = Stroke::new(Chrome::of(ui.ctx()).style.hairline_width as f32, glyph);
     match caption {
         Caption::Minimize => {
             painter.line_segment([b.left_center(), b.right_center()], line);
@@ -543,7 +537,7 @@ fn caption_button(ui: &mut Ui, rect: Rect, caption: Caption, chrome: &Chrome) {
                 pos2(b.left(), b.top() + inset),
                 pos2(b.right() - inset, b.bottom()),
             );
-            painter.rect_stroke(front, 0.0, line, StrokeKind::Middle);
+            painter.rect_stroke(front, Chrome::of(ui.ctx()).style.square_radius, line, StrokeKind::Middle);
             let back = [
                 pos2(front.left() + inset, front.top()),
                 pos2(front.left() + inset, b.top()),
@@ -554,7 +548,7 @@ fn caption_button(ui: &mut Ui, rect: Rect, caption: Caption, chrome: &Chrome) {
             painter.add(egui::Shape::line(back.to_vec(), line));
         }
         Caption::Maximize => {
-            painter.rect_stroke(b, 0.0, line, StrokeKind::Middle);
+            painter.rect_stroke(b, Chrome::of(ui.ctx()).style.square_radius, line, StrokeKind::Middle);
         }
         Caption::Close => {
             painter.line_segment([b.left_top(), b.right_bottom()], line);

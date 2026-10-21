@@ -1430,7 +1430,7 @@ fn paint(
         match (entry, line) {
             (Entry::Separator, _) => {
                 let y = painter.round_to_pixel_center(rect.center().y);
-                painter.hline(rect.x_range(), y, Stroke::new(1.0, p.separator));
+                painter.hline(rect.x_range(), y, Stroke::new(chrome.style.hairline_width as f32, p.separator));
             }
             (Entry::Row(row), Some((label, right))) => {
                 let lit = highlighted == Some(index) && row.enabled;

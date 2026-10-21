@@ -717,10 +717,16 @@
           "classic": 6
         },
         "scroll_width_hot": {
-          "all": 10
+          "plain": 10,
+          "pro": 10,
+          "studio": 10,
+          "classic": 6
         },
         "scroll_allocated": {
-          "all": 6
+          "plain": 6,
+          "pro": 6,
+          "studio": 6,
+          "classic": 0
         },
         "scroll_margin": {
           "all": 4
@@ -732,13 +738,19 @@
           "all": 12
         },
         "scroll_handle_alpha_rest": {
-          "all": 0.6
+          "plain": 0.6,
+          "pro": 0.6,
+          "studio": 0.6,
+          "classic": 0
         },
         "scroll_track_alpha_rest": {
           "all": 0
         },
         "scroll_track_alpha_active": {
-          "all": 0
+          "plain": 0,
+          "pro": 0,
+          "studio": 0,
+          "classic": 0.4
         },
         "scroll_track_alpha_hot": {
           "plain": 0.4,
@@ -780,6 +792,15 @@
         },
         "field_focus_role": {
           "all": "accent_text"
+        },
+        "dark_luminance": {
+          "all": 0.18
+        },
+        "square_radius": {
+          "all": 0
+        },
+        "bar_padding_y": {
+          "all": 0
         }
       },
       "styles": {},

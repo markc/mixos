@@ -516,8 +516,8 @@ style! {
     field_focus_role: FieldFocusRole = NONE,
     field_focus_width: f64 = Range(0.0, 3.0),
     field_height: f64 = LENGTH,
-    field_padding_x: f64 = LENGTH,
-    field_padding_y: f64 = LENGTH,
+    field_padding_x: f64 = Range(0.0, 127.0),
+    field_padding_y: f64 = Range(0.0, 127.0),
     field_radius: u8 = RADIUS,
     fine_scrub_rate: f64 = Range(0.001, 0.5),
     fine_span: f64 = Range(0.0, 1000.0),
@@ -554,7 +554,7 @@ style! {
     md_measure: f64 = LENGTH,
     md_quote_indent: f64 = LENGTH,
     md_quote_rule: f64 = LENGTH,
-    menu_margin: f64 = LENGTH,
+    menu_margin: f64 = Range(0.0, 127.0),
     menu_scroll_speed: f64 = Range(100.0, 3000.0),
     menu_search_width: f64 = LENGTH,
     menu_separator_height: f64 = LENGTH,
@@ -564,11 +564,11 @@ style! {
     pair_active_mix: f64 = ALPHA,
     pair_hover_mix: f64 = ALPHA,
     panel_card_after: f64 = LENGTH,
-    panel_card_margin_bottom: f64 = LENGTH,
-    panel_card_margin_collapsed: f64 = LENGTH,
-    panel_card_margin_left: f64 = LENGTH,
-    panel_card_margin_right: f64 = LENGTH,
-    panel_card_margin_top: f64 = LENGTH,
+    panel_card_margin_bottom: f64 = Range(0.0, 127.0),
+    panel_card_margin_collapsed: f64 = Range(0.0, 127.0),
+    panel_card_margin_left: f64 = Range(0.0, 127.0),
+    panel_card_margin_right: f64 = Range(0.0, 127.0),
+    panel_card_margin_top: f64 = Range(0.0, 127.0),
     panel_drag_band: f64 = LENGTH,
     panel_drop_inset_horizontal: f64 = LENGTH,
     panel_drop_inset_vertical: f64 = LENGTH,
@@ -589,7 +589,7 @@ style! {
     panel_pill_size: f64 = LENGTH,
     panel_pro_after: f64 = LENGTH,
     panel_pro_hover_alpha: f64 = ALPHA,
-    panel_pro_margin: f64 = LENGTH,
+    panel_pro_margin: f64 = Range(0.0, 127.0),
     panel_pro_min: f64 = LENGTH,
     panel_pro_pad: f64 = LENGTH,
     panel_pro_radius: u8 = RADIUS,
@@ -597,10 +597,10 @@ style! {
     panel_section_size: f64 = LENGTH,
     panel_strip: f64 = LENGTH,
     popup_shadow_alpha: f64 = ALPHA,
-    popup_shadow_blur: f64 = LENGTH,
-    popup_shadow_offset_x: f64 = LENGTH,
-    popup_shadow_offset_y: f64 = LENGTH,
-    popup_shadow_spread: f64 = LENGTH,
+    popup_shadow_blur: f64 = Range(0.0, 255.0),
+    popup_shadow_offset_x: f64 = Range(-128.0, 127.0),
+    popup_shadow_offset_y: f64 = Range(-128.0, 127.0),
+    popup_shadow_spread: f64 = Range(0.0, 255.0),
     push_label_size: f64 = LENGTH,
     resize_corner: f64 = Range(2.0, 32.0),
     resize_edge: f64 = Range(2.0, 16.0),
@@ -618,7 +618,7 @@ style! {
     scroll_width_hot: f64 = LENGTH,
     scrub_rate: f64 = Range(0.05, 5.0),
     search_icon: f64 = LENGTH,
-    search_lead: f64 = LENGTH,
+    search_lead: f64 = Range(0.0, 127.0),
     shortcut_gap: f64 = LENGTH,
     slider_big_step: f64 = LENGTH,
     slider_double_click: f64 = LENGTH,
@@ -677,10 +677,10 @@ style! {
     tabs_studio_close_radius: f64 = LENGTH,
     tabs_studio_gap: f64 = LENGTH,
     tabs_studio_hover_alpha: f64 = ALPHA,
-    tabs_studio_margin_bottom: f64 = LENGTH,
-    tabs_studio_margin_left: f64 = LENGTH,
-    tabs_studio_margin_right: f64 = LENGTH,
-    tabs_studio_margin_top: f64 = LENGTH,
+    tabs_studio_margin_bottom: f64 = Range(0.0, 127.0),
+    tabs_studio_margin_left: f64 = Range(0.0, 127.0),
+    tabs_studio_margin_right: f64 = Range(0.0, 127.0),
+    tabs_studio_margin_top: f64 = Range(0.0, 127.0),
     tabs_studio_meta_gap: f64 = LENGTH,
     tabs_studio_meta_size: f64 = LENGTH,
     tabs_studio_name_left: f64 = LENGTH,
@@ -711,11 +711,14 @@ style! {
     value_unit_size: f64 = LENGTH,
     value_width: f64 = LENGTH,
     weak_alpha: f64 = ALPHA,
-    window_margin: f64 = LENGTH,
-    window_shadow_blur: f64 = LENGTH,
-    window_shadow_offset_x: f64 = LENGTH,
-    window_shadow_offset_y: f64 = LENGTH,
-    window_shadow_spread: f64 = LENGTH,
+    window_margin: f64 = Range(0.0, 127.0),
+    window_shadow_blur: f64 = Range(0.0, 255.0),
+    window_shadow_offset_x: f64 = Range(-128.0, 127.0),
+    window_shadow_offset_y: f64 = Range(-128.0, 127.0),
+    window_shadow_spread: f64 = Range(0.0, 255.0),
+    dark_luminance: f64 = ALPHA,
+    square_radius: u8 = RADIUS,
+    bar_padding_y: f64 = Range(0.0, 127.0),
 }
 
 /// Tokens earlier designs authored that no longer select anything. They are
@@ -744,7 +747,8 @@ fn select(
     scheme: Scheme,
     style: Option<Style>,
 ) -> Result<ResolvedStyle, Vec<DesignDiagnostic>> {
-    let styles = compile_styles(family)?;
+    let (family, _) = complete_family(family, crate::compat::table());
+    let styles = compile_styles(&family)?;
     let name = style.map_or_else(
         || family.schemes[scheme.name()].clone(),
         |s| s.name().to_owned(),
@@ -756,6 +760,30 @@ fn select(
             format!("the selected style `{name}` is not a style in `styles`"),
         )]
     })
+}
+
+fn complete_family(family: &StyleFamilySource, table: &crate::compat::Table)
+    -> (StyleFamilySource, Vec<DesignDiagnostic>)
+{
+    let mut family = family.clone();
+    let mut diagnostics = Vec::new();
+    for (version, entries) in &table.versions {
+        for (name, tokens) in &entries.styles {
+            if !family.styles.contains_key(name) {
+                family.styles.insert(name.clone(), tokens.clone());
+                diagnostics.push(DesignDiagnostic::info("defaulted-style", format!("{PATH}.styles.{name}"),
+                    format!("defaulted from compatibility {version}")));
+            }
+        }
+        for (scheme, style) in &entries.schemes {
+            if Scheme::from_name(scheme).is_some() && !family.schemes.contains_key(scheme) {
+                family.schemes.insert(scheme.clone(), style.clone());
+                diagnostics.push(DesignDiagnostic::info("defaulted-scheme", format!("{PATH}.schemes.{scheme}"),
+                    format!("defaulted from compatibility {version}")));
+            }
+        }
+    }
+    (family, diagnostics)
 }
 
 /// The scheme's own style.
@@ -889,9 +917,9 @@ pub(crate) fn default_diagnostics(source: &DesignV1Source) -> Vec<DesignDiagnost
     let Some(family) = &source.families.style else {
         return Vec::new();
     };
-    let mut diagnostics = Vec::new();
+    let (family, mut diagnostics) = complete_family(family, crate::compat::table());
     for (name, tokens) in &family.styles {
-        let filled = filled_tokens(family, name, tokens, crate::compat::table());
+        let filled = filled_tokens(&family, name, tokens, crate::compat::table());
         for token in filled.keys().filter(|token| !tokens.contains_key(*token)) {
             diagnostics.push(DesignDiagnostic::info(
                 "defaulted-style-token",
@@ -1129,6 +1157,10 @@ mod tests {
             menu_highlight_radius: 0,
             field_radius: 0,
             scroll_width: 6.0,
+            scroll_width_hot: 6.0,
+            scroll_allocated: 0.0,
+            scroll_handle_alpha_rest: 0.0,
+            scroll_track_alpha_active: 0.4,
             scroll_track_alpha_hot: 0.7,
             radius_sm: 0,
             radius: 0,

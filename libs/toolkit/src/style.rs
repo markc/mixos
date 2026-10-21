@@ -297,6 +297,7 @@ pub fn apply(ctx: &egui::Context, theme: &Theme) {
     crate::chrome::install(ctx, &crate::chrome::Chrome::for_theme(theme));
     crate::icons::install(ctx, crate::icons::stroke_width(theme));
     crate::fonts::install(ctx, theme);
+    ctx.request_repaint();
 }
 
 /// The bar geometry and state opacities of the installed style.

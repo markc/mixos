@@ -64,6 +64,9 @@ pub(crate) fn style_entry(
         "fine_span" => vec!["input", "text", "layout"],
         "hot_distance" => vec!["input", "paint"],
         "icon_mask" => vec!["paint", "resources"],
+        "dark_luminance" => vec!["paint"],
+        "square_radius" => vec!["layout", "paint"],
+        "bar_padding_y" => vec!["layout"],
         _ => panic!("style token has no audited domains: {name}"),
     };
     let group = if name.starts_with("field_") || name.starts_with("value_") {

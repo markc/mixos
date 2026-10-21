@@ -306,7 +306,7 @@ fn pro_group<R>(
         ui.painter().hline(
             menu_rect.center().x - half..=menu_rect.center().x + half,
             y,
-            Stroke::new(1.0, ink),
+            Stroke::new(Chrome::of(ui.ctx()).style.hairline_width as f32, ink),
         );
     }
 
@@ -388,7 +388,7 @@ fn card_group<R>(
         .stroke(if chrome.style.bevels {
             Stroke::NONE
         } else {
-            Stroke::new(1.0, p.card_border)
+            Stroke::new(Chrome::of(ui.ctx()).style.hairline_width as f32, p.card_border)
         })
         .corner_radius(chrome.metrics.radius)
         .inner_margin(margin);
@@ -609,7 +609,7 @@ fn pill(ui: &Ui, chrome: &Chrome, rect: Rect, selected: bool, hovered: bool) {
             painter.rect_stroke(
                 rect,
                 radius,
-                Stroke::new(1.0, p.field_border),
+                Stroke::new(Chrome::of(ui.ctx()).style.hairline_width as f32, p.field_border),
                 StrokeKind::Inside,
             );
         }

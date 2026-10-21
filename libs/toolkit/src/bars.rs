@@ -48,7 +48,7 @@ fn rule(ui: &Ui, from: egui::Pos2, to: egui::Pos2) {
     let colour = Chrome::of(ui.ctx()).palette.separator;
     // A layer painter: the rail's rule lies outside the rail.
     let painter = ui.ctx().layer_painter(ui.layer_id());
-    let stroke = Stroke::new(1.0, colour);
+    let stroke = Stroke::new(Chrome::of(ui.ctx()).style.hairline_width as f32, colour);
     if from.y == to.y {
         painter.hline(from.x..=to.x, painter.round_to_pixel_center(from.y), stroke);
     } else {
@@ -63,7 +63,7 @@ pub fn options<R>(ui: &mut Ui, contents: impl FnOnce(&mut Ui) -> R) -> InnerResp
         ui,
         Margin::symmetric(
             crate::chrome::Chrome::of(ui.ctx()).style.bars_bar_inset as i8,
-            0,
+            Chrome::of(ui.ctx()).style.bar_padding_y as i8,
         ),
     );
     Panel::top("toolkit-options-bar")
@@ -97,7 +97,7 @@ pub fn status<R>(ui: &mut Ui, contents: impl FnOnce(&mut Ui) -> R) -> InnerRespo
         ui,
         Margin::symmetric(
             crate::chrome::Chrome::of(ui.ctx()).style.bars_bar_inset as i8,
-            0,
+            Chrome::of(ui.ctx()).style.bar_padding_y as i8,
         ),
     );
     Panel::bottom("toolkit-status-bar")
@@ -214,7 +214,7 @@ pub fn divider(ui: &mut Ui, height: f32) {
     ui.painter().vline(
         x,
         rect.y_range(),
-        Stroke::new(1.0, Chrome::of(ui.ctx()).palette.separator),
+        Stroke::new(Chrome::of(ui.ctx()).style.hairline_width as f32, Chrome::of(ui.ctx()).palette.separator),
     );
 }
 
@@ -225,7 +225,7 @@ pub fn hairline(ui: &mut Ui) -> Rect {
     ui.painter().hline(
         rect.x_range(),
         y,
-        Stroke::new(1.0, Chrome::of(ui.ctx()).palette.separator),
+        Stroke::new(Chrome::of(ui.ctx()).style.hairline_width as f32, Chrome::of(ui.ctx()).palette.separator),
     );
     rect
 }

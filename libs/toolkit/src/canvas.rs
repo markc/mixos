@@ -28,7 +28,7 @@ pub fn surround(ui: &Ui, rect: Rect) {
     let chrome = Chrome::of(ui.ctx());
     let p = &chrome.palette;
     let painter = ui.painter_at(rect);
-    painter.rect_filled(rect, 0.0, p.canvas);
+    painter.rect_filled(rect, Chrome::of(ui.ctx()).style.square_radius, p.canvas);
     if !chrome.style.canvas_dots || p.canvas_dot == p.canvas {
         return;
     }
@@ -45,7 +45,7 @@ pub fn surround(ui: &Ui, rect: Rect) {
                     pos2(x, y),
                     Vec2::splat(crate::chrome::Chrome::of(ui.ctx()).style.canvas_dot_size as f32),
                 ),
-                0.0,
+                Chrome::of(ui.ctx()).style.square_radius,
                 p.canvas_dot,
             );
             x += crate::chrome::Chrome::of(ui.ctx()).style.canvas_dot_pitch as f32;
@@ -107,7 +107,7 @@ pub fn scrollbars(ui: &mut Ui, id: Id, viewport: Rect, content: Vec2, offset: &m
         viewport.max - Vec2::splat(crate::chrome::Chrome::of(ui.ctx()).style.canvas_bar as f32),
     );
     let corner = Rect::from_min_max(inner.max, viewport.max);
-    ui.painter().rect_filled(corner, 0.0, p.chrome);
+    ui.painter().rect_filled(corner, Chrome::of(ui.ctx()).style.square_radius, p.chrome);
     for axis in [0, 1] {
         let track = if axis == 0 {
             Rect::from_min_max(
@@ -140,8 +140,8 @@ pub fn scrollbars(ui: &mut Ui, id: Id, viewport: Rect, content: Vec2, offset: &m
 fn bar(ui: &mut Ui, id: Id, axis: usize, track: Rect, view: f32, content: f32, offset: &mut f32) {
     let p = Chrome::of(ui.ctx()).palette;
     let painter = ui.painter();
-    painter.rect_filled(track, 0.0, p.chrome);
-    let rule = Stroke::new(1.0, p.separator);
+    painter.rect_filled(track, Chrome::of(ui.ctx()).style.square_radius, p.chrome);
+    let rule = Stroke::new(Chrome::of(ui.ctx()).style.hairline_width as f32, p.separator);
     if axis == 0 {
         painter.hline(
             track.x_range(),

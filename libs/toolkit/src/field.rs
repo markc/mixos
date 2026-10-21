@@ -337,23 +337,11 @@ impl Widget for ValueField<'_> {
             let mut text = edit.text.take().unwrap_or_else(|| format(*value, fine));
             let output = TextEdit::singleline(&mut text)
                 .id(id)
-                .frame(egui::Frame::NONE)
-                .margin(Margin::symmetric(
-                    crate::chrome::Chrome::of(ui.ctx()).style.field_padding_x as i8,
-                    crate::chrome::Chrome::of(ui.ctx()).style.field_padding_y as i8,
-                ))
+                .frame(egui::Frame::new().inner_margin(field.padding))
                 .font(number_font.clone())
                 .horizontal_align(Align::RIGHT)
                 .vertical_align(Align::Center)
-                .desired_width(
-                    inner.width()
-                        - Margin::symmetric(
-                            crate::chrome::Chrome::of(ui.ctx()).style.field_padding_x as i8,
-                            crate::chrome::Chrome::of(ui.ctx()).style.field_padding_y as i8,
-                        )
-                        .sum()
-                        .x,
-                )
+                .desired_width(inner.width())
                 .min_size(inner.size());
             response = cell.add(output);
             if response.changed()
@@ -427,7 +415,8 @@ impl Widget for ValueField<'_> {
         }
         if chrome.style.bevels {
             chrome::bevel(&painter, rect, false, &p);
-        } else {
+        }
+        if !chrome.style.bevels || editing {
             // An open editor shows focus as a text field does (§3.15).
             painter.rect_stroke(
                 rect,
@@ -495,13 +484,14 @@ impl Widget for TextField<'_> {
                     egui::Frame::new()
                         .inner_margin(padding)
                         .corner_radius(field.radius)
-                        .fill(chrome.palette.field),
+                        .fill(ui.visuals().text_edit_bg_color()),
                 )
                 .min_size(vec2(0.0, field.height)),
         );
         if chrome.style.bevels {
             chrome::bevel(ui.painter(), response.rect, false, &chrome.palette);
-        } else {
+        }
+        if !chrome.style.bevels || response.has_focus() {
             ui.painter().rect_stroke(
                 response.rect,
                 field.radius,

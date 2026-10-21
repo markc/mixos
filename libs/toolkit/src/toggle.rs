@@ -225,14 +225,14 @@ impl Widget for Switch<'_> {
             if chrome.style.switch == SwitchStyle::Block {
                 // Classic's knob is undetermined (§5.4): a raised `card`
                 // block the knob's diameter square, as its slider knob is.
-                painter.rect_filled(track, 0.0, if *self.on { p.accent } else { p.field });
+                painter.rect_filled(track, Chrome::of(ui.ctx()).style.square_radius, if *self.on { p.accent } else { p.field });
                 chrome::bevel(painter, track, false, p);
                 let knob = Rect::from_center_size(
                     centre,
                     Vec2::splat(2.0 * crate::chrome::Chrome::of(ui.ctx()).style.toggle_knob as f32),
                 )
                 .round_to_pixels(ui.pixels_per_point());
-                painter.rect_filled(knob, 0.0, p.card);
+                painter.rect_filled(knob, Chrome::of(ui.ctx()).style.square_radius, p.card);
                 chrome::bevel(painter, knob, true, p);
             } else {
                 painter.rect_filled(

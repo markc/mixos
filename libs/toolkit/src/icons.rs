@@ -11,7 +11,7 @@
 //!
 //! **Colour comes from the theme.** Upstream SVGs stroke in `currentColor`.
 //! The loader has no current colour, so the stroke is rendered as a white
-//! mask ([`MASK`]) and tinted at draw time with the widget's text colour.
+//! mask (`style.icon_mask`) and tinted at draw time with the widget's text colour.
 //! The mask is a rendering device, not a UI colour: every visible colour is
 //! the tint.
 
@@ -23,10 +23,6 @@ use std::borrow::Cow;
 /// The stroke used when the design authors none: the shipped baseline, which
 /// matches the `icon.stroke_width` token (1.5 on the 24-unit grid).
 pub const DEFAULT_STROKE: f32 = 1.5;
-
-/// The stroke colour the SVG is rasterised in before tinting. White, so
-/// multiplying by the tint yields the tint exactly.
-pub const MASK: &str = "#fff";
 
 macro_rules! icons {
     ($($variant:ident => $file:literal),+ $(,)?) => {
@@ -185,17 +181,19 @@ pub fn stroke_of(ctx: &egui::Context) -> f32 {
         .unwrap_or(DEFAULT_STROKE)
 }
 
-/// `icon`'s SVG source with its stroke at `stroke` and coloured [`MASK`].
+/// `icon`'s SVG source with its stroke at `stroke` and coloured `style.icon_mask`.
 pub fn source(icon: Icon, stroke: f32) -> String {
+    let mask = mask_string(crate::style::default_tokens().icon_mask);
     icon.svg()
-        .replace("stroke=\"currentColor\"", &format!("stroke=\"{MASK}\""))
+        .replace("stroke=\"currentColor\"", &format!("stroke=\"{mask}\""))
         .replace("stroke-width=\"2\"", &format!("stroke-width=\"{stroke}\""))
 }
 
 /// `icon` as an egui image `size` points square, stroked at `stroke` and
 /// tinted `colour`.
 pub fn image(icon: Icon, stroke: f32, size: f32, colour: Color32) -> Image<'static> {
-    let uri = format!("bytes://lucide/{}@{stroke}.svg", icon.name());
+    let mask = mask_string(crate::style::default_tokens().icon_mask);
+    let uri = format!("bytes://lucide/{}@{stroke}@{mask}.svg", icon.name());
     let bytes = source(icon, stroke).into_bytes();
     Image::new(ImageSource::Bytes {
         uri: Cow::Owned(uri),
@@ -208,8 +206,7 @@ pub fn image(icon: Icon, stroke: f32, size: f32, colour: Color32) -> Image<'stat
 /// The installed stroke and mask, resolved for the context being drawn.
 pub fn image_of(ctx: &egui::Context, icon: Icon, size: f32, colour: Color32) -> Image<'static> {
     let stroke = stroke_of(ctx);
-    let [r, g, b, a] = crate::chrome::Chrome::of(ctx).style.icon_mask.0;
-    let mask = format!("#{r:02x}{g:02x}{b:02x}{a:02x}");
+    let mask = mask_string(crate::chrome::Chrome::of(ctx).style.icon_mask);
     let uri = format!("bytes://lucide/{}@{stroke}@{mask}.svg", icon.name());
     let bytes = icon
         .svg()
@@ -222,6 +219,11 @@ pub fn image_of(ctx: &egui::Context, icon: Icon, size: f32, colour: Color32) -> 
     })
     .fit_to_exact_size(Vec2::splat(size))
     .tint(colour)
+}
+
+fn mask_string(mask: design::family::style::StyleColour) -> String {
+    let [r, g, b, a] = mask.0;
+    format!("#{r:02x}{g:02x}{b:02x}{a:02x}")
 }
 
 #[cfg(test)]
@@ -242,7 +244,7 @@ mod tests {
     fn stroke_and_colour_are_rewritten() {
         let svg = source(Icon::Play, 1.25);
         assert!(svg.contains("stroke-width=\"1.25\""));
-        assert!(svg.contains(&format!("stroke=\"{MASK}\"")));
+        assert!(svg.contains("stroke=\"#ffffffff\""));
         assert!(!svg.contains("currentColor"));
     }
 

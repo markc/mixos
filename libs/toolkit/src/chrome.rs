@@ -49,13 +49,11 @@ use egui::{
 /// (the shipped Pro is dark in both modes, its light mode being medium grey;
 /// Studio follows the mode; Classic is light).
 pub fn dark_base(theme: &Theme) -> bool {
-    let chrome = Chrome::for_theme(theme);
+    let chrome = Chrome::base_for_theme(theme);
     chrome.is_dark(theme.mode())
 }
 
-/// A chrome surface at or below this relative luminance is dark: mid grey,
-/// CIE L* 50.
-const DARK_LUMINANCE: f32 = 0.18;
+
 
 macro_rules! palette {
     ($($role:ident),+ $(,)?) => {
@@ -129,6 +127,32 @@ palette!(
 );
 
 impl Palette {
+    /// Slots a tuned role owns in either renderer family. Untuned pair
+    /// surfaces keep their pair writers.
+    pub fn slots(role: &str, style: &ResolvedStyle) -> &'static [&'static str] {
+        match role {
+            "chrome" => &["panel_fill"],
+            "card" => &["window_fill", "faint_bg_color", "widgets.noninteractive.bg_fill", "widgets.noninteractive.weak_bg_fill"],
+            "card_border" => &["window_stroke.color"],
+            "field" => &["extreme_bg_color", "code_bg_color", "text_edit_bg_color", "widgets.inactive.bg_fill", "widgets.inactive.weak_bg_fill"],
+            "accent" if style.selection == Selection::Accent => &["hyperlink_color", "selection.bg_fill"],
+            "accent" => &["hyperlink_color"],
+            "accent_soft" if style.selection == Selection::AccentSoft => &["selection.bg_fill"],
+            "accent_text" => &["selection.stroke.color"],
+            "warning" => &["warn_fg_color"],
+            "danger" => &["error_fg_color"],
+            "text" => &["override_text_color", "widgets.inactive.fg_stroke.color", "widgets.hovered.fg_stroke.color", "widgets.open.fg_stroke.color", "widgets.active.fg_stroke.color"],
+            "text_dim" => &["widgets.noninteractive.fg_stroke.color"],
+            "separator" => &["widgets.noninteractive.bg_stroke.color"],
+            "hover" => &["widgets.hovered.bg_fill", "widgets.hovered.weak_bg_fill", "widgets.open.bg_fill", "widgets.open.weak_bg_fill"],
+            "pressed" => &["widgets.active.bg_fill", "widgets.active.weak_bg_fill"],
+            "field_border" => &["widgets.inactive.bg_stroke.color", "widgets.hovered.bg_stroke.color", "widgets.open.bg_stroke.color"],
+            "accent_border" => &["widgets.active.bg_stroke.color"],
+            "shadow" => &["window_shadow.color", "popup_shadow.color"],
+            _ => &[],
+        }
+    }
+
     /// The roles read back from a pair-based egui style, for the hue schemes
     /// and for any role a design leaves out. Close keeps the destructive
     /// colour it always had, with the panel colour as its glyph.
@@ -397,6 +421,12 @@ impl Chrome {
     /// ([`Metrics::from_egui`]), so its spacing and radii still size the
     /// title bar and menus.
     pub fn for_theme(theme: &Theme) -> Self {
+        let mut chrome = Self::base_for_theme(theme);
+        chrome.palette = chrome.palette.with_roles(&theme.overlay().chrome);
+        chrome
+    }
+
+    pub(crate) fn base_for_theme(theme: &Theme) -> Self {
         let style = theme.style();
         let pairs = crate::style::pair_style(theme);
         let mut palette = Palette::from_visuals(&pairs.visuals);
@@ -409,7 +439,6 @@ impl Chrome {
         if let Some(accent) = theme.accent() {
             palette.accent = crate::style::srgb(accent);
         }
-        palette = palette.with_roles(&theme.overlay().chrome);
         let metrics = if theme.dictionary().style.is_none() && style.widgets == Widgets::Pairs {
             Metrics::from_egui(&pairs, &style)
         } else {
@@ -430,7 +459,7 @@ impl Chrome {
             Widgets::Pairs => mode == Mode::Dark,
             Widgets::Chrome => {
                 let c = egui::Rgba::from(self.palette.chrome);
-                0.2126 * c.r() + 0.7152 * c.g() + 0.0722 * c.b() <= DARK_LUMINANCE
+                0.2126 * c.r() + 0.7152 * c.g() + 0.0722 * c.b() <= self.style.dark_luminance as f32
             }
         }
     }
@@ -467,7 +496,7 @@ pub fn install(ctx: &Context, chrome: &Chrome) {
 
 /// The complete egui style of chrome widgets (§1.5, §2).
 pub fn style(theme: &Theme) -> Style {
-    let chrome = Chrome::for_theme(theme);
+    let chrome = Chrome::base_for_theme(theme);
     let m = chrome.metrics;
     let tokens = chrome.style;
     let mut style = Style {

@@ -358,7 +358,7 @@ session look under server decorations.</p>
     ui.label(format!("Count: {}", engine.count));
     ui.add_space(space.md);
     ui.add(toolkit::button::IconButton::new(Icon::Settings).tooltip("Settings"));
-    ui.label(toolkit::text::dim("dim text"));
+    ui.add(toolkit::text::dim("dim text"));
     let _ = p.accent;                               // read where you paint
 }
 </code></pre>

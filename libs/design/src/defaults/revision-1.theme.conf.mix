@@ -1275,6 +1275,8 @@ design: {
         },
         styles: {
           plain: {
+            bar_padding_y: 0,
+            dark_luminance: 0.18, square_radius: 0,
             "animation_time": 0.2,
             "bar_row_gap": 4,
             "bars_bar_inset": 8,
@@ -1532,6 +1534,8 @@ design: {
             radius_sm: 6, radius: 4, radius_lg: 12
           },
           pro: {
+            bar_padding_y: 0,
+            dark_luminance: 0.18, square_radius: 0,
             "animation_time": 0.2,
             "bar_row_gap": 4,
             "bars_bar_inset": 8,
@@ -1789,6 +1793,8 @@ design: {
             radius_sm: 3, radius: 4, radius_lg: 6
           },
           studio: {
+            bar_padding_y: 0,
+            dark_luminance: 0.18, square_radius: 0,
             "animation_time": 0.2,
             "bar_row_gap": 4,
             "bars_bar_inset": 8,
@@ -2046,6 +2052,8 @@ design: {
             radius_sm: 6, radius: 8, radius_lg: 12
           },
           classic: {
+            bar_padding_y: 0,
+            dark_luminance: 0.18, square_radius: 0,
             "animation_time": 0.2,
             "bar_row_gap": 4,
             "bars_bar_inset": 8,
@@ -2179,18 +2187,18 @@ design: {
             "push_label_size": 13,
             "resize_corner": 12,
             "resize_edge": 5,
-            "scroll_allocated": 6,
+            "scroll_allocated": 0,
             "scroll_handle_alpha_active": 0.6,
             "scroll_handle_alpha_hot": 1,
-            "scroll_handle_alpha_rest": 0.6,
+            "scroll_handle_alpha_rest": 0,
             "scroll_handle_min": 12,
             "scroll_margin": 4,
             "scroll_outer_margin": 0,
-            "scroll_track_alpha_active": 0,
+            "scroll_track_alpha_active": 0.4,
             "scroll_track_alpha_hot": 0.7,
             "scroll_track_alpha_rest": 0,
             "scroll_width": 6,
-            "scroll_width_hot": 10,
+            "scroll_width_hot": 6,
             "scrub_rate": 0.5,
             "search_icon": 14,
             "search_lead": 22,

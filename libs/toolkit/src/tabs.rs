@@ -520,7 +520,7 @@ fn doc_tab(
             painter.rect_stroke(
                 rect,
                 radius,
-                Stroke::new(1.0, p.card_border),
+                Stroke::new(Chrome::of(ui.ctx()).style.hairline_width as f32, p.card_border),
                 StrokeKind::Inside,
             );
         }
@@ -604,7 +604,7 @@ fn doc_tab(
     }
     if pro {
         let x = painter.round_to_pixel_center(rect.right() - 0.5);
-        painter.vline(x, rect.y_range(), Stroke::new(1.0, p.separator));
+        painter.vline(x, rect.y_range(), Stroke::new(Chrome::of(ui.ctx()).style.hairline_width as f32, p.separator));
     } else if close.hovered() {
         painter.rect_filled(
             close_rect,
@@ -626,7 +626,7 @@ fn doc_tab(
                 crate::chrome::Chrome::of(ui.ctx()).style.tabs_progress as f32,
             ),
         );
-        painter.rect_filled(line, 0.0, p.accent);
+        painter.rect_filled(line, Chrome::of(ui.ctx()).style.square_radius, p.accent);
     }
     paint_icon(
         ui,

@@ -9959,6 +9959,7 @@ checksum = "06bdbd8cfc056b8d2e2e85f29b56a3bdbecb527cef81eb39e3e7b98af4652770"
 name = "toolkit"
 version = "0.1.1"
 dependencies = [
+ "anyhow",
  "assets",
  "command",
  "config",
@@ -9969,6 +9970,7 @@ dependencies = [
  "egui_kittest",
  "futures",
  "image",
+ "libc",
  "png 0.18.1",
  "pulldown-cmark",
  "raw-window-handle",

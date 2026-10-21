@@ -33299,7 +33299,7 @@ fn view(ui: &mut egui::Ui, engine: &Engine) {
     ui.label(format!("Count: {}", engine.count));
     ui.add_space(space.md);
     ui.add(toolkit::button::IconButton::new(Icon::Settings).tooltip("Settings"));
-    ui.label(toolkit::text::dim("dim text"));
+    ui.add(toolkit::text::dim("dim text"));
     let _ = p.accent;                               // read where you paint
 }
 ```
