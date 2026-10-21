@@ -17,7 +17,7 @@ use world::state::Loop;
 /// (`native_motion::dispatch`) — the pan is the canvas's, not the game's.
 pub(crate) fn hand_active(_loop: &Loop) -> bool {
     matches!(
-        _loop.inner.canvas().Grab,
+        _loop.inner.canvas().grab,
         CanvasGrab::Active(ActiveOption::Hand)
     )
 }

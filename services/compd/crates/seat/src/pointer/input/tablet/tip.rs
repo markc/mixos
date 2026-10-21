@@ -63,10 +63,10 @@ pub fn end_draw(_loop: &mut Loop, tool: &TabletToolDescriptor, time: u32) {
 /// Clear the transient Select grab on lift, mirroring `touch/session.rs::disarm_select`.
 fn disarm_select(_loop: &mut Loop) {
     if matches!(
-        _loop.inner.canvas().Grab,
+        _loop.inner.canvas().grab,
         CanvasGrab::Target(TargetOption::Select { .. })
     ) {
-        _loop.inner.canvas_mut().Grab = CanvasGrab::None;
+        _loop.inner.canvas_mut().grab = CanvasGrab::None;
     }
 }
 
@@ -84,8 +84,8 @@ pub fn tip<I: InputBackend>(event: &I::TabletToolTipEvent, _loop: &mut Loop) {
             } else if select_active(_loop) {
                 // Select tool: arm the transient grab (disarmed on lift) so the
                 // emulated press + drag rubber-band selects, like the touch session.
-                _loop.inner.canvas_mut().Grab =
-                    CanvasGrab::Target(TargetOption::Select { Append: true });
+                _loop.inner.canvas_mut().grab =
+                    CanvasGrab::Target(TargetOption::Select { append: true });
                 cursor::follow(_loop, screen, world, time);
                 crate::pointer::input::touch::emulate::press(_loop, time);
                 _loop.state.tablet.stroke = Stroke::Pointer;

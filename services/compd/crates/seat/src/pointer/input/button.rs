@@ -138,7 +138,7 @@ pub fn button<I: InputBackend>(event: &<I as InputBackend>::PointerButtonEvent, 
             // edge. The canvas grab "tool" already encodes the held modifier
             // (incl. the nested-winit Super→Ctrl remap): Move vs Scale.
             use world::canvas::input::state::{CanvasGrab, TargetOption};
-            let tool = match _loop.inner.canvas().Grab {
+            let tool = match _loop.inner.canvas().grab {
                 CanvasGrab::Target(TargetOption::Move) => Some(false),
                 CanvasGrab::Target(TargetOption::Scale) => Some(true),
                 _ => None,

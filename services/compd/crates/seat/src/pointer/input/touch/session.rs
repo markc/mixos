@@ -29,10 +29,10 @@ fn mode_for(n: usize) -> Mode {
 /// canvas grab returns to normal between touches. No-op when no touch Select grab set.
 fn disarm_select(_loop: &mut Loop) {
     if matches!(
-        _loop.inner.canvas_mut().Grab,
+        _loop.inner.canvas_mut().grab,
         CanvasGrab::Target(TargetOption::Select { .. })
     ) {
-        _loop.inner.canvas_mut().Grab = CanvasGrab::None;
+        _loop.inner.canvas_mut().grab = CanvasGrab::None;
     }
 }
 
@@ -62,8 +62,8 @@ pub fn down<I: InputBackend>(event: &I::TouchDownEvent, _loop: &mut Loop) {
         // the life of THIS touch sequence (disarmed on lift), so the mouse — which
         // shares the canvas grab — is never switched into Select by the touch pane.
         if _loop.inner.touch.tool_mode == TouchMode::Select {
-            _loop.inner.canvas_mut().Grab =
-                CanvasGrab::Target(TargetOption::Select { Append: true });
+            _loop.inner.canvas_mut().grab =
+                CanvasGrab::Target(TargetOption::Select { append: true });
         }
         let world = geom::world(_loop, phys);
         // Compositor UI UI (the touch pane, overview menu, selection bar, …)

@@ -16,13 +16,13 @@ use world::state::export::{ActiveOption, CanvasGrab};
 /// mode (`ActiveOption::Hand`).
 pub fn toggle_hand(_loop: &mut Loop) {
     if matches!(
-        _loop.inner.canvas().Grab,
+        _loop.inner.canvas().grab,
         CanvasGrab::Active(ActiveOption::Hand)
     ) {
-        _loop.inner.canvas_mut().Grab = CanvasGrab::None;
+        _loop.inner.canvas_mut().grab = CanvasGrab::None;
         _loop.state.seat.force_cursor = None;
     } else {
-        _loop.inner.canvas_mut().Grab = CanvasGrab::Active(ActiveOption::Hand);
+        _loop.inner.canvas_mut().grab = CanvasGrab::Active(ActiveOption::Hand);
         _loop.state.seat.force_cursor = Some(CursorIcon::Grab);
         // The hand tool breaks out of any pointer lock/confine the focused client holds.
         crate::pointer::input::constraint::break_constraint(_loop);

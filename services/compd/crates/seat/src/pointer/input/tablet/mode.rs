@@ -12,7 +12,7 @@ use world::state::export::{ActiveOption, CanvasGrab};
 /// mode the pen navigates (tip-drag pans anywhere, dial zooms) instead of drawing.
 pub fn hand_active(l: &Loop) -> bool {
     matches!(
-        l.inner.canvas().Grab,
+        l.inner.canvas().grab,
         CanvasGrab::Active(ActiveOption::Hand)
     ) || l.inner.touch.tool_mode == TouchMode::Hand
 }
