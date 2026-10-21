@@ -491,11 +491,19 @@ pub async fn identity_get(
     args: serde_json::Value,
 ) -> Result<serde_json::Value> {
     let mut response = account_identity_get(db, domains_runtime, account_id, args).await?;
-    let Some(primary) = response["list"].as_array().and_then(|list| list.first()).cloned() else {
+    let Some(primary) = response["list"]
+        .as_array()
+        .and_then(|list| list.first())
+        .cloned()
+    else {
         return Ok(response);
     };
     let account = crate::props::aliases::canon(primary["email"].as_str().unwrap_or_default());
-    let snapshot = match aliases_runtime.store().list(&crate::props::aliases::namespace_name()).await {
+    let snapshot = match aliases_runtime
+        .store()
+        .list(&crate::props::aliases::namespace_name())
+        .await
+    {
         Ok(snapshot) => snapshot,
         Err(error) => {
             // Preserve the account identity on a store fault, but never
@@ -506,7 +514,9 @@ pub async fn identity_get(
     };
     let mut addresses = std::collections::BTreeSet::new();
     for record in snapshot.value {
-        let target = record.value.as_object()
+        let target = record
+            .value
+            .as_object()
             .and_then(|value| value.get("target"))
             .and_then(|value| match value {
                 ::props::value::PropValue::String(target) => Some(target.as_str()),
@@ -527,14 +537,20 @@ pub async fn identity_get(
         // JMAP ids use URL-safe characters and must stay short even for
         // long email addresses. Keep the primary account's existing id.
         identity["id"] = serde_json::json!(format!(
-            "{account_id}-alias-{}", blake3::hash(address.as_bytes()).to_hex()
+            "{account_id}-alias-{}",
+            blake3::hash(address.as_bytes()).to_hex()
         ));
         identity["email"] = serde_json::json!(address);
-        response["list"].as_array_mut().expect("primary identity list").push(identity);
+        response["list"]
+            .as_array_mut()
+            .expect("primary identity list")
+            .push(identity);
     }
-    response["state"] = serde_json::json!(blake3::hash(
-        serde_json::to_string(&response["list"])?.as_bytes()
-    ).to_hex().to_string());
+    response["state"] = serde_json::json!(
+        blake3::hash(serde_json::to_string(&response["list"])?.as_bytes())
+            .to_hex()
+            .to_string()
+    );
     Ok(response)
 }
 
@@ -707,17 +723,20 @@ mod identity_get_tests {
             ("target".into(), PropValue::String(target.into())),
             ("enabled".into(), PropValue::Bool(enabled)),
         ]));
-        runtime.set(
-            RecordKey::collection(crate::props::aliases::namespace_name(), address.to_string()),
-            value,
-            SetOpts {
-                expected_version: Some(Version::zero()),
-                merge: MergeMode::Replace,
-                actor: Actor::service("identity-tests").expect("valid actor"),
-                cause: None,
-                ts_ms: 0,
-            },
-        ).await.expect("seed alias");
+        runtime
+            .set(
+                RecordKey::collection(crate::props::aliases::namespace_name(), address.to_string()),
+                value,
+                SetOpts {
+                    expected_version: Some(Version::zero()),
+                    merge: MergeMode::Replace,
+                    actor: Actor::service("identity-tests").expect("valid actor"),
+                    cause: None,
+                    ts_ms: 0,
+                },
+            )
+            .await
+            .expect("seed alias");
     }
 
     async fn seed(runtime: &Arc<Runtime>, domain: &str, mutate: impl FnOnce(&mut PropValue)) {
@@ -779,9 +798,15 @@ mod identity_get_tests {
         let fx = make_db_fixture().await;
         let id = seed_account(&fx.db, "user@example.com");
         seed(&rt, "example.com", |_| {}).await; // defaults_value: enabled=true
-        let out = identity_get(&fx.db, rt, &build_aliases_runtime(), id, serde_json::json!({}))
-            .await
-            .unwrap();
+        let out = identity_get(
+            &fx.db,
+            rt,
+            &build_aliases_runtime(),
+            id,
+            serde_json::json!({}),
+        )
+        .await
+        .unwrap();
         assert_eq!(list_count(&out), 1);
     }
 
@@ -812,9 +837,15 @@ mod identity_get_tests {
         // Seed a *different* domain so the namespace is non-empty but
         // the account's domain is absent.
         seed(&rt, "other.example", |_| {}).await;
-        let out = identity_get(&fx.db, rt, &build_aliases_runtime(), id, serde_json::json!({}))
-            .await
-            .unwrap();
+        let out = identity_get(
+            &fx.db,
+            rt,
+            &build_aliases_runtime(),
+            id,
+            serde_json::json!({}),
+        )
+        .await
+        .unwrap();
         assert_eq!(list_count(&out), 0);
     }
 
@@ -824,9 +855,15 @@ mod identity_get_tests {
         let fx = make_db_fixture().await;
         let id = seed_account(&fx.db, "user@example.com");
         // Don't seed any rows — namespace is empty.
-        let out = identity_get(&fx.db, rt, &build_aliases_runtime(), id, serde_json::json!({}))
-            .await
-            .unwrap();
+        let out = identity_get(
+            &fx.db,
+            rt,
+            &build_aliases_runtime(),
+            id,
+            serde_json::json!({}),
+        )
+        .await
+        .unwrap();
         assert_eq!(list_count(&out), 1);
     }
 
@@ -921,9 +958,15 @@ mod identity_get_tests {
 
         let fx = make_db_fixture().await;
         let id = seed_account(&fx.db, "user@example.com");
-        let out = identity_get(&fx.db, runtime, &build_aliases_runtime(), id, serde_json::json!({}))
-            .await
-            .unwrap();
+        let out = identity_get(
+            &fx.db,
+            runtime,
+            &build_aliases_runtime(),
+            id,
+            serde_json::json!({}),
+        )
+        .await
+        .unwrap();
         // Best-effort: legacy single identity preserves submission UI.
         assert_eq!(list_count(&out), 1);
     }
@@ -935,12 +978,18 @@ mod identity_get_tests {
         let fx = make_db_fixture().await;
         let id = seed_account(&fx.db, "user@example.com");
         seed(&domains, "example.com", |_| {}).await;
-        let before = identity_get(&fx.db, domains.clone(), &aliases, id, serde_json::json!({})).await.unwrap();
+        let before = identity_get(&fx.db, domains.clone(), &aliases, id, serde_json::json!({}))
+            .await
+            .unwrap();
         seed_alias(&aliases, "mc@example.com", "USER@example.com", true).await;
         seed_alias(&aliases, "off@example.com", "user@example.com", false).await;
         seed_alias(&aliases, "other@example.com", "other@example.com", true).await;
-        let out = identity_get(&fx.db, domains.clone(), &aliases, id, serde_json::json!({})).await.unwrap();
-        let repeated = identity_get(&fx.db, domains, &aliases, id, serde_json::json!({})).await.unwrap();
+        let out = identity_get(&fx.db, domains.clone(), &aliases, id, serde_json::json!({}))
+            .await
+            .unwrap();
+        let repeated = identity_get(&fx.db, domains, &aliases, id, serde_json::json!({}))
+            .await
+            .unwrap();
         assert_eq!(out, repeated);
         assert_eq!(list_count(&out), 2);
         assert_eq!(out["list"][0]["id"], id.to_string());
@@ -950,12 +999,21 @@ mod identity_get_tests {
         assert_ne!(out["state"], before["state"]);
         let alias_id = out["list"][1]["id"].as_str().unwrap();
         assert!(alias_id.len() <= 255);
-        assert!(alias_id.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_'));
+        assert!(
+            alias_id
+                .bytes()
+                .all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_')
+        );
         // Every advertised address passes the same gate as EmailSubmission/set.
         for identity in out["list"].as_array().unwrap() {
-            assert!(crate::props::aliases::sender_authorized(
-                &aliases, identity["email"].as_str().unwrap(), "user@example.com"
-            ).await);
+            assert!(
+                crate::props::aliases::sender_authorized(
+                    &aliases,
+                    identity["email"].as_str().unwrap(),
+                    "user@example.com"
+                )
+                .await
+            );
         }
     }
 
@@ -975,7 +1033,9 @@ mod identity_get_tests {
         for fail_list in [false, true] {
             faulty.set_fail_get(true);
             faulty.fail_list.store(fail_list, Ordering::SeqCst);
-            let out = identity_get(&fx.db, domains.clone(), &aliases, id, serde_json::json!({})).await.unwrap();
+            let out = identity_get(&fx.db, domains.clone(), &aliases, id, serde_json::json!({}))
+                .await
+                .unwrap();
             assert_eq!(list_count(&out), 1);
             assert_eq!(out["list"][0]["email"], "user@example.com");
         }
