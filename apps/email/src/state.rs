@@ -6664,6 +6664,46 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn round2_successful_replacement_clears_the_refusal() {
+        let mut state = connected();
+        typed(&mut state);
+        state.apply_ui(UiEvent::ComposeField(ComposeField::Body, "x".repeat(65 * 1024 * 1024)));
+        assert!(state.compose.as_ref().unwrap().error.is_some());
+        state.apply_ui(UiEvent::ComposeField(ComposeField::Body, "Accepted".into()));
+        let compose = state.compose.as_ref().unwrap();
+        assert_eq!(compose.body.contents(), "Accepted");
+        assert!(compose.error.is_none());
+    }
+
+    #[test]
+    fn round2_successful_editor_edit_clears_the_refusal() {
+        let mut state = connected();
+        typed(&mut state);
+        state.apply_ui(UiEvent::ComposeEdit(editor::Event::Command(
+            editor::EditCommand::Insert("x".repeat(2 * 1024 * 1024)),
+        )));
+        assert!(state.compose.as_ref().unwrap().error.is_some());
+        let revision = state.compose.as_ref().unwrap().body.revision;
+        state.apply_ui(UiEvent::ComposeEdit(editor::Event::Command(
+            editor::EditCommand::Insert("Accepted".into()),
+        )));
+        let compose = state.compose.as_ref().unwrap();
+        assert!(compose.error.is_none());
+        assert_eq!(compose.body.revision, revision + 1);
+    }
+
+    #[test]
+    fn round2_a_legacy_settings_read_does_not_block_account_writes() {
+        let mut state = connected();
+        let mut legacy = state.settings.clone();
+        legacy.composer.font.family = Some("Inter".into());
+        state.set_settings(legacy);
+        assert_eq!(state.settings.composer.font.family, None);
+        let entry = state.settings.accounts[0].clone();
+        assert!(crate::writer::plan(&state.settings, &Change::Upsert(entry)).is_ok());
+    }
+
+    #[test]
     fn round2_oversized_restore_cannot_overwrite_the_kept_body() {
         let mut state = connected();
         typed(&mut state);
