@@ -17,6 +17,14 @@ pub(crate) fn cancel(pipe: &mut OutputPipe) {
         timer.cancel();
     }
     pipe.late_latch.park();
+    pipe.gpu_completion = None;
+}
+
+pub(crate) fn collect_gpu(pipe: &mut OutputPipe) {
+    if let Some(elapsed) = pipe.gpu_completion.as_ref().and_then(|sample| sample.elapsed()) {
+        pipe.late_latch.observe(elapsed);
+        pipe.gpu_completion = None;
+    }
 }
 
 /// Returns true while this pipe must wait. Once armed, all redraw reasons
@@ -36,9 +44,6 @@ pub(crate) fn defer(
     let config = model::environment::config::base::get();
     let margin = Duration::from_micros(config.late_latch_margin_us);
     let plan = pipe.late_latch.plan(now, margin);
-    if pipe.late_latch.armed.is_none() {
-        pipe.late_latch.budget_used = plan.budget;
-    }
     let immediate = if !model::environment::config::base::late_latch_enabled() {
         Some("kms_latch_disabled")
     } else if protocols::tearing::gate::gate::tearing() || pipe.last_tear {
@@ -66,6 +71,9 @@ pub(crate) fn defer(
     } else {
         None
     };
+    if immediate.is_none() {
+        pipe.late_latch.begin(now, plan);
+    }
     // The flip handler only arms a wait. An immediate decision is recorded by
     // the executor when it actually renders, avoiding two decisions per frame.
     if !trace_immediate && (immediate.is_some() || plan.deadline.is_none()) {

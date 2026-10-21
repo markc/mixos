@@ -328,13 +328,19 @@ placement before exec and <code>cgroup.kill</code> provide complete cleanup when
 from <code>preferences.json</code> beside it.</p>
 <p>Native fixed-refresh outputs use late-latch composition by default. After a
 flip with pending redraws, each CRTC waits until the next kernel-timestamped
-vblank minus its render budget. The budget is the maximum render-start to
-commit-return time in two 50-frame buckets, plus <code>late_latch_margin_us</code>
-(default 1500). A missed target adds a quarter-refresh back-off for 100
-submitted frames; repeated misses double it up to one refresh, then it decays.
-The initial render estimate is 2 ms. The 1.5 ms margin leaves room for event
-dispatch, scheduling jitter and asynchronous GPU completion; hardware timing
-still needs measurement under load.</p>
+vblank minus its render budget. Two 50-commit buckets retain the maximum time
+from the armed deadline (or clamped plan instant) to commit return, including
+dispatch delay and sibling rendering. Exportable render fences also contribute
+their completion observation through a non-blocking calloop source. The GPU
+observation includes dispatch latency; unavailable fences leave GPU tails to
+the learned floor. Modesets and the first commit and flip after reset do not
+train steady-state cost or phase.</p>
+<p>The budget is the larger of that measured maximum and a learned floor, plus
+<code>late_latch_margin_us</code> (default 1500). A miss raises the floor to at least the
+submitted budget minus margin plus one eighth of a refresh. The floor shrinks
+by only 50 µs per 100 consecutive target hits; idle or unknown feedback breaks
+that run. The initial estimate is 2 ms. The 1.5 ms margin covers residual jitter
+and GPU observation error; hardware timing still needs measurement under load.</p>
 <p>Set <code>late_latch:false</code> in the settings file to disable it, or set the emergency
 environment switch <code>COMPD_DISABLE_LATE_LATCH</code> (any value). Both take effect at
 startup without rebuilding; the margin uses the same settings file. Schema 7

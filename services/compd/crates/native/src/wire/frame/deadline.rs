@@ -7,6 +7,38 @@ use std::cell::Cell;
 use std::rc::Rc;
 use std::time::Instant;
 
+/// Readability on an exported sync_file means the GPU fence has signalled.
+/// Record its observation without borrowing the renderer or waiting on the GPU.
+/// The observation includes event dispatch latency, a conservative upper bound.
+pub struct GpuCompletion<D: 'static> {
+    elapsed: Rc<Cell<Option<std::time::Duration>>>,
+    token: RegistrationToken,
+    handle: LoopHandle<'static, D>,
+}
+
+impl<D: 'static> GpuCompletion<D> {
+    pub fn new(handle: &LoopHandle<'static, D>, fd: std::os::fd::OwnedFd, start: Instant) -> Option<Self> {
+        use smithay::reexports::calloop::{generic::Generic, Interest, Mode, PostAction};
+        let elapsed = Rc::new(Cell::new(None));
+        let completed = elapsed.clone();
+        let token = handle.insert_source(Generic::new(fd, Interest::READ, Mode::Level), move |_, _, _| {
+            completed.set(Some(start.elapsed()));
+            Ok(PostAction::Disable)
+        }).ok()?;
+        Some(Self { elapsed, token, handle: handle.clone() })
+    }
+
+    pub fn elapsed(&self) -> Option<std::time::Duration> {
+        self.elapsed.get()
+    }
+}
+
+impl<D: 'static> Drop for GpuCompletion<D> {
+    fn drop(&mut self) {
+        self.handle.remove(self.token);
+    }
+}
+
 pub struct DeadlineTimer<D: 'static> {
     source: Dispatcher<'static, Timer, D>,
     token: RegistrationToken,
@@ -46,6 +78,8 @@ impl<D: 'static> DeadlineTimer<D> {
 
     pub fn arm(&self, at: Instant) -> bool {
         self.source.as_source_mut().set_deadline(at);
+        // calloop 0.14's update invokes Timer::reregister, which registers the
+        // new deadline even when this source was disabled after its last fire.
         self.handle.update(&self.token).is_ok()
     }
 
@@ -154,5 +188,44 @@ mod tests {
             .unwrap();
         assert_eq!(data.fires, 2);
         assert!(data.schedule.pending());
+    }
+
+    #[test]
+    fn update_rearms_a_timer_disabled_by_its_callback() {
+        let mut event_loop: EventLoop<'static, Data> = EventLoop::try_new().unwrap();
+        let mut data = Data::default();
+        let timer = DeadlineTimer::new(&event_loop.handle(), "a".into(), fired).unwrap();
+        for expected in 1..=2 {
+            assert!(timer.arm(Instant::now()));
+            event_loop.dispatch(Some(Duration::ZERO), &mut data).unwrap();
+            assert_eq!(data.fires, expected);
+            event_loop.dispatch(Some(Duration::ZERO), &mut data).unwrap();
+            assert_eq!(data.fires, expected, "disabled between arms");
+        }
+    }
+
+    #[test]
+    fn gpu_readiness_is_observed_once_without_waiting_and_drop_removes_source() {
+        use std::io::Write;
+        use std::os::unix::net::UnixStream;
+        let mut event_loop: EventLoop<'static, ()> = EventLoop::try_new().unwrap();
+        let (reader, mut writer) = UnixStream::pair().unwrap();
+        let start = Instant::now() - Duration::from_millis(3);
+        let sample = GpuCompletion::new(&event_loop.handle(), reader.into(), start).unwrap();
+        event_loop.dispatch(Some(Duration::ZERO), &mut ()).unwrap();
+        assert_eq!(sample.elapsed(), None);
+        writer.write_all(&[1]).unwrap();
+        event_loop.dispatch(Some(Duration::ZERO), &mut ()).unwrap();
+        assert!(sample.elapsed().unwrap() >= Duration::from_millis(3));
+        let elapsed = sample.elapsed();
+        event_loop.dispatch(Some(Duration::ZERO), &mut ()).unwrap();
+        assert_eq!(sample.elapsed(), elapsed, "readiness disables the source");
+        drop(sample);
+        event_loop.dispatch(Some(Duration::ZERO), &mut ()).unwrap();
+
+        let (reader, _writer) = UnixStream::pair().unwrap();
+        let sample = GpuCompletion::new(&event_loop.handle(), reader.into(), Instant::now()).unwrap();
+        drop(sample); // reset/prune before completion
+        event_loop.dispatch(Some(Duration::ZERO), &mut ()).unwrap();
     }
 }
