@@ -9,8 +9,8 @@
 
 /// What paces [`TripleBufferBackground::rate`]. Shared with the UI triple buffering, so
 /// the two settings cannot drift on what "one per frame" means.
-pub use crate::environment::tearing::rate::rate::Cadence;
-pub use crate::environment::tearing::rate::rate::Rate;
+pub use crate::environment::tearing::rate::Cadence;
+pub use crate::environment::tearing::rate::Rate;
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, RwLock};
 use std::time::Duration;

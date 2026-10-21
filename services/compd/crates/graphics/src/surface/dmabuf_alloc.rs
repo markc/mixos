@@ -179,7 +179,7 @@ fn allocate_with_modifiers(
 /// Record the post-determined format for the developer "GPU formats" panel.
 fn publish_stats(kind: &str, fourcc: Fourcc, modifier: Modifier, plane_count: u32) {
     use render_gles::format::rule::rule;
-    model::stats::registry::gpu::gpu::set_device_format(
+    model::stats::registry::gpu::set_device_format(
         kind,
         &format!("{fourcc:?}"),
         modifier.into(),

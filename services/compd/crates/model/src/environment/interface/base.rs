@@ -15,7 +15,7 @@
 //! a real choice. UI renders only when its UI is dirty, so pacing it would be
 //! inert; bevy's cadence is its own `App` schedule, not ours to set from here.
 
-pub use crate::environment::tearing::rate::rate::{Cadence, Rate};
+pub use crate::environment::tearing::rate::{Cadence, Rate};
 use serde::{Deserialize, Serialize};
 use std::sync::RwLock;
 use std::time::Duration;

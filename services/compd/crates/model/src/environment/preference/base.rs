@@ -304,7 +304,7 @@ pub struct Preference {
     /// and silently reset every unrelated preference. Unknown keys are ignored
     /// (no `deny_unknown_fields`), so the stale `tearing` entry simply lapses.
     #[serde(default)]
-    pub flip: crate::environment::tearing::config::config::Config,
+    pub flip: crate::environment::tearing::config::Config,
     /// wlr + ext foreign-toplevel-management (taskbar/dock protocols), gated as ONE
     /// preference: `"enabled"` (the default — agentic-first: default open, opt-in
     /// hard) advertises open windows to docks;
@@ -679,7 +679,7 @@ impl Default for Preference {
             keyboard: KeyboardLayout::default(),
             background_shader: None,
             graphics: crate::environment::graphics::base::GraphicsAaConfig::default(),
-            flip: crate::environment::tearing::config::config::Config::default(),
+            flip: crate::environment::tearing::config::Config::default(),
             protocol_foreign: default_protocol_foreign(),
             protocol_foreign_all_worlds: false,
             input_method_restricted: false,
@@ -778,7 +778,7 @@ pub fn load() -> Preference {
     // Mirror the graphics config into the kernel-readable global.
     crate::environment::graphics::base::set(prefs.graphics);
     DECORATIONS_SSD.store(prefs.decorations_ssd, std::sync::atomic::Ordering::Relaxed);
-    crate::environment::tearing::config::config::set(prefs.flip);
+    crate::environment::tearing::config::set(prefs.flip);
     // Background triple buffering: the worker re-reads this every pass, so
     // publishing here is what makes the knobs apply live. `enabled` still needs a
     // restart — it decides whether the worker thread and its device exist at all.
@@ -797,7 +797,7 @@ pub fn save(prefs: &Preference) -> Result<(), String> {
     // Keep the kernel-readable global in sync with every live edit.
     crate::environment::graphics::base::set(prefs.graphics);
     DECORATIONS_SSD.store(prefs.decorations_ssd, std::sync::atomic::Ordering::Relaxed);
-    crate::environment::tearing::config::config::set(prefs.flip);
+    crate::environment::tearing::config::set(prefs.flip);
     // Background triple buffering: the worker re-reads this every pass, so
     // publishing here is what makes the knobs apply live. `enabled` still needs a
     // restart — it decides whether the worker thread and its device exist at all.

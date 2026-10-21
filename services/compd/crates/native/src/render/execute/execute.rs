@@ -390,7 +390,7 @@ pub fn execute(
     // force a full-screen redraw. Being pre-emptive must not mean doing more work
     // per frame — only doing it sooner — so damage stays honest and this changes
     // nothing but whether the prepared frame may be called empty.
-    let preemptive = model::environment::tearing::config::config::get()
+    let preemptive = model::environment::tearing::config::get()
         .preemptive
         .forces(protocols::tearing::gate::gate::governed());
     if preemptive {
@@ -1317,7 +1317,7 @@ fn present(
     // target — even a frozen one — restores normal scheduling by itself; there
     // is no latched state to get stuck in.
     let active = {
-        use model::environment::tearing::select::select::{Exclusivity, Scene};
+        use model::environment::tearing::select::{Exclusivity, Scene};
         use protocols::tearing::gate::gate;
         use protocols::tearing::liveness::liveness;
         use protocols::tearing::pacer::pacer;
@@ -1373,7 +1373,7 @@ fn present(
             any_visible: !window_visible.is_empty(),
         };
 
-        let cfg = model::environment::tearing::config::config::get();
+        let cfg = model::environment::tearing::config::get();
         let active = outputs::tearing::resolve::resolve::active(&cfg, scene);
 
         // Stamp what the scene actually drew, for the gates that ask about

@@ -2,9 +2,9 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Per-frame resolution: which section governs, and what it decides.
 
-use model::environment::tearing::config::config::{Config, Pacing, Tearing};
-use model::environment::tearing::rate::rate::{PaceMode, TearMode};
-use model::environment::tearing::select::select::{Exclusivity, Scene};
+use model::environment::tearing::config::{Config, Pacing, Tearing};
+use model::environment::tearing::rate::{PaceMode, TearMode};
+use model::environment::tearing::select::{Exclusivity, Scene};
 use std::time::Duration;
 
 /// Fraction of a refresh interval counting as "retrace imminent"; inside it a

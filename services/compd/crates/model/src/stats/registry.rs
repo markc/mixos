@@ -10,7 +10,7 @@
 
 pub mod base {
     pub use crate::stats::registry::counter::*;
-    pub use crate::stats::registry::gpu::gpu::{DeviceFormat, set_device_format};
+    pub use crate::stats::registry::gpu::{DeviceFormat, set_device_format};
     pub use crate::stats::registry::hdr::*;
     pub use crate::stats::registry::meta::*;
     pub use crate::stats::registry::shader::*;

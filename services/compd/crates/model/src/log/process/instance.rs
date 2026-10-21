@@ -10,7 +10,14 @@
 //! build-time protobuf step. The live log surface is journald (stderr) today and
 //! the Bus later.
 
-pub mod instance;
-pub use instance::*;
+use crate::debug::instance::record;
+
+/// Start the drain thread. Call exactly once.
+pub fn start(rx: crossbeam_channel::Receiver<record::Record>) {
+    let _ = std::thread::Builder::new()
+        .name("compd-log-drain".into())
+        .spawn(move || crate::log::process::instance::drain::drain(rx));
+}
+
 
 pub mod drain;
