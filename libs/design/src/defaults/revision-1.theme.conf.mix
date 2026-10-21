@@ -544,7 +544,7 @@ design: {
             "chrome.accent": { color_space: "oklch", l: 0.707262659, c: 0.132565999, h: 236.447185817, alpha: 1.000000000 },
             "chrome.accent_soft": { color_space: "oklch", l: 0.707262659, c: 0.132565999, h: 236.447185817, alpha: 0.188235294 },
             "chrome.accent_border": { color_space: "oklch", l: 0.707262659, c: 0.132565999, h: 236.447185817, alpha: 0.666666667 },
-            "chrome.accent_text": { color_space: "oklch", l: 0.462469034, c: 0.093201307, h: 241.976902437, alpha: 1.000000000 },
+            "chrome.accent_text": {"alpha":1,"c":0.09317150655515317,"color_space":"oklch","h":242.3714916438924,"l":0.44895118427064346},
             "chrome.separator": { color_space: "oklch", l: 0.886441924, c: 0.007006589, h: 247.904184518, alpha: 1.000000000 },
             "chrome.shadow": { color_space: "oklch", l: 0.000000000, c: 0.000000000, h: 0.000000000, alpha: 0.176470588 },
             "chrome.primary_bg": {"alpha":1,"c":0.11915448955207121,"color_space":"oklch","h":245.33825472619233,"l":0.49338754502367566},
