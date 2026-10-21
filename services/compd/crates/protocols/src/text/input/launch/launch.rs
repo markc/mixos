@@ -14,8 +14,8 @@ use std::sync::atomic::{AtomicI32, AtomicU64, Ordering};
 use smithay::reexports::wayland_server::{Client, DisplayHandle};
 
 use model::environment::preference::base::Ime;
-use slots::library::process::child::hygiene::hygiene::command;
-use slots::library::process::child::spawn::spawn as child_spawn;
+use slots::library::process::child::hygiene::command;
+use slots::library::process::child::spawn as child_spawn;
 
 /// pid (== process-group id) of the launched IME; `0` before launch / if none started.
 static IME_PGID: AtomicI32 = AtomicI32::new(0);

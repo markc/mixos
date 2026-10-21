@@ -42,7 +42,7 @@
 //! clients while being able to import 154.
 
 use crate::format::role::role::Role;
-use slots::storage::concurrent::concurrent::StorageConcurrent;
+use slots::storage::concurrent::StorageConcurrent;
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::allocator::format::FormatSet;
 use smithay::backend::drm::{DrmNode, NodeType};

@@ -2,11 +2,11 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 use smithay::reexports::calloop::channel::Sender as CalloopSender;
 
-use slots::launch::container::container::wrap_podman;
-use slots::launch::dispatch::dispatch::LaunchWorker;
-use slots::launch::execute::execute::execute;
-use slots::launch::policy::policy::{LAUNCH_DISPATCH, LaunchDispatch};
-use slots::launch::types::types::{LaunchOutcome, LaunchRequest};
+use slots::launch::container::wrap_podman;
+use slots::launch::dispatch::LaunchWorker;
+use slots::launch::execute::execute;
+use slots::launch::policy::{LAUNCH_DISPATCH, LaunchDispatch};
+use slots::launch::types::{LaunchOutcome, LaunchRequest};
 use slots::storage::token::base::{Token, TokenMut};
 
 /// App-launch driver. Held in kernel storage; populated by the loader's

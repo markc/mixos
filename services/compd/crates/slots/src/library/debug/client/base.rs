@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 // Every spawn goes through the hygiene wrapper — see `process.child`.
-use crate::library::process::child::hygiene::hygiene;
-use crate::library::process::child::spawn::spawn as child_spawn;
+use crate::library::process::child::hygiene;
+use crate::library::process::child::spawn as child_spawn;
 
 pub fn init_logging() {
     if let Ok(env_filter) = tracing_subscriber::EnvFilter::try_from_default_env() {

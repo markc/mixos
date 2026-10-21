@@ -21,8 +21,8 @@
 use std::io;
 
 // Every spawn goes through the hygiene wrapper — see `process.child`.
-use slots::library::process::child::hygiene::hygiene::command;
-use slots::library::process::child::spawn::spawn as child_spawn;
+use slots::library::process::child::hygiene::command;
+use slots::library::process::child::spawn as child_spawn;
 
 /// Propagate the session environment to systemd --user and the D-Bus
 /// activation environment. Call ONCE, after the Wayland socket is listening

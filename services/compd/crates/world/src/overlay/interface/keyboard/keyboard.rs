@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 use model::environment::keybinding::base::{KeyBindings, KeyRow};
-use slots::library::input::keyboard::format::format;
-use slots::library::input::keyboard::keyboard::combo::KeyCombo;
-use slots::library::input::keyboard::keyboard::handler::ShortcutHandler;
-use slots::library::input::keyboard::keyboard::key::Key;
+use slots::library::input::keyboard::format;
+use slots::library::input::keyboard::combo::KeyCombo;
+use slots::library::input::keyboard::handler::ShortcutHandler;
+use slots::library::input::keyboard::key::Key;
 use slots::library::input::keyboard::shortcut;
 use smithay::backend::input::{InputBackend, KeyState};
 use smithay::backend::session::Session;

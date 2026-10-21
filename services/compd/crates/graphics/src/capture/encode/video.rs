@@ -12,8 +12,8 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::process::{Child, Stdio};
 
-use slots::library::process::child::hygiene::hygiene::command;
-use slots::library::process::child::spawn::spawn as child_spawn;
+use slots::library::process::child::hygiene::command;
+use slots::library::process::child::spawn as child_spawn;
 use std::sync::mpsc::{Sender, channel};
 use std::thread::JoinHandle;
 

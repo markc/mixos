@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 use slots::channel::router::base::ChannelRouter;
-use slots::launch::types::types::LaunchOutcome;
+use slots::launch::types::LaunchOutcome;
 
 /// The launch-completed event channel. Declared here so there is a single
 /// sender; listeners (world systems) import the public `EXECUTED` token.
 pub mod event {
-    use slots::launch::types::types::LaunchOutcome;
+    use slots::launch::types::LaunchOutcome;
     slots::define_channel!(pub EXECUTED, EXECUTED_TX: LaunchOutcome);
 }
 

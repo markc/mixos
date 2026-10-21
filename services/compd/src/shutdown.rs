@@ -149,7 +149,7 @@ pub fn teardown(state: &mut Loop, nested: bool) {
     // The apps first, and NOT gated on `nested`: the slice is keyed by our own pid, so it
     // can only ever name this compositor's own launches. A nested dev session stopping it
     // cannot touch the host's.
-    match slots::launch::scope::scope::stop_session_slice() {
+    match slots::launch::scope::stop_session_slice() {
         Ok(()) => info!("session application containment collected"),
         Err(err) => warn!("could not stop the session slice; apps may outlive us: {err}"),
     }

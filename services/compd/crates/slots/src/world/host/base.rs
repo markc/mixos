@@ -6,7 +6,7 @@ use crate::persist::document::entry::base::DocumentEntry;
 use crate::persist::entry::base::PersistEntry;
 use crate::storage::slot::base::Storage;
 use crate::trait_::system::base::{BufferCx, Receiver, System, SystemCx, WorldBuilder};
-use crate::world::flow::flow;
+use crate::world::flow;
 use crate::world::frame::base::{FramePlan, FrameTick};
 use std::any::Any;
 use std::collections::VecDeque;

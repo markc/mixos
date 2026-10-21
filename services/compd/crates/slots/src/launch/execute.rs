@@ -1,9 +1,105 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
+//! `execute()` — the one place a child is actually spawned.
+
 //! The unified executor: self-spawn for a reliable PID, then apply the
 //! configured backend. Backend- and dispatch-agnostic — runs either inline on
 //! the calloop thread or on the launch worker.
 
 // Developer logging: error!/warn!/info!/trace!/abort! in scope for this crate.
 
-pub mod execute;
+use crate::launch::scope::adopt_into_scope;
+use crate::launch::types::{LaunchOutcome, LaunchRequest};
+use crate::library::process::child::hygiene::command;
+use crate::library::process::child::journal;
+use crate::library::process::child::spawn::spawn_detached;
+
+/// Spawn `req` and return its outcome.
+///
+/// The PID is always `Child::id()` — we self-spawn, so it is available synchronously and
+/// never polled out of systemd. When `scope` is set the live PID is additionally adopted
+/// into a transient systemd `.scope` (best-effort); the caller passes `false` when
+/// systemd is unavailable, e.g. a sandbox without systemd as PID 1.
+///
+/// We never `wait` here. `spawn_detached` hands the child's exit descriptor to the event
+/// loop, which reaps that ONE child when it reports readable — see `child.pidfd`.
+pub fn execute(req: &LaunchRequest, scope: bool) -> LaunchOutcome {
+    let permit = match crate::launch::scope::containment::begin_spawn() {
+        Ok(permit) => permit,
+        Err(error) => return fail(req, error),
+    };
+    let mut argv = req.argv.iter();
+    let Some(program) = argv.next() else {
+        return fail(req, "launch request has no program".into());
+    };
+
+    // Signals, fds and CPU priority the app must not inherit — see
+    // `process.child/child.hygiene` for what each step undoes and why.
+    let mut cmd = command(program);
+    cmd.args(argv);
+    for (k, v) in &req.env {
+        cmd.env(k, v);
+    }
+    if let Some(dir) = &req.working_dir {
+        cmd.current_dir(dir);
+    }
+    // The journal, the way a systemd service gets it, rather than the compositor's own
+    // stdio — see `child.journal`. Inheriting is set at `exec` and no later adoption can
+    // undo it, so this is the only point at which it can be decided.
+    let (stdin, stdout, stderr) = journal::stdio(program);
+    cmd.stdin(stdin);
+    cmd.stdout(stdout);
+    cmd.stderr(stderr);
+
+    // Attach before exec, so even a client that immediately double-forks stays
+    // within the session's delegated cgroup and cannot escape cleanup.
+    if let Err(error) = crate::launch::scope::containment::configure_command(&mut cmd, &permit) {
+        return fail(req, format!("session containment failed: {error}"));
+    }
+
+    // `child.spawn`, never `Command::spawn` directly: it refuses a program that
+    // could not be resolved (the ordinary failure — a plan naming a binary that
+    // isn't installed) BEFORE forking, and holds the reaper off for the fork+exec
+    // window so std's own wait on a failed exec cannot lose the race.
+    // `spawn_detached`, because nothing waits on this child: its exit descriptor is
+    // registered before the adoption below, which is a round trip the child can exit
+    // during. A descriptor can be opened for a process that has already become a zombie,
+    // so that cannot lose the race.
+    let pid = match spawn_detached(&mut cmd) {
+        // std's `Child` does not wait on drop; releasing the handle here changes nothing,
+        // since the exit is collected through the descriptor.
+        Ok(child) => child.id(),
+        Err(e) => return fail(req, format!("spawn failed: {e}")),
+    };
+
+    if scope
+        && cfg!(feature = "desktop-dbus")
+        && !crate::launch::scope::containment::enabled()
+        && let Err(e) = adopt_into_scope(pid, &req.unit)
+    {
+        warn!("scope adoption failed for pid {pid} ({}): {e}", req.unit);
+    }
+
+    LaunchOutcome {
+        correlation: req.correlation,
+        token: req.token.clone(),
+        pid: Some(pid),
+        result: Ok(()),
+    }
+}
+
+fn fail(req: &LaunchRequest, reason: String) -> LaunchOutcome {
+    // Name BOTH resolvable inputs. `spawn` reports a failed `chdir` and a failed
+    // `exec` with the same bare ENOENT, so a message carrying neither path sends
+    // you looking at the binary when the pinned working directory is what moved.
+    warn!(
+        "launch failed: {reason} (argv={:?} cwd={:?})",
+        req.argv, req.working_dir
+    );
+    LaunchOutcome {
+        correlation: req.correlation,
+        token: req.token.clone(),
+        pid: None,
+        result: Err(reason),
+    }
+}

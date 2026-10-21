@@ -7,7 +7,7 @@ use crate::input::layer::base::InputLayer;
 use crate::persist::document::entry::base::DocumentEntry;
 use crate::persist::entry::base::PersistEntry;
 use crate::storage::slot::base::Storage;
-pub use crate::trait_::cx::cx::{BufferCx, SystemCx};
+pub use crate::trait_::cx::{BufferCx, SystemCx};
 use crate::world::frame::base::{FramePlan, FrameTick};
 use std::any::Any;
 

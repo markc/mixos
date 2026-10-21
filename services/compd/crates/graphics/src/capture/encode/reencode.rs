@@ -17,8 +17,8 @@ use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Stdio};
 
-use slots::library::process::child::hygiene::hygiene::command;
-use slots::library::process::child::spawn::spawn as child_spawn;
+use slots::library::process::child::hygiene::command;
+use slots::library::process::child::spawn as child_spawn;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::thread::JoinHandle;
