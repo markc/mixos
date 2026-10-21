@@ -92,3 +92,18 @@ entry point to record the chosen wgpu adapter; Wayland client tracing records
 the actual buffer creation request. A shm result is reported as a weaker
 client-buffer claim, even when wgpu renders on a GPU. Software wgpu adapters
 are recorded explicitly and establish no GPU-client claim.
+
+What the headless-only run proves, and does not (review, 2026-10-21): with no
+console reference supplied, the test shows a large, stable rendered change
+after typing plus exact model text; it does not check glyph correctness
+(tofu or a wrong font fallback would still pass). Glyphs are only pinned by
+the console comparison. SSIM at 0.99 tolerates uniform brightness drift: a
++10 luma shift scores about 0.9955 at mid grey and 0.9988 at bright grey, so
+a brightness regression is within the threshold by design and must be
+caught elsewhere. The tested artefact is the test-only launcher, which
+compiles the shipped entry point from the same source; drift is a compile
+error, never silent. The first run chose a software Vulkan adapter
+(llvmpipe) with `wl_shm`: forcing a hardware wgpu adapter on the render node
+is an open follow-up, as are the test's fixed post-typing sleep (retry once
+on an unchanged capture), the helper's leftover `.session` directory on
+failure, and its reliance on `spawn` merging the parent environment.
