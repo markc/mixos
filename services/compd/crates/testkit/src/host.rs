@@ -241,7 +241,7 @@ impl TestHost {
         self.active_world ^= 1;
     }
 
-    fn remove_drawable(&mut self, uuid::Uuid) {
+    fn remove_drawable(&mut self, uuid: uuid::Uuid) {
         // Teardown can follow an activation, and Space unmap can precede both.
         world::order::track::base::DrawOrder::remove_from_all(
             world::order::track::base::ComponentId(uuid),
