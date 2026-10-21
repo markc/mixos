@@ -35,7 +35,7 @@ pub fn register_frame_hook(hook: FrameHook) {
 pub fn hooks(state: &mut Loop, renderer: &mut GlesRenderer, size: Size<i32, Physical>) -> Ticked {
     crate::hook::window::interface::hook(state);
     crate::hook::surface::wgpu::hook(state, renderer, size);
-    recorder::interface::interface::per_frame(state, renderer, size);
+    recorder::interface::per_frame(state, renderer, size);
     // Debug FPS overlay (top-right): measures the composited-frame rate.
     world::surface::draw::fps::per_frame(state, renderer, size);
     // The installed hooks (copied out: a hook may itself touch the list).

@@ -215,7 +215,7 @@ pub fn drain_lifecycle(_loop: &mut Loop) {
     }
 
     // Map/unmap/destroy/fullscreen may have changed the captured window set.
-    recorder::interface::interface::on_window_geometry_changed(_loop);
+    recorder::interface::on_window_geometry_changed(_loop);
 
     _loop.schedule_redraw(RedrawReason::WindowState);
 }
@@ -543,7 +543,7 @@ fn _reform(state: &mut Loop, window: Window, transform_update: TransformUpdate, 
 
     // A window moved/resized — refresh the capture region's tracked bbox +
     // force-render set (event-driven, mirrors the group bbox invalidation).
-    recorder::interface::interface::on_window_geometry_changed(state);
+    recorder::interface::on_window_geometry_changed(state);
 }
 
 // fn force_window_geometry(window: &Window, new_geom: Rectangle<i32, Logical>) {

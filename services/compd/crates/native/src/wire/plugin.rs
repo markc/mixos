@@ -44,7 +44,7 @@ pub fn apply_output_change(state: &mut Loop, change: world::event::output::Outpu
             // Capturing requires an output — stop any in-progress capture the
             // moment the display goes away. (Capture is a Loop-level hook, not a
             // World system, so the emitter stops it directly.)
-            recorder::interface::interface::stop_and_discard(state);
+            recorder::interface::stop_and_discard(state);
             // Deliver the event just broadcast (and anything else queued) now: the
             // per-frame dispatch does not run while dark. No-poll law: no repeating
             // timer for the dark window; the per-iteration idle hook dispatches the

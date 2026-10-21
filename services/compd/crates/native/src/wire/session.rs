@@ -54,7 +54,7 @@ pub fn register(
                     state.state.redraw.wake();
 
                     // Seat de-activating — stop and discard any active capture.
-                    recorder::interface::interface::stop_and_discard(state);
+                    recorder::interface::stop_and_discard(state);
 
                     // The keys-up for anything held at switch time will be
                     // consumed by the other VT — forget held modifiers now.

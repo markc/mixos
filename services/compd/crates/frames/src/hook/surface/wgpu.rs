@@ -37,7 +37,7 @@ fn load_incoming_buffer(state: &mut Loop, x: &mut GlesRenderer, size: Size<i32, 
         info!("Delegate message...: {:?}", item);
         match item.message {
             SurfaceMessageType::Capture(capture_message) => {
-                recorder::interface::interface::handle(state, x, capture_message)
+                recorder::interface::handle(state, x, capture_message)
             }
         }
     }
