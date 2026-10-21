@@ -388,7 +388,7 @@ fn compose(
     // it, so the nested window occupies the whole host window at any host DPI while the
     // compositor stays at the logical scale-1 output. Under a scale-1 host these are equal.
     let present_size = context.winit_backend.window_size();
-    let present_full = Rectangle::<i32, Physical>::from_loc_and_size((0, 0), present_size);
+    let present_full = Rectangle::<i32, Physical>::from_size(present_size);
     // Stable capture id for this output — the SAME EDID-derived `OutputId::from_key`
     // the rim's capture requests use (they key off `active_output()` on every
     // backend), so entries match on winit too. A hardcoded `OutputId(0)` here never

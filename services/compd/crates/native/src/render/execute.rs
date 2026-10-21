@@ -906,7 +906,7 @@ pub fn execute(
                         .get(&world::driver::capture::base::CAPTURE_REGISTRY)
                     {
                         let entries = registry.entries_for_output(output_id);
-                        let full_src = Rectangle::<i32, Physical>::from_loc_and_size((0, 0), size);
+                        let full_src = Rectangle::<i32, Physical>::from_size(size);
 
                         for (entry_id, mut entry_tex, entry_size, src_override) in entries {
                             // Region captures blit their sub-rect of the composed
