@@ -39,8 +39,8 @@ mod accent;
 mod axis;
 mod colour;
 mod colour_model;
-mod compiler;
 pub mod compat;
+mod compiler;
 mod context;
 mod design_model;
 mod diagnostic;
@@ -55,8 +55,8 @@ mod source;
 mod state;
 #[cfg(test)]
 mod trial;
-mod typography;
 mod tunable;
+mod typography;
 
 pub use tunable::{Tunable, TunableRange, tunables};
 

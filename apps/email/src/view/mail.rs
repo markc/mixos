@@ -490,7 +490,12 @@ fn attachments_popup(
                     } else {
                         weak
                     };
-                    ui.add(icons::image_of(ui.ctx(), type_icon(a.content_type.as_deref()), 14.0, ink));
+                    ui.add(icons::image_of(
+                        ui.ctx(),
+                        type_icon(a.content_type.as_deref()),
+                        14.0,
+                        ink,
+                    ));
                     // Fixed name and size columns, so the actions line up.
                     let height = ui.spacing().interact_size.y;
                     ui.allocate_ui(egui::vec2(name_width, height), |ui| {

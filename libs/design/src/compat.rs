@@ -62,7 +62,11 @@ impl Table {
         }
         let mut names = std::collections::BTreeSet::new();
         for (version, entries) in &table.versions {
-            if version.strip_prefix('v').and_then(|v| v.parse::<u32>().ok()).is_none() {
+            if version
+                .strip_prefix('v')
+                .and_then(|v| v.parse::<u32>().ok())
+                .is_none()
+            {
                 return Err(format!("invalid compatibility version `{version}`"));
             }
             for (kind, entries) in [
@@ -81,9 +85,13 @@ impl Table {
         Ok(table)
     }
 
-    pub fn token(&self, name: &str, style: &str, base: Option<&str>, scheme: &str)
-        -> Option<(&StyleValueSource, &str)>
-    {
+    pub fn token(
+        &self,
+        name: &str,
+        style: &str,
+        base: Option<&str>,
+        scheme: &str,
+    ) -> Option<(&StyleValueSource, &str)> {
         self.versions.iter().find_map(|(version, entries)| {
             let values = entries.tokens.get(name)?;
             [Some(style), base, Some(scheme), Some("plain"), Some("all")]
@@ -119,6 +127,10 @@ mod tests {
     fn duplicate_names_are_refused_across_versions() {
         let source = SOURCE.replacen("\"v2\":", "v3: { tokens: { field_height: { all: 24 } }, styles: {}, schemes: {}, terminal: {} }, v2:", 1);
         assert_ne!(source, SOURCE, "the fixture mutation must occur");
-        assert!(Table::parse(&source).unwrap_err().contains("duplicate compatibility token `field_height`"));
+        assert!(
+            Table::parse(&source)
+                .unwrap_err()
+                .contains("duplicate compatibility token `field_height`")
+        );
     }
 }

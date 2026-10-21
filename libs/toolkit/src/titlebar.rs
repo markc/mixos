@@ -150,13 +150,38 @@ fn fit_with_tokens(free: f32, slots: &[Slot], tokens: &design::ResolvedStyle) ->
             })
             .sum();
         let link = slots[..n].iter().any(|s| matches!(s, Slot::Link(_)));
-        width + if link { tokens.title_link_room as f32 } else { 0.0 }
+        width
+            + if link {
+                tokens.title_link_room as f32
+            } else {
+                0.0
+            }
     };
     let mut shown = slots.len();
-    while shown > 0 && need(shown, egui::Rangef { min: tokens.title_combo_min_width as f32, max: tokens.title_combo_max_width as f32 }.min) > free {
+    while shown > 0
+        && need(
+            shown,
+            egui::Rangef {
+                min: tokens.title_combo_min_width as f32,
+                max: tokens.title_combo_max_width as f32,
+            }
+            .min,
+        ) > free
+    {
         shown -= 1;
     }
-    let combo = (free - need(shown, 0.0)).clamp(egui::Rangef { min: tokens.title_combo_min_width as f32, max: tokens.title_combo_max_width as f32 }.min, egui::Rangef { min: tokens.title_combo_min_width as f32, max: tokens.title_combo_max_width as f32 }.max);
+    let combo = (free - need(shown, 0.0)).clamp(
+        egui::Rangef {
+            min: tokens.title_combo_min_width as f32,
+            max: tokens.title_combo_max_width as f32,
+        }
+        .min,
+        egui::Rangef {
+            min: tokens.title_combo_min_width as f32,
+            max: tokens.title_combo_max_width as f32,
+        }
+        .max,
+    );
     (combo, shown)
 }
 
@@ -435,9 +460,14 @@ fn right_group<S>(
         if let Some((command, true)) = command {
             fired.push((command.id, Origin::Ui));
         }
-        x -= width + crate::chrome::Chrome::of(ui.ctx()).style.title_control_spacing as f32;
+        x -= width
+            + crate::chrome::Chrome::of(ui.ctx())
+                .style
+                .title_control_spacing as f32;
     }
-    x + crate::chrome::Chrome::of(ui.ctx()).style.title_control_spacing as f32
+    x + crate::chrome::Chrome::of(ui.ctx())
+        .style
+        .title_control_spacing as f32
 }
 
 /// The window title in Inter Medium, `text_dim`: centred on the bar, slid
@@ -488,7 +518,12 @@ fn caption_button(ui: &mut Ui, rect: Rect, caption: Caption, chrome: &Chrome) {
     // Flat fills, no animation (§3.2, §4).
     let (fill, glyph) = match caption {
         Caption::Close if pressed => (
-            Some(p.caption_close.gamma_multiplychrome.style.close_pressed_alpha as f32),
+            Some(
+                p.caption_close
+                    .gamma_multiplychrome
+                    .style
+                    .close_pressed_alpha as f32,
+            ),
             p.caption_close_text,
         ),
         Caption::Close if hovered => (Some(p.caption_close), p.caption_close_text),
@@ -631,4 +666,9 @@ pub fn edges(ui: &mut Ui) {
 }
 
 /// The installed value of the former `COMBO_WIDTH` constant.
-pub fn combo_width_of(ctx: &egui::Context) -> egui::Rangef { egui::Rangef { min: crate::chrome::Chrome::of(ctx).style.title_combo_min_width as f32, max: crate::chrome::Chrome::of(ctx).style.title_combo_max_width as f32 } }
+pub fn combo_width_of(ctx: &egui::Context) -> egui::Rangef {
+    egui::Rangef {
+        min: crate::chrome::Chrome::of(ctx).style.title_combo_min_width as f32,
+        max: crate::chrome::Chrome::of(ctx).style.title_combo_max_width as f32,
+    }
+}

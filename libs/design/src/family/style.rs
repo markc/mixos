@@ -36,15 +36,46 @@ const PATH: &str = "design.v1.families.style";
 /// The original vocabulary. Later tokens default through the compatibility
 /// table; these names remain required in every authored style.
 pub const REQUIRED: [&str; 40] = [
-    "widgets", "faces", "body_size", "bevels", "widget_stroke", "selection",
-    "scroll_bars", "canvas_dots", "toggle", "switch", "knob", "slider_fill",
-    "push_shape", "secondary_button", "push_height", "primary_hover_alpha",
-    "primary_press_alpha", "panel_groups", "document_tabs", "tool_bar_rule",
-    "dock_width", "dock_margin", "options_bar", "status_bar", "tool_bar",
-    "tool_button", "tool_margin", "rail", "rail_button", "title_bar_height",
-    "mark", "menu_title_height", "menu_row_height", "menu_row_padding_x",
-    "menu_row_padding_y", "menu_min_width", "menu_highlight_radius",
-    "radius_sm", "radius", "radius_lg",
+    "widgets",
+    "faces",
+    "body_size",
+    "bevels",
+    "widget_stroke",
+    "selection",
+    "scroll_bars",
+    "canvas_dots",
+    "toggle",
+    "switch",
+    "knob",
+    "slider_fill",
+    "push_shape",
+    "secondary_button",
+    "push_height",
+    "primary_hover_alpha",
+    "primary_press_alpha",
+    "panel_groups",
+    "document_tabs",
+    "tool_bar_rule",
+    "dock_width",
+    "dock_margin",
+    "options_bar",
+    "status_bar",
+    "tool_bar",
+    "tool_button",
+    "tool_margin",
+    "rail",
+    "rail_button",
+    "title_bar_height",
+    "mark",
+    "menu_title_height",
+    "menu_row_height",
+    "menu_row_padding_x",
+    "menu_row_padding_y",
+    "menu_min_width",
+    "menu_highlight_radius",
+    "radius_sm",
+    "radius",
+    "radius_lg",
 ];
 
 /// A closed set of named token values: the variants, their source names, and
@@ -113,8 +144,13 @@ impl Token for StyleColour {
             return Err("expected a hexadecimal colour".into());
         };
         let rgba = crate::parse_legacy_v0_hex_colour(value)?;
-        if rgba.iter().any(|c| !(min..=max).contains(&(f64::from(*c) / 255.0))) {
-            return Err(format!("each colour channel must be between {min} and {max}"));
+        if rgba
+            .iter()
+            .any(|c| !(min..=max).contains(&(f64::from(*c) / 255.0)))
+        {
+            return Err(format!(
+                "each colour channel must be between {min} and {max}"
+            ));
         }
         Ok(Self(rgba))
     }
@@ -266,11 +302,15 @@ const NONE: Range = Range(0.0, 0.0);
 trait Token: Sized + Default {
     fn read(value: &StyleValueSource, range: Range) -> Result<Self, String>;
     fn write(&self) -> StyleValueSource;
-    fn variants() -> Option<Vec<String>> { None }
+    fn variants() -> Option<Vec<String>> {
+        None
+    }
 }
 
 impl Token for bool {
-    fn write(&self) -> StyleValueSource { StyleValueSource::Flag(*self) }
+    fn write(&self) -> StyleValueSource {
+        StyleValueSource::Flag(*self)
+    }
     fn read(value: &StyleValueSource, _: Range) -> Result<Self, String> {
         match value {
             StyleValueSource::Flag(flag) => Ok(*flag),
@@ -280,7 +320,9 @@ impl Token for bool {
 }
 
 impl Token for f64 {
-    fn write(&self) -> StyleValueSource { StyleValueSource::Number(*self) }
+    fn write(&self) -> StyleValueSource {
+        StyleValueSource::Number(*self)
+    }
     fn read(value: &StyleValueSource, Range(min, max): Range) -> Result<Self, String> {
         match value {
             StyleValueSource::Number(n) if n.is_finite() && (min..=max).contains(n) => Ok(*n),
@@ -291,7 +333,9 @@ impl Token for f64 {
 }
 
 impl Token for u8 {
-    fn write(&self) -> StyleValueSource { StyleValueSource::Number(f64::from(*self)) }
+    fn write(&self) -> StyleValueSource {
+        StyleValueSource::Number(f64::from(*self))
+    }
     fn read(value: &StyleValueSource, range: Range) -> Result<Self, String> {
         let n = f64::read(value, range)?;
         if n.fract() == 0.0 {
@@ -794,12 +838,23 @@ fn filled_tokens(
 ) -> BTreeMap<String, StyleValueSource> {
     let mut filled = tokens.clone();
     let base = match tokens.get("base") {
-        Some(StyleValueSource::Name(base)) if Style::from_name(base).is_some() => Some(base.as_str()),
+        Some(StyleValueSource::Name(base)) if Style::from_name(base).is_some() => {
+            Some(base.as_str())
+        }
         _ => None,
     };
-    let scheme = family.schemes.iter().find_map(|(scheme, bound)| {
-        (bound == name).then(|| Scheme::from_name(scheme)).flatten()
-    }).map(|s| if s.is_chrome_scheme() { s.name() } else { "plain" }).unwrap_or("plain");
+    let scheme = family
+        .schemes
+        .iter()
+        .find_map(|(scheme, bound)| (bound == name).then(|| Scheme::from_name(scheme)).flatten())
+        .map(|s| {
+            if s.is_chrome_scheme() {
+                s.name()
+            } else {
+                "plain"
+            }
+        })
+        .unwrap_or("plain");
     for token in TOKENS.iter().filter(|token| !REQUIRED.contains(token)) {
         if !filled.contains_key(*token)
             && let Some((value, _)) = table.token(token, name, base, scheme)
@@ -815,22 +870,34 @@ fn validate_constraints(style: &ResolvedStyle, path: &str, errors: &mut Vec<Desi
     for constraint in &crate::compat::table().constraints {
         if let (Some(StyleValueSource::Number(a)), Some(StyleValueSource::Number(b))) =
             (values.get(&constraint.a), values.get(&constraint.b))
-            && constraint.kind == "le" && a > b
+            && constraint.kind == "le"
+            && a > b
         {
-            errors.push(DesignDiagnostic::error("invalid-style-token", path,
-                format!("`{}` ({a}) must not exceed `{}` ({b})", constraint.a, constraint.b)));
+            errors.push(DesignDiagnostic::error(
+                "invalid-style-token",
+                path,
+                format!(
+                    "`{}` ({a}) must not exceed `{}` ({b})",
+                    constraint.a, constraint.b
+                ),
+            ));
         }
     }
 }
 
 pub(crate) fn default_diagnostics(source: &DesignV1Source) -> Vec<DesignDiagnostic> {
-    let Some(family) = &source.families.style else { return Vec::new(); };
+    let Some(family) = &source.families.style else {
+        return Vec::new();
+    };
     let mut diagnostics = Vec::new();
     for (name, tokens) in &family.styles {
         let filled = filled_tokens(family, name, tokens, crate::compat::table());
         for token in filled.keys().filter(|token| !tokens.contains_key(*token)) {
-            diagnostics.push(DesignDiagnostic::info("defaulted-style-token",
-                format!("{PATH}.styles.{name}.{token}"), "defaulted from compatibility v2"));
+            diagnostics.push(DesignDiagnostic::info(
+                "defaulted-style-token",
+                format!("{PATH}.styles.{name}.{token}"),
+                "defaulted from compatibility v2",
+            ));
         }
     }
     diagnostics
@@ -843,12 +910,17 @@ mod tests {
 
     #[test]
     fn required_names_match_the_frozen_source() {
-        let old = crate::parse_design_source(SourceIdentity::new("frozen"),
-            include_str!("../../tests/fixtures/revision-1-before-axes.theme.conf.mix")).unwrap();
+        let old = crate::parse_design_source(
+            SourceIdentity::new("frozen"),
+            include_str!("../../tests/fixtures/revision-1-before-axes.theme.conf.mix"),
+        )
+        .unwrap();
         let family = old.v1.families.style.unwrap();
-        let names = family.styles["studio"].keys()
+        let names = family.styles["studio"]
+            .keys()
             .filter(|name| !RETIRED.contains(&name.as_str()))
-            .map(String::as_str).collect::<BTreeSet<_>>();
+            .map(String::as_str)
+            .collect::<BTreeSet<_>>();
         assert_eq!(REQUIRED.len(), 40);
         assert_eq!(REQUIRED.into_iter().collect::<BTreeSet<_>>(), names);
         assert_eq!(&TOKENS[..40], REQUIRED);
@@ -857,26 +929,64 @@ mod tests {
     #[test]
     fn unsafe_behaviour_values_and_an_unreachable_corner_are_refused() {
         let style = compile_family(&family(), Scheme::Studio).unwrap();
-        for (name, below) in [("resize_edge", 1.99), ("resize_corner", 1.99),
-            ("scrub_rate", 0.049), ("fine_scrub_rate", 0.0009), ("fine_span", -0.01),
-            ("hot_distance", -0.01), ("menu_scroll_speed", 99.0), ("double_click_time", 0.099)]
-        {
-            let result = style.with_values(&BTreeMap::from([(name.into(), StyleValueSource::Number(below))]));
-            assert!(result.unwrap_err().iter().any(|e| e.code == "invalid-style-token"), "{name}");
+        for (name, below) in [
+            ("resize_edge", 1.99),
+            ("resize_corner", 1.99),
+            ("scrub_rate", 0.049),
+            ("fine_scrub_rate", 0.0009),
+            ("fine_span", -0.01),
+            ("hot_distance", -0.01),
+            ("menu_scroll_speed", 99.0),
+            ("double_click_time", 0.099),
+        ] {
+            let result = style.with_values(&BTreeMap::from([(
+                name.into(),
+                StyleValueSource::Number(below),
+            )]));
+            assert!(
+                result
+                    .unwrap_err()
+                    .iter()
+                    .any(|e| e.code == "invalid-style-token"),
+                "{name}"
+            );
         }
-        assert!(style.with_values(&BTreeMap::from([("icon_mask".into(), StyleValueSource::Name("#001111".into()))])).is_err());
-        let errors = style.with_values(&BTreeMap::from([("resize_edge".into(), StyleValueSource::Number(13.0))])).unwrap_err();
-        assert!(errors.iter().any(|e| e.message.contains("resize_edge") && e.message.contains("resize_corner")));
+        assert!(
+            style
+                .with_values(&BTreeMap::from([(
+                    "icon_mask".into(),
+                    StyleValueSource::Name("#001111".into())
+                )]))
+                .is_err()
+        );
+        let errors = style
+            .with_values(&BTreeMap::from([(
+                "resize_edge".into(),
+                StyleValueSource::Number(13.0),
+            )]))
+            .unwrap_err();
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.message.contains("resize_edge") && e.message.contains("resize_corner"))
+        );
     }
 
     #[test]
     fn embedded_tokens_need_no_defaults_and_old_sources_report_them() {
         assert!(default_diagnostics(&embedded().v1).is_empty());
-        let old = crate::parse_design_source(SourceIdentity::new("old"),
-            include_str!("../../tests/fixtures/revision-1-before-axes.theme.conf.mix")).unwrap();
+        let old = crate::parse_design_source(
+            SourceIdentity::new("old"),
+            include_str!("../../tests/fixtures/revision-1-before-axes.theme.conf.mix"),
+        )
+        .unwrap();
         let diagnostics = default_diagnostics(&old.v1);
         assert!(!diagnostics.is_empty());
-        assert!(diagnostics.iter().all(|d| d.severity == crate::DiagnosticSeverity::Info));
+        assert!(
+            diagnostics
+                .iter()
+                .all(|d| d.severity == crate::DiagnosticSeverity::Info)
+        );
     }
 
     fn embedded() -> crate::DesignSourceDocument {

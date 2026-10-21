@@ -696,7 +696,14 @@ impl Shell {
             self.perform();
         }
         let connected = self.transport.connected();
-        let events = view(ui, &mut self.app, &self.commands, &self.strings, &self.palette, connected);
+        let events = view(
+            ui,
+            &mut self.app,
+            &self.commands,
+            &self.strings,
+            &self.palette,
+            connected,
+        );
         crate::view::apply(&mut self.app, &self.commands, events);
         toolkit::markdown::open_links(ui.ctx(), "ced");
         self.perform();

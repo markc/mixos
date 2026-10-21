@@ -41,7 +41,16 @@ fn snapshot(cores: usize, busy: f64) -> Value {
 }
 
 fn table(rows: usize) -> Value {
-    let names = ["systemd", "compd", "monitor", "firefox", "Web Content", "noded", "term", "mix"];
+    let names = [
+        "systemd",
+        "compd",
+        "monitor",
+        "firefox",
+        "Web Content",
+        "noded",
+        "term",
+        "mix",
+    ];
     let rows: Vec<Value> = (0..rows)
         .map(|i| {
             let depth = if i == 0 { 0 } else { 1 + (i % 3 == 2) as u32 };
@@ -73,7 +82,14 @@ fn engine(cores: usize, rows: usize, tab: Tab) -> Engine {
     let ticket = |kind| tickets.iter().find(|(k, _)| *k == kind).unwrap().1;
     // A minute of history, as monitord.history would seed it.
     let series = |name: &str, phase: f64, low: f64, high: f64| {
-        (name.to_owned(), json!((0..60).map(|i| json!([i, wave(i, phase, low, high), 0, 0])).collect::<Vec<_>>()))
+        (
+            name.to_owned(),
+            json!(
+                (0..60)
+                    .map(|i| json!([i, wave(i, phase, low, high), 0, 0]))
+                    .collect::<Vec<_>>()
+            ),
+        )
     };
     let mut seeded = serde_json::Map::new();
     for (name, values) in [
@@ -91,16 +107,34 @@ fn engine(cores: usize, rows: usize, tab: Tab) -> Engine {
         let (name, values) = series(&format!("cpu.core.{c}.busy"), c as f64 * 0.7, 2.0, 90.0);
         seeded.insert(name, values);
     }
-    e.fetched(Fetch::History, ticket(Fetch::History), Ok(json!({"series": seeded})));
-    e.fetched(Fetch::Snapshot, ticket(Fetch::Snapshot), Ok(snapshot(cores, 27.4)));
+    e.fetched(
+        Fetch::History,
+        ticket(Fetch::History),
+        Ok(json!({"series": seeded})),
+    );
+    e.fetched(
+        Fetch::Snapshot,
+        ticket(Fetch::Snapshot),
+        Ok(snapshot(cores, 27.4)),
+    );
     e.fetched(Fetch::Processes, ticket(Fetch::Processes), Ok(table(rows)));
-    e.fetched(Fetch::Peers, ticket(Fetch::Peers), Ok(json!({"node": "alpha", "peers": [{"name": "beta"}, {"name": "gamma"}]})));
+    e.fetched(
+        Fetch::Peers,
+        ticket(Fetch::Peers),
+        Ok(json!({"node": "alpha", "peers": [{"name": "beta"}, {"name": "gamma"}]})),
+    );
     e.set_tab(tab);
     e.take_effects();
     e
 }
 
-fn render(theme: Theme, name: &str, mut engine: Engine, section: Option<&str>, selected: Option<u32>) {
+fn render(
+    theme: Theme,
+    name: &str,
+    mut engine: Engine,
+    section: Option<&str>,
+    selected: Option<u32>,
+) {
     if let Some(section) = section {
         engine.set_section(section).unwrap();
     }
@@ -128,32 +162,68 @@ fn light() -> Theme {
 
 #[test]
 fn processes_dark() {
-    render(dark(), "processes_dark", engine(4, 40, Tab::Processes), None, Some(22));
+    render(
+        dark(),
+        "processes_dark",
+        engine(4, 40, Tab::Processes),
+        None,
+        Some(22),
+    );
 }
 
 #[test]
 fn processes_light() {
-    render(light(), "processes_light", engine(4, 40, Tab::Processes), None, Some(22));
+    render(
+        light(),
+        "processes_light",
+        engine(4, 40, Tab::Processes),
+        None,
+        Some(22),
+    );
 }
 
 #[test]
 fn performance_cpu_dark() {
-    render(dark(), "performance_cpu_dark", engine(16, 10, Tab::Performance), Some("cpu"), None);
+    render(
+        dark(),
+        "performance_cpu_dark",
+        engine(16, 10, Tab::Performance),
+        Some("cpu"),
+        None,
+    );
 }
 
 #[test]
 fn performance_memory_light() {
-    render(light(), "performance_memory_light", engine(4, 10, Tab::Performance), Some("memory"), None);
+    render(
+        light(),
+        "performance_memory_light",
+        engine(4, 10, Tab::Performance),
+        Some("memory"),
+        None,
+    );
 }
 
 #[test]
 fn performance_disk_dark() {
-    render(dark(), "performance_disk_dark", engine(4, 10, Tab::Performance), Some("disk:nvme0n1"), None);
+    render(
+        dark(),
+        "performance_disk_dark",
+        engine(4, 10, Tab::Performance),
+        Some("disk:nvme0n1"),
+        None,
+    );
 }
 
 #[test]
 fn performance_net_light() {
-    render(light(), "performance_net_light", engine(4, 10, Tab::Performance), Some("net:eth0"), None);
+    render(
+        light(),
+        "performance_net_light",
+        engine(4, 10, Tab::Performance),
+        Some("net:eth0"),
+        None,
+    );
 }
 
 /// Monitor's default look is the session's: Studio Dark when no theme is
@@ -161,7 +231,10 @@ fn performance_net_light() {
 #[test]
 fn the_default_theme_is_studio_dark() {
     let embedded = Theme::embedded();
-    assert_eq!((embedded.scheme(), embedded.mode()), (Scheme::Studio, Mode::Dark));
+    assert_eq!(
+        (embedded.scheme(), embedded.mode()),
+        (Scheme::Studio, Mode::Dark)
+    );
 }
 
 /// The representative workload: a 2,000-process table and a 64-core grid,

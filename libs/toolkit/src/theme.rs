@@ -402,8 +402,12 @@ impl Theme {
 
     /// The chrome's forms and lengths (the design's style family).
     pub fn style(&self) -> ResolvedStyle {
-        if self.overlay.style.is_empty() { self.style } else {
-            self.style.with_values(&self.overlay.style).expect("validated style overlay")
+        if self.overlay.style.is_empty() {
+            self.style
+        } else {
+            self.style
+                .with_values(&self.overlay.style)
+                .expect("validated style overlay")
         }
     }
 

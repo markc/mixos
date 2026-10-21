@@ -370,11 +370,8 @@ impl Shell {
     }
 
     fn refuse_closing(&self, id: u64) {
-        self.bus.reply(
-            id,
-            10,
-            json!({"error_code":"BUSY","message":label("busy")}),
-        );
+        self.bus
+            .reply(id, 10, json!({"error_code":"BUSY","message":label("busy")}));
     }
 
     fn release(&mut self) {
@@ -674,7 +671,9 @@ mod tests {
             e.command(1, "monitor.execute", &json!({"id": command.id}).to_string());
             let effects = settle(&mut e, &commands, &strings);
             assert!(
-                effects.iter().any(|x| matches!(x, Effect::Reply { id: 1, .. })),
+                effects
+                    .iter()
+                    .any(|x| matches!(x, Effect::Reply { id: 1, .. })),
                 "{}: {effects:?}",
                 command.id
             );
@@ -683,11 +682,23 @@ mod tests {
 
     #[test]
     fn replies_become_values_or_reasons() {
-        let ok = Reply { rc: 0, body: "{\"a\":1}".into(), error: None };
+        let ok = Reply {
+            rc: 0,
+            body: "{\"a\":1}".into(),
+            error: None,
+        };
         assert_eq!(reply_value(Ok(ok)).unwrap()["a"], 1);
-        let refused = Reply { rc: 10, body: "{\"status\":\"bad_request\",\"error\":\"no\"}".into(), error: None };
+        let refused = Reply {
+            rc: 10,
+            body: "{\"status\":\"bad_request\",\"error\":\"no\"}".into(),
+            error: None,
+        };
         assert_eq!(reply_value(Ok(refused)).unwrap_err(), "no");
-        let broker = Reply { rc: 10, body: String::new(), error: Some("Service 'monitord' not found".into()) };
+        let broker = Reply {
+            rc: 10,
+            body: String::new(),
+            error: Some("Service 'monitord' not found".into()),
+        };
         assert!(reply_value(Ok(broker)).unwrap_err().contains("not found"));
     }
 

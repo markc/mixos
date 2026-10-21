@@ -145,7 +145,15 @@ pub fn view(
             icon: Icon::Keyboard,
         },
     ];
-    let fired = titlebar::show_with(ui, &crate::label("title"), Some(Icon::Mail), commands, state, strings, &mut controls);
+    let fired = titlebar::show_with(
+        ui,
+        &crate::label("title"),
+        Some(Icon::Mail),
+        commands,
+        state,
+        strings,
+        &mut controls,
+    );
     let mut mode_set = false;
     for (id, origin) in fired {
         if id == "view.mode" {
@@ -336,9 +344,7 @@ fn window(
             .resizable(true)
             .default_size(remaining * state.ui.reader)
             .frame(pane_frame(ui.ctx(), state.pane == Pane::Reader))
-            .show(ui, |ui| {
-                reader(ui, state, view, commands, strings, events)
-            });
+            .show(ui, |ui| reader(ui, state, view, commands, strings, events));
         let split = right.response.rect.width() / remaining.max(1.0);
         if (split - state.ui.reader).abs() > 0.005 {
             events.push(UiEvent::SplitReader(split));

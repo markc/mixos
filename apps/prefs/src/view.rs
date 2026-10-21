@@ -107,7 +107,15 @@ pub fn view(
             icon: Icon::Keyboard,
         },
     ];
-    let fired = titlebar::show_with(ui, &label("title"), Some(Icon::Settings), commands, engine, strings, &mut controls);
+    let fired = titlebar::show_with(
+        ui,
+        &label("title"),
+        Some(Icon::Settings),
+        commands,
+        engine,
+        strings,
+        &mut controls,
+    );
     // The toggle goes to the mode opposite the one this frame drew, so a
     // click reported twice cannot flip it back.
     let mut mode_set = false;
@@ -185,12 +193,7 @@ pub fn view(
 }
 
 /// A tree whose selection and expansion live in the serialisable engine.
-fn editors(
-    ui: &mut Ui,
-    engine: &Engine,
-    commands: &Registry<Engine>,
-    events: &mut Vec<UiEvent>,
-) {
+fn editors(ui: &mut Ui, engine: &Engine, commands: &Registry<Engine>, events: &mut Vec<UiEvent>) {
     let title = label("panels");
     panel::group(ui, "editors", &[title.as_str()], |ui, _| {
         ScrollArea::vertical()
@@ -233,7 +236,12 @@ fn editors(
                                     let command =
                                         commands.get(section.command()).expect("section command");
                                     ui.horizontal(|ui| {
-                                        ui.add(icons::image_of(ui.ctx(), command.icon.expect("section icon"), ICON, ui.visuals().text_color()));
+                                        ui.add(icons::image_of(
+                                            ui.ctx(),
+                                            command.icon.expect("section icon"),
+                                            ICON,
+                                            ui.visuals().text_color(),
+                                        ));
                                         if toolkit::selectable(
                                             ui,
                                             engine.section() == section,

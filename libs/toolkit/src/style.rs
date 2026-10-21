@@ -144,7 +144,10 @@ pub fn pair_style(theme: &Theme) -> Style {
     let tokens = theme.style();
     let spacing = &mut style.spacing;
     spacing.item_spacing = egui::vec2(tokens.item_spacing_x as f32, tokens.item_spacing_y as f32);
-    spacing.button_padding = egui::vec2(tokens.button_padding_x as f32, tokens.button_padding_y as f32);
+    spacing.button_padding = egui::vec2(
+        tokens.button_padding_x as f32,
+        tokens.button_padding_y as f32,
+    );
     spacing.interact_size = egui::Vec2::splattokens.interact as f32;
     spacing.window_margin = Margin::sametokens.window_margin as i8;
     spacing.menu_margin = Margin::sametokens.menu_margin as i8;
@@ -182,7 +185,10 @@ pub fn pair_style(theme: &Theme) -> Style {
     style.visuals.window_corner_radius = CornerRadius::same(tokens.radius_lg);
     let shadow = &mut style.visuals.popup_shadow;
     *shadow = egui::Shadow {
-        offset: [tokens.popup_shadow_offset_x as i8, tokens.popup_shadow_offset_y as i8],
+        offset: [
+            tokens.popup_shadow_offset_x as i8,
+            tokens.popup_shadow_offset_y as i8,
+        ],
         blur: tokens.popup_shadow_blur as u8,
         spread: tokens.popup_shadow_spread as u8,
         color: shadow.color.gamma_multiplytokens.popup_shadow_alpha as f32,
@@ -304,9 +310,17 @@ pub fn scroll_style(tokens: &design::ResolvedStyle) -> egui::style::ScrollStyle 
     let solid = tokens.scroll_bars == design::family::style::ScrollBars::Solid;
     egui::style::ScrollStyle {
         floating: !solid,
-        bar_width: if solid { tokens.scroll_width } else { tokens.scroll_width_hot } as f32,
+        bar_width: if solid {
+            tokens.scroll_width
+        } else {
+            tokens.scroll_width_hot
+        } as f32,
         floating_width: tokens.scroll_width as f32,
-        floating_allocated_width: if solid { 0.0 } else { tokens.scroll_allocated as f32 },
+        floating_allocated_width: if solid {
+            0.0
+        } else {
+            tokens.scroll_allocated as f32
+        },
         handle_min_length: tokens.scroll_handle_min as f32,
         bar_inner_margin: tokens.scroll_margin as f32,
         bar_outer_margin: tokens.scroll_outer_margin as f32,
@@ -327,7 +341,9 @@ fn apply_role_overlay(visuals: &mut Visuals, theme: &Theme) {
     let tokens = theme.style();
     let palette = crate::chrome::Chrome::for_theme(theme).palette;
     for role in theme.overlay().chrome.keys() {
-        let Some(value) = palette.get(role) else { continue; };
+        let Some(value) = palette.get(role) else {
+            continue;
+        };
         match role.as_str() {
             "chrome" => visuals.panel_fill = value,
             "card" => {
@@ -350,14 +366,20 @@ fn apply_role_overlay(visuals: &mut Visuals, theme: &Theme) {
                     visuals.selection.bg_fill = value;
                 }
             }
-            "accent_soft" if tokens.selection == design::family::style::Selection::AccentSoft => visuals.selection.bg_fill = value,
+            "accent_soft" if tokens.selection == design::family::style::Selection::AccentSoft => {
+                visuals.selection.bg_fill = value
+            }
             "accent_text" => visuals.selection.stroke.color = value,
             "warning" => visuals.warn_fg_color = value,
             "danger" => visuals.error_fg_color = value,
             "text" => {
                 visuals.override_text_color = Some(value);
-                for state in [&mut visuals.widgets.inactive, &mut visuals.widgets.hovered,
-                    &mut visuals.widgets.open, &mut visuals.widgets.active] {
+                for state in [
+                    &mut visuals.widgets.inactive,
+                    &mut visuals.widgets.hovered,
+                    &mut visuals.widgets.open,
+                    &mut visuals.widgets.active,
+                ] {
                     state.fg_stroke.color = value;
                 }
             }
@@ -374,7 +396,11 @@ fn apply_role_overlay(visuals: &mut Visuals, theme: &Theme) {
                 visuals.widgets.active.weak_bg_fill = value;
             }
             "field_border" => {
-                for state in [&mut visuals.widgets.inactive, &mut visuals.widgets.hovered, &mut visuals.widgets.open] {
+                for state in [
+                    &mut visuals.widgets.inactive,
+                    &mut visuals.widgets.hovered,
+                    &mut visuals.widgets.open,
+                ] {
                     state.bg_stroke.color = value;
                 }
             }

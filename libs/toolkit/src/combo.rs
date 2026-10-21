@@ -33,14 +33,43 @@ use egui::{
 /// The chevron centred in `rect`, in `visuals`' text colour at 80%.
 pub fn chevron(ui: &Ui, rect: Rect, visuals: &WidgetVisuals, _open: bool) {
     let c = rect.center();
-    let ink = visuals.text_color().gamma_multiply(crate::chrome::Chrome::of(ui.ctx()).style.combo_chevron_alpha as f32);
+    let ink = visuals.text_color().gamma_multiply(
+        crate::chrome::Chrome::of(ui.ctx())
+            .style
+            .combo_chevron_alpha as f32,
+    );
     let points = vec![
-        pos2(c.x - crate::chrome::Chrome::of(ui.ctx()).style.combo_chevron_half as f32, c.y - crate::chrome::Chrome::of(ui.ctx()).style.combo_chevron_height as f32 / 2.0),
-        pos2(c.x, c.y + crate::chrome::Chrome::of(ui.ctx()).style.combo_chevron_height as f32 / 2.0),
-        pos2(c.x + crate::chrome::Chrome::of(ui.ctx()).style.combo_chevron_half as f32, c.y - crate::chrome::Chrome::of(ui.ctx()).style.combo_chevron_height as f32 / 2.0),
+        pos2(
+            c.x - crate::chrome::Chrome::of(ui.ctx()).style.combo_chevron_half as f32,
+            c.y - crate::chrome::Chrome::of(ui.ctx())
+                .style
+                .combo_chevron_height as f32
+                / 2.0,
+        ),
+        pos2(
+            c.x,
+            c.y + crate::chrome::Chrome::of(ui.ctx())
+                .style
+                .combo_chevron_height as f32
+                / 2.0,
+        ),
+        pos2(
+            c.x + crate::chrome::Chrome::of(ui.ctx()).style.combo_chevron_half as f32,
+            c.y - crate::chrome::Chrome::of(ui.ctx())
+                .style
+                .combo_chevron_height as f32
+                / 2.0,
+        ),
     ];
-    ui.painter()
-        .add(egui::Shape::line(points, Stroke::new(crate::chrome::Chrome::of(ui.ctx()).style.combo_chevron_stroke as f32, ink)));
+    ui.painter().add(egui::Shape::line(
+        points,
+        Stroke::new(
+            crate::chrome::Chrome::of(ui.ctx())
+                .style
+                .combo_chevron_stroke as f32,
+            ink,
+        ),
+    ));
 }
 
 /// `selected` in `options`, as a combo `width` wide (egui's `combo_width`,
@@ -129,4 +158,6 @@ fn lock_arrows(ui: &Ui, id: Id) {
 }
 
 /// The installed value of the former `LIST_HEIGHT` constant.
-pub fn list_height_of(ctx: &egui::Context) -> f32 { crate::chrome::Chrome::of(ctx).style.combo_list_height as f32 }
+pub fn list_height_of(ctx: &egui::Context) -> f32 {
+    crate::chrome::Chrome::of(ctx).style.combo_list_height as f32
+}

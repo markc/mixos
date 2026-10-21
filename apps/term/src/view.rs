@@ -32,7 +32,14 @@ pub fn title_bar(
     commands: &Registry<App>,
     strings: &Strings,
 ) -> Vec<UiEvent> {
-    titlebar::show(ui, &label("title"), Some(Icon::FileTerminal), commands, app, strings)
+    titlebar::show(
+        ui,
+        &label("title"),
+        Some(Icon::FileTerminal),
+        commands,
+        app,
+        strings,
+    )
     .into_iter()
     .map(|(id, origin)| UiEvent::Command(id, origin))
     .collect()

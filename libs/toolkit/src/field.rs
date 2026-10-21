@@ -55,7 +55,12 @@ impl Style {
 
     fn stroke(self, palette: &chrome::Palette, focused: bool) -> Stroke {
         if focused {
-            Stroke::new(self.focus_width, palette.get(self.focus_role.name()).expect("field focus role"))
+            Stroke::new(
+                self.focus_width,
+                palette
+                    .get(self.focus_role.name())
+                    .expect("field focus role"),
+            )
         } else {
             Stroke::new(self.border_width, palette.field_border)
         }
@@ -256,7 +261,10 @@ impl Widget for ValueField<'_> {
         // One id for the resting box and its editor, as egui's DragValue
         // has: the field edits while it has keyboard focus.
         let id = ui.next_auto_id();
-        let (_, rect) = ui.allocate_space(vec2(width, crate::chrome::Chrome::of(ui.ctx()).style.field_height as f32));
+        let (_, rect) = ui.allocate_space(vec2(
+            width,
+            crate::chrome::Chrome::of(ui.ctx()).style.field_height as f32,
+        ));
         let editing = ui.memory(|m| m.has_focus(id));
         let mut edit: Edit = ui.data(|d| d.get_temp(id)).unwrap_or_default();
         let before = *value;
@@ -299,8 +307,14 @@ impl Widget for ValueField<'_> {
             }
         }
 
-        let number_font = FontId::new(crate::chrome::Chrome::of(ui.ctx()).style.value_number_size as f32, FontFamily::Monospace);
-        let unit_font = FontId::new(crate::chrome::Chrome::of(ui.ctx()).style.value_unit_size as f32, FontFamily::Monospace);
+        let number_font = FontId::new(
+            crate::chrome::Chrome::of(ui.ctx()).style.value_number_size as f32,
+            FontFamily::Monospace,
+        );
+        let unit_font = FontId::new(
+            crate::chrome::Chrome::of(ui.ctx()).style.value_unit_size as f32,
+            FontFamily::Monospace,
+        );
         let unit_galley = unit.map(|u| {
             ui.painter()
                 .layout_no_wrap(u.to_owned(), unit_font, p.text_faint)
@@ -308,7 +322,11 @@ impl Widget for ValueField<'_> {
         // The 16 pt reserve holds a one-character unit; a longer one ("px")
         // widens it to keep crate::chrome::Chrome::of(ui.ctx()).style.value_unit_gap as f32 before the unit (undetermined, §5.4).
         let reserve = unit_galley.as_ref().map_or(0.0, |g| {
-            (crate::chrome::Chrome::of(ui.ctx()).style.value_unit_reserve as f32).max(crate::chrome::Chrome::of(ui.ctx()).style.value_unit_inset as f32 + g.size().x + crate::chrome::Chrome::of(ui.ctx()).style.value_unit_gap as f32)
+            (crate::chrome::Chrome::of(ui.ctx()).style.value_unit_reserve as f32).max(
+                crate::chrome::Chrome::of(ui.ctx()).style.value_unit_inset as f32
+                    + g.size().x
+                    + crate::chrome::Chrome::of(ui.ctx()).style.value_unit_gap as f32,
+            )
         });
         let inner = Rect::from_min_max(rect.min, pos2(rect.right() - reserve, rect.bottom()));
         let painter = ui.painter_at(rect.expand(1.0));
@@ -330,11 +348,22 @@ impl Widget for ValueField<'_> {
             let output = TextEdit::singleline(&mut text)
                 .id(id)
                 .frame(egui::Frame::NONE)
-                .margin(Margin::symmetric(crate::chrome::Chrome::of(ui.ctx()).style.field_padding_x as i8, crate::chrome::Chrome::of(ui.ctx()).style.field_padding_y as i8))
+                .margin(Margin::symmetric(
+                    crate::chrome::Chrome::of(ui.ctx()).style.field_padding_x as i8,
+                    crate::chrome::Chrome::of(ui.ctx()).style.field_padding_y as i8,
+                ))
                 .font(number_font.clone())
                 .horizontal_align(Align::RIGHT)
                 .vertical_align(Align::Center)
-                .desired_width(inner.width() - Margin::symmetric(crate::chrome::Chrome::of(ui.ctx()).style.field_padding_x as i8, crate::chrome::Chrome::of(ui.ctx()).style.field_padding_y as i8).sum().x)
+                .desired_width(
+                    inner.width()
+                        - Margin::symmetric(
+                            crate::chrome::Chrome::of(ui.ctx()).style.field_padding_x as i8,
+                            crate::chrome::Chrome::of(ui.ctx()).style.field_padding_y as i8,
+                        )
+                        .sum()
+                        .x,
+                )
                 .min_size(inner.size());
             response = cell.add(output);
             if response.changed()
@@ -370,7 +399,11 @@ impl Widget for ValueField<'_> {
                         .zip(i.pointer.interact_pos())
                         .map(|(a, b)| b.x - a.x)
                 });
-                let rate = if fine { crate::chrome::Chrome::of(ui.ctx()).style.fine_scrub_rate } else { crate::chrome::Chrome::of(ui.ctx()).style.scrub_rate };
+                let rate = if fine {
+                    crate::chrome::Chrome::of(ui.ctx()).style.fine_scrub_rate
+                } else {
+                    crate::chrome::Chrome::of(ui.ctx()).style.scrub_rate
+                };
                 *value = clamp(
                     ((edit.drag_from + f64::from(travel.unwrap_or(0.0)) * rate) / rate).round()
                         * rate,
@@ -380,14 +413,24 @@ impl Widget for ValueField<'_> {
                 ui.memory_mut(|m| m.request_focus(id));
             }
             let galley = painter.layout_no_wrap(format(*value, fine), number_font, p.text);
-            let x = inner.right() - f32::from(Margin::symmetric(crate::chrome::Chrome::of(ui.ctx()).style.field_padding_x as i8, crate::chrome::Chrome::of(ui.ctx()).style.field_padding_y as i8).right) - galley.size().x;
+            let x = inner.right()
+                - f32::from(
+                    Margin::symmetric(
+                        crate::chrome::Chrome::of(ui.ctx()).style.field_padding_x as i8,
+                        crate::chrome::Chrome::of(ui.ctx()).style.field_padding_y as i8,
+                    )
+                    .right,
+                )
+                - galley.size().x;
             let at = pos2(x, rect.center().y - galley.size().y / 2.0)
                 .round_to_pixels(ui.pixels_per_point());
             painter.galley(at, galley, p.text);
             response = response.on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
         }
         if let Some(galley) = unit_galley {
-            let x = rect.right() - crate::chrome::Chrome::of(ui.ctx()).style.value_unit_inset as f32 - galley.size().x;
+            let x = rect.right()
+                - crate::chrome::Chrome::of(ui.ctx()).style.value_unit_inset as f32
+                - galley.size().x;
             let at = pos2(x, rect.center().y - galley.size().y / 2.0)
                 .round_to_pixels(ui.pixels_per_point());
             painter.galley(at, galley, p.text_faint);
@@ -423,7 +466,10 @@ pub fn text(ui: &mut Ui, text: &mut String, hint: &str, width: f32) -> Response 
 /// id, to know its focus before it is drawn).
 pub fn text_edit<'t>(text: &'t mut String, hint: &str, width: f32) -> TextField<'t> {
     TextField {
-        edit: TextEdit::singleline(text).hint_text(hint).desired_width(width).vertical_align(Align::Center),
+        edit: TextEdit::singleline(text)
+            .hint_text(hint)
+            .desired_width(width)
+            .vertical_align(Align::Center),
         search: false,
     }
 }
@@ -435,8 +481,14 @@ pub struct TextField<'t> {
 }
 
 impl TextField<'_> {
-    pub fn id(mut self, id: egui::Id) -> Self { self.edit = self.edit.id(id); self }
-    pub fn password(mut self, password: bool) -> Self { self.edit = self.edit.password(password); self }
+    pub fn id(mut self, id: egui::Id) -> Self {
+        self.edit = self.edit.id(id);
+        self
+    }
+    pub fn password(mut self, password: bool) -> Self {
+        self.edit = self.edit.password(password);
+        self
+    }
 }
 
 impl Widget for TextField<'_> {
@@ -444,19 +496,35 @@ impl Widget for TextField<'_> {
         let chrome = Chrome::of(ui.ctx());
         let field = Style::of(ui.ctx());
         let mut padding = field.padding;
-        if self.search { padding.left = chrome.style.search_lead as i8; }
-        let response = ui.add(self.edit
-            .frame(egui::Frame::new().inner_margin(padding).corner_radius(field.radius).fill(chrome.palette.field))
-            .min_size(vec2(0.0, field.height)));
+        if self.search {
+            padding.left = chrome.style.search_lead as i8;
+        }
+        let response = ui.add(
+            self.edit
+                .frame(
+                    egui::Frame::new()
+                        .inner_margin(padding)
+                        .corner_radius(field.radius)
+                        .fill(chrome.palette.field),
+                )
+                .min_size(vec2(0.0, field.height)),
+        );
         if chrome.style.bevels {
             chrome::bevel(ui.painter(), response.rect, false, &chrome.palette);
         } else {
-            ui.painter().rect_stroke(response.rect, field.radius,
-                field.stroke(&chrome.palette, response.has_focus()), StrokeKind::Inside);
+            ui.painter().rect_stroke(
+                response.rect,
+                field.radius,
+                field.stroke(&chrome.palette, response.has_focus()),
+                StrokeKind::Inside,
+            );
         }
         if self.search {
             let side = chrome.style.search_icon as f32;
-            let centre = pos2(response.rect.left() + f32::from(field.padding.left) + side / 2.0, response.rect.center().y);
+            let centre = pos2(
+                response.rect.left() + f32::from(field.padding.left) + side / 2.0,
+                response.rect.center().y,
+            );
             paint_icon(ui, Icon::Search, centre, side, chrome.palette.text_faint);
         }
         response
@@ -470,12 +538,15 @@ pub fn search(ui: &mut Ui, text: &mut String, hint: &str, width: f32) -> Respons
     ui.add(edit)
 }
 
-
 /// The installed value of the former `HEIGHT` constant.
-pub fn height_of(ctx: &egui::Context) -> f32 { crate::chrome::Chrome::of(ctx).style.field_height as f32 }
+pub fn height_of(ctx: &egui::Context) -> f32 {
+    crate::chrome::Chrome::of(ctx).style.field_height as f32
+}
 
 /// The installed value of the former `VALUE_WIDTH` constant.
-pub fn value_width_of(ctx: &egui::Context) -> f32 { crate::chrome::Chrome::of(ctx).style.value_width as f32 }
+pub fn value_width_of(ctx: &egui::Context) -> f32 {
+    crate::chrome::Chrome::of(ctx).style.value_width as f32
+}
 
 #[cfg(test)]
 mod tests {

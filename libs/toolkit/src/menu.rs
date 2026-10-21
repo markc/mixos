@@ -165,7 +165,6 @@ pub const PATH_SEPARATOR: &str = " › ";
 
 /// The search field's width (§3.5) and the separator band after it.
 
-
 /// The command rows of `menus` matching `query` (case-insensitive), each
 /// labelled with its menu path joined by [`PATH_SEPARATOR`], ranked: the
 /// label starts with the query, then a word of it does, then the label

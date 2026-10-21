@@ -212,10 +212,22 @@ pub fn bevel(painter: &egui::Painter, rect: Rect, raised: bool, palette: &Palett
     };
     let style = Chrome::of(painter.ctx()).style;
     let r = rect.shrink(style.hairline_width as f32 / 2.0);
-    painter.line_segment([r.left_bottom(), r.left_top()], Stroke::new(style.hairline_width as f32, lit));
-    painter.line_segment([r.left_top(), r.right_top()], Stroke::new(style.hairline_width as f32, lit));
-    painter.line_segment([r.right_top(), r.right_bottom()], Stroke::new(style.hairline_width as f32, shade));
-    painter.line_segment([r.right_bottom(), r.left_bottom()], Stroke::new(style.hairline_width as f32, shade));
+    painter.line_segment(
+        [r.left_bottom(), r.left_top()],
+        Stroke::new(style.hairline_width as f32, lit),
+    );
+    painter.line_segment(
+        [r.left_top(), r.right_top()],
+        Stroke::new(style.hairline_width as f32, lit),
+    );
+    painter.line_segment(
+        [r.right_top(), r.right_bottom()],
+        Stroke::new(style.hairline_width as f32, shade),
+    );
+    painter.line_segment(
+        [r.right_bottom(), r.left_bottom()],
+        Stroke::new(style.hairline_width as f32, shade),
+    );
 }
 
 /// Weak text is the text colour at this opacity (§1.4, egui's default).
@@ -319,7 +331,10 @@ impl Metrics {
             caption_gap: pt(style.caption_gap),
             resize_edge: pt(style.resize_edge),
             resize_corner: pt(style.resize_corner),
-            menu_title_padding: vec2(pt(style.menu_title_padding_x), pt(style.menu_title_padding_y)),
+            menu_title_padding: vec2(
+                pt(style.menu_title_padding_x),
+                pt(style.menu_title_padding_y),
+            ),
             menu_title_height: pt(style.menu_title_height),
             menu_min_width: pt(style.menu_min_width),
             menu_row_height: pt(style.menu_row_height),
@@ -467,7 +482,10 @@ pub fn style(theme: &Theme) -> Style {
 
     let spacing = &mut style.spacing;
     spacing.item_spacing = vec2(tokens.item_spacing_x as f32, tokens.item_spacing_y as f32);
-    spacing.button_padding = vec2(tokens.button_padding_x as f32, tokens.button_padding_y as f32);
+    spacing.button_padding = vec2(
+        tokens.button_padding_x as f32,
+        tokens.button_padding_y as f32,
+    );
     spacing.interact_size = Vec2::splattokens.interact as f32;
     spacing.slider_width = tokens.slider_width as f32;
     spacing.combo_width = tokens.combo_width as f32;
@@ -497,9 +515,10 @@ pub fn style(theme: &Theme) -> Style {
     style
         .text_styles
         .insert(TextStyle::Button, proportional(body));
-    style
-        .text_styles
-        .insert(TextStyle::Heading, crate::fonts::headingtokens.heading_size as f32);
+    style.text_styles.insert(
+        TextStyle::Heading,
+        crate::fonts::headingtokens.heading_size as f32,
+    );
     style.text_styles.insert(
         TextStyle::Monospace,
         FontId::new(tokens.mono_size as f32, FontFamily::Monospace),
@@ -558,13 +577,19 @@ fn visuals(theme: &Theme, chrome: &Chrome) -> Visuals {
     v.menu_corner_radius = CornerRadius::same(m.radius);
     // §2.5. A transparent shadow role (Classic) draws nothing.
     v.window_shadow = Shadow {
-        offset: [style.window_shadow_offset_x as i8, style.window_shadow_offset_y as i8],
+        offset: [
+            style.window_shadow_offset_x as i8,
+            style.window_shadow_offset_y as i8,
+        ],
         blur: style.window_shadow_blur as u8,
         spread: style.window_shadow_spread as u8,
         color: p.shadow,
     };
     v.popup_shadow = Shadow {
-        offset: [style.popup_shadow_offset_x as i8, style.popup_shadow_offset_y as i8],
+        offset: [
+            style.popup_shadow_offset_x as i8,
+            style.popup_shadow_offset_y as i8,
+        ],
         blur: style.popup_shadow_blur as u8,
         spread: style.popup_shadow_spread as u8,
         color: p.shadow,

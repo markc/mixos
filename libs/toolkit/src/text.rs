@@ -7,10 +7,17 @@ pub struct Text {
     role: &'static str,
 }
 
-pub fn dim(text: impl Into<String>) -> Text { role(text, "text_dim") }
-pub fn faint(text: impl Into<String>) -> Text { role(text, "text_faint") }
+pub fn dim(text: impl Into<String>) -> Text {
+    role(text, "text_dim")
+}
+pub fn faint(text: impl Into<String>) -> Text {
+    role(text, "text_faint")
+}
 pub fn role(text: impl Into<String>, role: &'static str) -> Text {
-    Text { text: text.into(), role }
+    Text {
+        text: text.into(),
+        role,
+    }
 }
 
 impl egui::Widget for Text {

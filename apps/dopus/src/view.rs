@@ -111,14 +111,10 @@ pub fn title(app: &App) -> String {
 }
 
 /// Draw the whole window into `ui`.
-pub fn view(
-    ui: &mut Ui,
-    app: &App,
-    commands: &Registry<App>,
-    strings: &Strings,
-) -> Vec<UiEvent> {
+pub fn view(ui: &mut Ui, app: &App, commands: &Registry<App>, strings: &Strings) -> Vec<UiEvent> {
     let mut events = Vec::new();
-    let fired = toolkit::titlebar::show(ui, &title(app), Some(Icon::Folder), commands, app, strings);
+    let fired =
+        toolkit::titlebar::show(ui, &title(app), Some(Icon::Folder), commands, app, strings);
     events.extend(
         fired
             .into_iter()
@@ -166,9 +162,7 @@ pub fn view(
     }
     egui::CentralPanel::default()
         .frame(bars::dock_frame(ui.ctx()))
-        .show(ui, |ui| {
-            panes(ui, app, commands, strings, &mut events)
-        });
+        .show(ui, |ui| panes(ui, app, commands, strings, &mut events));
     drag_preview(ui.ctx());
     dialogs(ui.ctx(), app, commands, strings, &mut events);
     toolkit::titlebar::edges(ui);
@@ -423,7 +417,16 @@ fn pane_view(
             .auto_shrink(false)
             .show_rows(ui, row_h, rows.len(), |ui, range| {
                 for index in range {
-                    row(ui, app, commands, strings, pane, &rows[index], (row_h, show_size, show_modified), events);
+                    row(
+                        ui,
+                        app,
+                        commands,
+                        strings,
+                        pane,
+                        &rows[index],
+                        (row_h, show_size, show_modified),
+                        events,
+                    );
                 }
             });
     });

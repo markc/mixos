@@ -106,8 +106,8 @@ fn draw(ui: &mut Ui, row: &TreeRow, cursor: bool, events: &mut Vec<UiEvent>) {
                     } else {
                         Icon::ChevronRight
                     };
-                    let toggle =
-                        ui.add(icons::image_of(ui.ctx(), chevron, ICON, weak).sense(Sense::click()));
+                    let toggle = ui
+                        .add(icons::image_of(ui.ctx(), chevron, ICON, weak).sense(Sense::click()));
                     if toggle.clicked() {
                         events.push(UiEvent::Expand(row.node.clone(), !row.expanded));
                         ui.memory_mut(|m| m.request_focus(tree_id()));

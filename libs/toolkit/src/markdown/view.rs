@@ -49,7 +49,9 @@ use crate::strings::{own, own_with};
 /// [`egui::Context::open_url`].
 pub fn show(ui: &mut Ui, document: &Document) -> Option<String> {
     let mut view = View::new(ui);
-    let width = ui.available_width().min(view.body.size * crate::chrome::Chrome::of(ui.ctx()).style.md_measure as f32);
+    let width = ui
+        .available_width()
+        .min(view.body.size * crate::chrome::Chrome::of(ui.ctx()).style.md_measure as f32);
     ui.vertical(|ui| {
         ui.set_max_width(width);
         ui.spacing_mut().item_spacing.y = 0.0;
@@ -141,7 +143,15 @@ impl View {
 
     fn heading_base(&self, ui: &Ui, level: u8) -> Base {
         let index = usize::from(level.clamp(1, 6) - 1);
-        let size = self.heading * [crate::chrome::Chrome::of(ui.ctx()).style.md_heading_scale_1 as f32, crate::chrome::Chrome::of(ui.ctx()).style.md_heading_scale_2 as f32, crate::chrome::Chrome::of(ui.ctx()).style.md_heading_scale_3 as f32, crate::chrome::Chrome::of(ui.ctx()).style.md_heading_scale_4 as f32, crate::chrome::Chrome::of(ui.ctx()).style.md_heading_scale_5 as f32, crate::chrome::Chrome::of(ui.ctx()).style.md_heading_scale_6 as f32][index];
+        let size = self.heading
+            * [
+                crate::chrome::Chrome::of(ui.ctx()).style.md_heading_scale_1 as f32,
+                crate::chrome::Chrome::of(ui.ctx()).style.md_heading_scale_2 as f32,
+                crate::chrome::Chrome::of(ui.ctx()).style.md_heading_scale_3 as f32,
+                crate::chrome::Chrome::of(ui.ctx()).style.md_heading_scale_4 as f32,
+                crate::chrome::Chrome::of(ui.ctx()).style.md_heading_scale_5 as f32,
+                crate::chrome::Chrome::of(ui.ctx()).style.md_heading_scale_6 as f32,
+            ][index];
         let font = self.strong(ui, size);
         Base {
             font: font.clone(),
@@ -163,8 +173,16 @@ impl View {
         for (index, block) in blocks.iter().enumerate() {
             if index > 0 {
                 let gap = match (&blocks[index - 1], block) {
-                    (Block::Heading { .. }, _) => crate::chrome::Chrome::of(ui.ctx()).style.md_gap_after_heading as f32,
-                    (_, Block::Heading { .. }) => crate::chrome::Chrome::of(ui.ctx()).style.md_gap_before_heading as f32,
+                    (Block::Heading { .. }, _) => {
+                        crate::chrome::Chrome::of(ui.ctx())
+                            .style
+                            .md_gap_after_heading as f32
+                    }
+                    (_, Block::Heading { .. }) => {
+                        crate::chrome::Chrome::of(ui.ctx())
+                            .style
+                            .md_gap_before_heading as f32
+                    }
                     _ if in_item => crate::chrome::Chrome::of(ui.ctx()).style.md_item_gap as f32,
                     _ => crate::chrome::Chrome::of(ui.ctx()).style.md_gap as f32,
                 };
@@ -246,8 +264,13 @@ impl View {
                 ..TextFormat::default()
             };
             if marks.code {
-                format.font_id =
-                    FontId::new(base.font.size * crate::chrome::Chrome::of(ui.ctx()).style.md_inline_code_scale as f32, self.mono.family.clone());
+                format.font_id = FontId::new(
+                    base.font.size
+                        * crate::chrome::Chrome::of(ui.ctx())
+                            .style
+                            .md_inline_code_scale as f32,
+                    self.mono.family.clone(),
+                );
                 format.background = self.code_bg;
             }
             if marks.strike {
@@ -321,8 +344,18 @@ impl View {
     /// sideways rather than wrapped.
     fn code(&mut self, ui: &mut Ui, text: &str) {
         let padding = Margin::symmetric(
-            self.em(vec2(crate::chrome::Chrome::of(ui.ctx()).style.md_code_padding_x as f32, crate::chrome::Chrome::of(ui.ctx()).style.md_code_padding_y as f32).x).round() as i8,
-            self.em(vec2(crate::chrome::Chrome::of(ui.ctx()).style.md_code_padding_x as f32, crate::chrome::Chrome::of(ui.ctx()).style.md_code_padding_y as f32).y).round() as i8,
+            self.em(vec2(
+                crate::chrome::Chrome::of(ui.ctx()).style.md_code_padding_x as f32,
+                crate::chrome::Chrome::of(ui.ctx()).style.md_code_padding_y as f32,
+            )
+            .x)
+                .round() as i8,
+            self.em(vec2(
+                crate::chrome::Chrome::of(ui.ctx()).style.md_code_padding_x as f32,
+                crate::chrome::Chrome::of(ui.ctx()).style.md_code_padding_y as f32,
+            )
+            .y)
+                .round() as i8,
         );
         Frame::new()
             .fill(self.palette.field)
@@ -338,7 +371,8 @@ impl View {
                             font: self.mono.clone(),
                             strong: self.mono.clone(),
                             color: self.palette.text,
-                            line: self.mono.size * crate::chrome::Chrome::of(ui.ctx()).style.md_line as f32,
+                            line: self.mono.size
+                                * crate::chrome::Chrome::of(ui.ctx()).style.md_line as f32,
                             wrap: false,
                         };
                         self.plain(ui, text, &base);
@@ -360,9 +394,18 @@ impl View {
         });
         self.color = saved;
         let rect = row.response.rect;
-        let rule = Rect::from_min_size(rect.min, vec2(crate::chrome::Chrome::of(ui.ctx()).style.md_quote_rule as f32, rect.height()));
-        ui.painter()
-            .rect_filled(rule, crate::chrome::Chrome::of(ui.ctx()).style.md_quote_rule as f32 / 2.0, self.palette.text_faint);
+        let rule = Rect::from_min_size(
+            rect.min,
+            vec2(
+                crate::chrome::Chrome::of(ui.ctx()).style.md_quote_rule as f32,
+                rect.height(),
+            ),
+        );
+        ui.painter().rect_filled(
+            rule,
+            crate::chrome::Chrome::of(ui.ctx()).style.md_quote_rule as f32 / 2.0,
+            self.palette.text_faint,
+        );
     }
 
     fn list(&mut self, ui: &mut Ui, start: Option<u64>, items: &[Item], depth: usize) {
@@ -532,7 +575,6 @@ fn hit<'a>(galley: &Arc<Galley>, at: Vec2, links: &[(Range<usize>, &'a Link)]) -
     }
     None
 }
-
 
 #[cfg(test)]
 mod tests {

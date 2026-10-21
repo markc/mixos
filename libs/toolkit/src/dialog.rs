@@ -170,7 +170,10 @@ impl Dialog {
             choices,
         } = self;
         let tokens = Chrome::of(ctx).style;
-        let width = width.unwrap_or(Rangef { min: tokens.dialog_min_width as f32, max: tokens.dialog_max_width as f32 });
+        let width = width.unwrap_or(Rangef {
+            min: tokens.dialog_min_width as f32,
+            max: tokens.dialog_max_width as f32,
+        });
         let mut place: Placement = ctx.data(|d| d.get_temp(id)).unwrap_or_default();
         let mut area = Area::new(id)
             .kind(UiKind::Modal)
@@ -179,7 +182,13 @@ impl Dialog {
             .interactable(true);
         area = match place.at {
             Some(at) => area.fixed_pos(at),
-            None => area.anchor(Align2::CENTER_CENTER, Vec2::new(0.0, crate::chrome::Chrome::of(ctx).style.dialog_centre_drop as f32)),
+            None => area.anchor(
+                Align2::CENTER_CENTER,
+                Vec2::new(
+                    0.0,
+                    crate::chrome::Chrome::of(ctx).style.dialog_centre_drop as f32,
+                ),
+            ),
         };
         let os = ctx.os();
         // Read before the body draws: a text or value field gives up focus
@@ -204,7 +213,12 @@ impl Dialog {
                     ui.set_min_width(width.min);
                     ui.set_max_width(width.max);
                 }
-                let font = crate::fonts::bound(ui.ctx(), crate::fonts::heading(crate::chrome::Chrome::of(ctx).style.dialog_title_size as f32));
+                let font = crate::fonts::bound(
+                    ui.ctx(),
+                    crate::fonts::heading(
+                        crate::chrome::Chrome::of(ctx).style.dialog_title_size as f32,
+                    ),
+                );
                 let ink = Chrome::of(ui.ctx()).palette.text;
                 let title = ui
                     .add(Label::new(RichText::new(&title).font(font).color(ink)).selectable(false));
@@ -217,12 +231,16 @@ impl Dialog {
                 // under the title's glyphs); 8 pt exactly below it.
                 ui.add_space(crate::chrome::Chrome::of(ctx).style.dialog_above_rule as f32);
                 bars::hairline(ui);
-                ui.add_space(crate::chrome::Chrome::of(ctx).style.dialog_below_rule as f32 - ui.spacing().item_spacing.y);
+                ui.add_space(
+                    crate::chrome::Chrome::of(ctx).style.dialog_below_rule as f32
+                        - ui.spacing().item_spacing.y,
+                );
                 let inner = match resize {
                     Some((default, min)) => {
                         // The body keeps the size the person left it at, up to
                         // most of the window; the buttons stay below it.
-                        let max = ui.ctx().content_rect().size() * crate::chrome::Chrome::of(ctx).style.dialog_resize_max_share as f32;
+                        let max = ui.ctx().content_rect().size()
+                            * crate::chrome::Chrome::of(ctx).style.dialog_resize_max_share as f32;
                         egui::Resize::default()
                             .id_salt(id.with("size"))
                             .default_size(default)
@@ -272,7 +290,10 @@ impl Dialog {
 
 /// The button row, right-aligned and laid out left to right.
 fn button_row(ui: &mut Ui, choices: &[Choice], os: OperatingSystem) -> Option<usize> {
-    let font = crate::fonts::bound(ui.ctx(), crate::fonts::medium(crate::button::push_size_of(ui.ctx())));
+    let font = crate::fonts::bound(
+        ui.ctx(),
+        crate::fonts::medium(crate::button::push_size_of(ui.ctx())),
+    );
     let ordered = order(choices, os);
     let widths: Vec<f32> = ordered
         .iter()
@@ -282,10 +303,13 @@ fn button_row(ui: &mut Ui, choices: &[Choice], os: OperatingSystem) -> Option<us
                 font.clone(),
                 Color32::PLACEHOLDER,
             );
-            (galley.size().x + 28.0).max(crate::chrome::Chrome::of(ui.ctx()).style.dialog_button_min as f32)
+            (galley.size().x + 28.0)
+                .max(crate::chrome::Chrome::of(ui.ctx()).style.dialog_button_min as f32)
         })
         .collect();
-    let total = widths.iter().sum::<f32>() + crate::chrome::Chrome::of(ui.ctx()).style.dialog_button_gap as f32 * (widths.len().saturating_sub(1)) as f32;
+    let total = widths.iter().sum::<f32>()
+        + crate::chrome::Chrome::of(ui.ctx()).style.dialog_button_gap as f32
+            * (widths.len().saturating_sub(1)) as f32;
     let height = Chrome::of(ui.ctx()).metrics.push_height;
     let (_, row) = ui.allocate_space(egui::vec2(ui.available_width(), height));
     // Placed left to right, so focus order is reading order, flush right.
@@ -310,9 +334,13 @@ fn button_row(ui: &mut Ui, choices: &[Choice], os: OperatingSystem) -> Option<us
     chosen
 }
 
-
 /// The installed value of the former `WIDTH` constant.
-pub fn width_of(ctx: &egui::Context) -> Rangef { Rangef { min: crate::chrome::Chrome::of(ctx).style.dialog_min_width as f32, max: crate::chrome::Chrome::of(ctx).style.dialog_max_width as f32 } }
+pub fn width_of(ctx: &egui::Context) -> Rangef {
+    Rangef {
+        min: crate::chrome::Chrome::of(ctx).style.dialog_min_width as f32,
+        max: crate::chrome::Chrome::of(ctx).style.dialog_max_width as f32,
+    }
+}
 
 #[cfg(test)]
 mod tests {

@@ -68,7 +68,15 @@ pub fn view(
         },
     ];
     let title = format!("{} — {}", label("title"), engine.host());
-    let fired = titlebar::show_with(ui, &title, Some(Icon::Monitor), commands, engine, strings, &mut controls);
+    let fired = titlebar::show_with(
+        ui,
+        &title,
+        Some(Icon::Monitor),
+        commands,
+        engine,
+        strings,
+        &mut controls,
+    );
     // The toggle goes to the mode opposite the one this frame drew, so a
     // click reported twice cannot flip it back.
     let mut mode_set = false;
@@ -138,7 +146,10 @@ fn status_bar(ui: &mut Ui, engine: &Engine) {
             if let Some(t) = &engine.processes {
                 ui.small(label_with(
                     "processes-count",
-                    &[("count", &t.count.to_string()), ("total", &t.total.to_string())],
+                    &[
+                        ("count", &t.count.to_string()),
+                        ("total", &t.total.to_string()),
+                    ],
                 ));
             }
         });
@@ -159,7 +170,12 @@ fn tool_bar(
             }
         }
         bars::divider(ui, ui.available_height().min(18.0));
-        ui.add(icons::image_of(ui.ctx(), Icon::Server, ICON, ui.visuals().weak_text_color()));
+        ui.add(icons::image_of(
+            ui.ctx(),
+            Icon::Server,
+            ICON,
+            ui.visuals().weak_text_color(),
+        ));
         let mut options = vec![label("this-node")];
         options.extend(engine.peers.iter().cloned());
         if let Some(node) = &engine.ui.node
@@ -304,15 +320,30 @@ fn processes(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
 /// The section list's title and one-line figure for `key`.
 fn section_text(s: &Snapshot, key: &str) -> Option<(String, String, Kind)> {
     if key == "cpu" {
-        let speed = average_mhz(s).map(|m| format!("  {}", mhz(m))).unwrap_or_default();
-        return Some((label("cpu"), format!("{}{speed}", percent(s.cpu.busy)), Kind::Cpu));
+        let speed = average_mhz(s)
+            .map(|m| format!("  {}", mhz(m)))
+            .unwrap_or_default();
+        return Some((
+            label("cpu"),
+            format!("{}{speed}", percent(s.cpu.busy)),
+            Kind::Cpu,
+        ));
     }
     if key == "memory" {
         let m = &s.memory;
-        let share = if m.total > 0 { m.used as f64 * 100.0 / m.total as f64 } else { 0.0 };
+        let share = if m.total > 0 {
+            m.used as f64 * 100.0 / m.total as f64
+        } else {
+            0.0
+        };
         return Some((
             label("memory"),
-            format!("{} / {} ({:.0}%)", bytes(m.used as f64), bytes(m.total as f64), share),
+            format!(
+                "{} / {} ({:.0}%)",
+                bytes(m.used as f64),
+                bytes(m.total as f64),
+                share
+            ),
             Kind::Memory,
         ));
     }
@@ -390,7 +421,10 @@ fn performance(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
                                 )
                                 .clicked();
                                 let figure = ui
-                                    .add(egui::Label::new(RichText::new(&figure).small()).sense(Sense::click()))
+                                    .add(
+                                        egui::Label::new(RichText::new(&figure).small())
+                                            .sense(Sense::click()),
+                                    )
                                     .clicked();
                                 title || figure
                             })
@@ -450,26 +484,41 @@ fn figures(ui: &mut Ui, id: &str, pairs: &[(String, String)], columns: usize) {
 }
 
 fn graph_size(ui: &Ui, share: f32) -> Vec2 {
-    Vec2::new(ui.available_width(), (ui.available_height() * share).clamp(120.0, 320.0))
+    Vec2::new(
+        ui.available_width(),
+        (ui.available_height() * share).clamp(120.0, 320.0),
+    )
 }
 
 fn cpu(ui: &mut Ui, engine: &Engine, s: &Snapshot) {
     heading(ui, &label("cpu"), s.cpu.model.as_deref());
     ui.small(format!("{} % · 60 s", label("utilisation")));
-    graph::line(ui, graph_size(ui, 0.3), &engine.rings.get("cpu.busy"), 100.0, Kind::Cpu);
+    graph::line(
+        ui,
+        graph_size(ui, 0.3),
+        &engine.rings.get("cpu.busy"),
+        100.0,
+        Kind::Cpu,
+    );
     ui.add_space(8.0);
     // Each logical processor, in as square a grid as the width allows.
     let n = s.cpu.per_core.len();
     if n > 1 {
         ui.small(label("cores"));
         let width = ui.available_width();
-        let columns = ((n as f32).sqrt().ceil() as usize).clamp(1, 16).max((width / 160.0) as usize).min(n);
+        let columns = ((n as f32).sqrt().ceil() as usize)
+            .clamp(1, 16)
+            .max((width / 160.0) as usize)
+            .min(n);
         let cell = Vec2::new((width / columns as f32) - 6.0, 44.0);
         egui::Grid::new("cores").spacing([6.0, 6.0]).show(ui, |ui| {
             for (i, core) in s.cpu.per_core.iter().enumerate() {
                 let values = engine.rings.get(&format!("cpu.core.{}.busy", core.cpu));
-                graph::line(ui, cell, &values, 100.0, Kind::Cpu)
-                    .on_hover_text(format!("CPU {} · {}", core.cpu, percent(core.busy)));
+                graph::line(ui, cell, &values, 100.0, Kind::Cpu).on_hover_text(format!(
+                    "CPU {} · {}",
+                    core.cpu,
+                    percent(core.busy)
+                ));
                 if (i + 1) % columns == 0 {
                     ui.end_row();
                 }
@@ -488,7 +537,10 @@ fn cpu(ui: &mut Ui, engine: &Engine, s: &Snapshot) {
         pairs.push((label("speed"), mhz(m)));
     }
     if let Some(l) = &s.load {
-        pairs.push((label("load"), format!("{:.2}  {:.2}  {:.2}", l.one, l.five, l.fifteen)));
+        pairs.push((
+            label("load"),
+            format!("{:.2}  {:.2}  {:.2}", l.one, l.five, l.fifteen),
+        ));
     }
     pairs.push((label("tasks"), s.tasks.total.to_string()));
     if let Some(up) = s.uptime_s {
@@ -509,7 +561,11 @@ fn memory(ui: &mut Ui, engine: &Engine, s: &Snapshot) {
         Kind::Memory,
     );
     ui.add_space(8.0);
-    let share = if m.total > 0 { m.used as f64 / m.total as f64 } else { 0.0 };
+    let share = if m.total > 0 {
+        m.used as f64 / m.total as f64
+    } else {
+        0.0
+    };
     graph::meter(ui, ui.available_width(), share, Kind::Memory);
     ui.add_space(8.0);
     let mut pairs = vec![
@@ -521,7 +577,11 @@ fn memory(ui: &mut Ui, engine: &Engine, s: &Snapshot) {
     if s.swap.total > 0 {
         pairs.push((
             label("swap"),
-            format!("{} / {}", bytes(s.swap.used as f64), bytes(s.swap.total as f64)),
+            format!(
+                "{} / {}",
+                bytes(s.swap.used as f64),
+                bytes(s.swap.total as f64)
+            ),
         ));
     }
     figures(ui, "memory-figures", &pairs, 2);
@@ -539,16 +599,27 @@ fn disk(ui: &mut Ui, engine: &Engine, s: &Snapshot, name: &str) {
     let read = engine.rings.get(&format!("disk.{name}.read"));
     let write = engine.rings.get(&format!("disk.{name}.write"));
     let top = scale(&read, 1024.0 * 1024.0).max(scale(&write, 1024.0 * 1024.0));
-    ui.small(format!("{} / {} · {}", label("read"), label("write"), rate(top)));
+    ui.small(format!(
+        "{} / {} · {}",
+        label("read"),
+        label("write"),
+        rate(top)
+    ));
     graph::lines(
         ui,
         graph_size(ui, 0.25),
-        &[(read.as_slice(), Kind::Disk), (write.as_slice(), Kind::Memory)],
+        &[
+            (read.as_slice(), Kind::Disk),
+            (write.as_slice(), Kind::Memory),
+        ],
         top,
     );
     ui.add_space(8.0);
     let pairs = vec![
-        (label("active-time"), d.busy.map(percent).unwrap_or_else(|| "—".into())),
+        (
+            label("active-time"),
+            d.busy.map(percent).unwrap_or_else(|| "—".into()),
+        ),
         (label("read"), rate(d.read_bps.unwrap_or(0.0))),
         (label("write"), rate(d.write_bps.unwrap_or(0.0))),
     ];
@@ -567,8 +638,16 @@ fn disk(ui: &mut Ui, engine: &Engine, s: &Snapshot, name: &str) {
                 ui.label(&f.mount);
                 ui.weak(&f.kind);
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    ui.label(format!("{} / {}", bytes(f.used as f64), bytes(f.total as f64)));
-                    let share = if f.total > 0 { f.used as f64 / f.total as f64 } else { 0.0 };
+                    ui.label(format!(
+                        "{} / {}",
+                        bytes(f.used as f64),
+                        bytes(f.total as f64)
+                    ));
+                    let share = if f.total > 0 {
+                        f.used as f64 / f.total as f64
+                    } else {
+                        0.0
+                    };
                     graph::meter(ui, 160.0, share, Kind::Disk);
                 });
             });
@@ -580,11 +659,20 @@ fn net(ui: &mut Ui, engine: &Engine, s: &Snapshot, name: &str) {
     let Some(i) = s.net.iter().find(|i| i.name == name) else {
         return;
     };
-    heading(ui, &format!("{} {name}", label("network")), i.state.as_deref());
+    heading(
+        ui,
+        &format!("{} {name}", label("network")),
+        i.state.as_deref(),
+    );
     let rx = engine.rings.get(&format!("net.{name}.rx"));
     let tx = engine.rings.get(&format!("net.{name}.tx"));
     let top = scale(&rx, 1024.0).max(scale(&tx, 1024.0));
-    ui.small(format!("{} / {} · {}", label("receive"), label("send"), rate(top)));
+    ui.small(format!(
+        "{} / {} · {}",
+        label("receive"),
+        label("send"),
+        rate(top)
+    ));
     graph::lines(
         ui,
         graph_size(ui, 0.45),
@@ -595,18 +683,15 @@ fn net(ui: &mut Ui, engine: &Engine, s: &Snapshot, name: &str) {
     let mut pairs = vec![
         (label("receive"), rate(i.rx_bps.unwrap_or(0.0))),
         (label("send"), rate(i.tx_bps.unwrap_or(0.0))),
-        (label("state"), i.state.clone().unwrap_or_else(|| "—".into())),
+        (
+            label("state"),
+            i.state.clone().unwrap_or_else(|| "—".into()),
+        ),
     ];
     if let Some(speed) = i.speed_mbps {
         pairs.push((label("link-speed"), format!("{speed} Mbit/s")));
     }
-    pairs.push((
-        format!("{} ↓", label("total")),
-        bytes(i.rx_bytes as f64),
-    ));
-    pairs.push((
-        format!("{} ↑", label("total")),
-        bytes(i.tx_bytes as f64),
-    ));
+    pairs.push((format!("{} ↓", label("total")), bytes(i.rx_bytes as f64)));
+    pairs.push((format!("{} ↑", label("total")), bytes(i.tx_bytes as f64)));
     figures(ui, "net-figures", &pairs, 3);
 }

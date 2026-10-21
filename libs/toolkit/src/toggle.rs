@@ -60,7 +60,10 @@ fn row(
         ui.painter()
             .layout_no_wrap(label.to_owned(), font, Color32::PLACEHOLDER)
     });
-    let width = control.x + galley.as_ref().map_or(0.0, |g| crate::chrome::Chrome::of(ui.ctx()).style.toggle_label_gap as f32 + g.size().x);
+    let width = control.x
+        + galley.as_ref().map_or(0.0, |g| {
+            crate::chrome::Chrome::of(ui.ctx()).style.toggle_label_gap as f32 + g.size().x
+        });
     let height = ui.spacing().interact_size.y.max(control.y);
     let (rect, mut response) = ui.allocate_exact_size(vec2(width, height), Sense::click());
     if response.clicked() {
@@ -104,7 +107,12 @@ pub fn tick(b: Rect) -> [egui::Pos2; 3] {
 
 impl Widget for Checkbox<'_> {
     fn ui(self, ui: &mut Ui) -> Response {
-        let (b, response, galley) = row(ui, Vec2::splat(crate::chrome::Chrome::of(ui.ctx()).style.checkbox_box as f32), &self.label, *self.checked);
+        let (b, response, galley) = row(
+            ui,
+            Vec2::splat(crate::chrome::Chrome::of(ui.ctx()).style.checkbox_box as f32),
+            &self.label,
+            *self.checked,
+        );
         if response.clicked() {
             *self.checked = !*self.checked;
         }
@@ -132,14 +140,31 @@ pub fn paint_box(
     outline: Color32,
 ) {
     if checked {
-        painter.rect_filled(b, (Chrome::of(painter.ctx()).style.toggle_box_radius as f32), p.accent);
-        painter.add(egui::Shape::line(tick(b).to_vec(), Stroke::new((Chrome::of(painter.ctx()).style.toggle_tick as f32), crate::style::token_colour(Chrome::of(painter.ctx()).style.toggle_mark))));
+        painter.rect_filled(
+            b,
+            (Chrome::of(painter.ctx()).style.toggle_box_radius as f32),
+            p.accent,
+        );
+        painter.add(egui::Shape::line(
+            tick(b).to_vec(),
+            Stroke::new(
+                (Chrome::of(painter.ctx()).style.toggle_tick as f32),
+                crate::style::token_colour(Chrome::of(painter.ctx()).style.toggle_mark),
+            ),
+        ));
     } else {
-        painter.rect_filled(b, (Chrome::of(painter.ctx()).style.toggle_box_radius as f32), p.field);
+        painter.rect_filled(
+            b,
+            (Chrome::of(painter.ctx()).style.toggle_box_radius as f32),
+            p.field,
+        );
         painter.rect_stroke(
             b,
             (Chrome::of(painter.ctx()).style.toggle_box_radius as f32),
-            Stroke::new((Chrome::of(painter.ctx()).style.toggle_outline as f32), outline),
+            Stroke::new(
+                (Chrome::of(painter.ctx()).style.toggle_outline as f32),
+                outline,
+            ),
             StrokeKind::Inside,
         );
     }
@@ -163,7 +188,11 @@ impl<'a> Switch<'a> {
 
 /// The knob centre's x along `track` at animation position `t` (0 off, 1 on).
 pub fn knob_x(track: Rect, t: f32) -> f32 {
-    knob_x_with_inset(track, t, crate::style::default_tokens().toggle_knob_inset as f32)
+    knob_x_with_inset(
+        track,
+        t,
+        crate::style::default_tokens().toggle_knob_inset as f32,
+    )
 }
 
 fn knob_x_with_inset(track: Rect, t: f32, inset: f32) -> f32 {
@@ -172,7 +201,15 @@ fn knob_x_with_inset(track: Rect, t: f32, inset: f32) -> f32 {
 
 impl Widget for Switch<'_> {
     fn ui(self, ui: &mut Ui) -> Response {
-        let (track, response, galley) = row(ui, vec2(crate::chrome::Chrome::of(ui.ctx()).style.switch_track_w as f32, crate::chrome::Chrome::of(ui.ctx()).style.switch_track_h as f32), &self.label, *self.on);
+        let (track, response, galley) = row(
+            ui,
+            vec2(
+                crate::chrome::Chrome::of(ui.ctx()).style.switch_track_w as f32,
+                crate::chrome::Chrome::of(ui.ctx()).style.switch_track_h as f32,
+            ),
+            &self.label,
+            *self.on,
+        );
         if response.clicked() {
             *self.on = !*self.on;
         }
@@ -181,23 +218,43 @@ impl Widget for Switch<'_> {
             let p = &chrome.palette;
             let t = ui.ctx().animate_bool_responsive(response.id, *self.on);
             let painter = ui.painter();
-            let centre = pos2(knob_x_with_inset(track, t, Chrome::of(ui.ctx()).style.toggle_knob_inset as f32), track.center().y);
+            let centre = pos2(
+                knob_x_with_inset(
+                    track,
+                    t,
+                    Chrome::of(ui.ctx()).style.toggle_knob_inset as f32,
+                ),
+                track.center().y,
+            );
             if chrome.style.switch == SwitchStyle::Block {
                 // Classic's knob is undetermined (§5.4): a raised `card`
                 // block the knob's diameter square, as its slider knob is.
                 painter.rect_filled(track, 0.0, if *self.on { p.accent } else { p.field });
                 chrome::bevel(painter, track, false, p);
-                let knob = Rect::from_center_size(centre, Vec2::splat(2.0 * crate::chrome::Chrome::of(ui.ctx()).style.toggle_knob as f32))
-                    .round_to_pixels(ui.pixels_per_point());
+                let knob = Rect::from_center_size(
+                    centre,
+                    Vec2::splat(2.0 * crate::chrome::Chrome::of(ui.ctx()).style.toggle_knob as f32),
+                )
+                .round_to_pixels(ui.pixels_per_point());
                 painter.rect_filled(knob, 0.0, p.card);
                 chrome::bevel(painter, knob, true, p);
             } else {
                 painter.rect_filled(
                     track,
-                    vec2(crate::chrome::Chrome::of(ui.ctx()).style.switch_track_w as f32, crate::chrome::Chrome::of(ui.ctx()).style.switch_track_h as f32).y / 2.0,
+                    vec2(
+                        crate::chrome::Chrome::of(ui.ctx()).style.switch_track_w as f32,
+                        crate::chrome::Chrome::of(ui.ctx()).style.switch_track_h as f32,
+                    )
+                    .y / 2.0,
                     if *self.on { p.accent } else { p.field_border },
                 );
-                painter.circle_filled(centre, crate::chrome::Chrome::of(ui.ctx()).style.toggle_knob as f32, crate::style::token_colour(crate::chrome::Chrome::of(ui.ctx()).style.toggle_mark));
+                painter.circle_filled(
+                    centre,
+                    crate::chrome::Chrome::of(ui.ctx()).style.toggle_knob as f32,
+                    crate::style::token_colour(
+                        crate::chrome::Chrome::of(ui.ctx()).style.toggle_mark,
+                    ),
+                );
             }
             paint_label(
                 ui,
@@ -235,12 +292,18 @@ impl Widget for Toggle<'_> {
     }
 }
 
-
 /// The installed value of the former `BOX` constant.
-pub fn box_of(ctx: &egui::Context) -> f32 { crate::chrome::Chrome::of(ctx).style.checkbox_box as f32 }
+pub fn box_of(ctx: &egui::Context) -> f32 {
+    crate::chrome::Chrome::of(ctx).style.checkbox_box as f32
+}
 
 /// The installed value of the former `TRACK` constant.
-pub fn track_of(ctx: &egui::Context) -> Vec2 { vec2(crate::chrome::Chrome::of(ctx).style.switch_track_w as f32, crate::chrome::Chrome::of(ctx).style.switch_track_h as f32) }
+pub fn track_of(ctx: &egui::Context) -> Vec2 {
+    vec2(
+        crate::chrome::Chrome::of(ctx).style.switch_track_w as f32,
+        crate::chrome::Chrome::of(ctx).style.switch_track_h as f32,
+    )
+}
 
 #[cfg(test)]
 mod tests {

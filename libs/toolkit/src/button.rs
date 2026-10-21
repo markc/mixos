@@ -145,7 +145,13 @@ impl Widget for IconButton {
             if let Some(outline) = outline {
                 painter.rect_stroke(rect, radius, Stroke::new(1.0, outline), StrokeKind::Inside);
             }
-            paint_icon(ui, icon, rect.center(), (size * crate::chrome::Chrome::of(ui.ctx()).style.button_icon_share as f32).round(), tint);
+            paint_icon(
+                ui,
+                icon,
+                rect.center(),
+                (size * crate::chrome::Chrome::of(ui.ctx()).style.button_icon_share as f32).round(),
+                tint,
+            );
         }
         match tooltip {
             Some(text) => response.on_hover_text(text),
@@ -215,12 +221,22 @@ impl Widget for PushButton {
     fn ui(self, ui: &mut Ui) -> Response {
         let chrome = Chrome::of(ui.ctx());
         let (style, p) = (&chrome.style, &chrome.palette);
-        let font = crate::fonts::bound(ui.ctx(), crate::fonts::medium(crate::chrome::Chrome::of(ui.ctx()).style.push_label_size as f32));
+        let font = crate::fonts::bound(
+            ui.ctx(),
+            crate::fonts::medium(crate::chrome::Chrome::of(ui.ctx()).style.push_label_size as f32),
+        );
         let galley = ui
             .painter()
             .layout_no_wrap(self.label.clone(), font, Color32::PLACEHOLDER);
         let height = chrome.metrics.push_height;
-        let size = vec2((galley.size().x + crate::chrome::Chrome::of(ui.ctx()).style.button_push_padding as f32).max(self.min_width), height);
+        let size = vec2(
+            (galley.size().x
+                + crate::chrome::Chrome::of(ui.ctx())
+                    .style
+                    .button_push_padding as f32)
+                .max(self.min_width),
+            height,
+        );
         let (rect, response) = ui.allocate_exact_size(size, Sense::click());
         response
             .widget_info(|| WidgetInfo::labeled(WidgetType::Button, ui.is_enabled(), &self.label));
@@ -258,7 +274,10 @@ impl Widget for PushButton {
                 painter.rect_stroke(
                     rect,
                     corner,
-                    Stroke::new(crate::chrome::Chrome::of(ui.ctx()).style.button_pro_outline as f32, outline),
+                    Stroke::new(
+                        crate::chrome::Chrome::of(ui.ctx()).style.button_pro_outline as f32,
+                        outline,
+                    ),
                     StrokeKind::Inside,
                 );
                 p.text
@@ -301,11 +320,16 @@ impl Widget for PushButton {
 /// 2 pt `accent`, 2 pt outside, its radius grown to match.
 pub fn focus_ring(ui: &Ui, rect: Rect, radius: f32, chrome: &Chrome) {
     let ring = rect.expand(crate::chrome::Chrome::of(ui.ctx()).style.focus_offset as f32);
-    let corner = CornerRadius::same((radius + crate::chrome::Chrome::of(ui.ctx()).style.focus_offset as f32).round() as u8);
+    let corner = CornerRadius::same(
+        (radius + crate::chrome::Chrome::of(ui.ctx()).style.focus_offset as f32).round() as u8,
+    );
     ui.painter().rect_stroke(
         ring,
         corner,
-        Stroke::new(crate::chrome::Chrome::of(ui.ctx()).style.focus_ring as f32, chrome.palette.accent),
+        Stroke::new(
+            crate::chrome::Chrome::of(ui.ctx()).style.focus_ring as f32,
+            chrome.palette.accent,
+        ),
         StrokeKind::Inside,
     );
 }
@@ -328,7 +352,9 @@ impl Link {
 
     /// The width it takes in a row.
     pub fn width(ui: &Ui, label: &str) -> f32 {
-        let font = egui::FontId::proportional(crate::chrome::Chrome::of(ui.ctx()).style.button_link_size as f32);
+        let font = egui::FontId::proportional(
+            crate::chrome::Chrome::of(ui.ctx()).style.button_link_size as f32,
+        );
         crate::chrome::Chrome::of(ui.ctx()).style.button_link_icon as f32
             + crate::chrome::Chrome::of(ui.ctx()).style.link_gap as f32
             + ui.painter()
@@ -340,12 +366,16 @@ impl Link {
 
 impl Widget for Link {
     fn ui(self, ui: &mut Ui) -> Response {
-        let font = egui::FontId::proportional(crate::chrome::Chrome::of(ui.ctx()).style.button_link_size as f32);
+        let font = egui::FontId::proportional(
+            crate::chrome::Chrome::of(ui.ctx()).style.button_link_size as f32,
+        );
         let galley = ui
             .painter()
             .layout_no_wrap(self.label.clone(), font, Color32::PLACEHOLDER);
         let size = vec2(
-            crate::chrome::Chrome::of(ui.ctx()).style.button_link_icon as f32 + crate::chrome::Chrome::of(ui.ctx()).style.link_gap as f32 + galley.size().x,
+            crate::chrome::Chrome::of(ui.ctx()).style.button_link_icon as f32
+                + crate::chrome::Chrome::of(ui.ctx()).style.link_gap as f32
+                + galley.size().x,
             ui.spacing().interact_size.y,
         );
         let (rect, response) = ui.allocate_exact_size(size, Sense::click());
@@ -361,12 +391,18 @@ impl Widget for Link {
             paint_icon(
                 ui,
                 self.icon,
-                pos2(rect.left() + crate::chrome::Chrome::of(ui.ctx()).style.button_link_icon as f32 / 2.0, rect.center().y),
+                pos2(
+                    rect.left()
+                        + crate::chrome::Chrome::of(ui.ctx()).style.button_link_icon as f32 / 2.0,
+                    rect.center().y,
+                ),
                 crate::chrome::Chrome::of(ui.ctx()).style.button_link_icon as f32,
                 ink,
             );
             let at = pos2(
-                rect.left() + crate::chrome::Chrome::of(ui.ctx()).style.button_link_icon as f32 + crate::chrome::Chrome::of(ui.ctx()).style.link_gap as f32,
+                rect.left()
+                    + crate::chrome::Chrome::of(ui.ctx()).style.button_link_icon as f32
+                    + crate::chrome::Chrome::of(ui.ctx()).style.link_gap as f32,
                 rect.center().y - galley.size().y / 2.0,
             );
             ui.painter()
@@ -403,18 +439,25 @@ pub fn selectable(ui: &mut Ui, selected: bool, text: impl Into<egui::WidgetText>
     response
 }
 
-
 /// The installed value of the former `ICON_BUTTON` constant.
-pub fn icon_button_of(ctx: &egui::Context) -> f32 { crate::chrome::Chrome::of(ctx).style.icon_button as f32 }
+pub fn icon_button_of(ctx: &egui::Context) -> f32 {
+    crate::chrome::Chrome::of(ctx).style.icon_button as f32
+}
 
 /// The installed value of the former `PUSH_SIZE` constant.
-pub fn push_size_of(ctx: &egui::Context) -> f32 { crate::chrome::Chrome::of(ctx).style.push_label_size as f32 }
+pub fn push_size_of(ctx: &egui::Context) -> f32 {
+    crate::chrome::Chrome::of(ctx).style.push_label_size as f32
+}
 
 /// The installed value of the former `FOCUS_RING` constant.
-pub fn focus_ring_of(ctx: &egui::Context) -> f32 { crate::chrome::Chrome::of(ctx).style.focus_ring as f32 }
+pub fn focus_ring_of(ctx: &egui::Context) -> f32 {
+    crate::chrome::Chrome::of(ctx).style.focus_ring as f32
+}
 
 /// The installed value of the former `FOCUS_OFFSET` constant.
-pub fn focus_offset_of(ctx: &egui::Context) -> f32 { crate::chrome::Chrome::of(ctx).style.focus_offset as f32 }
+pub fn focus_offset_of(ctx: &egui::Context) -> f32 {
+    crate::chrome::Chrome::of(ctx).style.focus_offset as f32
+}
 
 #[cfg(test)]
 mod tests {

@@ -173,7 +173,13 @@ impl Gesture {
         self.feed_with_tokens(time, input, out, &crate::style::default_tokens());
     }
 
-    fn feed_with_tokens(&mut self, time: f64, input: Input, out: &mut Vec<Effect>, tokens: &design::ResolvedStyle) {
+    fn feed_with_tokens(
+        &mut self,
+        time: f64,
+        input: Input,
+        out: &mut Vec<Effect>,
+        tokens: &design::ResolvedStyle,
+    ) {
         match input {
             Input::Press(at) => {
                 self.pending = Some(Pending {
@@ -231,15 +237,29 @@ impl Widget for Slider<'_> {
             step,
             label,
         } = self;
-        let width = ui.available_width().max(crate::chrome::Chrome::of(ui.ctx()).style.slider_min_width as f32);
-        let (rect, mut response) =
-            ui.allocate_exact_size(vec2(width, crate::chrome::Chrome::of(ui.ctx()).style.slider_height as f32), Sense::click_and_drag());
-        let track_x = rect.x_range().shrink(crate::chrome::Chrome::of(ui.ctx()).style.slider_inset as f32);
+        let width = ui
+            .available_width()
+            .max(crate::chrome::Chrome::of(ui.ctx()).style.slider_min_width as f32);
+        let (rect, mut response) = ui.allocate_exact_size(
+            vec2(
+                width,
+                crate::chrome::Chrome::of(ui.ctx()).style.slider_height as f32,
+            ),
+            Sense::click_and_drag(),
+        );
+        let track_x = rect
+            .x_range()
+            .shrink(crate::chrome::Chrome::of(ui.ctx()).style.slider_inset as f32);
         let before = *value;
         let clamp = |v: f64| v.clamp(*range.start(), *range.end());
         let span = Rect::from_x_y_ranges(track_x, rect.y_range());
 
-        let step = step.unwrap_or_else(|| (range.end() - range.start()) * crate::chrome::Chrome::of(ui.ctx()).style.slider_key_step_share);
+        let step = step.unwrap_or_else(|| {
+            (range.end() - range.start())
+                * crate::chrome::Chrome::of(ui.ctx())
+                    .style
+                    .slider_key_step_share
+        });
         let id = response.id;
         let enabled = ui.is_enabled();
         let focused = enabled && response.has_focus();
@@ -286,18 +306,33 @@ impl Widget for Slider<'_> {
             }
             let adjust =
                 |amount: f64, effects: &mut Vec<Effect>, gesture: &mut Gesture, value: &mut f64| {
-                    gesture.feed_with_tokens(time, Input::Interrupt, effects, &Chrome::of(ui.ctx()).style);
+                    gesture.feed_with_tokens(
+                        time,
+                        Input::Interrupt,
+                        effects,
+                        &Chrome::of(ui.ctx()).style,
+                    );
                     *value = clamp(*value + amount);
                 };
             match event {
-                Event::PointerMoved(to) => gesture.feed_with_tokens(time, Input::Move(*to), &mut effects, &Chrome::of(ui.ctx()).style),
+                Event::PointerMoved(to) => gesture.feed_with_tokens(
+                    time,
+                    Input::Move(*to),
+                    &mut effects,
+                    &Chrome::of(ui.ctx()).style,
+                ),
                 Event::PointerButton {
                     pos,
                     button: egui::PointerButton::Primary,
                     pressed: true,
                     ..
                 } if over_us(*pos) => {
-                    gesture.feed_with_tokens(time, Input::Press(*pos), &mut effects, &Chrome::of(ui.ctx()).style);
+                    gesture.feed_with_tokens(
+                        time,
+                        Input::Press(*pos),
+                        &mut effects,
+                        &Chrome::of(ui.ctx()).style,
+                    );
                 }
                 Event::PointerButton {
                     pos,
@@ -305,7 +340,12 @@ impl Widget for Slider<'_> {
                     pressed: false,
                     ..
                 } => {
-                    gesture.feed_with_tokens(time, Input::Release(*pos), &mut effects, &Chrome::of(ui.ctx()).style);
+                    gesture.feed_with_tokens(
+                        time,
+                        Input::Release(*pos),
+                        &mut effects,
+                        &Chrome::of(ui.ctx()).style,
+                    );
                 }
                 Event::MouseWheel { delta, .. } if hovered && delta.y != 0.0 => {
                     let notch = f64::from(delta.y.signum()) * if shift { 10.0 } else { 1.0 };
@@ -323,7 +363,11 @@ impl Widget for Slider<'_> {
                     modifiers,
                     ..
                 } if focused => {
-                    let size = if modifiers.shift { crate::chrome::Chrome::of(ui.ctx()).style.slider_big_step } else { 1.0 };
+                    let size = if modifiers.shift {
+                        crate::chrome::Chrome::of(ui.ctx()).style.slider_big_step
+                    } else {
+                        1.0
+                    };
                     let sign = if *key == Key::ArrowRight { 1.0 } else { -1.0 };
                     adjust(sign * size * step, &mut effects, &mut gesture, value);
                 }
@@ -337,7 +381,12 @@ impl Widget for Slider<'_> {
                             if let Some(ActionData::NumericValue(target)) = request.data
                                 && target.is_finite()
                             {
-                                gesture.feed_with_tokens(time, Input::Interrupt, &mut effects, &Chrome::of(ui.ctx()).style);
+                                gesture.feed_with_tokens(
+                                    time,
+                                    Input::Interrupt,
+                                    &mut effects,
+                                    &Chrome::of(ui.ctx()).style,
+                                );
                                 *value = clamp(target);
                             }
                         }
@@ -398,7 +447,15 @@ impl Widget for Slider<'_> {
                 Some(stops) => {
                     let track = Rect::from_x_y_ranges(
                         track_x,
-                        cy - crate::chrome::Chrome::of(ui.ctx()).style.slider_gradient_track as f32 / 2.0..=cy + crate::chrome::Chrome::of(ui.ctx()).style.slider_gradient_track as f32 / 2.0,
+                        cy - crate::chrome::Chrome::of(ui.ctx())
+                            .style
+                            .slider_gradient_track as f32
+                            / 2.0
+                            ..=cy
+                                + crate::chrome::Chrome::of(ui.ctx())
+                                    .style
+                                    .slider_gradient_track as f32
+                                    / 2.0,
                     );
                     painter.add(Shape::mesh(gradient_mesh(
                         track.round_to_pixels(ppp),
@@ -408,36 +465,93 @@ impl Widget for Slider<'_> {
                 None => {
                     let track = Rect::from_x_y_ranges(
                         track_x,
-                        cy - crate::chrome::Chrome::of(ui.ctx()).style.slider_plain_track as f32 / 2.0..=cy + crate::chrome::Chrome::of(ui.ctx()).style.slider_plain_track as f32 / 2.0,
+                        cy - crate::chrome::Chrome::of(ui.ctx()).style.slider_plain_track as f32
+                            / 2.0
+                            ..=cy
+                                + crate::chrome::Chrome::of(ui.ctx()).style.slider_plain_track
+                                    as f32
+                                    / 2.0,
                     );
-                    painter.rect_filled(track, crate::chrome::Chrome::of(ui.ctx()).style.slider_track_radius as f32, p.field_border);
+                    painter.rect_filled(
+                        track,
+                        crate::chrome::Chrome::of(ui.ctx())
+                            .style
+                            .slider_track_radius as f32,
+                        p.field_border,
+                    );
                     let fill = match chrome.style.slider_fill {
                         SliderFill::Accent => p.accent,
                         SliderFill::TextDim => p.text_dim,
                     };
                     let filled = Rect::from_min_max(track.min, pos2(knob_x, track.max.y));
-                    painter.rect_filled(filled, crate::chrome::Chrome::of(ui.ctx()).style.slider_track_radius as f32, fill);
+                    painter.rect_filled(
+                        filled,
+                        crate::chrome::Chrome::of(ui.ctx())
+                            .style
+                            .slider_track_radius as f32,
+                        fill,
+                    );
                 }
             }
             let centre = pos2(knob_x, cy);
             if chrome.style.knob == Knob::Block {
-                let knob = Rect::from_center_size(centre, vec2(crate::chrome::Chrome::of(ui.ctx()).style.slider_knob_classic_w as f32, crate::chrome::Chrome::of(ui.ctx()).style.slider_knob_classic_h as f32)).round_to_pixels(ppp);
+                let knob = Rect::from_center_size(
+                    centre,
+                    vec2(
+                        crate::chrome::Chrome::of(ui.ctx())
+                            .style
+                            .slider_knob_classic_w as f32,
+                        crate::chrome::Chrome::of(ui.ctx())
+                            .style
+                            .slider_knob_classic_h as f32,
+                    ),
+                )
+                .round_to_pixels(ppp);
                 painter.rect_filled(knob, 0.0, p.card);
                 chrome::bevel(painter, knob, true, p);
             } else {
                 let (radius, fill, ring) = if chrome.style.knob == Knob::Ringed {
-                    (crate::chrome::Chrome::of(ui.ctx()).style.slider_knob_pro as f32, crate::style::token_colour(crate::chrome::Chrome::of(ui.ctx()).style.slider_knob_pro_fill), Some(crate::style::token_colour(crate::chrome::Chrome::of(ui.ctx()).style.slider_knob_pro_ring)))
+                    (
+                        crate::chrome::Chrome::of(ui.ctx()).style.slider_knob_pro as f32,
+                        crate::style::token_colour(
+                            crate::chrome::Chrome::of(ui.ctx())
+                                .style
+                                .slider_knob_pro_fill,
+                        ),
+                        Some(crate::style::token_colour(
+                            crate::chrome::Chrome::of(ui.ctx())
+                                .style
+                                .slider_knob_pro_ring,
+                        )),
+                    )
                 } else {
-                    (crate::chrome::Chrome::of(ui.ctx()).style.slider_knob_studio as f32, crate::style::token_colour(crate::chrome::Chrome::of(ui.ctx()).style.slider_knob_studio_fill), None)
+                    (
+                        crate::chrome::Chrome::of(ui.ctx()).style.slider_knob_studio as f32,
+                        crate::style::token_colour(
+                            crate::chrome::Chrome::of(ui.ctx())
+                                .style
+                                .slider_knob_studio_fill,
+                        ),
+                        None,
+                    )
                 };
                 if response.hovered() || response.dragged() {
                     painter.circle_stroke(
                         centre,
                         crate::chrome::Chrome::of(ui.ctx()).style.slider_halo_radius as f32,
-                        Stroke::new(crate::chrome::Chrome::of(ui.ctx()).style.slider_halo_width as f32, p.accent_soft),
+                        Stroke::new(
+                            crate::chrome::Chrome::of(ui.ctx()).style.slider_halo_width as f32,
+                            p.accent_soft,
+                        ),
                     );
                 }
-                painter.circle_filled(centre + vec2(0.0, 1.0), radius + 0.5, crate::style::token_colour(crate::chrome::Chrome::of(ui.ctx()).style.slider_shadow));
+                painter.circle_filled(
+                    centre + vec2(0.0, 1.0),
+                    radius + 0.5,
+                    crate::style::token_colour(
+                        crate::chrome::Chrome::of(ui.ctx()).style.slider_shadow,
+                    ),
+                );
                 painter.circle_filled(centre, radius, fill);
                 if let Some(ring) = ring {
                     painter.circle_stroke(centre, radius, Stroke::new(1.0, ring));
@@ -491,7 +605,8 @@ pub fn row(
                 .text_style(TextStyle::Body),
         );
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            let mut field = ValueField::new(&mut *value, range.clone()).width(field::value_width_of(ui.ctx()));
+            let mut field =
+                ValueField::new(&mut *value, range.clone()).width(field::value_width_of(ui.ctx()));
             if let Some(unit) = unit {
                 field = field.unit(unit);
             }
@@ -506,9 +621,10 @@ pub fn row(
     response
 }
 
-
 /// The installed value of the former `HEIGHT` constant.
-pub fn height_of(ctx: &egui::Context) -> f32 { crate::chrome::Chrome::of(ctx).style.slider_height as f32 }
+pub fn height_of(ctx: &egui::Context) -> f32 {
+    crate::chrome::Chrome::of(ctx).style.slider_height as f32
+}
 
 #[cfg(test)]
 mod tests {

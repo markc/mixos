@@ -72,7 +72,14 @@ fn panel_with(theme: &Theme, name: &str, open: Option<&str>) {
         .with_size(egui::vec2(420.0, 260.0))
         .wgpu()
         .build_ui(move |ui| {
-            let _ = toolkit::titlebar::show(ui, "Demo", Some(Icon::Server), &commands, &state, &strings);
+            let _ = toolkit::titlebar::show(
+                ui,
+                "Demo",
+                Some(Icon::Server),
+                &commands,
+                &state,
+                &strings,
+            );
             egui::CentralPanel::default().show(ui, |ui| contents(ui, &strings));
         });
     toolkit::install(&harness.ctx, theme);

@@ -61,7 +61,15 @@ pub fn view(
         command: "help.keys",
         icon: Icon::Keyboard,
     }];
-    let fired = titlebar::show_with(ui, &label("title"), Some(Icon::FileText), commands, &*app, strings, &mut controls);
+    let fired = titlebar::show_with(
+        ui,
+        &label("title"),
+        Some(Icon::FileText),
+        commands,
+        &*app,
+        strings,
+        &mut controls,
+    );
     events.extend(
         fired
             .into_iter()
@@ -249,7 +257,12 @@ fn notices(ui: &mut Ui, app: &App, events: &mut Vec<UiEvent>) {
             };
             for conflict in m.conflicts() {
                 ui.horizontal(|ui| {
-                    ui.add(icons::image_of(ui.ctx(), Icon::Info, ICON, ui.visuals().warn_fg_color));
+                    ui.add(icons::image_of(
+                        ui.ctx(),
+                        Icon::Info,
+                        ICON,
+                        ui.visuals().warn_fg_color,
+                    ));
                     let n = conflict.texts.len().to_string();
                     ui.label(label_with("conflict-notice", &[("n", &n)]));
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -268,7 +281,12 @@ fn notices(ui: &mut Ui, app: &App, events: &mut Vec<UiEvent>) {
             }
             if m.detached_copy().is_some() {
                 ui.horizontal(|ui| {
-                    ui.add(icons::image_of(ui.ctx(), Icon::Unplug, ICON, ui.visuals().warn_fg_color));
+                    ui.add(icons::image_of(
+                        ui.ctx(),
+                        Icon::Unplug,
+                        ICON,
+                        ui.visuals().warn_fg_color,
+                    ));
                     ui.label(label("detached-notice"));
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         if ui.small_button(label("take-theirs")).clicked() {

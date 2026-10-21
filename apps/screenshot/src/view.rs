@@ -117,7 +117,15 @@ pub fn view(
             icon: Icon::Keyboard,
         },
     ];
-    let fired = titlebar::show_engine_with(ui, &title(app), Some(Icon::Camera), commands, app, strings, &mut controls);
+    let fired = titlebar::show_engine_with(
+        ui,
+        &title(app),
+        Some(Icon::Camera),
+        commands,
+        app,
+        strings,
+        &mut controls,
+    );
     events.extend(fired.into_iter().map(|(id, o)| UiEvent::Command(id, o)));
     bars::options(ui, |ui| options(ui, app, commands, strings, &mut events));
     bars::status(ui, |ui| status(ui, app));

@@ -286,12 +286,7 @@ fn row_button(field: ComposeField) -> (toolkit::Icon, &'static str) {
 /// One form row as Thunderbird lays it out: the label outside the field,
 /// right-aligned in a column `column` wide, then `add` with the rest of the
 /// row and the label's id (for the field's accessible name).
-fn row<R>(
-    ui: &mut Ui,
-    text: &str,
-    column: f32,
-    add: impl FnOnce(&mut Ui, egui::Id) -> R,
-) -> R {
+fn row<R>(ui: &mut Ui, text: &str, column: f32, add: impl FnOnce(&mut Ui, egui::Id) -> R) -> R {
     row_of(ui, text, column, field::height_of(ui.ctx()), add)
 }
 
@@ -367,7 +362,8 @@ fn form(ui: &mut Ui, compose: &ComposeState, state: &State, events: &mut Vec<UiE
             .push_height
             .max(field::height_of(ui.ctx()));
         row_of(ui, &crate::label("from"), column, height, |ui, label| {
-            let identities = toolkit::button::PushButton::secondary(crate::label("identities-open"));
+            let identities =
+                toolkit::button::PushButton::secondary(crate::label("identities-open"));
             // The button is laid out first from the right, so the identity
             // takes exactly what is left.
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {

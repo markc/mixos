@@ -64,7 +64,15 @@ pub fn view(
             icon: Icon::Keyboard,
         },
     ];
-    let fired = titlebar::show_with(ui, &label("title"), Some(Icon::Server), commands, engine, strings, &mut controls);
+    let fired = titlebar::show_with(
+        ui,
+        &label("title"),
+        Some(Icon::Server),
+        commands,
+        engine,
+        strings,
+        &mut controls,
+    );
     // The toggle goes to the mode opposite the one this frame drew, so a
     // click reported twice cannot flip it back.
     let mut mode_set = false;
@@ -174,8 +182,9 @@ fn tree_row(ui: &mut Ui, engine: &Engine, row: &Row, events: &mut Vec<UiEvent>) 
             } else {
                 Icon::ChevronRight
             };
-            let toggle = ui
-                .add(egui::Button::image(icons::image_of(ui.ctx(), chevron, ICON, colour)).frame(false));
+            let toggle = ui.add(
+                egui::Button::image(icons::image_of(ui.ctx(), chevron, ICON, colour)).frame(false),
+            );
             // An image button has no text: name it, with its row's name, for
             // screen readers and click-by-label.
             let name = label_with(
@@ -199,7 +208,12 @@ fn tree_row(ui: &mut Ui, engine: &Engine, row: &Row, events: &mut Vec<UiEvent>) 
             RowKind::NoPeers => RichText::new(label("no-peers")).weak(),
         };
         if let RowKind::Service(_) = row.kind {
-            ui.add(icons::image_of(ui.ctx(), Icon::Server, ICON, ui.visuals().weak_text_color()));
+            ui.add(icons::image_of(
+                ui.ctx(),
+                Icon::Server,
+                ICON,
+                ui.visuals().weak_text_color(),
+            ));
         }
         let selected = engine.ui.row_key.as_deref() == Some(row.key.as_str());
         if toolkit::selectable(ui, selected, text).clicked() {
