@@ -15,7 +15,8 @@ use std::{
 #[path = "support/process.rs"]
 mod process;
 
-fn measurement(process: &mut process::Process, stalled: bool) -> (f64, usize) {
+/// Runs one 60 s probe pass and returns `(achieved_hz, missed, cadence_missed)`.
+fn measurement(process: &mut process::Process, stalled: bool) -> (f64, usize, usize) {
     let probe = std::env::current_exe()
         .unwrap()
         .parent()
