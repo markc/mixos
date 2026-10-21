@@ -945,20 +945,43 @@ pub fn agent_touch(lp: &mut Loop, slot: u32, phase: &str, x: f64, y: f64) {
     if world::comp::session_lock::active(lp) {
         return;
     }
-    let Some(touch) = lp.state.seat.agent.as_ref().and_then(|s| s.get_touch()) else { return };
+    let Some(touch) = lp.state.seat.agent.as_ref().and_then(|s| s.get_touch()) else {
+        return;
+    };
     let time = now_ms(lp);
     let serial = SERIAL_COUNTER.next_serial();
     let slot = Some(slot).into();
     if phase == "touch_up" {
         touch.up(&mut lp.state, &UpEvent { slot, serial, time });
     } else {
-        let Ok((_, output, x, y)) = output_row(lp, None, x, y) else { return };
+        let Ok((_, output, x, y)) = output_row(lp, None, x, y) else {
+            return;
+        };
         let position = (f64::from(output.x) + x, f64::from(output.y) + y);
-        let Ok(focus) = agent_hit(lp, None, position) else { return };
+        let Ok(focus) = agent_hit(lp, None, position) else {
+            return;
+        };
         if phase == "touch_down" {
-            touch.down(&mut lp.state, focus, &DownEvent { slot, location: position.into(), serial, time });
+            touch.down(
+                &mut lp.state,
+                focus,
+                &DownEvent {
+                    slot,
+                    location: position.into(),
+                    serial,
+                    time,
+                },
+            );
         } else {
-            touch.motion(&mut lp.state, focus, &TouchMotion { slot, location: position.into(), time });
+            touch.motion(
+                &mut lp.state,
+                focus,
+                &TouchMotion {
+                    slot,
+                    location: position.into(),
+                    time,
+                },
+            );
         }
     }
     touch.frame(&mut lp.state);
