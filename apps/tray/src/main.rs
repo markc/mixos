@@ -10,7 +10,7 @@ use std::sync::mpsc;
 use ksni::blocking::TrayMethods as _;
 use ksni::menu::StandardItem;
 use ksni::{Category, MenuItem, Status, ToolTip, Tray};
-use units::{Unit, UnitState};
+use units::Unit;
 
 const APP_ID: &str = "dev.mixos.tray";
 
@@ -107,6 +107,7 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use units::UnitState;
 
     #[test]
     fn unit_rows_show_name_and_state_and_are_not_clickable() {

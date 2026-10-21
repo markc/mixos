@@ -14,17 +14,7 @@ const NO_SUCH_UNIT: &str = "org.freedesktop.systemd1.NoSuchUnit";
 
 /// The units shown in the menu. Templated units (`maild@.service`,
 /// `noded@.service`) need an instance name, so they are not listed yet.
-const WATCHED: &[(&str, Manager)] = &[
-    ("hostd.service", Manager::System),
-    ("monitord.service", Manager::System),
-    ("webd.service", Manager::System),
-];
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Manager {
-    System,
-    User,
-}
+const WATCHED: &[&str] = &["hostd.service", "monitord.service", "webd.service"];
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum UnitState {
@@ -52,18 +42,13 @@ pub struct Unit {
     pub state: UnitState,
 }
 
-/// Queries every watched unit once, opening each bus at most once.
+/// Queries every watched system unit once, opening the system bus once.
 pub fn probe_all() -> Vec<Unit> {
     let system = Connection::system();
-    let session = Connection::session();
     WATCHED
         .iter()
-        .map(|&(name, manager)| {
-            let bus = match manager {
-                Manager::System => system.as_ref(),
-                Manager::User => session.as_ref(),
-            };
-            let state = match bus {
+        .map(|&name| {
+            let state = match system.as_ref() {
                 Ok(conn) => match active_state(conn, name) {
                     Ok(Some(state)) => UnitState::Known(state),
                     Ok(None) => UnitState::NotInstalled,
@@ -147,7 +132,7 @@ mod tests {
 
     #[test]
     fn watched_units_are_plain_service_names() {
-        for (name, _) in WATCHED {
+        for name in WATCHED {
             assert!(name.ends_with(".service"), "{name}");
             assert!(
                 !name.contains('@'),
