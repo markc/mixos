@@ -89,7 +89,10 @@ pub fn parse_chord(text: &str) -> Option<Chord> {
 }
 
 /// The default bindings. An action may have several chords; a chord maps to
-/// exactly one action.
+/// exactly one action. None is on F1–F12: those keys are the person's
+/// (docs/docs/decisions/2026-10-17-function-keys-belong-to-the-user.md), so
+/// Find Next and Find Previous have no default chord; Enter in the find
+/// field finds the next match.
 pub const DEFAULT: &[(&str, ActionId)] = &[
     ("Ctrl+N", ActionId::FileNew),
     ("Ctrl+O", ActionId::FileOpen),
@@ -118,8 +121,6 @@ pub const DEFAULT: &[(&str, ActionId)] = &[
     ("Ctrl+Delete", ActionId::EditDeleteWordRight),
     ("Insert", ActionId::EditOverwrite),
     ("Ctrl+F", ActionId::SearchFind),
-    ("F3", ActionId::SearchFindNext),
-    ("Shift+F3", ActionId::SearchFindPrev),
     ("Ctrl+H", ActionId::SearchReplace),
     ("Ctrl+G", ActionId::SearchGotoLine),
     ("Ctrl+=", ActionId::ViewZoomIn),
@@ -141,13 +142,12 @@ pub const DEFAULT: &[(&str, ActionId)] = &[
     ("Ctrl+9", ActionId::TabsGoto(9)),
 ];
 
-/// Tab / Shift+Tab with a multi-line selection indent/outdent; F10 and
-/// Alt+<mnemonic> open menus — these are handled by the key router, not the
+/// Tab / Shift+Tab with a multi-line selection indent/outdent;
+/// Alt+<mnemonic> opens menus — these are handled by the key router, not the
 /// table, because they depend on state.
 pub const CONTEXTUAL: &[(&str, &str)] = &[
     ("Tab", "indent the selection (multi-line) or insert a tab"),
     ("Shift+Tab", "outdent the selection"),
-    ("F10", "open the menu bar"),
     (
         "Alt+<letter>",
         "open that menu (File, Edit, Search, View, Macros, Tabs, Help)",
@@ -172,6 +172,10 @@ mod tests {
         let mut seen = std::collections::HashSet::new();
         for (text, action) in DEFAULT {
             let c = parse_chord(text).unwrap_or_else(|| panic!("{text} does not parse"));
+            assert!(
+                !NAMED[..12].contains(&c.key.as_str()),
+                "{text}: F1-F12 are the person's"
+            );
             assert!(seen.insert(c), "{text} bound twice (again to {action:?})");
         }
     }

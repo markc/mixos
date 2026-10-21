@@ -27,6 +27,18 @@ fn canonical_chord(text: &str) -> String {
     out
 }
 
+fn is_user_fkey(chord: &str) -> bool {
+    let key = chord.rsplit('+').next().unwrap_or(chord).to_ascii_lowercase();
+    matches!(
+        key.as_str(),
+        "f1" | "f2" | "f3" | "f4" | "f5" | "f6" | "f7" | "f8" | "f9" | "f10" | "f11" | "f12"
+    )
+}
+
+fn ensure_not_user_fkey(chord: &str) {
+    assert!(!is_user_fkey(chord), "F1-F12 belong to the user");
+}
+
 #[derive(Default)]
 pub(crate) struct Bindings {
     current: BTreeMap<&'static str, Bound>,
@@ -37,6 +49,9 @@ pub(crate) struct Bindings {
 impl Bindings {
     pub fn add(&mut self, id: &'static str, own: Option<String>) {
         let own = own.map(|s| canonical_chord(&s));
+        if let Some(s) = &own {
+            ensure_not_user_fkey(s);
+        }
         assert!(
             !self.current.contains_key(id),
             "duplicate command id {id:?}"
@@ -63,6 +78,9 @@ impl Bindings {
     pub fn set_shortcut(&mut self, id: &'static str, own: Option<String>) {
         let own = own.map(|s| canonical_chord(&s));
         if let Some(s) = &own {
+            ensure_not_user_fkey(s);
+        }
+        if let Some(s) = &own {
             assert!(
                 !self.taken(s),
                 "duplicate shortcut {s:?} on {id:?} (chord text decides duplicates)"
@@ -74,6 +92,7 @@ impl Bindings {
     pub fn add_shortcuts(&mut self, id: &'static str, shortcuts: impl IntoIterator<Item = String>) {
         for s in shortcuts {
             let s = canonical_chord(&s);
+            ensure_not_user_fkey(&s);
             if !self.taken(&s) {
                 self.current.get_mut(id).expect("known command").1.push(s);
             }
@@ -157,5 +176,82 @@ impl Bindings {
         bound.extend(chosen);
         self.current = bound;
         notes
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[should_panic(expected = "F1-F12 belong to the user")]
+    fn bare_f1_default_is_rejected_case_insensitively() {
+        let mut bindings = Bindings::default();
+        bindings.add("cmd.bare_fkey", Some("f1".into()));
+    }
+
+    #[test]
+    #[should_panic(expected = "F1-F12 belong to the user")]
+    fn modified_fkey_default_is_rejected() {
+        let mut bindings = Bindings::default();
+        bindings.add("cmd.modified_fkey", Some("Ctrl+Alt+F12".into()));
+    }
+
+    #[test]
+    #[should_panic(expected = "F1-F12 belong to the user")]
+    fn extra_fkey_shortcut_is_rejected() {
+        let mut bindings = Bindings::default();
+        bindings.add("cmd.extra_fkey", None);
+        bindings.add_shortcuts("cmd.extra_fkey", ["Shift+F10".to_string()]);
+    }
+
+    #[test]
+    #[should_panic(expected = "F1-F12 belong to the user")]
+    fn set_shortcut_fkey_is_rejected() {
+        let mut bindings = Bindings::default();
+        bindings.add("cmd.set_fkey", None);
+        bindings.set_shortcut("cmd.set_fkey", Some("Alt+F2".into()));
+    }
+
+    #[test]
+    fn f13_remains_valid_as_default() {
+        let mut bindings = Bindings::default();
+        bindings.add("cmd.f13", Some("Ctrl+F13".into()));
+        assert_eq!(bindings.shortcuts_of("cmd.f13"), vec!["Ctrl+F13".to_string()]);
+    }
+
+    #[test]
+    fn rebind_accepts_user_fkey_override() {
+        let mut bindings = Bindings::default();
+        bindings.add("cmd.user_fkey", Some("Ctrl+O".into()));
+
+        let overrides = Overrides::from([(
+            "cmd.user_fkey".to_string(),
+            vec!["Ctrl+F1".to_string()],
+        )]);
+
+        let notes = bindings.rebind(&overrides, |text| Some(text.to_string()));
+
+        assert!(notes.is_empty());
+        assert_eq!(
+            bindings.shortcuts_of("cmd.user_fkey"),
+            vec!["Ctrl+F1".to_string()]
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "F1-F12 belong to the user")]
+    fn extra_fkey_shortcut_is_rejected_before_duplicate_filtering() {
+        let mut bindings = Bindings::default();
+        bindings.add("cmd.user_fkey", Some("Ctrl+O".into()));
+        bindings.add("cmd.extra_fkey", None);
+
+        let overrides = Overrides::from([(
+            "cmd.user_fkey".to_string(),
+            vec!["F1".to_string()],
+        )]);
+        let _ = bindings.rebind(&overrides, |text| Some(text.to_string()));
+
+        bindings.add_shortcuts("cmd.extra_fkey", ["F1".to_string()]);
     }
 }

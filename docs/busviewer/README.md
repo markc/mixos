@@ -145,7 +145,7 @@ Every menu item, shortcut and `busviewer.execute` id is one command in
 | `edit.clear` | Edit › Clear body | |
 | `edit.copy` | Edit › Copy reply | |
 | `bus.call` | Bus › Call verb | Ctrl+Enter |
-| `help.shortcuts` | Help › Keyboard shortcuts | F1 |
+| `help.shortcuts` | Help › Keyboard shortcuts | Ctrl+/ |
 | `help.about` | Help › About BusViewer | |
 | `view.search` | title bar search button | Ctrl+F |
 | `view.mode` | title bar light/dark button | |

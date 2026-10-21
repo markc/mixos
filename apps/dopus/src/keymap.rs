@@ -15,7 +15,6 @@ pub const DEFAULT: &[(&str, &str)] = &[
     ("Ctrl+L", "location.focus"),
     ("Enter", "file.open"),
     ("Ctrl+Shift+N", "file.new-folder"),
-    ("F2", "file.rename"),
     ("Ctrl+E", "file.rename"),
     ("Ctrl+C", "file.copy-other-pane"),
     ("Ctrl+X", "file.move-other-pane"),
@@ -24,10 +23,9 @@ pub const DEFAULT: &[(&str, &str)] = &[
     ("Alt+ArrowLeft", "nav.back"),
     ("Alt+ArrowRight", "nav.forward"),
     ("Backspace", "nav.parent"),
+    ("Alt+ArrowUp", "nav.parent"),
     ("Alt+Home", "nav.home"),
-    ("F6", "nav.switch-pane"),
     ("Tab", "nav.switch-pane"),
-    ("F5", "view.refresh"),
     ("Ctrl+R", "view.refresh"),
     ("Ctrl+H", "view.toggle-hidden"),
     ("Ctrl+1", "view.sort-name"),
@@ -74,9 +72,13 @@ mod tests {
             let s = toolkit::keymap::parse_chord(text)
                 .unwrap_or_else(|| panic!("{text} does not parse"));
             assert!(seen.insert(s), "{text} bound twice (again to {action})");
+            assert!(
+                !toolkit::keymap::user_only(s.logical_key),
+                "{text}: F1-F12 are the person's"
+            );
             assert_eq!(&toolkit::keymap::chord_text(&s), text, "round trip");
         }
-        assert_eq!(default_keys("file.rename"), ["F2", "Ctrl+E"]);
+        assert_eq!(default_keys("nav.parent"), ["Backspace", "Alt+ArrowUp"]);
         assert!(defaults_for("help.about").is_empty());
     }
 }

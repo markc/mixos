@@ -14,7 +14,7 @@ it keeps.
 
 - **Two panes.** Each shows one folder as a tree with Name, Size and
   Modified columns; columns that do not fit are hidden, Modified first. One
-  pane is active; Switch Pane (F6 or Tab) moves between them, and copy and
+  pane is active; Switch Pane (Tab) moves between them, and copy and
   move always go to the other pane. Drag the divider to change the split.
 - **The path field** at the top of each pane always shows where it is. Click
   it, type a path and press Enter to go there; `~` is your home, and a file
@@ -64,22 +64,22 @@ Keyboard Shortcuts lists every key in force.
 |---|---|---|
 | File | Open | Enter |
 | | New Folder | Ctrl+Shift+N |
-| | Rename | F2, Ctrl+E |
+| | Rename | Ctrl+E |
 | | Copy to Other Pane | Ctrl+C |
 | | Move to Other Pane | Ctrl+X |
 | | Delete | Delete |
 | | Quit | Ctrl+Q |
 | View | Places, Properties | Ctrl+B, Ctrl+I |
 | | Hidden Files | Ctrl+H |
-| | Refresh | F5, Ctrl+R |
+| | Refresh | Ctrl+R |
 | | Sort by Name, Size, Modified | Ctrl+1, Ctrl+2, Ctrl+3 |
 | | Theme | (this window's look; the session's by default) |
 | Go | Back, Forward | Alt+ArrowLeft, Alt+ArrowRight |
-| | Parent Folder | Backspace |
+| | Parent Folder | Backspace, Alt+ArrowUp |
 | | Home | Alt+Home |
 | | Location… | Ctrl+L |
-| | Switch Pane | F6, Tab |
-| Help | Keyboard Shortcuts | F1 |
+| | Switch Pane | Tab |
+| Help | Keyboard Shortcuts | Ctrl+/ |
 
 To change a key, set it in the desktop profile: the binding applies at once,
 and DOpus's defaults stay for every action you leave alone. For example,

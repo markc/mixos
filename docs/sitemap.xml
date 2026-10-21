@@ -53,6 +53,7 @@
   <url><loc>https://mixos.dev/docs/decisions/2026-10-16-email-accounts-in-settings/</loc></url>
   <url><loc>https://mixos.dev/docs/decisions/2026-10-16-monitord-and-monitor/</loc></url>
   <url><loc>https://mixos.dev/docs/decisions/2026-10-16-site-url-layout/</loc></url>
+  <url><loc>https://mixos.dev/docs/decisions/2026-10-17-function-keys-belong-to-the-user/</loc></url>
   <url><loc>https://mixos.dev/docs/decisions/2026-10-18-property-store-in-props/</loc></url>
   <url><loc>https://mixos.dev/docs/decisions/2026-10-19-mcp-program-name/</loc></url>
   <url><loc>https://mixos.dev/docs/decisions/2026-10-20-commands-take-parameters/</loc></url>

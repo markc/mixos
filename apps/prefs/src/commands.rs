@@ -456,7 +456,7 @@ pub fn registry() -> Registry<Engine> {
         group: 0,
         label: "shortcuts",
         menu: Some("help"),
-        shortcut: key(Modifiers::NONE, Key::F1),
+        shortcut: key(Modifiers::COMMAND, Key::Slash),
         icon: None,
         enabled: undialogued,
         run: |e| e.open(Dialog::Shortcuts),
