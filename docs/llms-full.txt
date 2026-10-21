@@ -5627,7 +5627,11 @@ surface-origin self-check.** Unchanged outcomes do not validate the old shim:
 the named stable `touch_and_drag_on_surface_seen` and
 `touch_drag_outside_of_surface_and_back_not_lost` cases still fail with
 `unconfigured_buffer` before reaching input injection, so they cannot prove
-touch continuity until the runtime configure defect is fixed.
+touch continuity. Fixture source (`src/surface_builder.cpp`) shows that these
+cases use `XdgStableSurfaceBuilder`, which assigns the xdg role, sets window
+geometry and calls `attach_visible_buffer` without the initial bufferless
+commit/configure/ack handshake. Their errors are consistent with enforcing
+that handshake; their current outcomes do not validate touch delivery.
 
 Two subsequent complete gate runs against committed baseline `de856d52` passed
 the name-by-name outcome comparison. Each again recorded **361 passed, 563 failed,
@@ -5644,25 +5648,36 @@ The interface name is part of every protocol error's identity:
 
 - **`xdg_surface`, error 3 = `unconfigured_buffer`.** Stable
   [xdg-shell.xml](https://gitlab.freedesktop.org/wayland/wayland-protocols/-/blob/main/stable/xdg-shell/xdg-shell.xml)
-  starts this enum at 1: `not_constructed`, `already_constructed`,
-  `unconfigured_buffer`, `invalid_serial`, `invalid_size`. Compd emits error 3
-  on correctly configured wlcs surfaces, for example
-  `ForeignToplevelManagerTest.detects_toplevel_closed`, yet fails to emit it in
+  requires an initial bufferless commit, the first `configure` event and its
+  `ack_configure` before attaching a buffer; earlier attaches are errors. The
+  client trace of `ForeignToplevelManagerTest.detects_toplevel_closed` shows
+  xdg surface/toplevel creation followed directly by buffer attach and commit,
+  without that handshake. Compd's error 3 is correct enforcement for this
+  fixture, which bypasses `create_visible_surface`'s handshake. This trace
+  does not classify the other 318 cases; per-case traces are required before
+  assigning ownership across the class. Separately,
   `XdgSurfaceStableTest.attaching_buffer_to_unconfigured_xdg_surface_is_an_error`
-  (the report says the expected error was not received). This is a **compd
-  configure-state defect** for a later phase; its root cause has not been traced.
-  Start at `vendor/smithay/src/wayland/shell/xdg/mod.rs:1673` (toplevel
-  pre-commit check, posted at `1721`), and `2067` (popup, posted at `2116`).
-  The hooks are installed by `xdg/handlers/surface.rs:130,208`.
+  attaches after `get_xdg_surface` without a role or commit; its trace shows
+  no error where error 3 is required. Smithay's role pre-commit checks at
+  `vendor/smithay/src/wayland/shell/xdg/mod.rs:1673` (posted at `1721`) and
+  `2067` (posted at `2116`), installed by
+  `xdg/handlers/surface.rs:130,208`, do not cover this attach-only sequence.
+  **Missing attach-time validation** remains native conformance work outside
+  Phase 6; it does not establish a configure-state defect.
 - **`zwlr_layer_surface_v1`, error 0 = `invalid_surface_state`.** The 79-case
   baseline class is on this interface, not `zwlr_layer_shell_v1`:
   `Layer/LayerSurfaceLayerTest.surface_on_lower_layer_is_initially_placed_below/0`
-  reports `must ack the initial configure before attaching buffer`. This is
-  another **compd configure-state defect**, raised in
-  `vendor/smithay/src/wayland/shell/wlr_layer/mod.rs:576`.
+  reports `must ack the initial configure before attaching buffer`, raised in
+  `vendor/smithay/src/wayland/shell/wlr_layer/mod.rs:576`. Its client trace
+  shows `get_layer_surface` and `set_size`, then buffer attach, frame and
+  commit, without an initial bufferless commit, configure or acknowledgement.
   [Layer-shell XML](https://gitlab.freedesktop.org/wlroots/wlr-protocols/-/blob/master/unstable/wlr-layer-shell-unstable-v1.xml)
-  defines **`zwlr_layer_shell_v1`, error 0 = `role`** separately: another role
-  is already assigned. That check is at
+  requires that handshake before attaching a buffer. The rejection is correct
+  for this fixture: its configure listener can acknowledge events, but no
+  initial bufferless commit requests one before attachment. The remaining 78
+  cases need individual attribution. The XML defines
+  **`zwlr_layer_shell_v1`, error 0 = `role`** separately: another role is
+  already assigned. That check is at
   `vendor/smithay/src/wayland/shell/wlr_layer/handlers.rs:84,85`, with the
   role stamp in `wayland/compositor/tree.rs:170`. An erroneous early or stale
   assignment on a fresh surface would be a compd defect, but the original logs
@@ -5695,8 +5710,9 @@ The interface name is part of every protocol error's identity:
   mismatch, which does not fully explain their observed failures.
   They are not evidence of a protocol-permitted refusal of a valid client.
 
-All failed cases remain in the expectation file; this phase fixes the shim and
-attributes runtime conformance work rather than changing normal compd policy.
+All failed cases remain in the expectation file. This phase fixes the shim and
+records evidence for follow-up without changing normal compd policy. Failure
+class counts alone do not establish that every case is a compositor defect.
 
 ---
 

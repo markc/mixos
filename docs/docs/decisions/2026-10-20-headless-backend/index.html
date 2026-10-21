@@ -478,7 +478,11 @@ surface-origin self-check.</strong> Unchanged outcomes do not validate the old s
 the named stable <code>touch_and_drag_on_surface_seen</code> and
 <code>touch_drag_outside_of_surface_and_back_not_lost</code> cases still fail with
 <code>unconfigured_buffer</code> before reaching input injection, so they cannot prove
-touch continuity until the runtime configure defect is fixed.</p>
+touch continuity. Fixture source (<code>src/surface_builder.cpp</code>) shows that these
+cases use <code>XdgStableSurfaceBuilder</code>, which assigns the xdg role, sets window
+geometry and calls <code>attach_visible_buffer</code> without the initial bufferless
+commit/configure/ack handshake. Their errors are consistent with enforcing
+that handshake; their current outcomes do not validate touch delivery.</p>
 <p>Two subsequent complete gate runs against committed baseline <code>de856d52</code> passed
 the name-by-name outcome comparison. Each again recorded <strong>361 passed, 563 failed,
 304 skipped, 0 flaky</strong>, with 237 successful placement checks and complete JSON
@@ -493,25 +497,36 @@ The interface name is part of every protocol error's identity:</p>
 <ul>
 <li><strong><code>xdg_surface</code>, error 3 = <code>unconfigured_buffer</code>.</strong> Stable
 <a href="https://gitlab.freedesktop.org/wayland/wayland-protocols/-/blob/main/stable/xdg-shell/xdg-shell.xml">xdg-shell.xml</a>
-starts this enum at 1: <code>not_constructed</code>, <code>already_constructed</code>,
-<code>unconfigured_buffer</code>, <code>invalid_serial</code>, <code>invalid_size</code>. Compd emits error 3
-on correctly configured wlcs surfaces, for example
-<code>ForeignToplevelManagerTest.detects_toplevel_closed</code>, yet fails to emit it in
+requires an initial bufferless commit, the first <code>configure</code> event and its
+<code>ack_configure</code> before attaching a buffer; earlier attaches are errors. The
+client trace of <code>ForeignToplevelManagerTest.detects_toplevel_closed</code> shows
+xdg surface/toplevel creation followed directly by buffer attach and commit,
+without that handshake. Compd's error 3 is correct enforcement for this
+fixture, which bypasses <code>create_visible_surface</code>'s handshake. This trace
+does not classify the other 318 cases; per-case traces are required before
+assigning ownership across the class. Separately,
 <code>XdgSurfaceStableTest.attaching_buffer_to_unconfigured_xdg_surface_is_an_error</code>
-(the report says the expected error was not received). This is a <strong>compd
-configure-state defect</strong> for a later phase; its root cause has not been traced.
-Start at <code>vendor/smithay/src/wayland/shell/xdg/mod.rs:1673</code> (toplevel
-pre-commit check, posted at <code>1721</code>), and <code>2067</code> (popup, posted at <code>2116</code>).
-The hooks are installed by <code>xdg/handlers/surface.rs:130,208</code>.</li>
+attaches after <code>get_xdg_surface</code> without a role or commit; its trace shows
+no error where error 3 is required. Smithay's role pre-commit checks at
+<code>vendor/smithay/src/wayland/shell/xdg/mod.rs:1673</code> (posted at <code>1721</code>) and
+<code>2067</code> (posted at <code>2116</code>), installed by
+<code>xdg/handlers/surface.rs:130,208</code>, do not cover this attach-only sequence.
+<strong>Missing attach-time validation</strong> remains native conformance work outside
+Phase 6; it does not establish a configure-state defect.</li>
 <li><strong><code>zwlr_layer_surface_v1</code>, error 0 = <code>invalid_surface_state</code>.</strong> The 79-case
 baseline class is on this interface, not <code>zwlr_layer_shell_v1</code>:
 <code>Layer/LayerSurfaceLayerTest.surface_on_lower_layer_is_initially_placed_below/0</code>
-reports <code>must ack the initial configure before attaching buffer</code>. This is
-another <strong>compd configure-state defect</strong>, raised in
-<code>vendor/smithay/src/wayland/shell/wlr_layer/mod.rs:576</code>.
+reports <code>must ack the initial configure before attaching buffer</code>, raised in
+<code>vendor/smithay/src/wayland/shell/wlr_layer/mod.rs:576</code>. Its client trace
+shows <code>get_layer_surface</code> and <code>set_size</code>, then buffer attach, frame and
+commit, without an initial bufferless commit, configure or acknowledgement.
 <a href="https://gitlab.freedesktop.org/wlroots/wlr-protocols/-/blob/master/unstable/wlr-layer-shell-unstable-v1.xml">Layer-shell XML</a>
-defines <strong><code>zwlr_layer_shell_v1</code>, error 0 = <code>role</code></strong> separately: another role
-is already assigned. That check is at
+requires that handshake before attaching a buffer. The rejection is correct
+for this fixture: its configure listener can acknowledge events, but no
+initial bufferless commit requests one before attachment. The remaining 78
+cases need individual attribution. The XML defines
+<strong><code>zwlr_layer_shell_v1</code>, error 0 = <code>role</code></strong> separately: another role is
+already assigned. That check is at
 <code>vendor/smithay/src/wayland/shell/wlr_layer/handlers.rs:84,85</code>, with the
 role stamp in <code>wayland/compositor/tree.rs:170</code>. An erroneous early or stale
 assignment on a fresh surface would be a compd defect, but the original logs
@@ -544,8 +559,9 @@ conformance defects; the geometry-offset cases also have the stated contract
 mismatch, which does not fully explain their observed failures.
 They are not evidence of a protocol-permitted refusal of a valid client.</li>
 </ul>
-<p>All failed cases remain in the expectation file; this phase fixes the shim and
-attributes runtime conformance work rather than changing normal compd policy.</p>
+<p>All failed cases remain in the expectation file. This phase fixes the shim and
+records evidence for follow-up without changing normal compd policy. Failure
+class counts alone do not establish that every case is a compositor defect.</p>
         </article>
         <p class="doc-source"><a href="/docs/decisions/2026-10-20-headless-backend.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
     </div>
