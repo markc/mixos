@@ -11,7 +11,7 @@ use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 use email::secrets::Secrets;
 use email::shell::{Done, Event};
-use email::state::{Mode as Surface, SessionInfo, State, Tag, UiState};
+use email::state::{ComposeField, Mode as Surface, SessionInfo, State, Tag, UiState};
 use email::view::{UiEvent, view};
 use email::work::Work;
 use email::{commands, label, strings};
@@ -217,11 +217,23 @@ fn window(state: State, theme: &Theme) -> Harness<'static, (State, Vec<UiEvent>)
     unsafe { std::env::set_var("TZ", "UTC") };
     let registry = commands::registry();
     let strings = strings();
+    let window_theme = theme.clone();
     let mut h = Harness::builder()
         .with_size(egui::vec2(1180.0, 760.0))
         .build_ui_state(
             move |ui, (state, seen): &mut (State, Vec<UiEvent>)| {
-                let events = view(ui, state, &registry, &strings);
+                let palette = editor::Palette::from_theme(if state.settings.composer.light {
+                    toolkit::content::light_theme()
+                } else {
+                    &window_theme
+                });
+                let fired = commands::shortcuts(ui.ctx(), state, &registry);
+                let mut events = view(ui, state, &registry, &strings, &palette);
+                events.extend(
+                    fired
+                        .into_iter()
+                        .map(|id| UiEvent::Command(id, toolkit::command::Origin::Shortcut)),
+                );
                 for event in events {
                     seen.push(event.clone());
                     if let UiEvent::Command(id, origin) = event {
@@ -403,7 +415,7 @@ fn a_quoted_reply_quotes_and_an_unquoted_one_does_not() {
     registry
         .execute("mail.reply_quoted", &mut state, Origin::Bus)
         .unwrap();
-    let body = state.compose.take().unwrap().draft.body;
+    let body = state.compose.take().unwrap().body.contents();
     assert!(body.contains("Bob wrote:"), "{body}");
     assert!(body.contains("\n> Lunch on Thursday works."), "{body}");
     assert!(
@@ -413,7 +425,7 @@ fn a_quoted_reply_quotes_and_an_unquoted_one_does_not() {
     registry
         .execute("mail.reply_unquoted", &mut state, Origin::Bus)
         .unwrap();
-    let body = state.compose.take().unwrap().draft.body;
+    let body = state.compose.take().unwrap().body.contents();
     assert!(!body.contains("wrote:"), "{body}");
 }
 
@@ -523,6 +535,131 @@ fn bare_key_and_delete_shortcuts_are_browsing_only() {
         assert_eq!(registry.scope_of(id), Scope::Browsing, "{id}");
     }
     assert_eq!(registry.scope_of("mail.reply"), Scope::Anywhere);
+}
+
+#[test]
+fn composer_body_types_undoes_and_keeps_registry_chords() {
+    let mut state = opened("text/plain", PLAIN);
+    state.compose();
+    let mut h = window(state, &theme(Scheme::Pro, Mode::Dark));
+    h.get_by_label("Body").click();
+    h.run();
+    assert!(email::view::compose::body_focused(&h.ctx));
+    h.get_by_label("Body").type_text("Typed body");
+    h.run();
+    assert_eq!(
+        h.state().0.compose.as_ref().unwrap().body.contents(),
+        "Typed body"
+    );
+    assert!(h.state().0.compose.as_ref().unwrap().draft.body.is_empty());
+    assert!(
+        !h.state()
+            .1
+            .iter()
+            .any(|e| matches!(e, UiEvent::ComposeField(ComposeField::Body, _)))
+    );
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
+    h.run();
+    assert_eq!(h.state().0.compose.as_ref().unwrap().body.contents(), "");
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Y);
+    h.run();
+    assert_eq!(
+        h.state().0.compose.as_ref().unwrap().body.contents(),
+        "Typed body"
+    );
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
+    h.run();
+    h.key_press_modifiers(
+        egui::Modifiers::COMMAND.plus(egui::Modifiers::SHIFT),
+        egui::Key::Z,
+    );
+    h.run();
+    assert_eq!(
+        h.state().0.compose.as_ref().unwrap().body.contents(),
+        "Typed body"
+    );
+
+    let registry = commands::registry();
+    h.state_mut().1.clear();
+    for command in registry.iter() {
+        for chord in registry.shortcuts_of(command.id) {
+            assert!(
+                !matches!(chord.logical_key, egui::Key::Z | egui::Key::Y),
+                "undo belongs to the editor"
+            );
+            h.key_press_modifiers(chord.modifiers, chord.logical_key);
+            h.run();
+            assert!(email::view::compose::body_focused(&h.ctx), "{}", command.id);
+            assert!(
+                !h.state()
+                    .1
+                    .iter()
+                    .any(|e| matches!(e, UiEvent::Command(..))),
+                "{} fired",
+                command.id
+            );
+        }
+    }
+    // A letter key produces a key event and a text event on the platform.
+    for key in [egui::Key::S, egui::Key::M, egui::Key::J] {
+        h.key_press(key);
+        h.run();
+    }
+    h.get_by_label("Body").type_text("smj");
+    h.run();
+    assert!(
+        h.state()
+            .0
+            .compose
+            .as_ref()
+            .unwrap()
+            .body
+            .contents()
+            .ends_with("smj")
+    );
+    assert!(
+        !h.state()
+            .1
+            .iter()
+            .any(|e| matches!(e, UiEvent::Command(..)))
+    );
+}
+
+#[test]
+fn focused_body_keeps_letter_chords_before_the_view_runs() {
+    let mut state = opened("text/plain", PLAIN);
+    state.compose();
+    // window() runs shortcuts before view(), exactly as Shell::ui does.
+    let mut h = window(state, &theme(Scheme::Pro, Mode::Dark));
+    h.get_by_label("Body").click();
+    h.run();
+    h.state_mut().1.clear();
+    // Put the key and text in the same platform frame, not separate frames.
+    for (key, text) in [
+        (egui::Key::S, "s"),
+        (egui::Key::M, "m"),
+        (egui::Key::J, "j"),
+    ] {
+        h.input_mut().events.extend([
+            egui::Event::Key {
+                key,
+                physical_key: Some(key),
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::NONE,
+            },
+            egui::Event::Text(text.into()),
+        ]);
+        h.run();
+    }
+    assert_eq!(h.state().0.compose.as_ref().unwrap().body.contents(), "smj");
+    assert!(
+        !h.state()
+            .1
+            .iter()
+            .any(|e| matches!(e, UiEvent::Command(..)))
+    );
+    assert!(email::view::compose::body_focused(&h.ctx));
 }
 
 /// The batched action the state queued last: its ids and change.
@@ -816,6 +953,36 @@ fn button(h: &Harness<'static, (State, Vec<UiEvent>)>, key: &str) -> egui::Rect 
 }
 
 #[test]
+fn composer_uses_taller_padded_fields_without_losing_shared_editor_input() {
+    let mut overlay = toolkit::theme::Overlay::default();
+    for (name, value) in [("field_height", 48.0), ("field_padding_y", 8.0)] {
+        overlay
+            .style
+            .insert(name.into(), design::StyleValueSource::Number(value));
+    }
+    let theme = theme(Scheme::Studio, Mode::Dark)
+        .with_overlay(overlay)
+        .unwrap();
+    let mut state = opened("text/plain", PLAIN);
+    assert!(state.open_compose(Some("home"), Default::default()));
+    let mut h = window(state, &theme);
+    h.run();
+    let to = field(&h, "To").unwrap();
+    let subject = field(&h, "Subject").unwrap();
+    let cc = button(&h, "show-cc");
+    assert!((cc.height() - 48.0).abs() < 1.0, "{cc:?}");
+    assert!((cc.center().y - to.center().y).abs() < 4.0);
+    assert!(subject.top() > to.bottom(), "padded rows do not overlap");
+    h.get_by_label("Body").click();
+    h.get_by_label("Body").type_text("Body with taller fields");
+    h.run();
+    assert_eq!(
+        h.state().0.compose.as_ref().unwrap().body.contents(),
+        "Body with taller fields"
+    );
+}
+
+#[test]
 fn compose_rows_put_labels_outside_and_open_cc_bcc_and_reply_to_from_the_to_row() {
     let mut state = opened("text/plain", PLAIN);
     assert!(state.open_compose(Some("home"), Default::default()));
@@ -1041,5 +1208,16 @@ fn quoted_reply_compose_studio_dark() {
         .unwrap();
     let mut h = window(state, &theme(Scheme::Studio, Mode::Dark));
     h.run();
+    let send = h.get_by_label(&label("send")).rect();
+    let cancel = h.get_by_label(&label("cancel")).rect();
+    let toggle = h.get_by_label(&label("reply-below-quote")).rect();
+    let screen = h.ctx.content_rect();
+    for rect in [send, cancel, toggle] {
+        assert!(
+            screen.contains_rect(rect),
+            "composer footer stays on screen: {rect:?}"
+        );
+    }
+    assert!(toggle.bottom() < send.top());
     h.snapshot("quoted_reply_compose_studio_dark");
 }

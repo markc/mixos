@@ -27,6 +27,52 @@ fn request(authority: &Authority, id: &str, mode: &str) -> ApplyRequest {
     }
 }
 #[test]
+fn round2_old_composer_family_loads_and_allows_later_writes() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = authority(dir.path());
+    let mut old = state.accepted.clone();
+    drop(state);
+    // Reproduce an intact record authored before the monospace restriction.
+    old.desktop.email.composer.font.family = Some("Inter".into());
+    old.seal().unwrap();
+    let bytes = strict::to_string_pretty(&old).unwrap();
+    std::fs::write(dir.path().join("desktop.conf.mix"), &bytes).unwrap();
+    std::fs::write(dir.path().join("desktop.previous.conf.mix"), &bytes).unwrap();
+    let (store, data) = Store::open(dir.path(), &binding()).unwrap();
+    assert!(!store.restored);
+    assert_eq!(data.desktop.email.composer.font.family, None);
+    data.check(&binding()).unwrap();
+    let mut state = Authority::new(store, data).unwrap();
+    state
+        .apply(request(&state, "after-font-reset", "light"))
+        .unwrap();
+    for (id, path, value) in [
+        ("bad-font", "email.composer.font.family", json!("Inter")),
+        (
+            "bad-surface",
+            "email.composer",
+            json!({"font":{"family":"Inter"}}),
+        ),
+        (
+            "bad-group",
+            "email",
+            json!({"composer":{"font":{"family":"Inter"}}}),
+        ),
+    ] {
+        let mut edit = request(&state, id, "dark");
+        edit.changes = BTreeMap::from([(path.into(), value)]);
+        assert_eq!(
+            state.apply(edit).unwrap_err()["status"],
+            "validation_failed"
+        );
+    }
+    drop(state);
+    let (_, reopened) = Store::open(dir.path(), &binding()).unwrap();
+    assert_eq!(reopened.desktop.email.composer.font.family, None);
+    assert_eq!(reopened.desktop.appearance.mode, "light");
+}
+
+#[test]
 fn validate_reports_its_base_and_rejects_stale_editors_without_writing() {
     let dir = tempfile::tempdir().unwrap();
     let mut state = authority(dir.path());

@@ -31,6 +31,8 @@ config.workspace = true
 design.workspace = true
 eframe.workspace = true
 egui.workspace = true
+editor.workspace = true
+editor-model.workspace = true
 futures.workspace = true
 # O_NONBLOCK, so a CA path naming a FIFO never blocks its open.
 libc.workspace = true

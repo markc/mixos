@@ -164,6 +164,13 @@ pub fn show(
     let id = ui.make_persistent_id(id_salt);
     let rect = ui.available_rect_before_wrap();
     let response = ui.interact(rect, id, Sense::click_and_drag());
+    response.widget_info(|| {
+        egui::WidgetInfo::labeled(
+            egui::WidgetType::TextEdit,
+            ui.is_enabled() && !view.read_only,
+            view.label.as_deref().unwrap_or_default(),
+        )
+    });
     ui.advance_cursor_after_rect(rect);
     let shared = ui.data_mut(|d| {
         d.get_temp_mut_or_insert_with(id, || {
@@ -1347,7 +1354,8 @@ impl Draw<'_, '_, '_> {
         let model = self.p.doc.model;
         let t = self.g.text_rect();
         let sel = sel_range(model.sel);
-        if sel.is_empty()
+        if self.p.view.current_line
+            && sel.is_empty()
             && let Some(row) = self.row_of(sel.start)
         {
             painter.rect_filled(
@@ -1394,6 +1402,14 @@ impl Draw<'_, '_, '_> {
         let mut budget = SliceBudget::default();
         let mut buf = String::new();
         let dy = ((self.g.metrics.row_h - self.row_font_h) / 2.0).round();
+        if doc.text.is_empty()
+            && let Some(placeholder) = &self.p.view.placeholder
+            && let Some(row) = self.rows.first()
+        {
+            let colour = self.p.palette.gutter_text;
+            let galley = painter.layout_no_wrap(placeholder.clone(), self.font.clone(), colour);
+            painter.galley(pos2(self.x(row, 0), row.y + dy), galley, colour);
+        }
         for row in self.rows {
             // Every visible line is asked for, empty or not, so a cold seek
             // left over from another viewport settles on this one.

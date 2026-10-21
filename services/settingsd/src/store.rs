@@ -77,8 +77,9 @@ impl Accepted {
     /// seal [`Accepted::check`] verified as stored; returns it at [`FORMAT`]
     /// and whether anything changed.
     ///
-    /// An older record keeps everything it authored (the desktop, the pinned
-    /// source, its history). What is derived from them, the effective
+    /// An older record keeps its authored settings, pinned source and history,
+    /// except that a legacy prose composer font resets to the mono default.
+    /// What is derived from them, the effective
     /// interpretation, is never trusted across formats: it is resolved again
     /// from the authored desktop and pinned source, and both digests are
     /// sealed anew at the current format. The store writes the result
@@ -92,14 +93,26 @@ impl Accepted {
     ///   effective digest: bump [`FORMAT`], add a line to its history, and
     ///   this function re-derives older records on their next open.
     pub fn upgrade(mut self) -> anyhow::Result<(Self, bool)> {
-        if self.format == FORMAT {
-            return Ok((self, false));
-        }
         anyhow::ensure!(
-            self.format < FORMAT,
+            self.format <= FORMAT,
             "accepted format {} is newer than {FORMAT}",
             self.format
         );
+        // This authored migration runs only after the stored seal verifies.
+        // Keep receipt fences honest by advancing the profile revision; the
+        // resolved design is unchanged, so its revision stays as it was.
+        let reset = self.desktop.email.reset_legacy_composer_family();
+        if reset {
+            self.revision = Revision(
+                self.revision
+                    .0
+                    .checked_add(1)
+                    .ok_or_else(|| anyhow::anyhow!("accepted revision exhausted"))?,
+            );
+        }
+        if self.format == FORMAT && !reset {
+            return Ok((self, false));
+        }
         let effective = settings::resolve_with_embedded(&self.desktop, &self.embedded_source)
             .map_err(|e| anyhow::anyhow!("accepted desktop no longer resolves: {e:?}"))?;
         self.effective_digest = settings::digest(&effective)?;

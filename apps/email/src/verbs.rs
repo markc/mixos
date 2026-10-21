@@ -1259,6 +1259,9 @@ fn dispatch(
             // The identity sets Reply-To; an explicit one replaces it.
             let reply_to = text(args, "reply_to")?.filter(|r| !r.trim().is_empty());
             state.open_compose(Some(&account), draft);
+            if let Some(error) = state.close_failed_compose() {
+                return Err(invalid(&error));
+            }
             if let (Some(reply_to), Some(compose)) = (reply_to, state.compose.as_mut()) {
                 compose.draft.reply_to = Some(reply_to);
             }

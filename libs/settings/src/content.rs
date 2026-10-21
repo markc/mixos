@@ -17,8 +17,9 @@ use serde_json::Value;
 pub const PADDINGS: [u32; 5] = [1, 2, 4, 8, 16];
 pub const FONT_SIZE_MIN: f64 = 6.0;
 pub const FONT_SIZE_MAX: f64 = 48.0;
-/// The bundled families a surface may choose. None is the design's UI face
-/// (Inter), so an unset family follows the design.
+/// The bundled families a surface may choose. The composer and Ced editor
+/// accept only [`MONO_FAMILY`]; their unset family is also that face.
+/// Other surfaces use the design's UI face (Inter) when unset.
 pub const FAMILIES: [&str; 2] = ["Inter", "JetBrains Mono"];
 
 fn is_default<T: Default + PartialEq>(value: &T) -> bool {
@@ -76,7 +77,7 @@ impl Content {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct ContentFont {
-    /// One of [`FAMILIES`], or None for the design's UI face.
+    /// One of [`FAMILIES`], or None for the surface's default face.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub family: Option<String>,
     /// Logical pixels, [`FONT_SIZE_MIN`] to [`FONT_SIZE_MAX`].
@@ -114,6 +115,14 @@ pub fn validate(content: &Content, path: &str) -> Result<(), Diagnostic> {
             "Font must be Inter or JetBrains Mono",
         ));
     }
+    if path == "email.composer"
+        && matches!(content.font.family.as_deref(), Some(family) if family != MONO_FAMILY)
+    {
+        return Err(error(
+            "email.composer.font.family",
+            "The composer needs the monospace font, JetBrains Mono",
+        ));
+    }
     let size = content.font.size;
     if !size.is_finite() || !(FONT_SIZE_MIN..=FONT_SIZE_MAX).contains(&size) {
         return Err(error(
@@ -126,9 +135,20 @@ pub fn validate(content: &Content, path: &str) -> Result<(), Diagnostic> {
 
 /// The `describe()` entries for one surface, under `path`.
 pub fn describe(path: &str) -> Value {
+    let monospace = path == "email.composer";
+    let families = if monospace {
+        &FAMILIES[1..]
+    } else {
+        &FAMILIES[..]
+    };
+    let default_face = if monospace {
+        MONO_FAMILY
+    } else {
+        "the design's UI face"
+    };
     serde_json::json!({
         format!("{path}.padding"): {"type":"integer", "enum":PADDINGS, "default":DEFAULT_PADDING, "unit":"px"},
-        format!("{path}.font.family"): {"type":"string|null", "names":FAMILIES, "default":null, "null":"the design's UI face"},
+        format!("{path}.font.family"): {"type":"string|null", "names":families, "default":null, "null":default_face},
         format!("{path}.font.size"): {"type":"number", "minimum":FONT_SIZE_MIN, "maximum":FONT_SIZE_MAX, "unit":"px"},
         format!("{path}.light"): {"type":"boolean", "default":false},
     })
@@ -288,6 +308,27 @@ mod tests {
         .unwrap();
         let error = validate(&content, "email.reader").unwrap_err();
         assert_eq!(error.path, "email.reader.font.family");
+    }
+
+    #[test]
+    fn the_composer_takes_only_the_monospace_face() {
+        let mut content = Content::default();
+        assert!(validate(&content, "email.composer").is_ok());
+        for family in ["JetBrains Mono", "Inter", "Comic Sans"] {
+            content.font.family = Some(family.into());
+            let result = validate(&content, "email.composer");
+            if family == MONO_FAMILY {
+                assert!(result.is_ok());
+            } else {
+                assert_eq!(result.unwrap_err().path, "email.composer.font.family");
+            }
+        }
+        let schema = describe("email.composer");
+        assert_eq!(
+            schema["email.composer.font.family"]["names"],
+            json!([MONO_FAMILY])
+        );
+        assert_eq!(schema["email.composer.font.family"]["null"], MONO_FAMILY);
     }
 
     #[test]
