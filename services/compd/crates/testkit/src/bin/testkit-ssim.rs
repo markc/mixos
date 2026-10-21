@@ -20,8 +20,10 @@ fn size(text: &str) -> Result<(u32, u32)> {
 fn load(path: &Path, raw: Option<(u32, u32)>) -> Result<GrayImage> {
     let rgba = if let Some((w, h)) = raw {
         let bytes = std::fs::read(path)?;
-        let expected = u64::from(w).checked_mul(u64::from(h))
-            .and_then(|pixels| pixels.checked_mul(4)).ok_or("raw dimensions overflow")?;
+        let expected = u64::from(w)
+            .checked_mul(u64::from(h))
+            .and_then(|pixels| pixels.checked_mul(4))
+            .ok_or("raw dimensions overflow")?;
         if u64::try_from(bytes.len())? != expected {
             return Err("raw input must contain exactly width * height * 4 bytes".into());
         }
@@ -166,7 +168,9 @@ mod tests {
 
     #[test]
     fn inverted_checkerboard_has_negative_covariance() {
-        let a = GrayImage::from_fn(8, 8, |x, y| image::Luma([if (x + y) % 2 == 0 { 0 } else { 255 }]));
+        let a = GrayImage::from_fn(8, 8, |x, y| {
+            image::Luma([if (x + y) % 2 == 0 { 0 } else { 255 }])
+        });
         let b = GrayImage::from_fn(8, 8, |x, y| image::Luma([255 - a.get_pixel(x, y)[0]]));
         // Equal means; variance = 255^2/4 and covariance = -variance.
         let expected = (-2.0 * 16256.25 + 58.5225) / (2.0 * 16256.25 + 58.5225);

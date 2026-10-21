@@ -91,22 +91,40 @@ fn capture(bus: &Bus, target: &Value, path: &Path) {
 }
 
 fn buffer_creation(trace: &str) -> (&str, &str) {
-    let surface = trace.lines().find_map(|line| {
-        line.contains(".get_xdg_surface(")
-            .then(|| line.split_once(", wl_surface#").map(|(_, rest)| rest.trim_end_matches(')')))
-            .flatten()
-    }).expect("xdg toplevel surface in client trace");
+    let surface = trace
+        .lines()
+        .find_map(|line| {
+            line.contains(".get_xdg_surface(")
+                .then(|| {
+                    line.split_once(", wl_surface#")
+                        .map(|(_, rest)| rest.trim_end_matches(')'))
+                })
+                .flatten()
+        })
+        .expect("xdg toplevel surface in client trace");
     let attached = format!("wl_surface#{surface}.attach(wl_buffer#");
-    let attach = trace.lines().find(|line| line.contains(&attached))
+    let attach = trace
+        .lines()
+        .find(|line| line.contains(&attached))
         .expect("app toplevel attached a rendered buffer");
-    let id = attach.split_once(&attached).unwrap().1.split(',').next().unwrap();
+    let id = attach
+        .split_once(&attached)
+        .unwrap()
+        .1
+        .split(',')
+        .next()
+        .unwrap();
     // Resolve the attached buffer's most recent creation, excluding cursor
     // buffers and any later reuse of the same protocol object id.
     let prefix = &trace[..trace.find(attach).unwrap()];
-    let creation = prefix.lines().rev().find(|line| {
-        line.contains(&format!("new id wl_buffer#{id},"))
-            || line.contains(&format!("new id wl_buffer#{id})"))
-    }).expect("creation of the app's attached wl_buffer");
+    let creation = prefix
+        .lines()
+        .rev()
+        .find(|line| {
+            line.contains(&format!("new id wl_buffer#{id},"))
+                || line.contains(&format!("new id wl_buffer#{id})"))
+        })
+        .expect("creation of the app's attached wl_buffer");
     let kind = if creation.contains("wl_shm_pool") {
         "wl_shm"
     } else if creation.contains("wl_drm") {
@@ -163,12 +181,13 @@ fn ced_wgpu_agent_typing_and_idle_ssim() {
         thread::sleep(Duration::from_millis(50));
     }
     let before = root.join("before.png");
+    let reference_frame = root.join("reference.png");
     let helper = Path::new(env!("CARGO_MANIFEST_DIR")).join("../testkit/scripts/app_reference.mix");
     let output = Command::new(
         std::env::var_os("MIXOS_TEST_MIX").unwrap_or_else(|| "/opt/mixos/bin/mix".into()),
     )
     .arg(helper)
-    .arg(&before)
+    .arg(&reference_frame)
     .args(["--comp", COMP, "--output", "headless-0", "--keep", "--app"])
     .arg(binary("examples/ced-headless-probe"))
     .env("MIXOS_NODED_URL", &bus.url)
@@ -199,7 +218,7 @@ fn ced_wgpu_agent_typing_and_idle_ssim() {
     assert_eq!(record["row"]["window_y"], 60.0);
     let target = &record["window"];
     if let Some(reference) = std::env::var_os("COMPD_TEST_APP_REFERENCE") {
-        assert!(compare(Path::new(&reference), &before, IDLE_MIN, true) >= IDLE_MIN);
+        assert!(compare(Path::new(&reference), &reference_frame, IDLE_MIN, true) >= IDLE_MIN);
     } else {
         println!("CONSOLE_REFERENCE not supplied; cross-backend SSIM not run");
     }
@@ -251,7 +270,9 @@ fn ced_wgpu_agent_typing_and_idle_ssim() {
     let trace = fs::read_to_string(&_app.log).unwrap();
     let adapter = trace
         .lines()
-        .find(|line| line.contains("wgpu adapter:") || line.contains("Software rasterizer detected"))
+        .find(|line| {
+            line.contains("wgpu adapter:") || line.contains("Software rasterizer detected")
+        })
         .expect("the selected wgpu adapter must be logged");
     println!("CED_WGPU {adapter}");
     if adapter.contains("device_type: Cpu") {
@@ -262,7 +283,7 @@ fn ced_wgpu_agent_typing_and_idle_ssim() {
     println!("ced: idle >= {IDLE_MIN}, typed < {TYPED_MAX}; exact agent text readback");
     let artifacts = binary("headless-app-artifacts");
     fs::create_dir_all(&artifacts).unwrap();
-    for path in [&before, &idle, &typed, &_app.log] {
+    for path in [&reference_frame, &before, &idle, &typed, &_app.log] {
         fs::copy(path, artifacts.join(path.file_name().unwrap())).unwrap();
     }
     fs::write(artifacts.join("reference.json"), record.to_string()).unwrap();
