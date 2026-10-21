@@ -118,46 +118,6 @@ pub static COMPOSITE_NODE: slots::storage::token::base::Token<Option<DrmNode>> =
 pub static COMPOSITE_NODE_MUT: slots::storage::token::base::TokenMut<Option<DrmNode>> =
     slots::storage::token::base::TokenMut::new(&COMPOSITE_NODE);
 
-/// WHAT A COMPLETE REGISTRAR LOOKS LIKE: every role there is. `format.answer`
-/// will not answer anything until all of them have registered.
-///
-/// # Why the whole enum, with no exceptions
-///
-/// Because an exception is a hole with a plausible reason attached, and the holes
-/// are precisely where this went wrong before. "Nested has no scanout device" is
-/// true, but it is a statement the machine should MAKE, not one the gate should
-/// assume — a backend that has nothing for a role registers an EMPTY set and says
-/// so, which reads identically to every consumer (`set_or_empty` → empty →
-/// degrade, exactly as before) while being distinguishable from silence to the
-/// gate. Exempting the role instead would mean a backend that genuinely SHOULD
-/// have published it, and did not, is answered for anyway.
-///
-/// [`Role::ALL`] is a fixed-length array over the enum, so adding a role is a
-/// compile error until someone decides who registers it.
-///
-/// # Why this is a constant here and not something a backend declares
-///
-/// Because "when do I arm the gate" is itself an ordering decision, and an
-/// ordering decision made by a caller is exactly the class of bug this exists to
-/// catch. A backend that armed late would leave the window it was meant to close;
-/// one that armed early would fail its own bring-up. Stated here, there is no
-/// window and no announcement to get wrong — the requirement is true from the
-/// first instruction of the process, and the startup sequence is what has to
-/// satisfy it.
-///
-/// # Why "not yet" is not "never"
-///
-/// [`View`] sees only "no entry", and `format.resolve` DEGRADES on it — drops the
-/// term and answers from what is left. That is RIGHT for a role nobody will ever
-/// publish and WRONG for one that is still coming: the answer omits a constraint
-/// the machine really imposes, comes out wider than the truth, and the producer
-/// allocates a modifier the missing party cannot import. Nothing fails at the
-/// allocation; it fails later and elsewhere, as a surface that never appears.
-/// Requiring an explicit empty registration is what separates the two cases.
-///
-/// No wgpu import role: wgpu shares the renderer's GL context.
-const REQUIRED: &[Role] = &[Role::Sample, Role::GlesSample];
-
 /// A handle to the kernel's format data. Cheap to clone (one `Arc`); every method
 /// takes `&self`, so a producer holds one for its lifetime.
 #[derive(Clone, Debug, Default)]

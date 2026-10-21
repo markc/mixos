@@ -124,8 +124,8 @@ pub fn available(r: &Registrar, consumer: Consumer) -> Answer {
 /// Nothing fails at the allocation. It fails later and elsewhere, as a surface
 /// that never appears.
 ///
-/// `registrar::REQUIRED` is what separates the two, and it is a constant in that
-/// file rather than something a caller declares: "when do I arm the gate" would
+/// `Role::ALL` separates the two, and the registrar owns that requirement
+/// rather than asking each caller to declare it: "when do I arm the gate" would
 /// itself be an ordering decision, and an ordering decision made by a caller is
 /// the class of bug this exists to catch. There is no window here — the
 /// requirement holds from the first instruction of the process, and the startup
