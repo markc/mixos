@@ -461,13 +461,9 @@ fn document(
                 .rect_filled(geometry.bounds, 0.0, palette.background);
             let top =
                 ui.fonts_mut(|fonts| ((metrics.row_h - fonts.row_height(&font)) / 2.0).round());
-            egui::Frame::new()
-                .inner_margin(egui::Margin {
-                    left: geometry.gutter_w as i8,
-                    top: top as i8,
-                    ..Default::default()
-                })
-                .show(ui, |ui| {
+            let mut text_rect = geometry.text_rect();
+            text_rect.min.y += top;
+            ui.scope_builder(egui::UiBuilder::new().max_rect(text_rect), |ui| {
                     egui::ScrollArea::both()
                         .id_salt(("ced.preview", tab.id))
                         .auto_shrink([false, false])
@@ -476,7 +472,7 @@ fn document(
                                 toolkit::markdown::show(ui, document);
                             }
                         });
-                });
+            });
         });
     };
     let out = match mode {

@@ -55,7 +55,7 @@ pub struct Tab {
     pub editor: EditorModel,
     pub highlight: Highlight,
     pub diagnostics: Diagnostics,
-    /// Path given by the user (kept across reattach).
+    /// Path to reopen, updated from the service after Open or Save As.
     pub path: Option<String>,
     /// Detected once after Save As, until fresh metadata arrives.
     saved_language: Option<&'static str>,
@@ -1534,6 +1534,7 @@ impl Controller {
             }
         };
         if let Some(t) = self.tab_mut(tab) {
+            t.path.clone_from(&open.path);
             t.saved_language = None;
         }
         if let Some(x) = self.x.get_mut(&tab) {
@@ -3407,7 +3408,7 @@ mod tests {
             c.drive(tab, Step::default(), &mut Vec::new());
         }
         let open = serde_json::from_value(json!({"buffer":B,"epoch":"0000e1e1",
-            "path":"/work/notes","opened_as":null,"name":"notes","language":"markdown",
+            "path":"/work/fresh-notes","opened_as":null,"name":"notes","language":"markdown",
             "rev":0,"lines":2,"bytes":12,"eol":"lf","bom":false,"disk":"clean",
             "reopened":true,"created":false,"recovery_id":"5f0c2a9e1b7d4c33",
             "recovered":false,"recovered_from":null}))
