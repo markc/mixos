@@ -351,7 +351,7 @@ fn form(
         footer += text_height(crate::label_with(
             "compose-from-new",
             &[("old", &compose.draft.from), ("new", &from.address)],
-        )) + toolkit::chrome::Chrome::of(ui.ctx()).style.metrics.push_height + spacing;
+        )) + toolkit::chrome::Chrome::of(ui.ctx()).metrics.push_height + spacing;
     }
     if let Some(error) = &compose.error {
         footer += text_height(crate::label_with("send-failed", &[("error", error)]));
