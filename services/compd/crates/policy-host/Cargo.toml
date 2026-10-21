@@ -18,6 +18,9 @@ kind = "service"
 layer = "desktop"
 contract = "none"
 
+[features]
+wlcs = []
+
 [dependencies]
 # The MixOS etc dir rule.
 config = { workspace = true }

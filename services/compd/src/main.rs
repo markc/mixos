@@ -10,6 +10,8 @@ mod scenes;
 mod shutdown;
 mod wayland;
 mod xwayland;
+#[cfg(feature = "wlcs")]
+mod wlcs;
 
 use model::{info, trace, warn};
 
@@ -482,6 +484,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Late costs nothing: the event loop has not begun dispatching, so no client
     // has seen the registry.
     outputs::advertise::advertise::advertise_dmabuf(&mut state);
+    #[cfg(feature = "wlcs")]
+    let mut wlcs = if backend == cli::Backend::Headless {
+        wlcs::install(&mut state, &event_loop)?
+    } else {
+        None
+    };
 
     // Initial seat-pointer placement. The cursor renders at the seat's world
     // location (`(0,0)` -> screen center), but the relative-motion accumulator
@@ -690,6 +698,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             state.drain_protocol();
         }
         // Then the Bus, so a read never sees state the drain has not applied.
+        #[cfg(feature = "wlcs")]
+        if let Some(wlcs) = wlcs.as_mut() {
+            wlcs.service(state);
+        }
         // A no-op unless the port's wake source fired.
         if let Some(bus) = bus_port.as_mut() {
             bus.service(state);

@@ -84,6 +84,8 @@ layers: {
 
   # 7 — the binary
   "compd": 7,
+  # 7 — wlcs C ABI test adapter, owns a headless compd child.
+  "wlcs": 7,
 }
 
 # The binary package.
