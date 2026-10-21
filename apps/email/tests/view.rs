@@ -197,11 +197,13 @@ fn harness_with(state: State, theme: &Theme) -> Harness<'static, Window> {
     unsafe { std::env::set_var("TZ", "UTC") };
     let registry = commands::registry();
     let strings = strings();
+    let window_theme = theme.clone();
     let mut h = Harness::builder()
         .with_size(egui::vec2(1180.0, 760.0))
         .build_ui_state(
             move |ui, window: &mut Window| {
-                let events = view(ui, &window.state, &registry, &strings, 2.0);
+                let palette = editor::Palette::from_theme(if window.state.settings.composer.light { toolkit::content::light_theme() } else { &window_theme });
+                let events = view(ui, &window.state, &registry, &strings, 2.0, &palette);
                 for event in events {
                     window.seen.push(event.clone());
                     window.state.apply_ui(event);

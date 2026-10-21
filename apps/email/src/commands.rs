@@ -521,6 +521,15 @@ pub fn registry() -> Registry<State> {
     r
 }
 
+/// Registry chords wait while the composer body has the keyboard.
+pub fn shortcuts(ctx: &egui::Context, state: &State, registry: &Registry<State>) -> Vec<&'static str> {
+    if state.compose.is_some() && crate::view::compose::body_focused(ctx) {
+        Vec::new()
+    } else {
+        registry.shortcuts(ctx, state)
+    }
+}
+
 /// Whether every shown row of the current account's target passes `test`
 /// (false with none).
 fn target_all(state: &State, test: fn(&jmap::Email) -> bool) -> bool {

@@ -164,6 +164,13 @@ pub fn show(
     let id = ui.make_persistent_id(id_salt);
     let rect = ui.available_rect_before_wrap();
     let response = ui.interact(rect, id, Sense::click_and_drag());
+    response.widget_info(|| {
+        egui::WidgetInfo::labeled(
+            egui::WidgetType::TextEdit,
+            ui.is_enabled() && !view.read_only,
+            view.label.as_deref().unwrap_or_default(),
+        )
+    });
     ui.advance_cursor_after_rect(rect);
     let shared = ui.data_mut(|d| {
         d.get_temp_mut_or_insert_with(id, || {

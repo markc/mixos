@@ -117,6 +117,8 @@ pub struct Shell {
     commands: Registry<State>,
     strings: Strings,
     theme: Theme,
+    palette: editor::Palette,
+    composer_light: bool,
     bus: citizen::Handle,
     runtime: tokio::runtime::Runtime,
     tx: mpsc::Sender<Event>,
@@ -565,8 +567,16 @@ impl Shell {
             Some((saver, thread)) => (Some(saver), thread),
             None => (None, None),
         };
+        let composer_light = state.settings.composer.light;
+        let palette = editor::Palette::from_theme(if composer_light {
+            toolkit::content::light_theme()
+        } else {
+            &theme
+        });
         let mut shell = Self {
             state,
+            palette,
+            composer_light,
             commands: commands::registry(),
             strings: crate::strings(),
             theme: theme.clone(),
@@ -1487,6 +1497,8 @@ impl Shell {
         toolkit::install(&self.ctx, &self.theme.with_choice(&choice));
         self.state.set_session_mode(self.theme.mode());
         self.installed = choice;
+        self.palette = self.editor_palette();
+        self.composer_light = self.state.settings.composer.light;
     }
 
     /// The choice changed since the theme was installed: install again.
@@ -1494,6 +1506,10 @@ impl Shell {
         if self.choice() != self.installed {
             self.install_theme();
             self.ctx.request_repaint();
+        }
+        if self.composer_light != self.state.settings.composer.light {
+            self.palette = self.editor_palette();
+            self.composer_light = self.state.settings.composer.light;
         }
     }
 
@@ -1547,11 +1563,20 @@ impl Shell {
         }
     }
 
+    /// The composer's colours follow its surface or the window theme.
+    fn editor_palette(&self) -> editor::Palette {
+        if self.state.settings.composer.light {
+            editor::Palette::from_theme(toolkit::content::light_theme())
+        } else {
+            editor::Palette::from_theme(&self.theme.with_choice(&self.choice()))
+        }
+    }
+
     /// One frame's drawing and interaction.
     pub fn ui(&mut self, ui: &mut egui::Ui) {
-        let fired = self.commands.shortcuts(ui.ctx(), &self.state);
+        let fired = crate::commands::shortcuts(ui.ctx(), &self.state, &self.commands);
         let stroke = toolkit::icons::stroke_width(&self.theme);
-        let mut events = view(ui, &self.state, &self.commands, &self.strings, stroke);
+        let mut events = view(ui, &self.state, &self.commands, &self.strings, stroke, &self.palette);
         toolkit::markdown::open_links(ui.ctx(), "email");
         events.extend(
             fired

@@ -96,6 +96,8 @@ pub struct View {
     pub remote_carets: bool,
     /// Accept no editing commands; selection, copy and scrolling still work.
     pub read_only: bool,
+    /// The accessible name, when the owner has one.
+    pub label: Option<String>,
     /// Find highlight-all ranges, ascending and non-overlapping; drawn under
     /// the selection.
     #[serde(skip)]
@@ -114,6 +116,7 @@ impl Default for View {
             whitespace: false,
             remote_carets: true,
             read_only: false,
+            label: None,
             matches: Vec::new(),
         }
     }

@@ -460,12 +460,57 @@ pub struct ContactState {
     pub busy: bool,
 }
 
+/// The composer's text and its revision.
+pub struct Body {
+    pub doc: editor::local::Document,
+    pub revision: u64,
+}
+
+impl Body {
+    pub fn new(text: &str) -> Self {
+        Self {
+            doc: editor::local::Document::new(text, "markdown")
+                .expect("valid composer text"),
+            revision: 0,
+        }
+    }
+
+    pub fn contents(&self) -> String {
+        self.doc.contents()
+    }
+
+    pub fn set_body(&mut self, text: &str) {
+        self.doc.set_contents(text).expect("valid composer text");
+        self.revision += 1;
+    }
+}
+
+impl Clone for Body {
+    /// Rebuild from the text. The clone drops undo history.
+    fn clone(&self) -> Self {
+        Self { revision: self.revision, ..Self::new(&self.contents()) }
+    }
+}
+
+impl PartialEq for Body {
+    fn eq(&self, other: &Self) -> bool {
+        self.contents() == other.contents()
+    }
+}
+
+impl std::fmt::Debug for Body {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("Body").field(&self.contents()).finish()
+    }
+}
+
 /// A compose dialog in flight.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ComposeState {
     /// The account it sends from.
     pub account: String,
     pub draft: Composed,
+    pub body: Body,
     /// The recipient fields as typed. The draft's lists are parsed from
     /// them, so a separator the user just typed is not lost.
     pub to_text: String,
@@ -602,6 +647,10 @@ pub struct Suggest {
 }
 
 impl ComposeState {
+    pub fn set_body(&mut self, text: &str) {
+        self.body.set_body(text);
+    }
+
     /// The text of recipient field `field` (empty for the others).
     pub fn recipients(&self, field: ComposeField) -> &str {
         match field {
@@ -638,7 +687,7 @@ impl ComposeState {
             cc: self.cc_text.clone(),
             bcc: self.bcc_text.clone(),
             subject: self.draft.subject.clone(),
-            body: self.draft.body.clone(),
+            body: self.body.contents(),
             in_reply_to: self.draft.in_reply_to.clone(),
             identity: self.identity.clone(),
             from_name: self.draft.from_name.clone(),
@@ -659,7 +708,7 @@ pub struct StaleFrom {
 }
 
 impl ComposeState {
-    pub fn new(account: &str, draft: Composed) -> Self {
+    pub fn new(account: &str, mut draft: Composed) -> Self {
         let text = |list: &[EmailAddress]| {
             list.iter()
                 .map(jmap::format_address)
@@ -668,6 +717,7 @@ impl ComposeState {
         };
         Self {
             account: account.to_owned(),
+            body: Body::new(&std::mem::take(&mut draft.body)),
             to_text: text(&draft.to),
             cc_text: text(&draft.cc),
             bcc_text: text(&draft.bcc),
@@ -4587,7 +4637,7 @@ impl State {
                 "cc": c.cc_text,
                 "bcc": c.bcc_text,
                 "subject": c.draft.subject,
-                "body": c.draft.body,
+                "body": c.body.contents(),
                 "in_reply_to": c.draft.in_reply_to,
                 "stale": c.stale,
                 "busy": c.busy,
@@ -5068,8 +5118,8 @@ impl State {
         let new = signature_block(&sender.signature);
         let (from_name, reply_to) = from_fields(explicit, &sender);
         if let Some(compose) = &mut self.compose {
-            if compose.draft.body == old {
-                compose.draft.body = new;
+            if compose.body.contents() == old {
+                compose.set_body(&new);
             }
             compose.account = account;
             compose.identity = sender.id;
@@ -5109,15 +5159,15 @@ impl State {
         draft.from = sender.address.clone();
         (draft.from_name, draft.reply_to) = from_fields(explicit, sender);
         let identity = sender.id.clone();
-        if draft.body.is_empty() {
-            draft.body = self.signed_body(&account);
-        }
         // A compose already open is never dropped: its draft is kept and
         // offered again.
         if self.compose.is_some() {
             self.set_aside_compose();
         }
         let mut compose = ComposeState::new(&account, draft);
+        if compose.body.contents().is_empty() {
+            compose.set_body(&self.signed_body(&account));
+        }
         compose.draft_id = self.new_draft_id();
         compose.identity = identity;
         self.compose = Some(compose);
@@ -5393,6 +5443,21 @@ impl State {
                     }
                 }
             }
+            UiEvent::ComposeEdit(event) => {
+                if let Some(compose) = &mut self.compose
+                    && !compose.busy
+                {
+                    let before = compose.body.doc.doc().revision;
+                    compose.body.doc.apply(&event, &editor::View::prose());
+                    if compose.body.doc.doc().revision != before {
+                        compose.body.revision += 1;
+                        compose.revision += 1;
+                    }
+                    if let Some(error) = compose.body.doc.take_refusal() {
+                        compose.error = Some(error.to_string());
+                    }
+                }
+            }
             UiEvent::ComposeField(field, value) => {
                 // While a send is in flight the dialog shows what was sent:
                 // edits wait for its answer (the view disables the fields).
@@ -5408,7 +5473,7 @@ impl State {
                             compose.draft.reply_to = Some(value).filter(|v| !v.trim().is_empty());
                         }
                         ComposeField::Subject => compose.draft.subject = value,
-                        ComposeField::Body => compose.draft.body = value,
+                        ComposeField::Body => compose.set_body(&value),
                     }
                     compose.revision += 1;
                     // A row being edited stays open, even cleared to retype.
@@ -5461,7 +5526,7 @@ impl State {
                 // The person's text stays; only the quote and signature move.
                 // An edited quote is left alone, and so is the toggle.
                 let Some(body) = crate::quote::moved(
-                    &compose.draft.body,
+                    &compose.body.contents(),
                     &reply.quote,
                     &reply.signature,
                     position,
@@ -5469,7 +5534,7 @@ impl State {
                     return;
                 };
                 reply.position = position;
-                compose.draft.body = body;
+                compose.set_body(&body);
                 compose.revision += 1;
             }
             UiEvent::ComposeUseNewFrom => {
@@ -5587,7 +5652,8 @@ impl State {
                 compose.busy = true;
                 compose.error = None;
                 compose.sending = Some(ticket);
-                let draft = compose.draft.clone();
+                let mut draft = compose.draft.clone();
+                draft.body = compose.body.contents();
                 let attempt = compose.attempt.clone();
                 let snapshot = compose.saved_draft();
                 view.tickets.send = ticket;
@@ -6335,35 +6401,35 @@ pub(crate) mod tests {
         let compose = state.compose.clone().expect("a compose dialog");
         let reply = compose.reply.clone().expect("a quoted reply");
         assert_eq!(reply.position, Position::Above);
-        let typed = format!("Thanks!{}", compose.draft.body);
+        let typed = format!("Thanks!{}", compose.body.contents());
         state.apply_ui(UiEvent::ComposeField(ComposeField::Body, typed));
 
         state.apply_ui(UiEvent::ComposeReplyPosition(Position::Below));
         let compose = state.compose.clone().unwrap();
         assert_eq!(compose.reply.as_ref().unwrap().position, Position::Below);
         assert_eq!(
-            compose.draft.body,
+            compose.body.contents(),
             arrange("Thanks!", &reply.quote, &reply.signature, Position::Below)
         );
-        assert!(compose.draft.body.starts_with(&reply.quote));
+        assert!(compose.body.contents().starts_with(&reply.quote));
 
         state.apply_ui(UiEvent::ComposeReplyPosition(Position::Above));
         let compose = state.compose.clone().unwrap();
         assert_eq!(
-            compose.draft.body,
+            compose.body.contents(),
             arrange("Thanks!", &reply.quote, &reply.signature, Position::Above)
         );
 
         // An edited quote is left as the person wrote it: the switch does nothing.
-        let edited = compose.draft.body.replace("wrote:", "wrote this:");
+        let edited = compose.body.contents().replace("wrote:", "wrote this:");
         assert_ne!(
-            edited, compose.draft.body,
+            edited, compose.body.contents(),
             "the attribution is in the quote"
         );
         state.apply_ui(UiEvent::ComposeField(ComposeField::Body, edited.clone()));
         state.apply_ui(UiEvent::ComposeReplyPosition(Position::Below));
         let compose = state.compose.clone().unwrap();
-        assert_eq!(compose.draft.body, edited);
+        assert_eq!(compose.body.contents(), edited);
         assert_eq!(compose.reply.unwrap().position, Position::Above);
     }
 
@@ -6440,12 +6506,12 @@ pub(crate) mod tests {
         let compose = state.compose.clone().unwrap();
         assert_eq!(compose.account, "b");
         assert_eq!(compose.draft.from, "ann@b.example.invalid");
-        assert_eq!(compose.draft.body, "\n\n-- \nAnn\nGold Coast\n");
+        assert_eq!(compose.body.contents(), "\n\n-- \nAnn\nGold Coast\n");
         // Switching From swaps an untouched signature.
         state.apply_ui(UiEvent::ComposeAccount("a".into()));
         let compose = state.compose.clone().unwrap();
         assert_eq!(compose.draft.from, "ann@a.example.invalid");
-        assert!(compose.draft.body.is_empty());
+        assert!(compose.body.contents().is_empty());
     }
 
     fn bare(email: &str) -> EmailAddress {
@@ -6521,7 +6587,7 @@ pub(crate) mod tests {
         assert_eq!(compose.to_text, "bob@example.invalid");
         assert!(compose.cc_text.is_empty() && compose.bcc_text.is_empty());
         assert_eq!(compose.draft.subject, "Hi");
-        assert!(compose.draft.body.is_empty());
+        assert!(compose.body.contents().is_empty());
     }
 
     #[test]
@@ -6551,6 +6617,75 @@ pub(crate) mod tests {
         ] {
             state.apply_ui(UiEvent::ComposeField(field, value.into()));
         }
+    }
+
+    #[test]
+    fn editor_body_is_the_only_text_saved_reported_and_sent() {
+        let mut state = connected();
+        typed(&mut state);
+        state.apply_ui(UiEvent::ComposeField(ComposeField::Body, String::new()));
+        let revision = state.compose.as_ref().unwrap().body.revision;
+        state.apply_ui(UiEvent::ComposeEdit(editor::Event::Command(
+            editor_model::model::EditCommand::Insert("Typed in the editor".into()),
+        )));
+        let compose = state.compose.as_ref().unwrap();
+        assert_eq!(compose.body.contents(), "Typed in the editor");
+        assert_eq!(compose.body.revision, revision + 1);
+        assert!(compose.draft.body.is_empty(), "no stale wire body while open");
+        assert_eq!(compose.body, compose.body.clone());
+        assert_eq!(compose.saved_draft().body, "Typed in the editor");
+        assert_eq!(state.info()["compose"]["body"], "Typed in the editor");
+        state.save_draft();
+        let mut store = MemoryStore::default();
+        keep(&mut state, &mut store);
+        assert_eq!(store.list()[0].body, "Typed in the editor");
+        state.apply_ui(UiEvent::SendCompose);
+        let sent = state.take_work().into_iter().find_map(|w| match w {
+            Work::Send { draft, .. } => Some(draft),
+            _ => None,
+        }).unwrap();
+        assert_eq!(sent.body, "Typed in the editor");
+        let compose = state.compose.as_ref().unwrap();
+        assert!(compose.draft.body.is_empty());
+        let revision = compose.body.revision;
+        state.apply_ui(UiEvent::ComposeEdit(editor::Event::Command(
+            editor::EditCommand::Insert("refused while busy".into()),
+        )));
+        assert_eq!(state.compose.as_ref().unwrap().body.revision, revision);
+        assert_eq!(state.compose.as_ref().unwrap().body.contents(), sent.body);
+    }
+
+    #[test]
+    fn programmatic_body_replaces_text_and_advances_revision() {
+        let mut state = connected();
+        state.open_compose(Some("a"), Composed { body: "Initial".into(), ..Composed::default() });
+        let compose = state.compose.as_ref().unwrap();
+        assert_eq!(compose.body.contents(), "Initial");
+        assert!(compose.draft.body.is_empty());
+        let revision = compose.body.revision;
+        state.apply_ui(UiEvent::ComposeField(ComposeField::Body, "Replacement".into()));
+        let compose = state.compose.as_ref().unwrap();
+        assert_eq!(compose.body.contents(), "Replacement");
+        assert_eq!(compose.body.revision, revision + 1);
+        assert!(compose.draft.body.is_empty());
+    }
+
+    #[test]
+    fn editor_refusal_is_shown_and_motion_does_not_dirty_the_draft() {
+        let mut state = connected();
+        state.apply_ui(UiEvent::Compose);
+        let revision = state.compose.as_ref().unwrap().revision;
+        state.apply_ui(UiEvent::ComposeEdit(editor::Event::Command(
+            editor::EditCommand::Move { to: editor::Motion::DocEnd, extend: false },
+        )));
+        assert_eq!(state.compose.as_ref().unwrap().revision, revision);
+        state.apply_ui(UiEvent::ComposeEdit(editor::Event::Command(
+            editor::EditCommand::Insert("x".repeat(2 * 1024 * 1024)),
+        )));
+        let compose = state.compose.as_ref().unwrap();
+        assert!(compose.error.is_some());
+        assert!(compose.body.contents().is_empty());
+        assert_eq!(compose.revision, revision);
     }
 
     #[test]
@@ -6672,7 +6807,7 @@ pub(crate) mod tests {
         assert_eq!(compose.to_text, "bob@example.invalid");
         assert_eq!(compose.cc_text, "cy@example.invalid");
         assert_eq!(compose.draft.subject, "Lunch");
-        assert_eq!(compose.draft.body, "Noon at the usual place?");
+        assert_eq!(compose.body.contents(), "Noon at the usual place?");
         assert_eq!(compose.attempt.email_id.as_deref(), Some("E1"));
         // Closing a restored draft asks too: it holds text.
         state.apply_ui(UiEvent::CloseCompose);
@@ -8139,7 +8274,7 @@ pub(crate) mod tests {
         assert_eq!(compose.to_text, "ann@a.example.invalid, cy@example.invalid");
         assert_eq!(compose.cc_text, "dee@example.invalid");
         assert_eq!(
-            compose.draft.body, "Lunch at one?\n-- \nBob",
+            compose.body.contents(), "Lunch at one?\n-- \nBob",
             "as it was, not re-signed"
         );
         assert_eq!(compose.draft.in_reply_to, None, "a new thread");
@@ -8389,9 +8524,9 @@ pub(crate) mod tests {
         assert_eq!(compose.draft.subject, "Fwd: Hello");
         assert_eq!(compose.to_text, "x@example.invalid");
         assert!(
-            compose.draft.body.contains("Bob <bob@example.invalid>"),
+            compose.body.contents().contains("Bob <bob@example.invalid>"),
             "{}",
-            compose.draft.body
+            compose.body.contents()
         );
     }
 

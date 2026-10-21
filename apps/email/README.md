@@ -26,6 +26,12 @@ first, and the default keeps it. A draft is removed only once its message
 is sent or the person discards it; one kept from an earlier run is
 offered at start.
 
+The composer body uses the shared editor in process, with Markdown source,
+soft wrap and the editor's undo and redo. It has no preview. Its document
+is the source of truth; the wire body stays empty until sending, saving a
+draft or reporting state. Cloning a compose keeps the text and drops undo
+history. Registry shortcuts wait while the body has keyboard focus.
+
 The reader keeps its Markdown/plain choice per email. Its parsed body is
 cached by `toolkit::markdown::Preview`, using the email id as the key and
 the body hash as the revision. The shell hands reader links to

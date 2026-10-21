@@ -9,7 +9,7 @@
 //! window over a draft with something in it asks first, keeping the draft
 //! by default; a draft kept from an earlier run is offered at start.
 
-use egui::{TextEdit, Ui};
+use egui::Ui;
 use toolkit::dialog::{self, Choice};
 use toolkit::field;
 use toolkit::toggle::Toggle;
@@ -125,7 +125,13 @@ pub fn restore(ui: &mut Ui, state: &State, events: &mut Vec<UiEvent>) {
 }
 
 /// The compose dialog, when a draft is open.
-pub fn dialog(ui: &mut Ui, state: &State, events: &mut Vec<UiEvent>) {
+pub fn body_focused(ctx: &egui::Context) -> bool {
+    ctx.data(|d| d.get_temp::<egui::Id>(egui::Id::new("email.compose.body.focus")))
+        .is_some_and(|id| ctx.memory(|m| m.has_focus(id)))
+}
+
+/// The compose dialog, when a draft is open.
+pub fn dialog(ui: &mut Ui, state: &State, palette: &editor::Palette, events: &mut Vec<UiEvent>) {
     let Some(compose) = &state.compose else {
         return;
     };
@@ -143,7 +149,7 @@ pub fn dialog(ui: &mut Ui, state: &State, events: &mut Vec<UiEvent>) {
         .buttons(choices)
         .resizable(egui::vec2(720.0, 560.0), egui::vec2(480.0, 320.0))
         .show(ui.ctx(), |ui| {
-            form(ui, compose, state, events);
+            form(ui, compose, state, palette, events);
         });
     if shown.chosen == Some(send_index) {
         events.push(UiEvent::SendCompose);
@@ -321,7 +327,7 @@ fn row_of<R>(
 /// The rows, labels outside on the left: From (the identity, with
 /// Identities… at the right), To (with the Cc, Bcc and Reply-To buttons at
 /// the right), the optional rows the person opened, and Subject.
-fn form(ui: &mut Ui, compose: &ComposeState, state: &State, events: &mut Vec<UiEvent>) {
+fn form(ui: &mut Ui, compose: &ComposeState, state: &State, palette: &editor::Palette, events: &mut Vec<UiEvent>) {
     // The label column fits the widest label any row can have, so opening
     // a row never moves the fields sideways.
     let font = egui::TextStyle::Body.resolve(ui.style());
@@ -457,24 +463,35 @@ fn form(ui: &mut Ui, compose: &ComposeState, state: &State, events: &mut Vec<UiE
             }
         });
         ui.add_space(4.0);
-        let mut body = compose.draft.body.clone();
-        let mut edited = false;
         // The text takes the composer's own padding, font and size.
         toolkit::content::surface(ui, &state.settings.composer, |ui| {
-            let editor = TextEdit::multiline(&mut body)
-                .desired_rows(8)
-                .desired_width(f32::INFINITY)
-                .hint_text(crate::label("body"));
-            edited = ui.add(editor).changed();
+            let view = editor::View {
+                read_only: compose.busy,
+                label: Some(crate::label("body")),
+                font_size: Some(egui::TextStyle::Body.resolve(ui.style()).size),
+                ..editor::View::prose()
+            };
+            let height = (ui.text_style_height(&egui::TextStyle::Body) * 8.0)
+                .max(ui.available_height());
+            ui.allocate_ui(egui::vec2(ui.available_width(), height), |ui| {
+                let output = editor::show(
+                    ui,
+                    ("email.compose.body", &compose.draft_id),
+                    &compose.body.doc.doc(),
+                    palette,
+                    &view,
+                );
+                ui.ctx().data_mut(|d| d.insert_temp(
+                    egui::Id::new("email.compose.body.focus"), output.response.id,
+                ));
+                events.extend(output.events.into_iter().map(UiEvent::ComposeEdit));
+            });
         });
-        if edited {
-            events.push(UiEvent::ComposeField(ComposeField::Body, body));
-        }
         // A reply's quote can sit above or below the person's text. The
         // switch is off the table once the quote itself was edited.
         if let Some(reply) = &compose.reply {
             let movable = crate::quote::moved(
-                &compose.draft.body,
+                &compose.body.contents(),
                 &reply.quote,
                 &reply.signature,
                 reply.position,
