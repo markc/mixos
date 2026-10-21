@@ -25,7 +25,9 @@ pub struct BrokerAccount {
 /// They are a snapshot, not a claim about the process at a later instant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ServerPeerCredentials {
-    pub pid: u32,
+    /// None when the kernel API supplies no usable positive PID. An explicit
+    /// PID pin always rejects that case before establishing a connection.
+    pub pid: Option<u32>,
     pub uid: u32,
     pub gid: u32,
 }
@@ -372,12 +374,14 @@ async fn connect_verified(
     })
 }
 
-fn verified_server_pid(pid: Option<i32>, expected: Option<u32>) -> Result<u32, ConnectError> {
+fn verified_server_pid(
+    pid: Option<i32>,
+    expected: Option<u32>,
+) -> Result<Option<u32>, ConnectError> {
     let pid = pid
         .and_then(|pid| u32::try_from(pid).ok())
-        .filter(|pid| *pid != 0)
-        .ok_or(ConnectError::ServerPidMismatch)?;
-    if expected.is_some_and(|expected| expected != pid) {
+        .filter(|pid| *pid != 0);
+    if expected.is_some() && expected != pid {
         return Err(ConnectError::ServerPidMismatch);
     }
     Ok(pid)
@@ -476,12 +480,16 @@ mod tests {
     }
     #[test]
     fn pinned_pid_requires_usable_matching_kernel_credential() {
-        assert_eq!(verified_server_pid(Some(42), Some(42)).unwrap(), 42);
+        assert_eq!(verified_server_pid(Some(42), Some(42)).unwrap(), Some(42));
         for pid in [None, Some(-1), Some(0), Some(43)] {
             assert!(matches!(
                 verified_server_pid(pid, Some(42)),
                 Err(ConnectError::ServerPidMismatch)
             ));
+        }
+        // The opt-in does not tighten the previous UID/GID-only path.
+        for pid in [None, Some(-1), Some(0)] {
+            assert_eq!(verified_server_pid(pid, None).unwrap(), None);
         }
     }
     #[test]

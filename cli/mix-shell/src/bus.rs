@@ -2206,7 +2206,7 @@ mod tests {
         let UnixConnectOutcome::VerifiedUnix(first) = first else {
             panic!("matching pin must use verified Unix");
         };
-        assert_eq!(first.server_peer_credentials().pid, pid);
+        assert_eq!(first.server_peer_credentials().pid, Some(pid));
         assert_eq!(first.server_peer_credentials().uid, unsafe {
             libc::geteuid()
         });
@@ -2230,7 +2230,7 @@ mod tests {
         let UnixConnectOutcome::VerifiedUnix(again) = again else {
             panic!("reconnect with the matching pin must use verified Unix");
         };
-        assert_eq!(again.server_peer_credentials().pid, pid);
+        assert_eq!(again.server_peer_credentials().pid, Some(pid));
         again.client().close().await;
     }
 
