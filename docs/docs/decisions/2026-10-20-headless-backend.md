@@ -90,12 +90,16 @@ linux-dmabuf buffers and pass the existing rendered-pixel readback checks;
 this establishes GPU EGL client allocation, import and composition. The ced
 probe continues to record its actual wgpu adapter and attached buffer type.
 This does not establish hardware Vulkan WSI on the build workers: their only
-Vulkan ICD is llvmpipe and they lack `vulkan-intel`.
+Vulkan ICD is llvmpipe and they lack `vulkan-intel`. On a headless desk with
+`vulkan-intel` installed, ced chose Vulkan on the Intel GPU and presented
+through linux-dmabuf even against the earlier v3 global (2026-10-21,
+recorded in the private journal); the Vulkan path depends on the ICD being
+in the desk image, which the image builder now includes.
 
 The Phase 5b Intel render-node run observed a version 6 global from the current
-Smithay feedback helper (the existing compositor diagnostic calls it v5).
-Mesa bound version 4. Default feedback named `0xe280`, equal to
-`/dev/dri/renderD128`'s `st_rdev`, with one tranche and 224 format-table entries.
+Smithay feedback helper. Mesa bound version 4. Default feedback named
+`0xe280`, equal to the selected node's (`/dev/dri/renderD128`) `st_rdev`, with
+one tranche of 224 format indices.
 `weston-simple-egl` created linux-dmabuf buffers; screencopy retained its dark
 background and bright bar. Ced chose `Gl`, `IntegratedGpu`,
 `Mesa Intel(R) Iris(R) Xe Graphics (RPL-P)`, Mesa 26.2.4, and attached
@@ -130,7 +134,8 @@ caught elsewhere. The tested artefact is the test-only launcher, which
 compiles the shipped entry point from the same source; drift is a compile
 error, never silent. The first Phase 5 run chose a software Vulkan adapter
 (llvmpipe) with `wl_shm`; Phase 5b's device feedback enables the hardware GL
-path recorded above. Hardware Vulkan WSI remains unproven. Open follow-ups
+path recorded above. Hardware Vulkan WSI is unproven on the workers and
+observed on a desk with the Intel ICD. Open follow-ups
 are the test's fixed post-typing sleep (retry once on an unchanged capture),
 the helper's leftover `.session` directory on
 failure, and its reliance on `spawn` merging the parent environment.
