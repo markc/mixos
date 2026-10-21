@@ -255,11 +255,7 @@ mod tests {
         let observed = Instant::now();
         let now = Duration::from_secs(10);
         for offset in [Duration::from_micros(300), Duration::from_micros(1500)] {
-            let at = super::super::vblank::trusted_anchor(
-                observed,
-                Some(now + offset),
-                Some(now),
-            );
+            let at = super::super::vblank::trusted_anchor(observed, Some(now + offset), Some(now));
             let mut latch = ready(observed);
             latch.flipped(at, PERIOD, true);
             let plan = latch.plan(observed, MARGIN);
