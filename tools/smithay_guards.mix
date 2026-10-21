@@ -1,9 +1,9 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Copyright 2026 Mark Constable <mc@mixos.dev>
 -- smithay_guards.mix — run every guard test vendor/smithay/PATCHES.md cites.
--- version: 0.1.4
+-- version: 0.1.5
 --
---   mix tools/smithay_guards.mix [--reseed] [--json]
+--   mix tools/smithay_guards.mix [--reseed] [--locked] [--json]
 --
 -- Run from the repo root. Builds vendored smithay's OWN lib tests
 -- standalone (`cargo test --manifest-path vendor/smithay/Cargo.toml --lib`)
@@ -17,6 +17,7 @@
 -- Cargo.lock (gitignored there) is seeded from the workspace Cargo.lock so every
 -- shared dependency resolves to the version compd builds. `--reseed`
 -- re-copies it; otherwise an existing one is kept.
+-- --locked refuses any resolution change to the prepared standalone lockfile.
 --
 -- Exit codes: 0 every guard passed, 1 a guard failed, is unparsed or missing,
 -- 2 the tests did not build (or setup failed).
@@ -85,11 +86,14 @@ $GUARDS = [
 $args = args()
 $reseed = false
 $as_json = false
+$locked = false
 for each $a in $args
   if $a == "--reseed" then
     $reseed = true
   elif $a == "--json" then
     $as_json = true
+  elif $a == "--locked" then
+    $locked = true
   else
     eprint("unknown option: " .. $a)
     exit(2)
@@ -107,8 +111,11 @@ end
 $log = "vendor/smithay/target/smithay_guards.log"
 mkdir("vendor/smithay/target", {parents: true})
 print("cargo test (vendored smithay lib, compd features) → " .. $log)
-$r = run_argv(["cargo", "test", "--manifest-path", "vendor/smithay/Cargo.toml", "--lib",
-  "--no-default-features", "--features", $FEATURES, "--", "--test-threads=1"],
+$cargo_args = ["cargo", "test", "--manifest-path", "vendor/smithay/Cargo.toml", "--lib",
+  "--no-default-features", "--features", $FEATURES]
+if $locked then push($cargo_args, "--locked") end
+$cargo_args = concat($cargo_args, ["--", "--test-threads=1"])
+$r = run_argv($cargo_args,
   {stdout: {file: $log}, stderr: "stdout", timeout: 5400})
 
 -- Every "test <path> ... <verdict>". The verdict is not always on the same
