@@ -31,6 +31,18 @@ pub(crate) fn collect_gpu(pipe: &mut OutputPipe) {
     }
 }
 
+fn sync_reason(enabled: bool, tearing: bool, vrr_active: bool) -> Option<&'static str> {
+    if !enabled {
+        Some("kms_latch_disabled")
+    } else if tearing {
+        Some("kms_latch_tearing")
+    } else if vrr_active {
+        Some("kms_latch_vrr")
+    } else {
+        None
+    }
+}
+
 /// Returns true while this pipe must wait. Once armed, all redraw reasons
 /// coalesce until expiry, even if another pipe or a forced ping invokes execute.
 pub(crate) fn defer(
@@ -48,14 +60,18 @@ pub(crate) fn defer(
     let config = model::environment::config::base::get();
     let margin = Duration::from_micros(config.late_latch_margin_us);
     let plan = pipe.late_latch.plan(now, margin);
-    let immediate = if !model::environment::config::base::late_latch_enabled() {
-        Some("kms_latch_disabled")
-    } else if protocols::tearing::gate::gate::tearing() || pipe.last_tear {
-        Some("kms_latch_tearing")
-    } else if config.vrr {
-        // Conservative even on a connector that refused VRR: a variable cadence
-        // has no fixed next vblank to aim at.
-        Some("kms_latch_vrr")
+    // Read this pipe's committed CRTC state from the surface used by apply_vrr,
+    // not the global preference or the surface's pending VRR request.
+    let vrr_active = pipe.drm_output.as_ref().is_some_and(|output| {
+        output.with_compositor(|comp| comp.surface().vrr_active())
+    });
+    let sync = sync_reason(
+        model::environment::config::base::late_latch_enabled(),
+        protocols::tearing::gate::gate::tearing() || pipe.last_tear,
+        vrr_active,
+    );
+    let immediate = if sync.is_some() {
+        sync
     } else if screencopy::active()
         || screencopy::file::pending(&pipe.output)
         || state
@@ -131,4 +147,47 @@ pub(crate) fn defer(
     }
     state.state.redraw.release(key);
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use kms::scanout::timing::deadline::LateLatch;
+    use model::environment::config::base::default_settings;
+    use smithay::reexports::calloop::EventLoop;
+
+    #[test]
+    fn requested_vrr_with_fixed_refresh_still_defers_but_active_vrr_is_immediate() {
+        let mut config = default_settings();
+        config.vrr = true;
+        let now = Instant::now();
+        let period = Duration::from_millis(16);
+        let margin = Duration::from_micros(config.late_latch_margin_us);
+        let mut latch = LateLatch::default();
+        latch.committed(now, margin, false);
+        latch.flipped(Some(now), period, true);
+        latch.flipped(Some(now), period, true);
+        let plan = latch.plan(now, margin);
+
+        assert!(config.vrr);
+        // Unsupported, refused, off and not-yet-committed requests all have
+        // vrr_active=false, independently for each pipe.
+        assert_eq!(sync_reason(config.late_latch, false, false), None);
+        let mut event_loop: EventLoop<'static, bool> = EventLoop::try_new().unwrap();
+        let timer = DeadlineTimer::new(&event_loop.handle(), "fixed".into(), |fired, _| {
+            *fired = true;
+        })
+        .unwrap();
+        latch.begin(now, plan);
+        assert!(timer.arm(plan.deadline.unwrap()));
+        let mut fired = false;
+        event_loop.dispatch(Some(Duration::ZERO), &mut fired).unwrap();
+        assert!(!fired, "the frame waits for its deadline");
+        assert_eq!(
+            sync_reason(config.late_latch, false, true),
+            Some("kms_latch_vrr")
+        );
+        // A sibling with active VRR does not change the fixed-refresh gate.
+        assert_eq!(sync_reason(config.late_latch, false, false), None);
+    }
 }

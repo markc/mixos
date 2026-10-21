@@ -140,7 +140,11 @@ environment switch `COMPD_DISABLE_LATE_LATCH` (any value). Both take effect at
 startup without rebuilding; the margin uses the same settings file. Schema 7
 adds these fields to older files in memory. Startup, the first redraw after
 idle, untrustworthy timestamps, over-budget frames, tearing, governed pacing,
-VRR and active capture retain immediate composition. Nested and headless
+active VRR on that CRTC and active capture retain immediate composition.
+The VRR preference alone does not disable late latch: unsupported connectors,
+refused requests and VRR-off pipes still use fixed-refresh deadlines. The gate
+reads cached committed DRM state, independently for each output.
+Nested and headless
 backends keep their existing pacing. Frame callbacks and presentation feedback
 use their existing paths, including empty-frame callback timers.
 
