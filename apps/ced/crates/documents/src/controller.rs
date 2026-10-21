@@ -3401,7 +3401,7 @@ mod tests {
             &mut c,
             req,
             json!({"buffer":B,"epoch":"0000e1e1","path":"/work/notes",
-            "rev":0,"saved_rev":0,"disk":"clean"}),
+            "rev":0,"saved_rev":0,"file_bytes":12,"disk":"clean","durable":true,"warning":null}),
         );
         assert_eq!(c.tab(tab).unwrap().path.as_deref(), Some("/work/notes"));
         assert_eq!(c.tab(tab).unwrap().saved_language, Some("text"));
