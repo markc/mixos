@@ -6698,7 +6698,7 @@ pub(crate) mod tests {
         );
         let replies = state.take_replies();
         assert_eq!(replies.len(), 1);
-        assert_eq!(replies[0].body["error_code"], code::INVALID);
+        assert_eq!(replies[0].body["error_code"], code::INVALID_ARGUMENT);
         assert!(state.compose.is_none());
         state.save_draft();
         assert!(state.take_draft_ops().is_empty());
@@ -6713,7 +6713,7 @@ pub(crate) mod tests {
         state.apply(Event::Account(tag, Done::Answered(1, then, Ok(email))));
         let replies = state.take_replies();
         assert_eq!(replies.len(), 1);
-        assert_eq!(replies[0].body["error_code"], code::INVALID);
+        assert_eq!(replies[0].body["error_code"], code::INVALID_ARGUMENT);
         assert!(state.compose.is_none());
         state.save_draft();
         assert!(state.take_draft_ops().is_empty());
