@@ -1791,7 +1791,7 @@ mod handler_impls {
             token_data: XdgActivationTokenData,
             surface: WlSurface,
         ) {
-            protocols::xdg::activation::request_activation(surface, token, token_data);
+            protocols::xdg::activation::request::request_activation(surface, token, token_data);
         }
     }
     impl XdgShellHandler for Dispatch {
