@@ -1314,7 +1314,7 @@
       "field_height": 24,
       "field_padding_x": 6,
       "field_padding_y": 3,
-      "field_radius": 4,
+      "field_radius": 6,
       "fine_scrub_rate": 0.01,
       "fine_span": 10,
       "focus_offset": 2,

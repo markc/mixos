@@ -1258,6 +1258,7 @@ mod tests {
 
     fn adwaita() -> ResolvedStyle {
         ResolvedStyle {
+            field_radius: 6,
             radius: 9,
             ..studio()
         }
