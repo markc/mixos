@@ -10706,6 +10706,16 @@ end
 
 ## No broker — graceful degradation
 
+For a one-shot local authority query, a caller may launch `mix` with
+`MIXOS_NODED_EXPECTED_SERVER_PID` set to a positive decimal PID obtained from
+its trusted process supervisor. This pins the server of the verified Unix
+connection to the kernel's connect-time `SO_PEERCRED` PID. A missing or
+mismatched PID refuses the connection before WebSocket setup or any Bus RPC.
+While the variable is present, Mix does not discover the Unix endpoint over
+TCP or fall back to anonymous TCP; it checks the pin again on every reconnect.
+An invalid value also refuses Bus traffic. Supply the variable only to the
+one-shot process that needs the check.
+
 The handler uses a **lazy probe** with a small state machine, so Bus forms behave
 predictably on a host that may or may not have a broker:
 
