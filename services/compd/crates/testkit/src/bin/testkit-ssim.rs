@@ -20,7 +20,9 @@ fn size(text: &str) -> Result<(u32, u32)> {
 fn load(path: &Path, raw: Option<(u32, u32)>) -> Result<GrayImage> {
     let rgba = if let Some((w, h)) = raw {
         let bytes = std::fs::read(path)?;
-        if u64::try_from(bytes.len())? != u64::from(w) * u64::from(h) * 4 {
+        let expected = u64::from(w).checked_mul(u64::from(h))
+            .and_then(|pixels| pixels.checked_mul(4)).ok_or("raw dimensions overflow")?;
+        if u64::try_from(bytes.len())? != expected {
             return Err("raw input must contain exactly width * height * 4 bytes".into());
         }
         RgbaImage::from_raw(w, h, bytes)
