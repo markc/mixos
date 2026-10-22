@@ -1,0 +1,29 @@
+{
+  schema: 1,
+  -- Binary name to Cargo package. maild is a link to mix, not another build.
+  crates: {
+    mix: "system",
+    "mixos-mcp": "mixos-mcp",
+    noded: "noded",
+    editd: "editd",
+    settingsd: "settingsd",
+    portald: "portald",
+    hostd: "hostd",
+    monitord: "monitord",
+    backdrop: "backdrop",
+    busviewer: "busviewer",
+    ced: "ced",
+    compd: "compd",
+    dopus: "dopus",
+    email: "email",
+    monitor: "monitor",
+    prefs: "prefs",
+    screenshot: "screenshot",
+    term: "term",
+    indexd: "indexd"
+  },
+  packages: {
+    "mixos-server": ["mix", "mixos-mcp", "noded", "editd", "settingsd", "portald", "hostd", "monitord", "maild"],
+    "mixos-desktop": ["backdrop", "busviewer", "ced", "compd", "dopus", "email", "monitor", "prefs", "screenshot", "term", "indexd"]
+  }
+}

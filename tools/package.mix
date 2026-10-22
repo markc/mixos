@@ -4,7 +4,7 @@
 -- package.mix: the release tarballs, from binaries cargo has already built.
 -- Run by .github/workflows/release.yml with the freshly built mix; locally:
 --
---   mix tools/package.mix --release 0.1.1 [--arch x86_64] [--bin-dir target/release] [--out dist/release]
+--   mix tools/package.mix --release 0.1.1 --commit FULL_SHA [--arch x86_64] [--bin-dir target/release] [--out dist/release]
 --
 -- Two prefix tarballs per architecture, the layout releasesd installs
 -- (docs/releasesd/README.md): one top directory holding bin/ and share/.
@@ -16,18 +16,25 @@
 -- mixos-desktop), so neither needs an `asset` pattern. The checksum file is
 -- written by the release job over every tarball, not here.
 
-$g = getopt(args(), {help: {short: "h"}, release: {arg: true}, arch: {arg: true},
+$g = getopt(args(), {help: {short: "h"}, release: {arg: true}, commit: {arg: true}, arch: {arg: true},
   "bin-dir": {arg: true}, out: {arg: true}})
 if len($g.errors) != 0 then raise("PACKAGE_ARGS", join($g.errors, "; ")) end
 if $g.opts.help then
-  print("usage: mix tools/package.mix --release V [--arch ARCH] [--bin-dir DIR] [--out DIR]")
+  print("usage: mix tools/package.mix --release V --commit FULL_SHA [--arch ARCH] [--bin-dir DIR] [--out DIR]")
   exit(0)
 end
 
-$PACKAGES = {
-  "mixos-server": ["mix", "mixos-mcp", "noded", "editd", "settingsd", "portald", "maild"],
-  "mixos-desktop": ["compd", "ced", "dopus", "prefs", "busviewer", "monitor", "screenshot", "indexd"]
-}
+$source = dirname(dirname(realpath($0)))
+$release = load_data($source .. "/tools/release_packages.mx")
+if $release.schema != 1 then raise("PACKAGE_SCHEMA", "unsupported release_packages.mx schema") end
+$PACKAGES = $release.packages
+for $pkg in keys($PACKAGES)
+  for $b in $PACKAGES[$pkg]
+    if $b != "maild" and $release.crates[$b] == nil then
+      raise("PACKAGE_SCHEMA", $b .. " has no Cargo package in release_packages.mx")
+    end
+  end
+end
 -- Desktop entries ship with their app: a packaged binary NAME with an
 -- apps/NAME/assets/dev.mixos.NAME.desktop carries it, so binary and entry
 -- always travel as a pair. Exec and TryExec lose the system path so
@@ -40,29 +47,43 @@ fn entries_for($root, $bins)
   end
   return $out
 end
+fn add_tree($from, $to)
+  if not is_dir($from) then raise("PACKAGE_MISSING", "runtime tree " .. $from .. " is missing") end
+  mkdir($to, {parents: true})
+  run_argv_must(["cp", "-a", $from .. "/.", $to], {timeout: 120})
+end
 $DOCS = ["README.md", "LICENSE-MIT", "LICENSE-APACHE", "NOTICE"]
 
 $version = $g.opts.release ?? ""
 if not re_match($version, "^[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?$") then
   raise("PACKAGE_ARGS", "--release must be a version like 1.2.3 or 1.2.3-rc.1, got '" .. $version .. "'")
 end
+$commit = $g.opts.commit ?? ""
+if not re_match($commit, "^[0-9a-f]{40}$") then raise("PACKAGE_ARGS", "--commit must be a full source SHA") end
+$head = trim(run_argv_must(["git", "-C", $source, "rev-parse", "HEAD"], {timeout: 15}))
+if $head != $commit then raise("PACKAGE_SOURCE", "source checkout differs from --commit") end
 $arch = $g.opts.arch ?? platform().arch
 if not re_match($arch, "^(x86_64|aarch64)$") then raise("PACKAGE_ARGS", "--arch must be x86_64 or aarch64") end
-$source = dirname(dirname(realpath($0)))
+if $arch != platform().arch then raise("PACKAGE_ARCH", "--arch must match the build host") end
 -- Use the native Mix executing this packager, including release bootstrap.
 $mix = realpath("/proc/self/exe")
 if $mix == nil then raise("PACKAGE_MIX", "cannot resolve the running Mix binary") end
 $bin_dir = $g.opts["bin-dir"] ?? ($source .. "/target/release")
 $out = $g.opts.out ?? ($source .. "/dist/release")
 
+if is_dir($out) and len(glob($out .. "/*")) != 0 then
+  raise("PACKAGE_OUTPUT", "output directory is not empty: " .. $out)
+end
 mkdir($out, {parents: true})
 $stage = $out .. "/.stage"
 remove_dir($stage)
+$archives = []
 
 for $pkg in sort(keys($PACKAGES))
   $name = $pkg .. "-" .. $version .. "-linux-" .. $arch
   $top = $stage .. "/" .. $name
   mkdir($top .. "/bin", {parents: true})
+  $members = []
   for $b in $PACKAGES[$pkg]
     if $b == "maild" then
       -- maild is carried by the system binary, never a second executable.
@@ -71,6 +92,11 @@ for $pkg in sort(keys($PACKAGES))
     end
     $src = $bin_dir .. "/" .. $b
     if not is_file($src) then raise("PACKAGE_MISSING", $src .. " is not built") end
+    $v = trim(run_argv_must([$src, "--version"], {timeout: 10, stderr: "stdout"}))
+    if not contains($v, slice($commit, 0, 12)) then
+      raise("PACKAGE_SOURCE", $b .. " does not identify source " .. slice($commit, 0, 12) .. ": " .. $v)
+    end
+    push($members, {name: $b, sha256: hash_file($src, "sha256"), version: $v})
     copy($src, $top .. "/bin/" .. $b)
     chmod($top .. "/bin/" .. $b, 0o755)
   end
@@ -87,6 +113,11 @@ for $pkg in sort(keys($PACKAGES))
     chmod($top .. "/share/doc/" .. $pkg .. "/" .. $d, 0o644)
   end
   if $pkg == "mixos-desktop" then
+    add_tree($source .. "/share/scenes", $top .. "/share/scenes")
+    add_tree($source .. "/share/brand", $top .. "/share/brand")
+    add_tree($source .. "/share/icons", $top .. "/share/icons")
+    add_tree($source .. "/services/compd/scripts", $top .. "/share/compd/scripts")
+    add_tree($source .. "/services/notifyd/scripts", $top .. "/lib/notifyd")
     mkdir($top .. "/share/indexd/units", {parents: true})
     for $u in ["indexd.service", "sysusers.conf"]
       copy($source .. "/services/indexd/units/" .. $u, $top .. "/share/indexd/units/" .. $u)
@@ -99,6 +130,8 @@ for $pkg in sort(keys($PACKAGES))
       "--root", $top .. "/share"], {timeout: 30})
   end
   if $pkg == "mixos-server" then
+    add_tree($source .. "/services/releasesd/scripts", $top .. "/lib/releasesd")
+    add_tree($source .. "/share/assets", $top .. "/share/assets")
     mkdir($top .. "/share/maild/units", {parents: true})
     for $u in ["maild@.service", "maild.service", "sysusers.conf"]
       copy($source .. "/services/maild/units/" .. $u, $top .. "/share/maild/units/" .. $u)
@@ -113,8 +146,18 @@ for $pkg in sort(keys($PACKAGES))
   end
   $tar = $out .. "/" .. $name .. ".tar.gz"
   -- Owner-neutral and sorted, so the archive does not depend on the runner.
-  run_argv_must(["tar", "--sort=name", "--owner=0", "--group=0", "--numeric-owner",
+  run_argv_must(["tar", "--sort=name", "--owner=0", "--group=0", "--numeric-owner", "--mtime=@0",
     "-czf", $tar, "-C", $stage, $name], {timeout: 600})
-  print($tar .. "  sha256:" .. hash_file($tar, "sha256"))
+  $sha = hash_file($tar, "sha256")
+  push($archives, {name: $pkg, asset: basename($tar), sha256: $sha, binaries: $members})
+  print($tar .. "  sha256:" .. $sha)
 end
 remove_dir($stage)
+$manifest = $out .. "/release.manifest.mx"
+write_file($manifest, data_encode({schema: 1, version: $version, source: $commit,
+  platform: "linux-" .. $arch .. "-glibc", archives: $archives}) .. "\n")
+$sums = []
+for $row in $archives push($sums, $row.sha256 .. "  " .. $row.asset) end
+push($sums, hash_file($manifest, "sha256") .. "  " .. basename($manifest))
+write_file($out .. "/SHA256SUMS.txt", join($sums, "\n") .. "\n")
+print($manifest .. "  sha256:" .. hash_file($manifest, "sha256"))
