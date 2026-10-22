@@ -17,10 +17,10 @@
 -- written by the release job over every tarball, not here.
 
 $g = getopt(args(), {help: {short: "h"}, release: {arg: true}, commit: {arg: true}, arch: {arg: true},
-  "bin-dir": {arg: true}, out: {arg: true}})
+  "bin-dir": {arg: true}, out: {arg: true}, "fixture-binaries": {}})
 if len($g.errors) != 0 then raise("PACKAGE_ARGS", join($g.errors, "; ")) end
 if $g.opts.help then
-  print("usage: mix tools/package.mix --release V --commit FULL_SHA [--arch ARCH] [--bin-dir DIR] [--out DIR]")
+  print("usage: mix tools/package.mix --release V --commit FULL_SHA [--arch ARCH] [--bin-dir DIR] [--out DIR] [--fixture-binaries for tests only]")
   exit(0)
 end
 
@@ -92,9 +92,11 @@ for $pkg in sort(keys($PACKAGES))
     end
     $src = $bin_dir .. "/" .. $b
     if not is_file($src) then raise("PACKAGE_MISSING", $src .. " is not built") end
-    $v = trim(run_argv_must([$src, "--version"], {timeout: 10, stderr: "stdout"}))
-    if not contains($v, slice($commit, 0, 12)) then
-      raise("PACKAGE_SOURCE", $b .. " does not identify source " .. slice($commit, 0, 12) .. ": " .. $v)
+    $v = if $g.opts["fixture-binaries"] then "fixture" else
+      trim(run_argv_must([$src, "--version"], {timeout: 10, stderr: "stdout"})) end
+    if (not $g.opts["fixture-binaries"] and
+        (not starts_with($v, $b .. " ") or not contains($v, slice($commit, 0, 12)))) then
+      raise("PACKAGE_SOURCE", $b .. " does not identify itself and source " .. slice($commit, 0, 12) .. ": " .. $v)
     end
     push($members, {name: $b, sha256: hash_file($src, "sha256"), version: $v})
     copy($src, $top .. "/bin/" .. $b)
@@ -118,10 +120,8 @@ for $pkg in sort(keys($PACKAGES))
     add_tree($source .. "/share/icons", $top .. "/share/icons")
     add_tree($source .. "/services/compd/scripts", $top .. "/share/compd/scripts")
     add_tree($source .. "/services/notifyd/scripts", $top .. "/lib/notifyd")
-    mkdir($top .. "/share/indexd/units", {parents: true})
-    for $u in ["indexd.service", "sysusers.conf"]
-      copy($source .. "/services/indexd/units/" .. $u, $top .. "/share/indexd/units/" .. $u)
-      chmod($top .. "/share/indexd/units/" .. $u, 0o644)
+    for $svc in ["compd", "indexd", "notifyd"]
+      add_tree($source .. "/services/" .. $svc .. "/units", $top .. "/share/" .. $svc .. "/units")
     end
     mkdir($top .. "/share/indexd/examples", {parents: true})
     copy($source .. "/services/indexd/examples/config.conf.mix", $top .. "/share/indexd/examples/config.conf.mix")
@@ -132,10 +132,8 @@ for $pkg in sort(keys($PACKAGES))
   if $pkg == "mixos-server" then
     add_tree($source .. "/services/releasesd/scripts", $top .. "/lib/releasesd")
     add_tree($source .. "/share/assets", $top .. "/share/assets")
-    mkdir($top .. "/share/maild/units", {parents: true})
-    for $u in ["maild@.service", "maild.service", "sysusers.conf"]
-      copy($source .. "/services/maild/units/" .. $u, $top .. "/share/maild/units/" .. $u)
-      chmod($top .. "/share/maild/units/" .. $u, 0o644)
+    for $svc in ["hostd", "noded", "editd", "settingsd", "portald", "monitord", "maild", "releasesd"]
+      add_tree($source .. "/services/" .. $svc .. "/units", $top .. "/share/" .. $svc .. "/units")
     end
     $licences = $top .. "/share/licenses/maild/mail-parser"
     mkdir($licences, {parents: true})
@@ -155,7 +153,7 @@ end
 remove_dir($stage)
 $manifest = $out .. "/release.manifest.mx"
 write_file($manifest, data_encode({schema: 1, version: $version, source: $commit,
-  platform: "linux-" .. $arch .. "-glibc", archives: $archives}) .. "\n")
+  platform: "linux-" .. $arch .. "-glibc", fixture: $g.opts["fixture-binaries"], archives: $archives}) .. "\n")
 $sums = []
 for $row in $archives push($sums, $row.sha256 .. "  " .. $row.asset) end
 push($sums, hash_file($manifest, "sha256") .. "  " .. basename($manifest))

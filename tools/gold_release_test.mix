@@ -1,0 +1,79 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Disposable-root proof of gold install, rollback and digest refusal.
+
+$repo = dirname(dirname(realpath($0)))
+$mix = realpath("/proc/self/exe")
+$base = "/tmp/mixos-gold-test-" .. uuid()
+$root = $base .. "/gold"
+$state = $base .. "/state"
+$dist = $base .. "/dist"
+$name = "mixos-desktop-0.1.2-linux-x86_64"
+$source = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+fn need($yes, $what)
+  if not $yes then raise("GOLD_TEST", $what) end
+end
+
+mkdir($root .. "/bin", {parents: true})
+mkdir($dist, {parents: true})
+write_file($root .. "/bin/mock", "previous\n")
+mkdir($base .. "/pack/" .. $name .. "/bin", {parents: true})
+mkdir($base .. "/pack/" .. $name .. "/share/scenes", {parents: true})
+write_file($base .. "/pack/" .. $name .. "/bin/mock", "new\n")
+chmod($base .. "/pack/" .. $name .. "/bin/mock", 0o755)
+write_file($base .. "/pack/" .. $name .. "/share/scenes/test.mix", "print(1)\n")
+symlink("mock", $base .. "/pack/" .. $name .. "/bin/alias")
+$tar = $dist .. "/" .. $name .. ".tar.gz"
+run_argv_must(["tar", "-czf", $tar, "-C", $base .. "/pack", $name], {timeout: 30})
+$manifest = $dist .. "/release.manifest.mx"
+write_file($manifest, data_encode({schema: 1, version: "0.1.2", source: $source,
+  platform: "linux-x86_64-glibc", archives: [{name: "mixos-desktop", asset: basename($tar),
+  sha256: hash_file($tar, "sha256"), binaries: [{name: "mock", sha256: hash_file($base .. "/pack/" .. $name .. "/bin/mock", "sha256")}]}]}) .. "\n")
+$sha = hash_file($manifest, "sha256")
+$base_argv = [$mix, $repo .. "/tools/gold_release.mix"]
+$opts = ["--root", $root, "--state", $state, "--manifest", $manifest,
+  "--manifest-sha256", $sha, "--archive-dir", $dist, "--package", "desktop"]
+try
+  $bad = run_argv(concat(concat($base_argv, ["plan"]),
+    ["--root", $root, "--state", $state, "--manifest", $manifest,
+     "--manifest-sha256", "0000000000000000000000000000000000000000000000000000000000000000",
+     "--archive-dir", $dist, "--package", "desktop"]), {timeout: 30, stderr: "stdout"})
+  need($bad.exit_code != 0 and contains($bad.stdout, "GOLD_DIGEST"), "wrong manifest digest refusal differs: " .. $bad.stdout)
+  $plan = run_argv(concat(concat($base_argv, ["plan"]), $opts), {timeout: 30, stderr: "stdout"})
+  need($plan.exit_code == 0 and contains($plan.stdout, "changed=3"), "plan failed: " .. $plan.stdout)
+  need(read_file($root .. "/bin/mock") == "previous\n", "plan changed gold")
+  $apply = run_argv(concat(concat($base_argv, ["apply"]), $opts), {timeout: 30, stderr: "stdout"})
+  need($apply.exit_code == 0 and contains($apply.stdout, "APPLIED receipt="), "apply failed: " .. $apply.stdout)
+  need(read_file($root .. "/bin/mock") == "new\n", "gold binary did not change")
+  need(read_link($root .. "/bin/alias") == "mock", "gold link missing")
+  need(is_file($root .. "/share/scenes/test.mix"), "gold scene missing")
+  $lines = split(trim($apply.stdout), "\n")
+  $last = $lines[len($lines) - 1]
+  $id = replace(fields($last)[1], "receipt=", "")
+  $rollback = run_argv(concat($base_argv, ["rollback", "--root", $root, "--state", $state,
+    "--receipt", $id]), {timeout: 30, stderr: "stdout"})
+  need($rollback.exit_code == 0 and contains($rollback.stdout, "ROLLBACK"), "rollback failed: " .. $rollback.stdout)
+  need(read_file($root .. "/bin/mock") == "previous\n", "rollback did not restore gold")
+  need(not exists($root .. "/bin/alias", {follow_symlinks: false}), "rollback left new link")
+  need(not is_file($root .. "/share/scenes/test.mix"), "rollback left new scene")
+  $apply2 = run_argv(concat(concat($base_argv, ["apply"]), $opts), {timeout: 30, stderr: "stdout"})
+  need($apply2.exit_code == 0, "second apply failed: " .. $apply2.stdout)
+  $lines2 = split(trim($apply2.stdout), "\n")
+  $id2 = replace(fields($lines2[len($lines2) - 1])[1], "receipt=", "")
+  $receipt2 = $state .. "/receipts/" .. $id2 .. ".mx"
+  $rec2 = load_data($receipt2)
+  $rec2.status = "pending"
+  write_file($state .. "/pending.mx", data_encode($rec2) .. "\n")
+  remove($receipt2)
+  $recover = run_argv(concat($base_argv, ["recover", "--root", $root, "--state", $state]),
+    {timeout: 30, stderr: "stdout"})
+  need($recover.exit_code == 0 and read_file($root .. "/bin/mock") == "previous\n",
+    "interrupted apply recovery failed: " .. $recover.stdout)
+  run_argv_must(["truncate", "-s", "+1", $tar], {timeout: 10})
+  $tampered = run_argv(concat(concat($base_argv, ["plan"]), $opts), {timeout: 30, stderr: "stdout"})
+  need($tampered.exit_code != 0 and contains($tampered.stdout, "GOLD_DIGEST"),
+    "tampered archive was accepted: " .. $tampered.stdout)
+  print("PASS gold release plan, apply, rollback, recovery and digest refusals")
+finally
+  remove_dir($base)
+end
