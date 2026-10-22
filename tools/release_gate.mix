@@ -182,8 +182,10 @@ for $crate in $crates
   push($build, "-p")
   push($build, $crate)
 end
-push($build, "--features")
-push($build, "compd/backend-all")
+if $selection != "server" then
+  push($build, "--features")
+  push($build, "compd/backend-all")
+end
 stage("release-build", $build, 7200)
 if $selection != "server" then
   stage("compd-rpath", concat($chroot, ["/usr/bin/patchelf", "--set-rpath", "$ORIGIN/../lib",
