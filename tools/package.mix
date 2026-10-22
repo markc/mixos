@@ -163,7 +163,8 @@ for $pkg in $selected
     add_tree($source .. "/share/icons", $top .. "/share/icons")
     add_tree($source .. "/services/compd/scripts", $top .. "/share/compd/scripts")
     add_tree($source .. "/services/notifyd/scripts", $top .. "/lib/notifyd")
-    for $svc in ["compd", "indexd", "notifyd", "settingsd"]
+    add_tree($source .. "/services/releasesd/scripts", $top .. "/lib/releasesd")
+    for $svc in ["compd", "indexd", "notifyd", "settingsd", "hostd", "noded", "monitord", "editd", "portald", "releasesd"]
       add_tree($source .. "/services/" .. $svc .. "/units", $top .. "/share/" .. $svc .. "/units")
     end
     mkdir($top .. "/share/indexd/examples", {parents: true})
@@ -173,9 +174,8 @@ for $pkg in $selected
       "--root", $top .. "/share"], {timeout: 30})
   end
   if $pkg == "mixos-server" then
-    add_tree($source .. "/services/releasesd/scripts", $top .. "/lib/releasesd")
     add_tree($source .. "/share/assets", $top .. "/share/assets")
-    for $svc in ["hostd", "noded", "editd", "portald", "monitord", "maild", "releasesd"]
+    for $svc in ["hostd", "noded", "monitord", "maild"]
       add_tree($source .. "/services/" .. $svc .. "/units", $top .. "/share/" .. $svc .. "/units")
     end
     $licences = $top .. "/share/licenses/maild/mail-parser"
