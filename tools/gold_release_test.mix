@@ -99,11 +99,20 @@ try
   need($unsafe.exit_code != 0 and contains($unsafe.stdout, "GOLD_PATH"),
     "unsafe receipt path was accepted: " .. $unsafe.stdout)
   remove($state .. "/pending.mx")
+  $bad_manifest = $dist .. "/bad.manifest.mx"
+  $bad_doc = load_data($manifest)
+  $bad_doc.archives[0].libraries[0].sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+  write_file($bad_manifest, data_encode($bad_doc) .. "\n")
+  $bad_library = run_argv(concat($base_argv, ["plan", "--root", $root, "--state", $state,
+    "--manifest", $bad_manifest, "--manifest-sha256", hash_file($bad_manifest, "sha256"),
+    "--archive-dir", $dist, "--package", "desktop"]), {timeout: 30, stderr: "stdout"})
+  need($bad_library.exit_code != 0 and contains($bad_library.stdout, "GOLD_LIBRARY"),
+    "wrong runtime library digest was accepted: " .. $bad_library.stdout)
   run_argv_must(["truncate", "-s", "+1", $tar], {timeout: 10})
   $tampered = run_argv(concat(concat($base_argv, ["plan"]), $opts), {timeout: 30, stderr: "stdout"})
   need($tampered.exit_code != 0 and contains($tampered.stdout, "GOLD_DIGEST"),
     "tampered archive was accepted: " .. $tampered.stdout)
-  print("PASS gold release plan, apply, rollback, recovery, path and digest refusals")
+  print("PASS gold release plan, apply, rollback, recovery, path, library and archive digest refusals")
 finally
   remove_dir($base)
 end

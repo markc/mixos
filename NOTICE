@@ -39,6 +39,10 @@ calloop 0.14.5, vendor/calloop, Victor Berger and contributors, MIT; and
 input-rs 0.10.0, vendor/input, Victoria Brekenfeld and contributors, MIT;
 original licence files retained, local fixes in each PATCHES.md.
 
+The Linux x86_64 desktop release bundles libinput 1.26.2, libinput contributors,
+MIT/Expat, built from upstream commit 3402f380019dc4f882e1d8627029607aca3f4be6.
+Its upstream COPYING ships in share/licenses/libinput/COPYING in the archive.
+
 Microsoft Edit buffer and syntax sources: Microsoft Corporation, MIT,
 revision 826b4c097b6f14ba0a846dc56f2f0223a3aaf73a; see vendor/msedit.
 editd retains source from the predecessor repository at revision
