@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.1.0
--- Native installed-artifact test in disposable user/mount/PID/network namespaces.
+-- Native installed/candidate-artifact test in disposable user/mount/PID/network namespaces.
 $prepare=require("../scripts/broker_profile.mix")
 fn check($ok,$message)
   if not $ok then raise("BROKER_NAMESPACE_TEST",$message) end
@@ -96,9 +96,21 @@ try
     $f=fields($line)
     if len($f)>=4 and contains($line,"x86-64") and not has_key($cache,$f[0]) then $cache[$f[0]]=$f[len($f)-1] end
   end
-  copy_elf($root,"/opt/mixos/bin/mix","/opt/mixos/bin/mix",$cache)
+  $mix_candidate=env("MIXOS_TEST_MIX","")
+  $pin_test=$mix_candidate!=""
+  $mix_source=if $pin_test then $mix_candidate else "/opt/mixos/bin/mix" end
+  if $pin_test then
+    $expected=env("MIXOS_TEST_MIX_SHA256","")
+    check(starts_with($mix_source,"/") and is_file($mix_source) and re_match($expected,"^[0-9a-f]{64}$") and hash_file($mix_source,"sha256")==$expected,"explicit Mix candidate hash differs")
+  end
+  copy_elf($root,$mix_source,"/opt/mixos/bin/mix",$cache)
+  check(hash_file($root .. "/opt/mixos/bin/mix","sha256")==hash_file($mix_source,"sha256"),"fixture Mix artifact copy differs")
   $candidate=env("MIXOS_TEST_NODED","/opt/mixos/bin/noded")
   check(type($candidate)=="string" and starts_with($candidate,"/") and is_file($candidate),"explicit native noded artifact absent")
+  if $pin_test then
+    $expected=env("MIXOS_TEST_NODED_SHA256","")
+    check(re_match($expected,"^[0-9a-f]{64}$") and hash_file($candidate,"sha256")==$expected,"explicit noded candidate hash differs")
+  end
   copy_elf($root,$candidate,"/opt/mixos/bin/noded",$cache)
   check(hash_file($root .. "/opt/mixos/bin/noded","sha256")==hash_file($candidate,"sha256"),"fixture noded artifact copy differs")
   if has_key($cache,"libnss_files.so.2") then copy_elf($root,$cache["libnss_files.so.2"],$cache["libnss_files.so.2"],$cache) end
@@ -145,10 +157,21 @@ print(json_encode({uid:uid(),gid:gid(),info:$info,rc:$rc,value:$result}))'
   native(["ip","address","del","192.0.2.14/32","dev","lo"])
   $tcp=as_user($root,2000,'$h=tcp_connect("192.0.2.14",4200,{timeout:1}); tcp_close($h)',$client_env)
   check(not $tcp.ok,"isolated TCP path remained reachable")
+  if $pin_test then $client_env.MIXOS_NODED_EXPECTED_SERVER_PID=to_string($daemon) end
   $unix_query=as_user($root,2000,$query_source,$client_env)
   check($unix_query.ok,"fresh native Unix-only authority query failed")
   $unix=json_parse($unix_query.stdout)
   check($unix.info.rc==0 and $unix.info.value.node=="desk-a" and $unix.rc==0 and $unix.value.posture=="verified" and $unix.value.epoch==7 and $unix.value.hash==$authority.value.hash,"Unix-only route did not preserve signed authority")
+  $wrong_pin_rc=nil
+  if $pin_test then
+    $wrong_env=$client_env
+    $wrong_env.MIXOS_NODED_EXPECTED_SERVER_PID=to_string($daemon+1)
+    $wrong_query=as_user($root,2000,$query_source,$wrong_env)
+    check($wrong_query.ok,"wrong-pin script failed before reporting its send result")
+    $wrong=json_parse($wrong_query.stdout)
+    check($wrong.rc==-3 and $wrong.info.rc==-3,"wrong server PID did not fail closed")
+    $wrong_pin_rc=$wrong.rc
+  end
   $baseline=$var .. "/noded/inventory.baseline"
   $b=stat($baseline,{follow_symlinks:false})
   check($b.uid==1999 and $b.gid==1999 and $b.perm==0o600,"native witness ownership differs")
@@ -166,7 +189,7 @@ print(json_encode({uid:uid(),gid:gid(),info:$info,rc:$rc,value:$result}))'
     $meta=stat(if $path=="/" then $root else $root .. $path end,{follow_symlinks:false})
     push($ancestry,{path:$path,uid:$meta.uid,gid:$meta.gid,perm:$meta.perm,is_symlink:$meta.is_symlink})
   end
-  print(json_encode({proof:"native-disposable-broker-namespace",noded_sha256:hash_file($candidate,"sha256"),client_uid:$authority.uid,client_gid:$authority.gid,broker_uid:$endpoint.uid,baseline_uid:$b.uid,baseline_gid:$b.gid,baseline_mode:$b.perm,baseline_lock_mode:$lock.perm,desktop_write_refused:not $attack.ok,private_var_write_refused:not $private_attack.ok,desktop_state_preserved:true,signed_authority:true,tcp_unreachable:not $tcp.ok,unix_only_authority:true,epoch:$authority.value.epoch,endpoint:$plan.endpoint,ancestry:$ancestry,user_namespace:true,network_namespace:true,pid_namespace:true,live_activation:false,pid_pin_tested:false,systemd_unit_started:false}))
+  print(json_encode({proof:"native-disposable-broker-namespace",mix_sha256:hash_file($mix_source,"sha256"),noded_sha256:hash_file($candidate,"sha256"),client_uid:$authority.uid,client_gid:$authority.gid,broker_uid:$endpoint.uid,baseline_uid:$b.uid,baseline_gid:$b.gid,baseline_mode:$b.perm,baseline_lock_mode:$lock.perm,desktop_write_refused:not $attack.ok,private_var_write_refused:not $private_attack.ok,desktop_state_preserved:true,signed_authority:true,tcp_unreachable:not $tcp.ok,unix_only_authority:true,epoch:$authority.value.epoch,endpoint:$plan.endpoint,ancestry:$ancestry,user_namespace:true,network_namespace:true,pid_namespace:true,pid_pin_tested:$pin_test,correct_pid:if $pin_test then $daemon else nil end,correct_pid_rc:if $pin_test then $unix.rc else nil end,wrong_pid_rc:$wrong_pin_rc,live_activation:false,systemd_unit_started:false}))
 finally
   if $watch!=nil then fs_unwatch($watch) end
   if $daemon!=nil then $_killed=kill($daemon,9); run_argv(["pidwait","-p",to_string($daemon)],{timeout:5}) end

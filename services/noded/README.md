@@ -27,18 +27,25 @@ mesh distributor is enabled by this module; activation still requires effective
 unit verification, signed authority and connection identity gates.
 
 `tests/broker_namespace_test.mix` uses real subordinate UIDs in private user,
-mount, PID and network namespaces, with installed native Mix and a candidate
-noded copied into a disposable chroot. It preserves the enclosing container's
+mount, PID and network namespaces, with native Mix and a candidate noded copied
+into a disposable chroot. It preserves the enclosing container's
 masked proc mounts. Disposable signing material stays in its temporary root and
 is removed. It checks a signed authority query as the desktop UID, repeats the
 query after isolated TCP becomes unreachable, verifies private witness/lock
 ownership and mode0600, requires actual desktop write denials, and checks parent
-mount/loopback state and temporary-root cleanup. It does not boot systemd or
-claim the separately owned server-PID pin was tested.
+mount/loopback state and temporary-root cleanup. With a separately built Mix
+candidate that includes the server-PID pin, it also proves that a fresh
+correct-PID query succeeds and a wrong-PID query refuses while TCP is unreachable.
+It does not boot systemd.
 
 Run through native Mix; `MIXOS_TEST_NODED` may select a CBC-built candidate file
 for this fixture only. It is copied and hash-checked, never installed to gold.
 The candidate must include the explicit private witness/lock mode invariant.
+Set `MIXOS_TEST_MIX` to an absolute candidate Mix path plus
+`MIXOS_TEST_MIX_SHA256` and `MIXOS_TEST_NODED_SHA256` to exercise the opt-in
+PID-pin proof. The fixture verifies both hashes before copying either binary;
+without these variables, `pid_pin_tested` stays false. Both candidates remain
+uninstalled.
 The fixture needs Linux subordinate UID/GID mappings and native `unshare`,
 `chroot`, `mount`, `ip`, `readelf`, `ldconfig` and `pidwait` facilities; unsupported
 namespace policy is a fixture environment failure, not a noded regression.
