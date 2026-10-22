@@ -23,7 +23,7 @@
     indexd: "indexd"
   },
   packages: {
-    "mixos-server": ["mix", "mixos-mcp", "noded", "editd", "settingsd", "portald", "hostd", "monitord", "maild"],
-    "mixos-desktop": ["mix", "backdrop", "busviewer", "ced", "compd", "dopus", "email", "monitor", "prefs", "screenshot", "term", "indexd"]
+    "mixos-server": ["mix", "mixos-mcp", "noded", "editd", "portald", "hostd", "monitord", "maild"],
+    "mixos-desktop": ["mix", "backdrop", "busviewer", "ced", "compd", "dopus", "email", "monitor", "prefs", "screenshot", "term", "indexd", "settingsd"]
   }
 }

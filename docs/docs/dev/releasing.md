@@ -8,8 +8,8 @@ description: Exact-source CBC gates, x86_64 glibc packaging, GitHub drafts, and 
 The first release target is Linux x86_64 with a glibc 2.39 floor. The
 release contract is in `tools/release_packages.mx`. The initial desktop
 candidate contains one archive, `release.manifest.mx`, and `SHA256SUMS.txt`.
-The desktop archive includes the ten desktop products, indexd and the Mix
-runtime used by its session scripts.
+The desktop archive includes the ten desktop products, indexd, the desktop
+settings authority settingsd, and the Mix runtime used by its session scripts.
 An admitted server archive can join a later candidate. Every archive in a
 candidate comes from one exact public source commit. Packaging an unadmitted
 service does not admit it for publication.
