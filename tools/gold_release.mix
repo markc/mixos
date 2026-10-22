@@ -25,9 +25,13 @@ end
 if not is_dir($root) or stat($root, {follow_symlinks: false}).is_symlink then
   raise("GOLD_ROOT", $root .. " must be an existing real directory")
 end
+if $root != realpath($root) then raise("GOLD_ROOT", "root must be a canonical path") end
 if $root == "/opt/mixos" and uid() != 0 then raise("GOLD_ROOT", "live gold install needs one explicit sudo invocation") end
 if not starts_with($state, "/") or $state == $root or starts_with($state, $root .. "/") then
   raise("GOLD_STATE", "state must be an absolute directory outside gold")
+end
+for $part in split($state, "/")
+  if $part == "." or $part == ".." then raise("GOLD_STATE", "state path must be canonical") end
 end
 fn root_owned_path($path)
   $p = $path
@@ -55,6 +59,7 @@ end
 if not flock($state .. "/.lock", {wait: 0}) then raise("GOLD_BUSY", "another gold release operation is running") end
 $pending = $state .. "/pending.mx"
 $receipt_dir = $state .. "/receipts"
+$sequence_path = $state .. "/sequence.mx"
 if $root == "/opt/mixos" then root_owned_path($state) end
 mkdir($receipt_dir, {parents: true})
 if $root == "/opt/mixos" then root_owned_path($receipt_dir) end
@@ -126,13 +131,22 @@ end
 if $mode == "recover" then
   if not is_file($pending) then raise("GOLD_PENDING", "there is no interrupted update") end
   $rec = load_data($pending)
-  if $rec.root != $root or not contains(["pending", "applied"], $rec.status) then
+  if $rec.root != $root or not contains(["pending", "applied", "recovered"], $rec.status) then
     raise("GOLD_RECEIPT", "pending receipt does not describe this root")
   end
-  restore($rec)
-  $rec.status = "recovered"
-  $rec.rolled_back_at = now_iso()
-  write_atomic($pending, data_encode($rec) .. "\n")
+  if $rec.status == "recovered" then
+    for $item in $rec.files
+      safe_rel($item.rel)
+      if not matches($root .. "/" .. $item.rel, $item.before) then
+        raise("GOLD_ROLLBACK_FOREIGN", "recovered gold path changed: " .. $item.rel)
+      end
+    end
+  else
+    restore($rec)
+    $rec.status = "recovered"
+    $rec.rolled_back_at = now_iso()
+    write_atomic($pending, data_encode($rec) .. "\n")
+  end
   rename($pending, $receipt_dir .. "/" .. $rec.id .. ".mx")
   exit(0)
 end
@@ -146,6 +160,16 @@ if $mode == "rollback" then
   $rec = load_data($path)
   if $rec.id != $id or $rec.root != $root or $rec.status != "applied" then
     raise("GOLD_RECEIPT", "receipt does not describe an applied update to this root")
+  end
+  if type($rec.sequence) != "number" then raise("GOLD_ORDER", "receipt has no release sequence") end
+  for $other_path in glob($receipt_dir .. "/*.mx")
+    if $other_path == $path then continue end
+    $other = load_data($other_path)
+    if $other.root == $root and $other.status == "applied" then
+      if type($other.sequence) != "number" or $other.sequence >= $rec.sequence then
+        raise("GOLD_ORDER", "roll back newer applied release first: " .. $other.id)
+      end
+    end
   end
   restore($rec)
   $rec.status = "rolled_back"
@@ -275,7 +299,16 @@ try
       if not matches($b, $f.before) then raise("GOLD_BACKUP", "backup verification failed for " .. $f.rel) end
     end
   end
-  $record = {schema: 1, id: $id, status: "pending", root: $root,
+  if not is_file($sequence_path) and len(glob($receipt_dir .. "/*.mx")) != 0 then
+    raise("GOLD_ORDER", "existing receipts have no release sequence")
+  end
+  $last = if is_file($sequence_path) then load_data($sequence_path) else {schema: 1, last: 0} end
+  if $last.schema != 1 or type($last.last) != "number" or $last.last < 0 then
+    raise("GOLD_ORDER", "invalid release sequence")
+  end
+  $next = $last.last + 1
+  write_atomic($sequence_path, data_encode({schema: 1, last: $next}) .. "\n")
+  $record = {schema: 1, id: $id, sequence: $next, status: "pending", root: $root,
     source: $manifest.source, version: $manifest.version, packages: $want,
     manifest_sha256: $expect, backup: $backup, started_at: now_iso(), files: []}
   for $f in $files
