@@ -12,13 +12,17 @@ mkdir($case_dir .. "/bin", {parents:true})
 try
   copy($mix_bin, $case_dir .. "/bin/mix")
   copy($binary, $case_dir .. "/bin/indexd")
-  for $name in ["mixos-mcp", "noded", "editd", "settingsd", "portald", "hostd", "monitord",
-    "backdrop", "busviewer", "ced", "compd", "dopus", "email", "monitor", "prefs", "screenshot", "term"]
+  for $name in ["backdrop", "busviewer", "ced", "compd", "dopus", "email", "monitor", "prefs", "screenshot", "term"]
     copy("/usr/bin/true", $case_dir .. "/bin/" .. $name)
   end
   run_argv_must([$mix_bin, $root .. "/tools/package.mix", "--release", $version,
-    "--commit", $commit, "--fixture-binaries", "--bin-dir", $case_dir .. "/bin",
+    "--commit", $commit, "--package", "desktop", "--fixture-binaries", "--bin-dir", $case_dir .. "/bin",
     "--out", $case_dir .. "/out"], {timeout:120})
+  $manifest = load_data($case_dir .. "/out/release.manifest.mx")
+  if (len($manifest.archives) != 1 or $manifest.archives[0].name != "mixos-desktop" or
+      is_file($case_dir .. "/out/mixos-server-" .. $version .. "-linux-" .. platform().arch .. ".tar.gz")) then
+    raise("PACKAGE_SELECTION", "desktop-only package included server output")
+  end
   $top_name = "mixos-desktop-" .. $version .. "-linux-" .. platform().arch
   mkdir($case_dir .. "/extracted")
   run_argv_must(["tar", "-xzf", $case_dir .. "/out/" .. $top_name .. ".tar.gz", "-C", $case_dir .. "/extracted"], {timeout:60})

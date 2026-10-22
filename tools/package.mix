@@ -6,7 +6,7 @@
 --
 --   mix tools/package.mix --release 0.1.1 --commit FULL_SHA [--arch x86_64] [--bin-dir target/release] [--out dist/release]
 --
--- Two prefix tarballs per architecture, the layout releasesd installs
+-- Up to two prefix tarballs per architecture, the layout releasesd installs
 -- (docs/releasesd/README.md): one top directory holding bin/ and share/.
 --
 --   mixos-server-<v>-linux-<arch>.tar.gz    mix and the headless services
@@ -17,10 +17,10 @@
 -- written here over every tarball and the manifest.
 
 $g = getopt(args(), {help: {short: "h"}, release: {arg: true}, commit: {arg: true}, arch: {arg: true},
-  "bin-dir": {arg: true}, out: {arg: true}, "fixture-binaries": {}})
+  "bin-dir": {arg: true}, out: {arg: true}, package: {arg: true}, "fixture-binaries": {}})
 if len($g.errors) != 0 then raise("PACKAGE_ARGS", join($g.errors, "; ")) end
 if $g.opts.help then
-  print("usage: mix tools/package.mix --release V --commit FULL_SHA [--arch ARCH] [--bin-dir DIR] [--out DIR] [--fixture-binaries for tests only]")
+  print("usage: mix tools/package.mix --release V --commit FULL_SHA [--package desktop|server|all] [--arch ARCH] [--bin-dir DIR] [--out DIR] [--fixture-binaries for tests only]")
   exit(0)
 end
 
@@ -78,6 +78,12 @@ $mix = realpath("/proc/self/exe")
 if $mix == nil then raise("PACKAGE_MIX", "cannot resolve the running Mix binary") end
 $bin_dir = $g.opts["bin-dir"] ?? ($source .. "/target/release")
 $out = $g.opts.out ?? ($source .. "/dist/release")
+$selection = $g.opts.package ?? "all"
+if not contains(["desktop", "server", "all"], $selection) then
+  raise("PACKAGE_ARGS", "--package must be desktop, server or all")
+end
+$selected = if $selection == "all" then sort(keys($PACKAGES))
+  elif $selection == "desktop" then ["mixos-desktop"] else ["mixos-server"] end
 
 if is_dir($out) and len(glob($out .. "/*")) != 0 then
   raise("PACKAGE_OUTPUT", "output directory is not empty: " .. $out)
@@ -87,7 +93,7 @@ $stage = $out .. "/.stage"
 remove_dir($stage)
 $archives = []
 
-for $pkg in sort(keys($PACKAGES))
+for $pkg in $selected
   $name = $pkg .. "-" .. $version .. "-linux-" .. $arch
   $top = $stage .. "/" .. $name
   mkdir($top .. "/bin", {parents: true})

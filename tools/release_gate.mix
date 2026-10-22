@@ -1,16 +1,18 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Exact-source CBC gate for an x86_64 glibc release candidate.
--- Run only on cbc2/cbc3 through cbc-build.mix --commit FULL_SHA.
+-- Run on the designated CBC worker through cbc-build.mix --commit FULL_SHA.
 --
 --   mix tools/release_gate.mix check --commit FULL_SHA
 --   mix tools/release_gate.mix package --commit FULL_SHA --version V --out DIR
 --       --rootfs UBUNTU_24_04_ROOT --target-dir CBC_TARGET_DIR
+--       --cargo-home CARGO_HOME --rustup-home RUSTUP_HOME
 --
 -- The package step builds each selected Cargo package once, then packages
 -- those same binaries. It never installs into /opt/mixos or publishes a release.
 
 $g = getopt(args(), {commit: {arg: true}, version: {arg: true}, out: {arg: true},
-  rootfs: {arg: true}, "target-dir": {arg: true}})
+  rootfs: {arg: true}, "target-dir": {arg: true},
+  "cargo-home": {arg: true}, "rustup-home": {arg: true}, package: {arg: true}})
 if len($g.errors) != 0 or len($g.rest) != 1 or not contains(["check", "package"], $g.rest[0]) then
   raise("RELEASE_ARGS", "usage: mix tools/release_gate.mix check|package --commit FULL_SHA [--version V --out DIR]")
 end
@@ -41,8 +43,12 @@ fn stage($name, $argv, $timeout)
   $tail = run_argv(["tail", "-n", $lines, $log], {timeout: 20, max_output: 100000})
   print(trim($tail.stdout))
   print("LOG " .. $name .. " " .. $log)
-  if $r.exit_code != 0 then raise("RELEASE_GATE", $name .. " failed (rc " .. to_string($r.exit_code) .. ")") end
   if $r.timed_out then raise("RELEASE_GATE", $name .. " timed out") end
+  if $r.exit_code != 0 then
+    $reason = if $r.signal != nil then "signal " .. to_string($r.signal)
+      else "rc " .. to_string($r.exit_code) end
+    raise("RELEASE_GATE", $name .. " failed (" .. $reason .. ")")
+  end
   print("PASS " .. $name)
 end
 
@@ -77,6 +83,12 @@ $version = $g.opts.version ?? ""
 $out = $g.opts.out ?? ""
 $rootfs = $g.opts.rootfs ?? ""
 $target_dir = $g.opts["target-dir"] ?? ""
+$cargo_home = $g.opts["cargo-home"] ?? ""
+$rustup_home = $g.opts["rustup-home"] ?? ""
+$selection = $g.opts.package ?? "all"
+if not contains(["desktop", "server", "all"], $selection) then
+  raise("RELEASE_ARGS", "--package must be desktop, server or all")
+end
 if not re_match($version, "^[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?$") then
   raise("RELEASE_ARGS", "package needs --version V")
 end
@@ -87,19 +99,53 @@ if (not starts_with($target_dir, "/") or not is_dir($target_dir) or
     not starts_with($out, $target_dir .. "/")) then
   raise("RELEASE_ARGS", "package needs --target-dir and --out inside it")
 end
+if (not starts_with($cargo_home, "/") or not is_dir($cargo_home) or
+    not starts_with($rustup_home, "/") or not is_dir($rustup_home)) then
+  raise("RELEASE_ARGS", "package needs absolute --cargo-home and --rustup-home")
+end
+
+-- Bind only known paths into the build root, and refuse a pre-existing
+-- mount at the requested destination if it points at a different inode.
+fn bind_once($source, $dest, $file)
+  if $file then
+    mkdir(dirname($dest), {parents: true})
+    if not exists($dest, {follow_symlinks: false}) then write_file($dest, "") end
+  else
+    mkdir($dest, {parents: true})
+  end
+  if run_argv(["findmnt", "-M", $dest], {timeout: 10}).exit_code != 0 then
+    run_argv_must(["mount", "--bind", $source, $dest], {timeout: 20})
+  end
+  $a = stat($source)
+  $b = stat($dest)
+  if $a.dev != $b.dev or $a.ino != $b.ino then
+    raise("RELEASE_ROOT", "build-root bind differs from source: " .. $dest)
+  end
+end
+
+bind_once(cwd(), $rootfs .. cwd(), false)
+bind_once($target_dir, $rootfs .. $target_dir, false)
+bind_once($cargo_home, $rootfs .. $cargo_home, false)
+bind_once($rustup_home, $rootfs .. $rustup_home, false)
+bind_once("/proc", $rootfs .. "/proc", false)
+bind_once("/dev/null", $rootfs .. "/dev/null", true)
+$device = run_argv(["chroot", $rootfs, "/usr/bin/test", "-c", "/dev/null"], {timeout: 20})
+if $device.exit_code != 0 then raise("RELEASE_ROOT", "build-root /dev/null is not a device") end
 $toolchain_match = re_find(read_file("rust-toolchain.toml"), "channel = \"([^\"]+)\"")
 if len($toolchain_match) != 1 then raise("RELEASE_TOOLCHAIN", "one pinned Rust channel is required") end
-$rust_bin = "/root/.rustup/toolchains/" .. $toolchain_match[0].groups[0] .. "-x86_64-unknown-linux-gnu/bin"
+$rust_bin = $rustup_home .. "/toolchains/" .. $toolchain_match[0].groups[0] .. "-x86_64-unknown-linux-gnu/bin"
 $chroot = ["chroot", $rootfs, "/usr/bin/env", "-C", cwd(),
-  "PATH=" .. $rust_bin .. ":/usr/bin:/bin", "HOME=/root", "CARGO_HOME=/root/.cargo",
-  "RUSTUP_HOME=/root/.rustup", "CARGO_TARGET_DIR=" .. $target_dir,
-  "CARGO_INCREMENTAL=0", "RUSTC_WRAPPER="]
+  "PATH=" .. $rust_bin .. ":/usr/bin:/bin", "HOME=" .. dirname($cargo_home),
+  "CARGO_HOME=" .. $cargo_home, "RUSTUP_HOME=" .. $rustup_home, "CARGO_TARGET_DIR=" .. $target_dir,
+  "CARGO_INCREMENTAL=0", "CARGO_BUILD_JOBS=4", "RUSTC_WRAPPER="]
 $libc = trim(run_argv_must(concat($chroot, ["/usr/bin/getconf", "GNU_LIBC_VERSION"]), {timeout: 20}))
 if $libc != "glibc 2.39" then raise("RELEASE_GLIBC", "build root needs glibc 2.39; got " .. $libc) end
 $root_head = trim(run_argv_must(concat($chroot, ["/usr/bin/git", "rev-parse", "HEAD"]), {timeout: 20}))
 if $root_head != $commit then raise("RELEASE_SOURCE", "build root does not see the exact CBC source") end
 $crates = []
-for $pkg in sort(keys($release.packages))
+$selected = if $selection == "all" then sort(keys($release.packages))
+  elif $selection == "desktop" then ["mixos-desktop"] else ["mixos-server"] end
+for $pkg in $selected
   for $b in $release.packages[$pkg]
     if $b != "maild" then
       $crate = $release.crates[$b]
@@ -118,5 +164,5 @@ push($build, "compd/backend-all")
 stage("release-build", $build, 7200)
 stage("package", concat($chroot, [$target_dir .. "/release/mix", "tools/package.mix",
   "--release", $version, "--commit", $commit, "--arch", "x86_64",
-  "--bin-dir", $target_dir .. "/release", "--out", $out]), 1200)
+  "--bin-dir", $target_dir .. "/release", "--out", $out, "--package", $selection]), 1200)
 print("PACKAGED exact source " .. $commit .. " at " .. $out)

@@ -248,6 +248,8 @@ mod tests {
             .enable_all()
             .build()
             .unwrap();
-        rt.block_on(async { assert!(listener(&socket).is_ok()) });
+        rt.block_on(async {
+            listener(&socket).unwrap_or_else(|e| panic!("stale socket was not replaced: {e:#}"));
+        });
     }
 }

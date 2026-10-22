@@ -234,6 +234,7 @@ One line per component with a page: kind, then install profiles. The
 - [Decision — commands take parameters and return results](https://mixos.dev/docs/decisions/2026-10-20-commands-take-parameters.md): Typed parameters, returned results and one UI-free command registry for every dispatch path.
 - [Render-node headless compositor backend](https://mixos.dev/docs/decisions/2026-10-20-headless-backend.md): A third compd backend for offscreen testing and recording.
 - [Decision — desktop theming and style](https://mixos.dev/docs/decisions/2026-10-21-desktop-theming-and-style.md): Every MixOS egui application takes its whole look from one install call and reads it back from the context; every style token and chrome colour is readable and tunable over the Bus for the session, one application or one window, and the terminal's colours for the session, under any design source; later tokens are data, never a migration; the compositor's title bars follow each window's look; the scroll bar, the form row and the fields are toolkit widgets; a gate refuses literals and raw widgets in applications.
+- [Weekly CBC releases, starting with Linux x86_64](https://mixos.dev/docs/decisions/2026-10-22-weekly-cbc-releases.md): MixOS release builds run on designated CBC workers at an exact source commit; GitHub hosts the verified result.
 
 ### Specs
 
@@ -248,6 +249,7 @@ One line per component with a page: kind, then install profiles. The
 ### Contributor guides
 
 - [Source and build map](https://mixos.dev/docs/dev/2026-10-21-source-and-build-map.md): The current Mix interpreter, shell, executable, application and documentation source paths, how builds relate to installed versions, and where staged decisions need implementation checks.
+- [Releasing MixOS](https://mixos.dev/docs/dev/releasing.md): Exact-source CBC gates, x86_64 glibc packaging, GitHub drafts, and verified gold installation.
 
 ## Optional
 
