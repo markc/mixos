@@ -19,9 +19,11 @@ settings panel can drive it), and on any Linux, not only MixOS.
 
 Your catalogue is `~/.config/mixos/releases.mx`. Until you write one,
 releasesd follows MixOS itself: `mixos-desktop` (the compositor and the
-apps) and `mixos-server` (`mix` and the headless services), both built by
-the MixOS release workflow. Your own catalogue replaces that list, so keep
-those two entries at the top to keep MixOS current:
+apps) and `mixos-server` (`mix` and the headless services). This shows the
+latest published version and permits a **per-user** install. It does not
+replace the system's `/opt/mixos` tree or activate a running desk. Your own
+catalogue replaces that list, so keep those entries if you want to follow
+MixOS releases:
 
 ```text
 {
@@ -80,6 +82,18 @@ GitHub allows 60 requests an hour.
 
 It never overwrites a file it didn't create. If something of yours is
 already at `~/.local/bin/example`, the install leaves it alone and says so.
+
+## MixOS system updates
+
+An operator updates the canonical `/opt/mixos` tree from the published
+`release.manifest.mx` and matching archives with `tools/gold_release.mix`.
+The installer checks the trusted manifest digest, archive and binary hashes,
+architecture and glibc floor. `plan` shows the changes; `apply` records a
+receipt and backups; `rollback --receipt ID` restores the previous files.
+It needs one deliberate privileged invocation and does not restart a desk.
+Shared desks see the host tree through their mount; isolated desks need a
+verified copy followed by their own restart. Prefs does not yet drive this
+system update path.
 
 ## On the Bus
 

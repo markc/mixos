@@ -288,6 +288,7 @@ cancel = Cancel
 toggle-mode = Light or dark interface
 panels = Editors
 apps-title = Applications
+apps-scope = These installs are per user. MixOS system updates to /opt/mixos require an operator.
 col-app = Application
 col-installed = Installed
 col-latest = Latest

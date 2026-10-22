@@ -211,6 +211,7 @@
                         <a href="#the-catalogue">The catalogue</a>
                         <a href="#everyday-use">Everyday use</a>
                         <a href="#what-an-install-does">What an install does</a>
+                        <a href="#mixos-system-updates">MixOS system updates</a>
                         <a href="#on-the-bus">On the Bus</a>
                         <a href="#sharing-one-install-with-a-container">Sharing one install with a container</a>
                         <a href="#source-and-tests">Source and tests</a>
@@ -250,9 +251,11 @@ settings panel can drive it), and on any Linux, not only MixOS.</p>
 <h2 id="the-catalogue">The catalogue</h2>
 <p>Your catalogue is <code>~/.config/mixos/releases.mx</code>. Until you write one,
 releasesd follows MixOS itself: <code>mixos-desktop</code> (the compositor and the
-apps) and <code>mixos-server</code> (<code>mix</code> and the headless services), both built by
-the MixOS release workflow. Your own catalogue replaces that list, so keep
-those two entries at the top to keep MixOS current:</p>
+apps) and <code>mixos-server</code> (<code>mix</code> and the headless services). This shows the
+latest published version and permits a <strong>per-user</strong> install. It does not
+replace the system's <code>/opt/mixos</code> tree or activate a running desk. Your own
+catalogue replaces that list, so keep those entries if you want to follow
+MixOS releases:</p>
 <pre><code class="language-text">{
   schema: 1,
   apps: [
@@ -302,6 +305,16 @@ through <code>current</code>, so an update or rollback needs no relinking.</li>
 </ol>
 <p>It never overwrites a file it didn't create. If something of yours is
 already at <code>~/.local/bin/example</code>, the install leaves it alone and says so.</p>
+<h2 id="mixos-system-updates">MixOS system updates</h2>
+<p>An operator updates the canonical <code>/opt/mixos</code> tree from the published
+<code>release.manifest.mx</code> and matching archives with <code>tools/gold_release.mix</code>.
+The installer checks the trusted manifest digest, archive and binary hashes,
+architecture and glibc floor. <code>plan</code> shows the changes; <code>apply</code> records a
+receipt and backups; <code>rollback --receipt ID</code> restores the previous files.
+It needs one deliberate privileged invocation and does not restart a desk.
+Shared desks see the host tree through their mount; isolated desks need a
+verified copy followed by their own restart. Prefs does not yet drive this
+system update path.</p>
 <h2 id="on-the-bus">On the Bus</h2>
 <p>The session runs the service as <code>releases</code>:</p>
 <pre><code class="language-sh">send releases releases.check

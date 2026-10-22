@@ -62,6 +62,8 @@ pub mod compiler {
     pub const DEFS_PATH: &str = "src/defs.rs";
 
     const HEADER: &str = "\
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Compiled lsh definitions: bytecode, strings, charsets, the language table
 //! and file associations.
 //!

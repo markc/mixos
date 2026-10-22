@@ -4,11 +4,13 @@
 --
 --   mix tools/release_gate.mix check --commit FULL_SHA
 --   mix tools/release_gate.mix package --commit FULL_SHA --version V --out DIR
+--       --rootfs UBUNTU_24_04_ROOT --target-dir CBC_TARGET_DIR
 --
 -- The package step builds each selected Cargo package once, then packages
 -- those same binaries. It never installs into /opt/mixos or publishes a release.
 
-$g = getopt(args(), {commit: {arg: true}, version: {arg: true}, out: {arg: true}})
+$g = getopt(args(), {commit: {arg: true}, version: {arg: true}, out: {arg: true},
+  rootfs: {arg: true}, "target-dir": {arg: true}})
 if len($g.errors) != 0 or len($g.rest) != 1 or not contains(["check", "package"], $g.rest[0]) then
   raise("RELEASE_ARGS", "usage: mix tools/release_gate.mix check|package --commit FULL_SHA [--version V --out DIR]")
 end
@@ -27,7 +29,14 @@ mkdir($log_dir, {parents: true})
 fn stage($name, $argv, $timeout)
   $log = $log_dir .. "/" .. $name .. ".log"
   print("START " .. $name .. " " .. join($argv, " "))
-  $r = run_argv($argv, {timeout: $timeout, stderr: "stdout", stdout: {file: $log}})
+  $opts = {timeout: $timeout, stderr: "stdout", stdout: {file: $log}}
+  if $name == "test" then
+    $opts.env = {MIXOS_TEST_MIX: realpath("target/debug/mix"),
+      MIXOS_TEST_NODED: realpath("target/debug/noded"),
+      MIXOS_TEST_EDITD: realpath("target/debug/editd"),
+      MIXOS_TEST_DOPUS: realpath("target/debug/dopus")}
+  end
+  $r = run_argv($argv, $opts)
   $lines = if $r.exit_code == 0 then "20" else "100" end
   $tail = run_argv(["tail", "-n", $lines, $log], {timeout: 20, max_output: 100000})
   print(trim($tail.stdout))
@@ -45,7 +54,13 @@ if $mode == "check" then
     "-D", "clippy::all", "-A", "clippy::module_inception", "-A", "clippy::too_many_arguments",
     "-A", "clippy::type_complexity", "-A", "clippy::large_enum_variant",
     "-A", "clippy::mutable_key_type"], 5400)
-  stage("test", ["cargo", "test", "--workspace", "--locked", "--no-fail-fast"], 5400)
+  -- The 64 MiB editd latency ceiling is a performance probe for the shipped
+  -- code. Run it alone in release mode; debug builds need over 1 s even on
+  -- CBC hosts and do not measure the release binary's performance.
+  stage("test", ["cargo", "test", "--workspace", "--locked", "--no-fail-fast", "--",
+    "--skip", "large_file_open_edit_get_latency"], 5400)
+  stage("latency", ["cargo", "test", "--release", "-p", "editd", "--test", "dispatch", "--locked",
+    "large_file_open_edit_get_latency", "--", "--exact", "--nocapture"], 3600)
   $mix = "target/debug/mix"
   stage("closure", [$mix, "tools/closure_gate.mix", "--locked"], 900)
   stage("layers", [$mix, "tools/layering_gate.mix", "--manifest-path", "Cargo.toml", "--locked"], 900)
@@ -60,10 +75,29 @@ end
 
 $version = $g.opts.version ?? ""
 $out = $g.opts.out ?? ""
+$rootfs = $g.opts.rootfs ?? ""
+$target_dir = $g.opts["target-dir"] ?? ""
 if not re_match($version, "^[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?$") then
   raise("RELEASE_ARGS", "package needs --version V")
 end
-if not starts_with($out, "/") then raise("RELEASE_ARGS", "package needs an absolute --out directory") end
+if not starts_with($rootfs, "/") or not is_dir($rootfs) then
+  raise("RELEASE_ARGS", "package needs an existing absolute --rootfs")
+end
+if (not starts_with($target_dir, "/") or not is_dir($target_dir) or
+    not starts_with($out, $target_dir .. "/")) then
+  raise("RELEASE_ARGS", "package needs --target-dir and --out inside it")
+end
+$toolchain_match = re_find(read_file("rust-toolchain.toml"), "channel = \"([^\"]+)\"")
+if len($toolchain_match) != 1 then raise("RELEASE_TOOLCHAIN", "one pinned Rust channel is required") end
+$rust_bin = "/root/.rustup/toolchains/" .. $toolchain_match[0].groups[0] .. "-x86_64-unknown-linux-gnu/bin"
+$chroot = ["chroot", $rootfs, "/usr/bin/env", "-C", cwd(),
+  "PATH=" .. $rust_bin .. ":/usr/bin:/bin", "HOME=/root", "CARGO_HOME=/root/.cargo",
+  "RUSTUP_HOME=/root/.rustup", "CARGO_TARGET_DIR=" .. $target_dir,
+  "CARGO_INCREMENTAL=0", "RUSTC_WRAPPER="]
+$libc = trim(run_argv_must(concat($chroot, ["/usr/bin/getconf", "GNU_LIBC_VERSION"]), {timeout: 20}))
+if $libc != "glibc 2.39" then raise("RELEASE_GLIBC", "build root needs glibc 2.39; got " .. $libc) end
+$root_head = trim(run_argv_must(concat($chroot, ["/usr/bin/git", "rev-parse", "HEAD"]), {timeout: 20}))
+if $root_head != $commit then raise("RELEASE_SOURCE", "build root does not see the exact CBC source") end
 $crates = []
 for $pkg in sort(keys($release.packages))
   for $b in $release.packages[$pkg]
@@ -74,7 +108,7 @@ for $pkg in sort(keys($release.packages))
     end
   end
 end
-$build = ["cargo", "build", "--release", "--locked"]
+$build = concat($chroot, [$rust_bin .. "/cargo", "build", "--release", "--locked"])
 for $crate in $crates
   push($build, "-p")
   push($build, $crate)
@@ -82,6 +116,7 @@ end
 push($build, "--features")
 push($build, "compd/backend-all")
 stage("release-build", $build, 7200)
-stage("package", ["target/release/mix", "tools/package.mix", "--release", $version,
-  "--commit", $commit, "--arch", "x86_64", "--bin-dir", "target/release", "--out", $out], 1200)
+stage("package", concat($chroot, [$target_dir .. "/release/mix", "tools/package.mix",
+  "--release", $version, "--commit", $commit, "--arch", "x86_64",
+  "--bin-dir", $target_dir .. "/release", "--out", $out]), 1200)
 print("PACKAGED exact source " .. $commit .. " at " .. $out)

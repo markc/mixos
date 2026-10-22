@@ -27,7 +27,7 @@ $tar = $dist .. "/" .. $name .. ".tar.gz"
 run_argv_must(["tar", "-czf", $tar, "-C", $base .. "/pack", $name], {timeout: 30})
 $manifest = $dist .. "/release.manifest.mx"
 write_file($manifest, data_encode({schema: 1, version: "0.1.2", source: $source,
-  platform: "linux-x86_64-glibc", archives: [{name: "mixos-desktop", asset: basename($tar),
+  platform: "linux-x86_64-glibc", glibc_floor: "2.39", archives: [{name: "mixos-desktop", asset: basename($tar),
   sha256: hash_file($tar, "sha256"), binaries: [{name: "mock", sha256: hash_file($base .. "/pack/" .. $name .. "/bin/mock", "sha256")}]}]}) .. "\n")
 $sha = hash_file($manifest, "sha256")
 $base_argv = [$mix, $repo .. "/tools/gold_release.mix"]

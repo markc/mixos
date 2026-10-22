@@ -2,7 +2,7 @@
 -- Copyright 2026 Mark Constable <mc@mixos.dev>
 -- version: 0.1.0
 -- package.mix: the release tarballs, from binaries cargo has already built.
--- Run by .github/workflows/release.yml with the freshly built mix; locally:
+-- Run inside the Ubuntu 24.04 CBC build root with the freshly built mix:
 --
 --   mix tools/package.mix --release 0.1.1 --commit FULL_SHA [--arch x86_64] [--bin-dir target/release] [--out dist/release]
 --
@@ -14,7 +14,7 @@
 --
 -- releasesd picks between them by the catalogue name (mixos-server,
 -- mixos-desktop), so neither needs an `asset` pattern. The checksum file is
--- written by the release job over every tarball, not here.
+-- written here over every tarball and the manifest.
 
 $g = getopt(args(), {help: {short: "h"}, release: {arg: true}, commit: {arg: true}, arch: {arg: true},
   "bin-dir": {arg: true}, out: {arg: true}, "fixture-binaries": {}})
@@ -65,6 +65,14 @@ if $head != $commit then raise("PACKAGE_SOURCE", "source checkout differs from -
 $arch = $g.opts.arch ?? platform().arch
 if not re_match($arch, "^(x86_64|aarch64)$") then raise("PACKAGE_ARGS", "--arch must be x86_64 or aarch64") end
 if $arch != platform().arch then raise("PACKAGE_ARCH", "--arch must match the build host") end
+$glibc = "fixture"
+if not $g.opts["fixture-binaries"] then
+  $libc = trim(run_argv_must(["getconf", "GNU_LIBC_VERSION"], {timeout: 10}))
+  if $libc != "glibc 2.39" then
+    raise("PACKAGE_GLIBC", "the first release must be packaged and exercised in the Ubuntu 24.04 glibc 2.39 build root; got " .. $libc)
+  end
+  $glibc = "2.39"
+end
 -- Use the native Mix executing this packager, including release bootstrap.
 $mix = realpath("/proc/self/exe")
 if $mix == nil then raise("PACKAGE_MIX", "cannot resolve the running Mix binary") end
@@ -153,7 +161,8 @@ end
 remove_dir($stage)
 $manifest = $out .. "/release.manifest.mx"
 write_file($manifest, data_encode({schema: 1, version: $version, source: $commit,
-  platform: "linux-" .. $arch .. "-glibc", fixture: $g.opts["fixture-binaries"], archives: $archives}) .. "\n")
+  platform: "linux-" .. $arch .. "-glibc", glibc_floor: $glibc,
+  fixture: $g.opts["fixture-binaries"], archives: $archives}) .. "\n")
 $sums = []
 for $row in $archives push($sums, $row.sha256 .. "  " .. $row.asset) end
 push($sums, hash_file($manifest, "sha256") .. "  " .. basename($manifest))

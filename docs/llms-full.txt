@@ -780,115 +780,115 @@ checked separately by the layering gate.
 
 | Package | Component | Kind | Layer | Contract | Version |
 |---|---|---|---|---|---|
-| [backdrop](https://github.com/markc/mixos/blob/main/apps/backdrop/Cargo.toml) | backdrop | app | desktop | none | 0.1.1 |
-| [wallpaper](https://github.com/markc/mixos/blob/main/apps/backdrop/crates/wallpaper/Cargo.toml) | backdrop | app | core | none | 0.1.1 |
-| [busviewer](https://github.com/markc/mixos/blob/main/apps/busviewer/Cargo.toml) | busviewer | app | desktop | public | 0.1.1 |
-| [inspector](https://github.com/markc/mixos/blob/main/apps/busviewer/crates/inspector/Cargo.toml) | busviewer | app | core | none | 0.1.1 |
-| [ced](https://github.com/markc/mixos/blob/main/apps/ced/Cargo.toml) | ced | app | desktop | public | 0.1.1 |
-| [documents](https://github.com/markc/mixos/blob/main/apps/ced/crates/documents/Cargo.toml) | ced | app | core | none | 0.1.1 |
-| [dopus](https://github.com/markc/mixos/blob/main/apps/dopus/Cargo.toml) | dopus | app | desktop | public | 0.1.1 |
-| [dopus-core](https://github.com/markc/mixos/blob/main/apps/dopus/crates/dopus-core/Cargo.toml) | dopus | app | core | none | 0.1.1 |
-| [email](https://github.com/markc/mixos/blob/main/apps/email/Cargo.toml) | email | app | desktop | public | 0.1.1 |
-| [jmap](https://github.com/markc/mixos/blob/main/apps/email/crates/jmap/Cargo.toml) | email | app | core | none | 0.1.1 |
-| [monitor](https://github.com/markc/mixos/blob/main/apps/monitor/Cargo.toml) | monitor | app | desktop | public | 0.1.1 |
-| [vitals](https://github.com/markc/mixos/blob/main/apps/monitor/crates/vitals/Cargo.toml) | monitor | app | core | none | 0.1.1 |
-| [prefs](https://github.com/markc/mixos/blob/main/apps/prefs/Cargo.toml) | prefs | app | desktop | public | 0.1.1 |
-| [preferences](https://github.com/markc/mixos/blob/main/apps/prefs/crates/preferences/Cargo.toml) | prefs | app | core | none | 0.1.1 |
-| [screenshot](https://github.com/markc/mixos/blob/main/apps/screenshot/Cargo.toml) | screenshot | app | desktop | public | 0.1.1 |
-| [annotation](https://github.com/markc/mixos/blob/main/apps/screenshot/crates/annotation/Cargo.toml) | screenshot | app | core | none | 0.1.1 |
+| [backdrop](https://github.com/markc/mixos/blob/main/apps/backdrop/Cargo.toml) | backdrop | app | desktop | none | 0.1.2 |
+| [wallpaper](https://github.com/markc/mixos/blob/main/apps/backdrop/crates/wallpaper/Cargo.toml) | backdrop | app | core | none | 0.1.2 |
+| [busviewer](https://github.com/markc/mixos/blob/main/apps/busviewer/Cargo.toml) | busviewer | app | desktop | public | 0.1.2 |
+| [inspector](https://github.com/markc/mixos/blob/main/apps/busviewer/crates/inspector/Cargo.toml) | busviewer | app | core | none | 0.1.2 |
+| [ced](https://github.com/markc/mixos/blob/main/apps/ced/Cargo.toml) | ced | app | desktop | public | 0.1.2 |
+| [documents](https://github.com/markc/mixos/blob/main/apps/ced/crates/documents/Cargo.toml) | ced | app | core | none | 0.1.2 |
+| [dopus](https://github.com/markc/mixos/blob/main/apps/dopus/Cargo.toml) | dopus | app | desktop | public | 0.1.2 |
+| [dopus-core](https://github.com/markc/mixos/blob/main/apps/dopus/crates/dopus-core/Cargo.toml) | dopus | app | core | none | 0.1.2 |
+| [email](https://github.com/markc/mixos/blob/main/apps/email/Cargo.toml) | email | app | desktop | public | 0.1.2 |
+| [jmap](https://github.com/markc/mixos/blob/main/apps/email/crates/jmap/Cargo.toml) | email | app | core | none | 0.1.2 |
+| [monitor](https://github.com/markc/mixos/blob/main/apps/monitor/Cargo.toml) | monitor | app | desktop | public | 0.1.2 |
+| [vitals](https://github.com/markc/mixos/blob/main/apps/monitor/crates/vitals/Cargo.toml) | monitor | app | core | none | 0.1.2 |
+| [prefs](https://github.com/markc/mixos/blob/main/apps/prefs/Cargo.toml) | prefs | app | desktop | public | 0.1.2 |
+| [preferences](https://github.com/markc/mixos/blob/main/apps/prefs/crates/preferences/Cargo.toml) | prefs | app | core | none | 0.1.2 |
+| [screenshot](https://github.com/markc/mixos/blob/main/apps/screenshot/Cargo.toml) | screenshot | app | desktop | public | 0.1.2 |
+| [annotation](https://github.com/markc/mixos/blob/main/apps/screenshot/crates/annotation/Cargo.toml) | screenshot | app | core | none | 0.1.2 |
 | [term](https://github.com/markc/mixos/blob/main/apps/term/Cargo.toml) | term | app | desktop | public | 0.4.0 |
-| [term-core](https://github.com/markc/mixos/blob/main/apps/term/crates/term-core/Cargo.toml) | term | app | core | none | 0.1.1 |
-| [term-render](https://github.com/markc/mixos/blob/main/apps/term/crates/term-render/Cargo.toml) | term | app | desktop | none | 0.1.1 |
-| [tray](https://github.com/markc/mixos/blob/main/apps/tray/Cargo.toml) | tray | app | desktop | none | 0.1.1 |
-| [mesh-sign](https://github.com/markc/mixos/blob/main/cli/mesh-sign/Cargo.toml) | mesh-sign | cli | core | none | 0.1.1 |
+| [term-core](https://github.com/markc/mixos/blob/main/apps/term/crates/term-core/Cargo.toml) | term | app | core | none | 0.1.2 |
+| [term-render](https://github.com/markc/mixos/blob/main/apps/term/crates/term-render/Cargo.toml) | term | app | desktop | none | 0.1.2 |
+| [tray](https://github.com/markc/mixos/blob/main/apps/tray/Cargo.toml) | tray | app | desktop | none | 0.1.2 |
+| [mesh-sign](https://github.com/markc/mixos/blob/main/cli/mesh-sign/Cargo.toml) | mesh-sign | cli | core | none | 0.1.2 |
 | [mix-shell](https://github.com/markc/mixos/blob/main/cli/mix-shell/Cargo.toml) | mix-shell | cli | mix | public | 0.117.0 |
-| [mixos-mcp](https://github.com/markc/mixos/blob/main/cli/mixos-mcp/Cargo.toml) | mixos-mcp | cli | core | none | 0.1.1 |
-| [system](https://github.com/markc/mixos/blob/main/cli/system/Cargo.toml) | system | cli | core | none | 0.1.1 |
-| [assets](https://github.com/markc/mixos/blob/main/libs/assets/Cargo.toml) | assets | lib | core | public | 0.1.1 |
-| [buildinfo](https://github.com/markc/mixos/blob/main/libs/buildinfo/Cargo.toml) | buildinfo | lib | core | none | 0.1.1 |
-| [bus](https://github.com/markc/mixos/blob/main/libs/bus/Cargo.toml) | bus | lib | core | none | 0.1.1 |
-| [citizen](https://github.com/markc/mixos/blob/main/libs/citizen/Cargo.toml) | citizen | lib | core | none | 0.1.1 |
+| [mixos-mcp](https://github.com/markc/mixos/blob/main/cli/mixos-mcp/Cargo.toml) | mixos-mcp | cli | core | none | 0.1.2 |
+| [system](https://github.com/markc/mixos/blob/main/cli/system/Cargo.toml) | system | cli | core | none | 0.1.2 |
+| [assets](https://github.com/markc/mixos/blob/main/libs/assets/Cargo.toml) | assets | lib | core | public | 0.1.2 |
+| [buildinfo](https://github.com/markc/mixos/blob/main/libs/buildinfo/Cargo.toml) | buildinfo | lib | core | none | 0.1.2 |
+| [bus](https://github.com/markc/mixos/blob/main/libs/bus/Cargo.toml) | bus | lib | core | none | 0.1.2 |
+| [citizen](https://github.com/markc/mixos/blob/main/libs/citizen/Cargo.toml) | citizen | lib | core | none | 0.1.2 |
 | [command](https://github.com/markc/mixos/blob/main/libs/command/Cargo.toml) | command | lib | core | public | 0.3.0 |
-| [config](https://github.com/markc/mixos/blob/main/libs/config/Cargo.toml) | config | lib | core | none | 0.1.1 |
-| [daemon](https://github.com/markc/mixos/blob/main/libs/daemon/Cargo.toml) | daemon | lib | core | none | 0.1.1 |
-| [davproto](https://github.com/markc/mixos/blob/main/libs/davproto/Cargo.toml) | davproto | lib | core | none | 0.1.1 |
-| [design](https://github.com/markc/mixos/blob/main/libs/design/Cargo.toml) | design | lib | core | none | 0.1.1 |
-| [edit](https://github.com/markc/mixos/blob/main/libs/edit/Cargo.toml) | edit | lib | core | none | 0.1.1 |
-| [editor-model](https://github.com/markc/mixos/blob/main/libs/editor-model/Cargo.toml) | editor-model | lib | core | none | 0.1.1 |
-| [editor](https://github.com/markc/mixos/blob/main/libs/editor/Cargo.toml) | editor | lib | desktop | none | 0.1.1 |
-| [expr](https://github.com/markc/mixos/blob/main/libs/expr/Cargo.toml) | expr | lib | core | none | 0.1.1 |
-| [files](https://github.com/markc/mixos/blob/main/libs/files/Cargo.toml) | files | lib | core | none | 0.1.1 |
-| [logging](https://github.com/markc/mixos/blob/main/libs/logging/Cargo.toml) | logging | lib | core | none | 0.1.1 |
-| [mds](https://github.com/markc/mixos/blob/main/libs/mds/Cargo.toml) | mds | lib | core | none | 0.1.1 |
-| [mimedb](https://github.com/markc/mixos/blob/main/libs/mimedb/Cargo.toml) | mimedb | lib | mix | none | 0.1.1 |
+| [config](https://github.com/markc/mixos/blob/main/libs/config/Cargo.toml) | config | lib | core | none | 0.1.2 |
+| [daemon](https://github.com/markc/mixos/blob/main/libs/daemon/Cargo.toml) | daemon | lib | core | none | 0.1.2 |
+| [davproto](https://github.com/markc/mixos/blob/main/libs/davproto/Cargo.toml) | davproto | lib | core | none | 0.1.2 |
+| [design](https://github.com/markc/mixos/blob/main/libs/design/Cargo.toml) | design | lib | core | none | 0.1.2 |
+| [edit](https://github.com/markc/mixos/blob/main/libs/edit/Cargo.toml) | edit | lib | core | none | 0.1.2 |
+| [editor-model](https://github.com/markc/mixos/blob/main/libs/editor-model/Cargo.toml) | editor-model | lib | core | none | 0.1.2 |
+| [editor](https://github.com/markc/mixos/blob/main/libs/editor/Cargo.toml) | editor | lib | desktop | none | 0.1.2 |
+| [expr](https://github.com/markc/mixos/blob/main/libs/expr/Cargo.toml) | expr | lib | core | none | 0.1.2 |
+| [files](https://github.com/markc/mixos/blob/main/libs/files/Cargo.toml) | files | lib | core | none | 0.1.2 |
+| [logging](https://github.com/markc/mixos/blob/main/libs/logging/Cargo.toml) | logging | lib | core | none | 0.1.2 |
+| [mds](https://github.com/markc/mixos/blob/main/libs/mds/Cargo.toml) | mds | lib | core | none | 0.1.2 |
+| [mimedb](https://github.com/markc/mixos/blob/main/libs/mimedb/Cargo.toml) | mimedb | lib | mix | none | 0.1.2 |
 | [mix](https://github.com/markc/mixos/blob/main/libs/mix/Cargo.toml) | mix | lib | mix | public | 0.117.0 |
-| [props](https://github.com/markc/mixos/blob/main/libs/props/Cargo.toml) | props | lib | core | none | 0.1.1 |
-| [scene](https://github.com/markc/mixos/blob/main/libs/scene/Cargo.toml) | scene | lib | core | none | 0.1.1 |
+| [props](https://github.com/markc/mixos/blob/main/libs/props/Cargo.toml) | props | lib | core | none | 0.1.2 |
+| [scene](https://github.com/markc/mixos/blob/main/libs/scene/Cargo.toml) | scene | lib | core | none | 0.1.2 |
 | [settings](https://github.com/markc/mixos/blob/main/libs/settings/Cargo.toml) | settings | lib | core | public | 0.8.0 |
-| [strict](https://github.com/markc/mixos/blob/main/libs/strict/Cargo.toml) | strict | lib | core | none | 0.1.1 |
-| [syntax](https://github.com/markc/mixos/blob/main/libs/syntax/Cargo.toml) | syntax | lib | core | none | 0.1.1 |
-| [test-broker](https://github.com/markc/mixos/blob/main/libs/test-broker/Cargo.toml) | test-broker | lib | core | none | 0.1.1 |
-| [thumbs](https://github.com/markc/mixos/blob/main/libs/thumbs/Cargo.toml) | thumbs | lib | core | none | 0.1.1 |
-| [toolkit](https://github.com/markc/mixos/blob/main/libs/toolkit/Cargo.toml) | toolkit | lib | desktop | none | 0.1.1 |
-| [blobd](https://github.com/markc/mixos/blob/main/services/blobd/Cargo.toml) | blobd | service | core | none | 0.1.1 |
+| [strict](https://github.com/markc/mixos/blob/main/libs/strict/Cargo.toml) | strict | lib | core | none | 0.1.2 |
+| [syntax](https://github.com/markc/mixos/blob/main/libs/syntax/Cargo.toml) | syntax | lib | core | none | 0.1.2 |
+| [test-broker](https://github.com/markc/mixos/blob/main/libs/test-broker/Cargo.toml) | test-broker | lib | core | none | 0.1.2 |
+| [thumbs](https://github.com/markc/mixos/blob/main/libs/thumbs/Cargo.toml) | thumbs | lib | core | none | 0.1.2 |
+| [toolkit](https://github.com/markc/mixos/blob/main/libs/toolkit/Cargo.toml) | toolkit | lib | desktop | none | 0.1.2 |
+| [blobd](https://github.com/markc/mixos/blob/main/services/blobd/Cargo.toml) | blobd | service | core | none | 0.1.2 |
 | [bridged](https://github.com/markc/mixos/blob/main/services/bridged/component.mx) | bridged | service | desktop | public | 0.2.0 |
 | [compd](https://github.com/markc/mixos/blob/main/services/compd/Cargo.toml) | compd | service | desktop | public | 0.2.0 |
-| [comp-model](https://github.com/markc/mixos/blob/main/services/compd/crates/comp-model/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
-| [comp-service](https://github.com/markc/mixos/blob/main/services/compd/crates/comp-service/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
-| [decor](https://github.com/markc/mixos/blob/main/services/compd/crates/decor/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
-| [dispatcher](https://github.com/markc/mixos/blob/main/services/compd/crates/dispatcher/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
-| [drivers](https://github.com/markc/mixos/blob/main/services/compd/crates/drivers/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
-| [edges](https://github.com/markc/mixos/blob/main/services/compd/crates/edges/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
-| [effects](https://github.com/markc/mixos/blob/main/services/compd/crates/effects/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
-| [frames](https://github.com/markc/mixos/blob/main/services/compd/crates/frames/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
-| [graphics](https://github.com/markc/mixos/blob/main/services/compd/crates/graphics/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
-| [headless](https://github.com/markc/mixos/blob/main/services/compd/crates/headless/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
-| [kms](https://github.com/markc/mixos/blob/main/services/compd/crates/kms/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
-| [ledger](https://github.com/markc/mixos/blob/main/services/compd/crates/ledger/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
-| [model](https://github.com/markc/mixos/blob/main/services/compd/crates/model/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
-| [motion](https://github.com/markc/mixos/blob/main/services/compd/crates/motion/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
-| [native](https://github.com/markc/mixos/blob/main/services/compd/crates/native/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
-| [nested](https://github.com/markc/mixos/blob/main/services/compd/crates/nested/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
-| [outputs](https://github.com/markc/mixos/blob/main/services/compd/crates/outputs/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
-| [policy-host](https://github.com/markc/mixos/blob/main/services/compd/crates/policy-host/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
-| [policy](https://github.com/markc/mixos/blob/main/services/compd/crates/policy/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
-| [protocols](https://github.com/markc/mixos/blob/main/services/compd/crates/protocols/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
-| [recorder](https://github.com/markc/mixos/blob/main/services/compd/crates/recorder/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
-| [render-gles](https://github.com/markc/mixos/blob/main/services/compd/crates/render-gles/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
-| [scene-host](https://github.com/markc/mixos/blob/main/services/compd/crates/scene-host/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
-| [scenegraph](https://github.com/markc/mixos/blob/main/services/compd/crates/scenegraph/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
-| [screencopy](https://github.com/markc/mixos/blob/main/services/compd/crates/screencopy/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
-| [seat](https://github.com/markc/mixos/blob/main/services/compd/crates/seat/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
-| [slots](https://github.com/markc/mixos/blob/main/services/compd/crates/slots/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
-| [surfaces](https://github.com/markc/mixos/blob/main/services/compd/crates/surfaces/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
-| [testkit](https://github.com/markc/mixos/blob/main/services/compd/crates/testkit/Cargo.toml) | compd | test | desktop | none | 0.1.1 |
-| [ui](https://github.com/markc/mixos/blob/main/services/compd/crates/ui/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
-| [wlcs](https://github.com/markc/mixos/blob/main/services/compd/crates/wlcs/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
-| [world](https://github.com/markc/mixos/blob/main/services/compd/crates/world/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
-| [x11-wm](https://github.com/markc/mixos/blob/main/services/compd/crates/x11-wm/Cargo.toml) | compd | service | desktop | none | 0.1.1 |
+| [comp-model](https://github.com/markc/mixos/blob/main/services/compd/crates/comp-model/Cargo.toml) | compd | service | desktop | none | 0.1.2 |
+| [comp-service](https://github.com/markc/mixos/blob/main/services/compd/crates/comp-service/Cargo.toml) | compd | service | desktop | none | 0.1.2 |
+| [decor](https://github.com/markc/mixos/blob/main/services/compd/crates/decor/Cargo.toml) | compd | service | desktop | none | 0.1.2 |
+| [dispatcher](https://github.com/markc/mixos/blob/main/services/compd/crates/dispatcher/Cargo.toml) | compd | service | desktop | none | 0.1.2 |
+| [drivers](https://github.com/markc/mixos/blob/main/services/compd/crates/drivers/Cargo.toml) | compd | service | desktop | none | 0.1.2 |
+| [edges](https://github.com/markc/mixos/blob/main/services/compd/crates/edges/Cargo.toml) | compd | service | desktop | none | 0.1.2 |
+| [effects](https://github.com/markc/mixos/blob/main/services/compd/crates/effects/Cargo.toml) | compd | service | desktop | none | 0.1.2 |
+| [frames](https://github.com/markc/mixos/blob/main/services/compd/crates/frames/Cargo.toml) | compd | service | desktop | none | 0.1.2 |
+| [graphics](https://github.com/markc/mixos/blob/main/services/compd/crates/graphics/Cargo.toml) | compd | service | desktop | none | 0.1.2 |
+| [headless](https://github.com/markc/mixos/blob/main/services/compd/crates/headless/Cargo.toml) | compd | service | desktop | none | 0.1.2 |
+| [kms](https://github.com/markc/mixos/blob/main/services/compd/crates/kms/Cargo.toml) | compd | service | desktop | none | 0.1.2 |
+| [ledger](https://github.com/markc/mixos/blob/main/services/compd/crates/ledger/Cargo.toml) | compd | service | desktop | none | 0.1.2 |
+| [model](https://github.com/markc/mixos/blob/main/services/compd/crates/model/Cargo.toml) | compd | service | desktop | none | 0.1.2 |
+| [motion](https://github.com/markc/mixos/blob/main/services/compd/crates/motion/Cargo.toml) | compd | service | desktop | none | 0.1.2 |
+| [native](https://github.com/markc/mixos/blob/main/services/compd/crates/native/Cargo.toml) | compd | service | desktop | none | 0.1.2 |
+| [nested](https://github.com/markc/mixos/blob/main/services/compd/crates/nested/Cargo.toml) | compd | service | desktop | none | 0.1.2 |
+| [outputs](https://github.com/markc/mixos/blob/main/services/compd/crates/outputs/Cargo.toml) | compd | service | desktop | none | 0.1.2 |
+| [policy-host](https://github.com/markc/mixos/blob/main/services/compd/crates/policy-host/Cargo.toml) | compd | service | desktop | none | 0.1.2 |
+| [policy](https://github.com/markc/mixos/blob/main/services/compd/crates/policy/Cargo.toml) | compd | service | desktop | none | 0.1.2 |
+| [protocols](https://github.com/markc/mixos/blob/main/services/compd/crates/protocols/Cargo.toml) | compd | service | desktop | none | 0.1.2 |
+| [recorder](https://github.com/markc/mixos/blob/main/services/compd/crates/recorder/Cargo.toml) | compd | service | desktop | none | 0.1.2 |
+| [render-gles](https://github.com/markc/mixos/blob/main/services/compd/crates/render-gles/Cargo.toml) | compd | service | desktop | none | 0.1.2 |
+| [scene-host](https://github.com/markc/mixos/blob/main/services/compd/crates/scene-host/Cargo.toml) | compd | service | desktop | none | 0.1.2 |
+| [scenegraph](https://github.com/markc/mixos/blob/main/services/compd/crates/scenegraph/Cargo.toml) | compd | service | desktop | none | 0.1.2 |
+| [screencopy](https://github.com/markc/mixos/blob/main/services/compd/crates/screencopy/Cargo.toml) | compd | service | desktop | none | 0.1.2 |
+| [seat](https://github.com/markc/mixos/blob/main/services/compd/crates/seat/Cargo.toml) | compd | service | desktop | none | 0.1.2 |
+| [slots](https://github.com/markc/mixos/blob/main/services/compd/crates/slots/Cargo.toml) | compd | service | desktop | none | 0.1.2 |
+| [surfaces](https://github.com/markc/mixos/blob/main/services/compd/crates/surfaces/Cargo.toml) | compd | service | desktop | none | 0.1.2 |
+| [testkit](https://github.com/markc/mixos/blob/main/services/compd/crates/testkit/Cargo.toml) | compd | test | desktop | none | 0.1.2 |
+| [ui](https://github.com/markc/mixos/blob/main/services/compd/crates/ui/Cargo.toml) | compd | service | desktop | none | 0.1.2 |
+| [wlcs](https://github.com/markc/mixos/blob/main/services/compd/crates/wlcs/Cargo.toml) | compd | service | desktop | none | 0.1.2 |
+| [world](https://github.com/markc/mixos/blob/main/services/compd/crates/world/Cargo.toml) | compd | service | desktop | none | 0.1.2 |
+| [x11-wm](https://github.com/markc/mixos/blob/main/services/compd/crates/x11-wm/Cargo.toml) | compd | service | desktop | none | 0.1.2 |
 | [dnsd](https://github.com/markc/mixos/blob/main/services/dnsd/Cargo.toml) | dnsd | service | core | public | 0.3.4 |
-| [dns-core](https://github.com/markc/mixos/blob/main/services/dnsd/crates/dns-core/Cargo.toml) | dnsd | service | core | none | 0.1.1 |
+| [dns-core](https://github.com/markc/mixos/blob/main/services/dnsd/crates/dns-core/Cargo.toml) | dnsd | service | core | none | 0.1.2 |
 | [editd](https://github.com/markc/mixos/blob/main/services/editd/Cargo.toml) | editd | service | core | public | 0.2.0 |
 | [hostd](https://github.com/markc/mixos/blob/main/services/hostd/Cargo.toml) | hostd | service | core | public | 0.1.0 |
-| [indexd](https://github.com/markc/mixos/blob/main/services/indexd/Cargo.toml) | indexd | service | core | public | 0.1.1 |
+| [indexd](https://github.com/markc/mixos/blob/main/services/indexd/Cargo.toml) | indexd | service | core | public | 0.1.2 |
 | [inputd](https://github.com/markc/mixos/blob/main/services/inputd/Cargo.toml) | inputd | service | core | public | 0.5.0 |
-| [inputd-core](https://github.com/markc/mixos/blob/main/services/inputd/crates/inputd-core/Cargo.toml) | inputd | service | core | none | 0.1.1 |
-| [inputd-schema](https://github.com/markc/mixos/blob/main/services/inputd/crates/inputd-schema/Cargo.toml) | inputd | service | core | none | 0.1.1 |
-| [maild](https://github.com/markc/mixos/blob/main/services/maild/Cargo.toml) | maild | service | core | public | 0.1.1 |
-| [maild-auth](https://github.com/markc/mixos/blob/main/services/maild/crates/maild-auth/Cargo.toml) | maild | service | core | none | 0.1.1 |
-| [maild-bayesian](https://github.com/markc/mixos/blob/main/services/maild/crates/maild-bayesian/Cargo.toml) | maild | service | core | none | 0.1.1 |
-| [maild-rules](https://github.com/markc/mixos/blob/main/services/maild/crates/maild-rules/Cargo.toml) | maild | service | core | none | 0.1.1 |
-| [mixtrayd](https://github.com/markc/mixos/blob/main/services/mixtrayd/Cargo.toml) | mixtrayd | service | desktop | public | 0.1.1 |
+| [inputd-core](https://github.com/markc/mixos/blob/main/services/inputd/crates/inputd-core/Cargo.toml) | inputd | service | core | none | 0.1.2 |
+| [inputd-schema](https://github.com/markc/mixos/blob/main/services/inputd/crates/inputd-schema/Cargo.toml) | inputd | service | core | none | 0.1.2 |
+| [maild](https://github.com/markc/mixos/blob/main/services/maild/Cargo.toml) | maild | service | core | public | 0.1.2 |
+| [maild-auth](https://github.com/markc/mixos/blob/main/services/maild/crates/maild-auth/Cargo.toml) | maild | service | core | none | 0.1.2 |
+| [maild-bayesian](https://github.com/markc/mixos/blob/main/services/maild/crates/maild-bayesian/Cargo.toml) | maild | service | core | none | 0.1.2 |
+| [maild-rules](https://github.com/markc/mixos/blob/main/services/maild/crates/maild-rules/Cargo.toml) | maild | service | core | none | 0.1.2 |
+| [mixtrayd](https://github.com/markc/mixos/blob/main/services/mixtrayd/Cargo.toml) | mixtrayd | service | desktop | public | 0.1.2 |
 | [monitord](https://github.com/markc/mixos/blob/main/services/monitord/Cargo.toml) | monitord | service | core | public | 0.1.0 |
 | [noded](https://github.com/markc/mixos/blob/main/services/noded/Cargo.toml) | noded | service | core | public | 0.18.3 |
-| [mesh-trust](https://github.com/markc/mixos/blob/main/services/noded/crates/mesh-trust/Cargo.toml) | noded | service | core | none | 0.1.1 |
-| [mesh](https://github.com/markc/mixos/blob/main/services/noded/crates/mesh/Cargo.toml) | noded | service | core | none | 0.1.1 |
+| [mesh-trust](https://github.com/markc/mixos/blob/main/services/noded/crates/mesh-trust/Cargo.toml) | noded | service | core | none | 0.1.2 |
+| [mesh](https://github.com/markc/mixos/blob/main/services/noded/crates/mesh/Cargo.toml) | noded | service | core | none | 0.1.2 |
 | [notifyd](https://github.com/markc/mixos/blob/main/services/notifyd/component.mx) | notifyd | service | desktop | public | 0.1.0 |
 | [portald](https://github.com/markc/mixos/blob/main/services/portald/Cargo.toml) | portald | service | core | public | 0.1.0 |
 | [releasesd](https://github.com/markc/mixos/blob/main/services/releasesd/component.mx) | releasesd | service | desktop | public | 0.2.0 |
 | [settingsd](https://github.com/markc/mixos/blob/main/services/settingsd/Cargo.toml) | settingsd | service | core | public | 0.1.0 |
 | [toolsd](https://github.com/markc/mixos/blob/main/services/toolsd/component.mx) | toolsd | service | core | public | 0.1.0 |
-| [webd](https://github.com/markc/mixos/blob/main/services/webd/Cargo.toml) | webd | service | core | public | 0.1.1 |
+| [webd](https://github.com/markc/mixos/blob/main/services/webd/Cargo.toml) | webd | service | core | public | 0.1.2 |
 
 ---
 
@@ -32429,9 +32429,11 @@ settings panel can drive it), and on any Linux, not only MixOS.
 
 Your catalogue is `~/.config/mixos/releases.mx`. Until you write one,
 releasesd follows MixOS itself: `mixos-desktop` (the compositor and the
-apps) and `mixos-server` (`mix` and the headless services), both built by
-the MixOS release workflow. Your own catalogue replaces that list, so keep
-those two entries at the top to keep MixOS current:
+apps) and `mixos-server` (`mix` and the headless services). This shows the
+latest published version and permits a **per-user** install. It does not
+replace the system's `/opt/mixos` tree or activate a running desk. Your own
+catalogue replaces that list, so keep those entries if you want to follow
+MixOS releases:
 
 ```text
 {
@@ -32490,6 +32492,18 @@ GitHub allows 60 requests an hour.
 
 It never overwrites a file it didn't create. If something of yours is
 already at `~/.local/bin/example`, the install leaves it alone and says so.
+
+## MixOS system updates
+
+An operator updates the canonical `/opt/mixos` tree from the published
+`release.manifest.mx` and matching archives with `tools/gold_release.mix`.
+The installer checks the trusted manifest digest, archive and binary hashes,
+architecture and glibc floor. `plan` shows the changes; `apply` records a
+receipt and backups; `rollback --receipt ID` restores the previous files.
+It needs one deliberate privileged invocation and does not restart a desk.
+Shared desks see the host tree through their mount; isolated desks need a
+verified copy followed by their own restart. Prefs does not yet drive this
+system update path.
 
 ## On the Bus
 
