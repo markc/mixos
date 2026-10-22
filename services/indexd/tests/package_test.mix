@@ -33,7 +33,8 @@ try
   if hash_file($mix_bin, "sha256") != hash_file($top .. "/bin/mix", "sha256") then
     raise("PACKAGE_BINARY", "desktop lacks its Mix runtime")
   end
-  for $service in ["noded", "monitord", "editd", "portald", "settingsd"]
+  if not is_file($top .. "/bin/mixos-mcp") then raise("PACKAGE_PROFILE", "desktop lacks base MCP binary") end
+  for $service in ["noded", "hostd", "monitord", "editd", "portald", "settingsd"]
     if not is_file($top .. "/bin/" .. $service) or not is_dir($top .. "/share/" .. $service .. "/units") then
       raise("PACKAGE_PROFILE", "desktop lacks " .. $service .. " binary or unit")
     end
@@ -57,9 +58,11 @@ try
   run_argv_must(["tar", "-xzf", $server_out .. "/" .. $server_top_name .. ".tar.gz",
     "-C", $case_dir .. "/extracted"], {timeout:60})
   $server_top = $case_dir .. "/extracted/" .. $server_top_name
+  if not is_file($server_top .. "/bin/mixos-mcp") then raise("PACKAGE_PROFILE", "server lacks base MCP binary") end
   for $service in ["noded", "hostd", "monitord"]
-    if not is_file($server_top .. "/bin/" .. $service) then
-      raise("PACKAGE_PROFILE", "server lacks base service " .. $service)
+    if (not is_file($server_top .. "/bin/" .. $service) or
+        not is_dir($server_top .. "/share/" .. $service .. "/units")) then
+      raise("PACKAGE_PROFILE", "server lacks base service or unit " .. $service)
     end
   end
   if read_link($server_top .. "/bin/maild") != "mix" then raise("PACKAGE_PROFILE", "server lacks maild link") end
@@ -69,7 +72,8 @@ try
       raise("PACKAGE_PROFILE", "desktop service leaked into server: " .. $service)
     end
   end
-  if exists($server_top .. "/lib/releasesd", {follow_symlinks: false}) then
+  if (exists($server_top .. "/lib/releasesd", {follow_symlinks: false}) or
+      exists($server_top .. "/share/releasesd", {follow_symlinks: false})) then
     raise("PACKAGE_PROFILE", "desktop release service leaked into server")
   end
   print("indexd package: desktop and server profile membership, binary, unit and config passed")
