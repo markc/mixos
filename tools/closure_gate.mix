@@ -6,6 +6,9 @@
 -- For every crate of services/compd/layers.conf.mix that is in the workspace
 -- (plus libs/scene), resolve its normal and build closure with `cargo tree -p
 -- <crate>` in two feature modes (default and --all-features). cargo tree
+-- uses Cargo's default duplicate-subtree elision: every package still appears,
+-- and the gate needs membership only. Expanding all duplicate subtrees
+-- makes this check needlessly expensive for a full desktop workspace.
 -- resolves features for the selected package only, so another member's
 -- features (eframe's Vulkan backend, say) cannot leak into the answer the way
 -- a workspace-wide `cargo metadata` resolve would.
@@ -69,18 +72,22 @@ $effects = $table.effects_crates ?? []
 $fail = []
 for each $c in $crates
   for each $mode in [[], ["--all-features"]]
-    $argv = concat(["cargo", "tree", "-p", $c, "-e", "normal,build", "--prefix", "none", "--no-dedupe", "-f", "{p}", "--manifest-path", $root .. "/Cargo.toml"], $mode, $pass)
+    $argv = concat(["cargo", "tree", "-p", $c, "-e", "normal,build", "--prefix", "none", "-f", "{p}", "--manifest-path", $root .. "/Cargo.toml"], $mode, $pass)
     $r = run_argv($argv, {timeout: 600, max_output: 268435456})
     if not $r.ok then
       eprint("closure_gate: cargo tree -p " .. $c .. " failed\n" .. $r.stderr)
       exit(2)
     end
     $names = []
+    $seen = {}
     for each $line in split($r.stdout, "\n")
       $n = trim($line)
       if $n != "" then
         $name = split($n, " ")[0]
-        if not contains($names, $name) then push($names, $name) end
+        if $seen[$name] != true then
+          $seen[$name] = true
+          push($names, $name)
+        end
       end
     end
     $label = len($mode) == 0 ? "default" : "all-features"
