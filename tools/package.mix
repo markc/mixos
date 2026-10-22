@@ -153,7 +153,8 @@ for $pkg in $selected
       mkdir($top .. "/share/licenses/libinput", {parents: true})
       copy($libinput_source .. "/COPYING", $top .. "/share/licenses/libinput/COPYING")
       $loaded = run_argv_must(["ldd", $top .. "/bin/compd"], {timeout: 20})
-      if not contains($loaded, "libinput.so.10 => " .. $top .. "/lib/libinput.so.10") then
+      if not contains(replace($loaded, "/bin/../lib/", "/lib/"),
+          "libinput.so.10 => " .. $top .. "/lib/libinput.so.10") then
         raise("PACKAGE_LIBINPUT", "compd does not load the bundled libinput")
       end
     end
