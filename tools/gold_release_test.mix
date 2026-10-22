@@ -8,6 +8,7 @@ $root = $base .. "/gold"
 $state = $base .. "/state"
 $dist = $base .. "/dist"
 $name = "mixos-desktop-0.1.2-linux-x86_64"
+$server_name = "mixos-server-0.1.2-linux-x86_64"
 $source = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
 fn need($yes, $what)
@@ -18,18 +19,31 @@ mkdir($root .. "/bin", {parents: true})
 mkdir($dist, {parents: true})
 write_file($root .. "/bin/mock", "previous\n")
 mkdir($base .. "/pack/" .. $name .. "/bin", {parents: true})
+mkdir($base .. "/pack/" .. $name .. "/lib", {parents: true})
 mkdir($base .. "/pack/" .. $name .. "/share/scenes", {parents: true})
 write_file($base .. "/pack/" .. $name .. "/bin/mock", "new\n")
+write_file($base .. "/pack/" .. $name .. "/lib/libinput.so.10", "mock-library\n")
 chmod($base .. "/pack/" .. $name .. "/bin/mock", 0o755)
 write_file($base .. "/pack/" .. $name .. "/share/scenes/test.mix", "print(1)\n")
 symlink("mock", $base .. "/pack/" .. $name .. "/bin/alias")
 $tar = $dist .. "/" .. $name .. ".tar.gz"
 run_argv_must(["tar", "-czf", $tar, "-C", $base .. "/pack", $name], {timeout: 30})
+mkdir($base .. "/pack/" .. $server_name .. "/bin", {parents: true})
+mkdir($base .. "/pack/" .. $server_name .. "/share/server", {parents: true})
+copy($base .. "/pack/" .. $name .. "/bin/mock", $base .. "/pack/" .. $server_name .. "/bin/mock")
+write_file($base .. "/pack/" .. $server_name .. "/share/server/test.mix", "print(2)\n")
+$server_tar = $dist .. "/" .. $server_name .. ".tar.gz"
+run_argv_must(["tar", "-czf", $server_tar, "-C", $base .. "/pack", $server_name], {timeout: 30})
 $manifest = $dist .. "/release.manifest.mx"
 write_file($manifest, data_encode({schema: 1, version: "0.1.2", source: $source,
   platform: "linux-x86_64-glibc", glibc_floor: "2.39", fixture: false,
   archives: [{name: "mixos-desktop", asset: basename($tar),
-  sha256: hash_file($tar, "sha256"), binaries: [{name: "mock", sha256: hash_file($base .. "/pack/" .. $name .. "/bin/mock", "sha256")}]}]}) .. "\n")
+  sha256: hash_file($tar, "sha256"),
+  binaries: [{name: "mock", sha256: hash_file($base .. "/pack/" .. $name .. "/bin/mock", "sha256")}],
+  libraries: [{name: "libinput.so.10", sha256: hash_file($base .. "/pack/" .. $name .. "/lib/libinput.so.10", "sha256")}]},
+  {name: "mixos-server", asset: basename($server_tar), sha256: hash_file($server_tar, "sha256"),
+   binaries: [{name: "mock", sha256: hash_file($base .. "/pack/" .. $server_name .. "/bin/mock", "sha256")}],
+   libraries: []}]}) .. "\n")
 $sha = hash_file($manifest, "sha256")
 $base_argv = [$mix, $repo .. "/tools/gold_release.mix"]
 $opts = ["--root", $root, "--state", $state, "--manifest", $manifest,
@@ -41,12 +55,18 @@ try
      "--archive-dir", $dist, "--package", "desktop"]), {timeout: 30, stderr: "stdout"})
   need($bad.exit_code != 0 and contains($bad.stdout, "GOLD_DIGEST"), "wrong manifest digest refusal differs: " .. $bad.stdout)
   $plan = run_argv(concat(concat($base_argv, ["plan"]), $opts), {timeout: 30, stderr: "stdout"})
-  need($plan.exit_code == 0 and contains($plan.stdout, "changed=3"), "plan failed: " .. $plan.stdout)
+  need($plan.exit_code == 0 and contains($plan.stdout, "changed=4"), "plan failed: " .. $plan.stdout)
+  $all_opts = ["--root", $root, "--state", $state, "--manifest", $manifest,
+    "--manifest-sha256", $sha, "--archive-dir", $dist, "--package", "all"]
+  $all_plan = run_argv(concat(concat($base_argv, ["plan"]), $all_opts), {timeout: 30, stderr: "stdout"})
+  need($all_plan.exit_code == 0 and contains($all_plan.stdout, "changed=5"),
+    "identical shared binary was not accepted: " .. $all_plan.stdout)
   need(read_file($root .. "/bin/mock") == "previous\n", "plan changed gold")
   $apply = run_argv(concat(concat($base_argv, ["apply"]), $opts), {timeout: 30, stderr: "stdout"})
   need($apply.exit_code == 0 and contains($apply.stdout, "APPLIED receipt="), "apply failed: " .. $apply.stdout)
   need(read_file($root .. "/bin/mock") == "new\n", "gold binary did not change")
   need(read_link($root .. "/bin/alias") == "mock", "gold link missing")
+  need(read_file($root .. "/lib/libinput.so.10") == "mock-library\n", "runtime library missing")
   need(is_file($root .. "/share/scenes/test.mix"), "gold scene missing")
   $lines = split(trim($apply.stdout), "\n")
   $last = $lines[len($lines) - 1]
@@ -56,6 +76,7 @@ try
   need($rollback.exit_code == 0 and contains($rollback.stdout, "ROLLBACK"), "rollback failed: " .. $rollback.stdout)
   need(read_file($root .. "/bin/mock") == "previous\n", "rollback did not restore gold")
   need(not exists($root .. "/bin/alias", {follow_symlinks: false}), "rollback left new link")
+  need(not exists($root .. "/lib/libinput.so.10", {follow_symlinks: false}), "rollback left runtime library")
   need(not is_file($root .. "/share/scenes/test.mix"), "rollback left new scene")
   $apply2 = run_argv(concat(concat($base_argv, ["apply"]), $opts), {timeout: 30, stderr: "stdout"})
   need($apply2.exit_code == 0, "second apply failed: " .. $apply2.stdout)

@@ -239,6 +239,8 @@
 <p>The first release target is Linux x86_64 with a glibc 2.39 floor. The
 release contract is in <code>tools/release_packages.mx</code>. The initial desktop
 candidate contains one archive, <code>release.manifest.mx</code>, and <code>SHA256SUMS.txt</code>.
+The desktop archive includes the ten desktop products, indexd and the Mix
+runtime used by its session scripts.
 An admitted server archive can join a later candidate. Every archive in a
 candidate comes from one exact public source commit. Packaging an unadmitted
 service does not admit it for publication.</p>
@@ -257,7 +259,23 @@ development libraries used by the workspace: <code>libxkbcommon-dev</code>,
 <code>libgbm-dev</code>, <code>libdrm-dev</code>, <code>libinput-dev</code>, <code>libudev-dev</code>,
 <code>libseat-dev</code>, <code>libpixman-1-dev</code>, <code>libpulse-dev</code>,
 <code>libpipewire-0.3-dev</code> and <code>libspa-0.2-dev</code>. It also needs <code>git</code>,
-<code>build-essential</code>, <code>pkg-config</code>, <code>clang</code> and <code>libarchive-tools</code>.
+<code>build-essential</code>, <code>pkg-config</code>, <code>clang</code>, <code>libarchive-tools</code>, <code>meson</code>,
+<code>ninja-build</code> and <code>patchelf</code>.
+Ubuntu 24.04 supplies libinput 1.25, while compd's tablet dial support
+uses the 1.26 ABI. Build libinput 1.26.2 from upstream tag <code>1.26.2</code>
+(peeled commit <code>3402f380019dc4f882e1d8627029607aca3f4be6</code>) inside the
+same root with Meson, install it under <code>/usr</code>, and run <code>ldconfig</code> there.
+Keep that pinned source checkout inside the target directory. The gate
+refuses another libinput source or library version. The desktop archive
+bundles the 1.26.2 shared library and its licence; compd's relative
+runtime library path makes that copy take precedence over the host copy.
+After installing the listed build dependencies in the root, the CBC worker
+can provision the pinned library with:</p>
+<pre><code class="language-text">/opt/mixos/bin/mix tools/libinput_compat.mix \
+  --rootfs /srv/ubuntu-24.04-root --target-dir /srv/mixos-target
+</code></pre>
+<p>The script verifies the upstream commit and installed ABI. It is safe to
+run again after an Ubuntu root update.
 On the CBC worker, the native Mix gate takes absolute
 paths for the root, Cargo and Rustup homes, and a dedicated target
 directory. It bind-mounts the exact checkout, toolchain, cache, target,
@@ -268,21 +286,23 @@ requested commit.</p>
   --package desktop \
   --rootfs /srv/ubuntu-24.04-root --target-dir /srv/mixos-target \
   --cargo-home /home/user/.cargo --rustup-home /home/user/.rustup \
+  --libinput-source /srv/mixos-target/libinput-1.26.2-src \
   --out /srv/mixos-target/release-V
 </code></pre>
 <p>The package stage builds each selected Cargo package once in that root.
 The packager then runs each binary's <code>--version</code> inside the same root,
-checks the source hash, and writes the archives and manifest. The
+checks the source hash and bundled libinput resolution, and writes the
+archives and manifest. The
 <code>--fixture-binaries</code> option is for tests only; the gold installer refuses
 fixture manifests. Check the complete saved log and the archive hashes
 before upload. Never substitute a build made against a newer host glibc.</p>
 <h2 id="stage-and-publish">Stage and publish</h2>
-<p>Transfer the four output files from CBC with a hash comparison on both
+<p>Transfer the three desktop output files from CBC with a hash comparison on both
 sides. Upload them to a new <strong>draft</strong> GitHub Release at the frozen commit,
 then compare GitHub's asset digests with the CBC files. Do not replace an
 existing published tag or its assets. Publishing requires a full green
-status, archive checks, clean install and rollback proof, and separate
-desktop and server acceptance. The release notes identify any archive that
+status, archive checks, clean install and rollback proof, and acceptance
+for every included archive. The release notes identify any archive that
 is still pending. Enable immutable releases before public publication.</p>
 <p>After the initial release, cut one candidate each week. Failure holds the
 previous release; it does not trigger repeated rebuilds on every push.</p>

@@ -204,7 +204,8 @@ try
     if len($rows) != 1 then raise("GOLD_MANIFEST", "expected exactly one " .. $pkg .. " archive") end
     $row = $rows[0]
     $asset = $pkg .. "-" .. $manifest.version .. "-linux-x86_64.tar.gz"
-    if $row.asset != $asset or not re_match($row.sha256 ?? "", "^[0-9a-f]{64}$") or type($row.binaries) != "list" then
+    if ($row.asset != $asset or not re_match($row.sha256 ?? "", "^[0-9a-f]{64}$") or
+        type($row.binaries) != "list" or type($row.libraries ?? []) != "list") then
       raise("GOLD_MANIFEST", "invalid archive record for " .. $pkg)
     end
     copy($archive_dir .. "/" .. $asset, $stage .. "/" .. $asset)
@@ -223,6 +224,13 @@ try
         raise("GOLD_BINARY", $pkg .. " has a missing or different binary")
       end
     end
+    for $lib in $row.libraries ?? []
+      if (type($lib.name) != "string" or not re_match($lib.name, "^lib[a-z0-9.-]+\\.so\\.[0-9]+$") or
+          not re_match($lib.sha256 ?? "", "^[0-9a-f]{64}$") or
+          hash_file($top .. "/lib/" .. $lib.name, "sha256") != $lib.sha256) then
+        raise("GOLD_LIBRARY", $pkg .. " has a missing or different runtime library")
+      end
+    end
     for $p in walk($top, {include_dirs: true, follow_symlinks: false})
       if $p == $top then continue end
       $rel = slice($p, len($top) + 1, len($p))
@@ -234,13 +242,21 @@ try
       end
       $st = stat($p, {follow_symlinks: false})
       if $st.is_dir then continue end
-      if contains($seen, $rel) then raise("GOLD_LAYOUT", "duplicate release path " .. $rel) end
+      $after = if $st.is_symlink then {kind: "link", target: read_link($p)}
+        else {kind: "file", sha256: hash_file($p, "sha256")} end
+      if contains($seen, $rel) then
+        $prior = filter($files, fn($f) = $f.rel == $rel)[0].after
+        if ($prior.kind != $after.kind or
+            ($after.kind == "file" and $prior.sha256 != $after.sha256) or
+            ($after.kind == "link" and $prior.target != $after.target)) then
+          raise("GOLD_LAYOUT", "conflicting release path " .. $rel)
+        end
+        continue
+      end
       push($seen, $rel)
       $dest = $root .. "/" .. $rel
       safe_parent($dest)
       $before = existing_state($dest)
-      $after = if $st.is_symlink then {kind: "link", target: read_link($p)}
-        else {kind: "file", sha256: hash_file($p, "sha256")} end
       push($files, {rel: $rel, source: $p, before: $before, after: $after,
         same: matches($dest, $after)})
     end

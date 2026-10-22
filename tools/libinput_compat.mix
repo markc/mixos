@@ -1,0 +1,71 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Provision the pinned libinput ABI inside a CBC Ubuntu 24.04 release root.
+-- This runs on CBC before release_gate.mix package, never on a user host.
+--
+-- mix tools/libinput_compat.mix --rootfs ROOT --target-dir TARGET
+
+$g = getopt(args(), {rootfs: {arg: true}, "target-dir": {arg: true}})
+$root = $g.opts.rootfs ?? ""
+$target = $g.opts["target-dir"] ?? ""
+if (len($g.errors) != 0 or len($g.rest) != 0 or uid() != 0 or
+    not starts_with($root, "/") or not is_dir($root) or
+    not starts_with($target, "/") or not is_dir($target)) then
+  raise("LIBINPUT_ARGS", "run as root on CBC with --rootfs ROOT --target-dir TARGET")
+end
+$commit = "3402f380019dc4f882e1d8627029607aca3f4be6"
+$source = $target .. "/libinput-1.26.2-src"
+$build = $target .. "/libinput-1.26.2-build-usr"
+
+fn bind_once($from, $to, $file)
+  if $file then
+    mkdir(dirname($to), {parents: true})
+    if not exists($to, {follow_symlinks: false}) then write_file($to, "") end
+  else
+    mkdir($to, {parents: true})
+  end
+  if run_argv(["findmnt", "-M", $to], {timeout: 10}).exit_code != 0 then
+    run_argv_must(["mount", "--bind", $from, $to], {timeout: 20})
+  end
+  $a = stat($from)
+  $b = stat($to)
+  if $a.dev != $b.dev or $a.ino != $b.ino then
+    raise("LIBINPUT_ROOT", "build-root bind differs from source: " .. $to)
+  end
+end
+
+bind_once($target, $root .. $target, false)
+bind_once("/proc", $root .. "/proc", false)
+bind_once("/dev/null", $root .. "/dev/null", true)
+$libc = trim(run_argv_must(["chroot", $root, "/usr/bin/getconf", "GNU_LIBC_VERSION"], {timeout: 20}))
+if $libc != "glibc 2.39" then raise("LIBINPUT_ROOT", "expected Ubuntu 24.04 glibc 2.39") end
+
+if not is_dir($source) then
+  print(trim(run_argv_must(["git", "clone", "--depth", "1", "--branch", "1.26.2",
+    "https://gitlab.freedesktop.org/libinput/libinput.git", $source],
+    {timeout: 180, stderr: "stdout"})))
+end
+$head = trim(run_argv_must(["git", "-C", $source, "rev-parse", "HEAD"], {timeout: 20}))
+if $head != $commit then raise("LIBINPUT_SOURCE", "libinput checkout is not pinned 1.26.2") end
+
+$setup = ["chroot", $root, "/usr/bin/meson", "setup"]
+if is_file($build .. "/build.ninja") then
+  $setup = push($setup, "--reconfigure")
+end
+$setup = concat($setup, [$build, $source, "--prefix", "/usr", "--libdir",
+  "lib/x86_64-linux-gnu", "--buildtype", "release", "-Dtests=false",
+  "-Ddebug-gui=false", "-Ddocumentation=false"])
+print(trim(run_argv_must($setup, {timeout: 180, stderr: "stdout"})))
+print(trim(run_argv_must(["chroot", $root, "/usr/bin/meson", "compile", "-C", $build,
+  "-j", "4"], {timeout: 600, stderr: "stdout"})))
+print(trim(run_argv_must(["chroot", $root, "/usr/bin/meson", "install", "-C", $build],
+  {timeout: 180, stderr: "stdout"})))
+run_argv_must(["chroot", $root, "/usr/sbin/ldconfig"], {timeout: 20})
+$version = trim(run_argv_must(["chroot", $root, "/usr/bin/pkg-config", "--modversion", "libinput"], {timeout: 20}))
+if $version != "1.26.2" then raise("LIBINPUT_ROOT", "installed libinput version differs: " .. $version) end
+$symbols = run_argv_must(["chroot", $root, "/usr/bin/nm", "-D",
+  "/usr/lib/x86_64-linux-gnu/libinput.so.10"], {timeout: 20})
+if (not contains($symbols, "libinput_event_tablet_pad_get_dial_delta_v120@@LIBINPUT_1.26") or
+    not contains($symbols, "libinput_event_tablet_pad_get_dial_number@@LIBINPUT_1.26")) then
+  raise("LIBINPUT_ROOT", "installed library lacks the 1.26 tablet dial ABI")
+end
+print("READY libinput 1.26.2 source=" .. $commit .. " root=" .. $root)

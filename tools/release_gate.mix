@@ -12,7 +12,8 @@
 
 $g = getopt(args(), {commit: {arg: true}, version: {arg: true}, out: {arg: true},
   rootfs: {arg: true}, "target-dir": {arg: true},
-  "cargo-home": {arg: true}, "rustup-home": {arg: true}, package: {arg: true}})
+  "cargo-home": {arg: true}, "rustup-home": {arg: true},
+  "libinput-source": {arg: true}, package: {arg: true}})
 if len($g.errors) != 0 or len($g.rest) != 1 or not contains(["check", "package"], $g.rest[0]) then
   raise("RELEASE_ARGS", "usage: mix tools/release_gate.mix check|package --commit FULL_SHA [--version V --out DIR]")
 end
@@ -86,6 +87,7 @@ $target_dir = $g.opts["target-dir"] ?? ""
 $cargo_home = $g.opts["cargo-home"] ?? ""
 $rustup_home = $g.opts["rustup-home"] ?? ""
 $selection = $g.opts.package ?? "all"
+$libinput_source = $g.opts["libinput-source"] ?? ""
 if not contains(["desktop", "server", "all"], $selection) then
   raise("RELEASE_ARGS", "--package must be desktop, server or all")
 end
@@ -102,6 +104,10 @@ end
 if (not starts_with($cargo_home, "/") or not is_dir($cargo_home) or
     not starts_with($rustup_home, "/") or not is_dir($rustup_home)) then
   raise("RELEASE_ARGS", "package needs absolute --cargo-home and --rustup-home")
+end
+if $selection != "server" and (not starts_with($libinput_source, $target_dir .. "/") or
+    not is_dir($libinput_source)) then
+  raise("RELEASE_ARGS", "desktop package needs --libinput-source inside --target-dir")
 end
 
 -- Bind only known paths into the build root, and refuse a pre-existing
@@ -142,6 +148,23 @@ $libc = trim(run_argv_must(concat($chroot, ["/usr/bin/getconf", "GNU_LIBC_VERSIO
 if $libc != "glibc 2.39" then raise("RELEASE_GLIBC", "build root needs glibc 2.39; got " .. $libc) end
 $root_head = trim(run_argv_must(concat($chroot, ["/usr/bin/git", "rev-parse", "HEAD"]), {timeout: 20}))
 if $root_head != $commit then raise("RELEASE_SOURCE", "build root does not see the exact CBC source") end
+if $selection != "server" then
+  $input_head = trim(run_argv_must(["git", "-C", $libinput_source, "rev-parse", "HEAD"], {timeout: 20}))
+  if $input_head != "3402f380019dc4f882e1d8627029607aca3f4be6" then
+    raise("RELEASE_LIBINPUT", "libinput source is not the pinned 1.26.2 commit")
+  end
+  $input_version = trim(run_argv_must(concat($chroot,
+    ["/usr/bin/pkg-config", "--modversion", "libinput"]), {timeout: 20}))
+  if $input_version != "1.26.2" then
+    raise("RELEASE_LIBINPUT", "build root needs libinput 1.26.2; got " .. $input_version)
+  end
+  $dial_symbols = run_argv_must(concat($chroot,
+    ["/usr/bin/nm", "-D", "/usr/lib/x86_64-linux-gnu/libinput.so.10"]), {timeout: 20})
+  if (not contains($dial_symbols, "libinput_event_tablet_pad_get_dial_delta_v120@@LIBINPUT_1.26") or
+      not contains($dial_symbols, "libinput_event_tablet_pad_get_dial_number@@LIBINPUT_1.26")) then
+    raise("RELEASE_LIBINPUT", "build root libinput lacks tablet dial symbols")
+  end
+end
 $crates = []
 $selected = if $selection == "all" then sort(keys($release.packages))
   elif $selection == "desktop" then ["mixos-desktop"] else ["mixos-server"] end
@@ -162,7 +185,15 @@ end
 push($build, "--features")
 push($build, "compd/backend-all")
 stage("release-build", $build, 7200)
+if $selection != "server" then
+  stage("compd-rpath", concat($chroot, ["/usr/bin/patchelf", "--set-rpath", "$ORIGIN/../lib",
+    $target_dir .. "/release/compd"]), 60)
+  $rpath = trim(run_argv_must(concat($chroot, ["/usr/bin/patchelf", "--print-rpath",
+    $target_dir .. "/release/compd"]), {timeout: 20}))
+  if $rpath != "$ORIGIN/../lib" then raise("RELEASE_LIBINPUT", "compd runtime library path differs") end
+end
 stage("package", concat($chroot, [$target_dir .. "/release/mix", "tools/package.mix",
   "--release", $version, "--commit", $commit, "--arch", "x86_64",
-  "--bin-dir", $target_dir .. "/release", "--out", $out, "--package", $selection]), 1200)
+  "--bin-dir", $target_dir .. "/release", "--out", $out, "--package", $selection,
+  "--libinput-source", $libinput_source]), 1200)
 print("PACKAGED exact source " .. $commit .. " at " .. $out)

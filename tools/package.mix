@@ -17,7 +17,8 @@
 -- written here over every tarball and the manifest.
 
 $g = getopt(args(), {help: {short: "h"}, release: {arg: true}, commit: {arg: true}, arch: {arg: true},
-  "bin-dir": {arg: true}, out: {arg: true}, package: {arg: true}, "fixture-binaries": {}})
+  "bin-dir": {arg: true}, out: {arg: true}, package: {arg: true},
+  "libinput-source": {arg: true}, "fixture-binaries": {}})
 if len($g.errors) != 0 then raise("PACKAGE_ARGS", join($g.errors, "; ")) end
 $fixture = $g.opts["fixture-binaries"] == true
 if $g.opts.help then
@@ -85,6 +86,14 @@ if not contains(["desktop", "server", "all"], $selection) then
 end
 $selected = if $selection == "all" then sort(keys($PACKAGES))
   elif $selection == "desktop" then ["mixos-desktop"] else ["mixos-server"] end
+$libinput_source = $g.opts["libinput-source"] ?? ""
+if not $fixture and contains($selected, "mixos-desktop") then
+  if (not is_dir($libinput_source) or
+      trim(run_argv_must(["git", "-C", $libinput_source, "rev-parse", "HEAD"], {timeout: 15})) !=
+      "3402f380019dc4f882e1d8627029607aca3f4be6") then
+    raise("PACKAGE_LIBINPUT", "desktop needs the pinned libinput 1.26.2 source")
+  end
+end
 
 if is_dir($out) and len(glob($out .. "/*")) != 0 then
   raise("PACKAGE_OUTPUT", "output directory is not empty: " .. $out)
@@ -99,6 +108,7 @@ for $pkg in $selected
   $top = $stage .. "/" .. $name
   mkdir($top .. "/bin", {parents: true})
   $members = []
+  $libraries = []
   for $b in $PACKAGES[$pkg]
     if $b == "maild" then
       -- maild is carried by the system binary, never a second executable.
@@ -130,6 +140,23 @@ for $pkg in $selected
     chmod($top .. "/share/doc/" .. $pkg .. "/" .. $d, 0o644)
   end
   if $pkg == "mixos-desktop" then
+    if not $fixture then
+      $input = "/usr/lib/x86_64-linux-gnu/libinput.so.10.13.0"
+      $input_version = trim(run_argv_must(["pkg-config", "--modversion", "libinput"], {timeout: 10}))
+      if $input_version != "1.26.2" then raise("PACKAGE_LIBINPUT", "libinput 1.26.2 is required") end
+      mkdir($top .. "/lib", {parents: true})
+      copy($input, $top .. "/lib/libinput.so.10")
+      chmod($top .. "/lib/libinput.so.10", 0o644)
+      push($libraries, {name: "libinput.so.10", version: $input_version,
+        source: "3402f380019dc4f882e1d8627029607aca3f4be6",
+        sha256: hash_file($top .. "/lib/libinput.so.10", "sha256")})
+      mkdir($top .. "/share/licenses/libinput", {parents: true})
+      copy($libinput_source .. "/COPYING", $top .. "/share/licenses/libinput/COPYING")
+      $loaded = run_argv_must(["ldd", $top .. "/bin/compd"], {timeout: 20})
+      if not contains($loaded, "libinput.so.10 => " .. $top .. "/lib/libinput.so.10") then
+        raise("PACKAGE_LIBINPUT", "compd does not load the bundled libinput")
+      end
+    end
     add_tree($source .. "/share/scenes", $top .. "/share/scenes")
     add_tree($source .. "/share/brand", $top .. "/share/brand")
     add_tree($source .. "/share/icons", $top .. "/share/icons")
@@ -162,7 +189,8 @@ for $pkg in $selected
   run_argv_must(["tar", "--sort=name", "--owner=0", "--group=0", "--numeric-owner", "--mtime=@0",
     "-czf", $tar, "-C", $stage, $name], {timeout: 600})
   $sha = hash_file($tar, "sha256")
-  push($archives, {name: $pkg, asset: basename($tar), sha256: $sha, binaries: $members})
+  push($archives, {name: $pkg, asset: basename($tar), sha256: $sha,
+    binaries: $members, libraries: $libraries})
   print($tar .. "  sha256:" .. $sha)
 end
 remove_dir($stage)
