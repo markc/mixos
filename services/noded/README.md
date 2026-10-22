@@ -43,7 +43,7 @@ for this fixture only. It is copied and hash-checked, never installed to gold.
 The candidate must include the explicit private witness/lock mode invariant.
 Set `MIXOS_TEST_MIX` to an absolute candidate Mix path plus
 `MIXOS_TEST_MIX_SHA256` and `MIXOS_TEST_NODED_SHA256` to exercise the opt-in
-PID-pin proof. The fixture verifies both hashes before copying either binary;
+PID-pin proof. The fixture verifies each hash before copying that binary;
 without these variables, `pid_pin_tested` stays false. Both candidates remain
 uninstalled.
 The fixture needs Linux subordinate UID/GID mappings and native `unshare`,

@@ -97,19 +97,20 @@ try
     if len($f)>=4 and contains($line,"x86-64") and not has_key($cache,$f[0]) then $cache[$f[0]]=$f[len($f)-1] end
   end
   $mix_candidate=env("MIXOS_TEST_MIX","")
+  $mix_expected=env("MIXOS_TEST_MIX_SHA256","")
+  $noded_expected=env("MIXOS_TEST_NODED_SHA256","")
   $pin_test=$mix_candidate!=""
+  check($pin_test or ($mix_expected=="" and $noded_expected==""),"candidate hash without Mix candidate would skip the PID proof")
   $mix_source=if $pin_test then $mix_candidate else "/opt/mixos/bin/mix" end
   if $pin_test then
-    $expected=env("MIXOS_TEST_MIX_SHA256","")
-    check(starts_with($mix_source,"/") and is_file($mix_source) and re_match($expected,"^[0-9a-f]{64}$") and hash_file($mix_source,"sha256")==$expected,"explicit Mix candidate hash differs")
+    check(starts_with($mix_source,"/") and is_file($mix_source) and re_match($mix_expected,"^[0-9a-f]{64}$") and hash_file($mix_source,"sha256")==$mix_expected,"explicit Mix candidate hash differs")
   end
   copy_elf($root,$mix_source,"/opt/mixos/bin/mix",$cache)
   check(hash_file($root .. "/opt/mixos/bin/mix","sha256")==hash_file($mix_source,"sha256"),"fixture Mix artifact copy differs")
   $candidate=env("MIXOS_TEST_NODED","/opt/mixos/bin/noded")
   check(type($candidate)=="string" and starts_with($candidate,"/") and is_file($candidate),"explicit native noded artifact absent")
   if $pin_test then
-    $expected=env("MIXOS_TEST_NODED_SHA256","")
-    check(re_match($expected,"^[0-9a-f]{64}$") and hash_file($candidate,"sha256")==$expected,"explicit noded candidate hash differs")
+    check(re_match($noded_expected,"^[0-9a-f]{64}$") and hash_file($candidate,"sha256")==$noded_expected,"explicit noded candidate hash differs")
   end
   copy_elf($root,$candidate,"/opt/mixos/bin/noded",$cache)
   check(hash_file($root .. "/opt/mixos/bin/noded","sha256")==hash_file($candidate,"sha256"),"fixture noded artifact copy differs")
