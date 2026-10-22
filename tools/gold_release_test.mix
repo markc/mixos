@@ -27,7 +27,8 @@ $tar = $dist .. "/" .. $name .. ".tar.gz"
 run_argv_must(["tar", "-czf", $tar, "-C", $base .. "/pack", $name], {timeout: 30})
 $manifest = $dist .. "/release.manifest.mx"
 write_file($manifest, data_encode({schema: 1, version: "0.1.2", source: $source,
-  platform: "linux-x86_64-glibc", glibc_floor: "2.39", archives: [{name: "mixos-desktop", asset: basename($tar),
+  platform: "linux-x86_64-glibc", glibc_floor: "2.39", fixture: false,
+  archives: [{name: "mixos-desktop", asset: basename($tar),
   sha256: hash_file($tar, "sha256"), binaries: [{name: "mock", sha256: hash_file($base .. "/pack/" .. $name .. "/bin/mock", "sha256")}]}]}) .. "\n")
 $sha = hash_file($manifest, "sha256")
 $base_argv = [$mix, $repo .. "/tools/gold_release.mix"]
@@ -69,11 +70,19 @@ try
     {timeout: 30, stderr: "stdout"})
   need($recover.exit_code == 0 and read_file($root .. "/bin/mock") == "previous\n",
     "interrupted apply recovery failed: " .. $recover.stdout)
+  $attack = $rec2
+  $attack.files[len($attack.files) - 1].rel = "bin/../../outside"
+  write_file($state .. "/pending.mx", data_encode($attack) .. "\n")
+  $unsafe = run_argv(concat($base_argv, ["recover", "--root", $root, "--state", $state]),
+    {timeout: 30, stderr: "stdout"})
+  need($unsafe.exit_code != 0 and contains($unsafe.stdout, "GOLD_PATH"),
+    "unsafe receipt path was accepted: " .. $unsafe.stdout)
+  remove($state .. "/pending.mx")
   run_argv_must(["truncate", "-s", "+1", $tar], {timeout: 10})
   $tampered = run_argv(concat(concat($base_argv, ["plan"]), $opts), {timeout: 30, stderr: "stdout"})
   need($tampered.exit_code != 0 and contains($tampered.stdout, "GOLD_DIGEST"),
     "tampered archive was accepted: " .. $tampered.stdout)
-  print("PASS gold release plan, apply, rollback, recovery and digest refusals")
+  print("PASS gold release plan, apply, rollback, recovery, path and digest refusals")
 finally
   remove_dir($base)
 end

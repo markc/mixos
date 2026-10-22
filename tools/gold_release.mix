@@ -75,6 +75,17 @@ fn matches($path, $want)
   return true
 end
 
+fn safe_rel($rel)
+  if type($rel) != "string" or $rel == "" or starts_with($rel, "/") then
+    raise("GOLD_PATH", "invalid release path")
+  end
+  for $part in split($rel, "/")
+    if $part == "" or $part == "." or $part == ".." then
+      raise("GOLD_PATH", "invalid release path: " .. $rel)
+    end
+  end
+end
+
 fn safe_parent($path)
   $p = dirname($path)
   while $p != $root
@@ -88,6 +99,7 @@ end
 
 fn restore($rec)
   for $item in reverse($rec.files)
+    safe_rel($item.rel)
     if $item.same then continue end
     $dest = $root .. "/" .. $item.rel
     safe_parent($dest)
@@ -170,7 +182,7 @@ try
   if ($manifest.schema != 1 or not re_match($manifest.source ?? "", "^[0-9a-f]{40}$") or
       not re_match($manifest.version ?? "", "^[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?$") or
       $manifest.platform != "linux-x86_64-glibc" or $manifest.glibc_floor != "2.39" or
-      $manifest.fixture == true or
+      $manifest.fixture != false or
       type($manifest.archives) != "list") then
     raise("GOLD_MANIFEST", "unsupported or incomplete x86_64 release manifest")
   end
@@ -214,6 +226,7 @@ try
     for $p in walk($top, {include_dirs: true, follow_symlinks: false})
       if $p == $top then continue end
       $rel = slice($p, len($top) + 1, len($p))
+      safe_rel($rel)
       if contains(["bin", "share", "lib"], $rel) then continue end
       if (not starts_with($rel, "bin/") and not starts_with($rel, "share/") and
           not starts_with($rel, "lib/")) then

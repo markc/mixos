@@ -19,6 +19,7 @@
 $g = getopt(args(), {help: {short: "h"}, release: {arg: true}, commit: {arg: true}, arch: {arg: true},
   "bin-dir": {arg: true}, out: {arg: true}, package: {arg: true}, "fixture-binaries": {}})
 if len($g.errors) != 0 then raise("PACKAGE_ARGS", join($g.errors, "; ")) end
+$fixture = $g.opts["fixture-binaries"] == true
 if $g.opts.help then
   print("usage: mix tools/package.mix --release V --commit FULL_SHA [--package desktop|server|all] [--arch ARCH] [--bin-dir DIR] [--out DIR] [--fixture-binaries for tests only]")
   exit(0)
@@ -66,7 +67,7 @@ $arch = $g.opts.arch ?? platform().arch
 if not re_match($arch, "^(x86_64|aarch64)$") then raise("PACKAGE_ARGS", "--arch must be x86_64 or aarch64") end
 if $arch != platform().arch then raise("PACKAGE_ARCH", "--arch must match the build host") end
 $glibc = "fixture"
-if not $g.opts["fixture-binaries"] then
+if not $fixture then
   $libc = trim(run_argv_must(["getconf", "GNU_LIBC_VERSION"], {timeout: 10}))
   if $libc != "glibc 2.39" then
     raise("PACKAGE_GLIBC", "the first release must be packaged and exercised in the Ubuntu 24.04 glibc 2.39 build root; got " .. $libc)
@@ -106,9 +107,9 @@ for $pkg in $selected
     end
     $src = $bin_dir .. "/" .. $b
     if not is_file($src) then raise("PACKAGE_MISSING", $src .. " is not built") end
-    $v = if $g.opts["fixture-binaries"] then "fixture" else
+    $v = if $fixture then "fixture" else
       trim(run_argv_must([$src, "--version"], {timeout: 10, stderr: "stdout"})) end
-    if (not $g.opts["fixture-binaries"] and
+    if (not $fixture and
         (not starts_with($v, $b .. " ") or not contains($v, slice($commit, 0, 12)))) then
       raise("PACKAGE_SOURCE", $b .. " does not identify itself and source " .. slice($commit, 0, 12) .. ": " .. $v)
     end
@@ -168,7 +169,7 @@ remove_dir($stage)
 $manifest = $out .. "/release.manifest.mx"
 write_file($manifest, data_encode({schema: 1, version: $version, source: $commit,
   platform: "linux-" .. $arch .. "-glibc", glibc_floor: $glibc,
-  fixture: $g.opts["fixture-binaries"], archives: $archives}) .. "\n")
+  fixture: $fixture, archives: $archives}) .. "\n")
 $sums = []
 for $row in $archives push($sums, $row.sha256 .. "  " .. $row.asset) end
 push($sums, hash_file($manifest, "sha256") .. "  " .. basename($manifest))
