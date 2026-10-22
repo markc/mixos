@@ -102,6 +102,13 @@ fn safe_parent($path)
   end
 end
 
+fn verify_receipt($rec)
+  if (type($rec.id) != "string" or not re_match($rec.id, "^[a-z0-9-]{8,100}$") or
+      $rec.backup != $state .. "/backups/" .. $rec.id or type($rec.files) != "list") then
+    raise("GOLD_RECEIPT", "invalid receipt identity or backup path")
+  end
+end
+
 fn restore($rec)
   for $item in reverse($rec.files)
     safe_rel($item.rel)
@@ -131,6 +138,7 @@ end
 if $mode == "recover" then
   if not is_file($pending) then raise("GOLD_PENDING", "there is no interrupted update") end
   $rec = load_data($pending)
+  verify_receipt($rec)
   if $rec.root != $root or not contains(["pending", "applied", "recovered"], $rec.status) then
     raise("GOLD_RECEIPT", "pending receipt does not describe this root")
   end
@@ -158,6 +166,7 @@ if $mode == "rollback" then
   $path = $receipt_dir .. "/" .. $id .. ".mx"
   if not is_file($path) then raise("GOLD_RECEIPT", "no receipt " .. $id) end
   $rec = load_data($path)
+  verify_receipt($rec)
   if $rec.id != $id or $rec.root != $root or $rec.status != "applied" then
     raise("GOLD_RECEIPT", "receipt does not describe an applied update to this root")
   end

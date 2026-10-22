@@ -123,6 +123,14 @@ try
   need($unsafe.exit_code != 0 and contains($unsafe.stdout, "GOLD_PATH"),
     "unsafe receipt path was accepted: " .. $unsafe.stdout)
   remove($state .. "/pending.mx")
+  $id_attack = $rec2
+  $id_attack.id = "../../escape"
+  write_file($state .. "/pending.mx", data_encode($id_attack) .. "\n")
+  $unsafe_id = run_argv(concat($base_argv, ["recover", "--root", $root, "--state", $state]),
+    {timeout: 30, stderr: "stdout"})
+  need($unsafe_id.exit_code != 0 and contains($unsafe_id.stdout, "GOLD_RECEIPT"),
+    "unsafe receipt id was accepted: " .. $unsafe_id.stdout)
+  remove($state .. "/pending.mx")
   $bad_manifest = $dist .. "/bad.manifest.mx"
   $bad_doc = load_data($manifest)
   $bad_doc.archives[0].libraries[0].sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
