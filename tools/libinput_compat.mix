@@ -49,7 +49,7 @@ if $head != $commit then raise("LIBINPUT_SOURCE", "libinput checkout is not pinn
 
 $setup = ["chroot", $root, "/usr/bin/meson", "setup"]
 if is_file($build .. "/build.ninja") then
-  $setup = push($setup, "--reconfigure")
+  push($setup, "--reconfigure")
 end
 $setup = concat($setup, [$build, $source, "--prefix", "/usr", "--libdir",
   "lib/x86_64-linux-gnu", "--buildtype", "release", "-Dtests=false",
