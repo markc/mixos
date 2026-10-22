@@ -242,7 +242,7 @@ try
   -- must drop all of them, not just the entries.
   $manifest = load_data($root .. "/share/icons/manifest.conf.mix")
   check($manifest.schema == 1 and $manifest.stroke_width == 1.5, "manifest is not the stroke 1.5 Lucide catalogue")
-  check(len($manifest.icons) == 37, "manifest must list 37 aliases, found " .. to_string(len($manifest.icons)))
+  check(len($manifest.icons) == 38, "manifest must list 38 aliases, found " .. to_string(len($manifest.icons)))
   for each $icon in $manifest.icons
     check(icon_call($icon.name, 24, "mixos").rc == 14, "a manifest alias resolved before installation: " .. $icon.name)
   end

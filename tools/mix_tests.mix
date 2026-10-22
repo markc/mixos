@@ -91,7 +91,12 @@ $env = {
 }
 $failed = []
 for each $s in $scripts
-  $r = run_argv([$bin .. "/mix", $s], {cwd: $root, env: $env, timeout: 900, stderr: "stdout"})
+  -- The releasesd installer deliberately refuses root. The CBC worker may
+  -- run this gate as root, so exercise those user-install tests as nobody.
+  $argv = if starts_with($s, "services/releasesd/tests/") and uid() == 0 then
+    ["runuser", "-u", "nobody", "--", $bin .. "/mix", $s]
+  else [$bin .. "/mix", $s] end
+  $r = run_argv($argv, {cwd: $root, env: $env, timeout: 900, stderr: "stdout"})
   $secs = to_string(round($r.duration_ms / 1000))
   if $r.ok then
     print("PASS " .. $s .. " (" .. $secs .. " s)")
