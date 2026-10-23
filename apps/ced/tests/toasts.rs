@@ -4,7 +4,7 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use bus::native_client::NodedClient;
+use ::bus::native_client::NodedClient;
 use ced::app::App;
 use ced::bus::{self, BusHandle, Delivery};
 use documents::config::Config;
