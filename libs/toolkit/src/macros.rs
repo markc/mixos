@@ -196,13 +196,12 @@ impl State {
                     });
                 }
                 Action::Run(index) => {
-                    if let Some(roots) = &self.roots {
-                        if let Err(err) =
+                    if let Some(roots) = &self.roots
+                        && let Err(err) =
                             self.runner
                                 .start(roots, &self.app, &self.catalogue.entries[index])
-                        {
-                            self.error = Some(err.to_string());
-                        }
+                    {
+                        self.error = Some(err.to_string());
                     }
                 }
                 Action::Stop => self.runner.stop(),
