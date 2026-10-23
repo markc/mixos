@@ -130,6 +130,7 @@ icons! {
     ReplyAll => "reply-all",
     Save => "save",
     Scan => "scan",
+    ScrollText => "scroll-text",
     Search => "search",
     Send => "send",
     Server => "server",

@@ -1011,6 +1011,7 @@ pub(super) fn window_only(action: ActionId, args: Option<&Value>) -> bool {
         | ActionId::ViewMarkdownPreview
         | ActionId::ViewReloadSettings
         | ActionId::HelpKeys
+        | ActionId::HelpMacros
         | ActionId::HelpAbout => true,
         ActionId::FileOpen => !has("paths"),
         ActionId::FileSaveAs => !has("path"),

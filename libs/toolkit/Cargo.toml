@@ -23,6 +23,7 @@ mod_module_files = "deny"
 assets.workspace = true
 config.workspace = true
 design.workspace = true
+macros.workspace = true
 egui.workspace = true
 egui_extras.workspace = true
 command.workspace = true

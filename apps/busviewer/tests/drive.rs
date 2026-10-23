@@ -181,6 +181,7 @@ fn the_title_bar_controls_are_in_the_tree_and_work_by_click() {
         label("search-services"),
         label("toggle-mode"),
         label("shortcuts"),
+        "Macros".to_owned(),
     ] {
         let found = nodes(&mut h, 1, &name);
         assert!(

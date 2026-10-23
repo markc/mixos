@@ -183,6 +183,8 @@ impl Op {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct UiState {
     #[serde(default)]
+    pub macros_open: bool,
+    #[serde(default)]
     pub wallpaper_kind: Option<crate::wallpaper::Kind>,
     #[serde(default)]
     pub wallpaper_colour: Option<String>,
@@ -225,6 +227,7 @@ pub struct UiState {
 impl Default for UiState {
     fn default() -> Self {
         Self {
+            macros_open: false,
             wallpaper_kind: None,
             wallpaper_colour: None,
             wallpaper_image: None,

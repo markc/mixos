@@ -93,6 +93,7 @@ pub enum Effect {
 }
 
 pub struct App {
+    pub macros_open: bool,
     pub core: DopusCore,
     /// `dopus.actions.list`'s table.
     pub actions: Vec<verbs::ActionRow>,
@@ -174,6 +175,7 @@ impl App {
         Self {
             core,
             actions,
+            macros_open: false,
             dialog: None,
             queued: VecDeque::new(),
             editing: None,

@@ -1,0 +1,24 @@
+[package]
+name = "macros"
+description = "Shared Mix macro catalogue, storage and background runner"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[package.metadata.mixos]
+component = "macros"
+kind = "lib"
+layer = "core"
+contract = "none"
+
+[lints.clippy]
+mod_module_files = "deny"
+
+[dependencies]
+libc.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

@@ -100,6 +100,9 @@ pub fn view(
             app.editor_held = shown.is_some_and(|(_, held)| held);
         });
     dialogs(ui.ctx(), app, commands, strings, &mut events);
+    if toolkit::macros::show_app(ui.ctx(), "ced", app.ui.macros_open) {
+        events.push(UiEvent::Command("help.macros", Origin::Ui));
+    }
     events
 }
 

@@ -120,6 +120,7 @@ fn plain(id: &'static str) -> Command<bool> {
 fn bar_registry() -> Registry<bool> {
     let mut r = Registry::new();
     r.add(plain("view.mode"));
+    r.add(plain("help.macros"));
     r.add(plain("help.keys"));
     r.add(plain("view.search"));
     r.add(Command {
@@ -151,6 +152,7 @@ fn the_icon_bar_puts_app_actions_before_the_standard_tail() {
         [
             "doc.new",
             "view.sidebar",
+            "help.macros",
             "view.search",
             "help.keys",
             "view.mode"
@@ -162,6 +164,7 @@ fn the_icon_bar_puts_app_actions_before_the_standard_tail() {
         [
             Icon::SquarePen,
             Icon::PanelLeft,
+            Icon::ScrollText,
             Icon::Search,
             Icon::Keyboard,
             Icon::Sun
@@ -187,9 +190,10 @@ fn the_icon_bar_skips_unknown_and_duplicate_standard_actions() {
         true,
         &[
             titlebar::Action::new("doc.missing", Icon::Square),
+            titlebar::Action::new("help.macros", Icon::Keyboard),
             titlebar::Action::new("view.mode", Icon::Moon),
         ],
     );
     let ids: Vec<_> = items.iter().map(|i| i.command).collect();
-    assert_eq!(ids, ["view.search", "help.keys", "view.mode"]);
+    assert_eq!(ids, ["help.macros", "view.search", "help.keys", "view.mode"]);
 }

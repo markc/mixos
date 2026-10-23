@@ -82,6 +82,8 @@ pub enum Dialog {
 /// (`monitor.info`).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct UiState {
+    #[serde(default)]
+    pub macros_open: bool,
     /// The watched node; `None` is this one.
     pub node: Option<String>,
     pub tab: Tab,
@@ -116,6 +118,7 @@ pub struct UiState {
 impl Default for UiState {
     fn default() -> Self {
         Self {
+            macros_open: false,
             node: None,
             tab: Tab::Processes,
             section: "cpu".into(),

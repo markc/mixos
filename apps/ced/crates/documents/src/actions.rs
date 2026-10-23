@@ -3,8 +3,7 @@
 //! Every menu / keymap / `ced.action` action. The string id is the `ced.action` /
 //! `ced.actions` wire name and never changes once shipped.
 //!
-//! Macros are not here: they are discovered at run time and appear as
-//! `macro.<stem>` actions.
+//! The shared macros panel is registered by the GUI as `help.macros`.
 
 /// Top-level menus, in bar order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -13,18 +12,16 @@ pub enum Menu {
     Edit,
     Search,
     View,
-    Macros,
     Tabs,
     Help,
 }
 
 impl Menu {
-    pub const ALL: [Menu; 7] = [
+    pub const ALL: [Menu; 6] = [
         Menu::File,
         Menu::Edit,
         Menu::Search,
         Menu::View,
-        Menu::Macros,
         Menu::Tabs,
         Menu::Help,
     ];
@@ -35,7 +32,6 @@ impl Menu {
             Menu::Edit => "Edit",
             Menu::Search => "Search",
             Menu::View => "View",
-            Menu::Macros => "Macros",
             Menu::Tabs => "Tabs",
             Menu::Help => "Help",
         }
@@ -152,6 +148,7 @@ actions! {
     TabsNext => "tabs.next", "Next Tab", Tabs;
     TabsPrev => "tabs.prev", "Previous Tab", Tabs;
     HelpKeys => "help.keys", "Keyboard Shortcuts", Help;
+    HelpMacros => "help.macros", "Macros", Help;
     HelpAbout => "help.about", "About MixOS Editor", Help;
 }
 

@@ -124,6 +124,9 @@ pub fn view(
         .frame(egui::Frame::NONE)
         .show(ui, |ui| picture(ui, app, preview, drag, &mut events));
     dialogs(ui.ctx(), app, commands, strings, &mut events);
+    if toolkit::macros::show_app(ui.ctx(), "screenshot", app.ui.macros_open) {
+        events.push(UiEvent::Command("help.macros", Origin::Ui));
+    }
     titlebar::edges(ui);
     events
 }

@@ -1282,6 +1282,7 @@ pub struct ThemeChoice {
 /// tree's keyboard cursor.
 #[derive(Clone, Debug, PartialEq)]
 pub struct UiState {
+    pub macros_open: bool,
     pub places: f32,
     pub reader: f32,
     pub dialog: Option<Dialog>,
@@ -1295,6 +1296,7 @@ pub struct UiState {
 impl Default for UiState {
     fn default() -> Self {
         Self {
+            macros_open: false,
             places: 0.18,
             reader: 0.42,
             dialog: None,

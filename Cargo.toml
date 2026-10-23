@@ -130,6 +130,7 @@ editor = { path = "libs/editor" }
 editor-model = { path = "libs/editor-model", default-features = false }
 expr = { path = "libs/expr" }
 logging = { path = "libs/logging" }
+macros = { path = "libs/macros" }
 mix = { path = "libs/mix" }
 syntax = { path = "libs/syntax" }
 props = { path = "libs/props" }

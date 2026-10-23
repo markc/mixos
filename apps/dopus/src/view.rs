@@ -174,6 +174,9 @@ pub fn view(ui: &mut Ui, app: &App, commands: &Registry<App>, strings: &Strings)
         .show(ui, |ui| panes(ui, app, commands, strings, &mut events));
     drag_preview(ui.ctx());
     dialogs(ui.ctx(), app, commands, strings, &mut events);
+    if toolkit::macros::show_app(ui.ctx(), "dopus", app.macros_open) {
+        events.push(UiEvent::Command("help.macros", Origin::Ui));
+    }
     toolkit::titlebar::edges(ui);
     events
 }

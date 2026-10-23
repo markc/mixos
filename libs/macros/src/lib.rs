@@ -1,0 +1,8 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+//! Shared Mix macro discovery and execution. Discovery never executes scripts.
+
+mod catalogue;
+mod runner;
+
+pub use catalogue::{Catalogue, Diagnostic, Entry, Roots, Tier, valid_id};
+pub use runner::{OUTPUT_LIMIT, Output, Runner, Status};

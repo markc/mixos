@@ -102,6 +102,7 @@ pub struct App {
     pub theme: toolkit::theme_menu::Choice,
     /// The Keyboard Shortcuts dialog is open.
     pub keys_dialog: bool,
+    pub macros_open: bool,
     /// The About dialog is open.
     pub about_dialog: bool,
     /// Text the platform read for a Ctrl+Shift+V, for the paste command.
@@ -195,6 +196,7 @@ impl App {
             effects: Vec::new(),
             theme: Default::default(),
             keys_dialog: false,
+            macros_open: false,
             about_dialog: false,
             pasted: None,
             target_tab: None,

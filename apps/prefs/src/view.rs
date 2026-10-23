@@ -177,6 +177,9 @@ pub fn view(
         });
     dialogs(ui, engine, commands, strings, &mut events);
     wallpaper::picker(ui, engine, &mut events);
+    if toolkit::macros::show_app(ui.ctx(), "prefs", engine.ui.macros_open) {
+        events.push(UiEvent::Command("help.macros", Origin::Ui));
+    }
     toolkit::titlebar::edges(ui);
     events
 }

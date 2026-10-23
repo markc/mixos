@@ -348,9 +348,10 @@ pub struct IconBarItem {
     pub toggled: bool,
 }
 
-/// The standard tail, left to right: search, the shortcuts sheet, light
+/// The standard tail, left to right: macros, search, the shortcuts sheet, light
 /// and dark. Each slot takes the first id the app registers.
-const TAIL: [&[&str]; 3] = [
+const TAIL: [&[&str]; 4] = [
+    &["help.macros"],
     &["app.runner", "view.search"],
     &["help.shortcuts", "help.keys"],
     &["view.mode"],
@@ -370,6 +371,7 @@ pub fn icon_bar<S>(
     let tail = TAIL.iter().filter_map(|ids| {
         let id = ids.iter().find(|id| registry.get(id).is_some())?;
         let icon = match *id {
+            "help.macros" => Icon::ScrollText,
             "app.runner" | "view.search" => Icon::Search,
             "view.mode" => theme_icon(dark),
             _ => Icon::Keyboard,

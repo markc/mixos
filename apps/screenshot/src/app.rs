@@ -152,6 +152,8 @@ pub enum Answer {
 /// value (`screenshot.info`'s `ui`).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct UiState {
+    #[serde(default)]
+    pub macros_open: bool,
     pub tool: Tool,
     /// The ink new objects take, straight sRGB with alpha.
     pub colour: [u8; 4],
@@ -198,6 +200,7 @@ pub const DELAYS: [u32; 4] = [0, 3, 5, 10];
 impl UiState {
     fn new(colour: [u8; 4]) -> Self {
         Self {
+            macros_open: false,
             tool: Tool::Draw(Kind::Arrow),
             colour,
             width: WIDTHS[1].2,

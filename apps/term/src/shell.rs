@@ -659,6 +659,7 @@ impl Shell {
                 let elsewhere = focused.is_some_and(|f| f != self.focus);
                 let keyboard = !elsewhere
                     && !toolkit::menu::is_open(&ctx)
+                    && !self.app.macros_open
                     && !self.app.keys_dialog
                     && !self.app.about_dialog
                     && !self.exiting;
@@ -719,6 +720,9 @@ impl Shell {
                         .execute("tab.close", &mut self.app, Origin::Ui);
                 }
             }
+        }
+        if toolkit::macros::show_app(&ctx, "term", self.app.macros_open) {
+            let _ = self.commands.execute("help.macros", &mut self.app, Origin::Ui);
         }
         if self.app.keys_dialog && view::keys_dialog(&ctx, &self.commands, &self.strings) {
             self.app.keys_dialog = false;

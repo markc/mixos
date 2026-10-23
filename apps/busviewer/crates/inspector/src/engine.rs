@@ -84,6 +84,8 @@ pub struct Row {
 /// value and readable over the Bus (`busviewer.info`).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct UiState {
+    #[serde(default)]
+    pub macros_open: bool,
     pub selected: Option<Selection>,
     pub row_key: Option<String>,
     pub filter: String,
@@ -115,6 +117,7 @@ pub struct UiState {
 impl Default for UiState {
     fn default() -> Self {
         Self {
+            macros_open: false,
             selected: None,
             row_key: None,
             filter: String::new(),

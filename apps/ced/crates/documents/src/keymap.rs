@@ -150,7 +150,7 @@ pub const CONTEXTUAL: &[(&str, &str)] = &[
     ("Shift+Tab", "outdent the selection"),
     (
         "Alt+<letter>",
-        "open that menu (File, Edit, Search, View, Macros, Tabs, Help)",
+        "open that menu (File, Edit, Search, View, Tabs, Help)",
     ),
 ];
 

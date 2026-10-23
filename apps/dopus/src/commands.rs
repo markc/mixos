@@ -69,6 +69,10 @@ fn first_free(action: &str, used: &mut Vec<KeyboardShortcut>) -> Option<Keyboard
 /// The registry, with the default chords as shortcuts.
 pub fn registry() -> Registry<App> {
     let mut r = Registry::new();
+    r.add(toolkit::macros::command(
+        |a: &App| a.dialog.is_none(),
+        |a: &mut App| a.macros_open = !a.macros_open,
+    ));
     let mut used = Vec::new();
     let file = Some("file");
     let view = Some("view");

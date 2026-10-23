@@ -55,6 +55,9 @@ fn several_tabs(a: &App) -> bool {
 
 pub fn registry() -> Registry<App> {
     let mut r = Registry::new();
+    r.add(toolkit::macros::command(always, |a: &mut App| {
+        a.macros_open = !a.macros_open;
+    }));
     let cs = ctrl_shift();
     let (ctrl, shift) = (Modifiers::CTRL, Modifiers::SHIFT);
     commands! { r;

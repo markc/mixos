@@ -25,7 +25,7 @@ const NONE: Modifiers = Modifiers::NONE;
 pub fn needs_window(id: &str) -> bool {
     matches!(
         id,
-        "file.open" | "file.save_as" | "help.about" | "help.shortcuts"
+        "file.open" | "file.save_as" | "help.about" | "help.shortcuts" | "help.macros"
     )
 }
 
@@ -77,6 +77,10 @@ macro_rules! tools {
 /// The registry.
 pub fn registry() -> toolkit::command::EngineAdapter<App> {
     let mut r = Registry::new();
+    r.add(toolkit::macros::command(
+        |a: &App| !a.headless && !a.modal(),
+        |a: &mut App| a.ui.macros_open = !a.ui.macros_open,
+    ));
     // File.
     r.add(Command {
         id: "file.open",

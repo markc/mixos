@@ -107,6 +107,7 @@ pub struct FindBar {
 /// What the window shows besides the documents: one serialisable struct.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct UiState {
+    pub macros_open: bool,
     /// Text size in points.
     pub font_px: u16,
     pub whitespace: bool,
@@ -298,6 +299,7 @@ impl App {
 
     fn ui_from(config: &Config, problems: bool, output: bool, find: Option<FindBar>) -> UiState {
         UiState {
+            macros_open: false,
             font_px: config.font_px.unwrap_or(DEFAULT_FONT_PX),
             whitespace: config.show_whitespace,
             line_numbers: config.line_numbers,
@@ -457,7 +459,7 @@ impl App {
             ViewMarkdownSource | ViewMarkdownSplit | ViewMarkdownPreview => {
                 self.active().is_some_and(|tab| self.markdown(tab))
             }
-            FileNew | FileOpen | FileExit | FileSaveAll | HelpKeys | HelpAbout | ViewZoomIn
+            FileNew | FileOpen | FileExit | FileSaveAll | HelpKeys | HelpMacros | HelpAbout | ViewZoomIn
             | ViewZoomOut | ViewZoomReset | ViewWhitespace | ViewLineNumbers | ViewRemoteCarets
             | ViewProblems | ViewOutput | ViewReloadSettings => true,
             FileClose | ViewClearMarkers => tab,
@@ -756,6 +758,10 @@ impl App {
                 }
                 None => self.done(token, Err(Self::refused(code::NOT_FOUND, "no_document"))),
             },
+            HelpMacros => {
+                self.ui.macros_open = !self.ui.macros_open;
+                self.done(token, ok())
+            }
             HelpKeys => {
                 self.show(Dialog::Keys { token });
                 Vec::new()

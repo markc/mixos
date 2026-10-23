@@ -31,9 +31,6 @@ impl AppDirs {
     pub fn theme_override(&self) -> PathBuf {
         self.config().join("theme.conf.mix")
     }
-    pub fn macros_dir(&self) -> PathBuf {
-        self.config().join("macros")
-    }
     pub fn session_file(&self) -> PathBuf {
         self.state().join("session.json")
     }

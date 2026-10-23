@@ -17,6 +17,9 @@ const fn key(modifiers: Modifiers, key: Key) -> Option<KeyboardShortcut> {
 
 pub fn registry() -> Registry<Engine> {
     let mut r = Registry::new();
+    r.add(toolkit::macros::command(undialogued, |e: &mut Engine| {
+        e.ui.macros_open = !e.ui.macros_open;
+    }));
     r.add(Command {
         id: "file.quit",
         submenu: None,

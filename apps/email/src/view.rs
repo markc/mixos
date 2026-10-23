@@ -192,6 +192,9 @@ pub fn view(
             events.push(UiEvent::CloseDialog);
         }
     }
+    if toolkit::macros::show_app(ui.ctx(), "email", state.ui.macros_open) {
+        events.push(UiEvent::Command("help.macros", Origin::Ui));
+    }
     toolkit::titlebar::edges(ui);
     events
 }
