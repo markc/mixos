@@ -132,8 +132,14 @@ fn restore($rec)
       rename($tmp, $dest)
     end
   end
-  for $d in reverse($rec.dirs ?? [])
-    $_ = run_argv(["rmdir", $root .. "/" .. $d], {timeout: 10})
+  -- Only directories this install created are listed; rmdir leaves any that
+  -- still hold content. Receipts from before created_dirs listed every
+  -- archive directory (`dirs`), so they remove none: leaving an empty
+  -- directory behind is the safe direction.
+  for $d in reverse($rec.created_dirs ?? [])
+    safe_rel($d)
+    safe_parent($root .. "/" .. $d)
+    $_ = run_argv(["rmdir", "--", $root .. "/" .. $d], {timeout: 10})
   end
   print("ROLLBACK " .. $rec.id .. " restored gold files")
 end
@@ -273,15 +279,21 @@ try
       $rel = slice($p, len($top) + 1, len($p))
       safe_rel($rel)
       $st = stat($p, {follow_symlinks: false})
+      if (not contains(["bin", "share", "lib"], $rel) and not starts_with($rel, "bin/") and
+          not starts_with($rel, "share/") and not starts_with($rel, "lib/")) then
+        raise("GOLD_LAYOUT", "unsupported release path " .. $rel)
+      end
       if $st.is_dir then
-        if not contains($dirs, $rel) then push($dirs, $rel) end
+        -- Record only directories this install will create, so a rollback
+        -- never removes one that was already there (even an empty one).
+        $dir_dest = $root .. "/" .. $rel
+        safe_parent($dir_dest)
+        if not exists($dir_dest, {follow_symlinks: false}) and not contains($dirs, $rel) then
+          push($dirs, $rel)
+        end
         continue
       end
       if contains(["bin", "share", "lib"], $rel) then continue end
-      if (not starts_with($rel, "bin/") and not starts_with($rel, "share/") and
-          not starts_with($rel, "lib/")) then
-        raise("GOLD_LAYOUT", "unsupported release path " .. $rel)
-      end
       $after = if $st.is_symlink then {kind: "link", target: read_link($p)}
         else {kind: "file", sha256: hash_file($p, "sha256")} end
       if contains($seen, $rel) then
@@ -330,7 +342,7 @@ try
   for $f in $files
     $record.files = push($record.files, {rel: $f.rel, before: $f.before, after: $f.after, same: $f.same})
   end
-  $record.dirs = $dirs
+  $record.created_dirs = $dirs
   write_atomic($pending, data_encode($record) .. "\n")
   try
     for $f in $files

@@ -18,6 +18,8 @@ end
 mkdir($root .. "/bin", {parents: true})
 mkdir($dist, {parents: true})
 write_file($root .. "/bin/mock", "previous\n")
+-- An empty directory that predates the install must survive its rollback.
+mkdir($root .. "/share", {parents: true})
 mkdir($base .. "/pack/" .. $name .. "/bin", {parents: true})
 mkdir($base .. "/pack/" .. $name .. "/lib", {parents: true})
 mkdir($base .. "/pack/" .. $name .. "/share/scenes", {parents: true})
@@ -95,6 +97,10 @@ try
   need(not exists($root .. "/bin/alias", {follow_symlinks: false}), "rollback left new link")
   need(not exists($root .. "/lib/libinput.so.10", {follow_symlinks: false}), "rollback left runtime library")
   need(not is_file($root .. "/share/scenes/test.mix"), "rollback left new scene")
+  need(not exists($root .. "/share/scenes", {follow_symlinks: false}), "rollback left a directory it created")
+  need(not exists($root .. "/lib", {follow_symlinks: false}), "rollback left the lib directory it created")
+  need(is_dir($root .. "/share"), "rollback removed an empty directory that predates the install")
+  need(is_dir($root .. "/bin"), "rollback removed a directory that predates the install")
   $apply2 = run_argv(concat(concat($base_argv, ["apply"]), $opts), {timeout: 30, stderr: "stdout"})
   need($apply2.exit_code == 0, "second apply failed: " .. $apply2.stdout)
   $lines2 = split(trim($apply2.stdout), "\n")
@@ -122,6 +128,14 @@ try
     {timeout: 30, stderr: "stdout"})
   need($unsafe.exit_code != 0 and contains($unsafe.stdout, "GOLD_PATH"),
     "unsafe receipt path was accepted: " .. $unsafe.stdout)
+  remove($state .. "/pending.mx")
+  $dir_attack = $rec2
+  $dir_attack.created_dirs = ["share/../../outside"]
+  write_file($state .. "/pending.mx", data_encode($dir_attack) .. "\n")
+  $unsafe_dir = run_argv(concat($base_argv, ["recover", "--root", $root, "--state", $state]),
+    {timeout: 30, stderr: "stdout"})
+  need($unsafe_dir.exit_code != 0 and contains($unsafe_dir.stdout, "GOLD_PATH"),
+    "unsafe receipt directory was accepted: " .. $unsafe_dir.stdout)
   remove($state .. "/pending.mx")
   $id_attack = $rec2
   $id_attack.id = "../../escape"

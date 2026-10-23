@@ -51,6 +51,19 @@ fn entries_for($root, $bins)
 end
 fn add_tree($from, $to)
   if not is_dir($from) then raise("PACKAGE_MISSING", "runtime tree " .. $from .. " is missing") end
+  -- git status does not list ignored files, but cp -a would ship them, so the
+  -- clean-source check alone cannot vouch for a copied tree.
+  if not $fixture then
+    if not starts_with($from, $source .. "/") then
+      raise("PACKAGE_SOURCE", "runtime tree " .. $from .. " is outside the source checkout")
+    end
+    $rel = strip_prefix($from, $source .. "/")
+    $ignored = trim(run_argv_must(["git", "-C", $source, "ls-files", "--others", "--ignored",
+      "--exclude-standard", "--directory", "--no-empty-directory", "--", $rel], {timeout: 30}))
+    if $ignored != "" then
+      raise("PACKAGE_SOURCE", "runtime tree " .. $rel .. " holds gitignored files: " .. replace($ignored, "\n", ", "))
+    end
+  end
   mkdir($to, {parents: true})
   run_argv_must(["cp", "-a", $from .. "/.", $to], {timeout: 120})
 end
