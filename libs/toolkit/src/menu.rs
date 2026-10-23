@@ -729,7 +729,7 @@ pub fn anchored_open(ctx: &Context, open: bool) {
     ctx.data_mut(|d| d.insert_temp(crate::window_id(viewport, "toolkit.anchored-open"), open));
 }
 
-fn anchored_rect(anchor: Rect, outer: Vec2, bounds: Rect) -> Rect {
+pub(crate) fn anchored_rect(anchor: Rect, outer: Vec2, bounds: Rect) -> Rect {
     let top = anchor.bottom().max(bounds.top());
     let size = outer.min(vec2(bounds.width(), (bounds.bottom() - top).max(0.0)));
     let left = if anchor.left() + size.x > bounds.right() {
@@ -741,6 +741,24 @@ fn anchored_rect(anchor: Rect, outer: Vec2, bounds: Rect) -> Rect {
         pos2(left.clamp(bounds.left(), bounds.right() - size.x), top),
         size,
     )
+}
+
+/// The same measured frame used by the drop-down and its inline title entry.
+pub(crate) fn anchored_menu_rect(ui: &Ui, anchor: Rect, menu: &Menu) -> Rect {
+    let chrome = Chrome::of(ui.ctx());
+    let layout = Layout::new(ui, &chrome, &menu.entries, chrome.metrics.menu_min_width);
+    anchored_content_rect(ui, anchor, layout.size)
+}
+
+fn anchored_content_rect(ui: &Ui, anchor: Rect, content: Vec2) -> Rect {
+    let chrome = Chrome::of(ui.ctx());
+    let margin = Frame::menu(ui.style()).total_margin().sum();
+    let bounds = ui.ctx().content_rect().shrink(chrome.metrics.edge_gap);
+    let mut outer = content + margin;
+    if outer.y > (bounds.bottom() - anchor.bottom()).max(0.0) {
+        outer.x += ui.spacing().scroll.allocated_width();
+    }
+    anchored_rect(anchor, outer, bounds)
 }
 
 /// A single-level menu below an arbitrary icon. Uses the bar's navigation,
@@ -798,12 +816,7 @@ pub fn anchored(
             chrome.metrics.menu_min_width,
         );
         let margin = Frame::menu(ui.style()).total_margin().sum();
-        let bounds = ctx.content_rect().shrink(chrome.metrics.edge_gap);
-        let mut outer = layout.size + margin;
-        if outer.y > (bounds.bottom() - anchor.bottom()).max(0.0) {
-            outer.x += ui.spacing().scroll.allocated_width();
-        }
-        let rect = anchored_rect(anchor, outer, bounds);
+        let rect = anchored_content_rect(ui, anchor, layout.size);
         ctx.data_mut(|d| {
             d.insert_temp(
                 crate::window_id(viewport, "toolkit.anchored-tooltips"),

@@ -3,6 +3,9 @@
 
 ## Unreleased — 2026-10-24
 
+- Give the New macro title field the drop-down's measured width, anchored
+  placement and a full text-field height. Wrap inline errors within that frame.
+- Cover title entry at scale 2.5, including wider catalogues and a snapshot.
 - Share atomic-save target resolution with the editor and probe that exact
   directory, including through symlinks. Refuse read-only macro files inline.
 - Keep tall macro menus below their icon and scroll vertically; reserve the

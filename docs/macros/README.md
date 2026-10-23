@@ -52,6 +52,9 @@ The drop-down shares the menu bar's row sizes, font, padding and frame, with
 the same minimum width. Near the window's right edge it aligns to the icon's
 right edge. Oversized content scrolls inside the window. An empty catalogue
 shows **No macros yet**.
+The New macro title field uses the same measured width and anchored placement
+as the drop-down, with a full text-field height. Creation errors wrap below
+the field within that frame.
 Tall menus stay below the title-bar icon and scroll vertically, preserving
 access to the icon. Horizontal scrolling is used only for rows wider than
 the available content area.
