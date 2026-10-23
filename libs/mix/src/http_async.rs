@@ -350,10 +350,7 @@ async fn perform(
         };
         let status = response.status().as_u16();
         map.insert("status".into(), Value::Number(status as f64));
-        map.insert(
-            "final_url".into(),
-            Value::String(current_url.to_string()),
-        );
+        map.insert("final_url".into(), Value::String(current_url.to_string()));
         let mut response_headers = indexmap::IndexMap::new();
         for key in response.headers().keys() {
             response_headers.insert(

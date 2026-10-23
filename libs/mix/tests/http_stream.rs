@@ -32,9 +32,7 @@ fn server(f: impl FnOnce(TcpStream) + Send + 'static) -> (String, JoinHandle<()>
     server_request(move |socket, _request| f(socket))
 }
 
-fn server_request(
-    f: impl FnOnce(TcpStream, String) + Send + 'static,
-) -> (String, JoinHandle<()>) {
+fn server_request(f: impl FnOnce(TcpStream, String) + Send + 'static) -> (String, JoinHandle<()>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let url = format!("http://{}/", listener.local_addr().unwrap());
     let task = thread::spawn(move || {
@@ -446,94 +444,106 @@ async fn tls_verification_and_explicit_insecure_mode_match_buffered_http() {
     use rustls::pki_types::{CertificateDer, PrivateKeyDer, pem::PemObject};
     use ureq::rustls;
     for insecure in [false, true] {
-      for path in ["ordinary", "idle", "stream"] {
-        let cert = CertificateDer::from_pem_slice(include_bytes!("fixtures/socket-test-cert.pem"))
+        for path in ["ordinary", "idle", "stream"] {
+            let cert =
+                CertificateDer::from_pem_slice(include_bytes!("fixtures/socket-test-cert.pem"))
+                    .unwrap();
+            let key = PrivateKeyDer::from_pem_slice(include_bytes!("fixtures/socket-test-key.pem"))
+                .unwrap();
+            let config = rustls::ServerConfig::builder_with_provider(std::sync::Arc::new(
+                rustls::crypto::ring::default_provider(),
+            ))
+            .with_safe_default_protocol_versions()
+            .unwrap()
+            .with_no_client_auth()
+            .with_single_cert(vec![cert], key)
             .unwrap();
-        let key =
-            PrivateKeyDer::from_pem_slice(include_bytes!("fixtures/socket-test-key.pem")).unwrap();
-        let config = rustls::ServerConfig::builder_with_provider(std::sync::Arc::new(
-            rustls::crypto::ring::default_provider(),
-        ))
-        .with_safe_default_protocol_versions()
-        .unwrap()
-        .with_no_client_auth()
-        .with_single_cert(vec![cert], key)
-        .unwrap();
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let url = format!("https://{}/", listener.local_addr().unwrap());
-        let task = thread::spawn(move || {
-            let (socket, _) = accept(&listener);
-            socket
-                .set_read_timeout(Some(Duration::from_secs(2)))
-                .unwrap();
-            let mut socket = rustls::StreamOwned::new(
-                rustls::ServerConnection::new(std::sync::Arc::new(config)).unwrap(),
-                socket,
-            );
-            let mut request = Vec::new();
-            while !request.ends_with(b"\r\n\r\n") {
-                let mut byte = [0];
-                match socket.read(&mut byte) {
-                    Ok(1) => request.push(byte[0]),
-                    _ if !insecure => return,
-                    other => panic!("TLS request failed: {other:?}"),
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let url = format!("https://{}/", listener.local_addr().unwrap());
+            let task = thread::spawn(move || {
+                let (socket, _) = accept(&listener);
+                socket
+                    .set_read_timeout(Some(Duration::from_secs(2)))
+                    .unwrap();
+                let mut socket = rustls::StreamOwned::new(
+                    rustls::ServerConnection::new(std::sync::Arc::new(config)).unwrap(),
+                    socket,
+                );
+                let mut request = Vec::new();
+                while !request.ends_with(b"\r\n\r\n") {
+                    let mut byte = [0];
+                    match socket.read(&mut byte) {
+                        Ok(1) => request.push(byte[0]),
+                        _ if !insecure => return,
+                        other => panic!("TLS request failed: {other:?}"),
+                    }
                 }
-            }
-            socket
-                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 3\r\n\r\nok\n")
-                .unwrap();
-            socket.flush().unwrap();
-        });
-        let opts = format!("{{ssl_verify: {}}}", !insecure);
-        let call = match path {
-            "ordinary" => format!("http_get(\"{url}\", nil, {opts})"),
-            "idle" => format!("http_get(\"{url}\", nil, {{ssl_verify: {}, idle_timeout: 1}})", !insecure),
-            _ => format!("http_stream(\"GET\", \"{url}\", fn($line) = true, nil, nil, {opts})"),
-        };
-        let out = run(&format!(
-            r#"
+                socket
+                    .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 3\r\n\r\nok\n")
+                    .unwrap();
+                socket.flush().unwrap();
+            });
+            let opts = format!("{{ssl_verify: {}}}", !insecure);
+            let call = match path {
+                "ordinary" => format!("http_get(\"{url}\", nil, {opts})"),
+                "idle" => format!(
+                    "http_get(\"{url}\", nil, {{ssl_verify: {}, idle_timeout: 1}})",
+                    !insecure
+                ),
+                _ => format!("http_stream(\"GET\", \"{url}\", fn($line) = true, nil, nil, {opts})"),
+            };
+            let out = run(&format!(
+                r#"
             $r = {call}
             print($r.status)
             print($r.error_code)
         "#,
-        ))
-        .await
-        .unwrap();
-        join(task).await;
-        assert_eq!(out, if insecure { "200\nnil\n" } else { "0\nHTTP_TLS\n" }, "{path}");
-      }
+            ))
+            .await
+            .unwrap();
+            join(task).await;
+            assert_eq!(
+                out,
+                if insecure {
+                    "200\nnil\n"
+                } else {
+                    "0\nHTTP_TLS\n"
+                },
+                "{path}"
+            );
+        }
     }
 }
 
 #[tokio::test]
 async fn post_redirect_does_not_replay_a_body_on_307_or_308() {
-  for status in [307, 308] {
-    for path in ["ordinary", "idle", "stream"] {
-    let (url, task) = server_request(move |mut socket, request| {
-        assert!(request.starts_with("POST / "));
-        assert!(request.ends_with("body"));
-        socket
+    for status in [307, 308] {
+        for path in ["ordinary", "idle", "stream"] {
+            let (url, task) = server_request(move |mut socket, request| {
+                assert!(request.starts_with("POST / "));
+                assert!(request.ends_with("body"));
+                socket
             .write_all(format!("HTTP/1.1 {status} Redirect\r\nLocation: /other\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").as_bytes())
             .unwrap();
-    });
-    let call = match path {
-        "ordinary" => format!("http_post(\"{url}\", \"body\")"),
-        "idle" => format!("http_post(\"{url}\", \"body\", nil, {{idle_timeout: 1}})"),
-        _ => format!("http_stream(\"POST\", \"{url}\", fn($line) = true, \"body\")"),
-    };
-    let out = run(&format!(
-        r#"
+            });
+            let call = match path {
+                "ordinary" => format!("http_post(\"{url}\", \"body\")"),
+                "idle" => format!("http_post(\"{url}\", \"body\", nil, {{idle_timeout: 1}})"),
+                _ => format!("http_stream(\"POST\", \"{url}\", fn($line) = true, \"body\")"),
+            };
+            let out = run(&format!(
+                r#"
         $r = {call}
         print($r.status)
         print($r.error_code)
     "#
-    ))
-    .await
-    .unwrap();
-    join(task).await;
-    assert_eq!(out, format!("{status}\nnil\n"), "{path}");
+            ))
+            .await
+            .unwrap();
+            join(task).await;
+            assert_eq!(out, format!("{status}\nnil\n"), "{path}");
+        }
     }
-  }
 }
 
 #[tokio::test]
@@ -619,7 +629,9 @@ async fn buffered_success_keys_match_without_stream_fields() {
         let mut ordinary_keys = None;
         for idle in [false, true] {
             let (url, task) = server(|mut socket| {
-                socket.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok").unwrap();
+                socket
+                    .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok")
+                    .unwrap();
             });
             let opts = if idle { "{idle_timeout: 1}" } else { "{}" };
             let call = match name {
@@ -627,11 +639,17 @@ async fn buffered_success_keys_match_without_stream_fields() {
                 "http_post" => format!("http_post(\"{url}\", \"\", nil, {opts})"),
                 _ => format!("http_request(\"GET\", \"{url}\", nil, nil, {opts})"),
             };
-            let out = run(&format!("$r = {call}\nprint(json_encode(keys($r)))")).await.unwrap();
+            let out = run(&format!("$r = {call}\nprint(json_encode(keys($r)))"))
+                .await
+                .unwrap();
             join(task).await;
             let mut keys: Vec<String> = serde_json::from_str(out.trim()).unwrap();
             keys.sort_unstable();
-            assert!(!keys.iter().any(|key| key == "stopped" || key == "bytes_received"));
+            assert!(
+                !keys
+                    .iter()
+                    .any(|key| key == "stopped" || key == "bytes_received")
+            );
             if let Some(expected) = &ordinary_keys {
                 assert_eq!(&keys, expected, "{name}");
             } else {
@@ -646,16 +664,20 @@ async fn gzip_negotiation_and_decoded_byte_counts_match_ureq() {
     // gzip -n of our own "data: gzip\n" fixture. Keep this independent of
     // Mix's archive feature and of any compression tool on the test worker.
     let compressed = [
-        31, 139, 8, 0, 0, 0, 0, 0, 0, 3, 75, 73, 44, 73, 180, 82,
-        72, 175, 202, 44, 224, 2, 0, 44, 125, 98, 168, 11, 0, 0, 0,
+        31, 139, 8, 0, 0, 0, 0, 0, 0, 3, 75, 73, 44, 73, 180, 82, 72, 175, 202, 44, 224, 2, 0, 44,
+        125, 98, 168, 11, 0, 0, 0,
     ];
     for path in ["ordinary", "idle", "stream"] {
         let payload = compressed;
         let (url, task) = server_request(move |mut socket, request| {
-            let encoding = request.lines().find_map(|line| {
-                let (key, value) = line.split_once(':')?;
-                key.eq_ignore_ascii_case("accept-encoding").then(|| value.trim())
-            }).unwrap();
+            let encoding = request
+                .lines()
+                .find_map(|line| {
+                    let (key, value) = line.split_once(':')?;
+                    key.eq_ignore_ascii_case("accept-encoding")
+                        .then(|| value.trim())
+                })
+                .unwrap();
             assert_eq!(encoding, "gzip");
             write!(socket, "HTTP/1.1 200 OK\r\nContent-Encoding: gzip\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", payload.len()).unwrap();
             socket.write_all(&payload).unwrap();
@@ -665,9 +687,20 @@ async fn gzip_negotiation_and_decoded_byte_counts_match_ureq() {
             "idle" => format!("http_get(\"{url}\", {{idle_timeout: 1}})"),
             _ => format!("http_stream(\"GET\", \"{url}\", fn($line) print($line) end)"),
         };
-        let out = run(&format!("$r = {call}\nprint($r.status)\nprint($r.body)\nprint($r.bytes_received ?? 0)")).await.unwrap();
+        let out = run(&format!(
+            "$r = {call}\nprint($r.status)\nprint($r.body)\nprint($r.bytes_received ?? 0)"
+        ))
+        .await
+        .unwrap();
         join(task).await;
-        assert_eq!(out, if path == "stream" { "data: gzip\n200\n\n11\n" } else { "200\ndata: gzip\n\n0\n" });
+        assert_eq!(
+            out,
+            if path == "stream" {
+                "data: gzip\n200\n\n11\n"
+            } else {
+                "200\ndata: gzip\n\n0\n"
+            }
+        );
     }
 }
 
@@ -682,14 +715,20 @@ async fn redirect_budget_boundary_matches_ureq() {
                 // 200, whereas receiving a fifth redirect exhausts the budget.
                 for index in 0..5 {
                     let (mut socket, _) = accept(&listener);
-                    socket.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+                    socket
+                        .set_read_timeout(Some(Duration::from_secs(2)))
+                        .unwrap();
                     let mut request = Vec::new();
                     while !request.ends_with(b"\r\n\r\n") {
                         let mut byte = [0];
                         assert_eq!(socket.read(&mut byte).unwrap(), 1);
                         request.push(byte[0]);
                     }
-                    let status = if index < redirects { "302 Found" } else { "200 OK" };
+                    let status = if index < redirects {
+                        "302 Found"
+                    } else {
+                        "200 OK"
+                    };
                     write!(socket, "HTTP/1.1 {status}\r\nLocation: /next\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").unwrap();
                 }
             });
@@ -698,9 +737,21 @@ async fn redirect_budget_boundary_matches_ureq() {
                 "idle" => format!("http_get(\"{url}\", {{idle_timeout: 1}})"),
                 _ => format!("http_stream(\"GET\", \"{url}\", fn($line) = true)"),
             };
-            let out = run(&format!("$r = {call}\nprint($r.status)\nprint($r.error_code)")).await.unwrap();
+            let out = run(&format!(
+                "$r = {call}\nprint($r.status)\nprint($r.error_code)"
+            ))
+            .await
+            .unwrap();
             join(task).await;
-            assert_eq!(out, if redirects == 4 { "200\nnil\n" } else { "0\nHTTP_REDIRECT\n" }, "{path}");
+            assert_eq!(
+                out,
+                if redirects == 4 {
+                    "200\nnil\n"
+                } else {
+                    "0\nHTTP_REDIRECT\n"
+                },
+                "{path}"
+            );
         }
     }
 }
@@ -714,21 +765,35 @@ async fn url_userinfo_authentication_matches_ureq() {
     ] {
         for path in ["ordinary", "idle", "stream"] {
             let (url, task) = server_request(move |mut socket, request| {
-                let auth: Vec<_> = request.lines().filter_map(|line| {
-                    let (key, value) = line.split_once(':')?;
-                    key.eq_ignore_ascii_case("authorization").then(|| value.trim())
-                }).collect();
+                let auth: Vec<_> = request
+                    .lines()
+                    .filter_map(|line| {
+                        let (key, value) = line.split_once(':')?;
+                        key.eq_ignore_ascii_case("authorization")
+                            .then(|| value.trim())
+                    })
+                    .collect();
                 assert_eq!(auth, [expected]);
-                socket.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n").unwrap();
+                socket
+                    .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
+                    .unwrap();
             });
             let url = url.replacen("http://", &format!("http://{userinfo}@"), 1);
-            let headers = if explicit { "{Authorization: \"Bearer explicit\"}" } else { "{}" };
+            let headers = if explicit {
+                "{Authorization: \"Bearer explicit\"}"
+            } else {
+                "{}"
+            };
             let call = match path {
                 "ordinary" => format!("http_get(\"{url}\", {headers})"),
                 "idle" => format!("http_get(\"{url}\", {headers}, {{idle_timeout: 1}})"),
                 _ => format!("http_stream(\"GET\", \"{url}\", fn($line) = true, nil, {headers})"),
             };
-            let out = run(&format!("$r = {call}\nprint($r.status)\nprint($r.final_url == \"{url}\")")).await.unwrap();
+            let out = run(&format!(
+                "$r = {call}\nprint($r.status)\nprint($r.final_url == \"{url}\")"
+            ))
+            .await
+            .unwrap();
             join(task).await;
             assert_eq!(out, "200\ntrue\n", "{path}");
         }
@@ -739,15 +804,24 @@ async fn url_userinfo_authentication_matches_ureq() {
 async fn redirect_discards_a_caller_host_on_idle_and_stream_paths() {
     for path in ["idle", "stream"] {
         let (target, target_task) = server_request(|mut socket, request| {
-            let host = request.lines().find_map(|line| {
-                let (key, value) = line.split_once(':')?;
-                key.eq_ignore_ascii_case("host").then(|| value.trim())
-            }).unwrap();
+            let host = request
+                .lines()
+                .find_map(|line| {
+                    let (key, value) = line.split_once(':')?;
+                    key.eq_ignore_ascii_case("host").then(|| value.trim())
+                })
+                .unwrap();
             assert_eq!(host, socket.local_addr().unwrap().to_string());
-            socket.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n").unwrap();
+            socket
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
+                .unwrap();
         });
         let (url, task) = server_request(move |mut socket, request| {
-            assert!(request.to_ascii_lowercase().contains("host: original.example"));
+            assert!(
+                request
+                    .to_ascii_lowercase()
+                    .contains("host: original.example")
+            );
             write!(socket, "HTTP/1.1 302 Found\r\nLocation: {target}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").unwrap();
         });
         let headers = "{Host: \"original.example\"}";
@@ -756,7 +830,12 @@ async fn redirect_discards_a_caller_host_on_idle_and_stream_paths() {
         } else {
             format!("http_stream(\"GET\", \"{url}\", fn($line) = true, nil, {headers})")
         };
-        assert_eq!(run(&format!("$r = {call}\nprint($r.status)")).await.unwrap(), "200\n");
+        assert_eq!(
+            run(&format!("$r = {call}\nprint($r.status)"))
+                .await
+                .unwrap(),
+            "200\n"
+        );
         join(task).await;
         join(target_task).await;
     }
@@ -765,12 +844,17 @@ async fn redirect_discards_a_caller_host_on_idle_and_stream_paths() {
 #[tokio::test]
 async fn nested_http_stream_callbacks_keep_independent_responses_and_frames() {
     let (inner, inner_task) = server(|mut socket| {
-        socket.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\nin!\n").unwrap();
+        socket
+            .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\nin!\n")
+            .unwrap();
     });
     let (outer, outer_task) = server(|mut socket| {
-        socket.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 8\r\n\r\none\ntwo\n").unwrap();
+        socket
+            .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 8\r\n\r\none\ntwo\n")
+            .unwrap();
     });
-    let out = run(&format!(r#"
+    let out = run(&format!(
+        r#"
         $r = http_stream("GET", "{outer}", fn($line)
             print("outer:" .. $line);
             if $line == "one" then
@@ -781,7 +865,10 @@ async fn nested_http_stream_callbacks_keep_independent_responses_and_frames() {
         end)
         print($r.status)
         print($r.bytes_received)
-    "#)).await.unwrap();
+    "#
+    ))
+    .await
+    .unwrap();
     join(outer_task).await;
     join(inner_task).await;
     assert_eq!(out, "outer:one\ninner:in!\n200\nouter:two\n200\n8\n");
@@ -790,13 +877,19 @@ async fn nested_http_stream_callbacks_keep_independent_responses_and_frames() {
 #[tokio::test]
 async fn bare_cr_is_data_including_at_eof() {
     let (url, task) = server(|mut socket| {
-        socket.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 8\r\n\r\none\rtwo\r").unwrap();
+        socket
+            .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 8\r\n\r\none\rtwo\r")
+            .unwrap();
     });
-    let out = run(&format!(r#"
+    let out = run(&format!(
+        r#"
         $r = http_stream("GET", "{url}", fn($line) print(json_encode($line)) end)
         print($r.status)
         print($r.bytes_received)
-    "#)).await.unwrap();
+    "#
+    ))
+    .await
+    .unwrap();
     join(task).await;
     assert_eq!(out, "\"one\\rtwo\\r\"\n200\n8\n");
 }
