@@ -1692,7 +1692,7 @@ mod tests {
         let row = h.get_by_label("New macro…").rect();
         let anchor = h.ctx.data(|d| d.get_temp::<egui::Rect>(crate::window_id(egui::ViewportId::ROOT, "macro-anchor"))).unwrap();
         let chrome = crate::chrome::Chrome::of(&h.ctx);
-        let margin = egui::Frame::menu(&h.ctx.style()).total_margin();
+        let margin = egui::Frame::menu(&h.ctx.global_style()).total_margin();
         assert!(row.width() >= chrome.metrics.menu_min_width);
         assert!((row.right() + margin.right - anchor.right()).abs() < 1.0);
         assert!(h.ctx.content_rect().contains_rect(row));
