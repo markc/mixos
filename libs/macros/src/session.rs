@@ -58,6 +58,19 @@ impl Session {
         self.0.lock().unwrap().catalogue.clone()
     }
 
+    /// Storage roots for background create/edit work in the GUI adapter.
+    pub fn roots(&self) -> Option<Roots> {
+        self.0.lock().unwrap().roots.clone()
+    }
+
+    pub fn runner_status(&self) -> Status {
+        self.0.lock().unwrap().runner.status()
+    }
+
+    pub fn runner_output(&self) -> Output {
+        self.0.lock().unwrap().runner.output()
+    }
+
     /// Call on a worker thread. No filesystem work holds the session lock.
     pub fn reload(&self) -> Result<Catalogue, String> {
         let (roots, app) = {
