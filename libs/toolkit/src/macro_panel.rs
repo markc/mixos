@@ -155,10 +155,13 @@ pub fn show(ctx: &egui::Context, open: &mut bool, data: &Data, draft: &mut Draft
     // The modal backdrop can consume a title-bar click before the app's
     // toggle sees it. Dismiss on that outside click as well, but ignore the
     // opening click when an app executes its toggle before drawing us.
-    let outside = was_open && ctx.input(|i| {
-        i.pointer.primary_clicked()
-            && i.pointer.interact_pos().is_some_and(|pos| !shown.rect.contains(pos))
-    });
+    let outside = was_open
+        && ctx.input(|i| {
+            i.pointer.primary_clicked()
+                && i.pointer
+                    .interact_pos()
+                    .is_some_and(|pos| !shown.rect.contains(pos))
+        });
     if shown.chosen.is_some() || shown.dismissed || outside {
         *open = false;
         ctx.data_mut(|d| d.remove::<bool>(visible));

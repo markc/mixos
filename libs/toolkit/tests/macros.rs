@@ -94,6 +94,8 @@ fn close_updates_the_open_flag() {
 struct AppPanel {
     open: bool,
     modal: bool,
+    queued_toggle: bool,
+    toggles: usize,
 }
 
 fn app_harness() -> Harness<'static, AppPanel> {
@@ -105,9 +107,9 @@ fn app_harness() -> Harness<'static, AppPanel> {
                     |s: &AppPanel| s.open || !s.modal,
                     |s: &mut AppPanel| s.open = !s.open,
                 );
-                let mut fired = false;
+                let mut fired = std::mem::take(&mut state.queued_toggle);
                 egui::CentralPanel::default().show(ui, |ui| {
-                    fired = ui
+                    fired |= ui
                         .add_enabled((toggle.enabled)(state), egui::Button::new("Toggle macros"))
                         .clicked();
                 });
@@ -116,6 +118,7 @@ fn app_harness() -> Harness<'static, AppPanel> {
                 // idempotent close. Both can arrive in the same frame.
                 if fired {
                     (toggle.run)(state);
+                    state.toggles += 1;
                 }
                 if close {
                     state.open = false;
@@ -124,6 +127,7 @@ fn app_harness() -> Harness<'static, AppPanel> {
             AppPanel {
                 open: true,
                 modal: true,
+                ..AppPanel::default()
             },
         );
     toolkit::install(&h.ctx, &toolkit::Theme::embedded());
@@ -150,6 +154,20 @@ fn app_panel_toggle_and_outside_dismissal_do_not_reopen_it() {
     assert!(!h.state().open);
     h.run_steps(40);
     assert!(!h.state().open);
+}
+
+#[test]
+fn same_frame_toggle_and_close_leave_the_app_panel_closed() {
+    let mut h = app_harness();
+    h.state_mut().queued_toggle = true;
+    h.get_by_label("Close").click();
+    h.run_steps(40);
+    assert_eq!(h.state().toggles, 1);
+    assert!(!h.state().open);
+    h.state_mut().modal = false;
+    h.get_by_label("Toggle macros").click();
+    h.run_steps(40);
+    assert!(h.state().open, "the opening click must not dismiss the panel");
 }
 
 #[test]
