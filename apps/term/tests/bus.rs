@@ -178,11 +178,18 @@ fn the_window_answers_its_verbs_over_a_real_broker() {
         "term.execute",
         "term.ui.tree",
         "term.window.state",
+        "term.macros.status",
     ] {
         assert!(names.contains(&verb), "{verb} missing from {names:?}");
     }
 
     // The lane still serves the terminal's own verbs on the same name.
+    let (rc, body) = call("term.macros.status", json!({}));
+    assert_eq!(rc, 0, "{body}");
+    assert_eq!(serde_json::from_str::<Value>(&body).unwrap()["state"], "idle");
+    let (rc, body) = call("HELP", json!({}));
+    assert_eq!(rc, 0, "{body}");
+    assert!(body.contains("term.macros.status"));
     let (rc, body) = call("term.tabs", json!({}));
     assert_eq!(rc, 0, "{body}");
     assert!(body.contains("instance="), "{body}");

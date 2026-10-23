@@ -54,6 +54,9 @@ pub fn describe() -> Value {
         json!({"name":"app.describe","description":"Describe the app and every verb with its arguments","read_only":true}),
     ];
     for (name, read_only) in term_core::bus::VERBS {
+        if name.starts_with("term.macros.") {
+            continue; // Described with argument shapes by the shared handler below.
+        }
         let description = help_line(name).unwrap_or(match name {
             "term.session" => {
                 "term.session {}: this process's pid, instance and native session status"

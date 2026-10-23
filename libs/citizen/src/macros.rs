@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Macro transport glue shared by application Bus lanes.
 use crate::outbox::Outbox;
-pub use ::macros::verbs::describe;
+pub use ::macros::verbs::{SUFFIXES, describe};
 use bus::native_client::{IncomingCommand, SupervisedClient};
 use serde_json::{Value, json};
 use std::sync::Arc;
