@@ -177,24 +177,24 @@ bytes before JSON parsing.
 
 | Error code | Meaning |
 |---|---|
-| `INVALID_ARGUMENT` | Bad or oversized body, unknown fields, missing or empty id/title |
+| `INVALID_ARGUMENT` | Bad or oversized body, unknown fields, missing or empty id/title, or an invalid single-line title |
 | `NOT_FOUND` | Unknown macro id |
 | `BUSY` | A macro is already running |
 | `UNAVAILABLE` | No absolute HOME/roots |
-| `INTERNAL` | Scan error, worker failure or dropped reply channel |
+| `INTERNAL` | Create/scan I/O error, worker failure or dropped reply channel |
 
-The first list and every reload scan off the caller's thread and defer the
+Creation (including its rescan), the first list and every reload run off the caller's thread and defer the
 reply. Run loads the catalogue first if necessary and answers acceptance,
 not completion. Run numbers increase only for accepted runs within the app
 process. A manager-thread start refusal preserves the previous number and
 identity and emits no finished event. A child spawn failure after acceptance
 emits one `failed_to_start` event. States are
 `idle`, `running`, `exited`, `failed` and `failed_to_start`; a signal gives
-`exit:null`. Idle identity fields are null. Origins are `gui` or `bus`.
+`exit:null`. Idle identity fields are null. Origins are `gui:<window-id>` or `bus`.
 
 Subscribe to `<service>.macros.finished` before starting a run. Once the
 manager has cleaned up and reaped the process, one event is queued with
-`{run,id,title,origin,state,exit,error,dropped}`. `dropped` is the output-tail
+`{run,id,title,origin,started,state,exit,error,text,dropped}`. `dropped` is the output-tail
 flag; `event_dropped` counts lost Bus events. Delivery is bounded and best
 effort, like command execution events. Read status and output after a gap
 or reconnect. Completion uses a callback, without a polling loop.

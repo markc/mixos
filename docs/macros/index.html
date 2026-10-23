@@ -378,23 +378,23 @@ authority as executing an app command; running a macro executes user code.</p>
 <p>Refusals use rc 10 and <code>{error_code,message}</code>. Bodies are limited to 8192
 bytes before JSON parsing.</p>
 <table><thead><tr><th>Error code</th><th>Meaning</th></tr></thead><tbody>
-<tr><td><code>INVALID_ARGUMENT</code></td><td>Bad or oversized body, unknown fields, missing or empty id/title</td></tr>
+<tr><td><code>INVALID_ARGUMENT</code></td><td>Bad or oversized body, unknown fields, missing or empty id/title, or an invalid single-line title</td></tr>
 <tr><td><code>NOT_FOUND</code></td><td>Unknown macro id</td></tr>
 <tr><td><code>BUSY</code></td><td>A macro is already running</td></tr>
 <tr><td><code>UNAVAILABLE</code></td><td>No absolute HOME/roots</td></tr>
-<tr><td><code>INTERNAL</code></td><td>Scan error, worker failure or dropped reply channel</td></tr>
+<tr><td><code>INTERNAL</code></td><td>Create/scan I/O error, worker failure or dropped reply channel</td></tr>
 </tbody></table>
-<p>The first list and every reload scan off the caller's thread and defer the
+<p>Creation (including its rescan), the first list and every reload run off the caller's thread and defer the
 reply. Run loads the catalogue first if necessary and answers acceptance,
 not completion. Run numbers increase only for accepted runs within the app
 process. A manager-thread start refusal preserves the previous number and
 identity and emits no finished event. A child spawn failure after acceptance
 emits one <code>failed_to_start</code> event. States are
 <code>idle</code>, <code>running</code>, <code>exited</code>, <code>failed</code> and <code>failed_to_start</code>; a signal gives
-<code>exit:null</code>. Idle identity fields are null. Origins are <code>gui</code> or <code>bus</code>.</p>
+<code>exit:null</code>. Idle identity fields are null. Origins are <code>gui:&lt;window-id&gt;</code> or <code>bus</code>.</p>
 <p>Subscribe to <code>&lt;service&gt;.macros.finished</code> before starting a run. Once the
 manager has cleaned up and reaped the process, one event is queued with
-<code>{run,id,title,origin,state,exit,error,dropped}</code>. <code>dropped</code> is the output-tail
+<code>{run,id,title,origin,started,state,exit,error,text,dropped}</code>. <code>dropped</code> is the output-tail
 flag; <code>event_dropped</code> counts lost Bus events. Delivery is bounded and best
 effort, like command execution events. Read status and output after a gap
 or reconnect. Completion uses a callback, without a polling loop.</p>
