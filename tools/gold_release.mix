@@ -132,6 +132,9 @@ fn restore($rec)
       rename($tmp, $dest)
     end
   end
+  for $d in reverse($rec.dirs ?? [])
+    $_ = run_argv(["rmdir", $root .. "/" .. $d], {timeout: 10})
+  end
   print("ROLLBACK " .. $rec.id .. " restored gold files")
 end
 
@@ -232,6 +235,7 @@ try
     elif $selection == "desktop" then ["mixos-desktop"] else ["mixos-server"] end
   $files = []
   $seen = []
+  $dirs = []
   for $pkg in $want
     $rows = filter($manifest.archives, fn($r) = $r.name == $pkg)
     if len($rows) != 1 then raise("GOLD_MANIFEST", "expected exactly one " .. $pkg .. " archive") end
@@ -268,13 +272,16 @@ try
       if $p == $top then continue end
       $rel = slice($p, len($top) + 1, len($p))
       safe_rel($rel)
+      $st = stat($p, {follow_symlinks: false})
+      if $st.is_dir then
+        if not contains($dirs, $rel) then push($dirs, $rel) end
+        continue
+      end
       if contains(["bin", "share", "lib"], $rel) then continue end
       if (not starts_with($rel, "bin/") and not starts_with($rel, "share/") and
           not starts_with($rel, "lib/")) then
         raise("GOLD_LAYOUT", "unsupported release path " .. $rel)
       end
-      $st = stat($p, {follow_symlinks: false})
-      if $st.is_dir then continue end
       $after = if $st.is_symlink then {kind: "link", target: read_link($p)}
         else {kind: "file", sha256: hash_file($p, "sha256")} end
       if contains($seen, $rel) then
@@ -323,6 +330,7 @@ try
   for $f in $files
     $record.files = push($record.files, {rel: $f.rel, before: $f.before, after: $f.after, same: $f.same})
   end
+  $record.dirs = $dirs
   write_atomic($pending, data_encode($record) .. "\n")
   try
     for $f in $files

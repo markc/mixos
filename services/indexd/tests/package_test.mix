@@ -12,7 +12,7 @@ mkdir($case_dir .. "/bin", {parents:true})
 try
   copy($mix_bin, $case_dir .. "/bin/mix")
   copy($binary, $case_dir .. "/bin/indexd")
-  for $name in ["mixos-mcp", "noded", "hostd", "monitord", "editd", "portald", "settingsd", "backdrop", "busviewer", "ced", "compd", "dopus", "email", "monitor", "prefs", "screenshot", "term"]
+  for $name in ["mixos-mcp", "noded", "hostd", "monitord", "maild", "editd", "portald", "settingsd", "backdrop", "busviewer", "ced", "compd", "dopus", "email", "monitor", "prefs", "screenshot", "term"]
     copy("/usr/bin/true", $case_dir .. "/bin/" .. $name)
   end
   run_argv_must([$mix_bin, $root .. "/tools/package.mix", "--release", $version,
@@ -65,7 +65,10 @@ try
       raise("PACKAGE_PROFILE", "server lacks base service or unit " .. $service)
     end
   end
-  if read_link($server_top .. "/bin/maild") != "mix" then raise("PACKAGE_PROFILE", "server lacks maild link") end
+  if (not is_file($server_top .. "/bin/maild") or
+      stat($server_top .. "/bin/maild", {follow_symlinks: false}).is_symlink) then
+    raise("PACKAGE_PROFILE", "server lacks a real maild binary")
+  end
   for $service in ["editd", "portald", "settingsd"]
     if (exists($server_top .. "/bin/" .. $service, {follow_symlinks: false}) or
         exists($server_top .. "/share/" .. $service, {follow_symlinks: false})) then

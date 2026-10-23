@@ -32,7 +32,7 @@ if $release.schema != 1 then raise("PACKAGE_SCHEMA", "unsupported release_packag
 $PACKAGES = $release.packages
 for $pkg in keys($PACKAGES)
   for $b in $PACKAGES[$pkg]
-    if $b != "maild" and $release.crates[$b] == nil then
+    if $release.crates[$b] == nil then
       raise("PACKAGE_SCHEMA", $b .. " has no Cargo package in release_packages.mx")
     end
   end
@@ -64,6 +64,10 @@ $commit = $g.opts.commit ?? ""
 if not re_match($commit, "^[0-9a-f]{40}$") then raise("PACKAGE_ARGS", "--commit must be a full source SHA") end
 $head = trim(run_argv_must(["git", "-C", $source, "rev-parse", "HEAD"], {timeout: 15}))
 if $head != $commit then raise("PACKAGE_SOURCE", "source checkout differs from --commit") end
+if not $fixture then
+  $dirty = trim(run_argv_must(["git", "-C", $source, "status", "--porcelain"], {timeout: 30}))
+  if $dirty != "" then raise("PACKAGE_SOURCE", "source checkout is not clean; commit or stash before packaging") end
+end
 $arch = $g.opts.arch ?? platform().arch
 if not re_match($arch, "^(x86_64|aarch64)$") then raise("PACKAGE_ARGS", "--arch must be x86_64 or aarch64") end
 if $arch != platform().arch then raise("PACKAGE_ARCH", "--arch must match the build host") end
@@ -110,11 +114,6 @@ for $pkg in $selected
   $members = []
   $libraries = []
   for $b in $PACKAGES[$pkg]
-    if $b == "maild" then
-      -- maild is carried by the system binary, never a second executable.
-      symlink("mix", $top .. "/bin/maild")
-      continue
-    end
     $src = $bin_dir .. "/" .. $b
     if not is_file($src) then raise("PACKAGE_MISSING", $src .. " is not built") end
     $v = if $fixture then "fixture" else

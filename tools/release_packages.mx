@@ -1,10 +1,11 @@
 {
   schema: 1,
-  -- Binary name to Cargo package. maild is a link to mix, not another build.
+  -- Binary name to Cargo package.
   crates: {
     mix: "system",
     "mixos-mcp": "mixos-mcp",
     noded: "noded",
+    maild: "maild",
     editd: "editd",
     settingsd: "settingsd",
     portald: "portald",

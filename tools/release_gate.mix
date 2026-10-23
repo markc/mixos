@@ -22,6 +22,8 @@ $commit = $g.opts.commit ?? ""
 if not re_match($commit, "^[0-9a-f]{40}$") then raise("RELEASE_ARGS", "--commit must be a full source SHA") end
 $head = trim(run_argv_must(["git", "rev-parse", "HEAD"], {timeout: 15}))
 if $head != $commit then raise("RELEASE_SOURCE", "HEAD differs from --commit") end
+$dirty = trim(run_argv_must(["git", "status", "--porcelain"], {timeout: 30}))
+if $dirty != "" then raise("RELEASE_SOURCE", "source checkout is not clean; commit or stash before building") end
 if platform().arch != "x86_64" then raise("RELEASE_ARCH", "the first release supports x86_64 only") end
 
 $release = load_data("tools/release_packages.mx")
@@ -148,6 +150,8 @@ $libc = trim(run_argv_must(concat($chroot, ["/usr/bin/getconf", "GNU_LIBC_VERSIO
 if $libc != "glibc 2.39" then raise("RELEASE_GLIBC", "build root needs glibc 2.39; got " .. $libc) end
 $root_head = trim(run_argv_must(concat($chroot, ["/usr/bin/git", "rev-parse", "HEAD"]), {timeout: 20}))
 if $root_head != $commit then raise("RELEASE_SOURCE", "build root does not see the exact CBC source") end
+$root_dirty = trim(run_argv_must(concat($chroot, ["/usr/bin/git", "status", "--porcelain"]), {timeout: 30}))
+if $root_dirty != "" then raise("RELEASE_SOURCE", "build root sees a dirty source checkout") end
 if $selection != "server" then
   $input_head = trim(run_argv_must(["git", "-C", $libinput_source, "rev-parse", "HEAD"], {timeout: 20}))
   if $input_head != "3402f380019dc4f882e1d8627029607aca3f4be6" then
@@ -170,11 +174,9 @@ $selected = if $selection == "all" then sort(keys($release.packages))
   elif $selection == "desktop" then ["mixos-desktop"] else ["mixos-server"] end
 for $pkg in $selected
   for $b in $release.packages[$pkg]
-    if $b != "maild" then
-      $crate = $release.crates[$b]
-      if $crate == nil then raise("RELEASE_SCHEMA", $b .. " lacks a Cargo package") end
-      if not contains($crates, $crate) then push($crates, $crate) end
-    end
+    $crate = $release.crates[$b]
+    if $crate == nil then raise("RELEASE_SCHEMA", $b .. " lacks a Cargo package") end
+    if not contains($crates, $crate) then push($crates, $crate) end
   end
 end
 $build = concat($chroot, [$rust_bin .. "/cargo", "build", "--release", "--locked"])
