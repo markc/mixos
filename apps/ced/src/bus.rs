@@ -668,7 +668,12 @@ mod tests {
         let body = failure_body(10, "Permission denied".into(), None, "edit.open");
         let value: serde_json::Value = serde_json::from_str(&body).unwrap();
         assert_eq!(value["message"], "Permission denied");
-        let body = failure_body(10, r#"{"error_code":"IO","message":"Disk full"}"#.into(), None, "edit.save");
+        let body = failure_body(
+            10,
+            r#"{"error_code":"IO","message":"Disk full"}"#.into(),
+            None,
+            "edit.save",
+        );
         let value: serde_json::Value = serde_json::from_str(&body).unwrap();
         assert_eq!(value["message"], "Disk full");
     }

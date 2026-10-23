@@ -1059,6 +1059,7 @@ impl Controller {
     ) {
         if let Some(x) = self.x.get_mut(&tab) {
             x.open_error = None;
+            x.reattaching = reattach;
         }
         let body = match &path {
             Some(p) => json!({"path": p, "origin": UI_ORIGIN}),
@@ -1083,6 +1084,10 @@ impl Controller {
     }
 
     fn send_list(&mut self, tab: TabId, fx: &mut Vec<Effect>) {
+        if let Some(x) = self.x.get_mut(&tab) {
+            x.open_error = None;
+            x.reattaching = true;
+        }
         let out = Outgoing {
             verb: "edit.list".into(),
             body: "{}".into(),
@@ -1385,15 +1390,23 @@ impl Controller {
             // `edit` (re)appearing in services.registered may be a restart:
             // ask it its epoch.
             "noded.props.changed" => {
-                let Ok(value) = serde_json::from_str::<Value>(body) else { return };
+                let Ok(value) = serde_json::from_str::<Value>(body) else {
+                    return;
+                };
                 if value["path"] != "services.registered" {
                     return;
                 }
-                let Some(services) = value["new"].as_array() else { return };
-                let present = services.iter().any(|service| service.as_str() == Some("edit"));
+                let Some(services) = value["new"].as_array() else {
+                    return;
+                };
+                let present = services
+                    .iter()
+                    .any(|service| service.as_str() == Some("edit"));
                 let was_present = self.edit_present.unwrap_or_else(|| {
                     value["old"].as_array().is_some_and(|services| {
-                        services.iter().any(|service| service.as_str() == Some("edit"))
+                        services
+                            .iter()
+                            .any(|service| service.as_str() == Some("edit"))
                     })
                 });
                 let appeared = present && !was_present;
@@ -1673,7 +1686,9 @@ impl Controller {
 
     /// An initial open has exceeded its first deadline and is being retried.
     pub fn open_slow(&self, tab: TabId) -> bool {
-        self.x.get(&tab).is_some_and(|x| x.open_misses > 0 && x.open_error.is_none())
+        self.x
+            .get(&tab)
+            .is_some_and(|x| x.open_misses > 0 && x.open_error.is_none())
     }
 
     /// Answer every `ced.open` / `ced.new` whose tabs have all had an answer.
@@ -3184,39 +3199,39 @@ mod tests {
 
     #[test]
     fn missing_edit_fails_fast_and_registration_retries_unattached_tabs() {
-            let mut c = ctl();
-            let effects = c.open_paths(&["/work/hello.mix".into()], Intent::ui(0));
-            let (req, budget) = effects
+        let mut c = ctl();
+        let effects = c.open_paths(&["/work/hello.mix".into()], Intent::ui(0));
+        let (req, budget) = effects
+            .iter()
+            .find_map(|fx| match fx {
+                Effect::Send { req, out } if out.verb == "edit.open" => {
+                    Some((*req, out.deadline_ms))
+                }
+                _ => None,
+            })
+            .unwrap();
+        assert!(budget <= 3000);
+        let tab = c.tabs()[0].id;
+        let effects = c.on_incoming(Incoming::Reply {
+            req,
+            rc: 10,
+            body: r#"{"error_code":"UNAVAILABLE","message":""}"#.into(),
+        });
+        assert_eq!(c.open_error(tab), Some(EDIT_UNAVAILABLE));
+        assert!(effects.iter().any(|fx| matches!(fx, Effect::Notice { notice: Notice::Message { text, .. }, .. } if text == EDIT_UNAVAILABLE)));
+        assert!(
+            !effects.iter().any(|fx| matches!(fx, Effect::Send { .. })),
+            "wait for registration without polling"
+        );
+        let effects = c.on_incoming(Incoming::Topic {
+            topic: "noded.props.changed".into(),
+            body: r#"{"path":"services.registered","old":[],"new":["edit"]}"#.into(),
+        });
+        assert!(
+            effects
                 .iter()
-                .find_map(|fx| match fx {
-                    Effect::Send { req, out } if out.verb == "edit.open" => {
-                        Some((*req, out.deadline_ms))
-                    }
-                    _ => None,
-                })
-                .unwrap();
-            assert!(budget <= 3000);
-            let tab = c.tabs()[0].id;
-            let effects = c.on_incoming(Incoming::Reply {
-                    req,
-                    rc: 10,
-                    body: r#"{"error_code":"UNAVAILABLE","message":""}"#.into(),
-            });
-            assert_eq!(c.open_error(tab), Some(EDIT_UNAVAILABLE));
-            assert!(effects.iter().any(|fx| matches!(fx, Effect::Notice { notice: Notice::Message { text, .. }, .. } if text == EDIT_UNAVAILABLE)));
-            assert!(
-                !effects.iter().any(|fx| matches!(fx, Effect::Send { .. })),
-                "wait for registration without polling"
-            );
-            let effects = c.on_incoming(Incoming::Topic {
-                topic: "noded.props.changed".into(),
-                body: r#"{"path":"services.registered","old":[],"new":["edit"]}"#.into(),
-            });
-            assert!(
-                effects
-                    .iter()
-                    .any(|fx| matches!(fx, Effect::Send { out, .. } if out.verb == "edit.open"))
-            );
+                .any(|fx| matches!(fx, Effect::Send { out, .. } if out.verb == "edit.open"))
+        );
     }
 
     fn registered(c: &mut Controller, services: Value) -> Vec<Effect> {
@@ -3245,7 +3260,12 @@ mod tests {
             assert_eq!(c.open_error(tab), None);
             assert!(c.open_slow(tab));
             assert!(!c.x[&tab].reattaching);
-            assert_eq!(fx.iter().filter(|e| matches!(e, Effect::Notice { .. })).count(), usize::from(attempt == 0));
+            assert_eq!(
+                fx.iter()
+                    .filter(|e| matches!(e, Effect::Notice { .. }))
+                    .count(),
+                usize::from(attempt == 0)
+            );
         }
         let (req, _) = sent(&fx, "edit.open");
         reply(&mut c, req, test_open());
@@ -3260,7 +3280,11 @@ mod tests {
         let tab = c.tabs()[0].id;
         for _ in 0..2 {
             let (req, _) = sent(&fx, "edit.open");
-            c.on_incoming(Incoming::Reply { req, rc:10, body: refusal("UNAVAILABLE", "missing", None) });
+            c.on_incoming(Incoming::Reply {
+                req,
+                rc: 10,
+                body: refusal("UNAVAILABLE", "missing", None),
+            });
             assert_eq!(c.open_error(tab), Some(EDIT_UNAVAILABLE));
             assert!(!c.x[&tab].reattaching);
             fx = registered(&mut c, json!(["edit"]));
@@ -3277,15 +3301,31 @@ mod tests {
         let mut existing = ctl();
         let fx = existing.on_incoming(Incoming::Topic {
             topic: "noded.props.changed".into(),
-            body: json!({"path":"services.registered", "old":["edit"], "new":["edit", "other"]}).to_string(),
+            body: json!({"path":"services.registered", "old":["edit"], "new":["edit", "other"]})
+                .to_string(),
         });
-        assert!(fx.is_empty(), "the first event may be an unrelated registration");
+        assert!(
+            fx.is_empty(),
+            "the first event may be an unrelated registration"
+        );
         let mut c = ctl();
         assert!(registered(&mut c, json!(["other"])).is_empty());
         assert!(!registered(&mut c, json!(["edit"])).is_empty());
         assert!(registered(&mut c, json!(["edit", "other"])).is_empty());
-        assert!(c.on_incoming(Incoming::Topic { topic:"noded.props.changed".into(), body:r#"{"path":"other","new":["edit"],"note":"services.registered"}"#.into() }).is_empty());
-        assert!(c.on_incoming(Incoming::Topic { topic:"noded.props.changed".into(), body:"invalid services.registered edit".into() }).is_empty());
+        assert!(
+            c.on_incoming(Incoming::Topic {
+                topic: "noded.props.changed".into(),
+                body: r#"{"path":"other","new":["edit"],"note":"services.registered"}"#.into()
+            })
+            .is_empty()
+        );
+        assert!(
+            c.on_incoming(Incoming::Topic {
+                topic: "noded.props.changed".into(),
+                body: "invalid services.registered edit".into()
+            })
+            .is_empty()
+        );
         assert!(registered(&mut c, json!([])).is_empty());
         let fx = registered(&mut c, json!(["edit"]));
         sent(&fx, "edit.info");
@@ -3301,12 +3341,25 @@ mod tests {
         let mut fx = Vec::new();
         c.reattach(tab, &mut fx);
         let (req, _) = sent(&fx, "edit.open");
-        let fx = c.on_incoming(Incoming::Reply { req, rc:10, body:refusal("UNAVAILABLE", "missing", None) });
+        let fx = c.on_incoming(Incoming::Deadline { req });
+        assert!(c.x[&tab].reattaching, "the renewed request is in flight");
+        let (req, _) = sent(&fx, "edit.open");
+        let fx = c.on_incoming(Incoming::Reply {
+            req,
+            rc: 10,
+            body: refusal("UNAVAILABLE", "missing", None),
+        });
         assert!(c.tab(tab).unwrap().mirror.is_some());
         assert_eq!(c.open_error(tab), None);
         assert!(!c.x[&tab].reattaching);
-        let timer = fx.iter().find_map(|e| match e { Effect::Timer { id, .. } => Some(*id), _ => None }).unwrap();
-        let fx = c.on_incoming(Incoming::Timer { id:timer });
+        let timer = fx
+            .iter()
+            .find_map(|e| match e {
+                Effect::Timer { id, .. } => Some(*id),
+                _ => None,
+            })
+            .unwrap();
+        let fx = c.on_incoming(Incoming::Timer { id: timer });
         let (req, _) = sent(&fx, "edit.open");
         reply(&mut c, req, test_open());
         assert!(!c.x[&tab].reattaching);

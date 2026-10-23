@@ -1463,13 +1463,31 @@ mod tests {
         let mut a = app();
         for tab in [Some(1), Some(2), None] {
             for _ in 0..2 {
-                a.notice(tab, Notice::Message { level: Level::Error, text: "same.txt: failed".into() });
+                a.notice(
+                    tab,
+                    Notice::Message {
+                        level: Level::Error,
+                        text: "same.txt: failed".into(),
+                    },
+                );
             }
         }
-        assert_eq!(a.effects.iter().filter(|e| matches!(e, Effect::Notify { .. })).count(), 3);
+        assert_eq!(
+            a.effects
+                .iter()
+                .filter(|e| matches!(e, Effect::Notify { .. }))
+                .count(),
+            3
+        );
         assert_eq!(a.recent_notices.len(), 3);
         a.now += NOTICE_GAP_SECONDS;
-        a.notice(None, Notice::Message { level: Level::Error, text: "new error".into() });
+        a.notice(
+            None,
+            Notice::Message {
+                level: Level::Error,
+                text: "new error".into(),
+            },
+        );
         assert_eq!(a.recent_notices.len(), 1);
     }
 
