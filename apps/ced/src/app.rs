@@ -1408,6 +1408,14 @@ mod tests {
     }
 
     #[test]
+    fn document_toasts_include_the_document_name() {
+        let (mut a, _, tab, _) = documents();
+        a.effects.clear();
+        a.notice(Some(tab), Notice::Message { level: Level::Error, text: "Save failed.".into() });
+        assert!(matches!(&a.effects[0], Effect::Notify { text, .. } if text == "one.md: Save failed."));
+    }
+
+    #[test]
     fn prompts_wait_behind_an_open_dialog() {
         let mut a = app();
         a.dialog = Some(Dialog::About { token: 0 });

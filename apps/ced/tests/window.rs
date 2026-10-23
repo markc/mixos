@@ -427,10 +427,16 @@ fn document_decisions_remain_in_the_notice_strip() {
     assert!(h.query_by_label("Dismiss").is_some());
 
     service.editd.borrow_mut().restart("e2", Some("service text\n"));
-    service.deliver(Delivery::Incoming(Incoming::Topic {
-        topic: "noded.props.changed".into(),
-        body: r#"{"key":"services.registered","value":["edit"]}"#.into(),
+    let buffer = service.editd.borrow().buffers()[0].clone();
+    let answer = service.editd.borrow_mut().handle("local:agent", "edit.insert", &json!({
+        "buffer": buffer, "at": 0, "text": "new ", "origin": "agent:test"
     }));
+    assert_eq!(answer.rc, 0);
+    for event in service.editd.borrow_mut().take_events() {
+        service.deliver(Delivery::Incoming(Incoming::Topic {
+            topic: "edit.changed".into(), body: serde_json::to_string(&event).unwrap(),
+        }));
+    }
     h.run_steps(8);
     assert!(h.query_by_label("Keep Mine").is_some());
     assert!(h.query_by_label("Take the Service's").is_some());
