@@ -105,6 +105,7 @@ find-replace-all = All
 
 no-documents = No open documents. File › Open… or File › New.
 opening = Opening { $name }…
+opening-slow = Still opening; the edit service is slow.
 open-failed = { $name } could not be opened: { $error }
 reconnecting = Reconnecting to the edit service…
 not-connected = The edit service is not reachable.

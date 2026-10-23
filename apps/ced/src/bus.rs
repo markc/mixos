@@ -113,6 +113,9 @@ fn failure_body(rc: u8, body: String, error: Option<&str>, verb: &str) -> String
     if rc < 10 {
         return body;
     }
+    if !body.trim().is_empty() && serde_json::from_str::<serde_json::Value>(&body).is_err() {
+        return body;
+    }
     let mut value = serde_json::from_str::<serde_json::Value>(&body)
         .ok()
         .filter(|v| v.is_object())
@@ -662,6 +665,14 @@ pub fn forward_open(url: &str, service: &str, paths: &[String]) -> Result<(), St
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn failure_keeps_real_error_text() {
+        assert_eq!(failure_body(10, "Permission denied".into(), None, "edit.open"), "Permission denied");
+        let body = failure_body(10, r#"{"error_code":"IO","message":"Disk full"}"#.into(), None, "edit.save");
+        let value: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(value["message"], "Disk full");
+    }
 
     #[test]
     fn empty_broker_errors_have_a_code_verb_and_sentence() {

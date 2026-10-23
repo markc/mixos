@@ -379,7 +379,13 @@ fn document(
                     message.to_owned()
                 }
             })
-            .unwrap_or_else(|| label_with("opening", &[("name", &name)]));
+            .unwrap_or_else(|| {
+                if app.ctl.open_slow(tab.id) {
+                    label("opening-slow")
+                } else {
+                    label_with("opening", &[("name", &name)])
+                }
+            });
         centred(ui, &message);
         return None;
     };

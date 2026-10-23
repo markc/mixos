@@ -206,7 +206,7 @@ pub struct App {
     pub dialog: Option<Dialog>,
     /// Prompts waiting for the open dialog to close.
     queued: VecDeque<Dialog>,
-    recent_notices: HashMap<String, f64>,
+    recent_notices: HashMap<(Option<TabId>, String), f64>,
     /// A transient status line and when it expires.
     pub status: Option<(String, f64)>,
     /// Effects for the shell: Bus work, clipboard, relex, session, quit.
@@ -535,10 +535,11 @@ impl App {
         };
         self.recent_notices
             .retain(|_, at| self.now - *at < NOTICE_GAP_SECONDS);
-        if self.recent_notices.contains_key(&text) {
+        let key = (tab, text.clone());
+        if self.recent_notices.contains_key(&key) {
             return;
         }
-        self.recent_notices.insert(text.clone(), self.now);
+        self.recent_notices.insert(key, self.now);
         self.effects.push(Effect::Notify { text, level });
     }
 

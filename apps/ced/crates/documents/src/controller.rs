@@ -151,7 +151,7 @@ const OPEN_WARN_AFTER: u32 = 3;
 /// A Bus `ced.action` waits this long for its server op's outcome (a save's
 /// own deadline, its `edit.list` check and one resend fit inside).
 const OP_WAIT_MS: u64 = 90_000;
-/// Shown when `edit` is absent or an initial open exceeds its budget.
+/// Shown when `edit` is absent.
 pub const EDIT_UNAVAILABLE: &str =
     "The edit service is not running; this document will open when it starts.";
 
@@ -248,6 +248,7 @@ enum Req {
 
 enum TimerFor {
     Retry(TabId),
+    Reattach(TabId),
     Wait(u64),
     Publish(TabId),
     Session,
@@ -315,6 +316,7 @@ pub struct Controller {
     timers: HashMap<u64, TimerFor>,
     last_event_seq: Option<u64>,
     edit_epoch: Option<String>,
+    edit_present: bool,
     edit_info: verbs::EditInfo,
     waiters: Vec<Waiter>,
     opens: Vec<PendingOpen>,
@@ -535,6 +537,7 @@ impl Controller {
             timers: HashMap::new(),
             last_event_seq: None,
             edit_epoch: None,
+            edit_present: false,
             edit_info: verbs::EditInfo {
                 epoch: None,
                 version: None,
@@ -1054,6 +1057,9 @@ impl Controller {
         reattach: bool,
         fx: &mut Vec<Effect>,
     ) {
+        if let Some(x) = self.x.get_mut(&tab) {
+            x.open_error = None;
+        }
         let body = match &path {
             Some(p) => json!({"path": p, "origin": UI_ORIGIN}),
             None => json!({"origin": UI_ORIGIN}),
@@ -1065,7 +1071,12 @@ impl Controller {
             deadline_ms: if self.tab(tab).is_some_and(|t| t.mirror.is_some()) {
                 DEADLINE_LONG_MS
             } else {
-                3_000
+                match self.x.get(&tab).map_or(0, |x| x.open_misses) {
+                    0 => 3_000,
+                    1 => 6_000,
+                    2 => 12_000,
+                    _ => 30_000,
+                }
             },
         };
         self.send(out, Req::Open { tab, reattach }, fx);
@@ -1221,6 +1232,9 @@ impl Controller {
                 }
             }
             Some(Req::Open { tab, reattach }) => {
+                if let Some(x) = self.x.get_mut(&tab) {
+                    x.reattaching = false;
+                }
                 if self.tab(tab).is_some_and(|t| t.mirror.is_some()) {
                     // Retain the established restart recovery for live mirrors.
                     let path = self.tab(tab).and_then(|t| t.path.clone());
@@ -1238,10 +1252,29 @@ impl Controller {
                         }
                     }
                 } else {
-                    self.open_failed(tab, EDIT_UNAVAILABLE.into(), fx);
+                    if let Some(x) = self.x.get_mut(&tab) {
+                        x.open_misses = x.open_misses.saturating_add(1);
+                        if x.open_misses == 1 {
+                            fx.push(Effect::Notice {
+                                tab: Some(tab),
+                                notice: Notice::Message {
+                                    level: Level::Warn,
+                                    text: "Still opening; the edit service is slow.".into(),
+                                },
+                            });
+                        }
+                    }
+                    if let Some(t) = self.tab(tab) {
+                        self.send_open(tab, t.path.clone(), reattach, fx);
+                    }
                 }
             }
-            Some(Req::List { tab }) => self.send_list(tab, fx),
+            Some(Req::List { tab }) => {
+                if let Some(x) = self.x.get_mut(&tab) {
+                    x.reattaching = false;
+                }
+                self.send_list(tab, fx);
+            }
             Some(Req::Find { tab, .. }) => fx.push(Effect::Notice {
                 tab: Some(tab),
                 notice: Notice::Message {
@@ -1264,6 +1297,7 @@ impl Controller {
 
     fn on_timer(&mut self, id: u64, fx: &mut Vec<Effect>) {
         match self.timers.remove(&id) {
+            Some(TimerFor::Reattach(tab)) => self.reattach(tab, fx),
             Some(TimerFor::Retry(tab)) => {
                 if let Some(step) = self
                     .tab_mut(tab)
@@ -1350,11 +1384,19 @@ impl Controller {
             }
             // `edit` (re)appearing in services.registered may be a restart:
             // ask it its epoch.
-            "noded.props.changed"
-                if body.contains("services.registered") && body.contains("\"edit\"") =>
-            {
-                self.send_info(fx);
-                self.retry_unattached(fx);
+            "noded.props.changed" => {
+                let Ok(value) = serde_json::from_str::<Value>(body) else { return };
+                if value["path"] != "services.registered" {
+                    return;
+                }
+                let Some(services) = value["new"].as_array() else { return };
+                let present = services.iter().any(|service| service.as_str() == Some("edit"));
+                let appeared = present && !self.edit_present;
+                self.edit_present = present;
+                if appeared {
+                    self.send_info(fx);
+                    self.retry_unattached(fx);
+                }
             }
             _ => {}
         }
@@ -1465,6 +1507,7 @@ impl Controller {
             return;
         }
         x.reattaching = true;
+        x.open_error = None;
         if let Some(step) = self
             .tab_mut(tab)
             .and_then(|t| t.mirror.as_mut())
@@ -1490,12 +1533,20 @@ impl Controller {
         if self.tab(tab).is_none() {
             return;
         }
+        if let Some(x) = self.x.get_mut(&tab) {
+            x.reattaching = false;
+        }
         if rc >= 10
             && serde_json::from_str::<Value>(body)
                 .ok()
                 .is_some_and(|v| v["error_code"] == "UNAVAILABLE")
         {
-            self.open_failed(tab, EDIT_UNAVAILABLE.into(), fx);
+            self.edit_present = false;
+            if self.tab(tab).is_some_and(|t| t.mirror.is_none()) {
+                self.open_failed(tab, EDIT_UNAVAILABLE.into(), fx);
+            } else {
+                self.timer(DEADLINE_LONG_MS, TimerFor::Reattach(tab), fx);
+            }
             return;
         }
         match reply_result(rc, body) {
@@ -1516,6 +1567,10 @@ impl Controller {
     /// A scratch tab reattaches by `recovery_id`; with no match it
     /// becomes a fresh scratch buffer and keeps its text as a detached copy.
     fn on_list_reply(&mut self, tab: TabId, rc: u8, body: &str, fx: &mut Vec<Effect>) {
+        let reattach = self.x.get(&tab).is_some_and(|x| x.reattaching);
+        if let Some(x) = self.x.get_mut(&tab) {
+            x.reattaching = false;
+        }
         let rid = self.x.get(&tab).and_then(|x| x.recovery_id.clone());
         let list = reply_result(rc, body)
             .ok()
@@ -1529,11 +1584,9 @@ impl Controller {
         match row {
             Some((l, b)) => {
                 let open = open_reply_of(&l.epoch, b);
-                let reattach = self.x.get(&tab).is_some_and(|x| x.reattaching);
                 self.attach(tab, reattach, &open, fx);
             }
             None => {
-                let reattach = self.x.get(&tab).is_some_and(|x| x.reattaching);
                 self.send_open(tab, None, reattach, fx);
             }
         }
@@ -1610,6 +1663,11 @@ impl Controller {
     /// The failure shown instead of an indefinite opening indicator.
     pub fn open_error(&self, tab: TabId) -> Option<&str> {
         self.x.get(&tab)?.open_error.as_deref()
+    }
+
+    /// An initial open has exceeded its first deadline and is being retried.
+    pub fn open_slow(&self, tab: TabId) -> bool {
+        self.x.get(&tab).is_some_and(|x| x.open_misses > 0 && x.open_error.is_none())
     }
 
     /// Answer every `ced.open` / `ced.new` whose tabs have all had an answer.
@@ -3120,7 +3178,7 @@ mod tests {
 
     #[test]
     fn missing_edit_fails_fast_and_registration_retries_unattached_tabs() {
-        for timeout in [false, true] {
+        for _ in 0..1 {
             let mut c = ctl();
             let effects = c.open_paths(&["/work/hello.mix".into()], Intent::ui(0));
             let (req, budget) = effects
@@ -3134,14 +3192,10 @@ mod tests {
                 .unwrap();
             assert!(budget <= 3000);
             let tab = c.tabs()[0].id;
-            let effects = c.on_incoming(if timeout {
-                Incoming::Deadline { req }
-            } else {
-                Incoming::Reply {
+            let effects = c.on_incoming(Incoming::Reply {
                     req,
                     rc: 10,
                     body: r#"{"error_code":"UNAVAILABLE","message":""}"#.into(),
-                }
             });
             assert_eq!(c.open_error(tab), Some(EDIT_UNAVAILABLE));
             assert!(effects.iter().any(|fx| matches!(fx, Effect::Notice { notice: Notice::Message { text, .. }, .. } if text == EDIT_UNAVAILABLE)));
@@ -3151,7 +3205,7 @@ mod tests {
             );
             let effects = c.on_incoming(Incoming::Topic {
                 topic: "noded.props.changed".into(),
-                body: r#"{"key":"services.registered","value":["edit"]}"#.into(),
+                body: r#"{"path":"services.registered","old":[],"new":["edit"]}"#.into(),
             });
             assert!(
                 effects
@@ -3159,6 +3213,93 @@ mod tests {
                     .any(|fx| matches!(fx, Effect::Send { out, .. } if out.verb == "edit.open"))
             );
         }
+    }
+
+    fn registered(c: &mut Controller, services: Value) -> Vec<Effect> {
+        c.on_incoming(Incoming::Topic {
+            topic: "noded.props.changed".into(),
+            body: json!({"path":"services.registered", "new": services}).to_string(),
+        })
+    }
+
+    fn test_open() -> Value {
+        json!({"buffer":"b1_0000e1e1", "epoch":"0000e1e1", "path":"/work/hello.mix", "opened_as":null,
+            "name":"hello.mix", "language":"text", "rev":0, "lines":1, "bytes":0, "eol":"lf", "bom":false,
+            "disk":"clean", "reopened":false, "created":false, "recovery_id":"5f0c2a9e1b7d4c33",
+            "recovered":false, "recovered_from":null})
+    }
+
+    #[test]
+    fn slow_open_retries_with_capped_budgets_and_one_warning() {
+        let mut c = ctl();
+        let mut fx = c.open_paths(&["/work/hello.mix".into()], Intent::ui(0));
+        let tab = c.tabs()[0].id;
+        for (attempt, budget) in [3000, 6000, 12000, 30000, 30000].into_iter().enumerate() {
+            let (req, _) = sent(&fx, "edit.open");
+            assert!(fx.iter().any(|e| matches!(e, Effect::Send { out, .. } if out.verb == "edit.open" && out.deadline_ms == budget)));
+            fx = c.on_incoming(Incoming::Deadline { req });
+            assert_eq!(c.open_error(tab), None);
+            assert!(c.open_slow(tab));
+            assert!(!c.x[&tab].reattaching);
+            assert_eq!(fx.iter().filter(|e| matches!(e, Effect::Notice { .. })).count(), usize::from(attempt == 0));
+        }
+        let (req, _) = sent(&fx, "edit.open");
+        reply(&mut c, req, test_open());
+        assert!(c.tab(tab).unwrap().mirror.is_some());
+        assert!(!c.open_slow(tab));
+    }
+
+    #[test]
+    fn repeated_failure_registration_and_attachment_clear_retry_state() {
+        let mut c = ctl();
+        let mut fx = c.open_paths(&["/work/hello.mix".into()], Intent::ui(0));
+        let tab = c.tabs()[0].id;
+        for _ in 0..2 {
+            let (req, _) = sent(&fx, "edit.open");
+            c.on_incoming(Incoming::Reply { req, rc:10, body: refusal("UNAVAILABLE", "missing", None) });
+            assert_eq!(c.open_error(tab), Some(EDIT_UNAVAILABLE));
+            assert!(!c.x[&tab].reattaching);
+            fx = registered(&mut c, json!(["edit"]));
+            assert_eq!(c.open_error(tab), None);
+        }
+        let (req, _) = sent(&fx, "edit.open");
+        reply(&mut c, req, test_open());
+        assert!(c.tab(tab).unwrap().mirror.is_some());
+        assert!(!c.x[&tab].reattaching);
+    }
+
+    #[test]
+    fn registrations_only_act_on_edit_appearing() {
+        let mut c = ctl();
+        assert!(registered(&mut c, json!(["other"])).is_empty());
+        assert!(!registered(&mut c, json!(["edit"])).is_empty());
+        assert!(registered(&mut c, json!(["edit", "other"])).is_empty());
+        assert!(c.on_incoming(Incoming::Topic { topic:"noded.props.changed".into(), body:r#"{"path":"other","new":["edit"],"note":"services.registered"}"#.into() }).is_empty());
+        assert!(c.on_incoming(Incoming::Topic { topic:"noded.props.changed".into(), body:"invalid services.registered edit".into() }).is_empty());
+        assert!(registered(&mut c, json!([])).is_empty());
+        let fx = registered(&mut c, json!(["edit"]));
+        sent(&fx, "edit.info");
+    }
+
+    #[test]
+    fn unavailable_reattach_preserves_mirror_and_retries() {
+        let mut c = ctl();
+        let fx = c.open_paths(&["/work/hello.mix".into()], Intent::ui(0));
+        let (req, _) = sent(&fx, "edit.open");
+        reply(&mut c, req, test_open());
+        let tab = c.tabs()[0].id;
+        let mut fx = Vec::new();
+        c.reattach(tab, &mut fx);
+        let (req, _) = sent(&fx, "edit.open");
+        let fx = c.on_incoming(Incoming::Reply { req, rc:10, body:refusal("UNAVAILABLE", "missing", None) });
+        assert!(c.tab(tab).unwrap().mirror.is_some());
+        assert_eq!(c.open_error(tab), None);
+        assert!(!c.x[&tab].reattaching);
+        let timer = fx.iter().find_map(|e| match e { Effect::Timer { id, .. } => Some(*id), _ => None }).unwrap();
+        let fx = c.on_incoming(Incoming::Timer { id:timer });
+        let (req, _) = sent(&fx, "edit.open");
+        reply(&mut c, req, test_open());
+        assert!(!c.x[&tab].reattaching);
     }
 
     #[test]
