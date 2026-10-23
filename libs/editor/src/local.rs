@@ -112,10 +112,7 @@ pub struct Saved {
 
 impl SaveSnapshot {
     pub fn write(self) -> Result<Saved, Error> {
-        let target = match fs::symlink_metadata(&self.path) {
-            Ok(m) if m.file_type().is_symlink() => fs::canonicalize(&self.path)?,
-            _ => self.path.clone(),
-        };
+        let target = save_target(&self.path)?;
         write_replacing(&target, &self.bytes)?;
         Ok(Saved {
             identity: self.identity,
@@ -416,10 +413,7 @@ impl Document {
     /// stays a link: its target is written.
     pub fn save_as(&mut self, path: impl AsRef<Path>) -> Result<(), Error> {
         let path = path.as_ref();
-        let target = match fs::symlink_metadata(path) {
-            Ok(m) if m.file_type().is_symlink() => fs::canonicalize(path)?,
-            _ => path.to_path_buf(),
-        };
+        let target = save_target(path)?;
         write_replacing(&target, &self.buffer.to_bytes(&self.meta))?;
         self.buffer.mark_saved();
         if self.path.as_deref() != Some(path) {
@@ -429,19 +423,54 @@ impl Document {
     }
 }
 
-/// Write `bytes` to a new temporary file beside `target` (created
-/// exclusively, so nothing existing is followed or truncated), give it
-/// `target`'s permissions, flush it, and rename it over `target`. A failure
-/// removes the temporary file and leaves `target` as it was.
-fn write_replacing(target: &Path, bytes: &[u8]) -> io::Result<()> {
+/// The resolved file and directory used by an atomic save.
+pub struct SaveTarget {
+    path: PathBuf,
+    directory: PathBuf,
+}
+
+impl SaveTarget {
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+    pub fn directory(&self) -> &Path {
+        &self.directory
+    }
+}
+
+/// Resolve exactly where an atomic save writes its temporary file and renames
+/// it. Symlinks stay links: their resolved target is replaced instead.
+pub fn save_target(path: &Path) -> io::Result<SaveTarget> {
+    let target = match fs::symlink_metadata(path) {
+        Ok(m) if m.file_type().is_symlink() => fs::canonicalize(path)?,
+        _ => path.to_path_buf(),
+    };
+    let directory = target
+        .parent()
+        .filter(|d| !d.as_os_str().is_empty())
+        .unwrap_or(Path::new("."))
+        .to_path_buf();
+    Ok(SaveTarget {
+        path: target,
+        directory,
+    })
+}
+
+/// Write beside the resolved target, keep its permissions and rename over it.
+/// A failure removes the temporary file and leaves the target as it was.
+fn write_replacing(destination: &SaveTarget, bytes: &[u8]) -> io::Result<()> {
+    let target = destination.path();
     let name = target
         .file_name()
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "no file name"))?;
-    let dir = target
-        .parent()
-        .filter(|d| !d.as_os_str().is_empty())
-        .unwrap_or(Path::new("."));
+    let dir = destination.directory();
     let permissions = fs::metadata(target).ok().map(|m| m.permissions());
+    if permissions.as_ref().is_some_and(|p| p.readonly()) {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "file is read-only",
+        ));
+    }
     let (tmp, mut file) = (0..1000)
         .find_map(|n| {
             let mut tmp_name = OsString::from(".");
@@ -680,6 +709,26 @@ mod tests {
         assert!(doc.complete_save(&saved));
         assert!(!doc.is_dirty());
         assert_eq!(doc.contents(), "first second one\r\n");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_file_made_read_only_after_open_is_not_replaced_by_either_save_api() {
+        use std::os::unix::fs::PermissionsExt;
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("readonly.mix");
+        fs::write(&path, "original").unwrap();
+        let mut doc = Document::open(&path).unwrap();
+        typed(&mut doc, "edit ");
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o444)).unwrap();
+        assert!(doc.save().is_err());
+        assert!(doc.save_snapshot().unwrap().write().is_err());
+        assert!(doc.is_dirty());
+        assert_eq!(fs::read_to_string(&path).unwrap(), "original");
+        assert_eq!(
+            fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o444
+        );
     }
 
     #[test]

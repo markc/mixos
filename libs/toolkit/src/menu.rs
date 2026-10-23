@@ -729,6 +729,38 @@ pub fn anchored_open(ctx: &Context, open: bool) {
     ctx.data_mut(|d| d.insert_temp(crate::window_id(viewport, "toolkit.anchored-open"), open));
 }
 
+pub(crate) fn anchored_rect(anchor: Rect, outer: Vec2, bounds: Rect) -> Rect {
+    let top = anchor.bottom().max(bounds.top());
+    let size = outer.min(vec2(bounds.width(), (bounds.bottom() - top).max(0.0)));
+    let left = if anchor.left() + size.x > bounds.right() {
+        anchor.right() - size.x
+    } else {
+        anchor.left()
+    };
+    Rect::from_min_size(
+        pos2(left.clamp(bounds.left(), bounds.right() - size.x), top),
+        size,
+    )
+}
+
+/// The same measured frame used by the drop-down and its inline title entry.
+pub(crate) fn anchored_menu_rect(ui: &Ui, anchor: Rect, menu: &Menu) -> Rect {
+    let chrome = Chrome::of(ui.ctx());
+    let layout = Layout::new(ui, &chrome, &menu.entries, chrome.metrics.menu_min_width);
+    anchored_content_rect(ui, anchor, layout.size)
+}
+
+fn anchored_content_rect(ui: &Ui, anchor: Rect, content: Vec2) -> Rect {
+    let chrome = Chrome::of(ui.ctx());
+    let margin = Frame::menu(ui.style()).total_margin().sum();
+    let bounds = ui.ctx().content_rect().shrink(chrome.metrics.edge_gap);
+    let mut outer = content + margin;
+    if outer.y > (bounds.bottom() - anchor.bottom()).max(0.0) {
+        outer.x += ui.spacing().scroll.allocated_width();
+    }
+    anchored_rect(anchor, outer, bounds)
+}
+
 /// A single-level menu below an arbitrary icon. Uses the bar's navigation,
 /// layout, painting and scrolling; the caller owns its transient open flag.
 pub fn anchored(
@@ -777,13 +809,14 @@ pub fn anchored(
     let mut frame = Rect::NOTHING;
     if nav.open_menu().is_some() {
         let chrome = Chrome::of(&ctx);
-        let layout = Layout::new(ui, &chrome, &menus[0].entries, 0.0);
-        let screen = ctx.content_rect();
-        let width = layout.size.x + ui.spacing().menu_margin.sum().x;
-        let at = pos2(
-            anchor.left().min(screen.right() - width).max(screen.left()),
-            anchor.bottom(),
+        let layout = Layout::new(
+            ui,
+            &chrome,
+            &menus[0].entries,
+            chrome.metrics.menu_min_width,
         );
+        let margin = Frame::menu(ui.style()).total_margin().sum();
+        let rect = anchored_content_rect(ui, anchor, layout.size);
         ctx.data_mut(|d| {
             d.insert_temp(
                 crate::window_id(viewport, "toolkit.anchored-tooltips"),
@@ -796,11 +829,12 @@ pub fn anchored(
             0,
             &menus[0].entries,
             &layout,
-            Rect::from_min_size(at, layout.size),
+            rect,
             &mut nav,
             &menus,
             View {
-                max_height: (screen.bottom() - at.y).max(chrome.metrics.menu_row_height),
+                max_height: (rect.height() - margin.y).max(0.0),
+                max_width: Some((rect.width() - margin.x).max(0.0)),
                 moved: ctx.input(|i| i.pointer.delta() != Vec2::ZERO),
                 keyed,
                 deeper: None,
@@ -1311,6 +1345,7 @@ pub fn bar_picked(
             // a submenu entered by keyboard brings its parent row into view.
             let view = View {
                 max_height,
+                max_width: None,
                 moved,
                 keyed: keyed && level <= st.nav.depth(),
                 deeper,
@@ -1545,6 +1580,8 @@ struct Shown {
 struct View {
     /// The tallest the level's content may be; taller content scrolls.
     max_height: f32,
+    /// Anchored menus constrain oversized content to the native window.
+    max_width: Option<f32>,
     /// The pointer moved this frame.
     moved: bool,
     /// A key moved this level's highlight this frame: scroll it into view.
@@ -1571,6 +1608,7 @@ fn show_level(
 ) -> Shown {
     let View {
         max_height,
+        max_width,
         moved,
         keyed,
         deeper,
@@ -1581,49 +1619,79 @@ fn show_level(
         .order(Order::Foreground)
         .fixed_pos(rect.min)
         .constrain(false)
-        .fade_in(false)
-        .show(ctx, |ui| {
-            Frame::menu(ui.style())
-                .show(ui, |ui| {
-                    if let Some((search, query)) = header {
-                        search_header(ui, chrome, search, query, layout.size.x, entries.is_empty());
-                    }
-                    // At least the rows, up to the window: an egui area
-                    // starts at the style's default area size (400 pt high),
-                    // and a scroll area alone never grows past its area, so
-                    // a long level would scroll in a 400 pt box however tall
-                    // the window. Asking for the rows makes the area grow.
-                    configure_scroll(ui, chrome);
-                    let out = ScrollArea::vertical()
-                        .id_salt(id.with("scroll"))
-                        .max_height(max_height)
-                        .min_scrolled_height(max_height.min(layout.size.y))
-                        .auto_shrink([true, true])
-                        .show(ui, |ui| {
-                            level_rows(
-                                ui, chrome, level, entries, layout, nav, menus, moved, keyed,
-                                deeper, id,
-                            )
-                        });
-                    let view = out.inner_rect;
-                    let bar = (out.content_size.y > view.height() + 0.5).then(|| {
-                        // egui's bar ends at the allocated strip's outer
-                        // margin; a floating bar is wider than its strip and
-                        // reaches back over the rows' right edge.
-                        let s = &ui.spacing().scroll;
-                        let allocated = if s.floating {
-                            s.floating_allocated_width
-                        } else {
-                            s.bar_inner_margin + s.bar_width + s.bar_outer_margin
-                        };
-                        let right = view.right() + allocated;
-                        let left = view.right().min(right - s.bar_outer_margin - s.bar_width);
-                        Rect::from_x_y_ranges(left..=right, view.y_range())
+        .fade_in(false);
+    let area = if max_width.is_some() {
+        area.default_size(rect.size())
+    } else {
+        area
+    };
+    let area = area.show(ctx, |ui| {
+        Frame::menu(ui.style())
+            .show(ui, |ui| {
+                if let Some(width) = max_width {
+                    // Area size is cached between openings. Grow to this
+                    // menu's measured, bounded frame even after a shorter
+                    // catalogue, without forcing scrollbars past its edge.
+                    ui.set_min_size(vec2(width, max_height));
+                }
+                if let Some((search, query)) = header {
+                    search_header(ui, chrome, search, query, layout.size.x, entries.is_empty());
+                }
+                // At least the rows, up to the window: an egui area
+                // starts at the style's default area size (400 pt high),
+                // and a scroll area alone never grows past its area, so
+                // a long level would scroll in a 400 pt box however tall
+                // the window. Asking for the rows makes the area grow.
+                configure_scroll(ui, chrome);
+                let scroll = if let Some(width) = max_width {
+                    let gutter = if layout.size.y > max_height {
+                        ui.spacing().scroll.allocated_width()
+                    } else {
+                        0.0
+                    };
+                    let scroll = if layout.size.x + gutter > width {
+                        ScrollArea::both()
+                    } else {
+                        ScrollArea::vertical()
+                    };
+                    scroll.max_width(width).min_scrolled_width(0.0)
+                } else {
+                    ScrollArea::vertical()
+                };
+                let out = scroll
+                    .id_salt(id.with("scroll"))
+                    .max_height(max_height)
+                    .min_scrolled_height(if max_width.is_some() {
+                        0.0
+                    } else {
+                        max_height.min(layout.size.y)
+                    })
+                    .auto_shrink([true, true])
+                    .show(ui, |ui| {
+                        level_rows(
+                            ui, chrome, level, entries, layout, nav, menus, moved, keyed, deeper,
+                            id,
+                        )
                     });
-                    (out.inner, view, bar)
-                })
-                .inner
-        });
+                let view = out.inner_rect;
+                let bar = (out.content_size.y > view.height() + 0.5).then(|| {
+                    // egui's bar ends at the allocated strip's outer
+                    // margin; a floating bar is wider than its strip and
+                    // reaches back over the rows' right edge.
+                    let s = &ui.spacing().scroll;
+                    let allocated = if s.floating {
+                        s.floating_allocated_width
+                    } else {
+                        s.bar_inner_margin + s.bar_width + s.bar_outer_margin
+                    };
+                    let right = view.right() + allocated;
+                    let left = view.right().min(right - s.bar_outer_margin - s.bar_width);
+                    Rect::from_x_y_ranges(left..=right, view.y_range())
+                });
+                (out.inner, view, bar)
+            })
+            .inner
+    });
     let ((rows, under, activated), view, bar) = area.inner;
     Shown {
         frame: area.response.rect,
@@ -1851,6 +1919,90 @@ fn configure_scroll(ui: &mut Ui, chrome: &Chrome) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_short_window_keeps_the_menu_below_its_icon_and_only_scrolls_vertically() {
+        let ctx = Context::default();
+        crate::install(&ctx, &crate::Theme::embedded());
+        ctx.global_style_mut(|style| style.spacing.scroll.floating = false);
+        let anchor = Rect::from_min_size(pos2(350.0, 10.0), vec2(24.0, 24.0));
+        let mut open = true;
+        let mut frame = Rect::NOTHING;
+        for pass in 0..40 {
+            let mut out = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(400.0, 160.0))),
+                    time: Some(pass as f64),
+                    ..Default::default()
+                },
+                |ui| {
+                    let menu = Menu {
+                        title: "Macros".into(),
+                        entries: (0..20)
+                            .map(|n| {
+                                Entry::Row(Row::command("macro", format!("Macro {n}"), None, true))
+                            })
+                            .collect(),
+                    };
+                    let _ = anchored(
+                        ui,
+                        Id::new("short-menu"),
+                        anchor,
+                        &mut open,
+                        menu.clone(),
+                        &[],
+                    );
+                    let cache_id = crate::window_id(ctx.viewport_id(), "toolkit.anchored-input");
+                    let cache = ctx.data(|d| d.get_temp::<AnchoredInput>(cache_id)).unwrap();
+                    frame = cache.frame;
+                    // Render this same bounded level directly to inspect its rows
+                    // and scroll viewport, rather than relying on scrollbar paint.
+                    let chrome = Chrome::of(&ctx);
+                    let layout =
+                        Layout::new(ui, &chrome, &menu.entries, chrome.metrics.menu_min_width);
+                    let margin = Frame::menu(ui.style()).total_margin().sum();
+                    let mut nav = Nav::default();
+                    nav.open(0);
+                    let menus = [menu];
+                    let shown = show_level(
+                        &ctx,
+                        &chrome,
+                        1,
+                        &menus[0].entries,
+                        &layout,
+                        frame,
+                        &mut nav,
+                        &menus,
+                        View {
+                            max_height: (frame.height() - margin.y).max(0.0),
+                            max_width: Some((frame.width() - margin.x).max(0.0)),
+                            moved: false,
+                            keyed: false,
+                            deeper: None,
+                        },
+                        None,
+                    );
+                    if pass > 2 {
+                        assert!(shown.bar.is_some(), "vertical overflow must scroll");
+                        assert!(
+                            shown.rows[0].width() <= shown.view.width() + 1.0,
+                            "rows must fit without horizontal scrolling"
+                        );
+                        assert!(
+                            (shown.frame.height() - margin.y - shown.view.height()).abs() < 1.0,
+                            "no horizontal scrollbar gutter"
+                        );
+                    }
+                },
+            );
+            out.textures_delta.clear();
+        }
+        assert!(open);
+        assert_eq!(frame.top(), anchor.bottom());
+        let bounds = ctx.content_rect().shrink(Chrome::of(&ctx).metrics.edge_gap);
+        assert!(frame.bottom() <= bounds.bottom() + 1.0);
+        assert!(frame.right() <= bounds.right() + 1.0);
+    }
 
     #[test]
     fn menu_speed_moves_its_area_without_changing_other_scroll_areas() {
@@ -2245,4 +2397,26 @@ mod tests {
             "no enabled child, no enabled submenu"
         );
     }
+}
+#[test]
+fn anchored_placement_aligns_to_the_icon_and_clamps_the_full_frame() {
+    let bounds = Rect::from_min_max(pos2(0.0, 0.0), pos2(1275.0, 800.0));
+    let anchor = Rect::from_min_size(pos2(1200.0, 20.0), vec2(24.0, 24.0));
+    let rect = anchored_rect(anchor, vec2(220.0, 100.0), bounds);
+    assert_eq!(rect.right(), anchor.right());
+    assert_eq!(rect.top(), anchor.bottom());
+    assert!(bounds.contains_rect(rect));
+    let oversized = anchored_rect(anchor, vec2(2000.0, 1000.0), bounds);
+    assert_eq!(
+        oversized,
+        Rect::from_min_max(pos2(bounds.left(), anchor.bottom()), bounds.max)
+    );
+    let bottom = anchored_rect(
+        anchor.translate(vec2(0.0, 740.0)),
+        vec2(220.0, 100.0),
+        bounds,
+    );
+    assert!(bounds.contains_rect(bottom));
+    assert_eq!(bottom.top(), 784.0);
+    assert_eq!(bottom.bottom(), bounds.bottom());
 }

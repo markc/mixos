@@ -1,8 +1,25 @@
 <!-- SPDX-License-Identifier: MIT OR Apache-2.0 -->
 # Changelog
 
+## Unreleased — 2026-10-24
+
+- Give the New macro title field the drop-down's measured width, anchored
+  placement and a full text-field height. Wrap inline errors within that frame.
+- Cover title entry at scale 2.5, including wider catalogues and a snapshot.
+- Share atomic-save target resolution with the editor and probe that exact
+  directory, including through symlinks. Refuse read-only macro files inline.
+- Keep tall macro menus below their icon and scroll vertically; reserve the
+  themed scrollbar gutter without adding an unnecessary horizontal scrollbar.
+- Pin the empty menu's final row after separator cleanup.
+
 ## Unreleased — 2026-10-23
 
+- Give icon-anchored menus the menu bar's minimum width and frame metrics;
+  right-align at the icon near window edges and constrain oversized content.
+- Explain empty macro catalogues with a disabled row.
+- Keep failed macro creates and copies in the menu with path-specific errors.
+  Check existing files' save directories before editing and retain dirty edits
+  with path-specific save errors if permissions later change.
 - Focus the macro title only after its visible widget is drawn, and release
   focus before disabling it for creation, keeping AccessKit focus valid.
 - Save macro editor snapshots independently of discovery, keep the document
