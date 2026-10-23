@@ -8,8 +8,8 @@ use std::collections::VecDeque;
 use std::io;
 use std::path::Path;
 use std::process::{Command, Stdio};
-use std::sync::{Arc, Mutex, mpsc};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, mpsc};
 use std::time::Duration;
 
 const SLOTS: [&str; 15] = [
@@ -209,13 +209,25 @@ impl State {
                 status: payload["summary"].as_str().unwrap_or_default().into(),
             };
             self.retained = Some(finished.clone());
-            notifications::post(&self.app, self.window, payload, finished, self.notify_tx.clone(), &self.lifetime, ctx);
+            notifications::post(
+                &self.app,
+                self.window,
+                payload,
+                finished,
+                self.notify_tx.clone(),
+                &self.lifetime,
+                ctx,
+            );
         }
     }
 
     fn create_title(&mut self) {
-        if self.creation.is_some() { return; }
-        let Some(title) = self.title.clone() else { return; };
+        if self.creation.is_some() {
+            return;
+        }
+        let Some(title) = self.title.clone() else {
+            return;
+        };
         let Some(roots) = self.engine.roots.clone() else {
             self.creation_error = Some(own("macros-no-home"));
             return;
@@ -229,7 +241,8 @@ impl State {
                 let path = roots.create_from_title(&app, &title)?;
                 let doc = editor::local::Document::open(path).map_err(io::Error::other)?;
                 Ok((Catalogue::scan(&roots, &app)?, doc))
-            })().map_err(|e: io::Error| e.to_string());
+            })()
+            .map_err(|e: io::Error| e.to_string());
             let _ = tx.send(result);
         });
     }
@@ -240,7 +253,13 @@ impl State {
         match result {
             Ok((catalogue, doc)) => {
                 self.replace_catalogue(catalogue, ctx);
-                self.editor_entry = self.engine.catalogue.entries.iter().find(|e| Some(e.path.as_path()) == doc.path()).cloned();
+                self.editor_entry = self
+                    .engine
+                    .catalogue
+                    .entries
+                    .iter()
+                    .find(|e| Some(e.path.as_path()) == doc.path())
+                    .cloned();
                 self.document = Some(doc);
                 self.editor_open = true;
                 self.open = false;
@@ -253,7 +272,9 @@ impl State {
             Err(error) => {
                 self.creation_error = Some(error);
                 self.open = true;
-                ctx.data_mut(|d| d.insert_temp(crate::window_id(viewport, "macro-title-focused"), false));
+                ctx.data_mut(|d| {
+                    d.insert_temp(crate::window_id(viewport, "macro-title-focused"), false)
+                });
             }
         }
     }
@@ -276,7 +297,10 @@ impl State {
     }
 
     fn can_replace_document(&mut self) -> bool {
-        if self.saving.is_some() || self.close_after_save || self.document.as_ref().is_some_and(|doc| doc.is_dirty()) {
+        if self.saving.is_some()
+            || self.close_after_save
+            || self.document.as_ref().is_some_and(|doc| doc.is_dirty())
+        {
             self.error = Some(own("macros-save-first"));
             self.editor_open = true;
             false
@@ -300,7 +324,9 @@ impl State {
                 Err(mpsc::TryRecvError::Disconnected) => Some(Err(own("macros-worker-failed"))),
                 Err(mpsc::TryRecvError::Empty) => None,
             };
-            if let Some(result) = result { self.saved(result, ctx); }
+            if let Some(result) = result {
+                self.saved(result, ctx);
+            }
         }
         if let Some(rx) = &self.creation {
             let result = match rx.try_recv() {
@@ -308,7 +334,9 @@ impl State {
                 Err(mpsc::TryRecvError::Disconnected) => Some(Err(own("macros-worker-failed"))),
                 Err(mpsc::TryRecvError::Empty) => None,
             };
-            if let Some(result) = result { self.created(result, ctx); }
+            if let Some(result) = result {
+                self.created(result, ctx);
+            }
         }
         if let Some(rx) = &self.pending {
             let completion = match rx.try_recv() {
@@ -326,7 +354,8 @@ impl State {
                         self.replace_catalogue(catalogue, ctx);
                         if let Some(doc) = doc {
                             self.editor_entry = self
-                                .engine.catalogue
+                                .engine
+                                .catalogue
                                 .entries
                                 .iter()
                                 .find(|e| Some(e.path.as_path()) == doc.path())
@@ -336,7 +365,8 @@ impl State {
                         }
                         if let Some(entry) = run {
                             let entry = self
-                                .engine.catalogue
+                                .engine
+                                .catalogue
                                 .entries
                                 .iter()
                                 .find(|e| e.path == entry.path)
@@ -389,22 +419,35 @@ impl State {
                         menu::anchored_open(ctx, true);
                         let shown = egui::Frame::menu(ui.style()).show(ui, |ui| {
                             let (enter, escape) = menu::title_keys(ctx);
-                            let field = ui.add_enabled(self.creation.is_none(),
+                            let field = ui.add_enabled(
+                                self.creation.is_none(),
                                 egui::TextEdit::singleline(title)
                                     .id(crate::window_id(viewport, "macro-title"))
                                     .hint_text(own("macros-title")),
                             );
-                            if let Some(error) = &self.creation_error { ui.label(error); }
+                            if let Some(error) = &self.creation_error {
+                                ui.label(error);
+                            }
                             // Only a visible, enabled widget has an AccessKit
                             // node to receive focus. Areas may first run an
                             // invisible sizing pass; leave the request pending.
-                            if ui.is_visible() && field.enabled() && !ctx
-                                .data(|d| d.get_temp::<bool>(crate::window_id(viewport, "macro-title-focused")))
-                                .unwrap_or(false)
+                            if ui.is_visible()
+                                && field.enabled()
+                                && !ctx
+                                    .data(|d| {
+                                        d.get_temp::<bool>(crate::window_id(
+                                            viewport,
+                                            "macro-title-focused",
+                                        ))
+                                    })
+                                    .unwrap_or(false)
                             {
                                 field.request_focus();
                                 ctx.data_mut(|d| {
-                                    d.insert_temp(crate::window_id(viewport, "macro-title-focused"), true)
+                                    d.insert_temp(
+                                        crate::window_id(viewport, "macro-title-focused"),
+                                        true,
+                                    )
                                 });
                             }
                             (field, enter, escape)
@@ -502,8 +545,11 @@ impl State {
     }
 
     fn needs_repaint(&self) -> bool {
-        self.engine.runner.status() == Status::Running || self.pending.is_some()
-            || self.creation.is_some() || self.saving.is_some() || self.save_request.is_some()
+        self.engine.runner.status() == Status::Running
+            || self.pending.is_some()
+            || self.creation.is_some()
+            || self.saving.is_some()
+            || self.save_request.is_some()
     }
 
     fn show_editor(&mut self, ctx: &egui::Context) {
@@ -538,7 +584,9 @@ impl State {
                     .data_mut(|d| d.remove_temp::<bool>(crate::window_id(viewport, "macro-save")))
                     .unwrap_or(false);
                 run |= ctx
-                    .data_mut(|d| d.remove_temp::<bool>(crate::window_id(viewport, "macro-save-run")))
+                    .data_mut(|d| {
+                        d.remove_temp::<bool>(crate::window_id(viewport, "macro-save-run"))
+                    })
                     .unwrap_or(false);
                 let editor_enabled = !menu::is_open(ctx);
                 if let Some(doc) = &mut self.document {
@@ -577,13 +625,16 @@ impl State {
                     ui.label(error);
                 }
                 ui.separator();
-                if let Some(message) = &self.run_message { ui.label(message); }
+                if let Some(message) = &self.run_message {
+                    ui.label(message);
+                }
                 let output = self.displayed_output();
-                if self.engine.runner.status() != Status::Running && let Some(last) = &self.retained {
+                if self.engine.runner.status() != Status::Running
+                    && let Some(last) = &self.retained
+                {
                     ui.label(&last.status).on_hover_text(&last.title);
                 }
-                if let Some(running) = &self.engine.running
-                {
+                if let Some(running) = &self.engine.running {
                     ui.label(own_with(
                         "macros-running-title",
                         &[("title", &running.title)],
@@ -599,12 +650,16 @@ impl State {
                         );
                     });
             });
-        if !open { self.close_editor(); }
+        if !open {
+            self.close_editor();
+        }
         if !self.editor_open {
             if let Some(id) = self.editor_focus {
                 ctx.memory_mut(|m| m.surrender_focus(id));
             }
-            ctx.data_mut(|d| d.remove::<Option<egui::Id>>(crate::window_id(viewport, "macro-editor-focus")));
+            ctx.data_mut(|d| {
+                d.remove::<Option<egui::Id>>(crate::window_id(viewport, "macro-editor-focus"))
+            });
         }
         if ced
             && let Some(path) = self
@@ -630,7 +685,8 @@ impl State {
         if save || requested {
             self.save_request = Some(self.save_request.unwrap_or(false) || run);
         }
-        if self.saving.is_none() && self.document.is_some()
+        if self.saving.is_none()
+            && self.document.is_some()
             && let Some(run) = self.save_request.take()
         {
             let snapshot = match self.document.as_ref().unwrap().save_snapshot() {
@@ -648,10 +704,13 @@ impl State {
             let (tx, rx) = mpsc::channel();
             self.saving = Some(rx);
             std::thread::spawn(move || {
-                let completion = snapshot.write().map(|saved| {
-                    let catalogue = roots.and_then(|roots| Catalogue::scan(&roots, &app).ok());
-                    (saved, catalogue, entry)
-                }).map_err(|error| error.to_string());
+                let completion = snapshot
+                    .write()
+                    .map(|saved| {
+                        let catalogue = roots.and_then(|roots| Catalogue::scan(&roots, &app).ok());
+                        (saved, catalogue, entry)
+                    })
+                    .map_err(|error| error.to_string());
                 let _ = tx.send(completion);
             });
         }
@@ -665,11 +724,17 @@ impl State {
                     self.replace_catalogue(catalogue, ctx);
                     self.reload();
                 }
-                if let Some(doc) = &mut self.document { doc.complete_save(&saved); }
+                if let Some(doc) = &mut self.document {
+                    doc.complete_save(&saved);
+                }
                 self.error = None;
-                if let Some(entry) = run { self.run(entry, ctx); }
+                if let Some(entry) = run {
+                    self.run(entry, ctx);
+                }
                 if self.close_after_save {
-                    if self.document.as_ref().is_some_and(|doc| doc.is_dirty()) || self.save_request.is_some() {
+                    if self.document.as_ref().is_some_and(|doc| doc.is_dirty())
+                        || self.save_request.is_some()
+                    {
                         self.save_editor(true, false);
                     } else {
                         self.editor_open = false;
@@ -686,24 +751,41 @@ impl State {
     }
 
     fn close_editor(&mut self) {
-        if self.document.as_ref().is_some_and(|doc| doc.is_dirty()) || self.saving.is_some() || self.save_request.is_some() {
+        if self.document.as_ref().is_some_and(|doc| doc.is_dirty())
+            || self.saving.is_some()
+            || self.save_request.is_some()
+        {
             self.close_after_save = true;
             self.editor_open = true;
-            if self.saving.is_none() && self.save_request.is_none() { self.save_editor(true, false); }
-        } else { self.editor_open = false; }
+            if self.saving.is_none() && self.save_request.is_none() {
+                self.save_editor(true, false);
+            }
+        } else {
+            self.editor_open = false;
+        }
     }
 
     fn displayed_output(&self) -> String {
-        if self.engine.runner.status() == Status::Running { self.engine.runner.output().text }
-        else { self.retained.as_ref().map(|r| r.output.clone()).unwrap_or_default() }
+        if self.engine.runner.status() == Status::Running {
+            self.engine.runner.output().text
+        } else {
+            self.retained
+                .as_ref()
+                .map(|r| r.output.clone())
+                .unwrap_or_default()
+        }
     }
 
     fn replace_catalogue(&mut self, catalogue: Catalogue, ctx: &egui::Context) {
         // Cached keyboard picks refer to the old row-to-file mapping. Closing
         // invalidates both the highlight and any already queued activation.
-        if !self.engine.catalogue.entries.is_empty() && self.engine.catalogue.entries != catalogue.entries {
+        if !self.engine.catalogue.entries.is_empty()
+            && self.engine.catalogue.entries != catalogue.entries
+        {
             menu::dismiss_anchored(ctx);
-            if self.title.is_none() { self.open = false; }
+            if self.title.is_none() {
+                self.open = false;
+            }
         }
         self.engine.catalogue = catalogue;
     }
@@ -756,7 +838,8 @@ fn macro_menu(catalogue: &Catalogue, running: Option<&str>) -> (Menu, Vec<usize>
             if indices.len() == SLOTS.len() {
                 continue;
             }
-            let mut item = Row::command(SLOTS[indices.len()], &entry.title, None, running.is_none());
+            let mut item =
+                Row::command(SLOTS[indices.len()], &entry.title, None, running.is_none());
             if !entry.tier.is_user() {
                 item.shortcut = Some(own("macros-builtin-mark"));
             }
@@ -826,7 +909,9 @@ fn launch(path: &Path, folder: bool) -> io::Result<()> {
 }
 
 pub fn show_app(ctx: &egui::Context, app: &str, open: bool) -> bool {
-    let Some(state) = window_state(ctx, app, open) else { return false; };
+    let Some(state) = window_state(ctx, app, open) else {
+        return false;
+    };
     let mut state = state.lock().unwrap();
     state.open = open;
     state.show(ctx);
@@ -841,10 +926,14 @@ type WindowState = Arc<Mutex<State>>;
 pub fn close_app(ctx: &egui::Context, app: &str) {
     let owners_id = egui::Id::new("macro-viewport-owners");
     ctx.data_mut(|d| {
-        let mut owners = d.get_temp::<Vec<(egui::ViewportId, egui::Id)>>(owners_id).unwrap_or_default();
+        let mut owners = d
+            .get_temp::<Vec<(egui::ViewportId, egui::Id)>>(owners_id)
+            .unwrap_or_default();
         owners.retain(|(viewport, id)| {
             let keep = *id != crate::window_id(*viewport, ("shared-macros", app));
-            if !keep { d.remove::<WindowState>(*id); }
+            if !keep {
+                d.remove::<WindowState>(*id);
+            }
             keep
         });
         d.insert_temp(owners_id, owners);
@@ -854,10 +943,14 @@ pub fn close_app(ctx: &egui::Context, app: &str) {
 fn window_state(ctx: &egui::Context, app: &str, open: bool) -> Option<WindowState> {
     let viewport = ctx.viewport_id();
     let owners_id = egui::Id::new("macro-viewport-owners");
-    let mut owners = ctx.data(|d| d.get_temp::<Vec<(egui::ViewportId, egui::Id)>>(owners_id)).unwrap_or_default();
+    let mut owners = ctx
+        .data(|d| d.get_temp::<Vec<(egui::ViewportId, egui::Id)>>(owners_id))
+        .unwrap_or_default();
     owners.retain(|(viewport, id)| {
         let present = ctx.input(|i| i.raw.viewports.contains_key(viewport));
-        if !present { ctx.data_mut(|d| d.remove::<WindowState>(*id)); }
+        if !present {
+            ctx.data_mut(|d| d.remove::<WindowState>(*id));
+        }
         present
     });
     let id = crate::window_id(viewport, ("shared-macros", app));
@@ -890,16 +983,30 @@ mod tests {
         // of Mix, so start/stop/reaping never depend on an installed binary.
         std::fs::write(&mix, "#!/bin/sh\n# SPDX-License-Identifier: MIT OR Apache-2.0\nprintf '%s\\n' \"$$\" > \"$1.parent\"\n/bin/sleep 120 &\nchild=$!\nprintf '%s\\n' \"$child\" > \"$1.child\"\nwait \"$child\"\n").unwrap();
         std::fs::set_permissions(&mix, std::fs::Permissions::from_mode(0o700)).unwrap();
-        let roots = Roots { builtin: temp.path().join("builtin"), user: temp.path().join("user"), home: temp.path().into(), mix };
+        let roots = Roots {
+            builtin: temp.path().join("builtin"),
+            user: temp.path().join("user"),
+            home: temp.path().into(),
+            mix,
+        };
         let path = roots.create_from_title("ced", "Wait").unwrap();
-        let entry = Entry { path, id: "wait".into(), title: "Wait".into(), tier: Tier::UserApp, shadows: vec![] };
+        let entry = Entry {
+            path,
+            id: "wait".into(),
+            title: "Wait".into(),
+            tier: Tier::UserApp,
+            shadows: vec![],
+        };
         (temp, roots, entry)
     }
 
     fn wait_until(mut predicate: impl FnMut() -> bool) {
         let deadline = std::time::Instant::now() + Duration::from_secs(10);
         while !predicate() {
-            assert!(std::time::Instant::now() < deadline, "timed out waiting for the macro worker");
+            assert!(
+                std::time::Instant::now() < deadline,
+                "timed out waiting for the macro worker"
+            );
             std::thread::sleep(Duration::from_millis(5));
         }
     }
@@ -918,11 +1025,27 @@ mod tests {
         let other_window = State::new("ced");
         assert_eq!(other_window.engine.runner.status(), Status::Idle);
         state.document = Some(editor::local::Document::open(&entry.path).unwrap());
-        state.document.as_mut().unwrap().command(editor::EditCommand::Insert("-- saved\n".into()), &editor::View::default()).unwrap();
+        state
+            .document
+            .as_mut()
+            .unwrap()
+            .command(
+                editor::EditCommand::Insert("-- saved\n".into()),
+                &editor::View::default(),
+            )
+            .unwrap();
         state.save_editor(false, true);
         assert!(state.document.is_some(), "saving must not blank the editor");
-        let result = state.saving.take().unwrap().recv_timeout(Duration::from_secs(10)).unwrap();
-        assert!(matches!(&result, Ok((_, _, None))), "Ctrl+Enter only saves while already running");
+        let result = state
+            .saving
+            .take()
+            .unwrap()
+            .recv_timeout(Duration::from_secs(10))
+            .unwrap();
+        assert!(
+            matches!(&result, Ok((_, _, None))),
+            "Ctrl+Enter only saves while already running"
+        );
         state.saved(result, &ctx);
         assert!(!state.document.as_ref().unwrap().is_dirty());
         state.engine.runner.stop();
@@ -937,7 +1060,11 @@ mod tests {
         let mut state = State::new("ced");
         state.engine.roots = Some(roots);
         state.run(entry, &egui::Context::default());
-        state.retained = Some(Finished { title: "Earlier run".into(), output: "earlier output".into(), status: "Earlier run done".into() });
+        state.retained = Some(Finished {
+            title: "Earlier run".into(),
+            output: "earlier output".into(),
+            status: "Earlier run done".into(),
+        });
         assert_eq!(state.engine.running.as_ref().unwrap().title, "Wait");
         assert_eq!(state.displayed_output(), state.engine.runner.output().text);
         assert_ne!(state.displayed_output(), "earlier output");
@@ -954,10 +1081,14 @@ mod tests {
         runner.start(&roots, "ced", &entry).unwrap();
         runner.stop(); // stop may arrive before the manager has spawned.
         let mut restarted = false;
-        wait_until(|| {
-            match runner.start(&roots, "ced", &entry) {
-                Ok(()) => { restarted = true; true }
-                Err(error) => { assert_eq!(error.kind(), io::ErrorKind::AlreadyExists); false }
+        wait_until(|| match runner.start(&roots, "ced", &entry) {
+            Ok(()) => {
+                restarted = true;
+                true
+            }
+            Err(error) => {
+                assert_eq!(error.kind(), io::ErrorKind::AlreadyExists);
+                false
             }
         });
         assert!(restarted);
@@ -977,24 +1108,43 @@ mod tests {
         let parent_file = entry.path.with_extension("mix.parent");
         let child_file = entry.path.with_extension("mix.child");
         wait_until(|| std::fs::read_to_string(&child_file).is_ok_and(|s| !s.trim().is_empty()));
-        let parent: i32 = std::fs::read_to_string(parent_file).unwrap().trim().parse().unwrap();
-        let child: i32 = std::fs::read_to_string(child_file).unwrap().trim().parse().unwrap();
+        let parent: i32 = std::fs::read_to_string(parent_file)
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        let child: i32 = std::fs::read_to_string(child_file)
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
         drop(state);
         // ESRCH for the leader proves it is no longer even a zombie. Do not
         // waitpid before this: stealing the manager's reap would break its
         // WNOWAIT reservation and could turn group cleanup into a PID race.
         wait_until(|| {
             // SAFETY: signal zero only probes the test-owned process.
-            (unsafe { libc::kill(parent, 0) }) == -1 && io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH)
+            (unsafe { libc::kill(parent, 0) }) == -1
+                && io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH)
         });
         let mut status = 0;
         // SAFETY: the leader is already gone; this must report ECHILD.
-        assert_eq!(unsafe { libc::waitpid(parent, &mut status, libc::WNOHANG) }, -1);
-        assert_eq!(io::Error::last_os_error().raw_os_error(), Some(libc::ECHILD));
-        wait_until(|| match std::fs::read_to_string(format!("/proc/{child}/stat")) {
-            Ok(stat) => stat.rsplit_once(") ").is_some_and(|(_, tail)| tail.starts_with('Z')),
-            Err(error) => error.kind() == io::ErrorKind::NotFound,
-        });
+        assert_eq!(
+            unsafe { libc::waitpid(parent, &mut status, libc::WNOHANG) },
+            -1
+        );
+        assert_eq!(
+            io::Error::last_os_error().raw_os_error(),
+            Some(libc::ECHILD)
+        );
+        wait_until(
+            || match std::fs::read_to_string(format!("/proc/{child}/stat")) {
+                Ok(stat) => stat
+                    .rsplit_once(") ")
+                    .is_some_and(|(_, tail)| tail.starts_with('Z')),
+                Err(error) => error.kind() == io::ErrorKind::NotFound,
+            },
+        );
     }
 
     #[test]
@@ -1050,8 +1200,13 @@ mod tests {
         let (menu, indices) = macro_menu(&catalogue, Some("Active"));
         assert_eq!(menu.entries[0].row().unwrap().label, "Stop \"Active\"");
         assert_eq!(indices.len(), 15);
-        assert!(menu.entries.iter().filter_map(MenuEntry::row)
-            .filter(|r| r.id.is_some_and(|id| SLOTS.contains(&id))).all(|r| !r.enabled));
+        assert!(
+            menu.entries
+                .iter()
+                .filter_map(MenuEntry::row)
+                .filter(|r| r.id.is_some_and(|id| SLOTS.contains(&id)))
+                .all(|r| !r.enabled)
+        );
         assert!(
             indices[..10]
                 .iter()
@@ -1101,9 +1256,19 @@ mod tests {
         state.open = true;
         let user = temp.path().join("not-a-directory");
         std::fs::write(&user, "obstruction").unwrap();
-        state.engine.roots = Some(Roots { user, builtin: temp.path().join("builtin"), home: temp.path().into(), mix: "/opt/mixos/bin/mix".into() });
+        state.engine.roots = Some(Roots {
+            user,
+            builtin: temp.path().join("builtin"),
+            home: temp.path().into(),
+            mix: "/opt/mixos/bin/mix".into(),
+        });
         state.create_title();
-        let result = state.creation.take().unwrap().recv_timeout(Duration::from_secs(10)).unwrap();
+        let result = state
+            .creation
+            .take()
+            .unwrap()
+            .recv_timeout(Duration::from_secs(10))
+            .unwrap();
         assert!(result.is_err());
         state.created(result, &egui::Context::default());
         assert_eq!(state.title.as_deref(), Some("Tidy imports"));
@@ -1122,28 +1287,67 @@ mod tests {
         state.document = Some(editor::local::Document::open(&entry.path).unwrap());
         let (hold, pending) = mpsc::channel::<Completion>();
         state.pending = Some(pending); // a catalogue scan has not completed.
-        state.document.as_mut().unwrap().command(editor::EditCommand::Insert("-- first\n".into()), &editor::View::default()).unwrap();
+        state
+            .document
+            .as_mut()
+            .unwrap()
+            .command(
+                editor::EditCommand::Insert("-- first\n".into()),
+                &editor::View::default(),
+            )
+            .unwrap();
         state.save_editor(true, false);
         assert!(state.pending.is_some());
         assert!(state.document.is_some());
         assert!(state.saving.is_some(), "saving must not wait for discovery");
-        state.document.as_mut().unwrap().command(editor::EditCommand::Insert("-- later\n".into()), &editor::View::default()).unwrap();
+        state
+            .document
+            .as_mut()
+            .unwrap()
+            .command(
+                editor::EditCommand::Insert("-- later\n".into()),
+                &editor::View::default(),
+            )
+            .unwrap();
         state.save_editor(true, false);
-        assert_eq!(state.save_request, Some(false), "a second Ctrl+S stays queued during the first write");
-        let result = state.saving.take().unwrap().recv_timeout(Duration::from_secs(10)).unwrap();
+        assert_eq!(
+            state.save_request,
+            Some(false),
+            "a second Ctrl+S stays queued during the first write"
+        );
+        let result = state
+            .saving
+            .take()
+            .unwrap()
+            .recv_timeout(Duration::from_secs(10))
+            .unwrap();
         let ctx = egui::Context::default();
         state.saved(result, &ctx);
-        assert!(state.document.as_ref().unwrap().is_dirty(), "newer edits must stay dirty");
+        assert!(
+            state.document.as_ref().unwrap().is_dirty(),
+            "newer edits must stay dirty"
+        );
         state.save_editor(false, false);
-        assert!(state.saving.is_some(), "the queued save must write the newer snapshot");
+        assert!(
+            state.saving.is_some(),
+            "the queued save must write the newer snapshot"
+        );
         state.close_editor();
         assert!(state.editor_open, "close waits for the save receipt");
-        let result = state.saving.take().unwrap().recv_timeout(Duration::from_secs(10)).unwrap();
+        let result = state
+            .saving
+            .take()
+            .unwrap()
+            .recv_timeout(Duration::from_secs(10))
+            .unwrap();
         state.saved(result, &ctx);
         assert!(!state.editor_open);
         let doc = state.document.as_ref().unwrap();
         assert!(!doc.is_dirty());
-        assert_eq!(std::fs::read_to_string(&entry.path).unwrap(), doc.contents());
+        assert_eq!(
+            std::fs::read_to_string(&entry.path).unwrap(),
+            doc.contents()
+        );
         drop(hold);
     }
 
@@ -1155,13 +1359,22 @@ mod tests {
         let path = dir.join("macro.mix");
         std::fs::write(&path, "original").unwrap();
         let mut doc = editor::local::Document::open(&path).unwrap();
-        doc.command(editor::EditCommand::Insert("new ".into()), &editor::View::default()).unwrap();
+        doc.command(
+            editor::EditCommand::Insert("new ".into()),
+            &editor::View::default(),
+        )
+        .unwrap();
         std::fs::remove_file(&path).unwrap();
         std::fs::remove_dir(&dir).unwrap();
         let mut state = State::new("ced");
         state.document = Some(doc);
         state.close_editor();
-        let result = state.saving.take().unwrap().recv_timeout(Duration::from_secs(10)).unwrap();
+        let result = state
+            .saving
+            .take()
+            .unwrap()
+            .recv_timeout(Duration::from_secs(10))
+            .unwrap();
         assert!(result.is_err());
         state.saved(result, &egui::Context::default());
         assert!(state.editor_open);
@@ -1178,11 +1391,20 @@ mod tests {
         let ctx = egui::Context::default();
         let mut delay = Duration::ZERO;
         for frame in 0..40 {
-            let mut output = ctx.run_ui(egui::RawInput { time: Some(frame as f64), ..Default::default() }, |_| state.show(&ctx));
+            let mut output = ctx.run_ui(
+                egui::RawInput {
+                    time: Some(frame as f64),
+                    ..Default::default()
+                },
+                |_| state.show(&ctx),
+            );
             delay = output.viewport_output[&egui::ViewportId::ROOT].repaint_delay;
             output.textures_delta.clear();
         }
-        assert!(delay > Duration::from_millis(100), "idle delay was {delay:?}");
+        assert!(
+            delay > Duration::from_millis(100),
+            "idle delay was {delay:?}"
+        );
     }
 
     #[derive(Default)]
@@ -1197,30 +1419,59 @@ mod tests {
 
     fn app_harness() -> egui_kittest::Harness<'static, AppMenu> {
         let temp = tempfile::tempdir().unwrap();
-        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(800.0, 700.0)).build_ui_state(move |ui, app: &mut AppMenu| {
-            let runtime = window_state(ui.ctx(), "ced", true).unwrap();
-            {
-                let mut state = runtime.lock().unwrap();
-                state.loaded = true;
-                state.engine.roots = Some(Roots { user: temp.path().join("user"), builtin: temp.path().join("builtin"), home: temp.path().into(), mix: temp.path().join("unused") });
-            }
-            let mut registry = crate::command::Registry::new();
-            registry.add(command(|s: &AppMenu| s.open || !s.modal, |s: &mut AppMenu| { s.open = !s.open; s.toggles += 1; }));
-            let strings = crate::Strings::new("toolkit-macros = Macros\nhelp = Help\n");
-            let fired = crate::titlebar::show_bar(ui, "Test", None, &registry, app, &strings, &[]);
-            egui::CentralPanel::default().show(ui, |ui| {
-                if ui.button("Underlying control").clicked() { app.clicks += 1; }
-                // Deliberately greedy app content: menu keys must already
-                // have been taken by the title bar's pre-content pass.
-                for key in [egui::Key::Enter, egui::Key::Escape] {
-                    if ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, key)) { app.stolen_keys += 1; }
-                }
-            });
-            let close = show_app(ui.ctx(), "ced", app.open);
-            for (id, origin) in fired { registry.execute(id, app, origin).unwrap(); }
-            if std::mem::take(&mut app.queued_toggle) { registry.execute("help.macros", app, crate::command::Origin::Ui).unwrap(); }
-            if close { app.open = false; }
-        }, AppMenu::default());
+        let mut h = egui_kittest::Harness::builder()
+            .with_size(egui::vec2(800.0, 700.0))
+            .build_ui_state(
+                move |ui, app: &mut AppMenu| {
+                    let runtime = window_state(ui.ctx(), "ced", true).unwrap();
+                    {
+                        let mut state = runtime.lock().unwrap();
+                        state.loaded = true;
+                        state.engine.roots = Some(Roots {
+                            user: temp.path().join("user"),
+                            builtin: temp.path().join("builtin"),
+                            home: temp.path().into(),
+                            mix: temp.path().join("unused"),
+                        });
+                    }
+                    let mut registry = crate::command::Registry::new();
+                    registry.add(command(
+                        |s: &AppMenu| s.open || !s.modal,
+                        |s: &mut AppMenu| {
+                            s.open = !s.open;
+                            s.toggles += 1;
+                        },
+                    ));
+                    let strings = crate::Strings::new("toolkit-macros = Macros\nhelp = Help\n");
+                    let fired =
+                        crate::titlebar::show_bar(ui, "Test", None, &registry, app, &strings, &[]);
+                    egui::CentralPanel::default().show(ui, |ui| {
+                        if ui.button("Underlying control").clicked() {
+                            app.clicks += 1;
+                        }
+                        // Deliberately greedy app content: menu keys must already
+                        // have been taken by the title bar's pre-content pass.
+                        for key in [egui::Key::Enter, egui::Key::Escape] {
+                            if ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, key)) {
+                                app.stolen_keys += 1;
+                            }
+                        }
+                    });
+                    let close = show_app(ui.ctx(), "ced", app.open);
+                    for (id, origin) in fired {
+                        registry.execute(id, app, origin).unwrap();
+                    }
+                    if std::mem::take(&mut app.queued_toggle) {
+                        registry
+                            .execute("help.macros", app, crate::command::Origin::Ui)
+                            .unwrap();
+                    }
+                    if close {
+                        app.open = false;
+                    }
+                },
+                AppMenu::default(),
+            );
         crate::install(&h.ctx, &crate::Theme::embedded());
         h.run_steps(5);
         h
@@ -1234,39 +1485,62 @@ mod tests {
     #[test]
     fn show_app_icon_escape_and_same_frame_toggle_close_stay_in_sync() {
         let mut h = app_harness();
-        h.get_by_label("Macros").click(); h.run_steps(5);
+        h.get_by_label("Macros").click();
+        h.run_steps(5);
         assert!(h.state().open);
-        h.get_by_label("Macros").click(); h.run_steps(5);
+        h.get_by_label("Macros").click();
+        h.run_steps(5);
         assert!(!h.state().open);
-        h.get_by_label("Macros").click(); h.run_steps(5);
+        h.get_by_label("Macros").click();
+        h.run_steps(5);
         h.state_mut().modal = true;
         h.state_mut().queued_toggle = true;
-        h.key_press(egui::Key::Escape); h.run_steps(5);
+        h.key_press(egui::Key::Escape);
+        h.run_steps(5);
         assert!(!h.state().open);
         assert!(!menu::is_open(&h.ctx));
         assert_eq!(h.state().stolen_keys, 0);
         h.state_mut().modal = false;
-        h.get_by_label("Macros").click(); h.run_steps(5);
-        assert!(h.state().open, "an old dismissal must not close a later opening");
+        h.get_by_label("Macros").click();
+        h.run_steps(5);
+        assert!(
+            h.state().open,
+            "an old dismissal must not close a later opening"
+        );
     }
 
     #[test]
     fn show_app_new_title_takes_enter_and_escape_before_app_content() {
         let mut h = app_harness();
-        h.get_by_label("Macros").click(); h.run_steps(5);
-        h.get_by_label("New macro…").click(); h.run_steps(5);
+        h.get_by_label("Macros").click();
+        h.run_steps(5);
+        h.get_by_label("New macro…").click();
+        h.run_steps(5);
         assert_eq!(runtime(&h).lock().unwrap().title.as_deref(), Some(""));
         assert!(h.state().open);
-        assert!(h.ctx.memory(|m| m.has_focus(crate::window_id(egui::ViewportId::ROOT, "macro-title"))));
-        h.key_press(egui::Key::Escape); h.run_steps(5);
+        assert!(
+            h.ctx
+                .memory(|m| m.has_focus(crate::window_id(egui::ViewportId::ROOT, "macro-title")))
+        );
+        h.key_press(egui::Key::Escape);
+        h.run_steps(5);
         assert!(!h.state().open);
-        assert!(!h.ctx.memory(|m| m.has_focus(crate::window_id(egui::ViewportId::ROOT, "macro-title"))));
+        assert!(
+            !h.ctx
+                .memory(|m| m.has_focus(crate::window_id(egui::ViewportId::ROOT, "macro-title")))
+        );
         assert_eq!(h.state().stolen_keys, 0);
-        h.get_by_label("Macros").click(); h.run_steps(5);
-        h.get_by_label("New macro…").click(); h.run_steps(5);
+        h.get_by_label("Macros").click();
+        h.run_steps(5);
+        h.get_by_label("New macro…").click();
+        h.run_steps(5);
         h.event(egui::Event::Text("Tidy imports".into()));
-        h.key_press(egui::Key::Enter); h.run_steps(5);
-        wait_until(|| { h.run_steps(1); runtime(&h).lock().unwrap().creation.is_none() });
+        h.key_press(egui::Key::Enter);
+        h.run_steps(5);
+        wait_until(|| {
+            h.run_steps(1);
+            runtime(&h).lock().unwrap().creation.is_none()
+        });
         assert_eq!(h.state().stolen_keys, 0);
         assert!(!h.state().open);
         assert!(runtime(&h).lock().unwrap().document.is_some());
@@ -1277,11 +1551,17 @@ mod tests {
         let mut h = app_harness();
         let roots = runtime(&h).lock().unwrap().engine.roots.clone().unwrap();
         std::fs::write(&roots.user, "obstruction").unwrap();
-        h.get_by_label("Macros").click(); h.run_steps(5);
-        h.get_by_label("New macro…").click(); h.run_steps(5);
+        h.get_by_label("Macros").click();
+        h.run_steps(5);
+        h.get_by_label("New macro…").click();
+        h.run_steps(5);
         h.event(egui::Event::Text("Tidy imports".into()));
-        h.key_press(egui::Key::Enter); h.run_steps(5);
-        wait_until(|| { h.run_steps(1); runtime(&h).lock().unwrap().creation_error.is_some() });
+        h.key_press(egui::Key::Enter);
+        h.run_steps(5);
+        wait_until(|| {
+            h.run_steps(1);
+            runtime(&h).lock().unwrap().creation_error.is_some()
+        });
         h.run_steps(5);
         let state = runtime(&h);
         let state = state.lock().unwrap();
@@ -1290,21 +1570,43 @@ mod tests {
         assert!(h.state().open);
         assert!(!state.editor_open);
         let _ = h.get_by_label(state.creation_error.as_ref().unwrap());
-        assert!(h.ctx.memory(|m| m.has_focus(crate::window_id(egui::ViewportId::ROOT, "macro-title"))));
+        assert!(
+            h.ctx
+                .memory(|m| m.has_focus(crate::window_id(egui::ViewportId::ROOT, "macro-title")))
+        );
         assert_eq!(h.state().stolen_keys, 0);
     }
 
     #[test]
     fn refreshed_catalogue_discards_a_pick_from_the_previous_menu() {
         let mut h = app_harness();
-        let entry = |id: &str| Entry { id: id.into(), title: id.into(), tier: Tier::UserApp, path: format!("{id}.mix").into(), shadows: vec![] };
+        let entry = |id: &str| Entry {
+            id: id.into(),
+            title: id.into(),
+            tier: Tier::UserApp,
+            path: format!("{id}.mix").into(),
+            shadows: vec![],
+        };
         runtime(&h).lock().unwrap().engine.catalogue.entries = vec![entry("alpha")];
-        h.get_by_label("Macros").click(); h.run_steps(5);
-        h.event(egui::Event::Text("a".into())); h.run_steps(1);
+        h.get_by_label("Macros").click();
+        h.run_steps(5);
+        h.event(egui::Event::Text("a".into()));
+        h.run_steps(1);
         let (tx, rx) = mpsc::channel();
-        assert!(tx.send(Ok((Catalogue { entries: vec![entry("before"), entry("alpha")], diagnostics: vec![] }, None, None))).is_ok());
+        assert!(
+            tx.send(Ok((
+                Catalogue {
+                    entries: vec![entry("before"), entry("alpha")],
+                    diagnostics: vec![]
+                },
+                None,
+                None
+            )))
+            .is_ok()
+        );
         runtime(&h).lock().unwrap().pending = Some(rx);
-        h.key_press(egui::Key::Enter); h.run_steps(5);
+        h.key_press(egui::Key::Enter);
+        h.run_steps(5);
         let state = runtime(&h);
         let state = state.lock().unwrap();
         assert_eq!(state.engine.runner.status(), Status::Idle);
@@ -1316,15 +1618,33 @@ mod tests {
     fn outside_presses_dismiss_dropdown_and_title_and_reach_the_underlying_control() {
         for title in [false, true] {
             let mut h = app_harness();
-            h.get_by_label("Macros").click(); h.run_steps(5);
-            if title { h.get_by_label("New macro…").click(); h.run_steps(5); }
+            h.get_by_label("Macros").click();
+            h.run_steps(5);
+            if title {
+                h.get_by_label("New macro…").click();
+                h.run_steps(5);
+            }
             let pos = h.get_by_label("Underlying control").rect().center();
             h.event(egui::Event::PointerMoved(pos));
-            h.event(egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed: true, modifiers: egui::Modifiers::NONE });
+            h.event(egui::Event::PointerButton {
+                pos,
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: egui::Modifiers::NONE,
+            });
             h.run_steps(1);
             assert!(!h.state().open);
-            assert!(!h.ctx.memory(|m| m.has_focus(crate::window_id(egui::ViewportId::ROOT, "macro-title"))));
-            h.event(egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed: false, modifiers: egui::Modifiers::NONE });
+            assert!(
+                !h.ctx.memory(
+                    |m| m.has_focus(crate::window_id(egui::ViewportId::ROOT, "macro-title"))
+                )
+            );
+            h.event(egui::Event::PointerButton {
+                pos,
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers: egui::Modifiers::NONE,
+            });
             h.run_steps(5);
             assert_eq!(h.state().clicks, 1);
         }
@@ -1341,7 +1661,12 @@ mod tests {
         output.textures_delta.clear();
         let repaint_context = ctx.clone();
         let mut input = egui::RawInput::default();
-        input.viewports.get_mut(&egui::ViewportId::ROOT).unwrap().events.push(egui::ViewportEvent::Close);
+        input
+            .viewports
+            .get_mut(&egui::ViewportId::ROOT)
+            .unwrap()
+            .events
+            .push(egui::ViewportEvent::Close);
         let mut output = ctx.run_ui(input, |_| {
             // The app may cancel this request for its own unsaved work.
             assert!(window_state(&ctx, "ced", false).is_some());
@@ -1360,7 +1685,10 @@ mod tests {
         let mut states = Vec::new();
         let mut ids = Vec::new();
         for viewport in [egui::ViewportId::ROOT, second] {
-            let mut input = egui::RawInput { viewport_id: viewport, ..Default::default() };
+            let mut input = egui::RawInput {
+                viewport_id: viewport,
+                ..Default::default()
+            };
             input.viewports.insert(second, Default::default());
             let mut out = ctx.run_ui(input, |_| {
                 states.push(window_state(&ctx, "ced", true).unwrap());
@@ -1370,10 +1698,15 @@ mod tests {
         }
         assert!(!Arc::ptr_eq(&states[0], &states[1]));
         assert_ne!(ids[0], ids[1]);
-        assert_ne!(states[0].lock().unwrap().window, states[1].lock().unwrap().window);
+        assert_ne!(
+            states[0].lock().unwrap().window,
+            states[1].lock().unwrap().window
+        );
         let weak = Arc::downgrade(&states[1]);
         states.pop();
-        let mut out = ctx.run_ui(egui::RawInput::default(), |_| { let _ = window_state(&ctx, "ced", false); });
+        let mut out = ctx.run_ui(egui::RawInput::default(), |_| {
+            let _ = window_state(&ctx, "ced", false);
+        });
         out.textures_delta.clear();
         assert!(weak.upgrade().is_none());
     }

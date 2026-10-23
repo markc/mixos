@@ -547,8 +547,9 @@ fn right_group<S>(
                 let button = IconButton::new(*icon).selected(*selected).tooltip(tooltip);
                 let response = cell.add_enabled(registry.enabled(c.id, state), button);
                 if c.id == "help.macros" {
-                    ui.ctx()
-                        .data_mut(|d| d.insert_temp(crate::window_id(viewport, "macro-anchor"), response.rect));
+                    ui.ctx().data_mut(|d| {
+                        d.insert_temp(crate::window_id(viewport, "macro-anchor"), response.rect)
+                    });
                     if ui
                         .ctx()
                         .data(|d| d.get_temp::<bool>(crate::window_id(viewport, "macro-busy")))

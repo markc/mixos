@@ -118,8 +118,12 @@ impl Roots {
                 // AlreadyExists can also come from create_dir_all when a
                 // parent is a regular file. Retry only an occupied candidate,
                 // including a dangling symlink that exclusive create refuses.
-                Err(err) if err.kind() == io::ErrorKind::AlreadyExists
-                    && folder.join(format!("{id}.mix")).symlink_metadata().is_ok() => continue,
+                Err(err)
+                    if err.kind() == io::ErrorKind::AlreadyExists
+                        && folder.join(format!("{id}.mix")).symlink_metadata().is_ok() =>
+                {
+                    continue;
+                }
                 result => return result,
             }
         }

@@ -553,8 +553,9 @@ struct TitleInput {
 /// Like the bar, dismiss on an outside press and leave the pointer event
 /// available to the underlying control. This is deliberately not a modal.
 fn outside_press(ctx: &Context, inside: impl Fn(Pos2) -> bool) -> bool {
-    ctx.input(|i| i.pointer.primary_pressed()
-        && i.pointer.interact_pos().is_some_and(|pos| !inside(pos)))
+    ctx.input(|i| {
+        i.pointer.primary_pressed() && i.pointer.interact_pos().is_some_and(|pos| !inside(pos))
+    })
 }
 
 pub(crate) fn open_title(ctx: &Context) {
@@ -564,7 +565,9 @@ pub(crate) fn open_title(ctx: &Context) {
 
 pub(crate) fn title_bounds(ctx: &Context, bounds: Rect) {
     let id = crate::window_id(ctx.viewport_id(), "toolkit.anchored-title");
-    let mut state = ctx.data(|d| d.get_temp::<TitleInput>(id)).unwrap_or_default();
+    let mut state = ctx
+        .data(|d| d.get_temp::<TitleInput>(id))
+        .unwrap_or_default();
     state.bounds = Some(bounds);
     ctx.data_mut(|d| d.insert_temp(id, state));
 }
@@ -576,11 +579,17 @@ pub(crate) fn close_title(ctx: &Context) {
 
 fn title_keyboard(ctx: &Context) -> bool {
     let id = crate::window_id(ctx.viewport_id(), "toolkit.anchored-title");
-    let Some(mut state) = ctx.data(|d| d.get_temp::<TitleInput>(id)) else { return false; };
+    let Some(mut state) = ctx.data(|d| d.get_temp::<TitleInput>(id)) else {
+        return false;
+    };
     state.enter |= ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Enter));
     state.close |= ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape));
-    state.close |= state.bounds.is_some_and(|bounds| outside_press(ctx, |pos| bounds.contains(pos)));
-    if state.close { anchored_open(ctx, false); }
+    state.close |= state
+        .bounds
+        .is_some_and(|bounds| outside_press(ctx, |pos| bounds.contains(pos)));
+    if state.close {
+        anchored_open(ctx, false);
+    }
     ctx.data_mut(|d| d.insert_temp(id, state));
     true
 }
@@ -588,7 +597,9 @@ fn title_keyboard(ctx: &Context) -> bool {
 pub(crate) fn title_keys(ctx: &Context) -> (bool, bool) {
     title_keyboard(ctx);
     let id = crate::window_id(ctx.viewport_id(), "toolkit.anchored-title");
-    let mut state = ctx.data(|d| d.get_temp::<TitleInput>(id)).unwrap_or_default();
+    let mut state = ctx
+        .data(|d| d.get_temp::<TitleInput>(id))
+        .unwrap_or_default();
     let keys = (state.enter, state.close);
     state.enter = false;
     state.close = false;
@@ -609,7 +620,9 @@ pub(crate) fn dismiss_anchored(ctx: &Context) {
 /// anchored menu is painted by its owner later, but shares the bar's input
 /// priority. In particular a focused app editor must never eat menu letters.
 pub(crate) fn anchored_keyboard(ctx: &Context) {
-    if title_keyboard(ctx) { return; }
+    if title_keyboard(ctx) {
+        return;
+    }
     let viewport = ctx.viewport_id();
     let cache_id = crate::window_id(viewport, "toolkit.anchored-input");
     let Some(mut cache) = ctx.data(|d| d.get_temp::<AnchoredInput>(cache_id)) else {
@@ -621,10 +634,13 @@ pub(crate) fn anchored_keyboard(ctx: &Context) {
     if nav.open_menu().is_none() {
         return;
     }
-    let (result, keyed) = if outside_press(ctx, |p| cache.frame.contains(p) || cache.anchor.contains(p)) {
-        nav.close();
-        (None, false)
-    } else { anchored_keys(ctx, &mut nav, &cache.menus) };
+    let (result, keyed) =
+        if outside_press(ctx, |p| cache.frame.contains(p) || cache.anchor.contains(p)) {
+            nav.close();
+            (None, false)
+        } else {
+            anchored_keys(ctx, &mut nav, &cache.menus)
+        };
     anchored_open(ctx, nav.open_menu().is_some());
     cache.result = result;
     cache.keyed = keyed;
@@ -768,7 +784,12 @@ pub fn anchored(
             anchor.left().min(screen.right() - width).max(screen.left()),
             anchor.bottom(),
         );
-        ctx.data_mut(|d| d.insert_temp(crate::window_id(viewport, "toolkit.anchored-tooltips"), tooltips.to_vec()));
+        ctx.data_mut(|d| {
+            d.insert_temp(
+                crate::window_id(viewport, "toolkit.anchored-tooltips"),
+                tooltips.to_vec(),
+            )
+        });
         let shown = show_level(
             &ctx,
             &chrome,
@@ -788,7 +809,10 @@ pub fn anchored(
         );
         frame = shown.frame;
         ctx.data_mut(|d| {
-            d.remove::<Vec<(&'static str, String)>>(crate::window_id(viewport, "toolkit.anchored-tooltips"))
+            d.remove::<Vec<(&'static str, String)>>(crate::window_id(
+                viewport,
+                "toolkit.anchored-tooltips",
+            ))
         });
         let (outside, released, secondary) = ctx.input(|i| {
             (
@@ -1705,7 +1729,10 @@ fn level_rows(
             if let Some(tip) = ui
                 .ctx()
                 .data(|d| {
-                    d.get_temp::<Vec<(&'static str, String)>>(crate::window_id(viewport, "toolkit.anchored-tooltips"))
+                    d.get_temp::<Vec<(&'static str, String)>>(crate::window_id(
+                        viewport,
+                        "toolkit.anchored-tooltips",
+                    ))
                 })
                 .and_then(|tips| {
                     tips.into_iter()

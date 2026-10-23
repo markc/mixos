@@ -117,7 +117,11 @@ impl SaveSnapshot {
             _ => self.path.clone(),
         };
         write_replacing(&target, &self.bytes)?;
-        Ok(Saved { identity: self.identity, revision: self.revision, path: self.path })
+        Ok(Saved {
+            identity: self.identity,
+            revision: self.revision,
+            path: self.path,
+        })
     }
 }
 
@@ -206,7 +210,8 @@ impl Document {
 
     pub fn save_snapshot(&self) -> Result<SaveSnapshot, Error> {
         Ok(SaveSnapshot {
-            identity: self.identity, revision: self.buffer.rev(),
+            identity: self.identity,
+            revision: self.buffer.rev(),
             path: self.path.clone().ok_or(Error::NoPath)?,
             bytes: self.buffer.to_bytes(&self.meta),
         })
@@ -215,9 +220,12 @@ impl Document {
     /// Acknowledge only the version actually written. Edits made during the
     /// write stay dirty, and a receipt cannot mark another document saved.
     pub fn complete_save(&mut self, saved: &Saved) -> bool {
-        let current = saved.identity == self.identity && saved.revision == self.buffer.rev()
+        let current = saved.identity == self.identity
+            && saved.revision == self.buffer.rev()
             && self.path.as_ref() == Some(&saved.path);
-        if current { self.buffer.mark_saved(); }
+        if current {
+            self.buffer.mark_saved();
+        }
         current
     }
 

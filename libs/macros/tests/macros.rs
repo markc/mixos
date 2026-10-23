@@ -211,7 +211,13 @@ fn create_from_title_counts_dangling_symlinks_as_name_clashes() {
     std::os::unix::fs::symlink(folder.join("missing.mix"), &occupied).unwrap();
     let path = roots.create_from_title("ced", "Tidy").unwrap();
     assert_eq!(path.file_name().unwrap(), "tidy-2.mix");
-    assert!(occupied.symlink_metadata().unwrap().file_type().is_symlink());
+    assert!(
+        occupied
+            .symlink_metadata()
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
 }
 
 #[test]
@@ -230,7 +236,8 @@ fn create_from_title_reports_obstructed_parents_without_retrying() {
         std::thread::spawn(move || {
             let _ = tx.send(roots.create_from_title("ced", "Tidy imports"));
         });
-        let result = rx.recv_timeout(Duration::from_secs(2))
+        let result = rx
+            .recv_timeout(Duration::from_secs(2))
             .expect("parent obstruction must report an error, not retry every slug");
         assert!(result.is_err());
         assert_eq!(fs::read_to_string(obstruction).unwrap(), "keep");
