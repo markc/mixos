@@ -105,6 +105,7 @@ find-replace-all = All
 
 no-documents = No open documents. File › Open… or File › New.
 opening = Opening { $name }…
+opening-slow = Still opening; the edit service is slow.
 open-failed = { $name } could not be opened: { $error }
 reconnecting = Reconnecting to the edit service…
 not-connected = The edit service is not reachable.
@@ -131,3 +132,5 @@ conflict-notice = { $n ->
 reinsert = Re-insert at Caret
 reinsert-later = The document is reconnecting. Re-insert the text once it is back.
 detached-notice = This document is no longer attached to the edit service. Your copy is kept.
+edit-unavailable = The edit service is not running; this document will open when it starts.
+request-failed = Ced could not complete the request.

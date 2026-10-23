@@ -250,7 +250,9 @@ applying it locally first.</p>
 ced --headless             every verb, no window
 ced --service NAME         register as NAME (tests)
 </code></pre>
-<p>The edit service must be running. Ced registers on the Bus as <code>ced</code>; a
+<p>Without the edit service, Ced shows a clear waiting state within three seconds
+and posts a desktop toast. The document opens automatically when the service
+registers on the Bus. Ced registers on the Bus as <code>ced</code>; a
 second <code>ced</code> hands its paths to the first and exits.</p>
 <h2 id="the-window">The window</h2>
 <ul>
@@ -259,9 +261,12 @@ the same id in the menu bar, as a shortcut (Notepad++ conventions: see
 Help › Keyboard Shortcuts) and in <code>ced.action {id}</code>.</li>
 <li><strong>Tabs</strong> show unsaved changes, and ◆ when another origin edited the
 document since you last looked at it.</li>
-<li><strong>The notice strip</strong> keeps warnings, edits that could not be applied
+<li><strong>The notice strip</strong> keeps edits that could not be applied
 (re-insert them at the caret or dismiss them), and a document that lost
-its connection to the service (keep your copy or take the service's).</li>
+its connection to the service (keep your copy or take the service's).
+Warnings and errors use desktop notification toasts, with the status line
+as a fallback if notifications are unavailable. Identical messages appear
+at most once every five seconds.</li>
 <li><strong>Find</strong> (Ctrl+F, Ctrl+H) runs in the service, so it searches the shared
 text, not a local copy.</li>
 <li><strong>Markdown and commit messages wrap</strong>; code scrolls sideways.</li>

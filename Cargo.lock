@@ -1214,6 +1214,7 @@ dependencies = [
  "serde",
  "serde_json",
  "settings",
+ "test-broker",
  "tokio",
  "toolkit",
  "tracing",
