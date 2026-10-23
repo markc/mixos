@@ -488,6 +488,7 @@ impl State {
                 egui::Rect::from_min_size(ctx.content_rect().left_top(), egui::Vec2::ZERO)
             });
         let mut selected = None;
+        let running_title = self.running_title();
         egui::Area::new(crate::window_id(viewport, "macro-menu-owner"))
             .order(egui::Order::Foreground)
             .fixed_pos(anchor.left_bottom())
@@ -497,7 +498,7 @@ impl State {
                         menu::anchored_open(ctx, true);
                         let chrome = crate::chrome::Chrome::of(ctx);
                         let (mut model, _) =
-                            macro_menu(&self.catalogue, self.running_title().as_deref());
+                            macro_menu(&self.catalogue, running_title.as_deref());
                         append_menu_error(&mut model, self.error.as_deref());
                         let menu_rect = menu::anchored_menu_rect(ui, anchor, &model);
                         let margin = egui::Frame::menu(ui.style()).total_margin().sum();
@@ -611,7 +612,7 @@ impl State {
                     }
                 } else {
                     let (mut model, indices) =
-                        macro_menu(&self.catalogue, self.running_title().as_deref());
+                        macro_menu(&self.catalogue, running_title.as_deref());
                     append_menu_error(&mut model, self.error.as_deref());
                     let tips = SLOTS
                         .iter()
