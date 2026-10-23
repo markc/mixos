@@ -5161,6 +5161,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc04a4c58212d57930a24bf47d3fa87485264a3a054e9c10e042eb373573ad3c"
 
 [[package]]
+name = "macros"
+version = "0.1.2"
+dependencies = [
+ "libc",
+ "tempfile",
+]
+
+[[package]]
 name = "mail-auth"
 version = "0.7.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9987,6 +9995,7 @@ dependencies = [
  "futures",
  "image",
  "libc",
+ "macros",
  "png 0.18.1",
  "pulldown-cmark",
  "raw-window-handle",
