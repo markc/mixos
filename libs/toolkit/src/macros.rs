@@ -947,7 +947,8 @@ fn window_state(ctx: &egui::Context, app: &str, open: bool) -> Option<WindowStat
         .data(|d| d.get_temp::<Vec<(egui::ViewportId, egui::Id)>>(owners_id))
         .unwrap_or_default();
     owners.retain(|(viewport, id)| {
-        let present = ctx.input(|i| i.raw.viewports.contains_key(viewport));
+        let present = *viewport == egui::ViewportId::ROOT
+            || ctx.input(|i| i.raw.viewports.contains_key(viewport));
         if !present {
             ctx.data_mut(|d| d.remove::<WindowState>(*id));
         }
@@ -1676,6 +1677,28 @@ mod tests {
         close_app(&ctx, "ced");
         assert!(weak.unwrap().upgrade().is_none());
         drop(repaint_context);
+    }
+
+    #[test]
+    fn root_state_survives_frames_with_no_raw_viewports() {
+        let ctx = egui::Context::default();
+        let mut first = None;
+        for frame in 0..3 {
+            let mut out = ctx.run_ui(egui::RawInput::default(), |_| {
+                // Exercise the adapter with the host's viewport map absent.
+                // Restore it before egui's own end-pass bookkeeping.
+                let viewports = ctx.input_mut(|i| std::mem::take(&mut i.raw.viewports));
+                assert!(ctx.input(|i| i.raw.viewports.is_empty()));
+                let state = window_state(&ctx, "ced", frame == 0).unwrap();
+                if let Some(first) = &first {
+                    assert!(Arc::ptr_eq(first, &state));
+                } else {
+                    first = Some(state);
+                }
+                ctx.input_mut(|i| i.raw.viewports = viewports);
+            });
+            out.textures_delta.clear();
+        }
     }
 
     #[test]

@@ -131,21 +131,8 @@ struct Inbox {
 
 impl Inbox {
     fn insert(&mut self, record: Record) {
-        while self
-            .outstanding
-            .values()
-            .filter(|(window, _, _)| *window == record.window)
-            .count()
-            >= PER_WINDOW
-        {
-            let id = *self
-                .outstanding
-                .iter()
-                .find(|(_, (window, _, _))| *window == record.window)
-                .unwrap()
-                .0;
-            self.withdraw(id);
-        }
+        // Count each retained run once, whether its send has completed or not.
+        // VecDeque order is insertion order, independent of notification ids.
         while self
             .records
             .iter()
@@ -158,7 +145,10 @@ impl Inbox {
                 .iter()
                 .position(|r| r.window == record.window)
                 .unwrap();
-            self.records.remove(index);
+            let evicted = self.records.remove(index).unwrap();
+            if let Some(id) = evicted.notification {
+                self.withdraw(id);
+            }
         }
         self.records.push_back(record);
     }
@@ -465,6 +455,44 @@ mod tests {
         let mut out = ctx.run_ui(egui::RawInput::default(), |_| state.show(&ctx));
         out.textures_delta.clear();
         assert!(!state.editor_open);
+    }
+
+    #[test]
+    fn mixed_sent_and_unsent_records_evict_exactly_one_oldest_run() {
+        for oldest_sent in [false, true] {
+            let first = super::super::State::new("ced");
+            let second = super::super::State::new("ced");
+            let mut inbox = Inbox::default();
+            for n in 0..PER_WINDOW as u64 {
+                inbox.insert(record(&first, n));
+                if (n % 2 == 0) == oldest_sent {
+                    inbox.sent(Some(100 + n));
+                }
+            }
+            inbox.insert(record(&second, 30));
+            inbox.sent(Some(30));
+            assert!(inbox.withdrawals.is_empty());
+            inbox.insert(record(&first, PER_WINDOW as u64));
+            let retained: Vec<_> = inbox
+                .records
+                .iter()
+                .filter(|r| r.window == first.window)
+                .map(|r| r.finished.title.clone())
+                .collect();
+            assert_eq!(
+                retained,
+                (1..=PER_WINDOW)
+                    .map(|n| format!("Run {n}"))
+                    .collect::<Vec<_>>()
+            );
+            assert_eq!(inbox.records.len(), PER_WINDOW + 1);
+            assert_eq!(inbox.withdrawals.len(), usize::from(oldest_sent));
+            if oldest_sent {
+                assert_eq!(inbox.withdrawals[0].0, 100);
+                assert!(!inbox.outstanding.contains_key(&100));
+            }
+            assert!(inbox.outstanding.contains_key(&30));
+        }
     }
 
     #[test]
