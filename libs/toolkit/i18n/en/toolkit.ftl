@@ -16,6 +16,7 @@ macros-empty = No macros yet
 macros-create-error = Can't create { $path }: { $error }
 macros-open-error = Can't open { $path }: { $error }
 macros-save-error = Can't save { $path }: { $error }
+macros-read-only = { $path } is read-only
 macros-shadows = Shadows other tiers
 macros-run = Run
 macros-edit = Edit

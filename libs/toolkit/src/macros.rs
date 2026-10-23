@@ -935,12 +935,17 @@ fn path_error(key: &str, path: &Path, error: impl std::fmt::Display) -> io::Erro
 fn open_macro(path: &Path) -> io::Result<editor::local::Document> {
     let document = editor::local::Document::open(path)
         .map_err(|e| path_error("macros-open-error", path, e))?;
+    let target = editor::local::save_target(path)
+        .map_err(|e| path_error("macros-save-error", path, e))?;
+    let metadata = std::fs::metadata(target.path())
+        .map_err(|e| path_error("macros-save-error", path, e))?;
+    if metadata.permissions().readonly() {
+        return Err(io::Error::new(io::ErrorKind::PermissionDenied,
+            own_with("macros-read-only", &[("path", &path.display().to_string())])));
+    }
     let check = || -> io::Result<()> {
         static NEXT_PROBE: AtomicU64 = AtomicU64::new(1);
-        let target = path.canonicalize()?;
-        let parent = target
-            .parent()
-            .ok_or_else(|| io::Error::other("no parent directory"))?;
+        let parent = target.directory();
         loop {
             let id = NEXT_PROBE.fetch_add(1, Ordering::Relaxed);
             let probe = parent.join(format!(".macro-save-check-{}-{id}", std::process::id()));
@@ -1303,6 +1308,8 @@ mod tests {
         let empty = menu.entries[3].row().unwrap();
         assert_eq!(empty.label, "No macros yet");
         assert!(!empty.enabled);
+        assert_eq!(menu.entries.len(), 4);
+        assert_eq!(menu.entries.last().unwrap().row().unwrap().label, "No macros yet");
     }
 
     #[test]
@@ -1508,6 +1515,78 @@ mod tests {
             assert!(!h.state().editor_open);
             assert!(h.state().document.is_none());
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlink_checks_and_saves_use_the_target_directory_in_both_directions() {
+        use std::os::unix::fs::symlink;
+        for target_readonly in [false, true] {
+            let (_temp, roots, mut entry) = runner_fixture();
+            let links = roots.folder("ced", Tier::UserApp).unwrap();
+            let targets = roots.user.join("targets");
+            std::fs::create_dir(&targets).unwrap();
+            let target = targets.join("target.mix");
+            std::fs::write(&target, "original").unwrap();
+            entry.path = links.join("linked.mix");
+            symlink(&target, &entry.path).unwrap();
+            let resolved = editor::local::save_target(&entry.path).unwrap();
+            assert_eq!(resolved.path(), target.canonicalize().unwrap().as_path());
+            assert_eq!(resolved.directory(), targets.canonicalize().unwrap().as_path());
+            let Some(_readonly) = ReadOnlyParent::new(if target_readonly { &targets } else { &links }) else { return; };
+            if target_readonly {
+                let mut state = State::new("ced");
+                state.engine.roots = Some(roots);
+                state.loaded = true;
+                state.edit(entry.clone());
+                let mut h = permission_harness(state);
+                wait_until(|| { h.run_steps(1); h.state().pending.is_none() });
+                let error = h.state().error.as_ref().unwrap();
+                assert!(error.contains(&entry.path.display().to_string()));
+                assert!(error.to_lowercase().contains("permission denied"));
+                let _ = h.get_by_label(error);
+                assert!(!h.state().editor_open);
+                assert!(h.state().document.is_none());
+                // Both save APIs must fail in exactly the directory the probe
+                // refused, even though the link's own directory is writable.
+                let mut doc = editor::local::Document::open(&entry.path).unwrap();
+                assert!(doc.save().is_err());
+                assert!(doc.save_snapshot().unwrap().write().is_err());
+                assert_eq!(std::fs::read_to_string(&target).unwrap(), "original");
+            } else {
+                let mut doc = open_macro(&entry.path).unwrap();
+                doc.command(editor::EditCommand::Insert("edit ".into()), &editor::View::default()).unwrap();
+                doc.save().unwrap();
+                let saved = doc.save_snapshot().unwrap().write().unwrap();
+                assert!(doc.complete_save(&saved));
+                assert_eq!(std::fs::read_to_string(&target).unwrap(), "edit original");
+                assert!(entry.path.symlink_metadata().unwrap().file_type().is_symlink());
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn read_only_macro_file_is_refused_inline_in_a_writable_directory() {
+        use std::os::unix::fs::PermissionsExt;
+        let (_temp, roots, entry) = runner_fixture();
+        std::fs::set_permissions(&entry.path, std::fs::Permissions::from_mode(0o444)).unwrap();
+        let before = std::fs::read(&entry.path).unwrap();
+        let mut state = State::new("ced");
+        state.engine.roots = Some(roots);
+        state.loaded = true;
+        state.edit(entry.clone());
+        let mut h = permission_harness(state);
+        wait_until(|| { h.run_steps(1); h.state().pending.is_none() });
+        let error = h.state().error.as_ref().unwrap();
+        assert!(error.contains(&entry.path.display().to_string()));
+        assert!(error.contains("is read-only"));
+        let _ = h.get_by_label(error);
+        assert!(h.state().open);
+        assert!(!h.state().editor_open);
+        assert!(h.state().document.is_none());
+        assert_eq!(std::fs::read(&entry.path).unwrap(), before);
+        assert_eq!(std::fs::metadata(&entry.path).unwrap().permissions().mode() & 0o777, 0o444);
     }
 
     #[cfg(unix)]

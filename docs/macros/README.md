@@ -52,6 +52,9 @@ The drop-down shares the menu bar's row sizes, font, padding and frame, with
 the same minimum width. Near the window's right edge it aligns to the icon's
 right edge. Oversized content scrolls inside the window. An empty catalogue
 shows **No macros yet**.
+Tall menus stay below the title-bar icon and scroll vertically, preserving
+access to the icon. Horizontal scrolling is used only for rows wider than
+the available content area.
 
 Left release runs a macro; right release edits it. Arrows move the highlight,
 Enter runs, Shift+Enter edits, and a letter jumps to the next matching title.
@@ -83,6 +86,9 @@ reason inline. Failed built-in copies show the same kind of error in the
 menu, without opening an editor. Editing reads an existing file and checks
 its atomic-save directory first. If permissions change while editing, save
 errors name the file and OS reason, and the edits remain available.
+The check and save share target resolution: a symlink's target directory
+is checked, rather than the directory holding the link. Read-only macro
+files are refused inline, including in writable directories.
 
 Saving keeps the document visible and editable, even during discovery.
 Closing a dirty editor saves before closing; a failed save keeps the text

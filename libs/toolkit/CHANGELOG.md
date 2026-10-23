@@ -1,6 +1,14 @@
 <!-- SPDX-License-Identifier: MIT OR Apache-2.0 -->
 # Changelog
 
+## Unreleased — 2026-10-24
+
+- Share atomic-save target resolution with the editor and probe that exact
+  directory, including through symlinks. Refuse read-only macro files inline.
+- Keep tall macro menus below their icon and scroll vertically; reserve the
+  themed scrollbar gutter without adding an unnecessary horizontal scrollbar.
+- Pin the empty menu's final row after separator cleanup.
+
 ## Unreleased — 2026-10-23
 
 - Give icon-anchored menus the menu bar's minimum width and frame metrics;

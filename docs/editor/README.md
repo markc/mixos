@@ -52,6 +52,10 @@ local document to a shared one without changing its UI code.
 exclusively, so no existing file or link is followed), gives it the
 original's permissions, flushes it and renames it into place. Saving
 through a symbolic link writes the link's target; the link stays a link.
+`save_target(path)` returns that destination and its temporary-file directory;
+both foreground and snapshot saves use it, so callers can check the exact
+directory before editing. Read-only files are refused even when their parent
+directory would permit replacement. A refused save leaves edits dirty.
 Edits the buffer refuses (a paste over the 1 MiB request limit) are kept
 for `take_refusal`. `set_contents` is a reload: it has no request limit,
 and Undo does not take it back.
