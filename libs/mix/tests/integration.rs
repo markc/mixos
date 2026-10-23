@@ -5686,7 +5686,10 @@ mod rc_band_contract_tests {
 #[tokio::test(flavor = "current_thread")]
 async fn eval_special_builtin_wins_as_binop_operand_too() {
     for (name, src) in [
-        ("printf", "fn printf($a) = \"USER\"\nprint(printf(\"B\") .. \"|\")\n"),
+        (
+            "printf",
+            "fn printf($a) = \"USER\"\nprint(printf(\"B\") .. \"|\")\n",
+        ),
         (
             "write_stdout",
             "fn write_stdout($a) = \"USER\"\nprint(write_stdout(\"W\") .. \"|\")\n",
