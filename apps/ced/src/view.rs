@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The window: the toolkit title bar with the menus, the document tabs, the
-//! notice strip (warnings, set-aside edits, a detached document), the find
+//! notice strip (set-aside edits, a detached document), the find
 //! bar, the editor, the Problems and Output panels, and the status bar.
 //! [`view`] draws the state and returns what the person did as
 //! [`UiEvent`]s; [`apply`] runs them after the frame, so a snapshot needs no
@@ -13,7 +13,7 @@ use documents::controller::Tab;
 use editor::{Doc, Palette};
 use editor_model::diag::Severity;
 use editor_model::mirror::{DetachReason, Phase};
-use editor_model::types::{Level, TabId};
+use editor_model::types::TabId;
 use egui::{Align, Layout, RichText, Ui};
 use toolkit::command::Origin;
 use toolkit::dialog::{self, Choice, Role};
@@ -33,7 +33,6 @@ pub enum UiEvent {
     CloseTab(TabId),
     Editor(TabId, editor::Event),
     Answer(Answer),
-    DismissNotice(usize),
     /// A find-bar button: find next or previous, replace, replace all.
     Find(ActionId, Origin),
     CloseFind,
@@ -143,7 +142,6 @@ fn apply_one(app: &mut App, commands: &Registry<App>, event: UiEvent) {
             }
             UiEvent::Editor(tab, event) => app.editor_event(tab, event),
             UiEvent::Answer(answer) => app.answer(answer),
-            UiEvent::DismissNotice(i) => app.dismiss_notice(i),
             UiEvent::Find(action, origin) => app.find(action, origin),
             UiEvent::CloseFind => app.close_find(),
             UiEvent::KeepMine(tab) => {
@@ -199,7 +197,8 @@ fn tabs(ui: &mut Ui, app: &App, events: &mut Vec<UiEvent>) {
         .map(|t| {
             let name = tab_name(t);
             let mirror = t.mirror.as_ref();
-            let opening = mirror.is_none_or(|m| matches!(m.phase(), Phase::Bootstrapping { .. }));
+            let opening = app.ctl.open_error(t.id).is_none()
+                && mirror.is_none_or(|m| matches!(m.phase(), Phase::Bootstrapping { .. }));
             let mut meta = mirror.map_or_else(String::new, |_| t.language().to_owned());
             if app.ctl.agent_since_focus(t.id) {
                 meta.push_str(" ◆");
@@ -235,28 +234,13 @@ fn tabs(ui: &mut Ui, app: &App, events: &mut Vec<UiEvent>) {
 fn notices(ui: &mut Ui, app: &App, events: &mut Vec<UiEvent>) {
     let tab = app.active_tab();
     let mirror = tab.and_then(|t| t.mirror.as_ref());
-    let has_notices = !app.notices.is_empty()
-        || mirror.is_some_and(|m| !m.conflicts().is_empty() || m.detached_copy().is_some());
+    let has_notices =
+        mirror.is_some_and(|m| !m.conflicts().is_empty() || m.detached_copy().is_some());
     if !has_notices {
         return;
     }
     bars::options(ui, |ui| {
         ui.vertical(|ui| {
-            for (i, shown) in app.notices.iter().enumerate() {
-                ui.horizontal(|ui| {
-                    let colour = match shown.level {
-                        Level::Error => ui.visuals().error_fg_color,
-                        _ => ui.visuals().warn_fg_color,
-                    };
-                    ui.add(icons::image_of(ui.ctx(), Icon::CircleAlert, ICON, colour));
-                    ui.label(&shown.text);
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        if ui.small_button(label("dismiss")).clicked() {
-                            events.push(UiEvent::DismissNotice(i));
-                        }
-                    });
-                });
-            }
             let (Some(tab), Some(m)) = (tab, mirror) else {
                 return;
             };
@@ -385,7 +369,24 @@ fn document(
     };
     let name = tab_name(tab);
     let Some(m) = tab.mirror.as_ref() else {
-        centred(ui, &label_with("opening", &[("name", &name)]));
+        let message = app
+            .ctl
+            .open_error(tab.id)
+            .map(|message| {
+                if message == documents::controller::EDIT_UNAVAILABLE {
+                    label("edit-unavailable")
+                } else {
+                    message.to_owned()
+                }
+            })
+            .unwrap_or_else(|| {
+                if app.ctl.open_slow(tab.id) {
+                    label("opening-slow")
+                } else {
+                    label_with("opening", &[("name", &name)])
+                }
+            });
+        centred(ui, &message);
         return None;
     };
     if matches!(m.phase(), Phase::Bootstrapping { .. }) {

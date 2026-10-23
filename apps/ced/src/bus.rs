@@ -37,6 +37,9 @@ use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
 /// Everything the Bus thread delivers.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Delivery {
+    NotificationFailed {
+        text: String,
+    },
     Incoming(Incoming),
     Command(BusCommand),
     /// The answer to session-look read `ticket`: `rc`, the body and the
@@ -104,6 +107,40 @@ const DRAIN: Duration = Duration::from_secs(2);
 /// How long one session-look read may take.
 const LOOK_BUDGET: Duration = Duration::from_secs(30);
 
+/// Broker errors can have only an error header and an empty body/message.
+/// Preserve a real sentence at the boundary, including the verb and code.
+fn failure_body(rc: u8, body: String, error: Option<&str>, verb: &str) -> String {
+    if rc < 10 {
+        return body;
+    }
+    let mut value = serde_json::from_str::<serde_json::Value>(&body)
+        .ok()
+        .filter(|v| v.is_object())
+        .unwrap_or_else(|| serde_json::json!({"message": body}));
+    let code = value["error_code"]
+        .as_str()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or(
+            if error.is_some_and(|s| s.starts_with("Service '") && s.ends_with("' not found")) {
+                "UNAVAILABLE"
+            } else {
+                "INTERNAL"
+            },
+        )
+        .to_owned();
+    if value["message"]
+        .as_str()
+        .is_none_or(|s| s.trim().is_empty())
+    {
+        value["message"] = serde_json::json!(match error.filter(|s| !s.trim().is_empty()) {
+            Some(error) => format!("{verb} failed ({code}): {error}."),
+            None => format!("{verb} failed ({code})."),
+        });
+    }
+    value["error_code"] = serde_json::json!(code);
+    value.to_string()
+}
+
 /// Wakes the host after each delivery (the window's repaint request).
 pub type Wake = Arc<dyn Fn() + Send + Sync>;
 
@@ -163,7 +200,8 @@ impl BusHandle {
 pub fn is_bus(effect: &Effect) -> bool {
     matches!(
         effect,
-        Effect::Send { .. }
+        Effect::Notify { .. }
+            | Effect::Send { .. }
             | Effect::Respond { .. }
             | Effect::Timer { .. }
             | Effect::Subscribe { .. }
@@ -359,6 +397,22 @@ async fn run(
                     Some(WorkerCommand::Effect(effect)) => effect,
                 };
                 match effect {
+                    Effect::Notify { text, level } => {
+                        let (c, o) = (client.clone(), out.clone());
+                        tokio::spawn(async move {
+                            let body = serde_json::json!({
+                                "summary": "Ced", "body": text.chars().take(500).collect::<String>(),
+                                "app": "ced", "level": if level == editor_model::types::Level::Error { "error" } else { "warning" },
+                                "timeout_ms": 6000
+                            }).to_string();
+                            let headers = BTreeMap::new();
+                            let result = tokio::time::timeout(Duration::from_secs(3),
+                                c.call_with_headers_raw("notify", "notify.send", &headers, &body)).await;
+                            if !matches!(result, Ok(Ok((0..=9, _, _)))) {
+                                o.send(Delivery::NotificationFailed { text });
+                            }
+                        });
+                    }
                     Effect::Send { req, out: request } => {
                         let (c, o) = (client.clone(), out.clone());
                         tokio::spawn(async move {
@@ -380,7 +434,9 @@ async fn run(
                                         Err(_) => Incoming::Reply { req, rc, body },
                                     }
                                 }
-                                Ok(Ok((rc, body, _))) => Incoming::Reply { req, rc, body },
+                                Ok(Ok((rc, body, error))) => Incoming::Reply {
+                                    req, rc, body: failure_body(rc, body, error.as_deref(), &request.verb)
+                                },
                                 Ok(Err(_)) => {
                                     tokio::time::sleep_until(deadline).await;
                                     Incoming::Deadline { req }
@@ -606,6 +662,41 @@ pub fn forward_open(url: &str, service: &str, paths: &[String]) -> Result<(), St
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn failure_keeps_real_error_text() {
+        let body = failure_body(10, "Permission denied".into(), None, "edit.open");
+        let value: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(value["message"], "Permission denied");
+        let body = failure_body(
+            10,
+            r#"{"error_code":"IO","message":"Disk full"}"#.into(),
+            None,
+            "edit.save",
+        );
+        let value: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(value["message"], "Disk full");
+    }
+
+    #[test]
+    fn empty_broker_errors_have_a_code_verb_and_sentence() {
+        for body in ["", r#"{"error_code":"UNAVAILABLE","message":""}"#] {
+            let body = failure_body(
+                10,
+                body.into(),
+                Some("Service 'edit' not found"),
+                "edit.open",
+            );
+            let value: serde_json::Value = serde_json::from_str(&body).unwrap();
+            assert_eq!(value["error_code"], "UNAVAILABLE");
+            assert!(
+                value["message"]
+                    .as_str()
+                    .unwrap()
+                    .contains("edit.open failed (UNAVAILABLE)")
+            );
+        }
+    }
 
     fn cmd(from: &str, headers: &[(&str, &str)]) -> IncomingCommand {
         IncomingCommand {

@@ -6,7 +6,7 @@
 //! window, and typing that reaches the service. Regenerate the images with
 //! `UPDATE_SNAPSHOTS=1` and look at them before committing.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
 use std::rc::Rc;
 use std::time::Duration;
@@ -67,6 +67,7 @@ print(\"Hello\")
 /// clock until the test fires them. Session-look reads, their retries and
 /// subscriptions are recorded for the test to answer.
 struct Fake {
+    edit_available: Rc<Cell<bool>>,
     editd: Rc<RefCell<FakeEditd>>,
     queue: Rc<RefCell<VecDeque<Delivery>>>,
     timers: Rc<RefCell<Vec<u64>>>,
@@ -78,6 +79,7 @@ struct Fake {
 
 /// The test's side of the fake: the service, and its clock.
 struct Service {
+    edit_available: Rc<Cell<bool>>,
     editd: Rc<RefCell<FakeEditd>>,
     queue: Rc<RefCell<VecDeque<Delivery>>>,
     timers: Rc<RefCell<Vec<u64>>>,
@@ -124,6 +126,14 @@ impl Transport for Fake {
             self.subscribed.borrow_mut().push(topic.clone());
         }
         if let Effect::Send { req, out } = effect {
+            if !self.edit_available.get() {
+                self.queue.borrow_mut().push_back(reply(
+                    *req,
+                    10,
+                    r#"{"error_code":"UNAVAILABLE","message":""}"#.into(),
+                ));
+                return;
+            }
             let args: Value = serde_json::from_str(&out.body).unwrap_or_else(|_| json!({}));
             let mut answer = self
                 .editd
@@ -198,6 +208,15 @@ fn window(
     files: &[(&str, &str)],
     size: egui::Vec2,
 ) -> (Harness<'static, Holder>, Service) {
+    window_with_edit(theme, files, size, true)
+}
+
+fn window_with_edit(
+    theme: Theme,
+    files: &[(&str, &str)],
+    size: egui::Vec2,
+    available: bool,
+) -> (Harness<'static, Holder>, Service) {
     let editd = Rc::new(RefCell::new(FakeEditd::new("e1")));
     let paths: Vec<String> = files
         .iter()
@@ -207,6 +226,7 @@ fn window(
         })
         .collect();
     let service = Service {
+        edit_available: Rc::new(Cell::new(available)),
         editd: editd.clone(),
         queue: Rc::default(),
         timers: Rc::default(),
@@ -216,6 +236,7 @@ fn window(
         published: Rc::default(),
     };
     let transport = Box::new(Fake {
+        edit_available: service.edit_available.clone(),
         editd: editd.clone(),
         queue: service.queue.clone(),
         timers: service.timers.clone(),
@@ -352,7 +373,7 @@ fn markdown_preview_is_read_only_and_stays_above_the_panels() {
     h.run_steps(4);
     let heading = h.get_by_label("Project notes");
     let rect = heading.rect();
-    assert!(rect.top() > h.get_by_label("A document notice").rect().bottom());
+    assert!(h.query_by_label("A document notice").is_none());
     assert!(rect.bottom() < h.get_by_label("No problems.").rect().top());
     assert!(rect.bottom() < h.get_by_label("Nothing has run yet.").rect().top());
     heading.click();
@@ -362,6 +383,104 @@ fn markdown_preview_is_read_only_and_stays_above_the_panels() {
     let editd = service.editd.borrow();
     assert_eq!(editd.text(&editd.buffers()[0]), MARKDOWN);
     assert!(h.state().shell.as_ref().unwrap().app.editor_id.is_none());
+}
+
+#[test]
+fn missing_edit_shows_waiting_state_and_registration_opens_the_document() {
+    use egui_kittest::kittest::Queryable;
+    let (mut h, service) = window_with_edit(
+        theme(Scheme::Studio, Mode::Dark),
+        &[("/work/hello.mix", "print(1)\n")],
+        egui::vec2(900.0, 500.0),
+        false,
+    );
+    h.run_steps(4);
+    assert!(
+        h.query_by_label(documents::controller::EDIT_UNAVAILABLE)
+            .is_some()
+    );
+    service.edit_available.set(true);
+    service.deliver(Delivery::Incoming(Incoming::Topic {
+        topic: "noded.props.changed".into(),
+        body: r#"{"path":"services.registered","new":["edit"]}"#.into(),
+    }));
+    h.run_steps(6);
+    assert!(
+        h.query_by_label(documents::controller::EDIT_UNAVAILABLE)
+            .is_none()
+    );
+    assert!(
+        h.state()
+            .shell
+            .as_ref()
+            .unwrap()
+            .app
+            .active_tab()
+            .unwrap()
+            .mirror
+            .is_some()
+    );
+}
+
+#[test]
+fn document_decisions_remain_in_the_notice_strip() {
+    use editor_model::model::EditCommand;
+    use egui_kittest::kittest::Queryable;
+
+    let (mut h, service) = window(
+        theme(Scheme::Studio, Mode::Dark),
+        &[("/work/a.txt", "hello world\n")],
+        egui::vec2(900.0, 500.0),
+    );
+    h.run_steps(6);
+    let shell = h.state_mut().shell.as_mut().unwrap();
+    let tab = shell.app.active().unwrap();
+    shell.app.editor_event(
+        tab,
+        editor::Event::Command(EditCommand::SetSelection(edit::anchor::Selection {
+            anchor: 2,
+            head: 4,
+        })),
+    );
+    shell.app.editor_event(
+        tab,
+        editor::Event::Command(EditCommand::Insert("XY".into())),
+    );
+    let buffer = service.editd.borrow().buffers()[0].clone();
+    let answer = service.editd.borrow_mut().handle(
+        "local:agent",
+        "edit.replace",
+        &json!({
+            "buffer": buffer, "range": [3, 5], "text": "Q", "origin": "agent:test"
+        }),
+    );
+    assert_eq!(answer.rc, 0);
+    h.run_steps(6);
+    assert!(h.query_by_label("Re-insert at Caret").is_some());
+    assert!(h.query_by_label("Dismiss").is_some());
+
+    service
+        .editd
+        .borrow_mut()
+        .restart("e2", Some("service text\n"));
+    let buffer = service.editd.borrow().buffers()[0].clone();
+    let answer = service.editd.borrow_mut().handle(
+        "local:agent",
+        "edit.insert",
+        &json!({
+            "buffer": buffer, "at": 0, "text": "new ", "origin": "agent:test"
+        }),
+    );
+    assert_eq!(answer.rc, 0);
+    for event in service.editd.borrow_mut().take_events() {
+        service.deliver(Delivery::Incoming(Incoming::Topic {
+            topic: "edit.changed".into(),
+            body: serde_json::to_string(&event).unwrap(),
+        }));
+    }
+    h.run_steps(8);
+    assert!(h.query_by_label("Keep Mine").is_some());
+    assert!(h.query_by_label("Take the Service's").is_some());
 }
 
 #[test]
