@@ -738,10 +738,7 @@ fn anchored_rect(anchor: Rect, outer: Vec2, bounds: Rect) -> Rect {
         anchor.left()
     };
     Rect::from_min_size(
-        pos2(
-            left.clamp(bounds.left(), bounds.right() - size.x),
-            top,
-        ),
+        pos2(left.clamp(bounds.left(), bounds.right() - size.x), top),
         size,
     )
 }
@@ -1636,7 +1633,9 @@ fn show_level(
                 let scroll = if let Some(width) = max_width {
                     let gutter = if layout.size.y > max_height {
                         ui.spacing().scroll.allocated_width()
-                    } else { 0.0 };
+                    } else {
+                        0.0
+                    };
                     let scroll = if layout.size.x + gutter > width {
                         ScrollArea::both()
                     } else {
@@ -1917,36 +1916,71 @@ mod tests {
         let mut open = true;
         let mut frame = Rect::NOTHING;
         for pass in 0..40 {
-            let mut out = ctx.run_ui(egui::RawInput {
-                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(400.0, 160.0))),
-                time: Some(pass as f64),
-                ..Default::default()
-            }, |ui| {
-                let menu = Menu { title: "Macros".into(), entries: (0..20).map(|n|
-                    Entry::Row(Row::command("macro", format!("Macro {n}"), None, true))
-                ).collect() };
-                let _ = anchored(ui, Id::new("short-menu"), anchor, &mut open, menu.clone(), &[]);
-                let cache_id = crate::window_id(ctx.viewport_id(), "toolkit.anchored-input");
-                let cache = ctx.data(|d| d.get_temp::<AnchoredInput>(cache_id)).unwrap();
-                frame = cache.frame;
-                // Render this same bounded level directly to inspect its rows
-                // and scroll viewport, rather than relying on scrollbar paint.
-                let chrome = Chrome::of(&ctx);
-                let layout = Layout::new(ui, &chrome, &menu.entries, chrome.metrics.menu_min_width);
-                let margin = Frame::menu(ui.style()).total_margin().sum();
-                let mut nav = Nav::default();
-                nav.open(0);
-                let shown = show_level(&ctx, &chrome, 1, &menu.entries, &layout, frame, &mut nav, &[menu], View {
-                    max_height: (frame.height() - margin.y).max(0.0),
-                    max_width: Some((frame.width() - margin.x).max(0.0)),
-                    moved: false, keyed: false, deeper: None,
-                }, None);
-                if pass > 2 {
-                    assert!(shown.bar.is_some(), "vertical overflow must scroll");
-                    assert!(shown.rows[0].width() <= shown.view.width() + 1.0, "rows must fit without horizontal scrolling");
-                    assert!((shown.frame.height() - margin.y - shown.view.height()).abs() < 1.0, "no horizontal scrollbar gutter");
-                }
-            });
+            let mut out = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(400.0, 160.0))),
+                    time: Some(pass as f64),
+                    ..Default::default()
+                },
+                |ui| {
+                    let menu = Menu {
+                        title: "Macros".into(),
+                        entries: (0..20)
+                            .map(|n| {
+                                Entry::Row(Row::command("macro", format!("Macro {n}"), None, true))
+                            })
+                            .collect(),
+                    };
+                    let _ = anchored(
+                        ui,
+                        Id::new("short-menu"),
+                        anchor,
+                        &mut open,
+                        menu.clone(),
+                        &[],
+                    );
+                    let cache_id = crate::window_id(ctx.viewport_id(), "toolkit.anchored-input");
+                    let cache = ctx.data(|d| d.get_temp::<AnchoredInput>(cache_id)).unwrap();
+                    frame = cache.frame;
+                    // Render this same bounded level directly to inspect its rows
+                    // and scroll viewport, rather than relying on scrollbar paint.
+                    let chrome = Chrome::of(&ctx);
+                    let layout =
+                        Layout::new(ui, &chrome, &menu.entries, chrome.metrics.menu_min_width);
+                    let margin = Frame::menu(ui.style()).total_margin().sum();
+                    let mut nav = Nav::default();
+                    nav.open(0);
+                    let shown = show_level(
+                        &ctx,
+                        &chrome,
+                        1,
+                        &menu.entries,
+                        &layout,
+                        frame,
+                        &mut nav,
+                        &[menu],
+                        View {
+                            max_height: (frame.height() - margin.y).max(0.0),
+                            max_width: Some((frame.width() - margin.x).max(0.0)),
+                            moved: false,
+                            keyed: false,
+                            deeper: None,
+                        },
+                        None,
+                    );
+                    if pass > 2 {
+                        assert!(shown.bar.is_some(), "vertical overflow must scroll");
+                        assert!(
+                            shown.rows[0].width() <= shown.view.width() + 1.0,
+                            "rows must fit without horizontal scrolling"
+                        );
+                        assert!(
+                            (shown.frame.height() - margin.y - shown.view.height()).abs() < 1.0,
+                            "no horizontal scrollbar gutter"
+                        );
+                    }
+                },
+            );
             out.textures_delta.clear();
         }
         assert!(open);
@@ -2359,7 +2393,10 @@ fn anchored_placement_aligns_to_the_icon_and_clamps_the_full_frame() {
     assert_eq!(rect.top(), anchor.bottom());
     assert!(bounds.contains_rect(rect));
     let oversized = anchored_rect(anchor, vec2(2000.0, 1000.0), bounds);
-    assert_eq!(oversized, Rect::from_min_max(pos2(bounds.left(), anchor.bottom()), bounds.max));
+    assert_eq!(
+        oversized,
+        Rect::from_min_max(pos2(bounds.left(), anchor.bottom()), bounds.max)
+    );
     let bottom = anchored_rect(
         anchor.translate(vec2(0.0, 740.0)),
         vec2(220.0, 100.0),

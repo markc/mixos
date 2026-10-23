@@ -430,8 +430,12 @@ pub struct SaveTarget {
 }
 
 impl SaveTarget {
-    pub fn path(&self) -> &Path { &self.path }
-    pub fn directory(&self) -> &Path { &self.directory }
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+    pub fn directory(&self) -> &Path {
+        &self.directory
+    }
 }
 
 /// Resolve exactly where an atomic save writes its temporary file and renames
@@ -441,9 +445,15 @@ pub fn save_target(path: &Path) -> io::Result<SaveTarget> {
         Ok(m) if m.file_type().is_symlink() => fs::canonicalize(path)?,
         _ => path.to_path_buf(),
     };
-    let directory = target.parent().filter(|d| !d.as_os_str().is_empty())
-        .unwrap_or(Path::new(".")).to_path_buf();
-    Ok(SaveTarget { path: target, directory })
+    let directory = target
+        .parent()
+        .filter(|d| !d.as_os_str().is_empty())
+        .unwrap_or(Path::new("."))
+        .to_path_buf();
+    Ok(SaveTarget {
+        path: target,
+        directory,
+    })
 }
 
 /// Write beside the resolved target, keep its permissions and rename over it.
@@ -456,7 +466,10 @@ fn write_replacing(destination: &SaveTarget, bytes: &[u8]) -> io::Result<()> {
     let dir = destination.directory();
     let permissions = fs::metadata(target).ok().map(|m| m.permissions());
     if permissions.as_ref().is_some_and(|p| p.readonly()) {
-        return Err(io::Error::new(io::ErrorKind::PermissionDenied, "file is read-only"));
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "file is read-only",
+        ));
     }
     let (tmp, mut file) = (0..1000)
         .find_map(|n| {
@@ -712,7 +725,10 @@ mod tests {
         assert!(doc.save_snapshot().unwrap().write().is_err());
         assert!(doc.is_dirty());
         assert_eq!(fs::read_to_string(&path).unwrap(), "original");
-        assert_eq!(fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o444);
+        assert_eq!(
+            fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o444
+        );
     }
 
     #[test]

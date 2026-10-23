@@ -935,13 +935,15 @@ fn path_error(key: &str, path: &Path, error: impl std::fmt::Display) -> io::Erro
 fn open_macro(path: &Path) -> io::Result<editor::local::Document> {
     let document = editor::local::Document::open(path)
         .map_err(|e| path_error("macros-open-error", path, e))?;
-    let target = editor::local::save_target(path)
-        .map_err(|e| path_error("macros-save-error", path, e))?;
-    let metadata = std::fs::metadata(target.path())
-        .map_err(|e| path_error("macros-save-error", path, e))?;
+    let target =
+        editor::local::save_target(path).map_err(|e| path_error("macros-save-error", path, e))?;
+    let metadata =
+        std::fs::metadata(target.path()).map_err(|e| path_error("macros-save-error", path, e))?;
     if metadata.permissions().readonly() {
-        return Err(io::Error::new(io::ErrorKind::PermissionDenied,
-            own_with("macros-read-only", &[("path", &path.display().to_string())])));
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            own_with("macros-read-only", &[("path", &path.display().to_string())]),
+        ));
     }
     let check = || -> io::Result<()> {
         static NEXT_PROBE: AtomicU64 = AtomicU64::new(1);
@@ -1309,7 +1311,10 @@ mod tests {
         assert_eq!(empty.label, "No macros yet");
         assert!(!empty.enabled);
         assert_eq!(menu.entries.len(), 4);
-        assert_eq!(menu.entries.last().unwrap().row().unwrap().label, "No macros yet");
+        assert_eq!(
+            menu.entries.last().unwrap().row().unwrap().label,
+            "No macros yet"
+        );
     }
 
     #[test]
@@ -1532,15 +1537,25 @@ mod tests {
             symlink(&target, &entry.path).unwrap();
             let resolved = editor::local::save_target(&entry.path).unwrap();
             assert_eq!(resolved.path(), target.canonicalize().unwrap().as_path());
-            assert_eq!(resolved.directory(), targets.canonicalize().unwrap().as_path());
-            let Some(_readonly) = ReadOnlyParent::new(if target_readonly { &targets } else { &links }) else { return; };
+            assert_eq!(
+                resolved.directory(),
+                targets.canonicalize().unwrap().as_path()
+            );
+            let Some(_readonly) =
+                ReadOnlyParent::new(if target_readonly { &targets } else { &links })
+            else {
+                return;
+            };
             if target_readonly {
                 let mut state = State::new("ced");
                 state.engine.roots = Some(roots);
                 state.loaded = true;
                 state.edit(entry.clone());
                 let mut h = permission_harness(state);
-                wait_until(|| { h.run_steps(1); h.state().pending.is_none() });
+                wait_until(|| {
+                    h.run_steps(1);
+                    h.state().pending.is_none()
+                });
                 let error = h.state().error.as_ref().unwrap();
                 assert!(error.contains(&entry.path.display().to_string()));
                 assert!(error.to_lowercase().contains("permission denied"));
@@ -1555,12 +1570,23 @@ mod tests {
                 assert_eq!(std::fs::read_to_string(&target).unwrap(), "original");
             } else {
                 let mut doc = open_macro(&entry.path).unwrap();
-                doc.command(editor::EditCommand::Insert("edit ".into()), &editor::View::default()).unwrap();
+                doc.command(
+                    editor::EditCommand::Insert("edit ".into()),
+                    &editor::View::default(),
+                )
+                .unwrap();
                 doc.save().unwrap();
                 let saved = doc.save_snapshot().unwrap().write().unwrap();
                 assert!(doc.complete_save(&saved));
                 assert_eq!(std::fs::read_to_string(&target).unwrap(), "edit original");
-                assert!(entry.path.symlink_metadata().unwrap().file_type().is_symlink());
+                assert!(
+                    entry
+                        .path
+                        .symlink_metadata()
+                        .unwrap()
+                        .file_type()
+                        .is_symlink()
+                );
             }
         }
     }
@@ -1577,7 +1603,10 @@ mod tests {
         state.loaded = true;
         state.edit(entry.clone());
         let mut h = permission_harness(state);
-        wait_until(|| { h.run_steps(1); h.state().pending.is_none() });
+        wait_until(|| {
+            h.run_steps(1);
+            h.state().pending.is_none()
+        });
         let error = h.state().error.as_ref().unwrap();
         assert!(error.contains(&entry.path.display().to_string()));
         assert!(error.contains("is read-only"));
@@ -1586,7 +1615,10 @@ mod tests {
         assert!(!h.state().editor_open);
         assert!(h.state().document.is_none());
         assert_eq!(std::fs::read(&entry.path).unwrap(), before);
-        assert_eq!(std::fs::metadata(&entry.path).unwrap().permissions().mode() & 0o777, 0o444);
+        assert_eq!(
+            std::fs::metadata(&entry.path).unwrap().permissions().mode() & 0o777,
+            0o444
+        );
     }
 
     #[cfg(unix)]
