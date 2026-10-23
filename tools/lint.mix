@@ -1,8 +1,8 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Copyright 2026 Mark Constable <mc@mixos.dev>
--- version: 0.1.0
--- The fast lint tier: everything that needs a checkout, `mix` and `cargo
--- metadata`, and nothing that compiles Rust or runs tests. CI runs it on
+-- version: 0.2.0
+-- The fast lint tier: everything that needs a checkout, `mix`, `cargo
+-- metadata` and rustfmt, and nothing that compiles Rust or runs tests. CI runs it on
 -- every push (.github/workflows/lint.yml). The full build and test suites
 -- run on the CBC build hosts for the weekly release candidate
 -- (docs/docs/dev/releasing.md). Every check runs to the end; exit 1 if any
@@ -110,6 +110,22 @@ fn report($name, $ok, $seconds, $out)
   end
 end
 
+-- rustfmt over the workspace members, the same command as CI's Format step.
+-- Not `cargo fmt --all`: that reaches path dependencies, and vendor/ keeps
+-- its upstream formatting. rustfmt parses but never compiles.
+if wanted("rustfmt") then
+  $ran = $ran + 1
+  if run_argv(["which", "cargo"], {timeout: 10}).exit_code != 0 then
+    print("SKIP rustfmt (needs cargo)")
+  else
+    $t0 = time()
+    $r = run_argv(["cargo", "fmt", "--check"], {cwd: $root, timeout: $GATE_TIMEOUT, stderr: "stdout", max_output: 2000000})
+    $ok = $r.exit_code == 0 and not $r.timed_out
+    $diffs = filter(split(trim($r.stdout), "\n"), fn($l) = starts_with($l, "Diff in "))
+    report("rustfmt", $ok, time() - $t0, if len($diffs) > 0 then join($diffs, "\n") else $r.stdout end)
+    if not $ok then push($failed, "rustfmt") end
+  end
+end
 if wanted("mix-files") then
   $ran = $ran + 1
   $t0 = time()

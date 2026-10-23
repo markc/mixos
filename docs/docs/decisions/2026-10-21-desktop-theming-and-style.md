@@ -135,3 +135,12 @@ migration.
   any style token or chrome colour for the session, one application or
   one window, and the terminal's colours for the session, under any
   design source.
+
+## Amendment (2026-10-23): removing tokens is a clean break
+
+A token that no code reads any more is deleted outright: from the
+declared set, the shipped designs, the compatibility table and its
+fixtures. It is not kept as a retired name. A saved design that still
+authors a deleted token is refused as an unknown token, so check saved
+designs before deleting one. The first use removed the panel tokens left
+behind when panel groups became plain sections.

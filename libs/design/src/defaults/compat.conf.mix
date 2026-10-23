@@ -1383,23 +1383,10 @@
       "panel_groups": "cards",
       "panel_header": 24,
       "panel_header_after": 6,
-      "panel_menu_box_h": 18,
-      "panel_menu_box_w": 20,
-      "panel_menu_from_right": 14,
-      "panel_menu_line": 10,
-      "panel_menu_pitch": 3.5,
       "panel_pill_gap": 2,
-      "panel_pill_hover_alpha": 0.6,
       "panel_pill_min": 44,
       "panel_pill_pad": 20,
       "panel_pill_size": 12.5,
-      "panel_pro_after": 2,
-      "panel_pro_hover_alpha": 0.4,
-      "panel_pro_margin": 8,
-      "panel_pro_min": 40,
-      "panel_pro_pad": 22,
-      "panel_pro_radius": 3,
-      "panel_pro_size": 11.5,
       "panel_section_size": 11.5,
       "panel_strip": 26,
       "popup_shadow_alpha": 1,
@@ -1673,23 +1660,10 @@
       "panel_groups": "cards",
       "panel_header": 24,
       "panel_header_after": 6,
-      "panel_menu_box_h": 18,
-      "panel_menu_box_w": 20,
-      "panel_menu_from_right": 14,
-      "panel_menu_line": 10,
-      "panel_menu_pitch": 3.5,
       "panel_pill_gap": 2,
-      "panel_pill_hover_alpha": 0.6,
       "panel_pill_min": 44,
       "panel_pill_pad": 20,
       "panel_pill_size": 12.5,
-      "panel_pro_after": 2,
-      "panel_pro_hover_alpha": 0.4,
-      "panel_pro_margin": 8,
-      "panel_pro_min": 40,
-      "panel_pro_pad": 22,
-      "panel_pro_radius": 3,
-      "panel_pro_size": 11.5,
       "panel_section_size": 11.5,
       "panel_strip": 26,
       "popup_shadow_alpha": 1,
@@ -2173,36 +2147,6 @@
         "panel_strip": {
           "all": 26
         },
-        "panel_pro_size": {
-          "all": 11.5
-        },
-        "panel_pro_pad": {
-          "all": 22
-        },
-        "panel_pro_min": {
-          "all": 40
-        },
-        "panel_pro_radius": {
-          "all": 3
-        },
-        "panel_pro_hover_alpha": {
-          "all": 0.4
-        },
-        "panel_pro_margin": {
-          "all": 8
-        },
-        "panel_pro_after": {
-          "all": 2
-        },
-        "panel_menu_from_right": {
-          "all": 14
-        },
-        "panel_menu_line": {
-          "all": 10
-        },
-        "panel_menu_pitch": {
-          "all": 3.5
-        },
         "panel_card_margin_collapsed": {
           "all": 6
         },
@@ -2229,9 +2173,6 @@
         },
         "panel_pill_gap": {
           "all": 2
-        },
-        "panel_pill_hover_alpha": {
-          "all": 0.6
         },
         "panel_ellipsis": {
           "all": 22
@@ -2553,12 +2494,6 @@
         },
         "tabs_studio_margin_bottom": {
           "all": 4
-        },
-        "panel_menu_box_w": {
-          "all": 20
-        },
-        "panel_menu_box_h": {
-          "all": 18
         },
         "panel_card_margin_left": {
           "all": 8

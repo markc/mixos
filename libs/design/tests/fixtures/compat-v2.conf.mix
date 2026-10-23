@@ -254,36 +254,6 @@
         "panel_strip": {
           "all": 26
         },
-        "panel_pro_size": {
-          "all": 11.5
-        },
-        "panel_pro_pad": {
-          "all": 22
-        },
-        "panel_pro_min": {
-          "all": 40
-        },
-        "panel_pro_radius": {
-          "all": 3
-        },
-        "panel_pro_hover_alpha": {
-          "all": 0.4
-        },
-        "panel_pro_margin": {
-          "all": 8
-        },
-        "panel_pro_after": {
-          "all": 2
-        },
-        "panel_menu_from_right": {
-          "all": 14
-        },
-        "panel_menu_line": {
-          "all": 10
-        },
-        "panel_menu_pitch": {
-          "all": 3.5
-        },
         "panel_card_margin_collapsed": {
           "all": 6
         },
@@ -310,9 +280,6 @@
         },
         "panel_pill_gap": {
           "all": 2
-        },
-        "panel_pill_hover_alpha": {
-          "all": 0.6
         },
         "panel_ellipsis": {
           "all": 22
@@ -634,12 +601,6 @@
         },
         "tabs_studio_margin_bottom": {
           "all": 4
-        },
-        "panel_menu_box_w": {
-          "all": 20
-        },
-        "panel_menu_box_h": {
-          "all": 18
         },
         "panel_card_margin_left": {
           "all": 8
