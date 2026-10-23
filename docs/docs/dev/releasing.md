@@ -21,7 +21,7 @@ Use a designated CBC worker and freeze a full 40-character source commit.
 Clippy, functional tests, the release-mode editd latency test, source gates
 and Mix tests. Its `LOG` lines identify the saved stage logs. The
 `mixos/weekly-x86_64-source` commit status goes green only after that
-exact-source gate passes. The separate `mixos/weekly-x86_64-full` status
+exact-source gate passes. The separate `mixos/weekly-x86_64-artifacts` status
 goes green only after packaging, disposable gold preflight, draft upload
 and GitHub asset digest comparison also pass at the same commit. There
 is no Rust build on a GitHub push. A push runs only the lint tier: run

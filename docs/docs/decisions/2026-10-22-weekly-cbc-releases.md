@@ -19,9 +19,12 @@ the source commit and hashes in `release.manifest.mx`, and refuses a higher
 glibc floor. Those exact bytes move to a draft GitHub Release; GitHub does
 not rebuild them. A published release is immutable.
 
-The full gate is a distinct commit status,
-`mixos/weekly-x86_64-full`. It runs for a frozen weekly candidate after the
-first release. Normal pushes do not launch a full GitHub-hosted Rust build.
+The full gate is two commit statuses on the candidate's exact commit:
+`mixos/weekly-x86_64-source` (build, Clippy, tests, source gates and Mix
+tests) and then `mixos/weekly-x86_64-artifacts` (packaging, disposable gold
+preflight, draft upload and draft asset digests). It runs for a frozen
+weekly candidate. There is no GitHub-hosted Rust build; a push runs only the
+lint tier described below.
 A failed gate cannot create a publishable candidate, and the last published
 version remains current. Any cheaper source checks must use their own status
 name and cannot stand in for the full gate.
