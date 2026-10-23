@@ -14,10 +14,22 @@ struct Panel {
 fn harness(data: Data, render: bool) -> Harness<'static, Panel> {
     let builder = Harness::builder().with_size(egui::vec2(800.0, 700.0));
     let builder = if render { builder.wgpu() } else { builder };
-    let mut h = builder.build_ui_state(|ui, state: &mut Panel| {
-        egui::CentralPanel::default().show(ui, |_| {});
-        state.actions.extend(macro_panel::show(ui.ctx(), &mut state.open, &state.data, &mut state.draft));
-    }, Panel { open: true, data, ..Panel::default() });
+    let mut h = builder.build_ui_state(
+        |ui, state: &mut Panel| {
+            egui::CentralPanel::default().show(ui, |_| {});
+            state.actions.extend(macro_panel::show(
+                ui.ctx(),
+                &mut state.open,
+                &state.data,
+                &mut state.draft,
+            ));
+        },
+        Panel {
+            open: true,
+            data,
+            ..Panel::default()
+        },
+    );
     toolkit::install(&h.ctx, &toolkit::Theme::embedded());
     h.run();
     h
@@ -26,8 +38,11 @@ fn harness(data: Data, render: bool) -> Harness<'static, Panel> {
 fn populated() -> Data {
     Data {
         rows: vec![Row {
-            id: "hello".into(), title: "Hello desktop".into(), tier: "User for this app".into(),
-            path: "/home/user/.config/mixos/macros/ced/hello.mix".into(), shadows: "Built-in global".into(),
+            id: "hello".into(),
+            title: "Hello desktop".into(),
+            tier: "User for this app".into(),
+            path: "/home/user/.config/mixos/macros/ced/hello.mix".into(),
+            shadows: "Built-in global".into(),
         }],
         ..Data::default()
     }

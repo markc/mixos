@@ -14,9 +14,15 @@ type Completion = Result<(Catalogue, Option<String>), String>;
 /// The standard Help command, labelled and tipped like the other help items.
 pub fn command<S>(enabled: fn(&S) -> bool, run: fn(&mut S)) -> crate::Command<S> {
     crate::Command {
-        id: "help.macros", label: "toolkit-macros", menu: Some("help"),
-        submenu: None, group: 0, shortcut: None, icon: Some(crate::Icon::ScrollText),
-        enabled, run,
+        id: "help.macros",
+        label: "toolkit-macros",
+        menu: Some("help"),
+        submenu: None,
+        group: 0,
+        shortcut: None,
+        icon: Some(crate::Icon::ScrollText),
+        enabled,
+        run,
     }
 }
 
@@ -36,16 +42,35 @@ pub struct State {
 
 impl State {
     pub fn new(app: &str) -> Self {
-        Self { open: false, catalogue: Catalogue::default(), runner: Runner::default(), app: app.into(), roots: Roots::resolve(), pending: None, draft: Draft::default(), error: None, loaded: false }
+        Self {
+            open: false,
+            catalogue: Catalogue::default(),
+            runner: Runner::default(),
+            app: app.into(),
+            roots: Roots::resolve(),
+            pending: None,
+            draft: Draft::default(),
+            error: None,
+            loaded: false,
+        }
     }
 
-    pub fn toggle(&mut self) { self.open = !self.open; }
+    pub fn toggle(&mut self) {
+        self.open = !self.open;
+    }
 
-    pub fn reload(&mut self) { self.work(|_, _| Ok(())); }
+    pub fn reload(&mut self) {
+        self.work(|_, _| Ok(()));
+    }
 
     fn work(&mut self, task: impl FnOnce(&Roots, &str) -> io::Result<()> + Send + 'static) {
-        if self.pending.is_some() { return; }
-        let Some(roots) = self.roots.clone() else { self.error = Some(own("macros-no-home")); return; };
+        if self.pending.is_some() {
+            return;
+        }
+        let Some(roots) = self.roots.clone() else {
+            self.error = Some(own("macros-no-home"));
+            return;
+        };
         let app = self.app.clone();
         let (tx, rx) = mpsc::channel();
         self.pending = Some(rx);
@@ -74,33 +99,74 @@ impl State {
                     self.pending = None;
                     self.loaded = true;
                 }
-                Err(mpsc::TryRecvError::Disconnected) => { self.pending = None; self.error = Some(own("macros-worker-failed")); }
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    self.pending = None;
+                    self.error = Some(own("macros-worker-failed"));
+                }
                 Err(mpsc::TryRecvError::Empty) => {}
             }
         }
-        if !self.open { return; }
-        if !self.loaded && self.pending.is_none() { self.reload(); }
+        if !self.open {
+            return;
+        }
+        if !self.loaded && self.pending.is_none() {
+            self.reload();
+        }
         let status = self.runner.status();
         let output = self.runner.output();
         let mut data = Data {
-            rows: self.catalogue.entries.iter().map(|e| Row {
-                id: e.id.clone(), title: e.title.clone(), tier: tier_label(e.tier), path: e.path.display().to_string(),
-                shadows: e.shadows.iter().map(|&t| tier_label(t)).collect::<Vec<_>>().join(", "),
-            }).collect(),
-            diagnostics: self.catalogue.diagnostics.iter().map(|d| format!("{}: {}", d.path.display(), d.message)).collect(),
-            busy: self.pending.is_some(), running: status == Status::Running,
+            rows: self
+                .catalogue
+                .entries
+                .iter()
+                .map(|e| Row {
+                    id: e.id.clone(),
+                    title: e.title.clone(),
+                    tier: tier_label(e.tier),
+                    path: e.path.display().to_string(),
+                    shadows: e
+                        .shadows
+                        .iter()
+                        .map(|&t| tier_label(t))
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                })
+                .collect(),
+            diagnostics: self
+                .catalogue
+                .diagnostics
+                .iter()
+                .map(|d| format!("{}: {}", d.path.display(), d.message))
+                .collect(),
+            busy: self.pending.is_some(),
+            running: status == Status::Running,
             status: match status {
-                Status::Idle => String::new(), Status::Running => own("macros-running"),
-                Status::Exited(code) => own_with("macros-exited", &[("code", &code.map_or_else(|| own("macros-signal"), |n| n.to_string()))]),
+                Status::Idle => String::new(),
+                Status::Running => own("macros-running"),
+                Status::Exited(code) => own_with(
+                    "macros-exited",
+                    &[(
+                        "code",
+                        &code.map_or_else(|| own("macros-signal"), |n| n.to_string()),
+                    )],
+                ),
                 Status::FailedToStart(err) => own_with("macros-failed", &[("error", &err)]),
             },
-            output: output.text, dropped: output.dropped,
+            output: output.text,
+            dropped: output.dropped,
         };
-        if let Some(err) = &self.error { data.diagnostics.push(err.clone()); }
+        if let Some(err) = &self.error {
+            data.diagnostics.push(err.clone());
+        }
         for action in macro_panel::show(ctx, &mut self.open, &data, &mut self.draft) {
             match action {
                 Action::Reload => self.reload(),
-                Action::New(app) => self.draft = Draft { target_app: Some(app), ..Draft::default() },
+                Action::New(app) => {
+                    self.draft = Draft {
+                        target_app: Some(app),
+                        ..Draft::default()
+                    }
+                }
                 Action::Create => {
                     let id = self.draft.id.clone();
                     let title = self.draft.title.clone();
@@ -118,14 +184,25 @@ impl State {
                 Action::Edit(index) => {
                     let entry = self.catalogue.entries[index].clone();
                     self.work(move |roots, app| {
-                        let path = if entry.tier.is_user() { entry.path } else { roots.copy_to_user(app, &entry)? };
-                        if let Some(parent) = path.parent() { std::fs::create_dir_all(parent)?; }
+                        let path = if entry.tier.is_user() {
+                            entry.path
+                        } else {
+                            roots.copy_to_user(app, &entry)?
+                        };
+                        if let Some(parent) = path.parent() {
+                            std::fs::create_dir_all(parent)?;
+                        }
                         launch(&path, false)
                     });
                 }
                 Action::Run(index) => {
                     if let Some(roots) = &self.roots {
-                        if let Err(err) = self.runner.start(roots, &self.app, &self.catalogue.entries[index]) { self.error = Some(err.to_string()); }
+                        if let Err(err) =
+                            self.runner
+                                .start(roots, &self.app, &self.catalogue.entries[index])
+                        {
+                            self.error = Some(err.to_string());
+                        }
                     }
                 }
                 Action::Stop => self.runner.stop(),
@@ -137,15 +214,34 @@ impl State {
     }
 }
 
-fn user_tier(app: bool) -> Tier { if app { Tier::UserApp } else { Tier::UserGlobal } }
-fn tier_label(tier: Tier) -> String { own(&format!("macros-{}", tier.as_str())) }
+fn user_tier(app: bool) -> Tier {
+    if app { Tier::UserApp } else { Tier::UserGlobal }
+}
+fn tier_label(tier: Tier) -> String {
+    own(&format!("macros-{}", tier.as_str()))
+}
 
 fn launch(path: &Path, folder: bool) -> io::Result<()> {
-    let native = if folder { "/opt/mixos/bin/dopus" } else { "/opt/mixos/bin/ced" };
-    let binary = if Path::new(native).is_file() { native } else { "xdg-open" };
-    let mut child = Command::new(binary).arg(path).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn()?;
+    let native = if folder {
+        "/opt/mixos/bin/dopus"
+    } else {
+        "/opt/mixos/bin/ced"
+    };
+    let binary = if Path::new(native).is_file() {
+        native
+    } else {
+        "xdg-open"
+    };
+    let mut child = Command::new(binary)
+        .arg(path)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()?;
     // The launcher is independent; reaping it never delays the panel's worker.
-    std::thread::spawn(move || { let _ = child.wait(); });
+    std::thread::spawn(move || {
+        let _ = child.wait();
+    });
     Ok(())
 }
 
@@ -154,7 +250,9 @@ fn launch(path: &Path, folder: bool) -> io::Result<()> {
 pub fn show_app(ctx: &egui::Context, app: &str, open: bool) -> bool {
     let id = egui::Id::new(("shared-macros", app));
     let state: Option<Arc<Mutex<State>>> = ctx.data(|d| d.get_temp(id));
-    if !open && state.is_none() { return false; }
+    if !open && state.is_none() {
+        return false;
+    }
     let state = state.unwrap_or_else(|| {
         let state = Arc::new(Mutex::new(State::new(app)));
         ctx.data_mut(|d| d.insert_temp(id, state.clone()));

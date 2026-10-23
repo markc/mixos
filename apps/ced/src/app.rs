@@ -459,9 +459,9 @@ impl App {
             ViewMarkdownSource | ViewMarkdownSplit | ViewMarkdownPreview => {
                 self.active().is_some_and(|tab| self.markdown(tab))
             }
-            FileNew | FileOpen | FileExit | FileSaveAll | HelpKeys | HelpMacros | HelpAbout | ViewZoomIn
-            | ViewZoomOut | ViewZoomReset | ViewWhitespace | ViewLineNumbers | ViewRemoteCarets
-            | ViewProblems | ViewOutput | ViewReloadSettings => true,
+            FileNew | FileOpen | FileExit | FileSaveAll | HelpKeys | HelpMacros | HelpAbout
+            | ViewZoomIn | ViewZoomOut | ViewZoomReset | ViewWhitespace | ViewLineNumbers
+            | ViewRemoteCarets | ViewProblems | ViewOutput | ViewReloadSettings => true,
             FileClose | ViewClearMarkers => tab,
             // Text can be copied and selected out of a detached document.
             EditCopy | EditSelectAll => mirror.is_some(),

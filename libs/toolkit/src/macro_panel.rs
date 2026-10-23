@@ -45,7 +45,9 @@ pub struct Draft {
 
 /// Draw with the toolkit's dialog, button, field and section styles.
 pub fn show(ctx: &egui::Context, open: &mut bool, data: &Data, draft: &mut Draft) -> Vec<Action> {
-    if !*open { return Vec::new(); }
+    if !*open {
+        return Vec::new();
+    }
     let mut actions = Vec::new();
     let shown = Dialog::new("macros-panel", own("toolkit-macros"))
         .buttons(vec![Choice::new(own("macros-close"), Role::Cancel)])
@@ -59,7 +61,9 @@ pub fn show(ctx: &egui::Context, open: &mut bool, data: &Data, draft: &mut Draft
                         ("macros-open-app", Action::OpenFolder(true)),
                         ("macros-reload", Action::Reload),
                     ] {
-                        if ui.add(PushButton::secondary(own(key))).clicked() { actions.push(action); }
+                        if ui.add(PushButton::secondary(own(key))).clicked() {
+                            actions.push(action);
+                        }
                     }
                 });
             });
@@ -68,37 +72,80 @@ pub fn show(ctx: &egui::Context, open: &mut bool, data: &Data, draft: &mut Draft
                 let width = ui.available_width();
                 crate::field::text(ui, &mut draft.id, &own("macros-id"), width);
                 crate::field::text(ui, &mut draft.title, &own("macros-title"), width);
-                if ui.add_enabled(!data.busy && !draft.id.is_empty(), PushButton::primary(own("macros-create"))).clicked() {
+                if ui
+                    .add_enabled(
+                        !data.busy && !draft.id.is_empty(),
+                        PushButton::primary(own("macros-create")),
+                    )
+                    .clicked()
+                {
                     actions.push(Action::Create);
                 }
             }
             let max_height = ctx.content_rect().height()
                 * crate::chrome::Chrome::of(ctx).style.dialog_resize_max_share as f32;
-            egui::ScrollArea::vertical().id_salt("macro-list").max_height(max_height / 3.0).show(ui, |ui| {
-                if data.rows.is_empty() { ui.add(crate::text::dim(own("macros-empty"))); }
-                for (index, row) in data.rows.iter().enumerate() {
-                    ui.push_id(&row.id, |ui| {
-                        crate::panel::section_label(ui, &row.tier);
-                        ui.label(&row.title).on_hover_text(&row.path);
-                        ui.add(crate::text::dim(&row.id));
-                        if !row.shadows.is_empty() {
-                            ui.add(crate::text::dim(own("macros-shadows"))).on_hover_text(&row.shadows);
-                        }
-                        ui.horizontal(|ui| {
-                            if ui.add_enabled(!data.running, PushButton::primary(own("macros-run"))).clicked() { actions.push(Action::Run(index)); }
-                            if ui.add_enabled(!data.busy, PushButton::secondary(own("macros-edit"))).clicked() { actions.push(Action::Edit(index)); }
+            egui::ScrollArea::vertical()
+                .id_salt("macro-list")
+                .max_height(max_height / 3.0)
+                .show(ui, |ui| {
+                    if data.rows.is_empty() {
+                        ui.add(crate::text::dim(own("macros-empty")));
+                    }
+                    for (index, row) in data.rows.iter().enumerate() {
+                        ui.push_id(&row.id, |ui| {
+                            crate::panel::section_label(ui, &row.tier);
+                            ui.label(&row.title).on_hover_text(&row.path);
+                            ui.add(crate::text::dim(&row.id));
+                            if !row.shadows.is_empty() {
+                                ui.add(crate::text::dim(own("macros-shadows")))
+                                    .on_hover_text(&row.shadows);
+                            }
+                            ui.horizontal(|ui| {
+                                if ui
+                                    .add_enabled(
+                                        !data.running,
+                                        PushButton::primary(own("macros-run")),
+                                    )
+                                    .clicked()
+                                {
+                                    actions.push(Action::Run(index));
+                                }
+                                if ui
+                                    .add_enabled(
+                                        !data.busy,
+                                        PushButton::secondary(own("macros-edit")),
+                                    )
+                                    .clicked()
+                                {
+                                    actions.push(Action::Edit(index));
+                                }
+                            });
                         });
-                    });
-                }
-                for diagnostic in &data.diagnostics { ui.label(diagnostic); }
-            });
-            if !data.status.is_empty() { ui.label(&data.status); }
-            if data.running && ui.add(PushButton::secondary(own("macros-stop"))).clicked() { actions.push(Action::Stop); }
-            if data.dropped { ui.add(crate::text::dim(own("macros-output-dropped"))); }
-            if !data.output.is_empty() {
-                egui::ScrollArea::both().id_salt("macro-output").max_height(max_height / 3.0).stick_to_bottom(true).show(ui, |ui| {
-                    ui.add(egui::Label::new(egui::RichText::new(&data.output).monospace()).selectable(true));
+                    }
+                    for diagnostic in &data.diagnostics {
+                        ui.label(diagnostic);
+                    }
                 });
+            if !data.status.is_empty() {
+                ui.label(&data.status);
+            }
+            if data.running && ui.add(PushButton::secondary(own("macros-stop"))).clicked() {
+                actions.push(Action::Stop);
+            }
+            if data.dropped {
+                ui.add(crate::text::dim(own("macros-output-dropped")));
+            }
+            if !data.output.is_empty() {
+                egui::ScrollArea::both()
+                    .id_salt("macro-output")
+                    .max_height(max_height / 3.0)
+                    .stick_to_bottom(true)
+                    .show(ui, |ui| {
+                        ui.add(
+                            egui::Label::new(egui::RichText::new(&data.output).monospace())
+                                .selectable(true),
+                        );
+                    });
             }
         });
     if shown.chosen.is_some() || shown.dismissed {

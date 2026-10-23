@@ -722,7 +722,9 @@ impl Shell {
             }
         }
         if toolkit::macros::show_app(&ctx, "term", self.app.macros_open) {
-            let _ = self.commands.execute("help.macros", &mut self.app, Origin::Ui);
+            let _ = self
+                .commands
+                .execute("help.macros", &mut self.app, Origin::Ui);
         }
         if self.app.keys_dialog && view::keys_dialog(&ctx, &self.commands, &self.strings) {
             self.app.keys_dialog = false;
