@@ -124,7 +124,7 @@ async fn refused_require_stays_retryable_once_corrected() {
 }
 
 #[tokio::test]
-async fn serve_extension_name_is_not_refused() {
+async fn extension_name_is_not_reserved() {
     // `context` is a mix-shell extension, not a builtin: a plain evaluator
     // has no such extension, and a module's exported `context` stays
     // reachable as $m.context(). Lint warns (MIX-W2313); the runtime allows.
