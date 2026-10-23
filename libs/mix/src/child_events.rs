@@ -19,6 +19,21 @@ mod linux {
         thread,
     };
 
+    /// Called only while the leader is unreaped, pinning its PID/group.
+    fn open_pidfd(pid: i32) -> std::io::Result<OwnedFd> {
+        let fd = unsafe { libc::syscall(libc::SYS_pidfd_open, pid, 0) as i32 };
+        if fd < 0 { Err(std::io::Error::last_os_error()) }
+        else { Ok(unsafe { OwnedFd::from_raw_fd(fd) }) }
+    }
+
+    fn signal_group(pid: i32, signal: i32) {
+        unsafe { libc::kill(-pid, signal); }
+    }
+
+    fn signal_leader(pidfd: &OwnedFd, signal: i32) -> bool {
+        unsafe { libc::syscall(libc::SYS_pidfd_send_signal, pidfd.as_raw_fd(), signal, std::ptr::null::<libc::siginfo_t>(), 0) == 0 }
+    }
+
     /// The same generation-owned, sole-reaper model as ChildWatch, with
     /// stdout/stderr and cancellation in one poll set. No evaluator values
     /// or runtime handles cross the worker boundary.
@@ -77,9 +92,7 @@ mod linux {
             let mut child = command.spawn().map_err(|e| refusal("PROCESS_SPAWN", e.to_string()))?;
             let pid = child.id() as i32;
             let setup = (|| -> std::io::Result<_> {
-                let fd = unsafe { libc::syscall(libc::SYS_pidfd_open, pid, 0) as i32 };
-                if fd < 0 { return Err(std::io::Error::last_os_error()); }
-                let pidfd = unsafe { OwnedFd::from_raw_fd(fd) };
+                let pidfd = open_pidfd(pid)?;
                 let (cancel, wake) = UnixStream::pair()?;
                 let mut pipes = vec![Pipe::new(child.stdout.take().unwrap().into(), "stdout")?];
                 if let Some(stderr) = child.stderr.take() { pipes.push(Pipe::new(stderr.into(), "stderr")?); }
@@ -88,7 +101,7 @@ mod linux {
             let (pidfd, cancel, wake, mut pipes) = match setup {
                 Ok(v) => v,
                 Err(e) => {
-                    unsafe { libc::kill(-pid, libc::SIGKILL); }
+                    signal_group(pid, libc::SIGKILL);
                     let _ = child.kill(); let _ = child.wait();
                     return Err(refusal("PROC_MONITOR", e.to_string()));
                 }
@@ -114,20 +127,18 @@ mod linux {
                         cancelled = true;
                         // Keep the leader unreaped during grace: its PID pins
                         // the group, even when it exits immediately on TERM.
-                        unsafe {
-                            libc::kill(-pid, libc::SIGTERM);
-                            libc::syscall(libc::SYS_pidfd_send_signal, pidfd.as_raw_fd(), libc::SIGTERM, std::ptr::null::<libc::siginfo_t>(), 0);
-                            libc::poll(std::ptr::null_mut(), 0, 150);
-                            libc::kill(-pid, libc::SIGKILL);
-                            libc::syscall(libc::SYS_pidfd_send_signal, pidfd.as_raw_fd(), libc::SIGKILL, std::ptr::null::<libc::siginfo_t>(), 0);
-                        }
+                        signal_group(pid, libc::SIGTERM);
+                        signal_leader(&pidfd, libc::SIGTERM);
+                        unsafe { libc::poll(std::ptr::null_mut(), 0, 150); }
+                        signal_group(pid, libc::SIGKILL);
+                        signal_leader(&pidfd, libc::SIGKILL);
                         break;
                     }
                     if fds[0].revents != 0 {
                         exited = true;
                         // As for managed spawn, descendants cannot outlive
                         // the leader. This also releases inherited pipe ends.
-                        unsafe { libc::kill(-pid, libc::SIGKILL); }
+                        signal_group(pid, libc::SIGKILL);
                     }
                     for (pipe, fd) in pipes.iter_mut().zip(&fds[2..]) {
                         if fd.revents != 0 { pipe.read(&queue, &handle, max_line); }
@@ -148,7 +159,7 @@ mod linux {
                 Ok(worker) => Ok(Self { cancel, completed, worker: Some(worker) }),
                 Err(e) => {
                     if let Some(mut child) = slot.lock().unwrap().take() {
-                        unsafe { libc::kill(-pid, libc::SIGKILL); }
+                        signal_group(pid, libc::SIGKILL);
                         let _ = child.kill(); let _ = child.wait();
                     }
                     crate::builtins::unregister_managed_pid(pid);
@@ -178,17 +189,17 @@ mod linux {
         pub fn new(mut child: Child, tag: String, queue: Arc<Queue>) -> MixResult<Self> {
             let pid = child.id() as i32;
             // The child is unreaped, so its PID cannot be reused before pidfd_open.
-            let fd = unsafe { libc::syscall(libc::SYS_pidfd_open, pid, 0) as i32 };
-            if fd < 0 {
-                let error = std::io::Error::last_os_error();
+            let pidfd = match open_pidfd(pid) {
+                Ok(fd) => Arc::new(fd),
+                Err(error) => {
                 let _ = child.kill();
                 let _ = child.wait();
                 return Err(refusal(
                     "PROC_UNSUPPORTED",
                     format!("managed spawn requires pidfd: {error}"),
                 ));
-            }
-            let pidfd = Arc::new(unsafe { OwnedFd::from_raw_fd(fd) });
+                }
+            };
             let (cancel, wake) = match UnixStream::pair() {
                 Ok(pair) => pair,
                 Err(e) => {
@@ -219,15 +230,12 @@ mod linux {
                 };
                 // End remaining descendants before reaping the leader, even on
                 // a natural exit. The unreaped PID pins the process-group identity.
-                unsafe { libc::kill(-pid, libc::SIGKILL); }
+                signal_group(pid, libc::SIGKILL);
                 // The leader may have left its original process group. Signal
                 // its retained identity too before the blocking reap; a group
                 // kill alone cannot bound cancellation by the child's death.
                 if cancelled {
-                    unsafe {
-                        libc::syscall(libc::SYS_pidfd_send_signal, worker_fd.as_raw_fd(),
-                            libc::SIGKILL, std::ptr::null::<libc::siginfo_t>(), 0);
-                    }
+                    signal_leader(&worker_fd, libc::SIGKILL);
                 }
                 let result = child.wait();
                 crate::builtins::unregister_managed_pid(pid);
@@ -271,15 +279,7 @@ mod linux {
         }
 
         pub fn signal(&self, signal: i32) -> bool {
-            unsafe {
-                libc::syscall(
-                    libc::SYS_pidfd_send_signal,
-                    self.pidfd.as_raw_fd(),
-                    signal,
-                    std::ptr::null::<libc::siginfo_t>(),
-                    0,
-                ) == 0
-            }
+            signal_leader(&self.pidfd, signal)
         }
     }
 

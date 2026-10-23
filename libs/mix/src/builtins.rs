@@ -6641,7 +6641,7 @@ pub(crate) fn process_watch_command(args: &[Value]) -> MixResult<(std::process::
             }
         }
     }
-    let opts = parse_run_argv_opts(caller, Some(&Value::Map(common)))?;
+    let opts = parse_run_argv_opts(caller, Some(&Value::Map(common.into())))?;
     let mut command = std::process::Command::new(&argv[0]);
     command.args(&argv[1..]);
     if let Some(cwd) = opts.cwd { command.current_dir(cwd); }

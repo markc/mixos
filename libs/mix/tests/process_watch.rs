@@ -22,6 +22,7 @@ async fn watcher() -> Evaluator {
             $lines = concat($lines, [$event.args])
         end
         on proc.watch_exited
+            $last_line_count = len($lines)
             $exits = concat($exits, [$event.args])
         end
     "#).await.unwrap();
@@ -35,6 +36,7 @@ async fn ordered_lines_then_exactly_one_terminal_in_plain_script() {
     pump(&mut e).await;
     let Value::List(lines) = e.get_global("lines").unwrap() else { panic!() };
     assert_eq!(lines.len(), 20);
+    assert_eq!(e.get_global("last_line_count").unwrap(), Value::Number(20.0));
     for (n, line) in lines.iter().enumerate() {
         let Value::Map(m) = line else { panic!() };
         assert_eq!(m["line"], Value::String((n + 1).to_string()));
@@ -55,9 +57,13 @@ async fn truncates_and_flushes_unterminated_line() {
     let mut e = watcher().await;
     exec(&mut e, r#"$h = process_watch(["printf", "abcdef\nxyz"], {max_line: 3})"#).await.unwrap();
     pump(&mut e).await;
-    let text = e.get_global("lines").unwrap().to_mix_string();
-    assert!(text.contains("line: abc, truncated: true"), "{text}");
-    assert!(text.contains("line: xyz, truncated: false"), "{text}");
+    let Value::List(lines) = e.get_global("lines").unwrap() else { panic!() };
+    assert_eq!(lines.len(), 2);
+    for (line, (text, truncated)) in lines.iter().zip([("abc", true), ("xyz", false)]) {
+        let Value::Map(m) = line else { panic!() };
+        assert_eq!(m["line"], Value::String(text.into()));
+        assert_eq!(m["truncated"], Value::Bool(truncated));
+    }
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -75,6 +81,21 @@ async fn stderr_modes_and_shared_environment_validation() {
             assert_eq!(m["stream"], Value::String("stderr".into()));
         }
     }
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn cwd_and_environment_reach_direct_child() {
+    let mut e = watcher().await;
+    exec(&mut e, r#"$h = process_watch(["/usr/bin/printenv", "MIX_WATCH_TEST"], {clear_env: true, env: {MIX_WATCH_TEST: 42, REMOVE_ME: nil}})"#).await.unwrap();
+    pump(&mut e).await;
+    let Value::List(lines) = e.get_global("lines").unwrap() else { panic!() };
+    let Value::Map(line) = &lines[0] else { panic!() };
+    assert_eq!(line["line"], Value::String("42".into()));
+    exec(&mut e, r#"$lines = []; $h = process_watch(["/usr/bin/pwd"], {cwd: "/tmp"})"#).await.unwrap();
+    pump(&mut e).await;
+    let Value::List(lines) = e.get_global("lines").unwrap() else { panic!() };
+    let Value::Map(line) = &lines[0] else { panic!() };
+    assert_eq!(line["line"], Value::String("/tmp".into()));
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -117,4 +138,48 @@ async fn reload_candidate_and_bad_options_never_start_children() {
         r#"process_watch(["true"], {env: {"bad=name": "x"}})"#,
         r#"process_watch(["true"], {detach: true})"#,
     ] { assert!(exec(&mut e, source).await.is_err(), "{source}"); }
+}
+
+struct Bus {
+    rx: tokio::sync::Mutex<tokio::sync::mpsc::UnboundedReceiver<mix::evaluator::IncomingEvent>>,
+    ready: tokio::sync::Notify,
+}
+impl mix::evaluator::BusHandler for Bus {
+    fn send<'a>(&'a self, _: &'a str, _: &'a str, _: &'a Value) -> mix::evaluator::BusFuture<'a, MixResult<(i32, Value)>> {
+        Box::pin(async { Ok((0, Value::Nil)) })
+    }
+    fn emit<'a>(&'a self, _: &'a str, _: &'a str, _: &'a Value) -> mix::evaluator::BusFuture<'a, MixResult<()>> {
+        Box::pin(async { self.ready.notify_one(); Ok(()) })
+    }
+    fn port_exists<'a>(&'a self, _: &'a str) -> mix::evaluator::BusFuture<'a, MixResult<bool>> {
+        Box::pin(async { Ok(true) })
+    }
+    fn next_incoming<'a>(&'a self) -> mix::evaluator::BusFuture<'a, Option<mix::evaluator::IncomingEvent>> {
+        Box::pin(async { self.ready.notified().await; self.rx.lock().await.recv().await })
+    }
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn bus_ping_is_dispatched_while_a_child_remains_alive() {
+    let mut e = watcher().await;
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+    e.set_bus_handler(std::rc::Rc::new(Bus { rx: tokio::sync::Mutex::new(rx), ready: tokio::sync::Notify::new() }));
+    // The inbound ping becomes ready only after a line handler emits.
+    exec(&mut e, r#"
+        on proc.line
+            $lines = concat($lines, [$event.args])
+            emit probe ready
+        end
+        on ping
+            $pong = true
+            quit()
+        end
+        $h = process_watch(["yes", "streaming"])
+    "#).await.unwrap();
+    tx.send(mix::evaluator::IncomingEvent { generation: 0, command: "ping".into(), body: "{}".into(), headers: Default::default() }).unwrap();
+    pump(&mut e).await;
+    assert_eq!(e.get_global("pong"), Some(Value::Bool(true)));
+    assert_ne!(exec(&mut e, "len($lines)").await.unwrap(), Value::Number(0.0));
+    assert_eq!(exec(&mut e, "len($exits)").await.unwrap(), Value::Number(0.0));
+    e.close_native_events();
 }
