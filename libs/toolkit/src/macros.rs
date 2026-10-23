@@ -462,12 +462,14 @@ impl State {
             self.retained = Some(finished);
             self.editor_open = true;
         }
-        ctx.data_mut(|d| {
-            d.insert_temp(
-                crate::window_id(viewport, "macro-busy"),
-                self.engine.runner_status() == Status::Running,
-            )
+        let busy = self.engine.runner_status() == Status::Running;
+        let changed = ctx.data_mut(|d| {
+            let id = crate::window_id(viewport, "macro-busy");
+            let changed = d.get_temp::<bool>(id).unwrap_or(false) != busy;
+            d.insert_temp(id, busy);
+            changed
         });
+        if changed { ctx.request_repaint(); }
         if self.open && !self.loaded && self.pending.is_none() {
             self.reload();
         }
@@ -1123,7 +1125,8 @@ fn launch(path: &Path, folder: bool) -> io::Result<()> {
 }
 
 pub fn show_app(ctx: &egui::Context, app: &str, open: bool) -> bool {
-    let Some(state) = window_state(ctx, app, open) else {
+    // Even an unopened menu observes Bus runs and displays the busy dot.
+    let Some(state) = window_state(ctx, app, true) else {
         return false;
     };
     let mut state = state.lock().unwrap();
