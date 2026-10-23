@@ -64,6 +64,16 @@ async fn truncates_and_flushes_unterminated_line() {
         assert_eq!(m["line"], Value::String(text.into()));
         assert_eq!(m["truncated"], Value::Bool(truncated));
     }
+    e.set_global("long_line", Value::String("x".repeat(70000) + "\nnext\n"));
+    exec(&mut e, r#"$lines = []; $h = process_watch(["printf", $long_line])"#).await.unwrap();
+    pump(&mut e).await;
+    let Value::List(lines) = e.get_global("lines").unwrap() else { panic!() };
+    assert_eq!(lines.len(), 2);
+    let Value::Map(line) = &lines[0] else { panic!() };
+    assert_eq!(line["line"].to_mix_string().len(), 65536);
+    assert_eq!(line["truncated"], Value::Bool(true));
+    let Value::Map(line) = &lines[1] else { panic!() };
+    assert_eq!(line["line"], Value::String("next".into()));
 }
 
 #[tokio::test(flavor = "current_thread")]

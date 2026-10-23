@@ -2232,7 +2232,7 @@ weakened by these changes. Binary frames in event bodies are hex-encoded
 <code>hostname</code> / <code>cwd</code> / <code>platform</code> / <code>which</code> / <code>net_watch</code> / <code>net_unwatch</code> /
 <code>net_state</code> are <strong>Env</strong> (read-only inspection);
 <code>run</code> / <code>run_rc</code> / <code>run_stream</code> / <code>spawn</code> / <code>kill</code> / <code>process_alive</code> / <code>chdir</code> /
-<code>audio_watch</code> / <code>audio_unwatch</code> / <code>audio_state</code> / <code>exit</code> (and <code>panic</code> — see <a href="/mix/errors/">errors</a>) are <strong>Process</strong> (they touch the
+<code>process_watch</code> / <code>process_unwatch</code> / <code>audio_watch</code> / <code>audio_unwatch</code> / <code>audio_state</code> / <code>exit</code> (and <code>panic</code> — see <a href="/mix/errors/">errors</a>) are <strong>Process</strong> (they touch the
 OS process table or filesystem CWD); <code>shell_quote</code> / <code>sql_quote</code> / <code>sanitize</code> /
 <code>random_password</code> / <code>uuid</code> / hashes / <code>base64_*</code> are <strong>Pure</strong>. An embedding
 daemon can deny the Process class to run untrusted Mix without it spawning

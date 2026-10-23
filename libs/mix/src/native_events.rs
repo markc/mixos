@@ -123,8 +123,8 @@ struct Pending {
     closed: bool,
     last_watch: Option<String>,
     last_source: Option<String>,
-    /// Round-robin over filesystem (0), child (1), net/audio (2) and
-    /// socket (3) records.
+    /// Round-robin over filesystem (0), child (1), net/audio (2),
+    /// socket (3) and process-line (4) records.
     turn: usize,
 }
 
