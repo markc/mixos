@@ -20,6 +20,9 @@
 -- compd's scene host; the scene tests on the build hosts check them.
 --
 -- This runs on the last released mix in CI, so it uses only released Mix.
+-- Nothing here may compile: tools/smithay_guards.mix runs `cargo test` on
+-- the vendored smithay crate, so it belongs to the full gate on the build
+-- hosts, not to this tier.
 $root = dirname(dirname(realpath($0)))
 $mix = realpath("/proc/self/exe")
 $only = args()
@@ -37,7 +40,6 @@ $checks = [
     "--layers", "apps/layers.conf.mix", "--across-components", "--require", "--locked"]},
   {name: "verb-registry", argv: ["tools/verb_registry.mix"]},
   {name: "webd", argv: ["tools/webd_lint.mix"]},
-  {name: "smithay-guards", argv: ["tools/smithay_guards.mix"]},
   {name: "component-index", argv: ["tools/component_index.mix", "--check"]},
   {name: "units", argv: ["tools/unit_gate.mix"]},
   {name: "style", argv: ["tools/style_gate.mix", "--toolkit"]},

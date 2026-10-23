@@ -257,8 +257,9 @@ the working week starts on a known-good release. Changes merged between
 releases are not release candidates and do not run the full gate.</p>
 <p>Every push runs the <strong>lint tier</strong> instead (<code>tools/lint.mix</code>, workflow
 <code>lint</code>, amended 2026-10-23). It runs <code>rustfmt --check</code>, a syntax or data
-check of every Mix file, and the repository's own gates: closure, layering,
-verb registry, units, style, component index and site. It compiles no Rust
+check of every Mix file, and the repository's own gates that need no
+compile: closure, layering, verb registry, webd, units, style, component
+index and site. It compiles no Rust
 and runs no tests. Its runner uses the <code>mix</code> binary from the latest
 published release, verified against that release's <code>SHA256SUMS.txt</code>.</p>
 <p><code>mixos-desktop</code> and <code>mixos-server</code> have separate package membership and

@@ -33,9 +33,10 @@ jobs:
       - name: Install Rust
         run: rustup toolchain install --profile minimal --component rustfmt
 
-      # Workspace members only: vendor/ keeps its upstream formatting.
+      # Workspace members only: vendor/ keeps its upstream formatting, which
+      # is why this is not `cargo fmt --all` (that reaches path dependencies).
       - name: Format
-        run: cargo fmt --all --check
+        run: cargo fmt --check
 
       # Mix runs every other check. It is not on the runner, so take the
       # binary from the latest published release and check the archive
@@ -64,9 +65,10 @@ jobs:
           member="${archive%.tar.gz}/bin/mix"
           tar -xzf "$dir/$archive" -C "$dir" "$member"
           [ -f "$dir/$member" ] && [ ! -L "$dir/$member" ]
-          install -D -m 0755 "$dir/$member" "$RUNNER_TEMP/bin/mix"
-          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
-          "$RUNNER_TEMP/bin/mix" --version
+          # Some tools name /opt/mixos/bin/mix directly (AGENTS.md §3.4).
+          sudo install -D -m 0755 "$dir/$member" /opt/mixos/bin/mix
+          echo "/opt/mixos/bin" >> "$GITHUB_PATH"
+          /opt/mixos/bin/mix --version
 
       - name: Lint
         if: ${{ !cancelled() && steps.fetch-mix.outcome == 'success' }}
