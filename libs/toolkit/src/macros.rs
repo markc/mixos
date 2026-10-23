@@ -230,10 +230,7 @@ impl State {
         // the previous terminal run before Runner resets its output buffer.
         self.finish_run(ctx);
         self.run_message = None;
-        match self
-            .engine
-            .run(&entry.id, &format!("gui:{}", self.window))
-        {
+        match self.engine.run(&entry.id, &format!("gui:{}", self.window)) {
             Ok(_) => self.retained = None,
             Err(error) => {
                 self.run_message = Some(error.to_string());
@@ -473,7 +470,9 @@ impl State {
             d.insert_temp(id, busy);
             changed
         });
-        if changed { ctx.request_repaint(); }
+        if changed {
+            ctx.request_repaint();
+        }
         if self.open && !self.loaded && self.pending.is_none() {
             self.reload();
         }
@@ -922,9 +921,7 @@ impl State {
     fn sync_catalogue(&mut self, catalogue: Catalogue, ctx: &egui::Context) {
         // Cached keyboard picks refer to the old row-to-file mapping. Closing
         // invalidates both the highlight and any already queued activation.
-        if !self.catalogue.entries.is_empty()
-            && self.catalogue.entries != catalogue.entries
-        {
+        if !self.catalogue.entries.is_empty() && self.catalogue.entries != catalogue.entries {
             menu::dismiss_anchored(ctx);
             if self.title.is_none() {
                 self.open = false;
@@ -936,8 +933,7 @@ impl State {
 
 impl Drop for State {
     fn drop(&mut self) {
-        if self.engine.status()["origin"].as_str()
-            == Some(format!("gui:{}", self.window).as_str())
+        if self.engine.status()["origin"].as_str() == Some(format!("gui:{}", self.window).as_str())
         {
             self.engine.stop();
         }
@@ -1272,10 +1268,7 @@ mod tests {
         assert!(!state.document.as_ref().unwrap().is_dirty());
         state.engine.stop();
         wait_until(|| state.engine.runner_status() != Status::Running);
-        assert!(matches!(
-            state.engine.runner_status(),
-            Status::Exited(_)
-        ));
+        assert!(matches!(state.engine.runner_status(), Status::Exited(_)));
     }
 
     #[cfg(unix)]
@@ -1291,10 +1284,7 @@ mod tests {
             status: "Earlier run done".into(),
         });
         assert_eq!(state.running_title().unwrap(), "Wait");
-        assert_eq!(
-            state.displayed_output(),
-            state.engine.runner_output().text
-        );
+        assert_eq!(state.displayed_output(), state.engine.runner_output().text);
         assert_ne!(state.displayed_output(), "earlier output");
         state.engine.stop();
         wait_until(|| state.engine.runner_status() != Status::Running);
@@ -2284,19 +2274,21 @@ mod tests {
         {
             let state = runtime(&h);
             let state = state.lock().unwrap();
-            state
-                .engine
-                .replace_catalogue(state.catalogue.clone());
+            state.engine.replace_catalogue(state.catalogue.clone());
         }
         h.get_by_label("Macros").click();
         h.run_steps(5);
         h.event(egui::Event::Text("a".into()));
         h.run_steps(1);
         let (tx, rx) = mpsc::channel();
-        runtime(&h).lock().unwrap().engine.replace_catalogue(Catalogue {
-            entries: vec![entry("before"), entry("alpha")],
-            diagnostics: vec![],
-        });
+        runtime(&h)
+            .lock()
+            .unwrap()
+            .engine
+            .replace_catalogue(Catalogue {
+                entries: vec![entry("before"), entry("alpha")],
+                diagnostics: vec![],
+            });
         assert!(
             tx.send(Ok((
                 Catalogue {

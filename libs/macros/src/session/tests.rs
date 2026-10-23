@@ -162,7 +162,8 @@ fn new_creates_in_the_user_app_tier_and_refreshes_list() {
         "XDG_CONFIG_HOME" => Some(dir.path().join("xdg")),
         "MIXOS_SHARE" => Some(dir.path().join("share")),
         _ => None,
-    }).unwrap();
+    })
+    .unwrap();
     let session = Session::with_roots("fixture", Some(roots.clone()));
     let reply = verbs::handle(&session, "new", &json!({"title":"Tidy imports"}));
     assert!(matches!(reply, Reply::Deferred(_)));
@@ -228,7 +229,9 @@ fn subscribers_receive_once_in_order_outside_the_lock_and_can_be_removed() {
 #[test]
 fn a_run_started_by_a_subscriber_finishes_after_the_previous_delivery() {
     let (_dir, roots, session) = fixture();
-    roots.create("fixture", crate::Tier::UserApp, "test", "Test").unwrap();
+    roots
+        .create("fixture", crate::Tier::UserApp, "test", "Test")
+        .unwrap();
     session.reload().unwrap();
     let next = session.clone();
     let (tx, rx) = mpsc::channel();
@@ -244,7 +247,9 @@ fn a_run_started_by_a_subscriber_finishes_after_the_previous_delivery() {
         tx.send((body["run"].as_u64().unwrap(), 2)).unwrap();
     }));
     session.run("test", "bus").unwrap();
-    let events = (0..4).map(|_| rx.recv_timeout(Duration::from_secs(10)).unwrap()).collect::<Vec<_>>();
+    let events = (0..4)
+        .map(|_| rx.recv_timeout(Duration::from_secs(10)).unwrap())
+        .collect::<Vec<_>>();
     assert_eq!(events, vec![(1, 1), (1, 2), (2, 1), (2, 2)]);
     session.remove_finish_hook(first);
     session.remove_finish_hook(second);
