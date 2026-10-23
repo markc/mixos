@@ -242,6 +242,23 @@
 <h2 id="unreleased--2026-10-23">Unreleased — 2026-10-23</h2>
 <ul>
 <li>
+<p>Save macro editor snapshots independently of discovery, keep the document
+visible during writes, and save dirty edits before closing the editor.</p>
+</li>
+<li>
+<p>Wake idle macro windows only for live work or native Bus deliveries.</p>
+</li>
+<li>
+<p>Invalidate cached picks on catalogue changes and take title-field keys
+before app content; match menu-bar outside-click dismissal.</p>
+</li>
+<li>
+<p>Withdraw notifications on window close and prioritise live run output.</p>
+</li>
+<li>
+<p>Cover menu/app synchronisation and runner teardown with hermetic fixtures.</p>
+</li>
+<li>
 <p>Use one lazy native Bus client and <code>notify.changed</code> subscription per
 process, with bounded output retention and repaint-driven deliveries.</p>
 </li>

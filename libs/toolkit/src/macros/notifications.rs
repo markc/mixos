@@ -90,10 +90,16 @@ fn fallback(message: Message) {
 #[derive(Default)]
 struct Inbox {
     records: VecDeque<Record>,
+    outstanding: BTreeMap<u64, (u64, Weak<()>, Instant)>,
+    withdrawals: VecDeque<(u64, Instant)>,
 }
 
 impl Inbox {
     fn insert(&mut self, record: Record) {
+        while self.outstanding.values().filter(|(window, _, _)| *window == record.window).count() >= PER_WINDOW {
+            let id = *self.outstanding.iter().find(|(_, (window, _, _))| *window == record.window).unwrap().0;
+            self.withdraw(id);
+        }
         while self.records.iter().filter(|r| r.window == record.window).count() >= PER_WINDOW {
             let index = self.records.iter().position(|r| r.window == record.window).unwrap();
             self.records.remove(index);
@@ -103,7 +109,10 @@ impl Inbox {
 
     fn sent(&mut self, result: Option<u64>) {
         if let Some(id) = result {
-            if let Some(record) = self.records.back_mut() { record.notification = Some(id); }
+            if let Some(record) = self.records.back_mut() {
+                record.notification = Some(id);
+                self.outstanding.insert(id, (record.window, record.recipient.alive.clone(), record.expires));
+            }
         } else if let Some(record) = self.records.pop_back() {
             record.recipient.deliver(record.finished);
         }
@@ -112,6 +121,7 @@ impl Inbox {
     fn outcome(&mut self, body: &serde_json::Value) {
         let Some(id) = body["id"].as_u64() else { return };
         if body["outcome"].is_null() { return; }
+        self.outstanding.remove(&id);
         if let Some(index) = self.records.iter().position(|r| r.notification == Some(id)) {
             let record = self.records.remove(index).unwrap();
             if record.expires > Instant::now()
@@ -121,12 +131,26 @@ impl Inbox {
         }
     }
 
-    fn closed(&mut self, window: u64) { self.records.retain(|r| r.window != window); }
+    fn withdraw(&mut self, id: u64) {
+        if let Some((_, _, expires)) = self.outstanding.remove(&id) { self.withdrawals.push_back((id, expires)); }
+        self.records.retain(|r| r.notification != Some(id));
+    }
+    fn closed(&mut self, window: u64) {
+        let ids: Vec<_> = self.outstanding.iter().filter(|(_, (owner, _, _))| *owner == window).map(|(&id, _)| id).collect();
+        for id in ids { self.withdraw(id); }
+        self.records.retain(|r| r.window != window);
+    }
     fn bus_error(&mut self) { self.records.retain(|r| r.notification.is_none()); }
     fn prune(&mut self, now: Instant) {
         self.records.retain(|r| r.expires > now && r.recipient.alive.upgrade().is_some());
+        let ids: Vec<_> = self.outstanding.iter().filter(|(_, (_, alive, expires))| *expires <= now || alive.upgrade().is_none()).map(|(&id, _)| id).collect();
+        for id in ids { self.withdraw(id); }
+        self.withdrawals.retain(|(_, expires)| *expires > now);
     }
-    fn next_expiry(&self) -> Option<Instant> { self.records.iter().map(|r| r.expires).min() }
+    fn next_expiry(&self) -> Option<Instant> {
+        self.records.iter().map(|r| r.expires).chain(self.outstanding.values().map(|(_, _, expiry)| *expiry))
+            .chain(self.withdrawals.iter().map(|(_, expiry)| *expiry)).min()
+    }
 }
 
 struct Native {
@@ -155,6 +179,15 @@ async fn worker(mut rx: tokio::sync::mpsc::Receiver<Message>) {
     let mut inbox = Inbox::default();
     loop {
         inbox.prune(Instant::now());
+        if let Some(native) = &native && native.client.is_connected()
+            && let Some((id, _)) = inbox.withdrawals.pop_front() {
+            // Best effort with a deadline; already-settled notifications may
+            // refuse the close. There is no UI fallback for a withdrawal.
+            let _ = tokio::time::timeout(SEND_BUDGET, native.client.call_with_headers_raw(
+                "notify", "notify.close", &BTreeMap::new(), &serde_json::json!({"id": id}).to_string()
+            )).await;
+            continue;
+        }
         let expires = inbox.next_expiry();
         let (incoming, state) = match native.as_mut() {
             Some(n) => (Some(&mut n.incoming), Some(&mut n.state)),
@@ -293,6 +326,8 @@ mod tests {
         inbox.bus_error();
         assert!(inbox.records.is_empty());
         assert!(state.notifications.try_recv().is_err());
+        inbox.closed(state.window);
+        assert_eq!(inbox.withdrawals.front().map(|(id, _)| *id), Some(42));
         let mut out = ctx.run_ui(egui::RawInput::default(), |_| state.show(&ctx));
         out.textures_delta.clear();
         assert!(!state.editor_open);
@@ -310,8 +345,12 @@ mod tests {
         inbox.closed(first.window);
         assert_eq!(inbox.records.len(), 1);
         assert_eq!(inbox.records[0].window, second.window);
+        assert_eq!(inbox.withdrawals.iter().map(|(id, _)| *id).collect::<Vec<_>>(), (0..20).collect::<Vec<_>>());
+        assert!(inbox.outstanding.contains_key(&30));
         drop(second);
         inbox.prune(Instant::now());
         assert!(inbox.records.is_empty());
+        assert!(inbox.outstanding.is_empty());
+        assert_eq!(inbox.withdrawals.back().map(|(id, _)| *id), Some(30));
     }
 }

@@ -3,6 +3,14 @@
 
 ## Unreleased — 2026-10-23
 
+- Save macro editor snapshots independently of discovery, keep the document
+  visible during writes, and save dirty edits before closing the editor.
+- Wake idle macro windows only for live work or native Bus deliveries.
+- Invalidate cached picks on catalogue changes and take title-field keys
+  before app content; match menu-bar outside-click dismissal.
+- Withdraw notifications on window close and prioritise live run output.
+- Cover menu/app synchronisation and runner teardown with hermetic fixtures.
+
 - Use one lazy native Bus client and `notify.changed` subscription per
   process, with bounded output retention and repaint-driven deliveries.
 - Dim macro rows during a run; Ctrl+Enter still saves and reports an active run.

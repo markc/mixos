@@ -539,12 +539,77 @@ struct AnchoredInput {
     result: Option<Pick>,
     handled: bool,
     keyed: bool,
+    frame: Rect,
+    anchor: Rect,
+}
+
+#[derive(Clone, Default)]
+struct TitleInput {
+    bounds: Option<Rect>,
+    enter: bool,
+    close: bool,
+}
+
+/// Like the bar, dismiss on an outside press and leave the pointer event
+/// available to the underlying control. This is deliberately not a modal.
+fn outside_press(ctx: &Context, inside: impl Fn(Pos2) -> bool) -> bool {
+    ctx.input(|i| i.pointer.primary_pressed()
+        && i.pointer.interact_pos().is_some_and(|pos| !inside(pos)))
+}
+
+pub(crate) fn open_title(ctx: &Context) {
+    let id = crate::window_id(ctx.viewport_id(), "toolkit.anchored-title");
+    ctx.data_mut(|d| d.insert_temp(id, TitleInput::default()));
+}
+
+pub(crate) fn title_bounds(ctx: &Context, bounds: Rect) {
+    let id = crate::window_id(ctx.viewport_id(), "toolkit.anchored-title");
+    let mut state = ctx.data(|d| d.get_temp::<TitleInput>(id)).unwrap_or_default();
+    state.bounds = Some(bounds);
+    ctx.data_mut(|d| d.insert_temp(id, state));
+}
+
+pub(crate) fn close_title(ctx: &Context) {
+    let id = crate::window_id(ctx.viewport_id(), "toolkit.anchored-title");
+    ctx.data_mut(|d| d.remove::<TitleInput>(id));
+}
+
+fn title_keyboard(ctx: &Context) -> bool {
+    let id = crate::window_id(ctx.viewport_id(), "toolkit.anchored-title");
+    let Some(mut state) = ctx.data(|d| d.get_temp::<TitleInput>(id)) else { return false; };
+    state.enter |= ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Enter));
+    state.close |= ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape));
+    state.close |= state.bounds.is_some_and(|bounds| outside_press(ctx, |pos| bounds.contains(pos)));
+    if state.close { anchored_open(ctx, false); }
+    ctx.data_mut(|d| d.insert_temp(id, state));
+    true
+}
+
+pub(crate) fn title_keys(ctx: &Context) -> (bool, bool) {
+    title_keyboard(ctx);
+    let id = crate::window_id(ctx.viewport_id(), "toolkit.anchored-title");
+    let mut state = ctx.data(|d| d.get_temp::<TitleInput>(id)).unwrap_or_default();
+    let keys = (state.enter, state.close);
+    state.enter = false;
+    state.close = false;
+    ctx.data_mut(|d| d.insert_temp(id, state));
+    keys
+}
+
+pub(crate) fn dismiss_anchored(ctx: &Context) {
+    let id = crate::window_id(ctx.viewport_id(), "toolkit.anchored-input");
+    if let Some(cache) = ctx.data(|d| d.get_temp::<AnchoredInput>(id)) {
+        ctx.data_mut(|d| d.remove::<Nav>(cache.id));
+    }
+    ctx.data_mut(|d| d.remove::<AnchoredInput>(id));
+    anchored_open(ctx, false);
 }
 
 /// Called by the title bar before application content gets its keys. The
 /// anchored menu is painted by its owner later, but shares the bar's input
 /// priority. In particular a focused app editor must never eat menu letters.
 pub(crate) fn anchored_keyboard(ctx: &Context) {
+    if title_keyboard(ctx) { return; }
     let viewport = ctx.viewport_id();
     let cache_id = crate::window_id(viewport, "toolkit.anchored-input");
     let Some(mut cache) = ctx.data(|d| d.get_temp::<AnchoredInput>(cache_id)) else {
@@ -556,7 +621,11 @@ pub(crate) fn anchored_keyboard(ctx: &Context) {
     if nav.open_menu().is_none() {
         return;
     }
-    let (result, keyed) = anchored_keys(ctx, &mut nav, &cache.menus);
+    let (result, keyed) = if outside_press(ctx, |p| cache.frame.contains(p) || cache.anchor.contains(p)) {
+        nav.close();
+        (None, false)
+    } else { anchored_keys(ctx, &mut nav, &cache.menus) };
+    anchored_open(ctx, nav.open_menu().is_some());
     cache.result = result;
     cache.keyed = keyed;
     cache.handled = true;
@@ -689,6 +758,7 @@ pub fn anchored(
     nav.validate(&menus);
     let (mut pick, mut keyed) = anchored_keys(&ctx, &mut nav, &menus);
     keyed |= prior.as_ref().is_some_and(|p| p.keyed);
+    let mut frame = Rect::NOTHING;
     if nav.open_menu().is_some() {
         let chrome = Chrome::of(&ctx);
         let layout = Layout::new(ui, &chrome, &menus[0].entries, 0.0);
@@ -716,13 +786,14 @@ pub fn anchored(
             },
             None,
         );
+        frame = shown.frame;
         ctx.data_mut(|d| {
             d.remove::<Vec<(&'static str, String)>>(crate::window_id(viewport, "toolkit.anchored-tooltips"))
         });
         let (outside, released, secondary) = ctx.input(|i| {
             (
                 !opening
-                    && i.pointer.any_pressed()
+                    && i.pointer.primary_pressed()
                     && i.pointer
                         .interact_pos()
                         .is_some_and(|p| !shown.frame.contains(p) && !anchor.contains(p)),
@@ -757,6 +828,8 @@ pub fn anchored(
                 result: None,
                 handled: false,
                 keyed: false,
+                frame,
+                anchor,
             },
         )
     });
@@ -1297,7 +1370,7 @@ pub fn bar_picked(
     if pressed {
         st.inside_press = pointer.is_some_and(inside);
         st.scroll_press = pointer.is_some_and(|p| bars.iter().any(|b| b.contains(p)));
-        if !on_title && !st.inside_press && st.nav.open.is_some() {
+        if !on_title && outside_press(&ctx, inside) && st.nav.open.is_some() {
             st.nav.close();
         }
     }
@@ -2034,6 +2107,8 @@ mod tests {
                     result: None,
                     handled: false,
                     keyed: false,
+                    frame: Rect::NOTHING,
+                    anchor: Rect::NOTHING,
                 },
             );
         });

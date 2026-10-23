@@ -236,6 +236,30 @@ fn a_press_outside_closes_the_menus() {
     assert!(current(&h).is_none());
 }
 
+#[test]
+fn an_outside_press_closes_the_bar_and_reaches_the_underlying_control() {
+    let mut h = Harness::builder().with_size(egui::vec2(800.0, 600.0)).build_ui_state(|ui, clicks: &mut usize| {
+        ui.horizontal(|ui| {
+            let _ = menu::bar(ui, &[Menu { title: "File".into(), entries: vec![Entry::Row(Row::command("test", "Test", None, true))] }]);
+        });
+        egui::CentralPanel::default().show(ui, |ui| {
+            ui.add_space(250.0);
+            if ui.button("Underlying control").clicked() { *clicks += 1; }
+        });
+    }, 0usize);
+    toolkit::install(&h.ctx, &toolkit::Theme::embedded());
+    h.run_steps(5);
+    h.get_by_label("File").click(); h.run_steps(5);
+    let pos = h.get_by_label("Underlying control").rect().center();
+    h.event(Event::PointerMoved(pos));
+    h.event(Event::PointerButton { pos, button: PointerButton::Primary, pressed: true, modifiers: Modifiers::NONE });
+    h.run_steps(1);
+    assert!(!menu::is_open(&h.ctx));
+    h.event(Event::PointerButton { pos, button: PointerButton::Primary, pressed: false, modifiers: Modifiers::NONE });
+    h.run_steps(5);
+    assert_eq!(*h.state(), 1);
+}
+
 /// `keys` pressed within one frame.
 fn burst(h: &mut Harness<'_, Fixture>, keys: &[Key]) {
     for &key in keys {

@@ -593,6 +593,10 @@ impl Shell {
 }
 
 impl eframe::App for Shell {
+    fn on_exit(&mut self) {
+        toolkit::macros::close_app(&self.ctx, "prefs");
+    }
+
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         Shell::logic(self, ctx);
     }

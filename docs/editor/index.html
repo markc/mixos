@@ -280,6 +280,10 @@ through a symbolic link writes the link's target; the link stays a link.
 Edits the buffer refuses (a paste over the 1 MiB request limit) are kept
 for <code>take_refusal</code>. <code>set_contents</code> is a reload: it has no request limit,
 and Undo does not take it back.</p>
+<p>For background saves, call <code>save_snapshot</code>, move the snapshot to a worker
+and call its <code>write</code> method. Return the <code>Saved</code> receipt to <code>complete_save</code> on
+the original document. The document stays visible and editable throughout;
+only a receipt for its current version marks it clean. Later edits stay dirty.</p>
 <h2 id="tests">Tests</h2>
 <p><code>cargo test -p editor</code>: measurement, rows and wrapping, geometry, keys, the
 input-method guard, palettes in every scheme, the local document, and

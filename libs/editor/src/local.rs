@@ -94,6 +94,33 @@ pub struct Document {
     refusal: Option<Error>,
 }
 
+/// Owned file bytes and document version, safe to write on a worker while
+/// the original document remains visible and editable.
+pub struct SaveSnapshot {
+    identity: u64,
+    revision: u64,
+    path: PathBuf,
+    bytes: Vec<u8>,
+}
+
+#[derive(Debug)]
+pub struct Saved {
+    identity: u64,
+    revision: u64,
+    path: PathBuf,
+}
+
+impl SaveSnapshot {
+    pub fn write(self) -> Result<Saved, Error> {
+        let target = match fs::symlink_metadata(&self.path) {
+            Ok(m) if m.file_type().is_symlink() => fs::canonicalize(&self.path)?,
+            _ => self.path.clone(),
+        };
+        write_replacing(&target, &self.bytes)?;
+        Ok(Saved { identity: self.identity, revision: self.revision, path: self.path })
+    }
+}
+
 impl Document {
     /// A new, unsaved document holding `text`, highlighted as `language`
     /// (an edit-service language id such as `markdown`, `rust` or `text`).
@@ -175,6 +202,23 @@ impl Document {
     /// Changed since it was opened or last saved.
     pub fn is_dirty(&self) -> bool {
         self.buffer.is_dirty()
+    }
+
+    pub fn save_snapshot(&self) -> Result<SaveSnapshot, Error> {
+        Ok(SaveSnapshot {
+            identity: self.identity, revision: self.buffer.rev(),
+            path: self.path.clone().ok_or(Error::NoPath)?,
+            bytes: self.buffer.to_bytes(&self.meta),
+        })
+    }
+
+    /// Acknowledge only the version actually written. Edits made during the
+    /// write stay dirty, and a receipt cannot mark another document saved.
+    pub fn complete_save(&mut self, saved: &Saved) -> bool {
+        let current = saved.identity == self.identity && saved.revision == self.buffer.rev()
+            && self.path.as_ref() == Some(&saved.path);
+        if current { self.buffer.mark_saved(); }
+        current
     }
 
     /// The last edit the buffer refused since this was last called (a paste
@@ -604,6 +648,30 @@ mod tests {
             .map(|e| e.unwrap().file_name())
             .collect();
         assert_eq!(names, ["notes.md"], "no temporary file is left");
+    }
+
+    #[test]
+    fn snapshot_save_keeps_the_view_and_does_not_mark_new_edits_clean() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("macro.mix");
+        fs::write(&path, b"\xEF\xBB\xBFone\r\n").unwrap();
+        let mut doc = Document::open(&path).unwrap();
+        typed(&mut doc, "first ");
+        let selection = doc.selection();
+        let snapshot = doc.save_snapshot().unwrap();
+        typed(&mut doc, "second ");
+        let saved = snapshot.write().unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"\xEF\xBB\xBFfirst one\r\n");
+        assert!(!doc.complete_save(&saved));
+        assert!(doc.is_dirty());
+        assert_eq!(doc.contents(), "first second one\r\n");
+        assert!(doc.selection().head > selection.head);
+        let mut other = Document::open(&path).unwrap();
+        assert!(!other.complete_save(&saved));
+        let saved = doc.save_snapshot().unwrap().write().unwrap();
+        assert!(doc.complete_save(&saved));
+        assert!(!doc.is_dirty());
+        assert_eq!(doc.contents(), "first second one\r\n");
     }
 
     #[test]

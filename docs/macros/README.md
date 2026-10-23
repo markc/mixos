@@ -73,6 +73,12 @@ and refreshes the menu catalogue. Ctrl+Enter saves then runs. **Open in Ced**
 hands off larger edits, with `xdg-open` as fallback. Discovery, file storage,
 launchers and notification work run on background threads.
 
+Saving keeps the document visible and editable, even during discovery.
+Closing a dirty editor saves before closing; a failed save keeps the text
+and error visible. Outside clicks dismiss menus with the same click-through
+behaviour as the toolkit menu bar. Catalogue changes close an open macro
+list so a stale highlight cannot select a different file.
+
 Every completed run posts a notifyd toast: title and done or failed status,
 plus the last few output lines. **Show output** opens that run's retained
 output in the editor's bottom strip. The runner retains the last 64 KiB of
@@ -88,6 +94,10 @@ notification outputs, for up to five minutes; answering, dismissing, closing,
 expiry or closing the window releases them. A Bus failure after a successful
 send drops that notification's retained output without opening the editor.
 Each viewport has its own menu, editor and runner state.
+Closing its window also withdraws outstanding notifications with
+`notify.close` and stops its runner; the background manager kills the process
+group before reaping the leader. While another run is live, the output strip
+shows that run; an older notification's output can be viewed when idle.
 
 ## Execution context
 

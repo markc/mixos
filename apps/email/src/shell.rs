@@ -1689,6 +1689,10 @@ async fn connect(login: &Login) -> Result<Client, jmap::Error> {
 }
 
 impl eframe::App for Shell {
+    fn on_exit(&mut self) {
+        toolkit::macros::close_app(&self.ctx, "email");
+    }
+
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         Shell::logic(self, ctx);
     }

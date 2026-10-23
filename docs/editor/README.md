@@ -56,6 +56,11 @@ Edits the buffer refuses (a paste over the 1 MiB request limit) are kept
 for `take_refusal`. `set_contents` is a reload: it has no request limit,
 and Undo does not take it back.
 
+For background saves, call `save_snapshot`, move the snapshot to a worker
+and call its `write` method. Return the `Saved` receipt to `complete_save` on
+the original document. The document stays visible and editable throughout;
+only a receipt for its current version marks it clean. Later edits stay dirty.
+
 ## Tests
 
 `cargo test -p editor`: measurement, rows and wrapping, geometry, keys, the

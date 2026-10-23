@@ -277,19 +277,17 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn dropping_a_runner_requests_termination_and_the_manager_reaps() {
-        let Some(mut roots) = Roots::resolve() else {
-            return;
-        };
-        if !roots.mix.is_file() {
-            eprintln!("skip: real Mix binary absent at {}", roots.mix.display());
-            return;
-        }
+        use std::os::unix::fs::PermissionsExt;
         let temp = tempfile::tempdir().unwrap();
-        roots.home = temp.path().into();
+        let mix = temp.path().join("runner-stub");
+        std::fs::write(&mix, "#!/bin/sh\n# SPDX-License-Identifier: MIT OR Apache-2.0\nexec /bin/sleep 120\n").unwrap();
+        std::fs::set_permissions(&mix, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let roots = Roots { user: temp.path().join("user"), builtin: temp.path().join("builtin"), home: temp.path().into(), mix };
         let path = temp.path().join("drop.mix");
-        std::fs::write(&path, "while true\nsleep(1)\nend\n").unwrap();
+        std::fs::write(&path, "-- title: Drop\n").unwrap();
         let entry = Entry {
             id: "drop".into(),
             title: "Drop".into(),

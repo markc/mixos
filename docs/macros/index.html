@@ -292,6 +292,11 @@ Click its text to edit; the app remains usable alongside it. Ctrl+S saves
 and refreshes the menu catalogue. Ctrl+Enter saves then runs. <strong>Open in Ced</strong>
 hands off larger edits, with <code>xdg-open</code> as fallback. Discovery, file storage,
 launchers and notification work run on background threads.</p>
+<p>Saving keeps the document visible and editable, even during discovery.
+Closing a dirty editor saves before closing; a failed save keeps the text
+and error visible. Outside clicks dismiss menus with the same click-through
+behaviour as the toolkit menu bar. Catalogue changes close an open macro
+list so a stale highlight cannot select a different file.</p>
 <p>Every completed run posts a notifyd toast: title and done or failed status,
 plus the last few output lines. <strong>Show output</strong> opens that run's retained
 output in the editor's bottom strip. The runner retains the last 64 KiB of
@@ -305,7 +310,11 @@ a repaint of the originating viewport. Each window retains at most eight
 notification outputs, for up to five minutes; answering, dismissing, closing,
 expiry or closing the window releases them. A Bus failure after a successful
 send drops that notification's retained output without opening the editor.
-Each viewport has its own menu, editor and runner state.</p>
+Each viewport has its own menu, editor and runner state.
+Closing its window also withdraws outstanding notifications with
+<code>notify.close</code> and stops its runner; the background manager kills the process
+group before reaping the leader. While another run is live, the output strip
+shows that run; an older notification's output can be viewed when idle.</p>
 <h2 id="execution-context">Execution context</h2>
 <p>The runner starts <code>/opt/mixos/bin/mix &lt;path&gt;</code> directly, without a shell
 wrapper. An absolute <code>MIXOS_MIX</code> selects another Mix binary. Its working

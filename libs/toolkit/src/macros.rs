@@ -37,6 +37,7 @@ type Work = Box<
     dyn FnOnce(&Roots, &str) -> io::Result<(Option<editor::local::Document>, Option<Entry>)> + Send,
 >;
 type Creation = Result<(Catalogue, editor::local::Document), String>;
+type SaveCompletion = Result<(editor::local::Saved, Option<Catalogue>, Option<Entry>), String>;
 static NEXT_WINDOW: AtomicU64 = AtomicU64::new(1);
 
 pub fn command<S>(enabled: fn(&S) -> bool, run: fn(&mut S)) -> crate::Command<S> {
@@ -78,6 +79,8 @@ pub struct State {
     creation_error: Option<String>,
     run_message: Option<String>,
     save_request: Option<bool>,
+    saving: Option<mpsc::Receiver<SaveCompletion>>,
+    close_after_save: bool,
     loaded: bool,
     error: Option<String>,
     document: Option<editor::local::Document>,
@@ -86,7 +89,6 @@ pub struct State {
     editor_focus: Option<egui::Id>,
     running: Option<Entry>,
     retained: Option<Finished>,
-    show_retained: bool,
 }
 
 impl State {
@@ -109,6 +111,8 @@ impl State {
             creation_error: None,
             run_message: None,
             save_request: None,
+            saving: None,
+            close_after_save: false,
             loaded: false,
             error: None,
             document: None,
@@ -117,7 +121,6 @@ impl State {
             editor_focus: None,
             running: None,
             retained: None,
-            show_retained: false,
         }
     }
 
@@ -171,7 +174,6 @@ impl State {
             let _ = self.runner.start(roots, &self.app, &entry);
             self.running = Some(entry);
             self.retained = None;
-            self.show_retained = false;
         } else {
             self.error = Some(own("macros-no-home"));
             self.editor_open = true;
@@ -223,7 +225,7 @@ impl State {
         self.creation = None;
         match result {
             Ok((catalogue, doc)) => {
-                self.catalogue = catalogue;
+                self.replace_catalogue(catalogue, ctx);
                 self.editor_entry = self.catalogue.entries.iter().find(|e| Some(e.path.as_path()) == doc.path()).cloned();
                 self.document = Some(doc);
                 self.editor_open = true;
@@ -260,7 +262,7 @@ impl State {
     }
 
     fn can_replace_document(&mut self) -> bool {
-        if self.document.as_ref().is_some_and(|doc| doc.is_dirty()) {
+        if self.saving.is_some() || self.close_after_save || self.document.as_ref().is_some_and(|doc| doc.is_dirty()) {
             self.error = Some(own("macros-save-first"));
             self.editor_open = true;
             false
@@ -278,6 +280,14 @@ impl State {
 
     pub fn show(&mut self, ctx: &egui::Context) {
         let viewport = ctx.viewport_id();
+        if let Some(rx) = &self.saving {
+            let result = match rx.try_recv() {
+                Ok(result) => Some(result),
+                Err(mpsc::TryRecvError::Disconnected) => Some(Err(own("macros-worker-failed"))),
+                Err(mpsc::TryRecvError::Empty) => None,
+            };
+            if let Some(result) = result { self.saved(result, ctx); }
+        }
         if let Some(rx) = &self.creation {
             let result = match rx.try_recv() {
                 Ok(result) => Some(result),
@@ -299,7 +309,7 @@ impl State {
                 self.loaded = true;
                 match result {
                     Ok((catalogue, doc, run)) => {
-                        self.catalogue = catalogue;
+                        self.replace_catalogue(catalogue, ctx);
                         if let Some(doc) = doc {
                             self.editor_entry = self
                                 .catalogue
@@ -339,7 +349,6 @@ impl State {
         self.finish_run(ctx);
         while let Ok(finished) = self.notifications.try_recv() {
             self.retained = Some(finished);
-            self.show_retained = true;
             self.editor_open = true;
         }
         ctx.data_mut(|d| {
@@ -365,12 +374,7 @@ impl State {
                     if self.open {
                         menu::anchored_open(ctx, true);
                         let shown = egui::Frame::menu(ui.style()).show(ui, |ui| {
-                            let enter = ui.input_mut(|i| {
-                                i.consume_key(egui::Modifiers::NONE, egui::Key::Enter)
-                            });
-                            let escape = ui.input_mut(|i| {
-                                i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)
-                            });
+                            let (enter, escape) = menu::title_keys(ctx);
                             let field = ui.add_enabled(self.creation.is_none(),
                                 egui::TextEdit::singleline(title)
                                     .id(crate::window_id(viewport, "macro-title"))
@@ -388,9 +392,10 @@ impl State {
                             }
                             (field, enter, escape)
                         });
+                        menu::title_bounds(ctx, shown.response.rect);
                         let (field, enter, escape) = shown.inner;
                         let outside = ctx.input(|i| {
-                            i.pointer.any_pressed()
+                            i.pointer.primary_pressed()
                                 && i.pointer
                                     .interact_pos()
                                     .is_some_and(|p| !shown.response.rect.contains(p))
@@ -443,6 +448,8 @@ impl State {
                         self.title = Some(String::new());
                         self.creation_error = None;
                         self.open = true;
+                        menu::open_title(ctx);
+                        ctx.memory_mut(|m| m.request_focus(crate::window_id(viewport, "macro-title")));
                         ctx.data_mut(|d| {
                             d.insert_temp(crate::window_id(viewport, "macro-title-focused"), false)
                         });
@@ -459,16 +466,23 @@ impl State {
             }
         }
         if !self.open {
+            menu::close_title(ctx);
             ctx.memory_mut(|m| m.surrender_focus(crate::window_id(viewport, "macro-title")));
             self.title = None;
         }
         menu::anchored_open(ctx, self.open);
         self.show_editor(ctx);
-        // Poll even with the menu closed: a fast failed start and later
-        // notification actions must still reach this window.
-        if self.runner.status() == Status::Running || self.pending.is_some() || self.creation.is_some() {
+        self.save_editor(false, false);
+        // Only live workers need polling. Native notification deliveries wake
+        // this viewport directly, including when its menu is closed.
+        if self.needs_repaint() {
             ctx.request_repaint_after(Duration::from_millis(100));
         }
+    }
+
+    fn needs_repaint(&self) -> bool {
+        self.runner.status() == Status::Running || self.pending.is_some()
+            || self.creation.is_some() || self.saving.is_some() || self.save_request.is_some()
     }
 
     fn show_editor(&mut self, ctx: &egui::Context) {
@@ -543,19 +557,11 @@ impl State {
                 }
                 ui.separator();
                 if let Some(message) = &self.run_message { ui.label(message); }
-                let output = if self.runner.status() == Status::Running && !self.show_retained {
-                    self.runner.output().text
-                } else {
-                    self.retained
-                        .as_ref()
-                        .map(|r| r.output.clone())
-                        .unwrap_or_default()
-                };
-                if let Some(last) = &self.retained {
+                let output = self.displayed_output();
+                if self.runner.status() != Status::Running && let Some(last) = &self.retained {
                     ui.label(&last.status).on_hover_text(&last.title);
                 }
-                if !self.show_retained
-                    && let Some(running) = &self.running
+                if let Some(running) = &self.running
                 {
                     ui.label(own_with(
                         "macros-running-title",
@@ -572,8 +578,8 @@ impl State {
                         );
                     });
             });
-        self.editor_open = open;
-        if !open {
+        if !open { self.close_editor(); }
+        if !self.editor_open {
             if let Some(id) = self.editor_focus {
                 ctx.memory_mut(|m| m.surrender_focus(id));
             }
@@ -603,35 +609,90 @@ impl State {
         if save || requested {
             self.save_request = Some(self.save_request.unwrap_or(false) || run);
         }
-        if self.pending.is_none() && self.document.is_some()
+        if self.saving.is_none() && self.document.is_some()
             && let Some(run) = self.save_request.take()
-            && let Some(mut doc) = self.document.take()
         {
-            let entry = if run { self.editor_entry.clone() } else { None };
-            let Some(roots) = self.roots.clone() else {
-                self.document = Some(doc);
-                return;
+            let snapshot = match self.document.as_ref().unwrap().save_snapshot() {
+                Ok(snapshot) => snapshot,
+                Err(error) => {
+                    self.error = Some(error.to_string());
+                    self.editor_open = true;
+                    self.close_after_save = false;
+                    return;
+                }
             };
+            let entry = if run { self.editor_entry.clone() } else { None };
+            let roots = self.roots.clone();
             let app = self.app.clone();
             let (tx, rx) = mpsc::channel();
-            self.pending = Some(rx);
+            self.saving = Some(rx);
             std::thread::spawn(move || {
-                let result = doc
-                    .save()
-                    .map_err(|e| e.to_string())
-                    .and_then(|()| Catalogue::scan(&roots, &app).map_err(|e| e.to_string()));
-                let completion = match result {
-                    Ok(catalogue) => Ok((catalogue, Some(doc), entry)),
-                    Err(error) => Err((error, Some(doc))),
-                };
+                let completion = snapshot.write().map(|saved| {
+                    let catalogue = roots.and_then(|roots| Catalogue::scan(&roots, &app).ok());
+                    (saved, catalogue, entry)
+                }).map_err(|error| error.to_string());
                 let _ = tx.send(completion);
             });
         }
     }
+
+    fn saved(&mut self, result: SaveCompletion, ctx: &egui::Context) {
+        self.saving = None;
+        match result {
+            Ok((saved, catalogue, run)) => {
+                if let Some(catalogue) = catalogue {
+                    self.replace_catalogue(catalogue, ctx);
+                    self.reload();
+                }
+                if let Some(doc) = &mut self.document { doc.complete_save(&saved); }
+                self.error = None;
+                if let Some(entry) = run { self.run(entry, ctx); }
+                if self.close_after_save {
+                    if self.document.as_ref().is_some_and(|doc| doc.is_dirty()) || self.save_request.is_some() {
+                        self.save_editor(true, false);
+                    } else {
+                        self.editor_open = false;
+                        self.close_after_save = false;
+                    }
+                }
+            }
+            Err(error) => {
+                self.error = Some(error);
+                self.editor_open = true;
+                self.close_after_save = false;
+            }
+        }
+    }
+
+    fn close_editor(&mut self) {
+        if self.document.as_ref().is_some_and(|doc| doc.is_dirty()) || self.saving.is_some() || self.save_request.is_some() {
+            self.close_after_save = true;
+            self.editor_open = true;
+            if self.saving.is_none() && self.save_request.is_none() { self.save_editor(true, false); }
+        } else { self.editor_open = false; }
+    }
+
+    fn displayed_output(&self) -> String {
+        if self.runner.status() == Status::Running { self.runner.output().text }
+        else { self.retained.as_ref().map(|r| r.output.clone()).unwrap_or_default() }
+    }
+
+    fn replace_catalogue(&mut self, catalogue: Catalogue, ctx: &egui::Context) {
+        // Cached keyboard picks refer to the old row-to-file mapping. Closing
+        // invalidates both the highlight and any already queued activation.
+        if !self.catalogue.entries.is_empty() && self.catalogue.entries != catalogue.entries {
+            menu::dismiss_anchored(ctx);
+            if self.title.is_none() { self.open = false; }
+        }
+        self.catalogue = catalogue;
+    }
 }
 
 impl Drop for State {
-    fn drop(&mut self) { notifications::forget(self.window); }
+    fn drop(&mut self) {
+        self.runner.stop();
+        notifications::forget(self.window);
+    }
 }
 
 pub(crate) fn keyboard(ctx: &egui::Context) {
@@ -753,6 +814,22 @@ pub fn show_app(ctx: &egui::Context, app: &str, open: bool) -> bool {
 
 type WindowState = Arc<Mutex<State>>;
 
+/// Release native-window resources on actual app exit, including when a
+/// notification still owns a Context for repaint delivery. A close request
+/// alone is insufficient: applications can cancel it for unsaved documents.
+pub fn close_app(ctx: &egui::Context, app: &str) {
+    let owners_id = egui::Id::new("macro-viewport-owners");
+    ctx.data_mut(|d| {
+        let mut owners = d.get_temp::<Vec<(egui::ViewportId, egui::Id)>>(owners_id).unwrap_or_default();
+        owners.retain(|(viewport, id)| {
+            let keep = *id != crate::window_id(*viewport, ("shared-macros", app));
+            if !keep { d.remove::<WindowState>(*id); }
+            keep
+        });
+        d.insert_temp(owners_id, owners);
+    });
+}
+
 fn window_state(ctx: &egui::Context, app: &str, open: bool) -> Option<WindowState> {
     let viewport = ctx.viewport_id();
     let owners_id = egui::Id::new("macro-viewport-owners");
@@ -781,6 +858,123 @@ fn window_state(ctx: &egui::Context, app: &str, open: bool) -> Option<WindowStat
 #[cfg(test)]
 mod tests {
     use super::*;
+    use egui_kittest::kittest::Queryable;
+
+    #[cfg(unix)]
+    fn runner_fixture() -> (tempfile::TempDir, Roots, Entry) {
+        use std::os::unix::fs::PermissionsExt;
+        let temp = tempfile::tempdir().unwrap();
+        let mix = temp.path().join("runner-stub");
+        // Explicit test-only shell fixture: the runner launches this instead
+        // of Mix, so start/stop/reaping never depend on an installed binary.
+        std::fs::write(&mix, "#!/bin/sh\n# SPDX-License-Identifier: MIT OR Apache-2.0\nprintf '%s\\n' \"$$\" > \"$1.parent\"\n/bin/sleep 120 &\nchild=$!\nprintf '%s\\n' \"$child\" > \"$1.child\"\nwait \"$child\"\n").unwrap();
+        std::fs::set_permissions(&mix, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let roots = Roots { builtin: temp.path().join("builtin"), user: temp.path().join("user"), home: temp.path().into(), mix };
+        let path = roots.create_from_title("ced", "Wait").unwrap();
+        let entry = Entry { path, id: "wait".into(), title: "Wait".into(), tier: Tier::UserApp, shadows: vec![] };
+        (temp, roots, entry)
+    }
+
+    fn wait_until(mut predicate: impl FnMut() -> bool) {
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while !predicate() {
+            assert!(std::time::Instant::now() < deadline, "timed out waiting for the macro worker");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn state_keeps_one_runner_per_window_and_stop_ends_it() {
+        let (_temp, roots, entry) = runner_fixture();
+        let mut state = State::new("ced");
+        state.roots = Some(roots);
+        let ctx = egui::Context::default();
+        state.run(entry.clone(), &ctx);
+        state.run(entry.clone(), &ctx);
+        assert_eq!(state.runner.status(), Status::Running);
+        assert!(state.run_message.is_some());
+        let other_window = State::new("ced");
+        assert_eq!(other_window.runner.status(), Status::Idle);
+        state.document = Some(editor::local::Document::open(&entry.path).unwrap());
+        state.document.as_mut().unwrap().command(editor::EditCommand::Insert("-- saved\n".into()), &editor::View::default()).unwrap();
+        state.save_editor(false, true);
+        assert!(state.document.is_some(), "saving must not blank the editor");
+        let result = state.saving.take().unwrap().recv_timeout(Duration::from_secs(10)).unwrap();
+        assert!(matches!(&result, Ok((_, _, None))), "Ctrl+Enter only saves while already running");
+        state.saved(result, &ctx);
+        assert!(!state.document.as_ref().unwrap().is_dirty());
+        state.runner.stop();
+        wait_until(|| state.runner.status() != Status::Running);
+        assert!(matches!(state.runner.status(), Status::Exited(_)));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn late_output_does_not_hide_a_live_run() {
+        let (_temp, roots, entry) = runner_fixture();
+        let mut state = State::new("ced");
+        state.roots = Some(roots);
+        state.run(entry, &egui::Context::default());
+        state.retained = Some(Finished { title: "Earlier run".into(), output: "earlier output".into(), status: "Earlier run done".into() });
+        assert_eq!(state.running.as_ref().unwrap().title, "Wait");
+        assert_eq!(state.displayed_output(), state.runner.output().text);
+        assert_ne!(state.displayed_output(), "earlier output");
+        state.runner.stop();
+        wait_until(|| state.runner.status() != Status::Running);
+        assert_eq!(state.displayed_output(), "earlier output");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn stop_during_startup_and_rerun_immediately_after_stop() {
+        let (_temp, roots, entry) = runner_fixture();
+        let mut runner = Runner::default();
+        runner.start(&roots, "ced", &entry).unwrap();
+        runner.stop(); // stop may arrive before the manager has spawned.
+        let mut restarted = false;
+        wait_until(|| {
+            match runner.start(&roots, "ced", &entry) {
+                Ok(()) => { restarted = true; true }
+                Err(error) => { assert_eq!(error.kind(), io::ErrorKind::AlreadyExists); false }
+            }
+        });
+        assert!(restarted);
+        assert_eq!(runner.status(), Status::Running);
+        runner.stop();
+        wait_until(|| runner.status() != Status::Running);
+        assert!(matches!(runner.status(), Status::Exited(_)));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn closing_a_window_kills_its_group_and_reaps_the_leader() {
+        let (_temp, roots, entry) = runner_fixture();
+        let mut state = State::new("ced");
+        state.roots = Some(roots);
+        state.run(entry.clone(), &egui::Context::default());
+        let parent_file = entry.path.with_extension("mix.parent");
+        let child_file = entry.path.with_extension("mix.child");
+        wait_until(|| std::fs::read_to_string(&child_file).is_ok_and(|s| !s.trim().is_empty()));
+        let parent: i32 = std::fs::read_to_string(parent_file).unwrap().trim().parse().unwrap();
+        let child: i32 = std::fs::read_to_string(child_file).unwrap().trim().parse().unwrap();
+        drop(state);
+        // ESRCH for the leader proves it is no longer even a zombie. Do not
+        // waitpid before this: stealing the manager's reap would break its
+        // WNOWAIT reservation and could turn group cleanup into a PID race.
+        wait_until(|| {
+            // SAFETY: signal zero only probes the test-owned process.
+            (unsafe { libc::kill(parent, 0) }) == -1 && io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH)
+        });
+        let mut status = 0;
+        // SAFETY: the leader is already gone; this must report ECHILD.
+        assert_eq!(unsafe { libc::waitpid(parent, &mut status, libc::WNOHANG) }, -1);
+        assert_eq!(io::Error::last_os_error().raw_os_error(), Some(libc::ECHILD));
+        wait_until(|| match std::fs::read_to_string(format!("/proc/{child}/stat")) {
+            Ok(stat) => stat.rsplit_once(") ").is_some_and(|(_, tail)| tail.starts_with('Z')),
+            Err(error) => error.kind() == io::ErrorKind::NotFound,
+        });
+    }
 
     #[test]
     fn completion_toasts_cover_every_terminal_status_and_bound_the_tail() {
@@ -849,56 +1043,6 @@ mod tests {
     }
 
     #[test]
-    fn state_keeps_one_runner_per_window_and_stop_ends_it() {
-        let temp = tempfile::tempdir().unwrap();
-        let path = temp.path().join("wait.mix");
-        std::fs::write(&path, "while true\nsleep(1)\nend\n").unwrap();
-        let mut state = State::new("ced");
-        let Some(roots) = &mut state.roots else {
-            return;
-        };
-        if !roots.mix.is_file() {
-            return;
-        }
-        roots.home = temp.path().into();
-        let entry = Entry {
-            id: "wait".into(),
-            title: "First".into(),
-            tier: Tier::UserApp,
-            path,
-            shadows: vec![],
-        };
-        let ctx = egui::Context::default();
-        state.run(entry.clone(), &ctx);
-        let mut other = entry;
-        other.title = "Second".into();
-        state.run(other, &ctx);
-        assert_eq!(state.running.as_ref().unwrap().title, "First");
-        assert_eq!(state.runner.status(), Status::Running);
-        let path = state.running.as_ref().unwrap().path.clone();
-        let text = "-- saved while running\nwhile true\nsleep(1)\nend\n";
-        let mut doc = editor::local::Document::open(&path).unwrap();
-        doc.set_contents(text).unwrap();
-        state.document = Some(doc);
-        state.save_editor(false, true);
-        assert_eq!(state.run_message.as_deref(), Some(own("macros-already-running").as_str()));
-        let result = state.pending.take().unwrap().recv_timeout(Duration::from_secs(10)).unwrap();
-        let Ok((_, doc, run)) = result else { panic!("save failed") };
-        assert!(run.is_none(), "Ctrl+Enter saves without queueing a second run");
-        assert!(!doc.unwrap().is_dirty());
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
-        let another_window = State::new("ced");
-        assert_eq!(another_window.runner.status(), Status::Idle);
-        state.runner.stop();
-        let deadline = std::time::Instant::now() + Duration::from_secs(10);
-        while state.runner.status() == Status::Running {
-            assert!(std::time::Instant::now() < deadline);
-            std::thread::sleep(Duration::from_millis(10));
-        }
-        assert!(matches!(state.runner.status(), Status::Exited(_)));
-    }
-
-    #[test]
     fn macro_editor_snapshot() {
         let mut state = State::new("ced");
         state.editor_open = true;
@@ -945,6 +1089,222 @@ mod tests {
         assert!(state.open);
         assert!(state.creation_error.is_some());
         assert!(!state.editor_open);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn saves_during_discovery_keep_the_editor_visible_and_close_saves_later_edits() {
+        let (_temp, roots, entry) = runner_fixture();
+        let mut state = State::new("ced");
+        state.roots = Some(roots);
+        state.editor_open = true;
+        state.document = Some(editor::local::Document::open(&entry.path).unwrap());
+        let (hold, pending) = mpsc::channel::<Completion>();
+        state.pending = Some(pending); // a catalogue scan has not completed.
+        state.document.as_mut().unwrap().command(editor::EditCommand::Insert("-- first\n".into()), &editor::View::default()).unwrap();
+        state.save_editor(true, false);
+        assert!(state.pending.is_some());
+        assert!(state.document.is_some());
+        assert!(state.saving.is_some(), "saving must not wait for discovery");
+        state.document.as_mut().unwrap().command(editor::EditCommand::Insert("-- later\n".into()), &editor::View::default()).unwrap();
+        state.save_editor(true, false);
+        assert_eq!(state.save_request, Some(false), "a second Ctrl+S stays queued during the first write");
+        let result = state.saving.take().unwrap().recv_timeout(Duration::from_secs(10)).unwrap();
+        let ctx = egui::Context::default();
+        state.saved(result, &ctx);
+        assert!(state.document.as_ref().unwrap().is_dirty(), "newer edits must stay dirty");
+        state.save_editor(false, false);
+        assert!(state.saving.is_some(), "the queued save must write the newer snapshot");
+        state.close_editor();
+        assert!(state.editor_open, "close waits for the save receipt");
+        let result = state.saving.take().unwrap().recv_timeout(Duration::from_secs(10)).unwrap();
+        state.saved(result, &ctx);
+        assert!(!state.editor_open);
+        let doc = state.document.as_ref().unwrap();
+        assert!(!doc.is_dirty());
+        assert_eq!(std::fs::read_to_string(&entry.path).unwrap(), doc.contents());
+        drop(hold);
+    }
+
+    #[test]
+    fn failed_save_on_close_keeps_dirty_text_visible() {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path().join("gone");
+        std::fs::create_dir(&dir).unwrap();
+        let path = dir.join("macro.mix");
+        std::fs::write(&path, "original").unwrap();
+        let mut doc = editor::local::Document::open(&path).unwrap();
+        doc.command(editor::EditCommand::Insert("new ".into()), &editor::View::default()).unwrap();
+        std::fs::remove_file(&path).unwrap();
+        std::fs::remove_dir(&dir).unwrap();
+        let mut state = State::new("ced");
+        state.document = Some(doc);
+        state.close_editor();
+        let result = state.saving.take().unwrap().recv_timeout(Duration::from_secs(10)).unwrap();
+        assert!(result.is_err());
+        state.saved(result, &egui::Context::default());
+        assert!(state.editor_open);
+        assert!(state.document.as_ref().unwrap().is_dirty());
+        assert_eq!(state.document.as_ref().unwrap().contents(), "new original");
+        assert!(state.error.is_some());
+    }
+
+    #[test]
+    fn idle_macro_state_does_not_request_ten_hz_repaints() {
+        let mut state = State::new("ced");
+        state.loaded = true;
+        assert!(!state.needs_repaint());
+        let ctx = egui::Context::default();
+        let mut delay = Duration::ZERO;
+        for frame in 0..40 {
+            let mut output = ctx.run_ui(egui::RawInput { time: Some(frame as f64), ..Default::default() }, |_| state.show(&ctx));
+            delay = output.viewport_output[&egui::ViewportId::ROOT].repaint_delay;
+            output.textures_delta.clear();
+        }
+        assert!(delay > Duration::from_millis(100), "idle delay was {delay:?}");
+    }
+
+    #[derive(Default)]
+    struct AppMenu {
+        open: bool,
+        modal: bool,
+        queued_toggle: bool,
+        toggles: usize,
+        clicks: usize,
+        stolen_keys: usize,
+    }
+
+    fn app_harness() -> egui_kittest::Harness<'static, AppMenu> {
+        let temp = tempfile::tempdir().unwrap();
+        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(800.0, 700.0)).build_ui_state(move |ui, app: &mut AppMenu| {
+            let runtime = window_state(ui.ctx(), "ced", true).unwrap();
+            {
+                let mut state = runtime.lock().unwrap();
+                state.loaded = true;
+                state.roots = Some(Roots { user: temp.path().join("user"), builtin: temp.path().join("builtin"), home: temp.path().into(), mix: temp.path().join("unused") });
+            }
+            let mut registry = crate::command::Registry::new();
+            registry.add(command(|s: &AppMenu| s.open || !s.modal, |s: &mut AppMenu| { s.open = !s.open; s.toggles += 1; }));
+            let strings = crate::Strings::new("toolkit-macros = Macros\nhelp = Help\n");
+            let fired = crate::titlebar::show_bar(ui, "Test", None, &registry, app, &strings, &[]);
+            egui::CentralPanel::default().show(ui, |ui| {
+                if ui.button("Underlying control").clicked() { app.clicks += 1; }
+                // Deliberately greedy app content: menu keys must already
+                // have been taken by the title bar's pre-content pass.
+                for key in [egui::Key::Enter, egui::Key::Escape] {
+                    if ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, key)) { app.stolen_keys += 1; }
+                }
+            });
+            let close = show_app(ui.ctx(), "ced", app.open);
+            for (id, origin) in fired { registry.execute(id, app, origin).unwrap(); }
+            if std::mem::take(&mut app.queued_toggle) { registry.execute("help.macros", app, crate::command::Origin::Ui).unwrap(); }
+            if close { app.open = false; }
+        }, AppMenu::default());
+        crate::install(&h.ctx, &crate::Theme::embedded());
+        h.run_steps(5);
+        h
+    }
+
+    fn runtime(h: &egui_kittest::Harness<'_, AppMenu>) -> WindowState {
+        let id = crate::window_id(egui::ViewportId::ROOT, ("shared-macros", "ced"));
+        h.ctx.data(|d| d.get_temp(id)).unwrap()
+    }
+
+    #[test]
+    fn show_app_icon_escape_and_same_frame_toggle_close_stay_in_sync() {
+        let mut h = app_harness();
+        h.get_by_label("Macros").click(); h.run_steps(5);
+        assert!(h.state().open);
+        h.get_by_label("Macros").click(); h.run_steps(5);
+        assert!(!h.state().open);
+        h.get_by_label("Macros").click(); h.run_steps(5);
+        h.state_mut().modal = true;
+        h.state_mut().queued_toggle = true;
+        h.key_press(egui::Key::Escape); h.run_steps(5);
+        assert!(!h.state().open);
+        assert!(!menu::is_open(&h.ctx));
+        assert_eq!(h.state().stolen_keys, 0);
+        h.state_mut().modal = false;
+        h.get_by_label("Macros").click(); h.run_steps(5);
+        assert!(h.state().open, "an old dismissal must not close a later opening");
+    }
+
+    #[test]
+    fn show_app_new_title_takes_enter_and_escape_before_app_content() {
+        let mut h = app_harness();
+        h.get_by_label("Macros").click(); h.run_steps(5);
+        h.get_by_label("New macro…").click(); h.run_steps(5);
+        assert_eq!(runtime(&h).lock().unwrap().title.as_deref(), Some(""));
+        assert!(h.state().open);
+        h.key_press(egui::Key::Escape); h.run_steps(5);
+        assert!(!h.state().open);
+        assert_eq!(h.state().stolen_keys, 0);
+        h.get_by_label("Macros").click(); h.run_steps(5);
+        h.get_by_label("New macro…").click(); h.run_steps(5);
+        h.event(egui::Event::Text("Tidy imports".into()));
+        h.key_press(egui::Key::Enter); h.run_steps(5);
+        wait_until(|| { h.run_steps(1); runtime(&h).lock().unwrap().creation.is_none() });
+        assert_eq!(h.state().stolen_keys, 0);
+        assert!(!h.state().open);
+        assert!(runtime(&h).lock().unwrap().document.is_some());
+    }
+
+    #[test]
+    fn refreshed_catalogue_discards_a_pick_from_the_previous_menu() {
+        let mut h = app_harness();
+        let entry = |id: &str| Entry { id: id.into(), title: id.into(), tier: Tier::UserApp, path: format!("{id}.mix").into(), shadows: vec![] };
+        runtime(&h).lock().unwrap().catalogue.entries = vec![entry("alpha")];
+        h.get_by_label("Macros").click(); h.run_steps(5);
+        h.event(egui::Event::Text("a".into())); h.run_steps(1);
+        let (tx, rx) = mpsc::channel();
+        assert!(tx.send(Ok((Catalogue { entries: vec![entry("before"), entry("alpha")], diagnostics: vec![] }, None, None))).is_ok());
+        runtime(&h).lock().unwrap().pending = Some(rx);
+        h.key_press(egui::Key::Enter); h.run_steps(5);
+        let state = runtime(&h);
+        let state = state.lock().unwrap();
+        assert_eq!(state.runner.status(), Status::Idle);
+        assert!(state.document.is_none());
+        assert!(!h.state().open);
+    }
+
+    #[test]
+    fn outside_presses_dismiss_dropdown_and_title_and_reach_the_underlying_control() {
+        for title in [false, true] {
+            let mut h = app_harness();
+            h.get_by_label("Macros").click(); h.run_steps(5);
+            if title { h.get_by_label("New macro…").click(); h.run_steps(5); }
+            let pos = h.get_by_label("Underlying control").rect().center();
+            h.event(egui::Event::PointerMoved(pos));
+            h.event(egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed: true, modifiers: egui::Modifiers::NONE });
+            h.run_steps(1);
+            assert!(!h.state().open);
+            h.event(egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed: false, modifiers: egui::Modifiers::NONE });
+            h.run_steps(5);
+            assert_eq!(h.state().clicks, 1);
+        }
+    }
+
+    #[test]
+    fn app_exit_releases_state_even_with_a_retained_repaint_context() {
+        let ctx = egui::Context::default();
+        let mut weak = None;
+        let mut output = ctx.run_ui(egui::RawInput::default(), |_| {
+            let state = window_state(&ctx, "ced", true).unwrap();
+            weak = Some(Arc::downgrade(&state));
+        });
+        output.textures_delta.clear();
+        let repaint_context = ctx.clone();
+        let mut input = egui::RawInput::default();
+        input.viewports.get_mut(&egui::ViewportId::ROOT).unwrap().events.push(egui::ViewportEvent::Close);
+        let mut output = ctx.run_ui(input, |_| {
+            // The app may cancel this request for its own unsaved work.
+            assert!(window_state(&ctx, "ced", false).is_some());
+        });
+        output.textures_delta.clear();
+        assert!(weak.as_ref().unwrap().upgrade().is_some());
+        close_app(&ctx, "ced");
+        assert!(weak.unwrap().upgrade().is_none());
+        drop(repaint_context);
     }
 
     #[test]

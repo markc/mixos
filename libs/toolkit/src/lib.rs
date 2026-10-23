@@ -89,6 +89,9 @@ pub fn install(ctx: &egui::Context, theme: &Theme) {
 }
 
 /// Widget and runtime keys shared by one viewport, never its siblings.
-pub(crate) fn window_id(viewport: egui::ViewportId, name: impl std::hash::Hash) -> egui::Id {
+pub(crate) fn window_id(
+    viewport: egui::ViewportId,
+    name: impl std::hash::Hash + std::fmt::Debug,
+) -> egui::Id {
     egui::Id::new((viewport, name))
 }
