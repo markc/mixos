@@ -51,6 +51,7 @@ pub struct IconButton {
     selected: bool,
     kind: IconKind,
     tooltip: Option<String>,
+    name: Option<String>,
 }
 
 impl IconButton {
@@ -61,6 +62,7 @@ impl IconButton {
             selected: false,
             kind: IconKind::Bar,
             tooltip: None,
+            name: None,
         }
     }
 
@@ -82,9 +84,17 @@ impl IconButton {
         self
     }
 
-    /// The tooltip, which is also the button's accessible name.
+    /// The tooltip, which is also the button's accessible name unless
+    /// [`IconButton::name`] gives one.
     pub fn tooltip(mut self, text: impl Into<String>) -> Self {
         self.tooltip = Some(text.into());
+        self
+    }
+
+    /// The accessible name, when it differs from the tooltip (a command's
+    /// label without its shortcut).
+    pub fn name(mut self, text: impl Into<String>) -> Self {
+        self.name = Some(text.into());
         self
     }
 }
@@ -97,10 +107,13 @@ impl Widget for IconButton {
             selected,
             kind,
             tooltip,
+            name,
         } = self;
         let size = size.unwrap_or(Chrome::of(ui.ctx()).style.icon_button as f32);
         let (rect, response) = ui.allocate_exact_size(Vec2::splat(size), Sense::click());
-        let name = tooltip.clone().unwrap_or_else(|| icon.name().to_owned());
+        let name = name
+            .or_else(|| tooltip.clone())
+            .unwrap_or_else(|| icon.name().to_owned());
         response.widget_info(|| {
             WidgetInfo::selected(WidgetType::Button, ui.is_enabled(), selected, &name)
         });

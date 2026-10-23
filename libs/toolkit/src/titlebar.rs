@@ -539,7 +539,10 @@ fn right_group<S>(
                 selected,
             } => registry.get(command).map(|c| {
                 let tooltip = crate::tooltip::for_command(ui.ctx(), c, strings);
-                let button = IconButton::new(*icon).selected(*selected).tooltip(tooltip);
+                let button = IconButton::new(*icon)
+                    .selected(*selected)
+                    .tooltip(tooltip)
+                    .name(crate::command::label_text(strings, c.label));
                 (
                     c,
                     cell.add_enabled(registry.enabled(c.id, state), button)
