@@ -62,7 +62,7 @@ the available content area.
 Left release runs a macro; right release edits it. Arrows move the highlight,
 Enter runs, Shift+Enter edits, and a letter jumps to the next matching title.
 Run, edit, Escape and an outside click close the menu and release its keys.
-One macro runs per window. A busy dot appears on the icon, and the first
+One macro runs per application process, shared by GUI and Bus callers across all windows. This supersedes the original menu decision’s per-window execution rule. A busy dot appears on the icon, and the first
 menu entry becomes **Stop "Title"**. Stop kills the process group and reaps
 the child in the background. Closing the menu leaves the run alone; closing
 the app requests termination and background reaping.
@@ -170,7 +170,7 @@ authority as executing an app command; running a macro executes user code.
 | `status` | `{}` | `{state,run,id,title,origin,started,exit,error}` |
 | `output` | `{}` | `{run,text,dropped}`; the retained 64 KiB tail |
 | `stop` | `{}` | `{stopping:bool}`; termination is asynchronous |
-| `new` | `{title}` | `UNAVAILABLE` until title-based creation lands |
+| `new` | `{title}` | Creates in the user per-app tier; replies `{id, title, path}` without opening an editor |
 
 Refusals use rc 10 and `{error_code,message}`. Bodies are limited to 8192
 bytes before JSON parsing.
@@ -180,7 +180,7 @@ bytes before JSON parsing.
 | `INVALID_ARGUMENT` | Bad or oversized body, unknown fields, missing or empty id/title |
 | `NOT_FOUND` | Unknown macro id |
 | `BUSY` | A macro is already running |
-| `UNAVAILABLE` | `new` is not yet available, or no absolute HOME/roots |
+| `UNAVAILABLE` | No absolute HOME/roots |
 | `INTERNAL` | Scan error, worker failure or dropped reply channel |
 
 The first list and every reload scan off the caller's thread and defer the
@@ -200,3 +200,16 @@ effort, like command execution events. Read status and output after a gap
 or reconnect. Completion uses a callback, without a polling loop.
 
 Filesystem watching and per-app context adapters remain future work.
+
+GUI runs use `origin: gui:<window-id>`, with a process-local numeric window id.
+Bus runs use `origin: bus`. Both publish `<app>.macros.finished`; only the
+starting GUI window posts a toast. All windows show the shared busy dot and
+Stop title. Closing the starting window stops its GUI run and removes its
+finish subscription; closing another window does not stop the run.
+
+Session finish subscribers register with `add_finish_hook` and unregister
+with `remove_finish_hook`. They run once in registration order, outside the
+session lock. Window callbacks use weak lifetime guards for in-flight delivery.
+The completion body includes the retained output `text`, captured before a
+subsequent run can reset it. Weak change observers wake every live viewport
+for Bus starts, catalogue changes and completion without idle polling.

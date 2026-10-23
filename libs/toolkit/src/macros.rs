@@ -3,7 +3,9 @@
 mod notifications;
 use crate::menu::{self, Entry as MenuEntry, Menu, Row};
 use crate::strings::{own, own_with};
-use ::macros::{Catalogue, Entry, Roots, Runner, Status, Tier};
+use ::macros::{Catalogue, Entry, Roots, Status, Tier};
+#[cfg(test)]
+use ::macros::Runner;
 use std::collections::VecDeque;
 use std::io;
 use std::path::Path;
@@ -61,24 +63,10 @@ struct Finished {
     status: String,
 }
 
-/// Macro execution and catalogue state, kept together for the shared Session
-/// integration. The window's menu, editor and notification state stay outside.
+/// The catalogue here is a menu snapshot; Session owns the shared catalogue.
 pub struct Engine {
     pub catalogue: Catalogue,
-    pub runner: Runner,
-    roots: Option<Roots>,
-    running: Option<Entry>,
-}
-
-impl Default for Engine {
-    fn default() -> Self {
-        Self {
-            catalogue: Catalogue::default(),
-            runner: Runner::default(),
-            roots: Roots::resolve(),
-            running: None,
-        }
-    }
+    pub session: ::macros::Session,
 }
 
 /// Runtime resources stay outside app engines and serialised app state.
@@ -86,6 +74,10 @@ pub struct State {
     pub open: bool,
     pub engine: Engine,
     app: String,
+    finish_rx: mpsc::Receiver<serde_json::Value>,
+    subscriber: u64,
+    change_hook: ::macros::session::ChangeHook,
+    repaint: Arc<Mutex<Option<(egui::Context, egui::ViewportId)>>>,
     pending: Option<mpsc::Receiver<Completion>>,
     queued: VecDeque<Work>,
     notifications: mpsc::Receiver<Finished>,
@@ -109,17 +101,57 @@ pub struct State {
 }
 
 impl State {
+    #[cfg(test)]
+    fn set_test_roots(&mut self, roots: Roots) {
+        if self.engine.session.roots().is_some_and(|old| old.user == roots.user && old.builtin == roots.builtin) { return; }
+        self.engine.session.remove_finish_hook(self.subscriber);
+        let session = ::macros::Session::with_roots(&self.app, Some(roots));
+        let (tx, rx) = mpsc::channel();
+        self.subscriber = session.add_finish_hook(Arc::new(move |body| { let _ = tx.send(body); }));
+        self.finish_rx = rx;
+        self.engine.session = session;
+        self.engine.session.observe_changes(&self.change_hook);
+        let _ = self.engine.session.reload();
+    }
+
     pub fn new(app: &str) -> Self {
         let (notify_tx, notifications) = mpsc::channel();
+        let session = ::macros::Session::for_app(app);
+        #[cfg(test)]
+        let session = { let _ = session; ::macros::Session::with_roots(app, Roots::resolve()) };
+        Self::with_session(app, session, notify_tx, notifications)
+    }
+
+    fn with_session(app: &str, session: ::macros::Session, notify_tx: mpsc::Sender<Finished>, notifications: mpsc::Receiver<Finished>) -> Self {
+        let (finish_tx, finish_rx) = mpsc::channel();
+        let lifetime = Arc::new(());
+        let weak = Arc::downgrade(&lifetime);
+        let subscriber = session.add_finish_hook(Arc::new(move |body| {
+            if weak.upgrade().is_some() {
+                let _ = finish_tx.send(body);
+            }
+        }));
+        let repaint = Arc::new(Mutex::new(None::<(egui::Context, egui::ViewportId)>));
+        let target = repaint.clone();
+        let change_hook: ::macros::session::ChangeHook = Arc::new(move || {
+            if let Some((ctx, viewport)) = &*target.lock().unwrap() {
+                ctx.request_repaint_of(*viewport);
+            }
+        });
+        session.observe_changes(&change_hook);
         Self {
             open: false,
-            engine: Engine::default(),
+            engine: Engine { catalogue: Catalogue::default(), session },
+            finish_rx,
+            subscriber,
+            change_hook,
+            repaint,
             app: app.into(),
             pending: None,
             notifications,
             notify_tx,
             queued: VecDeque::new(),
-            lifetime: Arc::new(()),
+            lifetime,
             window: NEXT_WINDOW.fetch_add(1, Ordering::Relaxed),
             title: None,
             creation: None,
@@ -155,7 +187,7 @@ impl State {
             self.queued.push_back(Box::new(task));
             return;
         }
-        let Some(roots) = self.engine.roots.clone() else {
+        let Some(roots) = self.engine.session.roots() else {
             self.error = Some(own("macros-no-home"));
             self.open = true;
             return;
@@ -173,7 +205,7 @@ impl State {
     }
 
     fn run(&mut self, entry: Entry, ctx: &egui::Context) {
-        if self.engine.runner.status() == Status::Running {
+        if self.engine.session.runner_status() == Status::Running {
             self.run_message = Some(own("macros-already-running"));
             self.editor_open = true;
             return;
@@ -182,43 +214,42 @@ impl State {
         // the previous terminal run before Runner resets its output buffer.
         self.finish_run(ctx);
         self.run_message = None;
-        if let Some(roots) = &self.engine.roots {
-            // Thread-spawn failure sets a terminal status too; polling it
-            // follows the same notification path as a child failing to start.
-            let _ = self.engine.runner.start(roots, &self.app, &entry);
-            self.engine.running = Some(entry);
-            self.retained = None;
-        } else {
-            self.error = Some(own("macros-no-home"));
-            self.editor_open = true;
+        match self.engine.session.run(&entry.id, &format!("gui:{}", self.window)) {
+            Ok(_) => self.retained = None,
+            Err(error) => {
+                self.run_message = Some(error.to_string());
+                self.editor_open = true;
+            }
         }
     }
 
     fn finish_run(&mut self, ctx: &egui::Context) {
-        let status = self.engine.runner.status();
-        if status == Status::Running {
-            return;
-        }
-        if let Some(entry) = self.engine.running.take() {
+        while let Ok(body) = self.finish_rx.try_recv() {
+            if body["origin"].as_str() != Some(format!("gui:{}", self.window).as_str()) {
+                continue;
+            }
             self.run_message = None;
-            let output = self.engine.runner.output().text;
-            let payload = notification(&self.app, &entry.title, &status, &output);
+            let title = body["title"].as_str().unwrap_or_default();
+            let output = body["text"].as_str().unwrap_or_default().to_owned();
+            let status = match body["state"].as_str() {
+                Some("exited") => Status::Exited(body["exit"].as_i64().map(|v| v as i32)),
+                Some("failed_to_start") => Status::FailedToStart(body["error"].as_str().unwrap_or_default().into()),
+                _ => Status::Failed(body["error"].as_str().unwrap_or_default().into()),
+            };
+            let payload = notification(&self.app, title, &status, &output);
             let finished = Finished {
-                title: entry.title,
+                title: title.into(),
                 output,
                 status: payload["summary"].as_str().unwrap_or_default().into(),
             };
             self.retained = Some(finished.clone());
-            notifications::post(
-                &self.app,
-                self.window,
-                payload,
-                finished,
-                self.notify_tx.clone(),
-                &self.lifetime,
-                ctx,
-            );
+            notifications::post(&self.app, self.window, payload, finished, self.notify_tx.clone(), &self.lifetime, ctx);
         }
+    }
+
+    fn running_title(&self) -> Option<String> {
+        let status = self.engine.session.status();
+        (status["state"] == "running").then(|| status["title"].as_str().unwrap_or_default().to_owned())
     }
 
     fn create_title(&mut self) {
@@ -228,7 +259,7 @@ impl State {
         let Some(title) = self.title.clone() else {
             return;
         };
-        let Some(roots) = self.engine.roots.clone() else {
+        let Some(roots) = self.engine.session.roots() else {
             self.creation_error = Some(own("macros-no-home"));
             return;
         };
@@ -325,6 +356,7 @@ impl State {
     }
 
     pub fn show(&mut self, ctx: &egui::Context) {
+        *self.repaint.lock().unwrap() = Some((ctx.clone(), ctx.viewport_id()));
         let viewport = ctx.viewport_id();
         if let Some(rx) = &self.saving {
             let result = match rx.try_recv() {
@@ -398,6 +430,9 @@ impl State {
         {
             self.work(task);
         }
+        if let Some(catalogue) = self.engine.session.catalogue() {
+            self.replace_catalogue(catalogue, ctx);
+        }
         self.finish_run(ctx);
         while let Ok(finished) = self.notifications.try_recv() {
             self.retained = Some(finished);
@@ -406,7 +441,7 @@ impl State {
         ctx.data_mut(|d| {
             d.insert_temp(
                 crate::window_id(viewport, "macro-busy"),
-                self.engine.runner.status() == Status::Running,
+                self.engine.session.runner_status() == Status::Running,
             )
         });
         if self.open && !self.loaded && self.pending.is_none() {
@@ -428,7 +463,7 @@ impl State {
                         let chrome = crate::chrome::Chrome::of(ctx);
                         let (mut model, _) = macro_menu(
                             &self.engine.catalogue,
-                            self.engine.running.as_ref().map(|e| e.title.as_str()),
+                            self.running_title().as_deref(),
                         );
                         append_menu_error(&mut model, self.error.as_deref());
                         let menu_rect = menu::anchored_menu_rect(ui, anchor, &model);
@@ -544,7 +579,7 @@ impl State {
                 } else {
                     let (mut model, indices) = macro_menu(
                         &self.engine.catalogue,
-                        self.engine.running.as_ref().map(|e| e.title.as_str()),
+                        self.running_title().as_deref(),
                     );
                     append_menu_error(&mut model, self.error.as_deref());
                     let tips = SLOTS
@@ -593,7 +628,7 @@ impl State {
                     ctx.request_repaint();
                 }
                 "macro.workshop" => self.folder(),
-                "macro.stop" => self.engine.runner.stop(),
+                "macro.stop" => { self.engine.session.stop(); },
                 _ => {}
             }
         }
@@ -613,7 +648,7 @@ impl State {
     }
 
     fn needs_repaint(&self) -> bool {
-        self.engine.runner.status() == Status::Running
+        self.engine.session.runner_status() == Status::Running
             || self.pending.is_some()
             || self.creation.is_some()
             || self.saving.is_some()
@@ -697,15 +732,15 @@ impl State {
                     ui.label(message);
                 }
                 let output = self.displayed_output();
-                if self.engine.runner.status() != Status::Running
+                if self.engine.session.runner_status() != Status::Running
                     && let Some(last) = &self.retained
                 {
                     ui.label(&last.status).on_hover_text(&last.title);
                 }
-                if let Some(running) = &self.engine.running {
+                if let Some(title) = self.running_title() {
                     ui.label(own_with(
                         "macros-running-title",
-                        &[("title", &running.title)],
+                        &[("title", &title)],
                     ));
                 }
                 egui::ScrollArea::both()
@@ -746,7 +781,7 @@ impl State {
 
     fn save_editor(&mut self, save: bool, mut run: bool) {
         let requested = run;
-        if run && self.engine.runner.status() == Status::Running {
+        if run && self.engine.session.runner_status() == Status::Running {
             self.run_message = Some(own("macros-already-running"));
             run = false;
         }
@@ -774,7 +809,7 @@ impl State {
                 }
             };
             let entry = if run { self.editor_entry.clone() } else { None };
-            let roots = self.engine.roots.clone();
+            let roots = self.engine.session.roots();
             let app = self.app.clone();
             let (tx, rx) = mpsc::channel();
             self.saving = Some(rx);
@@ -841,8 +876,8 @@ impl State {
     }
 
     fn displayed_output(&self) -> String {
-        if self.engine.runner.status() == Status::Running {
-            self.engine.runner.output().text
+        if self.engine.session.runner_status() == Status::Running {
+            self.engine.session.runner_output().text
         } else {
             self.retained
                 .as_ref()
@@ -862,13 +897,17 @@ impl State {
                 self.open = false;
             }
         }
+        self.engine.session.replace_catalogue(catalogue.clone());
         self.engine.catalogue = catalogue;
     }
 }
 
 impl Drop for State {
     fn drop(&mut self) {
-        self.engine.runner.stop();
+        if self.engine.session.status()["origin"].as_str() == Some(format!("gui:{}", self.window).as_str()) {
+            self.engine.session.stop();
+        }
+        self.engine.session.remove_finish_hook(self.subscriber);
         notifications::forget(self.window);
     }
 }
@@ -1160,17 +1199,17 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn state_keeps_one_runner_per_window_and_stop_ends_it() {
+    fn state_shares_one_runner_and_stop_ends_it() {
         let (_temp, roots, entry) = runner_fixture();
         let mut state = State::new("ced");
-        state.engine.roots = Some(roots);
+        state.set_test_roots(roots);
         let ctx = egui::Context::default();
         state.run(entry.clone(), &ctx);
         state.run(entry.clone(), &ctx);
-        assert_eq!(state.engine.runner.status(), Status::Running);
+        assert_eq!(state.engine.session.runner_status(), Status::Running);
         assert!(state.run_message.is_some());
         let other_window = State::new("ced");
-        assert_eq!(other_window.engine.runner.status(), Status::Idle);
+        assert_eq!(other_window.engine.session.runner_status(), Status::Idle);
         state.document = Some(editor::local::Document::open(&entry.path).unwrap());
         state
             .document
@@ -1195,9 +1234,9 @@ mod tests {
         );
         state.saved(result, &ctx);
         assert!(!state.document.as_ref().unwrap().is_dirty());
-        state.engine.runner.stop();
-        wait_until(|| state.engine.runner.status() != Status::Running);
-        assert!(matches!(state.engine.runner.status(), Status::Exited(_)));
+        state.engine.session.stop();
+        wait_until(|| state.engine.session.runner_status() != Status::Running);
+        assert!(matches!(state.engine.session.runner_status(), Status::Exited(_)));
     }
 
     #[cfg(unix)]
@@ -1205,18 +1244,18 @@ mod tests {
     fn late_output_does_not_hide_a_live_run() {
         let (_temp, roots, entry) = runner_fixture();
         let mut state = State::new("ced");
-        state.engine.roots = Some(roots);
+        state.set_test_roots(roots);
         state.run(entry, &egui::Context::default());
         state.retained = Some(Finished {
             title: "Earlier run".into(),
             output: "earlier output".into(),
             status: "Earlier run done".into(),
         });
-        assert_eq!(state.engine.running.as_ref().unwrap().title, "Wait");
-        assert_eq!(state.displayed_output(), state.engine.runner.output().text);
+        assert_eq!(state.running_title().unwrap(), "Wait");
+        assert_eq!(state.displayed_output(), state.engine.session.runner_output().text);
         assert_ne!(state.displayed_output(), "earlier output");
-        state.engine.runner.stop();
-        wait_until(|| state.engine.runner.status() != Status::Running);
+        state.engine.session.stop();
+        wait_until(|| state.engine.session.runner_status() != Status::Running);
         assert_eq!(state.displayed_output(), "earlier output");
     }
 
@@ -1250,7 +1289,7 @@ mod tests {
     fn closing_a_window_kills_its_group_and_reaps_the_leader() {
         let (_temp, roots, entry) = runner_fixture();
         let mut state = State::new("ced");
-        state.engine.roots = Some(roots);
+        state.set_test_roots(roots);
         state.run(entry.clone(), &egui::Context::default());
         let parent_file = entry.path.with_extension("mix.parent");
         let child_file = entry.path.with_extension("mix.child");
@@ -1418,7 +1457,7 @@ mod tests {
         state.open = true;
         let user = temp.path().join("not-a-directory");
         std::fs::write(&user, "obstruction").unwrap();
-        state.engine.roots = Some(Roots {
+        state.set_test_roots(Roots {
             user,
             builtin: temp.path().join("builtin"),
             home: temp.path().into(),
@@ -1731,7 +1770,7 @@ mod tests {
     fn saves_during_discovery_keep_the_editor_visible_and_close_saves_later_edits() {
         let (_temp, roots, entry) = runner_fixture();
         let mut state = State::new("ced");
-        state.engine.roots = Some(roots);
+        state.set_test_roots(roots);
         state.editor_open = true;
         state.document = Some(editor::local::Document::open(&entry.path).unwrap());
         let (hold, pending) = mpsc::channel::<Completion>();
@@ -1886,7 +1925,7 @@ mod tests {
                 {
                     let mut state = runtime.lock().unwrap();
                     state.loaded = true;
-                    state.engine.roots = Some(Roots {
+                    state.set_test_roots(Roots {
                         user: temp.path().join("user"),
                         builtin: temp.path().join("builtin"),
                         home: temp.path().into(),
@@ -2122,7 +2161,7 @@ mod tests {
     #[test]
     fn show_app_failed_creation_reports_inline_and_restores_title_focus() {
         let mut h = app_harness();
-        let roots = runtime(&h).lock().unwrap().engine.roots.clone().unwrap();
+        let roots = runtime(&h).lock().unwrap().engine.session.roots().unwrap();
         std::fs::write(&roots.user, "obstruction").unwrap();
         h.get_by_label("Macros").click();
         h.run_steps(5);
@@ -2182,7 +2221,7 @@ mod tests {
         h.run_steps(5);
         let state = runtime(&h);
         let state = state.lock().unwrap();
-        assert_eq!(state.engine.runner.status(), Status::Idle);
+        assert_eq!(state.engine.session.runner_status(), Status::Idle);
         assert!(state.document.is_none());
         assert!(!h.state().open);
     }

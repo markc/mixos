@@ -4,13 +4,14 @@ use crate::verbs::Refusal;
 use crate::{Catalogue, Output, Roots, Runner, Status};
 use serde_json::{Value, json};
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock, Weak};
 use std::time::SystemTime;
 
 #[cfg(test)]
 mod tests;
 
 pub type FinishHook = Arc<dyn Fn(Value) + Send + Sync>;
+pub type ChangeHook = Arc<dyn Fn() + Send + Sync>;
 
 #[derive(Clone)]
 pub struct Session(Arc<Mutex<State>>);
@@ -23,7 +24,9 @@ struct State {
     run: u64,
     identity: Value,
     active: bool,
-    finish: Option<FinishHook>,
+    finish: Vec<(u64, FinishHook)>,
+    next_subscriber: u64,
+    changes: Vec<Weak<dyn Fn() + Send + Sync>>,
 }
 
 impl Session {
@@ -47,12 +50,46 @@ impl Session {
             run: 0,
             identity: json!({"run":null,"id":null,"title":null,"origin":null,"started":null}),
             active: false,
-            finish: None,
+            finish: Vec::new(),
+            next_subscriber: 0,
+            changes: Vec::new(),
         })))
     }
 
-    pub fn set_finish_hook(&self, hook: Option<FinishHook>) {
-        self.0.lock().unwrap().finish = hook;
+    /// Subscribers run in registration order, outside the session lock.
+    /// Remove window subscribers on close; callbacks must tolerate an in-flight delivery.
+    pub fn add_finish_hook(&self, hook: FinishHook) -> u64 {
+        let mut state = self.0.lock().unwrap();
+        state.next_subscriber += 1;
+        let id = state.next_subscriber;
+        state.finish.push((id, hook));
+        id
+    }
+
+    pub fn remove_finish_hook(&self, id: u64) {
+        self.0.lock().unwrap().finish.retain(|(key, _)| *key != id);
+    }
+
+    pub fn replace_catalogue(&self, catalogue: Catalogue) {
+        let mut state = self.0.lock().unwrap();
+        let changed = state.catalogue.as_ref().is_none_or(|old| old.entries != catalogue.entries);
+        state.catalogue = Some(catalogue);
+        drop(state);
+        if changed { self.changed(); }
+    }
+
+    /// The caller retains the hook; dropping it removes the observer lazily.
+    pub fn observe_changes(&self, hook: &ChangeHook) {
+        self.0.lock().unwrap().changes.push(Arc::downgrade(hook));
+    }
+
+    fn changed(&self) {
+        let hooks = {
+            let mut state = self.0.lock().unwrap();
+            state.changes.retain(|hook| hook.strong_count() > 0);
+            state.changes.iter().filter_map(Weak::upgrade).collect::<Vec<_>>()
+        };
+        for hook in hooks { hook(); }
     }
 
     pub fn catalogue(&self) -> Option<Catalogue> {
@@ -72,6 +109,21 @@ impl Session {
         self.0.lock().unwrap().runner.output()
     }
 
+    /// Call on a worker: creation and the following scan both touch disk.
+    pub fn create(&self, title: &str) -> Result<Value, Refusal> {
+        let (roots, app) = {
+            let state = self.0.lock().unwrap();
+            (state.roots.clone().ok_or_else(|| Refusal::new("UNAVAILABLE", "an absolute HOME is required"))?, state.app.clone())
+        };
+        let path = roots.create_from_title(&app, title).map_err(|error| {
+            Refusal::new(if error.kind() == std::io::ErrorKind::InvalidInput { "INVALID_ARGUMENT" } else { "INTERNAL" }, error)
+        })?;
+        let catalogue = self.reload()?;
+        let entry = catalogue.entries.iter().find(|entry| entry.path == path)
+            .ok_or_else(|| Refusal::new("INTERNAL", "created macro missing after rescan"))?;
+        Ok(json!({"id":entry.id,"title":entry.title,"path":path}))
+    }
+
     /// Call on a worker thread. No filesystem work holds the session lock.
     pub fn reload(&self) -> Result<Catalogue, Refusal> {
         let (roots, app) = {
@@ -85,7 +137,7 @@ impl Session {
             )
         };
         let catalogue = Catalogue::scan(&roots, &app).map_err(|e| Refusal::new("INTERNAL", e))?;
-        self.0.lock().unwrap().catalogue = Some(catalogue.clone());
+        self.replace_catalogue(catalogue.clone());
         Ok(catalogue)
     }
 
@@ -120,17 +172,19 @@ impl Session {
             let Some(inner) = weak.upgrade() else {
                 return;
             };
-            let (hook, body) = {
+            let (hooks, body) = {
                 let mut state = inner.lock().unwrap();
                 let mut body = state.identity.clone();
                 status_fields(&mut body, status);
                 body["dropped"] = json!(state.runner.output().dropped);
+                body["text"] = json!(state.runner.output().text);
                 state.active = false;
                 (state.finish.clone(), body)
             };
-            if let Some(hook) = hook {
-                hook(body);
+            for (_, hook) in hooks {
+                hook(body.clone());
             }
+            Session(inner).changed();
         })));
         let app = state.app.clone();
         if let Err(error) = state.runner.start(&roots, &app, &entry) {
@@ -139,6 +193,8 @@ impl Session {
             state.identity = previous_identity;
             return Err(Refusal::new("INTERNAL", error));
         }
+        drop(state);
+        self.changed();
         Ok(json!({"accepted":true,"run":run,"id":entry.id,"title":entry.title}))
     }
 

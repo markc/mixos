@@ -61,9 +61,9 @@ fn completion_is_once_per_run_for_success_failure_signal_and_spawn_failure() {
         .unwrap();
     let session = Session::with_roots("fixture", Some(roots.clone()));
     let (tx, rx) = mpsc::channel();
-    session.set_finish_hook(Some(Arc::new(move |body| {
+    session.add_finish_hook(Arc::new(move |body| {
         tx.send(body).unwrap();
-    })));
+    }));
     session.reload().unwrap();
     for (run, source, expected, stop) in [
         (1, "exit(0)\n", json!(0), false),
@@ -94,9 +94,9 @@ fn completion_is_once_per_run_for_success_failure_signal_and_spawn_failure() {
     roots.mix = roots.home.join("missing-mix");
     let session = Session::with_roots("fixture", Some(roots));
     let (tx, rx) = mpsc::channel();
-    session.set_finish_hook(Some(Arc::new(move |body| {
+    session.add_finish_hook(Arc::new(move |body| {
         tx.send(body).unwrap();
-    })));
+    }));
     session.reload().unwrap();
     session.run("test", "gui").unwrap();
     let event = rx.recv_timeout(Duration::from_secs(10)).unwrap();
@@ -125,14 +125,8 @@ fn refusals_distinguish_arguments_availability_scan_and_channel_failures() {
             "INVALID_ARGUMENT"
         );
     }
-    assert_eq!(
-        verbs::handle(&session, "new", &json!({"title":"Test"}))
-            .wait()
-            .unwrap_err()
-            .code,
-        "UNAVAILABLE"
-    );
     let unavailable = Session::with_roots("fixture", None);
+    assert_eq!(verbs::handle(&unavailable, "new", &json!({"title":"Test"})).wait().unwrap_err().code, "UNAVAILABLE");
     assert_eq!(
         verbs::handle(&unavailable, "reload", &json!({}))
             .wait()
@@ -155,6 +149,51 @@ fn refusals_distinguish_arguments_availability_scan_and_channel_failures() {
 }
 
 #[test]
+fn new_creates_in_the_user_app_tier_and_refreshes_list() {
+    let (_dir, roots, session) = fixture();
+    let reply = verbs::handle(&session, "new", &json!({"title":"Tidy imports"}));
+    assert!(matches!(reply, Reply::Deferred(_)));
+    let body = reply.wait().unwrap();
+    assert_eq!(body["id"], "tidy-imports");
+    assert_eq!(body["title"], "Tidy imports");
+    assert_eq!(body["path"], json!(roots.user.join("fixture/tidy-imports.mix")));
+    let list = verbs::handle(&session, "list", &json!({})).wait().unwrap();
+    assert_eq!(list["macros"][0]["id"], body["id"]);
+    assert_eq!(list["macros"][0]["tier"], "user-app");
+    assert_eq!(verbs::handle(&session, "new", &json!({"title":"   "})).wait().unwrap_err().code, "INVALID_ARGUMENT");
+    std::fs::remove_file(body["path"].as_str().unwrap()).unwrap();
+    std::fs::remove_dir(roots.user.join("fixture")).unwrap();
+    std::fs::remove_dir(&roots.user).unwrap();
+    std::fs::write(&roots.user, "obstruction").unwrap();
+    assert_eq!(verbs::handle(&session, "new", &json!({"title":"Test"})).wait().unwrap_err().code, "INTERNAL");
+}
+
+#[test]
+fn subscribers_receive_once_in_order_outside_the_lock_and_can_be_removed() {
+    let (_dir, roots, session) = fixture();
+    roots.create("fixture", crate::Tier::UserApp, "test", "Test").unwrap();
+    let (tx, rx) = mpsc::channel();
+    let first = session.clone();
+    let first_tx = tx.clone();
+    let id = session.add_finish_hook(Arc::new(move |body| {
+        let _ = first.status(); // would deadlock under the session lock
+        first_tx.send((1, body)).unwrap();
+    }));
+    session.add_finish_hook(Arc::new(move |body| { tx.send((2, body)).unwrap(); }));
+    session.reload().unwrap();
+    session.run("test", "gui:42").unwrap();
+    let a = rx.recv_timeout(Duration::from_secs(10)).unwrap();
+    let b = rx.recv_timeout(Duration::from_secs(10)).unwrap();
+    assert_eq!((a.0, b.0), (1, 2));
+    assert_eq!(a.1, b.1);
+    assert_eq!(a.1["origin"], "gui:42");
+    session.remove_finish_hook(id);
+    session.run("test", "bus").unwrap();
+    assert_eq!(rx.recv_timeout(Duration::from_secs(10)).unwrap().0, 2);
+    assert!(rx.try_recv().is_err());
+}
+
+#[test]
 fn output_retains_the_tail_and_reports_dropped_bytes() {
     let (_dir, roots, session) = fixture();
     assert!(roots.mix.is_file(), "CBC needs the native Mix binary");
@@ -165,9 +204,9 @@ fn output_retains_the_tail_and_reports_dropped_bytes() {
     std::fs::write(path, source).unwrap();
     session.reload().unwrap();
     let (tx, rx) = mpsc::channel();
-    session.set_finish_hook(Some(Arc::new(move |body| {
+    session.add_finish_hook(Arc::new(move |body| {
         tx.send(body).unwrap();
-    })));
+    }));
     session.run("tail", "bus").unwrap();
     let event = rx.recv_timeout(Duration::from_secs(10)).unwrap();
     assert_eq!(event["dropped"], true);

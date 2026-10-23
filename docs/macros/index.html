@@ -285,7 +285,7 @@ the available content area.</p>
 <p>Left release runs a macro; right release edits it. Arrows move the highlight,
 Enter runs, Shift+Enter edits, and a letter jumps to the next matching title.
 Run, edit, Escape and an outside click close the menu and release its keys.
-One macro runs per window. A busy dot appears on the icon, and the first
+One macro runs per application process, shared by GUI and Bus callers across all windows. This supersedes the original menu decision’s per-window execution rule. A busy dot appears on the icon, and the first
 menu entry becomes <strong>Stop "Title"</strong>. Stop kills the process group and reaps
 the child in the background. Closing the menu leaves the run alone; closing
 the app requests termination and background reaping.</p>
@@ -373,7 +373,7 @@ authority as executing an app command; running a macro executes user code.</p>
 <tr><td><code>status</code></td><td><code>{}</code></td><td><code>{state,run,id,title,origin,started,exit,error}</code></td></tr>
 <tr><td><code>output</code></td><td><code>{}</code></td><td><code>{run,text,dropped}</code>; the retained 64 KiB tail</td></tr>
 <tr><td><code>stop</code></td><td><code>{}</code></td><td><code>{stopping:bool}</code>; termination is asynchronous</td></tr>
-<tr><td><code>new</code></td><td><code>{title}</code></td><td><code>UNAVAILABLE</code> until title-based creation lands</td></tr>
+<tr><td><code>new</code></td><td><code>{title}</code></td><td>Creates in the user per-app tier; replies <code>{id, title, path}</code> without opening an editor</td></tr>
 </tbody></table>
 <p>Refusals use rc 10 and <code>{error_code,message}</code>. Bodies are limited to 8192
 bytes before JSON parsing.</p>
@@ -381,7 +381,7 @@ bytes before JSON parsing.</p>
 <tr><td><code>INVALID_ARGUMENT</code></td><td>Bad or oversized body, unknown fields, missing or empty id/title</td></tr>
 <tr><td><code>NOT_FOUND</code></td><td>Unknown macro id</td></tr>
 <tr><td><code>BUSY</code></td><td>A macro is already running</td></tr>
-<tr><td><code>UNAVAILABLE</code></td><td><code>new</code> is not yet available, or no absolute HOME/roots</td></tr>
+<tr><td><code>UNAVAILABLE</code></td><td>No absolute HOME/roots</td></tr>
 <tr><td><code>INTERNAL</code></td><td>Scan error, worker failure or dropped reply channel</td></tr>
 </tbody></table>
 <p>The first list and every reload scan off the caller's thread and defer the
@@ -399,6 +399,17 @@ flag; <code>event_dropped</code> counts lost Bus events. Delivery is bounded and
 effort, like command execution events. Read status and output after a gap
 or reconnect. Completion uses a callback, without a polling loop.</p>
 <p>Filesystem watching and per-app context adapters remain future work.</p>
+<p>GUI runs use <code>origin: gui:&lt;window-id&gt;</code>, with a process-local numeric window id.
+Bus runs use <code>origin: bus</code>. Both publish <code>&lt;app&gt;.macros.finished</code>; only the
+starting GUI window posts a toast. All windows show the shared busy dot and
+Stop title. Closing the starting window stops its GUI run and removes its
+finish subscription; closing another window does not stop the run.</p>
+<p>Session finish subscribers register with <code>add_finish_hook</code> and unregister
+with <code>remove_finish_hook</code>. They run once in registration order, outside the
+session lock. Window callbacks use weak lifetime guards for in-flight delivery.
+The completion body includes the retained output <code>text</code>, captured before a
+subsequent run can reset it. Weak change observers wake every live viewport
+for Bus starts, catalogue changes and completion without idle polling.</p>
         </article>
         <p class="doc-source"><a href="/macros/README.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
     </div>

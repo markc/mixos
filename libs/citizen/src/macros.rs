@@ -12,9 +12,9 @@ const REQUEST_BODY_LIMIT: usize = 8192;
 
 pub fn install(app: &str, service: &str, outbox: Arc<Outbox>) {
     let topic = format!("{service}.macros.finished");
-    ::macros::Session::for_app(app).set_finish_hook(Some(Arc::new(move |body| {
+    ::macros::Session::for_app(app).add_finish_hook(Arc::new(move |body| {
         outbox.push(&topic, vec![body], 0);
-    })));
+    }));
 }
 
 /// Intercept only the named app's macro namespace. Blocking completion waits

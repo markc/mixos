@@ -65,7 +65,7 @@ pub fn describe(app: &str) -> Vec<Value> {
                     json!({}),
                 ),
                 _ => (
-                    "Create a user macro (not yet available)",
+                    "Create a user per-app macro without opening an editor",
                     json!({"title":"string"}),
                 ),
             };
@@ -107,7 +107,10 @@ pub fn handle(session: &Session, suffix: &str, body: &Value) -> Reply {
         "status" => Reply::Immediate(Ok(session.status())),
         "output" => Reply::Immediate(Ok(session.output())),
         "stop" => Reply::Immediate(Ok(json!({"stopping":session.stop()}))),
-        "new" => Reply::Immediate(Err(Refusal::new("UNAVAILABLE", "not yet available"))),
+        "new" => {
+            let title = body["title"].as_str().unwrap().to_owned();
+            defer(session, move |s| s.create(&title))
+        }
         _ => Reply::Immediate(Err(Refusal::new("INVALID_ARGUMENT", "unknown macro verb"))),
     }
 }
