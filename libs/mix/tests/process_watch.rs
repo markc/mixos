@@ -190,6 +190,7 @@ async fn ordered_lines_then_exactly_one_terminal_in_plain_script() {
     assert_eq!(exits.len(), 1);
     let Value::Map(m) = &exits[0] else { panic!() };
     assert_eq!(m["exit_code"], Value::Number(0.0));
+    assert_eq!(m["detached_output"], Value::Bool(false));
     pump(&mut e).await;
     assert_eq!(
         exec(&mut e, "len($exits)").await.unwrap(),

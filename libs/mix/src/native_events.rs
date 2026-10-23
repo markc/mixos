@@ -107,8 +107,8 @@ struct Pending {
     turn: usize,
 }
 
-/// Which native families a consumer can dispatch. A sleep yield point only
-/// takes records whose command has a registered handler.
+/// Which native families a consumer can dispatch. Process records also drain
+/// without handlers so completed watches cannot keep the pump alive forever.
 #[derive(Clone, Copy, Default)]
 pub(crate) struct Families {
     pub processes: bool,
@@ -549,8 +549,8 @@ impl Queue {
         self.next_selected(watch, Families::ALL).await
     }
 
-    /// A sleep yield point only consumes families with an actual handler.
-    /// In particular, an unrelated handler cannot steal a later fs_wait batch.
+    /// Select handler-owned families, while always draining process records.
+    /// An unrelated handler cannot steal a later fs_wait batch.
     pub async fn next_selected(
         &self,
         watch: Option<&str>,

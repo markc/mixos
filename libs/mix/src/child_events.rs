@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Managed children have one reaper. poll(2) waits on pidfd + cancellation FD,
-//! with an infinite deadline; neither waitpid(WNOHANG) nor timers drive exits.
+//! with an infinite deadline for leader exit; bounded deadlines apply only to
+//! cancellation grace and draining inherited pipes after exit.
 use crate::{
     error::MixResult,
     native_events::{Queue, refusal},
@@ -248,8 +249,8 @@ mod linux {
                             drain_deadline = Some(
                                 std::time::Instant::now() + std::time::Duration::from_millis(500),
                             );
-                            // As for managed spawn, descendants cannot outlive
-                            // the leader. This also releases inherited pipe ends.
+                            // End descendants in the original group. Detached
+                            // pipe holders are bounded by the drain deadline.
                             signal_group(pid, libc::SIGKILL);
                         }
                         for (pipe, fd) in pipes.iter_mut().zip(&fds[2..]) {
