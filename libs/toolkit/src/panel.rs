@@ -204,6 +204,9 @@ fn section<R>(
             width
                 - crate::chrome::Chrome::of(ui.ctx()).style.panel_ellipsis as f32
                 - crate::chrome::Chrome::of(ui.ctx()).style.panel_ellipsis_gap as f32
+        } else if tabs.len() > 1 {
+            // Room for the overflow chevron after the last tab that fits.
+            width - tabs::chevron_of(ui.ctx())
         } else {
             width
         };
