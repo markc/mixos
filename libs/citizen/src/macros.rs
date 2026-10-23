@@ -4,17 +4,26 @@ use crate::outbox::Outbox;
 pub use ::macros::verbs::{Refusal, SUFFIXES, describe};
 use bus::native_client::{IncomingCommand, SupervisedClient};
 use serde_json::{Value, json};
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 // Match Term's request envelope limit without coupling citizen to term-core.
 const REQUEST_BODY_LIMIT: usize = 8192;
 
 pub fn install(app: &str, service: &str, outbox: Arc<Outbox>) {
+    static PUBLISHERS: OnceLock<Mutex<HashMap<(String, String), u64>>> = OnceLock::new();
+    let mut publishers = PUBLISHERS.get_or_init(Default::default).lock().unwrap();
+    let session = ::macros::Session::for_app(app);
+    let key = (app.to_owned(), service.to_owned());
+    if let Some(previous) = publishers.remove(&key) {
+        session.remove_finish_hook(previous);
+    }
     let topic = format!("{service}.macros.finished");
-    ::macros::Session::for_app(app).add_finish_hook(Arc::new(move |body| {
+    let subscriber = session.add_finish_hook(Arc::new(move |body| {
         outbox.push(&topic, vec![body], 0);
     }));
+    publishers.insert(key, subscriber);
 }
 
 /// Intercept only the named app's macro namespace. Blocking completion waits

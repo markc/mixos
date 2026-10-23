@@ -27,6 +27,7 @@ struct State {
     finish: Vec<(u64, FinishHook)>,
     next_subscriber: u64,
     changes: Vec<Weak<dyn Fn() + Send + Sync>>,
+    finish_delivery: Arc<Mutex<()>>,
 }
 
 impl Session {
@@ -53,6 +54,7 @@ impl Session {
             finish: Vec::new(),
             next_subscriber: 0,
             changes: Vec::new(),
+            finish_delivery: Arc::default(),
         })))
     }
 
@@ -195,7 +197,12 @@ impl Session {
             "started":SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap_or_default().as_millis()});
         state.active = true;
         let weak = Arc::downgrade(&self.0);
+        let delivery = state.finish_delivery.clone();
         state.runner.set_finish_hook(Some(Arc::new(move |status| {
+            // A subscriber may start the next run. Its completion must wait
+            // until every subscriber has received this run, without holding
+            // the session's state lock during callbacks.
+            let _delivery = delivery.lock().unwrap();
             let Some(inner) = weak.upgrade() else {
                 return;
             };

@@ -226,6 +226,31 @@ fn subscribers_receive_once_in_order_outside_the_lock_and_can_be_removed() {
 }
 
 #[test]
+fn a_run_started_by_a_subscriber_finishes_after_the_previous_delivery() {
+    let (_dir, roots, session) = fixture();
+    roots.create("fixture", crate::Tier::UserApp, "test", "Test").unwrap();
+    session.reload().unwrap();
+    let next = session.clone();
+    let (tx, rx) = mpsc::channel();
+    let first_tx = tx.clone();
+    let first = session.add_finish_hook(Arc::new(move |body| {
+        if body["run"] == 1 {
+            next.run("test", "bus").unwrap();
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        first_tx.send((body["run"].as_u64().unwrap(), 1)).unwrap();
+    }));
+    let second = session.add_finish_hook(Arc::new(move |body| {
+        tx.send((body["run"].as_u64().unwrap(), 2)).unwrap();
+    }));
+    session.run("test", "bus").unwrap();
+    let events = (0..4).map(|_| rx.recv_timeout(Duration::from_secs(10)).unwrap()).collect::<Vec<_>>();
+    assert_eq!(events, vec![(1, 1), (1, 2), (2, 1), (2, 2)]);
+    session.remove_finish_hook(first);
+    session.remove_finish_hook(second);
+}
+
+#[test]
 fn output_retains_the_tail_and_reports_dropped_bytes() {
     let (_dir, roots, session) = fixture();
     assert!(roots.mix.is_file(), "CBC needs the native Mix binary");

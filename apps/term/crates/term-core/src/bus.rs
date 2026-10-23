@@ -330,14 +330,16 @@ pub(crate) fn start_at(
                 let Some(mut incoming) = client.incoming_bounded() else {
                     return;
                 };
+                let outbox = window.as_ref().map(|window| window.outbox.clone())
+                    .unwrap_or_else(|| Arc::new(citizen::outbox::Outbox::default()));
+                citizen::macros::install("term", &name, outbox.clone());
+                citizen::outbox::spawn_publisher(client.clone(), outbox);
                 if let Some(window) = &window {
                     let _ = window.link.set(Link {
                         name: name.clone(),
                         client: client.clone(),
                         runtime: tokio::runtime::Handle::current(),
                     });
-                    citizen::macros::install("term", &name, window.outbox.clone());
-                    citizen::outbox::spawn_publisher(client.clone(), window.outbox.clone());
                     // The window starts its own Bus work now.
                     (window.wake)();
                 }
