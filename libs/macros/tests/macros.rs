@@ -307,7 +307,7 @@ fn descendant_fixture(detached: bool) {
     let temp = tempfile::tempdir().unwrap();
     roots.home = temp.path().into();
     fs::write(temp.path().join("child.mix"),
-        "write_file(\"child.pid\", to_string(pid()))\nwhile not exists(\"release\")\nsleep(0.01)\nend\nprint(\"old output\")\n").unwrap();
+        "write_file(\"child.pid\", to_string(pid()))\n$deadline = time() + 30\nwhile not exists(\"release\") and time() < $deadline\nsleep(0.01)\nend\nprint(\"old output\")\n").unwrap();
     let mix = format!("{:?}", roots.mix.to_str().unwrap());
     let argv = if detached {
         format!("[\"setsid\", {mix}, \"child.mix\"]")
@@ -347,8 +347,15 @@ fn descendant_fixture(detached: bool) {
         runner.stop();
         assert!(matches!(wait(&runner), Status::Exited(_)));
         // A killed grandchild can remain a zombie until init reaps it.
-        let proc_stat = fs::read_to_string(format!("/proc/{pid}/stat"));
-        assert!(proc_stat.is_err() || proc_stat.unwrap().split_once(") ").unwrap().1.starts_with('Z'));
+        let deadline = Instant::now() + Duration::from_secs(2);
+        loop {
+            let proc_stat = fs::read_to_string(format!("/proc/{pid}/stat"));
+            if proc_stat.is_err() || proc_stat.unwrap().split_once(") ").unwrap().1.starts_with('Z') {
+                break;
+            }
+            assert!(Instant::now() < deadline, "macro child survived stop");
+            std::thread::sleep(Duration::from_millis(10));
+        }
     }
 }
 

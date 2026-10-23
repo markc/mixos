@@ -58,10 +58,14 @@ pub fn apply_event(engine: &mut Engine, event: Event) {
 /// Apply one frame's interactions: selections and dialog answers first,
 /// then commands, so a command acts on what was selected this frame.
 pub fn apply_ui(engine: &mut Engine, commands: &Registry<Engine>, events: Vec<UiEvent>) {
+    // Dismissal wins over any toggle delivered in this frame.
+    let (closed, events): (Vec<_>, Vec<_>) = events
+        .into_iter()
+        .partition(|e| matches!(e, UiEvent::CloseMacros));
     let (fired, edits): (Vec<_>, Vec<_>) = events
         .into_iter()
         .partition(|e| matches!(e, UiEvent::Command(..)));
-    for event in edits.into_iter().chain(fired) {
+    for event in edits.into_iter().chain(fired).chain(closed) {
         match event {
             UiEvent::CloseMacros => engine.ui.macros_open = false,
             UiEvent::Command(id, origin) => {

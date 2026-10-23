@@ -1602,6 +1602,9 @@ impl Shell {
         );
         // Edits first, then commands, so a command sees every edit made in
         // the same frame (the busviewer ordering contract).
+        let (closed, events): (Vec<_>, Vec<_>) = events
+            .into_iter()
+            .partition(|e| matches!(e, UiEvent::CloseMacros));
         let (commands, edits): (Vec<_>, Vec<_>) = events
             .into_iter()
             .partition(|event| matches!(event, UiEvent::Command(..)));
@@ -1614,6 +1617,9 @@ impl Shell {
             {
                 eprintln!("email: {id}: {error}");
             }
+        }
+        for event in closed {
+            self.state.apply_ui(event);
         }
         self.settle();
         // A theme change is installed by the next frame's logic, before any

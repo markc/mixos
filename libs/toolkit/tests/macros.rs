@@ -112,7 +112,7 @@ fn app_harness() -> Harness<'static, AppPanel> {
                 let close = toolkit::macros::show_app(ui.ctx(), "ced", state.open);
                 // Apps queue UI commands, then apply the panel's unguarded,
                 // idempotent close. Both can arrive in the same frame.
-                if fired && !close {
+                if fired {
                     (toggle.run)(state);
                 }
                 if close {

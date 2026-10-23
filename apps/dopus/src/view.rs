@@ -176,7 +176,6 @@ pub fn view(ui: &mut Ui, app: &App, commands: &Registry<App>, strings: &Strings)
     drag_preview(ui.ctx());
     dialogs(ui.ctx(), app, commands, strings, &mut events);
     if toolkit::macros::show_app(ui.ctx(), "dopus", app.macros_open) {
-        events.retain(|e| !matches!(e, UiEvent::Command("help.macros", _)));
         events.push(UiEvent::CloseMacros);
     }
     toolkit::titlebar::edges(ui);
@@ -1015,10 +1014,14 @@ fn dialogs(
 /// Apply one frame's interactions: edits first, then commands, so a
 /// command sees every edit made in the same frame.
 pub fn apply(app: &mut App, commands: &Registry<App>, events: Vec<UiEvent>) {
+    // Dismissal wins over any toggle delivered in this frame.
+    let (closed, events): (Vec<_>, Vec<_>) = events
+        .into_iter()
+        .partition(|e| matches!(e, UiEvent::CloseMacros));
     let (fired, edits): (Vec<_>, Vec<_>) = events
         .into_iter()
         .partition(|e| matches!(e, UiEvent::Command(..) | UiEvent::CommandIn(..)));
-    for event in edits.into_iter().chain(fired) {
+    for event in edits.into_iter().chain(fired).chain(closed) {
         match event {
             UiEvent::CloseMacros => app.macros_open = false,
             UiEvent::Command(id, origin) => {

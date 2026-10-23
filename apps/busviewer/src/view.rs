@@ -120,7 +120,6 @@ pub fn view(
         }
     }
     if toolkit::macros::show_app(ui.ctx(), "busviewer", engine.ui.macros_open) {
-        events.retain(|e| !matches!(e, UiEvent::Command("help.macros", _)));
         events.push(UiEvent::CloseMacros);
     }
     toolkit::titlebar::edges(ui);

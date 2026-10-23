@@ -179,7 +179,6 @@ pub fn view(
     dialogs(ui, engine, commands, strings, &mut events);
     wallpaper::picker(ui, engine, &mut events);
     if toolkit::macros::show_app(ui.ctx(), "prefs", engine.ui.macros_open) {
-        events.retain(|e| !matches!(e, UiEvent::Command("help.macros", _)));
         events.push(UiEvent::CloseMacros);
     }
     toolkit::titlebar::edges(ui);

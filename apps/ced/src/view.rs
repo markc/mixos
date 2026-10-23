@@ -102,7 +102,6 @@ pub fn view(
         });
     dialogs(ui.ctx(), app, commands, strings, &mut events);
     if toolkit::macros::show_app(ui.ctx(), "ced", app.ui.macros_open) {
-        events.retain(|e| !matches!(e, UiEvent::Command("help.macros", _)));
         events.push(UiEvent::CloseMacros);
     }
     events
@@ -110,7 +109,10 @@ pub fn view(
 
 /// Run one frame's events against the app.
 pub fn apply(app: &mut App, commands: &Registry<App>, events: Vec<UiEvent>) {
-    for event in events {
+    let (closed, events): (Vec<_>, Vec<_>) = events
+        .into_iter()
+        .partition(|e| matches!(e, UiEvent::CloseMacros));
+    for event in events.into_iter().chain(closed) {
         apply_one(app, commands, event);
         record_noted(app, commands);
     }
