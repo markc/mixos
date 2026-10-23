@@ -87,3 +87,8 @@ pub fn install(ctx: &egui::Context, theme: &Theme) {
     egui_extras::install_image_loaders(ctx);
     style::apply(ctx, theme);
 }
+
+/// Widget and runtime keys shared by one viewport, never its siblings.
+pub(crate) fn window_id(viewport: egui::ViewportId, name: impl std::hash::Hash) -> egui::Id {
+    egui::Id::new((viewport, name))
+}

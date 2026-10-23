@@ -517,7 +517,8 @@ fn state_id() -> Id {
 
 /// Whether a menu is open (and so has the keyboard) on `ctx`.
 pub fn is_open(ctx: &Context) -> bool {
-    ctx.data(|d| d.get_temp::<bool>(Id::new("toolkit.anchored-open")))
+    let viewport = ctx.viewport_id();
+    ctx.data(|d| d.get_temp::<bool>(crate::window_id(viewport, "toolkit.anchored-open")))
         .unwrap_or(false)
         || ctx
             .data(|d| d.get_temp::<State>(state_id()))
@@ -544,7 +545,8 @@ struct AnchoredInput {
 /// anchored menu is painted by its owner later, but shares the bar's input
 /// priority. In particular a focused app editor must never eat menu letters.
 pub(crate) fn anchored_keyboard(ctx: &Context) {
-    let cache_id = Id::new("toolkit.anchored-input");
+    let viewport = ctx.viewport_id();
+    let cache_id = crate::window_id(viewport, "toolkit.anchored-input");
     let Some(mut cache) = ctx.data(|d| d.get_temp::<AnchoredInput>(cache_id)) else {
         return;
     };
@@ -638,7 +640,8 @@ impl Nav {
 
 /// Share shortcut ownership with the menu bar, including a transient title field.
 pub fn anchored_open(ctx: &Context, open: bool) {
-    ctx.data_mut(|d| d.insert_temp(Id::new("toolkit.anchored-open"), open));
+    let viewport = ctx.viewport_id();
+    ctx.data_mut(|d| d.insert_temp(crate::window_id(viewport, "toolkit.anchored-open"), open));
 }
 
 /// A single-level menu below an arbitrary icon. Uses the bar's navigation,
@@ -652,8 +655,10 @@ pub fn anchored(
     tooltips: &[(&'static str, String)],
 ) -> Option<Pick> {
     let ctx = ui.ctx().clone();
+    let viewport = ctx.viewport_id();
+    let id = id.with(ctx.viewport_id());
     let mut nav: Nav = ctx.data(|d| d.get_temp(id)).unwrap_or_default();
-    let cache_id = Id::new("toolkit.anchored-input");
+    let cache_id = crate::window_id(viewport, "toolkit.anchored-input");
     // Read then remove: remove_temp needs Default, which AnchoredInput
     // (an egui Id plus menus) has no sensible value for.
     let prior = ctx.data_mut(|d| {
@@ -693,7 +698,7 @@ pub fn anchored(
             anchor.left().min(screen.right() - width).max(screen.left()),
             anchor.bottom(),
         );
-        ctx.data_mut(|d| d.insert_temp(Id::new("toolkit.anchored-tooltips"), tooltips.to_vec()));
+        ctx.data_mut(|d| d.insert_temp(crate::window_id(viewport, "toolkit.anchored-tooltips"), tooltips.to_vec()));
         let shown = show_level(
             &ctx,
             &chrome,
@@ -712,7 +717,7 @@ pub fn anchored(
             None,
         );
         ctx.data_mut(|d| {
-            d.remove::<Vec<(&'static str, String)>>(Id::new("toolkit.anchored-tooltips"))
+            d.remove::<Vec<(&'static str, String)>>(crate::window_id(viewport, "toolkit.anchored-tooltips"))
         });
         let (outside, released, secondary) = ctx.input(|i| {
             (
@@ -1473,7 +1478,7 @@ fn show_level(
         keyed,
         deeper,
     } = view;
-    let id = state_id().with(level);
+    let id = state_id().with(ctx.viewport_id()).with(level);
     let area = Area::new(id)
         .kind(UiKind::Menu)
         .order(Order::Foreground)
@@ -1594,6 +1599,7 @@ fn level_rows(
     deeper: Option<Rect>,
     id: Id,
 ) -> (Vec<Rect>, Option<usize>, Option<usize>) {
+    let viewport = ui.ctx().viewport_id();
     let (content, _) = ui.allocate_exact_size(layout.size, Sense::hover());
     let mut rows = Vec::with_capacity(entries.len());
     let mut y = content.top();
@@ -1626,7 +1632,7 @@ fn level_rows(
             if let Some(tip) = ui
                 .ctx()
                 .data(|d| {
-                    d.get_temp::<Vec<(&'static str, String)>>(Id::new("toolkit.anchored-tooltips"))
+                    d.get_temp::<Vec<(&'static str, String)>>(crate::window_id(viewport, "toolkit.anchored-tooltips"))
                 })
                 .and_then(|tips| {
                     tips.into_iter()
@@ -2009,7 +2015,9 @@ mod tests {
     #[test]
     fn anchored_input_is_taken_before_the_application_draws() {
         let ctx = Context::default();
+        let viewport = ctx.viewport_id();
         let id = Id::new("anchored-test");
+        let scoped = id.with(ctx.viewport_id());
         let menus = vec![Menu {
             title: "Macros".into(),
             entries: vec![cmd("alpha", true), cmd("hello", true)],
@@ -2017,11 +2025,11 @@ mod tests {
         let mut nav = Nav::default();
         nav.open(0);
         ctx.data_mut(|d| {
-            d.insert_temp(id, nav);
+            d.insert_temp(scoped, nav);
             d.insert_temp(
-                Id::new("toolkit.anchored-input"),
+                crate::window_id(viewport, "toolkit.anchored-input"),
                 AnchoredInput {
-                    id,
+                    id: scoped,
                     menus: menus.clone(),
                     result: None,
                     handled: false,

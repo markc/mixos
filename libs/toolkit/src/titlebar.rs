@@ -493,6 +493,7 @@ fn right_group<S>(
     if controls.is_empty() {
         return right;
     }
+    let viewport = ui.ctx().viewport_id();
     let slots: Vec<Slot> = controls
         .iter()
         .map(|c| match c {
@@ -547,10 +548,10 @@ fn right_group<S>(
                 let response = cell.add_enabled(registry.enabled(c.id, state), button);
                 if c.id == "help.macros" {
                     ui.ctx()
-                        .data_mut(|d| d.insert_temp(egui::Id::new("macro-anchor"), response.rect));
+                        .data_mut(|d| d.insert_temp(crate::window_id(viewport, "macro-anchor"), response.rect));
                     if ui
                         .ctx()
-                        .data(|d| d.get_temp::<bool>(egui::Id::new("macro-busy")))
+                        .data(|d| d.get_temp::<bool>(crate::window_id(viewport, "macro-busy")))
                         .unwrap_or(false)
                     {
                         let chrome = Chrome::of(ui.ctx());

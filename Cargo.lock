@@ -10015,6 +10015,7 @@ version = "0.1.2"
 dependencies = [
  "anyhow",
  "assets",
+ "bus",
  "command",
  "config",
  "design",
@@ -10037,6 +10038,7 @@ dependencies = [
  "strict",
  "tempfile",
  "thumbs",
+ "tokio",
  "uuid",
  "wayland-backend",
  "wgpu",

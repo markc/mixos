@@ -11,6 +11,13 @@ generated: by docs/_build/gen-site.mix from libs/toolkit/CHANGELOG.md; do not ed
 
 ## Unreleased — 2026-10-23
 
+- Use one lazy native Bus client and `notify.changed` subscription per
+  process, with bounded output retention and repaint-driven deliveries.
+- Dim macro rows during a run; Ctrl+Enter still saves and reports an active run.
+- Keep the title field and show an inline error when creating a macro fails.
+- Scope macro state, widget IDs and anchored-menu input to each viewport,
+  releasing notification output when a viewport closes.
+
 - Replace the modal Macros panel with an icon-anchored menu, title-only
   creation and a non-modal shared editor with save/run shortcuts.
 - Report completed macros through notifyd, retaining output per notification

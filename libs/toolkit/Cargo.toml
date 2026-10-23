@@ -21,6 +21,8 @@ mod_module_files = "deny"
 
 [dependencies]
 assets.workspace = true
+bus = { workspace = true, features = ["native"] }
+tokio.workspace = true
 config.workspace = true
 design.workspace = true
 macros.workspace = true

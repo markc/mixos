@@ -56,9 +56,13 @@ menu entry becomes **Stop "Title"**. Stop kills the process group and reaps
 the child in the background. Closing the menu leaves the run alone; closing
 the app requests termination and background reaping.
 
+Macro rows are dimmed while a macro runs. Ctrl+Enter in the editor still
+saves, and reports that a macro is already running in its output strip.
+
 **New macro…** asks only for a title in a one-line field at the menu anchor.
 Enter creates the template in this app's user folder and opens the small
-editor; Escape cancels. Titles become ASCII slugs: `Tidy imports` creates
+editor; Escape cancels. If creation fails, the field keeps the title and
+shows the error inline so you can retry. Titles become ASCII slugs: `Tidy imports` creates
 `tidy-imports.mix`, then `tidy-imports-2.mix` on a clash. A title without ASCII
 letters or digits uses `macro`. Creation and copying never overwrite files.
 Editing a built-in first copies it to the matching user tier.
@@ -74,7 +78,16 @@ plus the last few output lines. **Show output** opens that run's retained
 output in the editor's bottom strip. The runner retains the last 64 KiB of
 combined standard output and standard error. If notifyd is absent or sending
 fails, the output strip opens automatically. A successful run without output
-still reports done. Notification actions are read using `notify.get`.
+still reports done.
+
+One lazy native Bus client per process registers a distinct
+`<app>-macros-<pid>` service and subscribes to `notify.changed` before posting.
+There are no notification subprocesses or outcome polls. Deliveries request
+a repaint of the originating viewport. Each window retains at most eight
+notification outputs, for up to five minutes; answering, dismissing, closing,
+expiry or closing the window releases them. A Bus failure after a successful
+send drops that notification's retained output without opening the editor.
+Each viewport has its own menu, editor and runner state.
 
 ## Execution context
 
