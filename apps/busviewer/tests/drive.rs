@@ -222,16 +222,18 @@ fn the_title_bar_controls_are_in_the_tree_and_work_by_click() {
         Some(design::Mode::Light),
         "the toggle shows the mode opposite the session's"
     );
+    // The keyboard icon, named like the search icon by its tooltip.
+    let keys = nodes(&mut h, 5, &label("shortcuts"));
     ok(
         &mut h,
-        5,
+        6,
         "busviewer.ui.click",
-        json!({"label":label("shortcuts")}),
+        json!({"label":keys[0]["label"]}),
     );
     assert_eq!(
         h.state().engine.ui.dialog,
         Some(inspector::Dialog::Shortcuts),
-        "the link opens the shortcuts"
+        "the keyboard icon opens the shortcuts"
     );
 }
 
@@ -281,7 +283,6 @@ fn every_chrome_control_of_the_window_is_in_the_tree_with_a_label() {
         label("shortcuts"),
         label("services"),
         label("details"),
-        "Panel menu".to_owned(),
         label("call"),
         label("clear"),
     ];
@@ -290,8 +291,8 @@ fn every_chrome_control_of_the_window_is_in_the_tree_with_a_label() {
     }
     assert_eq!(
         all.iter().filter(|n| n["label"] == "Panel menu").count(),
-        2,
-        "one per panel group"
+        0,
+        "plain panel sections have no menu"
     );
     assert!(
         all.iter().any(|n| n["placeholder"] == label("search")),

@@ -1,9 +1,7 @@
 # mixtrayd
 
-`mixtrayd` is the data service behind the MixOS tray popup, `mixtray`. The
-popup is a KDE Plasma plasmoid in
-[markc/plasma](https://github.com/markc/plasma); a native MixOS desktop
-version is planned. `mixtrayd` registers on the noded Bus as `mixtrayd` and answers one verb,
+`mixtrayd` is the data service behind the MixOS tray popup, `mixtray`. It
+registers on the noded Bus as `mixtrayd` and answers one verb,
 `mixtrayd.snapshot`, with four tabs of state:
 
 | Tab | Source |
@@ -55,8 +53,8 @@ hosts. The `mixtrayd.ssh` verb takes an `action`:
 | `restore` | `id` | renames it back, refusing to replace a live host |
 | `purge` | `id` | deletes a trashed host; a live host must be trashed first |
 
-The popup opens Connect (`konsole -e ssh ALIAS`) and Edit (`xdg-open` on the
-host file) itself, since those run in the desktop session, not the daemon's.
+The popup handles Connect (an `ssh ALIAS` terminal) and Edit (the host file)
+itself, since those run in the desktop session, not the daemon's.
 
 ## Use
 

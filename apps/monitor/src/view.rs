@@ -17,7 +17,7 @@ use egui_extras::{Column as Width, TableBuilder};
 use toolkit::button::PushButton;
 use toolkit::command::Origin;
 use toolkit::dialog::{self, Choice};
-use toolkit::titlebar::{self, Control};
+use toolkit::titlebar::{self, Action};
 use toolkit::{Icon, Registry, Strings, bars, combo, field, icons, panel, tooltip};
 use vitals::format::{bytes, mhz, percent, rate, uptime};
 use vitals::history::scale;
@@ -50,32 +50,16 @@ pub fn view(
     strings: &Strings,
 ) -> Vec<UiEvent> {
     let mut events = Vec::new();
-    let dark = ui.visuals().dark_mode;
-    let mut controls = [
-        Control::Icon {
-            command: "view.search",
-            icon: Icon::Search,
-            selected: false,
-        },
-        Control::Icon {
-            command: "view.mode",
-            icon: titlebar::theme_icon(dark),
-            selected: false,
-        },
-        Control::Link {
-            command: "help.shortcuts",
-            icon: Icon::Keyboard,
-        },
-    ];
     let title = format!("{} — {}", label("title"), engine.host());
-    let fired = titlebar::show_with(
+    // The icon bar: refresh, then the standard tail.
+    let fired = titlebar::show_bar(
         ui,
         &title,
         Some(Icon::Monitor),
         commands,
         engine,
         strings,
-        &mut controls,
+        &[Action::new("file.refresh", Icon::RefreshCw)],
     );
     // The toggle goes to the mode opposite the one this frame drew, so a
     // click reported twice cannot flip it back.

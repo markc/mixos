@@ -1,43 +1,31 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! Dock panel groups (chrome specification §3.10–3.11, §3.22): the Pro tab
-//! strip and body, the Studio card with pill tabs (Classic follows Studio,
-//! square and bevelled), section labels and the drag-drop insertion line.
+//! Dock panel groups (chrome specification §3.10–3.11, §3.22) as plain
+//! sections, section labels and the drag-drop insertion line.
 //!
-//! [`group`] draws whichever the style asks for around the caller's body
-//! and keeps the group's view state (the selected tab, whether it is
-//! collapsed) in the context under its id.
+//! [`group`] draws a section straight on the pane's background, the same
+//! in every style: no card, no border, no rounded corners, no pill fills
+//! (Mark, 2026-10-23: a flat pane without border clutter). A 24 pt header
+//! holds the tab titles as text, left-aligned (the selected or hovered one
+//! in `text`, the rest `text_dim`), then the body 6 pt below. The section
+//! keeps its view state (the selected tab, whether it is collapsed) in the
+//! context under its id. [`group_with_actions`] puts the caller's actions
+//! in the header instead, with the panel menu (three dots) at its right.
 //!
-//! **Pro.** A 26 pt `tab_strip` strip (top corners 3, all four when
-//! collapsed) of edge-to-edge tabs in Inter 11.5, label plus 22 wide (at
-//! least 40): the active tab `card` with `text`, a hovered one `hover` at
-//! 40% with `text_dim`, the rest bare in `text_faint`. A three-line panel
-//! menu button sits 14 pt from the strip's right. The body is `card` with
-//! bottom corners 3 and an 8 pt margin; 2 pt follow the group.
-//!
-//! **Studio.** A `card` with a 1 pt `card_border` at `radius`, margins 8
-//! at the sides, 6 at the top and 10 at the bottom (6 collapsed), and 6 pt
-//! after it. Its 24 pt header holds the pills (Inter Medium 12.5, label
-//! plus 20, at least 44, 2 pt apart; the selected pill `hover` with a 1 pt
-//! `field_border` inside, a hovered one `hover` at 60%, all in `text_dim`
-//! but the selected one) and, 4 pt after them, a 22 pt ellipsis button.
-//! 6 pt separate the header from the body.
-//!
-//! In both, dragging the strip (or the card's top 22 pt) reports a drag for
-//! the dock to move the group, and double-clicking a tab or the strip
-//! collapses the group to its header. Overflow follows [`crate::tabs::fit`].
-//! [`stack`] columns groups so those drags reorder them: the insertion line
-//! shows where a group would land, and the drop hands back the new order.
+//! Dragging the header's top band reports a drag for the dock to move the
+//! group, and double-clicking it collapses the group to its header.
+//! Overflow follows [`crate::tabs::fit`]. [`stack`] columns groups so those
+//! drags reorder them: the insertion line shows where a group would land,
+//! and the drop hands back the new order.
 
 use crate::button::IconButton;
-use crate::chrome::{self, Chrome};
+use crate::chrome::Chrome;
 use crate::icons::Icon;
 use crate::tabs;
-use design::family::style::PanelGroups;
 use egui::emath::GuiRounding;
 use egui::{
-    Color32, CornerRadius, FontFamily, FontId, Frame, Id, Margin, Pos2, Rect, Response, Sense,
-    Stroke, StrokeKind, Ui, WidgetInfo, WidgetType, pos2, vec2,
+    Color32, FontId, Frame, Id, Margin, Pos2, Rect, Response, Sense, Stroke, Ui, WidgetInfo,
+    WidgetType, pos2, vec2,
 };
 
 /// A group's view state.
@@ -52,9 +40,10 @@ pub struct GroupResponse<R> {
     /// The body's value; `None` while collapsed.
     pub inner: Option<R>,
     pub state: GroupState,
-    /// The panel menu (Pro) or ellipsis (Studio) button.
+    /// The panel menu (three dots) from [`group_with_actions`]; a plain
+    /// [`group`] has none, and this is its header, which never clicks.
     pub menu: Response,
-    /// The drag handle: the strip background, or the card's top band.
+    /// The drag handle: the header's top band.
     pub handle: Response,
 }
 
@@ -69,10 +58,7 @@ pub fn group<R>(
     let mut state: GroupState = ui.data(|d| d.get_temp(id)).unwrap_or_default();
     state.selected = state.selected.min(tabs.len().saturating_sub(1));
     let chrome = Chrome::of(ui.ctx());
-    let out = match chrome.style.panel_groups {
-        PanelGroups::TabStrip => pro_group(ui, id, &chrome, tabs, &mut state, &mut |_| {}, body),
-        PanelGroups::Cards => card_group(ui, id, &chrome, tabs, &mut state, &mut |_| {}, body),
-    };
+    let out = section(ui, id, &chrome, tabs, &mut state, &mut |_| {}, false, body);
     ui.data_mut(|d| d.insert_temp(id, state));
     GroupResponse { state, ..out }
 }
@@ -97,10 +83,7 @@ pub fn group_with_actions<R>(
             actions(ui);
         }
     };
-    let out = match chrome.style.panel_groups {
-        PanelGroups::TabStrip => pro_group(ui, id, &chrome, &[], &mut state, &mut run, body),
-        PanelGroups::Cards => card_group(ui, id, &chrome, &[], &mut state, &mut run, body),
-    };
+    let out = section(ui, id, &chrome, &[], &mut state, &mut run, true, body);
     ui.data_mut(|d| d.insert_temp(id, state));
     GroupResponse { state, ..out }
 }
@@ -138,207 +121,22 @@ fn widths(
     tabs::fit(&naturals, minimum, room, Some(selected))
 }
 
-fn pro_group<R>(
+/// A group as a plain section on the pane's own background: no card, no
+/// border, no pill fills. The header holds the tab titles as text (the
+/// selected one in `text`, the rest `text_dim`), or the caller's actions,
+/// and the panel menu (three dots) only when `dots` asks for it.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "group's inputs, called from its two entry points"
+)]
+fn section<R>(
     ui: &mut Ui,
     id: Id,
     chrome: &Chrome,
     tabs: &[&str],
     state: &mut GroupState,
     actions: &mut dyn FnMut(&mut Ui),
-    body: impl FnOnce(&mut Ui, usize) -> R,
-) -> GroupResponse<R> {
-    let p = &chrome.palette;
-    let width = ui.available_width();
-    let (strip, handle) = ui.allocate_exact_size(
-        vec2(
-            width,
-            crate::chrome::Chrome::of(ui.ctx()).style.panel_strip as f32,
-        ),
-        Sense::click_and_drag(),
-    );
-    if handle.double_clicked() {
-        state.collapsed = !state.collapsed;
-    }
-    let r = crate::chrome::Chrome::of(ui.ctx()).style.panel_pro_radius;
-    let strip_corners = if state.collapsed {
-        CornerRadius::same(r)
-    } else {
-        CornerRadius {
-            nw: r,
-            ne: r,
-            sw: 0,
-            se: 0,
-        }
-    };
-    ui.painter().rect_filled(strip, strip_corners, p.tab_strip);
-
-    let menu_rect = Rect::from_center_size(
-        pos2(
-            strip.right()
-                - crate::chrome::Chrome::of(ui.ctx())
-                    .style
-                    .panel_menu_from_right as f32,
-            strip.center().y,
-        ),
-        vec2(
-            crate::chrome::Chrome::of(ui.ctx()).style.panel_menu_box_w as f32,
-            crate::chrome::Chrome::of(ui.ctx()).style.panel_menu_box_h as f32,
-        ),
-    );
-    let font = FontId::new(
-        crate::chrome::Chrome::of(ui.ctx()).style.panel_pro_size as f32,
-        FontFamily::Proportional,
-    );
-    let fit = widths(
-        ui,
-        tabs,
-        &font,
-        crate::chrome::Chrome::of(ui.ctx()).style.panel_pro_pad as f32,
-        crate::chrome::Chrome::of(ui.ctx()).style.panel_pro_min as f32,
-        menu_rect.left() - strip.left(),
-        state.selected,
-    );
-    let mut x = strip.left();
-    let mut hidden = Vec::new();
-    for (index, (name, width)) in tabs.iter().zip(&fit.widths).enumerate() {
-        let Some(width) = *width else {
-            hidden.push((index, (*name).to_owned()));
-            continue;
-        };
-        let rect = Rect::from_min_size(
-            pos2(x, strip.top()),
-            vec2(
-                width,
-                crate::chrome::Chrome::of(ui.ctx()).style.panel_strip as f32,
-            ),
-        );
-        x += width;
-        let response = ui.interact(rect, id.with(("tab", index)), Sense::click());
-        let active = index == state.selected && !state.collapsed;
-        response.widget_info(|| {
-            WidgetInfo::selected(WidgetType::Button, ui.is_enabled(), active, name)
-        });
-        let (fill, ink) = if active {
-            (Some(p.card), p.text)
-        } else if response.hovered() {
-            (
-                Some(
-                    p.hover.gamma_multiply(
-                        crate::chrome::Chrome::of(ui.ctx())
-                            .style
-                            .panel_pro_hover_alpha as f32,
-                    ),
-                ),
-                p.text_dim,
-            )
-        } else {
-            (None, p.text_faint)
-        };
-        if let Some(fill) = fill {
-            let corners = if index == 0 {
-                CornerRadius {
-                    nw: r,
-                    ..CornerRadius::ZERO
-                }
-            } else {
-                CornerRadius::ZERO
-            };
-            ui.painter().rect_filled(rect, corners, fill);
-        }
-        let (galley, cut) = tabs::label(
-            ui,
-            name,
-            font.clone(),
-            width,
-            crate::chrome::Chrome::of(ui.ctx()).style.panel_pro_pad as f32,
-        );
-        let at = (rect.center() - galley.size() / 2.0).round_to_pixels(ui.pixels_per_point());
-        ui.painter().galley(at, galley, ink);
-        let response = if cut {
-            response.on_hover_text(*name)
-        } else {
-            response
-        };
-        tab_input(&response, index, state);
-    }
-    if fit.overflows() {
-        let rect = Rect::from_min_size(
-            pos2(x, strip.top()),
-            vec2(
-                tabs::chevron_of(ui.ctx()),
-                crate::chrome::Chrome::of(ui.ctx()).style.panel_strip as f32,
-            ),
-        );
-        if let Some(index) = tabs::chevron(ui, id.with("overflow"), rect, &hidden) {
-            state.selected = index;
-        }
-    }
-    if tabs.is_empty() {
-        let rect = Rect::from_min_size(
-            strip.left_top(),
-            vec2(
-                menu_rect.left() - strip.left(),
-                crate::chrome::Chrome::of(ui.ctx()).style.panel_strip as f32,
-            ),
-        );
-        ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| actions(ui));
-    }
-    let menu = ui.interact(menu_rect, id.with("menu"), Sense::click());
-    menu.widget_info(|| {
-        WidgetInfo::labeled(
-            WidgetType::Button,
-            ui.is_enabled(),
-            crate::strings::own("panel-menu"),
-        )
-    });
-    let ink = if menu.hovered() { p.text } else { p.text_faint };
-    for k in [-1.0, 0.0, 1.0] {
-        let y = ui.painter().round_to_pixel_center(
-            menu_rect.center().y
-                + k * crate::chrome::Chrome::of(ui.ctx()).style.panel_menu_pitch as f32,
-        );
-        let half = crate::chrome::Chrome::of(ui.ctx()).style.panel_menu_line as f32 / 2.0;
-        ui.painter().hline(
-            menu_rect.center().x - half..=menu_rect.center().x + half,
-            y,
-            Stroke::new(Chrome::of(ui.ctx()).style.hairline_width as f32, ink),
-        );
-    }
-
-    let inner = (!state.collapsed).then(|| {
-        Frame::new()
-            .fill(p.card)
-            .corner_radius(CornerRadius {
-                nw: 0,
-                ne: 0,
-                sw: r,
-                se: r,
-            })
-            .inner_margin(Margin::same(
-                crate::chrome::Chrome::of(ui.ctx()).style.panel_pro_margin as i8,
-            ))
-            .show(ui, |ui| {
-                ui.set_width(ui.available_width());
-                body(ui, state.selected)
-            })
-            .inner
-    });
-    ui.add_space(crate::chrome::Chrome::of(ui.ctx()).style.panel_pro_after as f32);
-    GroupResponse {
-        inner,
-        state: *state,
-        menu,
-        handle,
-    }
-}
-
-fn card_group<R>(
-    ui: &mut Ui,
-    id: Id,
-    chrome: &Chrome,
-    tabs: &[&str],
-    state: &mut GroupState,
-    actions: &mut dyn FnMut(&mut Ui),
+    dots: bool,
     body: impl FnOnce(&mut Ui, usize) -> R,
 ) -> GroupResponse<R> {
     let p = chrome.palette;
@@ -378,22 +176,11 @@ fn card_group<R>(
                 .panel_card_margin_bottom as i8,
         }
     };
-    let frame = Frame::new()
-        .fill(p.card)
-        .stroke(if chrome.style.bevels {
-            Stroke::NONE
-        } else {
-            Stroke::new(
-                Chrome::of(ui.ctx()).style.hairline_width as f32,
-                p.card_border,
-            )
-        })
-        .corner_radius(chrome.metrics.radius)
-        .inner_margin(margin);
+    let frame = Frame::new().inner_margin(margin);
     let shown = frame.show(ui, |ui| {
         ui.set_width(ui.available_width());
         let width = ui.available_width();
-        let (header, _) = ui.allocate_exact_size(
+        let (header, header_response) = ui.allocate_exact_size(
             vec2(
                 width,
                 crate::chrome::Chrome::of(ui.ctx()).style.panel_header as f32,
@@ -413,9 +200,16 @@ fn card_group<R>(
             ui.ctx(),
             crate::fonts::medium(crate::chrome::Chrome::of(ui.ctx()).style.panel_pill_size as f32),
         );
-        let room = width
-            - crate::chrome::Chrome::of(ui.ctx()).style.panel_ellipsis as f32
-            - crate::chrome::Chrome::of(ui.ctx()).style.panel_ellipsis_gap as f32;
+        let room = if dots {
+            width
+                - crate::chrome::Chrome::of(ui.ctx()).style.panel_ellipsis as f32
+                - crate::chrome::Chrome::of(ui.ctx()).style.panel_ellipsis_gap as f32
+        } else if tabs.len() > 1 {
+            // Room for the overflow chevron after the last tab that fits.
+            width - tabs::chevron_of(ui.ctx())
+        } else {
+            width
+        };
         let fit = widths(
             ui,
             tabs,
@@ -447,7 +241,6 @@ fn card_group<R>(
             response.widget_info(|| {
                 WidgetInfo::selected(WidgetType::Button, ui.is_enabled(), selected, name)
             });
-            pill(ui, chrome, rect, selected, response.hovered());
             let (galley, cut) = tabs::label(
                 ui,
                 name,
@@ -455,8 +248,14 @@ fn card_group<R>(
                 rect.width(),
                 crate::chrome::Chrome::of(ui.ctx()).style.panel_pill_pad as f32,
             );
-            let ink = if selected { p.text } else { p.text_dim };
-            let at = (rect.center() - galley.size() / 2.0).round_to_pixels(ui.pixels_per_point());
+            let ink = if selected || response.hovered() {
+                p.text
+            } else {
+                p.text_dim
+            };
+            // Left-aligned in its slot, so a lone title reads as a heading.
+            let at = pos2(rect.left(), rect.center().y - galley.size().y / 2.0)
+                .round_to_pixels(ui.pixels_per_point());
             ui.painter().galley(at, galley, ink);
             let response = if cut {
                 response.on_hover_text(*name)
@@ -498,21 +297,22 @@ fn card_group<R>(
                 crate::chrome::Chrome::of(ui.ctx()).style.panel_ellipsis as f32,
             ),
         );
-        let menu = ui.put(
-            ellipsis,
-            IconButton::new(Icon::Ellipsis)
-                .size(crate::chrome::Chrome::of(ui.ctx()).style.panel_ellipsis as f32)
-                .tooltip(crate::strings::own("panel-menu")),
-        );
+        let menu = if dots {
+            ui.put(
+                ellipsis,
+                IconButton::new(Icon::Ellipsis)
+                    .size(crate::chrome::Chrome::of(ui.ctx()).style.panel_ellipsis as f32)
+                    .tooltip(crate::strings::own("panel-menu")),
+            )
+        } else {
+            header_response
+        };
         let inner = (!state.collapsed).then(|| {
             ui.add_space(crate::chrome::Chrome::of(ui.ctx()).style.panel_header_after as f32);
             body(ui, state.selected)
         });
         (inner, menu, handle)
     });
-    if chrome.style.bevels {
-        chrome::bevel(ui.painter(), shown.response.rect, true, &p);
-    }
     ui.add_space(crate::chrome::Chrome::of(ui.ctx()).style.panel_card_after as f32);
     let (inner, menu, handle) = shown.inner;
     GroupResponse {
@@ -593,38 +393,6 @@ pub fn stack(
     }
     (handle.drag_stopped() && before != from && before != from + 1)
         .then(|| moved(order, from, before))
-}
-
-/// A Studio pill's fill and outline (§3.11).
-fn pill(ui: &Ui, chrome: &Chrome, rect: Rect, selected: bool, hovered: bool) {
-    let (p, painter) = (&chrome.palette, ui.painter());
-    let radius = chrome.metrics.radius_sm;
-    if selected {
-        painter.rect_filled(rect, radius, p.hover);
-        if chrome.style.bevels {
-            chrome::bevel(painter, rect, true, p);
-        } else {
-            painter.rect_stroke(
-                rect,
-                radius,
-                Stroke::new(
-                    Chrome::of(ui.ctx()).style.hairline_width as f32,
-                    p.field_border,
-                ),
-                StrokeKind::Inside,
-            );
-        }
-    } else if hovered {
-        painter.rect_filled(
-            rect,
-            radius,
-            p.hover.gamma_multiply(
-                crate::chrome::Chrome::of(ui.ctx())
-                    .style
-                    .panel_pill_hover_alpha as f32,
-            ),
-        );
-    }
 }
 
 /// A section label: Inter Medium 11.5 in `text_faint` (§3.22).

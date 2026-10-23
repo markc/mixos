@@ -506,14 +506,14 @@ fn title_bar_controls_click_at_one_pass_a_second() {
         label("search"),
         "the filter has the keyboard: {focus}"
     );
-    let link = control_link(&mut rig, 6, &label("shortcuts"));
-    send(&mut rig, 7, "busviewer.ui.click", json!({"id":link}));
+    let keys = control_button(&mut rig, 6, &label("shortcuts"));
+    send(&mut rig, 7, "busviewer.ui.click", json!({"id":keys}));
     wait(&mut rig, &[7]);
     rig.h.run_steps(2);
     assert_eq!(
         engine(&rig).ui.dialog,
         Some(inspector::Dialog::Shortcuts),
-        "the link opened the shortcuts"
+        "the keyboard icon opened the shortcuts"
     );
 }
 
@@ -883,9 +883,13 @@ fn a_newer_look_read_voids_an_armed_retry() {
     assert_eq!(effective_scheme(&mut rig, 1), json!("ocean"));
 }
 
-/// The one link named `name` exactly.
-fn control_link(rig: &mut Rig, id: u64, name: &str) -> String {
-    let nodes = tree(rig, id, json!({"label":name,"exact":true,"role":"Link"}));
+/// The one button whose name starts with `name` (an icon is named by its
+/// tooltip, which may add the shortcut).
+fn control_button(rig: &mut Rig, id: u64, name: &str) -> String {
+    let nodes: Vec<Value> = tree(rig, id, json!({"label":name,"role":"Button"}))
+        .into_iter()
+        .filter(|n| n["label"].as_str().is_some_and(|l| l.starts_with(name)))
+        .collect();
     assert_eq!(nodes.len(), 1, "{name}: {nodes:?}");
     nodes[0]["id"].as_str().unwrap().to_owned()
 }

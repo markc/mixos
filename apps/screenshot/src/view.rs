@@ -23,7 +23,7 @@ use egui::{
 use toolkit::button::{IconButton, PushButton};
 use toolkit::command::Origin;
 use toolkit::dialog::{self, Choice, Role};
-use toolkit::titlebar::{self, Control};
+use toolkit::titlebar::{self, Action};
 use toolkit::{Icon, Strings, bars, field, tooltip};
 
 /// One interaction from this frame.
@@ -106,25 +106,15 @@ pub fn view(
     drag: &mut Drag,
 ) -> Vec<UiEvent> {
     let mut events = Vec::new();
-    let mut controls = [
-        Control::Icon {
-            command: "capture.take",
-            icon: Icon::Camera,
-            selected: false,
-        },
-        Control::Link {
-            command: "help.shortcuts",
-            icon: Icon::Keyboard,
-        },
-    ];
-    let fired = titlebar::show_engine_with(
+    // The icon bar: take, then the standard tail.
+    let fired = titlebar::show_engine_bar(
         ui,
         &title(app),
         Some(Icon::Camera),
         commands,
         app,
         strings,
-        &mut controls,
+        &[Action::new("capture.take", Icon::Camera)],
     );
     events.extend(fired.into_iter().map(|(id, o)| UiEvent::Command(id, o)));
     bars::options(ui, |ui| options(ui, app, commands, strings, &mut events));
