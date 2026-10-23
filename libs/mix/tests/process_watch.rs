@@ -106,7 +106,10 @@ async fn detached_pipe_holder_has_bounded_drain() {
     let dir = std::env::temp_dir().join(format!(
         "mix-watch-detached-{}-{}",
         std::process::id(),
-        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
     ));
     std::fs::create_dir(&dir).unwrap();
     let pidfile = dir.join("grandchild.pid");
