@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! The window: the toolkit title bar with the menus, the document tabs, the
-//! notice strip (warnings, set-aside edits, a detached document), the find
+//! notice strip (set-aside edits, a detached document), the find
 //! bar, the editor, the Problems and Output panels, and the status bar.
 //! [`view`] draws the state and returns what the person did as
 //! [`UiEvent`]s; [`apply`] runs them after the frame, so a snapshot needs no
@@ -197,7 +197,7 @@ fn tabs(ui: &mut Ui, app: &App, events: &mut Vec<UiEvent>) {
         .map(|t| {
             let name = tab_name(t);
             let mirror = t.mirror.as_ref();
-            let opening = app.ctl.open_error(tab.id).is_none() && mirror.is_none_or(|m| matches!(m.phase(), Phase::Bootstrapping { .. }));
+            let opening = app.ctl.open_error(t.id).is_none() && mirror.is_none_or(|m| matches!(m.phase(), Phase::Bootstrapping { .. }));
             let mut meta = mirror.map_or_else(String::new, |_| t.language().to_owned());
             if app.ctl.agent_since_focus(t.id) {
                 meta.push_str(" ◆");
@@ -367,7 +367,11 @@ fn document(
     };
     let name = tab_name(tab);
     let Some(m) = tab.mirror.as_ref() else {
-        let message = app.ctl.open_error(tab.id).map(str::to_owned)
+        let message = app.ctl.open_error(tab.id).map(|message| {
+            if message == documents::controller::EDIT_UNAVAILABLE {
+                label("edit-unavailable")
+            } else { message.to_owned() }
+        })
             .unwrap_or_else(|| label_with("opening", &[("name", &name)]));
         centred(ui, &message);
         return None;

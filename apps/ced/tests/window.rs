@@ -6,7 +6,7 @@
 //! window, and typing that reaches the service. Regenerate the images with
 //! `UPDATE_SNAPSHOTS=1` and look at them before committing.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
 use std::rc::Rc;
 use std::time::Duration;
@@ -67,6 +67,7 @@ print(\"Hello\")
 /// clock until the test fires them. Session-look reads, their retries and
 /// subscriptions are recorded for the test to answer.
 struct Fake {
+    edit_available: Rc<Cell<bool>>,
     editd: Rc<RefCell<FakeEditd>>,
     queue: Rc<RefCell<VecDeque<Delivery>>>,
     timers: Rc<RefCell<Vec<u64>>>,
@@ -78,6 +79,7 @@ struct Fake {
 
 /// The test's side of the fake: the service, and its clock.
 struct Service {
+    edit_available: Rc<Cell<bool>>,
     editd: Rc<RefCell<FakeEditd>>,
     queue: Rc<RefCell<VecDeque<Delivery>>>,
     timers: Rc<RefCell<Vec<u64>>>,
@@ -124,6 +126,11 @@ impl Transport for Fake {
             self.subscribed.borrow_mut().push(topic.clone());
         }
         if let Effect::Send { req, out } = effect {
+            if !self.edit_available.get() {
+                self.queue.borrow_mut().push_back(reply(*req, 10,
+                    r#"{"error_code":"UNAVAILABLE","message":""}"#.into()));
+                return;
+            }
             let args: Value = serde_json::from_str(&out.body).unwrap_or_else(|_| json!({}));
             let mut answer = self
                 .editd
@@ -198,6 +205,15 @@ fn window(
     files: &[(&str, &str)],
     size: egui::Vec2,
 ) -> (Harness<'static, Holder>, Service) {
+    window_with_edit(theme, files, size, true)
+}
+
+fn window_with_edit(
+    theme: Theme,
+    files: &[(&str, &str)],
+    size: egui::Vec2,
+    available: bool,
+) -> (Harness<'static, Holder>, Service) {
     let editd = Rc::new(RefCell::new(FakeEditd::new("e1")));
     let paths: Vec<String> = files
         .iter()
@@ -207,6 +223,7 @@ fn window(
         })
         .collect();
     let service = Service {
+        edit_available: Rc::new(Cell::new(available)),
         editd: editd.clone(),
         queue: Rc::default(),
         timers: Rc::default(),
@@ -216,6 +233,7 @@ fn window(
         published: Rc::default(),
     };
     let transport = Box::new(Fake {
+        edit_available: service.edit_available.clone(),
         editd: editd.clone(),
         queue: service.queue.clone(),
         timers: service.timers.clone(),
@@ -362,6 +380,25 @@ fn markdown_preview_is_read_only_and_stays_above_the_panels() {
     let editd = service.editd.borrow();
     assert_eq!(editd.text(&editd.buffers()[0]), MARKDOWN);
     assert!(h.state().shell.as_ref().unwrap().app.editor_id.is_none());
+}
+
+#[test]
+fn missing_edit_shows_waiting_state_and_registration_opens_the_document() {
+    use egui_kittest::kittest::Queryable;
+    let (mut h, service) = window_with_edit(
+        theme(Scheme::Studio, Mode::Dark),
+        &[("/work/hello.mix", "print(1)\n")], egui::vec2(900.0, 500.0), false,
+    );
+    h.run_steps(4);
+    assert!(h.query_by_label(documents::controller::EDIT_UNAVAILABLE).is_some());
+    service.edit_available.set(true);
+    service.deliver(Delivery::Incoming(Incoming::Topic {
+        topic: "noded.props.changed".into(),
+        body: r#"{"path":"services.registered","new":["edit"]}"#.into(),
+    }));
+    h.run_steps(6);
+    assert!(h.query_by_label(documents::controller::EDIT_UNAVAILABLE).is_none());
+    assert!(h.state().shell.as_ref().unwrap().app.active_tab().unwrap().mirror.is_some());
 }
 
 #[test]

@@ -149,7 +149,7 @@ const DEADLINE_MS: u64 = 5_000;
 /// A Bus `ced.action` waits this long for its server op's outcome (a save's
 /// own deadline, its `edit.list` check and one resend fit inside).
 const OP_WAIT_MS: u64 = 90_000;
-/// `edit.open` deadlines before the tab says the service is silent.
+/// Shown when `edit` is absent or an initial open exceeds its budget.
 pub const EDIT_UNAVAILABLE: &str = "The edit service is not running; this document will open when it starts.";
 
 /// A Bus `ced.action` waiting on its server op's outcome.

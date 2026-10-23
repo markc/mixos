@@ -131,3 +131,5 @@ conflict-notice = { $n ->
 reinsert = Re-insert at Caret
 reinsert-later = The document is reconnecting. Re-insert the text once it is back.
 detached-notice = This document is no longer attached to the edit service. Your copy is kept.
+edit-unavailable = The edit service is not running; this document will open when it starts.
+request-failed = Ced could not complete the request.

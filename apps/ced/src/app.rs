@@ -521,7 +521,7 @@ impl App {
             return;
         };
         let text = if text.trim().is_empty() {
-            "Ced could not complete the request.".to_owned()
+            crate::label("request-failed")
         } else { text };
         if level == Level::Info {
             self.status = Some((text, self.now + STATUS_SECONDS));
