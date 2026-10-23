@@ -114,19 +114,8 @@ for $file in ["chrome", "style", "field", "canvas", "button", "toggle", "slider"
     push($errors, $file .. ": " .. $message)
   end
 end
--- Tokens of the removed Pro panel strip and panel-menu glyph (panel groups
--- became plain sections, 2026-10-23). They stay in the schema, the compat
--- tables and frozen designs until their retirement (style.rs RETIRED plus a
--- compat version) lands; until then they need no consumer, and listing one
--- that has a consumer again is an error, so this list cannot go stale.
-$retiring = ["panel_pro_size", "panel_pro_pad", "panel_pro_min", "panel_pro_radius", "panel_pro_hover_alpha", "panel_pro_margin", "panel_pro_after", "panel_menu_from_right", "panel_menu_line", "panel_menu_pitch", "panel_menu_box_w", "panel_menu_box_h", "panel_pill_hover_alpha"]
 for $name in keys($defaults)
-  $consumed = re_match($consumers, '\.\s*' .. $name .. '\b')
-  if contains($retiring, $name) then
-    if $consumed then push($errors, "retiring token has a consumer again: " .. $name) end
-  elif not $consumed then
-    push($errors, "no toolkit consumer for " .. $name)
-  end
+  if not re_match($consumers, '\.\s*' .. $name .. '\b') then push($errors, "no toolkit consumer for " .. $name) end
 end
 if length($required) != 40 then push($errors, "required set is not forty names") end
 if length($errors) > 0 then
