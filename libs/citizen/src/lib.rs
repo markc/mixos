@@ -12,8 +12,8 @@
 //! that the app's name (`busviewer`, `prefs`) is a parameter: it names the
 //! worker thread, the closing refusal and the `<app>.ping` / `<app>.show`
 //! verbs used for single-instance activation.
-pub mod outbox;
 pub mod macros;
+pub mod outbox;
 
 use ::bus::native_client::{
     BoundedIncomingEvent, ConnState, IncomingCommand, NodedClient, SupervisedClient,

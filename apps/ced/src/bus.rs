@@ -486,8 +486,7 @@ async fn run(
             && !cmd.command.is_empty()
             && cmd.id.is_some()
         {
-            if citizen::macros::dispatch("ced", &cmd, client.clone()) { continue; }
-                next_command += 1;
+            next_command += 1;
             commands.insert(next_command, cmd);
         }
     }

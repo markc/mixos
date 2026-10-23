@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Macro transport glue shared by application Bus lanes.
 use crate::outbox::Outbox;
+pub use ::macros::verbs::describe;
 use bus::native_client::{IncomingCommand, SupervisedClient};
 use serde_json::{Value, json};
 use std::sync::Arc;
 use std::time::Duration;
-pub use ::macros::verbs::describe;
 
 pub fn install(app: &str, service: &str, outbox: Arc<Outbox>) {
     let topic = format!("{service}.macros.finished");
@@ -21,15 +21,28 @@ pub fn dispatch(app: &str, command: &IncomingCommand, client: Arc<SupervisedClie
         return false;
     };
     let reply = request(app, suffix, &command.body);
-    let command = command.clone();
+    let command = IncomingCommand {
+        generation: command.generation,
+        from: command.from.clone(),
+        command: command.command.clone(),
+        id: command.id.clone(),
+        args: command.args.clone(),
+        body: command.body.clone(),
+        headers: command.headers.clone(),
+    };
     tokio::spawn(async move {
         let answer = match reply {
             ::macros::verbs::Reply::Immediate(answer) => answer,
-            deferred => tokio::task::spawn_blocking(move || deferred.wait()).await
+            deferred => tokio::task::spawn_blocking(move || deferred.wait())
+                .await
                 .unwrap_or_else(|e| Err(e.to_string())),
         };
         let (rc, body) = answer_body(answer);
-        let _ = tokio::time::timeout(Duration::from_secs(2), client.respond(&command, rc, &body.to_string())).await;
+        let _ = tokio::time::timeout(
+            Duration::from_secs(2),
+            client.respond(&command, rc, &body.to_string()),
+        )
+        .await;
     });
     true
 }

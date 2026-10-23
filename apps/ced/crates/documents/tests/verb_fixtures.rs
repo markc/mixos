@@ -41,6 +41,9 @@ fn check(name: &str, v: &Value) {
         .rsplit_once('.')
         .unwrap_or_else(|| panic!("{name}: bad fixture name"));
     match (verb, kind) {
+        (verb, "request" | "reply") if verb.starts_with("ced.macros.") => {
+            round_trips::<Value>(name, v)
+        }
         (
             "ced.ping" | "ced.info" | "ced.new" | "ced.tabs" | "ced.actions" | "ced.stats"
             | "app.describe" | "app.quit",

@@ -104,7 +104,10 @@ pub fn describe() -> Value {
         {"name":"screenshot.quit","description":"Close; refused while unsaved annotations exist","read_only":false},
         {"name":"screenshot.theme","args":{"scheme":"optional scheme name or null to follow the session","mode":"optional light, dark or null"},"description":"Choose the window's scheme and mode; answers the choice","read_only":false}
     ]});
-    surface["verbs"].as_array_mut().unwrap().extend(citizen::macros::describe("screenshot"));
+    surface["verbs"]
+        .as_array_mut()
+        .unwrap()
+        .extend(citizen::macros::describe("screenshot"));
     surface
 }
 

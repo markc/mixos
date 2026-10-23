@@ -1547,7 +1547,10 @@ mod tests {
             .iter()
             .map(|v| v["name"].as_str().unwrap())
             .collect();
-        assert_eq!(names.len(), VERBS.len() + drive::VERBS.len() + citizen::macros::describe(APP).len());
+        assert_eq!(
+            names.len(),
+            VERBS.len() + drive::VERBS.len() + citizen::macros::describe(APP).len()
+        );
     }
 
     #[test]

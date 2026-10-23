@@ -1326,6 +1326,7 @@ version = "0.1.2"
 dependencies = [
  "bus",
  "futures",
+ "macros",
  "serde_json",
  "test-broker",
  "tokio",
@@ -5194,6 +5195,7 @@ name = "macros"
 version = "0.1.2"
 dependencies = [
  "libc",
+ "serde_json",
  "tempfile",
 ]
 

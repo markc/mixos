@@ -157,7 +157,11 @@ impl Outbox {
     /// The event just taken was not published: it is lost, and so is the
     /// loss it carried.
     pub fn failed(&self, body: &Value) {
-        let carried = body.get("event_dropped").or_else(|| body.get("dropped")).and_then(Value::as_u64).unwrap_or(0);
+        let carried = body
+            .get("event_dropped")
+            .or_else(|| body.get("dropped"))
+            .and_then(Value::as_u64)
+            .unwrap_or(0);
         self.state().lost += 1 + carried;
     }
 
@@ -288,5 +292,19 @@ mod tests {
         assert!(text.starts_with("---\ncommand: demo.command.executed\n---\n{"));
         let body: Value = serde_json::from_str(text.lines().nth(3).unwrap()).unwrap();
         assert_eq!(body["seq"], 1);
+    }
+
+    #[test]
+    fn macro_output_loss_is_independent_of_event_loss() {
+        let outbox = Outbox::new(2);
+        outbox.push("demo.macros.finished", [json!({"run":1,"dropped":true})], 3);
+        let (_, body) = outbox.next().unwrap();
+        assert_eq!(body["dropped"], true);
+        assert_eq!(body["event_dropped"], 3);
+        outbox.failed(&body);
+        outbox.push("demo.macros.finished", [json!({"run":2,"dropped":false})], 0);
+        let (_, body) = outbox.next().unwrap();
+        assert_eq!(body["dropped"], false);
+        assert_eq!(body["event_dropped"], 4);
     }
 }

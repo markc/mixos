@@ -30,7 +30,8 @@ impl Session {
         static SESSIONS: OnceLock<Mutex<HashMap<String, Session>>> = OnceLock::new();
         SESSIONS
             .get_or_init(Default::default)
-            .lock().unwrap()
+            .lock()
+            .unwrap()
             .entry(app.to_owned())
             .or_insert_with(|| Self::with_roots(app, Roots::resolve()))
             .clone()
@@ -38,9 +39,14 @@ impl Session {
 
     pub fn with_roots(app: &str, roots: Option<Roots>) -> Self {
         Self(Arc::new(Mutex::new(State {
-            app: app.into(), roots, catalogue: None, runner: Runner::default(),
-            run: 0, identity: json!({"run":null,"id":null,"title":null,"origin":null,"started":null}),
-            active: false, finish: None,
+            app: app.into(),
+            roots,
+            catalogue: None,
+            runner: Runner::default(),
+            run: 0,
+            identity: json!({"run":null,"id":null,"title":null,"origin":null,"started":null}),
+            active: false,
+            finish: None,
         })))
     }
 
@@ -56,7 +62,10 @@ impl Session {
     pub fn reload(&self) -> Result<Catalogue, String> {
         let (roots, app) = {
             let state = self.0.lock().unwrap();
-            (state.roots.clone().ok_or("an absolute HOME is required")?, state.app.clone())
+            (
+                state.roots.clone().ok_or("an absolute HOME is required")?,
+                state.app.clone(),
+            )
         };
         let catalogue = Catalogue::scan(&roots, &app).map_err(|e| e.to_string())?;
         self.0.lock().unwrap().catalogue = Some(catalogue.clone());
@@ -65,9 +74,15 @@ impl Session {
 
     pub fn run(&self, id: &str, origin: &str) -> Result<Value, String> {
         let mut state = self.0.lock().unwrap();
-        if state.active { return Err("a macro is already running".into()); }
-        let entry = state.catalogue.as_ref().and_then(|c| c.entries.iter().find(|e| e.id == id))
-            .cloned().ok_or("unknown macro id")?;
+        if state.active {
+            return Err("a macro is already running".into());
+        }
+        let entry = state
+            .catalogue
+            .as_ref()
+            .and_then(|c| c.entries.iter().find(|e| e.id == id))
+            .cloned()
+            .ok_or("unknown macro id")?;
         let roots = state.roots.clone().ok_or("an absolute HOME is required")?;
         state.run += 1;
         let run = state.run;
@@ -76,7 +91,9 @@ impl Session {
         state.active = true;
         let weak = Arc::downgrade(&self.0);
         state.runner.set_finish_hook(Some(Arc::new(move |status| {
-            let Some(inner) = weak.upgrade() else { return; };
+            let Some(inner) = weak.upgrade() else {
+                return;
+            };
             let (hook, body) = {
                 let mut state = inner.lock().unwrap();
                 let mut body = state.identity.clone();
@@ -85,7 +102,9 @@ impl Session {
                 state.active = false;
                 (state.finish.clone(), body)
             };
-            if let Some(hook) = hook { hook(body); }
+            if let Some(hook) = hook {
+                hook(body);
+            }
         })));
         let app = state.app.clone();
         if let Err(error) = state.runner.start(&roots, &app, &entry) {
@@ -95,7 +114,9 @@ impl Session {
             body["dropped"] = json!(false);
             let hook = state.finish.clone();
             drop(state);
-            if let Some(hook) = hook { hook(body); }
+            if let Some(hook) = hook {
+                hook(body);
+            }
             return Err(error.to_string());
         }
         Ok(json!({"accepted":true,"run":run,"id":entry.id,"title":entry.title}))
@@ -117,7 +138,9 @@ impl Session {
     pub fn stop(&self) -> bool {
         let state = self.0.lock().unwrap();
         let stopping = state.active;
-        if stopping { state.runner.stop(); }
+        if stopping {
+            state.runner.stop();
+        }
         stopping
     }
 }
