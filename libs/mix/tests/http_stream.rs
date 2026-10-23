@@ -396,7 +396,7 @@ async fn network_and_conditional_ca_file_capabilities_are_gated_before_io() {
         (
             "$r = http_stream(\"GET\", \"http://127.0.0.1:1/\", fn($line) = true)",
             vec![],
-            "Network capability not allowed",
+            "http_stream requires Network capability",
         ),
         (
             "$r = http_stream(\"GET\", \"http://127.0.0.1:1/\", fn($line) = true, nil, nil, {ca_file: \"absent.pem\"})",
@@ -570,7 +570,7 @@ async fn callback_deadline_does_not_abandon_an_evaluator_function_frame() {
         r#"
         $sentinel = "outer"
         $r = http_stream("GET", "{url}", fn($line)
-            $sentinel = "inner"
+            $sentinel = "inner";
             sleep(1.1)
         end, nil, nil, {{timeout: 1}})
         print($sentinel)
