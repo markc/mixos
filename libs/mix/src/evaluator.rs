@@ -7954,6 +7954,18 @@ impl Evaluator {
         ))
     }
 
+    /// [`refuse_reserved_fn_name`](Self::refuse_reserved_fn_name) over the
+    /// direct top level of `stmts`, for a loader that must refuse before
+    /// it records anything (include's dedup mark).
+    fn refuse_reserved_top_level_fns(&mut self, stmts: &[Stmt]) -> MixResult<()> {
+        for stmt in stmts {
+            if let StmtKind::FunctionDef { name, .. } = &stmt.kind {
+                self.refuse_reserved_fn_name(name, stmt.line)?;
+            }
+        }
+        Ok(())
+    }
+
     /// The current statement's span, when one is known.
     fn current_span(&self) -> Option<crate::error::Span> {
         (self.ctx.current_line > 0).then(|| crate::error::Span {
@@ -17768,6 +17780,17 @@ impl Evaluator {
                 return Err(e);
             }
         };
+        // A builtin-named top-level fn is refused BEFORE the mark below:
+        // nothing has run yet, so a corrected file must stay retryable,
+        // like a failed read or parse. (execute's hoisting pass refuses
+        // the same definition, but only after the include is marked.)
+        if dedup_key.is_some()
+            && let Err(e) = self.refuse_reserved_top_level_fns(&stmts)
+        {
+            self.ctx.current_file = old_file;
+            self.ctx.current_line = old_line;
+            return Err(e);
+        }
         // Read+parse succeeded: mark an `include` as loaded BEFORE the body
         // runs, so a cyclic include (A→B→A) dedups and terminates. A failed
         // read/parse above never reaches here, keeping failures retryable.

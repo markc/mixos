@@ -80,6 +80,49 @@ async fn non_colliding_name_still_works() {
     assert_eq!(out, "42\n");
 }
 
+/// Write `body` to a fresh file under a per-test temp dir; returns its path.
+fn temp_lib(test: &str, body: &str) -> (std::path::PathBuf, String) {
+    let dir = std::env::temp_dir().join(format!("mix_fn_shadows_{test}_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let lib = dir.join("lib.mix");
+    std::fs::write(&lib, body).unwrap();
+    let path = lib.to_string_lossy().to_string();
+    (dir, path)
+}
+
+#[tokio::test]
+async fn refused_include_stays_retryable_once_corrected() {
+    // Codex review: include marks a file loaded before its body runs, so a
+    // refusal raised by the hoisting pass left the file marked and a
+    // corrected re-include silently did nothing. The refusal now comes
+    // before the mark, as a failed read or parse does.
+    let (dir, lib) = temp_lib("include", "fn run($a) = $a\n");
+    let src = format!(
+        "try\n  include \"{lib}\"\ncatch $e\n  print(\"caught\")\nend\n\
+         write_file(\"{lib}\", \"fn run_cmd($a) = $a * 2\\n\")\n\
+         include \"{lib}\"\nprint(run_cmd(21))\n"
+    );
+    let (result, out) = run(&src).await;
+    let _ = std::fs::remove_dir_all(&dir);
+    result.expect("the corrected include loads");
+    assert_eq!(out, "caught\n42\n");
+}
+
+#[tokio::test]
+async fn refused_require_stays_retryable_once_corrected() {
+    // require caches only a successful load; pinned so it stays that way.
+    let (dir, lib) = temp_lib("require", "fn count($x) = 1\n");
+    let src = format!(
+        "try\n  require(\"{lib}\")\ncatch $e\n  print(\"caught\")\nend\n\
+         write_file(\"{lib}\", \"fn tally($x) = 2\\n\")\n\
+         $m = require(\"{lib}\")\nprint($m.tally(0))\n"
+    );
+    let (result, out) = run(&src).await;
+    let _ = std::fs::remove_dir_all(&dir);
+    result.expect("the corrected module loads");
+    assert_eq!(out, "caught\n2\n");
+}
+
 #[tokio::test]
 async fn serve_extension_name_is_not_refused() {
     // `context` is a mix-shell extension, not a builtin: a plain evaluator
