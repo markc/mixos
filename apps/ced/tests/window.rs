@@ -365,6 +365,41 @@ fn markdown_preview_is_read_only_and_stays_above_the_panels() {
 }
 
 #[test]
+fn document_decisions_remain_in_the_notice_strip() {
+    use egui_kittest::kittest::Queryable;
+    use editor_model::model::EditCommand;
+
+    let (mut h, service) = window(
+        theme(Scheme::Studio, Mode::Dark),
+        &[("/work/a.txt", "hello world\n")], egui::vec2(900.0, 500.0),
+    );
+    h.run_steps(6);
+    let shell = h.state_mut().shell.as_mut().unwrap();
+    let tab = shell.app.active().unwrap();
+    shell.app.editor_event(tab, editor::Event::Command(EditCommand::SetSelection(
+        edit::anchor::Selection { anchor: 2, head: 4 },
+    )));
+    shell.app.editor_event(tab, editor::Event::Command(EditCommand::Insert("XY".into())));
+    let buffer = service.editd.borrow().buffers()[0].clone();
+    let answer = service.editd.borrow_mut().handle("local:agent", "edit.replace", &json!({
+        "buffer": buffer, "range": [3, 5], "text": "Q", "origin": "agent:test"
+    }));
+    assert_eq!(answer.rc, 0);
+    h.run_steps(6);
+    assert!(h.query_by_label("Re-insert at Caret").is_some());
+    assert!(h.query_by_label("Dismiss").is_some());
+
+    service.editd.borrow_mut().restart("e2", Some("service text\n"));
+    service.deliver(Delivery::Incoming(Incoming::Topic {
+        topic: "noded.props.changed".into(),
+        body: r#"{"key":"services.registered","value":["edit"]}"#.into(),
+    }));
+    h.run_steps(8);
+    assert!(h.query_by_label("Keep Mine").is_some());
+    assert!(h.query_by_label("Take the Service's").is_some());
+}
+
+#[test]
 fn typing_reaches_the_edit_service() {
     let (mut h, service) = window(
         theme(Scheme::Studio, Mode::Dark),

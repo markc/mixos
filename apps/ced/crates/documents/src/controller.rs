@@ -397,16 +397,20 @@ fn reply_result(rc: u8, body: &str) -> Result<Value, wire::Refusal> {
             serde_json::from_str(body).unwrap_or(Value::Null)
         });
     }
-    Err(
-        serde_json::from_str::<wire::Refusal>(body).unwrap_or_else(|_| wire::Refusal {
+    let value = serde_json::from_str::<Value>(body).unwrap_or(Value::Null);
+    let mut refusal = serde_json::from_str::<wire::Refusal>(body).unwrap_or_else(|_| wire::Refusal {
             error_code: wire::ErrorCode::Internal,
-            message: body.to_string(),
+            message: value["message"].as_str().unwrap_or(body).to_string(),
             reason: None,
             buffer: None,
             rev: None,
             context: Default::default(),
-        }),
-    )
+        });
+    if refusal.message.trim().is_empty() {
+        let code = value["error_code"].as_str().unwrap_or("INTERNAL");
+        refusal.message = format!("The edit request failed ({code}).");
+    }
+    Err(refusal)
 }
 
 fn unparsed_refusal(v: &Value) -> wire::Refusal {

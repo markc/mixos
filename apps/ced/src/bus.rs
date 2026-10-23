@@ -112,9 +112,14 @@ fn failure_body(rc: u8, body: String, error: Option<&str>, verb: &str) -> String
     let mut value = serde_json::from_str::<serde_json::Value>(&body)
         .ok().filter(|v| v.is_object()).unwrap_or_else(|| serde_json::json!({}));
     let code = value["error_code"].as_str().filter(|s| !s.trim().is_empty())
-        .or(error).unwrap_or("UNAVAILABLE").to_owned();
+        .unwrap_or(if error.is_some_and(|s| s.starts_with("Service '") && s.ends_with("' not found")) {
+            "UNAVAILABLE"
+        } else { "INTERNAL" }).to_owned();
     if value["message"].as_str().is_none_or(|s| s.trim().is_empty()) {
-        value["message"] = serde_json::json!(format!("{verb} failed ({code})."));
+        value["message"] = serde_json::json!(match error.filter(|s| !s.trim().is_empty()) {
+            Some(error) => format!("{verb} failed ({code}): {error}."),
+            None => format!("{verb} failed ({code})."),
+        });
     }
     value["error_code"] = serde_json::json!(code);
     value.to_string()
@@ -640,6 +645,16 @@ pub fn forward_open(url: &str, service: &str, paths: &[String]) -> Result<(), St
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn empty_broker_errors_have_a_code_verb_and_sentence() {
+        for body in ["", r#"{"error_code":"UNAVAILABLE","message":""}"#] {
+            let body = failure_body(10, body.into(), Some("Service 'edit' not found"), "edit.open");
+            let value: serde_json::Value = serde_json::from_str(&body).unwrap();
+            assert_eq!(value["error_code"], "UNAVAILABLE");
+            assert!(value["message"].as_str().unwrap().contains("edit.open failed (UNAVAILABLE)"));
+        }
+    }
 
     fn cmd(from: &str, headers: &[(&str, &str)]) -> IncomingCommand {
         IncomingCommand {
