@@ -53,7 +53,7 @@ fn initial_list_and_reload_are_deferred_and_cache_the_catalogue() {
         session
             .run("missing", "bus")
             .unwrap_err()
-            .contains("unknown")
+            .code == "NOT_FOUND"
     );
 }
 
@@ -87,7 +87,7 @@ fn completion_is_once_per_run_for_success_failure_signal_and_spawn_failure() {
                 session
                     .run("test", "gui")
                     .unwrap_err()
-                    .contains("already running")
+                    .code == "BUSY"
             );
             assert!(session.stop());
         }
@@ -114,6 +114,30 @@ fn completion_is_once_per_run_for_success_failure_signal_and_spawn_failure() {
     assert_eq!(event["origin"], "gui");
     assert!(event["error"].is_string());
     assert!(rx.try_recv().is_err());
+}
+
+#[test]
+fn refusals_distinguish_arguments_availability_scan_and_channel_failures() {
+    let (_dir, roots, session) = fixture();
+    for (suffix, body) in [
+        ("run", json!({})),
+        ("run", json!({"id":""})),
+        ("run", json!({"id":"test","extra":true})),
+        ("new", json!({})),
+        ("status", json!({"extra":true})),
+        ("status", json!([])),
+    ] {
+        assert_eq!(verbs::handle(&session, suffix, &body).wait().unwrap_err().code, "INVALID_ARGUMENT");
+    }
+    assert_eq!(verbs::handle(&session, "new", &json!({"title":"Test"})).wait().unwrap_err().code, "UNAVAILABLE");
+    let unavailable = Session::with_roots("fixture", None);
+    assert_eq!(verbs::handle(&unavailable, "reload", &json!({})).wait().unwrap_err().code, "UNAVAILABLE");
+    // A file where the root directory should be forces a real scan error.
+    std::fs::write(&roots.builtin, "not a directory").unwrap();
+    assert_eq!(verbs::handle(&session, "reload", &json!({})).wait().unwrap_err().code, "INTERNAL");
+    let (tx, rx) = mpsc::channel();
+    drop(tx);
+    assert_eq!(Reply::Deferred(rx).wait().unwrap_err().code, "INTERNAL");
 }
 
 #[test]

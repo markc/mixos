@@ -1,11 +1,15 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Macro transport glue shared by application Bus lanes.
 use crate::outbox::Outbox;
+use ::macros::verbs::Refusal;
 pub use ::macros::verbs::{SUFFIXES, describe};
 use bus::native_client::{IncomingCommand, SupervisedClient};
 use serde_json::{Value, json};
 use std::sync::Arc;
 use std::time::Duration;
+
+// Match Term's request envelope limit without coupling citizen to term-core.
+const REQUEST_BODY_LIMIT: usize = 8192;
 
 pub fn install(app: &str, service: &str, outbox: Arc<Outbox>) {
     let topic = format!("{service}.macros.finished");
@@ -35,7 +39,7 @@ pub fn dispatch(app: &str, command: &IncomingCommand, client: Arc<SupervisedClie
             ::macros::verbs::Reply::Immediate(answer) => answer,
             deferred => tokio::task::spawn_blocking(move || deferred.wait())
                 .await
-                .unwrap_or_else(|e| Err(e.to_string())),
+                .unwrap_or_else(|e| Err(Refusal::new("INTERNAL", e))),
         };
         let (rc, body) = answer_body(answer);
         let _ = tokio::time::timeout(
@@ -48,15 +52,21 @@ pub fn dispatch(app: &str, command: &IncomingCommand, client: Arc<SupervisedClie
 }
 
 pub fn request(app: &str, suffix: &str, body: &str) -> ::macros::verbs::Reply {
+    if body.len() > REQUEST_BODY_LIMIT {
+        return ::macros::verbs::Reply::Immediate(Err(Refusal::new(
+            "INVALID_ARGUMENT",
+            "request exceeds 8192 bytes",
+        )));
+    }
     match serde_json::from_str::<Value>(if body.trim().is_empty() { "{}" } else { body }) {
         Ok(body) => ::macros::verbs::handle(&::macros::Session::for_app(app), suffix, &body),
-        Err(error) => ::macros::verbs::Reply::Immediate(Err(error.to_string())),
+        Err(error) => ::macros::verbs::Reply::Immediate(Err(Refusal::new("INVALID_ARGUMENT", error))),
     }
 }
 
 pub fn answer_body(answer: ::macros::verbs::Answer) -> (u8, Value) {
     match answer {
         Ok(body) => (0, body),
-        Err(message) => (10, json!({"error_code":"MACRO","message":message})),
+        Err(refusal) => (10, json!({"error_code":refusal.code,"message":refusal.message})),
     }
 }

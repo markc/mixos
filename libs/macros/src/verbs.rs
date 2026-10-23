@@ -5,7 +5,30 @@ use serde_json::{Value, json};
 use std::sync::mpsc::{self, Receiver};
 
 pub const SUFFIXES: [&str; 7] = ["list", "reload", "run", "status", "output", "stop", "new"];
-pub type Answer = Result<Value, String>;
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Refusal {
+    pub code: &'static str,
+    pub message: String,
+}
+
+impl Refusal {
+    pub fn new(code: &'static str, message: impl ToString) -> Self {
+        Self {
+            code,
+            message: message.to_string(),
+        }
+    }
+}
+
+impl std::fmt::Display for Refusal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for Refusal {}
+
+pub type Answer = Result<Value, Refusal>;
 pub enum Reply {
     Immediate(Answer),
     Deferred(Receiver<Answer>),
@@ -16,7 +39,7 @@ impl Reply {
     pub fn wait(self) -> Answer {
         match self {
             Self::Immediate(answer) => answer,
-            Self::Deferred(rx) => rx.recv().map_err(|e| e.to_string())?,
+            Self::Deferred(rx) => rx.recv().map_err(|e| Refusal::new("INTERNAL", e))?,
         }
     }
 }
@@ -63,7 +86,7 @@ pub fn handle(session: &Session, suffix: &str, body: &Value) -> Reply {
             && key.is_none_or(|k| body[k].as_str().is_some_and(|s| !s.is_empty()))
     });
     if !valid {
-        return Reply::Immediate(Err("invalid macro arguments".into()));
+        return Reply::Immediate(Err(Refusal::new("INVALID_ARGUMENT", "invalid macro arguments")));
     }
     match suffix {
         "list" if session.catalogue().is_some() => {
@@ -81,18 +104,23 @@ pub fn handle(session: &Session, suffix: &str, body: &Value) -> Reply {
         "status" => Reply::Immediate(Ok(session.status())),
         "output" => Reply::Immediate(Ok(session.output())),
         "stop" => Reply::Immediate(Ok(json!({"stopping":session.stop()}))),
-        "new" => Reply::Immediate(Err("not yet available".into())),
-        _ => Reply::Immediate(Err("unknown macro verb".into())),
+        "new" => Reply::Immediate(Err(Refusal::new("UNAVAILABLE", "not yet available"))),
+        _ => Reply::Immediate(Err(Refusal::new("INVALID_ARGUMENT", "unknown macro verb"))),
     }
 }
 
 fn defer(session: &Session, work: impl FnOnce(Session) -> Answer + Send + 'static) -> Reply {
     let session = session.clone();
     let (tx, rx) = mpsc::channel();
-    std::thread::spawn(move || {
-        let _ = tx.send(work(session));
-    });
-    Reply::Deferred(rx)
+    match std::thread::Builder::new()
+        .name("macro-scan".into())
+        .spawn(move || {
+            let _ = tx.send(work(session));
+        })
+    {
+        Ok(_) => Reply::Deferred(rx),
+        Err(error) => Reply::Immediate(Err(Refusal::new("INTERNAL", error))),
+    }
 }
 
 fn list(catalogue: Catalogue) -> Value {

@@ -627,7 +627,7 @@ async fn serve_with(
                     let reply = citizen::macros::request("term", suffix, &command.body);
                     window_replies.spawn(async move {
                         let answer = tokio::task::spawn_blocking(move || reply.wait()).await
-                            .unwrap_or_else(|e| Err(e.to_string()));
+                            .unwrap_or_else(|e| Err(macros::verbs::Refusal::new("INTERNAL", e)));
                         let (rc, body) = citizen::macros::answer_body(answer);
                         (command, rc, body.to_string())
                     });

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! One catalogue and runner per application process, shared by all callers.
 use crate::{Catalogue, Output, Roots, Runner, Status};
+use crate::verbs::Refusal;
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -72,31 +73,37 @@ impl Session {
     }
 
     /// Call on a worker thread. No filesystem work holds the session lock.
-    pub fn reload(&self) -> Result<Catalogue, String> {
+    pub fn reload(&self) -> Result<Catalogue, Refusal> {
         let (roots, app) = {
             let state = self.0.lock().unwrap();
             (
-                state.roots.clone().ok_or("an absolute HOME is required")?,
+                state.roots.clone().ok_or_else(|| Refusal::new("UNAVAILABLE", "an absolute HOME is required"))?,
                 state.app.clone(),
             )
         };
-        let catalogue = Catalogue::scan(&roots, &app).map_err(|e| e.to_string())?;
+        let catalogue = Catalogue::scan(&roots, &app).map_err(|e| Refusal::new("INTERNAL", e))?;
         self.0.lock().unwrap().catalogue = Some(catalogue.clone());
         Ok(catalogue)
     }
 
-    pub fn run(&self, id: &str, origin: &str) -> Result<Value, String> {
+    /// Acceptance requires starting the manager thread. A refusal preserves the
+    /// previous run number and identity and emits no finish event. Each accepted
+    /// run gets exactly one finish callback, including a child spawn failure
+    /// inside the manager, which happens after acceptance.
+    pub fn run(&self, id: &str, origin: &str) -> Result<Value, Refusal> {
         let mut state = self.0.lock().unwrap();
         if state.active {
-            return Err("a macro is already running".into());
+            return Err(Refusal::new("BUSY", "a macro is already running"));
         }
         let entry = state
             .catalogue
             .as_ref()
             .and_then(|c| c.entries.iter().find(|e| e.id == id))
             .cloned()
-            .ok_or("unknown macro id")?;
-        let roots = state.roots.clone().ok_or("an absolute HOME is required")?;
+            .ok_or_else(|| Refusal::new("NOT_FOUND", "unknown macro id"))?;
+        let roots = state.roots.clone().ok_or_else(|| Refusal::new("UNAVAILABLE", "an absolute HOME is required"))?;
+        let previous_run = state.run;
+        let previous_identity = state.identity.clone();
         state.run += 1;
         let run = state.run;
         state.identity = json!({"run":run,"id":entry.id,"title":entry.title,"origin":origin,
@@ -122,15 +129,9 @@ impl Session {
         let app = state.app.clone();
         if let Err(error) = state.runner.start(&roots, &app, &entry) {
             state.active = false;
-            let mut body = state.identity.clone();
-            status_fields(&mut body, &state.runner.status());
-            body["dropped"] = json!(false);
-            let hook = state.finish.clone();
-            drop(state);
-            if let Some(hook) = hook {
-                hook(body);
-            }
-            return Err(error.to_string());
+            state.run = previous_run;
+            state.identity = previous_identity;
+            return Err(Refusal::new("INTERNAL", error));
         }
         Ok(json!({"accepted":true,"run":run,"id":entry.id,"title":entry.title}))
     }

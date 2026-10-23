@@ -5,6 +5,29 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 #[test]
+fn macro_body_limit_is_checked_before_parsing_and_accepts_the_boundary() {
+    for body in [" ".repeat(8193), "é".repeat(4097), format!("{{}}{}", " ".repeat(8191))] {
+        let reply = citizen::macros::request("body-limit-test", "status", &body);
+        assert!(matches!(reply, macros::verbs::Reply::Immediate(_)));
+        let (rc, body) = citizen::macros::answer_body(reply.wait());
+        assert_eq!(rc, 10);
+        assert_eq!(body["error_code"], "INVALID_ARGUMENT");
+        assert_eq!(body["message"], "request exceeds 8192 bytes");
+    }
+    let boundary = format!("{{}}{}", " ".repeat(8190));
+    let (rc, _) = citizen::macros::answer_body(citizen::macros::request("body-limit-test", "status", &boundary).wait());
+    assert_eq!(rc, 0);
+}
+
+#[test]
+fn malformed_macro_json_has_a_typed_refusal() {
+    let (rc, body) = citizen::macros::answer_body(citizen::macros::request("body-limit-test", "status", "{").wait());
+    assert_eq!(rc, 10);
+    assert_eq!(body["error_code"], "INVALID_ARGUMENT");
+    assert!(body["message"].is_string());
+}
+
+#[test]
 fn macro_status_is_served_without_a_ui_dispatch_or_polling() {
     let broker = test_broker::Broker::start();
     let runtime = tokio::runtime::Builder::new_current_thread()

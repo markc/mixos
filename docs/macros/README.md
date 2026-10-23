@@ -166,15 +166,29 @@ authority as executing an app command; running a macro executes user code.
 |---|---|---|
 | `list` | `{}` | `{macros:[{id,title,tier,path,shadows}], diagnostics:[{path,message}], scanned:true}` |
 | `reload` | `{}` | Rescan and return the list shape |
-| `run` | `{id}` | `{accepted:true, run, id, title}`; unknown ids and a busy runner are refused |
+| `run` | `{id}` | `{accepted:true, run, id, title}`; `NOT_FOUND` for unknown ids, `BUSY` while running |
 | `status` | `{}` | `{state,run,id,title,origin,started,exit,error}` |
 | `output` | `{}` | `{run,text,dropped}`; the retained 64 KiB tail |
 | `stop` | `{}` | `{stopping:bool}`; termination is asynchronous |
-| `new` | `{title}` | Not yet available |
+| `new` | `{title}` | `UNAVAILABLE` until title-based creation lands |
+
+Refusals use rc 10 and `{error_code,message}`. Bodies are limited to 8192
+bytes before JSON parsing.
+
+| Error code | Meaning |
+|---|---|
+| `INVALID_ARGUMENT` | Bad or oversized body, unknown fields, missing or empty id/title |
+| `NOT_FOUND` | Unknown macro id |
+| `BUSY` | A macro is already running |
+| `UNAVAILABLE` | `new` is not yet available, or no absolute HOME/roots |
+| `INTERNAL` | Scan error, worker failure or dropped reply channel |
 
 The first list and every reload scan off the caller's thread and defer the
 reply. Run loads the catalogue first if necessary and answers acceptance,
-not completion. Run numbers increase within the app process. States are
+not completion. Run numbers increase only for accepted runs within the app
+process. A manager-thread start refusal preserves the previous number and
+identity and emits no finished event. A child spawn failure after acceptance
+emits one `failed_to_start` event. States are
 `idle`, `running`, `exited`, `failed` and `failed_to_start`; a signal gives
 `exit:null`. Idle identity fields are null. Origins are `gui` or `bus`.
 
