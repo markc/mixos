@@ -497,8 +497,7 @@ impl State {
                     if self.open {
                         menu::anchored_open(ctx, true);
                         let chrome = crate::chrome::Chrome::of(ctx);
-                        let (mut model, _) =
-                            macro_menu(&self.catalogue, running_title.as_deref());
+                        let (mut model, _) = macro_menu(&self.catalogue, running_title.as_deref());
                         append_menu_error(&mut model, self.error.as_deref());
                         let menu_rect = menu::anchored_menu_rect(ui, anchor, &model);
                         let margin = egui::Frame::menu(ui.style()).total_margin().sum();
@@ -2122,10 +2121,9 @@ mod tests {
     ) -> (egui_kittest::Harness<'static, AppMenu>, egui::Rect) {
         let mut h = app_harness_at(render, egui::vec2(1275.0, 700.0), 2.5);
         if wide {
-            runtime(&h)
-                .lock()
-                .unwrap()
-                .engine
+            let runtime = runtime(&h);
+            let mut state = runtime.lock().unwrap();
+            state
                 .catalogue
                 .entries
                 .push(Entry {
@@ -2135,6 +2133,7 @@ mod tests {
                     tier: Tier::UserApp,
                     shadows: vec![],
                 });
+            state.engine.replace_catalogue(state.catalogue.clone());
         }
         h.get_by_label("Macros").click();
         h.run_steps(40);
