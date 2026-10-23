@@ -18,20 +18,25 @@
 //! because the embedded source now contains Breeze and Adwaita; the store
 //! format and old selected/default values do not change. The bridge test below
 //! keeps the previous pins active after replacing only those identity fields.
+//!
+//! Re-pinned 2026-10-23: the embedded source dropped 13 dead panel tokens
+//! (clean break, theming amendment). Only the source identity moved: the
+//! snapshot length is unchanged and the bridge test still reaches the
+//! pre-modern pins once the identity fields are replaced.
 use settings::*;
 
 /// `settings::digest` of the default desktop's effective map.
 const EFFECTIVE_DIGEST_PINNED: &str =
-    "22760b7415943256f98294b8de6286434ee33967447d8107be7585c31c47557d";
+    "aaa4abe1fac5594e8af756f77048f7be3ad147ee2ec348971852916285fa8dcc";
 /// `settings::digest` of the fixed default-desktop `Snapshot`.
 const SNAPSHOT_DIGEST_PINNED: &str =
-    "2036902834d19d1e3b7b3b1a46bb04711da1b4b26f378aefc1d5962f3459088f";
+    "a35b6110f9a4701e10165c3109379cda758ffb88aff4766c7e4aeb6953c4e484";
 /// Serialised byte length of that `Snapshot`.
 const SNAPSHOT_JSON_LEN_PINNED: usize = 529_634;
 const PRE_MODERN_SOURCE_DIGEST: &str =
     "b69369a6e36b10fd44a418df78cb1f2a99a40649e78027ce057af9993f648630";
 const MODERN_SOURCE_DIGEST: &str =
-    "34726165cf21927a700a0eb8e5770f6a374d44a7cc2f2fc09d987faf2a288ce2";
+    "9ab8ab77799f670087a2f37c2ef0652d1795ef1a2ad25164212544d455ef07c7";
 const PRE_MODERN_EFFECTIVE_DIGEST: &str =
     "7cd941ce5897d03a0ec10d4f2431214bfa7b3287fc1513d7d7c2c9bd09344147";
 const PRE_MODERN_SNAPSHOT_DIGEST: &str =
