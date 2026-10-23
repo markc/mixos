@@ -21,6 +21,17 @@ pub struct BrokerAccount {
     pub gid: u32,
 }
 
+/// Kernel credentials captured from the Unix server at connect time.
+/// They are a snapshot, not a claim about the process at a later instant.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ServerPeerCredentials {
+    /// None when the kernel API supplies no usable positive PID. An explicit
+    /// PID pin rejects that case after Unix connect and before WebSocket setup.
+    pub pid: Option<u32>,
+    pub uid: u32,
+    pub gid: u32,
+}
+
 /// Explicit Unix opt-in. Supply the node-config value from the cos layer;
 /// this crate deliberately has no dependency on config.
 #[derive(Debug, Clone)]
@@ -35,6 +46,9 @@ pub struct UnixConnectOptions {
     /// Explicitly allow a fresh TCP connection after Unix setup fails. It
     /// never carries trusted context, even if TCP advertises native-session.
     pub allow_unverified_tcp_fallback: bool,
+    /// Require this kernel-reported server PID on every Unix connection.
+    /// A pin disables TCP endpoint discovery and all TCP fallback.
+    pub expected_server_pid: Option<u32>,
     /// Opt-in bounded verified command lane (1..=1024). Excess requests receive a uniform refusal; lifecycle notices
     /// use backpressure rather than being dropped.
     /// Individual retained commands are limited to 64 KiB of envelope/body.
@@ -49,6 +63,7 @@ impl UnixConnectOptions {
             configured_endpoint: None,
             require_native_session: false,
             allow_unverified_tcp_fallback: false,
+            expected_server_pid: None,
             incoming_capacity: None,
         }
     }
@@ -71,6 +86,7 @@ pub enum ConnectError {
     EndpointOwnership,
     EndpointChanged,
     PeerCredentials,
+    ServerPidMismatch,
     UnsupportedVersion,
     Io(std::io::Error),
     Protocol(anyhow::Error),
@@ -87,6 +103,7 @@ impl std::fmt::Display for ConnectError {
             Self::PeerCredentials => {
                 "Unix server credentials do not match configured broker account"
             }
+            Self::ServerPidMismatch => "Unix server PID is missing or does not match the pin",
             Self::UnsupportedVersion => "broker does not support native-session version 1",
             Self::Io(_) => "Unix endpoint I/O failed",
             Self::Protocol(_) => "broker connection setup failed",
@@ -116,6 +133,7 @@ pub enum UnixConnectOutcome {
 /// Only endpoint verification plus profile negotiation can construct this.
 pub struct VerifiedConnection {
     client: NodedClient,
+    server_peer_credentials: ServerPeerCredentials,
     incoming: tokio::sync::Mutex<VerifiedIncoming>,
     pub(crate) session_lock: tokio::sync::Mutex<()>,
     /// One hello per connection: see [`VerifiedConnection::session_context`].
@@ -126,6 +144,11 @@ impl VerifiedConnection {
     /// is absent on this handle; trusted deliveries come only from `recv`.
     pub fn client(&self) -> &NodedClient {
         &self.client
+    }
+
+    /// Connect-time SO_PEERCRED, retained for a caller's authority check.
+    pub fn server_peer_credentials(&self) -> ServerPeerCredentials {
+        self.server_peer_credentials
     }
 
     pub async fn recv(&mut self) -> Option<VerifiedCommand> {
@@ -262,13 +285,15 @@ impl NodedClient {
         provenance: Option<crate::RegisterProvenance>,
     ) -> Result<UnixConnectOutcome, ConnectError> {
         let mut resolved = options.clone();
-        if resolved.endpoint.is_none() && resolved.configured_endpoint.is_none() {
+        if should_discover_endpoint(&resolved) {
             resolved.configured_endpoint = discover_endpoint(tcp_url).await;
         }
         match connect_verified(service_name, &resolved, provenance.clone()).await {
             Ok(connection) => Ok(UnixConnectOutcome::VerifiedUnix(connection)),
             Err(unix_error)
-                if !options.require_native_session && options.allow_unverified_tcp_fallback =>
+                if !options.require_native_session
+                    && options.expected_server_pid.is_none()
+                    && options.allow_unverified_tcp_fallback =>
             {
                 let client = Self::connect_with_provenance(service_name, tcp_url, provenance)
                     .await
@@ -278,6 +303,12 @@ impl NodedClient {
             Err(error) => Err(error),
         }
     }
+}
+
+fn should_discover_endpoint(options: &UnixConnectOptions) -> bool {
+    options.endpoint.is_none()
+        && options.configured_endpoint.is_none()
+        && options.expected_server_pid.is_none()
 }
 
 /// TCP discovery supplies a locator only, never authority. Every discovered
@@ -319,6 +350,7 @@ async fn connect_verified(
     if peer.uid() != options.broker_account.uid || peer.gid() != options.broker_account.gid {
         return Err(ConnectError::PeerCredentials);
     }
+    let pid = verified_server_pid(peer.pid(), options.expected_server_pid)?;
     if verify_path(path, options.broker_account)? != before {
         return Err(ConnectError::EndpointChanged);
     }
@@ -334,10 +366,28 @@ async fn connect_verified(
             })?;
     Ok(VerifiedConnection {
         client,
+        server_peer_credentials: ServerPeerCredentials {
+            pid,
+            uid: peer.uid(),
+            gid: peer.gid(),
+        },
         incoming: tokio::sync::Mutex::new(incoming),
         session_lock: tokio::sync::Mutex::new(()),
         session_context: tokio::sync::OnceCell::new(),
     })
+}
+
+fn verified_server_pid(
+    pid: Option<i32>,
+    expected: Option<u32>,
+) -> Result<Option<u32>, ConnectError> {
+    let pid = pid
+        .and_then(|pid| u32::try_from(pid).ok())
+        .filter(|pid| *pid != 0);
+    if expected.is_some() && expected != pid {
+        return Err(ConnectError::ServerPidMismatch);
+    }
+    Ok(pid)
 }
 
 /// Check every component, rejecting symlinks and unprotected replacement
@@ -430,6 +480,30 @@ mod tests {
             Path::new("/run/example/explicit.sock")
         );
         assert!(!options.allow_unverified_tcp_fallback);
+    }
+    #[test]
+    fn pinned_pid_requires_usable_matching_kernel_credential() {
+        assert_eq!(verified_server_pid(Some(42), Some(42)).unwrap(), Some(42));
+        for pid in [None, Some(-1), Some(0), Some(43)] {
+            assert!(matches!(
+                verified_server_pid(pid, Some(42)),
+                Err(ConnectError::ServerPidMismatch)
+            ));
+        }
+        // The opt-in does not tighten the previous UID/GID-only path.
+        for pid in [None, Some(-1), Some(0)] {
+            assert_eq!(verified_server_pid(pid, None).unwrap(), None);
+        }
+    }
+    #[test]
+    fn pinned_connection_never_uses_tcp_endpoint_discovery() {
+        let mut options = UnixConnectOptions::new(BrokerAccount { uid: 123, gid: 123 });
+        assert!(should_discover_endpoint(&options));
+        options.expected_server_pid = Some(42);
+        assert!(!should_discover_endpoint(&options));
+        options.expected_server_pid = None;
+        options.configured_endpoint = Some("/run/example/bus.sock".into());
+        assert!(!should_discover_endpoint(&options));
     }
     #[test]
     fn principal_duplicates_are_detected_before_compatibility_parse() {

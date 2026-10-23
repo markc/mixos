@@ -483,17 +483,16 @@ impl MixBusHandler {
     /// already open this connection, and the pane shell and every test harness
     /// do. What was missing was a script being able to.
     ///
-    /// Every failure is silent-and-fall-back by design. The one thing this must
-    /// never do is report an unverified lane as a verified one.
-    async fn connect_verified(url: &str) -> Option<::bus::native_client::VerifiedConnection> {
+    /// The ordinary path may fall back to anonymous TCP. A process-local PID
+    /// pin changes that policy in `probe_with_pin` below.
+    fn verified_options() -> Option<::bus::native_client::UnixConnectOptions> {
         let account = std::env::var("MIXOS_BROKER_ACCOUNT").unwrap_or_else(|_| "noded".into());
         let (endpoint, _) = crate::node_config::NativeEnvironment::capture()
             .resolve()
             .ok()?;
         // The resident's own resolver, so a driver and a pane shell on one node
         // cannot disagree about which account owns the socket.
-        let options = crate::native_session::options(account, endpoint).ok()?;
-        Self::connect_verified_with(url, &options).await
+        crate::native_session::options(account, endpoint).ok()
     }
 
     /// Split from the config resolution above so the ABSENT-SOCKET path is
@@ -686,10 +685,34 @@ impl MixBusHandler {
         // local broker socket, a broker running as another account, a
         // cross-node target — all of those are ordinary, and all of them
         // must keep working exactly as they did.
-        if let Some(connection) = Self::connect_verified(&url).await {
-            return Some(std::sync::Arc::new(Lane::Verified(connection)));
+        let pid_pin = std::env::var_os("MIXOS_NODED_EXPECTED_SERVER_PID");
+        Self::probe_with_pin(&url, pid_pin.as_deref(), Self::verified_options()).await
+    }
+
+    /// One-shot authority query: the presence of a pin forbids every
+    /// anonymous TCP path, including when parsing or account lookup fails.
+    async fn probe_with_pin(
+        url: &str,
+        pid_pin: Option<&std::ffi::OsStr>,
+        options: Option<::bus::native_client::UnixConnectOptions>,
+    ) -> Option<std::sync::Arc<Lane>> {
+        let expected_server_pid = match pid_pin {
+            Some(value) => match parse_server_pid_pin(value) {
+                Some(pid) => Some(pid),
+                None => return None,
+            },
+            None => None,
+        };
+        if let Some(mut options) = options {
+            options.expected_server_pid = expected_server_pid;
+            if let Some(connection) = Self::connect_verified_with(url, &options).await {
+                return Some(std::sync::Arc::new(Lane::Verified(connection)));
+            }
         }
-        Self::probe_anonymous(&url).await
+        if pid_pin.is_some() {
+            return None;
+        }
+        Self::probe_anonymous(url).await
     }
 
     async fn probe_anonymous(url: &str) -> Option<std::sync::Arc<Lane>> {
@@ -722,6 +745,14 @@ impl MixBusHandler {
             *state = MeshState::Lost;
         }
     }
+}
+
+fn parse_server_pid_pin(value: &std::ffi::OsStr) -> Option<u32> {
+    value
+        .to_str()
+        .filter(|value| !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit()))
+        .and_then(|value| value.parse::<u32>().ok())
+        .filter(|pid| *pid != 0)
 }
 
 impl BusHandler for MixBusHandler {
@@ -2163,6 +2194,105 @@ mod tests {
         interactive.reconcile_native_generation(2, None).await;
         assert_eq!(interactive.test_state_label().await, "NeverPresent");
         assert_eq!(interactive.incoming_generation.get(), version);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn mix_pid_pin_never_downgrades_to_anonymous_tcp() {
+        use std::ffi::OsStr;
+
+        let broker = test_broker::Broker::start();
+        let options = broker.options();
+        assert!(
+            MixBusHandler::probe_with_pin(
+                &broker.url,
+                Some(OsStr::new("garbage")),
+                Some(options.clone())
+            )
+            .await
+            .is_none()
+        );
+        let wrong = (std::process::id() + 1).to_string();
+        assert!(
+            MixBusHandler::probe_with_pin(
+                &broker.url,
+                Some(OsStr::new(&wrong)),
+                Some(options.clone())
+            )
+            .await
+            .is_none()
+        );
+        assert!(
+            MixBusHandler::probe_with_pin(&broker.url, Some(OsStr::new(&wrong)), None)
+                .await
+                .is_none(),
+            "missing verified account cannot make a pinned query use TCP"
+        );
+        let correct = std::process::id().to_string();
+        let lane =
+            MixBusHandler::probe_with_pin(&broker.url, Some(OsStr::new(&correct)), Some(options))
+                .await
+                .unwrap();
+        let Lane::Verified(connection) = lane.as_ref() else {
+            panic!("correct Mix pin must select the verified lane");
+        };
+        assert_eq!(
+            connection.server_peer_credentials().pid,
+            Some(std::process::id())
+        );
+        connection.client().close().await;
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn pinned_verified_broker_revalidates_on_each_connection_without_tcp_fallback() {
+        use ::bus::native_client::{ConnectError, NodedClient, UnixConnectOutcome};
+
+        let broker = test_broker::Broker::start();
+        let pid = std::process::id();
+        let mut options = broker.options();
+        options.require_native_session = false;
+        options.allow_unverified_tcp_fallback = true;
+        options.expected_server_pid = Some(pid);
+        let first = NodedClient::connect_unix("", &broker.url, &options, None)
+            .await
+            .unwrap();
+        let UnixConnectOutcome::VerifiedUnix(first) = first else {
+            panic!("matching pin must use verified Unix");
+        };
+        assert_eq!(first.server_peer_credentials().pid, Some(pid));
+        assert_eq!(first.server_peer_credentials().uid, unsafe {
+            libc::geteuid()
+        });
+        assert_eq!(first.server_peer_credentials().gid, unsafe {
+            libc::getegid()
+        });
+        first.client().close().await;
+
+        // A new dial is not allowed to inherit the earlier verified result.
+        options.expected_server_pid = Some(pid.checked_add(1).unwrap());
+        assert!(matches!(
+            NodedClient::connect_unix("", &broker.url, &options, None).await,
+            Err(ConnectError::ServerPidMismatch)
+        ));
+        // Even though unverified TCP fallback is explicitly enabled above,
+        // the mismatch refused before any RPC and did not return that lane.
+        options.expected_server_pid = Some(pid);
+        let again = NodedClient::connect_unix("", &broker.url, &options, None)
+            .await
+            .unwrap();
+        let UnixConnectOutcome::VerifiedUnix(again) = again else {
+            panic!("reconnect with the matching pin must use verified Unix");
+        };
+        assert_eq!(again.server_peer_credentials().pid, Some(pid));
+        again.client().close().await;
+    }
+
+    #[test]
+    fn mix_pid_pin_is_positive_decimal_only() {
+        use std::ffi::OsStr;
+        assert_eq!(parse_server_pid_pin(OsStr::new("42")), Some(42));
+        for invalid in ["", "0", "-1", "+1", " 42", "42 ", "4294967296", "abc"] {
+            assert_eq!(parse_server_pid_pin(OsStr::new(invalid)), None);
+        }
     }
 
     #[tokio::test(flavor = "current_thread")]

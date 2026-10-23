@@ -24,6 +24,6 @@ pub use native::{
 };
 pub use types::IncomingCommand;
 pub use unix::{
-    BrokerAccount, ConnectError, Delivery, UnixConnectOptions, UnixConnectOutcome, VerifiedCommand,
-    VerifiedConnection,
+    BrokerAccount, ConnectError, Delivery, ServerPeerCredentials, UnixConnectOptions,
+    UnixConnectOutcome, VerifiedCommand, VerifiedConnection,
 };

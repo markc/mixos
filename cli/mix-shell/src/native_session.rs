@@ -596,6 +596,7 @@ async fn own(
                 | ConnectError::EndpointOwnership
                 | ConnectError::EndpointChanged
                 | ConnectError::PeerCredentials
+                | ConnectError::ServerPidMismatch
                 | ConnectError::UnsupportedVersion,
             )) => {
                 reporter.report(
