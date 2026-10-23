@@ -1,7 +1,9 @@
 # mixtrayd
 
-`mixtrayd` is the data service behind the MixOS tray popup, `mixtray`. It
-registers on the noded Bus as `mixtrayd` and answers one verb,
+`mixtrayd` is the data service behind the MixOS tray popup, `mixtray`. The
+popup is a KDE Plasma plasmoid in
+[markc/plasma](https://github.com/markc/plasma); a native MixOS desktop
+version is planned. `mixtrayd` registers on the noded Bus as `mixtrayd` and answers one verb,
 `mixtrayd.snapshot`, with four tabs of state:
 
 | Tab | Source |

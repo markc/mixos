@@ -150,7 +150,7 @@ One line per component with a page: kind, then install profiles. The
   - [mix-shell — changelog](https://mixos.dev/mix-shell/changelog.md): Release notes of the mix-shell component, mirrored from cli/mix-shell/CHANGELOG.md.
 - [mixos-mcp](https://mixos.dev/mixos-mcp/README.md): cli; profiles: base. MCP stdio access to the native MixOS Bus.
   - [mixos-mcp — changelog](https://mixos.dev/mixos-mcp/changelog.md): Release notes of the mixos-mcp component, mirrored from cli/mixos-mcp/CHANGELOG.md.
-- [mixtrayd](https://mixos.dev/mixtrayd/README.md): service; profiles: unclassified. mixtrayd is the data service behind the MixOS tray popup, mixtray. It registers on the noded Bus as mixtrayd and answers one verb, mixtrayd.snapshot, with four…
+- [mixtrayd](https://mixos.dev/mixtrayd/README.md): service; profiles: unclassified. mixtrayd is the data service behind the MixOS tray popup, mixtray. The popup is a KDE Plasma plasmoid in markc/plasma; a native MixOS desktop version is…
 - [monitor](https://mixos.dev/monitor/README.md): app; profiles: desktop. Monitor is the MixOS task manager, showing the processes and performance that monitord reports for this node or any node on the mesh, with End task and Kill for this node's processes.
 - [monitord](https://mixos.dev/monitord/README.md): service; profiles: base. How monitord samples a host's CPU, memory, disks, network and processes, keeps history in memory and SQLite, and answers read verbs on the Bus, so any node's load can be read from anywhere on the mesh.
   - [monitord — changelog](https://mixos.dev/monitord/changelog.md): Release notes of the monitord component, mirrored from services/monitord/CHANGELOG.md.
@@ -178,7 +178,6 @@ One line per component with a page: kind, then install profiles. The
   - [MixOS GUI app style guide](https://mixos.dev/toolkit/style-guide.md): An app is two crates: an engine crate under apps/<app>/crates/<name> that knows nothing about egui, and the egui shell crate apps/<app>. The shell crate's…
   - [toolkit — changelog](https://mixos.dev/toolkit/changelog.md): Release notes of the toolkit component, mirrored from libs/toolkit/CHANGELOG.md.
 - [toolsd](https://mixos.dev/toolsd/README.md): service; profiles: server. Runs the tools webd's admin panel queues (whois, dig, traceroute, shwho) as an unprivileged drain, outside webd's sandbox.
-- [tray](https://mixos.dev/tray/README.md): app; profiles: unclassified. The MixOS tray item, a StatusNotifierItem on Plasma's own tray host that shows the state of MixOS units.
 - [webd](https://mixos.dev/webd/README.md): service; profiles: server. Virtual hosts, CMS routes, embedded Mix handlers and ACME for the MixOS web service.
 
 ## Docs
