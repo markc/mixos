@@ -2025,7 +2025,7 @@ catalogue and runner. Subscribe to `busviewer.macros.finished` for completion.
 | `busviewer.macros.status` | `{}` | Current or last run |
 | `busviewer.macros.output` | `{}` | Retained output and dropped flag |
 | `busviewer.macros.stop` | `{}` | Whether termination was requested |
-| `busviewer.macros.new` | `{title}` | Not yet available |
+| `busviewer.macros.new` | `{title}` | Create a user per-app macro; `{id,title,path}`, without opening an editor |
 
 ---
 
@@ -2116,7 +2116,7 @@ catalogue and runner. Subscribe to `ced.macros.finished` for completion.
 | `ced.macros.status` | `{}` | Current or last run |
 | `ced.macros.output` | `{}` | Retained output and dropped flag |
 | `ced.macros.stop` | `{}` | Whether termination was requested |
-| `ced.macros.new` | `{title}` | Not yet available |
+| `ced.macros.new` | `{title}` | Create a user per-app macro; `{id,title,path}`, without opening an editor |
 
 ---
 
@@ -2929,8 +2929,8 @@ and `reload`. The session shares one catalogue and runner per app process.
 Scans defer their replies off the caller's thread. Run answers acceptance;
 `<service>.macros.finished` reports completion once per run through the
 application's event outbox. Run, stop, reload and new carry the app execute
-authority; list, status and output are read-only. New is described but
-answers not yet available until title-based creation lands.
+authority; list, status and output are read-only. New creates a user per-app macro from its title off the caller’s thread,
+rescans and replies `{id,title,path}` without opening an editor.
 
 ## Not yet decided
 
@@ -7924,7 +7924,7 @@ catalogue and runner. Subscribe to `dopus.macros.finished` for completion.
 | `dopus.macros.status` | `{}` | Current or last run |
 | `dopus.macros.output` | `{}` | Retained output and dropped flag |
 | `dopus.macros.stop` | `{}` | Whether termination was requested |
-| `dopus.macros.new` | `{title}` | Not yet available |
+| `dopus.macros.new` | `{title}` | Create a user per-app macro; `{id,title,path}`, without opening an editor |
 
 ---
 
@@ -8580,7 +8580,7 @@ catalogue and runner. Subscribe to `email.macros.finished` for completion.
 | `email.macros.status` | `{}` | Current or last run |
 | `email.macros.output` | `{}` | Retained output and dropped flag |
 | `email.macros.stop` | `{}` | Whether termination was requested |
-| `email.macros.new` | `{title}` | Not yet available |
+| `email.macros.new` | `{title}` | Create a user per-app macro; `{id,title,path}`, without opening an editor |
 
 ---
 
@@ -32208,7 +32208,7 @@ catalogue and runner. Subscribe to `monitor.macros.finished` for completion.
 | `monitor.macros.status` | `{}` | Current or last run |
 | `monitor.macros.output` | `{}` | Retained output and dropped flag |
 | `monitor.macros.stop` | `{}` | Whether termination was requested |
-| `monitor.macros.new` | `{title}` | Not yet available |
+| `monitor.macros.new` | `{title}` | Create a user per-app macro; `{id,title,path}`, without opening an editor |
 
 ---
 
@@ -33060,7 +33060,7 @@ catalogue and runner. Subscribe to `prefs.macros.finished` for completion.
 | `prefs.macros.status` | `{}` | Current or last run |
 | `prefs.macros.output` | `{}` | Retained output and dropped flag |
 | `prefs.macros.stop` | `{}` | Whether termination was requested |
-| `prefs.macros.new` | `{title}` | Not yet available |
+| `prefs.macros.new` | `{title}` | Create a user per-app macro; `{id,title,path}`, without opening an editor |
 
 ---
 
@@ -33599,7 +33599,7 @@ catalogue and runner. Subscribe to `screenshot.macros.finished` for completion.
 | `screenshot.macros.status` | `{}` | Current or last run |
 | `screenshot.macros.output` | `{}` | Retained output and dropped flag |
 | `screenshot.macros.stop` | `{}` | Whether termination was requested |
-| `screenshot.macros.new` | `{title}` | Not yet available |
+| `screenshot.macros.new` | `{title}` | Create a user per-app macro; `{id,title,path}`, without opening an editor |
 
 ---
 
@@ -34089,7 +34089,7 @@ catalogue and runner. Subscribe to `term.macros.finished` for completion.
 | `term.macros.status` | `{}` | Current or last run |
 | `term.macros.output` | `{}` | Retained output and dropped flag |
 | `term.macros.stop` | `{}` | Whether termination was requested |
-| `term.macros.new` | `{title}` | Not yet available |
+| `term.macros.new` | `{title}` | Create a user per-app macro; `{id,title,path}`, without opening an editor |
 
 ---
 

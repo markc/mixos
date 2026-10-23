@@ -88,4 +88,4 @@ catalogue and runner. Subscribe to `ced.macros.finished` for completion.
 | `ced.macros.status` | `{}` | Current or last run |
 | `ced.macros.output` | `{}` | Retained output and dropped flag |
 | `ced.macros.stop` | `{}` | Whether termination was requested |
-| `ced.macros.new` | `{title}` | Not yet available |
+| `ced.macros.new` | `{title}` | Create a user per-app macro; `{id,title,path}`, without opening an editor |

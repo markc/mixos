@@ -51,8 +51,8 @@ and `reload`. The session shares one catalogue and runner per app process.
 Scans defer their replies off the caller's thread. Run answers acceptance;
 `<service>.macros.finished` reports completion once per run through the
 application's event outbox. Run, stop, reload and new carry the app execute
-authority; list, status and output are read-only. New is described but
-answers not yet available until title-based creation lands.
+authority; list, status and output are read-only. New creates a user per-app macro from its title off the caller’s thread,
+rescans and replies `{id,title,path}` without opening an editor.
 
 ## Not yet decided
 

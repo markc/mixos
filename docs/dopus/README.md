@@ -147,4 +147,4 @@ catalogue and runner. Subscribe to `dopus.macros.finished` for completion.
 | `dopus.macros.status` | `{}` | Current or last run |
 | `dopus.macros.output` | `{}` | Retained output and dropped flag |
 | `dopus.macros.stop` | `{}` | Whether termination was requested |
-| `dopus.macros.new` | `{title}` | Not yet available |
+| `dopus.macros.new` | `{title}` | Create a user per-app macro; `{id,title,path}`, without opening an editor |

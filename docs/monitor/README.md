@@ -101,4 +101,4 @@ catalogue and runner. Subscribe to `monitor.macros.finished` for completion.
 | `monitor.macros.status` | `{}` | Current or last run |
 | `monitor.macros.output` | `{}` | Retained output and dropped flag |
 | `monitor.macros.stop` | `{}` | Whether termination was requested |
-| `monitor.macros.new` | `{title}` | Not yet available |
+| `monitor.macros.new` | `{title}` | Create a user per-app macro; `{id,title,path}`, without opening an editor |

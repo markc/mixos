@@ -304,4 +304,4 @@ catalogue and runner. Subscribe to `screenshot.macros.finished` for completion.
 | `screenshot.macros.status` | `{}` | Current or last run |
 | `screenshot.macros.output` | `{}` | Retained output and dropped flag |
 | `screenshot.macros.stop` | `{}` | Whether termination was requested |
-| `screenshot.macros.new` | `{title}` | Not yet available |
+| `screenshot.macros.new` | `{title}` | Create a user per-app macro; `{id,title,path}`, without opening an editor |

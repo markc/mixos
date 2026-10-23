@@ -246,4 +246,4 @@ catalogue and runner. Subscribe to `prefs.macros.finished` for completion.
 | `prefs.macros.status` | `{}` | Current or last run |
 | `prefs.macros.output` | `{}` | Retained output and dropped flag |
 | `prefs.macros.stop` | `{}` | Whether termination was requested |
-| `prefs.macros.new` | `{title}` | Not yet available |
+| `prefs.macros.new` | `{title}` | Create a user per-app macro; `{id,title,path}`, without opening an editor |

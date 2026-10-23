@@ -216,4 +216,4 @@ catalogue and runner. Subscribe to `busviewer.macros.finished` for completion.
 | `busviewer.macros.status` | `{}` | Current or last run |
 | `busviewer.macros.output` | `{}` | Retained output and dropped flag |
 | `busviewer.macros.stop` | `{}` | Whether termination was requested |
-| `busviewer.macros.new` | `{title}` | Not yet available |
+| `busviewer.macros.new` | `{title}` | Create a user per-app macro; `{id,title,path}`, without opening an editor |

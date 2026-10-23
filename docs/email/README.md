@@ -346,4 +346,4 @@ catalogue and runner. Subscribe to `email.macros.finished` for completion.
 | `email.macros.status` | `{}` | Current or last run |
 | `email.macros.output` | `{}` | Retained output and dropped flag |
 | `email.macros.stop` | `{}` | Whether termination was requested |
-| `email.macros.new` | `{title}` | Not yet available |
+| `email.macros.new` | `{title}` | Create a user per-app macro; `{id,title,path}`, without opening an editor |
