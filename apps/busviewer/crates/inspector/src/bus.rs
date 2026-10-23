@@ -5,7 +5,7 @@
 //! here is BusViewer's own discovery of the services and their verbs.
 #[cfg(feature = "testing")]
 pub use citizen::Logged;
-pub use citizen::{CallError, Delivery, Handle, Reply};
+pub use citizen::{CallError, Delivery, Handle, Reply, macros};
 use serde_json::Value;
 
 /// The app name: the worker thread, the closing refusal and the

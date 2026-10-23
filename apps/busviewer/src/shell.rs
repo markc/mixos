@@ -84,7 +84,7 @@ pub fn describe() -> Value {
     let mut surface = model::describe();
     if let Some(verbs) = surface["verbs"].as_array_mut() {
         verbs.extend(drive::describe(APP));
-        verbs.extend(citizen::macros::describe(APP));
+        verbs.extend(inspector::bus::macros::describe(APP));
     }
     surface
 }
@@ -839,7 +839,7 @@ mod tests {
         let mut expected: Vec<String> = model::VERBS.iter().map(|v| (*v).to_owned()).collect();
         expected.extend(drive::VERBS.iter().map(|v| format!("{APP}.{v}")));
         expected.extend(
-            citizen::macros::describe(APP)
+            inspector::bus::macros::describe(APP)
                 .iter()
                 .map(|v| v["name"].as_str().unwrap().to_owned()),
         );
