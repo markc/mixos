@@ -2123,16 +2123,13 @@ mod tests {
         if wide {
             let runtime = runtime(&h);
             let mut state = runtime.lock().unwrap();
-            state
-                .catalogue
-                .entries
-                .push(Entry {
-                    id: "wide".into(),
-                    title: "A much longer macro title that determines the menu width".into(),
-                    path: "wide.mix".into(),
-                    tier: Tier::UserApp,
-                    shadows: vec![],
-                });
+            state.catalogue.entries.push(Entry {
+                id: "wide".into(),
+                title: "A much longer macro title that determines the menu width".into(),
+                path: "wide.mix".into(),
+                tier: Tier::UserApp,
+                shadows: vec![],
+            });
             state.engine.replace_catalogue(state.catalogue.clone());
         }
         h.get_by_label("Macros").click();
