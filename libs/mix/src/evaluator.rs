@@ -14616,6 +14616,13 @@ impl Evaluator {
                         // FunctionCall arm, covering every metadata builtin
                         // incl. HOFs.)
                         self.check_capability(name)?;
+                        if self.globals.borrow().capability_policy.is_some() {
+                            for cc in builtins::conditional_capabilities(name) {
+                                if builtins::conditional_cap_engaged(name, &eval_args, cc.option) {
+                                    self.check_capability_class(cc.capability, name)?;
+                                }
+                            }
+                        }
                         // Knob D: cap the produced collection (map/filter/
                         // sort_by/group_by/unique_by bypass the call_builtin
                         // result check below).

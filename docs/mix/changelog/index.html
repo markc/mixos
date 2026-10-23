@@ -209,17 +209,18 @@
                 <div class="panel-content">
                     <nav id="toc-nav">
                         <a href="#unreleased">Unreleased</a>
+                        <a href="#added" class="toc-h3">Added</a>
                         <a href="#changed" class="toc-h3">Changed</a>
                         <a href="#fixed" class="toc-h3">Fixed</a>
                         <a href="#01170--2026-10-21">0.117.0 — 2026-10-21</a>
-                        <a href="#added" class="toc-h3">Added</a>
+                        <a href="#added-1" class="toc-h3">Added</a>
                         <a href="#changed-1" class="toc-h3">Changed</a>
                         <a href="#fixed-1" class="toc-h3">Fixed</a>
                         <a href="#01160">0.116.0</a>
-                        <a href="#added-1" class="toc-h3">Added</a>
+                        <a href="#added-2" class="toc-h3">Added</a>
                         <a href="#changed-2" class="toc-h3">Changed</a>
                         <a href="#01150">0.115.0</a>
-                        <a href="#added-2" class="toc-h3">Added</a>
+                        <a href="#added-3" class="toc-h3">Added</a>
                         <a href="#changed-3" class="toc-h3">Changed</a>
                         <a href="#fixed-2" class="toc-h3">Fixed</a>
                         <a href="#01140">0.114.0</a>
@@ -227,15 +228,15 @@
                         <a href="#01131">0.113.1</a>
                         <a href="#fixed-3" class="toc-h3">Fixed</a>
                         <a href="#01130">0.113.0</a>
-                        <a href="#added-3" class="toc-h3">Added</a>
-                        <a href="#01121">0.112.1</a>
                         <a href="#added-4" class="toc-h3">Added</a>
+                        <a href="#01121">0.112.1</a>
+                        <a href="#added-5" class="toc-h3">Added</a>
                         <a href="#fixed-4" class="toc-h3">Fixed</a>
                         <a href="#01120">0.112.0</a>
-                        <a href="#added-5" class="toc-h3">Added</a>
+                        <a href="#added-6" class="toc-h3">Added</a>
                         <a href="#fixed-5" class="toc-h3">Fixed</a>
                         <a href="#01110">0.111.0</a>
-                        <a href="#added-6" class="toc-h3">Added</a>
+                        <a href="#added-7" class="toc-h3">Added</a>
                         <a href="#fixed-6" class="toc-h3">Fixed</a>
                         <a href="#01091">0.109.1</a>
                     </nav>
@@ -267,6 +268,16 @@
 <p>Mirrored from <a href="https://github.com/markc/mixos/blob/main/libs/mix/CHANGELOG.md"><code>libs/mix/CHANGELOG.md</code></a>, where releases update it. The component's page is <a href="/mix/">mix</a>. This page describes the current <code>main</code> branch of MixOS.</p>
 </blockquote>
 <h2 id="unreleased">Unreleased</h2>
+<h3 id="added">Added</h3>
+<ul>
+<li><code>idle_timeout</code> on <code>http_get</code>, <code>http_post</code> and <code>http_request</code>, independent
+of the existing whole-call <code>timeout</code> (0 disables that cap).</li>
+<li><code>http_stream(method, url, on_line[, body, headers, opts])</code> delivers SSE
+lines during the response; returning false closes promptly. Scoped async
+reads release the response on callback errors, cancellation and evaluator
+retirement. Failures return status 0, received byte counts and partial
+bytes, with <code>HTTP_IDLE_TIMEOUT</code>, <code>HTTP_STREAM_CUT</code> or <code>HTTP_TIMEOUT</code>.</li>
+</ul>
 <h3 id="changed">Changed</h3>
 <ul>
 <li>A <code>fn</code> or <code>function</code> named after a builtin is refused at its definition
@@ -282,12 +293,21 @@ scenes found no live script affected.</li>
 </ul>
 <h3 id="fixed">Fixed</h3>
 <ul>
-<li>MIX-E1303 now covers the higher-order builtins (<code>count</code>, <code>map</code>, <code>filter</code>,
+<li>
+<p>HTTP idle/stream responses now negotiate gzip only, regenerate Host on
+redirects, and match ureq's literal URL-userinfo authentication. Buffered
+successes keep their existing keys; <code>stopped</code> is stream-only and received
+counts are limited to streams and buffered failures. Preserve bare CR
+bytes in an unterminated line. TLS classification inspects IO payloads.</p>
+</li>
+<li>
+<p>MIX-E1303 now covers the higher-order builtins (<code>count</code>, <code>map</code>, <code>filter</code>,
 <code>sort_by</code>, …). <code>fn count($x)</code> linted clean and was silently dead. Lint and
-runtime share one name set, <code>builtins::is_reserved_callable</code>.</li>
+runtime share one name set, <code>builtins::is_reserved_callable</code>.</p>
+</li>
 </ul>
 <h2 id="01170--2026-10-21">0.117.0 — 2026-10-21</h2>
-<h3 id="added">Added</h3>
+<h3 id="added-1">Added</h3>
 <ul>
 <li><code>analyzer::Analysis.functions</code> reports named function declarations with
 <code>name</code>, <code>file</code> and <code>line</code>, including nested and duplicate definitions but
@@ -453,7 +473,7 @@ index is evaluated before its object. This can add warnings for code that is
 correct but calls a non-pure builtin between a send and its check.</li>
 </ul>
 <h2 id="01160">0.116.0</h2>
-<h3 id="added-1">Added</h3>
+<h3 id="added-2">Added</h3>
 <ul>
 <li>The remote mix binary is configurable. Every builtin that drives a
 remote mix (<code>ssh_mix</code>, <code>ssh_mix_many</code>, <code>ssh_exec</code>, <code>ssh_run</code>'s
@@ -472,7 +492,7 @@ interpolated unchecked) and is an alias of <code>mix_bin</code>; passing both
 raises.</li>
 </ul>
 <h2 id="01150">0.115.0</h2>
-<h3 id="added-2">Added</h3>
+<h3 id="added-3">Added</h3>
 <ul>
 <li><code>unix_connect(path[, {timeout, frame}])</code>: a client for a local
 unix-domain stream socket, in <code>tcp_connect</code>'s handle space, so
@@ -514,7 +534,7 @@ fired. Leading-zero segments (<code>on svc-01.ping</code>) lex as part of the na
 as they do after <code>send</code>.</li>
 </ul>
 <h2 id="01130">0.113.0</h2>
-<h3 id="added-3">Added</h3>
+<h3 id="added-4">Added</h3>
 <ul>
 <li><code>mime_type(path[, {content}])</code>: a file's type from the freedesktop
 shared-mime-info database, decided by GLib's rules, so it agrees with
@@ -523,7 +543,7 @@ Returns <code>{mime, by, uncertain, exists, parents}</code>. Behind the new <cod
 feature, through the new <code>mimedb</code> crate. <code>mix man io</code> documents it.</li>
 </ul>
 <h2 id="01121">0.112.1</h2>
-<h3 id="added-4">Added</h3>
+<h3 id="added-5">Added</h3>
 <ul>
 <li><code>tcp_send(handle, payload[, {timeout}])</code>: one deadline bounds the whole
 send, however many partial writes a slow reader forces (seconds, 0 = wait
@@ -551,7 +571,7 @@ finite timeout ends on time and SIGTERM still ends an untimed wait.</li>
 forever instead of overflowing the deadline.</li>
 </ul>
 <h2 id="01120">0.112.0</h2>
-<h3 id="added-5">Added</h3>
+<h3 id="added-6">Added</h3>
 <ul>
 <li>Server-side TCP. <code>tcp_listen(host, port[, {backlog}])</code> binds and listens
 and returns a listener handle; <code>host</code> is required (<code>"127.0.0.1"</code> is the
@@ -594,7 +614,7 @@ HEAD. A conditional GET answered 304 with <code>Content-Encoding: gzip</code> no
 fails with <code>HTTP_BODY</code>, so ETag polling works.</li>
 </ul>
 <h2 id="01110">0.111.0</h2>
-<h3 id="added-6">Added</h3>
+<h3 id="added-7">Added</h3>
 <ul>
 <li><code>script_path()</code> returns the entry script's absolute, symlink-resolved path,
 the same answer as <code>realpath($0)</code>, fixed when the script starts (a later
