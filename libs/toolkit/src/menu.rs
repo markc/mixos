@@ -618,7 +618,13 @@ pub fn anchored(ui: &mut Ui, id: Id, anchor: Rect, open: &mut bool, menu: Menu, 
     let ctx = ui.ctx().clone();
     let mut nav: Nav = ctx.data(|d| d.get_temp(id)).unwrap_or_default();
     let cache_id = Id::new("toolkit.anchored-input");
-    let prior = ctx.data_mut(|d| d.remove_temp::<AnchoredInput>(cache_id));
+    // Read then remove: remove_temp needs Default, which AnchoredInput
+    // (an egui Id plus menus) has no sensible value for.
+    let prior = ctx.data_mut(|d| {
+        let prior = d.get_temp::<AnchoredInput>(cache_id);
+        d.remove::<AnchoredInput>(cache_id);
+        prior
+    });
     if let Some(prior) = &prior
         && prior.handled && nav.open_menu().is_none() {
         *open = false;
