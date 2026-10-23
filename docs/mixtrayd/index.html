@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="mixtrayd is the data service behind the MixOS tray popup, mixtray. The popup is a KDE Plasma plasmoid in markc/plasma; a native MixOS desktop version is…">
+    <meta name="description" content="mixtrayd is the data service behind the MixOS tray popup, mixtray. It registers on the noded Bus as mixtrayd and answers one verb, mixtrayd.snapshot, with four…">
     <!-- Favicons from share/brand: the SVG follows the visitor's light/dark preference. -->
     <link rel="icon" href="/favicon.ico?v=400d5816f3" sizes="any">
     <link rel="icon" type="image/svg+xml" href="/_web/favicon.svg?v=4eb2d64677">
@@ -238,10 +238,8 @@
     <div id="doc-view" class="content-section">
         <article id="content-doc" class="prose" data-pagefind-body>
 <h1 id="mixtrayd">mixtrayd</h1>
-<p><code>mixtrayd</code> is the data service behind the MixOS tray popup, <code>mixtray</code>. The
-popup is a KDE Plasma plasmoid in
-<a href="https://github.com/markc/plasma">markc/plasma</a>; a native MixOS desktop
-version is planned. <code>mixtrayd</code> registers on the noded Bus as <code>mixtrayd</code> and answers one verb,
+<p><code>mixtrayd</code> is the data service behind the MixOS tray popup, <code>mixtray</code>. It
+registers on the noded Bus as <code>mixtrayd</code> and answers one verb,
 <code>mixtrayd.snapshot</code>, with four tabs of state:</p>
 <table><thead><tr><th>Tab</th><th>Source</th></tr></thead><tbody>
 <tr><td>COS</td><td>systemd <code>ActiveState</code> for the MixOS units (system and user managers)</td></tr>
@@ -282,8 +280,8 @@ hosts. The <code>mixtrayd.ssh</code> verb takes an <code>action</code>:</p>
 <tr><td><code>restore</code></td><td><code>id</code></td><td>renames it back, refusing to replace a live host</td></tr>
 <tr><td><code>purge</code></td><td><code>id</code></td><td>deletes a trashed host; a live host must be trashed first</td></tr>
 </tbody></table>
-<p>The popup opens Connect (<code>konsole -e ssh ALIAS</code>) and Edit (<code>xdg-open</code> on the
-host file) itself, since those run in the desktop session, not the daemon's.</p>
+<p>The popup handles Connect (an <code>ssh ALIAS</code> terminal) and Edit (the host file)
+itself, since those run in the desktop session, not the daemon's.</p>
 <h2 id="use">Use</h2>
 <pre><code>mixtrayd serve                   # the daemon (the default)
 mixtrayd snapshot                # print one snapshot from the running daemon
