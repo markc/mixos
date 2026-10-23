@@ -50,6 +50,20 @@ impl PendingSource {
     }
 }
 
+#[derive(Default)]
+struct PendingProcess {
+    tag: String,
+    lines: VecDeque<ProcessRecord>,
+    line_count: usize,
+    max_queue: usize,
+    terminal: Option<serde_json::Value>,
+}
+
+enum ProcessRecord {
+    Line(serde_json::Value),
+    Overflow(u64),
+}
+
 /// One socket subscription's ordered FIFO (ws_on/tcp_on). Ordered and
 /// lossless — the antipode of the coalescing `sources` map above, which is
 /// deliberately unsuitable for frames.
@@ -68,6 +82,8 @@ struct PendingSocket {
 
 #[derive(Default)]
 struct Pending {
+    processes: BTreeMap<String, PendingProcess>,
+    last_process: Option<String>,
     watches: BTreeMap<String, PendingWatch>,
     sources: BTreeMap<String, PendingSource>,
     children: VecDeque<serde_json::Value>,
@@ -86,15 +102,16 @@ struct Pending {
     closed: bool,
     last_watch: Option<String>,
     last_source: Option<String>,
-    /// Round-robin over filesystem (0), child (1), net/audio (2) and
-    /// socket (3) records.
+    /// Round-robin over filesystem (0), child (1), net/audio (2),
+    /// socket (3) and process-line (4) records.
     turn: usize,
 }
 
-/// Which native families a consumer can dispatch. A sleep yield point only
-/// takes records whose command has a registered handler.
+/// Which native families a consumer can dispatch. Process records also drain
+/// without handlers so completed watches cannot keep the pump alive forever.
 #[derive(Clone, Copy, Default)]
 pub(crate) struct Families {
+    pub processes: bool,
     pub filesystem: bool,
     pub children: bool,
     pub net: bool,
@@ -109,6 +126,7 @@ pub(crate) struct Families {
 
 impl Families {
     pub const ALL: Self = Self {
+        processes: true,
         filesystem: true,
         children: true,
         net: true,
@@ -120,7 +138,7 @@ impl Families {
     /// (evaluator.rs `sleep()`); without the feature it has no caller.
     #[cfg(feature = "tokio-sleep")]
     pub fn any(self) -> bool {
-        self.filesystem || self.children || self.net || self.audio || self.sockets
+        self.filesystem || self.children || self.net || self.audio || self.sockets || self.processes
     }
 
     fn source(self, command: &str) -> bool {
@@ -149,6 +167,76 @@ pub(crate) struct Queue {
 }
 
 impl Queue {
+    pub(crate) fn process_line(&self, handle: &str, stream: &str, line: String, truncated: bool) {
+        let mut pending = self.pending.lock().unwrap();
+        let Some(p) = pending.processes.get_mut(handle) else {
+            return;
+        };
+        if p.line_count == p.max_queue {
+            if let Some(ProcessRecord::Overflow(dropped)) = p.lines.back_mut() {
+                *dropped = dropped.saturating_add(1);
+            } else {
+                p.lines.push_back(ProcessRecord::Overflow(1));
+            }
+        } else {
+            p.line_count += 1;
+            p.lines.push_back(ProcessRecord::Line(serde_json::json!({"watch":handle, "tag":p.tag, "stream":stream, "line":line, "truncated":truncated})));
+        }
+        drop(pending);
+        self.ready.notify_waiters();
+    }
+
+    pub(crate) fn process_exited(
+        &self,
+        handle: &str,
+        code: Option<i32>,
+        signal: Option<i32>,
+        detached_output: bool,
+    ) {
+        let mut pending = self.pending.lock().unwrap();
+        if let Some(p) = pending.processes.get_mut(handle) {
+            p.terminal = Some(
+                serde_json::json!({"watch":handle, "tag":p.tag, "exit_code":code, "signal":signal, "detached_output":detached_output}),
+            );
+        }
+        drop(pending);
+        self.ready.notify_waiters();
+    }
+
+    pub(crate) fn process_failed(&self, handle: &str) {
+        // A panic in a queue writer may have poisoned this lock. Recover the
+        // data so the sole reaper can still publish its terminal diagnostic.
+        let mut pending = self.pending.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(p) = pending.processes.get_mut(handle) {
+            p.terminal = Some(serde_json::json!({
+                "watch": handle, "tag": p.tag, "exit_code": null, "signal": null,
+                "detached_output": true, "error_code": "PROC_WORKER_PANIC",
+                "error": "process watch worker panicked; process group killed and leader reaped"
+            }));
+        }
+        self.pending.clear_poison();
+        drop(pending);
+        self.ready.notify_waiters();
+    }
+
+    fn take_process(pending: &mut Pending, handle: &str) -> IncomingEvent {
+        let p = pending.processes.get_mut(handle).unwrap();
+        if let Some(record) = p.lines.pop_front() {
+            return match record {
+                ProcessRecord::Overflow(dropped) => event(
+                    "proc.overflow",
+                    serde_json::json!({"watch":handle, "tag":p.tag, "dropped":dropped}),
+                ),
+                ProcessRecord::Line(line) => {
+                    p.line_count -= 1;
+                    event("proc.line", line)
+                }
+            };
+        }
+        let terminal = p.terminal.take().unwrap();
+        pending.processes.remove(handle);
+        event("proc.watch_exited", terminal)
+    }
     #[cfg(all(test, feature = "ws"))]
     pub(crate) fn socket_snapshot(&self) -> (usize, usize, usize) {
         let p = self.pending.lock().unwrap();
@@ -477,8 +565,8 @@ impl Queue {
         self.next_selected(watch, Families::ALL).await
     }
 
-    /// A sleep yield point only consumes families with an actual handler.
-    /// In particular, an unrelated handler cannot steal a later fs_wait batch.
+    /// Select handler-owned families, while always draining process records.
+    /// An unrelated handler cannot steal a later fs_wait batch.
     pub async fn next_selected(
         &self,
         watch: Option<&str>,
@@ -545,9 +633,27 @@ impl Queue {
                         .find(|h| p.last_socket.as_ref().is_none_or(|last| *h > last))
                         .or_else(|| ready.first())
                         .cloned();
-                    let families_n: usize = if cfg!(feature = "ws") { 4 } else { 3 };
+                    let ready: Vec<_> = p
+                        .processes
+                        .iter()
+                        .filter(|(_, s)| !s.lines.is_empty() || s.terminal.is_some())
+                        .map(|(h, _)| h.clone())
+                        .collect();
+                    let process = ready
+                        .iter()
+                        .find(|h| p.last_process.as_ref().is_none_or(|last| *h > last))
+                        .or_else(|| ready.first())
+                        .cloned();
+                    let families_n: usize = 5;
                     for step in 0..families_n {
                         let family = (p.turn + step) % families_n;
+                        if family == 4
+                            && let Some(h) = &process
+                        {
+                            p.last_process = Some(h.clone());
+                            p.turn = 0;
+                            return Ok(Self::take_process(&mut p, h));
+                        }
                         if family == 0
                             && let Some(h) = &h
                         {
@@ -572,7 +678,7 @@ impl Queue {
                             && let Some(so) = &so
                         {
                             p.last_socket = Some(so.clone());
-                            p.turn = 0;
+                            p.turn = 4;
                             return Ok(Self::take_socket(&mut p, so).unwrap());
                         }
                     }
@@ -618,6 +724,7 @@ pub(crate) fn json_value(v: serde_json::Value) -> Value {
 static NEXT_OWNER_ID: AtomicU64 = AtomicU64::new(1);
 
 pub(crate) struct NativeEvents {
+    processes: BTreeMap<String, crate::child_events::ProcessWatch>,
     pub queue: Arc<Queue>,
     pumping: Rc<Cell<bool>>,
     watches: BTreeSet<String>,
@@ -637,6 +744,7 @@ pub(crate) struct NativeEvents {
 impl Default for NativeEvents {
     fn default() -> Self {
         NativeEvents {
+            processes: BTreeMap::new(),
             queue: Arc::new(Queue::default()),
             pumping: Rc::new(Cell::new(false)),
             watches: BTreeSet::new(),
@@ -672,6 +780,7 @@ impl NativeEvents {
         self.pumping.get()
     }
     pub fn has_sources(&mut self) -> bool {
+        self.processes.retain(|_, p| !p.finished());
         self.children.retain(|c| !c.finished());
         // Completed socket readers published their terminal record before
         // setting the flag; dropping them here joins an exited thread.
@@ -680,6 +789,8 @@ impl NativeEvents {
         self.sockets
             .retain(|_, s| !s.completed.load(std::sync::atomic::Ordering::Acquire));
         !self.watches.is_empty()
+            || !self.processes.is_empty()
+            || !self.queue.pending.lock().unwrap().processes.is_empty()
             || !self.children.is_empty()
             || !self.desktop.is_empty()
             || !self.queue.pending.lock().unwrap().children.is_empty()
@@ -696,7 +807,63 @@ impl NativeEvents {
             }
     }
 
-    /// `net_watch`: one rtnetlink subscription per handle.
+    /// One directly executed child per handle, with ordered pipe records.
+    pub fn process_watch(&mut self, args: &[Value]) -> MixResult<String> {
+        self.ensure_open()?;
+        self.processes.retain(|_, p| !p.finished());
+        if self
+            .processes
+            .len()
+            .max(self.queue.pending.lock().unwrap().processes.len())
+            >= MAX_CHILDREN
+        {
+            return Err(refusal(
+                "PROC_WATCH_LIMIT",
+                "maximum 128 process watches per evaluator",
+            ));
+        }
+        let (command, tag, max_line, max_queue) = crate::builtins::process_watch_command(args)?;
+        let h = format!("process:{}", NEXT_HANDLE.fetch_add(1, Ordering::Relaxed));
+        self.queue.pending.lock().unwrap().processes.insert(
+            h.clone(),
+            PendingProcess {
+                tag,
+                max_queue,
+                ..Default::default()
+            },
+        );
+        match crate::child_events::ProcessWatch::new(
+            command,
+            self.queue.clone(),
+            h.clone(),
+            max_line,
+        ) {
+            Ok(source) => {
+                self.processes.insert(h.clone(), source);
+                Ok(h)
+            }
+            Err(e) => {
+                self.queue.pending.lock().unwrap().processes.remove(&h);
+                Err(e)
+            }
+        }
+    }
+
+    pub fn process_unwatch(&mut self, h: &str) -> bool {
+        self.processes.retain(|_, p| !p.finished());
+        let pending = self
+            .queue
+            .pending
+            .lock()
+            .unwrap()
+            .processes
+            .remove(h)
+            .is_some();
+        self.processes.remove(h);
+        self.queue.ready.notify_waiters();
+        pending
+    }
+
     pub fn net_watch(&mut self, groups: u32) -> MixResult<String> {
         self.source_watch("net", "net.changed", move |queue, h| {
             crate::desktop_events::NetSource::new(queue, h, groups)
@@ -1069,6 +1236,7 @@ impl NativeEvents {
             p.watches.clear();
             p.sources.clear();
             p.children.clear();
+            p.processes.clear();
             p.count = 0;
             #[cfg(feature = "ws")]
             {
@@ -1085,6 +1253,11 @@ impl NativeEvents {
         self.watches.clear();
         self.filesystem = None;
         self.children.clear();
+        // Wake every reaper before any Drop joins, overlapping TERM grace.
+        for watch in self.processes.values() {
+            watch.cancel();
+        }
+        self.processes.clear();
         self.desktop.clear();
         #[cfg(feature = "ws")]
         {
@@ -1210,6 +1383,7 @@ mod tests {
         let mut cx = Context::from_waker(&waker);
         assert!(wait.as_mut().poll(&mut cx).is_pending());
         let registry = NativeEvents {
+            processes: BTreeMap::new(),
             queue: q.clone(),
             pumping: Rc::new(Cell::new(false)),
             watches: BTreeSet::new(),
@@ -1657,5 +1831,111 @@ mod tests {
         r.close();
         assert_eq!(r.queue.directories.load(Ordering::SeqCst), 0);
         std::fs::remove_dir(path).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod process_tests {
+    use super::*;
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn worker_panic_kills_reaps_completes_and_reports() {
+        let queue = Arc::new(Queue::default());
+        queue
+            .pending
+            .lock()
+            .unwrap()
+            .processes
+            .insert("process:panic".into(), PendingProcess::default());
+        let mut command = std::process::Command::new("sleep");
+        command.arg("100").stdout(std::process::Stdio::piped());
+        let watch = crate::child_events::ProcessWatch::new(
+            command,
+            queue.clone(),
+            "process:panic".into(),
+            usize::MAX,
+        )
+        .unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        while !watch.finished() && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert!(watch.finished(), "panicked worker never completed");
+        drop(watch); // join before inspecting terminal publication
+        let pending = queue.pending.lock().unwrap();
+        let terminal = pending.processes["process:panic"]
+            .terminal
+            .as_ref()
+            .unwrap();
+        assert_eq!(terminal["error_code"], "PROC_WORKER_PANIC");
+    }
+
+    #[cfg(feature = "ws")]
+    #[tokio::test]
+    async fn continuously_ready_socket_cannot_starve_process_lines() {
+        let queue = Queue::default();
+        queue.register_socket_for_test("tcp:test", "data", "tcp");
+        queue.pending.lock().unwrap().processes.insert(
+            "process:test".into(),
+            PendingProcess {
+                max_queue: 2,
+                ..Default::default()
+            },
+        );
+        queue.process_line("process:test", "stdout", "line".into(), false);
+        let mut seen = Vec::new();
+        for _ in 0..2 {
+            assert!(queue.socket_push(
+                "tcp:test",
+                crate::builtins::socket_sources::SocketRecord {
+                    kind: "line",
+                    data: b"frame".to_vec()
+                }
+            ));
+            seen.push(queue.next(None).await.unwrap().command);
+        }
+        assert_eq!(seen, ["data", "proc.line"]);
+    }
+
+    #[tokio::test]
+    async fn overflow_markers_preserve_causal_order_and_terminal_is_last() {
+        let queue = Queue::default();
+        queue.pending.lock().unwrap().processes.insert(
+            "process:test".into(),
+            PendingProcess {
+                tag: "test".into(),
+                max_queue: 2,
+                ..Default::default()
+            },
+        );
+        for n in 0..7 {
+            queue.process_line("process:test", "stdout", n.to_string(), false);
+        }
+        for n in 0..2 {
+            let event = queue.next(None).await.unwrap();
+            assert_eq!(event.command, "proc.line");
+            let body: serde_json::Value = serde_json::from_str(&event.body).unwrap();
+            assert_eq!(body["line"], n.to_string());
+            if n == 0 {
+                queue.process_line("process:test", "stdout", "later".into(), false);
+                queue.process_line("process:test", "stdout", "dropped".into(), false);
+            }
+        }
+        let event = queue.next(None).await.unwrap();
+        assert_eq!(event.command, "proc.overflow");
+        let body: serde_json::Value = serde_json::from_str(&event.body).unwrap();
+        assert_eq!(body["dropped"], 5);
+        let event = queue.next(None).await.unwrap();
+        assert_eq!(event.command, "proc.line");
+        let body: serde_json::Value = serde_json::from_str(&event.body).unwrap();
+        assert_eq!(body["line"], "later");
+        let event = queue.next(None).await.unwrap();
+        assert_eq!(event.command, "proc.overflow");
+        let body: serde_json::Value = serde_json::from_str(&event.body).unwrap();
+        assert_eq!(body["dropped"], 1);
+        queue.process_exited("process:test", Some(0), None, false);
+        assert_eq!(queue.next(None).await.unwrap().command, "proc.watch_exited");
+        assert!(queue.pending.lock().unwrap().processes.is_empty());
     }
 }

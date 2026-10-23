@@ -351,6 +351,8 @@ builtin_table! {
     ("net_watch", CapabilityClass::Env, "system", "Subscribe to Linux rtnetlink link/address changes; returns an evaluator-owned opaque handle. Delivers net.changed {watch, changes:[{kind:\"link\"|\"addr\", ifname, index, up, removed, operstate?, loopback?, wireless?, family?, address?, prefix?}], overflow, closed?} via $event.args; bursts coalesce per link/address, repeats that change nothing are dropped, overflow means re-read net_state(). opts {events: [\"link\",\"addr\"]}. No polling fallback", contract!((opts?: map("net_watch_options", {events: list(string)})) -> string; failure[raises])),
     ("net_unwatch", CapabilityClass::Env, "system", "Cancel a net_watch handle and its pending changes", contract!((handle: string) -> nil; failure[raises])),
     ("net_state", CapabilityClass::Env, "system", "Snapshot of network links and addresses from an rtnetlink dump: {links:[{ifname, index, up, operstate?, loopback, wireless}], addresses:[{ifname, index, family, address, prefix}]}. up = operstate up, or IFF_UP+IFF_RUNNING when the driver reports unknown (lo, WireGuard)", contract!(() -> map("net_state", {links: list(map), addresses: list(map)}); effects[must_use, blocking]; failure[raises])),
+    ("process_watch", CapabilityClass::Process, "system", "Watch a directly executed argv child's stdout as ordered proc.line {watch,tag,stream,line,truncated} events, then one proc.watch_exited {watch,tag,exit_code,signal,detached_output}. Pipes drain for at most 500ms after leader exit; detached_output flags cut-off output. Options cwd/env/clear_env match run_argv; stderr null (default), lines or inherit; tag string; max_line 65536 bytes (truncate and flag), max_queue 1024 lines (drop newest; ordered proc.overflow marker at the drop position). Evaluator owns the process group and reaper; unwatch, shutdown and reload retirement terminate it. Reload candidates cannot start watches. v0.117.x, unreleased", contract!((argv: list(string), opts?: map("process_watch_options", {cwd: any_of(string, nil), env: map, clear_env: bool, stderr: string, tag: string, max_line: number, max_queue: number})) -> string; effects[shell]; failure[raises])),
+    ("process_unwatch", CapabilityClass::Process, "system", "Cancel a process_watch handle, discard pending events, terminate its process group (TERM, then KILL after 150ms), and reap the child. Waits up to 150ms for leader exit, returning promptly on TERM exit. Returns true only for a live watch or undelivered records, false after terminal delivery. v0.117.x, unreleased", contract!((handle: string) -> bool; effects[shell]; failure[raises])),
     ("audio_watch", CapabilityClass::Process, "system", "Subscribe to PipeWire (pulse server) change notices through one managed `pactl subscribe` child; returns an evaluator-owned opaque handle. Delivers audio.changed {watch, changes:[{facility, kind, index}], overflow, closed?} via $event.args; read the volume with audio_state() once per batch. closed {error_code:AUDIO_SOURCE_EXITED} when the server goes away. opts {facilities (default sink, source, server, card), runtime_dir}", contract!((opts?: map("audio_watch_options", {facilities: list(string), runtime_dir: string})) -> string; failure[raises])),
     ("audio_unwatch", CapabilityClass::Process, "system", "Cancel an audio_watch handle: kills and reaps its pactl child, drops pending changes", contract!((handle: string) -> nil; failure[raises])),
     ("audio_state", CapabilityClass::Process, "system", "Default audio sink volume via one `wpctl get-volume @DEFAULT_AUDIO_SINK@` (2 s deadline): {ok, volume, level (0-100+), muted, reason?}. No default sink, a wpctl that is missing or cannot start, or a timeout is ok:false with a reason, never an error. opts {runtime_dir}", contract!((opts?: map("audio_state_options", {runtime_dir: string})) -> map("audio_state", {ok: bool, volume: number, level: number, muted: bool, reason: string}); effects[must_use, blocking]; failure[returns_result])),
@@ -987,6 +989,8 @@ pub const EVAL_SPECIAL_BUILTINS: &[&str] = &[
     "net_watch",
     "net_unwatch",
     "net_state",
+    "process_watch",
+    "process_unwatch",
     "audio_watch",
     "audio_unwatch",
     "audio_state",
@@ -6602,6 +6606,88 @@ fn parse_stderr_route(caller: &str, value: &Value) -> MixResult<RunArgvStderr> {
             ),
         )),
     }
+}
+
+pub(crate) fn process_watch_command(
+    args: &[Value],
+) -> MixResult<(std::process::Command, String, usize, usize)> {
+    let caller = "process_watch";
+    let argv = parse_run_argv_argv(caller, &args[0])?;
+    let mut common = indexmap::IndexMap::new();
+    let mut tag = String::new();
+    let mut stderr = "null";
+    let mut max_line = 65536;
+    let mut max_queue = 1024;
+    if let Some(value) = args.get(1) {
+        let Value::Map(map) = value else {
+            return Err(opt_invalid(caller, "options must be a map"));
+        };
+        for (key, value) in map.iter() {
+            match key.as_str() {
+                "cwd" | "env" | "clear_env" => {
+                    common.insert(key.clone(), value.clone());
+                }
+                "tag" => {
+                    let Value::String(s) = value else {
+                        return Err(opt_invalid(caller, "tag must be a string"));
+                    };
+                    tag = s.clone();
+                }
+                "stderr" => {
+                    let Value::String(s) = value else {
+                        return Err(opt_invalid(caller, "stderr must be null, lines or inherit"));
+                    };
+                    if !matches!(s.as_str(), "null" | "lines" | "inherit") {
+                        return Err(opt_invalid(caller, "stderr must be null, lines or inherit"));
+                    }
+                    stderr = s;
+                }
+                "max_line" | "max_queue" => {
+                    let Value::Number(n) = value else {
+                        return Err(opt_invalid(caller, "limits must be positive integers"));
+                    };
+                    let bound = if key == "max_line" {
+                        16 * 1024 * 1024
+                    } else {
+                        65536
+                    };
+                    let n = as_count(caller, *n, bound)
+                        .map_err(|_| opt_invalid(caller, "limit out of range"))?;
+                    if n == 0 {
+                        return Err(opt_invalid(caller, "limits must be positive"));
+                    }
+                    if key == "max_line" {
+                        max_line = n;
+                    } else {
+                        max_queue = n;
+                    }
+                }
+                _ => return Err(opt_invalid(caller, format!("unknown option {key}"))),
+            }
+        }
+    }
+    let opts = parse_run_argv_opts(caller, Some(&Value::Map(common.into())))?;
+    let mut command = std::process::Command::new(&argv[0]);
+    command.args(&argv[1..]);
+    if let Some(cwd) = opts.cwd {
+        command.current_dir(cwd);
+    }
+    if opts.clear_env {
+        command.env_clear();
+    }
+    command.envs(opts.env);
+    for key in opts.env_unset {
+        command.env_remove(key);
+    }
+    command
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped());
+    command.stderr(match stderr {
+        "lines" => std::process::Stdio::piped(),
+        "inherit" => std::process::Stdio::inherit(),
+        _ => std::process::Stdio::null(),
+    });
+    Ok((command, tag, max_line, max_queue))
 }
 
 fn parse_run_argv_opts(caller: &str, v: Option<&Value>) -> MixResult<RunArgvOpts> {

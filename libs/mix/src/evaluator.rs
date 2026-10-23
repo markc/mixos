@@ -3018,6 +3018,8 @@ pub(crate) const INLINE_SPECIAL_FORMS: &[&str] = &[
     "net_watch",
     "net_unwatch",
     "net_state",
+    "process_watch",
+    "process_unwatch",
     "audio_watch",
     "audio_unwatch",
     "audio_state",
@@ -3184,6 +3186,8 @@ pub const EXPR_MODE_DENIED_BUILTINS: &[&str] = &[
     "net_watch",
     "net_unwatch",
     "net_state",
+    "process_watch",
+    "process_unwatch",
     "audio_watch",
     "audio_unwatch",
     "audio_state",
@@ -13450,6 +13454,8 @@ impl Evaluator {
                 "net_watch"
                     | "net_unwatch"
                     | "net_state"
+                    | "process_watch"
+                    | "process_unwatch"
                     | "audio_watch"
                     | "audio_unwatch"
                     | "audio_state"
@@ -13457,6 +13463,19 @@ impl Evaluator {
                 self.check_capability(name)?;
                 self.check_builtin_arity(name, eval_args.len())?;
                 return match name {
+                    "process_watch" => {
+                        if self.globals.borrow().reload_candidate {
+                            return Err(crate::native_events::refusal("PROC_WATCH_RELOAD_CANDIDATE", "process_watch cannot start during reload preparation; use on lifecycle.commit"));
+                        }
+                        let h = self.globals.borrow_mut().native_events.process_watch(eval_args)?;
+                        Ok(Value::String(h))
+                    }
+                    "process_unwatch" => {
+                        let Some(Value::String(h)) = eval_args.first() else {
+                            return Err(crate::native_events::refusal("PROC_WATCH_HANDLE", "handle must be a string"));
+                        };
+                        Ok(Value::Bool(self.globals.borrow_mut().native_events.process_unwatch(h)))
+                    }
                     "net_watch" => {
                         let groups = crate::desktop_events::net_groups(eval_args.first())?;
                         let h = self.globals.borrow_mut().native_events.net_watch(groups)?;
@@ -13805,6 +13824,8 @@ impl Evaluator {
                             | "net_watch"
                             | "net_unwatch"
                             | "net_state"
+                            | "process_watch"
+                            | "process_unwatch"
                             | "audio_watch"
                             | "audio_unwatch"
                             | "audio_state"
@@ -14015,6 +14036,13 @@ impl Evaluator {
                                 let families = {
                                     let g = self.globals.borrow();
                                     crate::native_events::Families {
+                                        processes: [
+                                            "proc.line",
+                                            "proc.overflow",
+                                            "proc.watch_exited",
+                                        ]
+                                        .iter()
+                                        .any(|name| g.handlers.contains_key(*name)),
                                         filesystem: g.handlers.contains_key("fs.changed"),
                                         children: g.handlers.contains_key("proc.exited"),
                                         net: g.handlers.contains_key("net.changed"),

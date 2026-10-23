@@ -997,7 +997,7 @@ mod linux {
     /// The kernel signals when the creating THREAD ends, so this is armed only
     /// on the owned-children host thread (the mix binary's evaluator, which
     /// lives as long as the process); elsewhere the drop path alone owns it.
-    fn arm_parent_death(command: &mut Command) {
+    pub(crate) fn arm_parent_death(command: &mut Command) {
         if !crate::builtins::owned_spawns::enabled_here() {
             return;
         }
@@ -1536,7 +1536,7 @@ pub(crate) fn snapshot(
 }
 
 #[cfg(target_os = "linux")]
-pub(crate) use linux::{AudioSource, NetSource, audio_state, net_state};
+pub(crate) use linux::{AudioSource, NetSource, arm_parent_death, audio_state, net_state};
 
 #[cfg(not(target_os = "linux"))]
 mod other {

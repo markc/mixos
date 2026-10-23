@@ -1036,6 +1036,70 @@ false
 
 `kill(pid, 9)` sends SIGKILL; pass any signal number you need.
 
+## Child line events — process_watch, process_unwatch
+
+(v0.117.x, unreleased)
+
+`process_watch(argv[, opts]) -> handle` starts argv directly, with no shell,
+null stdin and a new process group. It returns immediately. The evaluator's
+native event loop delivers `proc.line {watch, tag, stream, line, truncated}`,
+followed by exactly one `proc.watch_exited {watch, tag, exit_code, signal}`.
+The terminal name is distinct from managed spawn's `proc.exited`: watches
+have opaque handles and ordered pipe output, whereas spawn returns a PID.
+Lines within each stream retain byte order; stdout and stderr have no defined
+relative order. Newline bytes are removed; CR bytes are retained. EOF delivers
+any final unterminated line. Invalid UTF-8 is replaced lossily.
+
+```mix
+on proc.line
+  print($event.args.stream .. ": " .. $event.args.line)
+end
+on proc.watch_exited
+  print($event.args)
+end
+$monitor = process_watch(["gdbus", "monitor", "--session", "--dest",
+                          "org.freedesktop.Notifications"], {tag: "notifications"})
+```
+
+Options `cwd`, `env` (including nil removals) and `clear_env` have the same
+validation and meaning as `run_argv`. `stderr` is `"null"` by default,
+`"lines"` to deliver stderr lines, or `"inherit"`. `tag` is any string,
+default empty, echoed in all events. Unknown options are refused.
+
+`max_line` defaults to 65536 bytes; longer lines retain that prefix, discard
+the rest through newline and set `truncated: true`. It must be a positive
+integer, at most 16 MiB. `max_queue` defaults to 1024 retained lines per
+watch (positive integer, at most 65536). A full queue drops newest lines and
+counts them. A `proc.overflow {watch, tag, dropped}` marker occupies the drop
+position: after all earlier retained lines and before any later retained line.
+Consecutive drops coalesce into one marker. Markers do not consume line capacity.
+The terminal cannot
+be dropped by queue overflow.
+
+`process_unwatch(handle) -> bool` discards pending events, sends SIGTERM to
+the group and leader, waits for leader exit for up to 150 ms, then SIGKILLs
+remaining group members and reaps the leader. This synchronous join returns
+promptly when TERM ends the leader; it guarantees cleanup before returning.
+It returns true only for a live watch or undelivered records, and false once
+its terminal has been delivered. Evaluator shutdown
+and committed reload retirement perform the same cleanup.
+Shutdown and retirement cancel all watches before joining, so their TERM
+grace periods overlap. Reaping after SIGKILL has no fixed deadline: a child
+in uninterruptible kernel sleep (Linux D-state) can hold teardown until the
+kernel operation returns, preserving the sole reaper and avoiding zombies.
+Natural leader
+exit ends remaining descendants in the original process group. Pipes drain
+for at most 500 ms after leader exit, then close before reaping. The terminal
+includes `detached_output: true` if an open pipe was cut off (otherwise false).
+Descendants that detach into another group are outside group ownership.
+As with managed spawn,
+Linux pidfd is required and at most 128 watches may be outstanding. Watches
+are Process capabilities. Reload candidates are refused with
+`PROC_WATCH_RELOAD_CANDIDATE`; start replacement watches in `on lifecycle.commit`.
+Plain scripts use the same native event pump as `audio_watch`; register
+handlers and allow the runner to enter its event loop, or use a yielding
+`sleep()` with handlers registered. A long-lived watch keeps that loop alive.
+
 ## Desktop status events — net_watch, audio_watch
 
 A status applet needs to know when the network or the volume changes. Reading
@@ -2275,7 +2339,7 @@ Each system builtin carries a [capability class](capabilities.md) used by the
 `hostname` / `cwd` / `platform` / `which` / `net_watch` / `net_unwatch` /
 `net_state` are **Env** (read-only inspection);
 `run` / `run_rc` / `run_stream` / `spawn` / `kill` / `process_alive` / `chdir` /
-`audio_watch` / `audio_unwatch` / `audio_state` / `exit` (and `panic` — see [errors](errors.md)) are **Process** (they touch the
+`process_watch` / `process_unwatch` / `audio_watch` / `audio_unwatch` / `audio_state` / `exit` (and `panic` — see [errors](errors.md)) are **Process** (they touch the
 OS process table or filesystem CWD); `shell_quote` / `sql_quote` / `sanitize` /
 `random_password` / `uuid` / hashes / `base64_*` are **Pure**. An embedding
 daemon can deny the Process class to run untrusted Mix without it spawning
