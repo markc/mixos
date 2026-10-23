@@ -157,7 +157,7 @@ impl State {
         }
         let Some(roots) = self.engine.roots.clone() else {
             self.error = Some(own("macros-no-home"));
-            self.editor_open = true;
+            self.open = true;
             return;
         };
         let app = self.app.clone();
@@ -238,8 +238,10 @@ impl State {
         self.creation = Some(rx);
         std::thread::spawn(move || {
             let result = (|| {
-                let path = roots.create_from_title(&app, &title)?;
-                let doc = editor::local::Document::open(path).map_err(io::Error::other)?;
+                let folder = roots.folder(&app, Tier::UserApp)?;
+                let path = roots.create_from_title(&app, &title)
+                    .map_err(|e| path_error("macros-create-error", &folder, e))?;
+                let doc = open_macro(&path)?;
                 Ok((Catalogue::scan(&roots, &app)?, doc))
             })()
             .map_err(|e: io::Error| e.to_string());
@@ -287,10 +289,13 @@ impl State {
             let path = if entry.tier.is_user() {
                 entry.path
             } else {
-                roots.copy_to_user(app, &entry)?
+                let tier = if entry.tier.is_app() { Tier::UserApp } else { Tier::UserGlobal };
+                let destination = roots.folder(app, tier)?.join(format!("{}.mix", entry.id));
+                roots.copy_to_user(app, &entry)
+                    .map_err(|e| path_error("macros-create-error", &destination, e))?
             };
             Ok((
-                Some(editor::local::Document::open(path).map_err(io::Error::other)?),
+                Some(open_macro(&path)?),
                 None,
             ))
         });
@@ -380,7 +385,7 @@ impl State {
                             self.document = Some(doc);
                         }
                         self.error = Some(error);
-                        self.editor_open = true;
+                        self.open = true;
                     }
                 }
             }
@@ -475,10 +480,14 @@ impl State {
                         }
                     }
                 } else {
-                    let (model, indices) = macro_menu(
+                    let (mut model, indices) = macro_menu(
                         &self.engine.catalogue,
                         self.engine.running.as_ref().map(|e| e.title.as_str()),
                     );
+                    if let Some(error) = &self.error {
+                        model.entries.push(MenuEntry::Separator);
+                        model.entries.push(MenuEntry::Row(Row::command("macro.error", error, None, false)));
+                    }
                     let tips = SLOTS
                         .iter()
                         .map(|&id| (id, own("macros-edit-tip")))
@@ -689,10 +698,11 @@ impl State {
             && self.document.is_some()
             && let Some(run) = self.save_request.take()
         {
+            let path = self.document.as_ref().unwrap().path().map(Path::to_owned).unwrap_or_default();
             let snapshot = match self.document.as_ref().unwrap().save_snapshot() {
                 Ok(snapshot) => snapshot,
                 Err(error) => {
-                    self.error = Some(error.to_string());
+                    self.error = Some(path_error("macros-save-error", &path, error).to_string());
                     self.editor_open = true;
                     self.close_after_save = false;
                     return;
@@ -710,7 +720,7 @@ impl State {
                         let catalogue = roots.and_then(|roots| Catalogue::scan(&roots, &app).ok());
                         (saved, catalogue, entry)
                     })
-                    .map_err(|error| error.to_string());
+                    .map_err(|error| path_error("macros-save-error", &path, error).to_string());
                 let _ = tx.send(completion);
             });
         }
@@ -827,6 +837,10 @@ fn macro_menu(catalogue: &Catalogue, running: Option<&str>) -> (Menu, Vec<usize>
     entries.push(row("macro.new", own("macros-new")));
     entries.push(row("macro.workshop", own("macros-workshop")));
     let mut indices = Vec::new();
+    if catalogue.entries.is_empty() {
+        entries.push(MenuEntry::Separator);
+        entries.push(MenuEntry::Row(Row::command("macro.empty", own("macros-empty"), None, false)));
+    }
     for app in [true, false] {
         entries.push(MenuEntry::Separator);
         for (index, entry) in catalogue
@@ -884,6 +898,37 @@ fn notification(app: &str, title: &str, status: &Status, output: &str) -> serde_
         "app": app, "actions": [{"id": "output", "label": own("macros-show-output")}]
         , "timeout_ms": notifications::RETENTION.as_millis() as u64
     })
+}
+
+fn path_error(key: &str, path: &Path, error: impl std::fmt::Display) -> io::Error {
+    io::Error::other(own_with(key, &[("path", &path.display().to_string()), ("error", &error.to_string())]))
+}
+
+/// Read an existing macro and check the directory used by atomic saves before
+/// offering it for editing. Probe only a new, exclusively-created scratch file;
+/// never truncate or rewrite the macro to test writability.
+fn open_macro(path: &Path) -> io::Result<editor::local::Document> {
+    let document = editor::local::Document::open(path)
+        .map_err(|e| path_error("macros-open-error", path, e))?;
+    let check = || -> io::Result<()> {
+        static NEXT_PROBE: AtomicU64 = AtomicU64::new(1);
+        let target = path.canonicalize()?;
+        let parent = target.parent().ok_or_else(|| io::Error::other("no parent directory"))?;
+        loop {
+            let id = NEXT_PROBE.fetch_add(1, Ordering::Relaxed);
+            let probe = parent.join(format!(".macro-save-check-{}-{id}", std::process::id()));
+            match std::fs::OpenOptions::new().write(true).create_new(true).open(&probe) {
+                Ok(file) => {
+                    drop(file);
+                    return std::fs::remove_file(probe);
+                }
+                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
+                Err(error) => return Err(error),
+            }
+        }
+    };
+    check().map_err(|e| path_error("macros-save-error", path, e))?;
+    Ok(document)
 }
 
 fn launch(path: &Path, folder: bool) -> io::Result<()> {
@@ -1220,6 +1265,16 @@ mod tests {
     }
 
     #[test]
+    fn empty_catalogue_explains_itself_with_a_disabled_row() {
+        let (menu, indices) = macro_menu(&Catalogue::default(), None);
+        assert!(indices.is_empty());
+        assert!(matches!(menu.entries[2], MenuEntry::Separator));
+        let empty = menu.entries[3].row().unwrap();
+        assert_eq!(empty.label, "No macros yet");
+        assert!(!empty.enabled);
+    }
+
+    #[test]
     fn macro_editor_snapshot() {
         let mut state = State::new("ced");
         state.editor_open = true;
@@ -1276,6 +1331,148 @@ mod tests {
         assert!(state.open);
         assert!(state.creation_error.is_some());
         assert!(!state.editor_open);
+    }
+
+    #[cfg(unix)]
+    struct ReadOnlyParent {
+        path: std::path::PathBuf,
+        permissions: std::fs::Permissions,
+    }
+
+    #[cfg(unix)]
+    impl ReadOnlyParent {
+        fn new(path: &Path) -> Option<Self> {
+            use std::os::unix::fs::PermissionsExt;
+            // SAFETY: geteuid has no arguments or side effects.
+            if unsafe { libc::geteuid() } == 0 {
+                eprintln!("skip: root bypasses read-only directory permissions");
+                return None;
+            }
+            let permissions = std::fs::metadata(path).unwrap().permissions();
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o500)).unwrap();
+            Some(Self { path: path.into(), permissions })
+        }
+    }
+
+    #[cfg(unix)]
+    impl Drop for ReadOnlyParent {
+        fn drop(&mut self) {
+            std::fs::set_permissions(&self.path, self.permissions.clone()).unwrap();
+        }
+    }
+
+    #[cfg(unix)]
+    fn permission_harness(state: State) -> egui_kittest::Harness<'static, State> {
+        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1275.0, 700.0))
+            .build_ui_state(|ui, state: &mut State| state.show(ui.ctx()), state);
+        crate::install(&h.ctx, &crate::Theme::embedded());
+        h.run_steps(5);
+        h
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn read_only_parent_creation_reports_its_path_inline_without_an_editor() {
+        let (_temp, roots, _) = runner_fixture();
+        let Some(_readonly) = ReadOnlyParent::new(&roots.user) else { return; };
+        // The existing app folder must also be read-only: atomic creates
+        // need its permissions even when its ancestor is already present.
+        let folder = roots.folder("ced", Tier::UserApp).unwrap();
+        let _app_readonly = ReadOnlyParent::new(&folder).unwrap();
+        let mut state = State::new("ced");
+        state.engine.roots = Some(roots);
+        state.loaded = true;
+        state.open = true;
+        state.title = Some("Abc".into());
+        state.create_title();
+        let mut h = permission_harness(state);
+        wait_until(|| { h.run_steps(1); h.state().creation.is_none() });
+        let error = h.state().creation_error.as_ref().unwrap();
+        assert!(error.contains(&folder.display().to_string()));
+        assert!(error.to_lowercase().contains("permission denied"));
+        let _ = h.get_by_label(error);
+        assert_eq!(h.state().title.as_deref(), Some("Abc"));
+        assert!(h.state().open);
+        assert!(!h.state().editor_open);
+        assert!(h.state().document.is_none());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn read_only_parent_copy_reports_its_path_inline_without_an_editor() {
+        let (_temp, roots, _) = runner_fixture();
+        let folder = roots.folder("ced", Tier::UserApp).unwrap();
+        let Some(_readonly) = ReadOnlyParent::new(&folder) else { return; };
+        let builtin = roots.builtin.join("ced");
+        std::fs::create_dir_all(&builtin).unwrap();
+        let source = builtin.join("builtin.mix");
+        std::fs::write(&source, "-- title: Built-in\nprint(1)\n").unwrap();
+        let entry = Entry { id: "builtin".into(), title: "Built-in".into(), path: source, tier: Tier::BuiltinApp, shadows: vec![] };
+        let destination = folder.join("builtin.mix");
+        let mut state = State::new("ced");
+        state.engine.roots = Some(roots);
+        state.loaded = true;
+        state.edit(entry);
+        let mut h = permission_harness(state);
+        wait_until(|| { h.run_steps(1); h.state().pending.is_none() });
+        let error = h.state().error.as_ref().unwrap();
+        assert!(error.contains(&destination.display().to_string()));
+        assert!(error.to_lowercase().contains("permission denied"));
+        let _ = h.get_by_label(error);
+        assert!(h.state().open);
+        assert!(!h.state().editor_open);
+        assert!(h.state().document.is_none());
+        assert!(!destination.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unwritable_or_missing_user_files_never_open_an_editor() {
+        let (_temp, roots, entry) = runner_fixture();
+        let folder = roots.folder("ced", Tier::UserApp).unwrap();
+        let Some(_readonly) = ReadOnlyParent::new(&folder) else { return; };
+        for exists in [true, false] {
+            let mut entry = entry.clone();
+            if !exists { entry.path = folder.join("missing.mix"); }
+            let path = entry.path.clone();
+            let mut state = State::new("ced");
+            state.engine.roots = Some(roots.clone());
+            state.loaded = true;
+            state.edit(entry);
+            let mut h = permission_harness(state);
+            wait_until(|| { h.run_steps(1); h.state().pending.is_none() });
+            let error = h.state().error.as_ref().unwrap();
+            assert!(error.contains(&path.display().to_string()));
+            if exists { assert!(error.to_lowercase().contains("permission denied")); }
+            let _ = h.get_by_label(error);
+            assert!(!h.state().editor_open);
+            assert!(h.state().document.is_none());
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn save_permission_errors_name_the_path_and_keep_dirty_edits() {
+        let (_temp, roots, entry) = runner_fixture();
+        let mut document = open_macro(&entry.path).unwrap();
+        document.command(editor::EditCommand::Insert("-- edit\n".into()), &editor::View::default()).unwrap();
+        let folder = roots.folder("ced", Tier::UserApp).unwrap();
+        let Some(_readonly) = ReadOnlyParent::new(&folder) else { return; };
+        let mut state = State::new("ced");
+        state.engine.roots = Some(roots);
+        state.loaded = true;
+        state.document = Some(document);
+        state.editor_open = true;
+        state.save_editor(true, false);
+        let mut h = permission_harness(state);
+        wait_until(|| { h.run_steps(1); h.state().saving.is_none() });
+        let error = h.state().error.as_ref().unwrap();
+        assert!(error.contains(&entry.path.display().to_string()));
+        assert!(error.to_lowercase().contains("permission denied"));
+        let _ = h.get_by_label(error);
+        assert!(h.state().editor_open);
+        assert!(h.state().document.as_ref().unwrap().is_dirty());
+        assert!(h.state().document.as_ref().unwrap().contents().contains("-- edit"));
     }
 
     #[cfg(unix)]
@@ -1419,10 +1616,14 @@ mod tests {
     }
 
     fn app_harness() -> egui_kittest::Harness<'static, AppMenu> {
+        app_harness_at(false, egui::vec2(800.0, 700.0), 1.0)
+    }
+
+    fn app_harness_at(render: bool, size: egui::Vec2, scale: f32) -> egui_kittest::Harness<'static, AppMenu> {
         let temp = tempfile::tempdir().unwrap();
-        let mut h = egui_kittest::Harness::builder()
-            .with_size(egui::vec2(800.0, 700.0))
-            .build_ui_state(
+        let builder = egui_kittest::Harness::builder().with_size(size).with_pixels_per_point(scale);
+        let builder = if render { builder.wgpu() } else { builder };
+        let mut h = builder.build_ui_state(
                 move |ui, app: &mut AppMenu| {
                     let runtime = window_state(ui.ctx(), "ced", true).unwrap();
                     {
@@ -1481,6 +1682,22 @@ mod tests {
     fn runtime(h: &egui_kittest::Harness<'_, AppMenu>) -> WindowState {
         let id = crate::window_id(egui::ViewportId::ROOT, ("shared-macros", "ced"));
         h.ctx.data(|d| d.get_temp(id)).unwrap()
+    }
+
+    #[test]
+    fn macro_empty_menu_right_edge_snapshot() {
+        let mut h = app_harness_at(true, egui::vec2(1275.0, 700.0), 2.5);
+        h.get_by_label("Macros").click();
+        h.run_steps(40);
+        let row = h.get_by_label("New macro…").rect();
+        let anchor = h.ctx.data(|d| d.get_temp::<egui::Rect>(crate::window_id(egui::ViewportId::ROOT, "macro-anchor"))).unwrap();
+        let chrome = crate::chrome::Chrome::of(&h.ctx);
+        let margin = egui::Frame::menu(&h.ctx.style()).total_margin();
+        assert!(row.width() >= chrome.metrics.menu_min_width);
+        assert!((row.right() + margin.right - anchor.right()).abs() < 1.0);
+        assert!(h.ctx.content_rect().contains_rect(row));
+        let _ = h.get_by_label("No macros yet");
+        h.snapshot("macros_menu_empty_right_edge");
     }
 
     #[test]

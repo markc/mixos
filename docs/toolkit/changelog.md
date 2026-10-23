@@ -11,6 +11,12 @@ generated: by docs/_build/gen-site.mix from libs/toolkit/CHANGELOG.md; do not ed
 
 ## Unreleased — 2026-10-23
 
+- Give icon-anchored menus the menu bar's minimum width and frame metrics;
+  right-align at the icon near window edges and constrain oversized content.
+- Explain empty macro catalogues with a disabled row.
+- Keep failed macro creates and copies in the menu with path-specific errors.
+  Check existing files' save directories before editing and retain dirty edits
+  with path-specific save errors if permissions later change.
 - Focus the macro title only after its visible widget is drawn, and release
   focus before disabling it for creation, keeping AccessKit focus valid.
 - Save macro editor snapshots independently of discovery, keep the document
