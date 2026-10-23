@@ -32,13 +32,15 @@ pub fn title_bar(
     commands: &Registry<App>,
     strings: &Strings,
 ) -> Vec<UiEvent> {
-    titlebar::show(
+    // The icon bar: the standard tail only.
+    titlebar::show_bar(
         ui,
         &label("title"),
         Some(Icon::FileTerminal),
         commands,
         app,
         strings,
+        &[],
     )
     .into_iter()
     .map(|(id, origin)| UiEvent::Command(id, origin))

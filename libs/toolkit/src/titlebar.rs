@@ -322,6 +322,121 @@ pub fn show_engine_with<S>(
     show_with(ui, title, icon, &registry.ui, state, strings, controls)
 }
 
+/// One app-wide action an app names for its icon bar: a registry command
+/// and the icon it shows. Its tooltip, enablement and toggled state come
+/// from the registry.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Action {
+    pub command: &'static str,
+    pub icon: Icon,
+}
+
+impl Action {
+    pub const fn new(command: &'static str, icon: Icon) -> Self {
+        Self { command, icon }
+    }
+}
+
+/// One resolved icon of the bar, as drawn and as published to a compositor
+/// that hosts the bar in its own title band.
+#[derive(Clone, Debug, PartialEq)]
+pub struct IconBarItem {
+    pub command: &'static str,
+    pub icon: Icon,
+    pub tooltip: String,
+    pub enabled: bool,
+    pub toggled: bool,
+}
+
+/// The standard tail, left to right: search, the shortcuts sheet, light
+/// and dark. Each slot takes the first id the app registers.
+const TAIL: [&[&str]; 3] = [
+    &["app.runner", "view.search"],
+    &["help.shortcuts", "help.keys"],
+    &["view.mode"],
+];
+
+/// The icon bar, left to right: the app's `actions` that it registers, then
+/// the standard tail for the commands it registers. `dark` picks the
+/// sun/moon. Every item is an icon; nothing here draws.
+pub fn icon_bar<S>(
+    ctx: &egui::Context,
+    registry: &Registry<S>,
+    state: &S,
+    strings: &Strings,
+    actions: &[Action],
+    dark: bool,
+) -> Vec<IconBarItem> {
+    let tail = TAIL.iter().filter_map(|ids| {
+        let id = ids.iter().find(|id| registry.get(id).is_some())?;
+        let icon = match *id {
+            "app.runner" | "view.search" => Icon::Search,
+            "view.mode" => theme_icon(dark),
+            _ => Icon::Keyboard,
+        };
+        Some(Action::new(registry.get(id)?.id, icon))
+    });
+    let standard = |id: &str| TAIL.iter().any(|ids| ids.contains(&id));
+    actions
+        .iter()
+        .copied()
+        .filter(|a| !standard(a.command))
+        .chain(tail)
+        .filter_map(|a| {
+            let command = registry.get(a.command)?;
+            Some(IconBarItem {
+                command: command.id,
+                icon: a.icon,
+                tooltip: crate::tooltip::for_command(ctx, command, strings),
+                enabled: registry.enabled(command.id, state),
+                toggled: command.id != "view.mode"
+                    && registry.checked(command.id, state) == Some(true),
+            })
+        })
+        .collect()
+}
+
+/// [`show`] with the app's icon bar ([`icon_bar`]) at the right end of the
+/// row. As the row narrows the app's actions give way, leftmost first; the
+/// standard tail stays.
+pub fn show_bar<S>(
+    ui: &mut Ui,
+    title: &str,
+    icon: Option<Icon>,
+    registry: &Registry<S>,
+    state: &S,
+    strings: &Strings,
+    actions: &[Action],
+) -> Vec<(&'static str, Origin)> {
+    let dark = ui.visuals().dark_mode;
+    let items = icon_bar(ui.ctx(), registry, state, strings, actions, dark);
+    // The group runs right to left from the captions, and drops from its
+    // far end, so the tail goes first.
+    let mut controls: Vec<Control<'_>> = items
+        .iter()
+        .rev()
+        .map(|item| Control::Icon {
+            command: item.command,
+            icon: item.icon,
+            selected: item.toggled,
+        })
+        .collect();
+    show_with(ui, title, icon, registry, state, strings, &mut controls)
+}
+
+/// [`show_bar`] for a core command table.
+pub fn show_engine_bar<S>(
+    ui: &mut Ui,
+    title: &str,
+    icon: Option<Icon>,
+    registry: &crate::command::EngineAdapter<S>,
+    state: &S,
+    strings: &Strings,
+    actions: &[Action],
+) -> Vec<(&'static str, Origin)> {
+    show_bar(ui, title, icon, &registry.ui, state, strings, actions)
+}
+
 /// The registry's menus laid out left to right in `room`; their commands
 /// join `fired`. Returns the menus' right edge.
 fn menus<S>(

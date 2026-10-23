@@ -30,7 +30,7 @@ use toolkit::command::Origin;
 use toolkit::dialog::{self, Choice};
 use toolkit::field::ValueField;
 use toolkit::slider::Slider;
-use toolkit::titlebar::{self, Control};
+use toolkit::titlebar::{self, Action};
 use toolkit::toggle::Toggle;
 use toolkit::{Icon, Registry, Strings, bars, icons, panel, tooltip};
 mod email;
@@ -95,26 +95,15 @@ pub fn view(
     strings: &Strings,
 ) -> Vec<UiEvent> {
     let mut events = Vec::new();
-    let dark = ui.visuals().dark_mode;
-    let mut controls = [
-        Control::Icon {
-            command: "view.mode",
-            icon: titlebar::theme_icon(dark),
-            selected: false,
-        },
-        Control::Link {
-            command: "help.shortcuts",
-            icon: Icon::Keyboard,
-        },
-    ];
-    let fired = titlebar::show_with(
+    // The icon bar: refresh, then the standard tail.
+    let fired = titlebar::show_bar(
         ui,
         &label("title"),
         Some(Icon::Settings),
         commands,
         engine,
         strings,
-        &mut controls,
+        &[Action::new("view.refresh", Icon::RefreshCw)],
     );
     // The toggle goes to the mode opposite the one this frame drew, so a
     // click reported twice cannot flip it back.

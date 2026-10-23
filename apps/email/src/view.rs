@@ -22,7 +22,7 @@ pub mod tree;
 
 use toolkit::command::Origin;
 use toolkit::dialog::{self, Choice};
-use toolkit::titlebar::{self, Control};
+use toolkit::titlebar::{self, Action};
 use toolkit::{Icon, Registry, Strings, bars, panel};
 
 use crate::state::{AccountView, Dialog, Mode, Node, Pane, Phase, Source, State, TreeKey};
@@ -129,32 +129,15 @@ pub fn view(
     palette: &editor::Palette,
 ) -> Vec<UiEvent> {
     let mut events = Vec::new();
-    let dark = ui.visuals().dark_mode;
-    // The right-hand group: a new mail, light and dark, the shortcuts link.
-    let mut controls = [
-        Control::Icon {
-            command: "mail.compose",
-            icon: Icon::SquarePen,
-            selected: false,
-        },
-        Control::Icon {
-            command: "view.mode",
-            icon: titlebar::theme_icon(dark),
-            selected: false,
-        },
-        Control::Link {
-            command: "help.shortcuts",
-            icon: Icon::Keyboard,
-        },
-    ];
-    let fired = titlebar::show_with(
+    // The icon bar: a new mail, then the standard tail.
+    let fired = titlebar::show_bar(
         ui,
         &crate::label("title"),
         Some(Icon::Mail),
         commands,
         state,
         strings,
-        &mut controls,
+        &[Action::new("mail.compose", Icon::SquarePen)],
     );
     let mut mode_set = false;
     for (id, origin) in fired {

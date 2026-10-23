@@ -28,10 +28,10 @@ use egui::{
     Align, Align2, FontId, Id, Key, Layout, Rect, RichText, ScrollArea, Sense, TextStyle, Ui,
     UiBuilder, pos2, vec2,
 };
-use toolkit::button::IconButton;
 use toolkit::command::Origin;
 use toolkit::dialog::{self, Choice, Role};
-use toolkit::{Icon, Registry, Strings, bars, icons, tooltip};
+use toolkit::titlebar::Action;
+use toolkit::{Icon, Registry, Strings, bars, icons};
 
 use crate::app::{Answer, App, Dialog};
 use crate::{label, label_with};
@@ -113,8 +113,17 @@ pub fn title(app: &App) -> String {
 /// Draw the whole window into `ui`.
 pub fn view(ui: &mut Ui, app: &App, commands: &Registry<App>, strings: &Strings) -> Vec<UiEvent> {
     let mut events = Vec::new();
-    let fired =
-        toolkit::titlebar::show(ui, &title(app), Some(Icon::Folder), commands, app, strings);
+    // The icon bar: the two sidebar toggles, then the standard tail.
+    let sidebars = [Side::Left, Side::Right].map(|s| Action::new(s.command(), s.icon()));
+    let fired = toolkit::titlebar::show_bar(
+        ui,
+        &title(app),
+        Some(Icon::Folder),
+        commands,
+        app,
+        strings,
+        &sidebars,
+    );
     events.extend(
         fired
             .into_iter()
@@ -203,26 +212,6 @@ impl Side {
             Side::Left => "places",
             Side::Right => "properties",
         })
-    }
-}
-
-/// A sidebar's toggle button; its tooltip names it with its shortcut.
-fn toggle_button(
-    ui: &mut Ui,
-    app: &App,
-    commands: &Registry<App>,
-    strings: &Strings,
-    side: Side,
-    events: &mut Vec<UiEvent>,
-) {
-    let Some(command) = commands.get(side.command()) else {
-        return;
-    };
-    let tip = tooltip::for_command(ui.ctx(), command, strings);
-    let open = app.checked(side.command()) == Some(true);
-    let button = IconButton::new(side.icon()).selected(open).tooltip(tip);
-    if ui.add_enabled((command.enabled)(app), button).clicked() {
-        events.push(UiEvent::Command(command.id, Origin::Ui));
     }
 }
 
@@ -392,7 +381,7 @@ fn pane_view(
         );
     }
     ui.add_space(2.0);
-    location_bar(ui, app, commands, strings, pane, active, events);
+    location_bar(ui, app, pane, active, events);
     let width = ui.available_width();
     let (show_size, show_modified) = (
         width >= NAME_MIN + SIZE_W,
@@ -450,38 +439,23 @@ fn pane_view(
     });
 }
 
-/// A pane's top row: the path in a text field, with the sidebar toggle on
-/// the window's side (Places left of the left pane's path, Properties right
-/// of the right pane's). Focusing the field starts an edit with the whole
-/// path selected; Enter goes there, Esc or a click away puts it back.
+/// A pane's top row: the path in a text field (the sidebar toggles live in
+/// the icon bar). Focusing the field starts an edit with the whole path
+/// selected; Enter goes there, Esc or a click away puts it back.
 fn location_bar(
     ui: &mut Ui,
     app: &App,
-    commands: &Registry<App>,
-    strings: &Strings,
     pane: PaneId,
     active: bool,
     events: &mut Vec<UiEvent>,
 ) {
     let height = toolkit::button::icon_button_of(ui.ctx()).max(ui.spacing().interact_size.y + 4.0);
-    let side = match pane {
-        PaneId::Left => Side::Left,
-        PaneId::Right => Side::Right,
-    };
     ui.allocate_ui_with_layout(
         vec2(ui.available_width(), height),
         Layout::left_to_right(Align::Center),
         |ui| {
             ui.add_space(4.0);
-            if side == Side::Left {
-                toggle_button(ui, app, commands, strings, side, events);
-            }
-            let reserve = if side == Side::Right {
-                toolkit::button::icon_button_of(ui.ctx()) + ui.spacing().item_spacing.x + 4.0
-            } else {
-                4.0
-            };
-            let width = (ui.available_width() - reserve).max(40.0);
+            let width = (ui.available_width() - 4.0).max(40.0);
             let id = Id::new(("location", pane.index()));
             match &app.editing {
                 Some((editing, text)) if *editing == pane => {
@@ -534,9 +508,6 @@ fn location_bar(
                         events.push(UiEvent::EditLocation(pane));
                     }
                 }
-            }
-            if side == Side::Right {
-                toggle_button(ui, app, commands, strings, side, events);
             }
         },
     );

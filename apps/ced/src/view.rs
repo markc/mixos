@@ -18,7 +18,7 @@ use egui::{Align, Layout, RichText, Ui};
 use toolkit::command::Origin;
 use toolkit::dialog::{self, Choice, Role};
 use toolkit::tabs::DocTab;
-use toolkit::titlebar::{self, Control};
+use toolkit::titlebar;
 use toolkit::{Icon, Registry, Strings, bars, icons};
 
 use crate::app::{Answer, App, Dialog, PreviewMode};
@@ -57,18 +57,15 @@ pub fn view(
     connected: bool,
 ) -> Vec<UiEvent> {
     let mut events = Vec::new();
-    let mut controls = [Control::Link {
-        command: "help.keys",
-        icon: Icon::Keyboard,
-    }];
-    let fired = titlebar::show_with(
+    // The icon bar: the standard tail only.
+    let fired = titlebar::show_bar(
         ui,
         &label("title"),
         Some(Icon::FileText),
         commands,
         &*app,
         strings,
-        &mut controls,
+        &[],
     );
     events.extend(
         fired
