@@ -292,8 +292,8 @@ rc 15 <code>ALREADY_ANSWERED</code>, rc 16 <code>TOO_MANY_OPEN</code>.</p>
 <h2 id="limits">Limits</h2>
 <p><code>urgency</code> is <code>low</code>, <code>normal</code> (default) or <code>critical</code>. Existing senders may
 use the input-only <code>level</code> alias: <code>warning</code> means <code>normal</code>, <code>error</code> means
-<code>critical</code>; the three urgency values are also accepted. Explicit <code>urgency</code>
-takes precedence. Replies and events expose only <code>urgency</code>.</p>
+<code>critical</code>; every other level value is ignored and defaults to <code>normal</code>.
+Explicit <code>urgency</code> takes precedence. Replies and events expose only <code>urgency</code>.</p>
 <p><code>notify.get</code>, <code>notify.list</code> and change bodies contain <code>id</code>, <code>summary</code>, <code>body</code>,
 <code>app</code>, <code>source</code>, <code>urgency</code>, <code>actions</code>, <code>thread</code>, <code>request_id</code>, <code>created_at</code>,
 <code>status</code>, <code>outcome</code> and <code>presented</code>. The app defaults to source, then <code>MixOS</code>.
@@ -304,8 +304,8 @@ settled notifications use <code>NOT_FOUND</code> and <code>ALREADY_ANSWERED</cod
 clears all presentation records. Urgency and presentations persist across
 restarts; older state files default to <code>normal</code> and <code>{}</code>.</p>
 <p>A summary is at most 120 characters, a body 500, and a button label 32. A
-notification has at most four buttons. At most eight questions can wait for an
-answer at once; the ninth is refused until one is answered. notifyd keeps the
+notification has at most four buttons. At most 25 questions can wait for an
+answer at once; the 26th is refused until one is answered. notifyd keeps the
 last 200 notifications, and never drops one that is still open.</p>
 <h2 id="state">State</h2>
 <p>Notifications are kept in one JSON file, rewritten atomically on every change:

@@ -18,7 +18,7 @@ $SUMMARY_MAX = 120
 $BODY_MAX = 500
 $TEXT_MAX = 80
 $ACTIONS_MAX = 4
-$OPEN_ACTIONABLE_MAX = 8
+$OPEN_ACTIONABLE_MAX = 25
 $RECORDS_MAX = 200
 $TIMEOUT_MAX_MS = 86400000
 $KINDS = ["action", "dismissed", "expired", "closed"]
@@ -109,7 +109,7 @@ fn add($state, $args, $now, $now_iso)
   $urgency = $args.urgency
   if $urgency == nil then
     $level = $args.level
-    $urgency = if $level == "error" then "critical" elif $level == "warning" then "normal" else $level ?? "normal" end
+    $urgency = if $level == "error" then "critical" else "normal" end
   end
   if type($urgency) != "string" or not contains(["low", "normal", "critical"], $urgency) then
     _usage("urgency must be low, normal or critical")

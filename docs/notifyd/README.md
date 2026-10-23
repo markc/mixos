@@ -79,8 +79,8 @@ rc 15 `ALREADY_ANSWERED`, rc 16 `TOO_MANY_OPEN`.
 
 `urgency` is `low`, `normal` (default) or `critical`. Existing senders may
 use the input-only `level` alias: `warning` means `normal`, `error` means
-`critical`; the three urgency values are also accepted. Explicit `urgency`
-takes precedence. Replies and events expose only `urgency`.
+`critical`; every other level value is ignored and defaults to `normal`.
+Explicit `urgency` takes precedence. Replies and events expose only `urgency`.
 
 `notify.get`, `notify.list` and change bodies contain `id`, `summary`, `body`,
 `app`, `source`, `urgency`, `actions`, `thread`, `request_id`, `created_at`,
@@ -93,8 +93,8 @@ clears all presentation records. Urgency and presentations persist across
 restarts; older state files default to `normal` and `{}`.
 
 A summary is at most 120 characters, a body 500, and a button label 32. A
-notification has at most four buttons. At most eight questions can wait for an
-answer at once; the ninth is refused until one is answered. notifyd keeps the
+notification has at most four buttons. At most 25 questions can wait for an
+answer at once; the 26th is refused until one is answered. notifyd keeps the
 last 200 notifications, and never drops one that is still open.
 
 ## State

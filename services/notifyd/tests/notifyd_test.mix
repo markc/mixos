@@ -143,6 +143,9 @@ try
   check("ids continue after restart", call("notify.send", {summary: "next"}).v.id == $t.v.id + 1)
   sleep(4)
   check("re-armed timeout expired after restart", call("notify.get", {id: $t.v.id}).v.outcome.kind == "expired")
+  $info = call("notify.send", {summary: "Legacy info sender", level: "info"})
+  check("level info is accepted as normal", $info.rc == 0 and call("notify.get", {id: $info.v.id}).v.urgency == "normal")
+  check("explicit invalid urgency remains strict", call("notify.send", {summary: "Invalid urgency", urgency: "info", level: "warning"}).rc == 10)
 finally
   for each $p in $pids
     try
