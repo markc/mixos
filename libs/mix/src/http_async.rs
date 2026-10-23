@@ -306,7 +306,7 @@ async fn perform(
                 }
             };
             match status {
-                301 | 302 | 303 => {
+                301..=303 => {
                     if !["GET", "HEAD"].contains(&current_method.as_str()) {
                         current_method = "GET".into();
                     }
