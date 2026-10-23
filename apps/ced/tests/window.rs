@@ -352,7 +352,7 @@ fn markdown_preview_is_read_only_and_stays_above_the_panels() {
     h.run_steps(4);
     let heading = h.get_by_label("Project notes");
     let rect = heading.rect();
-    assert!(rect.top() > h.get_by_label("A document notice").rect().bottom());
+    assert!(h.query_by_label("A document notice").is_none());
     assert!(rect.bottom() < h.get_by_label("No problems.").rect().top());
     assert!(rect.bottom() < h.get_by_label("Nothing has run yet.").rect().top());
     heading.click();

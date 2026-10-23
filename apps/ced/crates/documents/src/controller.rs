@@ -86,6 +86,8 @@ pub struct BusCommand {
 /// What the Controller asks its host (GUI or headless loop) to do.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Effect {
+    /// Post a window message on the Bus lane, falling back to the status line.
+    Notify { text: String, level: Level },
     /// Send a request; `req` correlates the eventual `Incoming::Reply`.
     Send { req: u64, out: Outgoing },
     /// Answer a `ced.*` Bus command.
@@ -144,12 +146,11 @@ const PUBLISH_MIN_GAP_MS: u64 = 1_000;
 const SESSION_DEBOUNCE_MS: u64 = 1_000;
 /// Deadlines for the controller's own requests.
 const DEADLINE_MS: u64 = 5_000;
-const DEADLINE_LONG_MS: u64 = 30_000;
 /// A Bus `ced.action` waits this long for its server op's outcome (a save's
 /// own deadline, its `edit.list` check and one resend fit inside).
 const OP_WAIT_MS: u64 = 90_000;
 /// `edit.open` deadlines before the tab says the service is silent.
-const OPEN_WARN_AFTER: u32 = 3;
+pub const EDIT_UNAVAILABLE: &str = "The edit service is not running; this document will open when it starts.";
 
 /// A Bus `ced.action` waiting on its server op's outcome.
 struct OpWait {
@@ -170,8 +171,6 @@ struct TabX {
     /// Waiting for a reattach open/list.
     reattaching: bool,
     open_error: Option<String>,
-    /// `edit.open` deadlines passed in a row (the human hears once).
-    open_misses: u32,
     /// The caret/selection last published with `edit.select`.
     published: Option<Selection>,
     last_publish: Option<Instant>,
@@ -1053,7 +1052,7 @@ impl Controller {
             verb: "edit.open".into(),
             body: body.to_string(),
             op_id: None,
-            deadline_ms: DEADLINE_LONG_MS,
+            deadline_ms: 3_000,
         };
         self.send(out, Req::Open { tab, reattach }, fx);
     }
@@ -1206,25 +1205,7 @@ impl Controller {
                     self.drive(tab, step, fx);
                 }
             }
-            Some(Req::Open { tab, reattach }) => {
-                // Opening is idempotent for a path; ask again.
-                let path = self.tab(tab).and_then(|t| t.path.clone());
-                self.send_open(tab, path, reattach, fx);
-                let misses = self.x.get_mut(&tab).map(|x| {
-                    x.open_misses += 1;
-                    x.open_misses
-                });
-                if misses == Some(OPEN_WARN_AFTER) {
-                    let text = editor_model::mirror::MSG_SERVICE_SILENT.to_string();
-                    fx.push(Effect::Notice {
-                        tab: Some(tab),
-                        notice: Notice::Message {
-                            level: Level::Warn,
-                            text,
-                        },
-                    });
-                }
-            }
+            Some(Req::Open { tab, .. }) => self.open_failed(tab, EDIT_UNAVAILABLE.into(), fx),
             Some(Req::List { tab }) => self.send_list(tab, fx),
             Some(Req::Find { tab, .. }) => fx.push(Effect::Notice {
                 tab: Some(tab),
@@ -1338,6 +1319,13 @@ impl Controller {
                 if body.contains("services.registered") && body.contains("\"edit\"") =>
             {
                 self.send_info(fx);
+                for id in self.tab_ids() {
+                    if self.tab(id).is_some_and(|t| t.mirror.is_none())
+                        && self.open_error(id).is_some()
+                    {
+                        self.reattach(id, fx);
+                    }
+                }
             }
             _ => {}
         }
@@ -1462,6 +1450,13 @@ impl Controller {
         if self.tab(tab).is_none() {
             return;
         }
+        if rc >= 10
+            && serde_json::from_str::<Value>(body)
+                .ok().is_some_and(|v| v["error_code"] == "UNAVAILABLE")
+        {
+            self.open_failed(tab, EDIT_UNAVAILABLE.into(), fx);
+            return;
+        }
         match reply_result(rc, body) {
             Ok(v) => match serde_json::from_value::<wire::OpenReply>(v) {
                 Ok(open) => self.attach(tab, reattach, &open, fx),
@@ -1540,7 +1535,6 @@ impl Controller {
         if let Some(x) = self.x.get_mut(&tab) {
             x.recovery_id = Some(open.recovery_id.clone());
             x.opened = true;
-            x.open_misses = 0;
             x.reattaching = false;
             x.open_error = None;
         }
@@ -1569,6 +1563,11 @@ impl Controller {
             },
         });
         self.check_opens(fx);
+    }
+
+    /// The failure shown instead of an indefinite opening indicator.
+    pub fn open_error(&self, tab: TabId) -> Option<&str> {
+        self.x.get(&tab)?.open_error.as_deref()
     }
 
     /// Answer every `ced.open` / `ced.new` whose tabs have all had an answer.
@@ -3076,6 +3075,31 @@ impl Controller {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn missing_edit_fails_fast_and_registration_retries_unattached_tabs() {
+        for timeout in [false, true] {
+            let mut c = ctl();
+            let effects = c.open_paths(&["/work/hello.mix".into()], Intent::ui(0));
+            let (req, budget) = effects.iter().find_map(|fx| match fx {
+                Effect::Send { req, out } if out.verb == "edit.open" => Some((*req, out.deadline_ms)),
+                _ => None,
+            }).unwrap();
+            assert!(budget <= 3000);
+            let tab = c.tabs()[0].id;
+            let effects = c.on_incoming(if timeout { Incoming::Deadline { req } } else {
+                Incoming::Reply { req, rc: 10, body: r#"{"error_code":"UNAVAILABLE","message":""}"#.into() }
+            });
+            assert_eq!(c.open_error(tab), Some(EDIT_UNAVAILABLE));
+            assert!(effects.iter().any(|fx| matches!(fx, Effect::Notice { notice: Notice::Message { text, .. }, .. } if text == EDIT_UNAVAILABLE)));
+            assert!(!effects.iter().any(|fx| matches!(fx, Effect::Send { .. })), "wait for registration without polling");
+            let effects = c.on_incoming(Incoming::Topic {
+                topic: "noded.props.changed".into(),
+                body: r#"{"key":"services.registered","value":["edit"]}"#.into(),
+            });
+            assert!(effects.iter().any(|fx| matches!(fx, Effect::Send { out, .. } if out.verb == "edit.open")));
+        }
+    }
 
     #[test]
     fn path_line_col_suffixes() {

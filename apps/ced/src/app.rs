@@ -21,7 +21,7 @@
 //! - Prompts become dialogs. A prompt that arrives while a dialog is open
 //!   waits behind it.
 //! - Notices: information shows briefly in the status bar; warnings and
-//!   errors stay in the notice strip until dismissed (the last four).
+//!   errors become desktop toasts, with the status bar as a fallback.
 //! - Effects that need the Bus, the clipboard, a worker thread or the
 //!   process ([`App::effects`]) are left for the shell.
 
@@ -45,8 +45,7 @@ use toolkit::command::Origin;
 pub const DEFAULT_FONT_PX: u16 = 13;
 /// How long an information notice stays in the status bar, in seconds.
 pub const STATUS_SECONDS: f64 = 6.0;
-/// Warnings and errors kept in the notice strip.
-const NOTICES_MAX: usize = 4;
+const NOTICE_GAP_SECONDS: f64 = 5.0;
 
 /// How a Markdown tab is shown, for this session only.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
@@ -183,14 +182,6 @@ impl Dialog {
     }
 }
 
-/// A warning or error in the notice strip.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Shown {
-    pub tab: Option<TabId>,
-    pub level: Level,
-    pub text: String,
-}
-
 /// What the person did in a dialog.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Answer {
@@ -215,7 +206,7 @@ pub struct App {
     pub dialog: Option<Dialog>,
     /// Prompts waiting for the open dialog to close.
     queued: VecDeque<Dialog>,
-    pub notices: VecDeque<Shown>,
+    recent_notices: HashMap<String, f64>,
     /// A transient status line and when it expires.
     pub status: Option<(String, f64)>,
     /// Effects for the shell: Bus work, clipboard, relex, session, quit.
@@ -260,7 +251,7 @@ impl App {
             ui,
             dialog: None,
             queued: VecDeque::new(),
-            notices: VecDeque::new(),
+            recent_notices: HashMap::new(),
             status: None,
             effects: Vec::new(),
             now: 0.0,
@@ -529,14 +520,23 @@ impl App {
         let Notice::Message { level, text } = notice else {
             return;
         };
+        let text = if text.trim().is_empty() {
+            "Ced could not complete the request.".to_owned()
+        } else { text };
         if level == Level::Info {
             self.status = Some((text, self.now + STATUS_SECONDS));
             return;
         }
-        self.notices.push_back(Shown { tab, level, text });
-        while self.notices.len() > NOTICES_MAX {
-            self.notices.pop_front();
+        let text = match tab.and_then(|id| self.tab(id)) {
+            Some(tab) => format!("{}: {text}", crate::view::tab_name(tab)),
+            None => text,
+        };
+        self.recent_notices.retain(|_, at| self.now - *at < NOTICE_GAP_SECONDS);
+        if self.recent_notices.contains_key(&text) {
+            return;
         }
+        self.recent_notices.insert(text.clone(), self.now);
+        self.effects.push(Effect::Notify { text, level });
     }
 
     /// The status line, while it lasts.
@@ -547,10 +547,8 @@ impl App {
             .map(|(text, _)| text.as_str())
     }
 
-    pub fn dismiss_notice(&mut self, index: usize) {
-        if index < self.notices.len() {
-            self.notices.remove(index);
-        }
+    pub fn notification_failed(&mut self, text: String) {
+        self.status = Some((text, self.now + STATUS_SECONDS));
     }
 
     fn prompt(&mut self, prompt: Prompt) {
@@ -1374,7 +1372,7 @@ mod tests {
     }
 
     #[test]
-    fn notices_split_between_the_status_line_and_the_strip() {
+    fn notices_use_toasts_with_rate_limit_and_status_fallback() {
         let mut a = app();
         a.now = 10.0;
         a.notice(
@@ -1396,10 +1394,17 @@ mod tests {
                 },
             );
         }
-        let texts: Vec<_> = a.notices.iter().map(|s| s.text.as_str()).collect();
-        assert_eq!(texts, ["w2", "w3", "w4", "w5"], "the last four stay");
-        a.dismiss_notice(0);
-        assert_eq!(a.notices.len(), 3);
+        assert_eq!(a.effects.iter().filter(|fx| matches!(fx, Effect::Notify { .. })).count(), 6);
+        a.effects.clear();
+        a.notice(None, Notice::Message { level: Level::Error, text: "w5".into() });
+        assert!(a.effects.is_empty(), "identical text is limited across levels");
+        a.now += 5.0;
+        a.notice(None, Notice::Message { level: Level::Error, text: "w5".into() });
+        assert!(matches!(&a.effects[0], Effect::Notify { text, level: Level::Error } if text == "w5"));
+        a.notification_failed("w5".into());
+        assert_eq!(a.status(), Some("w5"));
+        a.notice(None, Notice::Message { level: Level::Warn, text: "  ".into() });
+        assert!(matches!(a.effects.last().unwrap(), Effect::Notify { text, .. } if !text.trim().is_empty()));
     }
 
     #[test]
