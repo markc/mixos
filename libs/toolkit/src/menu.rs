@@ -798,7 +798,12 @@ pub fn anchored(
     let mut frame = Rect::NOTHING;
     if nav.open_menu().is_some() {
         let chrome = Chrome::of(&ctx);
-        let layout = Layout::new(ui, &chrome, &menus[0].entries, chrome.metrics.menu_min_width);
+        let layout = Layout::new(
+            ui,
+            &chrome,
+            &menus[0].entries,
+            chrome.metrics.menu_min_width,
+        );
         let margin = Frame::menu(ui.style()).total_margin().sum();
         let bounds = ctx.content_rect().shrink(chrome.metrics.edge_gap);
         let rect = anchored_rect(anchor, layout.size + margin, bounds);
@@ -1605,62 +1610,68 @@ fn show_level(
         .fixed_pos(rect.min)
         .constrain(false)
         .fade_in(false);
-    let area = if max_width.is_some() { area.default_size(rect.size()) } else { area };
+    let area = if max_width.is_some() {
+        area.default_size(rect.size())
+    } else {
+        area
+    };
     let area = area.show(ctx, |ui| {
-            Frame::menu(ui.style())
-                .show(ui, |ui| {
-                    if let Some(width) = max_width {
-                        // Area size is cached between openings. Grow to this
-                        // menu's measured, bounded frame even after a shorter
-                        // catalogue, without forcing scrollbars past its edge.
-                        ui.set_min_size(vec2(width, max_height));
-                    }
-                    if let Some((search, query)) = header {
-                        search_header(ui, chrome, search, query, layout.size.x, entries.is_empty());
-                    }
-                    // At least the rows, up to the window: an egui area
-                    // starts at the style's default area size (400 pt high),
-                    // and a scroll area alone never grows past its area, so
-                    // a long level would scroll in a 400 pt box however tall
-                    // the window. Asking for the rows makes the area grow.
-                    configure_scroll(ui, chrome);
-                    let scroll = if let Some(width) = max_width {
-                        ScrollArea::both()
-                            .max_width(width)
-                            .min_scrolled_width(0.0)
+        Frame::menu(ui.style())
+            .show(ui, |ui| {
+                if let Some(width) = max_width {
+                    // Area size is cached between openings. Grow to this
+                    // menu's measured, bounded frame even after a shorter
+                    // catalogue, without forcing scrollbars past its edge.
+                    ui.set_min_size(vec2(width, max_height));
+                }
+                if let Some((search, query)) = header {
+                    search_header(ui, chrome, search, query, layout.size.x, entries.is_empty());
+                }
+                // At least the rows, up to the window: an egui area
+                // starts at the style's default area size (400 pt high),
+                // and a scroll area alone never grows past its area, so
+                // a long level would scroll in a 400 pt box however tall
+                // the window. Asking for the rows makes the area grow.
+                configure_scroll(ui, chrome);
+                let scroll = if let Some(width) = max_width {
+                    ScrollArea::both().max_width(width).min_scrolled_width(0.0)
+                } else {
+                    ScrollArea::vertical()
+                };
+                let out = scroll
+                    .id_salt(id.with("scroll"))
+                    .max_height(max_height)
+                    .min_scrolled_height(if max_width.is_some() {
+                        0.0
                     } else {
-                        ScrollArea::vertical()
-                    };
-                    let out = scroll
-                        .id_salt(id.with("scroll"))
-                        .max_height(max_height)
-                        .min_scrolled_height(if max_width.is_some() { 0.0 } else { max_height.min(layout.size.y) })
-                        .auto_shrink([true, true])
-                        .show(ui, |ui| {
-                            level_rows(
-                                ui, chrome, level, entries, layout, nav, menus, moved, keyed,
-                                deeper, id,
-                            )
-                        });
-                    let view = out.inner_rect;
-                    let bar = (out.content_size.y > view.height() + 0.5).then(|| {
-                        // egui's bar ends at the allocated strip's outer
-                        // margin; a floating bar is wider than its strip and
-                        // reaches back over the rows' right edge.
-                        let s = &ui.spacing().scroll;
-                        let allocated = if s.floating {
-                            s.floating_allocated_width
-                        } else {
-                            s.bar_inner_margin + s.bar_width + s.bar_outer_margin
-                        };
-                        let right = view.right() + allocated;
-                        let left = view.right().min(right - s.bar_outer_margin - s.bar_width);
-                        Rect::from_x_y_ranges(left..=right, view.y_range())
+                        max_height.min(layout.size.y)
+                    })
+                    .auto_shrink([true, true])
+                    .show(ui, |ui| {
+                        level_rows(
+                            ui, chrome, level, entries, layout, nav, menus, moved, keyed, deeper,
+                            id,
+                        )
                     });
-                    (out.inner, view, bar)
-                })
-                .inner
-        });
+                let view = out.inner_rect;
+                let bar = (out.content_size.y > view.height() + 0.5).then(|| {
+                    // egui's bar ends at the allocated strip's outer
+                    // margin; a floating bar is wider than its strip and
+                    // reaches back over the rows' right edge.
+                    let s = &ui.spacing().scroll;
+                    let allocated = if s.floating {
+                        s.floating_allocated_width
+                    } else {
+                        s.bar_inner_margin + s.bar_width + s.bar_outer_margin
+                    };
+                    let right = view.right() + allocated;
+                    let left = view.right().min(right - s.bar_outer_margin - s.bar_width);
+                    Rect::from_x_y_ranges(left..=right, view.y_range())
+                });
+                (out.inner, view, bar)
+            })
+            .inner
+    });
     let ((rows, under, activated), view, bar) = area.inner;
     Shown {
         frame: area.response.rect,
@@ -2283,17 +2294,21 @@ mod tests {
         );
     }
 }
-    #[test]
-    fn anchored_placement_aligns_to_the_icon_and_clamps_the_full_frame() {
-        let bounds = Rect::from_min_max(pos2(0.0, 0.0), pos2(1275.0, 800.0));
-        let anchor = Rect::from_min_size(pos2(1200.0, 20.0), vec2(24.0, 24.0));
-        let rect = anchored_rect(anchor, vec2(220.0, 100.0), bounds);
-        assert_eq!(rect.right(), anchor.right());
-        assert_eq!(rect.top(), anchor.bottom());
-        assert!(bounds.contains_rect(rect));
-        let oversized = anchored_rect(anchor, vec2(2000.0, 1000.0), bounds);
-        assert_eq!(oversized, bounds);
-        let bottom = anchored_rect(anchor.translate(vec2(0.0, 740.0)), vec2(220.0, 100.0), bounds);
-        assert!(bounds.contains_rect(bottom));
-        assert_eq!(bottom.bottom(), 760.0);
-    }
+#[test]
+fn anchored_placement_aligns_to_the_icon_and_clamps_the_full_frame() {
+    let bounds = Rect::from_min_max(pos2(0.0, 0.0), pos2(1275.0, 800.0));
+    let anchor = Rect::from_min_size(pos2(1200.0, 20.0), vec2(24.0, 24.0));
+    let rect = anchored_rect(anchor, vec2(220.0, 100.0), bounds);
+    assert_eq!(rect.right(), anchor.right());
+    assert_eq!(rect.top(), anchor.bottom());
+    assert!(bounds.contains_rect(rect));
+    let oversized = anchored_rect(anchor, vec2(2000.0, 1000.0), bounds);
+    assert_eq!(oversized, bounds);
+    let bottom = anchored_rect(
+        anchor.translate(vec2(0.0, 740.0)),
+        vec2(220.0, 100.0),
+        bounds,
+    );
+    assert!(bounds.contains_rect(bottom));
+    assert_eq!(bottom.bottom(), 760.0);
+}
