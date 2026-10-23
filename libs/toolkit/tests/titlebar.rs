@@ -148,7 +148,13 @@ fn the_icon_bar_puts_app_actions_before_the_standard_tail() {
     let ids: Vec<_> = items.iter().map(|i| i.command).collect();
     assert_eq!(
         ids,
-        ["doc.new", "view.sidebar", "view.search", "help.keys", "view.mode"]
+        [
+            "doc.new",
+            "view.sidebar",
+            "view.search",
+            "help.keys",
+            "view.mode"
+        ]
     );
     let icons: Vec<_> = items.iter().map(|i| i.icon).collect();
     assert_eq!(

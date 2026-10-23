@@ -442,13 +442,7 @@ fn pane_view(
 /// A pane's top row: the path in a text field (the sidebar toggles live in
 /// the icon bar). Focusing the field starts an edit with the whole path
 /// selected; Enter goes there, Esc or a click away puts it back.
-fn location_bar(
-    ui: &mut Ui,
-    app: &App,
-    pane: PaneId,
-    active: bool,
-    events: &mut Vec<UiEvent>,
-) {
+fn location_bar(ui: &mut Ui, app: &App, pane: PaneId, active: bool, events: &mut Vec<UiEvent>) {
     let height = toolkit::button::icon_button_of(ui.ctx()).max(ui.spacing().interact_size.y + 4.0);
     ui.allocate_ui_with_layout(
         vec2(ui.available_width(), height),
