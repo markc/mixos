@@ -1644,7 +1644,7 @@ mod tests {
         let folder = roots.folder("ced", Tier::UserApp).unwrap();
         let _app_readonly = ReadOnlyParent::new(&folder).unwrap();
         let mut state = State::new("ced");
-        state.engine.roots = Some(roots);
+        state.set_test_roots(roots);
         state.loaded = true;
         state.open = true;
         state.title = Some("Abc".into());
@@ -1685,7 +1685,7 @@ mod tests {
         };
         let destination = folder.join("builtin.mix");
         let mut state = State::new("ced");
-        state.engine.roots = Some(roots);
+        state.set_test_roots(roots);
         state.loaded = true;
         state.edit(entry);
         let mut h = permission_harness(state);
@@ -1718,7 +1718,7 @@ mod tests {
             }
             let path = entry.path.clone();
             let mut state = State::new("ced");
-            state.engine.roots = Some(roots.clone());
+            state.set_test_roots(roots.clone());
             state.loaded = true;
             state.edit(entry);
             let mut h = permission_harness(state);
@@ -1763,7 +1763,7 @@ mod tests {
             };
             if target_readonly {
                 let mut state = State::new("ced");
-                state.engine.roots = Some(roots);
+                state.set_test_roots(roots);
                 state.loaded = true;
                 state.edit(entry.clone());
                 let mut h = permission_harness(state);
@@ -1814,7 +1814,7 @@ mod tests {
         std::fs::set_permissions(&entry.path, std::fs::Permissions::from_mode(0o444)).unwrap();
         let before = std::fs::read(&entry.path).unwrap();
         let mut state = State::new("ced");
-        state.engine.roots = Some(roots);
+        state.set_test_roots(roots);
         state.loaded = true;
         state.edit(entry.clone());
         let mut h = permission_harness(state);
@@ -1852,7 +1852,7 @@ mod tests {
             return;
         };
         let mut state = State::new("ced");
-        state.engine.roots = Some(roots);
+        state.set_test_roots(roots);
         state.loaded = true;
         state.document = Some(document);
         state.editor_open = true;
