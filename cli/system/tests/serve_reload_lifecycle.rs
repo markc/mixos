@@ -467,7 +467,7 @@ async fn invalid_parse_and_raising_candidate_leave_the_boot_generation_running()
     let c = connect(&broker).await;
     wait_service(&c, HARD).await;
 
-    let boot = parse_trace(&dir, "boot");
+    let boot = wait_lines(&dir, "boot", 1, HARD);
     assert_eq!(boot.len(), 1, "boot generation launches exactly once");
     let legacy = boot[0].fields["legacy"].as_i64().unwrap();
     let managed = boot[0].fields["managed"].as_i64().unwrap();
@@ -556,7 +556,7 @@ async fn committed_reload_retires_old_children_then_launches_one_successor() {
     let c = connect(&broker).await;
     wait_service(&c, HARD).await;
 
-    let boot = parse_trace(&dir, "boot");
+    let boot = wait_lines(&dir, "boot", 1, HARD);
     let legacy = boot[0].fields["legacy"].as_i64().unwrap();
     let managed = boot[0].fields["managed"].as_i64().unwrap();
 
@@ -676,7 +676,7 @@ async fn broker_cut_during_candidate_prep_commit_dispatches_and_reconciles() {
     let (_node_conf, mut citizen) = boot(&variant, &dir, &broker);
     let c = connect(&broker).await;
     wait_service(&c, HARD).await;
-    let boot = parse_trace(&dir, "boot");
+    let boot = wait_lines(&dir, "boot", 1, HARD);
     let legacy = boot[0].fields["legacy"].as_i64().unwrap();
     let managed = boot[0].fields["managed"].as_i64().unwrap();
 
@@ -750,7 +750,7 @@ async fn sigterm_shuts_down_the_child_group_from_prep_and_from_the_dispatching_h
     let (_node_conf, mut citizen_a) = boot(&prep, &dir, &broker);
     let c = connect(&broker).await;
     wait_service(&c, HARD).await;
-    let boot_a = parse_trace(&dir, "boot");
+    let boot_a = wait_lines(&dir, "boot", 1, HARD);
     let legacy_a = boot_a[0].fields["legacy"].as_i64().unwrap();
     let managed_a = boot_a[0].fields["managed"].as_i64().unwrap();
     assert!(call(&c, "RELOAD", json!({})).await.is_ok());
@@ -790,7 +790,7 @@ async fn sigterm_shuts_down_the_child_group_from_prep_and_from_the_dispatching_h
     );
     let cb = connect(&broker).await;
     wait_service(&cb, HARD).await;
-    let boot_b = parse_trace(&dir, "boot");
+    let boot_b = wait_lines(&dir, "boot", 2, HARD);
     assert_eq!(
         boot_b.len(),
         2,
@@ -841,7 +841,7 @@ async fn offloaded_grace_keeps_reactor_responsive_while_sweeping_a_term_ignoring
     let c = connect(&broker).await;
     wait_service(&c, HARD).await;
     wait_trace(&dir, "legacy-ready|", HARD);
-    let boot = parse_trace(&dir, "boot");
+    let boot = wait_lines(&dir, "boot", 1, HARD);
     let legacy = boot[0].fields["legacy"].as_i64().unwrap();
     let managed = boot[0].fields["managed"].as_i64().unwrap();
 
