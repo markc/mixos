@@ -294,9 +294,14 @@ impl State {
         let (tx, rx) = mpsc::channel();
         self.creation = Some(rx);
         let session = self.engine.clone();
+        let app = self.app.clone();
         std::thread::spawn(move || {
             let result = (|| {
-                let answer = session.create(&title).map_err(io::Error::other)?;
+                let roots = session.roots().expect("creation roots checked");
+                let folder = roots.folder(&app, Tier::UserApp)?;
+                let answer = session
+                    .create(&title)
+                    .map_err(|error| path_error("macros-create-error", &folder, error))?;
                 let path = answer["path"].as_str().expect("created path is a string");
                 let doc = open_macro(Path::new(path))?;
                 let warning = answer["warning"].as_str().map(str::to_owned);
