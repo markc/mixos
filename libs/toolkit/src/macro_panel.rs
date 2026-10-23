@@ -45,9 +45,13 @@ pub struct Draft {
 
 /// Draw with the toolkit's dialog, button, field and section styles.
 pub fn show(ctx: &egui::Context, open: &mut bool, data: &Data, draft: &mut Draft) -> Vec<Action> {
+    let visible = egui::Id::new("macros-panel-visible");
     if !*open {
+        ctx.data_mut(|d| d.remove::<bool>(visible));
         return Vec::new();
     }
+    let was_open = ctx.data(|d| d.get_temp::<bool>(visible)).unwrap_or(false);
+    ctx.data_mut(|d| d.insert_temp(visible, true));
     let mut actions = Vec::new();
     let shown = Dialog::new("macros-panel", own("toolkit-macros"))
         .buttons(vec![Choice::new(own("macros-close"), Role::Cancel)])
@@ -148,8 +152,16 @@ pub fn show(ctx: &egui::Context, open: &mut bool, data: &Data, draft: &mut Draft
                     });
             }
         });
-    if shown.chosen.is_some() || shown.dismissed {
+    // The modal backdrop can consume a title-bar click before the app's
+    // toggle sees it. Dismiss on that outside click as well, but ignore the
+    // opening click when an app executes its toggle before drawing us.
+    let outside = was_open && ctx.input(|i| {
+        i.pointer.primary_clicked()
+            && i.pointer.interact_pos().is_some_and(|pos| !shown.rect.contains(pos))
+    });
+    if shown.chosen.is_some() || shown.dismissed || outside {
         *open = false;
+        ctx.data_mut(|d| d.remove::<bool>(visible));
         Dialog::reset(ctx, "macros-panel");
     }
     actions

@@ -297,9 +297,8 @@ fn descendant_fixture(detached: bool) {
         return;
     }
     if detached
-        && !std::env::var_os("PATH").is_some_and(|paths| {
-            std::env::split_paths(&paths).any(|p| p.join("setsid").is_file())
-        })
+        && !std::env::var_os("PATH")
+            .is_some_and(|paths| std::env::split_paths(&paths).any(|p| p.join("setsid").is_file()))
     {
         eprintln!("skip: setsid absent");
         return;
@@ -320,21 +319,31 @@ fn descendant_fixture(detached: bool) {
         if detached { "" } else { "while true\nsleep(1)\nend" }
     )).unwrap();
     let entry = Entry {
-        id: "parent".into(), title: "Parent".into(), tier: Tier::UserApp,
-        path, shadows: vec![],
+        id: "parent".into(),
+        title: "Parent".into(),
+        tier: Tier::UserApp,
+        path,
+        shadows: vec![],
     };
     let mut runner = Runner::default();
     runner.start(&roots, "ced", &entry).unwrap();
     let deadline = Instant::now() + Duration::from_secs(5);
     let pid_file = temp.path().join("child.pid");
     while !pid_file.exists() {
-        assert!(Instant::now() < deadline, "descendant did not start: {}", runner.output().text);
+        assert!(
+            Instant::now() < deadline,
+            "descendant did not start: {}",
+            runner.output().text
+        );
         std::thread::sleep(Duration::from_millis(10));
     }
     let pid: u32 = fs::read_to_string(pid_file).unwrap().parse().unwrap();
     if detached {
         while runner.status() == Status::Running {
-            assert!(Instant::now() < deadline, "detached pipe blocked completion");
+            assert!(
+                Instant::now() < deadline,
+                "detached pipe blocked completion"
+            );
             std::thread::sleep(Duration::from_millis(10));
         }
         assert_eq!(runner.status(), Status::Exited(Some(0)));
@@ -350,7 +359,14 @@ fn descendant_fixture(detached: bool) {
         let deadline = Instant::now() + Duration::from_secs(2);
         loop {
             let proc_stat = fs::read_to_string(format!("/proc/{pid}/stat"));
-            if proc_stat.is_err() || proc_stat.unwrap().split_once(") ").unwrap().1.starts_with('Z') {
+            if proc_stat.is_err()
+                || proc_stat
+                    .unwrap()
+                    .split_once(") ")
+                    .unwrap()
+                    .1
+                    .starts_with('Z')
+            {
                 break;
             }
             assert!(Instant::now() < deadline, "macro child survived stop");

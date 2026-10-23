@@ -107,6 +107,7 @@ impl State {
             }
         }
         if !self.open {
+            ctx.data_mut(|d| d.remove::<bool>(egui::Id::new("macros-panel-visible")));
             return;
         }
         if !self.loaded && self.pending.is_none() {

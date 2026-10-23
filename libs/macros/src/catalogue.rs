@@ -2,9 +2,9 @@
 use std::collections::BTreeMap;
 use std::fs::{self, OpenOptions};
 use std::io::{self, BufRead, BufReader, Read, Write};
-use std::path::{Path, PathBuf};
 #[cfg(unix)]
 use std::os::unix::fs::OpenOptionsExt;
+use std::path::{Path, PathBuf};
 
 /// Resolution is pure; missing/relative HOME cannot supply a user home.
 #[derive(Clone, Debug, PartialEq, Eq)]

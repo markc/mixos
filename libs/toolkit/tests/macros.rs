@@ -107,7 +107,9 @@ fn app_harness() -> Harness<'static, AppPanel> {
                 );
                 let mut fired = false;
                 egui::CentralPanel::default().show(ui, |ui| {
-                    fired = ui.add_enabled((toggle.enabled)(state), egui::Button::new("Toggle macros")).clicked();
+                    fired = ui
+                        .add_enabled((toggle.enabled)(state), egui::Button::new("Toggle macros"))
+                        .clicked();
                 });
                 let close = toolkit::macros::show_app(ui.ctx(), "ced", state.open);
                 // Apps queue UI commands, then apply the panel's unguarded,
@@ -119,7 +121,10 @@ fn app_harness() -> Harness<'static, AppPanel> {
                     state.open = false;
                 }
             },
-            AppPanel { open: true, modal: true },
+            AppPanel {
+                open: true,
+                modal: true,
+            },
         );
     toolkit::install(&h.ctx, &toolkit::Theme::embedded());
     h.run_steps(40);
@@ -149,13 +154,14 @@ fn app_panel_toggle_and_outside_dismissal_do_not_reopen_it() {
 
 #[test]
 fn macro_panel_snapshots() {
+    let mut results = egui_kittest::SnapshotResults::new();
     let mut empty = harness(Data::default(), true);
-    empty.snapshot("macros_empty");
+    results.add(empty.try_snapshot("macros_empty"));
     let mut data = populated();
     data.running = true;
     data.status = "Running".into();
     data.output = "Hello from Mix\nWorking…\n".into();
     data.dropped = true;
     let mut running = harness(data, true);
-    running.snapshot("macros_running");
+    results.add(running.try_snapshot("macros_running"));
 }
