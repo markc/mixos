@@ -182,11 +182,19 @@ fn create_from_title_slugs_and_allocates_without_overwriting() {
     ] {
         let path = roots.create_from_title("ced", title).unwrap();
         assert_eq!(path.file_name().unwrap(), expected);
-        assert!(fs::read_to_string(path).unwrap().starts_with(&format!("-- title: {title}\n")));
+        assert!(
+            fs::read_to_string(path)
+                .unwrap()
+                .starts_with(&format!("-- title: {title}\n"))
+        );
     }
     let original = roots.user.join("ced/tidy-imports.mix");
     let before = fs::read(&original).unwrap();
-    assert!(roots.create("ced", Tier::UserApp, "tidy-imports", "Other").is_err());
+    assert!(
+        roots
+            .create("ced", Tier::UserApp, "tidy-imports", "Other")
+            .is_err()
+    );
     assert_eq!(fs::read(original).unwrap(), before);
     for title in ["", "  ", "Injected\nprint(1)", "Injected\rtitle"] {
         assert!(roots.create_from_title("ced", title).is_err());

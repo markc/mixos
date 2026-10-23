@@ -851,9 +851,15 @@ impl editor::palette::Theme for Theme {
         if let Some(colour) = chrome.palette.get(role) {
             return colour;
         }
-        self.dictionary().colours.primitives.get(role)
+        self.dictionary()
+            .colours
+            .primitives
+            .get(role)
             .map(|value| crate::style::colour(*value))
-            .unwrap_or(if role == "palette.accent.hover" { chrome.palette.accent } else { chrome.palette.text })
+            .unwrap_or(if role == "palette.accent.hover" {
+                chrome.palette.accent
+            } else {
+                chrome.palette.text
+            })
     }
 }
-

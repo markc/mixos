@@ -25,7 +25,9 @@ pub trait Theme {
 }
 
 impl<T: Theme + ?Sized> Theme for std::sync::Arc<T> {
-    fn editor_colour(&self, role: &str) -> Color32 { self.as_ref().editor_colour(role) }
+    fn editor_colour(&self, role: &str) -> Color32 {
+        self.as_ref().editor_colour(role)
+    }
 }
 
 /// Highlight classes, [`HlClass::Plain`] to [`HlClass::Invalid`].
@@ -226,9 +228,24 @@ mod tests {
                 impl super::Theme for TestTheme {
                     fn editor_colour(&self, role: &str) -> Color32 {
                         let c = toolkit::chrome::Chrome::for_theme(&self.0);
-                        if role == "selection" { return c.palette.selection(&c.style); }
-                        c.palette.get(role).or_else(|| self.0.dictionary().colours.primitives.get(role).map(|v| toolkit::style::colour(*v)))
-                            .unwrap_or(if role == "palette.accent.hover" { c.palette.accent } else { c.palette.text })
+                        if role == "selection" {
+                            return c.palette.selection(&c.style);
+                        }
+                        c.palette
+                            .get(role)
+                            .or_else(|| {
+                                self.0
+                                    .dictionary()
+                                    .colours
+                                    .primitives
+                                    .get(role)
+                                    .map(|v| toolkit::style::colour(*v))
+                            })
+                            .unwrap_or(if role == "palette.accent.hover" {
+                                c.palette.accent
+                            } else {
+                                c.palette.text
+                            })
                     }
                 }
                 let p = Palette::from_theme(&TestTheme(theme));

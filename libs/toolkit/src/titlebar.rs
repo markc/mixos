@@ -546,10 +546,23 @@ fn right_group<S>(
                 let button = IconButton::new(*icon).selected(*selected).tooltip(tooltip);
                 let response = cell.add_enabled(registry.enabled(c.id, state), button);
                 if c.id == "help.macros" {
-                    ui.ctx().data_mut(|d| d.insert_temp(egui::Id::new("macro-anchor"), response.rect));
-                    if ui.ctx().data(|d| d.get_temp::<bool>(egui::Id::new("macro-busy"))).unwrap_or(false) {
+                    ui.ctx()
+                        .data_mut(|d| d.insert_temp(egui::Id::new("macro-anchor"), response.rect));
+                    if ui
+                        .ctx()
+                        .data(|d| d.get_temp::<bool>(egui::Id::new("macro-busy")))
+                        .unwrap_or(false)
+                    {
                         let chrome = Chrome::of(ui.ctx());
-                        ui.painter().circle_filled(response.rect.right_top() + egui::vec2(-chrome.metrics.menu_row_padding.x / 2.0, chrome.metrics.menu_row_padding.y), chrome.style.hairline_width as f32 * 2.0, chrome.palette.accent);
+                        ui.painter().circle_filled(
+                            response.rect.right_top()
+                                + egui::vec2(
+                                    -chrome.metrics.menu_row_padding.x / 2.0,
+                                    chrome.metrics.menu_row_padding.y,
+                                ),
+                            chrome.style.hairline_width as f32 * 2.0,
+                            chrome.palette.accent,
+                        );
                     }
                 }
                 (c, response.clicked())

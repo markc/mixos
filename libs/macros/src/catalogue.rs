@@ -108,7 +108,11 @@ impl Roots {
             slug.push_str("macro");
         }
         for n in 1u64.. {
-            let id = if n == 1 { slug.clone() } else { format!("{slug}-{n}") };
+            let id = if n == 1 {
+                slug.clone()
+            } else {
+                format!("{slug}-{n}")
+            };
             match self.create(app, Tier::UserApp, &id, title) {
                 Err(err) if err.kind() == io::ErrorKind::AlreadyExists => continue,
                 result => return result,
