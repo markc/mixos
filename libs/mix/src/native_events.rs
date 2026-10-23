@@ -1842,14 +1842,21 @@ mod process_tests {
     #[test]
     fn worker_panic_kills_reaps_completes_and_reports() {
         let queue = Arc::new(Queue::default());
-        queue.pending.lock().unwrap().processes.insert(
-            "process:panic".into(), PendingProcess::default(),
-        );
+        queue
+            .pending
+            .lock()
+            .unwrap()
+            .processes
+            .insert("process:panic".into(), PendingProcess::default());
         let mut command = std::process::Command::new("sleep");
         command.arg("100").stdout(std::process::Stdio::piped());
         let watch = crate::child_events::ProcessWatch::new(
-            command, queue.clone(), "process:panic".into(), usize::MAX,
-        ).unwrap();
+            command,
+            queue.clone(),
+            "process:panic".into(),
+            usize::MAX,
+        )
+        .unwrap();
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
         while !watch.finished() && std::time::Instant::now() < deadline {
             std::thread::sleep(std::time::Duration::from_millis(5));
@@ -1857,7 +1864,10 @@ mod process_tests {
         assert!(watch.finished(), "panicked worker never completed");
         drop(watch); // join before inspecting terminal publication
         let pending = queue.pending.lock().unwrap();
-        let terminal = pending.processes["process:panic"].terminal.as_ref().unwrap();
+        let terminal = pending.processes["process:panic"]
+            .terminal
+            .as_ref()
+            .unwrap();
         assert_eq!(terminal["error_code"], "PROC_WORKER_PANIC");
     }
 

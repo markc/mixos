@@ -172,101 +172,104 @@ mod linux {
                     // Keep Child outside the unwind boundary: std's Child Drop
                     // does not kill or reap. A failed reader still owns cleanup.
                     let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    #[cfg(test)]
-                    assert_ne!(max_line, usize::MAX, "injected process worker panic");
-                    loop {
-                        let timeout = drain_deadline.map_or(-1, |deadline: std::time::Instant| {
-                            deadline
-                                .saturating_duration_since(std::time::Instant::now())
-                                .as_millis()
-                                .min(500) as i32
-                        });
-                        if timeout == 0 {
-                            detached_output = pipes.iter().any(|p| !p.closed);
-                            for pipe in &mut pipes {
-                                if !pipe.closed && (!pipe.line.is_empty() || pipe.truncated) {
-                                    pipe.emit(&queue, &handle);
+                        #[cfg(test)]
+                        assert_ne!(max_line, usize::MAX, "injected process worker panic");
+                        loop {
+                            let timeout =
+                                drain_deadline.map_or(-1, |deadline: std::time::Instant| {
+                                    deadline
+                                        .saturating_duration_since(std::time::Instant::now())
+                                        .as_millis()
+                                        .min(500) as i32
+                                });
+                            if timeout == 0 {
+                                detached_output = pipes.iter().any(|p| !p.closed);
+                                for pipe in &mut pipes {
+                                    if !pipe.closed && (!pipe.line.is_empty() || pipe.truncated) {
+                                        pipe.emit(&queue, &handle);
+                                    }
+                                }
+                                break;
+                            }
+                            let mut fds = vec![
+                                libc::pollfd {
+                                    fd: if exited { -1 } else { pidfd.as_raw_fd() },
+                                    events: libc::POLLIN,
+                                    revents: 0,
+                                },
+                                libc::pollfd {
+                                    fd: wake.as_raw_fd(),
+                                    events: libc::POLLIN,
+                                    revents: 0,
+                                },
+                            ];
+                            for pipe in &pipes {
+                                fds.push(libc::pollfd {
+                                    fd: if pipe.closed { -1 } else { pipe.fd.as_raw_fd() },
+                                    events: libc::POLLIN,
+                                    revents: 0,
+                                });
+                            }
+                            let rc =
+                                unsafe { libc::poll(fds.as_mut_ptr(), fds.len() as _, timeout) };
+                            if rc < 0
+                                && std::io::Error::last_os_error().kind()
+                                    == std::io::ErrorKind::Interrupted
+                            {
+                                continue;
+                            }
+                            if rc < 0 || fds[1].revents != 0 {
+                                cancelled = true;
+                                // Keep the leader unreaped during grace: its PID pins
+                                // the group, even when it exits immediately on TERM.
+                                signal_group(pid, libc::SIGTERM);
+                                signal_leader(&pidfd, libc::SIGTERM);
+                                let deadline = std::time::Instant::now()
+                                    + std::time::Duration::from_millis(150);
+                                let mut grace = libc::pollfd {
+                                    fd: pidfd.as_raw_fd(),
+                                    events: libc::POLLIN,
+                                    revents: 0,
+                                };
+                                loop {
+                                    let remaining = deadline
+                                        .saturating_duration_since(std::time::Instant::now())
+                                        .as_millis()
+                                        as i32;
+                                    if remaining == 0
+                                        || unsafe { libc::poll(&mut grace, 1, remaining) } >= 0
+                                    {
+                                        break;
+                                    }
+                                    if std::io::Error::last_os_error().kind()
+                                        != std::io::ErrorKind::Interrupted
+                                    {
+                                        break;
+                                    }
+                                }
+                                signal_group(pid, libc::SIGKILL);
+                                signal_leader(&pidfd, libc::SIGKILL);
+                                break;
+                            }
+                            if fds[0].revents != 0 {
+                                exited = true;
+                                drain_deadline = Some(
+                                    std::time::Instant::now()
+                                        + std::time::Duration::from_millis(500),
+                                );
+                                // End descendants in the original group. Detached
+                                // pipe holders are bounded by the drain deadline.
+                                signal_group(pid, libc::SIGKILL);
+                            }
+                            for (pipe, fd) in pipes.iter_mut().zip(&fds[2..]) {
+                                if fd.revents != 0 {
+                                    pipe.read(&queue, &handle, max_line);
                                 }
                             }
-                            break;
-                        }
-                        let mut fds = vec![
-                            libc::pollfd {
-                                fd: if exited { -1 } else { pidfd.as_raw_fd() },
-                                events: libc::POLLIN,
-                                revents: 0,
-                            },
-                            libc::pollfd {
-                                fd: wake.as_raw_fd(),
-                                events: libc::POLLIN,
-                                revents: 0,
-                            },
-                        ];
-                        for pipe in &pipes {
-                            fds.push(libc::pollfd {
-                                fd: if pipe.closed { -1 } else { pipe.fd.as_raw_fd() },
-                                events: libc::POLLIN,
-                                revents: 0,
-                            });
-                        }
-                        let rc = unsafe { libc::poll(fds.as_mut_ptr(), fds.len() as _, timeout) };
-                        if rc < 0
-                            && std::io::Error::last_os_error().kind()
-                                == std::io::ErrorKind::Interrupted
-                        {
-                            continue;
-                        }
-                        if rc < 0 || fds[1].revents != 0 {
-                            cancelled = true;
-                            // Keep the leader unreaped during grace: its PID pins
-                            // the group, even when it exits immediately on TERM.
-                            signal_group(pid, libc::SIGTERM);
-                            signal_leader(&pidfd, libc::SIGTERM);
-                            let deadline =
-                                std::time::Instant::now() + std::time::Duration::from_millis(150);
-                            let mut grace = libc::pollfd {
-                                fd: pidfd.as_raw_fd(),
-                                events: libc::POLLIN,
-                                revents: 0,
-                            };
-                            loop {
-                                let remaining = deadline
-                                    .saturating_duration_since(std::time::Instant::now())
-                                    .as_millis()
-                                    as i32;
-                                if remaining == 0
-                                    || unsafe { libc::poll(&mut grace, 1, remaining) } >= 0
-                                {
-                                    break;
-                                }
-                                if std::io::Error::last_os_error().kind()
-                                    != std::io::ErrorKind::Interrupted
-                                {
-                                    break;
-                                }
-                            }
-                            signal_group(pid, libc::SIGKILL);
-                            signal_leader(&pidfd, libc::SIGKILL);
-                            break;
-                        }
-                        if fds[0].revents != 0 {
-                            exited = true;
-                            drain_deadline = Some(
-                                std::time::Instant::now() + std::time::Duration::from_millis(500),
-                            );
-                            // End descendants in the original group. Detached
-                            // pipe holders are bounded by the drain deadline.
-                            signal_group(pid, libc::SIGKILL);
-                        }
-                        for (pipe, fd) in pipes.iter_mut().zip(&fds[2..]) {
-                            if fd.revents != 0 {
-                                pipe.read(&queue, &handle, max_line);
+                            if exited && pipes.iter().all(|p| p.closed) {
+                                break;
                             }
                         }
-                        if exited && pipes.iter().all(|p| p.closed) {
-                            break;
-                        }
-                    }
                     }));
                     if outcome.is_err() {
                         signal_group(pid, libc::SIGKILL);
