@@ -315,7 +315,6 @@ impl State {
                 if let Some(catalogue) = catalogue {
                     self.replace_catalogue(catalogue, ctx);
                 }
-                self.error = warning;
                 self.editor_entry = self
                     .catalogue
                     .entries
@@ -330,6 +329,7 @@ impl State {
                 // Any older discovery still in flight must not win over the
                 // new file; queue a fresh scan behind it.
                 self.reload();
+                self.error = warning;
             }
             Err(error) => {
                 self.creation_error = Some(error);
