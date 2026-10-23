@@ -203,6 +203,22 @@ impl Queue {
         self.ready.notify_waiters();
     }
 
+    pub(crate) fn process_failed(&self, handle: &str) {
+        // A panic in a queue writer may have poisoned this lock. Recover the
+        // data so the sole reaper can still publish its terminal diagnostic.
+        let mut pending = self.pending.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(p) = pending.processes.get_mut(handle) {
+            p.terminal = Some(serde_json::json!({
+                "watch": handle, "tag": p.tag, "exit_code": null, "signal": null,
+                "detached_output": true, "error_code": "PROC_WORKER_PANIC",
+                "error": "process watch worker panicked; process group killed and leader reaped"
+            }));
+        }
+        self.pending.clear_poison();
+        drop(pending);
+        self.ready.notify_waiters();
+    }
+
     fn take_process(pending: &mut Pending, handle: &str) -> IncomingEvent {
         let p = pending.processes.get_mut(handle).unwrap();
         if let Some(record) = p.lines.pop_front() {
@@ -1237,6 +1253,10 @@ impl NativeEvents {
         self.watches.clear();
         self.filesystem = None;
         self.children.clear();
+        // Wake every reaper before any Drop joins, overlapping TERM grace.
+        for watch in self.processes.values() {
+            watch.cancel();
+        }
         self.processes.clear();
         self.desktop.clear();
         #[cfg(feature = "ws")]
@@ -1817,6 +1837,29 @@ mod tests {
 #[cfg(test)]
 mod process_tests {
     use super::*;
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn worker_panic_kills_reaps_completes_and_reports() {
+        let queue = Arc::new(Queue::default());
+        queue.pending.lock().unwrap().processes.insert(
+            "process:panic".into(), PendingProcess::default(),
+        );
+        let mut command = std::process::Command::new("sleep");
+        command.arg("100").stdout(std::process::Stdio::piped());
+        let watch = crate::child_events::ProcessWatch::new(
+            command, queue.clone(), "process:panic".into(), usize::MAX,
+        ).unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        while !watch.finished() && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert!(watch.finished(), "panicked worker never completed");
+        drop(watch); // join before inspecting terminal publication
+        let pending = queue.pending.lock().unwrap();
+        let terminal = pending.processes["process:panic"].terminal.as_ref().unwrap();
+        assert_eq!(terminal["error_code"], "PROC_WORKER_PANIC");
+    }
 
     #[cfg(feature = "ws")]
     #[tokio::test]

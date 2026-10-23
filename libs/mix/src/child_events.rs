@@ -169,6 +169,11 @@ mod linux {
                     let mut cancelled = false;
                     let mut drain_deadline = None;
                     let mut detached_output = false;
+                    // Keep Child outside the unwind boundary: std's Child Drop
+                    // does not kill or reap. A failed reader still owns cleanup.
+                    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    #[cfg(test)]
+                    assert_ne!(max_line, usize::MAX, "injected process worker panic");
                     loop {
                         let timeout = drain_deadline.map_or(-1, |deadline: std::time::Instant| {
                             deadline
@@ -262,6 +267,11 @@ mod linux {
                             break;
                         }
                     }
+                    }));
+                    if outcome.is_err() {
+                        signal_group(pid, libc::SIGKILL);
+                        signal_leader(&pidfd, libc::SIGKILL);
+                    }
                     drop(pipes);
                     let status = child.wait();
                     crate::builtins::unregister_managed_pid(pid);
@@ -269,7 +279,9 @@ mod linux {
                     // joins this worker, so it cannot observe a live owner with
                     // an already drained terminal and park without another wake.
                     worker_completed.store(true, std::sync::atomic::Ordering::Release);
-                    if !cancelled {
+                    if outcome.is_err() {
+                        queue.process_failed(&handle);
+                    } else if !cancelled {
                         match status {
                             Ok(s) => {
                                 queue.process_exited(&handle, s.code(), s.signal(), detached_output)
@@ -298,11 +310,15 @@ mod linux {
         pub fn finished(&self) -> bool {
             self.completed.load(std::sync::atomic::Ordering::Acquire)
         }
+
+        pub fn cancel(&self) {
+            let _ = self.cancel.shutdown(std::net::Shutdown::Write);
+        }
     }
 
     impl Drop for ProcessWatch {
         fn drop(&mut self) {
-            let _ = self.cancel.shutdown(std::net::Shutdown::Write);
+            self.cancel();
             if let Some(worker) = self.worker.take() {
                 let _ = worker.join();
             }
@@ -432,6 +448,7 @@ pub(crate) use linux::{ChildWatch, ProcessWatch};
 pub(crate) struct ProcessWatch;
 #[cfg(not(target_os = "linux"))]
 impl ProcessWatch {
+    pub fn cancel(&self) {}
     pub fn new(_: std::process::Command, _: Arc<Queue>, _: String, _: usize) -> MixResult<Self> {
         Err(refusal(
             "PROC_UNSUPPORTED",

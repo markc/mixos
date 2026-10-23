@@ -1082,7 +1082,12 @@ remaining group members and reaps the leader. This synchronous join returns
 promptly when TERM ends the leader; it guarantees cleanup before returning.
 It returns true only for a live watch or undelivered records, and false once
 its terminal has been delivered. Evaluator shutdown
-and committed reload retirement perform the same cleanup. Natural leader
+and committed reload retirement perform the same cleanup.
+Shutdown and retirement cancel all watches before joining, so their TERM
+grace periods overlap. Reaping after SIGKILL has no fixed deadline: a child
+in uninterruptible kernel sleep (Linux D-state) can hold teardown until the
+kernel operation returns, preserving the sole reaper and avoiding zombies.
+Natural leader
 exit ends remaining descendants in the original process group. Pipes drain
 for at most 500 ms after leader exit, then close before reaping. The terminal
 includes `detached_output: true` if an open pipe was cut off (otherwise false).

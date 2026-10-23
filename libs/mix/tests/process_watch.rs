@@ -93,6 +93,37 @@ async fn term_exit_does_not_wait_out_grace() {
 }
 
 #[tokio::test(flavor = "current_thread")]
+async fn retirement_overlaps_ten_term_ignoring_grace_periods() {
+    let mut e = watcher().await;
+    exec(&mut e, r#"
+        for $i = 1 to 10
+            process_watch(["sh", "-c", "trap \"\" TERM; echo ready; sleep 100"])
+        end
+    "#).await.unwrap();
+    // Each readiness line follows installation of the TERM disposition.
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while exec(&mut e, "len($lines)").await.unwrap() != Value::Number(10.0) {
+        assert!(std::time::Instant::now() < deadline);
+        exec(&mut e, "sleep(0.01)").await.unwrap();
+    }
+    let children = std::fs::read_to_string(format!("/proc/self/task/{}/children", unsafe {
+        libc::syscall(libc::SYS_gettid)
+    })).unwrap();
+    let pids: Vec<i32> = children.split_whitespace().map(|s| s.parse().unwrap()).collect();
+    let start = std::time::Instant::now();
+    e.close_native_events();
+    let elapsed = start.elapsed();
+    eprintln!("ten TERM-ignoring watches retired in {elapsed:?}");
+    assert!(elapsed < Duration::from_millis(750), "retirement took {elapsed:?}");
+    for pid in pids {
+        assert_eq!(unsafe { libc::kill(pid, 0) }, -1, "leftover {pid}");
+        let mut status = 0;
+        assert_eq!(unsafe { libc::waitpid(pid, &mut status, libc::WNOHANG) }, -1);
+        assert_eq!(std::io::Error::last_os_error().raw_os_error(), Some(libc::ECHILD));
+    }
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn detached_pipe_holder_has_bounded_drain() {
     struct Cleanup(i32, std::path::PathBuf);
     impl Drop for Cleanup {
