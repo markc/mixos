@@ -138,8 +138,10 @@ impl State {
         let (finish_tx, finish_rx) = mpsc::channel();
         let lifetime = Arc::new(());
         let weak = Arc::downgrade(&lifetime);
+        let window = NEXT_WINDOW.fetch_add(1, Ordering::Relaxed);
+        let origin = format!("gui:{window}");
         let subscriber = session.add_finish_hook(Arc::new(move |body| {
-            if weak.upgrade().is_some() {
+            if weak.upgrade().is_some() && body["origin"].as_str() == Some(origin.as_str()) {
                 let _ = finish_tx.send(body);
             }
         }));
@@ -165,7 +167,7 @@ impl State {
             notify_tx,
             queued: VecDeque::new(),
             lifetime,
-            window: NEXT_WINDOW.fetch_add(1, Ordering::Relaxed),
+            window,
             title: None,
             creation: None,
             creation_error: None,
