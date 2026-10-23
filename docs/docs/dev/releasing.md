@@ -24,7 +24,9 @@ and Mix tests. Its `LOG` lines identify the saved stage logs. The
 exact-source gate passes. The separate `mixos/weekly-x86_64-full` status
 goes green only after packaging, disposable gold preflight, draft upload
 and GitHub asset digest comparison also pass at the same commit. There
-is no Rust build on a GitHub push.
+is no Rust build on a GitHub push. A push runs only the lint tier: run
+`mix tools/lint.mix` locally before pushing to see the same result.
+Candidates are cut weekly on Friday.
 
 For packaging, prepare a signed Ubuntu 24.04 root with glibc 2.39, the
 pinned Rust toolchain from `rust-toolchain.toml`, Cargo's cache, and the

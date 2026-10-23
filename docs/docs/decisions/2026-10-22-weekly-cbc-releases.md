@@ -26,6 +26,18 @@ A failed gate cannot create a publishable candidate, and the last published
 version remains current. Any cheaper source checks must use their own status
 name and cannot stand in for the full gate.
 
+The weekly candidate is cut on **Friday** (amended 2026-10-23). The weekend
+is for review, and Sunday night is the window for an emergency rebuild, so
+the working week starts on a known-good release. Changes merged between
+releases are not release candidates and do not run the full gate.
+
+Every push runs the **lint tier** instead (`tools/lint.mix`, workflow
+`lint`, amended 2026-10-23). It runs `rustfmt --check`, a syntax or data
+check of every Mix file, and the repository's own gates: closure, layering,
+verb registry, units, style, component index and site. It compiles no Rust
+and runs no tests. Its runner uses the `mix` binary from the latest
+published release, verified against that release's `SHA256SUMS.txt`.
+
 `mixos-desktop` and `mixos-server` have separate package membership and
 acceptance. A desktop candidate may pass while a server service still needs
 admission. The release notes state exactly which archives are accepted.

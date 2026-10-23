@@ -5,7 +5,7 @@
 # The shipped ExecStart is the SAFE form: the Bus service only, no
 # keyboard. Grabbing a keyboard is a dead-keyboard risk, so an operator
 # turns it on with a drop-in after a supervised run (see
-# inputd-grab.conf.example beside this unit). While the daemon holds a grab
+# services/inputd/examples/inputd-grab.conf.example). While the daemon holds a grab
 # it is a single point of failure: Restart=always with a short RestartSec
 # is the main mitigation, and any death releases the grab with its fds.
 #

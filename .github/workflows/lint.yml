@@ -1,0 +1,73 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+# The fast lint tier on every push: rustfmt, Mix syntax and data checks, and
+# the repository's own gates (tools/lint.mix). It compiles no Rust and runs
+# no tests; the full gate runs on the CBC build hosts for the weekly Friday
+# candidate (docs/docs/decisions/2026-10-22-weekly-cbc-releases.md).
+name: lint
+
+# Every pushed branch is linted. Pull requests are linted only from forks:
+# a branch in this repository already runs on push.
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: lint-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: lint
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # The toolchain comes from rust-toolchain.toml; only rustfmt is needed.
+      # cargo metadata (closure and layering gates) needs cargo itself.
+      - name: Install Rust
+        run: rustup toolchain install --profile minimal --component rustfmt
+
+      # Workspace members only: vendor/ keeps its upstream formatting.
+      - name: Format
+        run: cargo fmt --all --check
+
+      # Mix runs every other check. It is not on the runner, so take the
+      # binary from the latest published release and check the archive
+      # against its own line in that release's SHA256SUMS.txt before use: a
+      # missing line fails. The glibc 2.39 floor matches ubuntu-24.04. This is
+      # the last released mix, not this commit's; a commit that needs newer
+      # Mix syntax lints after the next weekly release.
+      - name: Fetch released mix
+        id: fetch-mix
+        if: ${{ !cancelled() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName) ||
+            { echo "::error::no published MixOS release to take mix from"; exit 1; }
+          version=${tag#v}
+          archive="mixos-server-${version}-linux-x86_64.tar.gz"
+          dir="$RUNNER_TEMP/mixos-release"
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir "$dir" \
+            --pattern "$archive" --pattern SHA256SUMS.txt
+          line=$(grep -E "^[0-9a-f]{64}  ${archive//./\\.}\$" "$dir/SHA256SUMS.txt") ||
+            { echo "::error::SHA256SUMS.txt has no line for $archive"; exit 1; }
+          [ "$(printf '%s\n' "$line" | wc -l)" = 1 ]
+          (cd "$dir" && printf '%s\n' "$line" | sha256sum --check --strict -)
+          member="${archive%.tar.gz}/bin/mix"
+          tar -xzf "$dir/$archive" -C "$dir" "$member"
+          [ -f "$dir/$member" ] && [ ! -L "$dir/$member" ]
+          install -D -m 0755 "$dir/$member" "$RUNNER_TEMP/bin/mix"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/bin/mix" --version
+
+      - name: Lint
+        if: ${{ !cancelled() && steps.fetch-mix.outcome == 'success' }}
+        run: mix tools/lint.mix

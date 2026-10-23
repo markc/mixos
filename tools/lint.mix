@@ -1,0 +1,120 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Copyright 2026 Mark Constable <mc@mixos.dev>
+-- version: 0.1.0
+-- The fast lint tier: everything that needs a checkout, `mix` and `cargo
+-- metadata`, and nothing that compiles Rust or runs tests. CI runs it on
+-- every push (.github/workflows/lint.yml). The full build and test suites
+-- run on the CBC build hosts for the weekly release candidate
+-- (docs/docs/dev/releasing.md). Every check runs to the end; exit 1 if any
+-- failed.
+--
+--   mix tools/lint.mix [NAME...]
+--
+-- NAME runs only the checks whose name contains it.
+--
+-- Mix files: a program must pass `mix --check`. A strict-data document must
+-- load with load_data: that is every .conf.mix and .spec.mix file, plus the
+-- few plain .mix files listed in $DATA_MIX. A program never falls back to the
+-- data check, so a gutted script cannot pass as a table. Scenes
+-- (`*.scene.mix`, `share/scenes/*/scene.mix`) are a separate dialect read by
+-- compd's scene host; the scene tests on the build hosts check them.
+--
+-- This runs on the last released mix in CI, so it uses only released Mix.
+$root = dirname(dirname(realpath($0)))
+$mix = realpath("/proc/self/exe")
+$only = args()
+-- Plain .mix files that are strict data, read with load_data by their owner.
+$DATA_MIX = [
+  "services/dnsd/tests/fixtures/zones.mix",
+  "services/webd/vhosts/lib/foundation_registry.mix"
+]
+$GATE_TIMEOUT = 300
+
+$checks = [
+  {name: "closure", argv: ["tools/closure_gate.mix", "--locked"]},
+  {name: "layering", argv: ["tools/layering_gate.mix", "--manifest-path", "Cargo.toml", "--locked"]},
+  {name: "layering-apps", argv: ["tools/layering_gate.mix", "--manifest-path", "Cargo.toml",
+    "--layers", "apps/layers.conf.mix", "--across-components", "--require", "--locked"]},
+  {name: "verb-registry", argv: ["tools/verb_registry.mix"]},
+  {name: "webd", argv: ["tools/webd_lint.mix"]},
+  {name: "smithay-guards", argv: ["tools/smithay_guards.mix"]},
+  {name: "component-index", argv: ["tools/component_index.mix", "--check"]},
+  {name: "units", argv: ["tools/unit_gate.mix"]},
+  {name: "style", argv: ["tools/style_gate.mix", "--toolkit"]},
+  {name: "site", argv: ["docs/_build/gen-site.mix", "--check"]}
+]
+
+fn wanted($name)
+  if len($only) == 0 then return true end
+  for $o in $only
+    if contains($name, $o) then return true end
+  end
+  return false
+end
+
+fn is_scene($path)
+  return ends_with($path, ".scene.mix") or (starts_with($path, "share/scenes/") and basename($path) == "scene.mix")
+end
+
+fn mix_files()
+  $listed = run_argv(["git", "-C", $root, "ls-files", "*.mix"], {timeout: 60})
+  if $listed.exit_code != 0 then return {ok: false, out: trim($listed.stderr)} end
+  $bad = []
+  $count = 0
+  for $f in split(trim($listed.stdout), "\n")
+    if $f == "" or is_scene($f) then continue end
+    $count = $count + 1
+    if ends_with($f, ".conf.mix") or ends_with($f, ".spec.mix") or contains($DATA_MIX, $f) then
+      try
+        $_ = load_data($root .. "/" .. $f)
+      catch $message
+        push($bad, $f .. ": " .. slice(to_string($message), 0, 200))
+      end
+    else
+      $r = run_argv([$mix, "--check", $f], {cwd: $root, timeout: 30, stderr: "stdout"})
+      if $r.timed_out then
+        push($bad, $f .. ": mix --check timed out")
+      elif $r.exit_code != 0 then
+        push($bad, $f .. ": " .. slice(trim($r.stdout), 0, 200))
+      end
+    end
+  end
+  return {ok: len($bad) == 0, out: to_string($count) .. " files checked" .. (if len($bad) > 0 then "\n" .. join($bad, "\n") else "" end)}
+end
+
+$failed = []
+$ran = 0
+fn report($name, $ok, $seconds, $out)
+  print((if $ok then "PASS " else "FAIL " end) .. $name .. " (" .. to_string(round($seconds)) .. "s)")
+  if not $ok then
+    $lines = split(trim($out), "\n")
+    for $l in slice($lines, max(0, len($lines) - 20), len($lines)) print("    " .. $l) end
+  end
+end
+
+if wanted("mix-files") then
+  $ran = $ran + 1
+  $t0 = time()
+  $r = mix_files()
+  report("mix-files", $r.ok, time() - $t0, $r.out)
+  if not $r.ok then push($failed, "mix-files") end
+end
+for $c in $checks
+  if not wanted($c.name) then continue end
+  $ran = $ran + 1
+  $t0 = time()
+  $r = run_argv(concat([$mix], $c.argv), {cwd: $root, timeout: $GATE_TIMEOUT, stderr: "stdout", max_output: 2000000})
+  $ok = $r.exit_code == 0 and not $r.timed_out
+  $out = if $r.timed_out then $r.stdout .. "\ntimed out after " .. $GATE_TIMEOUT .. "s" else $r.stdout end
+  report($c.name, $ok, time() - $t0, $out)
+  if not $ok then push($failed, $c.name) end
+end
+if $ran == 0 then
+  print("lint: no check matches " .. join($only, ", "))
+  exit(2)
+end
+if len($failed) > 0 then
+  print("lint: " .. len($failed) .. " failed: " .. join($failed, ", "))
+  exit(1)
+end
+print("lint: all checks passed")
