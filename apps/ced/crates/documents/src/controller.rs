@@ -1069,7 +1069,11 @@ impl Controller {
             verb: "edit.open".into(),
             body: body.to_string(),
             op_id: None,
-            deadline_ms: self.open_deadline(tab),
+            deadline_ms: if self.tab(tab).is_some_and(|t| t.mirror.is_some()) {
+                DEADLINE_MS
+            } else {
+                self.open_deadline(tab)
+            },
         };
         self.send(out, Req::Open { tab, reattach }, fx);
     }
