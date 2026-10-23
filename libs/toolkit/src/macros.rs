@@ -426,73 +426,99 @@ impl State {
                     if self.open {
                         menu::anchored_open(ctx, true);
                         let chrome = crate::chrome::Chrome::of(ctx);
-                        let (mut model, _) = macro_menu(&self.engine.catalogue,
-                            self.engine.running.as_ref().map(|e| e.title.as_str()));
+                        let (mut model, _) = macro_menu(
+                            &self.engine.catalogue,
+                            self.engine.running.as_ref().map(|e| e.title.as_str()),
+                        );
                         append_menu_error(&mut model, self.error.as_deref());
                         let menu_rect = menu::anchored_menu_rect(ui, anchor, &model);
                         let margin = egui::Frame::menu(ui.style()).total_margin().sum();
                         let width = (menu_rect.width() - margin.x).max(0.0);
-                        let height = chrome.metrics.menu_row_height.max(ui.spacing().interact_size.y);
+                        let height = chrome
+                            .metrics
+                            .menu_row_height
+                            .max(ui.spacing().interact_size.y);
                         let error_height = self.creation_error.as_ref().map_or(0.0, |error| {
-                            ui.spacing().item_spacing.y + ui.painter().layout(error.clone(),
-                                egui::TextStyle::Body.resolve(ui.style()), ui.visuals().text_color(), width).size().y
+                            ui.spacing().item_spacing.y
+                                + ui.painter()
+                                    .layout(
+                                        error.clone(),
+                                        egui::TextStyle::Body.resolve(ui.style()),
+                                        ui.visuals().text_color(),
+                                        width,
+                                    )
+                                    .size()
+                                    .y
                         });
                         let bounds = ctx.content_rect().shrink(chrome.metrics.edge_gap);
-                        let rect = menu::anchored_rect(anchor,
-                            egui::vec2(menu_rect.width(), height + error_height + margin.y), bounds);
-                        let error_limit = (rect.height() - margin.y - height - ui.spacing().item_spacing.y).max(0.0);
-                        let shown = egui::Area::new(crate::window_id(viewport, "macro-title-owner"))
-                            .kind(egui::UiKind::Menu)
-                            .order(egui::Order::Foreground)
-                            .fixed_pos(rect.min)
-                            .default_size(rect.size())
-                            .constrain(false)
-                            .fade_in(false)
-                            .show(ctx, |ui| egui::Frame::menu(ui.style()).show(ui, |ui| {
-                            ui.set_width(width);
-                            // Areas cache their last size. Grow the content
-                            // before allocating a newly wrapped error strip.
-                            ui.set_min_height((rect.height() - margin.y).max(0.0));
-                            let (enter, escape) = menu::title_keys(ctx);
-                            let field = ui.add_enabled(
-                                self.creation.is_none(),
-                                egui::TextEdit::singleline(title)
-                                    .desired_width(width)
-                                    .min_size(egui::vec2(width, height))
-                                    .id(crate::window_id(viewport, "macro-title"))
-                                    .hint_text(own("macros-title")),
-                            );
-                            if let Some(error) = &self.creation_error {
-                                egui::ScrollArea::vertical()
-                                    .max_width(width)
-                                    .max_height(error_limit)
-                                    .min_scrolled_height(0.0)
-                                    .show(ui, |ui| ui.add(egui::Label::new(error).wrap()));
-                            }
-                            // Only a visible, enabled widget has an AccessKit
-                            // node to receive focus. Areas may first run an
-                            // invisible sizing pass; leave the request pending.
-                            if ui.is_visible()
-                                && field.enabled()
-                                && !ctx
-                                    .data(|d| {
-                                        d.get_temp::<bool>(crate::window_id(
-                                            viewport,
-                                            "macro-title-focused",
-                                        ))
+                        let rect = menu::anchored_rect(
+                            anchor,
+                            egui::vec2(menu_rect.width(), height + error_height + margin.y),
+                            bounds,
+                        );
+                        let error_limit =
+                            (rect.height() - margin.y - height - ui.spacing().item_spacing.y)
+                                .max(0.0);
+                        let shown =
+                            egui::Area::new(crate::window_id(viewport, "macro-title-owner"))
+                                .kind(egui::UiKind::Menu)
+                                .order(egui::Order::Foreground)
+                                .fixed_pos(rect.min)
+                                .default_size(rect.size())
+                                .constrain(false)
+                                .fade_in(false)
+                                .show(ctx, |ui| {
+                                    egui::Frame::menu(ui.style()).show(ui, |ui| {
+                                        ui.set_width(width);
+                                        // Areas cache their last size. Grow the content
+                                        // before allocating a newly wrapped error strip.
+                                        ui.set_min_height((rect.height() - margin.y).max(0.0));
+                                        let (enter, escape) = menu::title_keys(ctx);
+                                        let field = ui.add_enabled(
+                                            self.creation.is_none(),
+                                            egui::TextEdit::singleline(title)
+                                                .desired_width(width)
+                                                .min_size(egui::vec2(width, height))
+                                                .id(crate::window_id(viewport, "macro-title"))
+                                                .hint_text(own("macros-title")),
+                                        );
+                                        if let Some(error) = &self.creation_error {
+                                            egui::ScrollArea::vertical()
+                                                .max_width(width)
+                                                .max_height(error_limit)
+                                                .min_scrolled_height(0.0)
+                                                .show(ui, |ui| {
+                                                    ui.add(egui::Label::new(error).wrap())
+                                                });
+                                        }
+                                        // Only a visible, enabled widget has an AccessKit
+                                        // node to receive focus. Areas may first run an
+                                        // invisible sizing pass; leave the request pending.
+                                        if ui.is_visible()
+                                            && field.enabled()
+                                            && !ctx
+                                                .data(|d| {
+                                                    d.get_temp::<bool>(crate::window_id(
+                                                        viewport,
+                                                        "macro-title-focused",
+                                                    ))
+                                                })
+                                                .unwrap_or(false)
+                                        {
+                                            field.request_focus();
+                                            ctx.data_mut(|d| {
+                                                d.insert_temp(
+                                                    crate::window_id(
+                                                        viewport,
+                                                        "macro-title-focused",
+                                                    ),
+                                                    true,
+                                                )
+                                            });
+                                        }
+                                        (field, enter, escape)
                                     })
-                                    .unwrap_or(false)
-                            {
-                                field.request_focus();
-                                ctx.data_mut(|d| {
-                                    d.insert_temp(
-                                        crate::window_id(viewport, "macro-title-focused"),
-                                        true,
-                                    )
                                 });
-                            }
-                            (field, enter, escape)
-                        }));
                         menu::title_bounds(ctx, shown.response.rect);
                         let (field, enter, escape) = shown.inner.inner;
                         let outside = ctx.input(|i| {
@@ -867,7 +893,12 @@ pub(crate) fn keyboard(ctx: &egui::Context) {
 fn append_menu_error(menu: &mut Menu, error: Option<&str>) {
     if let Some(error) = error {
         menu.entries.push(MenuEntry::Separator);
-        menu.entries.push(MenuEntry::Row(Row::command("macro.error", error, None, false)));
+        menu.entries.push(MenuEntry::Row(Row::command(
+            "macro.error",
+            error,
+            None,
+            false,
+        )));
     }
 }
 
@@ -1931,16 +1962,25 @@ mod tests {
         h.snapshot("macros_menu_empty_right_edge");
     }
 
-    fn title_field_harness(render: bool, wide: bool) -> (egui_kittest::Harness<'static, AppMenu>, egui::Rect) {
+    fn title_field_harness(
+        render: bool,
+        wide: bool,
+    ) -> (egui_kittest::Harness<'static, AppMenu>, egui::Rect) {
         let mut h = app_harness_at(render, egui::vec2(1275.0, 700.0), 2.5);
         if wide {
-            runtime(&h).lock().unwrap().engine.catalogue.entries.push(Entry {
-                id: "wide".into(),
-                title: "A much longer macro title that determines the menu width".into(),
-                path: "wide.mix".into(),
-                tier: Tier::UserApp,
-                shadows: vec![],
-            });
+            runtime(&h)
+                .lock()
+                .unwrap()
+                .engine
+                .catalogue
+                .entries
+                .push(Entry {
+                    id: "wide".into(),
+                    title: "A much longer macro title that determines the menu width".into(),
+                    path: "wide.mix".into(),
+                    tier: Tier::UserApp,
+                    shadows: vec![],
+                });
         }
         h.get_by_label("Macros").click();
         h.run_steps(40);
@@ -1964,10 +2004,22 @@ mod tests {
             assert!((field.left() - menu_row.left()).abs() < 1.0);
             assert!((field.right() - menu_row.right()).abs() < 1.0);
             assert!(h.ctx.content_rect().contains_rect(field));
-            let anchor = h.ctx.data(|d| d.get_temp::<egui::Rect>(crate::window_id(egui::ViewportId::ROOT, "macro-anchor"))).unwrap();
+            let anchor = h
+                .ctx
+                .data(|d| {
+                    d.get_temp::<egui::Rect>(crate::window_id(
+                        egui::ViewportId::ROOT,
+                        "macro-anchor",
+                    ))
+                })
+                .unwrap();
             assert!(field.top() >= anchor.bottom());
             assert!((field.right() + margin.right - anchor.right()).abs() < 1.0);
-            assert!(h.ctx.memory(|m| m.has_focus(crate::window_id(egui::ViewportId::ROOT, "macro-title"))));
+            assert!(
+                h.ctx.memory(
+                    |m| m.has_focus(crate::window_id(egui::ViewportId::ROOT, "macro-title"))
+                )
+            );
         }
     }
 
@@ -1975,7 +2027,10 @@ mod tests {
     fn title_creation_errors_wrap_without_widening_the_frame() {
         let (mut h, _) = title_field_harness(false, false);
         let original = h.get_by_role(egui::accesskit::Role::TextInput).rect();
-        let error = format!("Can't create /{}: permission denied", "a-long-folder-name/".repeat(8));
+        let error = format!(
+            "Can't create /{}: permission denied",
+            "a-long-folder-name/".repeat(8)
+        );
         runtime(&h).lock().unwrap().creation_error = Some(error.clone());
         h.run_steps(40);
         let field = h.get_by_role(egui::accesskit::Role::TextInput).rect();
@@ -1993,7 +2048,10 @@ mod tests {
         let (mut h, _) = title_field_harness(true, false);
         h.event(egui::Event::Text("Tidy imports".into()));
         h.run_steps(40);
-        assert_eq!(runtime(&h).lock().unwrap().title.as_deref(), Some("Tidy imports"));
+        assert_eq!(
+            runtime(&h).lock().unwrap().title.as_deref(),
+            Some("Tidy imports")
+        );
         h.snapshot("macros_title_field");
     }
 
