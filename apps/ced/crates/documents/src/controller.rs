@@ -1128,6 +1128,7 @@ impl Controller {
                         volatile: Some(info.volatile),
                     };
                     self.note_epoch(&info.epoch, fx);
+                    self.retry_unattached(fx);
                 }
             }
             Some(Req::Close { tab, cmd, intent }) => {
@@ -1323,13 +1324,7 @@ impl Controller {
                 if body.contains("services.registered") && body.contains("\"edit\"") =>
             {
                 self.send_info(fx);
-                for id in self.tab_ids() {
-                    if self.tab(id).is_some_and(|t| t.mirror.is_none())
-                        && self.open_error(id).is_some()
-                    {
-                        self.reattach(id, fx);
-                    }
-                }
+                self.retry_unattached(fx);
             }
             _ => {}
         }
@@ -1416,6 +1411,17 @@ impl Controller {
                     }
                 }
                 true
+            }
+        }
+    }
+
+    /// Reopen the tab's buffer in the new daemon session.
+    fn retry_unattached(&mut self, fx: &mut Vec<Effect>) {
+        for id in self.tab_ids() {
+            if self.tab(id).is_some_and(|t| t.mirror.is_none())
+                && self.open_error(id) == Some(EDIT_UNAVAILABLE)
+            {
+                self.reattach(id, fx);
             }
         }
     }
