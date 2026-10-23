@@ -37,7 +37,9 @@ use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
 /// Everything the Bus thread delivers.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Delivery {
-    NotificationFailed { text: String },
+    NotificationFailed {
+        text: String,
+    },
     Incoming(Incoming),
     Command(BusCommand),
     /// The answer to session-look read `ticket`: `rc`, the body and the
@@ -108,14 +110,28 @@ const LOOK_BUDGET: Duration = Duration::from_secs(30);
 /// Broker errors can have only an error header and an empty body/message.
 /// Preserve a real sentence at the boundary, including the verb and code.
 fn failure_body(rc: u8, body: String, error: Option<&str>, verb: &str) -> String {
-    if rc < 10 { return body; }
+    if rc < 10 {
+        return body;
+    }
     let mut value = serde_json::from_str::<serde_json::Value>(&body)
-        .ok().filter(|v| v.is_object()).unwrap_or_else(|| serde_json::json!({}));
-    let code = value["error_code"].as_str().filter(|s| !s.trim().is_empty())
-        .unwrap_or(if error.is_some_and(|s| s.starts_with("Service '") && s.ends_with("' not found")) {
-            "UNAVAILABLE"
-        } else { "INTERNAL" }).to_owned();
-    if value["message"].as_str().is_none_or(|s| s.trim().is_empty()) {
+        .ok()
+        .filter(|v| v.is_object())
+        .unwrap_or_else(|| serde_json::json!({}));
+    let code = value["error_code"]
+        .as_str()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or(
+            if error.is_some_and(|s| s.starts_with("Service '") && s.ends_with("' not found")) {
+                "UNAVAILABLE"
+            } else {
+                "INTERNAL"
+            },
+        )
+        .to_owned();
+    if value["message"]
+        .as_str()
+        .is_none_or(|s| s.trim().is_empty())
+    {
         value["message"] = serde_json::json!(match error.filter(|s| !s.trim().is_empty()) {
             Some(error) => format!("{verb} failed ({code}): {error}."),
             None => format!("{verb} failed ({code})."),
@@ -184,7 +200,8 @@ impl BusHandle {
 pub fn is_bus(effect: &Effect) -> bool {
     matches!(
         effect,
-        Effect::Notify { .. } | Effect::Send { .. }
+        Effect::Notify { .. }
+            | Effect::Send { .. }
             | Effect::Respond { .. }
             | Effect::Timer { .. }
             | Effect::Subscribe { .. }
@@ -649,10 +666,20 @@ mod tests {
     #[test]
     fn empty_broker_errors_have_a_code_verb_and_sentence() {
         for body in ["", r#"{"error_code":"UNAVAILABLE","message":""}"#] {
-            let body = failure_body(10, body.into(), Some("Service 'edit' not found"), "edit.open");
+            let body = failure_body(
+                10,
+                body.into(),
+                Some("Service 'edit' not found"),
+                "edit.open",
+            );
             let value: serde_json::Value = serde_json::from_str(&body).unwrap();
             assert_eq!(value["error_code"], "UNAVAILABLE");
-            assert!(value["message"].as_str().unwrap().contains("edit.open failed (UNAVAILABLE)"));
+            assert!(
+                value["message"]
+                    .as_str()
+                    .unwrap()
+                    .contains("edit.open failed (UNAVAILABLE)")
+            );
         }
     }
 

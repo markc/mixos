@@ -522,7 +522,9 @@ impl App {
         };
         let text = if text.trim().is_empty() {
             crate::label("request-failed")
-        } else { text };
+        } else {
+            text
+        };
         if level == Level::Info {
             self.status = Some((text, self.now + STATUS_SECONDS));
             return;
@@ -531,7 +533,8 @@ impl App {
             Some(tab) => format!("{}: {text}", crate::view::tab_name(tab)),
             None => text,
         };
-        self.recent_notices.retain(|_, at| self.now - *at < NOTICE_GAP_SECONDS);
+        self.recent_notices
+            .retain(|_, at| self.now - *at < NOTICE_GAP_SECONDS);
         if self.recent_notices.contains_key(&text) {
             return;
         }
@@ -1394,25 +1397,64 @@ mod tests {
                 },
             );
         }
-        assert_eq!(a.effects.iter().filter(|fx| matches!(fx, Effect::Notify { .. })).count(), 6);
+        assert_eq!(
+            a.effects
+                .iter()
+                .filter(|fx| matches!(fx, Effect::Notify { .. }))
+                .count(),
+            6
+        );
         a.effects.clear();
-        a.notice(None, Notice::Message { level: Level::Error, text: "w5".into() });
-        assert!(a.effects.is_empty(), "identical text is limited across levels");
+        a.notice(
+            None,
+            Notice::Message {
+                level: Level::Error,
+                text: "w5".into(),
+            },
+        );
+        assert!(
+            a.effects.is_empty(),
+            "identical text is limited across levels"
+        );
         a.now += 5.0;
-        a.notice(None, Notice::Message { level: Level::Error, text: "w5".into() });
-        assert!(matches!(&a.effects[0], Effect::Notify { text, level: Level::Error } if text == "w5"));
+        a.notice(
+            None,
+            Notice::Message {
+                level: Level::Error,
+                text: "w5".into(),
+            },
+        );
+        assert!(
+            matches!(&a.effects[0], Effect::Notify { text, level: Level::Error } if text == "w5")
+        );
         a.notification_failed("w5".into());
         assert_eq!(a.status(), Some("w5"));
-        a.notice(None, Notice::Message { level: Level::Warn, text: "  ".into() });
-        assert!(matches!(a.effects.last().unwrap(), Effect::Notify { text, .. } if !text.trim().is_empty()));
+        a.notice(
+            None,
+            Notice::Message {
+                level: Level::Warn,
+                text: "  ".into(),
+            },
+        );
+        assert!(
+            matches!(a.effects.last().unwrap(), Effect::Notify { text, .. } if !text.trim().is_empty())
+        );
     }
 
     #[test]
     fn document_toasts_include_the_document_name() {
         let (mut a, _, tab, _) = documents();
         a.effects.clear();
-        a.notice(Some(tab), Notice::Message { level: Level::Error, text: "Save failed.".into() });
-        assert!(matches!(&a.effects[0], Effect::Notify { text, .. } if text == "one.md: Save failed."));
+        a.notice(
+            Some(tab),
+            Notice::Message {
+                level: Level::Error,
+                text: "Save failed.".into(),
+            },
+        );
+        assert!(
+            matches!(&a.effects[0], Effect::Notify { text, .. } if text == "one.md: Save failed.")
+        );
     }
 
     #[test]

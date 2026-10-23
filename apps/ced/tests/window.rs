@@ -127,8 +127,11 @@ impl Transport for Fake {
         }
         if let Effect::Send { req, out } = effect {
             if !self.edit_available.get() {
-                self.queue.borrow_mut().push_back(reply(*req, 10,
-                    r#"{"error_code":"UNAVAILABLE","message":""}"#.into()));
+                self.queue.borrow_mut().push_back(reply(
+                    *req,
+                    10,
+                    r#"{"error_code":"UNAVAILABLE","message":""}"#.into(),
+                ));
                 return;
             }
             let args: Value = serde_json::from_str(&out.body).unwrap_or_else(|_| json!({}));
@@ -387,54 +390,92 @@ fn missing_edit_shows_waiting_state_and_registration_opens_the_document() {
     use egui_kittest::kittest::Queryable;
     let (mut h, service) = window_with_edit(
         theme(Scheme::Studio, Mode::Dark),
-        &[("/work/hello.mix", "print(1)\n")], egui::vec2(900.0, 500.0), false,
+        &[("/work/hello.mix", "print(1)\n")],
+        egui::vec2(900.0, 500.0),
+        false,
     );
     h.run_steps(4);
-    assert!(h.query_by_label(documents::controller::EDIT_UNAVAILABLE).is_some());
+    assert!(
+        h.query_by_label(documents::controller::EDIT_UNAVAILABLE)
+            .is_some()
+    );
     service.edit_available.set(true);
     service.deliver(Delivery::Incoming(Incoming::Topic {
         topic: "noded.props.changed".into(),
         body: r#"{"path":"services.registered","new":["edit"]}"#.into(),
     }));
     h.run_steps(6);
-    assert!(h.query_by_label(documents::controller::EDIT_UNAVAILABLE).is_none());
-    assert!(h.state().shell.as_ref().unwrap().app.active_tab().unwrap().mirror.is_some());
+    assert!(
+        h.query_by_label(documents::controller::EDIT_UNAVAILABLE)
+            .is_none()
+    );
+    assert!(
+        h.state()
+            .shell
+            .as_ref()
+            .unwrap()
+            .app
+            .active_tab()
+            .unwrap()
+            .mirror
+            .is_some()
+    );
 }
 
 #[test]
 fn document_decisions_remain_in_the_notice_strip() {
-    use egui_kittest::kittest::Queryable;
     use editor_model::model::EditCommand;
+    use egui_kittest::kittest::Queryable;
 
     let (mut h, service) = window(
         theme(Scheme::Studio, Mode::Dark),
-        &[("/work/a.txt", "hello world\n")], egui::vec2(900.0, 500.0),
+        &[("/work/a.txt", "hello world\n")],
+        egui::vec2(900.0, 500.0),
     );
     h.run_steps(6);
     let shell = h.state_mut().shell.as_mut().unwrap();
     let tab = shell.app.active().unwrap();
-    shell.app.editor_event(tab, editor::Event::Command(EditCommand::SetSelection(
-        edit::anchor::Selection { anchor: 2, head: 4 },
-    )));
-    shell.app.editor_event(tab, editor::Event::Command(EditCommand::Insert("XY".into())));
+    shell.app.editor_event(
+        tab,
+        editor::Event::Command(EditCommand::SetSelection(edit::anchor::Selection {
+            anchor: 2,
+            head: 4,
+        })),
+    );
+    shell.app.editor_event(
+        tab,
+        editor::Event::Command(EditCommand::Insert("XY".into())),
+    );
     let buffer = service.editd.borrow().buffers()[0].clone();
-    let answer = service.editd.borrow_mut().handle("local:agent", "edit.replace", &json!({
-        "buffer": buffer, "range": [3, 5], "text": "Q", "origin": "agent:test"
-    }));
+    let answer = service.editd.borrow_mut().handle(
+        "local:agent",
+        "edit.replace",
+        &json!({
+            "buffer": buffer, "range": [3, 5], "text": "Q", "origin": "agent:test"
+        }),
+    );
     assert_eq!(answer.rc, 0);
     h.run_steps(6);
     assert!(h.query_by_label("Re-insert at Caret").is_some());
     assert!(h.query_by_label("Dismiss").is_some());
 
-    service.editd.borrow_mut().restart("e2", Some("service text\n"));
+    service
+        .editd
+        .borrow_mut()
+        .restart("e2", Some("service text\n"));
     let buffer = service.editd.borrow().buffers()[0].clone();
-    let answer = service.editd.borrow_mut().handle("local:agent", "edit.insert", &json!({
-        "buffer": buffer, "at": 0, "text": "new ", "origin": "agent:test"
-    }));
+    let answer = service.editd.borrow_mut().handle(
+        "local:agent",
+        "edit.insert",
+        &json!({
+            "buffer": buffer, "at": 0, "text": "new ", "origin": "agent:test"
+        }),
+    );
     assert_eq!(answer.rc, 0);
     for event in service.editd.borrow_mut().take_events() {
         service.deliver(Delivery::Incoming(Incoming::Topic {
-            topic: "edit.changed".into(), body: serde_json::to_string(&event).unwrap(),
+            topic: "edit.changed".into(),
+            body: serde_json::to_string(&event).unwrap(),
         }));
     }
     h.run_steps(8);

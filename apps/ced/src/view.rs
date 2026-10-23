@@ -197,7 +197,8 @@ fn tabs(ui: &mut Ui, app: &App, events: &mut Vec<UiEvent>) {
         .map(|t| {
             let name = tab_name(t);
             let mirror = t.mirror.as_ref();
-            let opening = app.ctl.open_error(t.id).is_none() && mirror.is_none_or(|m| matches!(m.phase(), Phase::Bootstrapping { .. }));
+            let opening = app.ctl.open_error(t.id).is_none()
+                && mirror.is_none_or(|m| matches!(m.phase(), Phase::Bootstrapping { .. }));
             let mut meta = mirror.map_or_else(String::new, |_| t.language().to_owned());
             if app.ctl.agent_since_focus(t.id) {
                 meta.push_str(" ◆");
@@ -233,7 +234,8 @@ fn tabs(ui: &mut Ui, app: &App, events: &mut Vec<UiEvent>) {
 fn notices(ui: &mut Ui, app: &App, events: &mut Vec<UiEvent>) {
     let tab = app.active_tab();
     let mirror = tab.and_then(|t| t.mirror.as_ref());
-    let has_notices = mirror.is_some_and(|m| !m.conflicts().is_empty() || m.detached_copy().is_some());
+    let has_notices =
+        mirror.is_some_and(|m| !m.conflicts().is_empty() || m.detached_copy().is_some());
     if !has_notices {
         return;
     }
@@ -367,11 +369,16 @@ fn document(
     };
     let name = tab_name(tab);
     let Some(m) = tab.mirror.as_ref() else {
-        let message = app.ctl.open_error(tab.id).map(|message| {
-            if message == documents::controller::EDIT_UNAVAILABLE {
-                label("edit-unavailable")
-            } else { message.to_owned() }
-        })
+        let message = app
+            .ctl
+            .open_error(tab.id)
+            .map(|message| {
+                if message == documents::controller::EDIT_UNAVAILABLE {
+                    label("edit-unavailable")
+                } else {
+                    message.to_owned()
+                }
+            })
             .unwrap_or_else(|| label_with("opening", &[("name", &name)]));
         centred(ui, &message);
         return None;

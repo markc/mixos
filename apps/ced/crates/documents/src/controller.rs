@@ -152,7 +152,8 @@ const OPEN_WARN_AFTER: u32 = 3;
 /// own deadline, its `edit.list` check and one resend fit inside).
 const OP_WAIT_MS: u64 = 90_000;
 /// Shown when `edit` is absent or an initial open exceeds its budget.
-pub const EDIT_UNAVAILABLE: &str = "The edit service is not running; this document will open when it starts.";
+pub const EDIT_UNAVAILABLE: &str =
+    "The edit service is not running; this document will open when it starts.";
 
 /// A Bus `ced.action` waiting on its server op's outcome.
 struct OpWait {
@@ -402,7 +403,8 @@ fn reply_result(rc: u8, body: &str) -> Result<Value, wire::Refusal> {
         });
     }
     let value = serde_json::from_str::<Value>(body).unwrap_or(Value::Null);
-    let mut refusal = serde_json::from_str::<wire::Refusal>(body).unwrap_or_else(|_| wire::Refusal {
+    let mut refusal =
+        serde_json::from_str::<wire::Refusal>(body).unwrap_or_else(|_| wire::Refusal {
             error_code: wire::ErrorCode::Internal,
             message: value["message"].as_str().unwrap_or(body).to_string(),
             reason: None,
@@ -1062,7 +1064,9 @@ impl Controller {
             op_id: None,
             deadline_ms: if self.tab(tab).is_some_and(|t| t.mirror.is_some()) {
                 DEADLINE_LONG_MS
-            } else { 3_000 },
+            } else {
+                3_000
+            },
         };
         self.send(out, Req::Open { tab, reattach }, fx);
     }
@@ -1224,10 +1228,13 @@ impl Controller {
                     if let Some(x) = self.x.get_mut(&tab) {
                         x.open_misses += 1;
                         if x.open_misses == OPEN_WARN_AFTER {
-                            fx.push(Effect::Notice { tab: Some(tab), notice: Notice::Message {
-                                level: Level::Warn,
-                                text: editor_model::mirror::MSG_SERVICE_SILENT.into(),
-                            }});
+                            fx.push(Effect::Notice {
+                                tab: Some(tab),
+                                notice: Notice::Message {
+                                    level: Level::Warn,
+                                    text: editor_model::mirror::MSG_SERVICE_SILENT.into(),
+                                },
+                            });
                         }
                     }
                 } else {
@@ -1485,7 +1492,8 @@ impl Controller {
         }
         if rc >= 10
             && serde_json::from_str::<Value>(body)
-                .ok().is_some_and(|v| v["error_code"] == "UNAVAILABLE")
+                .ok()
+                .is_some_and(|v| v["error_code"] == "UNAVAILABLE")
         {
             self.open_failed(tab, EDIT_UNAVAILABLE.into(), fx);
             return;
@@ -3115,23 +3123,41 @@ mod tests {
         for timeout in [false, true] {
             let mut c = ctl();
             let effects = c.open_paths(&["/work/hello.mix".into()], Intent::ui(0));
-            let (req, budget) = effects.iter().find_map(|fx| match fx {
-                Effect::Send { req, out } if out.verb == "edit.open" => Some((*req, out.deadline_ms)),
-                _ => None,
-            }).unwrap();
+            let (req, budget) = effects
+                .iter()
+                .find_map(|fx| match fx {
+                    Effect::Send { req, out } if out.verb == "edit.open" => {
+                        Some((*req, out.deadline_ms))
+                    }
+                    _ => None,
+                })
+                .unwrap();
             assert!(budget <= 3000);
             let tab = c.tabs()[0].id;
-            let effects = c.on_incoming(if timeout { Incoming::Deadline { req } } else {
-                Incoming::Reply { req, rc: 10, body: r#"{"error_code":"UNAVAILABLE","message":""}"#.into() }
+            let effects = c.on_incoming(if timeout {
+                Incoming::Deadline { req }
+            } else {
+                Incoming::Reply {
+                    req,
+                    rc: 10,
+                    body: r#"{"error_code":"UNAVAILABLE","message":""}"#.into(),
+                }
             });
             assert_eq!(c.open_error(tab), Some(EDIT_UNAVAILABLE));
             assert!(effects.iter().any(|fx| matches!(fx, Effect::Notice { notice: Notice::Message { text, .. }, .. } if text == EDIT_UNAVAILABLE)));
-            assert!(!effects.iter().any(|fx| matches!(fx, Effect::Send { .. })), "wait for registration without polling");
+            assert!(
+                !effects.iter().any(|fx| matches!(fx, Effect::Send { .. })),
+                "wait for registration without polling"
+            );
             let effects = c.on_incoming(Incoming::Topic {
                 topic: "noded.props.changed".into(),
                 body: r#"{"key":"services.registered","value":["edit"]}"#.into(),
             });
-            assert!(effects.iter().any(|fx| matches!(fx, Effect::Send { out, .. } if out.verb == "edit.open")));
+            assert!(
+                effects
+                    .iter()
+                    .any(|fx| matches!(fx, Effect::Send { out, .. } if out.verb == "edit.open"))
+            );
         }
     }
 
