@@ -137,7 +137,9 @@ accepted `dopus.action` runs on `<service>.command.executed` too.
 ## Macro Bus verbs
 
 The shared [macro Bus surface](/macros/#bus-verbs) uses this process's
-catalogue and runner. Subscribe to `dopus.macros.finished` for completion.
+catalogue and runner. Subscribe to `<service>.macros.finished` for completion, where `service` is
+the instance’s registered Bus name (for example `term-1234` for a second Term
+instance). Verbs keep the app’s canonical prefix, such as `dopus.macros.run`.
 
 | Verb | Arguments | Result |
 |---|---|---|

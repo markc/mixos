@@ -126,6 +126,14 @@ impl Session {
 
     /// Call on a worker: creation and the following scan both touch disk.
     pub fn create(&self, title: &str) -> Result<Value, Refusal> {
+        self.create_with_scan(title, || self.reload())
+    }
+
+    fn create_with_scan(
+        &self,
+        title: &str,
+        scan: impl FnOnce() -> Result<Catalogue, Refusal>,
+    ) -> Result<Value, Refusal> {
         let (roots, app) = {
             let state = self.0.lock().unwrap();
             (
@@ -146,13 +154,20 @@ impl Session {
                 error,
             )
         })?;
-        let catalogue = self.reload()?;
-        let entry = catalogue
-            .entries
-            .iter()
-            .find(|entry| entry.path == path)
-            .ok_or_else(|| Refusal::new("INTERNAL", "created macro missing after rescan"))?;
-        Ok(json!({"id":entry.id,"title":entry.title,"path":path}))
+        let id = path.file_stem().unwrap().to_string_lossy();
+        let mut answer = json!({"id":id,"title":title,"path":path,"scanned":false});
+        match scan() {
+            Ok(catalogue) => {
+                if let Some(entry) = catalogue.entries.iter().find(|entry| entry.path == path) {
+                    answer["title"] = json!(entry.title);
+                    answer["scanned"] = json!(true);
+                } else {
+                    answer["warning"] = json!("created macro missing after rescan");
+                }
+            }
+            Err(error) => answer["warning"] = json!(error.to_string()),
+        }
+        Ok(answer)
     }
 
     /// Call on a worker thread. No filesystem work holds the session lock.
@@ -254,6 +269,16 @@ impl Session {
     pub fn stop(&self) -> bool {
         let state = self.0.lock().unwrap();
         let stopping = state.active;
+        if stopping {
+            state.runner.stop();
+        }
+        stopping
+    }
+
+    /// Check ownership and request termination under the same session lock.
+    pub fn stop_if_origin(&self, origin: &str) -> bool {
+        let state = self.0.lock().unwrap();
+        let stopping = state.active && state.identity["origin"].as_str() == Some(origin);
         if stopping {
             state.runner.stop();
         }

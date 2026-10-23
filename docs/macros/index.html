@@ -400,7 +400,9 @@ effort, like command execution events. Read status and output after a gap
 or reconnect. Completion uses a callback, without a polling loop.</p>
 <p>Filesystem watching and per-app context adapters remain future work.</p>
 <p>GUI runs use <code>origin: gui:&lt;window-id&gt;</code>, with a process-local numeric window id.
-Bus runs use <code>origin: bus</code>. Both publish <code>&lt;app&gt;.macros.finished</code>; only the
+Bus runs use <code>origin: bus</code>. Both publish <code>&lt;service&gt;.macros.finished</code>, where <code>service</code> is the instance’s
+registered Bus name (for example <code>term-1234</code> for a second Term instance).
+Verbs retain the app’s canonical prefix, such as <code>term.macros.run</code>; only the
 starting GUI window posts a toast. All windows show the shared busy dot and
 Stop title. Closing the starting window stops its GUI run and removes its
 finish subscription; closing another window does not stop the run.</p>

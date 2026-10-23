@@ -38,7 +38,7 @@ type Completion = Result<
 type Work = Box<
     dyn FnOnce(&Roots, &str) -> io::Result<(Option<editor::local::Document>, Option<Entry>)> + Send,
 >;
-type Creation = Result<(Catalogue, editor::local::Document), String>;
+type Creation = Result<(Option<Catalogue>, editor::local::Document, Option<String>), String>;
 type SaveCompletion = Result<(editor::local::Saved, Option<Catalogue>, Option<Entry>), String>;
 static NEXT_WINDOW: AtomicU64 = AtomicU64::new(1);
 
@@ -286,23 +286,21 @@ impl State {
         let Some(title) = self.title.clone() else {
             return;
         };
-        let Some(roots) = self.engine.roots() else {
+        if self.engine.roots().is_none() {
             self.creation_error = Some(own("macros-no-home"));
             return;
-        };
+        }
         self.creation_error = None;
-        let app = self.app.clone();
         let (tx, rx) = mpsc::channel();
         self.creation = Some(rx);
         let session = self.engine.clone();
         std::thread::spawn(move || {
             let result = (|| {
-                let folder = roots.folder(&app, Tier::UserApp)?;
-                let path = roots
-                    .create_from_title(&app, &title)
-                    .map_err(|e| path_error("macros-create-error", &folder, e))?;
-                let doc = open_macro(&path)?;
-                Ok((session.reload().map_err(io::Error::other)?, doc))
+                let answer = session.create(&title).map_err(io::Error::other)?;
+                let path = answer["path"].as_str().expect("created path is a string");
+                let doc = open_macro(Path::new(path))?;
+                let warning = answer["warning"].as_str().map(str::to_owned);
+                Ok((session.catalogue(), doc, warning))
             })()
             .map_err(|e: io::Error| e.to_string());
             let _ = tx.send(result);
@@ -313,8 +311,11 @@ impl State {
         let viewport = ctx.viewport_id();
         self.creation = None;
         match result {
-            Ok((catalogue, doc)) => {
-                self.replace_catalogue(catalogue, ctx);
+            Ok((catalogue, doc, warning)) => {
+                if let Some(catalogue) = catalogue {
+                    self.replace_catalogue(catalogue, ctx);
+                }
+                self.error = warning;
                 self.editor_entry = self
                     .catalogue
                     .entries
@@ -933,10 +934,7 @@ impl State {
 
 impl Drop for State {
     fn drop(&mut self) {
-        if self.engine.status()["origin"].as_str() == Some(format!("gui:{}", self.window).as_str())
-        {
-            self.engine.stop();
-        }
+        self.engine.stop_if_origin(&format!("gui:{}", self.window));
         self.engine.remove_finish_hook(self.subscriber);
         notifications::forget(self.window);
     }
@@ -1226,6 +1224,47 @@ mod tests {
             );
             std::thread::sleep(Duration::from_millis(5));
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn closing_finished_gui_window_preserves_the_next_bus_run() {
+        let (_temp, roots, entry) = runner_fixture();
+        let mut state = State::new("ced");
+        state.set_test_roots(roots);
+        let session = state.engine.clone();
+        let (tx, rx) = mpsc::channel();
+        session.add_finish_hook(Arc::new(move |body| {
+            let _ = tx.send(body);
+        }));
+        state.run(entry.clone(), &egui::Context::default());
+        assert!(session.stop_if_origin(&format!("gui:{}", state.window)));
+        rx.recv_timeout(Duration::from_secs(10)).unwrap();
+        assert!(!session.stop_if_origin(&format!("gui:{}", state.window)));
+        session.run(&entry.id, "bus").unwrap();
+        drop(state);
+        assert!(rx.recv_timeout(Duration::from_millis(200)).is_err());
+        assert_eq!(session.runner_status(), Status::Running);
+        session.stop();
+        rx.recv_timeout(Duration::from_secs(10)).unwrap();
+    }
+
+    #[test]
+    fn created_editor_opens_with_a_nonfatal_scan_warning() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("created.mix");
+        std::fs::write(&path, "-- title: Created\n").unwrap();
+        let doc = editor::local::Document::open(&path).unwrap();
+        let mut state = State::new("ced");
+        state.created(
+            Ok((None, doc, Some("forced scan failure".into()))),
+            &egui::Context::default(),
+        );
+        assert!(state.editor_open);
+        assert_eq!(state.document.as_ref().unwrap().path(), Some(path.as_path()));
+        assert_eq!(state.error.as_deref(), Some("forced scan failure"));
+        assert!(state.creation_error.is_none());
+        assert!(path.is_file());
     }
 
     #[cfg(unix)]

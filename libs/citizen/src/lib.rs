@@ -421,11 +421,11 @@ async fn worker(
             return;
         }
     }
-    let _ = ready.send(Ok(()));
     if let Some(app) = &macro_app {
         macros::install(app, &service, outbox.clone());
     }
     outbox::spawn_publisher(client.clone(), outbox);
+    let _ = ready.send(Ok(()));
     let mut pending: HashMap<u64, IncomingCommand> = HashMap::new();
     let mut next_id = 0;
     let permits = Arc::new(tokio::sync::Semaphore::new(16));

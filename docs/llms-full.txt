@@ -2015,7 +2015,9 @@ cargo test --locked -p inspector -p busviewer
 ## Macro Bus verbs
 
 The shared [macro Bus surface](/macros/#bus-verbs) uses this process's
-catalogue and runner. Subscribe to `busviewer.macros.finished` for completion.
+catalogue and runner. Subscribe to `<service>.macros.finished` for completion, where `service` is
+the instance’s registered Bus name (for example `term-1234` for a second Term
+instance). Verbs keep the app’s canonical prefix, such as `busviewer.macros.run`.
 
 | Verb | Arguments | Result |
 |---|---|---|
@@ -2106,7 +2108,9 @@ them before committing.
 ## Macro Bus verbs
 
 The shared [macro Bus surface](/macros/#bus-verbs) uses this process's
-catalogue and runner. Subscribe to `ced.macros.finished` for completion.
+catalogue and runner. Subscribe to `<service>.macros.finished` for completion, where `service` is
+the instance’s registered Bus name (for example `term-1234` for a second Term
+instance). Verbs keep the app’s canonical prefix, such as `ced.macros.run`.
 
 | Verb | Arguments | Result |
 |---|---|---|
@@ -7914,7 +7918,9 @@ accepted `dopus.action` runs on `<service>.command.executed` too.
 ## Macro Bus verbs
 
 The shared [macro Bus surface](/macros/#bus-verbs) uses this process's
-catalogue and runner. Subscribe to `dopus.macros.finished` for completion.
+catalogue and runner. Subscribe to `<service>.macros.finished` for completion, where `service` is
+the instance’s registered Bus name (for example `term-1234` for a second Term
+instance). Verbs keep the app’s canonical prefix, such as `dopus.macros.run`.
 
 | Verb | Arguments | Result |
 |---|---|---|
@@ -8570,7 +8576,9 @@ email count. Nothing else scales with mailbox size.
 ## Macro Bus verbs
 
 The shared [macro Bus surface](/macros/#bus-verbs) uses this process's
-catalogue and runner. Subscribe to `email.macros.finished` for completion.
+catalogue and runner. Subscribe to `<service>.macros.finished` for completion, where `service` is
+the instance’s registered Bus name (for example `term-1234` for a second Term
+instance). Verbs keep the app’s canonical prefix, such as `email.macros.run`.
 
 | Verb | Arguments | Result |
 |---|---|---|
@@ -9553,7 +9561,9 @@ or reconnect. Completion uses a callback, without a polling loop.
 Filesystem watching and per-app context adapters remain future work.
 
 GUI runs use `origin: gui:<window-id>`, with a process-local numeric window id.
-Bus runs use `origin: bus`. Both publish `<app>.macros.finished`; only the
+Bus runs use `origin: bus`. Both publish `<service>.macros.finished`, where `service` is the instance’s
+registered Bus name (for example `term-1234` for a second Term instance).
+Verbs retain the app’s canonical prefix, such as `term.macros.run`; only the
 starting GUI window posts a toast. All windows show the shared busy dot and
 Stop title. Closing the starting window stops its GUI run and removes its
 finish subscription; closing another window does not stop the run.
@@ -32198,7 +32208,9 @@ committing. The snapshot suite also times the representative workload, a
 ## Macro Bus verbs
 
 The shared [macro Bus surface](/macros/#bus-verbs) uses this process's
-catalogue and runner. Subscribe to `monitor.macros.finished` for completion.
+catalogue and runner. Subscribe to `<service>.macros.finished` for completion, where `service` is
+the instance’s registered Bus name (for example `term-1234` for a second Term
+instance). Verbs keep the app’s canonical prefix, such as `monitor.macros.run`.
 
 | Verb | Arguments | Result |
 |---|---|---|
@@ -33050,7 +33062,9 @@ with `UPDATE_SNAPSHOTS=1` and look at the images before committing them.
 ## Macro Bus verbs
 
 The shared [macro Bus surface](/macros/#bus-verbs) uses this process's
-catalogue and runner. Subscribe to `prefs.macros.finished` for completion.
+catalogue and runner. Subscribe to `<service>.macros.finished` for completion, where `service` is
+the instance’s registered Bus name (for example `term-1234` for a second Term
+instance). Verbs keep the app’s canonical prefix, such as `prefs.macros.run`.
 
 | Verb | Arguments | Result |
 |---|---|---|
@@ -33589,7 +33603,9 @@ offscreen (regenerate with `UPDATE_SNAPSHOTS=1` and look at the images);
 ## Macro Bus verbs
 
 The shared [macro Bus surface](/macros/#bus-verbs) uses this process's
-catalogue and runner. Subscribe to `screenshot.macros.finished` for completion.
+catalogue and runner. Subscribe to `<service>.macros.finished` for completion, where `service` is
+the instance’s registered Bus name (for example `term-1234` for a second Term
+instance). Verbs keep the app’s canonical prefix, such as `screenshot.macros.run`.
 
 | Verb | Arguments | Result |
 |---|---|---|
@@ -34079,7 +34095,9 @@ PTY tests need the Mix binary at `/opt/mixos/bin/mix`.
 ## Macro Bus verbs
 
 The shared [macro Bus surface](/macros/#bus-verbs) uses this process's
-catalogue and runner. Subscribe to `term.macros.finished` for completion.
+catalogue and runner. Subscribe to `<service>.macros.finished` for completion, where `service` is
+the instance’s registered Bus name (for example `term-1234` for a second Term
+instance). Verbs keep the app’s canonical prefix, such as `term.macros.run`.
 
 | Verb | Arguments | Result |
 |---|---|---|

@@ -206,7 +206,9 @@ cargo test --locked -p inspector -p busviewer
 ## Macro Bus verbs
 
 The shared [macro Bus surface](/macros/#bus-verbs) uses this process's
-catalogue and runner. Subscribe to `busviewer.macros.finished` for completion.
+catalogue and runner. Subscribe to `<service>.macros.finished` for completion, where `service` is
+the instance’s registered Bus name (for example `term-1234` for a second Term
+instance). Verbs keep the app’s canonical prefix, such as `busviewer.macros.run`.
 
 | Verb | Arguments | Result |
 |---|---|---|

@@ -202,7 +202,9 @@ or reconnect. Completion uses a callback, without a polling loop.
 Filesystem watching and per-app context adapters remain future work.
 
 GUI runs use `origin: gui:<window-id>`, with a process-local numeric window id.
-Bus runs use `origin: bus`. Both publish `<app>.macros.finished`; only the
+Bus runs use `origin: bus`. Both publish `<service>.macros.finished`, where `service` is the instance’s
+registered Bus name (for example `term-1234` for a second Term instance).
+Verbs retain the app’s canonical prefix, such as `term.macros.run`; only the
 starting GUI window posts a toast. All windows show the shared busy dot and
 Stop title. Closing the starting window stops its GUI run and removes its
 finish subscription; closing another window does not stop the run.

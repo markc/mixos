@@ -17,6 +17,32 @@ fn fixture() -> (tempfile::TempDir, Roots, Session) {
 }
 
 #[test]
+fn created_file_survives_failed_or_incomplete_rescan() {
+    let (_dir, _roots, session) = fixture();
+    for missing in [false, true] {
+        let answer = session
+            .create_with_scan("New macro", || {
+                if missing {
+                    Ok(Catalogue::default())
+                } else {
+                    Err(Refusal::new("INTERNAL", "forced scan failure"))
+                }
+            })
+            .unwrap();
+        assert_eq!(answer["scanned"], false);
+        assert_eq!(answer["title"], "New macro");
+        assert!(answer["warning"].as_str().unwrap().contains(if missing {
+            "missing after rescan"
+        } else {
+            "forced scan failure"
+        }));
+        let path = std::path::Path::new(answer["path"].as_str().unwrap());
+        assert!(path.is_file());
+        assert_eq!(path.file_stem().unwrap().to_str().unwrap(), answer["id"]);
+    }
+}
+
+#[test]
 fn process_handles_share_the_same_state() {
     let a = Session::for_app("session-sharing-test");
     let b = Session::for_app("session-sharing-test");

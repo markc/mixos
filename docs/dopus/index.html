@@ -354,7 +354,9 @@ tests: the same verbs, minus those that need a window. It publishes its
 accepted <code>dopus.action</code> runs on <code>&lt;service&gt;.command.executed</code> too.</p>
 <h2 id="macro-bus-verbs">Macro Bus verbs</h2>
 <p>The shared <a href="/macros/#bus-verbs">macro Bus surface</a> uses this process's
-catalogue and runner. Subscribe to <code>dopus.macros.finished</code> for completion.</p>
+catalogue and runner. Subscribe to <code>&lt;service&gt;.macros.finished</code> for completion, where <code>service</code> is
+the instance’s registered Bus name (for example <code>term-1234</code> for a second Term
+instance). Verbs keep the app’s canonical prefix, such as <code>dopus.macros.run</code>.</p>
 <table><thead><tr><th>Verb</th><th>Arguments</th><th>Result</th></tr></thead><tbody>
 <tr><td><code>dopus.macros.list</code></td><td><code>{}</code></td><td>Catalogue and diagnostics</td></tr>
 <tr><td><code>dopus.macros.reload</code></td><td><code>{}</code></td><td>Catalogue and diagnostics</td></tr>
