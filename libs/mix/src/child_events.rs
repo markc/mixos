@@ -264,6 +264,10 @@ mod linux {
                     drop(pipes);
                     let status = child.wait();
                     crate::builtins::unregister_managed_pid(pid);
+                    // Publish completion before notifying the consumer. Pruning
+                    // joins this worker, so it cannot observe a live owner with
+                    // an already drained terminal and park without another wake.
+                    worker_completed.store(true, std::sync::atomic::Ordering::Release);
                     if !cancelled {
                         match status {
                             Ok(s) => {
@@ -272,7 +276,6 @@ mod linux {
                             Err(_) => queue.process_exited(&handle, None, None, detached_output),
                         }
                     }
-                    worker_completed.store(true, std::sync::atomic::Ordering::Release);
                 });
             match worker {
                 Ok(worker) => Ok(Self {
