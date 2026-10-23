@@ -35,7 +35,7 @@ fn integer(value: &Value, name: &str) -> MixResult<u64> {
     }
 }
 
-fn seconds(value: Option<&Value>, default: f64, name: &str) -> MixResult<Duration> {
+pub(super) fn seconds(value: Option<&Value>, default: f64, name: &str) -> MixResult<Duration> {
     let n = match value {
         None => default,
         Some(Value::Number(n)) => *n,

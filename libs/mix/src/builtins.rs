@@ -19,6 +19,9 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 #[cfg(feature = "http")]
 #[path = "http_files.rs"]
 mod http_files;
+#[cfg(feature = "http")]
+#[path = "http_async.rs"]
+pub(crate) mod http_async;
 
 /// Magnitude of a negative signed index, saturated to `usize`. The one
 /// safe spelling: `(-idx)` overflows at `i64::MIN` (debug panic, release
@@ -387,9 +390,9 @@ builtin_table! {
     ("hash_file", CapabilityClass::FsRead,     "system",  "Streaming digest of a file, fixed 64 KiB working set whatever the size: hash_file(path[, \"md5\"|\"sha1\"|\"sha256\"|\"blake3\"|nil][, {raw:true}]) → lowercase hex, or bytes with {raw:true}. md5/sha1 added v0.66.0 and are BROKEN hashes for legacy interop only (v0.24.0)", contract!((path: string, algo?: any_of(string, nil), opts?: any_of(map, nil)) -> any_of(string, bytes); failure[raises]; hints[algo: "one of \"md5\", \"sha1\", \"sha256\" or \"blake3\"; a map here is the options map placed one position early — write hash_file(path, \"sha256\", {raw: true})"])),
     ("uuid", CapabilityClass::Pure,            "system",  "Generate a new random UUID v4 string", contract!(() -> string)),
     ("dkim_keygen", CapabilityClass::Pure,     "system",  "Generate a DKIM keypair. dkim_keygen(\"rsa\", [bits=2048]) or dkim_keygen(\"ed25519\") → {algorithm, private_pem, public_b64, dns_txt_record}", contract!((algo: string, bits?: number) -> map("dkim_keypair", {algorithm: string, private_pem: string, public_b64: string, dns_txt_record: string}))),
-    ("http_get", CapabilityClass::Network,        "system",  "HTTP GET. http_get(url, [headers], [{timeout, ssl_verify, ca_file, ca_pem}] — timeout default 30, 0 disables; ssl_verify default true, false skips TLS cert/hostname checks like curl -k; ca_file/ca_pem ADD a private CA to the default roots — mutually exclusive with each other and with ssl_verify:false, 4 MiB cap, bad PEM raises HTTP_TLS, v0.29.0) → {status, body, bytes, headers, final_url, duration_ms, error_code, error} (headers lowercase-name→list; final_url after redirects; transport failure = status:0 + HTTP_* error_code; v0.30.0). `body` is the response decoded as UTF-8 (nil if not valid UTF-8); `bytes` is the raw byte buffer. Response bodies are capped at 64 MiB (over-cap → {status:0, error}).", contract!((url: string, headers?: any_of(map, nil), opts?: any_of(map, nil)) -> map("http_response", {status: number, body: any, bytes: bytes, headers: map, final_url: string, duration_ms: number, error_code: any, error: any}); effects[must_use, blocking]; failure[returns_result]; cond_caps[ca_file: FsRead])),
-    ("http_post", CapabilityClass::Network,       "system",  "HTTP POST. http_post(url, body, [headers], [{timeout, ssl_verify, ca_file, ca_pem}]) → {status, body, bytes, headers, final_url, duration_ms, error_code, error} (headers lowercase-name→list; final_url after redirects; transport failure = status:0 + HTTP_* error_code; v0.30.0). Opts (incl. ssl_verify: false → skip TLS verification like curl -k) and `body`/`bytes` semantics (incl. the 64 MiB body cap) match http_get.", contract!((url: string, body: any, headers?: any_of(map, nil), opts?: any_of(map, nil)) -> map("http_response", {status: number, body: any, bytes: bytes, headers: map, final_url: string, duration_ms: number, error_code: any, error: any}); effects[must_use, blocking]; failure[returns_result]; cond_caps[ca_file: FsRead])),
-    ("http_request", CapabilityClass::Network,    "system",  "HTTP any-verb. http_request(method, url, [body], [headers], [{timeout, ssl_verify, ca_file, ca_pem}]) → {status, body, bytes, headers, final_url, duration_ms, error_code, error} (headers lowercase-name→list; final_url after redirects; transport failure = status:0 + HTTP_* error_code; v0.30.0). Opts (incl. ssl_verify: false → skip TLS verification like curl -k) and `body`/`bytes` semantics (incl. the 64 MiB body cap) match http_get.", contract!((method: string, url: string, body?: any, headers?: any_of(map, nil), opts?: any_of(map, nil)) -> map("http_response", {status: number, body: any, bytes: bytes, headers: map, final_url: string, duration_ms: number, error_code: any, error: any}); effects[must_use, blocking]; failure[returns_result]; cond_caps[ca_file: FsRead])),
+    ("http_get", CapabilityClass::Network,        "system",  "HTTP GET. http_get(url, [headers], [{timeout, idle_timeout, ssl_verify, ca_file, ca_pem}] — whole-call timeout default 30, 0 disables; idle_timeout optional positive seconds (fractions allowed, max one year), longest response byte gap; idle failure HTTP_IDLE_TIMEOUT and cut body HTTP_STREAM_CUT retain bytes with bytes_received; ssl_verify default true, false skips TLS cert/hostname checks like curl -k; ca_file/ca_pem ADD a private CA to the default roots — mutually exclusive with each other and with ssl_verify:false, 4 MiB cap, bad PEM raises HTTP_TLS, v0.29.0) → {status, body, bytes, headers, final_url, duration_ms, error_code, error} (headers lowercase-name→list; final_url after redirects; transport failure = status:0 + HTTP_* error_code; v0.30.0). `body` is the response decoded as UTF-8 (nil if not valid UTF-8); `bytes` is the raw byte buffer. Response bodies are capped at 64 MiB (over-cap → {status:0, error}).", contract!((url: string, headers?: any_of(map, nil), opts?: any_of(map, nil)) -> map("http_response", {status: number, body: any, bytes: bytes, headers: map, final_url: string, duration_ms: number, error_code: any, error: any}); effects[must_use, blocking]; failure[returns_result]; cond_caps[ca_file: FsRead])),
+    ("http_post", CapabilityClass::Network,       "system",  "HTTP POST. http_post(url, body, [headers], [{timeout, idle_timeout, ssl_verify, ca_file, ca_pem}]) → {status, body, bytes, headers, final_url, duration_ms, error_code, error} (headers lowercase-name→list; final_url after redirects; transport failure = status:0 + HTTP_* error_code; v0.30.0). Opts (incl. ssl_verify: false → skip TLS verification like curl -k) and `body`/`bytes` semantics (incl. the 64 MiB body cap) match http_get.", contract!((url: string, body: any, headers?: any_of(map, nil), opts?: any_of(map, nil)) -> map("http_response", {status: number, body: any, bytes: bytes, headers: map, final_url: string, duration_ms: number, error_code: any, error: any}); effects[must_use, blocking]; failure[returns_result]; cond_caps[ca_file: FsRead])),
+    ("http_request", CapabilityClass::Network,    "system",  "HTTP any-verb. http_request(method, url, [body], [headers], [{timeout, idle_timeout, ssl_verify, ca_file, ca_pem}]) → {status, body, bytes, headers, final_url, duration_ms, error_code, error} (headers lowercase-name→list; final_url after redirects; transport failure = status:0 + HTTP_* error_code; v0.30.0). Opts (incl. ssl_verify: false → skip TLS verification like curl -k) and `body`/`bytes` semantics (incl. the 64 MiB body cap) match http_get.", contract!((method: string, url: string, body?: any, headers?: any_of(map, nil), opts?: any_of(map, nil)) -> map("http_response", {status: number, body: any, bytes: bytes, headers: map, final_url: string, duration_ms: number, error_code: any, error: any}); effects[must_use, blocking]; failure[returns_result]; cond_caps[ca_file: FsRead])),
     ("http_post_multipart", CapabilityClass::Network, "system", "HTTP POST with a multipart/form-data body: http_post_multipart(url, fields, files, [headers], [opts]) → http_response map. `fields` is a map of string form fields; `files` is a map of field_name → {filename, content_type?, data: bytes|buffer} (raw binary payloads, the webhook/file-upload slot — v0.103.12). The boundary is generated, and the Content-Type header is set accordingly.", contract!((url: string, fields: map, files: map, headers?: any_of(map, nil), opts?: any_of(map, nil)) -> map("http_response", {status: number, body: any, bytes: bytes, headers: map, final_url: string, duration_ms: number, error_code: any, error: any}); effects[must_use, blocking]; failure[returns_result]; cond_caps[ca_file: FsRead])),
     ("http_put_file", CapabilityClass::Network, "system", "Stream a regular file or inclusive range with exact Content-Length. Opts: method PUT/POST/PATCH (default PUT), range:{start,end}, headers, idle_timeout (seconds, default 30), deadline (seconds, default 0), ssl_verify, ca_file, ca_pem. Redirects disabled; 3xx returned. Deadline is cooperative and best-effort during blocking DNS/IO. Fixed 64 KiB transfer buffer; response capped at 64 MiB. Operational errors return status:0; invalid options raise. bytes_written counts source bytes consumed, size is window size, blake3 hashes that window (nil on failure). published is false (no local publication).", contract!((url: string, path: string, opts?: map("http_put_file_options", {method: string, range: map, headers: map, idle_timeout: number, deadline: number, ssl_verify: bool, ca_file: string, ca_pem: any})) -> map("http_file_response", {status: number, headers: map, bytes_written: number, size: number, blake3: any, body: any, bytes: bytes, final_url: string, duration_ms: number, error_code: any, error: any, published: bool}); effects[must_use, blocking]; failure[returns_result]; caps[FsRead])),
     ("http_get_file", CapabilityClass::Network, "system", "Stream GET through a unique temp sibling and publish atomically. Opts: overwrite (default false), append (default false; requires expect_blake3 and matching 206 Content-Range), expect_blake3 (64 lowercase hex), max_bytes (final size), headers, idle_timeout (seconds, default 30), deadline (seconds, default 0), ssl_verify, ca_file, ca_pem. 200/206 require identity framing and Content-Length; missing length or encoded responses return HTTP_IDENTITY_FRAMING. Append copies and hashes the existing prefix. Redirects returned; error bodies never installed. No-replace is atomic. Deadline is cooperative and best-effort during blocking DNS/IO. bytes_written counts downloaded bytes, size includes prefix, blake3 hashes the final file. published records publication even if directory fsync fails. Operational errors return status:0; invalid options raise.", contract!((url: string, path: string, opts?: map("http_get_file_options", {overwrite: bool, append: bool, expect_blake3: string, max_bytes: number, headers: map, idle_timeout: number, deadline: number, ssl_verify: bool, ca_file: string, ca_pem: any})) -> map("http_file_response", {status: number, headers: map, bytes_written: number, size: number, blake3: any, body: any, bytes: bytes, final_url: string, duration_ms: number, error_code: any, error: any, published: bool}); effects[must_use, blocking]; failure[returns_result]; caps[FsWrite]; cond_caps[append: FsRead, ca_file: FsRead])),
@@ -1291,6 +1294,7 @@ pub fn conditional_cap_engaged(name: &str, args: &[Value], option: &str) -> bool
             }
             "http_get" => return opts_in_slots(args.get(1), args.get(2)),
             "http_post" => return opts_in_slots(args.get(2), args.get(3)),
+            "http_stream" => return opts_in_slots(args.get(4), args.get(5)),
             "http_request" => {
                 // 3-arg sole-trailing-opts special case.
                 if args.len() == 3
@@ -21572,7 +21576,7 @@ fn source_has_io_kind(e: &(dyn std::error::Error + 'static), kinds: &[std::io::E
 /// literal `timeout` HTTP header, pass the opts slot explicitly:
 /// `http_get(url, {timeout: "60s"}, {})`.
 #[cfg(feature = "http")]
-const HTTP_OPT_KEYS: [&str; 4] = ["timeout", "ssl_verify", "ca_file", "ca_pem"];
+const HTTP_OPT_KEYS: [&str; 5] = ["timeout", "idle_timeout", "ssl_verify", "ca_file", "ca_pem"];
 
 /// True when a lone trailing map is the OPTS map (not headers): non-empty and
 /// every key is a recognised http opt. Lets `http_get(url, {ssl_verify: false})`
@@ -21590,6 +21594,7 @@ fn http_map_is_opts(m: &indexmap::IndexMap<String, Value>) -> bool {
 #[derive(Debug)]
 struct HttpOpts {
     timeout_s: u64,
+    idle: Option<std::time::Duration>,
     insecure: bool,
     ca_agent: Option<std::sync::Arc<ureq::rustls::ClientConfig>>,
 }
@@ -21603,6 +21608,7 @@ struct HttpOpts {
 fn parse_http_opts(name: &str, v: Option<&Value>) -> MixResult<HttpOpts> {
     let defaults = HttpOpts {
         timeout_s: HTTP_DEFAULT_TIMEOUT_S,
+        idle: None,
         insecure: false,
         ca_agent: None,
     };
@@ -21634,6 +21640,19 @@ fn parse_http_opts(name: &str, v: Option<&Value>) -> MixResult<HttpOpts> {
         Some(v) => parse_nonneg_int_opt(name, "timeout", v)?,
         None => HTTP_DEFAULT_TIMEOUT_S,
     };
+    let idle = map
+        .get("idle_timeout")
+        .map(|v| {
+            let duration = http_files::seconds(Some(v), 30.0, "idle_timeout")?;
+            if duration.is_zero() {
+                return Err(MixError::structured(
+                    "OPTION_INVALID",
+                    "idle_timeout must be greater than zero",
+                ));
+            }
+            Ok(duration)
+        })
+        .transpose()?;
     let insecure = match map.get("ssl_verify") {
         Some(Value::Bool(b)) => !b,
         None => false,
@@ -21728,6 +21747,7 @@ fn parse_http_opts(name: &str, v: Option<&Value>) -> MixResult<HttpOpts> {
     };
     Ok(HttpOpts {
         timeout_s,
+        idle,
         insecure,
         ca_agent,
     })
@@ -21916,6 +21936,12 @@ fn builtin_http_post_multipart(args: Vec<Value>) -> MixResult<Option<Value>> {
     )];
     let (extra_headers, opts) =
         http_headers_and_timeout("http_post_multipart", args.get(3), args.get(4))?;
+    if opts.idle.is_some() {
+        return Err(MixError::structured(
+            "OPTION_INVALID",
+            "http_post_multipart: idle_timeout is supported by http_get, http_post, http_request and http_stream",
+        ));
+    }
     headers.extend(extra_headers);
 
     Ok(Some(http_dispatch(

@@ -52,7 +52,7 @@ rot. `mix man syntax` is the mental model; gotchas is the corrections.
 - **[byte buffers](buffer.md)** — `buffer`/`buffer_push`/`freeze`, the one reference-semantic type.
 - **[regular expressions](regex.md)** — `re_match`/`re_find`/`re_replace`/`re_split`/`grep_lines` (subject first).
 - **[dates & time](datetime.md)** — `time`/`date_format`/`now_iso`/`duration_format`.
-- **[http](http.md)** — `http_get`/`http_post`/`http_request`, deadlines.
+- **[http](http.md)** — `http_get`/`http_post`/`http_request`, idle and whole-call timeouts, `http_stream` line callbacks.
 - **[datastar](datastar.md)** — `ds_*` SSE event framing.
 - **[archives](tar.md)** — `tar_list`/`tar_unpack`/`tar_pack`, zstd/gzip/none, safe staged extraction.
 - **[SQLite](sqlopen.md)** — `sqlopen`/`sqlexec`/`sqlclose`, read-only by default, `"rwc"` creates.

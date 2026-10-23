@@ -45,6 +45,16 @@ pub type EvalBuiltin = for<'a> fn(
 /// HOF entry — the caller then falls through to `call_builtin` (pure).
 pub fn lookup(name: &str) -> Option<EvalBuiltin> {
     match name {
+        #[cfg(feature = "http")]
+        "http_get" => Some(crate::builtins::http_async::get),
+        #[cfg(feature = "http")]
+        "http_post" => Some(crate::builtins::http_async::post),
+        #[cfg(feature = "http")]
+        "http_request" => Some(crate::builtins::http_async::request),
+        #[cfg(feature = "http")]
+        "http_stream" => Some(crate::builtins::http_async::stream),
+        #[cfg(not(feature = "http"))]
+        "http_stream" => Some(hof_http_stream_unavailable),
         "__hof_smoke" => Some(hof_smoke),
         "sort_by" => Some(hof_sort_by),
         "filter" => Some(hof_filter),
@@ -63,6 +73,19 @@ pub fn lookup(name: &str) -> Option<EvalBuiltin> {
     }
 }
 
+#[cfg(not(feature = "http"))]
+fn hof_http_stream_unavailable<'a>(
+    _eval: &'a mut Evaluator,
+    _args: Vec<Value>,
+) -> Pin<Box<dyn Future<Output = MixResult<Value>> + 'a>> {
+    Box::pin(async {
+        Err(MixError::structured(
+            "FEATURE_DISABLED",
+            "http_stream requires the http feature",
+        ))
+    })
+}
+
 // Single source of truth for HOF metadata — mirrors the pattern in
 // `builtins.rs`. Each HOF here has a corresponding match arm in
 // `lookup` above. Adding a new HOF means:
@@ -72,6 +95,7 @@ pub fn lookup(name: &str) -> Option<EvalBuiltin> {
 // No third list in `meta.rs` to update.
 builtin_table! {
     HOFS, HOF_NAMES,
+    ("http_stream", CapabilityClass::Network, "system", "Read HTTP response lines as they arrive: http_stream(method, url, on_line[, body, headers, opts]). Callback receives a UTF-8 line without LF/CRLF (including empty lines and a final unterminated line); return false to close promptly. Opts: timeout (whole call, integer seconds, default 30; 0 disables), idle_timeout (positive seconds, default 30; fractions allowed), ssl_verify, ca_file, ca_pem. Scoped response is dropped on return, callback error, interruption or evaluator retirement; no persistent handle. Returns status, headers, final_url, duration_ms, stopped, bytes_received, body/bytes (unfinished line only), error_code/error. Operational failure = status:0 with HTTP_IDLE_TIMEOUT, HTTP_TIMEOUT, HTTP_STREAM_CUT or HTTP_INTERRUPTED; completed lines remain delivered. 64 MiB per-line cap. Network capability; ca_file also requires fs-read.", contract!((method: string, url: string, on_line: function, body?: any, headers?: any_of(map, nil), opts?: any_of(map, nil)) -> map; effects[must_use, blocking]; failure[returns_result]; cond_caps[ca_file: FsRead])),
     ("sort_by", CapabilityClass::Pure,   "hof", "Return list sorted ascending by key function (stable) (v0.2.0)", contract!((list: list, func: function) -> list)),
     ("filter", CapabilityClass::Pure,    "hof", "Return new list of items where predicate returns truthy (v0.2.0)", contract!((list: list, pred: function) -> list)),
     ("map", CapabilityClass::Pure,       "hof", "Return new list of transform(item) results (v0.2.0)", contract!((list: list, func: function) -> list)),

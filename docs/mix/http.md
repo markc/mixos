@@ -1,5 +1,105 @@
 # http — HTTP client builtins
 
+## Response streams and idle timeouts
+
+`http_get`, `http_post` and `http_request` accept `idle_timeout`: positive
+seconds (fractions allowed, at most one year), limiting the gap between
+received response bytes, including the initial wait for response headers.
+Connection establishment and acquisition of the complete response headers
+are each also bounded by this duration. It is optional for buffered calls;
+omitting it preserves their existing behaviour. `timeout` remains the
+whole-call cap (integer seconds, default 30). **`timeout: 0` disables the
+whole-call cap**, while an explicitly supplied idle limit still applies.
+
+```mix
+$r = http_get($url, {timeout: 0, idle_timeout: 5})
+```
+
+`http_stream(method, url, on_line[, body, headers, opts])` reads a response
+as it arrives. It uses the same body, headers and TLS options as
+`http_request`. Supply `nil` for unused slots. Its default idle limit is
+30 seconds; set `timeout: 0` for a stream that may run indefinitely while
+data keeps arriving. HTTP error statuses also deliver their response lines.
+
+```mix
+$r = http_stream("POST", "https://api.example.com/messages",
+  fn($line)
+    print($line)
+    return $line != "data: [DONE]"
+  end,
+  json_encode({stream: true}),
+  {"Content-Type": "application/json", Accept: "text/event-stream"},
+  {timeout: 0, idle_timeout: 5})
+if $r.status == 0 then print($r.error_code .. ": " .. $r.error) end
+```
+
+The callback receives one UTF-8 line without LF or CRLF, including empty
+lines and a final line without a newline. SSE event assembly (blank-line
+boundaries, `data:` fields and multi-line payloads) belongs to the caller.
+Return the boolean `false` to stop and close promptly; any other return
+value continues. A callback exception propagates after releasing the response.
+Invalid UTF-8 returns `HTTP_TEXT`. Each line is capped at 64 MiB; the stream
+has no aggregate body cap. Callbacks run sequentially and apply backpressure.
+Avoid slow callbacks: idle reads are measured when the response is polled,
+and HTTP deadlines are checked after each callback returns. The evaluator
+uses its own interrupt checkpoints inside callbacks; the HTTP reader never
+cancels a callback midway through its evaluator frame. Synchronous callback
+work cannot be pre-empted.
+
+The result includes `status`, `headers`, `final_url`, `duration_ms`,
+`error_code`, `error`, `bytes_received` and `stopped` (true on callback stop).
+For streams, `body`/`bytes` contain only an unfinished line on failure;
+completed lines have already reached the callback. Successful streams
+return empty `body`/`bytes`. Byte counts include line terminators and any
+bytes already read ahead in the current chunk. Counts refer to decoded body
+bytes, excluding HTTP framing and compressed wire bytes. Buffered calls with an idle
+limit retain all received bytes in `bytes` and UTF-8 `body` (otherwise nil),
+including on failure, subject to the existing 64 MiB cap.
+
+Operational failures are values: `status: 0` with `HTTP_IDLE_TIMEOUT` for
+inactivity, `HTTP_TIMEOUT` for the whole-call cap, `HTTP_STREAM_CUT` for a
+body cut short (Content-Length or chunked framing), or `HTTP_INTERRUPTED`.
+Close-delimited EOF is a normal end: without framing, a client cannot tell
+an intentional close from a truncated application message. Received bytes
+remain counted even when an error follows. Inspect the result before trusting
+application-level completeness.
+
+This callback API follows Mix's evaluator-level higher-order builtins.
+The active call owns the async response, so early return, callback errors,
+SIGINT/SIGTERM cancellation and retiring the evaluator drop the connection;
+there is no persistent handle to leak or to close in a `finally` block.
+Network capability is required, with FsRead additionally required for
+`ca_file`, just as for the buffered calls.
+
+Implementation: the idle/stream path uses the workspace's async reqwest
+client. **With no whole-call deadline, ureq 2's socket idle timeout does
+work.** When both are configured, its total deadline overrides the socket
+read timeout. It also exposes a blocking response reader, so cancellation
+cannot drop an in-flight read promptly. Async reads let Mix enforce both
+budgets and drop the response on cancellation without a detached reader
+thread. Idle option validation is shared with file transfers. Calls without
+an idle option keep their established ureq path.
+
+TLS uses the same explicit rustls configuration: the same webpki roots as
+the existing HTTP builtins, `ca_file`/`ca_pem` added to that set, and the
+same signature-checking but trust-bypassing verifier for `ssl_verify: false`.
+The CA options remain mutually exclusive with each other and with disabled
+verification. Reqwest inherits `default-features: false` and `rustls-tls`
+from the workspace; gzip/brotli decoding is Rust code. This change enables
+neither native-tls nor OpenSSL and uses the existing rustls 0.23 version.
+That dependency choice is intended for static musl too; a successful
+`x86_64-unknown-linux-musl` build with `-C target-feature=+crt-static` still
+needs to be verified on the build worker.
+
+Redirects match `http_get`/`http_post`/`http_request`: ureq's configured
+budget of five requests permits four followed redirects and fails on a
+fifth 3xx. 301/302/303 switch methods other than GET/HEAD to GET; 307/308
+follow only GET/HEAD/OPTIONS/TRACE, without replaying a request body.
+Authorization, Cookie and Content-Length are removed when following a
+redirect, including to the same host. The final URL is reported. The
+separate file-transfer builtins disable redirects and return 3xx. These
+are distinct existing policies.
+
 ## Streaming file download (0.97.0)
 
 `http_get_file(url, path[, opts]) -> map<http_file_response>` streams GET to a
@@ -122,9 +222,9 @@ body_len=559
 ## The four calls
 
 ```
-http_get(url, [headers], [{timeout, ssl_verify, ca_file, ca_pem}])                      -- GET
-http_post(url, body, [headers], [{timeout, ssl_verify, ca_file, ca_pem}])               -- POST with a body
-http_request(method, url, [body], [headers], [{timeout, ssl_verify, ca_file, ca_pem}])  -- any verb
+http_get(url, [headers], [{timeout, idle_timeout, ssl_verify, ca_file, ca_pem}])                      -- GET
+http_post(url, body, [headers], [{timeout, idle_timeout, ssl_verify, ca_file, ca_pem}])               -- POST with a body
+http_request(method, url, [body], [headers], [{timeout, idle_timeout, ssl_verify, ca_file, ca_pem}])  -- any verb
 http_post_multipart(url, fields, files, [headers], [opts])                              -- POST multipart/form-data
 ```
 
@@ -133,7 +233,7 @@ http_post_multipart(url, fields, files, [headers], [opts])                      
 - `body` — a string (sent as UTF-8) or a `bytes` buffer (sent raw); see [Request bodies](#request-bodies).
 - `fields` / `files` (`http_post_multipart` only, v0.103.12) — `fields` is a map of string form fields; `files` is a map of `field_name → {filename, content_type?, data: bytes|buffer}`. The multipart boundary is generated and the `Content-Type` header set accordingly — the generic webhook/file-upload slot, so a vendor upload is a script over this, never a core dependency (see [Request bodies](#request-bodies)).
 - `method` (`http_request` only) — upper-cased internally, so `"get"`, `"Get"`, `"GET"` are equivalent. It must be a valid [RFC 7230](https://www.rfc-editor.org/rfc/rfc7230) token (no spaces / control bytes) or the call returns the error shape — this guards against request-line injection.
-- `{timeout, ssl_verify, ca_file, ca_pem}` — an optional trailing **opts map**. `timeout` bounds the whole request (default 30 s, `{timeout: 0}` disables — see [Timeouts](#timeouts)). `ssl_verify` defaults to `true`; `ssl_verify: false` **skips TLS certificate and hostname verification** for that call (like `curl -k`) — see [Skipping TLS verification](#skipping-tls-verification).
+- `{timeout, idle_timeout, ssl_verify, ca_file, ca_pem}` — an optional trailing **opts map**. `timeout` bounds the whole request (default 30 s, `{timeout: 0}` disables — see [Timeouts](#timeouts)). `ssl_verify` defaults to `true`; `ssl_verify: false` **skips TLS certificate and hostname verification** for that call (like `curl -k`) — see [Skipping TLS verification](#skipping-tls-verification).
 - `ca_file` / `ca_pem` (v0.29.0) — trust a **private CA** for this call: `ca_file` reads PEM certificate(s) from a path, `ca_pem` takes them inline (string/bytes/buffer). The certificates are **ADDED to the default (Mozilla webpki) roots** — chain building and hostname verification still run in full, so this is the right way to talk to an internal endpoint with a proper private-CA-issued cert (the readiness-check case), unlike `ssl_verify: false` which proves nothing. Mutually exclusive with each other and with `ssl_verify: false`; input capped at 4 MiB; a missing/unreadable file, invalid PEM, or PEM with no certificates raises a catchable `HTTP_TLS` structured error (see [errors](errors.md)). In a capability-sandboxed embedder, `ca_file` additionally requires the `fs-read` class (declared as a conditional capability in the builtin metadata).
 
 `http_get` takes 1–3 arguments, `http_post` 2–4, `http_request` 2–5. Too few
@@ -278,7 +378,7 @@ http_get($url, { "X-Token": $raw_bytes })
 ```
 
 One carve-out: a **sole** map in this slot whose keys are **all** opts keys
-(`timeout`, `ssl_verify`, `ca_file`, `ca_pem`) is read as the opts map, not as headers — see
+(`timeout`, `idle_timeout`, `ssl_verify`, `ca_file`, `ca_pem`) is read as the opts map, not as headers — see
 [the trailing-map rule](#the-trailing-map-rule). Any real-world header map
 (carrying a non-opts key like `Authorization`) is unaffected.
 
@@ -381,7 +481,7 @@ print($r["status"] .. " / " .. $r["error"])
 
 The opts map rides in the **last** slot, after the optional headers (and, for
 `http_request`, body) slots. To keep the common case short, a **sole trailing
-map whose keys are all opts keys (`timeout`, `ssl_verify`, `ca_file`, `ca_pem`) is always read as the
+map whose keys are all opts keys (`timeout`, `idle_timeout`, `ssl_verify`, `ca_file`, `ca_pem`) is always read as the
 opts map** — never as a headers map, and never as a request body:
 
 ```mix
@@ -497,7 +597,7 @@ end
 
 ## Notes & sharp edges
 
-- **Blocking & synchronous.** Each call blocks until the response is buffered, the deadline expires (30 s default — see [Timeouts](#timeouts)), or the body cap / a transport error trips. There is no async variant — for latency- sensitive paths, tighten `{timeout: N}` and branch on `status == 0`.
+- **Sequential calls.** Buffered calls return after collecting the body; `http_stream` runs callbacks during the read. The idle/stream path yields during network waits so cancellation can close it. All calls retain the default 30 s whole-call cap unless disabled.
 - **No automatic retries, no cookie jar, no redirect-body replay** — `ureq`'s defaults apply (redirects are followed). Add your own retry loop if you need one.
 - **TLS is on for `https://`.** A bad certificate surfaces as a transport error (`status: 0`), not a panic.
 - **Headers and methods are validated** to block request-line / header injection: a non-token method and a `bytes` header value are both rejected in-band (the former as `{status: 0, error}`, the latter as a runtime error).

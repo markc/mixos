@@ -34,7 +34,7 @@ url = ["dep:url"]
 # `sha-crypt` joined 0.102.6 for the $6$/$5$ schemes every NS passdb
 # (Dovecot {SHA512-CRYPT}) uses — same feature, same client-side story.
 crypto = ["dep:blake3", "dep:sha2", "dep:sha1", "dep:md-5", "dep:base64", "dep:uuid", "dep:bcrypt", "dep:sha-crypt", "dep:ring", "dep:rustls-pemfile"]
-http = ["dep:ureq", "dep:webpki-roots", "dep:rustls-pemfile", "dep:blake3"]
+http = ["dep:ureq", "dep:reqwest", "dep:webpki-roots", "dep:rustls-pemfile", "dep:blake3"]
 sqlite = ["dep:rusqlite"]
 # `tokio-sleep` is an alias-only feature kept for backwards
 # compatibility with consumers that still list
@@ -174,6 +174,7 @@ unicode-width = "0.2"
 # above: no_std-capable, one small dependency (tinyvec), already in the lock.
 unicode-normalization = "0.1"
 ureq = { version = "2", optional = true }
+reqwest = { workspace = true, optional = true, features = ["gzip", "brotli"] }
 # http `ca_file`/`ca_pem` (0.29.0): private-CA trust ADDED to the default
 # webpki roots. Version lines match ureq 2's own transitive deps so cargo
 # unifies them (no second rustls/root-store in the tree).

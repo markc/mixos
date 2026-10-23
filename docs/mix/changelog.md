@@ -10,6 +10,16 @@ generated: by docs/_build/gen-site.mix from libs/mix/CHANGELOG.md; do not edit
 
 ## Unreleased
 
+### Added
+
+- `idle_timeout` on `http_get`, `http_post` and `http_request`, independent
+  of the existing whole-call `timeout` (0 disables that cap).
+- `http_stream(method, url, on_line[, body, headers, opts])` delivers SSE
+  lines during the response; returning false closes promptly. Scoped async
+  reads release the response on callback errors, cancellation and evaluator
+  retirement. Failures return status 0, received byte counts and partial
+  bytes, with `HTTP_IDLE_TIMEOUT`, `HTTP_STREAM_CUT` or `HTTP_TIMEOUT`.
+
 ### Changed
 
 - A `fn` or `function` named after a builtin is refused at its definition

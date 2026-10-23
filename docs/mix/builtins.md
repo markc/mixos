@@ -2,6 +2,11 @@
 
 Every Mix builtin grouped by category, generated from the binary's own `mix builtins --json`. See the linked topical page for prose and examples; `mix what NAME` prints a one-line description of any single builtin (or keyword), and `mix help` prints a compact names-only summary.
 
+For incremental HTTP responses, see [`http_stream`](http.md#response-streams-and-idle-timeouts):
+a scoped line callback with early stop, independent idle and whole-call
+timeouts, and partial-byte diagnostics. The same `idle_timeout` option is
+available on `http_get`, `http_post` and `http_request`.
+
 Some builtins are feature-gated on the `mixos-lib-mix` crate (`json`, `regex`, `toml`, `yaml`, `datetime`, `url`, `crypto`, `http`, `sqlite`, `archive`, `dkim`, `markdown`, `datastar`, `xml`, `mime`) so embedders can pull only what they need — the `mix` binary turns them all on.
 
 ## Machine-readable discovery (metadata_schema 1)
