@@ -431,7 +431,7 @@ impl State {
             self.work(task);
         }
         if let Some(catalogue) = self.engine.session.catalogue() {
-            self.replace_catalogue(catalogue, ctx);
+            self.sync_catalogue(catalogue, ctx);
         }
         self.finish_run(ctx);
         while let Ok(finished) = self.notifications.try_recv() {
@@ -887,6 +887,11 @@ impl State {
     }
 
     fn replace_catalogue(&mut self, catalogue: Catalogue, ctx: &egui::Context) {
+        self.engine.session.replace_catalogue(catalogue.clone());
+        self.sync_catalogue(catalogue, ctx);
+    }
+
+    fn sync_catalogue(&mut self, catalogue: Catalogue, ctx: &egui::Context) {
         // Cached keyboard picks refer to the old row-to-file mapping. Closing
         // invalidates both the highlight and any already queued activation.
         if !self.engine.catalogue.entries.is_empty()
@@ -897,7 +902,6 @@ impl State {
                 self.open = false;
             }
         }
-        self.engine.session.replace_catalogue(catalogue.clone());
         self.engine.catalogue = catalogue;
     }
 }
@@ -2200,6 +2204,11 @@ mod tests {
             shadows: vec![],
         };
         runtime(&h).lock().unwrap().engine.catalogue.entries = vec![entry("alpha")];
+        {
+            let state = runtime(&h);
+            let state = state.lock().unwrap();
+            state.engine.session.replace_catalogue(state.engine.catalogue.clone());
+        }
         h.get_by_label("Macros").click();
         h.run_steps(5);
         h.event(egui::Event::Text("a".into()));
