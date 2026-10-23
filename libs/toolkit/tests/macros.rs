@@ -167,7 +167,10 @@ fn same_frame_toggle_and_close_leave_the_app_panel_closed() {
     h.state_mut().modal = false;
     h.get_by_label("Toggle macros").click();
     h.run_steps(40);
-    assert!(h.state().open, "the opening click must not dismiss the panel");
+    assert!(
+        h.state().open,
+        "the opening click must not dismiss the panel"
+    );
 }
 
 #[test]
