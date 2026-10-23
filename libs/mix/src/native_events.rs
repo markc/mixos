@@ -59,39 +59,6 @@ struct PendingProcess {
     terminal: Option<serde_json::Value>,
 }
 
-#[cfg(test)]
-mod process_tests {
-    use super::*;
-    #[tokio::test]
-    async fn overflow_count_is_reported_once_before_lines_and_terminal_is_last() {
-        let queue = Queue::default();
-        queue.pending.lock().unwrap().processes.insert(
-            "process:test".into(),
-            PendingProcess {
-                tag: "test".into(),
-                max_queue: 2,
-                ..Default::default()
-            },
-        );
-        for n in 0..7 {
-            queue.process_line("process:test", "stdout", n.to_string(), false);
-        }
-        queue.process_exited("process:test", Some(0), None);
-        let event = queue.next(None).await.unwrap();
-        assert_eq!(event.command, "proc.overflow");
-        let body: serde_json::Value = serde_json::from_str(&event.body).unwrap();
-        assert_eq!(body["dropped"], 5);
-        for n in 0..2 {
-            let event = queue.next(None).await.unwrap();
-            assert_eq!(event.command, "proc.line");
-            let body: serde_json::Value = serde_json::from_str(&event.body).unwrap();
-            assert_eq!(body["line"], n.to_string());
-        }
-        assert_eq!(queue.next(None).await.unwrap().command, "proc.watch_exited");
-        assert!(queue.pending.lock().unwrap().processes.is_empty());
-    }
-}
-
 /// One socket subscription's ordered FIFO (ws_on/tcp_on). Ordered and
 /// lossless — the antipode of the coalescing `sources` map above, which is
 /// deliberately unsuitable for frames.
@@ -680,7 +647,7 @@ impl Queue {
                             && let Some(so) = &so
                         {
                             p.last_socket = Some(so.clone());
-                            p.turn = 0;
+                            p.turn = 4;
                             return Ok(Self::take_socket(&mut p, so).unwrap());
                         }
                     }
@@ -809,7 +776,7 @@ impl NativeEvents {
             }
     }
 
-    /// `net_watch`: one rtnetlink subscription per handle.
+    /// One directly executed child per handle, with ordered pipe records.
     pub fn process_watch(&mut self, args: &[Value]) -> MixResult<String> {
         self.ensure_open()?;
         self.processes.retain(|_, p| !p.finished());
@@ -1830,3 +1797,56 @@ mod tests {
         std::fs::remove_dir(path).unwrap();
     }
 }
+
+#[cfg(test)]
+mod process_tests {
+    use super::*;
+
+    #[cfg(feature = "ws")]
+    #[tokio::test]
+    async fn continuously_ready_socket_cannot_starve_process_lines() {
+        let queue = Queue::default();
+        queue.register_socket_for_test("tcp:test", "data", "tcp");
+        queue.pending.lock().unwrap().processes.insert(
+            "process:test".into(),
+            PendingProcess { max_queue: 2, ..Default::default() },
+        );
+        queue.process_line("process:test", "stdout", "line".into(), false);
+        let mut seen = Vec::new();
+        for _ in 0..2 {
+            assert!(queue.socket_push("tcp:test", crate::builtins::socket_sources::SocketRecord { kind: "line", data: b"frame".to_vec() }));
+            seen.push(queue.next(None).await.unwrap().command);
+        }
+        assert_eq!(seen, ["data", "proc.line"]);
+    }
+
+    #[tokio::test]
+    async fn overflow_count_is_reported_once_before_lines_and_terminal_is_last() {
+        let queue = Queue::default();
+        queue.pending.lock().unwrap().processes.insert(
+            "process:test".into(),
+            PendingProcess {
+                tag: "test".into(),
+                max_queue: 2,
+                ..Default::default()
+            },
+        );
+        for n in 0..7 {
+            queue.process_line("process:test", "stdout", n.to_string(), false);
+        }
+        queue.process_exited("process:test", Some(0), None);
+        let event = queue.next(None).await.unwrap();
+        assert_eq!(event.command, "proc.overflow");
+        let body: serde_json::Value = serde_json::from_str(&event.body).unwrap();
+        assert_eq!(body["dropped"], 5);
+        for n in 0..2 {
+            let event = queue.next(None).await.unwrap();
+            assert_eq!(event.command, "proc.line");
+            let body: serde_json::Value = serde_json::from_str(&event.body).unwrap();
+            assert_eq!(body["line"], n.to_string());
+        }
+        assert_eq!(queue.next(None).await.unwrap().command, "proc.watch_exited");
+        assert!(queue.pending.lock().unwrap().processes.is_empty());
+    }
+}
+

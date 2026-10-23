@@ -24,6 +24,8 @@ async fn watcher() -> Evaluator {
         r#"
         $lines = []
         $exits = []
+        $last_line_count = 0
+        $pong = false
         on proc.line
             $lines = concat($lines, [$event.args])
         end
@@ -217,7 +219,7 @@ async fn reload_candidate_and_bad_options_never_start_children() {
     let error = exec(&mut e, r#"process_watch(["sleep", "1000"])"#)
         .await
         .unwrap_err();
-    assert!(error.to_string().contains("PROC_WATCH_RELOAD_CANDIDATE"));
+    assert!(matches!(error, mix::MixError::Structured(info) if info.code == "PROC_WATCH_RELOAD_CANDIDATE"));
     e.set_reload_candidate(false);
     for source in [
         r#"process_watch([])"#,

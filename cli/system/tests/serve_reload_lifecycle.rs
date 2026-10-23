@@ -381,7 +381,7 @@ if not is_reload_candidate() then start_watch() end
     )
     .unwrap();
     call(&c, "RELOAD", json!({})).await.unwrap();
-    wait_stderr(&dir, "PROC_WATCH_RELOAD_CANDIDATE", HARD);
+    wait_stderr(&dir, "process_watch cannot start during reload preparation", HARD);
     assert!(alive(first));
     assert!(call(&c, "rel.state", json!({})).await.is_ok());
     std::fs::write(&script_path, &source).unwrap();
