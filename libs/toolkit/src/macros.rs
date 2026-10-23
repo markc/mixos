@@ -693,6 +693,45 @@ fn notify_output_with(
     }
 }
 
+fn launch(path: &Path, folder: bool) -> io::Result<()> {
+    let native = if folder {
+        "/opt/mixos/bin/dopus"
+    } else {
+        "/opt/mixos/bin/ced"
+    };
+    let mut child = Command::new(if Path::new(native).is_file() {
+        native
+    } else {
+        "xdg-open"
+    })
+    .arg(path)
+    .stdin(Stdio::null())
+    .stdout(Stdio::null())
+    .stderr(Stdio::null())
+    .spawn()?;
+    std::thread::spawn(move || {
+        let _ = child.wait();
+    });
+    Ok(())
+}
+
+pub fn show_app(ctx: &egui::Context, app: &str, open: bool) -> bool {
+    let id = egui::Id::new(("shared-macros", app));
+    let state: Option<Arc<Mutex<State>>> = ctx.data(|d| d.get_temp(id));
+    if !open && state.is_none() {
+        return false;
+    }
+    let state = state.unwrap_or_else(|| {
+        let state = Arc::new(Mutex::new(State::new(app)));
+        ctx.data_mut(|d| d.insert_temp(id, state.clone()));
+        state
+    });
+    let mut state = state.lock().unwrap();
+    state.open = open;
+    state.show(ctx);
+    state.open != open
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -878,43 +917,4 @@ mod tests {
         h.run_steps(40);
         h.snapshot("macros_editor");
     }
-}
-
-fn launch(path: &Path, folder: bool) -> io::Result<()> {
-    let native = if folder {
-        "/opt/mixos/bin/dopus"
-    } else {
-        "/opt/mixos/bin/ced"
-    };
-    let mut child = Command::new(if Path::new(native).is_file() {
-        native
-    } else {
-        "xdg-open"
-    })
-    .arg(path)
-    .stdin(Stdio::null())
-    .stdout(Stdio::null())
-    .stderr(Stdio::null())
-    .spawn()?;
-    std::thread::spawn(move || {
-        let _ = child.wait();
-    });
-    Ok(())
-}
-
-pub fn show_app(ctx: &egui::Context, app: &str, open: bool) -> bool {
-    let id = egui::Id::new(("shared-macros", app));
-    let state: Option<Arc<Mutex<State>>> = ctx.data(|d| d.get_temp(id));
-    if !open && state.is_none() {
-        return false;
-    }
-    let state = state.unwrap_or_else(|| {
-        let state = Arc::new(Mutex::new(State::new(app)));
-        ctx.data_mut(|d| d.insert_temp(id, state.clone()));
-        state
-    });
-    let mut state = state.lock().unwrap();
-    state.open = open;
-    state.show(ctx);
-    state.open != open
 }

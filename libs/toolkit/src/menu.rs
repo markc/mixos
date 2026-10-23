@@ -728,17 +728,16 @@ pub fn anchored(
         });
         if outside {
             nav.close();
-        } else if (released && !opening) || shown.activated.is_some() {
-            if let Some(index) = shown.activated.or(shown.under)
-                && !ctx.input(|i| {
-                    i.pointer
-                        .interact_pos()
-                        .is_some_and(|p| shown.bar.is_some_and(|r| r.contains(p)))
-                })
-            {
-                nav.hover(0, index, &menus);
-                pick = nav.activate(&menus, secondary);
-            }
+        } else if ((released && !opening) || shown.activated.is_some())
+            && let Some(index) = shown.activated.or(shown.under)
+            && !ctx.input(|i| {
+                i.pointer
+                    .interact_pos()
+                    .is_some_and(|p| shown.bar.is_some_and(|r| r.contains(p)))
+            })
+        {
+            nav.hover(0, index, &menus);
+            pick = nav.activate(&menus, secondary);
         }
     }
     *open = nav.open_menu().is_some();
