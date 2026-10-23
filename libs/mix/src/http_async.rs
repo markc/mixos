@@ -412,7 +412,13 @@ async fn perform(
             if let Some(callback) = callback {
                 for &byte in &chunk {
                     pending.push(byte);
-                    if pending.len() as u64 > MAX_HTTP_BODY_BYTES {
+                    // The cap is on line content: the terminating \n, and a
+                    // \r that may start a CRLF, do not count, so a line of
+                    // exactly 64 MiB plus its terminator is accepted
+                    // (DeepSeek review). A \r that turns out to be data is
+                    // counted once the next byte arrives.
+                    let limit = MAX_HTTP_BODY_BYTES + u64::from(byte == b'\r');
+                    if byte != b'\n' && pending.len() as u64 > limit {
                         failure(&mut map, "HTTP_BODY_LIMIT", "line exceeds 64 MiB cap");
                         return Ok(());
                     }
