@@ -287,6 +287,7 @@ fn pair_visuals(theme: &Theme) -> Visuals {
 /// goes in both egui theme slots: the MixOS theme, not the system
 /// preference, picks the mode.
 pub fn apply(ctx: &egui::Context, theme: &Theme) {
+    ctx.data_mut(|d| d.insert_temp(egui::Id::new("toolkit.editor-palette"), editor::Palette::from_theme(theme)));
     ctx.options_mut(|options| {
         options.input_options.max_double_click_delay = theme.style().double_click_time;
     });

@@ -169,6 +169,30 @@ fn create_and_copy_never_overwrite_the_destination_tier() {
     }
 }
 
+#[test]
+fn create_from_title_slugs_and_allocates_without_overwriting() {
+    let temp = tempfile::tempdir().unwrap();
+    let roots = roots(temp.path());
+    for (title, expected) in [
+        ("Tidy imports", "tidy-imports.mix"),
+        ("Tidy imports", "tidy-imports-2.mix"),
+        ("Tidy imports", "tidy-imports-3.mix"),
+        ("  A___B!? C  ", "a-b-c.mix"),
+        ("日本語", "macro.mix"),
+    ] {
+        let path = roots.create_from_title("ced", title).unwrap();
+        assert_eq!(path.file_name().unwrap(), expected);
+        assert!(fs::read_to_string(path).unwrap().starts_with(&format!("-- title: {title}\n")));
+    }
+    let original = roots.user.join("ced/tidy-imports.mix");
+    let before = fs::read(&original).unwrap();
+    assert!(roots.create("ced", Tier::UserApp, "tidy-imports", "Other").is_err());
+    assert_eq!(fs::read(original).unwrap(), before);
+    for title in ["", "  ", "Injected\nprint(1)", "Injected\rtitle"] {
+        assert!(roots.create_from_title("ced", title).is_err());
+    }
+}
+
 #[cfg(unix)]
 #[test]
 fn symlinks_may_stay_inside_but_must_never_escape_the_root() {

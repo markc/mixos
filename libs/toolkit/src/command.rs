@@ -493,6 +493,7 @@ impl<S> Registry<S> {
     /// ignores extra Shift and Alt: Ctrl+Shift+S never runs the Ctrl+S
     /// command, even when the Ctrl+Shift+S command is disabled.
     pub fn shortcuts(&self, ctx: &egui::Context, state: &S) -> Vec<&'static str> {
+        crate::macros::keyboard(ctx);
         let mut fired = Vec::new();
         if menu::is_open(ctx) {
             return fired;

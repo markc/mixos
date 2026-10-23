@@ -85,6 +85,38 @@ impl Roots {
         self.write_new(app, tier, id, text.as_bytes())
     }
 
+    /// Slug a title and allocate a fresh name using the same exclusive create
+    /// path as `create`. Only a name clash is retried.
+    pub fn create_from_title(&self, app: &str, title: &str) -> io::Result<PathBuf> {
+        if title.trim().is_empty() || title.contains(['\n', '\r']) {
+            return Err(invalid("title must be a non-empty single line"));
+        }
+        let mut slug = String::new();
+        let mut separator = false;
+        for ch in title.chars() {
+            if ch.is_ascii_alphanumeric() {
+                if separator && !slug.is_empty() {
+                    slug.push('-');
+                }
+                slug.push(ch.to_ascii_lowercase());
+                separator = false;
+            } else {
+                separator = true;
+            }
+        }
+        if slug.is_empty() {
+            slug.push_str("macro");
+        }
+        for n in 1u64.. {
+            let id = if n == 1 { slug.clone() } else { format!("{slug}-{n}") };
+            match self.create(app, Tier::UserApp, &id, title) {
+                Err(err) if err.kind() == io::ErrorKind::AlreadyExists => continue,
+                result => return result,
+            }
+        }
+        unreachable!("exhausted macro names")
+    }
+
     pub fn copy_to_user(&self, app: &str, entry: &Entry) -> io::Result<PathBuf> {
         if entry.tier.is_user() {
             return Err(invalid("macro is already in a user tier"));

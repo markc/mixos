@@ -842,3 +842,18 @@ mod tests {
         ));
     }
 }
+impl editor::palette::Theme for Theme {
+    fn editor_colour(&self, role: &str) -> egui::Color32 {
+        let chrome = crate::chrome::Chrome::for_theme(self);
+        if role == "selection" {
+            return chrome.palette.selection(&chrome.style);
+        }
+        if let Some(colour) = chrome.palette.get(role) {
+            return colour;
+        }
+        self.dictionary().colours.primitives.get(role)
+            .map(|value| crate::style::colour(*value))
+            .unwrap_or(if role == "palette.accent.hover" { chrome.palette.accent } else { chrome.palette.text })
+    }
+}
+

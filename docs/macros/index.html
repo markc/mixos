@@ -209,7 +209,7 @@
                 <div class="panel-content">
                     <nav id="toc-nav">
                         <a href="#folders-and-precedence">Folders and precedence</a>
-                        <a href="#using-the-panel">Using the panel</a>
+                        <a href="#using-the-menu">Using the menu</a>
                         <a href="#execution-context">Execution context</a>
                         <a href="#library-boundaries">Library boundaries</a>
                     </nav>
@@ -262,23 +262,39 @@ shallow; it does not traverse another app's folder.</p>
 <p>For the same id, <strong>user per-app &gt; user global &gt; built-in per-app &gt; built-in
 global</strong>. The catalogue lists the winning entries by id, labels each tier
 and marks entries that shadow lower tiers. Missing folders are fine.</p>
-<h2 id="using-the-panel">Using the panel</h2>
+<h2 id="using-the-menu">Using the menu</h2>
 <p>The Macros icon is the first standard icon, immediately before search when
-the app provides search. <strong>Run</strong> starts one macro at a time per window.
-Output scrolls in a monospace view. The last 64 KiB of combined standard
-output and standard error are retained; the panel says when older output
-was dropped. <strong>Stop</strong> kills the process group and reaps the child in the
-background. Closing the panel leaves a running macro alone; closing the
-window requests termination and background reaping.</p>
-<p><strong>Edit</strong> opens a user macro in Ced, or copies a built-in macro to the
-matching user tier before opening it. <strong>New global</strong> and <strong>New for this app</strong>
-ask for an id and title, create a short template and open it for editing.
-Creating and copying refuse to overwrite an existing file in that tier.
-Choose <strong>Reload</strong> after changing a file; folder watching is future work.</p>
-<p><strong>Open global folder</strong> and <strong>Open app folder</strong> create the user folder if
-needed and open it in Dopus. When the native editor or file manager is
-absent, the system's <code>xdg-open</code> handles the path. Discovery, storage and
-launchers run on background threads.</p>
+the app provides search. It opens a transient drop-down directly beneath
+the icon. <strong>New macro…</strong> and <strong>Open Workshop</strong> come first, followed by this
+app's macros, then global macros, in catalogue order within each group.
+A dim dot marks built-ins. At most fifteen macros are shown; <strong>More in
+Workshop…</strong> reaches the rest. Workshop is planned; both Workshop entries
+currently open this app's user macro folder in Dopus, with <code>xdg-open</code> as
+the fallback.</p>
+<p>Left release runs a macro; right release edits it. Arrows move the highlight,
+Enter runs, Shift+Enter edits, and a letter jumps to the next matching title.
+Run, edit, Escape and an outside click close the menu and release its keys.
+One macro runs per window. A busy dot appears on the icon, and the first
+menu entry becomes <strong>Stop "Title"</strong>. Stop kills the process group and reaps
+the child in the background. Closing the menu leaves the run alone; closing
+the app requests termination and background reaping.</p>
+<p><strong>New macro…</strong> asks only for a title in a one-line field at the menu anchor.
+Enter creates the template in this app's user folder and opens the small
+editor; Escape cancels. Titles become ASCII slugs: <code>Tidy imports</code> creates
+<code>tidy-imports.mix</code>, then <code>tidy-imports-2.mix</code> on a clash. A title without ASCII
+letters or digits uses <code>macro</code>. Creation and copying never overwrite files.
+Editing a built-in first copies it to the matching user tier.</p>
+<p>The small editor is a non-modal floating window using the shared editor.
+Click its text to edit; the app remains usable alongside it. Ctrl+S saves
+and refreshes the menu catalogue. Ctrl+Enter saves then runs. <strong>Open in Ced</strong>
+hands off larger edits, with <code>xdg-open</code> as fallback. Discovery, file storage,
+launchers and notification work run on background threads.</p>
+<p>Every completed run posts a notifyd toast: title and done or failed status,
+plus the last few output lines. <strong>Show output</strong> opens that run's retained
+output in the editor's bottom strip. The runner retains the last 64 KiB of
+combined standard output and standard error. If notifyd is absent or sending
+fails, the output strip opens automatically. A successful run without output
+still reports done. Notification actions are read using <code>notify.get</code>.</p>
 <h2 id="execution-context">Execution context</h2>
 <p>The runner starts <code>/opt/mixos/bin/mix &lt;path&gt;</code> directly, without a shell
 wrapper. An absolute <code>MIXOS_MIX</code> selects another Mix binary. Its working
@@ -300,10 +316,10 @@ title; otherwise the id is shown. Header reads are bounded to 8 KiB.</p>
 <h2 id="library-boundaries">Library boundaries</h2>
 <p><code>libs/macros</code> is a core library with no egui dependency. It resolves roots,
 discovers files, creates or copies user macros and owns the background
-runner. <code>toolkit::macro_panel</code> accepts plain display data and returns
-actions. <code>toolkit::macros::State</code> joins that widget to the core, with
+runner. <code>toolkit::menu::anchored</code> reuses menu navigation and row rendering.
+<code>toolkit::macros::State</code> joins the menu and shared editor to the core, with
 <code>toggle</code>, <code>reload</code> and <code>show</code> methods. Its per-window adapter keeps runtime
-resources in the egui context while each app keeps the panel's open flag
+resources in the egui context while each app keeps the menu's open flag
 in its UI state. This keeps application engines below the GUI boundary in
 the application layering gate.</p>
 <p>Bus-specific macro verbs, filesystem watching and per-app context adapters

@@ -208,6 +208,7 @@
                 <div class="panel-title">On this page</div>
                 <div class="panel-content">
                     <nav id="toc-nav">
+                        <a href="#unreleased--2026-10-23">Unreleased — 2026-10-23</a>
                         <a href="#unreleased--2026-10-21">Unreleased — 2026-10-21</a>
                     </nav>
                 </div>
@@ -238,6 +239,16 @@
 </blockquote>
 &lt;!-- SPDX-License-Identifier: MIT OR Apache-2.0 --&gt;
 <h1 id="changelog">Changelog</h1>
+<h2 id="unreleased--2026-10-23">Unreleased — 2026-10-23</h2>
+<ul>
+<li>Replace the modal Macros panel with an icon-anchored menu, title-only
+creation and a non-modal shared editor with save/run shortcuts.</li>
+<li>Report completed macros through notifyd, retaining output per notification
+and opening the output strip if notifications are unavailable.</li>
+<li>Reuse menu navigation and drawing for anchored menus, including secondary
+release, Shift+Enter editing and title-initial navigation.</li>
+<li>Accept the shared editor's palette role interface without a dependency cycle.</li>
+</ul>
 <h2 id="unreleased--2026-10-21">Unreleased — 2026-10-21</h2>
 <ul>
 <li>Publish command contract 0.2.0 executed bodies (v2, bounded params and result).</li>

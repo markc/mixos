@@ -18,9 +18,15 @@
 use design::{LinearRgba, contrast_ratio};
 use editor_model::highlight::HlClass;
 use egui::{Color32, Rgba};
-use toolkit::Theme;
-use toolkit::chrome::Chrome;
-use toolkit::style::colour;
+/// The owner supplies resolved theme roles, keeping the editor independent
+/// of the shell which embeds it.
+pub trait Theme {
+    fn editor_colour(&self, role: &str) -> Color32;
+}
+
+impl<T: Theme + ?Sized> Theme for std::sync::Arc<T> {
+    fn editor_colour(&self, role: &str) -> Color32 { self.as_ref().editor_colour(role) }
+}
 
 /// Highlight classes, [`HlClass::Plain`] to [`HlClass::Invalid`].
 pub const HL_CLASSES: usize = HlClass::Invalid as usize + 1;
@@ -71,46 +77,42 @@ impl Palette {
     }
 
     /// The editor colours of `theme`.
-    pub fn from_theme(theme: &Theme) -> Self {
-        let chrome = Chrome::for_theme(theme);
-        let c = &chrome.palette;
-        let d = theme.dictionary();
-        let prim =
-            |name: &str, or: Color32| d.colours.primitives.get(name).map_or(or, |v| colour(*v));
+    pub fn from_theme(theme: &(impl Theme + ?Sized)) -> Self {
+        let get = |role| theme.editor_colour(role);
         // The hue schemes read their roles back from egui's visuals, where
         // dim text can equal text; the design's muted foreground then serves.
-        let dim = if c.text_dim == c.text {
-            prim("palette.foreground.muted", c.text)
+        let dim = if get("text_dim") == get("text") {
+            get("palette.foreground.muted")
         } else {
-            c.text_dim
+            get("text_dim")
         };
         let roles = Roles {
-            text: c.text,
+            text: get("text"),
             dim,
-            accent: c.accent,
-            accent_hover: prim("palette.accent.hover", c.accent),
-            success: prim("status.success", c.text),
-            warning: c.warning,
-            danger: c.danger,
+            accent: get("accent"),
+            accent_hover: get("palette.accent.hover"),
+            success: get("status.success"),
+            warning: get("warning"),
+            danger: get("danger"),
         };
-        let background = c.field;
-        let mut highlight = [c.text; HL_CLASSES];
+        let background = get("field");
+        let mut highlight = [get("text"); HL_CLASSES];
         for (slot, class) in highlight.iter_mut().zip(ALL_CLASSES) {
-            *slot = legible(class_role(&roles, class), c.text, background);
+            *slot = legible(class_role(&roles, class), get("text"), background);
         }
         Self {
             background,
-            text: c.text,
-            gutter_text: legible(c.text_faint, c.text, background),
-            current_line: c.hover,
-            selection: selection(c.selection(&chrome.style), c.accent),
-            caret: c.text,
-            separator: c.separator,
-            human_other: c.accent,
-            agent: c.warning,
-            error: c.danger,
-            warning: c.warning,
-            note: c.text_dim,
+            text: get("text"),
+            gutter_text: legible(get("text_faint"), get("text"), background),
+            current_line: get("hover"),
+            selection: selection(get("selection"), get("accent")),
+            caret: get("text"),
+            separator: get("separator"),
+            human_other: get("accent"),
+            agent: get("warning"),
+            error: get("danger"),
+            warning: get("warning"),
+            note: get("text_dim"),
             highlight,
         }
     }
@@ -193,6 +195,7 @@ fn legible(candidate: Color32, text: Color32, background: Color32) -> Color32 {
 mod tests {
     use super::*;
     use design::{DesignContext, Mode, Scheme};
+    use toolkit::Theme;
 
     #[test]
     fn classes_are_in_discriminant_order() {
@@ -217,7 +220,18 @@ mod tests {
                     mode,
                     ..DesignContext::default()
                 });
-                let p = Palette::from_theme(&theme);
+                // Unit tests compile this crate separately from toolkit's
+                // normal dependency. Adapt its normal-build palette here.
+                struct TestTheme(toolkit::Theme);
+                impl super::Theme for TestTheme {
+                    fn editor_colour(&self, role: &str) -> Color32 {
+                        let c = toolkit::chrome::Chrome::for_theme(&self.0);
+                        if role == "selection" { return c.palette.selection(&c.style); }
+                        c.palette.get(role).or_else(|| self.0.dictionary().colours.primitives.get(role).map(|v| toolkit::style::colour(*v)))
+                            .unwrap_or(if role == "palette.accent.hover" { c.palette.accent } else { c.palette.text })
+                    }
+                }
+                let p = Palette::from_theme(&TestTheme(theme));
                 for class in ALL_CLASSES {
                     let c = p.hl(class);
                     assert!(

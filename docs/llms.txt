@@ -96,6 +96,7 @@ One line per component with a page: kind, then install profiles. The
   - [inputd — changelog](https://mixos.dev/inputd/changelog.md): Release notes of the inputd component, mirrored from services/inputd/CHANGELOG.md.
 - [logging](https://mixos.dev/logging/README.md): lib; profiles: none (library). Shared tracing, sink selection, reload handles and process statistics for MixOS services and the Mix shell.
 - [macros](https://mixos.dev/macros/README.md): lib; profiles: none (library). Shared Mix macro discovery, user storage and background execution for every MixOS app.
+  - [macros — changelog](https://mixos.dev/macros/changelog.md): Release notes of the macros component, mirrored from libs/macros/CHANGELOG.md.
 - [maild](https://mixos.dev/maild/README.md): service; profiles: server. JMAP, SMTP, IMAP and DAV mail service
   - [maild — changelog](https://mixos.dev/maild/changelog.md): Release notes of the maild component, mirrored from services/maild/CHANGELOG.md.
 - [mds](https://mixos.dev/mds/README.md): lib; profiles: none (library). Per-container-set SQLite metadata and a content-addressable blob store, the storage library that maild links and blobd will use. A library, not a daemon.

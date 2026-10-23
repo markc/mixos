@@ -31,9 +31,9 @@ edit.workspace = true
 editor-model.workspace = true
 egui.workspace = true
 serde.workspace = true
-toolkit.workspace = true
 
 [dev-dependencies]
+toolkit.workspace = true
 egui_kittest.workspace = true
 serde_json.workspace = true
 tempfile.workspace = true

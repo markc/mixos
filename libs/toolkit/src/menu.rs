@@ -517,8 +517,160 @@ fn state_id() -> Id {
 
 /// Whether a menu is open (and so has the keyboard) on `ctx`.
 pub fn is_open(ctx: &Context) -> bool {
-    ctx.data(|d| d.get_temp::<State>(state_id()))
+    ctx.data(|d| d.get_temp::<bool>(Id::new("toolkit.anchored-open"))).unwrap_or(false)
+        || ctx.data(|d| d.get_temp::<State>(state_id()))
         .is_some_and(|s| s.nav.open.is_some())
+}
+
+/// A release or keyboard activation from an icon-anchored menu.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Pick {
+    pub id: &'static str,
+    pub edit: bool,
+}
+
+#[derive(Clone)]
+struct AnchoredInput {
+    id: Id,
+    menus: Vec<Menu>,
+    result: Option<Pick>,
+    handled: bool,
+    keyed: bool,
+}
+
+/// Called by the title bar before application content gets its keys. The
+/// anchored menu is painted by its owner later, but shares the bar's input
+/// priority. In particular a focused app editor must never eat menu letters.
+pub(crate) fn anchored_keyboard(ctx: &Context) {
+    let cache_id = Id::new("toolkit.anchored-input");
+    let Some(mut cache) = ctx.data(|d| d.get_temp::<AnchoredInput>(cache_id)) else { return };
+    let Some(mut nav) = ctx.data(|d| d.get_temp::<Nav>(cache.id)) else { return };
+    if nav.open_menu().is_none() { return; }
+    let (result, keyed) = anchored_keys(ctx, &mut nav, &cache.menus);
+    cache.result = result;
+    cache.keyed = keyed;
+    cache.handled = true;
+    ctx.data_mut(|d| { d.insert_temp(cache.id, nav); d.insert_temp(cache_id, cache); });
+}
+
+fn anchored_keys(ctx: &Context, nav: &mut Nav, menus: &[Menu]) -> (Option<Pick>, bool) {
+    let mut pick = None;
+    let mut keyed = false;
+    ctx.input_mut(|input| input.events.retain(|event| {
+        if nav.open_menu().is_none() { return true; }
+        match event {
+            egui::Event::Text(text) => {
+                if let Some(ch) = text.chars().next().filter(|c| c.is_alphabetic()) {
+                    nav.jump(ch, menus);
+                    keyed = true;
+                }
+                false
+            }
+            egui::Event::Key { key, pressed: true, modifiers, .. }
+                if !modifiers.ctrl && !modifiers.alt && !modifiers.command => {
+                let key = match key {
+                    Key::ArrowUp | Key::ArrowLeft if !modifiers.shift => NavKey::Up,
+                    Key::ArrowDown | Key::ArrowRight if !modifiers.shift => NavKey::Down,
+                    Key::Enter => { pick = nav.activate(menus, modifiers.shift); return false; }
+                    Key::Escape => NavKey::Escape,
+                    _ => return true,
+                };
+                nav.key(key, menus);
+                keyed = true;
+                false
+            }
+            _ => true,
+        }
+    }));
+    (pick, keyed)
+}
+
+impl Nav {
+    /// Jump forward, wrapping, to the next enabled title with this initial.
+    pub fn jump(&mut self, letter: char, menus: &[Menu]) {
+        let Some(entries) = self.level(menus, self.depth) else { return };
+        let count = entries.len();
+        let from = self.highlight[self.depth].map_or(count.saturating_sub(1), |i| i);
+        let next = (1..=count).map(|n| (from + n) % count).find(|&i| {
+            entries[i].row().is_some_and(|r| r.enabled && r.label.to_lowercase().starts_with(letter.to_lowercase().to_string().as_str()))
+        });
+        if let Some(index) = next {
+            self.hover(self.depth, index, menus);
+        }
+    }
+
+    pub fn activate(&mut self, menus: &[Menu], edit: bool) -> Option<Pick> {
+        match self.key(NavKey::Enter, menus) {
+            Outcome::Run(id) => Some(Pick { id, edit }),
+            _ => None,
+        }
+    }
+}
+
+/// Share shortcut ownership with the menu bar, including a transient title field.
+pub fn anchored_open(ctx: &Context, open: bool) {
+    ctx.data_mut(|d| d.insert_temp(Id::new("toolkit.anchored-open"), open));
+}
+
+/// A single-level menu below an arbitrary icon. Uses the bar's navigation,
+/// layout, painting and scrolling; the caller owns its transient open flag.
+pub fn anchored(ui: &mut Ui, id: Id, anchor: Rect, open: &mut bool, menu: Menu, tooltips: &[(&'static str, String)]) -> Option<Pick> {
+    let ctx = ui.ctx().clone();
+    let mut nav: Nav = ctx.data(|d| d.get_temp(id)).unwrap_or_default();
+    let cache_id = Id::new("toolkit.anchored-input");
+    let prior = ctx.data_mut(|d| d.remove_temp::<AnchoredInput>(cache_id));
+    if let Some(prior) = &prior
+        && prior.handled && nav.open_menu().is_none() {
+        *open = false;
+        anchored_open(&ctx, false);
+        return prior.result;
+    }
+    let opening = *open && nav.open_menu().is_none();
+    if !*open {
+        nav.close();
+        ctx.data_mut(|d| d.insert_temp(id, nav));
+        anchored_open(&ctx, false);
+        return None;
+    }
+    if opening {
+        close(&ctx);
+        nav.open(0);
+    }
+    let menus = [menu];
+    nav.validate(&menus);
+    let (mut pick, mut keyed) = anchored_keys(&ctx, &mut nav, &menus);
+    keyed |= prior.as_ref().is_some_and(|p| p.keyed);
+    if nav.open_menu().is_some() {
+        let chrome = Chrome::of(&ctx);
+        let layout = Layout::new(ui, &chrome, &menus[0].entries, 0.0);
+        let screen = ctx.content_rect();
+        let width = layout.size.x + ui.spacing().menu_margin.sum().x;
+        let at = pos2(anchor.left().min(screen.right() - width).max(screen.left()), anchor.bottom());
+        ctx.data_mut(|d| d.insert_temp(Id::new("toolkit.anchored-tooltips"), tooltips.to_vec()));
+        let shown = show_level(&ctx, &chrome, 0, &menus[0].entries, &layout,
+            Rect::from_min_size(at, layout.size), &mut nav, &menus,
+            View { max_height: (screen.bottom() - at.y).max(chrome.metrics.menu_row_height),
+                moved: ctx.input(|i| i.pointer.delta() != Vec2::ZERO), keyed, deeper: None }, None);
+        ctx.data_mut(|d| d.remove::<Vec<(&'static str, String)>>(Id::new("toolkit.anchored-tooltips")));
+        let (outside, released, secondary) = ctx.input(|i| (
+            !opening && i.pointer.any_pressed() && i.pointer.interact_pos().is_some_and(|p| !shown.frame.contains(p) && !anchor.contains(p)),
+            i.pointer.button_released(PointerButton::Primary) || i.pointer.button_released(PointerButton::Secondary),
+            i.pointer.button_released(PointerButton::Secondary)));
+        if outside {
+            nav.close();
+        } else if (released && !opening) || shown.activated.is_some() {
+            if let Some(index) = shown.activated.or(shown.under)
+                && !ctx.input(|i| i.pointer.interact_pos().is_some_and(|p| shown.bar.is_some_and(|r| r.contains(p)))) {
+                nav.hover(0, index, &menus);
+                pick = nav.activate(&menus, secondary);
+            }
+        }
+    }
+    *open = nav.open_menu().is_some();
+    anchored_open(&ctx, *open);
+    ctx.data_mut(|d| d.insert_temp(id, nav));
+    ctx.data_mut(|d| d.insert_temp(cache_id, AnchoredInput { id, menus: menus.to_vec(), result: None, handled: false, keyed: false }));
+    pick
 }
 
 /// The open menu and its highlight, as of the last frame.
@@ -1386,6 +1538,10 @@ fn level_rows(
             if row.enabled && response.clicked() && !response.clicked_by(PointerButton::Primary) {
                 activated = Some(index);
             }
+            if let Some(tip) = ui.ctx().data(|d| d.get_temp::<Vec<(&'static str, String)>>(Id::new("toolkit.anchored-tooltips")))
+                .and_then(|tips| tips.into_iter().find(|(id, _)| Some(*id) == row.id).map(|(_, tip)| tip)) {
+                response.clone().on_hover_text(tip);
+            }
         }
         if response.contains_pointer() {
             under = Some(index);
@@ -1713,6 +1869,55 @@ mod tests {
             Some(3),
             "keys move on from the hovered row"
         );
+    }
+
+    #[test]
+    fn anchored_navigation_jumps_wraps_and_distinguishes_edit_activation() {
+        let menus = [Menu { title: "Macros".into(), entries: vec![
+            cmd("alpha", true), cmd("absent", false), Entry::Separator,
+            cmd("another", true), cmd("beta", true),
+        ] }];
+        let mut nav = Nav::default();
+        nav.open(0);
+        nav.jump('A', &menus);
+        assert_eq!(nav.highlight(), [Some(0)]);
+        nav.jump('a', &menus);
+        assert_eq!(nav.highlight(), [Some(3)]);
+        nav.jump('a', &menus);
+        assert_eq!(nav.highlight(), [Some(0)]);
+        assert_eq!(nav.activate(&menus, true), Some(Pick { id: "alpha", edit: true }));
+        assert_eq!(nav.open_menu(), None);
+        nav.open(0);
+        nav.key(NavKey::Up, &menus);
+        assert_eq!(nav.activate(&menus, false), Some(Pick { id: "beta", edit: false }));
+        nav.open(0);
+        assert_eq!(nav.key(NavKey::Escape, &menus), Outcome::Closed);
+    }
+
+    #[test]
+    fn anchored_input_is_taken_before_the_application_draws() {
+        let ctx = Context::default();
+        let id = Id::new("anchored-test");
+        let menus = vec![Menu { title: "Macros".into(), entries: vec![cmd("alpha", true), cmd("hello", true)] }];
+        let mut nav = Nav::default();
+        nav.open(0);
+        ctx.data_mut(|d| {
+            d.insert_temp(id, nav);
+            d.insert_temp(Id::new("toolkit.anchored-input"), AnchoredInput { id, menus: menus.clone(), result: None, handled: false, keyed: false });
+        });
+        let mut open = true;
+        let mut out = ctx.run_ui(egui::RawInput { events: vec![
+            egui::Event::Text("h".into()),
+            egui::Event::Key { key: Key::Enter, physical_key: None, pressed: true, repeat: false, modifiers: Modifiers::SHIFT },
+        ], ..Default::default() }, |ui| {
+            anchored_keyboard(&ctx);
+            assert!(ctx.input(|i| i.events.is_empty()), "app content sees neither the letter nor Enter");
+            let pick = anchored(ui, id, Rect::NOTHING, &mut open, menus[0].clone(), &[]);
+            assert_eq!(pick, Some(Pick { id: "hello", edit: true }));
+        });
+        out.textures_delta.clear();
+        assert!(!open);
+        assert!(!is_open(&ctx));
     }
 
     #[test]

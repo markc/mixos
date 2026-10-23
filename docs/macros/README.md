@@ -37,26 +37,44 @@ For the same id, **user per-app > user global > built-in per-app > built-in
 global**. The catalogue lists the winning entries by id, labels each tier
 and marks entries that shadow lower tiers. Missing folders are fine.
 
-## Using the panel
+## Using the menu
 
 The Macros icon is the first standard icon, immediately before search when
-the app provides search. **Run** starts one macro at a time per window.
-Output scrolls in a monospace view. The last 64 KiB of combined standard
-output and standard error are retained; the panel says when older output
-was dropped. **Stop** kills the process group and reaps the child in the
-background. Closing the panel leaves a running macro alone; closing the
-window requests termination and background reaping.
+the app provides search. It opens a transient drop-down directly beneath
+the icon. **New macro…** and **Open Workshop** come first, followed by this
+app's macros, then global macros, in catalogue order within each group.
+A dim dot marks built-ins. At most fifteen macros are shown; **More in
+Workshop…** reaches the rest. Workshop is planned; both Workshop entries
+currently open this app's user macro folder in Dopus, with `xdg-open` as
+the fallback.
 
-**Edit** opens a user macro in Ced, or copies a built-in macro to the
-matching user tier before opening it. **New global** and **New for this app**
-ask for an id and title, create a short template and open it for editing.
-Creating and copying refuse to overwrite an existing file in that tier.
-Choose **Reload** after changing a file; folder watching is future work.
+Left release runs a macro; right release edits it. Arrows move the highlight,
+Enter runs, Shift+Enter edits, and a letter jumps to the next matching title.
+Run, edit, Escape and an outside click close the menu and release its keys.
+One macro runs per window. A busy dot appears on the icon, and the first
+menu entry becomes **Stop "Title"**. Stop kills the process group and reaps
+the child in the background. Closing the menu leaves the run alone; closing
+the app requests termination and background reaping.
 
-**Open global folder** and **Open app folder** create the user folder if
-needed and open it in Dopus. When the native editor or file manager is
-absent, the system's `xdg-open` handles the path. Discovery, storage and
-launchers run on background threads.
+**New macro…** asks only for a title in a one-line field at the menu anchor.
+Enter creates the template in this app's user folder and opens the small
+editor; Escape cancels. Titles become ASCII slugs: `Tidy imports` creates
+`tidy-imports.mix`, then `tidy-imports-2.mix` on a clash. A title without ASCII
+letters or digits uses `macro`. Creation and copying never overwrite files.
+Editing a built-in first copies it to the matching user tier.
+
+The small editor is a non-modal floating window using the shared editor.
+Click its text to edit; the app remains usable alongside it. Ctrl+S saves
+and refreshes the menu catalogue. Ctrl+Enter saves then runs. **Open in Ced**
+hands off larger edits, with `xdg-open` as fallback. Discovery, file storage,
+launchers and notification work run on background threads.
+
+Every completed run posts a notifyd toast: title and done or failed status,
+plus the last few output lines. **Show output** opens that run's retained
+output in the editor's bottom strip. The runner retains the last 64 KiB of
+combined standard output and standard error. If notifyd is absent or sending
+fails, the output strip opens automatically. A successful run without output
+still reports done. Notification actions are read using `notify.get`.
 
 ## Execution context
 
@@ -87,10 +105,10 @@ title; otherwise the id is shown. Header reads are bounded to 8 KiB.
 
 `libs/macros` is a core library with no egui dependency. It resolves roots,
 discovers files, creates or copies user macros and owns the background
-runner. `toolkit::macro_panel` accepts plain display data and returns
-actions. `toolkit::macros::State` joins that widget to the core, with
+runner. `toolkit::menu::anchored` reuses menu navigation and row rendering.
+`toolkit::macros::State` joins the menu and shared editor to the core, with
 `toggle`, `reload` and `show` methods. Its per-window adapter keeps runtime
-resources in the egui context while each app keeps the panel's open flag
+resources in the egui context while each app keeps the menu's open flag
 in its UI state. This keeps application engines below the GUI boundary in
 the application layering gate.
 
