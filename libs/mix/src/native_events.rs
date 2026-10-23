@@ -186,7 +186,13 @@ impl Queue {
         self.ready.notify_waiters();
     }
 
-    pub(crate) fn process_exited(&self, handle: &str, code: Option<i32>, signal: Option<i32>, detached_output: bool) {
+    pub(crate) fn process_exited(
+        &self,
+        handle: &str,
+        code: Option<i32>,
+        signal: Option<i32>,
+        detached_output: bool,
+    ) {
         let mut pending = self.pending.lock().unwrap();
         if let Some(p) = pending.processes.get_mut(handle) {
             p.terminal = Some(
@@ -202,8 +208,8 @@ impl Queue {
         if let Some(record) = p.lines.pop_front() {
             return match record {
                 ProcessRecord::Overflow(dropped) => event(
-                "proc.overflow",
-                serde_json::json!({"watch":handle, "tag":p.tag, "dropped":dropped}),
+                    "proc.overflow",
+                    serde_json::json!({"watch":handle, "tag":p.tag, "dropped":dropped}),
                 ),
                 ProcessRecord::Line(line) => {
                     p.line_count -= 1;
@@ -614,9 +620,7 @@ impl Queue {
                     let ready: Vec<_> = p
                         .processes
                         .iter()
-                        .filter(|(_, s)| {
-                            !s.lines.is_empty() || s.terminal.is_some()
-                        })
+                        .filter(|(_, s)| !s.lines.is_empty() || s.terminal.is_some())
                         .map(|(h, _)| h.clone())
                         .collect();
                     let process = ready

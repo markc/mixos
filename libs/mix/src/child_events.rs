@@ -170,7 +170,10 @@ mod linux {
                     let mut detached_output = false;
                     loop {
                         let timeout = drain_deadline.map_or(-1, |deadline: std::time::Instant| {
-                            deadline.saturating_duration_since(std::time::Instant::now()).as_millis().min(500) as i32
+                            deadline
+                                .saturating_duration_since(std::time::Instant::now())
+                                .as_millis()
+                                .min(500) as i32
                         });
                         if timeout == 0 {
                             detached_output = pipes.iter().any(|p| !p.closed);
@@ -213,14 +216,26 @@ mod linux {
                             // the group, even when it exits immediately on TERM.
                             signal_group(pid, libc::SIGTERM);
                             signal_leader(&pidfd, libc::SIGTERM);
-                            let deadline = std::time::Instant::now() + std::time::Duration::from_millis(150);
-                            let mut grace = libc::pollfd { fd: pidfd.as_raw_fd(), events: libc::POLLIN, revents: 0 };
+                            let deadline =
+                                std::time::Instant::now() + std::time::Duration::from_millis(150);
+                            let mut grace = libc::pollfd {
+                                fd: pidfd.as_raw_fd(),
+                                events: libc::POLLIN,
+                                revents: 0,
+                            };
                             loop {
-                                let remaining = deadline.saturating_duration_since(std::time::Instant::now()).as_millis() as i32;
-                                if remaining == 0 || unsafe { libc::poll(&mut grace, 1, remaining) } >= 0 {
+                                let remaining = deadline
+                                    .saturating_duration_since(std::time::Instant::now())
+                                    .as_millis()
+                                    as i32;
+                                if remaining == 0
+                                    || unsafe { libc::poll(&mut grace, 1, remaining) } >= 0
+                                {
                                     break;
                                 }
-                                if std::io::Error::last_os_error().kind() != std::io::ErrorKind::Interrupted {
+                                if std::io::Error::last_os_error().kind()
+                                    != std::io::ErrorKind::Interrupted
+                                {
                                     break;
                                 }
                             }
@@ -230,7 +245,9 @@ mod linux {
                         }
                         if fds[0].revents != 0 {
                             exited = true;
-                            drain_deadline = Some(std::time::Instant::now() + std::time::Duration::from_millis(500));
+                            drain_deadline = Some(
+                                std::time::Instant::now() + std::time::Duration::from_millis(500),
+                            );
                             // As for managed spawn, descendants cannot outlive
                             // the leader. This also releases inherited pipe ends.
                             signal_group(pid, libc::SIGKILL);
@@ -249,7 +266,9 @@ mod linux {
                     crate::builtins::unregister_managed_pid(pid);
                     if !cancelled {
                         match status {
-                            Ok(s) => queue.process_exited(&handle, s.code(), s.signal(), detached_output),
+                            Ok(s) => {
+                                queue.process_exited(&handle, s.code(), s.signal(), detached_output)
+                            }
                             Err(_) => queue.process_exited(&handle, None, None, detached_output),
                         }
                     }
