@@ -72,10 +72,15 @@ impl Session {
 
     pub fn replace_catalogue(&self, catalogue: Catalogue) {
         let mut state = self.0.lock().unwrap();
-        let changed = state.catalogue.as_ref().is_none_or(|old| old.entries != catalogue.entries);
+        let changed = state
+            .catalogue
+            .as_ref()
+            .is_none_or(|old| old.entries != catalogue.entries);
         state.catalogue = Some(catalogue);
         drop(state);
-        if changed { self.changed(); }
+        if changed {
+            self.changed();
+        }
     }
 
     /// The caller retains the hook; dropping it removes the observer lazily.
@@ -87,9 +92,15 @@ impl Session {
         let hooks = {
             let mut state = self.0.lock().unwrap();
             state.changes.retain(|hook| hook.strong_count() > 0);
-            state.changes.iter().filter_map(Weak::upgrade).collect::<Vec<_>>()
+            state
+                .changes
+                .iter()
+                .filter_map(Weak::upgrade)
+                .collect::<Vec<_>>()
         };
-        for hook in hooks { hook(); }
+        for hook in hooks {
+            hook();
+        }
     }
 
     pub fn catalogue(&self) -> Option<Catalogue> {
@@ -113,13 +124,29 @@ impl Session {
     pub fn create(&self, title: &str) -> Result<Value, Refusal> {
         let (roots, app) = {
             let state = self.0.lock().unwrap();
-            (state.roots.clone().ok_or_else(|| Refusal::new("UNAVAILABLE", "an absolute HOME is required"))?, state.app.clone())
+            (
+                state
+                    .roots
+                    .clone()
+                    .ok_or_else(|| Refusal::new("UNAVAILABLE", "an absolute HOME is required"))?,
+                state.app.clone(),
+            )
         };
         let path = roots.create_from_title(&app, title).map_err(|error| {
-            Refusal::new(if error.kind() == std::io::ErrorKind::InvalidInput { "INVALID_ARGUMENT" } else { "INTERNAL" }, error)
+            Refusal::new(
+                if error.kind() == std::io::ErrorKind::InvalidInput {
+                    "INVALID_ARGUMENT"
+                } else {
+                    "INTERNAL"
+                },
+                error,
+            )
         })?;
         let catalogue = self.reload()?;
-        let entry = catalogue.entries.iter().find(|entry| entry.path == path)
+        let entry = catalogue
+            .entries
+            .iter()
+            .find(|entry| entry.path == path)
             .ok_or_else(|| Refusal::new("INTERNAL", "created macro missing after rescan"))?;
         Ok(json!({"id":entry.id,"title":entry.title,"path":path}))
     }

@@ -3,9 +3,9 @@
 mod notifications;
 use crate::menu::{self, Entry as MenuEntry, Menu, Row};
 use crate::strings::{own, own_with};
-use ::macros::{Catalogue, Entry, Roots, Status, Tier};
 #[cfg(test)]
 use ::macros::Runner;
+use ::macros::{Catalogue, Entry, Roots, Status, Tier};
 use std::collections::VecDeque;
 use std::io;
 use std::path::Path;
@@ -76,7 +76,7 @@ pub struct State {
     app: String,
     finish_rx: mpsc::Receiver<serde_json::Value>,
     subscriber: u64,
-    change_hook: ::macros::session::ChangeHook,
+    _change_hook: ::macros::session::ChangeHook,
     repaint: Arc<Mutex<Option<(egui::Context, egui::ViewportId)>>>,
     pending: Option<mpsc::Receiver<Completion>>,
     queued: VecDeque<Work>,
@@ -103,14 +103,23 @@ pub struct State {
 impl State {
     #[cfg(test)]
     fn set_test_roots(&mut self, roots: Roots) {
-        if self.engine.session.roots().is_some_and(|old| old.user == roots.user && old.builtin == roots.builtin) { return; }
+        if self
+            .engine
+            .session
+            .roots()
+            .is_some_and(|old| old.user == roots.user && old.builtin == roots.builtin)
+        {
+            return;
+        }
         self.engine.session.remove_finish_hook(self.subscriber);
         let session = ::macros::Session::with_roots(&self.app, Some(roots));
         let (tx, rx) = mpsc::channel();
-        self.subscriber = session.add_finish_hook(Arc::new(move |body| { let _ = tx.send(body); }));
+        self.subscriber = session.add_finish_hook(Arc::new(move |body| {
+            let _ = tx.send(body);
+        }));
         self.finish_rx = rx;
         self.engine.session = session;
-        self.engine.session.observe_changes(&self.change_hook);
+        self.engine.session.observe_changes(&self._change_hook);
         let _ = self.engine.session.reload();
     }
 
@@ -118,11 +127,19 @@ impl State {
         let (notify_tx, notifications) = mpsc::channel();
         let session = ::macros::Session::for_app(app);
         #[cfg(test)]
-        let session = { let _ = session; ::macros::Session::with_roots(app, Roots::resolve()) };
+        let session = {
+            let _ = session;
+            ::macros::Session::with_roots(app, Roots::resolve())
+        };
         Self::with_session(app, session, notify_tx, notifications)
     }
 
-    fn with_session(app: &str, session: ::macros::Session, notify_tx: mpsc::Sender<Finished>, notifications: mpsc::Receiver<Finished>) -> Self {
+    fn with_session(
+        app: &str,
+        session: ::macros::Session,
+        notify_tx: mpsc::Sender<Finished>,
+        notifications: mpsc::Receiver<Finished>,
+    ) -> Self {
         let (finish_tx, finish_rx) = mpsc::channel();
         let lifetime = Arc::new(());
         let weak = Arc::downgrade(&lifetime);
@@ -141,10 +158,13 @@ impl State {
         session.observe_changes(&change_hook);
         Self {
             open: false,
-            engine: Engine { catalogue: Catalogue::default(), session },
+            engine: Engine {
+                catalogue: Catalogue::default(),
+                session,
+            },
             finish_rx,
             subscriber,
-            change_hook,
+            _change_hook: change_hook,
             repaint,
             app: app.into(),
             pending: None,
@@ -214,7 +234,11 @@ impl State {
         // the previous terminal run before Runner resets its output buffer.
         self.finish_run(ctx);
         self.run_message = None;
-        match self.engine.session.run(&entry.id, &format!("gui:{}", self.window)) {
+        match self
+            .engine
+            .session
+            .run(&entry.id, &format!("gui:{}", self.window))
+        {
             Ok(_) => self.retained = None,
             Err(error) => {
                 self.run_message = Some(error.to_string());
@@ -233,7 +257,9 @@ impl State {
             let output = body["text"].as_str().unwrap_or_default().to_owned();
             let status = match body["state"].as_str() {
                 Some("exited") => Status::Exited(body["exit"].as_i64().map(|v| v as i32)),
-                Some("failed_to_start") => Status::FailedToStart(body["error"].as_str().unwrap_or_default().into()),
+                Some("failed_to_start") => {
+                    Status::FailedToStart(body["error"].as_str().unwrap_or_default().into())
+                }
                 _ => Status::Failed(body["error"].as_str().unwrap_or_default().into()),
             };
             let payload = notification(&self.app, title, &status, &output);
@@ -243,13 +269,22 @@ impl State {
                 status: payload["summary"].as_str().unwrap_or_default().into(),
             };
             self.retained = Some(finished.clone());
-            notifications::post(&self.app, self.window, payload, finished, self.notify_tx.clone(), &self.lifetime, ctx);
+            notifications::post(
+                &self.app,
+                self.window,
+                payload,
+                finished,
+                self.notify_tx.clone(),
+                &self.lifetime,
+                ctx,
+            );
         }
     }
 
     fn running_title(&self) -> Option<String> {
         let status = self.engine.session.status();
-        (status["state"] == "running").then(|| status["title"].as_str().unwrap_or_default().to_owned())
+        (status["state"] == "running")
+            .then(|| status["title"].as_str().unwrap_or_default().to_owned())
     }
 
     fn create_title(&mut self) {
@@ -628,7 +663,9 @@ impl State {
                     ctx.request_repaint();
                 }
                 "macro.workshop" => self.folder(),
-                "macro.stop" => { self.engine.session.stop(); },
+                "macro.stop" => {
+                    self.engine.session.stop();
+                }
                 _ => {}
             }
         }
@@ -738,10 +775,7 @@ impl State {
                     ui.label(&last.status).on_hover_text(&last.title);
                 }
                 if let Some(title) = self.running_title() {
-                    ui.label(own_with(
-                        "macros-running-title",
-                        &[("title", &title)],
-                    ));
+                    ui.label(own_with("macros-running-title", &[("title", &title)]));
                 }
                 egui::ScrollArea::both()
                     .max_height(output_height)
@@ -908,7 +942,9 @@ impl State {
 
 impl Drop for State {
     fn drop(&mut self) {
-        if self.engine.session.status()["origin"].as_str() == Some(format!("gui:{}", self.window).as_str()) {
+        if self.engine.session.status()["origin"].as_str()
+            == Some(format!("gui:{}", self.window).as_str())
+        {
             self.engine.session.stop();
         }
         self.engine.session.remove_finish_hook(self.subscriber);
@@ -1240,7 +1276,10 @@ mod tests {
         assert!(!state.document.as_ref().unwrap().is_dirty());
         state.engine.session.stop();
         wait_until(|| state.engine.session.runner_status() != Status::Running);
-        assert!(matches!(state.engine.session.runner_status(), Status::Exited(_)));
+        assert!(matches!(
+            state.engine.session.runner_status(),
+            Status::Exited(_)
+        ));
     }
 
     #[cfg(unix)]
@@ -1256,7 +1295,10 @@ mod tests {
             status: "Earlier run done".into(),
         });
         assert_eq!(state.running_title().unwrap(), "Wait");
-        assert_eq!(state.displayed_output(), state.engine.session.runner_output().text);
+        assert_eq!(
+            state.displayed_output(),
+            state.engine.session.runner_output().text
+        );
         assert_ne!(state.displayed_output(), "earlier output");
         state.engine.session.stop();
         wait_until(|| state.engine.session.runner_status() != Status::Running);
@@ -1274,7 +1316,9 @@ mod tests {
         let session = first.engine.session.clone();
         let ctx = egui::Context::default();
         let (tx, rx) = mpsc::channel();
-        let removed = session.add_finish_hook(Arc::new(move |body| { let _ = tx.send(body); }));
+        let removed = session.add_finish_hook(Arc::new(move |body| {
+            let _ = tx.send(body);
+        }));
         session.run(&entry.id, "bus").unwrap();
         assert_eq!(first.running_title().as_deref(), Some("Wait"));
         assert_eq!(second.running_title().as_deref(), Some("Wait"));
@@ -2244,7 +2288,10 @@ mod tests {
         {
             let state = runtime(&h);
             let state = state.lock().unwrap();
-            state.engine.session.replace_catalogue(state.engine.catalogue.clone());
+            state
+                .engine
+                .session
+                .replace_catalogue(state.engine.catalogue.clone());
         }
         h.get_by_label("Macros").click();
         h.run_steps(5);

@@ -126,7 +126,13 @@ fn refusals_distinguish_arguments_availability_scan_and_channel_failures() {
         );
     }
     let unavailable = Session::with_roots("fixture", None);
-    assert_eq!(verbs::handle(&unavailable, "new", &json!({"title":"Test"})).wait().unwrap_err().code, "UNAVAILABLE");
+    assert_eq!(
+        verbs::handle(&unavailable, "new", &json!({"title":"Test"}))
+            .wait()
+            .unwrap_err()
+            .code,
+        "UNAVAILABLE"
+    );
     assert_eq!(
         verbs::handle(&unavailable, "reload", &json!({}))
             .wait()
@@ -150,28 +156,52 @@ fn refusals_distinguish_arguments_availability_scan_and_channel_failures() {
 
 #[test]
 fn new_creates_in_the_user_app_tier_and_refreshes_list() {
-    let (_dir, roots, session) = fixture();
+    let dir = tempfile::tempdir().unwrap();
+    let roots = Roots::resolve_with(|key| match key {
+        "HOME" => Some(dir.path().into()),
+        "XDG_CONFIG_HOME" => Some(dir.path().join("xdg")),
+        "MIXOS_SHARE" => Some(dir.path().join("share")),
+        _ => None,
+    }).unwrap();
+    let session = Session::with_roots("fixture", Some(roots.clone()));
     let reply = verbs::handle(&session, "new", &json!({"title":"Tidy imports"}));
     assert!(matches!(reply, Reply::Deferred(_)));
     let body = reply.wait().unwrap();
     assert_eq!(body["id"], "tidy-imports");
     assert_eq!(body["title"], "Tidy imports");
-    assert_eq!(body["path"], json!(roots.user.join("fixture/tidy-imports.mix")));
+    assert_eq!(
+        body["path"],
+        json!(roots.user.join("fixture/tidy-imports.mix"))
+    );
     let list = verbs::handle(&session, "list", &json!({})).wait().unwrap();
     assert_eq!(list["macros"][0]["id"], body["id"]);
     assert_eq!(list["macros"][0]["tier"], "user-app");
-    assert_eq!(verbs::handle(&session, "new", &json!({"title":"   "})).wait().unwrap_err().code, "INVALID_ARGUMENT");
+    assert_eq!(
+        verbs::handle(&session, "new", &json!({"title":"   "}))
+            .wait()
+            .unwrap_err()
+            .code,
+        "INVALID_ARGUMENT"
+    );
     std::fs::remove_file(body["path"].as_str().unwrap()).unwrap();
     std::fs::remove_dir(roots.user.join("fixture")).unwrap();
     std::fs::remove_dir(&roots.user).unwrap();
     std::fs::write(&roots.user, "obstruction").unwrap();
-    assert_eq!(verbs::handle(&session, "new", &json!({"title":"Test"})).wait().unwrap_err().code, "INTERNAL");
+    assert_eq!(
+        verbs::handle(&session, "new", &json!({"title":"Test"}))
+            .wait()
+            .unwrap_err()
+            .code,
+        "INTERNAL"
+    );
 }
 
 #[test]
 fn subscribers_receive_once_in_order_outside_the_lock_and_can_be_removed() {
     let (_dir, roots, session) = fixture();
-    roots.create("fixture", crate::Tier::UserApp, "test", "Test").unwrap();
+    roots
+        .create("fixture", crate::Tier::UserApp, "test", "Test")
+        .unwrap();
     let (tx, rx) = mpsc::channel();
     let first = session.clone();
     let first_tx = tx.clone();
@@ -179,7 +209,9 @@ fn subscribers_receive_once_in_order_outside_the_lock_and_can_be_removed() {
         let _ = first.status(); // would deadlock under the session lock
         first_tx.send((1, body)).unwrap();
     }));
-    session.add_finish_hook(Arc::new(move |body| { tx.send((2, body)).unwrap(); }));
+    session.add_finish_hook(Arc::new(move |body| {
+        tx.send((2, body)).unwrap();
+    }));
     session.reload().unwrap();
     session.run("test", "gui:42").unwrap();
     let a = rx.recv_timeout(Duration::from_secs(10)).unwrap();
