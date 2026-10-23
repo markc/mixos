@@ -29,9 +29,10 @@ if platform().arch != "x86_64" then raise("RELEASE_ARCH", "the first release sup
 $release = load_data("tools/release_packages.mx")
 if $release.schema != 1 then raise("RELEASE_SCHEMA", "unsupported release_packages.mx schema") end
 $log_dir = "/tmp/mixos-release-gate-" .. slice($commit, 0, 12) .. "-" .. uuid()
--- Term's native-session E2E tests (19 on 2026-10-23). Raise this when tests
+-- Term's native-session E2E tests run here (18 on 2026-10-23: 19 in the two
+-- modules, less the privileged multi-UID fixture). Raise this when tests
 -- are added; a drop below it means the stage's filters stopped matching.
-$E2E_MIN = 19
+$E2E_MIN = 18
 mkdir($log_dir, {parents: true})
 
 fn stage($name, $argv, $timeout)
@@ -86,9 +87,12 @@ if $mode == "check" then
   -- because they need a real current-commit Mix. Run exactly those two
   -- modules, straight after the build, before other tests can touch the
   -- tree (the tests refuse a dirty checkout). The other ignored tests are
-  -- subprocess fixtures, asset-set probes and benchmarks.
+  -- subprocess fixtures, asset-set probes and benchmarks. p0i_07 is left
+  -- out by name: it needs root plus a second real UID and re-executes
+  -- itself as that user, so it runs explicitly, not in this gate.
   stage("e2e", ["cargo", "test", "-p", "term-core", "--lib", "--locked", "--no-fail-fast", "--",
-    "--ignored", "native_session::production_e2e::", "native_session::enforcement_tests::"], 3600)
+    "--ignored", "native_session::production_e2e::", "native_session::enforcement_tests::",
+    "--skip", "native_session::enforcement_tests::p0i_07_other_uid_both_policies"], 3600)
   stage("clippy", ["cargo", "clippy", "--workspace", "--all-targets", "--locked", "--",
     "-D", "clippy::all", "-A", "clippy::module_inception", "-A", "clippy::too_many_arguments",
     "-A", "clippy::type_complexity", "-A", "clippy::large_enum_variant",
