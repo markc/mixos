@@ -1265,6 +1265,43 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn bus_and_windows_share_busy_status_but_only_the_origin_retains_a_toast() {
+        let (_temp, roots, entry) = runner_fixture();
+        let mut first = State::new("ced");
+        first.set_test_roots(roots);
+        let (tx, rx) = mpsc::channel();
+        let mut second = State::with_session("ced", first.engine.session.clone(), tx, rx);
+        let session = first.engine.session.clone();
+        let ctx = egui::Context::default();
+        let (tx, rx) = mpsc::channel();
+        let removed = session.add_finish_hook(Arc::new(move |body| { let _ = tx.send(body); }));
+        session.run(&entry.id, "bus").unwrap();
+        assert_eq!(first.running_title().as_deref(), Some("Wait"));
+        assert_eq!(second.running_title().as_deref(), Some("Wait"));
+        first.run(entry.clone(), &ctx);
+        assert!(first.run_message.is_some());
+        session.stop();
+        rx.recv_timeout(Duration::from_secs(10)).unwrap();
+        first.finish_run(&ctx);
+        second.finish_run(&ctx);
+        assert!(first.retained.is_none());
+        assert!(second.retained.is_none());
+        first.run(entry, &ctx);
+        session.stop();
+        let event = rx.recv_timeout(Duration::from_secs(10)).unwrap();
+        first.finish_run(&ctx);
+        second.finish_run(&ctx);
+        assert!(first.retained.is_some());
+        assert!(second.retained.is_none());
+        assert_eq!(event["origin"], format!("gui:{}", first.window));
+        session.remove_finish_hook(removed);
+        let subscriber = second.subscriber;
+        drop(second);
+        session.remove_finish_hook(subscriber); // removal is idempotent
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn stop_during_startup_and_rerun_immediately_after_stop() {
         let (_temp, roots, entry) = runner_fixture();
         let mut runner = Runner::default();
