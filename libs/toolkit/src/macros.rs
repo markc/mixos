@@ -63,16 +63,12 @@ struct Finished {
     status: String,
 }
 
-/// The catalogue here is a menu snapshot; Session owns the shared catalogue.
-pub struct Engine {
-    pub catalogue: Catalogue,
-    pub session: ::macros::Session,
-}
-
 /// Runtime resources stay outside app engines and serialised app state.
 pub struct State {
     pub open: bool,
-    pub engine: Engine,
+    pub engine: ::macros::Session,
+    // Window-local row mapping, refreshed from the authoritative Session catalogue.
+    catalogue: Catalogue,
     app: String,
     finish_rx: mpsc::Receiver<serde_json::Value>,
     subscriber: u64,
@@ -105,22 +101,21 @@ impl State {
     fn set_test_roots(&mut self, roots: Roots) {
         if self
             .engine
-            .session
             .roots()
             .is_some_and(|old| old.user == roots.user && old.builtin == roots.builtin)
         {
             return;
         }
-        self.engine.session.remove_finish_hook(self.subscriber);
+        self.engine.remove_finish_hook(self.subscriber);
         let session = ::macros::Session::with_roots(&self.app, Some(roots));
         let (tx, rx) = mpsc::channel();
         self.subscriber = session.add_finish_hook(Arc::new(move |body| {
             let _ = tx.send(body);
         }));
         self.finish_rx = rx;
-        self.engine.session = session;
-        self.engine.session.observe_changes(&self._change_hook);
-        let _ = self.engine.session.reload();
+        self.engine = session;
+        self.engine.observe_changes(&self._change_hook);
+        let _ = self.engine.reload();
     }
 
     pub fn new(app: &str) -> Self {
@@ -158,10 +153,8 @@ impl State {
         session.observe_changes(&change_hook);
         Self {
             open: false,
-            engine: Engine {
-                catalogue: Catalogue::default(),
-                session,
-            },
+            engine: session,
+            catalogue: Catalogue::default(),
             finish_rx,
             subscriber,
             _change_hook: change_hook,
@@ -207,7 +200,7 @@ impl State {
             self.queued.push_back(Box::new(task));
             return;
         }
-        let Some(roots) = self.engine.session.roots() else {
+        let Some(roots) = self.engine.roots() else {
             self.error = Some(own("macros-no-home"));
             self.open = true;
             return;
@@ -225,7 +218,7 @@ impl State {
     }
 
     fn run(&mut self, entry: Entry, ctx: &egui::Context) {
-        if self.engine.session.runner_status() == Status::Running {
+        if self.engine.runner_status() == Status::Running {
             self.run_message = Some(own("macros-already-running"));
             self.editor_open = true;
             return;
@@ -236,7 +229,6 @@ impl State {
         self.run_message = None;
         match self
             .engine
-            .session
             .run(&entry.id, &format!("gui:{}", self.window))
         {
             Ok(_) => self.retained = None,
@@ -282,7 +274,7 @@ impl State {
     }
 
     fn running_title(&self) -> Option<String> {
-        let status = self.engine.session.status();
+        let status = self.engine.status();
         (status["state"] == "running")
             .then(|| status["title"].as_str().unwrap_or_default().to_owned())
     }
@@ -294,7 +286,7 @@ impl State {
         let Some(title) = self.title.clone() else {
             return;
         };
-        let Some(roots) = self.engine.session.roots() else {
+        let Some(roots) = self.engine.roots() else {
             self.creation_error = Some(own("macros-no-home"));
             return;
         };
@@ -323,7 +315,6 @@ impl State {
             Ok((catalogue, doc)) => {
                 self.replace_catalogue(catalogue, ctx);
                 self.editor_entry = self
-                    .engine
                     .catalogue
                     .entries
                     .iter()
@@ -429,7 +420,6 @@ impl State {
                         self.replace_catalogue(catalogue, ctx);
                         if let Some(doc) = doc {
                             self.editor_entry = self
-                                .engine
                                 .catalogue
                                 .entries
                                 .iter()
@@ -440,7 +430,6 @@ impl State {
                         }
                         if let Some(entry) = run {
                             let entry = self
-                                .engine
                                 .catalogue
                                 .entries
                                 .iter()
@@ -465,7 +454,7 @@ impl State {
         {
             self.work(task);
         }
-        if let Some(catalogue) = self.engine.session.catalogue() {
+        if let Some(catalogue) = self.engine.catalogue() {
             self.sync_catalogue(catalogue, ctx);
         }
         self.finish_run(ctx);
@@ -476,7 +465,7 @@ impl State {
         ctx.data_mut(|d| {
             d.insert_temp(
                 crate::window_id(viewport, "macro-busy"),
-                self.engine.session.runner_status() == Status::Running,
+                self.engine.runner_status() == Status::Running,
             )
         });
         if self.open && !self.loaded && self.pending.is_none() {
@@ -497,7 +486,7 @@ impl State {
                         menu::anchored_open(ctx, true);
                         let chrome = crate::chrome::Chrome::of(ctx);
                         let (mut model, _) = macro_menu(
-                            &self.engine.catalogue,
+                            &self.catalogue,
                             self.running_title().as_deref(),
                         );
                         append_menu_error(&mut model, self.error.as_deref());
@@ -613,7 +602,7 @@ impl State {
                     }
                 } else {
                     let (mut model, indices) = macro_menu(
-                        &self.engine.catalogue,
+                        &self.catalogue,
                         self.running_title().as_deref(),
                     );
                     append_menu_error(&mut model, self.error.as_deref());
@@ -630,7 +619,7 @@ impl State {
                         &tips,
                     ) {
                         if let Some(slot) = SLOTS.iter().position(|id| *id == pick.id) {
-                            let entry = self.engine.catalogue.entries[indices[slot]].clone();
+                            let entry = self.catalogue.entries[indices[slot]].clone();
                             if pick.edit {
                                 self.edit(entry);
                             } else {
@@ -664,7 +653,7 @@ impl State {
                 }
                 "macro.workshop" => self.folder(),
                 "macro.stop" => {
-                    self.engine.session.stop();
+                    self.engine.stop();
                 }
                 _ => {}
             }
@@ -685,7 +674,7 @@ impl State {
     }
 
     fn needs_repaint(&self) -> bool {
-        self.engine.session.runner_status() == Status::Running
+        self.engine.runner_status() == Status::Running
             || self.pending.is_some()
             || self.creation.is_some()
             || self.saving.is_some()
@@ -769,7 +758,7 @@ impl State {
                     ui.label(message);
                 }
                 let output = self.displayed_output();
-                if self.engine.session.runner_status() != Status::Running
+                if self.engine.runner_status() != Status::Running
                     && let Some(last) = &self.retained
                 {
                     ui.label(&last.status).on_hover_text(&last.title);
@@ -815,7 +804,7 @@ impl State {
 
     fn save_editor(&mut self, save: bool, mut run: bool) {
         let requested = run;
-        if run && self.engine.session.runner_status() == Status::Running {
+        if run && self.engine.runner_status() == Status::Running {
             self.run_message = Some(own("macros-already-running"));
             run = false;
         }
@@ -843,7 +832,7 @@ impl State {
                 }
             };
             let entry = if run { self.editor_entry.clone() } else { None };
-            let roots = self.engine.session.roots();
+            let roots = self.engine.roots();
             let app = self.app.clone();
             let (tx, rx) = mpsc::channel();
             self.saving = Some(rx);
@@ -910,8 +899,8 @@ impl State {
     }
 
     fn displayed_output(&self) -> String {
-        if self.engine.session.runner_status() == Status::Running {
-            self.engine.session.runner_output().text
+        if self.engine.runner_status() == Status::Running {
+            self.engine.runner_output().text
         } else {
             self.retained
                 .as_ref()
@@ -921,33 +910,33 @@ impl State {
     }
 
     fn replace_catalogue(&mut self, catalogue: Catalogue, ctx: &egui::Context) {
-        self.engine.session.replace_catalogue(catalogue.clone());
+        self.engine.replace_catalogue(catalogue.clone());
         self.sync_catalogue(catalogue, ctx);
     }
 
     fn sync_catalogue(&mut self, catalogue: Catalogue, ctx: &egui::Context) {
         // Cached keyboard picks refer to the old row-to-file mapping. Closing
         // invalidates both the highlight and any already queued activation.
-        if !self.engine.catalogue.entries.is_empty()
-            && self.engine.catalogue.entries != catalogue.entries
+        if !self.catalogue.entries.is_empty()
+            && self.catalogue.entries != catalogue.entries
         {
             menu::dismiss_anchored(ctx);
             if self.title.is_none() {
                 self.open = false;
             }
         }
-        self.engine.catalogue = catalogue;
+        self.catalogue = catalogue;
     }
 }
 
 impl Drop for State {
     fn drop(&mut self) {
-        if self.engine.session.status()["origin"].as_str()
+        if self.engine.status()["origin"].as_str()
             == Some(format!("gui:{}", self.window).as_str())
         {
-            self.engine.session.stop();
+            self.engine.stop();
         }
-        self.engine.session.remove_finish_hook(self.subscriber);
+        self.engine.remove_finish_hook(self.subscriber);
         notifications::forget(self.window);
     }
 }
@@ -1246,10 +1235,11 @@ mod tests {
         let ctx = egui::Context::default();
         state.run(entry.clone(), &ctx);
         state.run(entry.clone(), &ctx);
-        assert_eq!(state.engine.session.runner_status(), Status::Running);
+        assert_eq!(state.engine.runner_status(), Status::Running);
         assert!(state.run_message.is_some());
-        let other_window = State::new("ced");
-        assert_eq!(other_window.engine.session.runner_status(), Status::Idle);
+        let (tx, rx) = mpsc::channel();
+        let other_window = State::with_session("ced", state.engine.clone(), tx, rx);
+        assert_eq!(other_window.engine.runner_status(), Status::Running);
         state.document = Some(editor::local::Document::open(&entry.path).unwrap());
         state
             .document
@@ -1274,10 +1264,10 @@ mod tests {
         );
         state.saved(result, &ctx);
         assert!(!state.document.as_ref().unwrap().is_dirty());
-        state.engine.session.stop();
-        wait_until(|| state.engine.session.runner_status() != Status::Running);
+        state.engine.stop();
+        wait_until(|| state.engine.runner_status() != Status::Running);
         assert!(matches!(
-            state.engine.session.runner_status(),
+            state.engine.runner_status(),
             Status::Exited(_)
         ));
     }
@@ -1297,11 +1287,11 @@ mod tests {
         assert_eq!(state.running_title().unwrap(), "Wait");
         assert_eq!(
             state.displayed_output(),
-            state.engine.session.runner_output().text
+            state.engine.runner_output().text
         );
         assert_ne!(state.displayed_output(), "earlier output");
-        state.engine.session.stop();
-        wait_until(|| state.engine.session.runner_status() != Status::Running);
+        state.engine.stop();
+        wait_until(|| state.engine.runner_status() != Status::Running);
         assert_eq!(state.displayed_output(), "earlier output");
     }
 
@@ -1312,8 +1302,8 @@ mod tests {
         let mut first = State::new("ced");
         first.set_test_roots(roots);
         let (tx, rx) = mpsc::channel();
-        let mut second = State::with_session("ced", first.engine.session.clone(), tx, rx);
-        let session = first.engine.session.clone();
+        let mut second = State::with_session("ced", first.engine.clone(), tx, rx);
+        let session = first.engine.clone();
         let ctx = egui::Context::default();
         let (tx, rx) = mpsc::channel();
         let removed = session.add_finish_hook(Arc::new(move |body| {
@@ -2246,7 +2236,7 @@ mod tests {
     #[test]
     fn show_app_failed_creation_reports_inline_and_restores_title_focus() {
         let mut h = app_harness();
-        let roots = runtime(&h).lock().unwrap().engine.session.roots().unwrap();
+        let roots = runtime(&h).lock().unwrap().engine.roots().unwrap();
         std::fs::write(&roots.user, "obstruction").unwrap();
         h.get_by_label("Macros").click();
         h.run_steps(5);
@@ -2284,14 +2274,13 @@ mod tests {
             path: format!("{id}.mix").into(),
             shadows: vec![],
         };
-        runtime(&h).lock().unwrap().engine.catalogue.entries = vec![entry("alpha")];
+        runtime(&h).lock().unwrap().catalogue.entries = vec![entry("alpha")];
         {
             let state = runtime(&h);
             let state = state.lock().unwrap();
             state
                 .engine
-                .session
-                .replace_catalogue(state.engine.catalogue.clone());
+                .replace_catalogue(state.catalogue.clone());
         }
         h.get_by_label("Macros").click();
         h.run_steps(5);
@@ -2314,7 +2303,7 @@ mod tests {
         h.run_steps(5);
         let state = runtime(&h);
         let state = state.lock().unwrap();
-        assert_eq!(state.engine.session.runner_status(), Status::Idle);
+        assert_eq!(state.engine.runner_status(), Status::Idle);
         assert!(state.document.is_none());
         assert!(!h.state().open);
     }
