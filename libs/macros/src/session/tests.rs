@@ -132,9 +132,9 @@ fn refusals_distinguish_arguments_availability_scan_and_channel_failures() {
     assert_eq!(verbs::handle(&session, "new", &json!({"title":"Test"})).wait().unwrap_err().code, "UNAVAILABLE");
     let unavailable = Session::with_roots("fixture", None);
     assert_eq!(verbs::handle(&unavailable, "reload", &json!({})).wait().unwrap_err().code, "UNAVAILABLE");
-    // A file where the root directory should be forces a real scan error.
-    std::fs::write(&roots.builtin, "not a directory").unwrap();
-    assert_eq!(verbs::handle(&session, "reload", &json!({})).wait().unwrap_err().code, "INTERNAL");
+    // Invalid app names fail root-folder resolution rather than producing diagnostics.
+    let invalid = Session::with_roots("../invalid", Some(roots));
+    assert_eq!(verbs::handle(&invalid, "reload", &json!({})).wait().unwrap_err().code, "INTERNAL");
     let (tx, rx) = mpsc::channel();
     drop(tx);
     assert_eq!(Reply::Deferred(rx).wait().unwrap_err().code, "INTERNAL");

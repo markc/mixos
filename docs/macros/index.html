@@ -369,15 +369,27 @@ authority as executing an app command; running a macro executes user code.</p>
 <table><thead><tr><th>Suffix after <code>&lt;app&gt;.macros.</code></th><th>Body</th><th>Reply</th></tr></thead><tbody>
 <tr><td><code>list</code></td><td><code>{}</code></td><td><code>{macros:[{id,title,tier,path,shadows}], diagnostics:[{path,message}], scanned:true}</code></td></tr>
 <tr><td><code>reload</code></td><td><code>{}</code></td><td>Rescan and return the list shape</td></tr>
-<tr><td><code>run</code></td><td><code>{id}</code></td><td><code>{accepted:true, run, id, title}</code>; unknown ids and a busy runner are refused</td></tr>
+<tr><td><code>run</code></td><td><code>{id}</code></td><td><code>{accepted:true, run, id, title}</code>; <code>NOT_FOUND</code> for unknown ids, <code>BUSY</code> while running</td></tr>
 <tr><td><code>status</code></td><td><code>{}</code></td><td><code>{state,run,id,title,origin,started,exit,error}</code></td></tr>
 <tr><td><code>output</code></td><td><code>{}</code></td><td><code>{run,text,dropped}</code>; the retained 64 KiB tail</td></tr>
 <tr><td><code>stop</code></td><td><code>{}</code></td><td><code>{stopping:bool}</code>; termination is asynchronous</td></tr>
-<tr><td><code>new</code></td><td><code>{title}</code></td><td>Not yet available</td></tr>
+<tr><td><code>new</code></td><td><code>{title}</code></td><td><code>UNAVAILABLE</code> until title-based creation lands</td></tr>
+</tbody></table>
+<p>Refusals use rc 10 and <code>{error_code,message}</code>. Bodies are limited to 8192
+bytes before JSON parsing.</p>
+<table><thead><tr><th>Error code</th><th>Meaning</th></tr></thead><tbody>
+<tr><td><code>INVALID_ARGUMENT</code></td><td>Bad or oversized body, unknown fields, missing or empty id/title</td></tr>
+<tr><td><code>NOT_FOUND</code></td><td>Unknown macro id</td></tr>
+<tr><td><code>BUSY</code></td><td>A macro is already running</td></tr>
+<tr><td><code>UNAVAILABLE</code></td><td><code>new</code> is not yet available, or no absolute HOME/roots</td></tr>
+<tr><td><code>INTERNAL</code></td><td>Scan error, worker failure or dropped reply channel</td></tr>
 </tbody></table>
 <p>The first list and every reload scan off the caller's thread and defer the
 reply. Run loads the catalogue first if necessary and answers acceptance,
-not completion. Run numbers increase within the app process. States are
+not completion. Run numbers increase only for accepted runs within the app
+process. A manager-thread start refusal preserves the previous number and
+identity and emits no finished event. A child spawn failure after acceptance
+emits one <code>failed_to_start</code> event. States are
 <code>idle</code>, <code>running</code>, <code>exited</code>, <code>failed</code> and <code>failed_to_start</code>; a signal gives
 <code>exit:null</code>. Idle identity fields are null. Origins are <code>gui</code> or <code>bus</code>.</p>
 <p>Subscribe to <code>&lt;service&gt;.macros.finished</code> before starting a run. Once the
