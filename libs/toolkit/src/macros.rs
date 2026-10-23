@@ -1261,7 +1261,10 @@ mod tests {
             &egui::Context::default(),
         );
         assert!(state.editor_open);
-        assert_eq!(state.document.as_ref().unwrap().path(), Some(path.as_path()));
+        assert_eq!(
+            state.document.as_ref().unwrap().path(),
+            Some(path.as_path())
+        );
         assert_eq!(state.error.as_deref(), Some("forced scan failure"));
         assert!(state.creation_error.is_none());
         assert!(path.is_file());
