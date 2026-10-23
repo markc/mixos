@@ -3,6 +3,8 @@
 
 ## Unreleased — 2026-10-23
 
+- Focus the macro title only after its visible widget is drawn, and release
+  focus before disabling it for creation, keeping AccessKit focus valid.
 - Save macro editor snapshots independently of discovery, keep the document
   visible during writes, and save dirty edits before closing the editor.
 - Wake idle macro windows only for live work or native Bus deliveries.

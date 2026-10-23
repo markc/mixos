@@ -395,7 +395,10 @@ impl State {
                                     .hint_text(own("macros-title")),
                             );
                             if let Some(error) = &self.creation_error { ui.label(error); }
-                            if !ctx
+                            // Only a visible, enabled widget has an AccessKit
+                            // node to receive focus. Areas may first run an
+                            // invisible sizing pass; leave the request pending.
+                            if ui.is_visible() && field.enabled() && !ctx
                                 .data(|d| d.get_temp::<bool>(crate::window_id(viewport, "macro-title-focused")))
                                 .unwrap_or(false)
                             {
@@ -415,6 +418,9 @@ impl State {
                                     .is_some_and(|p| !shown.response.rect.contains(p))
                         });
                         if enter && !title.trim().is_empty() {
+                            // The field becomes disabled while creation runs.
+                            // Release focus while its node is still drawn.
+                            field.surrender_focus();
                             selected = Some(menu::Pick {
                                 id: "macro.create",
                                 edit: false,
@@ -463,7 +469,8 @@ impl State {
                         self.creation_error = None;
                         self.open = true;
                         menu::open_title(ctx);
-                        ctx.memory_mut(|m| m.request_focus(crate::window_id(viewport, "macro-title")));
+                        // The title widget is drawn on the next frame. Its
+                        // response requests focus then, never on a missing node.
                         ctx.data_mut(|d| {
                             d.insert_temp(crate::window_id(viewport, "macro-title-focused"), false)
                         });
@@ -1250,8 +1257,10 @@ mod tests {
         h.get_by_label("New macro…").click(); h.run_steps(5);
         assert_eq!(runtime(&h).lock().unwrap().title.as_deref(), Some(""));
         assert!(h.state().open);
+        assert!(h.ctx.memory(|m| m.has_focus(crate::window_id(egui::ViewportId::ROOT, "macro-title"))));
         h.key_press(egui::Key::Escape); h.run_steps(5);
         assert!(!h.state().open);
+        assert!(!h.ctx.memory(|m| m.has_focus(crate::window_id(egui::ViewportId::ROOT, "macro-title"))));
         assert_eq!(h.state().stolen_keys, 0);
         h.get_by_label("Macros").click(); h.run_steps(5);
         h.get_by_label("New macro…").click(); h.run_steps(5);
@@ -1261,6 +1270,28 @@ mod tests {
         assert_eq!(h.state().stolen_keys, 0);
         assert!(!h.state().open);
         assert!(runtime(&h).lock().unwrap().document.is_some());
+    }
+
+    #[test]
+    fn show_app_failed_creation_reports_inline_and_restores_title_focus() {
+        let mut h = app_harness();
+        let roots = runtime(&h).lock().unwrap().engine.roots.clone().unwrap();
+        std::fs::write(&roots.user, "obstruction").unwrap();
+        h.get_by_label("Macros").click(); h.run_steps(5);
+        h.get_by_label("New macro…").click(); h.run_steps(5);
+        h.event(egui::Event::Text("Tidy imports".into()));
+        h.key_press(egui::Key::Enter); h.run_steps(5);
+        wait_until(|| { h.run_steps(1); runtime(&h).lock().unwrap().creation_error.is_some() });
+        h.run_steps(5);
+        let state = runtime(&h);
+        let state = state.lock().unwrap();
+        assert!(state.creation.is_none());
+        assert_eq!(state.title.as_deref(), Some("Tidy imports"));
+        assert!(h.state().open);
+        assert!(!state.editor_open);
+        let _ = h.get_by_label(state.creation_error.as_ref().unwrap());
+        assert!(h.ctx.memory(|m| m.has_focus(crate::window_id(egui::ViewportId::ROOT, "macro-title"))));
+        assert_eq!(h.state().stolen_keys, 0);
     }
 
     #[test]
@@ -1292,6 +1323,7 @@ mod tests {
             h.event(egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed: true, modifiers: egui::Modifiers::NONE });
             h.run_steps(1);
             assert!(!h.state().open);
+            assert!(!h.ctx.memory(|m| m.has_focus(crate::window_id(egui::ViewportId::ROOT, "macro-title"))));
             h.event(egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed: false, modifiers: egui::Modifiers::NONE });
             h.run_steps(5);
             assert_eq!(h.state().clicks, 1);

@@ -203,6 +203,42 @@ fn create_from_title_slugs_and_allocates_without_overwriting() {
 
 #[cfg(unix)]
 #[test]
+fn create_from_title_counts_dangling_symlinks_as_name_clashes() {
+    let temp = tempfile::tempdir().unwrap();
+    let roots = roots(temp.path());
+    let folder = roots.ensure_user_folder("ced", Tier::UserApp).unwrap();
+    let occupied = folder.join("tidy.mix");
+    std::os::unix::fs::symlink(folder.join("missing.mix"), &occupied).unwrap();
+    let path = roots.create_from_title("ced", "Tidy").unwrap();
+    assert_eq!(path.file_name().unwrap(), "tidy-2.mix");
+    assert!(occupied.symlink_metadata().unwrap().file_type().is_symlink());
+}
+
+#[test]
+fn create_from_title_reports_obstructed_parents_without_retrying() {
+    for obstruct_root in [true, false] {
+        let temp = tempfile::tempdir().unwrap();
+        let roots = roots(temp.path());
+        let obstruction = if obstruct_root {
+            roots.user.clone()
+        } else {
+            fs::create_dir(&roots.user).unwrap();
+            roots.user.join("ced")
+        };
+        fs::write(&obstruction, "keep").unwrap();
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(roots.create_from_title("ced", "Tidy imports"));
+        });
+        let result = rx.recv_timeout(Duration::from_secs(2))
+            .expect("parent obstruction must report an error, not retry every slug");
+        assert!(result.is_err());
+        assert_eq!(fs::read_to_string(obstruction).unwrap(), "keep");
+    }
+}
+
+#[cfg(unix)]
+#[test]
 fn symlinks_may_stay_inside_but_must_never_escape_the_root() {
     use std::os::unix::fs::symlink;
     let temp = tempfile::tempdir().unwrap();
