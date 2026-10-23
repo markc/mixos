@@ -72,7 +72,10 @@ async fn ordered_lines_then_exactly_one_terminal_in_plain_script() {
     let Value::Map(m) = &exits[0] else { panic!() };
     assert_eq!(m["exit_code"], Value::Number(0.0));
     pump(&mut e).await;
-    assert_eq!(exec(&mut e, "len($exits)").await.unwrap(), Value::Number(1.0));
+    assert_eq!(
+        exec(&mut e, "len($exits)").await.unwrap(),
+        Value::Number(1.0)
+    );
 }
 
 #[tokio::test(flavor = "current_thread")]
