@@ -53,4 +53,3 @@ yet. They are listed on both this page and the desktop page until they do.
 - [settingsd](../settingsd/README.md) (service): The headless desktop settings authority, the one writer for a session profile's settings, with durable receipts and retained change publication on the Bus.
 - [system](../system/README.md) (cli): The system package builds the mix shell executable with optional noded, monitord, maild, webd and dnsd personalities selected by the name it is started under.
 - [term](../term/README.md) (app): The MixOS terminal, with tabs, split panes and a GPU-drawn grid, driven by the session settings and fully scriptable over the Bus.
-- [tray](../tray/README.md) (app): The MixOS tray item, a StatusNotifierItem on Plasma's own tray host that shows the state of MixOS units.
