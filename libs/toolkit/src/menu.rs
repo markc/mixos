@@ -1950,15 +1950,16 @@ mod tests {
                     let margin = Frame::menu(ui.style()).total_margin().sum();
                     let mut nav = Nav::default();
                     nav.open(0);
+                    let menus = [menu];
                     let shown = show_level(
                         &ctx,
                         &chrome,
                         1,
-                        &menu.entries,
+                        &menus[0].entries,
                         &layout,
                         frame,
                         &mut nav,
-                        &[menu],
+                        &menus,
                         View {
                             max_height: (frame.height() - margin.y).max(0.0),
                             max_width: Some((frame.width() - margin.x).max(0.0)),
