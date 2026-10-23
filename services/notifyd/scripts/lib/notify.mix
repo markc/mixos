@@ -8,7 +8,7 @@
 --
 -- State: {schema: 1, seq, records: [record, ...]} oldest first.
 -- Record: {id, summary, body, app, source, actions: [{id, label}], thread,
---   request_id, created_at, created_t, deadline_t, outcome}
+--   request_id, urgency, presented, created_at, created_t, deadline_t, outcome}
 -- Outcome: nil while open, else {kind, action, at}; kind is one of
 --   action (a button; action is its id), dismissed (the human closed it
 --   without choosing), expired (its timeout passed), closed (the sender or
@@ -105,7 +105,15 @@ fn add($state, $args, $now, $now_iso)
   $body = _text($args, "body", $BODY_MAX, false)
   $source = _text($args, "source", $TEXT_MAX, false)
   $app = _text($args, "app", $TEXT_MAX, false)
-  if $app == "" then $app = if $source != "" then $source else "Notification" end end
+  if $app == "" then $app = if $source != "" then $source else "MixOS" end end
+  $urgency = $args.urgency
+  if $urgency == nil then
+    $level = $args.level
+    $urgency = if $level == "error" then "critical" elif $level == "warning" then "normal" else $level ?? "normal" end
+  end
+  if type($urgency) != "string" or not contains(["low", "normal", "critical"], $urgency) then
+    _usage("urgency must be low, normal or critical")
+  end
   $thread = _text($args, "thread", $TEXT_MAX, false)
   $request_id = _text($args, "request_id", $TEXT_MAX, false)
   $actions = _actions($args)
@@ -125,7 +133,7 @@ fn add($state, $args, $now, $now_iso)
   end
   $state.seq = $state.seq + 1
   $rec = {id: $state.seq, summary: $summary, body: $body, app: $app, source: $source,
-    actions: $actions, thread: $thread, request_id: $request_id,
+    actions: $actions, thread: $thread, request_id: $request_id, urgency: $urgency, presented: {},
     created_at: $now_iso, created_t: $now, deadline_t: $deadline, outcome: nil}
   $records = $state.records
   push($records, $rec)
@@ -151,6 +159,7 @@ fn settle($state, $id, $kind, $action, $now_iso)
         end
       end
       $r.outcome = {kind: $kind, action: if $kind == "action" then $action else nil end, at: $now_iso}
+      $r.presented = {}
       $found = $r
     end
     push($records, $r)
@@ -170,7 +179,29 @@ fn view($r)
   return {id: $r.id, summary: $r.summary, body: $r.body, app: $r.app, source: $r.source,
     actions: $r.actions, thread: $r.thread, request_id: $r.request_id,
     created_at: $r.created_at, status: if is_open($r) then "open" else "done" end,
-    outcome: $r.outcome}
+    outcome: $r.outcome, urgency: $r.urgency ?? "normal", presented: $r.presented ?? {}}
+end
+
+-- A surface owns one opaque reference per open notification.
+fn present($state, $args)
+  if type($args.id) != "number" or floor($args.id) != $args.id then _usage("id must be a whole number") end
+  $surface = _text($args, "surface", $TEXT_MAX, true)
+  $ref = _text($args, "ref", $TEXT_MAX, true)
+  if trim($surface) == "" or trim($ref) == "" then _usage("surface and ref must be non-empty") end
+  $records = []
+  $found = nil
+  for $r in $state.records
+    if $r.id == $args.id then
+      if not is_open($r) then raise("ALREADY_ANSWERED", "notification already has an outcome") end
+      $r.presented = $r.presented ?? {}
+      $r.presented[$surface] = $ref
+      $found = $r
+    end
+    push($records, $r)
+  end
+  if $found == nil then raise("NOT_FOUND", "no notification " .. to_string($args.id)) end
+  $state.records = $records
+  return {state: $state, record: $found}
 end
 
 -- notify.list: open records (or every record with all: true), oldest first.
@@ -192,6 +223,7 @@ fn restore($text)
   if type($v) != "map" or $v.schema != 1 or type($v.seq) != "number" or type($v.records) != "list" then
     raise("STATE_INVALID", "state file has the wrong shape")
   end
+  $records = []
   for each $r in $v.records
     if type($r) != "map" or type($r.id) != "number" or type($r.summary) != "string" or type($r.actions) != "list" then
       raise("STATE_INVALID", "state file has a malformed record")
@@ -209,6 +241,22 @@ fn restore($text)
     end
     -- An id is never handed out twice, even from a hand-edited file.
     if $r.id > $v.seq then $v.seq = $r.id end
+    $r.urgency = $r.urgency ?? "normal"
+    $r.presented = $r.presented ?? {}
+    if type($r.urgency) != "string" or not contains(["low", "normal", "critical"], $r.urgency) or type($r.presented) != "map" then
+      raise("STATE_INVALID", "record has malformed urgency or presentations")
+    end
+    for $surface in keys($r.presented)
+      if trim($surface) == "" or len($surface) > $TEXT_MAX or type($r.presented[$surface]) != "string" then
+        raise("STATE_INVALID", "record has malformed presentation")
+      end
+      if trim($r.presented[$surface]) == "" or len($r.presented[$surface]) > $TEXT_MAX then
+        raise("STATE_INVALID", "record has malformed presentation reference")
+      end
+    end
+    if not is_open($r) then $r.presented = {} end
+    push($records, $r)
   end
+  $v.records = $records
   return $v
 end

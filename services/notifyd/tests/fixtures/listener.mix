@@ -19,6 +19,9 @@ end
 on notification.closed
   record()
 end
+on notification.presented
+  record()
+end
 subscribe("notify.changed")
 on listener.ready
   reply(0, "{}")

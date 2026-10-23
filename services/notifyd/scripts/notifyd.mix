@@ -10,9 +10,10 @@
 --
 -- Verbs (bodies are JSON objects):
 --   notify.send     {summary, body?, app?, source?, actions?: [{id, label}],
---                    timeout_ms?, request_id?, thread?}   -> {id, status}
+--                    urgency?, timeout_ms?, request_id?, thread?} -> {id, status}
 --   notify.get      {id}               the record, with its outcome once set
 --   notify.list     {all?}             open records (all: every record), oldest first
+--   notify.present  {id, surface, ref} record a local surface's presentation
 --   notify.action   {id, action}       the human pressed a button
 --   notify.dismiss  {id}               the human closed it without choosing
 --   notify.close    {id}               the sender or the page withdrew it
@@ -22,7 +23,8 @@
 -- on the topic "<name>.changed" with inner command notification.answered, and
 -- notify.get reads it afterwards. Other inner commands: notification.created,
 -- notification.closed (any outcome that is not a button press).
--- action, dismiss, close and close_all settle a notification, so they are
+-- present records a local surface; action, dismiss, close and close_all settle
+-- a notification. These verbs are
 -- taken from callers on this node only (the broker's broker_origin stamp): a
 -- peer across the mesh must never answer or withdraw a question for the
 -- person, such as portald's screen-share consent.
@@ -132,6 +134,20 @@ end
 
 on notify.action desc "the human pressed button {action} on notification {id}"
   if local_caller() then $S = settle_and_reply(body().id, "action", body().action) end
+end
+
+on notify.present desc "record a local surface reference {id, surface, ref}"
+  if local_caller() then
+    try
+      $out = $n.present($S, body())
+      save($out.state)
+      $S = $out.state
+      announce("notification.presented", $out.record)
+      reply(0, json_encode($n.view($out.record)))
+    catch $m, $err
+      fail($err.code, $m)
+    end
+  end
 end
 
 on notify.dismiss desc "the human closed notification {id} without choosing"

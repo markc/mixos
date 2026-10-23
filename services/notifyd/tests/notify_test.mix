@@ -47,15 +47,35 @@ check("app defaults to source", $a.record.app == "claude@vt4")
 $b = $n.add($s, {summary: "Is this okay?", actions: $yes_no, timeout_ms: 5000}, 100, $T)
 $s = $b.state
 check("deadline is now + timeout", $b.record.deadline_t == 105)
-check("app defaults to Notification", $n.add($n.new_state(), {summary: "x"}, 1, $T).record.app == "Notification")
+check("app defaults to MixOS", $n.add($n.new_state(), {summary: "x"}, 1, $T).record.app == "MixOS")
 
 -- Outcomes: first wins, the action must exist.
+check("urgency defaults normal", $a.record.urgency == "normal")
+check("error alias is critical", $n.add($s, {summary: "x", level: "error"}, 1, $T).record.urgency == "critical")
+check("warning alias is normal", $n.add($s, {summary: "x", level: "warning"}, 1, $T).record.urgency == "normal")
+check("explicit urgency wins", $n.add($s, {summary: "x", urgency: "low", level: "error"}, 1, $T).record.urgency == "low")
+refuses("invalid urgency", "USAGE", fn() = $n.add($s, {summary: "x", urgency: "urgent"}, 1, $T))
+refuses("invalid presentation id", "USAGE", fn() = $n.present($s, {id: "1", surface: "plasma", ref: "12"}))
+refuses("missing presentation", "NOT_FOUND", fn() = $n.present($s, {id: 999, surface: "plasma", ref: "12"}))
+refuses("empty surface", "USAGE", fn() = $n.present($s, {id: 1, surface: "", ref: "12"}))
+$s = $n.present($s, {id: 2, surface: "plasma", ref: "12"}).state
+$s = $n.present($s, {id: 2, surface: "plasma", ref: "13"}).state
+$s = $n.present($s, {id: 2, surface: "desk", ref: "toast"}).state
+check("surface replaces its own ref", deep_eq($n.find($s, 2).presented, {plasma: "13", desk: "toast"}))
+check("presentations survive restore", deep_eq($n.restore(json_encode($s)), $s))
+refuses("restore refuses invalid urgency", "STATE_INVALID", fn() = $n.restore(json_encode({schema: 1, seq: 1, records: [{id: 1, summary: "x", actions: [], urgency: "urgent"}]})))
+refuses("restore refuses numeric presentation ref", "STATE_INVALID", fn() = $n.restore(json_encode({schema: 1, seq: 1, records: [{id: 1, summary: "x", actions: [], presented: {plasma: 42}}]})))
+$old = $n.new_state()
+$old.records = [{id: 1, summary: "old", actions: [], outcome: nil}]
+check("old state defaults urgency and presentations", $n.restore(json_encode($old)).records[0].urgency == "normal" and deep_eq($n.restore(json_encode($old)).records[0].presented, {}))
 refuses("unknown action", "USAGE", fn() = $n.settle($s, 2, "action", "maybe", $T))
 refuses("unknown id", "NOT_FOUND", fn() = $n.settle($s, 99, "dismissed", nil, $T))
 refuses("unknown outcome kind", "USAGE", fn() = $n.settle($s, 2, "superseded", nil, $T))
 $c = $n.settle($s, 2, "action", "yes", $T)
 $s = $c.state
 check("action recorded", $c.record.outcome.kind == "action" and $c.record.outcome.action == "yes")
+check("settling clears presentations", deep_eq($c.record.presented, {}))
+refuses("settled presentation refused", "ALREADY_ANSWERED", fn() = $n.present($s, {id: 2, surface: "plasma", ref: "14"}))
 refuses("a second outcome is refused", "ALREADY_ANSWERED", fn() = $n.settle($s, 2, "action", "no", $T))
 refuses("expiry after an answer is refused", "ALREADY_ANSWERED", fn() = $n.settle($s, 2, "expired", nil, $T))
 check("dismissed carries no action", $n.settle($s, 1, "dismissed", nil, $T).record.outcome.action == nil)

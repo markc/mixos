@@ -260,6 +260,7 @@ says what happened, and the body is the notification as <code>notify.get</code> 
 it:</p>
 <table><thead><tr><th>Inner command</th><th>When</th></tr></thead><tbody>
 <tr><td><code>notification.created</code></td><td>a notification was posted</td></tr>
+<tr><td><code>notification.presented</code></td><td>a local surface recorded or replaced its presentation reference</td></tr>
 <tr><td><code>notification.answered</code></td><td>the human pressed a button; <code>outcome.action</code> is its id</td></tr>
 <tr><td><code>notification.closed</code></td><td>any other outcome: <code>dismissed</code>, <code>expired</code> or <code>closed</code></td></tr>
 </tbody></table>
@@ -269,9 +270,10 @@ listening, and match on the id the send returned. If you were disconnected,
 <p>An expired question was not answered. Treat it as "no answer", never as yes.</p>
 <h2 id="verbs">Verbs</h2>
 <table><thead><tr><th>Verb</th><th>Body</th><th>Reply</th></tr></thead><tbody>
-<tr><td><code>notify.send</code></td><td><code>summary</code>, and optionally <code>body</code>, <code>app</code>, <code>source</code>, <code>actions</code> (<code>[{id, label}]</code>), <code>timeout_ms</code>, <code>request_id</code>, <code>thread</code></td><td><code>{id, status}</code></td></tr>
+<tr><td><code>notify.send</code></td><td><code>summary</code>, and optionally <code>body</code>, <code>app</code>, <code>source</code>, <code>urgency</code>, <code>actions</code> (<code>[{id, label}]</code>), <code>timeout_ms</code>, <code>request_id</code>, <code>thread</code></td><td><code>{id, status}</code></td></tr>
 <tr><td><code>notify.get</code></td><td><code>{id}</code></td><td>the notification, with <code>outcome</code> once it has one</td></tr>
 <tr><td><code>notify.list</code></td><td><code>{all?}</code></td><td>open notifications, oldest first; <code>all: true</code> includes answered ones</td></tr>
+<tr><td><code>notify.present</code></td><td><code>{id, surface, ref}</code></td><td>the notification with the surface's string reference recorded; replaces its previous reference</td></tr>
 <tr><td><code>notify.action</code></td><td><code>{id, action}</code></td><td>the human pressed a button (the toast calls this)</td></tr>
 <tr><td><code>notify.dismiss</code></td><td><code>{id}</code></td><td>the human closed it without choosing</td></tr>
 <tr><td><code>notify.close</code></td><td><code>{id}</code></td><td>the sender, or the Notifications page, withdrew it</td></tr>
@@ -279,8 +281,8 @@ listening, and match on the id the send returned. If you were disconnected,
 </tbody></table>
 <p>Each notification gets exactly one outcome. The first one wins, and a later
 button press or timeout is refused with <code>ALREADY_ANSWERED</code>.</p>
-<p><code>notify.action</code>, <code>notify.dismiss</code>, <code>notify.close</code> and <code>notify.close_all</code>
-settle a notification, so notifyd takes them only from callers on this node
+<p><code>notify.present</code>, <code>notify.action</code>, <code>notify.dismiss</code>, <code>notify.close</code> and <code>notify.close_all</code>
+record a local presentation or settle a notification, so notifyd takes them only from callers on this node
 (the broker's <code>broker_origin</code> stamp). A peer across the mesh can post and read
 notifications but never answer or withdraw one for the person. That matters
 for questions such as portald's screen-share consent.</p>
@@ -288,6 +290,19 @@ for questions such as portald's screen-share consent.</p>
 rc 13 <code>FORBIDDEN</code> (not a local caller), rc 14 <code>NOT_FOUND</code>,
 rc 15 <code>ALREADY_ANSWERED</code>, rc 16 <code>TOO_MANY_OPEN</code>.</p>
 <h2 id="limits">Limits</h2>
+<p><code>urgency</code> is <code>low</code>, <code>normal</code> (default) or <code>critical</code>. Existing senders may
+use the input-only <code>level</code> alias: <code>warning</code> means <code>normal</code>, <code>error</code> means
+<code>critical</code>; the three urgency values are also accepted. Explicit <code>urgency</code>
+takes precedence. Replies and events expose only <code>urgency</code>.</p>
+<p><code>notify.get</code>, <code>notify.list</code> and change bodies contain <code>id</code>, <code>summary</code>, <code>body</code>,
+<code>app</code>, <code>source</code>, <code>urgency</code>, <code>actions</code>, <code>thread</code>, <code>request_id</code>, <code>created_at</code>,
+<code>status</code>, <code>outcome</code> and <code>presented</code>. The app defaults to source, then <code>MixOS</code>.
+<code>presented</code> maps surface names to opaque string references, for example
+<code>{"plasma":"42"}</code>. Surface and ref are non-empty strings of at most 80
+characters. Only local callers can record presentations; unknown ids and
+settled notifications use <code>NOT_FOUND</code> and <code>ALREADY_ANSWERED</code>. Every outcome
+clears all presentation records. Urgency and presentations persist across
+restarts; older state files default to <code>normal</code> and <code>{}</code>.</p>
 <p>A summary is at most 120 characters, a body 500, and a button label 32. A
 notification has at most four buttons. At most eight questions can wait for an
 answer at once; the ninth is refused until one is answered. notifyd keeps the
