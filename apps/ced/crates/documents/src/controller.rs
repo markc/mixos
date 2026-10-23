@@ -1080,15 +1080,15 @@ impl Controller {
 
     fn open_deadline(&self, tab: TabId) -> u64 {
         if self.tab(tab).is_some_and(|t| t.mirror.is_some()) {
-                DEADLINE_LONG_MS
-            } else {
-                match self.x.get(&tab).map_or(0, |x| x.open_misses) {
-                    0 => 3_000,
-                    1 => 6_000,
-                    2 => 12_000,
-                    _ => 30_000,
-                }
+            DEADLINE_LONG_MS
+        } else {
+            match self.x.get(&tab).map_or(0, |x| x.open_misses) {
+                0 => 3_000,
+                1 => 6_000,
+                2 => 12_000,
+                _ => 30_000,
             }
+        }
     }
 
     fn send_list(&mut self, tab: TabId, fx: &mut Vec<Effect>) {
@@ -3278,8 +3278,12 @@ mod tests {
             assert!(c.open_slow(tab));
             assert_eq!(c.open_error(tab), None);
             assert_eq!(c.x[&tab].open_misses, attempt as u32 + 1);
-            assert_eq!(fx.iter().filter(|e| matches!(e, Effect::Notice { .. })).count(),
-                usize::from(attempt == 0));
+            assert_eq!(
+                fx.iter()
+                    .filter(|e| matches!(e, Effect::Notice { .. }))
+                    .count(),
+                usize::from(attempt == 0)
+            );
         }
         let (req, _) = sent(&fx, "edit.list");
         fx = c.on_incoming(Incoming::Reply {
@@ -3290,7 +3294,10 @@ mod tests {
         assert_eq!(c.open_error(tab), Some(EDIT_UNAVAILABLE));
         assert!(!c.open_slow(tab));
         assert!(!c.x[&tab].reattaching);
-        assert!(!fx.iter().any(|e| matches!(e, Effect::Send { .. } | Effect::Timer { .. })));
+        assert!(
+            !fx.iter()
+                .any(|e| matches!(e, Effect::Send { .. } | Effect::Timer { .. }))
+        );
         fx = registered(&mut c, json!(["edit"]));
         let (req, _) = sent(&fx, "edit.list");
         assert_eq!(c.open_error(tab), None);
