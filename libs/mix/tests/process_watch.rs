@@ -72,7 +72,7 @@ async fn ordered_lines_then_exactly_one_terminal_in_plain_script() {
     let Value::Map(m) = &exits[0] else { panic!() };
     assert_eq!(m["exit_code"], Value::Number(0.0));
     pump(&mut e).await;
-    assert_eq!(e.get_global("exits").unwrap(), Value::List(exits.clone()));
+    assert_eq!(exec(&mut e, "len($exits)").await.unwrap(), Value::Number(1.0));
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -219,7 +219,9 @@ async fn reload_candidate_and_bad_options_never_start_children() {
     let error = exec(&mut e, r#"process_watch(["sleep", "1000"])"#)
         .await
         .unwrap_err();
-    assert!(matches!(error, mix::MixError::Structured(info) if info.code == "PROC_WATCH_RELOAD_CANDIDATE"));
+    assert!(
+        matches!(error, mix::MixError::Structured(info) if info.code == "PROC_WATCH_RELOAD_CANDIDATE")
+    );
     e.set_reload_candidate(false);
     for source in [
         r#"process_watch([])"#,

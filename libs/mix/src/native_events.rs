@@ -1809,12 +1809,21 @@ mod process_tests {
         queue.register_socket_for_test("tcp:test", "data", "tcp");
         queue.pending.lock().unwrap().processes.insert(
             "process:test".into(),
-            PendingProcess { max_queue: 2, ..Default::default() },
+            PendingProcess {
+                max_queue: 2,
+                ..Default::default()
+            },
         );
         queue.process_line("process:test", "stdout", "line".into(), false);
         let mut seen = Vec::new();
         for _ in 0..2 {
-            assert!(queue.socket_push("tcp:test", crate::builtins::socket_sources::SocketRecord { kind: "line", data: b"frame".to_vec() }));
+            assert!(queue.socket_push(
+                "tcp:test",
+                crate::builtins::socket_sources::SocketRecord {
+                    kind: "line",
+                    data: b"frame".to_vec()
+                }
+            ));
             seen.push(queue.next(None).await.unwrap().command);
         }
         assert_eq!(seen, ["data", "proc.line"]);
@@ -1849,4 +1858,3 @@ mod process_tests {
         assert!(queue.pending.lock().unwrap().processes.is_empty());
     }
 }
-
