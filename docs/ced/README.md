@@ -90,4 +90,4 @@ instance). Verbs keep the app’s canonical prefix, such as `ced.macros.run`.
 | `ced.macros.status` | `{}` | Current or last run |
 | `ced.macros.output` | `{}` | Retained output and dropped flag |
 | `ced.macros.stop` | `{}` | Whether termination was requested |
-| `ced.macros.new` | `{title}` | Create a user per-app macro; `{id,title,path}`, without opening an editor |
+| `ced.macros.new` | `{title}` | Create a user per-app macro; `{id,title,path,scanned}`, without opening an editor; scan failures add `warning` and preserve the file |

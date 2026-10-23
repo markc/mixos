@@ -93,4 +93,4 @@ instance). Verbs keep the app’s canonical prefix, such as `term.macros.run`.
 | `term.macros.status` | `{}` | Current or last run |
 | `term.macros.output` | `{}` | Retained output and dropped flag |
 | `term.macros.stop` | `{}` | Whether termination was requested |
-| `term.macros.new` | `{title}` | Create a user per-app macro; `{id,title,path}`, without opening an editor |
+| `term.macros.new` | `{title}` | Create a user per-app macro; `{id,title,path,scanned}`, without opening an editor; scan failures add `warning` and preserve the file |

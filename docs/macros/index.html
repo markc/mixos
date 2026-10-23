@@ -373,7 +373,7 @@ authority as executing an app command; running a macro executes user code.</p>
 <tr><td><code>status</code></td><td><code>{}</code></td><td><code>{state,run,id,title,origin,started,exit,error}</code></td></tr>
 <tr><td><code>output</code></td><td><code>{}</code></td><td><code>{run,text,dropped}</code>; the retained 64 KiB tail</td></tr>
 <tr><td><code>stop</code></td><td><code>{}</code></td><td><code>{stopping:bool}</code>; termination is asynchronous</td></tr>
-<tr><td><code>new</code></td><td><code>{title}</code></td><td>Creates in the user per-app tier; replies <code>{id, title, path}</code> without opening an editor</td></tr>
+<tr><td><code>new</code></td><td><code>{title}</code></td><td>Creates in the user per-app tier; replies <code>{id, title, path, scanned}</code> without opening an editor; if the rescan fails, <code>scanned:false</code> and <code>warning</code> report it while preserving the created file</td></tr>
 </tbody></table>
 <p>Refusals use rc 10 and <code>{error_code,message}</code>. Bodies are limited to 8192
 bytes before JSON parsing.</p>

@@ -170,7 +170,7 @@ authority as executing an app command; running a macro executes user code.
 | `status` | `{}` | `{state,run,id,title,origin,started,exit,error}` |
 | `output` | `{}` | `{run,text,dropped}`; the retained 64 KiB tail |
 | `stop` | `{}` | `{stopping:bool}`; termination is asynchronous |
-| `new` | `{title}` | Creates in the user per-app tier; replies `{id, title, path}` without opening an editor |
+| `new` | `{title}` | Creates in the user per-app tier; replies `{id, title, path, scanned}` without opening an editor; if the rescan fails, `scanned:false` and `warning` report it while preserving the created file |
 
 Refusals use rc 10 and `{error_code,message}`. Bodies are limited to 8192
 bytes before JSON parsing.

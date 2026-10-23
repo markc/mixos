@@ -306,4 +306,4 @@ instance). Verbs keep the app’s canonical prefix, such as `screenshot.macros.r
 | `screenshot.macros.status` | `{}` | Current or last run |
 | `screenshot.macros.output` | `{}` | Retained output and dropped flag |
 | `screenshot.macros.stop` | `{}` | Whether termination was requested |
-| `screenshot.macros.new` | `{title}` | Create a user per-app macro; `{id,title,path}`, without opening an editor |
+| `screenshot.macros.new` | `{title}` | Create a user per-app macro; `{id,title,path,scanned}`, without opening an editor; scan failures add `warning` and preserve the file |

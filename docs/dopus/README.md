@@ -149,4 +149,4 @@ instance). Verbs keep the app’s canonical prefix, such as `dopus.macros.run`.
 | `dopus.macros.status` | `{}` | Current or last run |
 | `dopus.macros.output` | `{}` | Retained output and dropped flag |
 | `dopus.macros.stop` | `{}` | Whether termination was requested |
-| `dopus.macros.new` | `{title}` | Create a user per-app macro; `{id,title,path}`, without opening an editor |
+| `dopus.macros.new` | `{title}` | Create a user per-app macro; `{id,title,path,scanned}`, without opening an editor; scan failures add `warning` and preserve the file |

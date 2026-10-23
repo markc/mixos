@@ -2027,7 +2027,7 @@ instance). Verbs keep the app’s canonical prefix, such as `busviewer.macros.ru
 | `busviewer.macros.status` | `{}` | Current or last run |
 | `busviewer.macros.output` | `{}` | Retained output and dropped flag |
 | `busviewer.macros.stop` | `{}` | Whether termination was requested |
-| `busviewer.macros.new` | `{title}` | Create a user per-app macro; `{id,title,path}`, without opening an editor |
+| `busviewer.macros.new` | `{title}` | Create a user per-app macro; `{id,title,path,scanned}`, without opening an editor; scan failures add `warning` and preserve the file |
 
 ---
 
@@ -2120,7 +2120,7 @@ instance). Verbs keep the app’s canonical prefix, such as `ced.macros.run`.
 | `ced.macros.status` | `{}` | Current or last run |
 | `ced.macros.output` | `{}` | Retained output and dropped flag |
 | `ced.macros.stop` | `{}` | Whether termination was requested |
-| `ced.macros.new` | `{title}` | Create a user per-app macro; `{id,title,path}`, without opening an editor |
+| `ced.macros.new` | `{title}` | Create a user per-app macro; `{id,title,path,scanned}`, without opening an editor; scan failures add `warning` and preserve the file |
 
 ---
 
@@ -7930,7 +7930,7 @@ instance). Verbs keep the app’s canonical prefix, such as `dopus.macros.run`.
 | `dopus.macros.status` | `{}` | Current or last run |
 | `dopus.macros.output` | `{}` | Retained output and dropped flag |
 | `dopus.macros.stop` | `{}` | Whether termination was requested |
-| `dopus.macros.new` | `{title}` | Create a user per-app macro; `{id,title,path}`, without opening an editor |
+| `dopus.macros.new` | `{title}` | Create a user per-app macro; `{id,title,path,scanned}`, without opening an editor; scan failures add `warning` and preserve the file |
 
 ---
 
@@ -8588,7 +8588,7 @@ instance). Verbs keep the app’s canonical prefix, such as `email.macros.run`.
 | `email.macros.status` | `{}` | Current or last run |
 | `email.macros.output` | `{}` | Retained output and dropped flag |
 | `email.macros.stop` | `{}` | Whether termination was requested |
-| `email.macros.new` | `{title}` | Create a user per-app macro; `{id,title,path}`, without opening an editor |
+| `email.macros.new` | `{title}` | Create a user per-app macro; `{id,title,path,scanned}`, without opening an editor; scan failures add `warning` and preserve the file |
 
 ---
 
@@ -9529,7 +9529,7 @@ authority as executing an app command; running a macro executes user code.
 | `status` | `{}` | `{state,run,id,title,origin,started,exit,error}` |
 | `output` | `{}` | `{run,text,dropped}`; the retained 64 KiB tail |
 | `stop` | `{}` | `{stopping:bool}`; termination is asynchronous |
-| `new` | `{title}` | Creates in the user per-app tier; replies `{id, title, path}` without opening an editor |
+| `new` | `{title}` | Creates in the user per-app tier; replies `{id, title, path, scanned}` without opening an editor; if the rescan fails, `scanned:false` and `warning` report it while preserving the created file |
 
 Refusals use rc 10 and `{error_code,message}`. Bodies are limited to 8192
 bytes before JSON parsing.
@@ -32220,7 +32220,7 @@ instance). Verbs keep the app’s canonical prefix, such as `monitor.macros.run`
 | `monitor.macros.status` | `{}` | Current or last run |
 | `monitor.macros.output` | `{}` | Retained output and dropped flag |
 | `monitor.macros.stop` | `{}` | Whether termination was requested |
-| `monitor.macros.new` | `{title}` | Create a user per-app macro; `{id,title,path}`, without opening an editor |
+| `monitor.macros.new` | `{title}` | Create a user per-app macro; `{id,title,path,scanned}`, without opening an editor; scan failures add `warning` and preserve the file |
 
 ---
 
@@ -33074,7 +33074,7 @@ instance). Verbs keep the app’s canonical prefix, such as `prefs.macros.run`.
 | `prefs.macros.status` | `{}` | Current or last run |
 | `prefs.macros.output` | `{}` | Retained output and dropped flag |
 | `prefs.macros.stop` | `{}` | Whether termination was requested |
-| `prefs.macros.new` | `{title}` | Create a user per-app macro; `{id,title,path}`, without opening an editor |
+| `prefs.macros.new` | `{title}` | Create a user per-app macro; `{id,title,path,scanned}`, without opening an editor; scan failures add `warning` and preserve the file |
 
 ---
 
@@ -33615,7 +33615,7 @@ instance). Verbs keep the app’s canonical prefix, such as `screenshot.macros.r
 | `screenshot.macros.status` | `{}` | Current or last run |
 | `screenshot.macros.output` | `{}` | Retained output and dropped flag |
 | `screenshot.macros.stop` | `{}` | Whether termination was requested |
-| `screenshot.macros.new` | `{title}` | Create a user per-app macro; `{id,title,path}`, without opening an editor |
+| `screenshot.macros.new` | `{title}` | Create a user per-app macro; `{id,title,path,scanned}`, without opening an editor; scan failures add `warning` and preserve the file |
 
 ---
 
@@ -34107,7 +34107,7 @@ instance). Verbs keep the app’s canonical prefix, such as `term.macros.run`.
 | `term.macros.status` | `{}` | Current or last run |
 | `term.macros.output` | `{}` | Retained output and dropped flag |
 | `term.macros.stop` | `{}` | Whether termination was requested |
-| `term.macros.new` | `{title}` | Create a user per-app macro; `{id,title,path}`, without opening an editor |
+| `term.macros.new` | `{title}` | Create a user per-app macro; `{id,title,path,scanned}`, without opening an editor; scan failures add `warning` and preserve the file |
 
 ---
 

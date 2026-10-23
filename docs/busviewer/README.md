@@ -218,4 +218,4 @@ instance). Verbs keep the app’s canonical prefix, such as `busviewer.macros.ru
 | `busviewer.macros.status` | `{}` | Current or last run |
 | `busviewer.macros.output` | `{}` | Retained output and dropped flag |
 | `busviewer.macros.stop` | `{}` | Whether termination was requested |
-| `busviewer.macros.new` | `{title}` | Create a user per-app macro; `{id,title,path}`, without opening an editor |
+| `busviewer.macros.new` | `{title}` | Create a user per-app macro; `{id,title,path,scanned}`, without opening an editor; scan failures add `warning` and preserve the file |

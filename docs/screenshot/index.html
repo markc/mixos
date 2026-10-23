@@ -502,7 +502,7 @@ instance). Verbs keep the app’s canonical prefix, such as <code>screenshot.mac
 <tr><td><code>screenshot.macros.status</code></td><td><code>{}</code></td><td>Current or last run</td></tr>
 <tr><td><code>screenshot.macros.output</code></td><td><code>{}</code></td><td>Retained output and dropped flag</td></tr>
 <tr><td><code>screenshot.macros.stop</code></td><td><code>{}</code></td><td>Whether termination was requested</td></tr>
-<tr><td><code>screenshot.macros.new</code></td><td><code>{title}</code></td><td>Create a user per-app macro; <code>{id,title,path}</code>, without opening an editor</td></tr>
+<tr><td><code>screenshot.macros.new</code></td><td><code>{title}</code></td><td>Create a user per-app macro; <code>{id,title,path,scanned}</code>, without opening an editor; scan failures add <code>warning</code> and preserve the file</td></tr>
 </tbody></table>
         </article>
         <p class="doc-source"><a href="/screenshot/README.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>

@@ -348,4 +348,4 @@ instance). Verbs keep the app’s canonical prefix, such as `email.macros.run`.
 | `email.macros.status` | `{}` | Current or last run |
 | `email.macros.output` | `{}` | Retained output and dropped flag |
 | `email.macros.stop` | `{}` | Whether termination was requested |
-| `email.macros.new` | `{title}` | Create a user per-app macro; `{id,title,path}`, without opening an editor |
+| `email.macros.new` | `{title}` | Create a user per-app macro; `{id,title,path,scanned}`, without opening an editor; scan failures add `warning` and preserve the file |
