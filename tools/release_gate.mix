@@ -41,6 +41,11 @@ fn stage($name, $argv, $timeout)
       MIXOS_TEST_EDITD: realpath("target/debug/editd"),
       MIXOS_TEST_DOPUS: realpath("target/debug/dopus")}
   end
+  -- The native-session end-to-end tests check that this Mix was built from
+  -- the clean exact commit; the build stage above made it.
+  if $name == "e2e" then
+    $opts.env = {MIXOS_E2E_MIX_BIN: realpath("target/debug/mix")}
+  end
   $r = run_argv($argv, $opts)
   $lines = if $r.exit_code == 0 then "20" else "100" end
   $tail = run_argv(["tail", "-n", $lines, $log], {timeout: 20, max_output: 100000})
@@ -70,6 +75,12 @@ if $mode == "check" then
     "--skip", "large_file_open_edit_get_latency"], 5400)
   stage("latency", ["cargo", "test", "--release", "-p", "editd", "--test", "dispatch", "--locked",
     "large_file_open_edit_get_latency", "--", "--exact", "--nocapture"], 3600)
+  -- Term's native-session end-to-end tests are #[ignore]d in the normal run
+  -- because they need a real current-commit Mix. Run exactly those two
+  -- modules here; the other ignored tests are subprocess fixtures, asset-set
+  -- probes and benchmarks.
+  stage("e2e", ["cargo", "test", "-p", "term-core", "--lib", "--locked", "--no-fail-fast", "--",
+    "--ignored", "native_session::production_e2e::", "native_session::enforcement_tests::"], 3600)
   $mix = "target/debug/mix"
   stage("closure", [$mix, "tools/closure_gate.mix", "--locked"], 900)
   stage("layers", [$mix, "tools/layering_gate.mix", "--manifest-path", "Cargo.toml", "--locked"], 900)
