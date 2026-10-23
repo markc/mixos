@@ -8,6 +8,27 @@ generated: by docs/_build/gen-site.mix from libs/mix/CHANGELOG.md; do not edit
 
 > Mirrored from [`libs/mix/CHANGELOG.md`](https://github.com/markc/mixos/blob/main/libs/mix/CHANGELOG.md), where releases update it. The component's page is [mix](README.md). This page describes the current `main` branch of MixOS.
 
+## Unreleased
+
+### Changed
+
+- A `fn` or `function` named after a builtin is refused at its definition
+  with `FN_SHADOWS_BUILTIN`. A top-level definition (in a script or a
+  `require`d module) is refused before the first statement runs; a nested
+  one when control reaches it. The builtin always won at the call site, so
+  the function could never be called by name, and `mix --check` does not run
+  lint: a script defining `fn run($argv)` ran on and failed with
+  `run(): argument 1 (cmd) must be string`. `--serve` extension names such
+  as `context` are not refused (lint still warns, MIX-W2313). A sweep of
+  about 24,000 definitions across the hub, the MixOS tree and the installed
+  scenes found no live script affected.
+
+### Fixed
+
+- MIX-E1303 now covers the higher-order builtins (`count`, `map`, `filter`,
+  `sort_by`, …). `fn count($x)` linted clean and was silently dead. Lint and
+  runtime share one name set, `builtins::is_reserved_callable`.
+
 ## 0.117.0 — 2026-10-21
 
 ### Added

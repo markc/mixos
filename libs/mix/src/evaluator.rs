@@ -7932,6 +7932,28 @@ impl Evaluator {
         MixError::Structured(Box::new(info))
     }
 
+    /// Refuse a `fn` whose name a call site always hands to the builtin
+    /// (0.118.0, FN_SHADOWS_BUILTIN). The builtin still wins at the call;
+    /// this only moves the failure from far away (a builtin's argument
+    /// error, or wrong data with no error at all) to the definition. Lint
+    /// has said the same as MIX-E1303 since 0.90.0, but `mix --check` is
+    /// syntax-only, so a script that skipped `mix lint` ran on regardless.
+    /// `--serve` extension names are not refused: a module's exported
+    /// `context` is still reachable as `$m.context()` (lint warns, W2313).
+    fn refuse_reserved_fn_name(&mut self, name: &str, line: usize) -> MixResult<()> {
+        if !crate::builtins::is_reserved_callable(name) {
+            return Ok(());
+        }
+        self.ctx.current_line = line;
+        Err(self.coded_err(
+            "FN_SHADOWS_BUILTIN",
+            format!(
+                "fn {name} shadows the builtin {name}() — the builtin wins at every call site, \
+                 so this function could never be called by name; rename it (MIX-E1303)"
+            ),
+        ))
+    }
+
     /// The current statement's span, when one is known.
     fn current_span(&self) -> Option<crate::error::Span> {
         (self.ctx.current_line > 0).then(|| crate::error::Span {
@@ -8563,10 +8585,13 @@ impl Evaluator {
             // `FunctionDef` arm (which re-binds identically when reached),
             // so warning order and count are unchanged; for duplicate
             // top-level names, code between the two definitions still
-            // sees the earlier one, exactly as before.
+            // sees the earlier one, exactly as before. A builtin-named
+            // definition is refused here, so the script stops before its
+            // first statement rather than partway through.
             if unwrap_top_return && self.ctx.function_depth == 0 {
                 for stmt in stmts {
                     if let StmtKind::FunctionDef { name, params, body } = &stmt.kind {
+                        self.refuse_reserved_fn_name(name, stmt.line)?;
                         let f = self.build_function(name, params, body);
                         self.scope.define_function(f);
                     }
@@ -10233,6 +10258,9 @@ impl Evaluator {
                     // (execute_inner), so a hoisted definition warns once,
                     // at the same point in the output as before hoisting
                     // existed.
+                    // Nested definitions (in a branch, loop or function
+                    // body) are not hoisted, so they are refused here.
+                    self.refuse_reserved_fn_name(name, stmt.line)?;
                     self.warn_dead_param_pushes(name, params, body);
                     let f = self.build_function(name, params, body);
                     self.scope.define_function(f);
@@ -17894,9 +17922,11 @@ impl Evaluator {
             // execute_inner's own pre-pass never fires here). AFTER the
             // prelude snapshot above: a module fn shadowing a prelude
             // name must be bound as a fresh Rc so auto-export still
-            // includes it.
+            // includes it. A builtin-named module fn is refused here as
+            // in execute_inner, so require() fails before the body runs.
             for stmt in &stmts {
                 if let StmtKind::FunctionDef { name, params, body } = &stmt.kind {
+                    self.refuse_reserved_fn_name(name, stmt.line)?;
                     let f = self.build_function(name, params, body);
                     self.scope.define_function(f);
                 }

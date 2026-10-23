@@ -1519,11 +1519,14 @@ fn check_pad_loop_idiom(stmts: &[Stmt], ctx: &FileContext, a: &mut Analysis) {
 /// sixteen releases. Lint is also the only gate an `ssh_mix` body ever
 /// passes through, and a warning does not stop anything by default.
 ///
-/// The RUNTIME is deliberately unchanged: the builtin still wins. Letting
-/// the user definition win would flip the behaviour of every existing
-/// shadowing script silently, which is the exact failure mode being
-/// removed here — the fix is to rename, and now the tool says so in a way
-/// that stops the run.
+/// The builtin still wins at a call site. Letting the user definition win
+/// would flip the behaviour of every existing shadowing script silently,
+/// which is the exact failure mode being removed here. Since 0.118.0 the
+/// RUNTIME refuses the definition too (FN_SHADOWS_BUILTIN, before the
+/// first statement for a top-level `fn`): `mix --check` is syntax-only and
+/// never runs this pass, so a script that skipped `mix lint` ran on and
+/// failed far from the cause (`fn run($argv)` died as "run(): argument 1
+/// must be string" inside a CBC job, 2026-10-23).
 ///
 /// The code MOVED rather than changing severity in place: a code's letter
 /// encodes its severity permanently (`MIX-W2xxx` are warnings that were
@@ -1535,11 +1538,14 @@ fn check_pad_loop_idiom(stmts: &[Stmt], ctx: &FileContext, a: &mut Analysis) {
 /// (`printf`, `serve_name`, …) and never knew the Bus forms (`quit`,
 /// `reply`, `subscribe`, …) at all, yet the `FunctionCall` eval arm
 /// dispatches each of them before any user-function lookup — `fn quit() return 1 end;
-/// print(quit())` printed nil with no diagnostic.
+/// print(quit())` printed nil with no diagnostic. Since 0.118.0 it also
+/// covers the higher-order builtins (`count`, `map`, `filter`, …), which
+/// both of those lists miss: `fn count($x)` linted clean and was dead.
+/// The set is `builtins::is_reserved_callable`, shared with the runtime.
 fn check_builtin_shadowing(stmts: &[Stmt], ctx: &FileContext, a: &mut Analysis) {
     walk_stmts(stmts, &mut |stmt| {
         if let StmtKind::FunctionDef { name, .. } = &stmt.kind
-            && (crate::builtins::is_builtin(name) || INLINE_SPECIAL_FORMS.contains(&name.as_str()))
+            && crate::builtins::is_reserved_callable(name)
         {
             a.diagnostics.push(diag(
                 ctx,
@@ -1550,7 +1556,7 @@ fn check_builtin_shadowing(stmts: &[Stmt], ctx: &FileContext, a: &mut Analysis) 
                     "function '{name}' shadows the builtin of the same name and cannot be called BY NAME — the builtin wins at every call site"
                 ),
                 Some(
-                    "rename it; only an extracted function value (or a module exports map indexed as $m[\"name\"]) can still reach it, and a compat shim for an older mix is dead code on this one".to_string(),
+                    "rename it; the runtime refuses this definition (FN_SHADOWS_BUILTIN), and a compat shim for an older mix is dead code on this one".to_string(),
                 ),
             ));
         }

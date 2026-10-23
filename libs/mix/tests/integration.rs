@@ -5675,26 +5675,27 @@ mod rc_band_contract_tests {
 /// printf, write_stdout, …) must not win as a binary-operator operand when
 /// the plain call resolves to the builtin. Before the fix the inline
 /// fast path called the USER fn for `printf("B") .. "|"` (printed
-/// `USER|`) while `printf("C")` alone called the builtin.
+/// `USER|`) while `printf("C")` alone called the builtin. Since 0.118.0
+/// the definition itself is refused (FN_SHADOWS_BUILTIN), so neither form
+/// can reach a user `printf`; the operand-position guard stays as a
+/// second line of defence.
 #[tokio::test(flavor = "current_thread")]
 async fn eval_special_builtin_wins_as_binop_operand_too() {
-    let out = run_mix_capturing(
-        "fn printf($a) = \"USER\"\nprint(printf(\"B\") .. \"|\")\nfn write_stdout($a) = \"USER\"\nprint(write_stdout(\"W\") .. \"|\")\n",
-    )
-    .await
-    .unwrap();
-    assert!(
-        !out.contains("USER"),
-        "the builtin must win in operand position too: {out:?}"
-    );
-    assert!(
-        out.starts_with('B'),
-        "printf builtin must have run: {out:?}"
-    );
-    assert!(
-        out.contains('W'),
-        "write_stdout builtin must have run: {out:?}"
-    );
+    for (name, src) in [
+        ("printf", "fn printf($a) = \"USER\"\nprint(printf(\"B\") .. \"|\")\n"),
+        (
+            "write_stdout",
+            "fn write_stdout($a) = \"USER\"\nprint(write_stdout(\"W\") .. \"|\")\n",
+        ),
+    ] {
+        let err = run_mix_capturing(src)
+            .await
+            .expect_err("a builtin-named definition is refused");
+        assert!(
+            err.contains(&format!("fn {name} shadows the builtin")),
+            "{name}: {err}"
+        );
+    }
 }
 
 /// `serve_name()` (0.91.0) is nil outside `--serve`: a plain evaluator has

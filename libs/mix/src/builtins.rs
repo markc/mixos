@@ -1029,6 +1029,20 @@ pub fn is_builtin(name: &str) -> bool {
     .contains(name)
 }
 
+/// Every name a user function can never win against at a call site: the
+/// builtin table, the evaluator-special names `is_builtin` leaves out, the
+/// higher-order builtins (`count`, `map`, `filter`, …) and the inline
+/// special forms (`quit`, `reply`, `push`, …). The `FunctionCall` arm
+/// dispatches all of them before any user-function lookup. One predicate
+/// backs both MIX-E1303 and the runtime's FN_SHADOWS_BUILTIN refusal, so
+/// lint and runtime cannot drift apart on which names are taken.
+pub fn is_reserved_callable(name: &str) -> bool {
+    is_builtin(name)
+        || EVAL_SPECIAL_BUILTINS.contains(&name)
+        || crate::builtins_hof::lookup(name).is_some()
+        || crate::evaluator::INLINE_SPECIAL_FORMS.contains(&name)
+}
+
 /// The optional cargo features this interpreter was actually built with, in a
 /// stable order — the honest answer to "what can THIS binary do", for
 /// `mix doctor` and capability reporting. `cfg!` evaluates at compile time, so

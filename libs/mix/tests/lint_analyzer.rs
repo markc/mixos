@@ -1535,6 +1535,18 @@ fn send_status_emit_writes_no_status_and_credits_the_first_send() {
 }
 
 #[test]
+fn higher_order_builtin_name_is_e1303() {
+    // count/map/filter dispatch through builtins_hof, outside is_builtin;
+    // before 0.118.0 `fn count` linted clean and was silently dead.
+    for name in ["count", "map", "filter", "sort_by"] {
+        let out = codes(&format!("fn {name}($x)\n  return 1\nend\n"));
+        assert!(out.contains(&"MIX-E1303".to_string()), "{name}: {out:?}");
+    }
+    let out = codes("fn count_items($x)\n  return 1\nend\n");
+    assert!(!out.contains(&"MIX-E1303".to_string()), "got: {out:?}");
+}
+
+#[test]
 fn push_assign_back_is_an_error() {
     let out = codes("$l = [1]\n$l = push($l, 2)\nprint($l)\n");
     assert!(out.contains(&"MIX-E1508".to_string()), "got: {out:?}");

@@ -208,32 +208,35 @@
                 <div class="panel-title">On this page</div>
                 <div class="panel-content">
                     <nav id="toc-nav">
-                        <a href="#01170--2026-10-21">0.117.0 — 2026-10-21</a>
-                        <a href="#added" class="toc-h3">Added</a>
+                        <a href="#unreleased">Unreleased</a>
                         <a href="#changed" class="toc-h3">Changed</a>
                         <a href="#fixed" class="toc-h3">Fixed</a>
+                        <a href="#01170--2026-10-21">0.117.0 — 2026-10-21</a>
+                        <a href="#added" class="toc-h3">Added</a>
+                        <a href="#changed-1" class="toc-h3">Changed</a>
+                        <a href="#fixed-1" class="toc-h3">Fixed</a>
                         <a href="#01160">0.116.0</a>
                         <a href="#added-1" class="toc-h3">Added</a>
-                        <a href="#changed-1" class="toc-h3">Changed</a>
+                        <a href="#changed-2" class="toc-h3">Changed</a>
                         <a href="#01150">0.115.0</a>
                         <a href="#added-2" class="toc-h3">Added</a>
-                        <a href="#changed-2" class="toc-h3">Changed</a>
-                        <a href="#fixed-1" class="toc-h3">Fixed</a>
-                        <a href="#01140">0.114.0</a>
                         <a href="#changed-3" class="toc-h3">Changed</a>
-                        <a href="#01131">0.113.1</a>
                         <a href="#fixed-2" class="toc-h3">Fixed</a>
+                        <a href="#01140">0.114.0</a>
+                        <a href="#changed-4" class="toc-h3">Changed</a>
+                        <a href="#01131">0.113.1</a>
+                        <a href="#fixed-3" class="toc-h3">Fixed</a>
                         <a href="#01130">0.113.0</a>
                         <a href="#added-3" class="toc-h3">Added</a>
                         <a href="#01121">0.112.1</a>
                         <a href="#added-4" class="toc-h3">Added</a>
-                        <a href="#fixed-3" class="toc-h3">Fixed</a>
+                        <a href="#fixed-4" class="toc-h3">Fixed</a>
                         <a href="#01120">0.112.0</a>
                         <a href="#added-5" class="toc-h3">Added</a>
-                        <a href="#fixed-4" class="toc-h3">Fixed</a>
+                        <a href="#fixed-5" class="toc-h3">Fixed</a>
                         <a href="#01110">0.111.0</a>
                         <a href="#added-6" class="toc-h3">Added</a>
-                        <a href="#fixed-5" class="toc-h3">Fixed</a>
+                        <a href="#fixed-6" class="toc-h3">Fixed</a>
                         <a href="#01091">0.109.1</a>
                     </nav>
                 </div>
@@ -263,6 +266,26 @@
 <blockquote>
 <p>Mirrored from <a href="https://github.com/markc/mixos/blob/main/libs/mix/CHANGELOG.md"><code>libs/mix/CHANGELOG.md</code></a>, where releases update it. The component's page is <a href="/mix/">mix</a>. This page describes the current <code>main</code> branch of MixOS.</p>
 </blockquote>
+<h2 id="unreleased">Unreleased</h2>
+<h3 id="changed">Changed</h3>
+<ul>
+<li>A <code>fn</code> or <code>function</code> named after a builtin is refused at its definition
+with <code>FN_SHADOWS_BUILTIN</code>. A top-level definition (in a script or a
+<code>require</code>d module) is refused before the first statement runs; a nested
+one when control reaches it. The builtin always won at the call site, so
+the function could never be called by name, and <code>mix --check</code> does not run
+lint: a script defining <code>fn run($argv)</code> ran on and failed with
+<code>run(): argument 1 (cmd) must be string</code>. <code>--serve</code> extension names such
+as <code>context</code> are not refused (lint still warns, MIX-W2313). A sweep of
+about 24,000 definitions across the hub, the MixOS tree and the installed
+scenes found no live script affected.</li>
+</ul>
+<h3 id="fixed">Fixed</h3>
+<ul>
+<li>MIX-E1303 now covers the higher-order builtins (<code>count</code>, <code>map</code>, <code>filter</code>,
+<code>sort_by</code>, …). <code>fn count($x)</code> linted clean and was silently dead. Lint and
+runtime share one name set, <code>builtins::is_reserved_callable</code>.</li>
+</ul>
 <h2 id="01170--2026-10-21">0.117.0 — 2026-10-21</h2>
 <h3 id="added">Added</h3>
 <ul>
@@ -358,7 +381,7 @@ from the link's own directory (<code>demo/lib/alias -&gt; ../bin/demo</code>). G
 may have several members, as <code>pigz</code> and <code>cat a.gz b.gz</code> write.</li>
 <li><code>mix man sqlopen</code> documents the SQLite builtins and their modes.</li>
 </ul>
-<h3 id="changed">Changed</h3>
+<h3 id="changed-1">Changed</h3>
 <ul>
 <li><code>tar_unpack</code>'s <code>numeric_owner</code> now defaults to <code>true</code> only for root, as GNU
 tar does. An ordinary user's unpacked files keep their own uid and gid; a
@@ -387,7 +410,7 @@ install path's mix). It applies to <code>ssh_mix</code>, <code>ssh_mix_many</cod
 neither <code>mix_bin</code> nor <code>MIX_REMOTE_BIN</code> is set. For a host still on
 the old install path, pass <code>mix_bin</code> or set <code>MIX_REMOTE_BIN</code> to its mix.</li>
 </ul>
-<h3 id="fixed">Fixed</h3>
+<h3 id="fixed-1">Fixed</h3>
 <ul>
 <li>A <code>send</code> after a failed Bus connection retries within its timeout,
 re-reading <code>MIXOS_NODED_URL</code> and node configuration. Without <code>timeout=</code>,
@@ -442,7 +465,7 @@ it must be an absolute path or a bare name using only <code>[A-Za-z0-9_./+-]</co
 anything else raises <code>OPTION_INVALID</code> locally before ssh runs. A host with
 mix only at <code>/opt/mixos/bin/mix</code> used to fail with exit 127.</li>
 </ul>
-<h3 id="changed-1">Changed</h3>
+<h3 id="changed-2">Changed</h3>
 <ul>
 <li><code>ssh_exec</code>'s <code>remote_mix</code> option is now validated the same way (it was
 interpolated unchecked) and is an alias of <code>mix_bin</code>; passing both
@@ -460,13 +483,13 @@ frame, the framing of systemd's Varlink services and of hostd, for
 <code>tcp_recv_line</code> and <code>tcp_on {frame: "line"}</code> alike. Refusals carry
 <code>UNIX_CONNECT_*</code> codes. <code>mix man system</code> documents it.</li>
 </ul>
-<h3 id="changed-2">Changed</h3>
+<h3 id="changed-3">Changed</h3>
 <ul>
 <li>One frame splitter serves <code>tcp_recv_line</code> (blocking and Class C) and
 <code>tcp_on</code> line mode, keyed to the connection's delimiter. One trailing CR
 is still stripped from an LF line.</li>
 </ul>
-<h3 id="fixed-1">Fixed</h3>
+<h3 id="fixed-2">Fixed</h3>
 <ul>
 <li><code>max</code> now caps a complete line too. A line longer than <code>max</code> whose
 terminator arrived in the same read used to be delivered, so whether it
@@ -474,14 +497,14 @@ was refused depended on packet timing. All three paths (<code>tcp_recv_line</cod
 blocking and Class C, <code>tcp_on</code> line mode) now refuse it the same way.</li>
 </ul>
 <h2 id="01140">0.114.0</h2>
-<h3 id="changed-3">Changed</h3>
+<h3 id="changed-4">Changed</h3>
 <ul>
 <li>Released with mix-shell 0.114.0, whose usage-statistics store is now an
 append-only JSONL store (<code>mix man stats</code>). The language and its builtins
 are unchanged.</li>
 </ul>
 <h2 id="01131">0.113.1</h2>
-<h3 id="fixed-2">Fixed</h3>
+<h3 id="fixed-3">Fixed</h3>
 <ul>
 <li>An <code>on</code> header reads a hyphenated name whole, like a <code>send</code> target:
 <code>on dopus-test.command.executed</code> handles that topic. Before, the header
@@ -510,7 +533,7 @@ stay written. The wait honours SIGTERM and Ctrl-C. On a <code>tcp_on</code> hand
 the timeout is the receipt deadline. Without the option <code>tcp_send</code> is
 unchanged.</li>
 </ul>
-<h3 id="fixed-3">Fixed</h3>
+<h3 id="fixed-4">Fixed</h3>
 <ul>
 <li>SIGTERM now ends a blocking <code>tcp_accept</code>, <code>tcp_recv</code>, <code>tcp_recv_line</code> or
 <code>ws_recv</code> at once, as it ends <code>sleep()</code>. On unix these numeric waits now
@@ -564,7 +587,7 @@ raw source text now accept <code>@</code> as an ordinary character where it used
 fail lexing: a bareword <code>source</code>/<code>include</code> path (<code>source ./foo@bar.mix</code>) and
 the command after <code>|</code> (<code>print(1) | cat @foo</code>).</li>
 </ul>
-<h3 id="fixed-4">Fixed</h3>
+<h3 id="fixed-5">Fixed</h3>
 <ul>
 <li>HTTP 1xx, 204 and 304 responses are bodyless on every method, not only
 HEAD. A conditional GET answered 304 with <code>Content-Encoding: gzip</code> no longer
@@ -580,7 +603,7 @@ the same answer as <code>realpath($0)</code>, fixed when the script starts (a la
 start. A <code>require</code>d module, even during its top-level init, gets the entry
 script's path.</li>
 </ul>
-<h3 id="fixed-5">Fixed</h3>
+<h3 id="fixed-6">Fixed</h3>
 <ul>
 <li>Lambdas created inside a served <code>on</code> handler keep the handler's local
 variables when they run later (they faulted with <code>undefined variable</code>). A
