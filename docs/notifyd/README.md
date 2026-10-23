@@ -39,6 +39,7 @@ it:
 | Inner command | When |
 |---|---|
 | `notification.created` | a notification was posted |
+| `notification.presented` | a local surface recorded or replaced its presentation reference |
 | `notification.answered` | the human pressed a button; `outcome.action` is its id |
 | `notification.closed` | any other outcome: `dismissed`, `expired` or `closed` |
 
@@ -52,9 +53,10 @@ An expired question was not answered. Treat it as "no answer", never as yes.
 
 | Verb | Body | Reply |
 |---|---|---|
-| `notify.send` | `summary`, and optionally `body`, `app`, `source`, `actions` (`[{id, label}]`), `timeout_ms`, `request_id`, `thread` | `{id, status}` |
+| `notify.send` | `summary`, and optionally `body`, `app`, `source`, `urgency`, `actions` (`[{id, label}]`), `timeout_ms`, `request_id`, `thread` | `{id, status}` |
 | `notify.get` | `{id}` | the notification, with `outcome` once it has one |
 | `notify.list` | `{all?}` | open notifications, oldest first; `all: true` includes answered ones |
+| `notify.present` | `{id, surface, ref}` | the notification with the surface's string reference recorded; replaces its previous reference |
 | `notify.action` | `{id, action}` | the human pressed a button (the toast calls this) |
 | `notify.dismiss` | `{id}` | the human closed it without choosing |
 | `notify.close` | `{id}` | the sender, or the Notifications page, withdrew it |
@@ -63,8 +65,8 @@ An expired question was not answered. Treat it as "no answer", never as yes.
 Each notification gets exactly one outcome. The first one wins, and a later
 button press or timeout is refused with `ALREADY_ANSWERED`.
 
-`notify.action`, `notify.dismiss`, `notify.close` and `notify.close_all`
-settle a notification, so notifyd takes them only from callers on this node
+`notify.present`, `notify.action`, `notify.dismiss`, `notify.close` and `notify.close_all`
+record a local presentation or settle a notification, so notifyd takes them only from callers on this node
 (the broker's `broker_origin` stamp). A peer across the mesh can post and read
 notifications but never answer or withdraw one for the person. That matters
 for questions such as portald's screen-share consent.
@@ -75,9 +77,24 @@ rc 15 `ALREADY_ANSWERED`, rc 16 `TOO_MANY_OPEN`.
 
 ## Limits
 
+`urgency` is `low`, `normal` (default) or `critical`. Existing senders may
+use the input-only `level` alias: `warning` means `normal`, `error` means
+`critical`; every other level value is ignored and defaults to `normal`.
+Explicit `urgency` takes precedence. Replies and events expose only `urgency`.
+
+`notify.get`, `notify.list` and change bodies contain `id`, `summary`, `body`,
+`app`, `source`, `urgency`, `actions`, `thread`, `request_id`, `created_at`,
+`status`, `outcome` and `presented`. The app defaults to source, then `MixOS`.
+`presented` maps surface names to opaque string references, for example
+`{"plasma":"42"}`. Surface and ref are non-empty strings of at most 80
+characters. Only local callers can record presentations; unknown ids and
+settled notifications use `NOT_FOUND` and `ALREADY_ANSWERED`. Every outcome
+clears all presentation records. Urgency and presentations persist across
+restarts; older state files default to `normal` and `{}`.
+
 A summary is at most 120 characters, a body 500, and a button label 32. A
-notification has at most four buttons. At most eight questions can wait for an
-answer at once; the ninth is refused until one is answered. notifyd keeps the
+notification has at most four buttons. At most 8 questions can wait for an
+answer at once; the 9th is refused until one is answered. notifyd keeps the
 last 200 notifications, and never drops one that is still open.
 
 ## State

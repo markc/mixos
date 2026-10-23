@@ -2032,7 +2032,9 @@ ced --headless             every verb, no window
 ced --service NAME         register as NAME (tests)
 ```
 
-The edit service must be running. Ced registers on the Bus as `ced`; a
+Without the edit service, Ced shows a clear waiting state within three seconds
+and posts a desktop toast. The document opens automatically when the service
+registers on the Bus. Ced registers on the Bus as `ced`; a
 second `ced` hands its paths to the first and exits.
 
 ## The window
@@ -2042,9 +2044,12 @@ second `ced` hands its paths to the first and exits.
   Help › Keyboard Shortcuts) and in `ced.action {id}`.
 - **Tabs** show unsaved changes, and ◆ when another origin edited the
   document since you last looked at it.
-- **The notice strip** keeps warnings, edits that could not be applied
+- **The notice strip** keeps edits that could not be applied
   (re-insert them at the caret or dismiss them), and a document that lost
   its connection to the service (keep your copy or take the service's).
+  Warnings and errors use desktop notification toasts, with the status line
+  as a fallback if notifications are unavailable. Identical messages appear
+  at most once every five seconds.
 - **Find** (Ctrl+F, Ctrl+H) runs in the service, so it searches the shared
   text, not a local copy.
 - **Markdown and commit messages wrap**; code scrolls sideways.
@@ -8140,6 +8145,10 @@ local document to a shared one without changing its UI code.
 exclusively, so no existing file or link is followed), gives it the
 original's permissions, flushes it and renames it into place. Saving
 through a symbolic link writes the link's target; the link stays a link.
+`save_target(path)` returns that destination and its temporary-file directory;
+both foreground and snapshot saves use it, so callers can check the exact
+directory before editing. Read-only files are refused even when their parent
+directory would permit replacement. A refused save leaves edits dirty.
 Edits the buffer refuses (a paste over the 1 MiB request limit) are kept
 for `take_refusal`. `set_contents` is a reload: it has no request limit,
 and Undo does not take it back.
@@ -9327,6 +9336,17 @@ Workshop…** reaches the rest. Workshop is planned; both Workshop entries
 currently open this app's user macro folder in Dopus, with `xdg-open` as
 the fallback.
 
+The drop-down shares the menu bar's row sizes, font, padding and frame, with
+the same minimum width. Near the window's right edge it aligns to the icon's
+right edge. Oversized content scrolls inside the window. An empty catalogue
+shows **No macros yet**.
+The New macro title field uses the same measured width and anchored placement
+as the drop-down, with a full text-field height. Creation errors wrap below
+the field within that frame.
+Tall menus stay below the title-bar icon and scroll vertically, preserving
+access to the icon. Horizontal scrolling is used only for rows wider than
+the available content area.
+
 Left release runs a macro; right release edits it. Arrows move the highlight,
 Enter runs, Shift+Enter edits, and a letter jumps to the next matching title.
 Run, edit, Escape and an outside click close the menu and release its keys.
@@ -9351,6 +9371,15 @@ Click its text to edit; the app remains usable alongside it. Ctrl+S saves
 and refreshes the menu catalogue. Ctrl+Enter saves then runs. **Open in Ced**
 hands off larger edits, with `xdg-open` as fallback. Discovery, file storage,
 launchers and notification work run on background threads.
+
+Failed creates keep the title field and show the destination path and OS
+reason inline. Failed built-in copies show the same kind of error in the
+menu, without opening an editor. Editing reads an existing file and checks
+its atomic-save directory first. If permissions change while editing, save
+errors name the file and OS reason, and the edits remain available.
+The check and save share target resolution: a symlink's target directory
+is checked, rather than the directory holding the link. Read-only macro
+files are refused inline, including in writable directories.
 
 Saving keeps the document visible and editable, even during discovery.
 Closing a dirty editor saves before closing; a failed save keeps the text
@@ -32398,6 +32427,7 @@ it:
 | Inner command | When |
 |---|---|
 | `notification.created` | a notification was posted |
+| `notification.presented` | a local surface recorded or replaced its presentation reference |
 | `notification.answered` | the human pressed a button; `outcome.action` is its id |
 | `notification.closed` | any other outcome: `dismissed`, `expired` or `closed` |
 
@@ -32411,9 +32441,10 @@ An expired question was not answered. Treat it as "no answer", never as yes.
 
 | Verb | Body | Reply |
 |---|---|---|
-| `notify.send` | `summary`, and optionally `body`, `app`, `source`, `actions` (`[{id, label}]`), `timeout_ms`, `request_id`, `thread` | `{id, status}` |
+| `notify.send` | `summary`, and optionally `body`, `app`, `source`, `urgency`, `actions` (`[{id, label}]`), `timeout_ms`, `request_id`, `thread` | `{id, status}` |
 | `notify.get` | `{id}` | the notification, with `outcome` once it has one |
 | `notify.list` | `{all?}` | open notifications, oldest first; `all: true` includes answered ones |
+| `notify.present` | `{id, surface, ref}` | the notification with the surface's string reference recorded; replaces its previous reference |
 | `notify.action` | `{id, action}` | the human pressed a button (the toast calls this) |
 | `notify.dismiss` | `{id}` | the human closed it without choosing |
 | `notify.close` | `{id}` | the sender, or the Notifications page, withdrew it |
@@ -32422,8 +32453,8 @@ An expired question was not answered. Treat it as "no answer", never as yes.
 Each notification gets exactly one outcome. The first one wins, and a later
 button press or timeout is refused with `ALREADY_ANSWERED`.
 
-`notify.action`, `notify.dismiss`, `notify.close` and `notify.close_all`
-settle a notification, so notifyd takes them only from callers on this node
+`notify.present`, `notify.action`, `notify.dismiss`, `notify.close` and `notify.close_all`
+record a local presentation or settle a notification, so notifyd takes them only from callers on this node
 (the broker's `broker_origin` stamp). A peer across the mesh can post and read
 notifications but never answer or withdraw one for the person. That matters
 for questions such as portald's screen-share consent.
@@ -32434,9 +32465,24 @@ rc 15 `ALREADY_ANSWERED`, rc 16 `TOO_MANY_OPEN`.
 
 ## Limits
 
+`urgency` is `low`, `normal` (default) or `critical`. Existing senders may
+use the input-only `level` alias: `warning` means `normal`, `error` means
+`critical`; every other level value is ignored and defaults to `normal`.
+Explicit `urgency` takes precedence. Replies and events expose only `urgency`.
+
+`notify.get`, `notify.list` and change bodies contain `id`, `summary`, `body`,
+`app`, `source`, `urgency`, `actions`, `thread`, `request_id`, `created_at`,
+`status`, `outcome` and `presented`. The app defaults to source, then `MixOS`.
+`presented` maps surface names to opaque string references, for example
+`{"plasma":"42"}`. Surface and ref are non-empty strings of at most 80
+characters. Only local callers can record presentations; unknown ids and
+settled notifications use `NOT_FOUND` and `ALREADY_ANSWERED`. Every outcome
+clears all presentation records. Urgency and presentations persist across
+restarts; older state files default to `normal` and `{}`.
+
 A summary is at most 120 characters, a body 500, and a button label 32. A
-notification has at most four buttons. At most eight questions can wait for an
-answer at once; the ninth is refused until one is answered. notifyd keeps the
+notification has at most four buttons. At most 8 questions can wait for an
+answer at once; the 9th is refused until one is answered. notifyd keeps the
 last 200 notifications, and never drops one that is still open.
 
 ## State
@@ -36066,8 +36112,25 @@ their bytes.
 <!-- SPDX-License-Identifier: MIT OR Apache-2.0 -->
 # Changelog
 
+## Unreleased — 2026-10-24
+
+- Give the New macro title field the drop-down's measured width, anchored
+  placement and a full text-field height. Wrap inline errors within that frame.
+- Cover title entry at scale 2.5, including wider catalogues and a snapshot.
+- Share atomic-save target resolution with the editor and probe that exact
+  directory, including through symlinks. Refuse read-only macro files inline.
+- Keep tall macro menus below their icon and scroll vertically; reserve the
+  themed scrollbar gutter without adding an unnecessary horizontal scrollbar.
+- Pin the empty menu's final row after separator cleanup.
+
 ## Unreleased — 2026-10-23
 
+- Give icon-anchored menus the menu bar's minimum width and frame metrics;
+  right-align at the icon near window edges and constrain oversized content.
+- Explain empty macro catalogues with a disabled row.
+- Keep failed macro creates and copies in the menu with path-specific errors.
+  Check existing files' save directories before editing and retain dirty edits
+  with path-specific save errors if permissions later change.
 - Focus the macro title only after its visible widget is drawn, and release
   focus before disabling it for creation, keeping AccessKit focus valid.
 - Save macro editor snapshots independently of discovery, keep the document

@@ -165,6 +165,7 @@
     {name:"notify.get", owner:"notifyd", version:"0.1.0", status:"draft", class:"query", schema:"pending"},
     {name:"notify.list", owner:"notifyd", version:"0.1.0", status:"draft", class:"query", schema:"pending"},
     {name:"notify.action", owner:"notifyd", version:"0.1.0", status:"draft", class:"intent", schema:"pending"},
+    {name:"notify.present", owner:"notifyd", version:"0.1.0", status:"draft", class:"intent", schema:"pending"},
     {name:"notify.dismiss", owner:"notifyd", version:"0.1.0", status:"draft", class:"intent", schema:"pending"},
     {name:"notify.close", owner:"notifyd", version:"0.1.0", status:"draft", class:"intent", schema:"pending"},
     {name:"notify.close_all", owner:"notifyd", version:"0.1.0", status:"draft", class:"intent", schema:"pending"},

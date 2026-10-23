@@ -19,7 +19,9 @@ ced --headless             every verb, no window
 ced --service NAME         register as NAME (tests)
 ```
 
-The edit service must be running. Ced registers on the Bus as `ced`; a
+Without the edit service, Ced shows a clear waiting state within three seconds
+and posts a desktop toast. The document opens automatically when the service
+registers on the Bus. Ced registers on the Bus as `ced`; a
 second `ced` hands its paths to the first and exits.
 
 ## The window
@@ -29,9 +31,12 @@ second `ced` hands its paths to the first and exits.
   Help › Keyboard Shortcuts) and in `ced.action {id}`.
 - **Tabs** show unsaved changes, and ◆ when another origin edited the
   document since you last looked at it.
-- **The notice strip** keeps warnings, edits that could not be applied
+- **The notice strip** keeps edits that could not be applied
   (re-insert them at the caret or dismiss them), and a document that lost
   its connection to the service (keep your copy or take the service's).
+  Warnings and errors use desktop notification toasts, with the status line
+  as a fallback if notifications are unavailable. Identical messages appear
+  at most once every five seconds.
 - **Find** (Ctrl+F, Ctrl+H) runs in the service, so it searches the shared
   text, not a local copy.
 - **Markdown and commit messages wrap**; code scrolls sideways.

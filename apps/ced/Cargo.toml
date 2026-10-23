@@ -40,6 +40,7 @@ toolkit.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
+test-broker = { path = "../../libs/test-broker" }
 tracing-subscriber.workspace = true
 design.workspace = true
 editor-model = { workspace = true, features = ["mix", "fake"] }

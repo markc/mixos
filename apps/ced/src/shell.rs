@@ -229,6 +229,7 @@ impl Shell {
     fn pump(&mut self) {
         while let Some(delivery) = self.transport.poll() {
             match delivery {
+                Delivery::NotificationFailed { text } => self.app.notification_failed(text),
                 Delivery::Incoming(Incoming::Topic { topic, .. }) if topic == self.look_topic => {
                     // A hint, never trusted: the look comes from the read.
                     // The window's own topic: the controller never sees it.
