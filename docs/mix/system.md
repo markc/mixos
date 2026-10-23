@@ -1070,16 +1070,24 @@ default empty, echoed in all events. Unknown options are refused.
 the rest through newline and set `truncated: true`. It must be a positive
 integer, at most 16 MiB. `max_queue` defaults to 1024 retained lines per
 watch (positive integer, at most 65536). A full queue drops newest lines and
-counts them. One `proc.overflow {watch, tag, dropped}` reports the accumulated
-count before the next retained line, or before the terminal if none remain.
-Further drops after delivery form a new overflow report. The terminal cannot
+counts them. A `proc.overflow {watch, tag, dropped}` marker occupies the drop
+position: after all earlier retained lines and before any later retained line.
+Consecutive drops coalesce into one marker. Markers do not consume line capacity.
+The terminal cannot
 be dropped by queue overflow.
 
 `process_unwatch(handle) -> bool` discards pending events, sends SIGTERM to
-the group and leader, allows 150 ms grace, then SIGKILLs and reaps the leader.
-It returns false for an unknown or already retired handle. Evaluator shutdown
+the group and leader, waits for leader exit for up to 150 ms, then SIGKILLs
+remaining group members and reaps the leader. This synchronous join returns
+promptly when TERM ends the leader; it guarantees cleanup before returning.
+It returns true only for a live watch or undelivered records, and false once
+its terminal has been delivered. Evaluator shutdown
 and committed reload retirement perform the same cleanup. Natural leader
-exit ends any remaining descendants before reaping. As with managed spawn,
+exit ends remaining descendants in the original process group. Pipes drain
+for at most 500 ms after leader exit, then close before reaping. The terminal
+includes `detached_output: true` if an open pipe was cut off (otherwise false).
+Descendants that detach into another group are outside group ownership.
+As with managed spawn,
 Linux pidfd is required and at most 128 watches may be outstanding. Watches
 are Process capabilities. Reload candidates are refused with
 `PROC_WATCH_RELOAD_CANDIDATE`; start replacement watches in `on lifecycle.commit`.

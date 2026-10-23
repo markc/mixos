@@ -166,7 +166,21 @@ mod linux {
                     let mut child = worker_slot.lock().unwrap().take().unwrap();
                     let mut exited = false;
                     let mut cancelled = false;
+                    let mut drain_deadline = None;
+                    let mut detached_output = false;
                     loop {
+                        let timeout = drain_deadline.map_or(-1, |deadline: std::time::Instant| {
+                            deadline.saturating_duration_since(std::time::Instant::now()).as_millis().min(500) as i32
+                        });
+                        if timeout == 0 {
+                            detached_output = pipes.iter().any(|p| !p.closed);
+                            for pipe in &mut pipes {
+                                if !pipe.closed && (!pipe.line.is_empty() || pipe.truncated) {
+                                    pipe.emit(&queue, &handle);
+                                }
+                            }
+                            break;
+                        }
                         let mut fds = vec![
                             libc::pollfd {
                                 fd: if exited { -1 } else { pidfd.as_raw_fd() },
@@ -186,7 +200,7 @@ mod linux {
                                 revents: 0,
                             });
                         }
-                        let rc = unsafe { libc::poll(fds.as_mut_ptr(), fds.len() as _, -1) };
+                        let rc = unsafe { libc::poll(fds.as_mut_ptr(), fds.len() as _, timeout) };
                         if rc < 0
                             && std::io::Error::last_os_error().kind()
                                 == std::io::ErrorKind::Interrupted
@@ -199,8 +213,16 @@ mod linux {
                             // the group, even when it exits immediately on TERM.
                             signal_group(pid, libc::SIGTERM);
                             signal_leader(&pidfd, libc::SIGTERM);
-                            unsafe {
-                                libc::poll(std::ptr::null_mut(), 0, 150);
+                            let deadline = std::time::Instant::now() + std::time::Duration::from_millis(150);
+                            let mut grace = libc::pollfd { fd: pidfd.as_raw_fd(), events: libc::POLLIN, revents: 0 };
+                            loop {
+                                let remaining = deadline.saturating_duration_since(std::time::Instant::now()).as_millis() as i32;
+                                if remaining == 0 || unsafe { libc::poll(&mut grace, 1, remaining) } >= 0 {
+                                    break;
+                                }
+                                if std::io::Error::last_os_error().kind() != std::io::ErrorKind::Interrupted {
+                                    break;
+                                }
                             }
                             signal_group(pid, libc::SIGKILL);
                             signal_leader(&pidfd, libc::SIGKILL);
@@ -208,6 +230,7 @@ mod linux {
                         }
                         if fds[0].revents != 0 {
                             exited = true;
+                            drain_deadline = Some(std::time::Instant::now() + std::time::Duration::from_millis(500));
                             // As for managed spawn, descendants cannot outlive
                             // the leader. This also releases inherited pipe ends.
                             signal_group(pid, libc::SIGKILL);
@@ -221,12 +244,13 @@ mod linux {
                             break;
                         }
                     }
+                    drop(pipes);
                     let status = child.wait();
                     crate::builtins::unregister_managed_pid(pid);
                     if !cancelled {
                         match status {
-                            Ok(s) => queue.process_exited(&handle, s.code(), s.signal()),
-                            Err(_) => queue.process_exited(&handle, None, None),
+                            Ok(s) => queue.process_exited(&handle, s.code(), s.signal(), detached_output),
+                            Err(_) => queue.process_exited(&handle, None, None, detached_output),
                         }
                     }
                     worker_completed.store(true, std::sync::atomic::Ordering::Release);

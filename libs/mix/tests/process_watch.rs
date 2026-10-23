@@ -41,6 +41,60 @@ async fn watcher() -> Evaluator {
 }
 
 #[tokio::test(flavor = "current_thread")]
+async fn no_handlers_drains_and_finished_unwatch_is_false() {
+    let mut e = Evaluator::new();
+    exec(&mut e, r#"$h = process_watch(["true"])"#).await.unwrap();
+    tokio::time::timeout(Duration::from_secs(2), e.run_event_pump()).await.unwrap().unwrap();
+    assert_eq!(exec(&mut e, "process_unwatch($h)").await.unwrap(), Value::Bool(false));
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn finished_but_undelivered_unwatch_is_true() {
+    let mut e = watcher().await;
+    exec(&mut e, r#"$h = process_watch(["true"])"#).await.unwrap();
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert_eq!(exec(&mut e, "process_unwatch($h)").await.unwrap(), Value::Bool(true));
+    pump(&mut e).await;
+    assert_eq!(exec(&mut e, "len($exits)").await.unwrap(), Value::Number(0.0));
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn term_exit_does_not_wait_out_grace() {
+    let mut e = watcher().await;
+    exec(&mut e, r#"$h = process_watch(["sleep", "30"])"#).await.unwrap();
+    let start = std::time::Instant::now();
+    assert_eq!(exec(&mut e, "process_unwatch($h)").await.unwrap(), Value::Bool(true));
+    assert!(start.elapsed() < Duration::from_millis(100), "unwatch took {:?}", start.elapsed());
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn detached_pipe_holder_has_bounded_drain() {
+    struct Cleanup(i32);
+    impl Drop for Cleanup {
+        fn drop(&mut self) {
+            unsafe { libc::kill(self.0, libc::SIGKILL); }
+        }
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let pidfile = dir.path().join("grandchild.pid");
+    let mut e = watcher().await;
+    e.set_global("command", Value::String(format!("setsid sleep 30 & echo $! > {}; echo hi", pidfile.display())));
+    let start = std::time::Instant::now();
+    exec(&mut e, r#"$h = process_watch(["sh", "-c", $command])"#).await.unwrap();
+    // Install cleanup before pumping, including on timeout/assertion failure.
+    for _ in 0..100 {
+        if pidfile.exists() { break; }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    let _cleanup = Cleanup(std::fs::read_to_string(pidfile).unwrap().trim().parse().unwrap());
+    tokio::time::timeout(Duration::from_millis(1200), e.run_event_pump()).await.unwrap().unwrap();
+    assert!(start.elapsed() < Duration::from_millis(1200));
+    assert_eq!(exec(&mut e, "$lines[0].line").await.unwrap(), Value::String("hi".into()));
+    assert_eq!(exec(&mut e, "$exits[0].detached_output").await.unwrap(), Value::Bool(true));
+    assert_eq!(exec(&mut e, "len($exits)").await.unwrap(), Value::Number(1.0));
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn ordered_lines_then_exactly_one_terminal_in_plain_script() {
     let mut e = watcher().await;
     exec(

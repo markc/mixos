@@ -18,6 +18,32 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+#[test]
+fn plain_process_watch_without_handlers_exits() {
+    let dir = scratch_dir("watch-no-handlers");
+    let script = write_script(&dir, "process_watch([\"true\"])\n");
+    let mut child = Command::new(env!("CARGO_BIN_EXE_mix"))
+        .arg("--no-prelude")
+        .arg(script)
+        .stdin(Stdio::null())
+        .spawn()
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        if let Some(status) = child.try_wait().unwrap() {
+            assert!(status.success());
+            break;
+        }
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            panic!("unhandled watch kept plain script alive");
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
 fn scratch_dir(label: &str) -> PathBuf {
     let nonce = SystemTime::now()
         .duration_since(UNIX_EPOCH)

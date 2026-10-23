@@ -53,10 +53,15 @@ impl PendingSource {
 #[derive(Default)]
 struct PendingProcess {
     tag: String,
-    lines: VecDeque<serde_json::Value>,
+    lines: VecDeque<ProcessRecord>,
+    line_count: usize,
     max_queue: usize,
-    dropped: u64,
     terminal: Option<serde_json::Value>,
+}
+
+enum ProcessRecord {
+    Line(serde_json::Value),
+    Overflow(u64),
 }
 
 /// One socket subscription's ordered FIFO (ws_on/tcp_on). Ordered and
@@ -167,20 +172,25 @@ impl Queue {
         let Some(p) = pending.processes.get_mut(handle) else {
             return;
         };
-        if p.lines.len() == p.max_queue {
-            p.dropped = p.dropped.saturating_add(1);
+        if p.line_count == p.max_queue {
+            if let Some(ProcessRecord::Overflow(dropped)) = p.lines.back_mut() {
+                *dropped = dropped.saturating_add(1);
+            } else {
+                p.lines.push_back(ProcessRecord::Overflow(1));
+            }
         } else {
-            p.lines.push_back(serde_json::json!({"watch":handle, "tag":p.tag, "stream":stream, "line":line, "truncated":truncated}));
+            p.line_count += 1;
+            p.lines.push_back(ProcessRecord::Line(serde_json::json!({"watch":handle, "tag":p.tag, "stream":stream, "line":line, "truncated":truncated})));
         }
         drop(pending);
         self.ready.notify_waiters();
     }
 
-    pub(crate) fn process_exited(&self, handle: &str, code: Option<i32>, signal: Option<i32>) {
+    pub(crate) fn process_exited(&self, handle: &str, code: Option<i32>, signal: Option<i32>, detached_output: bool) {
         let mut pending = self.pending.lock().unwrap();
         if let Some(p) = pending.processes.get_mut(handle) {
             p.terminal = Some(
-                serde_json::json!({"watch":handle, "tag":p.tag, "exit_code":code, "signal":signal}),
+                serde_json::json!({"watch":handle, "tag":p.tag, "exit_code":code, "signal":signal, "detached_output":detached_output}),
             );
         }
         drop(pending);
@@ -189,15 +199,17 @@ impl Queue {
 
     fn take_process(pending: &mut Pending, handle: &str) -> IncomingEvent {
         let p = pending.processes.get_mut(handle).unwrap();
-        if p.dropped > 0 {
-            let dropped = std::mem::take(&mut p.dropped);
-            return event(
+        if let Some(record) = p.lines.pop_front() {
+            return match record {
+                ProcessRecord::Overflow(dropped) => event(
                 "proc.overflow",
                 serde_json::json!({"watch":handle, "tag":p.tag, "dropped":dropped}),
-            );
-        }
-        if let Some(line) = p.lines.pop_front() {
-            return event("proc.line", line);
+                ),
+                ProcessRecord::Line(line) => {
+                    p.line_count -= 1;
+                    event("proc.line", line)
+                }
+            };
         }
         let terminal = p.terminal.take().unwrap();
         pending.processes.remove(handle);
@@ -603,8 +615,7 @@ impl Queue {
                         .processes
                         .iter()
                         .filter(|(_, s)| {
-                            families.processes
-                                && (!s.lines.is_empty() || s.dropped > 0 || s.terminal.is_some())
+                            !s.lines.is_empty() || s.terminal.is_some()
                         })
                         .map(|(h, _)| h.clone())
                         .collect();
@@ -819,6 +830,7 @@ impl NativeEvents {
     }
 
     pub fn process_unwatch(&mut self, h: &str) -> bool {
+        self.processes.retain(|_, p| !p.finished());
         let pending = self
             .queue
             .pending
@@ -827,9 +839,9 @@ impl NativeEvents {
             .processes
             .remove(h)
             .is_some();
-        let owned = self.processes.remove(h).is_some();
+        self.processes.remove(h);
         self.queue.ready.notify_waiters();
-        pending || owned
+        pending
     }
 
     pub fn net_watch(&mut self, groups: u32) -> MixResult<String> {
@@ -1830,7 +1842,7 @@ mod process_tests {
     }
 
     #[tokio::test]
-    async fn overflow_count_is_reported_once_before_lines_and_terminal_is_last() {
+    async fn overflow_markers_preserve_causal_order_and_terminal_is_last() {
         let queue = Queue::default();
         queue.pending.lock().unwrap().processes.insert(
             "process:test".into(),
@@ -1843,17 +1855,29 @@ mod process_tests {
         for n in 0..7 {
             queue.process_line("process:test", "stdout", n.to_string(), false);
         }
-        queue.process_exited("process:test", Some(0), None);
-        let event = queue.next(None).await.unwrap();
-        assert_eq!(event.command, "proc.overflow");
-        let body: serde_json::Value = serde_json::from_str(&event.body).unwrap();
-        assert_eq!(body["dropped"], 5);
         for n in 0..2 {
             let event = queue.next(None).await.unwrap();
             assert_eq!(event.command, "proc.line");
             let body: serde_json::Value = serde_json::from_str(&event.body).unwrap();
             assert_eq!(body["line"], n.to_string());
+            if n == 0 {
+                queue.process_line("process:test", "stdout", "later".into(), false);
+                queue.process_line("process:test", "stdout", "dropped".into(), false);
+            }
         }
+        let event = queue.next(None).await.unwrap();
+        assert_eq!(event.command, "proc.overflow");
+        let body: serde_json::Value = serde_json::from_str(&event.body).unwrap();
+        assert_eq!(body["dropped"], 5);
+        let event = queue.next(None).await.unwrap();
+        assert_eq!(event.command, "proc.line");
+        let body: serde_json::Value = serde_json::from_str(&event.body).unwrap();
+        assert_eq!(body["line"], "later");
+        let event = queue.next(None).await.unwrap();
+        assert_eq!(event.command, "proc.overflow");
+        let body: serde_json::Value = serde_json::from_str(&event.body).unwrap();
+        assert_eq!(body["dropped"], 1);
+        queue.process_exited("process:test", Some(0), None, false);
         assert_eq!(queue.next(None).await.unwrap().command, "proc.watch_exited");
         assert!(queue.pending.lock().unwrap().processes.is_empty());
     }
