@@ -19,6 +19,153 @@ mod linux {
         thread,
     };
 
+    /// The same generation-owned, sole-reaper model as ChildWatch, with
+    /// stdout/stderr and cancellation in one poll set. No evaluator values
+    /// or runtime handles cross the worker boundary.
+    pub(crate) struct ProcessWatch {
+        cancel: UnixStream,
+        completed: Arc<std::sync::atomic::AtomicBool>,
+        worker: Option<thread::JoinHandle<()>>,
+    }
+
+    struct Pipe {
+        fd: OwnedFd,
+        stream: &'static str,
+        line: Vec<u8>,
+        truncated: bool,
+        closed: bool,
+    }
+
+    impl Pipe {
+        fn new(fd: OwnedFd, stream: &'static str) -> std::io::Result<Self> {
+            let flags = unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_GETFL) };
+            if flags < 0 || unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_SETFL, flags | libc::O_NONBLOCK) } < 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(Self { fd, stream, line: Vec::new(), truncated: false, closed: false })
+        }
+
+        fn emit(&mut self, queue: &Queue, handle: &str) {
+            // Lossy UTF-8 is explicit in the manual; retained storage stays
+            // bounded even for an indefinitely long unterminated line.
+            queue.process_line(handle, self.stream, String::from_utf8_lossy(&self.line).into_owned(), self.truncated);
+            self.line.clear();
+            self.truncated = false;
+        }
+
+        fn read(&mut self, queue: &Queue, handle: &str, max: usize) {
+            let mut bytes = [0; 4096];
+            let n = unsafe { libc::read(self.fd.as_raw_fd(), bytes.as_mut_ptr().cast(), bytes.len()) };
+            if n > 0 {
+                for &b in &bytes[..n as usize] {
+                    if b == b'\n' { self.emit(queue, handle); }
+                    else if self.line.len() < max { self.line.push(b); }
+                    else { self.truncated = true; }
+                }
+            } else if n == 0 || !matches!(std::io::Error::last_os_error().kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::Interrupted) {
+                if !self.line.is_empty() || self.truncated { self.emit(queue, handle); }
+                self.closed = true;
+            }
+        }
+    }
+
+    impl ProcessWatch {
+        pub fn new(mut command: std::process::Command, queue: Arc<Queue>, handle: String, max_line: usize) -> MixResult<Self> {
+            use std::os::unix::process::CommandExt;
+            command.process_group(0);
+            crate::desktop_events::arm_parent_death(&mut command);
+            let mut child = command.spawn().map_err(|e| refusal("PROCESS_SPAWN", e.to_string()))?;
+            let pid = child.id() as i32;
+            let setup = (|| -> std::io::Result<_> {
+                let fd = unsafe { libc::syscall(libc::SYS_pidfd_open, pid, 0) as i32 };
+                if fd < 0 { return Err(std::io::Error::last_os_error()); }
+                let pidfd = unsafe { OwnedFd::from_raw_fd(fd) };
+                let (cancel, wake) = UnixStream::pair()?;
+                let mut pipes = vec![Pipe::new(child.stdout.take().unwrap().into(), "stdout")?];
+                if let Some(stderr) = child.stderr.take() { pipes.push(Pipe::new(stderr.into(), "stderr")?); }
+                Ok((pidfd, cancel, wake, pipes))
+            })();
+            let (pidfd, cancel, wake, mut pipes) = match setup {
+                Ok(v) => v,
+                Err(e) => {
+                    unsafe { libc::kill(-pid, libc::SIGKILL); }
+                    let _ = child.kill(); let _ = child.wait();
+                    return Err(refusal("PROC_MONITOR", e.to_string()));
+                }
+            };
+            crate::builtins::register_managed_pid(pid);
+            let slot = Arc::new(std::sync::Mutex::new(Some(child)));
+            let worker_slot = slot.clone();
+            let completed = Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let worker_completed = completed.clone();
+            let worker = thread::Builder::new().name("mix-process-lines".into()).spawn(move || {
+                let mut child = worker_slot.lock().unwrap().take().unwrap();
+                let mut exited = false;
+                let mut cancelled = false;
+                loop {
+                    let mut fds = vec![
+                        libc::pollfd { fd: if exited { -1 } else { pidfd.as_raw_fd() }, events: libc::POLLIN, revents: 0 },
+                        libc::pollfd { fd: wake.as_raw_fd(), events: libc::POLLIN, revents: 0 },
+                    ];
+                    for pipe in &pipes { fds.push(libc::pollfd { fd: if pipe.closed { -1 } else { pipe.fd.as_raw_fd() }, events: libc::POLLIN, revents: 0 }); }
+                    let rc = unsafe { libc::poll(fds.as_mut_ptr(), fds.len() as _, -1) };
+                    if rc < 0 && std::io::Error::last_os_error().kind() == std::io::ErrorKind::Interrupted { continue; }
+                    if rc < 0 || fds[1].revents != 0 {
+                        cancelled = true;
+                        // Keep the leader unreaped during grace: its PID pins
+                        // the group, even when it exits immediately on TERM.
+                        unsafe {
+                            libc::kill(-pid, libc::SIGTERM);
+                            libc::syscall(libc::SYS_pidfd_send_signal, pidfd.as_raw_fd(), libc::SIGTERM, std::ptr::null::<libc::siginfo_t>(), 0);
+                            libc::poll(std::ptr::null_mut(), 0, 150);
+                            libc::kill(-pid, libc::SIGKILL);
+                            libc::syscall(libc::SYS_pidfd_send_signal, pidfd.as_raw_fd(), libc::SIGKILL, std::ptr::null::<libc::siginfo_t>(), 0);
+                        }
+                        break;
+                    }
+                    if fds[0].revents != 0 {
+                        exited = true;
+                        // As for managed spawn, descendants cannot outlive
+                        // the leader. This also releases inherited pipe ends.
+                        unsafe { libc::kill(-pid, libc::SIGKILL); }
+                    }
+                    for (pipe, fd) in pipes.iter_mut().zip(&fds[2..]) {
+                        if fd.revents != 0 { pipe.read(&queue, &handle, max_line); }
+                    }
+                    if exited && pipes.iter().all(|p| p.closed) { break; }
+                }
+                let status = child.wait();
+                crate::builtins::unregister_managed_pid(pid);
+                if !cancelled {
+                    match status {
+                        Ok(s) => queue.process_exited(&handle, s.code(), s.signal()),
+                        Err(_) => queue.process_exited(&handle, None, None),
+                    }
+                }
+                worker_completed.store(true, std::sync::atomic::Ordering::Release);
+            });
+            match worker {
+                Ok(worker) => Ok(Self { cancel, completed, worker: Some(worker) }),
+                Err(e) => {
+                    if let Some(mut child) = slot.lock().unwrap().take() {
+                        unsafe { libc::kill(-pid, libc::SIGKILL); }
+                        let _ = child.kill(); let _ = child.wait();
+                    }
+                    crate::builtins::unregister_managed_pid(pid);
+                    Err(refusal("PROC_MONITOR", e.to_string()))
+                }
+            }
+        }
+        pub fn finished(&self) -> bool { self.completed.load(std::sync::atomic::Ordering::Acquire) }
+    }
+
+    impl Drop for ProcessWatch {
+        fn drop(&mut self) {
+            let _ = self.cancel.shutdown(std::net::Shutdown::Write);
+            if let Some(worker) = self.worker.take() { let _ = worker.join(); }
+        }
+    }
+
     pub(crate) struct ChildWatch {
         pub pid: u32,
         pidfd: Arc<OwnedFd>,
@@ -147,7 +294,17 @@ mod linux {
 }
 
 #[cfg(target_os = "linux")]
-pub(crate) use linux::ChildWatch;
+pub(crate) use linux::{ChildWatch, ProcessWatch};
+
+#[cfg(not(target_os = "linux"))]
+pub(crate) struct ProcessWatch;
+#[cfg(not(target_os = "linux"))]
+impl ProcessWatch {
+    pub fn new(_: std::process::Command, _: Arc<Queue>, _: String, _: usize) -> MixResult<Self> {
+        Err(refusal("PROC_UNSUPPORTED", "process_watch requires Linux pidfd"))
+    }
+    pub fn finished(&self) -> bool { true }
+}
 #[cfg(not(target_os = "linux"))]
 pub(crate) struct ChildWatch {
     pub pid: u32,

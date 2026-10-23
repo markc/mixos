@@ -50,6 +50,41 @@ impl PendingSource {
     }
 }
 
+#[derive(Default)]
+struct PendingProcess {
+    tag: String,
+    lines: VecDeque<serde_json::Value>,
+    max_queue: usize,
+    dropped: u64,
+    terminal: Option<serde_json::Value>,
+}
+
+#[cfg(test)]
+mod process_tests {
+    use super::*;
+    #[tokio::test]
+    async fn overflow_count_is_reported_once_before_lines_and_terminal_is_last() {
+        let queue = Queue::default();
+        queue.pending.lock().unwrap().processes.insert("process:test".into(), PendingProcess {
+            tag: "test".into(), max_queue: 2, ..Default::default()
+        });
+        for n in 0..7 { queue.process_line("process:test", "stdout", n.to_string(), false); }
+        queue.process_exited("process:test", Some(0), None);
+        let event = queue.next(None).await.unwrap();
+        assert_eq!(event.command, "proc.overflow");
+        let body: serde_json::Value = serde_json::from_str(&event.body).unwrap();
+        assert_eq!(body["dropped"], 5);
+        for n in 0..2 {
+            let event = queue.next(None).await.unwrap();
+            assert_eq!(event.command, "proc.line");
+            let body: serde_json::Value = serde_json::from_str(&event.body).unwrap();
+            assert_eq!(body["line"], n.to_string());
+        }
+        assert_eq!(queue.next(None).await.unwrap().command, "proc.watch_exited");
+        assert!(queue.pending.lock().unwrap().processes.is_empty());
+    }
+}
+
 /// One socket subscription's ordered FIFO (ws_on/tcp_on). Ordered and
 /// lossless — the antipode of the coalescing `sources` map above, which is
 /// deliberately unsuitable for frames.
@@ -68,6 +103,8 @@ struct PendingSocket {
 
 #[derive(Default)]
 struct Pending {
+    processes: BTreeMap<String, PendingProcess>,
+    last_process: Option<String>,
     watches: BTreeMap<String, PendingWatch>,
     sources: BTreeMap<String, PendingSource>,
     children: VecDeque<serde_json::Value>,
@@ -95,6 +132,7 @@ struct Pending {
 /// takes records whose command has a registered handler.
 #[derive(Clone, Copy, Default)]
 pub(crate) struct Families {
+    pub processes: bool,
     pub filesystem: bool,
     pub children: bool,
     pub net: bool,
@@ -109,6 +147,7 @@ pub(crate) struct Families {
 
 impl Families {
     pub const ALL: Self = Self {
+        processes: true,
         filesystem: true,
         children: true,
         net: true,
@@ -120,7 +159,7 @@ impl Families {
     /// (evaluator.rs `sleep()`); without the feature it has no caller.
     #[cfg(feature = "tokio-sleep")]
     pub fn any(self) -> bool {
-        self.filesystem || self.children || self.net || self.audio || self.sockets
+        self.filesystem || self.children || self.net || self.audio || self.sockets || self.processes
     }
 
     fn source(self, command: &str) -> bool {
@@ -149,6 +188,38 @@ pub(crate) struct Queue {
 }
 
 impl Queue {
+    pub(crate) fn process_line(&self, handle: &str, stream: &str, line: String, truncated: bool) {
+        let mut pending = self.pending.lock().unwrap();
+        let Some(p) = pending.processes.get_mut(handle) else { return };
+        if p.lines.len() == p.max_queue {
+            p.dropped = p.dropped.saturating_add(1);
+        } else {
+            p.lines.push_back(serde_json::json!({"watch":handle, "tag":p.tag, "stream":stream, "line":line, "truncated":truncated}));
+        }
+        drop(pending);
+        self.ready.notify_waiters();
+    }
+
+    pub(crate) fn process_exited(&self, handle: &str, code: Option<i32>, signal: Option<i32>) {
+        let mut pending = self.pending.lock().unwrap();
+        if let Some(p) = pending.processes.get_mut(handle) {
+            p.terminal = Some(serde_json::json!({"watch":handle, "tag":p.tag, "exit_code":code, "signal":signal}));
+        }
+        drop(pending);
+        self.ready.notify_waiters();
+    }
+
+    fn take_process(pending: &mut Pending, handle: &str) -> IncomingEvent {
+        let p = pending.processes.get_mut(handle).unwrap();
+        if p.dropped > 0 {
+            let dropped = std::mem::take(&mut p.dropped);
+            return event("proc.overflow", serde_json::json!({"watch":handle, "tag":p.tag, "dropped":dropped}));
+        }
+        if let Some(line) = p.lines.pop_front() { return event("proc.line", line); }
+        let terminal = p.terminal.take().unwrap();
+        pending.processes.remove(handle);
+        event("proc.watch_exited", terminal)
+    }
     #[cfg(all(test, feature = "ws"))]
     pub(crate) fn socket_snapshot(&self) -> (usize, usize, usize) {
         let p = self.pending.lock().unwrap();
@@ -545,9 +616,16 @@ impl Queue {
                         .find(|h| p.last_socket.as_ref().is_none_or(|last| *h > last))
                         .or_else(|| ready.first())
                         .cloned();
-                    let families_n: usize = if cfg!(feature = "ws") { 4 } else { 3 };
+                    let ready: Vec<_> = p.processes.iter().filter(|(_, s)| families.processes && (!s.lines.is_empty() || s.dropped > 0 || s.terminal.is_some())).map(|(h, _)| h.clone()).collect();
+                    let process = ready.iter().find(|h| p.last_process.as_ref().is_none_or(|last| *h > last)).or_else(|| ready.first()).cloned();
+                    let families_n: usize = 5;
                     for step in 0..families_n {
                         let family = (p.turn + step) % families_n;
+                        if family == 4 && let Some(h) = &process {
+                            p.last_process = Some(h.clone());
+                            p.turn = 0;
+                            return Ok(Self::take_process(&mut p, h));
+                        }
                         if family == 0
                             && let Some(h) = &h
                         {
@@ -618,6 +696,7 @@ pub(crate) fn json_value(v: serde_json::Value) -> Value {
 static NEXT_OWNER_ID: AtomicU64 = AtomicU64::new(1);
 
 pub(crate) struct NativeEvents {
+    processes: BTreeMap<String, crate::child_events::ProcessWatch>,
     pub queue: Arc<Queue>,
     pumping: Rc<Cell<bool>>,
     watches: BTreeSet<String>,
@@ -637,6 +716,7 @@ pub(crate) struct NativeEvents {
 impl Default for NativeEvents {
     fn default() -> Self {
         NativeEvents {
+            processes: BTreeMap::new(),
             queue: Arc::new(Queue::default()),
             pumping: Rc::new(Cell::new(false)),
             watches: BTreeSet::new(),
@@ -672,6 +752,7 @@ impl NativeEvents {
         self.pumping.get()
     }
     pub fn has_sources(&mut self) -> bool {
+        self.processes.retain(|_, p| !p.finished());
         self.children.retain(|c| !c.finished());
         // Completed socket readers published their terminal record before
         // setting the flag; dropping them here joins an exited thread.
@@ -680,6 +761,8 @@ impl NativeEvents {
         self.sockets
             .retain(|_, s| !s.completed.load(std::sync::atomic::Ordering::Acquire));
         !self.watches.is_empty()
+            || !self.processes.is_empty()
+            || !self.queue.pending.lock().unwrap().processes.is_empty()
             || !self.children.is_empty()
             || !self.desktop.is_empty()
             || !self.queue.pending.lock().unwrap().children.is_empty()
@@ -697,6 +780,28 @@ impl NativeEvents {
     }
 
     /// `net_watch`: one rtnetlink subscription per handle.
+    pub fn process_watch(&mut self, args: &[Value]) -> MixResult<String> {
+        self.ensure_open()?;
+        self.processes.retain(|_, p| !p.finished());
+        if self.processes.len().max(self.queue.pending.lock().unwrap().processes.len()) >= MAX_CHILDREN {
+            return Err(refusal("PROC_WATCH_LIMIT", "maximum 128 process watches per evaluator"));
+        }
+        let (command, tag, max_line, max_queue) = crate::builtins::process_watch_command(args)?;
+        let h = format!("process:{}", NEXT_HANDLE.fetch_add(1, Ordering::Relaxed));
+        self.queue.pending.lock().unwrap().processes.insert(h.clone(), PendingProcess { tag, max_queue, ..Default::default() });
+        match crate::child_events::ProcessWatch::new(command, self.queue.clone(), h.clone(), max_line) {
+            Ok(source) => { self.processes.insert(h.clone(), source); Ok(h) }
+            Err(e) => { self.queue.pending.lock().unwrap().processes.remove(&h); Err(e) }
+        }
+    }
+
+    pub fn process_unwatch(&mut self, h: &str) -> bool {
+        let pending = self.queue.pending.lock().unwrap().processes.remove(h).is_some();
+        let owned = self.processes.remove(h).is_some();
+        self.queue.ready.notify_waiters();
+        pending || owned
+    }
+
     pub fn net_watch(&mut self, groups: u32) -> MixResult<String> {
         self.source_watch("net", "net.changed", move |queue, h| {
             crate::desktop_events::NetSource::new(queue, h, groups)
@@ -1069,6 +1174,7 @@ impl NativeEvents {
             p.watches.clear();
             p.sources.clear();
             p.children.clear();
+            p.processes.clear();
             p.count = 0;
             #[cfg(feature = "ws")]
             {
@@ -1085,6 +1191,7 @@ impl NativeEvents {
         self.watches.clear();
         self.filesystem = None;
         self.children.clear();
+        self.processes.clear();
         self.desktop.clear();
         #[cfg(feature = "ws")]
         {
@@ -1210,6 +1317,7 @@ mod tests {
         let mut cx = Context::from_waker(&waker);
         assert!(wait.as_mut().poll(&mut cx).is_pending());
         let registry = NativeEvents {
+            processes: BTreeMap::new(),
             queue: q.clone(),
             pumping: Rc::new(Cell::new(false)),
             watches: BTreeSet::new(),
