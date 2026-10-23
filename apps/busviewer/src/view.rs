@@ -23,6 +23,7 @@ use toolkit::{Icon, Registry, Strings, bars, field, icons, panel, tooltip};
 #[derive(Clone, Debug, PartialEq)]
 pub enum UiEvent {
     Command(&'static str, Origin),
+    CloseMacros,
     Filter(String),
     Toggle(String),
     Select(Row),
@@ -119,7 +120,8 @@ pub fn view(
         }
     }
     if toolkit::macros::show_app(ui.ctx(), "busviewer", engine.ui.macros_open) {
-        events.push(UiEvent::Command("help.macros", Origin::Ui));
+        events.retain(|e| !matches!(e, UiEvent::Command("help.macros", _)));
+        events.push(UiEvent::CloseMacros);
     }
     toolkit::titlebar::edges(ui);
     events

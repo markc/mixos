@@ -264,3 +264,102 @@ fn real_mix_runs_with_context_bounded_output_and_stop() {
     runner.stop();
     assert!(matches!(wait(&runner), Status::Exited(_)));
 }
+
+#[cfg(unix)]
+#[test]
+fn fifo_macro_is_diagnosed_without_blocking() {
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+    let temp = tempfile::tempdir().unwrap();
+    let roots = roots(temp.path());
+    fs::create_dir(&roots.user).unwrap();
+    let path = roots.user.join("pipe.mix");
+    let name = CString::new(path.as_os_str().as_bytes()).unwrap();
+    // SAFETY: name is a valid C path; mkfifo creates only this test fixture.
+    assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o600) }, 0);
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || tx.send(Catalogue::scan(&roots, "ced")).unwrap());
+    let found = rx.recv_timeout(Duration::from_secs(2)).unwrap().unwrap();
+    assert!(found.entries.is_empty());
+    assert_eq!(found.diagnostics.len(), 1);
+    assert_eq!(found.diagnostics[0].path, path);
+    assert!(found.diagnostics[0].message.contains("regular file"));
+}
+
+#[cfg(target_os = "linux")]
+fn descendant_fixture(detached: bool) {
+    let Some(mut roots) = Roots::resolve() else {
+        eprintln!("skip: no absolute HOME");
+        return;
+    };
+    if !roots.mix.is_file() {
+        eprintln!("skip: real Mix binary absent");
+        return;
+    }
+    if detached
+        && !std::env::var_os("PATH").is_some_and(|paths| {
+            std::env::split_paths(&paths).any(|p| p.join("setsid").is_file())
+        })
+    {
+        eprintln!("skip: setsid absent");
+        return;
+    }
+    let temp = tempfile::tempdir().unwrap();
+    roots.home = temp.path().into();
+    fs::write(temp.path().join("child.mix"),
+        "write_file(\"child.pid\", to_string(pid()))\nwhile not exists(\"release\")\nsleep(0.01)\nend\nprint(\"old output\")\n").unwrap();
+    let mix = format!("{:?}", roots.mix.to_str().unwrap());
+    let argv = if detached {
+        format!("[\"setsid\", {mix}, \"child.mix\"]")
+    } else {
+        format!("[{mix}, \"child.mix\"]")
+    };
+    let path = temp.path().join("parent.mix");
+    fs::write(&path, format!(
+        "$child = spawn({argv}, {{stdout: \"inherit\", stderr: \"inherit\"}})\nwhile not exists(\"child.pid\")\nsleep(0.01)\nend\n{}\n",
+        if detached { "" } else { "while true\nsleep(1)\nend" }
+    )).unwrap();
+    let entry = Entry {
+        id: "parent".into(), title: "Parent".into(), tier: Tier::UserApp,
+        path, shadows: vec![],
+    };
+    let mut runner = Runner::default();
+    runner.start(&roots, "ced", &entry).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let pid_file = temp.path().join("child.pid");
+    while !pid_file.exists() {
+        assert!(Instant::now() < deadline, "descendant did not start: {}", runner.output().text);
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let pid: u32 = fs::read_to_string(pid_file).unwrap().parse().unwrap();
+    if detached {
+        while runner.status() == Status::Running {
+            assert!(Instant::now() < deadline, "detached pipe blocked completion");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(runner.status(), Status::Exited(Some(0)));
+        fs::write(&entry.path, "sleep(0.3)\nprint(\"fresh output\")\n").unwrap();
+        runner.start(&roots, "ced", &entry).unwrap();
+        fs::write(temp.path().join("release"), "").unwrap();
+        assert_eq!(wait(&runner), Status::Exited(Some(0)));
+        assert_eq!(runner.output().text, "fresh output\n");
+    } else {
+        runner.stop();
+        assert!(matches!(wait(&runner), Status::Exited(_)));
+        // A killed grandchild can remain a zombie until init reaps it.
+        let proc_stat = fs::read_to_string(format!("/proc/{pid}/stat"));
+        assert!(proc_stat.is_err() || proc_stat.unwrap().split_once(") ").unwrap().1.starts_with('Z'));
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn detached_pipes_do_not_block_completion_or_contaminate_the_next_run() {
+    descendant_fixture(true);
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn stop_terminates_the_macro_process_group() {
+    descendant_fixture(false);
+}

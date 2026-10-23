@@ -18,6 +18,7 @@ pub enum Status {
     /// None means the process was terminated by a signal.
     Exited(Option<i32>),
     FailedToStart(String),
+    Failed(String),
 }
 
 #[derive(Clone, Debug, Default)]
@@ -79,10 +80,9 @@ impl Runner {
                 "a macro is already running",
             ));
         }
-        // A terminal status is published only after child and readers are
-        // reaped. The previous manager may still be returning from its closure.
         *self.status.lock().unwrap() = Status::Running;
-        *self.output.lock().unwrap() = Buffer::default();
+        // A detached descendant may retain a pipe from an earlier run.
+        self.output = Arc::new(Mutex::new(Buffer::default()));
         let (tx, rx) = mpsc::channel();
         let status = self.status.clone();
         let output = self.output.clone();
@@ -133,30 +133,46 @@ impl Runner {
                 let stdout = capture(child.stdout.take().unwrap(), output.clone());
                 let stderr = capture(child.stderr.take().unwrap(), output);
                 let result = loop {
-                    match child.try_wait() {
-                        Ok(Some(exit)) => break Ok(exit),
-                        Err(err) => {
+                    match exited(&mut child) {
+                        Ok(true) => {
                             terminate(&mut child);
-                            let _ = child.wait();
+                            break Ok(());
+                        }
+                        Err(err) => {
+                            if err.kind() == io::ErrorKind::Interrupted {
+                                continue;
+                            }
+                            // ECHILD means the PID is no longer reserved.
+                            if err.raw_os_error() != Some(libc::ECHILD) {
+                                terminate(&mut child);
+                            }
                             break Err(err);
                         }
-                        Ok(None) => {}
+                        Ok(false) => {}
                     }
                     match rx.recv_timeout(Duration::from_millis(20)) {
                         Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected) => {
                             terminate(&mut child);
-                            break child.wait();
+                            break Ok(());
                         }
                         Err(mpsc::RecvTimeoutError::Timeout) => {}
                     }
                 };
-                // Descendants must not keep the output pipes or outlive the macro.
-                terminate(&mut child);
-                let _ = stdout.join();
-                let _ = stderr.join();
+                // Allow ordinary output to drain, but never wait indefinitely
+                // for a descendant in another session holding the pipes open.
+                let deadline = std::time::Instant::now() + Duration::from_millis(100);
+                while !(stdout.is_finished() && stderr.is_finished())
+                    && std::time::Instant::now() < deadline
+                {
+                    thread::sleep(Duration::from_millis(1));
+                }
+                // No signals are sent after this reap. Publish immediately;
+                // dropping the reader handles detaches any lingering readers.
+                let reaped = child.wait();
+                let result = result.and(reaped);
                 *status.lock().unwrap() = match result {
                     Ok(exit) => Status::Exited(exit.code()),
-                    Err(err) => Status::FailedToStart(err.to_string()),
+                    Err(err) => Status::Failed(err.to_string()),
                 };
             });
         match worker {
@@ -207,7 +223,34 @@ fn terminate(child: &mut Child) {
     unsafe {
         libc::kill(-(child.id() as i32), libc::SIGKILL);
     }
+    #[cfg(not(unix))]
     let _ = child.kill();
+}
+
+#[cfg(unix)]
+fn exited(child: &mut Child) -> io::Result<bool> {
+    // SAFETY: info is writable and waitid only observes our owned child.
+    // WNOWAIT reserves its PID until group cleanup and Child::wait finish.
+    let mut info = unsafe { std::mem::zeroed::<libc::siginfo_t>() };
+    let result = unsafe {
+        libc::waitid(
+            libc::P_PID,
+            child.id(),
+            &mut info,
+            libc::WEXITED | libc::WNOHANG | libc::WNOWAIT,
+        )
+    };
+    if result == -1 {
+        Err(io::Error::last_os_error())
+    } else {
+        // SAFETY: waitid initialised the SIGCHLD fields (or left zero).
+        Ok(unsafe { info.si_pid() } != 0)
+    }
+}
+
+#[cfg(not(unix))]
+fn exited(child: &mut Child) -> io::Result<bool> {
+    child.try_wait().map(|status| status.is_some())
 }
 
 #[cfg(test)]

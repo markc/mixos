@@ -28,6 +28,7 @@ use vitals::{Column, Dialog, Engine, Tab};
 #[derive(Clone, Debug, PartialEq)]
 pub enum UiEvent {
     Command(&'static str, Origin),
+    CloseMacros,
     Tab(Tab),
     Section(String),
     Sort(Column),
@@ -108,7 +109,8 @@ pub fn view(
         }
     }
     if toolkit::macros::show_app(ui.ctx(), "monitor", engine.ui.macros_open) {
-        events.push(UiEvent::Command("help.macros", Origin::Ui));
+        events.retain(|e| !matches!(e, UiEvent::Command("help.macros", _)));
+        events.push(UiEvent::CloseMacros);
     }
     toolkit::titlebar::edges(ui);
     events

@@ -125,8 +125,8 @@ macro_rules! goto {
 pub fn registry() -> Registry<App> {
     let mut r = Registry::new();
     r.add(toolkit::macros::command(
-        |a: &App| a.enabled(ActionId::HelpMacros),
-        |a: &mut App| a.action(ActionId::HelpMacros),
+        |a: &App| a.ui.macros_open || a.enabled(ActionId::HelpMacros),
+        |a: &mut App| a.ui.macros_open = !a.ui.macros_open,
     ));
     commands! { r;
         FileNew => "file.new", "file-new", "file", 0;

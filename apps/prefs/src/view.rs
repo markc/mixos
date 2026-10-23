@@ -41,6 +41,7 @@ mod wallpaper;
 #[derive(Clone, Debug, PartialEq)]
 pub enum UiEvent {
     Command(&'static str, Origin),
+    CloseMacros,
     /// Select this app in the Applications table.
     Select(String),
     CloseDialog,
@@ -178,7 +179,8 @@ pub fn view(
     dialogs(ui, engine, commands, strings, &mut events);
     wallpaper::picker(ui, engine, &mut events);
     if toolkit::macros::show_app(ui.ctx(), "prefs", engine.ui.macros_open) {
-        events.push(UiEvent::Command("help.macros", Origin::Ui));
+        events.retain(|e| !matches!(e, UiEvent::Command("help.macros", _)));
+        events.push(UiEvent::CloseMacros);
     }
     toolkit::titlebar::edges(ui);
     events

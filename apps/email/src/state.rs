@@ -5417,6 +5417,7 @@ impl State {
     pub fn apply_ui(&mut self, event: crate::view::UiEvent) {
         use crate::view::UiEvent;
         match event {
+            UiEvent::CloseMacros => self.ui.macros_open = false,
             UiEvent::Command(id, origin) => {
                 let _ = (id, origin);
                 // Commands run through the registry (commands.rs), which

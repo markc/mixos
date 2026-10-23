@@ -116,7 +116,7 @@ const fn key(modifiers: Modifiers, key: Key) -> Option<KeyboardShortcut> {
 /// The registry: every command, its menu, its shortcut and its guard.
 pub fn registry() -> Registry<State> {
     let mut r = Registry::new();
-    r.add(toolkit::macros::command(undialogued, |s: &mut State| {
+    r.add(toolkit::macros::command(|s: &State| s.ui.macros_open || undialogued(s), |s: &mut State| {
         s.ui.macros_open = !s.ui.macros_open;
     }));
     r.add(Command {

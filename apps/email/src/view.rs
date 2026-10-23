@@ -34,6 +34,7 @@ use toolkit::datatable;
 #[derive(Clone, Debug, PartialEq)]
 pub enum UiEvent {
     Command(&'static str, Origin),
+    CloseMacros,
     /// Switch the centre pane's surface.
     Mode(Mode),
     /// A tree row was clicked: select what it stands for.
@@ -193,7 +194,8 @@ pub fn view(
         }
     }
     if toolkit::macros::show_app(ui.ctx(), "email", state.ui.macros_open) {
-        events.push(UiEvent::Command("help.macros", Origin::Ui));
+        events.retain(|e| !matches!(e, UiEvent::Command("help.macros", _)));
+        events.push(UiEvent::CloseMacros);
     }
     toolkit::titlebar::edges(ui);
     events

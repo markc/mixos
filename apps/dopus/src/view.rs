@@ -41,6 +41,7 @@ use crate::{label, label_with};
 pub enum UiEvent {
     /// A command, and how it was reached (for `dopus.command.executed`).
     Command(&'static str, Origin),
+    CloseMacros,
     /// A context-menu action on a pane (it activates first).
     CommandIn(&'static str, PaneId),
     Activate(PaneId),
@@ -175,7 +176,8 @@ pub fn view(ui: &mut Ui, app: &App, commands: &Registry<App>, strings: &Strings)
     drag_preview(ui.ctx());
     dialogs(ui.ctx(), app, commands, strings, &mut events);
     if toolkit::macros::show_app(ui.ctx(), "dopus", app.macros_open) {
-        events.push(UiEvent::Command("help.macros", Origin::Ui));
+        events.retain(|e| !matches!(e, UiEvent::Command("help.macros", _)));
+        events.push(UiEvent::CloseMacros);
     }
     toolkit::titlebar::edges(ui);
     events
@@ -1018,6 +1020,7 @@ pub fn apply(app: &mut App, commands: &Registry<App>, events: Vec<UiEvent>) {
         .partition(|e| matches!(e, UiEvent::Command(..) | UiEvent::CommandIn(..)));
     for event in edits.into_iter().chain(fired) {
         match event {
+            UiEvent::CloseMacros => app.macros_open = false,
             UiEvent::Command(id, origin) => {
                 let _ = commands.execute(id, app, origin);
             }

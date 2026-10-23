@@ -3,6 +3,8 @@ use std::collections::BTreeMap;
 use std::fs::{self, OpenOptions};
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
+#[cfg(unix)]
+use std::os::unix::fs::OpenOptionsExt;
 
 /// Resolution is pure; missing/relative HOME cannot supply a user home.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -297,11 +299,16 @@ fn checked_file(root: &Path, path: &Path) -> io::Result<fs::File> {
     if !target.starts_with(fs::canonicalize(root)?) {
         return Err(invalid("macro symlink escapes its root"));
     }
-    // Check metadata before opening: a pipe must never block a catalogue scan.
-    if !fs::metadata(&target)?.is_file() {
+    let mut options = OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    options.custom_flags(libc::O_NONBLOCK);
+    let file = options.open(target)?;
+    // Inspect the opened descriptor, not a path that can be swapped for a FIFO.
+    if !file.metadata()?.is_file() {
         return Err(invalid("macro is not a regular file"));
     }
-    fs::File::open(target)
+    Ok(file)
 }
 
 fn invalid(message: &str) -> io::Error {

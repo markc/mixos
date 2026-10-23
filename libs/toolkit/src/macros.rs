@@ -151,6 +151,7 @@ impl State {
                     )],
                 ),
                 Status::FailedToStart(err) => own_with("macros-failed", &[("error", &err)]),
+                Status::Failed(err) => own_with("macros-run-failed", &[("error", &err)]),
             },
             output: output.text,
             dropped: output.dropped,
@@ -245,7 +246,8 @@ fn launch(path: &Path, folder: bool) -> io::Result<()> {
 }
 
 /// Keep per-window runtime resources in the egui context; the app's serialisable
-/// UI state owns the open flag. Returns true when the Close action toggles it.
+/// UI state owns the open flag. Returns true when it must be set to false,
+/// independently of the guarded toggle command (including same-frame clicks).
 pub fn show_app(ctx: &egui::Context, app: &str, open: bool) -> bool {
     let id = egui::Id::new(("shared-macros", app));
     let state: Option<Arc<Mutex<State>>> = ctx.data(|d| d.get_temp(id));

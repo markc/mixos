@@ -32,6 +32,7 @@ fn harness(data: Data, render: bool) -> Harness<'static, Panel> {
     );
     toolkit::install(&h.ctx, &toolkit::Theme::embedded());
     h.run();
+    h.run_steps(40);
     h
 }
 
@@ -86,6 +87,63 @@ fn close_updates_the_open_flag() {
     let mut h = harness(Data::default(), false);
     h.get_by_label("Close").click();
     h.run();
+    assert!(!h.state().open);
+}
+
+#[derive(Default)]
+struct AppPanel {
+    open: bool,
+    modal: bool,
+}
+
+fn app_harness() -> Harness<'static, AppPanel> {
+    let mut h = Harness::builder()
+        .with_size(egui::vec2(800.0, 700.0))
+        .build_ui_state(
+            |ui, state: &mut AppPanel| {
+                let toggle = toolkit::macros::command(
+                    |s: &AppPanel| s.open || !s.modal,
+                    |s: &mut AppPanel| s.open = !s.open,
+                );
+                let mut fired = false;
+                egui::CentralPanel::default().show(ui, |ui| {
+                    fired = ui.add_enabled((toggle.enabled)(state), egui::Button::new("Toggle macros")).clicked();
+                });
+                let close = toolkit::macros::show_app(ui.ctx(), "ced", state.open);
+                // Apps queue UI commands, then apply the panel's unguarded,
+                // idempotent close. Both can arrive in the same frame.
+                if fired && !close {
+                    (toggle.run)(state);
+                }
+                if close {
+                    state.open = false;
+                }
+            },
+            AppPanel { open: true, modal: true },
+        );
+    toolkit::install(&h.ctx, &toolkit::Theme::embedded());
+    h.run_steps(40);
+    h
+}
+
+#[test]
+fn app_panel_closes_even_when_opening_commands_are_disabled() {
+    let mut h = app_harness();
+    h.get_by_label("Close").click();
+    h.run_steps(40);
+    assert!(!h.state().open);
+    assert!(h.state().modal);
+    h.run_steps(40);
+    assert!(!h.state().open);
+}
+
+#[test]
+fn app_panel_toggle_and_outside_dismissal_do_not_reopen_it() {
+    let mut h = app_harness();
+    h.get_by_label("Toggle macros").click();
+    h.run_steps(40);
+    assert!(!h.state().open);
+    h.run_steps(40);
     assert!(!h.state().open);
 }
 

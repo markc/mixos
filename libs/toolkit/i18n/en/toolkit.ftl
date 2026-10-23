@@ -28,6 +28,7 @@ macros-running = Running
 macros-exited = Exited: { $code }
 macros-signal = stopped by signal
 macros-failed = Failed to start: { $error }
+macros-run-failed = Macro failed: { $error }
 panel-menu = Panel menu
 more-tabs = More tabs
 close-document = Close { $name }

@@ -78,7 +78,7 @@ macro_rules! tools {
 pub fn registry() -> toolkit::command::EngineAdapter<App> {
     let mut r = Registry::new();
     r.add(toolkit::macros::command(
-        |a: &App| !a.headless && !a.modal(),
+        |a: &App| a.ui.macros_open || (!a.headless && !a.modal()),
         |a: &mut App| a.ui.macros_open = !a.ui.macros_open,
     ));
     // File.

@@ -30,6 +30,7 @@ use toolkit::{Icon, Strings, bars, field, tooltip};
 #[derive(Clone, Debug, PartialEq)]
 pub enum UiEvent {
     Command(&'static str, Origin),
+    CloseMacros,
     Add(Shape),
     Crop(Crop),
     Move(u64, f32, f32),
@@ -125,7 +126,8 @@ pub fn view(
         .show(ui, |ui| picture(ui, app, preview, drag, &mut events));
     dialogs(ui.ctx(), app, commands, strings, &mut events);
     if toolkit::macros::show_app(ui.ctx(), "screenshot", app.ui.macros_open) {
-        events.push(UiEvent::Command("help.macros", Origin::Ui));
+        events.retain(|e| !matches!(e, UiEvent::Command("help.macros", _)));
+        events.push(UiEvent::CloseMacros);
     }
     titlebar::edges(ui);
     events
@@ -967,6 +969,7 @@ pub fn apply(app: &mut App, _commands: &Commands, events: Vec<UiEvent>) {
         .partition(|e| matches!(e, UiEvent::Command(..)));
     for event in edits.into_iter().chain(fired) {
         match event {
+            UiEvent::CloseMacros => app.ui.macros_open = false,
             UiEvent::Command(id, origin) => {
                 let _ = app.execute(id, serde_json::Value::Null, origin);
             }

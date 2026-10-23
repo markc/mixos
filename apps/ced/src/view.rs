@@ -28,6 +28,7 @@ use crate::{label, label_with};
 #[derive(Debug, Clone, PartialEq)]
 pub enum UiEvent {
     Command(&'static str, Origin),
+    CloseMacros,
     SelectTab(TabId),
     CloseTab(TabId),
     Editor(TabId, editor::Event),
@@ -101,7 +102,8 @@ pub fn view(
         });
     dialogs(ui.ctx(), app, commands, strings, &mut events);
     if toolkit::macros::show_app(ui.ctx(), "ced", app.ui.macros_open) {
-        events.push(UiEvent::Command("help.macros", Origin::Ui));
+        events.retain(|e| !matches!(e, UiEvent::Command("help.macros", _)));
+        events.push(UiEvent::CloseMacros);
     }
     events
 }
@@ -124,6 +126,7 @@ pub fn record_noted(app: &mut App, commands: &Registry<App>) {
 fn apply_one(app: &mut App, commands: &Registry<App>, event: UiEvent) {
     {
         match event {
+            UiEvent::CloseMacros => app.ui.macros_open = false,
             UiEvent::Command(id, origin) => {
                 let _ = commands.execute(id, app, origin);
             }

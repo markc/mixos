@@ -63,6 +63,7 @@ pub fn apply_ui(engine: &mut Engine, commands: &Registry<Engine>, events: Vec<Ui
         .partition(|e| matches!(e, UiEvent::Command(..)));
     for event in edits.into_iter().chain(fired) {
         match event {
+            UiEvent::CloseMacros => engine.ui.macros_open = false,
             UiEvent::Command(id, origin) => {
                 let _ = commands.execute(id, engine, origin);
             }
