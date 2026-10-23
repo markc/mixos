@@ -323,14 +323,18 @@ async fn process_watch_streams_while_serving_and_reaps_on_reload_and_shutdown() 
     let dir = Dir::new("process-watch");
     let mut broker = Broker::start();
     let bin = Path::new(env!("CARGO_BIN_EXE_mix"));
-    let child = dir.write("child.mix", r#"
+    let child = dir.write(
+        "child.mix",
+        r#"
 print(pid())
 loop
   print("tick")
   sleep(0.03)
 end
-"#);
-    let source = format!(r#"
+"#,
+    );
+    let source = format!(
+        r#"
 $count = 0
 $TRACE = env("REL_TRACE")
 fn start_watch()
@@ -338,7 +342,7 @@ fn start_watch()
 end
 on proc.line
   if $count == 0 then
-    append_file($TRACE, "watch|" .. json_encode({{pid: to_number($event.args.line)}}) .. "|" .. chr(10))
+    append_file($TRACE, "watch|" .. json_encode({{pid: to_number($event.args.line)}}) .. "|t=" .. monotonic() .. chr(10))
   end
   $count = $count + 1
 end
@@ -349,13 +353,18 @@ on lifecycle.commit
   start_watch()
 end
 if not is_reload_candidate() then start_watch() end
-"#, json!(bin.to_str().unwrap()), json!(child.to_str().unwrap()));
+"#,
+        json!(bin.to_str().unwrap()),
+        json!(child.to_str().unwrap())
+    );
     let script_path = dir.write("service.mix", &source);
     let node_conf = dir.write("node.conf.mix", &node_conf_text(broker_tcp_port(&broker)));
     let mut citizen = Citizen::spawn(bin, &dir, &node_conf, &script_path);
     let c = connect(&broker).await;
     wait_service(&c, HARD).await;
-    let first = wait_lines(&dir, "watch", 1, HARD)[0].fields["pid"].as_i64().unwrap();
+    let first = wait_lines(&dir, "watch", 1, HARD)[0].fields["pid"]
+        .as_i64()
+        .unwrap();
     assert!(alive(first));
     for _ in 0..5 {
         let result = call(&c, "rel.state", json!({})).await.unwrap();
@@ -363,14 +372,23 @@ if not is_reload_candidate() then start_watch() end
     }
     // A candidate that ignores the passive-init rule must be rejected,
     // without stopping the committed generation's stream.
-    std::fs::write(&script_path, source.replace("if not is_reload_candidate() then start_watch() end", "start_watch()")).unwrap();
+    std::fs::write(
+        &script_path,
+        source.replace(
+            "if not is_reload_candidate() then start_watch() end",
+            "start_watch()",
+        ),
+    )
+    .unwrap();
     call(&c, "RELOAD", json!({})).await.unwrap();
     wait_stderr(&dir, "PROC_WATCH_RELOAD_CANDIDATE", HARD);
     assert!(alive(first));
     assert!(call(&c, "rel.state", json!({})).await.is_ok());
     std::fs::write(&script_path, &source).unwrap();
     call(&c, "RELOAD", json!({})).await.unwrap();
-    let next = wait_lines(&dir, "watch", 2, HARD)[1].fields["pid"].as_i64().unwrap();
+    let next = wait_lines(&dir, "watch", 2, HARD)[1].fields["pid"]
+        .as_i64()
+        .unwrap();
     assert_ne!(first, next);
     wait_dead(first, HARD);
     assert!(alive(next));

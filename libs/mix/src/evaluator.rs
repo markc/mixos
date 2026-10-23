@@ -13454,7 +13454,9 @@ impl Evaluator {
                 "net_watch"
                     | "net_unwatch"
                     | "net_state"
-                    | "process_watch" | "process_unwatch" | "audio_watch"
+                    | "process_watch"
+                    | "process_unwatch"
+                    | "audio_watch"
                     | "audio_unwatch"
                     | "audio_state"
             ) {
@@ -13822,7 +13824,9 @@ impl Evaluator {
                             | "net_watch"
                             | "net_unwatch"
                             | "net_state"
-                            | "process_watch" | "process_unwatch" | "audio_watch"
+                            | "process_watch"
+                            | "process_unwatch"
+                            | "audio_watch"
                             | "audio_unwatch"
                             | "audio_state"
                             | "ws_on"
@@ -14032,7 +14036,13 @@ impl Evaluator {
                                 let families = {
                                     let g = self.globals.borrow();
                                     crate::native_events::Families {
-                                        processes: ["proc.line", "proc.overflow", "proc.watch_exited"].iter().any(|name| g.handlers.contains_key(*name)),
+                                        processes: [
+                                            "proc.line",
+                                            "proc.overflow",
+                                            "proc.watch_exited",
+                                        ]
+                                        .iter()
+                                        .any(|name| g.handlers.contains_key(*name)),
                                         filesystem: g.handlers.contains_key("fs.changed"),
                                         children: g.handlers.contains_key("proc.exited"),
                                         net: g.handlers.contains_key("net.changed"),
@@ -19024,21 +19034,15 @@ mod standing_interrupt_tests {
         // path is data, never part of the source text.
         vec![
             (
-                "try\n  $log = $log .. \"T\"\n  write_file($marker, \"x\")\n  while true
-    $n = 1\n  end\n\
+                "try\n  $log = $log .. \"T\"\n  write_file($marker, \"x\")\n  while true\n    $n = 1\n  end\n\
                  catch $m\n  $log = $log .. \"C\"\n\
                  finally\n  $log = $log .. \"F\"\nend\n",
                 Some("TF"),
                 false,
             ),
             (
-                "try\n  try
-    write_file($marker, \"x\")
-    while true
-      $n = 1
-    end\n\
-                 catch $m
-    $log = $log .. \"C\"\n  end\n\
+                "try\n  try\n    write_file($marker, \"x\")\n    while true\n      $n = 1\n    end\n\
+                 catch $m\n    $log = $log .. \"C\"\n  end\n\
                  catch $m2\n  $log = $log .. \"O\"\n\
                  finally\n  $log = $log .. \"F\"\nend\n",
                 Some("F"),
@@ -19049,21 +19053,15 @@ mod standing_interrupt_tests {
             // runs on with no further interrupt, and the parent's time limit
             // fails the case.
             (
-                "while true\n  try
-    write_file($marker, \"x\")
-    while true
-      $n = 1
-    end\n\
-                 finally
-    continue\n  end\nend\n$log = $log .. \"X\"\n",
+                "while true\n  try\n    write_file($marker, \"x\")\n    while true\n      $n = 1\n    end\n\
+                 finally\n    continue\n  end\nend\n$log = $log .. \"X\"\n",
                 Some(""),
                 false,
             ),
             // Liveness: repeated raises must still end the run, however the
             // catch and finally clauses are entered.
             (
-                "try\n  write_file($marker, \"x\")\n  while true
-    $n = 1\n  end\n\
+                "try\n  write_file($marker, \"x\")\n  while true\n    $n = 1\n  end\n\
                  catch $m\n  $log = $log .. \"C\"\nend\n",
                 None,
                 true,

@@ -65,10 +65,17 @@ mod process_tests {
     #[tokio::test]
     async fn overflow_count_is_reported_once_before_lines_and_terminal_is_last() {
         let queue = Queue::default();
-        queue.pending.lock().unwrap().processes.insert("process:test".into(), PendingProcess {
-            tag: "test".into(), max_queue: 2, ..Default::default()
-        });
-        for n in 0..7 { queue.process_line("process:test", "stdout", n.to_string(), false); }
+        queue.pending.lock().unwrap().processes.insert(
+            "process:test".into(),
+            PendingProcess {
+                tag: "test".into(),
+                max_queue: 2,
+                ..Default::default()
+            },
+        );
+        for n in 0..7 {
+            queue.process_line("process:test", "stdout", n.to_string(), false);
+        }
         queue.process_exited("process:test", Some(0), None);
         let event = queue.next(None).await.unwrap();
         assert_eq!(event.command, "proc.overflow");
@@ -190,7 +197,9 @@ pub(crate) struct Queue {
 impl Queue {
     pub(crate) fn process_line(&self, handle: &str, stream: &str, line: String, truncated: bool) {
         let mut pending = self.pending.lock().unwrap();
-        let Some(p) = pending.processes.get_mut(handle) else { return };
+        let Some(p) = pending.processes.get_mut(handle) else {
+            return;
+        };
         if p.lines.len() == p.max_queue {
             p.dropped = p.dropped.saturating_add(1);
         } else {
@@ -203,7 +212,9 @@ impl Queue {
     pub(crate) fn process_exited(&self, handle: &str, code: Option<i32>, signal: Option<i32>) {
         let mut pending = self.pending.lock().unwrap();
         if let Some(p) = pending.processes.get_mut(handle) {
-            p.terminal = Some(serde_json::json!({"watch":handle, "tag":p.tag, "exit_code":code, "signal":signal}));
+            p.terminal = Some(
+                serde_json::json!({"watch":handle, "tag":p.tag, "exit_code":code, "signal":signal}),
+            );
         }
         drop(pending);
         self.ready.notify_waiters();
@@ -213,9 +224,14 @@ impl Queue {
         let p = pending.processes.get_mut(handle).unwrap();
         if p.dropped > 0 {
             let dropped = std::mem::take(&mut p.dropped);
-            return event("proc.overflow", serde_json::json!({"watch":handle, "tag":p.tag, "dropped":dropped}));
+            return event(
+                "proc.overflow",
+                serde_json::json!({"watch":handle, "tag":p.tag, "dropped":dropped}),
+            );
         }
-        if let Some(line) = p.lines.pop_front() { return event("proc.line", line); }
+        if let Some(line) = p.lines.pop_front() {
+            return event("proc.line", line);
+        }
         let terminal = p.terminal.take().unwrap();
         pending.processes.remove(handle);
         event("proc.watch_exited", terminal)
@@ -616,12 +632,26 @@ impl Queue {
                         .find(|h| p.last_socket.as_ref().is_none_or(|last| *h > last))
                         .or_else(|| ready.first())
                         .cloned();
-                    let ready: Vec<_> = p.processes.iter().filter(|(_, s)| families.processes && (!s.lines.is_empty() || s.dropped > 0 || s.terminal.is_some())).map(|(h, _)| h.clone()).collect();
-                    let process = ready.iter().find(|h| p.last_process.as_ref().is_none_or(|last| *h > last)).or_else(|| ready.first()).cloned();
+                    let ready: Vec<_> = p
+                        .processes
+                        .iter()
+                        .filter(|(_, s)| {
+                            families.processes
+                                && (!s.lines.is_empty() || s.dropped > 0 || s.terminal.is_some())
+                        })
+                        .map(|(h, _)| h.clone())
+                        .collect();
+                    let process = ready
+                        .iter()
+                        .find(|h| p.last_process.as_ref().is_none_or(|last| *h > last))
+                        .or_else(|| ready.first())
+                        .cloned();
                     let families_n: usize = 5;
                     for step in 0..families_n {
                         let family = (p.turn + step) % families_n;
-                        if family == 4 && let Some(h) = &process {
+                        if family == 4
+                            && let Some(h) = &process
+                        {
                             p.last_process = Some(h.clone());
                             p.turn = 0;
                             return Ok(Self::take_process(&mut p, h));
@@ -783,20 +813,53 @@ impl NativeEvents {
     pub fn process_watch(&mut self, args: &[Value]) -> MixResult<String> {
         self.ensure_open()?;
         self.processes.retain(|_, p| !p.finished());
-        if self.processes.len().max(self.queue.pending.lock().unwrap().processes.len()) >= MAX_CHILDREN {
-            return Err(refusal("PROC_WATCH_LIMIT", "maximum 128 process watches per evaluator"));
+        if self
+            .processes
+            .len()
+            .max(self.queue.pending.lock().unwrap().processes.len())
+            >= MAX_CHILDREN
+        {
+            return Err(refusal(
+                "PROC_WATCH_LIMIT",
+                "maximum 128 process watches per evaluator",
+            ));
         }
         let (command, tag, max_line, max_queue) = crate::builtins::process_watch_command(args)?;
         let h = format!("process:{}", NEXT_HANDLE.fetch_add(1, Ordering::Relaxed));
-        self.queue.pending.lock().unwrap().processes.insert(h.clone(), PendingProcess { tag, max_queue, ..Default::default() });
-        match crate::child_events::ProcessWatch::new(command, self.queue.clone(), h.clone(), max_line) {
-            Ok(source) => { self.processes.insert(h.clone(), source); Ok(h) }
-            Err(e) => { self.queue.pending.lock().unwrap().processes.remove(&h); Err(e) }
+        self.queue.pending.lock().unwrap().processes.insert(
+            h.clone(),
+            PendingProcess {
+                tag,
+                max_queue,
+                ..Default::default()
+            },
+        );
+        match crate::child_events::ProcessWatch::new(
+            command,
+            self.queue.clone(),
+            h.clone(),
+            max_line,
+        ) {
+            Ok(source) => {
+                self.processes.insert(h.clone(), source);
+                Ok(h)
+            }
+            Err(e) => {
+                self.queue.pending.lock().unwrap().processes.remove(&h);
+                Err(e)
+            }
         }
     }
 
     pub fn process_unwatch(&mut self, h: &str) -> bool {
-        let pending = self.queue.pending.lock().unwrap().processes.remove(h).is_some();
+        let pending = self
+            .queue
+            .pending
+            .lock()
+            .unwrap()
+            .processes
+            .remove(h)
+            .is_some();
         let owned = self.processes.remove(h).is_some();
         self.queue.ready.notify_waiters();
         pending || owned

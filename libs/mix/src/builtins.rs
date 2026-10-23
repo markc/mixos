@@ -6608,7 +6608,9 @@ fn parse_stderr_route(caller: &str, value: &Value) -> MixResult<RunArgvStderr> {
     }
 }
 
-pub(crate) fn process_watch_command(args: &[Value]) -> MixResult<(std::process::Command, String, usize, usize)> {
+pub(crate) fn process_watch_command(
+    args: &[Value],
+) -> MixResult<(std::process::Command, String, usize, usize)> {
     let caller = "process_watch";
     let argv = parse_run_argv_argv(caller, &args[0])?;
     let mut common = indexmap::IndexMap::new();
@@ -6617,25 +6619,48 @@ pub(crate) fn process_watch_command(args: &[Value]) -> MixResult<(std::process::
     let mut max_line = 65536;
     let mut max_queue = 1024;
     if let Some(value) = args.get(1) {
-        let Value::Map(map) = value else { return Err(opt_invalid(caller, "options must be a map")); };
+        let Value::Map(map) = value else {
+            return Err(opt_invalid(caller, "options must be a map"));
+        };
         for (key, value) in map.iter() {
             match key.as_str() {
-                "cwd" | "env" | "clear_env" => { common.insert(key.clone(), value.clone()); }
+                "cwd" | "env" | "clear_env" => {
+                    common.insert(key.clone(), value.clone());
+                }
                 "tag" => {
-                    let Value::String(s) = value else { return Err(opt_invalid(caller, "tag must be a string")); };
+                    let Value::String(s) = value else {
+                        return Err(opt_invalid(caller, "tag must be a string"));
+                    };
                     tag = s.clone();
                 }
                 "stderr" => {
-                    let Value::String(s) = value else { return Err(opt_invalid(caller, "stderr must be null, lines or inherit")); };
-                    if !matches!(s.as_str(), "null" | "lines" | "inherit") { return Err(opt_invalid(caller, "stderr must be null, lines or inherit")); }
+                    let Value::String(s) = value else {
+                        return Err(opt_invalid(caller, "stderr must be null, lines or inherit"));
+                    };
+                    if !matches!(s.as_str(), "null" | "lines" | "inherit") {
+                        return Err(opt_invalid(caller, "stderr must be null, lines or inherit"));
+                    }
                     stderr = s;
                 }
                 "max_line" | "max_queue" => {
-                    let Value::Number(n) = value else { return Err(opt_invalid(caller, "limits must be positive integers")); };
-                    let bound = if key == "max_line" { 16 * 1024 * 1024 } else { 65536 };
-                    let n = as_count(caller, *n, bound).map_err(|_| opt_invalid(caller, "limit out of range"))?;
-                    if n == 0 { return Err(opt_invalid(caller, "limits must be positive")); }
-                    if key == "max_line" { max_line = n; } else { max_queue = n; }
+                    let Value::Number(n) = value else {
+                        return Err(opt_invalid(caller, "limits must be positive integers"));
+                    };
+                    let bound = if key == "max_line" {
+                        16 * 1024 * 1024
+                    } else {
+                        65536
+                    };
+                    let n = as_count(caller, *n, bound)
+                        .map_err(|_| opt_invalid(caller, "limit out of range"))?;
+                    if n == 0 {
+                        return Err(opt_invalid(caller, "limits must be positive"));
+                    }
+                    if key == "max_line" {
+                        max_line = n;
+                    } else {
+                        max_queue = n;
+                    }
                 }
                 _ => return Err(opt_invalid(caller, format!("unknown option {key}"))),
             }
@@ -6644,11 +6669,19 @@ pub(crate) fn process_watch_command(args: &[Value]) -> MixResult<(std::process::
     let opts = parse_run_argv_opts(caller, Some(&Value::Map(common.into())))?;
     let mut command = std::process::Command::new(&argv[0]);
     command.args(&argv[1..]);
-    if let Some(cwd) = opts.cwd { command.current_dir(cwd); }
-    if opts.clear_env { command.env_clear(); }
+    if let Some(cwd) = opts.cwd {
+        command.current_dir(cwd);
+    }
+    if opts.clear_env {
+        command.env_clear();
+    }
     command.envs(opts.env);
-    for key in opts.env_unset { command.env_remove(key); }
-    command.stdin(std::process::Stdio::null()).stdout(std::process::Stdio::piped());
+    for key in opts.env_unset {
+        command.env_remove(key);
+    }
+    command
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped());
     command.stderr(match stderr {
         "lines" => std::process::Stdio::piped(),
         "inherit" => std::process::Stdio::inherit(),
@@ -36529,12 +36562,7 @@ mod bytes_tests {
     #[cfg(feature = "yaml")]
     #[test]
     fn yaml_parse_provisioning_shape() {
-        let src = "groups:\n  - name: memory
-    interval: 5m
-    rules:
-      - alert: pressure
-        enabled: true
-        threshold: 0.85\n";
+        let src = "groups:\n  - name: memory\n    interval: 5m\n    rules:\n      - alert: pressure\n        enabled: true\n        threshold: 0.85\n";
         let v = builtin_yaml_parse(vec![Value::String(src.into())])
             .unwrap()
             .unwrap();
@@ -38038,8 +38066,7 @@ mod data_serde_tests {
             "depth-1 indent wrong: {text:?}"
         );
         assert!(
-            text.contains("
-    \"port\""),
+            text.contains("\n    \"port\""),
             "depth-2 indent wrong: {text:?}"
         );
         // Escaping is mode-independent.
