@@ -1407,7 +1407,7 @@ mod tests {
         );
         a.effects.clear();
         a.notice(
-            None,
+            Some(1),
             Notice::Message {
                 level: Level::Error,
                 text: "w5".into(),
@@ -1419,7 +1419,7 @@ mod tests {
         );
         a.now += 5.0;
         a.notice(
-            None,
+            Some(1),
             Notice::Message {
                 level: Level::Error,
                 text: "w5".into(),
@@ -1456,6 +1456,21 @@ mod tests {
         assert!(
             matches!(&a.effects[0], Effect::Notify { text, .. } if text == "one.md: Save failed.")
         );
+    }
+
+    #[test]
+    fn identical_notices_in_different_tabs_are_independent_and_expire() {
+        let mut a = app();
+        for tab in [Some(1), Some(2), None] {
+            for _ in 0..2 {
+                a.notice(tab, Notice::Message { level: Level::Error, text: "same.txt: failed".into() });
+            }
+        }
+        assert_eq!(a.effects.iter().filter(|e| matches!(e, Effect::Notify { .. })).count(), 3);
+        assert_eq!(a.recent_notices.len(), 3);
+        a.now += NOTICE_GAP_SECONDS;
+        a.notice(None, Notice::Message { level: Level::Error, text: "new error".into() });
+        assert_eq!(a.recent_notices.len(), 1);
     }
 
     #[test]

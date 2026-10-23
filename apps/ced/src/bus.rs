@@ -113,13 +113,10 @@ fn failure_body(rc: u8, body: String, error: Option<&str>, verb: &str) -> String
     if rc < 10 {
         return body;
     }
-    if !body.trim().is_empty() && serde_json::from_str::<serde_json::Value>(&body).is_err() {
-        return body;
-    }
     let mut value = serde_json::from_str::<serde_json::Value>(&body)
         .ok()
         .filter(|v| v.is_object())
-        .unwrap_or_else(|| serde_json::json!({}));
+        .unwrap_or_else(|| serde_json::json!({"message": body}));
     let code = value["error_code"]
         .as_str()
         .filter(|s| !s.trim().is_empty())
@@ -668,7 +665,9 @@ mod tests {
 
     #[test]
     fn failure_keeps_real_error_text() {
-        assert_eq!(failure_body(10, "Permission denied".into(), None, "edit.open"), "Permission denied");
+        let body = failure_body(10, "Permission denied".into(), None, "edit.open");
+        let value: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(value["message"], "Permission denied");
         let body = failure_body(10, r#"{"error_code":"IO","message":"Disk full"}"#.into(), None, "edit.save");
         let value: serde_json::Value = serde_json::from_str(&body).unwrap();
         assert_eq!(value["message"], "Disk full");

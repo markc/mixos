@@ -3178,7 +3178,6 @@ mod tests {
 
     #[test]
     fn missing_edit_fails_fast_and_registration_retries_unattached_tabs() {
-        for _ in 0..1 {
             let mut c = ctl();
             let effects = c.open_paths(&["/work/hello.mix".into()], Intent::ui(0));
             let (req, budget) = effects
@@ -3212,7 +3211,6 @@ mod tests {
                     .iter()
                     .any(|fx| matches!(fx, Effect::Send { out, .. } if out.verb == "edit.open"))
             );
-        }
     }
 
     fn registered(c: &mut Controller, services: Value) -> Vec<Effect> {
