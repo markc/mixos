@@ -94,22 +94,28 @@ async fn term_exit_does_not_wait_out_grace() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn detached_pipe_holder_has_bounded_drain() {
-    struct Cleanup(i32);
+    struct Cleanup(i32, std::path::PathBuf);
     impl Drop for Cleanup {
         fn drop(&mut self) {
             unsafe {
                 libc::kill(self.0, libc::SIGKILL);
             }
+            let _ = std::fs::remove_dir_all(&self.1);
         }
     }
-    let dir = tempfile::tempdir().unwrap();
-    let pidfile = dir.path().join("grandchild.pid");
+    let dir = std::env::temp_dir().join(format!(
+        "mix-watch-detached-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+    ));
+    std::fs::create_dir(&dir).unwrap();
+    let pidfile = dir.join("grandchild.pid");
     let mut e = watcher().await;
     e.set_global(
         "command",
         Value::String(format!(
-            "setsid sleep 30 & echo $! > {}; echo hi",
-            pidfile.display()
+            "setsid sh -c 'echo $$ > {}; exec sleep 30' & while [ ! -s {} ]; do sleep 0.01; done; echo hi",
+            pidfile.display(), pidfile.display()
         )),
     );
     let start = std::time::Instant::now();
@@ -129,6 +135,7 @@ async fn detached_pipe_holder_has_bounded_drain() {
             .trim()
             .parse()
             .unwrap(),
+        dir,
     );
     tokio::time::timeout(Duration::from_millis(1200), e.run_event_pump())
         .await
