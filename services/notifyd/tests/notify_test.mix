@@ -100,13 +100,13 @@ check("an expired record is no longer due", len($n.due($s, 300)) == 0)
 
 -- The open-actionable limit.
 $full = $n.new_state()
-for $i = 1 to 25
+for $i = 1 to 8
   $full = $n.add($full, {summary: "q" .. to_string($i), actions: $yes_no}, 1, $T).state
 end
-refuses("26th open question is refused", "TOO_MANY_OPEN", fn() = $n.add($full, {summary: "q26", actions: $yes_no}, 1, $T))
-check("a passive note still fits", $n.add($full, {summary: "fyi"}, 1, $T).record.id == 26)
+refuses("ninth open question is refused", "TOO_MANY_OPEN", fn() = $n.add($full, {summary: "q9", actions: $yes_no}, 1, $T))
+check("a passive note still fits", $n.add($full, {summary: "fyi"}, 1, $T).record.id == 9)
 $full = $n.settle($full, 1, "dismissed", nil, $T).state
-check("answering one makes room", $n.add($full, {summary: "q26", actions: $yes_no}, 1, $T).record.id == 26)
+check("answering one makes room", $n.add($full, {summary: "q9", actions: $yes_no}, 1, $T).record.id == 9)
 
 -- Trimming keeps open records.
 $big = $n.new_state()

@@ -32385,8 +32385,8 @@ clears all presentation records. Urgency and presentations persist across
 restarts; older state files default to `normal` and `{}`.
 
 A summary is at most 120 characters, a body 500, and a button label 32. A
-notification has at most four buttons. At most 25 questions can wait for an
-answer at once; the 26th is refused until one is answered. notifyd keeps the
+notification has at most four buttons. At most 8 questions can wait for an
+answer at once; the 9th is refused until one is answered. notifyd keeps the
 last 200 notifications, and never drops one that is still open.
 
 ## State
