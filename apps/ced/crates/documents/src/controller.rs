@@ -174,7 +174,7 @@ struct TabX {
     /// Waiting for a reattach open/list.
     reattaching: bool,
     open_error: Option<String>,
-    /// Consecutive open deadlines while reattaching an existing mirror.
+    /// Consecutive open deadlines, including initial opens.
     open_misses: u32,
     /// The caret/selection last published with `edit.select`.
     published: Option<Selection>,
@@ -316,7 +316,7 @@ pub struct Controller {
     timers: HashMap<u64, TimerFor>,
     last_event_seq: Option<u64>,
     edit_epoch: Option<String>,
-    edit_present: bool,
+    edit_present: Option<bool>,
     edit_info: verbs::EditInfo,
     waiters: Vec<Waiter>,
     opens: Vec<PendingOpen>,
@@ -537,7 +537,7 @@ impl Controller {
             timers: HashMap::new(),
             last_event_seq: None,
             edit_epoch: None,
-            edit_present: false,
+            edit_present: None,
             edit_info: verbs::EditInfo {
                 epoch: None,
                 version: None,
@@ -1391,8 +1391,13 @@ impl Controller {
                 }
                 let Some(services) = value["new"].as_array() else { return };
                 let present = services.iter().any(|service| service.as_str() == Some("edit"));
-                let appeared = present && !self.edit_present;
-                self.edit_present = present;
+                let was_present = self.edit_present.unwrap_or_else(|| {
+                    value["old"].as_array().is_some_and(|services| {
+                        services.iter().any(|service| service.as_str() == Some("edit"))
+                    })
+                });
+                let appeared = present && !was_present;
+                self.edit_present = Some(present);
                 if appeared {
                     self.send_info(fx);
                     self.retry_unattached(fx);
@@ -1533,18 +1538,18 @@ impl Controller {
         if self.tab(tab).is_none() {
             return;
         }
-        if let Some(x) = self.x.get_mut(&tab) {
-            x.reattaching = false;
-        }
         if rc >= 10
             && serde_json::from_str::<Value>(body)
                 .ok()
                 .is_some_and(|v| v["error_code"] == "UNAVAILABLE")
         {
-            self.edit_present = false;
+            self.edit_present = Some(false);
             if self.tab(tab).is_some_and(|t| t.mirror.is_none()) {
                 self.open_failed(tab, EDIT_UNAVAILABLE.into(), fx);
             } else {
+                if let Some(x) = self.x.get_mut(&tab) {
+                    x.reattaching = false;
+                }
                 self.timer(DEADLINE_LONG_MS, TimerFor::Reattach(tab), fx);
             }
             return;
@@ -1567,10 +1572,8 @@ impl Controller {
     /// A scratch tab reattaches by `recovery_id`; with no match it
     /// becomes a fresh scratch buffer and keeps its text as a detached copy.
     fn on_list_reply(&mut self, tab: TabId, rc: u8, body: &str, fx: &mut Vec<Effect>) {
-        let reattach = self.x.get(&tab).is_some_and(|x| x.reattaching);
-        if let Some(x) = self.x.get_mut(&tab) {
-            x.reattaching = false;
-        }
+        let reattach = self.x.get(&tab).is_some_and(|x| x.reattaching)
+            || self.tab(tab).is_some_and(|t| t.mirror.is_some());
         let rid = self.x.get(&tab).and_then(|x| x.recovery_id.clone());
         let list = reply_result(rc, body)
             .ok()
@@ -1587,6 +1590,9 @@ impl Controller {
                 self.attach(tab, reattach, &open, fx);
             }
             None => {
+                if let Some(x) = self.x.get_mut(&tab) {
+                    x.reattaching = false;
+                }
                 self.send_open(tab, None, reattach, fx);
             }
         }
@@ -3268,6 +3274,12 @@ mod tests {
 
     #[test]
     fn registrations_only_act_on_edit_appearing() {
+        let mut existing = ctl();
+        let fx = existing.on_incoming(Incoming::Topic {
+            topic: "noded.props.changed".into(),
+            body: json!({"path":"services.registered", "old":["edit"], "new":["edit", "other"]}).to_string(),
+        });
+        assert!(fx.is_empty(), "the first event may be an unrelated registration");
         let mut c = ctl();
         assert!(registered(&mut c, json!(["other"])).is_empty());
         assert!(!registered(&mut c, json!(["edit"])).is_empty());
