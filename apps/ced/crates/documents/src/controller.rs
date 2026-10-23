@@ -146,6 +146,8 @@ const PUBLISH_MIN_GAP_MS: u64 = 1_000;
 const SESSION_DEBOUNCE_MS: u64 = 1_000;
 /// Deadlines for the controller's own requests.
 const DEADLINE_MS: u64 = 5_000;
+const DEADLINE_LONG_MS: u64 = 30_000;
+const OPEN_WARN_AFTER: u32 = 3;
 /// A Bus `ced.action` waits this long for its server op's outcome (a save's
 /// own deadline, its `edit.list` check and one resend fit inside).
 const OP_WAIT_MS: u64 = 90_000;
@@ -171,6 +173,8 @@ struct TabX {
     /// Waiting for a reattach open/list.
     reattaching: bool,
     open_error: Option<String>,
+    /// Consecutive open deadlines while reattaching an existing mirror.
+    open_misses: u32,
     /// The caret/selection last published with `edit.select`.
     published: Option<Selection>,
     last_publish: Option<Instant>,
@@ -1056,7 +1060,9 @@ impl Controller {
             verb: "edit.open".into(),
             body: body.to_string(),
             op_id: None,
-            deadline_ms: 3_000,
+            deadline_ms: if self.tab(tab).is_some_and(|t| t.mirror.is_some()) {
+                DEADLINE_LONG_MS
+            } else { 3_000 },
         };
         self.send(out, Req::Open { tab, reattach }, fx);
     }
@@ -1210,7 +1216,24 @@ impl Controller {
                     self.drive(tab, step, fx);
                 }
             }
-            Some(Req::Open { tab, .. }) => self.open_failed(tab, EDIT_UNAVAILABLE.into(), fx),
+            Some(Req::Open { tab, reattach }) => {
+                if self.tab(tab).is_some_and(|t| t.mirror.is_some()) {
+                    // Retain the established restart recovery for live mirrors.
+                    let path = self.tab(tab).and_then(|t| t.path.clone());
+                    self.send_open(tab, path, reattach, fx);
+                    if let Some(x) = self.x.get_mut(&tab) {
+                        x.open_misses += 1;
+                        if x.open_misses == OPEN_WARN_AFTER {
+                            fx.push(Effect::Notice { tab: Some(tab), notice: Notice::Message {
+                                level: Level::Warn,
+                                text: editor_model::mirror::MSG_SERVICE_SILENT.into(),
+                            }});
+                        }
+                    }
+                } else {
+                    self.open_failed(tab, EDIT_UNAVAILABLE.into(), fx);
+                }
+            }
             Some(Req::List { tab }) => self.send_list(tab, fx),
             Some(Req::Find { tab, .. }) => fx.push(Effect::Notice {
                 tab: Some(tab),
@@ -1415,7 +1438,7 @@ impl Controller {
         }
     }
 
-    /// Reopen the tab's buffer in the new daemon session.
+    /// Retry initial opens after the service becomes available.
     fn retry_unattached(&mut self, fx: &mut Vec<Effect>) {
         for id in self.tab_ids() {
             if self.tab(id).is_some_and(|t| t.mirror.is_none())
@@ -1545,6 +1568,7 @@ impl Controller {
         if let Some(x) = self.x.get_mut(&tab) {
             x.recovery_id = Some(open.recovery_id.clone());
             x.opened = true;
+            x.open_misses = 0;
             x.reattaching = false;
             x.open_error = None;
         }
