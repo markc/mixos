@@ -5259,15 +5259,19 @@ async fn prelude_chars_composes_after_codepoint_flip() {
     // spurious trailing empty from the out-of-range byte index 4 on a 4-codepoint
     // string. Post-P1 both are codepoints; this is the live-bug repair.
     // (run_mix_capturing doesn't load the prelude, so inline its exact body.)
-    let src = r#"function chars($s)
+    // chars() became a native builtin in 0.63.0, which silently won over this
+    // inline `function chars`: from then on the test exercised the builtin,
+    // not the length/substr composition. 0.118.0 refuses the shadowing
+    // definition (FN_SHADOWS_BUILTIN), so the body is named prelude_chars.
+    let src = r#"function prelude_chars($s)
     $result = []
     for $i = 0 to length($s) - 1
         push($result, substr($s, $i, 1))
 end
     return $result
 end
-print("n=" .. ("" .. length(chars("café"))))
-print("joined=" .. join(chars("café"), ","))
+print("n=" .. ("" .. length(prelude_chars("café"))))
+print("joined=" .. join(prelude_chars("café"), ","))
 "#;
     let out = run_mix_capturing(src).await.expect("run");
     assert!(
