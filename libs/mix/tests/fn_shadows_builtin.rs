@@ -28,7 +28,10 @@ async fn run(source: &str) -> (Result<(), MixError>, String) {
 fn refused_code(result: &Result<(), MixError>) -> String {
     match result {
         Ok(()) => panic!("expected FN_SHADOWS_BUILTIN, the script ran"),
-        Err(e) => e.info().map(|i| i.code.clone()).unwrap_or_else(|| e.to_string()),
+        Err(e) => e
+            .info()
+            .map(|i| i.code.clone())
+            .unwrap_or_else(|| e.to_string()),
     }
 }
 
@@ -39,7 +42,10 @@ async fn top_level_builtin_name_is_refused_before_the_first_statement() {
     assert_eq!(refused_code(&result), "FN_SHADOWS_BUILTIN");
     let msg = result.unwrap_err().to_string();
     assert!(msg.contains("fn run shadows the builtin run()"), "{msg}");
-    assert!(msg.contains("line 2"), "the error points at the definition: {msg}");
+    assert!(
+        msg.contains("line 2"),
+        "the error points at the definition: {msg}"
+    );
     assert_eq!(out, "", "the hoisting pass refuses before anything runs");
 }
 

@@ -57,7 +57,11 @@ async fn buffered(eval: &mut Evaluator, name: &str, args: Vec<Value>) -> MixResu
             (
                 args[0].to_mix_string().to_uppercase(),
                 args[1].to_mix_string(),
-                if short_opts { None } else { args.get(2).cloned() },
+                if short_opts {
+                    None
+                } else {
+                    args.get(2).cloned()
+                },
                 headers,
                 opts,
             )
@@ -78,7 +82,8 @@ pub(crate) fn stream(eval: &mut Evaluator, args: Vec<Value>) -> Reply<'_> {
                 ));
             }
         };
-        let (headers, mut opts) = http_headers_and_timeout("http_stream", args.get(4), args.get(5))?;
+        let (headers, mut opts) =
+            http_headers_and_timeout("http_stream", args.get(4), args.get(5))?;
         opts.idle.get_or_insert(Duration::from_secs(30));
         perform(
             eval,
@@ -467,6 +472,9 @@ mod tests {
         .unwrap();
         assert_eq!(whole_deadline(started, opts.timeout_s), None);
         assert_eq!(opts.idle, Some(Duration::from_millis(100)));
-        assert_eq!(whole_deadline(started, 1), Some(started + Duration::from_secs(1)));
+        assert_eq!(
+            whole_deadline(started, 1),
+            Some(started + Duration::from_secs(1))
+        );
     }
 }

@@ -17,11 +17,11 @@ use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 #[cfg(feature = "http")]
-#[path = "http_files.rs"]
-mod http_files;
-#[cfg(feature = "http")]
 #[path = "http_async.rs"]
 pub(crate) mod http_async;
+#[cfg(feature = "http")]
+#[path = "http_files.rs"]
+mod http_files;
 
 /// Magnitude of a negative signed index, saturated to `usize`. The one
 /// safe spelling: `(-idx)` overflows at `i64::MIN` (debug panic, release
