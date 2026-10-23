@@ -27,6 +27,12 @@
 
 ### Fixed
 
+- HTTP idle/stream responses now negotiate gzip only, regenerate Host on
+  redirects, and match ureq's literal URL-userinfo authentication. Buffered
+  successes keep their existing keys; `stopped` is stream-only and received
+  counts are limited to streams and buffered failures. Preserve bare CR
+  bytes in an unterminated line. TLS classification inspects IO payloads.
+
 - MIX-E1303 now covers the higher-order builtins (`count`, `map`, `filter`,
   `sort_by`, …). `fn count($x)` linted clean and was silently dead. Lint and
   runtime share one name set, `builtins::is_reserved_callable`.

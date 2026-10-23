@@ -174,7 +174,7 @@ unicode-width = "0.2"
 # above: no_std-capable, one small dependency (tinyvec), already in the lock.
 unicode-normalization = "0.1"
 ureq = { version = "2", optional = true }
-reqwest = { workspace = true, optional = true, features = ["gzip", "brotli"] }
+reqwest = { workspace = true, optional = true, features = ["gzip"] }
 # http `ca_file`/`ca_pem` (0.29.0): private-CA trust ADDED to the default
 # webpki roots. Version lines match ureq 2's own transitive deps so cargo
 # unifies them (no second rustls/root-store in the tree).

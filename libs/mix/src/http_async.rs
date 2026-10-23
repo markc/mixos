@@ -179,8 +179,10 @@ async fn perform(
         ("final_url".into(), Value::String(url.into())),
         ("error_code".into(), Value::Nil),
         ("error".into(), Value::Nil),
-        ("stopped".into(), Value::Bool(false)),
     ]);
+    if callback.is_some() {
+        map.insert("stopped".into(), Value::Bool(false));
+    }
     let mut bytes = Vec::new();
     let mut received = 0usize;
     let mut pending = Vec::new();
@@ -192,6 +194,7 @@ async fn perform(
         }
         let mut builder = reqwest::Client::builder()
             .http1_only()
+            .no_brotli()
             // Implement the existing ureq redirect contract below, including
             // its refusal to replay POST bodies on 307/308.
             .redirect(reqwest::redirect::Policy::none())
@@ -238,10 +241,32 @@ async fn perform(
         let mut current_headers = headers.to_vec();
         let mut redirects = 0;
         let mut response = loop {
+            // ureq encodes URL userinfo literally, without percent-decoding,
+            // and an explicit Authorization header takes precedence. Prevent
+            // reqwest from applying its different automatic userinfo handling.
+            let mut request_url = current_url.clone();
+            let userinfo = !current_url.username().is_empty()
+                || current_url
+                    .password()
+                    .is_some_and(|password| !password.is_empty());
+            if request_url.has_host() {
+                let _ = request_url.set_username("");
+                let _ = request_url.set_password(None);
+            }
             let mut request = client.request(
                 reqwest::Method::from_bytes(current_method.as_bytes()).expect("validated token"),
-                current_url.clone(),
+                request_url,
             );
+            if userinfo
+                && !current_headers
+                    .iter()
+                    .any(|(key, _)| key.eq_ignore_ascii_case("authorization"))
+            {
+                request = request.basic_auth(
+                    current_url.username(),
+                    Some(current_url.password().unwrap_or("")),
+                );
+            }
             for (key, value) in &current_headers {
                 request = request.header(key.as_str(), value.as_str());
             }
@@ -316,7 +341,7 @@ async fn perform(
                 _ => break response,
             }
             current_headers.retain(|(key, _)| {
-                !["content-length", "cookie", "authorization"]
+                !["host", "content-length", "cookie", "authorization"]
                     .contains(&key.to_ascii_lowercase().as_str())
             });
             current_body = None;
@@ -327,7 +352,7 @@ async fn perform(
         map.insert("status".into(), Value::Number(status as f64));
         map.insert(
             "final_url".into(),
-            Value::String(response.url().to_string()),
+            Value::String(current_url.to_string()),
         );
         let mut response_headers = indexmap::IndexMap::new();
         for key in response.headers().keys() {
@@ -432,7 +457,9 @@ async fn perform(
         _ => 0,
     };
     http_body_into_map(status, bytes, &mut map);
-    map.insert("bytes_received".into(), Value::Number(received as f64));
+    if callback.is_some() || status == 0 {
+        map.insert("bytes_received".into(), Value::Number(received as f64));
+    }
     map.insert(
         "duration_ms".into(),
         Value::Number(started.elapsed().as_secs_f64() * 1000.0),
@@ -445,8 +472,11 @@ async fn deliver(
     callback: &crate::scope::MixFunction,
     raw: &[u8],
 ) -> MixResult<bool> {
-    let line = raw.strip_suffix(b"\n").unwrap_or(raw);
-    let line = line.strip_suffix(b"\r").unwrap_or(line);
+    let line = if let Some(line) = raw.strip_suffix(b"\n") {
+        line.strip_suffix(b"\r").unwrap_or(line)
+    } else {
+        raw
+    };
     let text = std::str::from_utf8(line)
         .map_err(|_| MixError::structured("HTTP_TEXT", "http_stream: line is not UTF-8"))?;
     let result = eval
@@ -458,6 +488,15 @@ async fn deliver(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tls_classification_inspects_io_error_payloads() {
+        let error = std::io::Error::other(ureq::rustls::Error::InvalidCertificate(
+            ureq::rustls::CertificateError::UnknownIssuer,
+        ));
+        assert!(source_is_tls(&error));
+        assert!(!source_is_tls(&std::io::Error::other("not a TLS error")));
+    }
 
     #[test]
     fn timeout_zero_disables_only_the_whole_call_deadline() {

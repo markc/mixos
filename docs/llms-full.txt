@@ -17588,6 +17588,8 @@ are each also bounded by this duration. It is optional for buffered calls;
 omitting it preserves their existing behaviour. `timeout` remains the
 whole-call cap (integer seconds, default 30). **`timeout: 0` disables the
 whole-call cap**, while an explicitly supplied idle limit still applies.
+With `timeout: 0`, a server dripping a byte just inside `idle_timeout` can
+hold the call indefinitely; accepting that is the caller's trade-off.
 
 ```mix
 $r = http_get($url, {timeout: 0, idle_timeout: 5})
@@ -17602,7 +17604,7 @@ data keeps arriving. HTTP error statuses also deliver their response lines.
 ```mix
 $r = http_stream("POST", "https://api.example.com/messages",
   fn($line)
-    print($line)
+    print($line);
     return $line != "data: [DONE]"
   end,
   json_encode({stream: true}),
@@ -17612,7 +17614,8 @@ if $r.status == 0 then print($r.error_code .. ": " .. $r.error) end
 ```
 
 The callback receives one UTF-8 line without LF or CRLF, including empty
-lines and a final line without a newline. SSE event assembly (blank-line
+lines and a final line without a newline. Framing recognises LF and CRLF;
+a bare CR is not a terminator. SSE event assembly (blank-line
 boundaries, `data:` fields and multi-line payloads) belongs to the caller.
 Return the boolean `false` to stop and close promptly; any other return
 value continues. A callback exception propagates after releasing the response.
@@ -17626,6 +17629,9 @@ work cannot be pre-empted.
 
 The result includes `status`, `headers`, `final_url`, `duration_ms`,
 `error_code`, `error`, `bytes_received` and `stopped` (true on callback stop).
+`stopped` is emitted only by `http_stream`. Buffered successes have exactly
+the established response keys; buffered failures with `idle_timeout` also
+include `bytes_received` for partial-response diagnostics.
 For streams, `body`/`bytes` contain only an unfinished line on failure;
 completed lines have already reached the callback. Successful streams
 return empty `body`/`bytes`. Byte counts include line terminators and any
@@ -17663,18 +17669,23 @@ the existing HTTP builtins, `ca_file`/`ca_pem` added to that set, and the
 same signature-checking but trust-bypassing verifier for `ssl_verify: false`.
 The CA options remain mutually exclusive with each other and with disabled
 verification. Reqwest inherits `default-features: false` and `rustls-tls`
-from the workspace; gzip/brotli decoding is Rust code. This change enables
+from the workspace; only gzip is advertised and transparently decoded,
+matching ureq's default features. Brotli is disabled. `bytes_received`
+counts the decoded body bytes, not compressed bytes on the wire. This change enables
 neither native-tls nor OpenSSL and uses the existing rustls 0.23 version.
-That dependency choice is intended for static musl too; a successful
-`x86_64-unknown-linux-musl` build with `-C target-feature=+crt-static` still
-needs to be verified on the build worker.
+The build worker has verified a static-pie `x86_64-unknown-linux-musl`
+release build with `-C target-feature=+crt-static` and no shared libraries.
 
 Redirects match `http_get`/`http_post`/`http_request`: ureq's configured
 budget of five requests permits four followed redirects and fails on a
 fifth 3xx. 301/302/303 switch methods other than GET/HEAD to GET; 307/308
 follow only GET/HEAD/OPTIONS/TRACE, without replaying a request body.
 Authorization, Cookie and Content-Length are removed when following a
-redirect, including to the same host. The final URL is reported. The
+redirect, including to the same host. The idle/stream path additionally
+removes a caller-set Host so the next request uses the destination's host.
+URL userinfo uses ureq's literal (not percent-decoded) Basic auth encoding;
+an explicit Authorization header takes precedence on the initial request.
+The final URL is reported. The
 separate file-transfer builtins disable redirects and return 3xx. These
 are distinct existing policies.
 
@@ -34940,6 +34951,12 @@ loads unchanged.
   scenes found no live script affected.
 
 ### Fixed
+
+- HTTP idle/stream responses now negotiate gzip only, regenerate Host on
+  redirects, and match ureq's literal URL-userinfo authentication. Buffered
+  successes keep their existing keys; `stopped` is stream-only and received
+  counts are limited to streams and buffered failures. Preserve bare CR
+  bytes in an unterminated line. TLS classification inspects IO payloads.
 
 - MIX-E1303 now covers the higher-order builtins (`count`, `map`, `filter`,
   `sort_by`, …). `fn count($x)` linted clean and was silently dead. Lint and
