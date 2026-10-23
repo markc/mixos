@@ -43,8 +43,24 @@ $checks = [
   {name: "component-index", argv: ["tools/component_index.mix", "--check"]},
   {name: "units", argv: ["tools/unit_gate.mix"]},
   {name: "style", argv: ["tools/style_gate.mix", "--toolkit"]},
-  {name: "site", argv: ["docs/_build/gen-site.mix", "--check"]}
+  -- The site build subsets pinned fonts from an installed asset set with
+  -- hb-subset and woff2_compress. Where those are absent (a bare CI runner)
+  -- it is skipped; the pre-commit hook runs it on every commit.
+  {name: "site", argv: ["docs/_build/gen-site.mix", "--check"],
+    needs: ["/opt/mixos/share/assets/sets/2026-10-04-core-3"], tools: ["hb-subset", "woff2_compress"]}
 ]
+
+-- A check's prerequisites, or "" when they are all present.
+fn missing($c)
+  $gone = []
+  for $p in $c.needs ?? []
+    if not exists($p) then push($gone, $p) end
+  end
+  for $t in $c.tools ?? []
+    if run_argv(["which", $t], {timeout: 10}).exit_code != 0 then push($gone, $t) end
+  end
+  return join($gone, ", ")
+end
 
 fn wanted($name)
   if len($only) == 0 then return true end
@@ -104,6 +120,11 @@ end
 for $c in $checks
   if not wanted($c.name) then continue end
   $ran = $ran + 1
+  $gone = missing($c)
+  if $gone != "" then
+    print("SKIP " .. $c.name .. " (needs " .. $gone .. ")")
+    continue
+  end
   $t0 = time()
   $r = run_argv(concat([$mix], $c.argv), {cwd: $root, timeout: $GATE_TIMEOUT, stderr: "stdout", max_output: 2000000})
   $ok = $r.exit_code == 0 and not $r.timed_out

@@ -259,7 +259,9 @@ releases are not release candidates and do not run the full gate.</p>
 <code>lint</code>, amended 2026-10-23). It runs <code>rustfmt --check</code>, a syntax or data
 check of every Mix file, and the repository's own gates that need no
 compile: closure, layering, verb registry, webd, units, style, component
-index and site. It compiles no Rust
+index and site. The site check needs the pinned font assets and subsetting
+tools, so a bare runner skips it; the pre-commit hook runs it on every
+commit. The tier compiles no Rust
 and runs no tests. Its runner uses the <code>mix</code> binary from the latest
 published release, verified against that release's <code>SHA256SUMS.txt</code>.</p>
 <p><code>mixos-desktop</code> and <code>mixos-server</code> have separate package membership and
