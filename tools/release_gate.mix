@@ -29,6 +29,9 @@ if platform().arch != "x86_64" then raise("RELEASE_ARCH", "the first release sup
 $release = load_data("tools/release_packages.mx")
 if $release.schema != 1 then raise("RELEASE_SCHEMA", "unsupported release_packages.mx schema") end
 $log_dir = "/tmp/mixos-release-gate-" .. slice($commit, 0, 12) .. "-" .. uuid()
+-- Term's native-session E2E tests (19 on 2026-10-23). Raise this when tests
+-- are added; a drop below it means the stage's filters stopped matching.
+$E2E_MIN = 19
 mkdir($log_dir, {parents: true})
 
 fn stage($name, $argv, $timeout)
@@ -42,9 +45,13 @@ fn stage($name, $argv, $timeout)
       MIXOS_TEST_DOPUS: realpath("target/debug/dopus")}
   end
   -- The native-session end-to-end tests check that this Mix was built from
-  -- the clean exact commit; the build stage above made it.
+  -- the clean exact commit; the build stage made it.
   if $name == "e2e" then
-    $opts.env = {MIXOS_E2E_MIX_BIN: realpath("target/debug/mix")}
+    $opts.env = {MIXOS_E2E_MIX_BIN: realpath("target/debug/mix"),
+      MIXOS_TEST_MIX: realpath("target/debug/mix"),
+      MIXOS_TEST_NODED: realpath("target/debug/noded"),
+      MIXOS_TEST_EDITD: realpath("target/debug/editd"),
+      MIXOS_TEST_DOPUS: realpath("target/debug/dopus")}
   end
   $r = run_argv($argv, $opts)
   $lines = if $r.exit_code == 0 then "20" else "100" end
@@ -57,6 +64,17 @@ fn stage($name, $argv, $timeout)
       else "rc " .. to_string($r.exit_code) end
     raise("RELEASE_GATE", $name .. " failed (" .. $reason .. ")")
   end
+  -- A libtest filter that matches nothing still exits 0. The E2E stage must
+  -- prove it ran the tests it exists for.
+  if $name == "e2e" then
+    $ran = 0
+    for $m in re_find(read_file($log), "test result: ok\\. ([0-9]+) passed")
+      $ran = $ran + to_number($m.groups[0])
+    end
+    if $ran < $E2E_MIN then
+      raise("RELEASE_GATE", "e2e ran " .. to_string($ran) .. " tests; expected at least " .. to_string($E2E_MIN))
+    end
+  end
   print("PASS " .. $name)
 end
 
@@ -64,6 +82,13 @@ print("release gate " .. $mode .. " source=" .. $commit .. " arch=x86_64 logs=" 
 if $mode == "check" then
   stage("format", ["cargo", "fmt", "--check"], 300)
   stage("build", ["cargo", "build", "--workspace", "--all-targets", "--locked"], 5400)
+  -- Term's native-session end-to-end tests are #[ignore]d in the normal run
+  -- because they need a real current-commit Mix. Run exactly those two
+  -- modules, straight after the build, before other tests can touch the
+  -- tree (the tests refuse a dirty checkout). The other ignored tests are
+  -- subprocess fixtures, asset-set probes and benchmarks.
+  stage("e2e", ["cargo", "test", "-p", "term-core", "--lib", "--locked", "--no-fail-fast", "--",
+    "--ignored", "native_session::production_e2e::", "native_session::enforcement_tests::"], 3600)
   stage("clippy", ["cargo", "clippy", "--workspace", "--all-targets", "--locked", "--",
     "-D", "clippy::all", "-A", "clippy::module_inception", "-A", "clippy::too_many_arguments",
     "-A", "clippy::type_complexity", "-A", "clippy::large_enum_variant",
@@ -75,12 +100,6 @@ if $mode == "check" then
     "--skip", "large_file_open_edit_get_latency"], 5400)
   stage("latency", ["cargo", "test", "--release", "-p", "editd", "--test", "dispatch", "--locked",
     "large_file_open_edit_get_latency", "--", "--exact", "--nocapture"], 3600)
-  -- Term's native-session end-to-end tests are #[ignore]d in the normal run
-  -- because they need a real current-commit Mix. Run exactly those two
-  -- modules here; the other ignored tests are subprocess fixtures, asset-set
-  -- probes and benchmarks.
-  stage("e2e", ["cargo", "test", "-p", "term-core", "--lib", "--locked", "--no-fail-fast", "--",
-    "--ignored", "native_session::production_e2e::", "native_session::enforcement_tests::"], 3600)
   $mix = "target/debug/mix"
   stage("closure", [$mix, "tools/closure_gate.mix", "--locked"], 900)
   stage("layers", [$mix, "tools/layering_gate.mix", "--manifest-path", "Cargo.toml", "--locked"], 900)
