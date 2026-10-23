@@ -302,7 +302,11 @@ mod tests {
         assert_eq!(body["dropped"], true);
         assert_eq!(body["event_dropped"], 3);
         outbox.failed(&body);
-        outbox.push("demo.macros.finished", [json!({"run":2,"dropped":false})], 0);
+        outbox.push(
+            "demo.macros.finished",
+            [json!({"run":2,"dropped":false})],
+            0,
+        );
         let (_, body) = outbox.next().unwrap();
         assert_eq!(body["dropped"], false);
         assert_eq!(body["event_dropped"], 4);

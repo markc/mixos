@@ -1295,7 +1295,8 @@ fn parse_args(verb: &str, body: &str) -> Result<serde_json::Value, String> {
         return Err("request exceeds 8192 bytes".into());
     }
     if let Some(suffix) = verb.strip_prefix("term.macros.")
-        && citizen::macros::SUFFIXES.contains(&suffix) {
+        && citizen::macros::SUFFIXES.contains(&suffix)
+    {
         // Macro argument validation belongs to the shared handler. The lane
         // routes these before taking a TabSet lock or using its reply cache.
         return serde_json::from_str(if body.is_empty() { "{}" } else { body })
