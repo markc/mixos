@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! One catalogue and runner per application process, shared by all callers.
-use crate::{Catalogue, Output, Roots, Runner, Status};
 use crate::verbs::Refusal;
+use crate::{Catalogue, Output, Roots, Runner, Status};
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -77,7 +77,10 @@ impl Session {
         let (roots, app) = {
             let state = self.0.lock().unwrap();
             (
-                state.roots.clone().ok_or_else(|| Refusal::new("UNAVAILABLE", "an absolute HOME is required"))?,
+                state
+                    .roots
+                    .clone()
+                    .ok_or_else(|| Refusal::new("UNAVAILABLE", "an absolute HOME is required"))?,
                 state.app.clone(),
             )
         };
@@ -101,7 +104,10 @@ impl Session {
             .and_then(|c| c.entries.iter().find(|e| e.id == id))
             .cloned()
             .ok_or_else(|| Refusal::new("NOT_FOUND", "unknown macro id"))?;
-        let roots = state.roots.clone().ok_or_else(|| Refusal::new("UNAVAILABLE", "an absolute HOME is required"))?;
+        let roots = state
+            .roots
+            .clone()
+            .ok_or_else(|| Refusal::new("UNAVAILABLE", "an absolute HOME is required"))?;
         let previous_run = state.run;
         let previous_identity = state.identity.clone();
         state.run += 1;

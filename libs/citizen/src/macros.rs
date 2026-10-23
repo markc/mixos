@@ -60,13 +60,18 @@ pub fn request(app: &str, suffix: &str, body: &str) -> ::macros::verbs::Reply {
     }
     match serde_json::from_str::<Value>(if body.trim().is_empty() { "{}" } else { body }) {
         Ok(body) => ::macros::verbs::handle(&::macros::Session::for_app(app), suffix, &body),
-        Err(error) => ::macros::verbs::Reply::Immediate(Err(Refusal::new("INVALID_ARGUMENT", error))),
+        Err(error) => {
+            ::macros::verbs::Reply::Immediate(Err(Refusal::new("INVALID_ARGUMENT", error)))
+        }
     }
 }
 
 pub fn answer_body(answer: ::macros::verbs::Answer) -> (u8, Value) {
     match answer {
         Ok(body) => (0, body),
-        Err(refusal) => (10, json!({"error_code":refusal.code,"message":refusal.message})),
+        Err(refusal) => (
+            10,
+            json!({"error_code":refusal.code,"message":refusal.message}),
+        ),
     }
 }

@@ -49,12 +49,7 @@ fn initial_list_and_reload_are_deferred_and_cache_the_catalogue() {
     let reply = verbs::handle(&session, "reload", &json!({}));
     assert!(matches!(reply, Reply::Deferred(_)));
     reply.wait().unwrap();
-    assert!(
-        session
-            .run("missing", "bus")
-            .unwrap_err()
-            .code == "NOT_FOUND"
-    );
+    assert!(session.run("missing", "bus").unwrap_err().code == "NOT_FOUND");
 }
 
 #[test]
@@ -83,12 +78,7 @@ fn completion_is_once_per_run_for_success_failure_signal_and_spawn_failure() {
         assert_eq!(accepted["run"], run);
         if stop {
             assert_eq!(session.status()["state"], "running");
-            assert!(
-                session
-                    .run("test", "gui")
-                    .unwrap_err()
-                    .code == "BUSY"
-            );
+            assert!(session.run("test", "gui").unwrap_err().code == "BUSY");
             assert!(session.stop());
         }
         let event = rx.recv_timeout(Duration::from_secs(10)).unwrap();
@@ -127,14 +117,38 @@ fn refusals_distinguish_arguments_availability_scan_and_channel_failures() {
         ("status", json!({"extra":true})),
         ("status", json!([])),
     ] {
-        assert_eq!(verbs::handle(&session, suffix, &body).wait().unwrap_err().code, "INVALID_ARGUMENT");
+        assert_eq!(
+            verbs::handle(&session, suffix, &body)
+                .wait()
+                .unwrap_err()
+                .code,
+            "INVALID_ARGUMENT"
+        );
     }
-    assert_eq!(verbs::handle(&session, "new", &json!({"title":"Test"})).wait().unwrap_err().code, "UNAVAILABLE");
+    assert_eq!(
+        verbs::handle(&session, "new", &json!({"title":"Test"}))
+            .wait()
+            .unwrap_err()
+            .code,
+        "UNAVAILABLE"
+    );
     let unavailable = Session::with_roots("fixture", None);
-    assert_eq!(verbs::handle(&unavailable, "reload", &json!({})).wait().unwrap_err().code, "UNAVAILABLE");
+    assert_eq!(
+        verbs::handle(&unavailable, "reload", &json!({}))
+            .wait()
+            .unwrap_err()
+            .code,
+        "UNAVAILABLE"
+    );
     // Invalid app names fail root-folder resolution rather than producing diagnostics.
     let invalid = Session::with_roots("../invalid", Some(roots));
-    assert_eq!(verbs::handle(&invalid, "reload", &json!({})).wait().unwrap_err().code, "INTERNAL");
+    assert_eq!(
+        verbs::handle(&invalid, "reload", &json!({}))
+            .wait()
+            .unwrap_err()
+            .code,
+        "INTERNAL"
+    );
     let (tx, rx) = mpsc::channel();
     drop(tx);
     assert_eq!(Reply::Deferred(rx).wait().unwrap_err().code, "INTERNAL");

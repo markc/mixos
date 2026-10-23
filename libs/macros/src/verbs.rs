@@ -86,7 +86,10 @@ pub fn handle(session: &Session, suffix: &str, body: &Value) -> Reply {
             && key.is_none_or(|k| body[k].as_str().is_some_and(|s| !s.is_empty()))
     });
     if !valid {
-        return Reply::Immediate(Err(Refusal::new("INVALID_ARGUMENT", "invalid macro arguments")));
+        return Reply::Immediate(Err(Refusal::new(
+            "INVALID_ARGUMENT",
+            "invalid macro arguments",
+        )));
     }
     match suffix {
         "list" if session.catalogue().is_some() => {
@@ -116,8 +119,7 @@ fn defer(session: &Session, work: impl FnOnce(Session) -> Answer + Send + 'stati
         .name("macro-scan".into())
         .spawn(move || {
             let _ = tx.send(work(session));
-        })
-    {
+        }) {
         Ok(_) => Reply::Deferred(rx),
         Err(error) => Reply::Immediate(Err(Refusal::new("INTERNAL", error))),
     }
