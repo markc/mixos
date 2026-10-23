@@ -1,0 +1,82 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Hermetic: owned temporary files and injected process replies only.
+$w = require("../_lib/desk_worker.mix")
+$ops = require("../_lib/desk_ops.mix")
+$targets = require("../_lib/targets.mix")
+
+fn check($condition,$message)
+  if not $condition then raise("DESK_TEST",$message) end
+end
+
+fn refused($program)
+  try
+    $program()
+    return false
+  catch $failure
+    return true
+  end
+end
+
+$root = trim(run_argv_must(["mktemp","-d"]))
+$uid = to_number(trim(run_argv_must(["id","-u"])))
+$gid = to_number(trim(run_argv_must(["id","-g"])))
+$ctx = {writer:$uid,gid:$gid,target:{profile:$root,node:"example-desk"},paths:{seed:$root .. "/seed",roster:$root .. "/roster",inventory:$root .. "/missing/inventory"}}
+write_new($ctx.paths.seed,"synthetic-original",0o640)
+write_new($ctx.paths.roster,"original-roster",0o640)
+$before = {seed:$w.file_state($ctx.paths.seed),roster:$w.file_state($ctx.paths.roster),inventory:$w.file_state($ctx.paths.inventory)}
+
+-- Refuse symlink traversal, including dangling links.
+run_argv_must(["ln","-s",$root .. "/absent",$root .. "/link"])
+check(refused(fn()=$w.file_state($root .. "/link/child")),"ancestor symlink must refuse")
+
+-- O_EXCL refusal must never clean up a file that this run did not create.
+$collision = $root .. "/.mesh-stage-collision-run"
+write_new($collision,"unrelated-owned-fixture",0o600)
+check(refused(fn()=$w.apply_files($ctx,[$ops.payload("seed","synthetic-next")],$before,"collision-run")),"staging collision must refuse")
+check(read_file($collision)=="unrelated-owned-fixture","collision cleanup deleted an unowned stage")
+check(read_file($ctx.paths.seed)=="synthetic-original","collision changed destination")
+
+-- A second-file failure preserves a receipt and permits only pre-authority
+-- restoration. This tests real native write_new/chown/rename/sync, no mocks.
+check(refused(fn()=$w.apply_files($ctx,[$ops.payload("roster","new-roster"),$ops.payload("inventory","signed-fixture")],$before,"partial-sync")),"missing second destination must fail")
+check(read_file($ctx.paths.roster)=="new-roster","first publication fixture did not execute")
+check(is_file($root .. "/.mesh-rollout/partial-sync/receipt.json"),"partial run lost protected receipt")
+check($w.restore_files($ctx,"partial-sync").status=="restored","pre-inventory restore failed")
+check(read_file($ctx.paths.roster)=="original-roster","original roster not restored")
+
+-- Successful seed placement has no restart side effect and can restore bytes.
+$fresh = {seed:$w.file_state($ctx.paths.seed)}
+$placed = $w.apply_files($ctx,[$ops.payload("seed","synthetic-next")],$fresh,"seed-success")
+check($placed.status=="placed","seed was not placed")
+check(stat($placed.receipt).perm==0o600,"receipt is not private")
+$w.restore_files($ctx,"seed-success")
+check(read_file($ctx.paths.seed)=="synthetic-original","seed preimage restore failed")
+
+-- Never overwrite a concurrent seed change during restoration.
+$fresh = {seed:$w.file_state($ctx.paths.seed)}
+$w.apply_files($ctx,[$ops.payload("seed","synthetic-next")],$fresh,"seed-concurrent")
+write_file($ctx.paths.seed,"concurrent-fixture")
+check(refused(fn()=$w.restore_files($ctx,"seed-concurrent")),"concurrent write must prevent restore")
+check(read_file($ctx.paths.seed)=="concurrent-fixture","restore overwrote a concurrent write")
+
+mkdir($root .. "/missing")
+$fresh = {roster:$w.file_state($ctx.paths.roster),inventory:$w.file_state($ctx.paths.inventory)}
+write_new($root .. "/baseline","monotonic-witness",0o600)
+$w.apply_files($ctx,[$ops.payload("roster","new-roster"),$ops.payload("inventory","signed-fixture")],$fresh,"authority-success")
+check(refused(fn()=$w.restore_files($ctx,"authority-success")),"published authority must never roll back")
+check(read_file($ctx.paths.inventory)=="signed-fixture","authority was replaced by rollback")
+check(read_file($root .. "/baseline")=="monotonic-witness","witness changed")
+
+-- The only executable path is typed native stdin, never secret source argv.
+$target = $targets.parse_targets({schema_version:1,project:"example",targets:[{node:"example-desk",host:"example-host",kind:"desk",machine:"example-desk",profile:"/var/lib/example/desk-bus",session:3,account:"desktop",admission:"observe",mesh_open:true}]}).targets[0]
+$base = $ops.request($target,{mesh:"example.internal",epoch:1,members:[{credentials:[{kind:"d2",from_epoch:1,pubkey:"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="}],name:"example-desk",status:"active",bus:true,mesh_ip:"192.0.2.14",noded_port:4200}]},"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=","/opt/example/bin/mix")
+$job = $targets.stdin_job($target,"print($request)",{request:{secret:"synthetic-private-marker"}},"admin","/opt/example/bin/mix")
+check(not contains(json_encode($job.argv),"synthetic-private-marker"),"secret leaked to argv")
+check(contains($job.stdin,"synthetic-private-marker"),"secret did not travel through stdin")
+$bad_json = fn($job)={ok:true,stdout:"banner, not JSON",stdout_truncated:false,stderr_truncated:false}
+check(refused(fn()=$ops.preflight($base,"unused fixture source",$bad_json)),"malformed remote evidence must refuse")
+$truncated = fn($job)={ok:true,stdout:"{}",stdout_truncated:true,stderr_truncated:false}
+check(refused(fn()=$ops.preflight($base,"unused fixture source",$truncated)),"truncated remote evidence must refuse")
+print("PASS hermetic desk transaction: secret stdin, collision, partial publication, restore, concurrent change and monotonic authority")
+-- Remove only this test-created private root, after all assertions succeed.
+run_argv_must(["rm","-rf",$root])

@@ -1,0 +1,201 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- Native installed/candidate-artifact test in disposable user/mount/PID/network namespaces.
+$prepare=require("../scripts/broker_profile.mix")
+fn check($ok,$message)
+  if not $ok then raise("BROKER_NAMESPACE_TEST",$message) end
+end
+fn native($argv)
+  return run_argv_must($argv,{timeout:15})
+end
+fn copy_elf($root,$source,$destination,$cache)
+  $todo=[{source:$source,destination:$destination}]
+  $done=[]
+  while len($todo)>0
+    $entry=pop($todo)
+    if contains($done,$entry.destination) then continue end
+    push($done,$entry.destination)
+    mkdir(dirname($root .. $entry.destination),{parents:true})
+    if not exists($root .. $entry.destination) then copy($entry.source,$root .. $entry.destination); chmod($root .. $entry.destination,0o755) end
+    $dynamic=native(["readelf","-d",$entry.source])
+    for $match in re_find($dynamic,"Shared library: \\[([^\\]]+)\\]")
+      $name=$match.groups[0]
+      check(has_key($cache,$name),"native ELF dependency absent from loader cache")
+      push($todo,{source:$cache[$name],destination:$cache[$name]})
+    end
+    $headers=native(["readelf","-l",$entry.source])
+    for $match in re_find($headers,"Requesting program interpreter: ([^\\]]+)\\]")
+      $path=$match.groups[0]
+      push($todo,{source:$path,destination:$path})
+    end
+  end
+end
+fn as_user($root,$id,$source,$environment)
+  return run_argv(["chroot","--userspec=" .. to_string($id) .. ":" .. to_string($id),"--groups=" .. to_string($id),$root,"/opt/mixos/bin/mix","-"],{stdin:$source,env:$environment,clear_env:true,timeout:20})
+end
+
+$argv=args()
+if len($argv)==0 then
+  $owned=trim(native(["mktemp","-d","/tmp/mb-XXXXXXXX"]))
+  chmod($owned,0o711)
+  $before=filter(lines(read_file("/proc/self/mountinfo")),fn($line)=contains($line,$owned))
+  $loopback_before=json_parse(native(["ip","-j","address","show","dev","lo"]))
+  $r=run_argv(["unshare","--user","--map-auto","--map-root-user","--mount","--propagation","private","--net","--pid","--fork","/opt/mixos/bin/mix",realpath($0),"--inside",read_link("/proc/self/ns/net"),$owned],{timeout:90,grace:2})
+  print($r.stdout)
+  check(deep_eq($before,filter(lines(read_file("/proc/self/mountinfo")),fn($line)=contains($line,$owned))),"fixture leaked a parent-namespace mount")
+  check(not exists($owned,{follow_symlinks:false}),"fixture did not remove its temporary root")
+  check(deep_eq($loopback_before,json_parse(native(["ip","-j","address","show","dev","lo"]))),"fixture changed parent namespace loopback")
+  if not $r.ok then eprint($r.stderr); raise("BROKER_NAMESPACE_TEST","disposable namespace failed") end
+  print("PASS parent namespace mount/loopback isolation and temporary-root cleanup")
+  exit(0)
+end
+check(len($argv)==3 and $argv[0]=="--inside","invalid fixture arguments")
+check(uid()==0 and len(lines(read_file("/proc/self/uid_map")))>=2,"subordinate-ID user namespace required")
+check(read_link("/proc/self/ns/net")!=$argv[1],"network namespace was not isolated")
+check(pid()==1,"fixture requires its own PID namespace init")
+$base=$argv[2]
+check(re_match($base,"^/tmp/mb-[A-Za-z0-9]{8}$") and realpath($base)==$base and stat($base).uid==0,"fixture root is not owned/canonical")
+$root=$base .. "/rootfs"
+$daemon=nil
+$mounted=false
+$watch=nil
+try
+  mkdir($root)
+  chmod($root,0o755)
+  mkdir($root .. "/etc")
+  write_new($root .. "/etc/passwd","root:x:0:0:root:/:/usr/bin/nologin\ndesktop:x:2000:2000:Desktop:/:/usr/bin/nologin\n",0o644)
+  write_new($root .. "/etc/group","root:x:0:\ndesktop:x:2000:\n",0o644)
+  write_new($root .. "/etc/shadow","root:!:0:0:99999:7:::\ndesktop:!:0:0:99999:7:::\n",0o600)
+  write_new($root .. "/etc/gshadow","root:!::\ndesktop:!::\n",0o600)
+  write_new($root .. "/etc/nsswitch.conf","passwd: files\ngroup: files\nhosts: files\n",0o644)
+  $s=stat($root)
+  write_new($root .. "/.broker-rootfs.json",json_encode({kind:"native-broker-rootfs",dev:$s.dev,ino:$s.ino}),0o600)
+  $spec={project:"mixos",session:3,profile:"/var/lib/mixos/broker-a",client:{name:"desktop",uid:2000,gid:2000},broker:{name:"noded",uid:1999,gid:1999},node:{name:"desk-a",mesh:"example.internal",ip:"192.0.2.14",port:4200,admission:"observe",mesh_open:true}}
+  mkdir($root .. "/var/lib/mixos/desktop-a",{parents:true})
+  write_new($root .. "/var/lib/mixos/desktop-a/settings","preserved-desktop-state",0o600)
+  chown($root .. "/var/lib/mixos/desktop-a/settings",2000,2000)
+  chown($root .. "/var/lib/mixos/desktop-a",2000,2000)
+  chmod($root .. "/var/lib/mixos/desktop-a",0o700)
+  $desktop_before=stat($root .. "/var/lib/mixos/desktop-a/settings")
+  $passwd_before=hash_file($root .. "/etc/passwd","sha256")
+  $bad=$spec
+  $bad.client.uid=2001
+  $refused=false
+  try $prepare.prepare($root,$bad) catch $message,$error $refused=$error.code=="BROKER_ROOTFS" end
+  check($refused and hash_file($root .. "/etc/passwd","sha256")==$passwd_before,"mismatched desktop preflight changed account database")
+  $plan=$prepare.plan($spec)
+  $receipt=$prepare.prepare($root,$spec)
+  check($receipt.status=="prepared" and not $receipt.live_activation,"offline preparation failed")
+  check(contains(read_file($root .. "/etc/passwd"),"noded:x:1999:1999:"),"offline broker account absent")
+  check(contains(read_file($root .. $spec.profile .. "/etc/noded/service.env"),"MIXOS_BROKER_ACCOUNT=noded"),"broker effective environment absent")
+  check(not contains(read_file($root .. $spec.profile .. "/etc/client.env"),"MIXOS_VAR"),"client environment changed app VAR")
+  check(contains($plan.unit_text,"EnvironmentFile=\nEnvironmentFile=") and contains($plan.unit_text,"SupplementaryGroups=\n"),"effective unit does not reset inherited desktop configuration")
+  check(deep_eq(stat($root .. "/var/lib/mixos/desktop-a/settings"),$desktop_before) and read_file($root .. "/var/lib/mixos/desktop-a/settings")=="preserved-desktop-state","preparer changed desktop state or ownership")
+  $cache={}
+  for $line in lines(native(["ldconfig","-p"]))
+    $f=fields($line)
+    if len($f)>=4 and contains($line,"x86-64") and not has_key($cache,$f[0]) then $cache[$f[0]]=$f[len($f)-1] end
+  end
+  $mix_candidate=env("MIXOS_TEST_MIX","")
+  $mix_expected=env("MIXOS_TEST_MIX_SHA256","")
+  $noded_expected=env("MIXOS_TEST_NODED_SHA256","")
+  $pin_test=$mix_candidate!=""
+  check($pin_test or ($mix_expected=="" and $noded_expected==""),"candidate hash without Mix candidate would skip the PID proof")
+  $mix_source=if $pin_test then $mix_candidate else "/opt/mixos/bin/mix" end
+  if $pin_test then
+    check(starts_with($mix_source,"/") and is_file($mix_source) and re_match($mix_expected,"^[0-9a-f]{64}$") and hash_file($mix_source,"sha256")==$mix_expected,"explicit Mix candidate hash differs")
+  end
+  copy_elf($root,$mix_source,"/opt/mixos/bin/mix",$cache)
+  check(hash_file($root .. "/opt/mixos/bin/mix","sha256")==hash_file($mix_source,"sha256"),"fixture Mix artifact copy differs")
+  $candidate=env("MIXOS_TEST_NODED","/opt/mixos/bin/noded")
+  check(type($candidate)=="string" and starts_with($candidate,"/") and is_file($candidate),"explicit native noded artifact absent")
+  if $pin_test then
+    check(re_match($noded_expected,"^[0-9a-f]{64}$") and hash_file($candidate,"sha256")==$noded_expected,"explicit noded candidate hash differs")
+  end
+  copy_elf($root,$candidate,"/opt/mixos/bin/noded",$cache)
+  check(hash_file($root .. "/opt/mixos/bin/noded","sha256")==hash_file($candidate,"sha256"),"fixture noded artifact copy differs")
+  if has_key($cache,"libnss_files.so.2") then copy_elf($root,$cache["libnss_files.so.2"],$cache["libnss_files.so.2"],$cache) end
+  mkdir($root .. "/proc")
+  -- Retain the enclosing container's masked proc submounts. A new proc mount
+  -- would expose entries hidden by that policy and is correctly refused.
+  native(["mount","--rbind","/proc",$root .. "/proc"])
+  native(["mount","--make-rslave",$root .. "/proc"])
+  $mounted=true
+  native(["ip","link","set","lo","up"])
+  native(["ip","address","add","192.0.2.14/32","dev","lo"])
+  mkdir($base .. "/private")
+  chmod($base .. "/private",0o700)
+  $signer=["/opt/mixos/bin/mesh-sign","--secrets-db",$base .. "/private/secrets.db","--mesh","example.internal"]
+  native(concat($signer,["genesis"]))
+  $pub=trim(native(concat($signer,["pubkey"])))
+  $inventory={unsigned:true,schema_version:1,mesh:"example.internal",subnet:"192.0.2.0/24",epoch:7,hub:["desk-a"],members:[{name:"desk-a",mesh_ip:"192.0.2.14",bus:true,status:"active",noded_port:4200}]}
+  write_new($base .. "/private/inventory.mix",data_encode({inventory:$inventory}),0o600)
+  native(concat($signer,["sign",$base .. "/private/inventory.mix","--out",$base .. "/private/inventory.signed"]))
+  $etc=$root .. $spec.profile .. "/etc"
+  $var=$root .. $spec.profile .. "/var"
+  write_new($etc .. "/noded/genesis.pub",$pub .. chr(10),0o640)
+  chown($etc .. "/noded/genesis.pub",0,1999)
+  write_new($var .. "/noded/inventory.signed",read_file($base .. "/private/inventory.signed"),0o640)
+  chown($var .. "/noded/inventory.signed",0,1999)
+  $socket=$root .. $plan.endpoint
+  $watch=fs_watch($root .. $plan.run,{recursive:true,events:["created","modified","moved","deleted"]})
+  $daemon=spawn(["chroot","--userspec=1999:1999","--groups=1999",$root,"/opt/mixos/bin/noded","serve","--no-monitor","--no-log"],{env:$plan.broker_env,clear_env:true,die_with_parent:true,stdout:{file:$base .. "/noded.log"},stderr:{file:$base .. "/noded.err"}})
+  while not exists($socket,{follow_symlinks:false})
+    if not process_alive($daemon) then raise("BROKER_NAMESPACE_TEST","fixture noded exited before native socket") end
+    $_batch=fs_wait($watch)
+  end
+  $client_env={PATH:"/opt/mixos/bin:/usr/bin:/bin",MIXOS_NODE_CONFIG:$spec.profile .. "/etc/client.conf.mix",MIXOS_BROKER_ACCOUNT:"noded",MIXOS_NODED_URL:"",MIXOS_RUN:"/run/mixos/session/3"}
+  $query_source='send noded noded.info timeout=10
+$info={rc:$rc,value:$result}
+send noded noded.inventory timeout=10
+print(json_encode({uid:uid(),gid:gid(),info:$info,rc:$rc,value:$result}))'
+  $query=as_user($root,2000,$query_source,$client_env)
+  check($query.ok,"distinct client native authority query failed")
+  $authority=json_parse($query.stdout)
+  check($authority.uid==2000 and $authority.gid==2000 and $authority.info.rc==0 and $authority.info.value.node=="desk-a" and $authority.rc==0 and $authority.value.posture=="verified" and $authority.value.mesh=="example.internal" and $authority.value.epoch==7,"native signed authority/UID proof failed")
+  -- Force the fresh native query to use Unix. Nothing in the parent namespace
+  -- is changed; the fixture address exists only on this isolated loopback.
+  native(["ip","address","del","192.0.2.14/32","dev","lo"])
+  $tcp=as_user($root,2000,'$h=tcp_connect("192.0.2.14",4200,{timeout:1}); tcp_close($h)',$client_env)
+  check(not $tcp.ok,"isolated TCP path remained reachable")
+  if $pin_test then $client_env.MIXOS_NODED_EXPECTED_SERVER_PID=to_string($daemon) end
+  $unix_query=as_user($root,2000,$query_source,$client_env)
+  check($unix_query.ok,"fresh native Unix-only authority query failed")
+  $unix=json_parse($unix_query.stdout)
+  check($unix.info.rc==0 and $unix.info.value.node=="desk-a" and $unix.rc==0 and $unix.value.posture=="verified" and $unix.value.epoch==7 and $unix.value.hash==$authority.value.hash,"Unix-only route did not preserve signed authority")
+  $wrong_pin_rc=nil
+  if $pin_test then
+    $wrong_env=$client_env
+    $wrong_env.MIXOS_NODED_EXPECTED_SERVER_PID=to_string($daemon+1)
+    $wrong_query=as_user($root,2000,$query_source,$wrong_env)
+    check($wrong_query.ok,"wrong-pin script failed before reporting its send result")
+    $wrong=json_parse($wrong_query.stdout)
+    check($wrong.rc==-3 and $wrong.info.rc==-3,"wrong server PID did not fail closed")
+    $wrong_pin_rc=$wrong.rc
+  end
+  $baseline=$var .. "/noded/inventory.baseline"
+  $b=stat($baseline,{follow_symlinks:false})
+  check($b.uid==1999 and $b.gid==1999 and $b.perm==0o600,"native witness ownership differs")
+  $lock=stat($baseline .. ".lock",{follow_symlinks:false})
+  check($lock.uid==1999 and $lock.gid==1999 and $lock.perm==0o600,"native witness lock ownership differs")
+  $before=hash_file($baseline,"sha256")
+  $attack=as_user($root,2000,'write_file("/var/lib/mixos/broker-a/var/noded/inventory.baseline","forged")',$client_env)
+  check(not $attack.ok and contains($attack.stderr,"Permission denied") and hash_file($baseline,"sha256")==$before,"desktop UID did not encounter witness write denial")
+  $private_attack=as_user($root,2000,'write_new("/var/lib/mixos/broker-a/var/noded/desktop-touch","forged",0o600)',$client_env)
+  check(not $private_attack.ok and contains($private_attack.stderr,"Permission denied"),"desktop UID could create a file in private broker VAR")
+  $endpoint=stat($socket,{follow_symlinks:false})
+  check($endpoint.uid==1999 and floor($endpoint.mode/4096)%16==12,"native socket owner/type differs")
+  $ancestry=[]
+  for $path in ["/","/run","/run/mixos","/run/mixos/broker","/run/mixos/broker/3","/run/mixos/broker/3/noded"]
+    $meta=stat(if $path=="/" then $root else $root .. $path end,{follow_symlinks:false})
+    push($ancestry,{path:$path,uid:$meta.uid,gid:$meta.gid,perm:$meta.perm,is_symlink:$meta.is_symlink})
+  end
+  print(json_encode({proof:"native-disposable-broker-namespace",mix_sha256:hash_file($mix_source,"sha256"),noded_sha256:hash_file($candidate,"sha256"),client_uid:$authority.uid,client_gid:$authority.gid,broker_uid:$endpoint.uid,baseline_uid:$b.uid,baseline_gid:$b.gid,baseline_mode:$b.perm,baseline_lock_mode:$lock.perm,desktop_write_refused:not $attack.ok,private_var_write_refused:not $private_attack.ok,desktop_state_preserved:true,signed_authority:true,tcp_unreachable:not $tcp.ok,unix_only_authority:true,epoch:$authority.value.epoch,endpoint:$plan.endpoint,ancestry:$ancestry,user_namespace:true,network_namespace:true,pid_namespace:true,pid_pin_tested:$pin_test,correct_pid:if $pin_test then $daemon else nil end,correct_pid_rc:if $pin_test then $unix.rc else nil end,wrong_pid_rc:$wrong_pin_rc,live_activation:false,systemd_unit_started:false}))
+finally
+  if $watch!=nil then fs_unwatch($watch) end
+  if $daemon!=nil then $_killed=kill($daemon,9); run_argv(["pidwait","-p",to_string($daemon)],{timeout:5}) end
+  -- The enclosing container's locked masked submounts cannot be unmounted
+  -- individually. Detach the whole private bind tree after stopping noded.
+  if $mounted then native(["umount","--lazy",$root .. "/proc"]) end
+  native(["rm","-rf","--",$base])
+end

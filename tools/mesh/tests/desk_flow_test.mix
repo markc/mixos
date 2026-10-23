@@ -1,0 +1,150 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- No SSH, namespace, systemctl or secret store is contacted by this fixture.
+$ops = require("../_lib/desk_ops.mix")
+$targets = require("../_lib/targets.mix")
+$w = require("../_lib/desk_worker.mix")
+
+fn check($condition,$message)
+  if not $condition then raise("DESK_FLOW_TEST",$message) end
+end
+
+fn refused($action)
+  try
+    $action()
+    return false
+  catch $failure
+    return true
+  end
+end
+
+fn distributor_refused($action)
+  try
+    $action()
+    return false
+  catch $failure, $detail
+    return $detail.code == "DESK_DISTRIBUTOR"
+  end
+end
+
+fn simulated($job,$path)
+  $state = json_parse(read_file($path))
+  check(not contains(json_encode($job.argv),"synthetic-secret"),"private fixture reached argv")
+  $state.calls = push($state.calls,$job.operation)
+  $value = nil
+  $ok = true
+  if len($state.calls) == $state.fail_at then
+    $ok = false
+  elif $job.operation == "preflight" then
+    $value = $state.ctx
+  elif $job.operation == "seed" then
+    $state.ctx.states = $state.seed_states
+    $value = {status:"placed",receipt:"protected-fixture/seed"}
+  elif $job.operation == "sync" then
+    $state.ctx.states = $state.sync_states
+    $value = {status:"placed",receipt:"protected-fixture/sync"}
+  elif $job.operation == "restart" then
+    $value = {restarted:$state.ctx.target.unit}
+  elif $job.operation == "live" then
+    $value = {pid:42,uid:1000,sha256:"fixture-native-binary"}
+  end
+  write_file($path,json_encode($state))
+  $reply = {ok:$ok,value:$value,reason:"synthetic injected failure"}
+  if $job.operation == "authority" and $ok then
+    $reply = {info:{rc:0,value:{node:$state.ctx.target.node,wg_ip:"192.0.2.14"}},inventory:{rc:0,value:{posture:"verified",mesh:"example.internal",epoch:7,hash:$state.hash}}}
+  end
+  return {ok:true,stdout:json_encode($reply),stdout_truncated:false,stderr_truncated:false}
+end
+
+fn flow($base,$program,$execute)
+  $before = $ops.preflight($base,$program,$execute)
+  $ops.place_seed($base,$before,"synthetic-secret","AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",$program,$execute)
+  $before = $ops.preflight($base,$program,$execute)
+  $ops.place_sync($base,$before,"synthetic-roster","synthetic-signed",$program,$execute)
+  return $ops.verify_authority($base,7,"canonical-fixture",$execute)
+end
+
+$root = trim(run_argv_must(["mktemp","-d"]))
+$description = {schema_version:1,project:"example",targets:[{node:"desk",host:"host",kind:"desk",machine:"desk",profile:"/var/lib/example/desk-bus",session:3,account:"desktop",admission:"observe",mesh_open:true}]}
+$target = $targets.parse_targets($description).targets[0]
+$inventory = {mesh:"example.internal",epoch:7,members:[{name:"desk",mesh_ip:"192.0.2.14",status:"active",bus:true,credentials:[{kind:"d2",from_epoch:1,pubkey:"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="}]}]}
+$base = $ops.request($target,$inventory,"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=","/opt/example/bin/mix")
+$ctx = {target:$target,uid:1000,gid:1000,writer:0,dirs:{},binding:{},config:{},paths:{},binary:{},states:{seed:{present:false},seed_receipt:{present:false},roster:{present:false},inventory:{present:false}}}
+$ctx.states.genesis = {present:true,uid:0,gid:1000,perm:0o640,sha256:hash_sha256($base.genesis .. chr(10))}
+$seed_states = $ctx.states
+$proof = json_encode({node:"desk",mesh:"example.internal",seed_sha256:hash_sha256("synthetic-secret"),public_key:"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="},true)
+$seed_states.seed = {present:true,uid:0,gid:1000,perm:0o640,sha256:hash_sha256("synthetic-secret")}
+$seed_states.seed_receipt = {present:true,uid:0,gid:1000,perm:0o640,sha256:hash_sha256($proof)}
+$sync_states = $seed_states
+$sync_states.roster = {present:true,uid:0,gid:1000,perm:0o640,sha256:hash_sha256("synthetic-roster")}
+$sync_states.inventory = {present:true,uid:0,gid:1000,perm:0o640,sha256:hash_sha256("synthetic-signed")}
+$state = {ctx:$ctx,seed_states:$seed_states,sync_states:$sync_states,calls:[],fail_at:0,hash:"canonical-fixture"}
+$path = $root .. "/state.json"
+$execute = fn($job)=simulated($job,$path)
+$program = $ops.worker_program(dirname(dirname(realpath($0))) .. "/_lib/desk_worker.mix")
+write_file($path,json_encode($state))
+check(flow($base,$program,$execute).verified,"complete simulated flow failed")
+$expected = ["preflight","seed","preflight","preflight","sync","preflight","restart","preflight","live","authority"]
+check(deep_eq(json_parse(read_file($path)).calls,$expected),"unexpected distributor stage order")
+for $index = 1 to len($expected)
+  $fault = $state
+  $fault.fail_at = $index
+  write_file($path,json_encode($fault))
+  check(refused(fn()=flow($base,$program,$execute)),"injected stage failure was accepted")
+  check(len(json_parse(read_file($path)).calls)==$index,"commands continued after failed stage")
+end
+$fault = $state
+$fault.hash = "wrong-canonical"
+write_file($path,json_encode($fault))
+check(refused(fn()=flow($base,$program,$execute)),"stale authority hash accepted")
+
+-- Parseable but incomplete native evidence must produce the owning refusal,
+-- rather than an incidental nil-field runtime error.
+$empty_success = fn($job)={ok:true,stdout:'{"ok":true}',stdout_truncated:false,stderr_truncated:false}
+check(distributor_refused(fn()=$ops.preflight($base,$program,$empty_success)),"empty native success escaped owning refusal")
+for $reply in ['{}','{"info":{},"inventory":{}}','[]']
+  $bad_authority = fn($job)={ok:true,stdout:$reply,stdout_truncated:false,stderr_truncated:false}
+  check(distributor_refused(fn()=$ops.verify_authority($base,7,"canonical-fixture",$bad_authority)),"malformed authority escaped owning refusal")
+end
+$missing_state = $ctx
+$missing_state.states.seed = nil
+check(distributor_refused(fn()=$ops.stable_after($ctx,$missing_state,[$ops.payload("seed","synthetic-secret")])),"missing payload state escaped owning refusal")
+$new_state = $ctx
+$new_state.states.unexpected = {present:false}
+check(distributor_refused(fn()=$ops.stable_after($ctx,$new_state,[])),"unexpected authority state accepted")
+check(distributor_refused(fn()=$ops.stable_after($ctx,nil,[])),"missing preflight map escaped owning refusal")
+
+-- Target configuration is complete, explicit and cannot omit a rostered node.
+$config_path = $root .. "/targets.conf.mix"
+write_file($config_path,data_encode($description))
+check(has_key($ops.load_targets($config_path,"example",["desk"]),"desk"),"valid target map rejected")
+check(refused(fn()=$ops.load_targets($config_path,"example",["desk","omitted"])),"partial target map accepted")
+$old = $description
+$old.targets[0].admission = nil
+write_file($config_path,data_encode($old))
+check(refused(fn()=$ops.load_targets($config_path,"example",["desk"])),"implicit admission policy accepted")
+
+-- Effective unit/environment validation is pure over one captured unit reply.
+$text = "EXAMPLE_ETC=/var/lib/example/desk-bus/etc\nEXAMPLE_VAR=/var/lib/example/desk-bus/var\nEXAMPLE_NODE_CONFIG=/var/lib/example/desk-bus/etc/node.conf.mix\nEXAMPLE_RUN=/run/example/session/3\nEXAMPLE_BROKER_ACCOUNT=desktop\nEXAMPLE_NODED_URL=\n"
+$metadata = {present:true,uid:0,gid:1000,perm:0o640}
+$properties = {Type:"simple",KillMode:"control-group",RuntimeDirectory:"example/session/3/noded",User:"desktop",EnvironmentFiles:"/var/lib/example/desk-bus/etc/noded/service.env (ignore_errors=no)",UnsetEnvironment:"",ExecStart:"{ path=/opt/example/bin/noded ; argv[]=/opt/example/bin/noded serve --no-monitor --no-log ; ignore_errors=no ; start_time=[old] ; pid=42 }"}
+$w.validate_service($target,1000,$metadata,$properties,$text)
+for $bad in [{User:"root"},{EnvironmentFiles:"/evil/var/lib/example/desk-bus/etc/noded/service.env (ignore_errors=no)"},{EnvironmentFiles:$properties.EnvironmentFiles .. " /tmp/later.env (ignore_errors=no)"},{UnsetEnvironment:"EXAMPLE_ETC"},{ExecStart:"native noded serve --node other"}]
+  $changed = $properties
+  for $key in keys($bad) $changed[$key]=$bad[$key] end
+  check(refused(fn()=$w.validate_service($target,1000,$metadata,$changed,$text)),"unsafe service binding accepted")
+end
+check(refused(fn()=$w.validate_service($target,1000,$metadata,$properties,$text .. "EXAMPLE_ETC=/tmp/other\n")),"duplicate environment assignment accepted")
+check(refused(fn()=$w.validate_service($target,1000,{present:true,uid:1000,gid:1000,perm:0o640},$properties,$text)),"user-owned service environment accepted")
+
+-- Exercise actual generated source parsing/RPC without any namespace I/O:
+-- the invalid operation is rejected before dispatch can inspect a target.
+$source = "$request = {operation: \"invalid-fixture\"}\n" .. $program
+$generated = $root .. "/generated.mix"
+write_file($generated,$source)
+$native_mix = which("mix")
+check(type($native_mix)=="string" and re_match($native_mix,"^/opt/[a-z][a-z0-9-]{0,31}/bin/mix$"),"native interpreter must be installed under /opt")
+run_argv_must([$native_mix,"lint",$generated])
+$rpc = json_parse(run_argv_must([$native_mix,$generated]))
+check($rpc.ok==false and $rpc.error=="DESK_DISTRIBUTOR","generated native RPC refusal failed")
+print("PASS hermetic desk flow: exact namespace stages, ten fail-stop boundaries, policy, effective unit and generated RPC")
+run_argv_must(["rm","-rf",$root])

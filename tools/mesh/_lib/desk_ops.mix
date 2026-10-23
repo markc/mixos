@@ -1,0 +1,171 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Shared guarded desk path for the signed-inventory and private-seed owners.
+-- Loading this module does not contact a host or read private configuration.
+$targets = require("targets.mix")
+$ROLLOUT_READY = false
+
+fn fail($message)
+  raise("DESK_DISTRIBUTOR",$message)
+end
+
+fn load_targets($path, $project, $roster)
+  if not exists($path,{follow_symlinks:false}) then return {} end
+  $config_stat = stat($path,{follow_symlinks:false})
+  if not $config_stat.is_file or $config_stat.is_symlink then fail("target config must be a regular non-symlink file") end
+  $parsed = $targets.parse_targets(load_data($path))
+  if $parsed.project != $project or not re_match($project,"^[a-z][a-z0-9]*$") then fail("target project differs or cannot name native environment") end
+  $out = {}
+  for $target in $parsed.targets
+    if not contains($roster,$target.node) then fail("target identity is not rostered") end
+    if $target.kind == "system" then
+      if $target.host != $target.node then fail("system target must preserve its existing node transport") end
+      continue
+    end
+    if $target.admission == nil or $target.mesh_open == nil then fail("desk rollout requires explicit admission and mesh_open posture") end
+    $out[$target.node] = $target
+  end
+  if len($parsed.targets) != len($roster) then fail("configured target set must cover every rostered node exactly once") end
+  return $out
+end
+
+fn member_named($inventory, $node)
+  for $member in $inventory.members
+    if $member.name == $node and $member.status == "active" and $member.bus == true then return $member end
+  end
+  fail("desk must be an authenticated active Bus member")
+end
+
+fn request($target, $inventory, $genesis, $mix_bin)
+  $target = $targets.checked_target($target)
+  if $target.kind != "desk" or $target.admission == nil or type($target.mesh_open) != "bool" then fail("desk target lacks explicit policy") end
+  $member = member_named($inventory,$target.node)
+  $d2_keys = []
+  for $credential in ($member.credentials ?? [])
+    if $credential.kind == "d2" and $credential.from_epoch <= $inventory.epoch and ($credential.until_epoch == nil or $inventory.epoch < $credential.until_epoch) then push($d2_keys,$credential.pubkey) end
+  end
+  if len($d2_keys) == 0 then fail("desk has no current authenticated D2 identity") end
+  if type($genesis) != "string" or not re_match($genesis,"^[A-Za-z0-9+/]{43}=$") then fail("invalid authenticated genesis public key") end
+  return {target:$target,mesh:$inventory.mesh,ip:$member.mesh_ip,port:$member.noded_port ?? 4200,
+    admission:$target.admission,mesh_open:$target.mesh_open,genesis:$genesis,mix_bin:$mix_bin,d2_keys:$d2_keys}
+end
+
+fn worker_program($path)
+  return read_file($path) .. chr(10) .. 'try
+  $value = dispatch($request)
+  print(json_encode({ok:true,value:$value}))
+catch $failure, $detail
+  print(json_encode({ok:false,error:$detail.code,reason:if $detail.code == "DESK_DISTRIBUTOR" then $failure else "native operation refused" end}))
+end
+'
+end
+
+fn live_execute($job)
+  if not $ROLLOUT_READY then fail("desk distributor integration is not yet released; hermetic fixtures only") end
+  return ssh_mix($job.host,
+    '$r=run_argv($command,{stdin:$text,env:$environment,timeout:130}); print($r.stdout); if not $r.ok then raise("DESK_TRANSPORT","namespace process refused") end',
+    {mix_bin:$job.mix_bin,bindings:{command:$job.argv,text:$job.stdin,environment:$job.env},connect_timeout:8,timeout:145})
+end
+
+-- Executor injection is used by hermetic fixtures. All real callers pass nil.
+fn call($base, $operation, $extra, $program, $executor)
+  if not contains(["preflight","seed","sync","restart","live","restore"],$operation) then fail("invalid operation") end
+  $bound = $base
+  $bound.operation = $operation
+  for $key in keys($extra)
+    if not contains(["before","payloads","token"],$key) then fail("unexpected request override") end
+    $bound[$key] = $extra[$key]
+  end
+  $job = $targets.stdin_job($base.target,$program,{request:$bound},"admin",$base.mix_bin)
+  $job.mix_bin = $base.mix_bin
+  $job.operation = $operation
+  if $executor == nil and has_key($extra,"token") then
+    print("DESK_TRANSACTION " .. $base.target.node .. " " .. $operation .. " receipt=" .. $base.target.profile .. "/.mesh-rollout/" .. $extra.token .. "/receipt.json")
+  end
+  $result = if $executor == nil then live_execute($job) else $executor($job) end
+  if not $result.ok or $result.stdout_truncated or $result.stderr_truncated then fail("native " .. $operation .. " transport refused or truncated") end
+  $reply = nil
+  try
+    $reply = json_parse($result.stdout)
+  catch $bad_reply
+    fail("native " .. $operation .. " returned malformed evidence")
+  end
+  if type($reply) != "map" or $reply.ok != true then
+    fail("native " .. $operation .. " refused [" .. to_string($reply.error ?? "INVALID_REPLY") .. "]: " .. ($reply.reason ?? "invalid reply"))
+  end
+  if not has_key($reply,"value") or $reply.value == nil then fail("native " .. $operation .. " returned no operation evidence") end
+  return $reply.value
+end
+
+fn preflight($base, $program, $executor)
+  return call($base,"preflight",{},$program,$executor)
+end
+
+fn payload($kind, $bytes)
+  return {kind:$kind,bytes:$bytes,sha256:hash_sha256($bytes)}
+end
+
+fn stable_after($before, $after, $payloads)
+  if type($before) != "map" or type($after) != "map" or type($before.states) != "map" or type($after.states) != "map" then fail("native preflight evidence lacks state maps") end
+  if len(keys($before.states)) != len(keys($after.states)) then fail("authority state schema changed during rollout") end
+  for $kind in keys($after.states)
+    if not has_key($before.states,$kind) then fail("unexpected authority state appeared during rollout") end
+  end
+  for $key in ["target","uid","gid","writer","dirs","binding","config","paths","binary","interpreter"]
+    if not deep_eq($before[$key],$after[$key]) then fail("profile, namespace, unit or binary changed during rollout") end
+  end
+  for $entry in $payloads
+    $state = $after.states[$entry.kind]
+    if type($state) != "map" or $state.present != true or $state.sha256 != $entry.sha256 or $state.uid != 0 or $state.gid != $after.gid or $state.perm != 0o640 then fail("placed payload evidence differs") end
+  end
+  $changed = map($payloads,fn($entry)=$entry.kind)
+  for $kind in keys($before.states)
+    if not contains($changed,$kind) and not deep_eq($before.states[$kind],$after.states[$kind]) then fail("unrelated authority material changed during rollout") end
+  end
+  return $after
+end
+
+fn place_seed($base, $before, $bytes, $public_key, $program, $executor)
+  if not contains($base.d2_keys,$public_key) then fail("seed key differs from authenticated current D2 identity") end
+  $proof = {node:$base.target.node,mesh:$base.mesh,seed_sha256:hash_sha256($bytes),public_key:$public_key}
+  $files = [payload("seed",$bytes),payload("seed_receipt",json_encode($proof,true))]
+  $placed = call($base,"seed",{before:$before,payloads:$files,token:uuid()},$program,$executor)
+  $after = stable_after($before,preflight($base,$program,$executor),$files)
+  return {placement:$placed,verified:$after.states.seed}
+end
+
+fn place_sync($base, $before, $roster, $signed, $program, $executor)
+  $files = [payload("roster",$roster),payload("inventory",$signed)]
+  $placed = call($base,"sync",{before:$before,payloads:$files,token:uuid()},$program,$executor)
+  $expected = $files
+  if not $before.states.genesis.present then push($expected,payload("genesis",$base.genesis .. chr(10))) end
+  $after = stable_after($before,preflight($base,$program,$executor),$expected)
+  call($base,"restart",{before:$after},$program,$executor)
+  $live_before = stable_after($after,preflight($base,$program,$executor),$files)
+  $live = call($base,"live",{before:$live_before},$program,$executor)
+  return {placement:$placed,live:$live}
+end
+
+fn verify_authority($base, $epoch, $hash, $executor)
+  $program = 'send noded noded.info timeout=15
+$info = {rc:$rc,value:$result}
+send noded noded.inventory timeout=15
+print(json_encode({info:$info,inventory:{rc:$rc,value:$result}}))
+'
+  $job = $targets.stdin_job($base.target,$program,{},"citizen",$base.mix_bin)
+  $job.mix_bin = $base.mix_bin
+  $job.operation = "authority"
+  $r = if $executor == nil then live_execute($job) else $executor($job) end
+  if not $r.ok or $r.stdout_truncated or $r.stderr_truncated then fail("fresh citizen authority query failed") end
+  $reply = nil
+  try
+    $reply = json_parse($r.stdout)
+  catch $bad_reply
+    fail("fresh citizen authority reply malformed")
+  end
+  if type($reply) != "map" or type($reply.info) != "map" or type($reply.inventory) != "map" then fail("fresh citizen authority reply lacks result maps") end
+  $i = $reply.info
+  $a = $reply.inventory
+  if type($i.value) != "map" or type($a.value) != "map" then fail("fresh citizen authority reply lacks value maps") end
+  if $i.rc != 0 or $a.rc != 0 or $i.value.node != $base.target.node or $i.value.wg_ip != $base.ip or $a.value.posture != "verified" or $a.value.mesh != $base.mesh or $a.value.epoch != $epoch or $a.value.hash != $hash then fail("fresh citizen authority identity, mesh, epoch or hash mismatch") end
+  return {node:$base.target.node,mesh:$base.mesh,epoch:$epoch,hash:$hash,verified:true}
+end

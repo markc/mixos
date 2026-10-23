@@ -1,0 +1,63 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Pure separate-principal contract. No account, path or service is created.
+$targets = require("targets.mix")
+
+fn fail($message)
+  raise("BROKER_IDENTITY",$message)
+end
+
+fn identities($ids)
+  if type($ids) != "map" or type($ids.client) != "map" or type($ids.broker) != "map" then fail("both resolved principals are required") end
+  for $principal in [$ids.client,$ids.broker]
+    for $id in [$principal.uid,$principal.gid]
+      if type($id) != "number" or floor($id) != $id or $id <= 0 then fail("principals require positive unprivileged IDs") end
+    end
+    if type($principal.groups) != "list" or not contains($principal.groups,$principal.gid) then fail("resolved supplementary groups must include primary group") end
+    for $group in $principal.groups
+      if type($group) != "number" or floor($group) != $group or $group <= 0 then fail("resolved groups must be positive unprivileged IDs") end
+    end
+  end
+  if $ids.client.uid == $ids.broker.uid or contains($ids.client.groups,$ids.broker.gid) then fail("desktop must not share broker UID or private group") end
+  if not deep_eq($ids.broker.groups,[$ids.broker.gid]) then fail("broker must have only its private primary group") end
+  return $ids
+end
+
+fn layout($target,$ids)
+  $t = $targets.checked_target($target)
+  if $t.kind != "desk" or $t.identity_schema != 2 then fail("separate-principal target required") end
+  $ids = identities($ids)
+  $root = {uid:0,gid:0,perm:0o755,is_dir:true,is_symlink:false}
+  $private = {uid:0,gid:$ids.broker.gid,perm:0o750,is_dir:true,is_symlink:false}
+  $out = {}
+  for $path in ["/","/var","/var/lib","/var/lib/" .. $t.project,$t.profile,$t.etc,$t.var,"/run","/run/" .. $t.project,"/run/" .. $t.project .. "/broker",$t.broker_run]
+    $out[$path] = $root
+  end
+  $out[$t.etc .. "/noded"] = $private
+  $out[$t.var .. "/noded"] = {uid:$ids.broker.uid,gid:$ids.broker.gid,perm:0o700,is_dir:true,is_symlink:false}
+  $out[$t.broker_run .. "/noded"] = {uid:$ids.broker.uid,gid:$ids.broker.gid,perm:0o711,is_dir:true,is_symlink:false}
+  return $out
+end
+
+fn verify_layout($target,$ids,$snapshot)
+  $expected = layout($target,$ids)
+  if type($snapshot) != "map" or not deep_eq(sort(keys($snapshot)),sort(keys($expected))) then fail("directory snapshot is incomplete or unexpected") end
+  for $path in keys($expected)
+    $actual = $snapshot[$path]
+    if type($actual) != "map" or type($actual.is_symlink) != "bool" or $actual.is_symlink != false then fail("directory snapshot must explicitly exclude symlinks") end
+    for $key in ["uid","gid","perm","is_dir"]
+      if $actual[$key] != $expected[$path][$key] then fail("directory ownership or mode differs from separate-principal contract") end
+    end
+  end
+  return {validated:true,mutation_supported:false}
+end
+
+fn node_configs($target,$broker,$client)
+  $t = $targets.checked_target($target)
+  if $t.identity_schema != 2 then fail("separate-principal target required") end
+  if type($broker) != "map" or type($broker.noded) != "map" or type($client) != "map" then fail("broker and public client configurations required") end
+  -- Public client config contains identity and endpoint only, never a private
+  -- seed, authority store or an application runtime/state override.
+  $expected = {node:$broker.node,mesh:$broker.mesh,wg_ip:$broker.wg_ip,noded:{port:$broker.noded.port,unix_socket:$t.broker_endpoint}}
+  if $broker.node != $t.node or type($broker.mesh) != "string" or type($broker.wg_ip) != "string" or type($broker.noded.port) != "number" or floor($broker.noded.port) != $broker.noded.port or $broker.noded.port < 1 or $broker.noded.port > 65535 or $broker.noded.unix_socket != $t.broker_endpoint or not deep_eq($client,$expected) then fail("broker/client identity or explicit native endpoint differs") end
+  return {endpoint:$t.broker_endpoint,client_config:$t.client_config,mutation_supported:false}
+end

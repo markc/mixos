@@ -1,0 +1,86 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$targets = require("../_lib/targets.mix")
+fn check($condition, $message)
+  if not $condition then raise("TEST", $message) end
+end
+fn refuses($document)
+  try
+    $targets.parse_targets($document)
+    return false
+  catch $message, $error
+    return $error.code == "MESH_TARGET"
+  end
+end
+$system = {node:"node-a",host:"host-a",kind:"system"}
+$desk = {node:"desk-a",host:"host-a",kind:"desk",machine:"desk-a",profile:"/var/lib/example/profile-a",session:3,account:"user-a"}
+$document = {schema_version:1,project:"example",targets:[$system,$desk]}
+$parsed = $targets.parse_targets($document)
+$first = $targets.plan($parsed.targets[0])
+$second = $targets.plan($parsed.targets[1])
+check($first.inventory == "/var/lib/example/noded/inventory.signed", "system state root")
+check($first.unit == "noded.service", "system service")
+check(not $first.mutation_supported and $first.system_mutation_eligible, "policy eligibility is not implemented mutation")
+check($second.inventory == "/var/lib/example/profile-a/var/noded/inventory.signed", "desk state root")
+check($second.seed == "/var/lib/example/profile-a/etc/noded/d2.seed", "desk private path")
+check($second.unit == "noded@3.service" and $second.account == "user-a", "desk account/unit")
+check(not $second.mutation_supported, "no partial desk write path")
+$bad = $document
+$bad.targets[1].profile = "/var/lib/example/../elsewhere"
+check(refuses($bad), "traversal refused")
+$bad = $document
+$bad.targets[1].host = "-proxy-command"
+check(refuses($bad), "option-shaped host refused")
+$bad = $document
+$bad.targets[1].session = 3.5
+check(refuses($bad), "fractional session refused")
+$bad = $document
+$bad.targets[1].node = "node-a"
+check(refuses($bad), "duplicate identity refused")
+$bad = $document
+$bad.targets[0].machine = "desk-a"
+check(refuses($bad), "system/desk confusion refused")
+$bad = $document
+$bad.targets[1].unexpected = true
+check(refuses($bad), "unknown field refused")
+$bad = $document
+$bad.targets[1].account = "root"
+check(refuses($bad), "privileged desk account refused")
+$bad = $document
+$other = $desk
+$other.node = "desk-b"
+$bad.targets = push($document.targets, $other)
+check(refuses($bad), "duplicate broker endpoint refused")
+$bad = $document
+$other = $desk
+$other.node = "desk-b"
+$other.session = 4
+$bad.targets = push($document.targets, $other)
+check(refuses($bad), "duplicate profile store refused across different sessions")
+$bad = $document
+$bad.targets[1].host = "host-a\n"
+check(refuses($bad), "trailing newline refused")
+for $session in [0,7]
+  $bad = $document
+  $bad.targets[1].session = $session
+  check(refuses($bad), "session bounds refused")
+end
+$refused = false
+try
+  $targets.require_system_mutation($document)
+catch $message, $error
+  $refused = $error.code == "MESH_TARGET"
+end
+check($refused, "desk mutation must refuse before any I/O")
+check(len($targets.require_system_mutation({schema_version:1,project:"example",targets:[$system]}).targets) == 1, "system mutation policy")
+$marker = "synthetic-private-fixture"
+$job = $targets.stdin_job($parsed.targets[1], "print(uid())", {payload:$marker}, "admin", "/opt/example/bin/mix")
+check(not contains(json_encode($job.argv), $marker), "private fixture must never enter process argv")
+check(contains($job.stdin, $marker), "private fixture travels through stdin")
+check(contains($job.argv, "--machine=desk-a") and contains($job.argv, "--uid=root"), "admin namespace and identity")
+$citizen = $targets.stdin_job($parsed.targets[1], "print(uid())", {}, "citizen", "/opt/example/bin/mix")
+check(contains($citizen.argv, "--uid=user-a"), "citizen runs as session account")
+check(contains($citizen.stdin, "/var/lib/example/profile-a/etc"), "profile environment follows namespace")
+check(contains($citizen.stdin, "/run/example/session/3"), "session runtime follows namespace")
+$system_job = $targets.stdin_job($parsed.targets[0], "print(uid())", {}, "admin", "/opt/example/bin/mix")
+check(deep_eq($system_job.argv, ["/opt/example/bin/mix","-"]), "system dispatch stays direct native stdin")
+print("PASS native mesh target model: paths, identity boundaries and desk mutation refusal")
