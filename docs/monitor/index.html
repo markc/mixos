@@ -213,6 +213,7 @@
                         <a href="#agents">Agents</a>
                         <a href="#running-it">Running it</a>
                         <a href="#testing">Testing</a>
+                        <a href="#macro-bus-verbs">Macro Bus verbs</a>
                     </nav>
                 </div>
             </div>
@@ -303,6 +304,18 @@ checked by offscreen snapshots (<code>apps/monitor/tests/snapshots/</code>); run
 <code>UPDATE_SNAPSHOTS=1</code> to redraw them, and look at the images before
 committing. The snapshot suite also times the representative workload, a
 2,000-process table and a 64-core grid, and prints it.</p>
+<h2 id="macro-bus-verbs">Macro Bus verbs</h2>
+<p>The shared <a href="/macros/#bus-verbs">macro Bus surface</a> uses this process's
+catalogue and runner. Subscribe to <code>monitor.macros.finished</code> for completion.</p>
+<table><thead><tr><th>Verb</th><th>Arguments</th><th>Result</th></tr></thead><tbody>
+<tr><td><code>monitor.macros.list</code></td><td><code>{}</code></td><td>Catalogue and diagnostics</td></tr>
+<tr><td><code>monitor.macros.reload</code></td><td><code>{}</code></td><td>Catalogue and diagnostics</td></tr>
+<tr><td><code>monitor.macros.run</code></td><td><code>{id}</code></td><td>Acceptance and run number</td></tr>
+<tr><td><code>monitor.macros.status</code></td><td><code>{}</code></td><td>Current or last run</td></tr>
+<tr><td><code>monitor.macros.output</code></td><td><code>{}</code></td><td>Retained output and dropped flag</td></tr>
+<tr><td><code>monitor.macros.stop</code></td><td><code>{}</code></td><td>Whether termination was requested</td></tr>
+<tr><td><code>monitor.macros.new</code></td><td><code>{title}</code></td><td>Not yet available</td></tr>
+</tbody></table>
         </article>
         <p class="doc-source"><a href="/monitor/README.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
     </div>

@@ -17,7 +17,7 @@ type Job = BoxFuture<'static, Done>;
 /// Serve as `service` on the broker at `url`, capturing through `comp`;
 /// `path` is opened first.
 pub fn run(service: &str, url: &str, comp: &str, path: Option<PathBuf>) -> Result<(), String> {
-    let (handle, mut deliveries) = citizen::start(crate::SERVICE, service, url)?;
+    let (handle, mut deliveries) = citizen::start_with_macros(crate::SERVICE, service, url, &[])?;
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()

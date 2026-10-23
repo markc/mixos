@@ -144,7 +144,12 @@ impl Outbox {
         let lost = std::mem::take(&mut state.lost) + item.carried;
         let mut body = item.body;
         if let Some(fields) = body.as_object_mut() {
-            fields.insert("dropped".into(), Value::from(lost));
+            let key = if fields.get("dropped").is_some_and(Value::is_boolean) {
+                "event_dropped"
+            } else {
+                "dropped"
+            };
+            fields.insert(key.into(), Value::from(lost));
         }
         Some((item.topic, body))
     }
@@ -152,7 +157,7 @@ impl Outbox {
     /// The event just taken was not published: it is lost, and so is the
     /// loss it carried.
     pub fn failed(&self, body: &Value) {
-        let carried = body.get("dropped").and_then(Value::as_u64).unwrap_or(0);
+        let carried = body.get("event_dropped").or_else(|| body.get("dropped")).and_then(Value::as_u64).unwrap_or(0);
         self.state().lost += 1 + carried;
     }
 

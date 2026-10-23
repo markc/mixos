@@ -212,6 +212,7 @@
                         <a href="#using-the-menu">Using the menu</a>
                         <a href="#execution-context">Execution context</a>
                         <a href="#library-boundaries">Library boundaries</a>
+                        <a href="#bus-verbs">Bus verbs</a>
                     </nav>
                 </div>
             </div>
@@ -360,8 +361,32 @@ runner. <code>toolkit::menu::anchored</code> reuses menu navigation and row rend
 resources in the egui context while each app keeps the menu's open flag
 in its UI state. This keeps application engines below the GUI boundary in
 the application layering gate.</p>
-<p>Bus-specific macro verbs, filesystem watching and per-app context adapters
-are outside this first slice.</p>
+<h2 id="bus-verbs">Bus verbs</h2>
+<p>Email, BusViewer, Monitor, Prefs, Screenshot, Ced, Dopus and Term serve the
+same macro surface under their component prefix. <code>list</code>, <code>status</code> and
+<code>output</code> are read-only. <code>run</code>, <code>stop</code>, <code>reload</code> and <code>new</code> have the same
+authority as executing an app command; running a macro executes user code.</p>
+<table><thead><tr><th>Suffix after <code>&lt;app&gt;.macros.</code></th><th>Body</th><th>Reply</th></tr></thead><tbody>
+<tr><td><code>list</code></td><td><code>{}</code></td><td><code>{macros:[{id,title,tier,path,shadows}], diagnostics:[{path,message}], scanned:true}</code></td></tr>
+<tr><td><code>reload</code></td><td><code>{}</code></td><td>Rescan and return the list shape</td></tr>
+<tr><td><code>run</code></td><td><code>{id}</code></td><td><code>{accepted:true, run, id, title}</code>; unknown ids and a busy runner are refused</td></tr>
+<tr><td><code>status</code></td><td><code>{}</code></td><td><code>{state,run,id,title,origin,started,exit,error}</code></td></tr>
+<tr><td><code>output</code></td><td><code>{}</code></td><td><code>{run,text,dropped}</code>; the retained 64 KiB tail</td></tr>
+<tr><td><code>stop</code></td><td><code>{}</code></td><td><code>{stopping:bool}</code>; termination is asynchronous</td></tr>
+<tr><td><code>new</code></td><td><code>{title}</code></td><td>Not yet available</td></tr>
+</tbody></table>
+<p>The first list and every reload scan off the caller's thread and defer the
+reply. Run loads the catalogue first if necessary and answers acceptance,
+not completion. Run numbers increase within the app process. States are
+<code>idle</code>, <code>running</code>, <code>exited</code>, <code>failed</code> and <code>failed_to_start</code>; a signal gives
+<code>exit:null</code>. Idle identity fields are null. Origins are <code>gui</code> or <code>bus</code>.</p>
+<p>Subscribe to <code>&lt;service&gt;.macros.finished</code> before starting a run. Once the
+manager has cleaned up and reaped the process, one event is queued with
+<code>{run,id,title,origin,state,exit,error,dropped}</code>. <code>dropped</code> is the output-tail
+flag; <code>event_dropped</code> counts lost Bus events. Delivery is bounded and best
+effort, like command execution events. Read status and output after a gap
+or reconnect. Completion uses a callback, without a polling loop.</p>
+<p>Filesystem watching and per-app context adapters remain future work.</p>
         </article>
         <p class="doc-source"><a href="/macros/README.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
     </div>

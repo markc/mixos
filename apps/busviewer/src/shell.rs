@@ -84,6 +84,7 @@ pub fn describe() -> Value {
     let mut surface = model::describe();
     if let Some(verbs) = surface["verbs"].as_array_mut() {
         verbs.extend(drive::describe(APP));
+        verbs.extend(citizen::macros::describe(APP));
     }
     surface
 }
@@ -837,8 +838,10 @@ mod tests {
             .collect();
         let mut expected: Vec<String> = model::VERBS.iter().map(|v| (*v).to_owned()).collect();
         expected.extend(drive::VERBS.iter().map(|v| format!("{APP}.{v}")));
+        expected.extend(citizen::macros::describe(APP).iter().map(|v| v["name"].as_str().unwrap().to_owned()));
         assert_eq!(names, expected);
         for name in &names {
+            if name.starts_with(&format!("{APP}.macros.")) { continue; }
             let mut e = engine();
             e.command(1, name, "{}");
             let effects = settle(&mut e, &crate::commands::registry(), &crate::strings());

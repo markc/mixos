@@ -290,3 +290,18 @@ offscreen (regenerate with `UPDATE_SNAPSHOTS=1` and look at the images);
   agents alike.
 - A region selection may take up to 70 seconds (Cap allowed 38).
 - Raw shots are deleted when no longer needed, and the folder is pruned.
+
+## Macro Bus verbs
+
+The shared [macro Bus surface](/macros/#bus-verbs) uses this process's
+catalogue and runner. Subscribe to `screenshot.macros.finished` for completion.
+
+| Verb | Arguments | Result |
+|---|---|---|
+| `screenshot.macros.list` | `{}` | Catalogue and diagnostics |
+| `screenshot.macros.reload` | `{}` | Catalogue and diagnostics |
+| `screenshot.macros.run` | `{id}` | Acceptance and run number |
+| `screenshot.macros.status` | `{}` | Current or last run |
+| `screenshot.macros.output` | `{}` | Retained output and dropped flag |
+| `screenshot.macros.stop` | `{}` | Whether termination was requested |
+| `screenshot.macros.new` | `{title}` | Not yet available |

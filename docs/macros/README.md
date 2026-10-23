@@ -155,5 +155,34 @@ resources in the egui context while each app keeps the menu's open flag
 in its UI state. This keeps application engines below the GUI boundary in
 the application layering gate.
 
-Bus-specific macro verbs, filesystem watching and per-app context adapters
-are outside this first slice.
+## Bus verbs
+
+Email, BusViewer, Monitor, Prefs, Screenshot, Ced, Dopus and Term serve the
+same macro surface under their component prefix. `list`, `status` and
+`output` are read-only. `run`, `stop`, `reload` and `new` have the same
+authority as executing an app command; running a macro executes user code.
+
+| Suffix after `<app>.macros.` | Body | Reply |
+|---|---|---|
+| `list` | `{}` | `{macros:[{id,title,tier,path,shadows}], diagnostics:[{path,message}], scanned:true}` |
+| `reload` | `{}` | Rescan and return the list shape |
+| `run` | `{id}` | `{accepted:true, run, id, title}`; unknown ids and a busy runner are refused |
+| `status` | `{}` | `{state,run,id,title,origin,started,exit,error}` |
+| `output` | `{}` | `{run,text,dropped}`; the retained 64 KiB tail |
+| `stop` | `{}` | `{stopping:bool}`; termination is asynchronous |
+| `new` | `{title}` | Not yet available |
+
+The first list and every reload scan off the caller's thread and defer the
+reply. Run loads the catalogue first if necessary and answers acceptance,
+not completion. Run numbers increase within the app process. States are
+`idle`, `running`, `exited`, `failed` and `failed_to_start`; a signal gives
+`exit:null`. Idle identity fields are null. Origins are `gui` or `bus`.
+
+Subscribe to `<service>.macros.finished` before starting a run. Once the
+manager has cleaned up and reaped the process, one event is queued with
+`{run,id,title,origin,state,exit,error,dropped}`. `dropped` is the output-tail
+flag; `event_dropped` counts lost Bus events. Delivery is bounded and best
+effort, like command execution events. Read status and output after a gap
+or reconnect. Completion uses a callback, without a polling loop.
+
+Filesystem watching and per-app context adapters remain future work.

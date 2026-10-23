@@ -282,6 +282,7 @@ async fn run(
     };
     let mut state = client.subscribe_state();
     let _ = ready.send(Ok(Arc::clone(&client)));
+    citizen::macros::install("ced", &service, outbox.clone());
     citizen::outbox::spawn_publisher(client.clone(), outbox);
 
     let mut commands: HashMap<u64, IncomingCommand> = HashMap::new();
@@ -315,6 +316,7 @@ async fn run(
                 if cmd.command.is_empty() {
                     continue;
                 }
+                if citizen::macros::dispatch("ced", &cmd, client.clone()) { continue; }
                 next_command += 1;
                 let delivery = Delivery::Command(BusCommand {
                     id: next_command,
@@ -484,7 +486,8 @@ async fn run(
             && !cmd.command.is_empty()
             && cmd.id.is_some()
         {
-            next_command += 1;
+            if citizen::macros::dispatch("ced", &cmd, client.clone()) { continue; }
+                next_command += 1;
             commands.insert(next_command, cmd);
         }
     }

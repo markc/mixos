@@ -13,6 +13,7 @@
 //! worker thread, the closing refusal and the `<app>.ping` / `<app>.show`
 //! verbs used for single-instance activation.
 pub mod outbox;
+pub mod macros;
 
 use ::bus::native_client::{
     BoundedIncomingEvent, ConnState, IncomingCommand, NodedClient, SupervisedClient,
@@ -294,6 +295,27 @@ pub fn start_with_topics(
     url: &str,
     topics: &[String],
 ) -> Result<(Handle, mpsc::Receiver<Delivery>), String> {
+    start_inner(app, service, url, topics, false)
+}
+
+/// Start an application with the shared macro Bus surface enabled.
+pub fn start_with_macros(
+    app: &str,
+    service: &str,
+    url: &str,
+    topics: &[String],
+) -> Result<(Handle, mpsc::Receiver<Delivery>), String> {
+    start_inner(app, service, url, topics, true)
+}
+
+fn start_inner(
+    app: &str,
+    service: &str,
+    url: &str,
+    topics: &[String],
+    enable_macros: bool,
+) -> Result<(Handle, mpsc::Receiver<Delivery>), String> {
+    let macro_app = enable_macros.then(|| app.to_owned());
     let topics = topics.to_vec();
     let (send, receive) = mpsc::channel(64);
     let (tx, rx) = tokio::sync::mpsc::channel(64);
@@ -325,6 +347,7 @@ pub fn start_with_topics(
                     controls,
                     ready_send,
                     worker_outbox,
+                    macro_app,
                 )),
                 Err(error) => {
                     let _ = ready_send.send(Err(format!("Bus runtime: {error}")));
@@ -365,6 +388,7 @@ async fn worker(
     mut controls: tokio::sync::mpsc::UnboundedReceiver<Control>,
     ready: std::sync::mpsc::Sender<Result<(), String>>,
     outbox: Arc<outbox::Outbox>,
+    macro_app: Option<String>,
 ) {
     let connect = SupervisedClient::connect_options(&service, &url)
         .bounded_incoming(64)
@@ -398,6 +422,9 @@ async fn worker(
         }
     }
     let _ = ready.send(Ok(()));
+    if let Some(app) = &macro_app {
+        macros::install(app, &service, outbox.clone());
+    }
     outbox::spawn_publisher(client.clone(), outbox);
     let mut pending: HashMap<u64, IncomingCommand> = HashMap::new();
     let mut next_id = 0;
@@ -467,6 +494,10 @@ async fn worker(
                     continue;
                 }
                 next_id += 1;
+                if let Some(app) = &macro_app
+                    && macros::dispatch(app, &command, client.clone()) {
+                    continue;
+                }
                 let delivery = Delivery::Command {id:next_id,verb:command.command.clone(),body:if command.body.trim().is_empty(){"{}".into()}else{command.body.clone()}};
                 pending.insert(next_id,command);
                 let _ = send.send(delivery).await;

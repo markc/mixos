@@ -232,3 +232,18 @@ The source is [`apps/prefs`](https://github.com/markc/mixos/tree/main/apps/prefs
 
 Test with `cargo test -p preferences -p prefs`. Regenerate the snapshots
 with `UPDATE_SNAPSHOTS=1` and look at the images before committing them.
+
+## Macro Bus verbs
+
+The shared [macro Bus surface](/macros/#bus-verbs) uses this process's
+catalogue and runner. Subscribe to `prefs.macros.finished` for completion.
+
+| Verb | Arguments | Result |
+|---|---|---|
+| `prefs.macros.list` | `{}` | Catalogue and diagnostics |
+| `prefs.macros.reload` | `{}` | Catalogue and diagnostics |
+| `prefs.macros.run` | `{id}` | Acceptance and run number |
+| `prefs.macros.status` | `{}` | Current or last run |
+| `prefs.macros.output` | `{}` | Retained output and dropped flag |
+| `prefs.macros.stop` | `{}` | Whether termination was requested |
+| `prefs.macros.new` | `{title}` | Not yet available |

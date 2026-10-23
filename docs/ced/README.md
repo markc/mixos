@@ -74,3 +74,18 @@ them before committing.
   tools send with `ced.diagnostics`).
 - Paste from the menu asks the platform for the clipboard; the primary
   selection (middle click) is the compositor's, not ced's.
+
+## Macro Bus verbs
+
+The shared [macro Bus surface](/macros/#bus-verbs) uses this process's
+catalogue and runner. Subscribe to `ced.macros.finished` for completion.
+
+| Verb | Arguments | Result |
+|---|---|---|
+| `ced.macros.list` | `{}` | Catalogue and diagnostics |
+| `ced.macros.reload` | `{}` | Catalogue and diagnostics |
+| `ced.macros.run` | `{id}` | Acceptance and run number |
+| `ced.macros.status` | `{}` | Current or last run |
+| `ced.macros.output` | `{}` | Retained output and dropped flag |
+| `ced.macros.stop` | `{}` | Whether termination was requested |
+| `ced.macros.new` | `{title}` | Not yet available |

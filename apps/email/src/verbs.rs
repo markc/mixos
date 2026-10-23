@@ -375,6 +375,7 @@ pub fn describe() -> Value {
         })
         .collect();
     verbs.extend(drive::describe(APP));
+    verbs.extend(citizen::macros::describe(APP));
     json!({"schema": SCHEMA, "app_id": APP_ID, "version": env!("CARGO_PKG_VERSION"), "verbs": verbs})
 }
 
@@ -1546,7 +1547,7 @@ mod tests {
             .iter()
             .map(|v| v["name"].as_str().unwrap())
             .collect();
-        assert_eq!(names.len(), VERBS.len() + drive::VERBS.len());
+        assert_eq!(names.len(), VERBS.len() + drive::VERBS.len() + citizen::macros::describe(APP).len());
     }
 
     #[test]

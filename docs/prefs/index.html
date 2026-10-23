@@ -214,6 +214,7 @@
                         <a href="#for-agents">For agents</a>
                         <a href="#wallpaper">Wallpaper</a>
                         <a href="#running-and-testing">Running and testing</a>
+                        <a href="#macro-bus-verbs">Macro Bus verbs</a>
                     </nav>
                 </div>
             </div>
@@ -440,6 +441,18 @@ state read, never automatically resent.</p>
 </tbody></table>
 <p>Test with <code>cargo test -p preferences -p prefs</code>. Regenerate the snapshots
 with <code>UPDATE_SNAPSHOTS=1</code> and look at the images before committing them.</p>
+<h2 id="macro-bus-verbs">Macro Bus verbs</h2>
+<p>The shared <a href="/macros/#bus-verbs">macro Bus surface</a> uses this process's
+catalogue and runner. Subscribe to <code>prefs.macros.finished</code> for completion.</p>
+<table><thead><tr><th>Verb</th><th>Arguments</th><th>Result</th></tr></thead><tbody>
+<tr><td><code>prefs.macros.list</code></td><td><code>{}</code></td><td>Catalogue and diagnostics</td></tr>
+<tr><td><code>prefs.macros.reload</code></td><td><code>{}</code></td><td>Catalogue and diagnostics</td></tr>
+<tr><td><code>prefs.macros.run</code></td><td><code>{id}</code></td><td>Acceptance and run number</td></tr>
+<tr><td><code>prefs.macros.status</code></td><td><code>{}</code></td><td>Current or last run</td></tr>
+<tr><td><code>prefs.macros.output</code></td><td><code>{}</code></td><td>Retained output and dropped flag</td></tr>
+<tr><td><code>prefs.macros.stop</code></td><td><code>{}</code></td><td>Whether termination was requested</td></tr>
+<tr><td><code>prefs.macros.new</code></td><td><code>{title}</code></td><td>Not yet available</td></tr>
+</tbody></table>
         </article>
         <p class="doc-source"><a href="/prefs/README.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
     </div>

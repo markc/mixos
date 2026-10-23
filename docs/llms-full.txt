@@ -2012,6 +2012,21 @@ cargo test --locked -p inspector -p busviewer
   single-instance registration against an isolated real broker. It is
   ignored by default and needs `BUSVIEWER_TEST_URL`.
 
+## Macro Bus verbs
+
+The shared [macro Bus surface](/macros/#bus-verbs) uses this process's
+catalogue and runner. Subscribe to `busviewer.macros.finished` for completion.
+
+| Verb | Arguments | Result |
+|---|---|---|
+| `busviewer.macros.list` | `{}` | Catalogue and diagnostics |
+| `busviewer.macros.reload` | `{}` | Catalogue and diagnostics |
+| `busviewer.macros.run` | `{id}` | Acceptance and run number |
+| `busviewer.macros.status` | `{}` | Current or last run |
+| `busviewer.macros.output` | `{}` | Retained output and dropped flag |
+| `busviewer.macros.stop` | `{}` | Whether termination was requested |
+| `busviewer.macros.new` | `{title}` | Not yet available |
+
 ---
 
 <!-- page: https://mixos.dev/ced/ (source: https://mixos.dev/ced/README.md) -->
@@ -2087,6 +2102,21 @@ them before committing.
   tools send with `ced.diagnostics`).
 - Paste from the menu asks the platform for the clipboard; the primary
   selection (middle click) is the compositor's, not ced's.
+
+## Macro Bus verbs
+
+The shared [macro Bus surface](/macros/#bus-verbs) uses this process's
+catalogue and runner. Subscribe to `ced.macros.finished` for completion.
+
+| Verb | Arguments | Result |
+|---|---|---|
+| `ced.macros.list` | `{}` | Catalogue and diagnostics |
+| `ced.macros.reload` | `{}` | Catalogue and diagnostics |
+| `ced.macros.run` | `{id}` | Acceptance and run number |
+| `ced.macros.status` | `{}` | Current or last run |
+| `ced.macros.output` | `{}` | Retained output and dropped flag |
+| `ced.macros.stop` | `{}` | Whether termination was requested |
+| `ced.macros.new` | `{title}` | Not yet available |
 
 ---
 
@@ -2892,11 +2922,19 @@ output and a stop action. The shared discovery, runner and panel live in
 shared libraries; apps supply only their command registration and any
 domain context.
 
+## Bus verbs
+
+Agents use `<app>.macros.list`, `run`, `status`, `stop`, `output`, `new`
+and `reload`. The session shares one catalogue and runner per app process.
+Scans defer their replies off the caller's thread. Run answers acceptance;
+`<service>.macros.finished` reports completion once per run through the
+application's event outbox. Run, stop, reload and new carry the app execute
+authority; list, status and output are read-only. New is described but
+answers not yet available until title-based creation lands.
+
 ## Not yet decided
 
-The Bus verbs for agents (`<app>.macros.list`, `run`, `status`, `stop`,
-`output`, `new`, `reload`), folder watching and per-app context adapters
-are planned work, not part of this statement.
+Folder watching and per-app context adapters remain undecided.
 
 ---
 
@@ -7873,6 +7911,21 @@ action is not published.
 tests: the same verbs, minus those that need a window. It publishes its
 accepted `dopus.action` runs on `<service>.command.executed` too.
 
+## Macro Bus verbs
+
+The shared [macro Bus surface](/macros/#bus-verbs) uses this process's
+catalogue and runner. Subscribe to `dopus.macros.finished` for completion.
+
+| Verb | Arguments | Result |
+|---|---|---|
+| `dopus.macros.list` | `{}` | Catalogue and diagnostics |
+| `dopus.macros.reload` | `{}` | Catalogue and diagnostics |
+| `dopus.macros.run` | `{id}` | Acceptance and run number |
+| `dopus.macros.status` | `{}` | Current or last run |
+| `dopus.macros.output` | `{}` | Retained output and dropped flag |
+| `dopus.macros.stop` | `{}` | Whether termination was requested |
+| `dopus.macros.new` | `{title}` | Not yet available |
+
 ---
 
 <!-- page: https://mixos.dev/edit/ (source: https://mixos.dev/edit/README.md) -->
@@ -8513,6 +8566,21 @@ each of several accounts. The list renders one page (the page size) from
 a single query-and-get round trip, the reader fetches one email's bodies
 when it opens, and the tree's work grows with the mailbox count, not the
 email count. Nothing else scales with mailbox size.
+
+## Macro Bus verbs
+
+The shared [macro Bus surface](/macros/#bus-verbs) uses this process's
+catalogue and runner. Subscribe to `email.macros.finished` for completion.
+
+| Verb | Arguments | Result |
+|---|---|---|
+| `email.macros.list` | `{}` | Catalogue and diagnostics |
+| `email.macros.reload` | `{}` | Catalogue and diagnostics |
+| `email.macros.run` | `{id}` | Acceptance and run number |
+| `email.macros.status` | `{}` | Current or last run |
+| `email.macros.output` | `{}` | Retained output and dropped flag |
+| `email.macros.stop` | `{}` | Whether termination was requested |
+| `email.macros.new` | `{title}` | Not yet available |
 
 ---
 
@@ -9438,8 +9506,37 @@ resources in the egui context while each app keeps the menu's open flag
 in its UI state. This keeps application engines below the GUI boundary in
 the application layering gate.
 
-Bus-specific macro verbs, filesystem watching and per-app context adapters
-are outside this first slice.
+## Bus verbs
+
+Email, BusViewer, Monitor, Prefs, Screenshot, Ced, Dopus and Term serve the
+same macro surface under their component prefix. `list`, `status` and
+`output` are read-only. `run`, `stop`, `reload` and `new` have the same
+authority as executing an app command; running a macro executes user code.
+
+| Suffix after `<app>.macros.` | Body | Reply |
+|---|---|---|
+| `list` | `{}` | `{macros:[{id,title,tier,path,shadows}], diagnostics:[{path,message}], scanned:true}` |
+| `reload` | `{}` | Rescan and return the list shape |
+| `run` | `{id}` | `{accepted:true, run, id, title}`; unknown ids and a busy runner are refused |
+| `status` | `{}` | `{state,run,id,title,origin,started,exit,error}` |
+| `output` | `{}` | `{run,text,dropped}`; the retained 64 KiB tail |
+| `stop` | `{}` | `{stopping:bool}`; termination is asynchronous |
+| `new` | `{title}` | Not yet available |
+
+The first list and every reload scan off the caller's thread and defer the
+reply. Run loads the catalogue first if necessary and answers acceptance,
+not completion. Run numbers increase within the app process. States are
+`idle`, `running`, `exited`, `failed` and `failed_to_start`; a signal gives
+`exit:null`. Idle identity fields are null. Origins are `gui` or `bus`.
+
+Subscribe to `<service>.macros.finished` before starting a run. Once the
+manager has cleaned up and reaped the process, one event is queued with
+`{run,id,title,origin,state,exit,error,dropped}`. `dropped` is the output-tail
+flag; `event_dropped` counts lost Bus events. Delivery is bounded and best
+effort, like command execution events. Read status and output after a gap
+or reconnect. Completion uses a callback, without a polling loop.
+
+Filesystem watching and per-app context adapters remain future work.
 
 ---
 
@@ -32071,6 +32168,21 @@ checked by offscreen snapshots (`apps/monitor/tests/snapshots/`); run with
 committing. The snapshot suite also times the representative workload, a
 2,000-process table and a 64-core grid, and prints it.
 
+## Macro Bus verbs
+
+The shared [macro Bus surface](/macros/#bus-verbs) uses this process's
+catalogue and runner. Subscribe to `monitor.macros.finished` for completion.
+
+| Verb | Arguments | Result |
+|---|---|---|
+| `monitor.macros.list` | `{}` | Catalogue and diagnostics |
+| `monitor.macros.reload` | `{}` | Catalogue and diagnostics |
+| `monitor.macros.run` | `{id}` | Acceptance and run number |
+| `monitor.macros.status` | `{}` | Current or last run |
+| `monitor.macros.output` | `{}` | Retained output and dropped flag |
+| `monitor.macros.stop` | `{}` | Whether termination was requested |
+| `monitor.macros.new` | `{title}` | Not yet available |
+
 ---
 
 <!-- page: https://mixos.dev/monitord/ (source: https://mixos.dev/monitord/README.md) -->
@@ -32908,6 +33020,21 @@ The source is [`apps/prefs`](https://github.com/markc/mixos/tree/main/apps/prefs
 Test with `cargo test -p preferences -p prefs`. Regenerate the snapshots
 with `UPDATE_SNAPSHOTS=1` and look at the images before committing them.
 
+## Macro Bus verbs
+
+The shared [macro Bus surface](/macros/#bus-verbs) uses this process's
+catalogue and runner. Subscribe to `prefs.macros.finished` for completion.
+
+| Verb | Arguments | Result |
+|---|---|---|
+| `prefs.macros.list` | `{}` | Catalogue and diagnostics |
+| `prefs.macros.reload` | `{}` | Catalogue and diagnostics |
+| `prefs.macros.run` | `{id}` | Acceptance and run number |
+| `prefs.macros.status` | `{}` | Current or last run |
+| `prefs.macros.output` | `{}` | Retained output and dropped flag |
+| `prefs.macros.stop` | `{}` | Whether termination was requested |
+| `prefs.macros.new` | `{title}` | Not yet available |
+
 ---
 
 <!-- page: https://mixos.dev/props/ (source: https://mixos.dev/props/README.md) -->
@@ -33432,6 +33559,21 @@ offscreen (regenerate with `UPDATE_SNAPSHOTS=1` and look at the images);
 - A region selection may take up to 70 seconds (Cap allowed 38).
 - Raw shots are deleted when no longer needed, and the folder is pruned.
 
+## Macro Bus verbs
+
+The shared [macro Bus surface](/macros/#bus-verbs) uses this process's
+catalogue and runner. Subscribe to `screenshot.macros.finished` for completion.
+
+| Verb | Arguments | Result |
+|---|---|---|
+| `screenshot.macros.list` | `{}` | Catalogue and diagnostics |
+| `screenshot.macros.reload` | `{}` | Catalogue and diagnostics |
+| `screenshot.macros.run` | `{id}` | Acceptance and run number |
+| `screenshot.macros.status` | `{}` | Current or last run |
+| `screenshot.macros.output` | `{}` | Retained output and dropped flag |
+| `screenshot.macros.stop` | `{}` | Whether termination was requested |
+| `screenshot.macros.new` | `{title}` | Not yet available |
+
 ---
 
 <!-- page: https://mixos.dev/settings/ (source: https://mixos.dev/settings/README.md) -->
@@ -33906,6 +34048,21 @@ cargo build --locked --profile release-fast -p term
 `tests/window.rs` takes an offscreen snapshot of the window with two tabs
 and a split; regenerate it with `UPDATE_SNAPSHOTS=1` and look at it. The
 PTY tests need the Mix binary at `/opt/mixos/bin/mix`.
+
+## Macro Bus verbs
+
+The shared [macro Bus surface](/macros/#bus-verbs) uses this process's
+catalogue and runner. Subscribe to `term.macros.finished` for completion.
+
+| Verb | Arguments | Result |
+|---|---|---|
+| `term.macros.list` | `{}` | Catalogue and diagnostics |
+| `term.macros.reload` | `{}` | Catalogue and diagnostics |
+| `term.macros.run` | `{id}` | Acceptance and run number |
+| `term.macros.status` | `{}` | Current or last run |
+| `term.macros.output` | `{}` | Retained output and dropped flag |
+| `term.macros.stop` | `{}` | Whether termination was requested |
+| `term.macros.new` | `{title}` | Not yet available |
 
 ---
 

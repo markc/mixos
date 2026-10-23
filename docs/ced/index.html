@@ -214,6 +214,7 @@
                         <a href="#source">Source</a>
                         <a href="#tests">Tests</a>
                         <a href="#not-yet">Not yet</a>
+                        <a href="#macro-bus-verbs">Macro Bus verbs</a>
                     </nav>
                 </div>
             </div>
@@ -299,6 +300,18 @@ tools send with <code>ced.diagnostics</code>).</li>
 <li>Paste from the menu asks the platform for the clipboard; the primary
 selection (middle click) is the compositor's, not ced's.</li>
 </ul>
+<h2 id="macro-bus-verbs">Macro Bus verbs</h2>
+<p>The shared <a href="/macros/#bus-verbs">macro Bus surface</a> uses this process's
+catalogue and runner. Subscribe to <code>ced.macros.finished</code> for completion.</p>
+<table><thead><tr><th>Verb</th><th>Arguments</th><th>Result</th></tr></thead><tbody>
+<tr><td><code>ced.macros.list</code></td><td><code>{}</code></td><td>Catalogue and diagnostics</td></tr>
+<tr><td><code>ced.macros.reload</code></td><td><code>{}</code></td><td>Catalogue and diagnostics</td></tr>
+<tr><td><code>ced.macros.run</code></td><td><code>{id}</code></td><td>Acceptance and run number</td></tr>
+<tr><td><code>ced.macros.status</code></td><td><code>{}</code></td><td>Current or last run</td></tr>
+<tr><td><code>ced.macros.output</code></td><td><code>{}</code></td><td>Retained output and dropped flag</td></tr>
+<tr><td><code>ced.macros.stop</code></td><td><code>{}</code></td><td>Whether termination was requested</td></tr>
+<tr><td><code>ced.macros.new</code></td><td><code>{title}</code></td><td>Not yet available</td></tr>
+</tbody></table>
         </article>
         <p class="doc-source"><a href="/ced/README.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
     </div>

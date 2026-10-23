@@ -14,7 +14,7 @@ use serde_json::{Value, json};
 pub const SCHEMA: &str = "screenshot.v1";
 
 /// Every verb the app answers itself, in description order.
-pub const VERBS: [&str; 23] = [
+pub const VERBS: [&str; 30] = [
     "HELP",
     "app.describe",
     "screenshot.ping",
@@ -38,6 +38,13 @@ pub const VERBS: [&str; 23] = [
     "screenshot.show",
     "screenshot.quit",
     "screenshot.theme",
+    "screenshot.macros.list",
+    "screenshot.macros.reload",
+    "screenshot.macros.run",
+    "screenshot.macros.status",
+    "screenshot.macros.output",
+    "screenshot.macros.stop",
+    "screenshot.macros.new",
 ];
 
 /// Verbs that change the document (refused under a dialog or a job).
@@ -72,7 +79,7 @@ pub fn takes_nothing(verb: &str) -> bool {
 /// The app's own surface (the window adds the drive verbs).
 pub fn describe() -> Value {
     let shape = "{kind: arrow|line|rectangle|ellipse|pen|highlighter|redact|text|number, points: [{x,y}…] in original pixels (2, or 2..16384 for pen and highlighter), colour: [r,g,b,a], width: 0.5..512 original pixels, text?: string (text), size?: 8..1024 original pixels (text, number), number?: 1..9999 (number)}";
-    json!({"schema": SCHEMA, "app_id": crate::APP_ID, "verbs": [
+    let mut surface = json!({"schema": SCHEMA, "app_id": crate::APP_ID, "verbs": [
         {"name":"HELP","description":"List every verb","read_only":true},
         {"name":"app.describe","description":"Describe the app and every verb with its arguments","read_only":true},
         {"name":"screenshot.ping","description":"Probe the app","read_only":true},
@@ -96,7 +103,9 @@ pub fn describe() -> Value {
         {"name":"screenshot.show","description":"Restore and focus the existing window","read_only":false},
         {"name":"screenshot.quit","description":"Close; refused while unsaved annotations exist","read_only":false},
         {"name":"screenshot.theme","args":{"scheme":"optional scheme name or null to follow the session","mode":"optional light, dark or null"},"description":"Choose the window's scheme and mode; answers the choice","read_only":false}
-    ]})
+    ]});
+    surface["verbs"].as_array_mut().unwrap().extend(citizen::macros::describe("screenshot"));
+    surface
 }
 
 #[cfg(test)]

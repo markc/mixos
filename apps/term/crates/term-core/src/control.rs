@@ -1658,6 +1658,8 @@ fn actor_key(actor: &BrokerPrincipal) -> String {
 /// from an invented one.
 pub(crate) fn capability_of(verb: &str, contents: bool) -> Option<Capability> {
     Some(match verb {
+        "term.macros.run" | "term.macros.stop" | "term.macros.reload" | "term.macros.new" => Capability::Execute,
+        "term.macros.list" | "term.macros.status" | "term.macros.output" => Capability::ReadState,
         "term.session" | "term.list" | "term.tabs" | "term.panes" | "term.operation" => {
             Capability::ReadState
         }

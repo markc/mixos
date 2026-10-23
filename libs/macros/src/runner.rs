@@ -11,6 +11,8 @@ use std::time::Duration;
 
 pub const OUTPUT_LIMIT: usize = 64 * 1024;
 
+pub type FinishHook = Arc<dyn Fn(&Status) + Send + Sync>;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Status {
     Idle,
@@ -48,6 +50,7 @@ pub struct Runner {
     status: Arc<Mutex<Status>>,
     output: Arc<Mutex<Buffer>>,
     stop: Option<mpsc::Sender<()>>,
+    finish_hook: Option<FinishHook>,
 }
 
 impl Default for Runner {
@@ -56,11 +59,16 @@ impl Default for Runner {
             status: Arc::new(Mutex::new(Status::Idle)),
             output: Arc::new(Mutex::new(Buffer::default())),
             stop: None,
+            finish_hook: None,
         }
     }
 }
 
 impl Runner {
+    pub fn set_finish_hook(&mut self, hook: Option<FinishHook>) {
+        self.finish_hook = hook;
+    }
+
     pub fn status(&self) -> Status {
         self.status.lock().unwrap().clone()
     }
@@ -89,6 +97,7 @@ impl Runner {
         let roots = roots.clone();
         let app = app.to_owned();
         let entry = entry.clone();
+        let finish_hook = self.finish_hook.clone();
         let worker = thread::Builder::new()
             .name("macro-runner".into())
             .spawn(move || {
@@ -126,7 +135,11 @@ impl Runner {
                 let mut child = match command.spawn() {
                     Ok(child) => child,
                     Err(err) => {
-                        *status.lock().unwrap() = Status::FailedToStart(err.to_string());
+                        let final_status = Status::FailedToStart(err.to_string());
+                        *status.lock().unwrap() = final_status.clone();
+                        if let Some(hook) = &finish_hook {
+                            hook(&final_status);
+                        }
                         return;
                     }
                 };
@@ -170,10 +183,14 @@ impl Runner {
                 // dropping the reader handles detaches any lingering readers.
                 let reaped = child.wait();
                 let result = result.and(reaped);
-                *status.lock().unwrap() = match result {
+                let final_status = match result {
                     Ok(exit) => Status::Exited(exit.code()),
                     Err(err) => Status::Failed(err.to_string()),
                 };
+                *status.lock().unwrap() = final_status.clone();
+                if let Some(hook) = &finish_hook {
+                    hook(&final_status);
+                }
             });
         match worker {
             Ok(_worker) => {

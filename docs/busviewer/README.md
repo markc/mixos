@@ -202,3 +202,18 @@ cargo test --locked -p inspector -p busviewer
 - `crates/inspector/tests/native.rs` runs discovery, calls and
   single-instance registration against an isolated real broker. It is
   ignored by default and needs `BUSVIEWER_TEST_URL`.
+
+## Macro Bus verbs
+
+The shared [macro Bus surface](/macros/#bus-verbs) uses this process's
+catalogue and runner. Subscribe to `busviewer.macros.finished` for completion.
+
+| Verb | Arguments | Result |
+|---|---|---|
+| `busviewer.macros.list` | `{}` | Catalogue and diagnostics |
+| `busviewer.macros.reload` | `{}` | Catalogue and diagnostics |
+| `busviewer.macros.run` | `{id}` | Acceptance and run number |
+| `busviewer.macros.status` | `{}` | Current or last run |
+| `busviewer.macros.output` | `{}` | Retained output and dropped flag |
+| `busviewer.macros.stop` | `{}` | Whether termination was requested |
+| `busviewer.macros.new` | `{title}` | Not yet available |

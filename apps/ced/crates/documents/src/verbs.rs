@@ -18,6 +18,13 @@ pub const SCHEMA: &str = "ced.v1";
 
 /// `(verb, read_only)` in manifest order.
 pub const VERBS: &[(&str, bool)] = &[
+    ("ced.macros.list", true),
+    ("ced.macros.reload", false),
+    ("ced.macros.run", false),
+    ("ced.macros.status", true),
+    ("ced.macros.output", true),
+    ("ced.macros.stop", false),
+    ("ced.macros.new", false),
     ("ced.ping", true),
     ("ced.info", true),
     ("ced.open", false),

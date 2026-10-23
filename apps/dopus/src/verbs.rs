@@ -28,6 +28,13 @@ pub const SCHEMA: &str = "dopus.v1";
 
 /// `(verb, read_only)` in manifest order.
 pub const VERBS: &[(&str, bool)] = &[
+    ("dopus.macros.list", true),
+    ("dopus.macros.reload", false),
+    ("dopus.macros.run", false),
+    ("dopus.macros.status", true),
+    ("dopus.macros.output", true),
+    ("dopus.macros.stop", false),
+    ("dopus.macros.new", false),
     ("dopus.ping", true),
     ("dopus.describe", true),
     ("dopus.info", true),
@@ -825,7 +832,7 @@ pub fn serve_command(
                 headless: meta.headless,
             },
         )],
-        "dopus.describe" => vec![Served::reply_json(
+        "dopus.describe" | "app.describe" | "HELP" => vec![Served::reply_json(
             id,
             &DescribeReply {
                 contract: "ctk-app-control.v0".to_owned(),

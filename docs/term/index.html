@@ -212,6 +212,7 @@
                         <a href="#configuration">Configuration</a>
                         <a href="#keys">Keys</a>
                         <a href="#building-and-testing">Building and testing</a>
+                        <a href="#macro-bus-verbs">Macro Bus verbs</a>
                     </nav>
                 </div>
             </div>
@@ -297,6 +298,18 @@ cargo build --locked --profile release-fast -p term
 <p><code>tests/window.rs</code> takes an offscreen snapshot of the window with two tabs
 and a split; regenerate it with <code>UPDATE_SNAPSHOTS=1</code> and look at it. The
 PTY tests need the Mix binary at <code>/opt/mixos/bin/mix</code>.</p>
+<h2 id="macro-bus-verbs">Macro Bus verbs</h2>
+<p>The shared <a href="/macros/#bus-verbs">macro Bus surface</a> uses this process's
+catalogue and runner. Subscribe to <code>term.macros.finished</code> for completion.</p>
+<table><thead><tr><th>Verb</th><th>Arguments</th><th>Result</th></tr></thead><tbody>
+<tr><td><code>term.macros.list</code></td><td><code>{}</code></td><td>Catalogue and diagnostics</td></tr>
+<tr><td><code>term.macros.reload</code></td><td><code>{}</code></td><td>Catalogue and diagnostics</td></tr>
+<tr><td><code>term.macros.run</code></td><td><code>{id}</code></td><td>Acceptance and run number</td></tr>
+<tr><td><code>term.macros.status</code></td><td><code>{}</code></td><td>Current or last run</td></tr>
+<tr><td><code>term.macros.output</code></td><td><code>{}</code></td><td>Retained output and dropped flag</td></tr>
+<tr><td><code>term.macros.stop</code></td><td><code>{}</code></td><td>Whether termination was requested</td></tr>
+<tr><td><code>term.macros.new</code></td><td><code>{title}</code></td><td>Not yet available</td></tr>
+</tbody></table>
         </article>
         <p class="doc-source"><a href="/term/README.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
     </div>

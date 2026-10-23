@@ -252,6 +252,7 @@ async fn run(
     };
     let mut state = client.subscribe_state();
     let _ = ready.send(Ok(Arc::clone(&client)));
+    citizen::macros::install("dopus", &service, outbox.clone());
     citizen::outbox::spawn_publisher(client.clone(), outbox);
 
     // Commands awaiting a reply from the host.
@@ -268,6 +269,7 @@ async fn run(
                 if cmd.command.is_empty() {
                     continue;
                 }
+                if citizen::macros::dispatch("dopus", &cmd, client.clone()) { continue; }
                 next_command += 1;
                 let delivery = Delivery::Command(Command {
                     id: next_command,

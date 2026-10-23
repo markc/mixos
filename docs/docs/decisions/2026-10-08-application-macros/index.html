@@ -210,6 +210,7 @@
                     <nav id="toc-nav">
                         <a href="#where-macros-live">Where macros live</a>
                         <a href="#where-macros-appear">Where macros appear</a>
+                        <a href="#bus-verbs">Bus verbs</a>
                         <a href="#not-yet-decided">Not yet decided</a>
                     </nav>
                 </div>
@@ -270,10 +271,16 @@ macros: run, edit, new, open folder and reload, with the running macro's
 output and a stop action. The shared discovery, runner and panel live in
 shared libraries; apps supply only their command registration and any
 domain context.</p>
+<h2 id="bus-verbs">Bus verbs</h2>
+<p>Agents use <code>&lt;app&gt;.macros.list</code>, <code>run</code>, <code>status</code>, <code>stop</code>, <code>output</code>, <code>new</code>
+and <code>reload</code>. The session shares one catalogue and runner per app process.
+Scans defer their replies off the caller's thread. Run answers acceptance;
+<code>&lt;service&gt;.macros.finished</code> reports completion once per run through the
+application's event outbox. Run, stop, reload and new carry the app execute
+authority; list, status and output are read-only. New is described but
+answers not yet available until title-based creation lands.</p>
 <h2 id="not-yet-decided">Not yet decided</h2>
-<p>The Bus verbs for agents (<code>&lt;app&gt;.macros.list</code>, <code>run</code>, <code>status</code>, <code>stop</code>,
-<code>output</code>, <code>new</code>, <code>reload</code>), folder watching and per-app context adapters
-are planned work, not part of this statement.</p>
+<p>Folder watching and per-app context adapters remain undecided.</p>
         </article>
         <p class="doc-source"><a href="/docs/decisions/2026-10-08-application-macros.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
     </div>

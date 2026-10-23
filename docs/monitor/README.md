@@ -87,3 +87,18 @@ checked by offscreen snapshots (`apps/monitor/tests/snapshots/`); run with
 `UPDATE_SNAPSHOTS=1` to redraw them, and look at the images before
 committing. The snapshot suite also times the representative workload, a
 2,000-process table and a 64-core grid, and prints it.
+
+## Macro Bus verbs
+
+The shared [macro Bus surface](/macros/#bus-verbs) uses this process's
+catalogue and runner. Subscribe to `monitor.macros.finished` for completion.
+
+| Verb | Arguments | Result |
+|---|---|---|
+| `monitor.macros.list` | `{}` | Catalogue and diagnostics |
+| `monitor.macros.reload` | `{}` | Catalogue and diagnostics |
+| `monitor.macros.run` | `{id}` | Acceptance and run number |
+| `monitor.macros.status` | `{}` | Current or last run |
+| `monitor.macros.output` | `{}` | Retained output and dropped flag |
+| `monitor.macros.stop` | `{}` | Whether termination was requested |
+| `monitor.macros.new` | `{title}` | Not yet available |

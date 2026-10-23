@@ -133,3 +133,18 @@ action is not published.
 `dopus --headless` runs the core and the Bus port without a window, for
 tests: the same verbs, minus those that need a window. It publishes its
 accepted `dopus.action` runs on `<service>.command.executed` too.
+
+## Macro Bus verbs
+
+The shared [macro Bus surface](/macros/#bus-verbs) uses this process's
+catalogue and runner. Subscribe to `dopus.macros.finished` for completion.
+
+| Verb | Arguments | Result |
+|---|---|---|
+| `dopus.macros.list` | `{}` | Catalogue and diagnostics |
+| `dopus.macros.reload` | `{}` | Catalogue and diagnostics |
+| `dopus.macros.run` | `{id}` | Acceptance and run number |
+| `dopus.macros.status` | `{}` | Current or last run |
+| `dopus.macros.output` | `{}` | Retained output and dropped flag |
+| `dopus.macros.stop` | `{}` | Whether termination was requested |
+| `dopus.macros.new` | `{title}` | Not yet available |

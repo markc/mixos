@@ -44,8 +44,16 @@ output and a stop action. The shared discovery, runner and panel live in
 shared libraries; apps supply only their command registration and any
 domain context.
 
+## Bus verbs
+
+Agents use `<app>.macros.list`, `run`, `status`, `stop`, `output`, `new`
+and `reload`. The session shares one catalogue and runner per app process.
+Scans defer their replies off the caller's thread. Run answers acceptance;
+`<service>.macros.finished` reports completion once per run through the
+application's event outbox. Run, stop, reload and new carry the app execute
+authority; list, status and output are read-only. New is described but
+answers not yet available until title-based creation lands.
+
 ## Not yet decided
 
-The Bus verbs for agents (`<app>.macros.list`, `run`, `status`, `stop`,
-`output`, `new`, `reload`), folder watching and per-app context adapters
-are planned work, not part of this statement.
+Folder watching and per-app context adapters remain undecided.

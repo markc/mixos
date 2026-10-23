@@ -171,7 +171,7 @@ fn window(args: &Args) -> Result<(), String> {
     // The desktop profile's change hints: the session look (shell.rs).
     let topics = [::settings::summary_topic(::settings::follow::PROFILE)];
     let (handle, deliveries) =
-        citizen::start_with_topics(SERVICE, &args.service, &args.url, &topics)?;
+        citizen::start_with_macros(SERVICE, &args.service, &args.url, &topics)?;
     let theme = toolkit::Theme::load();
     let options = eframe::NativeOptions {
         // Client-side decorations: the toolkit title bar is the window frame.

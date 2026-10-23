@@ -19,7 +19,7 @@ pub fn start(
     url: &str,
     topics: &[String],
 ) -> Result<(Handle, futures::channel::mpsc::Receiver<Delivery>), String> {
-    citizen::start_with_topics(APP, service, url, topics)
+    citizen::start_with_macros(APP, service, url, topics)
 }
 
 /// Is a BusViewer already registered as `service`?

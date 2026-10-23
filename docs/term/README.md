@@ -77,3 +77,18 @@ cargo build --locked --profile release-fast -p term
 `tests/window.rs` takes an offscreen snapshot of the window with two tabs
 and a split; regenerate it with `UPDATE_SNAPSHOTS=1` and look at it. The
 PTY tests need the Mix binary at `/opt/mixos/bin/mix`.
+
+## Macro Bus verbs
+
+The shared [macro Bus surface](/macros/#bus-verbs) uses this process's
+catalogue and runner. Subscribe to `term.macros.finished` for completion.
+
+| Verb | Arguments | Result |
+|---|---|---|
+| `term.macros.list` | `{}` | Catalogue and diagnostics |
+| `term.macros.reload` | `{}` | Catalogue and diagnostics |
+| `term.macros.run` | `{id}` | Acceptance and run number |
+| `term.macros.status` | `{}` | Current or last run |
+| `term.macros.output` | `{}` | Retained output and dropped flag |
+| `term.macros.stop` | `{}` | Whether termination was requested |
+| `term.macros.new` | `{title}` | Not yet available |

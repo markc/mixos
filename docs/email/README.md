@@ -332,3 +332,18 @@ each of several accounts. The list renders one page (the page size) from
 a single query-and-get round trip, the reader fetches one email's bodies
 when it opens, and the tree's work grows with the mailbox count, not the
 email count. Nothing else scales with mailbox size.
+
+## Macro Bus verbs
+
+The shared [macro Bus surface](/macros/#bus-verbs) uses this process's
+catalogue and runner. Subscribe to `email.macros.finished` for completion.
+
+| Verb | Arguments | Result |
+|---|---|---|
+| `email.macros.list` | `{}` | Catalogue and diagnostics |
+| `email.macros.reload` | `{}` | Catalogue and diagnostics |
+| `email.macros.run` | `{id}` | Acceptance and run number |
+| `email.macros.status` | `{}` | Current or last run |
+| `email.macros.output` | `{}` | Retained output and dropped flag |
+| `email.macros.stop` | `{}` | Whether termination was requested |
+| `email.macros.new` | `{title}` | Not yet available |
