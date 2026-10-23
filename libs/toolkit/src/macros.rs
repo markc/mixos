@@ -209,9 +209,10 @@ impl State {
         let (tx, rx) = mpsc::channel();
         self.pending = Some(rx);
         self.error = None;
+        let session = self.engine.clone();
         std::thread::spawn(move || {
             let result = task(&roots, &app)
-                .and_then(|(doc, run)| Ok((Catalogue::scan(&roots, &app)?, doc, run)))
+                .and_then(|(doc, run)| Ok((session.reload().map_err(io::Error::other)?, doc, run)))
                 .map_err(|e| (e.to_string(), None));
             let _ = tx.send(result);
         });
@@ -294,6 +295,7 @@ impl State {
         let app = self.app.clone();
         let (tx, rx) = mpsc::channel();
         self.creation = Some(rx);
+        let session = self.engine.clone();
         std::thread::spawn(move || {
             let result = (|| {
                 let folder = roots.folder(&app, Tier::UserApp)?;
@@ -301,7 +303,7 @@ impl State {
                     .create_from_title(&app, &title)
                     .map_err(|e| path_error("macros-create-error", &folder, e))?;
                 let doc = open_macro(&path)?;
-                Ok((Catalogue::scan(&roots, &app)?, doc))
+                Ok((session.reload().map_err(io::Error::other)?, doc))
             })()
             .map_err(|e: io::Error| e.to_string());
             let _ = tx.send(result);
@@ -834,15 +836,14 @@ impl State {
                 }
             };
             let entry = if run { self.editor_entry.clone() } else { None };
-            let roots = self.engine.roots();
-            let app = self.app.clone();
+            let session = self.engine.clone();
             let (tx, rx) = mpsc::channel();
             self.saving = Some(rx);
             std::thread::spawn(move || {
                 let completion = snapshot
                     .write()
                     .map(|saved| {
-                        let catalogue = roots.and_then(|roots| Catalogue::scan(&roots, &app).ok());
+                        let catalogue = session.reload().ok();
                         (saved, catalogue, entry)
                     })
                     .map_err(|error| path_error("macros-save-error", &path, error).to_string());
@@ -912,8 +913,8 @@ impl State {
     }
 
     fn replace_catalogue(&mut self, catalogue: Catalogue, ctx: &egui::Context) {
-        self.engine.replace_catalogue(catalogue.clone());
-        self.sync_catalogue(catalogue, ctx);
+        // A receipt may be older than a Bus scan completed in the meantime.
+        self.sync_catalogue(self.engine.catalogue().unwrap_or(catalogue), ctx);
     }
 
     fn sync_catalogue(&mut self, catalogue: Catalogue, ctx: &egui::Context) {
@@ -2290,6 +2291,10 @@ mod tests {
         h.event(egui::Event::Text("a".into()));
         h.run_steps(1);
         let (tx, rx) = mpsc::channel();
+        runtime(&h).lock().unwrap().engine.replace_catalogue(Catalogue {
+            entries: vec![entry("before"), entry("alpha")],
+            diagnostics: vec![],
+        });
         assert!(
             tx.send(Ok((
                 Catalogue {

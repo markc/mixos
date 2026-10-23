@@ -28,6 +28,7 @@ struct State {
     next_subscriber: u64,
     changes: Vec<Weak<dyn Fn() + Send + Sync>>,
     finish_delivery: Arc<Mutex<()>>,
+    scan: Arc<Mutex<()>>,
 }
 
 impl Session {
@@ -55,6 +56,7 @@ impl Session {
             next_subscriber: 0,
             changes: Vec::new(),
             finish_delivery: Arc::default(),
+            scan: Arc::default(),
         })))
     }
 
@@ -155,7 +157,7 @@ impl Session {
 
     /// Call on a worker thread. No filesystem work holds the session lock.
     pub fn reload(&self) -> Result<Catalogue, Refusal> {
-        let (roots, app) = {
+        let (roots, app, scan) = {
             let state = self.0.lock().unwrap();
             (
                 state
@@ -163,10 +165,14 @@ impl Session {
                     .clone()
                     .ok_or_else(|| Refusal::new("UNAVAILABLE", "an absolute HOME is required"))?,
                 state.app.clone(),
+                state.scan.clone(),
             )
         };
+        let _scan = scan.lock().unwrap();
         let catalogue = Catalogue::scan(&roots, &app).map_err(|e| Refusal::new("INTERNAL", e))?;
-        self.replace_catalogue(catalogue.clone());
+        self.0.lock().unwrap().catalogue = Some(catalogue.clone());
+        drop(_scan);
+        self.changed();
         Ok(catalogue)
     }
 
