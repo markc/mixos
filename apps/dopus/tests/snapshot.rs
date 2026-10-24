@@ -134,13 +134,16 @@ fn window(theme: Theme, name: &str, sidebars: bool, dialog: Option<Dialog>) {
     }
     let registry = commands::registry();
     let strings = strings();
+    let mut theme = Some(theme);
     let mut harness = Harness::builder()
         .with_size(egui::vec2(980.0, 640.0))
         .wgpu()
         .build_ui(move |ui| {
+            if let Some(theme) = theme.take() {
+                toolkit::install(ui.ctx(), &theme);
+            }
             let _ = view(ui, &app, &registry, &strings);
         });
-    toolkit::install(&harness.ctx, &theme);
     harness.run();
     harness.snapshot(name);
 }

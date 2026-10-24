@@ -133,10 +133,15 @@ fn window_sized(theme: Theme, name: &str, app: App, size: egui::Vec2) {
         .map(|d| d.render(&screenshot::face()).unwrap());
     let mut preview: Option<Preview> = None;
     let mut drag = Drag::default();
+    let mut theme = Some(theme);
     let mut harness = Harness::builder()
         .with_size(size)
         .wgpu()
         .build_ui(move |ui| {
+            if let Some(theme) = theme.take() {
+                toolkit::install(ui.ctx(), &theme);
+                ui.ctx().style_mut(|style| style.visuals.text_cursor.blink = false);
+            }
             if preview.is_none()
                 && let Some(image) = &rendered
             {
@@ -154,7 +159,6 @@ fn window_sized(theme: Theme, name: &str, app: App, size: egui::Vec2) {
             }
             let _ = view(ui, &app, &registry, &strings, preview.as_ref(), &mut drag);
         });
-    toolkit::install(&harness.ctx, &theme);
     harness.run();
     harness.snapshot(name);
 }
