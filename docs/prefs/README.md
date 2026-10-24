@@ -1,11 +1,11 @@
 ---
-title: Prefs
+title: Preferences
 description: MixOS's preferences window — a sidebar of editors: Applications follows, installs, updates, rolls back and removes upstream releases; Appearance sets the session's colour scheme, style, mode, contrast and window frame; App Settings → Email edits the email app's accounts and mail options.
 ---
 
-# Prefs
+# Preferences
 
-Prefs holds MixOS's preference editors in one window: an expandable tree
+Preferences holds MixOS's preference editors in one window: an expandable tree
 on the left, the selected section on the right. Appearance contains Themes,
 Fonts, Wallpapers and Terminal; Applications contains MixOS Desktop, MixOS Server and
 Creative; App Settings contains Email. The sidebar can be resized. The name is a nod to the
@@ -56,19 +56,19 @@ current result. The window-button side can be changed whenever the effective
 title bar is drawn by the app.
 
 Each change applies to the whole session as you make it, as in GNOME's
-settings: the apps that follow the session look (Prefs itself, BusViewer,
+settings: the apps that follow the session look (Preferences itself, BusViewer,
 and the portal's clients) change with it. Only the setting you changed is
 written. Changes made quickly one after another are sent in turn, never
 lost.
 
-If settingsd refuses a change, Prefs keeps it and says so: **Apply**
+If settingsd refuses a change, Preferences keeps it and says so: **Apply**
 (Ctrl+S) tries again and **Revert** drops it. If the appearance is changed
-elsewhere at the same moment (another window, or an agent), Prefs follows
-it on every setting you did not touch. If it changed one you did, Prefs
+elsewhere at the same moment (another window, or an agent), Preferences follows
+it on every setting you did not touch. If it changed one you did, Preferences
 names it and applies nothing until you choose **Keep my changes** or
 **Revert**. Every change is checked against the revision you were shown, so
 it never lands on a change you have not seen. If its answer is
-lost, Prefs asks settingsd for the change's receipt before anything else is
+lost, Preferences asks settingsd for the change's receipt before anything else is
 applied (**Check again** asks now); if settingsd no longer holds one, the
 session's current state decides what the status line says.
 
@@ -115,31 +115,31 @@ the status line gives its reason and the panel keeps showing what
 settingsd holds; your typing stays in the form.
 
 **Passwords never go to the settings service**, whose settings every Bus
-client can read, and Prefs neither keeps nor shows them. **Set password**
+client can read, and Preferences neither keeps nor shows them. **Set password**
 hands the typed password to Email itself (`email.account.password.set`),
 which keeps it in its own private file, and empties the field; the field
 gets the password back only if Email refuses it. If Email is not running,
-Prefs starts it (`apps.launch`) and waits up to about 16 seconds for it to
-come onto the Bus. Under the field, Prefs says whether Email holds a
+Preferences starts it (`apps.launch`) and waits up to about 16 seconds for it to
+come onto the Bus. Under the field, Preferences says whether Email holds a
 password for the account, as Email reports it (`email.accounts`), or that
 this is unknown because Email is not running. **Connect now** asks Email
 to connect the account (`email.account.connect`). **Forget password…**
 asks first (Cancel is the default), then has Email delete the password it
-keeps; it is the only time Prefs sends an empty password, and it starts
+keeps; it is the only time Preferences sends an empty password, and it starts
 Email if needed, as Set password does. **Remove…** goes through Email
 when it may be running (`email.account.remove`): Email removes the account
 from settingsd and forgets its password itself, and refuses while the
 account is still being migrated from its old configuration
 (`MIGRATION_PENDING`, shown as Email gives it). When Email is not running,
-Prefs removes the account from settingsd directly and, once settingsd shows
-it gone, asks a running Email to forget the password; Prefs does not start
+Preferences removes the account from settingsd directly and, once settingsd shows
+it gone, asks a running Email to forget the password; Preferences does not start
 Email for this, and if Email is away or refuses, the status line says the
 password may still be held. An account still being migrated comes back
 when Email next starts, by design.
 An Email too old to know these verbs is reported as such, not retried.
 
 ```mix
--- What Prefs shows: accounts (with has_password), default, mail options.
+-- What Preferences shows: accounts (with has_password), default, mail options.
 send prefs prefs.email
 
 -- Add an account; the answer carries its new id.
@@ -163,12 +163,12 @@ send prefs prefs.email.password body='{"id":"acct-0f3a2b1c9d8e","forget":true}'
 or `enable`, or `path` and `value` for a mail option. Over the Bus,
 `remove` removes at once: the confirmation belongs to the window. A field
 the settings service would refuse is answered with `ARGUMENT`, naming it.
-For scripts that do not need Prefs open, call `settings.apply` on the
+For scripts that do not need Preferences open, call `settings.apply` on the
 `email.*` paths directly, and `email.account.password.set` on Email.
 
 ## For agents
 
-Prefs answers on the Bus as `prefs`. `prefs.info` reports the whole state;
+Preferences answers on the Bus as `prefs`. `prefs.info` reports the whole state;
 `prefs.apps` the rows, selection and notes; `prefs.appearance` the session
 look, the expected look while a change settles, any held or conflicting
 edits and the revision read; `prefs.appearance.set`
@@ -188,7 +188,7 @@ enablement. The window is drivable like every MixOS app
 `docs/docs/spec/bus/verbs.conf.mix`.
 
 For scripted work, call the services directly (`releases.*`,
-`settings.*`): Prefs is their window, not a second implementation.
+`settings.*`): Preferences is their window, not a second implementation.
 
 ## Wallpaper
 
@@ -196,7 +196,7 @@ In **Appearance → Wallpapers**, choose the default or an output, then Theme,
 Colour or Image. Colour accepts a picker or `#RRGGBB`. Browse opens the native
 image browser at the installed wallpaper folder, or Pictures in your home
 folder. It lists PNG/JPEG files and folders without blocking the window.
-Changes stay in Prefs until **Apply wallpaper**. **Revert wallpaper** drops
+Changes stay in Preferences until **Apply wallpaper**. **Revert wallpaper** drops
 them; **Refresh wallpaper** reads the current state again.
 
 An output's **Use default** removes just that override. Editing the default
@@ -204,7 +204,7 @@ preserves every output override. Images currently crop to fill; fit controls
 and slideshows will follow when backdrop supports them.
 
 Backdrop must be running on the same session Bus. A refusal shows its reason,
-keeps the draft and leaves the last good wallpaper in place. Prefs checks for
+keeps the draft and leaves the last good wallpaper in place. Preferences checks for
 intervening changes before sending the whole document; conflicts require
 Revert and a fresh edit. This check is best effort: backdrop does not yet
 provide an atomic compare-and-set operation. A lost reply is checked by a

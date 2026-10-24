@@ -110,7 +110,7 @@ keeps its menu row:
 | Monitor | `file.refresh` | F5 | Ctrl+R |
 | Monitor | `help.shortcuts` | F1 | Ctrl+/ |
 | BusViewer | `help.shortcuts` | F1 | Ctrl+/ |
-| Prefs | `help.shortcuts` | F1 | Ctrl+/ |
+| Preferences | `help.shortcuts` | F1 | Ctrl+/ |
 | dopus | `help.shortcuts` | F1 | Ctrl+/ |
 | dopus | `file.rename` | F2, Ctrl+E | Ctrl+E |
 | dopus | `nav.switch-pane` | F6, Tab | Tab |

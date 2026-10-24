@@ -21,9 +21,9 @@ email [--noded-url URL] [--service NAME]
 
 A second launch raises the first window.
 
-## Accounts are set up in Prefs
+## Accounts are set up in Preferences
 
-Accounts are configured in **Prefs → Email**, not in the app
+Accounts are configured in **Preferences → Email**, not in the app
 ([decision](../docs/decisions/2026-10-16-email-accounts-in-settings.md)).
 Each account has the fields below.
 
@@ -49,7 +49,7 @@ and **confirm before delete**. Every change applies at once:
 
 A settings read never deletes a password. Only **Email** forgets one: an
 account removed with `email.account.remove`, or an empty
-`email.account.password.set`. An account removed elsewhere (in Prefs, or
+`email.account.password.set`. An account removed elsewhere (in Preferences, or
 by a settings reset) leaves its entry in `secrets.conf.mix`, unused.
 
 settingsd omits the `email` group at its defaults, so a read with no

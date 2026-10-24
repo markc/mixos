@@ -13,7 +13,7 @@ this decision each application kept its key bindings its own way:
 - dopus read an overlay file, `keymap.conf.mix`, in its config directory,
   once at start-up;
 - ced had a fixed table of Notepad++-style defaults;
-- BusViewer and Prefs had shortcuts written into their command lists;
+- BusViewer and Preferences had shortcuts written into their command lists;
 - each parsed chord text in its own way (`ArrowLeft` in dopus, `Left` in
   ced).
 
@@ -71,7 +71,7 @@ binding in one place.
 - A shell that decodes the full snapshot (`deny_unknown_fields`) must be
   rebuilt before a profile carries `keymaps`. The portal is one; it is
   rebuilt with this change.
-- A Keyboard Shortcuts page in Prefs can follow: it reads each application's
+- A Keyboard Shortcuts page in Preferences can follow: it reads each application's
   commands over the Bus and writes `keymaps.<app>.<action>`.
 
 ## Not covered

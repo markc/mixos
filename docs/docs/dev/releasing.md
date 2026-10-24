@@ -116,5 +116,5 @@ Install and activate are separate operations. A shared desk sees the host
 gold tree through its mount. An isolated desk needs a hash-checked copy
 of that tree and its own restart. Test the isolated desk first, then the
 shared desk. The public installer does not assume particular console
-numbers. Prefs currently tracks and installs MixOS releases per user; it
+numbers. Preferences currently tracks and installs MixOS releases per user; it
 does not update or restart a system desk.

@@ -28,7 +28,7 @@ Status: accepted 2026-10-14. Extends
   A missing or still-scanning family falls back to the bundled Inter, which
   stays behind any system font as glyph fallback.
 - **Carried by the existing carrier.** `settings.apply` takes the new keys,
-  `prefs.appearance.set` is the Prefs front verb, and every app follows the
+  `prefs.appearance.set` is the Preferences front verb, and every app follows the
   summary topic as it does for the scheme. No new verb.
 
 ## Why
@@ -52,7 +52,7 @@ valid, so nothing is migrated.
 - **Apps following the session look** (busviewer, ced, dopus, screenshot)
   pick the choices up through `session_look` and `toolkit::install`, with no
   edits beyond the overlay.
-- **Prefs** builds its own theme from its draft; it is updated alongside.
+- **Preferences** builds its own theme from its draft; it is updated alongside.
 - **backdrop** draws textures only, with no text or icon widgets, and
   installs once at startup. It is out of scope.
 - **compd's title bars** use their own theme builder and an embedded-only

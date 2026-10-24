@@ -2139,7 +2139,7 @@ instance). Verbs keep the app’s canonical prefix, such as `ced.macros.run`.
 # citizen
 
 An app's supervised native Bus connection, shared by the MixOS apps
-(BusViewer, [Prefs](../prefs/README.md)). Headless: no UI dependency.
+(BusViewer, [Preferences](../prefs/README.md)). Headless: no UI dependency.
 
 - `start(app, service, url)`: register as `service` and receive
   `Delivery`s: commands for the app, `Changed` (service registration),
@@ -2155,7 +2155,7 @@ An app's supervised native Bus connection, shared by the MixOS apps
 - With the `testing` feature: `Handle::sink()`, a handle with no connection
   that logs its calls, replies and quit.
 
-Promoted from BusViewer's engine when Prefs became its second owner (see
+Promoted from BusViewer's engine when Preferences became its second owner (see
 [AGENTS.md](https://github.com/markc/mixos/blob/main/AGENTS.md) §2.2). Test
 with `cargo test -p citizen`.
 
@@ -3490,7 +3490,7 @@ this decision each application kept its key bindings its own way:
 - dopus read an overlay file, `keymap.conf.mix`, in its config directory,
   once at start-up;
 - ced had a fixed table of Notepad++-style defaults;
-- BusViewer and Prefs had shortcuts written into their command lists;
+- BusViewer and Preferences had shortcuts written into their command lists;
 - each parsed chord text in its own way (`ArrowLeft` in dopus, `Left` in
   ced).
 
@@ -3548,7 +3548,7 @@ binding in one place.
 - A shell that decodes the full snapshot (`deny_unknown_fields`) must be
   rebuilt before a profile carries `keymaps`. The portal is one; it is
   rebuilt with this change.
-- A Keyboard Shortcuts page in Prefs can follow: it reads each application's
+- A Keyboard Shortcuts page in Preferences can follow: it reads each application's
   commands over the Bus and writes `keymaps.<app>.<action>`.
 
 ## Not covered
@@ -3814,7 +3814,7 @@ projections, from owner-stamped deliveries.
    is refused like any unknown field. A request without `view` reads exactly
    as it did under 0.1.0, and the field is never sent at its default.
 3. **Plain followers move to the summary.** The `Follower` subscribes to
-   the summary topic and reads the summary view; Prefs does the same. A
+   the summary topic and reads the summary view; Preferences does the same. A
    follower still treats a delivery only as a hint: this decision does not
    change how deliveries are trusted.
 4. **Native consumers are unchanged.** The snapshot topic and the full view
@@ -4930,7 +4930,7 @@ Status: accepted 2026-10-14. Extends
   A missing or still-scanning family falls back to the bundled Inter, which
   stays behind any system font as glyph fallback.
 - **Carried by the existing carrier.** `settings.apply` takes the new keys,
-  `prefs.appearance.set` is the Prefs front verb, and every app follows the
+  `prefs.appearance.set` is the Preferences front verb, and every app follows the
   summary topic as it does for the scheme. No new verb.
 
 ## Why
@@ -4954,7 +4954,7 @@ valid, so nothing is migrated.
 - **Apps following the session look** (busviewer, ced, dopus, screenshot)
   pick the choices up through `session_look` and `toolkit::install`, with no
   edits beyond the overlay.
-- **Prefs** builds its own theme from its draft; it is updated alongside.
+- **Preferences** builds its own theme from its draft; it is updated alongside.
 - **backdrop** draws textures only, with no text or icon widgets, and
   installs once at startup. It is out of scope.
 - **compd's title bars** use their own theme builder and an embedded-only
@@ -5016,9 +5016,9 @@ and the [settings contract](../spec/settings/README.md) (`email.*`, contract
     settingsd has accepted the account.
   - No verb, topic, log line or diagnostic returns a password.
     `email.accounts` and `email.info` report `has_password: bool`.
-- **Prefs is the configuration surface.**
+- **Preferences is the configuration surface.**
   - Accounts are added, edited, removed, reordered and made the default
-    in Prefs' Email section, which writes `email.*` through settingsd. It
+    in Preferences' Email section, which writes `email.*` through settingsd. It
     sets passwords through `email.account.password.set`, starting Email
     first if it is not running.
   - The email app has no account form of its own. With no account, or
@@ -5049,7 +5049,7 @@ and the [settings contract](../spec/settings/README.md) (`email.*`, contract
   readable by every Bus client and would appear in every snapshot and
   backup of the profile.
 - **One place to configure.** Terminal preferences already live in
-  settingsd and are edited in Prefs. Mail accounts are the same kind of
+  settingsd and are edited in Preferences. Mail accounts are the same kind of
   thing, and a second account form inside the app would drift from it.
 - **Automation needs the accounts as data.** An agent can list, add or
   disable an account through `settings.apply` or the email verbs. It
@@ -5060,7 +5060,7 @@ and the [settings contract](../spec/settings/README.md) (`email.*`, contract
 - **A settings read never deletes a password.** Only an explicit action
   through Email does: `email.account.remove`, or
   `email.account.password.set` with an empty password. An account removed
-  elsewhere (in Prefs, by a reset) drops the app's client and view, and
+  elsewhere (in Preferences, by a reset) drops the app's client and view, and
   leaves its entry in the 0600 secrets file, unused. That is accepted:
   losing a password to a misread would be worse.
 - **An empty account list is not a removal of them all.** settingsd omits
@@ -5550,7 +5550,7 @@ keeps its menu row:
 | Monitor | `file.refresh` | F5 | Ctrl+R |
 | Monitor | `help.shortcuts` | F1 | Ctrl+/ |
 | BusViewer | `help.shortcuts` | F1 | Ctrl+/ |
-| Prefs | `help.shortcuts` | F1 | Ctrl+/ |
+| Preferences | `help.shortcuts` | F1 | Ctrl+/ |
 | dopus | `help.shortcuts` | F1 | Ctrl+/ |
 | dopus | `file.rename` | F2, Ctrl+E | Ctrl+E |
 | dopus | `nav.switch-pane` | F6, Tab | Tab |
@@ -6202,8 +6202,8 @@ migration.
 ## Consequences
 
 - Every application changes mechanically once; new knobs never need a
-  schema field, a store migration or a Prefs change again.
-- Prefs builds its Appearance controls from the registry, for the session
+  schema field, a store migration or a Preferences change again.
+- Preferences builds its Appearance controls from the registry, for the session
   and per application, each showing the design default, the inherited
   session value and the application's override, and gains a terminal
   Colours group.
@@ -6272,9 +6272,9 @@ admission. The release notes state exactly which archives are accepted.
 
 The canonical system installation is `/opt/mixos`. A privileged Mix gold
 installer verifies the published manifest and archives, records a receipt,
-and supports rollback. It does not activate running sessions. Prefs and
+and supports rollback. It does not activate running sessions. Preferences and
 releasesd currently offer verified **per-user** application installs; their
-MixOS entries do not update `/opt/mixos`. A system update control in Prefs
+MixOS entries do not update `/opt/mixos`. A system update control in Preferences
 must use a reviewed native privilege and activation path before it can claim
 to update the system.
 
@@ -6447,7 +6447,7 @@ Install and activate are separate operations. A shared desk sees the host
 gold tree through its mount. An isolated desk needs a hash-checked copy
 of that tree and its own restart. Test the isolated desk first, then the
 shared desk. The public installer does not assume particular console
-numbers. Prefs currently tracks and installs MixOS releases per user; it
+numbers. Preferences currently tracks and installs MixOS releases per user; it
 does not update or restart a system desk.
 
 ---
@@ -7208,7 +7208,7 @@ links?, skipped?, error?}`; `verified` is `{asset, sha256, proofs, tag}`.
 The optional top-level `categories` map supplies display labels for supported
 groups, for example `{creative: "Graphics"}`. Labels must be non-empty strings
 of at most 64 characters without control characters. Labels are projected onto
-rows so Prefs can use catalogue terminology without knowing external products.
+rows so Preferences can use catalogue terminology without knowing external products.
 
 A strict-data document, by default `$XDG_CONFIG_HOME/mixos/releases.mx`
 (`~/.config/mixos/releases.mx`). A missing file is the default catalogue,
@@ -7230,7 +7230,7 @@ is re-read on every request.
 | `name` | `^[a-z0-9][a-z0-9-]{0,63}$`, unique; it becomes a directory name |
 | `repo` | `owner/name` on GitHub |
 | `asset` | optional regex choosing the tarball when the default is wrong or ambiguous |
-| `category` | optional `mixos-desktop`, `mixos-server`, `creative` or `other`, used by Prefs to group rows; omitted entries remain in Other, with legacy MixOS bundle identifiers recognised |
+| `category` | optional `mixos-desktop`, `mixos-server`, `creative` or `other`, used by Preferences to group rows; omitted entries remain in Other, with legacy MixOS bundle identifiers recognised |
 | `exec_wrapper` | optional list of 1–32 non-empty strings without control characters, the first an absolute path without `=`; see below |
 
 **`exec_wrapper`.** When `link` writes the app's desktop entries, every
@@ -8275,9 +8275,9 @@ email [--noded-url URL] [--service NAME]
 
 A second launch raises the first window.
 
-## Accounts are set up in Prefs
+## Accounts are set up in Preferences
 
-Accounts are configured in **Prefs → Email**, not in the app
+Accounts are configured in **Preferences → Email**, not in the app
 ([decision](../docs/decisions/2026-10-16-email-accounts-in-settings.md)).
 Each account has the fields below.
 
@@ -8303,7 +8303,7 @@ and **confirm before delete**. Every change applies at once:
 
 A settings read never deletes a password. Only **Email** forgets one: an
 account removed with `email.account.remove`, or an empty
-`email.account.password.set`. An account removed elsewhere (in Prefs, or
+`email.account.password.set`. An account removed elsewhere (in Preferences, or
 by a settings reset) leaves its entry in `secrets.conf.mix`, unused.
 
 settingsd omits the `email` group at its defaults, so a read with no
@@ -9529,7 +9529,7 @@ the application layering gate.
 
 ## Bus verbs
 
-Email, BusViewer, Monitor, Prefs, Screenshot, Ced, Dopus and Term serve the
+Email, BusViewer, Monitor, Preferences, Screenshot, Ced, Dopus and Term serve the
 same macro surface under their component prefix. `list`, `status` and
 `output` are read-only. `run`, `stop`, `reload` and `new` have the same
 authority as executing an app command; running a macro executes user code.
@@ -32926,9 +32926,9 @@ The contract, with its status, is in [docs/docs/spec/portal](../docs/spec/portal
 
 <!-- page: https://mixos.dev/prefs/ (source: https://mixos.dev/prefs/README.md) -->
 
-# Prefs
+# Preferences
 
-Prefs holds MixOS's preference editors in one window: an expandable tree
+Preferences holds MixOS's preference editors in one window: an expandable tree
 on the left, the selected section on the right. Appearance contains Themes,
 Fonts, Wallpapers and Terminal; Applications contains MixOS Desktop, MixOS Server and
 Creative; App Settings contains Email. The sidebar can be resized. The name is a nod to the
@@ -32979,19 +32979,19 @@ current result. The window-button side can be changed whenever the effective
 title bar is drawn by the app.
 
 Each change applies to the whole session as you make it, as in GNOME's
-settings: the apps that follow the session look (Prefs itself, BusViewer,
+settings: the apps that follow the session look (Preferences itself, BusViewer,
 and the portal's clients) change with it. Only the setting you changed is
 written. Changes made quickly one after another are sent in turn, never
 lost.
 
-If settingsd refuses a change, Prefs keeps it and says so: **Apply**
+If settingsd refuses a change, Preferences keeps it and says so: **Apply**
 (Ctrl+S) tries again and **Revert** drops it. If the appearance is changed
-elsewhere at the same moment (another window, or an agent), Prefs follows
-it on every setting you did not touch. If it changed one you did, Prefs
+elsewhere at the same moment (another window, or an agent), Preferences follows
+it on every setting you did not touch. If it changed one you did, Preferences
 names it and applies nothing until you choose **Keep my changes** or
 **Revert**. Every change is checked against the revision you were shown, so
 it never lands on a change you have not seen. If its answer is
-lost, Prefs asks settingsd for the change's receipt before anything else is
+lost, Preferences asks settingsd for the change's receipt before anything else is
 applied (**Check again** asks now); if settingsd no longer holds one, the
 session's current state decides what the status line says.
 
@@ -33038,31 +33038,31 @@ the status line gives its reason and the panel keeps showing what
 settingsd holds; your typing stays in the form.
 
 **Passwords never go to the settings service**, whose settings every Bus
-client can read, and Prefs neither keeps nor shows them. **Set password**
+client can read, and Preferences neither keeps nor shows them. **Set password**
 hands the typed password to Email itself (`email.account.password.set`),
 which keeps it in its own private file, and empties the field; the field
 gets the password back only if Email refuses it. If Email is not running,
-Prefs starts it (`apps.launch`) and waits up to about 16 seconds for it to
-come onto the Bus. Under the field, Prefs says whether Email holds a
+Preferences starts it (`apps.launch`) and waits up to about 16 seconds for it to
+come onto the Bus. Under the field, Preferences says whether Email holds a
 password for the account, as Email reports it (`email.accounts`), or that
 this is unknown because Email is not running. **Connect now** asks Email
 to connect the account (`email.account.connect`). **Forget password…**
 asks first (Cancel is the default), then has Email delete the password it
-keeps; it is the only time Prefs sends an empty password, and it starts
+keeps; it is the only time Preferences sends an empty password, and it starts
 Email if needed, as Set password does. **Remove…** goes through Email
 when it may be running (`email.account.remove`): Email removes the account
 from settingsd and forgets its password itself, and refuses while the
 account is still being migrated from its old configuration
 (`MIGRATION_PENDING`, shown as Email gives it). When Email is not running,
-Prefs removes the account from settingsd directly and, once settingsd shows
-it gone, asks a running Email to forget the password; Prefs does not start
+Preferences removes the account from settingsd directly and, once settingsd shows
+it gone, asks a running Email to forget the password; Preferences does not start
 Email for this, and if Email is away or refuses, the status line says the
 password may still be held. An account still being migrated comes back
 when Email next starts, by design.
 An Email too old to know these verbs is reported as such, not retried.
 
 ```mix
--- What Prefs shows: accounts (with has_password), default, mail options.
+-- What Preferences shows: accounts (with has_password), default, mail options.
 send prefs prefs.email
 
 -- Add an account; the answer carries its new id.
@@ -33086,12 +33086,12 @@ send prefs prefs.email.password body='{"id":"acct-0f3a2b1c9d8e","forget":true}'
 or `enable`, or `path` and `value` for a mail option. Over the Bus,
 `remove` removes at once: the confirmation belongs to the window. A field
 the settings service would refuse is answered with `ARGUMENT`, naming it.
-For scripts that do not need Prefs open, call `settings.apply` on the
+For scripts that do not need Preferences open, call `settings.apply` on the
 `email.*` paths directly, and `email.account.password.set` on Email.
 
 ## For agents
 
-Prefs answers on the Bus as `prefs`. `prefs.info` reports the whole state;
+Preferences answers on the Bus as `prefs`. `prefs.info` reports the whole state;
 `prefs.apps` the rows, selection and notes; `prefs.appearance` the session
 look, the expected look while a change settles, any held or conflicting
 edits and the revision read; `prefs.appearance.set`
@@ -33111,7 +33111,7 @@ enablement. The window is drivable like every MixOS app
 `docs/docs/spec/bus/verbs.conf.mix`.
 
 For scripted work, call the services directly (`releases.*`,
-`settings.*`): Prefs is their window, not a second implementation.
+`settings.*`): Preferences is their window, not a second implementation.
 
 ## Wallpaper
 
@@ -33119,7 +33119,7 @@ In **Appearance → Wallpapers**, choose the default or an output, then Theme,
 Colour or Image. Colour accepts a picker or `#RRGGBB`. Browse opens the native
 image browser at the installed wallpaper folder, or Pictures in your home
 folder. It lists PNG/JPEG files and folders without blocking the window.
-Changes stay in Prefs until **Apply wallpaper**. **Revert wallpaper** drops
+Changes stay in Preferences until **Apply wallpaper**. **Revert wallpaper** drops
 them; **Refresh wallpaper** reads the current state again.
 
 An output's **Use default** removes just that override. Editing the default
@@ -33127,7 +33127,7 @@ preserves every output override. Images currently crop to fill; fit controls
 and slideshows will follow when backdrop supports them.
 
 Backdrop must be running on the same session Bus. A refusal shows its reason,
-keeps the draft and leaves the last good wallpaper in place. Prefs checks for
+keeps the draft and leaves the last good wallpaper in place. Preferences checks for
 intervening changes before sending the whole document; conflicts require
 Revert and a fresh edit. This check is best effort: backdrop does not yet
 provide an atomic compare-and-set operation. A lost reply is checked by a
@@ -33302,7 +33302,7 @@ architecture and glibc floor. `plan` shows the changes; `apply` records a
 receipt and backups; `rollback --receipt ID` restores the previous files.
 It needs one deliberate privileged invocation and does not restart a desk.
 Shared desks see the host tree through their mount; isolated desks need a
-verified copy followed by their own restart. Prefs does not yet drive this
+verified copy followed by their own restart. Preferences does not yet drive this
 system update path.
 
 ## On the Bus
@@ -34154,7 +34154,7 @@ it) and answers:
 ## Configuration
 
 The desktop profile's `terminal.*` settings, held by
-[settingsd](../settingsd/README.md) and edited in [Prefs](../prefs/README.md):
+[settingsd](../settingsd/README.md) and edited in [Preferences](../prefs/README.md):
 font family, size and weight, padding, border width, history lines, scroll
 speed, cursor shape and blink, the focus ring, copy on select, and `TERM`.
 The window follows them as they change; Ctrl+plus and minus write
@@ -34938,7 +34938,7 @@ drive verbs and registers them in the verb registry:
 To change the session for every app, a caller writes settingsd:
 `settings.validate` to try, `settings.apply` with
 `"tune.style.field_radius": 4` (fenced on the current revision; `null`
-resets; `"tune": null` resets all), `settings.reset`, or Prefs'
+resets; `"tune": null` resets all), `settings.reset`, or Preferences'
 `prefs.appearance.set`. Per app: `"apps.<id>.tune.<family>.<name>"`.
 Terminal colours, session scope only: `"terminal.colors.ansi.1": "#ff0000"`,
 `"terminal.colors.foreground"`, `.background`, `.cursor`. Style and chrome

@@ -156,7 +156,7 @@ the application layering gate.
 
 ## Bus verbs
 
-Email, BusViewer, Monitor, Prefs, Screenshot, Ced, Dopus and Term serve the
+Email, BusViewer, Monitor, Preferences, Screenshot, Ced, Dopus and Term serve the
 same macro surface under their component prefix. `list`, `status` and
 `output` are read-only. `run`, `stop`, `reload` and `new` have the same
 authority as executing an app command; running a macro executes user code.

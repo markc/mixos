@@ -53,7 +53,7 @@ its effects runtime (a pure JMAP client's server is whatever account the
 person points it at), where every other app reaches services through the
 Bus.
 
-Accounts live in settingsd's `email` group and are edited in Prefs; their
+Accounts live in settingsd's `email` group and are edited in Preferences; their
 passwords live only in the app's `secrets.conf.mix` (0600)
 ([decision](../../docs/docs/decisions/2026-10-16-email-accounts-in-settings.md)).
 Run it with `email` (a second launch raises the first).

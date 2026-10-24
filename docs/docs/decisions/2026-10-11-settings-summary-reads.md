@@ -41,7 +41,7 @@ projections, from owner-stamped deliveries.
    is refused like any unknown field. A request without `view` reads exactly
    as it did under 0.1.0, and the field is never sent at its default.
 3. **Plain followers move to the summary.** The `Follower` subscribes to
-   the summary topic and reads the summary view; Prefs does the same. A
+   the summary topic and reads the summary view; Preferences does the same. A
    follower still treats a delivery only as a hint: this decision does not
    change how deliveries are trusted.
 4. **Native consumers are unchanged.** The snapshot topic and the full view

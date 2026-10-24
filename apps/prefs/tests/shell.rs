@@ -146,7 +146,7 @@ fn executed_commands_are_published_with_their_origin() {
     rig.h.run_steps(3);
     rig.h.get_by_label("Help").click();
     rig.h.run_steps(3);
-    rig.h.get_by_label("About Prefs").click();
+    rig.h.get_by_label("About Preferences").click();
     rig.h.run_steps(3);
     let bodies = published(&rig);
     for body in &bodies {

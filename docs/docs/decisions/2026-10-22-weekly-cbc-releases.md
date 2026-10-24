@@ -50,9 +50,9 @@ admission. The release notes state exactly which archives are accepted.
 
 The canonical system installation is `/opt/mixos`. A privileged Mix gold
 installer verifies the published manifest and archives, records a receipt,
-and supports rollback. It does not activate running sessions. Prefs and
+and supports rollback. It does not activate running sessions. Preferences and
 releasesd currently offer verified **per-user** application installs; their
-MixOS entries do not update `/opt/mixos`. A system update control in Prefs
+MixOS entries do not update `/opt/mixos`. A system update control in Preferences
 must use a reviewed native privilege and activation path before it can claim
 to update the system.
 

@@ -1,6 +1,6 @@
 ---
 title: Decision — email accounts live in settingsd, passwords in the app
-description: The email app's accounts and mail options are the session profile's email group, edited in Prefs; their passwords stay in the app's private 0600 file and reach it only through a write-only verb.
+description: The email app's accounts and mail options are the session profile's email group, edited in Preferences; their passwords stay in the app's private 0600 file and reach it only through a write-only verb.
 ---
 
 # Decision — email accounts live in settingsd, passwords in the app
@@ -43,9 +43,9 @@ and the [settings contract](../spec/settings/README.md) (`email.*`, contract
     settingsd has accepted the account.
   - No verb, topic, log line or diagnostic returns a password.
     `email.accounts` and `email.info` report `has_password: bool`.
-- **Prefs is the configuration surface.**
+- **Preferences is the configuration surface.**
   - Accounts are added, edited, removed, reordered and made the default
-    in Prefs' Email section, which writes `email.*` through settingsd. It
+    in Preferences' Email section, which writes `email.*` through settingsd. It
     sets passwords through `email.account.password.set`, starting Email
     first if it is not running.
   - The email app has no account form of its own. With no account, or
@@ -76,7 +76,7 @@ and the [settings contract](../spec/settings/README.md) (`email.*`, contract
   readable by every Bus client and would appear in every snapshot and
   backup of the profile.
 - **One place to configure.** Terminal preferences already live in
-  settingsd and are edited in Prefs. Mail accounts are the same kind of
+  settingsd and are edited in Preferences. Mail accounts are the same kind of
   thing, and a second account form inside the app would drift from it.
 - **Automation needs the accounts as data.** An agent can list, add or
   disable an account through `settings.apply` or the email verbs. It
@@ -87,7 +87,7 @@ and the [settings contract](../spec/settings/README.md) (`email.*`, contract
 - **A settings read never deletes a password.** Only an explicit action
   through Email does: `email.account.remove`, or
   `email.account.password.set` with an empty password. An account removed
-  elsewhere (in Prefs, by a reset) drops the app's client and view, and
+  elsewhere (in Preferences, by a reset) drops the app's client and view, and
   leaves its entry in the 0600 secrets file, unused. That is accepted:
   losing a password to a misread would be worse.
 - **An empty account list is not a removal of them all.** settingsd omits
