@@ -964,14 +964,34 @@ mod tests {
     #[test]
     fn help_is_last_without_reordering_other_menus() {
         let mut registry = Registry::new();
-        for (id, menu) in [("h", "help"), ("f", "file"), ("v", "view"), ("h2", "help"), ("g", "go")] {
+        for (id, menu) in [
+            ("h", "help"),
+            ("f", "file"),
+            ("v", "view"),
+            ("h2", "help"),
+            ("g", "go"),
+        ] {
             registry.add(Command {
-                id, label: id, menu: Some(menu), submenu: None, group: 0,
-                shortcut: None, icon: None, enabled: |_: &()| true, run: |_| {},
+                id,
+                label: id,
+                menu: Some(menu),
+                submenu: None,
+                group: 0,
+                shortcut: None,
+                icon: None,
+                enabled: |_: &()| true,
+                run: |_| {},
             });
         }
-        let model = registry.model(&egui::Context::default(), &(), &Strings::new("help = Help\nfile = File\nview = View\ngo = Go\n"));
-        assert_eq!(model.iter().map(|m| m.title.as_str()).collect::<Vec<_>>(), ["File", "View", "Go", "Help"]);
+        let model = registry.model(
+            &egui::Context::default(),
+            &(),
+            &Strings::new("help = Help\nfile = File\nview = View\ngo = Go\n"),
+        );
+        assert_eq!(
+            model.iter().map(|m| m.title.as_str()).collect::<Vec<_>>(),
+            ["File", "View", "Go", "Help"]
+        );
         assert_eq!(model[3].entries.len(), 2);
     }
 

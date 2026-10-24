@@ -241,8 +241,16 @@ impl State {
         self.run_message = Some(error.clone());
         let payload = notification(&self.app, title, &Status::Failed(error.clone()), &error);
         notifications::post(
-            &self.app, payload, Finished { title: title.into(), output: error, status: own("macros-failed-short") },
-            self.notify_tx.clone(), &self.lifetime, ctx,
+            &self.app,
+            payload,
+            Finished {
+                title: title.into(),
+                output: error,
+                status: own("macros-failed-short"),
+            },
+            self.notify_tx.clone(),
+            &self.lifetime,
+            ctx,
         );
     }
 
@@ -475,7 +483,10 @@ impl State {
             if self.editor_open {
                 self.retained = Some(finished);
             } else {
-                eprintln!("{}: {} (notification unavailable)", self.app, finished.status);
+                eprintln!(
+                    "{}: {} (notification unavailable)",
+                    self.app, finished.status
+                );
             }
         }
         let busy = self.engine.runner_status() == Status::Running;
@@ -711,18 +722,30 @@ impl State {
         let row_height = chrome.metrics.menu_row_height;
         let output_height = row_height * 4.0;
         let editor_viewport = egui::ViewportId::from_hash_of(("macro-editor", self.window));
-        let title = self.editor_entry.as_ref().map(|e| e.title.as_str()).unwrap_or_default();
+        let title = self
+            .editor_entry
+            .as_ref()
+            .map(|e| e.title.as_str())
+            .unwrap_or_default();
         let dirty = self.document.as_ref().is_some_and(|doc| doc.is_dirty());
-        let title = format!("{}{} — {}", title, if dirty { " *" } else { "" }, own("macros-editor"));
+        let title = format!(
+            "{}{} — {}",
+            title,
+            if dirty { " *" } else { "" },
+            own("macros-editor")
+        );
         crate::drive::register_viewport(ctx, "macro-editor", editor_viewport);
-        ctx.show_viewport_immediate(editor_viewport, egui::ViewportBuilder::default()
-            .with_title(title)
-            .with_decorations(true)
-            .with_resizable(true)
-            .with_inner_size(egui::vec2(
-                chrome.style.dialog_max_width as f32,
-                row_height * 18.0,
-            )), |ctx, _class| {
+        ctx.show_viewport_immediate(
+            editor_viewport,
+            egui::ViewportBuilder::default()
+                .with_title(title)
+                .with_decorations(true)
+                .with_resizable(true)
+                .with_inner_size(egui::vec2(
+                    chrome.style.dialog_max_width as f32,
+                    row_height * 18.0,
+                )),
+            |ctx, _class| {
                 open = !ctx.input(|i| i.viewport().close_requested());
                 if ctx.input(|i| i.viewport().focused == Some(true))
                     && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
@@ -730,90 +753,99 @@ impl State {
                     open = false;
                 }
                 egui::CentralPanel::default().show(ctx, |ui| {
-                let ctx = &ui.ctx().clone();
-                if self
-                    .editor_focus
-                    .is_some_and(|id| ctx.memory(|m| m.has_focus(id)))
-                    && !menu::is_open(ctx)
-                {
-                    save = ui.input_mut(|i| i.consume_key(egui::Modifiers::CTRL, egui::Key::S));
-                    run = ui.input_mut(|i| i.consume_key(egui::Modifiers::CTRL, egui::Key::Enter));
-                }
-                save |= ctx
-                    .data_mut(|d| d.remove_temp::<bool>(crate::window_id(viewport, "macro-save")))
-                    .unwrap_or(false);
-                run |= ctx
-                    .data_mut(|d| {
-                        d.remove_temp::<bool>(crate::window_id(viewport, "macro-save-run"))
-                    })
-                    .unwrap_or(false);
-                let editor_enabled = !menu::is_open(ctx);
-                if let Some(doc) = &mut self.document {
-                    ui.horizontal(|ui| {
-                        save |= ui.button(own("macros-save")).clicked();
-                        run |= ui.button(own("macros-run")).clicked();
-                        ced = ui.button(own("macros-open-ced")).clicked();
-                        if doc.is_dirty() {
-                            ui.label(own("macros-unsaved"));
-                        }
-                    });
-                    ui.horizontal(|ui| {
-                        ui.label(
-                            doc.path()
-                                .map(|p| p.display().to_string())
-                                .unwrap_or_default(),
-                        );
-                    });
-                    let palette = ctx
-                        .data(|d| {
-                            d.get_temp::<editor::Palette>(egui::Id::new("toolkit.editor-palette"))
+                    let ctx = &ui.ctx().clone();
+                    if self
+                        .editor_focus
+                        .is_some_and(|id| ctx.memory(|m| m.has_focus(id)))
+                        && !menu::is_open(ctx)
+                    {
+                        save = ui.input_mut(|i| i.consume_key(egui::Modifiers::CTRL, egui::Key::S));
+                        run = ui
+                            .input_mut(|i| i.consume_key(egui::Modifiers::CTRL, egui::Key::Enter));
+                    }
+                    save |= ctx
+                        .data_mut(|d| {
+                            d.remove_temp::<bool>(crate::window_id(viewport, "macro-save"))
                         })
-                        .unwrap_or_else(|| editor::Palette::from_theme(&crate::Theme::embedded()));
-                    let height = (ui.available_height() - output_height - row_height * 2.0)
-                        .max(row_height * 6.0);
-                    ui.allocate_ui(egui::vec2(ui.available_width(), height), |ui| {
-                        ui.add_enabled_ui(editor_enabled, |ui| {
-                            self.editor_focus =
-                                Some(doc.show(ui, &palette, &editor::View::default()).response.id);
-                            ctx.data_mut(|d| {
-                                d.insert_temp(
-                                    crate::window_id(viewport, "macro-editor-focus"),
-                                    self.editor_focus,
-                                )
+                        .unwrap_or(false);
+                    run |= ctx
+                        .data_mut(|d| {
+                            d.remove_temp::<bool>(crate::window_id(viewport, "macro-save-run"))
+                        })
+                        .unwrap_or(false);
+                    let editor_enabled = !menu::is_open(ctx);
+                    if let Some(doc) = &mut self.document {
+                        ui.horizontal(|ui| {
+                            save |= ui.button(own("macros-save")).clicked();
+                            run |= ui.button(own("macros-run")).clicked();
+                            ced = ui.button(own("macros-open-ced")).clicked();
+                            if doc.is_dirty() {
+                                ui.label(own("macros-unsaved"));
+                            }
+                        });
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                doc.path()
+                                    .map(|p| p.display().to_string())
+                                    .unwrap_or_default(),
+                            );
+                        });
+                        let palette = ctx
+                            .data(|d| {
+                                d.get_temp::<editor::Palette>(egui::Id::new(
+                                    "toolkit.editor-palette",
+                                ))
+                            })
+                            .unwrap_or_else(|| {
+                                editor::Palette::from_theme(&crate::Theme::embedded())
+                            });
+                        let height = (ui.available_height() - output_height - row_height * 2.0)
+                            .max(row_height * 6.0);
+                        ui.allocate_ui(egui::vec2(ui.available_width(), height), |ui| {
+                            ui.add_enabled_ui(editor_enabled, |ui| {
+                                self.editor_focus = Some(
+                                    doc.show(ui, &palette, &editor::View::default()).response.id,
+                                );
+                                ctx.data_mut(|d| {
+                                    d.insert_temp(
+                                        crate::window_id(viewport, "macro-editor-focus"),
+                                        self.editor_focus,
+                                    )
+                                });
                             });
                         });
-                    });
-                    if let Some(error) = doc.take_refusal() {
-                        self.error = Some(error.to_string());
+                        if let Some(error) = doc.take_refusal() {
+                            self.error = Some(error.to_string());
+                        }
                     }
-                }
-                if let Some(error) = &self.error {
-                    ui.label(error);
-                }
-                ui.separator();
-                if let Some(message) = &self.run_message {
-                    ui.label(message);
-                }
-                let output = self.displayed_output();
-                if self.engine.runner_status() != Status::Running
-                    && let Some(last) = &self.retained
-                {
-                    ui.label(&last.status).on_hover_text(&last.title);
-                }
-                if let Some(title) = self.running_title() {
-                    ui.label(own_with("macros-running-title", &[("title", &title)]));
-                }
-                egui::ScrollArea::both()
-                    .max_height(output_height)
-                    .stick_to_bottom(true)
-                    .show(ui, |ui| {
-                        ui.add(
-                            egui::Label::new(egui::RichText::new(output).monospace())
-                                .selectable(true),
-                        );
-                    });
+                    if let Some(error) = &self.error {
+                        ui.label(error);
+                    }
+                    ui.separator();
+                    if let Some(message) = &self.run_message {
+                        ui.label(message);
+                    }
+                    let output = self.displayed_output();
+                    if self.engine.runner_status() != Status::Running
+                        && let Some(last) = &self.retained
+                    {
+                        ui.label(&last.status).on_hover_text(&last.title);
+                    }
+                    if let Some(title) = self.running_title() {
+                        ui.label(own_with("macros-running-title", &[("title", &title)]));
+                    }
+                    egui::ScrollArea::both()
+                        .max_height(output_height)
+                        .stick_to_bottom(true)
+                        .show(ui, |ui| {
+                            ui.add(
+                                egui::Label::new(egui::RichText::new(output).monospace())
+                                    .selectable(true),
+                            );
+                        });
                 });
-            });
+            },
+        );
         if !open {
             self.close_editor();
             if self.editor_open {
@@ -839,6 +871,10 @@ impl State {
                 launch(&path, false)?;
                 Ok((None, None))
             });
+        }
+        if run && self.engine.runner_status() == Status::Running {
+            let title = self.editor_entry.as_ref().map(|e| e.title.clone()).unwrap_or_default();
+            self.run_error(&title, own("macros-already-running"), ctx);
         }
         self.save_editor(save, run);
     }
@@ -937,7 +973,9 @@ impl State {
     }
 
     fn displayed_output(&self) -> String {
-        if self.engine.runner_status() == Status::Running {
+        if self.engine.runner_status() == Status::Running
+            && self.engine.status()["origin"].as_str() == Some(format!("gui:{}", self.window).as_str())
+        {
             self.engine.runner_output().text
         } else {
             self.retained

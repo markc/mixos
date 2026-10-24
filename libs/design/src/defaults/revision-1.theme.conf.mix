@@ -1,6 +1,6 @@
 scheme: "ocean"
 mode: "light"
-typography: { family: "Noto Sans", body_px: 14.667 }
+typography: { family: "Noto Sans", body_px: 15.644 }
 surface: "#f3fafc"
 panel: "#e9f4f7"
 master_panel: "#d8e8ed"

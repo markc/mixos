@@ -376,6 +376,11 @@ for every verb, at any display scale.
 
 ### `<app>.ui.tree`
 
+All drive verbs accept an optional `viewport` field. Omit it for the app
+window, or use `{"viewport":"macro-editor"}` for its open macro editor.
+The editor has its own widget tree, input coordinates and captures. A closed
+editor returns `NOT_FOUND`; pending requests are cancelled when it closes.
+
 The widget tree, from egui's AccessKit output for the last frame, depth
 first from the root.
 

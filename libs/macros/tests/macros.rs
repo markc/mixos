@@ -83,22 +83,11 @@ fn catalogue_precedence_titles_and_diagnostics_are_deterministic() {
     fs::create_dir(folder.join("directory.mix")).unwrap();
     let found = Catalogue::scan(&roots, "ced").unwrap();
     let ids: Vec<_> = found.entries.iter().map(|e| e.id.as_str()).collect();
-    assert_eq!(
-        ids,
-        [
-            "builtin-app",
-            "shared",
-            "user-app",
-            "z"
-        ]
-    );
+    assert_eq!(ids, ["builtin-app", "shared", "user-app", "z"]);
     let shared = &found.entries[1];
     assert_eq!(shared.tier, Tier::UserApp);
     assert_eq!(shared.title, "user-app");
-    assert_eq!(
-        shared.shadows,
-        [Tier::BuiltinApp]
-    );
+    assert_eq!(shared.shadows, [Tier::BuiltinApp]);
     assert_eq!(found.entries[3].title, "z");
     assert_eq!(found.diagnostics.len(), 3);
     // Removing each winner exposes exactly the next tier.

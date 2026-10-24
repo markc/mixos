@@ -284,7 +284,7 @@ pub fn bevel(painter: &egui::Painter, rect: Rect, raised: bool, palette: &Palett
 /// the specification's fixed ones (§2, §3.1–3.5).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Metrics {
-    /// Body and Button text size (§2.1: 12 Pro, 12.5 otherwise).
+    /// Body and Button text size (14.667 logical px by default).
     pub body_size: f32,
     /// A push button's height (§3.13: 28 Pro, 30 otherwise).
     pub push_height: f32,
@@ -876,9 +876,9 @@ mod tests {
     fn sizes_follow_the_style() {
         let pro = style(&theme(Scheme::Pro, Mode::Light));
         let studio = style(&theme(Scheme::Studio, Mode::Dark));
-        assert_eq!(pro.text_styles[&TextStyle::Button].size, 12.0);
-        assert_eq!(studio.text_styles[&TextStyle::Button].size, 12.5);
-        assert_eq!(pro.text_styles[&TextStyle::Heading].size, 15.0);
+        assert_eq!(pro.text_styles[&TextStyle::Button].size, 14.667);
+        assert_eq!(studio.text_styles[&TextStyle::Button].size, 14.667);
+        assert_eq!(pro.text_styles[&TextStyle::Heading].size, 17.6);
         assert_eq!(pro.spacing.interact_size, vec2(24.0, 24.0));
         assert_eq!(pro.spacing.menu_margin, Margin::same(6));
         assert_eq!(pro.visuals.popup_shadow.blur, 20);

@@ -287,6 +287,10 @@ and a body naming the reason:</p>
 <p>Coordinates and sizes are in points, egui's logical pixels: the same space
 for every verb, at any display scale.</p>
 <h3 id="appuitree"><code>&lt;app&gt;.ui.tree</code></h3>
+<p>All drive verbs accept an optional <code>viewport</code> field. Omit it for the app
+window, or use <code>{"viewport":"macro-editor"}</code> for its open macro editor.
+The editor has its own widget tree, input coordinates and captures. A closed
+editor returns <code>NOT_FOUND</code>; pending requests are cancelled when it closes.</p>
 <p>The widget tree, from egui's AccessKit output for the last frame, depth
 first from the root.</p>
 <ul>

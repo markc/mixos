@@ -1546,8 +1546,9 @@ impl Layout {
                     let right_width = right.as_ref().map_or(0.0, |g| m.shortcut_gap + g.size().x);
                     width = width
                         .max(2.0 * m.menu_row_padding.x + gutter + label.size().x + right_width);
+                    let text_height = label.size().y.max(right.as_ref().map_or(0.0, |g| g.size().y));
                     lines.push(Some((label, right)));
-                    heights.push(m.menu_row_height);
+                    heights.push(m.menu_row_height.max(text_height + 2.0 * m.menu_row_padding.y));
                 }
             }
         }

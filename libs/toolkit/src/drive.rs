@@ -153,11 +153,13 @@ pub fn describe(app: &str) -> Vec<Value> {
     ];
     verbs
         .into_iter()
-        .map(|(verb, args, description, read_only)| {
+        .map(|(verb, mut args, description, read_only)| {
             let mut entry = json!({"name":format!("{app}.{verb}"),"description":description,"read_only":read_only});
-            if !args.is_null() {
-                entry["args"] = args;
+            if args.is_null() {
+                args = json!({});
             }
+            args["viewport"] = json!("optional owned window name: macro-editor; omitted for the app window");
+            entry["args"] = args;
             entry
         })
         .collect()
@@ -209,10 +211,8 @@ pub fn queues(verb: &str) -> bool {
 /// but not yet taken). An app holds later Bus commands back while it is, so
 /// they act on what the input changed.
 pub fn pending(ctx: &Context) -> bool {
-    ctx.with_plugin(|drive: &mut Drive| {
-        drive.has_pending()
-    })
-    .unwrap_or(false)
+    ctx.with_plugin(|drive: &mut Drive| drive.has_pending())
+        .unwrap_or(false)
 }
 
 /// The per-frame step an app runs from its logic, which runs even while
@@ -273,21 +273,36 @@ pub fn request(ctx: &Context, id: u64, verb: &str, args: &Value) -> Option<Answe
         let Some(name) = name.as_str() else {
             return Some(refusal(id, "ARGUMENT", "viewport must be a window name"));
         };
-        let target = ctx.data(|d| d.get_temp::<egui::ViewportId>(egui::Id::new(("drive-viewport", name))));
+        let target =
+            ctx.data(|d| d.get_temp::<egui::ViewportId>(egui::Id::new(("drive-viewport", name))));
         let Some(target) = target else {
             return Some(refusal(id, "NOT_FOUND", "viewport is not open"));
         };
-        return ctx.with_plugin(|drive: &mut Drive| {
-            let app = drive.app.clone();
-            let options = drive.options.clone();
-            let child = drive.children.entry(target).or_insert_with(|| Box::new(Drive { app, options, ..Drive::default() }));
-            if child.requests.len() >= QUEUE_LIMIT {
-                return Some(refusal(id, "BUSY", "viewport request queue is full"));
-            }
-            child.requests.push_back((id, verb.into(), args.clone()));
-            ctx.request_repaint_of(target);
-            None
-        }).unwrap_or_else(|| Some(refusal(id, "UNAVAILABLE", "the drive layer is not installed")));
+        return ctx
+            .with_plugin(|drive: &mut Drive| {
+                let app = drive.app.clone();
+                let options = drive.options.clone();
+                let child = drive.children.entry(target).or_insert_with(|| {
+                    Box::new(Drive {
+                        app,
+                        options,
+                        ..Drive::default()
+                    })
+                });
+                if child.requests.len() >= QUEUE_LIMIT {
+                    return Some(refusal(id, "BUSY", "viewport request queue is full"));
+                }
+                child.requests.push_back((id, verb.into(), args.clone()));
+                ctx.request_repaint_of(target);
+                None
+            })
+            .unwrap_or_else(|| {
+                Some(refusal(
+                    id,
+                    "UNAVAILABLE",
+                    "the drive layer is not installed",
+                ))
+            });
     }
     let answer = ctx
         .with_plugin(|drive: &mut Drive| drive.request(ctx, id, verb, args))
@@ -310,13 +325,16 @@ pub fn register_viewport(ctx: &Context, name: &str, viewport: egui::ViewportId) 
 }
 
 pub fn unregister_viewport(ctx: &Context, name: &str) {
-    let target = ctx.data_mut(|d| d.remove_temp::<egui::ViewportId>(egui::Id::new(("drive-viewport", name))));
+    let target = ctx
+        .data_mut(|d| d.remove_temp::<egui::ViewportId>(egui::Id::new(("drive-viewport", name))));
     if let Some(target) = target {
         ctx.with_plugin(|drive: &mut Drive| {
             if let Some(mut child) = drive.children.remove(&target) {
                 child.settle(ctx, "the viewport closed");
                 for (id, _, _) in child.requests.drain(..) {
-                    child.answers.push(refusal(id, "CANCELLED", "the viewport closed"));
+                    child
+                        .answers
+                        .push(refusal(id, "CANCELLED", "the viewport closed"));
                 }
                 drive.answers.append(&mut child.answers);
             }
@@ -429,7 +447,13 @@ impl egui::Plugin for Drive {
         if input.viewport_id != egui::ViewportId::ROOT {
             let app = self.app.clone();
             let options = self.options.clone();
-            let child = self.children.entry(input.viewport_id).or_insert_with(|| Box::new(Drive { app, options, ..Drive::default() }));
+            let child = self.children.entry(input.viewport_id).or_insert_with(|| {
+                Box::new(Drive {
+                    app,
+                    options,
+                    ..Drive::default()
+                })
+            });
             while let Some((id, verb, args)) = child.requests.pop_front() {
                 if let Some(answer) = child.request(ctx, id, &verb, &args) {
                     child.answers.push(answer);
@@ -471,7 +495,9 @@ impl egui::Plugin for Drive {
         if ctx.viewport_id() != egui::ViewportId::ROOT {
             if let Some(child) = self.children.get_mut(&ctx.viewport_id()) {
                 child.output(ctx, output);
-                if !child.answers.is_empty() { ctx.request_repaint_of(egui::ViewportId::ROOT); }
+                if !child.answers.is_empty() {
+                    ctx.request_repaint_of(egui::ViewportId::ROOT);
+                }
             }
             return;
         }
@@ -481,8 +507,11 @@ impl egui::Plugin for Drive {
 
 impl Drive {
     fn has_pending(&self) -> bool {
-        self.running.is_some() || !self.queue.is_empty() || !self.answers.is_empty()
-            || !self.requests.is_empty() || self.children.values().any(|child| child.has_pending())
+        self.running.is_some()
+            || !self.queue.is_empty()
+            || !self.answers.is_empty()
+            || !self.requests.is_empty()
+            || self.children.values().any(|child| child.has_pending())
     }
 
     fn output(&mut self, ctx: &Context, output: &mut FullOutput) {

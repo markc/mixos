@@ -41,38 +41,76 @@ pub(super) fn post(
         std::thread::Builder::new()
             .name("macro-notifications".into())
             .spawn(move || {
-                let Ok(runtime) = tokio::runtime::Builder::new_current_thread().enable_all().build() else {
+                let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                else {
                     rx.close();
-                    while let Ok(message) = rx.try_recv() { message.fallback(); }
+                    while let Ok(message) = rx.try_recv() {
+                        message.fallback();
+                    }
                     return;
                 };
                 runtime.block_on(async move {
                     let mut client = None;
                     while let Some(message) = rx.recv().await {
-                        if message.alive.upgrade().is_none() { continue; }
+                        if message.alive.upgrade().is_none() {
+                            continue;
+                        }
                         let sent = tokio::time::timeout(SEND_BUDGET, async {
                             if client.is_none() {
-                                let service = format!("{}-macros-{}", message.app, std::process::id());
-                                client = SupervisedClient::connect_options(&service, &::bus::client_helpers::resolve_noded_url())
-                                    .fatal_on_registration_rejection(true).connect().await.ok();
+                                let service =
+                                    format!("{}-macros-{}", message.app, std::process::id());
+                                client = SupervisedClient::connect_options(
+                                    &service,
+                                    &::bus::client_helpers::resolve_noded_url(),
+                                )
+                                .fatal_on_registration_rejection(true)
+                                .connect()
+                                .await
+                                .ok();
                             }
-                            let (rc, _, _) = client.as_ref()?.call_with_headers_raw(
-                                "notify", "notify.send", &BTreeMap::new(), &message.payload.to_string()
-                            ).await.ok()?;
+                            let (rc, _, _) = client
+                                .as_ref()?
+                                .call_with_headers_raw(
+                                    "notify",
+                                    "notify.send",
+                                    &BTreeMap::new(),
+                                    &message.payload.to_string(),
+                                )
+                                .await
+                                .ok()?;
                             (rc < 10).then_some(())
-                        }).await.ok().flatten().is_some();
-                        if !sent { message.fallback(); }
+                        })
+                        .await
+                        .ok()
+                        .flatten()
+                        .is_some();
+                        if !sent {
+                            message.fallback();
+                        }
                     }
                 });
                 runtime.shutdown_timeout(Duration::from_millis(100));
-            }).ok().map(|_| tx)
+            })
+            .ok()
+            .map(|_| tx)
     });
     let message = Message {
-        app: app.into(), payload, finished, tx, alive: Arc::downgrade(alive),
-        ctx: ctx.clone(), viewport: ctx.viewport_id(),
+        app: app.into(),
+        payload,
+        finished,
+        tx,
+        alive: Arc::downgrade(alive),
+        ctx: ctx.clone(),
+        viewport: ctx.viewport_id(),
     };
     match sender {
-        Some(sender) => if let Err(error) = sender.try_send(message) { error.into_inner().fallback(); },
+        Some(sender) => {
+            if let Err(error) = sender.try_send(message) {
+                error.into_inner().fallback();
+            }
+        }
         None => message.fallback(),
     }
 }
