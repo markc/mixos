@@ -285,8 +285,15 @@ reply can never land on a newer operation.</p>
 <p>Discovery reads <code>noded.info</code>, <code>noded.list</code> and <code>noded.peers</code>. The local node
 appears first, followed by sorted peers. Each peer is queried through
 <code>noded.&lt;node&gt;.bus</code>, then its services through <code>&lt;service&gt;.&lt;node&gt;.bus</code>.
+Local membership and service identities are published as soon as they arrive,
+without waiting for remote nodes or verb descriptions. Discovery queries up
+to eight remote nodes concurrently, with a separate local slot. Each read has
+a three-second deadline (<code>DISCOVERY_CALL_BUDGET</code>); info and list run together.
 Discovery asks for <code>HELP</code>, falling back to <code>app.describe</code>, eight services
-at a time per node. Failed discovery and descriptions appear beneath the
+at a time per node, with a three-second budget for the description phase.
+Every node update wakes the view. The status counts completed nodes and
+unreachable nodes; unreachable rows include the reason and refresh retries them.
+Failed discovery and descriptions appear beneath the
 affected node or service. Each service retains its <code>ServiceInfo</code>; labels
 show version and short SHA when advertised, and Details shows the full
 identity including binary and dirty state.</p>
@@ -379,10 +386,13 @@ opens with a field that searches every command. The desktop profile can
 rebind the shortcuts (<code>keymaps.workshop.&lt;id&gt;</code>), and <code>workshop.commands</code>
 reports the ones in force.</p>
 <h2 id="running-it">Running it</h2>
-<pre><code class="language-text">workshop [--noded-url URL] [--service NAME] [--comp NAME]
+<pre><code class="language-text">workshop [--headless] [--noded-url URL] [--service NAME] [--comp NAME]
 </code></pre>
 <ul>
 <li><code>--noded-url</code>: the broker to use. The default is the session's noded.</li>
+<li><code>--headless</code>: run the same engine and Bus port without a native window or
+renderer. Repaint events wake the logic thread. Use a distinct <code>--service</code>
+name for a test instance; duplicate registrations are refused.</li>
 <li><code>--service</code>: the Bus name to register as, <code>workshop</code> by default.</li>
 <li><code>--comp</code>: the compositor's service name, used to raise the window. The
 default is <code>$MIXOS_COMP_SERVICE</code>, or <code>comp</code>.</li>
@@ -416,6 +426,9 @@ verbs Workshop describes, and that read-only verbs are class <code>query</code>
 <li><code>crates/inspector/tests/native.rs</code> runs discovery, calls and
 single-instance registration against an isolated real broker. It is
 ignored by default and needs <code>WORKSHOP_TEST_URL</code>.</li>
+<li><code>crates/inspector/tests/discovery.rs</code> uses a fake broker with a node that
+never replies. Local and healthy rows arrive before its timeout, discovery
+settles within a bounded time, and the next refresh retries the failed node.</li>
 </ul>
 <h2 id="macro-bus-verbs">Macro Bus verbs</h2>
 <p>The shared <a href="/macros/#bus-verbs">macro Bus surface</a> uses this process's

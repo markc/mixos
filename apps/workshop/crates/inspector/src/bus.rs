@@ -153,22 +153,21 @@ async fn discover_node(
     let _ = tx.unbounded_send(Update::Node(snapshot.clone(), false));
     // Bound the entire description phase too: a long list cannot hold a
     // node slot forever. Each individual read also has the call deadline.
-    let descriptions = stream::iter(snapshot.nodes[0].services.iter().cloned().map(|name| {
+    let names = snapshot.nodes[0].services.clone();
+    for result in snapshot.services.values_mut() {
+        *result = Err("description deadline exceeded (3 s)".into());
+    }
+    let mut descriptions = stream::iter(names.into_iter().map(|name| {
         let handle = handle.clone();
         async move {
             let result = describe(&handle, &name).await;
             (name, result)
         }
     }))
-    .buffer_unordered(DISCOVERY_CONCURRENCY)
-    .collect::<Vec<_>>();
-    match tokio::time::timeout(DISCOVERY_CALL_BUDGET, descriptions).await {
-        Ok(results) => snapshot.services.extend(results),
-        Err(_) => {
-            for result in snapshot.services.values_mut() {
-                *result = Err("description deadline exceeded (3 s)".into());
-            }
-        }
+    .buffer_unordered(DISCOVERY_CONCURRENCY);
+    let deadline = tokio::time::Instant::now() + DISCOVERY_CALL_BUDGET;
+    while let Ok(Some((name, result))) = tokio::time::timeout_at(deadline, descriptions.next()).await {
+        snapshot.services.insert(name, result);
     }
     let _ = tx.unbounded_send(Update::Node(snapshot, true));
 }

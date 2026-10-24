@@ -35,6 +35,8 @@ toolkit.workspace = true
 [dev-dependencies]
 egui_kittest.workspace = true
 inspector = { path = "crates/inspector", features = ["testing"] }
+tempfile.workspace = true
+test-broker = { path = "../../libs/test-broker" }
 
 [build-dependencies]
 buildinfo.workspace = true

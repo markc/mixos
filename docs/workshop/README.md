@@ -56,8 +56,15 @@ reply can never land on a newer operation.
 Discovery reads `noded.info`, `noded.list` and `noded.peers`. The local node
 appears first, followed by sorted peers. Each peer is queried through
 `noded.<node>.bus`, then its services through `<service>.<node>.bus`.
+Local membership and service identities are published as soon as they arrive,
+without waiting for remote nodes or verb descriptions. Discovery queries up
+to eight remote nodes concurrently, with a separate local slot. Each read has
+a three-second deadline (`DISCOVERY_CALL_BUDGET`); info and list run together.
 Discovery asks for `HELP`, falling back to `app.describe`, eight services
-at a time per node. Failed discovery and descriptions appear beneath the
+at a time per node, with a three-second budget for the description phase.
+Every node update wakes the view. The status counts completed nodes and
+unreachable nodes; unreachable rows include the reason and refresh retries them.
+Failed discovery and descriptions appear beneath the
 affected node or service. Each service retains its `ServiceInfo`; labels
 show version and short SHA when advertised, and Details shows the full
 identity including binary and dirty state.
@@ -166,10 +173,13 @@ reports the ones in force.
 ## Running it
 
 ```text
-workshop [--noded-url URL] [--service NAME] [--comp NAME]
+workshop [--headless] [--noded-url URL] [--service NAME] [--comp NAME]
 ```
 
 - `--noded-url`: the broker to use. The default is the session's noded.
+- `--headless`: run the same engine and Bus port without a native window or
+  renderer. Repaint events wake the logic thread. Use a distinct `--service`
+  name for a test instance; duplicate registrations are refused.
 - `--service`: the Bus name to register as, `workshop` by default.
 - `--comp`: the compositor's service name, used to raise the window. The
   default is `$MIXOS_COMP_SERVICE`, or `comp`.
@@ -208,6 +218,9 @@ cargo test --locked -p inspector -p workshop
 - `crates/inspector/tests/native.rs` runs discovery, calls and
   single-instance registration against an isolated real broker. It is
   ignored by default and needs `WORKSHOP_TEST_URL`.
+- `crates/inspector/tests/discovery.rs` uses a fake broker with a node that
+  never replies. Local and healthy rows arrive before its timeout, discovery
+  settles within a bounded time, and the next refresh retries the failed node.
 
 ## Macro Bus verbs
 
