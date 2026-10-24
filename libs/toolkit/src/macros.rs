@@ -1433,7 +1433,7 @@ mod tests {
             .recv_timeout(Duration::from_secs(10))
             .unwrap();
         assert!(
-            matches!(&result, Ok((_, _, None))),
+            matches!(&result, Ok((_, _, None, _))),
             "Ctrl+Enter only saves while already running"
         );
         state.saved(result, &ctx);
