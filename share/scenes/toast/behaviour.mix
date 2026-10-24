@@ -54,10 +54,18 @@ fn wrap_lines($text, $limit, $count)
     if $word == "" then continue end
     -- Bound unbroken words too, including URLs and wide test fixtures.
     while len($word) > $limit
-      if $cur != "" then push($lines, $cur); $cur = "" end
-      push($lines, slice($word, 0, $limit))
-      $word = slice($word, $limit)
+      $room = $limit
+      if $cur != "" then $room = $limit - len($cur) - 1 end
+      if $room > 0 then
+        if $cur != "" then $cur = $cur .. " " end
+        $cur = $cur .. slice($word, 0, $room)
+        $word = slice($word, $room)
+      end
+      push($lines, $cur)
+      $cur = ""
+      if len($lines) > $count then break end
     end
+    if len($lines) > $count then break end
     if $cur == "" then
       $cur = $word
     elif len($cur) + 1 + len($word) <= $limit then
@@ -120,9 +128,8 @@ end
 
 -- The seat height: each body line and the button row add to the bare toast.
 fn height_of($m)
-  -- Padding, the close button's header row, one title line and their gap.
-  $h = 80
-  $h = $h + 20 * max(0, $m.summary_count - 1)
+  -- Padding and header, then only the title lines actually shown.
+  $h = 60 + 20 * $m.summary_count
   if $m.has_body then $h = $h + 6 + 18 * $m.line_count end
   if $m.shown[0] then $h = $h + 34 end
   return $h
