@@ -438,7 +438,7 @@ fn numeric_port_boundaries_are_table_driven() {
                         .iter()
                         .any(|d| d.code == "port-min")
                 );
-            } else if port.name == "max_rows" {
+            } else if matches!(port.name, "max_rows" | "max_lines") {
                 assert!(zero.iter().any(|d| d.code == "port-min"));
                 assert!(
                     !numeric_probe(family, port.name, 1.0)
