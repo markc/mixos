@@ -279,6 +279,7 @@ mod tests {
                         observed.next().await
                     {
                         if verb == "noded.observe.event" {
+                            assert_eq!(id, 0, "one-way events must not occupy reply slots");
                             let row: Value = serde_json::from_str(&body).unwrap();
                             if row["verb"] == "noded.ping" {
                                 break row;
