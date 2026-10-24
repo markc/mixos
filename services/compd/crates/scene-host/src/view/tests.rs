@@ -162,6 +162,8 @@ fn long_toast_offscreen() {
             if !setup {
                 scene.setup(ui.ctx());
                 setup = true;
+                ui.ctx().request_repaint();
+                return;
             }
             scene.show(ui, &mut Vec::new());
             for (id, size, bold) in [("t_sum", 14.0, true), ("t_app", 11.0, false)] {
@@ -193,6 +195,8 @@ fn guarded_toast_offscreen() {
             if !setup {
                 scene.setup(ui.ctx());
                 setup = true;
+                ui.ctx().request_repaint();
+                return;
             }
             scene.show(ui, &mut Vec::new());
         });
