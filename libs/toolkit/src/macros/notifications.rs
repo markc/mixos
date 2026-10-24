@@ -95,74 +95,6 @@ impl Message {
 
 static CLIENT: OnceLock<Option<tokio::sync::mpsc::Sender<Message>>> = OnceLock::new();
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::sync::atomic::{AtomicUsize, Ordering};
-
-    struct Fake {
-        terminal: bool,
-        succeeds: bool,
-        drops: Arc<AtomicUsize>,
-    }
-
-    impl Drop for Fake {
-        fn drop(&mut self) {
-            self.drops.fetch_add(1, Ordering::SeqCst);
-        }
-    }
-
-    impl ToastClient for Fake {
-        fn terminal(&self) -> bool {
-            self.terminal
-        }
-        async fn send(&self, _: &serde_json::Value) -> bool {
-            self.succeeds
-        }
-    }
-
-    #[tokio::test]
-    async fn failed_and_terminal_clients_are_dropped_then_replaced() {
-        for terminal in [false, true] {
-            let drops = Arc::new(AtomicUsize::new(0));
-            let mut delivery = Delivery::new();
-            delivery.client = Some(Fake {
-                terminal,
-                succeeds: false,
-                drops: drops.clone(),
-            });
-            let payload = serde_json::json!({});
-            assert!(
-                !delivery
-                    .post(&payload, || async {
-                        panic!("must not connect before backoff")
-                    })
-                    .await
-            );
-            assert_eq!(drops.load(Ordering::SeqCst), 1);
-            assert!(delivery.client.is_none());
-            assert!(
-                !delivery
-                    .post(&payload, || async { panic!("backoff") })
-                    .await
-            );
-            delivery.retry_after = tokio::time::Instant::now();
-            assert!(
-                delivery
-                    .post(&payload, || async {
-                        Some(Fake {
-                            terminal: false,
-                            succeeds: true,
-                            drops: drops.clone(),
-                        })
-                    })
-                    .await
-            );
-            assert!(delivery.client.is_some());
-        }
-    }
-}
-
 pub(super) fn post(
     app: &str,
     payload: serde_json::Value,
@@ -232,5 +164,73 @@ pub(super) fn post(
             }
         }
         None => message.fallback(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    struct Fake {
+        terminal: bool,
+        succeeds: bool,
+        drops: Arc<AtomicUsize>,
+    }
+
+    impl Drop for Fake {
+        fn drop(&mut self) {
+            self.drops.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    impl ToastClient for Fake {
+        fn terminal(&self) -> bool {
+            self.terminal
+        }
+        async fn send(&self, _: &serde_json::Value) -> bool {
+            self.succeeds
+        }
+    }
+
+    #[tokio::test]
+    async fn failed_and_terminal_clients_are_dropped_then_replaced() {
+        for terminal in [false, true] {
+            let drops = Arc::new(AtomicUsize::new(0));
+            let mut delivery = Delivery::new();
+            delivery.client = Some(Fake {
+                terminal,
+                succeeds: false,
+                drops: drops.clone(),
+            });
+            let payload = serde_json::json!({});
+            assert!(
+                !delivery
+                    .post(&payload, || async {
+                        panic!("must not connect before backoff")
+                    })
+                    .await
+            );
+            assert_eq!(drops.load(Ordering::SeqCst), 1);
+            assert!(delivery.client.is_none());
+            assert!(
+                !delivery
+                    .post(&payload, || async { panic!("backoff") })
+                    .await
+            );
+            delivery.retry_after = tokio::time::Instant::now();
+            assert!(
+                delivery
+                    .post(&payload, || async {
+                        Some(Fake {
+                            terminal: false,
+                            succeeds: true,
+                            drops: drops.clone(),
+                        })
+                    })
+                    .await
+            );
+            assert!(delivery.client.is_some());
+        }
     }
 }

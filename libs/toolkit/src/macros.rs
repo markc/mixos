@@ -2695,8 +2695,18 @@ mod tests {
         input.viewports.insert(second, Default::default());
         let mut out = ctx.run_ui(input, |_| {
             close_app(&ctx, "ced");
-            assert!(ctx.data(|d| d.get_temp::<WindowState>(crate::window_id(egui::ViewportId::ROOT, ("shared-macros", "ced")))).is_none());
-            let remaining = ctx.data(|d| d.get_temp::<WindowState>(crate::window_id(second, ("shared-macros", "ced")))).unwrap();
+            assert!(
+                ctx.data(|d| d.get_temp::<WindowState>(crate::window_id(
+                    egui::ViewportId::ROOT,
+                    ("shared-macros", "ced")
+                )))
+                .is_none()
+            );
+            let remaining = ctx
+                .data(|d| {
+                    d.get_temp::<WindowState>(crate::window_id(second, ("shared-macros", "ced")))
+                })
+                .unwrap();
             assert!(Arc::ptr_eq(&remaining, &states[1]));
         });
         out.textures_delta.clear();
