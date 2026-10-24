@@ -5,6 +5,46 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 #[test]
+fn bus_macro_writes_refuse_other_services_and_workshop_deputy_calls() {
+    let broker = test_broker::Broker::start();
+    let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+    let caller = runtime.block_on(SupervisedClient::connect("unrelated-app", &broker.url)).unwrap();
+    let manager = runtime.block_on(SupervisedClient::connect("workshop-manager-test", &broker.url)).unwrap();
+    let (owner, _deliveries) = citizen::start_with_macros("ced", "ced-acl-test", &broker.url, &[]).unwrap();
+    let (workshop, _workshop_deliveries) = citizen::start_with_macros("workshop", "workshop-acl-test", &broker.url, &[]).unwrap();
+    runtime.block_on(async {
+        for suffix in ["put", "remove", "move", "copy", "new"] {
+            for (app, service) in [("ced", "ced-acl-test"), ("workshop", "workshop-acl-test")] {
+                for body in ["{}", r#"{"app":"ced"}"#] {
+                    let verb = format!("{app}.macros.{suffix}");
+                    let (rc, body, _) = caller.call_with_headers_raw(service, &verb, &BTreeMap::new(), body).await.unwrap();
+                    let body: serde_json::Value = serde_json::from_str(&body).unwrap();
+                    assert_eq!(rc, 10);
+                    assert_eq!(body["error_code"], "DENIED");
+                    assert!(body["message"].as_str().unwrap().contains(&verb));
+                }
+            }
+            // Invalid arguments demonstrate admission without writing real user files.
+            let reply = manager.call_with_headers_raw("ced-acl-test", &format!("ced.macros.{suffix}"), &BTreeMap::new(), "{}").await.unwrap();
+            assert_eq!(serde_json::from_str::<serde_json::Value>(&reply.1).unwrap()["error_code"], "INVALID_ARGUMENT");
+        }
+        for (verb, body) in [
+            ("workshop.execute", r#"{"id":"macro.put"}"#),
+            ("workshop.execute", r#"{"id":"bus.call"}"#),
+            ("workshop.call", r#"{"service":"ced","verb":"ced.macros.put"}"#),
+            ("workshop.call", r#"{}"#),
+        ] {
+            let reply = caller.call_with_headers_raw("workshop-acl-test", verb, &BTreeMap::new(), body).await.unwrap();
+            assert_eq!(serde_json::from_str::<serde_json::Value>(&reply.1).unwrap()["error_code"], "DENIED");
+        }
+        caller.close().await;
+        manager.close().await;
+    });
+    owner.quit(); workshop.quit();
+    owner.wait_done().unwrap(); workshop.wait_done().unwrap();
+}
+
+#[test]
 fn put_has_a_separate_larger_envelope_cap() {
     let oversized = " ".repeat(macros::verbs::PUT_ENVELOPE_LIMIT + 1);
     let (_, body) = citizen::macros::answer_body(
