@@ -364,12 +364,8 @@ mod tests {
             .unwrap();
         r.execute("view.style.studio", &mut app, crate::action::Origin::Bus)
             .unwrap();
-        r.execute(
-            "view.decorations.ssd",
-            &mut app,
-            crate::action::Origin::Bus,
-        )
-        .unwrap();
+        r.execute("view.decorations.ssd", &mut app, crate::action::Origin::Bus)
+            .unwrap();
         r.execute("view.captions.left", &mut app, crate::action::Origin::Bus)
             .unwrap();
         assert_eq!(
@@ -476,8 +472,7 @@ mod tests {
             "view.decorations.ssd",
             "view.captions.left",
         ] {
-            r.execute(id, &mut app, crate::action::Origin::Bus)
-                .unwrap();
+            r.execute(id, &mut app, crate::action::Origin::Bus).unwrap();
         }
         assert_ne!(
             session.with_choice(&app.choice).unwrap().dictionary(),
@@ -490,8 +485,7 @@ mod tests {
             "view.decorations.csd",
             "view.captions.right",
         ] {
-            r.execute(id, &mut app, crate::action::Origin::Bus)
-                .unwrap();
+            r.execute(id, &mut app, crate::action::Origin::Bus).unwrap();
         }
         assert_eq!(app.choice.style, None);
         let back = session.with_choice(&app.choice).unwrap();

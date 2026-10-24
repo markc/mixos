@@ -22,7 +22,8 @@ fn engine(dialog: Option<Dialog>) -> Engine {
         description: "Read one setting".into(),
         read_only: Some(true),
     };
-    s.services.insert("settingsd".into(), Ok(vec![command_name]));
+    s.services
+        .insert("settingsd".into(), Ok(vec![command_name]));
     let mut e = Engine::new(label);
     let Some(Effect::Discover { ticket }) = e.take_effects().pop() else {
         panic!("initial discovery")

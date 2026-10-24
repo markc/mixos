@@ -17,6 +17,7 @@ use scene::{ResolvedScene, SceneDocument, Severity};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
+use crate::command::SceneCommand;
 use crate::mount::{
     dialog_geometry, is_dialog, is_overlay, is_toast, page_id, scene_edge, toast_geometry,
 };
@@ -24,7 +25,6 @@ use crate::seat::{
     DialogError, DialogSeat, DialogSlot, Edge, PageRegistry, PageSeat, ToastSeat, ToastSlot,
 };
 use crate::templates::{PreparedLists, validate_templates};
-use crate::command::SceneCommand;
 
 /// The command every scene change carries, whatever the host registered as.
 pub const CHANGED_COMMAND: &str = "shell.scene.changed";

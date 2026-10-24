@@ -51,7 +51,9 @@ async fn call(client: &NodedClient, command_name: &str, args: Value) -> Result<V
         .map_err(|e| format!("lane_unavailable: {command_name} on blobd: {e}"))?
     {
         PortReply::Ok { value, .. } => Ok(value),
-        PortReply::AppError { message, .. } => Err(format!("lane_unavailable: {command_name}: {message}")),
+        PortReply::AppError { message, .. } => {
+            Err(format!("lane_unavailable: {command_name}: {message}"))
+        }
     }
 }
 

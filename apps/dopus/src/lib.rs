@@ -31,9 +31,10 @@
 //!   registry every action goes through; [`view`]: the drawing;
 //!   [`shell`]: the running window.
 
+pub mod actions;
 pub mod app;
 pub mod bus;
-pub mod actions;
+pub mod commands;
 pub mod config;
 pub mod dirs;
 pub mod elide;
@@ -41,7 +42,6 @@ pub mod headless;
 pub mod icons;
 pub mod keymap;
 pub mod shell;
-pub mod commands;
 pub mod view;
 
 use toolkit::Strings;

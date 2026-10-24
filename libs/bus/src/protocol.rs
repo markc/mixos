@@ -35,7 +35,8 @@ mod command_descriptor_tests {
         let descriptor: CommandDescriptor = serde_json::from_value(old).unwrap();
         assert!(!descriptor.read_only);
         assert_eq!(
-            serde_json::to_value(CommandDescriptor::new("status", &[], "Read status", true)).unwrap(),
+            serde_json::to_value(CommandDescriptor::new("status", &[], "Read status", true))
+                .unwrap(),
             serde_json::json!({"name":"status", "args":[], "description":"Read status", "read_only":true})
         );
     }

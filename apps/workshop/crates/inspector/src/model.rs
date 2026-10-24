@@ -249,8 +249,9 @@ mod tests {
 
     #[test]
     fn descriptions_preserve_legacy_unknown_safety_and_sort() {
-        let command_names = parse_commands(&json!({"commands":["quit",{"name":"ping","read_only":true},"ping"]}))
-            .unwrap();
+        let command_names =
+            parse_commands(&json!({"commands":["quit",{"name":"ping","read_only":true},"ping"]}))
+                .unwrap();
         assert_eq!(command_names.len(), 2);
         assert_eq!(command_names[0].name, "ping");
         assert_eq!(command_names[0].read_only, Some(true));

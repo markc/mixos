@@ -368,7 +368,12 @@ impl FakeEditd {
         }
     }
 
-    fn dispatch(&mut self, caller: &str, command: &str, args: &Value) -> Result<Value, wire::Refusal> {
+    fn dispatch(
+        &mut self,
+        caller: &str,
+        command: &str,
+        args: &Value,
+    ) -> Result<Value, wire::Refusal> {
         match command {
             "edit.insert" | "edit.delete" | "edit.replace" | "edit.apply" => {
                 self.text_mutation(caller, command, args)
@@ -473,11 +478,14 @@ impl FakeEditd {
         }
         self.lookup(&bid)?;
         let origin = Self::origin_of(caller, targs.meta.origin.as_deref())?;
-        let key = targs
-            .meta
-            .op_id
-            .clone()
-            .map(|id| (caller.to_string(), origin.to_string(), command.to_string(), id));
+        let key = targs.meta.op_id.clone().map(|id| {
+            (
+                caller.to_string(),
+                origin.to_string(),
+                command.to_string(),
+                id,
+            )
+        });
         if let Some(k) = &key
             && let Some(cached) = self.dedup_get(k)
         {

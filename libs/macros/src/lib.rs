@@ -2,10 +2,10 @@
 //! Shared Mix macro discovery and execution. Discovery never executes scripts.
 
 mod catalogue;
+pub mod commands;
 mod runner;
 pub mod session;
 mod storage;
-pub mod commands;
 
 pub use catalogue::{
     Catalogue, Diagnostic, Entry, Library, Roots, Targets, Tier, check_editable, valid_destination,

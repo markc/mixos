@@ -257,7 +257,11 @@ mod tests {
         e.take_effects()
             .into_iter()
             .filter_map(|x| match x {
-                Effect::Settings { ticket, command, body } => Some((ticket, command, body)),
+                Effect::Settings {
+                    ticket,
+                    command,
+                    body,
+                } => Some((ticket, command, body)),
                 _ => None,
             })
             .collect()

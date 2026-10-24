@@ -554,7 +554,11 @@ impl Engine {
             self.failed = false;
         }
         self.job = Some(Job { ticket, op, quiet });
-        self.effects.push(Effect::Releases { ticket, command: command_name, body });
+        self.effects.push(Effect::Releases {
+            ticket,
+            command: command_name,
+            body,
+        });
     }
 
     /// Read the shown panel's service again.
@@ -821,7 +825,11 @@ impl Engine {
     /// A delivery from the Bus connection.
     pub fn delivery(&mut self, delivery: Delivery) {
         match delivery {
-            Delivery::Command { id, command: command_name, body } => self.command(id, &command_name, &body),
+            Delivery::Command {
+                id,
+                command: command_name,
+                body,
+            } => self.command(id, &command_name, &body),
             // A service came or went: releases, settingsd or Email may be one.
             Delivery::Changed => {
                 self.start(Op::List);
@@ -1449,7 +1457,11 @@ mod tests {
         effects
             .iter()
             .filter_map(|e| match e {
-                Effect::Releases { ticket, command: command_name, body } => Some((*ticket, *command_name, body.clone())),
+                Effect::Releases {
+                    ticket,
+                    command: command_name,
+                    body,
+                } => Some((*ticket, *command_name, body.clone())),
                 _ => None,
             })
             .collect()

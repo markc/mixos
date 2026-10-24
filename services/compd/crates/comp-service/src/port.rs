@@ -1404,7 +1404,10 @@ fn dispatch_incoming(
             command,
             op,
         ),
-        Request::Read { command: command_name, scope } => {
+        Request::Read {
+            command: command_name,
+            scope,
+        } => {
             let Ok(permit) = Arc::clone(responder_permits).try_acquire_owned() else {
                 queue_reply(reply_sender, reply_timeouts, busy(command));
                 return;
@@ -1422,9 +1425,11 @@ fn dispatch_incoming(
                 let reply = match admission.receive().await {
                     Ok(snapshot) => {
                         let args = command.args.clone();
-                        tokio::task::spawn_blocking(move || dispatch_read(&snapshot, command_name, &args))
-                            .await
-                            .unwrap_or_else(|_| error("busy"))
+                        tokio::task::spawn_blocking(move || {
+                            dispatch_read(&snapshot, command_name, &args)
+                        })
+                        .await
+                        .unwrap_or_else(|_| error("busy"))
                     }
                     Err(()) => error("busy"),
                 };

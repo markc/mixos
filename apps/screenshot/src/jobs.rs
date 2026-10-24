@@ -6,9 +6,9 @@
 //! threads, never the UI thread or the Bus thread.
 use crate::app::{App, Effect, SaveTo};
 use crate::capture::{self, Comp, Request, Window};
+use action::{Error, Origin};
 use annotation::library::{self, Ledger, Saved};
 use annotation::{Document, Face};
-use action::{Error, Origin};
 use image::RgbaImage;
 use serde_json::{Value, json};
 use std::path::PathBuf;

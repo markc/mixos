@@ -368,7 +368,13 @@ mod tests {
             .1,
             "too_many"
         );
-        assert!(check(&req("/a", "scenes", commands::MAX_EXTERNAL_DIAGNOSTICS), 100).is_ok());
+        assert!(
+            check(
+                &req("/a", "scenes", commands::MAX_EXTERNAL_DIAGNOSTICS),
+                100
+            )
+            .is_ok()
+        );
         assert_eq!(
             check(&req("/a", "scenes", 1), commands::MAX_DIAGNOSTICS_BODY + 1)
                 .unwrap_err()

@@ -67,7 +67,11 @@ fn main() -> anyhow::Result<()> {
             noded_url: (!no_bus).then(bus::client_helpers::resolve_noded_url),
             host: root.map_or_else(Host::system, |root| Host::fixture(&root)),
         })),
-        Command::Call { command: command_name, body, socket } => {
+        Command::Call {
+            command: command_name,
+            body,
+            socket,
+        } => {
             let body = serde_json::from_str(&body)?;
             let (rc, reply) = runtime.block_on(local::call(&socket, &command_name, body))?;
             println!("{}", serde_json::to_string_pretty(&reply)?);

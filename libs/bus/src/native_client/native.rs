@@ -1462,7 +1462,10 @@ impl NodedClient {
                     headers: msg.headers.clone(),
                 };
                 let help = if cmd.command == "HELP" {
-                    command_names.read().expect("commands lock poisoned").clone()
+                    command_names
+                        .read()
+                        .expect("commands lock poisoned")
+                        .clone()
                 } else {
                     None
                 };

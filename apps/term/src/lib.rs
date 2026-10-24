@@ -15,10 +15,10 @@
 //! - [`bus`]: the window's own commands on the `term` name;
 //! - [`view`]: the drawing; [`shell`]: the running window.
 
+pub mod actions;
 pub mod app;
 pub mod bus;
 pub mod clipboard;
-pub mod actions;
 mod font;
 pub mod ime;
 pub mod input;

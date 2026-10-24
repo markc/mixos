@@ -13,10 +13,10 @@ use std::sync::mpsc::Receiver;
 use serde_json::{Value, json};
 use smithay::utils::{Physical, Rectangle};
 
+use crate::command::SceneCommand;
 use crate::port::{HostConfig, Inbound, Port, Request, Waker};
 use crate::render::{Action, Surface, Wiring};
 use crate::store::{SceneMount, SceneStore};
-use crate::command::SceneCommand;
 
 /// What one `service` pass did.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -1438,7 +1438,12 @@ mod tests {
             (Some("settings"), json!(evidence)),
             (Some("settings.binding.instance"), json!("fixture")),
         ] {
-            let request = request(SceneCommand::PropsGet, "agent", LOCAL, json!({"path": path}));
+            let request = request(
+                SceneCommand::PropsGet,
+                "agent",
+                LOCAL,
+                json!({"path": path}),
+            );
             let answer = host.answer_with_settings(
                 &request,
                 "DP-1",
@@ -1614,7 +1619,12 @@ mod tests {
         assert_eq!(body["menu"]["items"][2]["checked"], true);
         let serial = body["menu"]["serial"].as_u64().unwrap();
         let props = host.answer(
-            &request(SceneCommand::PropsGet, "agent", LOCAL, json!({"path":"menu"})),
+            &request(
+                SceneCommand::PropsGet,
+                "agent",
+                LOCAL,
+                json!({"path":"menu"}),
+            ),
             "DP-1",
             Some(1),
             &mut no_layout,
@@ -1659,7 +1669,12 @@ mod tests {
             host.panels.ensure("DP-1", (1280.0, 800.0));
             let source = EDGE.replace("notes", name).replace("right", edge);
             let answer = host.answer(
-                &request(SceneCommand::Load, "scenes", LOCAL, json!({"source":source})),
+                &request(
+                    SceneCommand::Load,
+                    "scenes",
+                    LOCAL,
+                    json!({"source":source}),
+                ),
                 "DP-1",
                 Some(1),
                 &mut no_layout,
@@ -1849,7 +1864,12 @@ mod tests {
         let body = |answer: &Answer| serde_json::from_str::<Value>(&answer.body).unwrap();
         let mut host = Host::default();
         let missing = host.answer(
-            &request(SceneCommand::DialogShow, "x", LOCAL, json!({"scene":"editor"})),
+            &request(
+                SceneCommand::DialogShow,
+                "x",
+                LOCAL,
+                json!({"scene":"editor"}),
+            ),
             "DP-1",
             Some(1),
             &mut no_layout,
@@ -1860,13 +1880,23 @@ mod tests {
         );
         let panel = EDGE.replace("name: notes", "name: panel");
         host.answer(
-            &request(SceneCommand::Load, "loader", LOCAL, json!({"source": panel})),
+            &request(
+                SceneCommand::Load,
+                "loader",
+                LOCAL,
+                json!({"source": panel}),
+            ),
             "DP-1",
             Some(1),
             &mut no_layout,
         );
         let edge = host.answer(
-            &request(SceneCommand::DialogHide, "x", LOCAL, json!({"scene":"panel"})),
+            &request(
+                SceneCommand::DialogHide,
+                "x",
+                LOCAL,
+                json!({"scene":"panel"}),
+            ),
             "DP-1",
             Some(1),
             &mut no_layout,
@@ -1879,7 +1909,12 @@ mod tests {
             .as_str()
             .unwrap();
         host.answer(
-            &request(SceneCommand::Load, "scenes", LOCAL, json!({"source": dialog})),
+            &request(
+                SceneCommand::Load,
+                "scenes",
+                LOCAL,
+                json!({"source": dialog}),
+            ),
             "DP-1",
             Some(1),
             &mut no_layout,

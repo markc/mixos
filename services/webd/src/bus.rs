@@ -377,24 +377,28 @@ pub async fn run(node: Arc<NodeState>) {
                 // the synchronous `dispatch` for anything else.
                 match vhost_commands::dispatch(ergonomic_suffix, &cmd, &node).await {
                     Some(result) => result,
-                    None => match listener_commands::dispatch(ergonomic_suffix, &cmd, &node).await {
-                        Some(result) => result,
-                        // B2 — the mutating `tls.reload` command (async:
-                        // file IO + reload lock). Read-only `tls.status`
-                        // returns `None` here and falls through to the
-                        // synchronous `dispatch` below, unchanged.
-                        None => match tls::dispatch(ergonomic_suffix, &cmd, &node).await {
+                    None => {
+                        match listener_commands::dispatch(ergonomic_suffix, &cmd, &node).await {
                             Some(result) => result,
-                            // `session.revoke` — cookie-path revocation
-                            // (2026-07 audit); async (per-vhost DB locks).
-                            None => {
-                                match session_commands::dispatch(ergonomic_suffix, &cmd, &node).await {
-                                    Some(result) => result,
-                                    None => dispatch(&cmd, &node),
+                            // B2 — the mutating `tls.reload` command (async:
+                            // file IO + reload lock). Read-only `tls.status`
+                            // returns `None` here and falls through to the
+                            // synchronous `dispatch` below, unchanged.
+                            None => match tls::dispatch(ergonomic_suffix, &cmd, &node).await {
+                                Some(result) => result,
+                                // `session.revoke` — cookie-path revocation
+                                // (2026-07 audit); async (per-vhost DB locks).
+                                None => {
+                                    match session_commands::dispatch(ergonomic_suffix, &cmd, &node)
+                                        .await
+                                    {
+                                        Some(result) => result,
+                                        None => dispatch(&cmd, &node),
+                                    }
                                 }
-                            }
-                        },
-                    },
+                            },
+                        }
+                    }
                 }
             } else {
                 dispatch(&cmd, &node)

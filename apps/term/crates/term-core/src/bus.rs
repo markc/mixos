@@ -140,10 +140,11 @@ fn to_window(
         return None;
     }
     let (reply, answer) = tokio::sync::oneshot::channel();
-    match window
-        .events
-        .try_send(WindowEvent::Command { command: command_name, body, reply })
-    {
+    match window.events.try_send(WindowEvent::Command {
+        command: command_name,
+        body,
+        reply,
+    }) {
         Ok(()) => (window.wake)(),
         Err(std::sync::mpsc::TrySendError::Full(_)) => {
             replies.spawn(async move { (command, 10, WINDOW_BUSY.to_owned()) });
@@ -198,8 +199,14 @@ pub const CANONICAL: &str = "term";
 /// be comparing one terminal wearing two hats.
 /// `altterm_serves_its_own_namespace_and_refuses_terms` is the gate, and it
 /// failed before this arm existed.
-fn canonical_command<'a>(service: &str, command_name: &'a str) -> Option<std::borrow::Cow<'a, str>> {
-    if let Some(rest) = command_name.strip_prefix(service).and_then(|r| r.strip_prefix('.')) {
+fn canonical_command<'a>(
+    service: &str,
+    command_name: &'a str,
+) -> Option<std::borrow::Cow<'a, str>> {
+    if let Some(rest) = command_name
+        .strip_prefix(service)
+        .and_then(|r| r.strip_prefix('.'))
+    {
         return Some(if service == CANONICAL {
             std::borrow::Cow::Borrowed(command_name)
         } else {
@@ -1503,7 +1510,10 @@ mod tests {
         assert!(parse_args("term.nope", "{}").is_err());
         for line in HELP.lines().filter(|l| l.starts_with("term.")) {
             let command_name = line.split([' ', ':']).next().unwrap();
-            assert!(COMMANDS.iter().any(|(v, _)| *v == command_name), "{command_name}");
+            assert!(
+                COMMANDS.iter().any(|(v, _)| *v == command_name),
+                "{command_name}"
+            );
         }
     }
 
@@ -2081,7 +2091,10 @@ mod tests {
             ("term.tab.move", r#"{"id":1,"index":1.5}"#),
             ("term.tab.move", r#"{"id":1}"#),
         ] {
-            assert!(parse_args(command_name, body).is_err(), "{command_name} {body}");
+            assert!(
+                parse_args(command_name, body).is_err(),
+                "{command_name} {body}"
+            );
         }
         for n in [0, 10000] {
             assert!(parse_args("term.snapshot", &format!(r#"{{"scrollback_lines":{n}}}"#)).is_ok());
@@ -2142,7 +2155,14 @@ mod tests {
             args["request_id"] = command_name.into();
             assert!(mutates(command_name));
             assert_eq!(
-                dispatch(true, &set, &cleanup, &mut replies, command_name, &args.to_string()),
+                dispatch(
+                    true,
+                    &set,
+                    &cleanup,
+                    &mut replies,
+                    command_name,
+                    &args.to_string()
+                ),
                 Err("starting".into()),
                 "{command_name}"
             );
@@ -3088,7 +3108,10 @@ mod tests {
             assert!(parse_args(command_name, "").is_ok());
             assert!(parse_args(command_name, "{}").is_ok());
             for body in ["null", "[]", "42", "raw", " ", r#"{"id":1}"#] {
-                assert!(parse_args(command_name, body).is_err(), "{command_name}: {body}");
+                assert!(
+                    parse_args(command_name, body).is_err(),
+                    "{command_name}: {body}"
+                );
             }
         }
         for command_name in ["term.tab.select", "term.tab.close", "term.pane.select"] {
@@ -3103,7 +3126,10 @@ mod tests {
                 r#"{"id":"42"}"#,
                 r#"{"id":18446744073709551616}"#,
             ] {
-                assert!(parse_args(command_name, body).is_err(), "{command_name}: {body}");
+                assert!(
+                    parse_args(command_name, body).is_err(),
+                    "{command_name}: {body}"
+                );
             }
         }
         for dir in ["h", "v", "horizontal", "vertical"] {
@@ -3240,7 +3266,15 @@ mod tests {
         let (cleanup, worker) = Cleanup::start().unwrap();
         let mut replies = ReplyCache::default();
         let mut call = |service: &str, command_name: &str| {
-            super::dispatch(true, service, &set, &cleanup, &mut replies, command_name, "")
+            super::dispatch(
+                true,
+                service,
+                &set,
+                &cleanup,
+                &mut replies,
+                command_name,
+                "",
+            )
         };
         assert!(call("altterm", "altterm.tabs").is_ok());
         assert_eq!(

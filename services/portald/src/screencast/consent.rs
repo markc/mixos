@@ -796,7 +796,11 @@ mod tests {
         assert!(consent.pending().is_empty());
     }
 
-    fn command(command_name: &str, body: serde_json::Value, origin: Option<&str>) -> IncomingCommand {
+    fn command(
+        command_name: &str,
+        body: serde_json::Value,
+        origin: Option<&str>,
+    ) -> IncomingCommand {
         let mut headers = std::collections::BTreeMap::new();
         if let Some(origin) = origin {
             headers.insert("broker_origin".to_owned(), origin.to_owned());

@@ -1120,7 +1120,10 @@ mod tests {
         let elsewhere = serve(&mut core, false, "dopus.action", r#"{"id":"place.open"}"#);
         assert_eq!(refusal(&elsewhere).as_deref(), Some(code::UNAVAILABLE));
         let command_name = serve(&mut core, false, "dopus.nope", "{}");
-        assert_eq!(refusal(&command_name).as_deref(), Some(code::UNKNOWN_COMMAND));
+        assert_eq!(
+            refusal(&command_name).as_deref(),
+            Some(code::UNKNOWN_COMMAND)
+        );
         let pane = serve(
             &mut core,
             false,
@@ -1156,7 +1159,11 @@ mod tests {
             ("dopus.action", r#"{"id":"view.toggle-places"}"#),
             ("dopus.state", "{}"),
         ] {
-            assert_eq!(ran(&mut core, true, command_name, body), None, "{command_name} {body}");
+            assert_eq!(
+                ran(&mut core, true, command_name, body),
+                None,
+                "{command_name} {body}"
+            );
         }
     }
 

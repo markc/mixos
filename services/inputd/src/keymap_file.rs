@@ -485,7 +485,8 @@ fn migrate_legacy_clipboard_row(row: &mut PhysicalBinding) -> bool {
     let Some(command) = row.action.as_str().strip_prefix(LEGACY_CLIPBOARD_PREFIX) else {
         return false;
     };
-    let Ok(action) = inputd_schema::ActionId::intern(&format!("desktop.clipboard.{command}")) else {
+    let Ok(action) = inputd_schema::ActionId::intern(&format!("desktop.clipboard.{command}"))
+    else {
         return false;
     };
     row.action = action;

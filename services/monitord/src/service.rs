@@ -89,7 +89,11 @@ fn args<T: for<'de> Deserialize<'de> + Default>(body: &Value) -> Result<T, Value
 }
 
 /// Answer one command. `Err` carries the refusal body (rc 10 on the wire).
-pub async fn dispatch(engine: &Arc<Engine>, command_name: &str, body: &Value) -> Result<Value, Value> {
+pub async fn dispatch(
+    engine: &Arc<Engine>,
+    command_name: &str,
+    body: &Value,
+) -> Result<Value, Value> {
     match command_name {
         "HELP" => Ok(json!({
             "commands": COMMANDS.iter().map(|v| json!({"name": v.name, "args": v.args, "summary": v.summary})).collect::<Vec<_>>()

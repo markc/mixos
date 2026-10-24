@@ -1325,8 +1325,8 @@ mod tests {
             "DP-1"
         ));
     }
-    use crate::store::SceneMount;
     use crate::command::SceneCommand;
+    use crate::store::SceneMount;
     use serde_json::json;
 
     fn edge(name: &str, edge: &str, w: Option<u32>) -> String {

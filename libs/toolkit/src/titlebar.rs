@@ -32,9 +32,9 @@
 //! frame so it wins at the borders. Every colour and size comes from the
 //! theme's [`Chrome`].
 
+use crate::action::{Origin, Registry};
 use crate::button::{IconButton, Link};
 use crate::chrome::Chrome;
-use crate::action::{Origin, Registry};
 use crate::icons::{self, Icon};
 use crate::strings::Strings;
 use design::{CaptionSide, Decorations};

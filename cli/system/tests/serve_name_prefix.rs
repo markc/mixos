@@ -188,7 +188,10 @@ async fn placeholder_commands_answer_under_each_instances_serve_name() {
     let foo = wait_answer(&c, "foo", "foo.call", &dir).await;
     assert_eq!(foo, json!({"served_by": "foo", "command": "foo.call"}));
     let other = wait_answer(&c, "other", "other.call", &dir).await;
-    assert_eq!(other, json!({"served_by": "other", "command": "other.call"}));
+    assert_eq!(
+        other,
+        json!({"served_by": "other", "command": "other.call"})
+    );
 
     // Neither instance answers the other's command or the literal placeholder.
     assert!(call(&c, "foo", "other.call").await.is_err());

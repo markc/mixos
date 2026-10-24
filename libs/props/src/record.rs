@@ -614,7 +614,10 @@ mod tests {
     fn event_kind_command_composition() {
         assert_eq!(EventKind::Created.command_for("demod"), "demod.props.set");
         assert_eq!(EventKind::Updated.command_for("demod"), "demod.props.set");
-        assert_eq!(EventKind::Deleted.command_for("demod"), "demod.props.delete");
+        assert_eq!(
+            EventKind::Deleted.command_for("demod"),
+            "demod.props.delete"
+        );
         assert_eq!(
             EventKind::Completed.command_for("demod"),
             "demod.props.complete"

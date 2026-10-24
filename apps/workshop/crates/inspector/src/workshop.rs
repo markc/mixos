@@ -431,7 +431,9 @@ impl Engine {
                 return true;
             }
             self.queue_workshop(
-                command_name.strip_prefix("workshop.").unwrap_or(command_name),
+                command_name
+                    .strip_prefix("workshop.")
+                    .unwrap_or(command_name),
                 args.clone(),
                 Some(id),
             );
@@ -448,7 +450,11 @@ mod tests {
     fn observe_events_never_generate_reply_effects() {
         let mut engine = Engine::new(str::to_owned);
         engine.take_effects();
-        assert!(engine.workshop_command(0, "noded.observe.event", &json!({"command":"noded.ping"})));
+        assert!(engine.workshop_command(
+            0,
+            "noded.observe.event",
+            &json!({"command":"noded.ping"})
+        ));
         assert!(engine.take_effects().is_empty());
         assert_eq!(engine.workshop.ignored_observations, 1);
         engine.workshop.subscription = Some("live".into());

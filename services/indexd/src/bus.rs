@@ -2,7 +2,7 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Native Bus registration, bounded concurrent dispatch and reconnect.
 use crate::Engine;
-use ::bus::{RegisterProvenance, CommandDescriptor, native_client::NodedClient};
+use ::bus::{CommandDescriptor, RegisterProvenance, native_client::NodedClient};
 use std::{
     sync::Arc,
     time::{Duration, Instant},

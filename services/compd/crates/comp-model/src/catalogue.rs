@@ -129,7 +129,11 @@ mod tests {
         let commands = all_commands().collect::<std::collections::BTreeSet<_>>();
         assert_eq!(commands.len(), 39, "no command is in two families");
         assert!(commands.iter().all(|command| command.starts_with("comp.")));
-        assert!(READ_COMMANDS.iter().all(|command| DIRECT_COMMANDS.contains(command)));
+        assert!(
+            READ_COMMANDS
+                .iter()
+                .all(|command| DIRECT_COMMANDS.contains(command))
+        );
         assert_eq!(TOPIC_SUFFIXES.len(), 13);
         assert_eq!(
             TOPIC_SUFFIXES
@@ -138,10 +142,16 @@ mod tests {
                 .len(),
             13
         );
-        assert_eq!(command_family("comp.window.focus"), Some(CommandFamily::Window));
+        assert_eq!(
+            command_family("comp.window.focus"),
+            Some(CommandFamily::Window)
+        );
         assert_eq!(command_family("comp.input.key"), Some(CommandFamily::Input));
         assert_eq!(command_family("comp.ping"), Some(CommandFamily::Direct));
-        assert_eq!(command_family("comp.session.get"), Some(CommandFamily::Direct));
+        assert_eq!(
+            command_family("comp.session.get"),
+            Some(CommandFamily::Direct)
+        );
         assert_eq!(command_family("comp-nested.panel.hold"), None);
         assert_eq!(
             topic_name(NESTED_SERVICE, FOCUS_TOPIC_SUFFIX),

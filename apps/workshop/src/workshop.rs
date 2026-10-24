@@ -286,25 +286,28 @@ mod tests {
     #[tokio::test]
     async fn failed_stop_cleans_up_the_replacement() {
         let mut calls = Vec::new();
-        let answer = observe_with(&json!({"on":true,"subscription_id":"old"}), |command, args| {
-            calls.push((command, args.clone()));
-            let reply = if command == "noded.observe.start" {
-                Ok(inspector::bus::Reply {
-                    rc: 0,
-                    body: json!({"subscription_id":"new","body":"redacted"}).to_string(),
-                    error: None,
-                })
-            } else if args["subscription_id"] == "old" {
-                Err("forced stop failure".into())
-            } else {
-                Ok(inspector::bus::Reply {
-                    rc: 0,
-                    body: "{}".into(),
-                    error: None,
-                })
-            };
-            std::future::ready(reply)
-        })
+        let answer = observe_with(
+            &json!({"on":true,"subscription_id":"old"}),
+            |command, args| {
+                calls.push((command, args.clone()));
+                let reply = if command == "noded.observe.start" {
+                    Ok(inspector::bus::Reply {
+                        rc: 0,
+                        body: json!({"subscription_id":"new","body":"redacted"}).to_string(),
+                        error: None,
+                    })
+                } else if args["subscription_id"] == "old" {
+                    Err("forced stop failure".into())
+                } else {
+                    Ok(inspector::bus::Reply {
+                        rc: 0,
+                        body: "{}".into(),
+                        error: None,
+                    })
+                };
+                std::future::ready(reply)
+            },
+        )
         .await
         .unwrap();
         assert_eq!(answer["error_code"], "UNAVAILABLE");

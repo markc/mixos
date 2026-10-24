@@ -940,7 +940,11 @@ impl Engine {
         };
         let command_name = call.command_name();
         self.look.job = Some((ticket, call));
-        self.effects.push(Effect::Settings { ticket, command: command_name, body });
+        self.effects.push(Effect::Settings {
+            ticket,
+            command: command_name,
+            body,
+        });
     }
 
     /// The panel takes edits: read, no dialog, not quitting. An edit made
@@ -1535,7 +1539,11 @@ mod tests {
         e.take_effects()
             .into_iter()
             .filter_map(|x| match x {
-                Effect::Settings { ticket, command: command_name, body } => Some((ticket, command_name, body)),
+                Effect::Settings {
+                    ticket,
+                    command: command_name,
+                    body,
+                } => Some((ticket, command_name, body)),
                 _ => None,
             })
             .collect()
@@ -1996,13 +2004,20 @@ mod tests {
         assert!(!e.take_effects().contains(&Effect::Exit));
         e.settled(apply, reply(0, changed()));
         let (read_back, command_name, _) = next(&mut e);
-        assert_eq!(command_name, "settings.get", "the read-back the queued edit needs");
+        assert_eq!(
+            command_name, "settings.get",
+            "the read-back the queued edit needs"
+        );
         e.settled(read_back, reply(0, snapshot_body("8", "forest", "dark")));
         let calls: Vec<_> = e
             .take_effects()
             .into_iter()
             .filter_map(|x| match x {
-                Effect::Settings { ticket, command: command_name, body } => Some((ticket, command_name, body)),
+                Effect::Settings {
+                    ticket,
+                    command: command_name,
+                    body,
+                } => Some((ticket, command_name, body)),
                 _ => None,
             })
             .collect();
@@ -2228,7 +2243,11 @@ mod tests {
                 .take_effects()
                 .into_iter()
                 .filter_map(|x| match x {
-                    Effect::Settings { ticket, command: command_name, .. } => Some((ticket, command_name)),
+                    Effect::Settings {
+                        ticket,
+                        command: command_name,
+                        ..
+                    } => Some((ticket, command_name)),
                     _ => None,
                 })
                 .collect();
@@ -2309,7 +2328,11 @@ mod tests {
         let reads: Vec<_> = effects
             .into_iter()
             .filter_map(|x| match x {
-                Effect::Settings { ticket, command: command_name, .. } => Some((ticket, command_name)),
+                Effect::Settings {
+                    ticket,
+                    command: command_name,
+                    ..
+                } => Some((ticket, command_name)),
                 _ => None,
             })
             .collect();

@@ -386,7 +386,11 @@ fn build_delegated_body(
 }
 
 impl BusCallHandler for WebdBusCallHandler {
-    fn call<'a>(&'a self, command: &'a str, args: &'a Value) -> BusCallFuture<'a, MixResult<Value>> {
+    fn call<'a>(
+        &'a self,
+        command: &'a str,
+        args: &'a Value,
+    ) -> BusCallFuture<'a, MixResult<Value>> {
         // Command allowlist — enforced in RUST, before any send, at BOTH the route
         // membership AND the global delegated-safe allowlist. The second check
         // is defence-in-depth: a stale/injected `bus:` grant persisted in cms.db
@@ -887,7 +891,10 @@ mod tests {
         );
         // Mixed prefixes with no explicit service → ambiguous → None (reject).
         assert_eq!(
-            resolve_target_service(None, &commands(&["maild.vtoken.list_opaque", "filesd.list"])),
+            resolve_target_service(
+                None,
+                &commands(&["maild.vtoken.list_opaque", "filesd.list"])
+            ),
             None
         );
         // Empty explicit string is ignored (treated as absent → derive).
@@ -909,6 +916,9 @@ mod tests {
             resolve_target_service(None, &commands(&["fs.list", "fs.stat"])),
             None
         );
-        assert_eq!(resolve_target_service(Some(""), &commands(&["fs.list"])), None);
+        assert_eq!(
+            resolve_target_service(Some(""), &commands(&["fs.list"])),
+            None
+        );
     }
 }

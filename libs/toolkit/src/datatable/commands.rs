@@ -450,9 +450,12 @@ mod tests {
 
     #[test]
     fn bad_arguments_are_refused_by_kind() {
-        let invalid = |command_name: &str, args: Value| matches!(ask(command_name, args), Err(Refusal::Invalid(_)));
-        let missing =
-            |command_name: &str, args: Value| matches!(ask(command_name, args), Err(Refusal::NotFound(_)));
+        let invalid = |command_name: &str, args: Value| {
+            matches!(ask(command_name, args), Err(Refusal::Invalid(_)))
+        };
+        let missing = |command_name: &str, args: Value| {
+            matches!(ask(command_name, args), Err(Refusal::NotFound(_)))
+        };
         assert!(
             invalid("table.sort", json!({"column": "folder"})),
             "unsortable"

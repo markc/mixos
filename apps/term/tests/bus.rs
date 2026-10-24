@@ -147,7 +147,8 @@ fn the_window_answers_its_commands_over_a_real_broker() {
     );
     // One call, the window stepping until its answer arrives.
     let mut call = |command_name: &str, body: Value| -> (u8, String) {
-        let (client, command_name, body) = (client.clone(), command_name.to_owned(), body.to_string());
+        let (client, command_name, body) =
+            (client.clone(), command_name.to_owned(), body.to_string());
         let task = runtime.spawn(async move {
             client
                 .call_with_headers_raw("term", &command_name, &Default::default(), &body)
@@ -180,7 +181,10 @@ fn the_window_answers_its_commands_over_a_real_broker() {
         "term.window.state",
         "term.macros.status",
     ] {
-        assert!(names.contains(&command_name), "{command_name} missing from {names:?}");
+        assert!(
+            names.contains(&command_name),
+            "{command_name} missing from {names:?}"
+        );
     }
 
     // The lane still serves the terminal's own commands on the same name.

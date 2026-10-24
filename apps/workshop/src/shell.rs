@@ -594,8 +594,14 @@ impl Shell {
     /// queue goes straight on; anything else waits until the drive input
     /// before it is answered.
     fn release(&mut self) {
-        while let Some(Event::Delivery(Delivery::Command { command: command_name, .. })) = self.held.front() {
-            let joins_queue = command_name.strip_prefix("workshop.").is_some_and(drive::queues);
+        while let Some(Event::Delivery(Delivery::Command {
+            command: command_name,
+            ..
+        })) = self.held.front()
+        {
+            let joins_queue = command_name
+                .strip_prefix("workshop.")
+                .is_some_and(drive::queues);
             if self.exiting || self.engine.quitting || (drive::pending(&self.ctx) && !joins_queue) {
                 return;
             }
@@ -658,7 +664,9 @@ impl Shell {
                             .as_ref()
                             .ok()?
                             .iter()
-                            .find_map(|command_name| command_name.name.strip_suffix(".macros.list"))?;
+                            .find_map(|command_name| {
+                                command_name.name.strip_suffix(".macros.list")
+                            })?;
                         if app == "workshop" {
                             return None;
                         }
@@ -740,7 +748,11 @@ impl Shell {
                 self.spawn(async move { Event::Shown(ticket, reply, bus::show(bus, comp).await) });
             }
             Effect::Reply { id, rc, body } => self.bus.reply(id, rc, body),
-            Effect::Drive { id, command: command_name, args } => {
+            Effect::Drive {
+                id,
+                command: command_name,
+                args,
+            } => {
                 if let Some(answer) = drive::request(&self.ctx, id, &command_name, &args) {
                     self.bus.reply(answer.id, answer.rc, answer.body);
                 }
@@ -848,7 +860,12 @@ impl Shell {
         let bus = self.bus.clone();
         self.spawn(async move {
             let result = bus
-                .raw_within(read.service, read.command, read.body.to_string(), LOOK_BUDGET)
+                .raw_within(
+                    read.service,
+                    read.command,
+                    read.body.to_string(),
+                    LOOK_BUDGET,
+                )
                 .await;
             Event::Look(read.ticket, result)
         });
@@ -1095,8 +1112,10 @@ mod tests {
             description: String::new(),
             read_only: Some(false),
         };
-        s.services
-            .insert("example".into(), Ok(vec![command_name("a"), command_name("b")]));
+        s.services.insert(
+            "example".into(),
+            Ok(vec![command_name("a"), command_name("b")]),
+        );
         let mut e = Engine::new(label);
         let Some(Effect::Discover { ticket }) = e.take_effects().pop() else {
             panic!("initial discovery")
@@ -1126,7 +1145,11 @@ mod tests {
         let mut performed = Vec::new();
         for (id, command_name, body) in [
             (1, "workshop.execute", r#"{"id":"bus.call"}"#),
-            (2, "workshop.select", r#"{"service":"example","command":"b"}"#),
+            (
+                2,
+                "workshop.select",
+                r#"{"service":"example","command":"b"}"#,
+            ),
         ] {
             apply_event(
                 &mut e,

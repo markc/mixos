@@ -17,15 +17,15 @@
 //!   ledger), shared by the window and headless mode;
 //! - [`view`]: the drawing; [`shell`]: the running window;
 //! - [`headless`]: the same app and commands with no window, for agents.
+pub mod actions;
 pub mod app;
 pub mod capture;
-pub mod actions;
+pub mod commands;
 pub mod headless;
 pub mod ink;
 pub mod jobs;
 pub mod names;
 pub mod shell;
-pub mod commands;
 pub mod view;
 
 use toolkit::Strings;

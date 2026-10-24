@@ -252,9 +252,10 @@ impl Bridge {
         let id = self.next_id;
         let c = self.settings.call_timeout_secs;
         let timeout_secs = if c > 20 { c - 10 } else { (c * 3 / 4).max(1) };
-        let request = json!({"id":id, "command":command_name, "body":body, "timeout_secs":timeout_secs})
-            .to_string()
-            + "\n";
+        let request =
+            json!({"id":id, "command":command_name, "body":body, "timeout_secs":timeout_secs})
+                .to_string()
+                + "\n";
         for attempt in 0..2 {
             // Owning the session across await is deliberate: cancellation or timeout
             // drops/kills it, so a late reply cannot be consumed by the next call.
@@ -693,7 +694,10 @@ mod tests {
             "feedback",
         ] {
             let error = client
-                .call(&format!("indexd.{command_name}"), &json!({"mode":"bridge_timeout"}))
+                .call(
+                    &format!("indexd.{command_name}"),
+                    &json!({"mode":"bridge_timeout"}),
+                )
                 .await
                 .unwrap_err()
                 .to_string();

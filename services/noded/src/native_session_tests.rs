@@ -1665,8 +1665,9 @@ async fn tcp_only_reserved_topic_keeps_legacy_observation_without_fanout_events(
     register(&mut observer, "audit-observer").await;
     send(
         &mut observer,
-        &request("noded.observe.start", "noded", "observe")
-            .with_body(r#"{"filter":{"commands":["maild.props.*","noded.ping"]},"body":"redacted"}"#),
+        &request("noded.observe.start", "noded", "observe").with_body(
+            r#"{"filter":{"commands":["maild.props.*","noded.ping"]},"body":"redacted"}"#,
+        ),
     )
     .await;
     assert_eq!(receive(&mut observer).await.get("rc"), Some("0"));

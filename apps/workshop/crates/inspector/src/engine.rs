@@ -52,7 +52,11 @@ pub enum Effect {
     Describe { id: u64, help: bool },
     /// Hand the window-level command `command` (without the `workshop.` prefix:
     /// `ui.click`, `window`, …) to the toolkit drive layer.
-    Drive { id: u64, command: String, args: Value },
+    Drive {
+        id: u64,
+        command: String,
+        args: Value,
+    },
     /// Put `text` on the clipboard.
     Copy(String),
     /// Close: stop the Bus connection and the window.
@@ -862,7 +866,11 @@ impl Engine {
     /// A delivery from the Bus connection.
     pub fn delivery(&mut self, delivery: Delivery) {
         match delivery {
-            Delivery::Command { id, command: command_name, body } => self.command(id, &command_name, &body),
+            Delivery::Command {
+                id,
+                command: command_name,
+                body,
+            } => self.command(id, &command_name, &body),
             Delivery::Changed => {
                 if self.busy() {
                     self.refetch = true;
@@ -896,7 +904,10 @@ impl Engine {
                 .ok_or_else(|| self.label("invalid-target")),
             (Some(service), Some(command_name)) => Ok(Selection {
                 service: service.as_str().ok_or("service must be a string")?.into(),
-                command: command_name.as_str().ok_or("command must be a string")?.into(),
+                command: command_name
+                    .as_str()
+                    .ok_or("command must be a string")?
+                    .into(),
             }),
             _ => Err("service and command must be supplied together".into()),
         }
@@ -1308,7 +1319,8 @@ impl Engine {
             return false;
         }
         let call = self.call.take().expect("matching call");
-        let (service, command_name, request) = (&call.target.service, &call.target.command, &call.body);
+        let (service, command_name, request) =
+            (&call.target.service, &call.target.command, &call.body);
         self.last_reply = match result {
             Ok(reply) => {
                 json!({"service":service,"command":command_name,"request_body":request,"rc":reply.rc,"body":reply.body})
@@ -1323,7 +1335,10 @@ impl Engine {
         let retained = self.workshop.retain(json!({"direction":"local","from":"workshop","service":service,"command":command_name,"rc":self.last_reply["rc"],"payload":payload,"request":request_body}));
         let rendered = if let Some(rc) = self.last_reply["rc"].as_u64() {
             let body = model::pretty(self.last_reply["body"].as_str().unwrap_or_default());
-            format!("{service}  {command_name}\n{} = {rc}\n\n{body}", self.label("rc"))
+            format!(
+                "{service}  {command_name}\n{} = {rc}\n\n{body}",
+                self.label("rc")
+            )
         } else {
             let error = self.last_reply["transport_error"]
                 .as_str()
@@ -1714,7 +1729,11 @@ mod tests {
             [Effect::Reply { id: 7, rc: 10, .. }]
         ));
         assert_eq!(calls(&effects), 0);
-        e.command(8, "workshop.call", r#"{"service":"example","command":"nope"}"#);
+        e.command(
+            8,
+            "workshop.call",
+            r#"{"service":"example","command":"nope"}"#,
+        );
         assert!(
             matches!(&e.take_effects()[..], [Effect::Reply { id: 8, rc: 10, body }] if body["error_code"] == "ARGUMENT")
         );
@@ -1903,8 +1922,12 @@ mod tests {
                 args: json!({"label":"File"})
             }
         );
-        assert!(matches!(&effects[1], Effect::Drive { id: 2, command: command_name, .. } if command_name == "window"));
-        assert!(matches!(&effects[2], Effect::Drive { id: 3, command: command_name, .. } if command_name == "window.state"));
+        assert!(
+            matches!(&effects[1], Effect::Drive { id: 2, command: command_name, .. } if command_name == "window")
+        );
+        assert!(
+            matches!(&effects[2], Effect::Drive { id: 3, command: command_name, .. } if command_name == "window.state")
+        );
     }
 
     #[test]
@@ -1921,7 +1944,12 @@ mod tests {
             .collect();
         assert_eq!(
             keys,
-            ["service:example", "command:example:echo", "mesh", "mesh:empty"]
+            [
+                "service:example",
+                "command:example:echo",
+                "mesh",
+                "mesh:empty"
+            ]
         );
         assert_eq!(
             code(ask(&mut e, "workshop.filter", json!({"text":5}))),
@@ -2022,7 +2050,10 @@ mod tests {
             .cloned()
             .unwrap();
         assert_eq!(
-            (command_name["kind"].as_str(), command_name["depth"].as_u64()),
+            (
+                command_name["kind"].as_str(),
+                command_name["depth"].as_u64()
+            ),
             (Some("command"), Some(1))
         );
         assert_eq!(

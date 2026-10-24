@@ -33,18 +33,14 @@ pub fn manifest() -> Vec<bus::CommandDescriptor> {
         "List served commands",
         true,
     ))
-    .chain(
-        COMMANDS
-            .iter()
-            .map(|command_name| bus::CommandDescriptor::new(command_name, &[], "Settings portal status", true)),
-    )
-    .chain(
-        crate::screencast::consent::COMMANDS
-            .iter()
-            .map(|(command_name, description, read_only)| {
-                bus::CommandDescriptor::new(command_name, &[], description, *read_only)
-            }),
-    )
+    .chain(COMMANDS.iter().map(|command_name| {
+        bus::CommandDescriptor::new(command_name, &[], "Settings portal status", true)
+    }))
+    .chain(crate::screencast::consent::COMMANDS.iter().map(
+        |(command_name, description, read_only)| {
+            bus::CommandDescriptor::new(command_name, &[], description, *read_only)
+        },
+    ))
     .collect()
 }
 
@@ -70,7 +66,9 @@ async fn fetch(client: &SupervisedClient, binding: &Binding) -> Result<Read, Dia
         .map_err(|error| fault(error.to_string()))?;
     let value = match reply {
         PortReply::Ok { rc: 0, value } => value,
-        PortReply::Ok { rc, value } => return Err(fault(format!("{FETCH_COMMAND} rc {rc}: {value}"))),
+        PortReply::Ok { rc, value } => {
+            return Err(fault(format!("{FETCH_COMMAND} rc {rc}: {value}")));
+        }
         PortReply::AppError { rc, message } => {
             return Err(fault(format!("{FETCH_COMMAND} rc {rc}: {message}")));
         }
@@ -670,7 +668,11 @@ mod tests {
                 "portald.screencast.revoke"
             ]
         );
-        assert!(manifest.iter().any(|command_name| command_name.name == "portald.status"));
+        assert!(
+            manifest
+                .iter()
+                .any(|command_name| command_name.name == "portald.status")
+        );
     }
 
     #[test]

@@ -238,7 +238,11 @@ impl Shell {
     fn pump(&mut self) {
         while let Ok(event) = self.rx.try_recv() {
             match event {
-                Event::Delivery(Delivery::Command { id, command: command_name, body }) => {
+                Event::Delivery(Delivery::Command {
+                    id,
+                    command: command_name,
+                    body,
+                }) => {
                     if self.exiting {
                         self.refuse_closing(id);
                     } else {
@@ -302,7 +306,9 @@ impl Shell {
     /// before it is answered.
     fn release(&mut self) {
         while let Some((_, command_name, _)) = self.held.front() {
-            let joins_queue = command_name.strip_prefix("screenshot.").is_some_and(drive::queues);
+            let joins_queue = command_name
+                .strip_prefix("screenshot.")
+                .is_some_and(drive::queues);
             if self.exiting || (drive::pending(&self.ctx) && !joins_queue) {
                 return;
             }
@@ -396,7 +402,11 @@ impl Shell {
             Effect::Forget { path } => {
                 self.runtime.spawn_blocking(move || jobs::forget(&path));
             }
-            Effect::Drive { id, command: command_name, args } => {
+            Effect::Drive {
+                id,
+                command: command_name,
+                args,
+            } => {
                 if let Some(answer) = drive::request(&self.ctx, id, &command_name, &args) {
                     self.bus.reply(answer.id, answer.rc, answer.body);
                 }
@@ -574,7 +584,12 @@ impl Shell {
         let bus = self.bus.clone();
         self.spawn(async move {
             let result = bus
-                .raw_within(read.service, read.command, read.body.to_string(), LOOK_BUDGET)
+                .raw_within(
+                    read.service,
+                    read.command,
+                    read.body.to_string(),
+                    LOOK_BUDGET,
+                )
                 .await;
             Event::Look(read.ticket, result)
         });

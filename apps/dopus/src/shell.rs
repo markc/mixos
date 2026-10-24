@@ -186,7 +186,10 @@ impl Shell {
                 icon_weight: None,
             },
             actions: self.app.actions.clone(),
-            extra_commands: drive::COMMANDS.iter().map(|v| format!("{APP}.{v}")).collect(),
+            extra_commands: drive::COMMANDS
+                .iter()
+                .map(|v| format!("{APP}.{v}"))
+                .collect(),
         }
     }
 

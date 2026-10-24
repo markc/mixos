@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use ::bus::native_client::{ConnState, SupervisedClient};
-use edit::wire::{SERVICE, COMMANDS};
+use edit::wire::{COMMANDS, SERVICE};
 
 /// Declared args per command (the manifest's `args` column).
 fn command_args(command_name: &str) -> &'static [&'static str] {
@@ -300,7 +300,10 @@ mod tests {
         let manifest = command_manifest();
         assert_eq!(manifest.len(), COMMANDS.len() + 1);
         for (command_name, _) in COMMANDS {
-            assert!(!command_description(command_name).is_empty(), "{command_name}: no description");
+            assert!(
+                !command_description(command_name).is_empty(),
+                "{command_name}: no description"
+            );
         }
     }
 }

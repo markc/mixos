@@ -585,7 +585,8 @@ impl Session {
                         writer.write_all(resp.as_bytes()).await?;
                     }
                 }
-                command_name @ ("FETCH" | "STORE" | "SEARCH" | "COPY" | "MOVE" | "EXPUNGE" | "UID") => {
+                command_name @ ("FETCH" | "STORE" | "SEARCH" | "COPY" | "MOVE" | "EXPUNGE"
+                | "UID") => {
                     if !self.state.is_authenticated() {
                         self.bad_commands += 1;
                         let resp = tagged(&parsed.tag, Status::Bad, None, "NOT AUTHENTICATED");

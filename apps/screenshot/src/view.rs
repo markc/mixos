@@ -11,17 +11,17 @@
 //! the canvas surround; the status bar. The picture is the painter's own
 //! render (what is saved is what is shown); only a gesture in progress and
 //! the selection are drawn over it here.
+use crate::actions::{ink_id, mode_id, size_id, tool_id, width_id};
 use crate::app::Commands;
 use crate::app::{Answer, App, Dialog, SIZES, Tool, WIDTHS};
 use crate::capture::{Mode, Target};
-use crate::actions::{ink_id, mode_id, size_id, tool_id, width_id};
 use crate::{label, label_with};
 use annotation::{Crop, Kind, Point, Shape, Viewport};
 use egui::{
     Align, Color32, Id, Layout, PointerButton, Pos2, Rect, RichText, Sense, Stroke, Ui, pos2, vec2,
 };
-use toolkit::button::{IconButton, PushButton};
 use toolkit::action::Origin;
+use toolkit::button::{IconButton, PushButton};
 use toolkit::dialog::{self, Choice, Role};
 use toolkit::titlebar::{self, Action};
 use toolkit::{Icon, Strings, bars, field, tooltip};

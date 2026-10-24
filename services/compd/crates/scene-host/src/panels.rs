@@ -1199,13 +1199,14 @@ impl Panels {
         }
         // A toggle decides against the actual reveal, including pointer and
         // keyboard holders. Release focus before asking the core to conceal.
-        let closing =
-            kind == PanelCommand::Hide || (kind == PanelCommand::Toggle && !self.hidden(output, edge));
-        let input = if closing && kind == PanelCommand::Toggle && self.mode(output, edge) == "hidden" {
-            PanelInput::Hide
-        } else {
-            kind.input()
-        };
+        let closing = kind == PanelCommand::Hide
+            || (kind == PanelCommand::Toggle && !self.hidden(output, edge));
+        let input =
+            if closing && kind == PanelCommand::Toggle && self.mode(output, edge) == "hidden" {
+                PanelInput::Hide
+            } else {
+                kind.input()
+            };
         if closing {
             self.pending_focus.remove(output);
         }
@@ -2538,7 +2539,9 @@ mod tests {
     fn a_refused_resize_leaves_a_transient_reveal_and_its_wake_untouched() {
         let mut panels = panels_with("DP-1");
         register(&mut panels, "DP-1", Edge::Bottom, "scene-panel", 52.0);
-        panels.input("DP-1", Edge::Bottom, PanelCommand::Show).unwrap();
+        panels
+            .input("DP-1", Edge::Bottom, PanelCommand::Show)
+            .unwrap();
         let before = format!("{:?}", panels.models["DP-1"]);
         assert_eq!(
             panels.resize("DP-1", Edge::Bottom, 30.0).unwrap_err()["error_code"],
@@ -2599,16 +2602,22 @@ mod tests {
             "EMPTY_EDGE"
         );
         register(&mut panels, "DP-1", Edge::Left, "scene-launcher", 440.0);
-        panels.input("DP-1", Edge::Left, PanelCommand::Show).unwrap();
+        panels
+            .input("DP-1", Edge::Left, PanelCommand::Show)
+            .unwrap();
         assert!(
             !panels.hidden("DP-1", Edge::Left),
             "a transient reveal holds it"
         );
-        panels.input("DP-1", Edge::Left, PanelCommand::Hide).unwrap();
+        panels
+            .input("DP-1", Edge::Left, PanelCommand::Hide)
+            .unwrap();
         assert!(panels.hidden("DP-1", Edge::Left));
         panels.input("DP-1", Edge::Left, PanelCommand::Pin).unwrap();
         assert_eq!(panels.mode("DP-1", Edge::Left), "pinned");
-        panels.input("DP-1", Edge::Left, PanelCommand::Hide).unwrap();
+        panels
+            .input("DP-1", Edge::Left, PanelCommand::Hide)
+            .unwrap();
         assert!(
             !panels.hidden("DP-1", Edge::Left),
             "hide never changes a persistent mode"

@@ -277,12 +277,8 @@ mod tests {
         let mut e = Engine::new(crate::label);
         r.execute("view.style.classic", &mut e, toolkit::action::Origin::Bus)
             .unwrap();
-        r.execute(
-            "view.decorations.ssd",
-            &mut e,
-            toolkit::action::Origin::Bus,
-        )
-        .unwrap();
+        r.execute("view.decorations.ssd", &mut e, toolkit::action::Origin::Bus)
+            .unwrap();
         r.execute("view.captions.left", &mut e, toolkit::action::Origin::Bus)
             .unwrap();
         assert_eq!(e.ui.theme_style, Some(Some(design::Style::Classic)));
@@ -342,8 +338,7 @@ mod tests {
             "help.about",
         ] {
             assert!(
-                r.execute(id, &mut e, toolkit::action::Origin::Bus)
-                    .is_err(),
+                r.execute(id, &mut e, toolkit::action::Origin::Bus).is_err(),
                 "{id} must be disabled under a dialog"
             );
         }

@@ -24,10 +24,10 @@ use toolkit::action::Origin;
 use toolkit::{Registry, Strings, Theme, drive};
 
 use crate::actions;
+use crate::commands::{Forward, Then, Write};
 use crate::drafts::{DirStore, DraftStore, MemoryStore};
 use crate::secrets::{Secrets, SecretsFile};
 use crate::state::{DRAFT_DEBOUNCE, Mode, SessionInfo, Settled, State, Tag, UiState, code};
-use crate::commands::{Forward, Then, Write};
 use crate::view::{UiEvent, view};
 use crate::work::{Login, Work};
 use crate::{APP, APP_ID, label};
@@ -1194,7 +1194,12 @@ impl Shell {
                 self.read_look();
                 continue;
             }
-            if let Event::Delivery(citizen::Delivery::Command { id, command: command_name, body }) = event {
+            if let Event::Delivery(citizen::Delivery::Command {
+                id,
+                command: command_name,
+                body,
+            }) = event
+            {
                 if self.exiting {
                     self.refuse_closing(id);
                 } else {
@@ -1290,7 +1295,9 @@ impl Shell {
     /// in the order sent.
     fn release(&mut self) {
         while let Some((_, command_name, _)) = self.held.front() {
-            let joins = command_name.strip_prefix("email.").is_some_and(drive::queues);
+            let joins = command_name
+                .strip_prefix("email.")
+                .is_some_and(drive::queues);
             if self.exiting || (drive::pending(&self.ctx) && !joins) {
                 return;
             }
@@ -1311,7 +1318,11 @@ impl Shell {
             body,
         );
         match forward {
-            Some(Forward::Drive { id, command: command_name, args }) => {
+            Some(Forward::Drive {
+                id,
+                command: command_name,
+                args,
+            }) => {
                 if let Some(answer) = drive::request(&self.ctx, id, &command_name, &args) {
                     self.bus.reply(answer.id, answer.rc, answer.body);
                 }
@@ -1412,7 +1423,12 @@ impl Shell {
         let bus = self.bus.clone();
         self.spawn(async move {
             let result = bus
-                .raw_within(read.service, read.command, read.body.to_string(), LOOK_BUDGET)
+                .raw_within(
+                    read.service,
+                    read.command,
+                    read.body.to_string(),
+                    LOOK_BUDGET,
+                )
                 .await;
             Event::Look(read.ticket, result)
         });

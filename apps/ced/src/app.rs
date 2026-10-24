@@ -29,10 +29,10 @@ use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 
 use documents::actions::ActionId;
+use documents::commands::{Refusal, code};
 use documents::config::{self, Config, FONT_PX_MAX, FONT_PX_MIN};
 use documents::controller::{Controller, Effect, Prompt, RecoveredRow, Tab};
 use documents::editor::{EditorMsg, LayoutReport};
-use documents::commands::{Refusal, code};
 use editor::{View, Wrap};
 use editor_model::mirror::Phase;
 use editor_model::types::{Intent, Invoker, Level, Notice, TabId};

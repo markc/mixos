@@ -1472,7 +1472,11 @@ mod tests {
         let inner = store.inner.lock().unwrap();
         let command: String = inner
             .conn
-            .query_row("SELECT command FROM __props_events WHERE nseq = 1", [], |r| r.get(0))
+            .query_row(
+                "SELECT command FROM __props_events WHERE nseq = 1",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(command, "demo.props.set");
     }

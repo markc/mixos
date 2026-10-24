@@ -30,7 +30,10 @@ fn engine() -> Engine {
     let mut s = Snapshot::default();
     s.services.insert(
         "settingsd".into(),
-        Ok(vec![command_name("settings.get"), command_name("settings.list")]),
+        Ok(vec![
+            command_name("settings.get"),
+            command_name("settings.list"),
+        ]),
     );
     s.services
         .insert("noded".into(), Ok(vec![command_name("noded.list")]));
@@ -72,9 +75,13 @@ fn window() -> Harness<'static, Window> {
                 for effect in effects {
                     match effect {
                         Effect::Reply { id, rc, body } => w.answers.push(Answer { id, rc, body }),
-                        Effect::Drive { id, command: command_name, args } => {
-                            w.answers.extend(drive::request(ui.ctx(), id, &command_name, &args))
-                        }
+                        Effect::Drive {
+                            id,
+                            command: command_name,
+                            args,
+                        } => w
+                            .answers
+                            .extend(drive::request(ui.ctx(), id, &command_name, &args)),
                         _ => {}
                     }
                 }

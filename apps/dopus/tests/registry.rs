@@ -4,8 +4,8 @@
 //! lists exactly the commands DOpus registers: its own (`dopus.describe`
 //! reports them in this order) and the toolkit's drive commands under its
 //! prefix, apart from the protocol commands every service answers.
-use dopus::shell::APP;
 use dopus::commands::COMMANDS;
+use dopus::shell::APP;
 
 const REGISTRY: &str = include_str!("../../../docs/docs/spec/bus/commands.conf.mix");
 
@@ -31,7 +31,11 @@ fn described() -> Vec<String> {
     COMMANDS
         .iter()
         .map(|(command, _)| (*command).to_owned())
-        .chain(toolkit::drive::COMMANDS.iter().map(|v| format!("{APP}.{v}")))
+        .chain(
+            toolkit::drive::COMMANDS
+                .iter()
+                .map(|v| format!("{APP}.{v}")),
+        )
         .collect()
 }
 

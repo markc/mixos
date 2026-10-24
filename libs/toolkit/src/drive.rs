@@ -304,7 +304,9 @@ pub fn request(ctx: &Context, id: u64, command_name: &str, args: &Value) -> Opti
                 if child.requests.len() >= QUEUE_LIMIT {
                     return Some(refusal(id, "BUSY", "viewport request queue is full"));
                 }
-                child.requests.push_back((id, command_name.into(), args.clone()));
+                child
+                    .requests
+                    .push_back((id, command_name.into(), args.clone()));
                 child
                     .deadlines
                     .insert(id, Instant::now() + child.options.capture_timeout);
@@ -636,7 +638,13 @@ impl Drive {
 }
 
 impl Drive {
-    fn request(&mut self, ctx: &Context, id: u64, command_name: &str, args: &Value) -> Option<Answer> {
+    fn request(
+        &mut self,
+        ctx: &Context,
+        id: u64,
+        command_name: &str,
+        args: &Value,
+    ) -> Option<Answer> {
         if !args.is_object() {
             return Some(refusal(id, "ARGUMENT", "arguments must be a JSON object"));
         }
@@ -1794,7 +1802,10 @@ mod tests {
             request(&ctx, 1, command_name, &args)
                 .map(|a| a.body["error_code"].as_str().unwrap_or("").to_owned())
         };
-        assert_eq!(code("ui.nope", json!({})).as_deref(), Some("UNKNOWN_COMMAND"));
+        assert_eq!(
+            code("ui.nope", json!({})).as_deref(),
+            Some("UNKNOWN_COMMAND")
+        );
         assert_eq!(code("ui.tree", json!([])).as_deref(), Some("ARGUMENT"));
         assert_eq!(code("ui.click", json!({})).as_deref(), Some("ARGUMENT"));
         assert_eq!(

@@ -569,7 +569,11 @@ fn captures(h: &Harness<'_, App>) -> std::path::PathBuf {
 
 fn refused(h: &mut Harness<'_, App>, command_name: &'static str, args: Value) -> String {
     let answer = call(h, command_name, args);
-    assert_eq!(answer.rc, 10, "{command_name} must be refused: {}", answer.body);
+    assert_eq!(
+        answer.rc, 10,
+        "{command_name} must be refused: {}",
+        answer.body
+    );
     answer.body["error_code"].as_str().unwrap().to_owned()
 }
 

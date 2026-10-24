@@ -214,9 +214,19 @@ impl Handle {
             .map_err(|_| "Bus stopped".to_owned())?;
         rx.await.map_err(|_| "subscription abandoned".to_owned())?
     }
-    pub async fn raw(&self, service: &str, command_name: &str, body: String) -> Result<Reply, CallError> {
-        self.raw_within(service, command_name, body, Duration::from_secs(CALL_SECONDS))
-            .await
+    pub async fn raw(
+        &self,
+        service: &str,
+        command_name: &str,
+        body: String,
+    ) -> Result<Reply, CallError> {
+        self.raw_within(
+            service,
+            command_name,
+            body,
+            Duration::from_secs(CALL_SECONDS),
+        )
+        .await
     }
     /// [`Handle::raw`] with its own time limit, for calls that legitimately
     /// run long (an install downloading); past it the outcome is unknown.
@@ -235,13 +245,24 @@ impl Handle {
         });
         let (tx, rx) = oneshot::channel();
         self.tx
-            .send(Effect::Call(service.into(), command_name.into(), body, limit, tx))
+            .send(Effect::Call(
+                service.into(),
+                command_name.into(),
+                body,
+                limit,
+                tx,
+            ))
             .await
             .map_err(|_| CallError::not_sent("Bus stopped; no call sent"))?;
         rx.await
             .map_err(|_| CallError::from("Bus request abandoned"))?
     }
-    pub async fn call(&self, service: &str, command_name: &str, args: Value) -> Result<Reply, String> {
+    pub async fn call(
+        &self,
+        service: &str,
+        command_name: &str,
+        args: Value,
+    ) -> Result<Reply, String> {
         self.raw(service, command_name, args.to_string())
             .await
             .map_err(|e| e.to_string())
@@ -687,7 +708,11 @@ fn anonymous(url: &str, service: &str, command_name: &str, args: Value) -> Resul
         .map_err(|e| e.to_string())?;
     runtime.block_on(async {
         // Activation may arrive after registration but before the first map.
-        let budget = if command_name.ends_with(".show") { 20 } else { 5 };
+        let budget = if command_name.ends_with(".show") {
+            20
+        } else {
+            5
+        };
         tokio::time::timeout(Duration::from_secs(budget), async {
             let client = NodedClient::connect_anonymous(url)
                 .await
@@ -878,7 +903,10 @@ mod tests {
         .into_iter();
         let owed = unanswered(pending, || buffered.next());
         let command_names: Vec<_> = owed.iter().map(|c| c.command.as_str()).collect();
-        assert_eq!(command_names, ["a.first", "b.second", "c.buffered", "d.buffered"]);
+        assert_eq!(
+            command_names,
+            ["a.first", "b.second", "c.buffered", "d.buffered"]
+        );
         assert!(buffered.next().is_none(), "drained until nothing was ready");
         assert!(unanswered(HashMap::new(), || None).is_empty());
     }

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! The document edit table, shared by the window and headless dispatch.
 use crate::{Crop, Document, Shape};
-use action::{Class, Action, Error, ParamSpec};
+use action::{Action, Class, Error, ParamSpec};
 use schemars::{JsonSchema, schema_for};
 use serde::{Deserialize, de::DeserializeOwned};
 use serde_json::{Value, json};

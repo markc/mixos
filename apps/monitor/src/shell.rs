@@ -45,7 +45,11 @@ pub enum Event {
 /// Apply one finished event to the engine.
 pub fn apply_event(engine: &mut Engine, event: Event) {
     match event {
-        Event::Delivery(Delivery::Command { id, command: command_name, body }) => engine.command(id, &command_name, &body),
+        Event::Delivery(Delivery::Command {
+            id,
+            command: command_name,
+            body,
+        }) => engine.command(id, &command_name, &body),
         Event::Delivery(Delivery::Changed) => engine.services_changed(),
         Event::Delivery(Delivery::Connected) => engine.set_connected(true),
         Event::Delivery(Delivery::Disconnected) => engine.set_connected(false),
@@ -381,8 +385,14 @@ impl Shell {
     }
 
     fn release(&mut self) {
-        while let Some(Event::Delivery(Delivery::Command { command: command_name, .. })) = self.held.front() {
-            let joins_queue = command_name.strip_prefix("monitor.").is_some_and(drive::queues);
+        while let Some(Event::Delivery(Delivery::Command {
+            command: command_name,
+            ..
+        })) = self.held.front()
+        {
+            let joins_queue = command_name
+                .strip_prefix("monitor.")
+                .is_some_and(drive::queues);
             if self.exiting || (drive::pending(&self.ctx) && !joins_queue) {
                 return;
             }
@@ -438,7 +448,11 @@ impl Shell {
                 self.ctx.request_repaint();
             }
             Effect::Reply { id, rc, body } => self.bus.reply(id, rc, body),
-            Effect::Drive { id, command: command_name, args } => {
+            Effect::Drive {
+                id,
+                command: command_name,
+                args,
+            } => {
                 if let Some(answer) = drive::request(&self.ctx, id, &command_name, &args) {
                     self.bus.reply(answer.id, answer.rc, answer.body);
                 }
@@ -517,7 +531,12 @@ impl Shell {
         let bus = self.bus.clone();
         self.spawn(async move {
             let result = bus
-                .raw_within(read.service, read.command, read.body.to_string(), LOOK_BUDGET)
+                .raw_within(
+                    read.service,
+                    read.command,
+                    read.body.to_string(),
+                    LOOK_BUDGET,
+                )
                 .await;
             Event::Look(read.ticket, result)
         });

@@ -569,8 +569,14 @@ mod tests {
         let mut injector = Injector::default();
         for (command_name, body) in [
             (commands::POINTER_MOVE, json!({"dx": 1})),
-            (commands::POINTER_MOVE, json!({"dx": 2147483648_i64, "dy": 0})),
-            (commands::POINTER_MOVE, json!({"dx": -2147483649_i64, "dy": 0})),
+            (
+                commands::POINTER_MOVE,
+                json!({"dx": 2147483648_i64, "dy": 0}),
+            ),
+            (
+                commands::POINTER_MOVE,
+                json!({"dx": -2147483649_i64, "dy": 0}),
+            ),
             (commands::POINTER_MOVE, json!({"dx": 1.5, "dy": 0})),
             (commands::POINTER_MOVE, json!({"dx": "1", "dy": 0})),
             (commands::POINTER_SCROLL, json!({"dx": 1})),
@@ -653,7 +659,11 @@ mod tests {
     fn pointer_write_errors_are_reported_and_keymap_gate_is_preserved() {
         let mut injector =
             Injector::with_test_file(File::options().write(true).open("/dev/full").unwrap());
-        let cmd = command(commands::POINTER_MOVE, json!({"dx": 1, "dy": 0}), Some("mesh"));
+        let cmd = command(
+            commands::POINTER_MOVE,
+            json!({"dx": 1, "dy": 0}),
+            Some("mesh"),
+        );
         let (rc, reply) = dispatch(&resolver(), &Store::default(), &mut injector, &cmd);
         assert_eq!(rc, 10);
         assert!(reply.contains("pointer injection failed"));
@@ -752,7 +762,13 @@ mod tests {
         let written = keymap_file::load(&path).unwrap();
         assert!(written.rows.iter().any(|r| r.action.as_str() == "user.f05"));
         // unbind, mode and reload too.
-        let (rc, reply) = run_as(&resolver, &store, mesh, commands::UNBIND, json!({"code":63}));
+        let (rc, reply) = run_as(
+            &resolver,
+            &store,
+            mesh,
+            commands::UNBIND,
+            json!({"code":63}),
+        );
         assert_eq!(rc, 0, "{reply}");
         assert!(reply["generation"].as_u64().unwrap() > bound, "{reply}");
         assert!(
@@ -818,8 +834,14 @@ mod tests {
             let (rc, reply) = run_as(&resolver, &store, Some("mesh"), command_name, body);
             assert_eq!(rc, 10, "{command_name}: {reply}");
             let error = reply["error"].as_str().unwrap();
-            assert!(error.contains("node-local caller"), "{command_name}: {error}");
-            assert!(error.contains("MIXOS_MESH_OPEN=0"), "{command_name}: {error}");
+            assert!(
+                error.contains("node-local caller"),
+                "{command_name}: {error}"
+            );
+            assert!(
+                error.contains("MIXOS_MESH_OPEN=0"),
+                "{command_name}: {error}"
+            );
         }
         {
             let live = resolver.lock().unwrap();
@@ -1051,7 +1073,10 @@ mod tests {
         let edge = inputd_core::Edge::Press;
         let mods = inputd_schema::SideModifiers::RIGHT_CTRL;
         let out = resolver.lock().unwrap().resolve(106, mods, edge);
-        assert_eq!(out.command.map(|v| v.as_str()), Some("comp.workspace.switch"));
+        assert_eq!(
+            out.command.map(|v| v.as_str()),
+            Some("comp.workspace.switch")
+        );
         assert_eq!(out.service.as_deref(), Some("comp"));
         let (rc, reply) = run(
             &resolver,

@@ -110,7 +110,9 @@ fn a_password_goes_to_email_and_is_answered_without_it() {
                 service,
                 command: command_name,
                 body,
-            } if command_name == "email.account.password.set" => Some((service.clone(), body.clone())),
+            } if command_name == "email.account.password.set" => {
+                Some((service.clone(), body.clone()))
+            }
             _ => None,
         })
         .expect("the call to Email");

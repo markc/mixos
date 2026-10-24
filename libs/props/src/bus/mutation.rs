@@ -688,7 +688,9 @@ impl PropsRouter {
                     );
                     return err(
                         ErrorCode::GrantFailed,
-                        format!("{command_name}: grant_failed (see daemon log for upstream detail)"),
+                        format!(
+                            "{command_name}: grant_failed (see daemon log for upstream detail)"
+                        ),
                     );
                 }
                 true

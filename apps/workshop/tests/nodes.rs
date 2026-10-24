@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-use inspector::model::{Node, Command};
+use inspector::model::{Command, Node};
 use inspector::{Effect, Engine, Snapshot};
 
 #[test]

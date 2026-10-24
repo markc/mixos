@@ -96,7 +96,10 @@ fn the_newline_after_a_heredoc_terminator_is_at_its_real_column() {
 
 #[test]
 fn every_token_points_back_into_a_real_tool_source() {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tools/command_registry.mix");
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../tools/command_registry.mix"
+    );
     let source = std::fs::read_to_string(path).unwrap();
     let lines: Vec<Vec<char>> = source.split('\n').map(|l| l.chars().collect()).collect();
     let tokens = Lexer::source_tokens(&source, true).unwrap();

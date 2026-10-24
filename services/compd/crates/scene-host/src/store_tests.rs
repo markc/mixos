@@ -679,7 +679,11 @@ fn conformance_and_last_good() {
         store.request(SceneCommand::Get, "", &get).unwrap().0,
         json!(expected)
     );
-    assert!(store.request(SceneCommand::Load, "bad", &Value::Null).is_err());
+    assert!(
+        store
+            .request(SceneCommand::Load, "bad", &Value::Null)
+            .is_err()
+    );
     assert!(
         store
             .request(
@@ -1104,7 +1108,12 @@ fn unloading_an_unknown_scene_refuses_with_the_pinned_body() {
         owner: "scenes",
         accepted_at: 1,
     };
-    let done = store.dispatch(SceneCommand::Unload, "", &json!({"scene":"gone"}), &mut caller);
+    let done = store.dispatch(
+        SceneCommand::Unload,
+        "",
+        &json!({"scene":"gone"}),
+        &mut caller,
+    );
     assert_eq!(done.rc, 10, "{}", done.body);
     let body: Value = serde_json::from_str(&done.body).unwrap();
     assert_eq!(body["error"], "unknown scene", "{body}");

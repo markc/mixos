@@ -161,9 +161,10 @@ impl BufCommand {
             BufCommand::AnchorSet(r) => r.meta.op_id.as_deref(),
             BufCommand::AnchorClear(r) => r.meta.op_id.as_deref(),
             BufCommand::Undo(r) | BufCommand::Redo(r) => r.op_id.as_deref(),
-            BufCommand::Get(_) | BufCommand::Find(_) | BufCommand::AnchorGet(_) | BufCommand::History(_) => {
-                None
-            }
+            BufCommand::Get(_)
+            | BufCommand::Find(_)
+            | BufCommand::AnchorGet(_)
+            | BufCommand::History(_) => None,
         }
     }
 }
@@ -878,7 +879,11 @@ impl Actor {
 
     // ── commands ───────────────────────────────────────────────────────────────
 
-    async fn handle(&mut self, command_name: BufCommand, caller: &Caller) -> Result<String, Refusal> {
+    async fn handle(
+        &mut self,
+        command_name: BufCommand,
+        caller: &Caller,
+    ) -> Result<String, Refusal> {
         match command_name {
             BufCommand::Insert(r) => {
                 let ops = vec![OpSpec::Insert {

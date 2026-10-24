@@ -133,7 +133,9 @@ async fn serve_reconnect_bridge_flush_eof_and_sigterm() {
         (json!(3), "indexd.unknown", json!({}), 10),
     ] {
         input
-            .write_all(format!("{}\n", json!({"id":id,"command":command_name,"body":body})).as_bytes())
+            .write_all(
+                format!("{}\n", json!({"id":id,"command":command_name,"body":body})).as_bytes(),
+            )
             .await
             .unwrap();
         input.flush().await.unwrap();
@@ -252,7 +254,13 @@ fn call_is_in_process_and_uses_explicit_config() {
     let (_dir, config) = fixture();
     let run = |command_name: &str, body: &str| {
         std::process::Command::new(env!("CARGO_BIN_EXE_indexd"))
-            .args(["--config", config.to_str().unwrap(), "call", command_name, body])
+            .args([
+                "--config",
+                config.to_str().unwrap(),
+                "call",
+                command_name,
+                body,
+            ])
             .env("MIXOS_NODED_URL", "ws://127.0.0.1:1/ws")
             .output()
             .unwrap()

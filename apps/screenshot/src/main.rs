@@ -149,7 +149,10 @@ fn forward(args: &Args) -> Result<(), String> {
         if reply.rc == 0 {
             Ok(())
         } else {
-            Err(format!("{command} refused (rc {}): {}", reply.rc, reply.body))
+            Err(format!(
+                "{command} refused (rc {}): {}",
+                reply.rc, reply.body
+            ))
         }
     };
     if let Some(mode) = args.capture {

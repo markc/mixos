@@ -110,7 +110,12 @@ async fn verified(broker: &Broker) -> VerifiedConnection {
     };
     c
 }
-async fn call(client: &NodedClient, name: &str, command_name: &str, mut body: Value) -> (u8, Value) {
+async fn call(
+    client: &NodedClient,
+    name: &str,
+    command_name: &str,
+    mut body: Value,
+) -> (u8, Value) {
     // Caller-side cache preserves the operation epoch after pane close. The
     // recipient still verifies this value against its broker-stamped actor.
     thread_local! {
@@ -933,7 +938,9 @@ fn p0i_07_owner_mutations_and_retired_retries() {
             );
             fixture._control.expire_retries();
             assert_eq!(
-                call(owner.client(), &parent.name, command_name, request).await.1["error_code"],
+                call(owner.client(), &parent.name, command_name, request)
+                    .await
+                    .1["error_code"],
                 "UNKNOWN_OUTCOME"
             );
             assert_eq!(
@@ -1217,7 +1224,15 @@ fn p0i_10_real_tcp_fallback_is_control_free() {
             "term.props.set",
             "term.props.watch",
         ] {
-            forbidden(call(&client, "term", command_name, json!({"text":"NO_LEGACY_CONTROL"})).await);
+            forbidden(
+                call(
+                    &client,
+                    "term",
+                    command_name,
+                    json!({"text":"NO_LEGACY_CONTROL"}),
+                )
+                .await,
+            );
         }
     });
     fixture
@@ -1859,7 +1874,10 @@ fn default_child_capabilities_cover_every_dispatchable_command() {
         "shell.task.submit",
         "",
     ] {
-        assert_eq!(super::super::control::capability_of(command_name, false), None);
+        assert_eq!(
+            super::super::control::capability_of(command_name, false),
+            None
+        );
     }
     // And the reverse: a capability nobody routes to is dead weight in every
     // grant, so the two tables have to stay the same size.

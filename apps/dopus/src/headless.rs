@@ -20,8 +20,8 @@ use futures::StreamExt;
 use toolkit::action::Origin;
 
 use crate::bus::{self, Delivery};
-use crate::dirs::AppDirs;
 use crate::commands::{self, Served, ServerMeta};
+use crate::dirs::AppDirs;
 
 /// The drain cadence: how long a worker reply can wait, and the tick period.
 const DRAIN_TICK: Duration = Duration::from_millis(200);
@@ -118,8 +118,12 @@ pub fn run(
                 continue;
             };
             let mut quit = false;
-            let served =
-                commands::serve_command(&command, &mut lock(&core), &meta, &buildinfo::build_info!());
+            let served = commands::serve_command(
+                &command,
+                &mut lock(&core),
+                &meta,
+                &buildinfo::build_info!(),
+            );
             let ran = commands::accepted_action(&command, &served);
             for served in served {
                 match served {

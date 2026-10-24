@@ -660,7 +660,8 @@ impl Control {
         // which commands exist — a known one comes back FORBIDDEN and an unknown
         // one UNSUPPORTED, which is a probe of the command table. The UNSUPPORTED
         // fall-through is below, after `allows`.
-        let capability = capability_of(command_name, request.contents).unwrap_or(Capability::ReadState);
+        let capability =
+            capability_of(command_name, request.contents).unwrap_or(Capability::ReadState);
         if (request.request_id.is_some() || request.operation_id.is_some())
             && actor.session.is_none()
             && (request.target.instance_id != parent.instance_id
@@ -1422,7 +1423,9 @@ impl Control {
                 (Reply::error("UNKNOWN_OUTCOME"), false)
             }
             Err(error) => {
-                eprintln!("term control: {command_name} -> {shell_command} child call failed ({error})");
+                eprintln!(
+                    "term control: {command_name} -> {shell_command} child call failed ({error})"
+                );
                 (Reply::error("DISCONNECTED"), false)
             }
         };

@@ -490,8 +490,7 @@ mod tests {
             "help.about",
         ] {
             assert!(
-                r.execute(id, &mut e, toolkit::action::Origin::Bus)
-                    .is_err(),
+                r.execute(id, &mut e, toolkit::action::Origin::Bus).is_err(),
                 "{id} must be disabled under a dialog"
             );
         }

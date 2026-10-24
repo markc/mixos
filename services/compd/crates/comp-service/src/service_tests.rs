@@ -358,7 +358,11 @@ async fn long_commands_release_their_slot_and_answer_later() {
     let mut engine = engine(&wiring.context);
     wiring.service.service(&mut engine);
     assert_eq!(engine.inner.calls, ["long true"]);
-    assert_eq!(ingress.depth(), 0, "the slot is free while the command waits");
+    assert_eq!(
+        ingress.depth(),
+        0,
+        "the slot is free while the command waits"
+    );
     let reply = engine.inner.longs.pop().unwrap();
     assert!(!reply.is_closed());
     reply.send(ControlReply::Body(json!({"steps": []})));

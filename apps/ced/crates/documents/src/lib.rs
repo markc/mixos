@@ -15,10 +15,10 @@
 //! - [`editor`]: what the editor view reports.
 
 pub mod actions;
+pub mod commands;
 pub mod config;
 pub mod controller;
 pub mod dirs;
 pub mod editor;
 pub mod keymap;
 pub mod session;
-pub mod commands;

@@ -60,7 +60,11 @@ pub enum Effect {
     Describe { id: u64, help: bool },
     /// Hand the window-level command `command` (`ui.click`, `window`, ...) to the
     /// toolkit drive layer.
-    Drive { id: u64, command: String, args: Value },
+    Drive {
+        id: u64,
+        command: String,
+        args: Value,
+    },
     /// Signal one local process as the person running Monitor, and report
     /// [`Engine::signalled`]. Only ever this node's processes.
     Signal { pid: u32, signal: Signal },

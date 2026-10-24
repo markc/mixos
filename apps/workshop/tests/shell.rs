@@ -31,7 +31,8 @@ fn fixture() -> Snapshot {
         read_only: Some(true),
     };
     let mut s = Snapshot::default();
-    s.services.insert("example".into(), Ok(vec![command_name("echo")]));
+    s.services
+        .insert("example".into(), Ok(vec![command_name("echo")]));
     s
 }
 

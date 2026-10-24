@@ -292,7 +292,15 @@ async fn serve(
                 name,
                 vec![(desk::LIMIT.to_owned(), desk)],
                 move |host, origin, grant| async move {
-                    desk::act(&host.root, &host.state, &command_name, &run_desk, &grant, &origin).await
+                    desk::act(
+                        &host.root,
+                        &host.state,
+                        &command_name,
+                        &run_desk,
+                        &grant,
+                        &origin,
+                    )
+                    .await
                 },
             )
             .await

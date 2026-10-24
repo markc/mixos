@@ -68,7 +68,8 @@ pub fn dispatch(
                             .is_some_and(::macros::commands::mutates)
                 }),
                 "workshop.call" => body["command"].as_str().is_none_or(|command_name| {
-                    command_name.rsplit_once(".macros.")
+                    command_name
+                        .rsplit_once(".macros.")
                         .is_some_and(|(_, suffix)| ::macros::commands::mutates(suffix))
                         || matches!(
                             command_name,

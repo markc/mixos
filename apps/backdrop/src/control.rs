@@ -362,9 +362,11 @@ impl Controller {
                 Err(mpsc::RecvTimeoutError::Disconnected) => break,
             };
             match msg {
-                Msg::Delivery(Delivery::Command { id, command: command_name, body }) => {
-                    self.command(id, &command_name, &body)
-                }
+                Msg::Delivery(Delivery::Command {
+                    id,
+                    command: command_name,
+                    body,
+                }) => self.command(id, &command_name, &body),
                 Msg::Delivery(Delivery::Disconnected) => {
                     eprintln!("backdrop: Bus disconnected; native supervision is reconnecting");
                 }

@@ -1545,7 +1545,11 @@ impl Editd {
             .get("buffer")
             .and_then(Value::as_str)
             .map(str::to_string);
-        let Some(read_only) = COMMANDS.iter().find(|(v, _)| *v == command_name).map(|(_, ro)| *ro) else {
+        let Some(read_only) = COMMANDS
+            .iter()
+            .find(|(v, _)| *v == command_name)
+            .map(|(_, ro)| *ro)
+        else {
             let mut r = refusal(
                 ErrorCode::UnknownCommand,
                 None,

@@ -10,7 +10,7 @@ use std::sync::{Arc, OnceLock};
 use dopus::app::App;
 use dopus::dirs::{AppDirs, COMPONENT};
 use dopus::shell::{Bus, Shell};
-use dopus::{APP_ID, bus, label, commands};
+use dopus::{APP_ID, bus, commands, label};
 use dopus_core::DopusCore;
 
 const HELP: &str = "dopus — the MixOS twin-pane file manager\n\

@@ -25,6 +25,7 @@ use smithay::utils::{Physical, Point, Size};
 use world::state::Loop;
 
 pub mod appearance;
+pub mod command;
 pub mod conf;
 mod freedesktop;
 pub mod host;
@@ -43,13 +44,12 @@ mod state;
 pub mod store;
 pub mod templates;
 pub mod tooltip;
-pub mod command;
 pub mod view;
 
+pub use command::SceneCommand;
 pub use host::{Host, SceneHost, SceneSurface, Serviced, scene_surface_id};
 pub use port::{DEFAULT_SERVICE, HostConfig, Waker};
 pub use store::{Mounted, SceneStore};
-pub use command::SceneCommand;
 
 thread_local! {
     /// The running host. Compositor-thread only: the request path evaluates

@@ -13,8 +13,8 @@
 use crate::{label, label_with};
 use egui::{Align, Layout, RichText, ScrollArea, TextEdit, Ui};
 use inspector::{Dialog, Engine, Row, RowKind};
-use toolkit::button::PushButton;
 use toolkit::action::Origin;
+use toolkit::button::PushButton;
 use toolkit::dialog::{self, Choice};
 use toolkit::titlebar::{self, Action};
 use toolkit::{Icon, Registry, Strings, bars, field, icons, panel, tooltip};

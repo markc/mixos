@@ -531,7 +531,10 @@ pub fn parse_window_op(command_name: &str, args: &Value) -> Result<WindowOp, Con
 
 /// The canonical `&'static` name of a window-family command.
 pub fn window_command(command_name: &str) -> Option<&'static str> {
-    WINDOW_COMMANDS.iter().copied().find(|known| *known == command_name)
+    WINDOW_COMMANDS
+        .iter()
+        .copied()
+        .find(|known| *known == command_name)
 }
 
 /// The defaults for `comp.window.wait` and `comp.window.close {force}`.
@@ -647,7 +650,10 @@ fn timeout_arg(
 }
 
 /// Every `comp.window.*` command. Minimise and restore keep their own parser.
-pub fn parse_window_command(command_name: &str, args: &Value) -> Result<WindowCommand, ControlReply> {
+pub fn parse_window_command(
+    command_name: &str,
+    args: &Value,
+) -> Result<WindowCommand, ControlReply> {
     let empty = serde_json::Map::new();
     match command_name {
         "comp.window.maximize"
@@ -669,7 +675,10 @@ pub fn parse_window_command(command_name: &str, args: &Value) -> Result<WindowCo
                 } else {
                     WindowState::Fullscreen
                 },
-                enabled: matches!(command_name, "comp.window.maximize" | "comp.window.fullscreen"),
+                enabled: matches!(
+                    command_name,
+                    "comp.window.maximize" | "comp.window.fullscreen"
+                ),
                 output: output_arg(object)?,
             }))
         }
@@ -921,13 +930,20 @@ pub fn parse_window_command(command_name: &str, args: &Value) -> Result<WindowCo
                 timeout: timeout_arg(object, WINDOW_WAIT_DEFAULT)?,
             })))
         }
-        _ => Err(invalid_argument("command", "window command", "comp.window.*")),
+        _ => Err(invalid_argument(
+            "command",
+            "window command",
+            "comp.window.*",
+        )),
     }
 }
 
 /// The canonical `&'static` name of a single-step input command.
 pub fn input_command(command_name: &str) -> Option<&'static str> {
-    INPUT_COMMANDS.iter().copied().find(|known| *known == command_name)
+    INPUT_COMMANDS
+        .iter()
+        .copied()
+        .find(|known| *known == command_name)
 }
 
 /// evdev `BTN_LEFT` / `BTN_RIGHT` / `BTN_MIDDLE`.
@@ -1063,7 +1079,8 @@ pub fn parse_input_op(command_name: &str, args: &Value) -> Result<InputOp, Contr
     }
     // Keep the internal human operation shape stable for existing call sites.
     Ok(
-        if seat == SeatKind::Human && !(command_name == "comp.input.release_all" && explicit_seat.is_some())
+        if seat == SeatKind::Human
+            && !(command_name == "comp.input.release_all" && explicit_seat.is_some())
         {
             op
         } else {
@@ -1536,7 +1553,11 @@ pub fn parse_sequence(args: &Value) -> Result<LongOp, ControlReply> {
                 "the delays together are at most 60000 ms",
             ));
         }
-        parsed.push(SequenceStep { command: command_name, op, delay });
+        parsed.push(SequenceStep {
+            command: command_name,
+            op,
+            delay,
+        });
     }
     Ok(match seat {
         Some(seat) => LongOp::SeatedSequence {
@@ -1851,7 +1872,11 @@ pub fn classify(command: &str, args: &Value, malformed: bool) -> Result<Request,
         };
         return parsed.map(Request::Panel).map_err(ControlReply::into_wire);
     }
-    let Some(command_name) = READ_COMMANDS.iter().copied().find(|known| *known == command) else {
+    let Some(command_name) = READ_COMMANDS
+        .iter()
+        .copied()
+        .find(|known| *known == command)
+    else {
         return Err(error("UNKNOWN_COMMAND"));
     };
     if malformed {

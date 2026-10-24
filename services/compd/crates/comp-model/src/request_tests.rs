@@ -60,7 +60,10 @@ fn state_commands_are_registered_fenced_and_strict() {
             json!({"id":7,"generation":null}),
             json!({"id":7,"generation":3,"typo":true}),
         ] {
-            assert!(parse_window_command(command, &args).is_err(), "{command}: {args}");
+            assert!(
+                parse_window_command(command, &args).is_err(),
+                "{command}: {args}"
+            );
         }
         let output = json!({"id":7,"generation":3,"output":"Output-1"});
         assert_eq!(
@@ -125,7 +128,10 @@ fn targeted_input_is_strict_and_sequences_share_the_parser() {
             assert!(parse_input_op(command, &args).is_err(), "{command}: {args}");
         }
         args.as_object_mut().unwrap().remove("window");
-        assert!(parse_input_op(command, &args).is_err(), "raise needs window");
+        assert!(
+            parse_input_op(command, &args).is_err(),
+            "raise needs window"
+        );
     }
 }
 
@@ -1407,7 +1413,10 @@ fn long_admission_budget_is_the_command_deadline_plus_slack() {
         until: WaitUntil::Mapped,
         timeout: Duration::from_secs(600),
     });
-    assert_eq!(long.admission_timeout(), LONG_COMMAND_MAX + LONG_COMMAND_SLACK);
+    assert_eq!(
+        long.admission_timeout(),
+        LONG_COMMAND_MAX + LONG_COMMAND_SLACK
+    );
 }
 
 #[test]

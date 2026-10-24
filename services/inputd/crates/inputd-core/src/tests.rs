@@ -293,7 +293,10 @@ fn the_scene_editor_chord_is_side_exact() {
     let r = Resolver::new(default_keymap());
     for held in SCENE_EDITOR_CHORDS {
         let press = r.resolve(SCENE_EDITOR_KEY, held, Edge::Press);
-        assert_eq!(press.command.map(ActionId::as_str), Some("scenes.editor.open"));
+        assert_eq!(
+            press.command.map(ActionId::as_str),
+            Some("scenes.editor.open")
+        );
         assert!(press.swallow);
         let repeat = r.resolve(SCENE_EDITOR_KEY, held, Edge::Repeat);
         assert_eq!(

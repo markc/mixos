@@ -40,12 +40,12 @@
 //! in a headless engine, holds its UI state in one serialisable struct and
 //! dispatches every action through its [`command::Registry`].
 
+pub mod action;
 pub mod bars;
 pub mod button;
 pub mod canvas;
 pub mod chrome;
 pub mod combo;
-pub mod action;
 pub mod content;
 pub mod datatable;
 pub mod decorations;
@@ -76,8 +76,8 @@ pub mod titlebar;
 pub mod toggle;
 pub mod tooltip;
 
-pub use button::selectable;
 pub use action::{Action, Registry};
+pub use button::selectable;
 pub use icons::Icon;
 pub use strings::Strings;
 pub use theme::Theme;

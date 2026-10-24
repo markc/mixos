@@ -2351,7 +2351,10 @@ async fn unknown_command_request_is_refused_immediately() {
         body.contains("\"error\":\"unknown command 'nosuch.command'"),
         "body: {body}"
     );
-    assert!(body.contains("\"command\":\"nosuch.command\""), "body: {body}");
+    assert!(
+        body.contains("\"command\":\"nosuch.command\""),
+        "body: {body}"
+    );
     assert!(
         body.contains("\"available\":[\"b.command\",\"q\"]"),
         "body: {body}"

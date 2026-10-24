@@ -216,10 +216,16 @@ mod tests {
     fn commands_parse_as_shell_or_under_the_registered_service() {
         for name in SceneCommand::names("shell") {
             assert!(SceneCommand::parse("shell", &name).is_some(), "{name}");
-            assert!(SceneCommand::parse("compd-scenes", &name).is_some(), "{name}");
+            assert!(
+                SceneCommand::parse("compd-scenes", &name).is_some(),
+                "{name}"
+            );
         }
         for name in SceneCommand::names("compd-scenes") {
-            assert!(SceneCommand::parse("compd-scenes", &name).is_some(), "{name}");
+            assert!(
+                SceneCommand::parse("compd-scenes", &name).is_some(),
+                "{name}"
+            );
             assert!(SceneCommand::parse("shell", &name).is_none(), "{name}");
         }
         assert_eq!(SceneCommand::parse("shell", "shellx.scene.load"), None);

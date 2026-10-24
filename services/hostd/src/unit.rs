@@ -95,7 +95,12 @@ async fn act_with(
         return Err(json!({"status":"unit_failed","command":COMMAND,"unit":unit,
             "action":action,"message":message}));
     }
-    let mut receipt = Receipt::new(COMMAND, grant, origin, json!({"unit": unit, "action": action}));
+    let mut receipt = Receipt::new(
+        COMMAND,
+        grant,
+        origin,
+        json!({"unit": unit, "action": action}),
+    );
     receipt.outcome = Outcome::Applied;
     receipt
         .save(state)

@@ -31,7 +31,11 @@ struct StubBus {
 }
 
 impl BusCallHandler for StubBus {
-    fn call<'a>(&'a self, command: &'a str, args: &'a Value) -> BusCallFuture<'a, MixResult<Value>> {
+    fn call<'a>(
+        &'a self,
+        command: &'a str,
+        args: &'a Value,
+    ) -> BusCallFuture<'a, MixResult<Value>> {
         self.calls
             .borrow_mut()
             .push((command.to_string(), args.clone()));

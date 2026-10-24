@@ -383,7 +383,11 @@ pub fn describe() -> Value {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Forward {
     /// A drive command (`email.ui.*`, `email.window*`), without the prefix.
-    Drive { id: u64, command: String, args: Value },
+    Drive {
+        id: u64,
+        command: String,
+        args: Value,
+    },
     /// Restore and focus the window, then answer.
     Show { id: u64 },
 }
@@ -1536,7 +1540,11 @@ mod tests {
     fn every_command_is_described_once_with_parseable_args() {
         let mut seen = std::collections::BTreeSet::new();
         for command_name in COMMANDS {
-            assert!(seen.insert(command_name.name), "{} twice", command_name.name);
+            assert!(
+                seen.insert(command_name.name),
+                "{} twice",
+                command_name.name
+            );
             let args: Value = serde_json::from_str(command_name.args).expect(command_name.name);
             assert!(args.is_object(), "{}", command_name.name);
         }
@@ -1573,7 +1581,9 @@ mod tests {
         for command_name in drive::COMMANDS {
             let mut state = connected_many(&["a"]);
             let forward = run(&mut state, &format!("email.{command_name}"), json!({}));
-            assert!(matches!(forward, Some(Forward::Drive { command: v, .. }) if v == *command_name));
+            assert!(
+                matches!(forward, Some(Forward::Drive { command: v, .. }) if v == *command_name)
+            );
         }
         let mut state = connected_many(&["a"]);
         run(&mut state, "email.nope", json!({}));

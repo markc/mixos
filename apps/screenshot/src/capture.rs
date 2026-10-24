@@ -550,7 +550,10 @@ pub(crate) mod tests {
             args: Value,
             _limit: Duration,
         ) -> BoxFuture<'static, Result<Value, String>> {
-            self.calls.lock().unwrap().push((command_name.into(), args.clone()));
+            self.calls
+                .lock()
+                .unwrap()
+                .push((command_name.into(), args.clone()));
             if let Some(on) = self.on.lock().unwrap().as_mut() {
                 on(command_name);
             }
@@ -719,7 +722,10 @@ pub(crate) mod tests {
         .await
         .unwrap_err();
         assert_eq!(error, "acknowledgement lost");
-        assert_eq!(script.command_names().last().unwrap(), "comp.window.restore");
+        assert_eq!(
+            script.command_names().last().unwrap(),
+            "comp.window.restore"
+        );
     }
 
     #[tokio::test]
@@ -805,7 +811,10 @@ pub(crate) mod tests {
         .await
         .unwrap_err();
         assert_eq!(error, "selection cancelled");
-        assert_eq!(script.command_names().last().unwrap(), "comp.window.restore");
+        assert_eq!(
+            script.command_names().last().unwrap(),
+            "comp.window.restore"
+        );
     }
 
     #[tokio::test]

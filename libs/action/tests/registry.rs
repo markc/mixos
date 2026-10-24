@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-use action::{Class, Action, Error, Origin, ParamSpec, Place, Registry, Scope, Strings};
+use action::{Action, Class, Error, Origin, ParamSpec, Place, Registry, Scope, Strings};
 use schemars::{JsonSchema, schema_for};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};

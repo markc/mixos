@@ -204,7 +204,10 @@ pub fn handle(session: &Session, caller: Caller, suffix: &str, body: &Value) -> 
             let title = body["title"].as_str().unwrap().to_owned();
             defer(session, move |s| s.create(&title))
         }
-        _ => Reply::Immediate(Err(Refusal::new("INVALID_ARGUMENT", "unknown macro command"))),
+        _ => Reply::Immediate(Err(Refusal::new(
+            "INVALID_ARGUMENT",
+            "unknown macro command",
+        ))),
     }
 }
 

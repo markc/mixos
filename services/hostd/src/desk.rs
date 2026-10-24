@@ -31,7 +31,11 @@ const SYSTEMCTL_BUDGET: Duration = Duration::from_secs(30);
 
 /// The host unit that runs `command`'s cycle for `desk`.
 pub fn unit(command: &str, desk: &str) -> String {
-    let action = if command == RESTART { "restart" } else { "stop" };
+    let action = if command == RESTART {
+        "restart"
+    } else {
+        "stop"
+    };
     format!("desk-{action}@{desk}.service")
 }
 
@@ -112,8 +116,10 @@ async fn act_with(
 ) -> Result<Value, Value> {
     if in_container(root) {
         tracing::warn!(target: "hostd::audit", command, desk, "desk power refused: hostd runs inside a container");
-        return Err(json!({"status":"in_container","command":command,"desk":desk,
-            "message":"this hostd runs inside a desk; desk power needs the host's hostd"}));
+        return Err(
+            json!({"status":"in_container","command":command,"desk":desk,
+            "message":"this hostd runs inside a desk; desk power needs the host's hostd"}),
+        );
     }
     let unit = unit(command, desk);
     // --no-block: answer once the job is queued. The cycle outlives the
@@ -134,7 +140,11 @@ async fn act_with(
             json!({"status":"unit_failed","command":command,"desk":desk,"unit":unit,"message":message}),
         );
     }
-    let action = if command == RESTART { "restart" } else { "stop" };
+    let action = if command == RESTART {
+        "restart"
+    } else {
+        "stop"
+    };
     let mut receipt = Receipt::new(
         command,
         grant,

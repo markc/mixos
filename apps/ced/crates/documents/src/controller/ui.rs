@@ -1380,6 +1380,9 @@ mod tests {
         let q: VecDeque<u64> = (1..=100).collect();
         let p = percentiles(&q);
         assert_eq!((p.p50, p.p95, p.p99, p.max), (50, 95, 99, 100));
-        assert_eq!(percentiles(&VecDeque::new()), commands::Percentiles::default());
+        assert_eq!(
+            percentiles(&VecDeque::new()),
+            commands::Percentiles::default()
+        );
     }
 }

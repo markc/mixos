@@ -37,8 +37,8 @@
 //! Colours, row heights and type all come from the theme: the row height
 //! is the chrome's menu-row height (a design token), compact by default.
 
-pub mod model;
 pub mod commands;
+pub mod model;
 
 pub use model::{
     Align, Column, DEFAULT_PAGE_SIZE, Density, Order, PageMove, Pick, SelectionMode, Sort,

@@ -1701,7 +1701,9 @@ impl Engine {
                 let text = self.label("email-password-forgotten", &[("account", &name)]);
                 return self.end_action(task, Ok(text), Value::Null);
             }
-            Answer::Refused(value) if unknown_command(&value) => self.label("email-unsupported", &[]),
+            Answer::Refused(value) if unknown_command(&value) => {
+                self.label("email-unsupported", &[])
+            }
             Answer::Refused(value) => refusal(&value),
             Answer::Missing => self.label("email-not-running", &[]),
             Answer::NotSent(message) | Answer::Lost(message) => message,
@@ -2484,7 +2486,11 @@ mod tests {
         e.take_effects()
             .into_iter()
             .filter_map(|x| match x {
-                Effect::Settings { ticket, command: command_name, body } => Some((ticket, command_name, body)),
+                Effect::Settings {
+                    ticket,
+                    command: command_name,
+                    body,
+                } => Some((ticket, command_name, body)),
                 _ => None,
             })
             .collect()
@@ -2500,7 +2506,13 @@ mod tests {
                     command: command_name,
                     body,
                     secret,
-                } => Some((*ticket, *service, *command_name, body.clone(), secret.is_some())),
+                } => Some((
+                    *ticket,
+                    *service,
+                    *command_name,
+                    body.clone(),
+                    secret.is_some(),
+                )),
                 _ => None,
             })
             .collect()

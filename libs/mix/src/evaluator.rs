@@ -1718,7 +1718,11 @@ pub type BusCallFuture<'a, T> = Pin<Box<dyn Future<Output = T> + 'a>>;
 /// implementor never lets the script choose the destination or forge the
 /// envelope.
 pub trait BusCallHandler {
-    fn call<'a>(&'a self, command_name: &'a str, args: &'a Value) -> BusCallFuture<'a, MixResult<Value>>;
+    fn call<'a>(
+        &'a self,
+        command_name: &'a str,
+        args: &'a Value,
+    ) -> BusCallFuture<'a, MixResult<Value>>;
 }
 
 /// Walk a Mix value (a `jmap` call's args) and return the name of the

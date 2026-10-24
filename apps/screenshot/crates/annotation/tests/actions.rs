@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-use annotation::{Document, HasDocument};
 use action::{Error, Origin, Registry};
+use annotation::{Document, HasDocument};
 use serde_json::{Value, json};
 
 struct State {

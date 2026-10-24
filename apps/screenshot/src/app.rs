@@ -15,11 +15,11 @@
 //! Ported from Cap's iced reducer (`apps/cap/src/app.rs`, markc/mixos-iced)
 //! with the same rules.
 use crate::capture::{Captured, Mode, Request, Target, Window};
-use crate::ink::Ink;
 use crate::commands;
+use crate::ink::Ink;
+use action::{ExecuteRequest, Origin};
 use annotation::library::Saved;
 use annotation::{Crop, Document, Kind, Point, Shape};
-use action::{ExecuteRequest, Origin};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
@@ -327,7 +327,11 @@ pub enum Effect {
     /// Answer `id` with the Bus surface (`HELP`: its commands only).
     Describe { id: u64, help: bool },
     /// Hand window command `command` (`ui.click`, `window`, …) to the drive layer.
-    Drive { id: u64, command: String, args: Value },
+    Drive {
+        id: u64,
+        command: String,
+        args: Value,
+    },
     /// Stop the Bus connection and close.
     Exit,
 }
@@ -1372,7 +1376,8 @@ impl App {
         if !commands::COMMANDS.contains(&command_name) {
             return self.error(id, code::UNKNOWN_COMMAND, "unknown screenshot command");
         }
-        if commands::takes_nothing(command_name) && args.as_object().is_some_and(|a| !a.is_empty()) {
+        if commands::takes_nothing(command_name) && args.as_object().is_some_and(|a| !a.is_empty())
+        {
             return self.error(id, code::ARGUMENT, "this command takes an empty object");
         }
         match command_name {
@@ -1445,7 +1450,9 @@ impl App {
             if self.document.is_none() {
                 return self.error(id, code::NO_IMAGE, "no image");
             }
-            let name = command_name.strip_prefix("screenshot.").expect("edit command");
+            let name = command_name
+                .strip_prefix("screenshot.")
+                .expect("edit command");
             return self.effects.push(Effect::Execute {
                 id,
                 request: ExecuteRequest {

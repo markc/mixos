@@ -37,10 +37,10 @@ use serde::Serialize;
 use serde_json::{Value, json};
 
 use crate::actions::ActionId;
+use crate::commands::{self, PhaseW, code};
 use crate::config::Config;
 use crate::editor::{EditorMsg, LayoutReport};
 use crate::session::{RECENT_MAX, Session, SessionTab};
-use crate::commands::{self, PhaseW, code};
 
 mod external;
 mod ui;
@@ -2869,7 +2869,10 @@ impl Controller {
                         description: "The MixOS Editor: an egui editor over the edit Bus service"
                             .into(),
                         controls: Vec::new(),
-                        commands: commands::COMMANDS.iter().map(|(v, _)| v.to_string()).collect(),
+                        commands: commands::COMMANDS
+                            .iter()
+                            .map(|(v, _)| v.to_string())
+                            .collect(),
                     }),
                 )
             }
@@ -3473,9 +3476,10 @@ mod tests {
             Some("timeout"),
         ))
         .unwrap();
-        let fixture: Value =
-            serde_json::from_str(include_str!("../tests/fixtures/commands/refusal.timeout.json"))
-                .unwrap();
+        let fixture: Value = serde_json::from_str(include_str!(
+            "../tests/fixtures/commands/refusal.timeout.json"
+        ))
+        .unwrap();
         assert_eq!(v, fixture);
     }
 

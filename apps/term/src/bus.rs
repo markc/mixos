@@ -33,10 +33,12 @@ const LOOK_BUDGET: Duration = Duration::from_secs(30);
 /// Whether the window answers `command` (term-core's [`term_core::bus::Window`]
 /// routing test).
 pub fn answers(command_name: &str) -> bool {
-    matches!(command_name, "app.describe" | "term.actions" | "term.execute")
-        || command_name
-            .strip_prefix("term.")
-            .is_some_and(|v| drive::COMMANDS.contains(&v))
+    matches!(
+        command_name,
+        "app.describe" | "term.actions" | "term.execute"
+    ) || command_name
+        .strip_prefix("term.")
+        .is_some_and(|v| drive::COMMANDS.contains(&v))
 }
 
 /// The HELP line for `command`, after the command and its argument shape.

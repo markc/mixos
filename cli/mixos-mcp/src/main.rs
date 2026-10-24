@@ -1011,7 +1011,11 @@ impl MixosMcp {
         let noded = self.noded().await?;
         let tabs = term_reply(
             noded
-                .call(service, &term_command(service, "tabs")?, serde_json::json!({}))
+                .call(
+                    service,
+                    &term_command(service, "tabs")?,
+                    serde_json::json!({}),
+                )
                 .await
                 .map_err(|e| e.to_string())?,
         )?;
@@ -3484,7 +3488,10 @@ mod tests {
             ] {
                 let command_name = term_command(service, suffix).unwrap();
                 assert_eq!(command_name, format!("{service}.{suffix}"));
-                assert!(command_name.starts_with(&format!("{service}.")), "{command_name}");
+                assert!(
+                    command_name.starts_with(&format!("{service}.")),
+                    "{command_name}"
+                );
             }
             // The regression this sweep removes, caught at the funnel: a call
             // site that passes an already-namespaced command is refused by name

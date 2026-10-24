@@ -135,10 +135,16 @@ fn main() -> Result<()> {
                 Ok(())
             }
             Command::Call {
-                command: command_name, json_body, ..
+                command: command_name,
+                json_body,
+                ..
             } => {
                 let reply = engine
-                    .call_sized(&command_name, serde_json::from_str(&json_body)?, json_body.len())
+                    .call_sized(
+                        &command_name,
+                        serde_json::from_str(&json_body)?,
+                        json_body.len(),
+                    )
                     .await;
                 println!("{reply}");
                 if reply.get("error").is_some() {

@@ -176,7 +176,11 @@ impl Shell {
         }
         while let Some(event) = self.bus.next_event() {
             match event {
-                WindowEvent::Command { command: command_name, body, reply } => {
+                WindowEvent::Command {
+                    command: command_name,
+                    body,
+                    reply,
+                } => {
                     if self.exiting {
                         let _ = reply.send(closing());
                         continue;

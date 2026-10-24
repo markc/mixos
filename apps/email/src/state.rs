@@ -9764,7 +9764,12 @@ pub(crate) mod tests {
         state.change_accounts(rename(), Some(1), Some("pw-1".into()));
         settings_ticket(&mut state);
         state.set_password("a", "pw-2", Some(2));
-        state.query("a".into(), 3, crate::commands::Query::Mailboxes, Then::Answer);
+        state.query(
+            "a".into(),
+            3,
+            crate::commands::Query::Mailboxes,
+            Then::Answer,
+        );
         state.write_server("a".into(), Some(4), Write::DeleteMailbox { id: "m".into() });
         state.take_work();
         state.close_out();

@@ -197,7 +197,10 @@ impl Citizen {
         Ok((0, outcome.reference.to_json().to_string(), events))
     }
 
-    fn command_stat(&self, args: Option<&Value>) -> Result<(u8, String, Vec<BusEvent>), StoreError> {
+    fn command_stat(
+        &self,
+        args: Option<&Value>,
+    ) -> Result<(u8, String, Vec<BusEvent>), StoreError> {
         let hash = blob_arg(args)?;
         let stat = self.store.stat(&hash)?;
         let body = json!({
@@ -212,7 +215,10 @@ impl Citizen {
         Ok((0, body.to_string(), Vec::new()))
     }
 
-    fn command_path(&self, args: Option<&Value>) -> Result<(u8, String, Vec<BusEvent>), StoreError> {
+    fn command_path(
+        &self,
+        args: Option<&Value>,
+    ) -> Result<(u8, String, Vec<BusEvent>), StoreError> {
         let hash = blob_arg(args)?;
         let path = self.store.path(&hash)?;
         Ok((0, json!({"path": path}).to_string(), Vec::new()))
@@ -292,7 +298,10 @@ impl Citizen {
         ))
     }
 
-    fn command_list(&self, args: Option<&Value>) -> Result<(u8, String, Vec<BusEvent>), StoreError> {
+    fn command_list(
+        &self,
+        args: Option<&Value>,
+    ) -> Result<(u8, String, Vec<BusEvent>), StoreError> {
         let owner = args.and_then(|a| a.get("owner")).and_then(Value::as_str);
         let limit = args
             .and_then(|a| a.get("limit"))
@@ -324,7 +333,10 @@ impl Citizen {
         ))
     }
 
-    fn command_quota(&self, args: Option<&Value>) -> Result<(u8, String, Vec<BusEvent>), StoreError> {
+    fn command_quota(
+        &self,
+        args: Option<&Value>,
+    ) -> Result<(u8, String, Vec<BusEvent>), StoreError> {
         let owner = args.and_then(|a| a.get("owner")).and_then(Value::as_str);
         let report = self.store.quota_report(owner)?;
         let owners: serde_json::Map<String, Value> = report

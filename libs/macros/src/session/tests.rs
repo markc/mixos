@@ -59,7 +59,8 @@ use std::time::Duration;
 fn management_commands_refresh_tiers_and_refuse_invalid_mutations() {
     let (_dir, roots, session) = fixture();
     session.create("Managed").unwrap();
-    let ask = |suffix, body| commands::handle(&session, commands::Caller::Workshop, suffix, &body).wait();
+    let ask =
+        |suffix, body| commands::handle(&session, commands::Caller::Workshop, suffix, &body).wait();
     assert_eq!(
         ask("get", json!({"id":"managed"})).unwrap()["tier"],
         "user-app"
@@ -471,10 +472,15 @@ fn refusals_distinguish_arguments_availability_scan_and_channel_failures() {
         "UNAVAILABLE"
     );
     assert_eq!(
-        commands::handle(&unavailable, commands::Caller::Workshop, "reload", &json!({}))
-            .wait()
-            .unwrap_err()
-            .code,
+        commands::handle(
+            &unavailable,
+            commands::Caller::Workshop,
+            "reload",
+            &json!({})
+        )
+        .wait()
+        .unwrap_err()
+        .code,
         "UNAVAILABLE"
     );
     // Invalid app names fail root-folder resolution rather than producing diagnostics.

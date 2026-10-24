@@ -1104,7 +1104,10 @@ fn status_commands_are_absent_from_legacy_surfaces() {
             "shell.evaluate",
             "shell.input",
         ] {
-            assert!(!source.contains(command_name), "legacy surface contains {command_name}");
+            assert!(
+                !source.contains(command_name),
+                "legacy surface contains {command_name}"
+            );
         }
     }
 }
@@ -1282,7 +1285,10 @@ async fn execute_call(
     parent.renew().await;
     tokio::time::timeout(
         Duration::from_secs(5),
-        parent.connection.client().call(&record.name, command_name, body),
+        parent
+            .connection
+            .client()
+            .call(&record.name, command_name, body),
     )
     .await
     .expect("an execute-family request must always answer")

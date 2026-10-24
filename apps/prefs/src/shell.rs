@@ -370,8 +370,14 @@ impl Shell {
     /// queue goes straight on; anything else waits until the drive input
     /// before it is answered.
     fn release(&mut self) {
-        while let Some(Event::Delivery(Delivery::Command { command: command_name, .. })) = self.held.front() {
-            let joins_queue = command_name.strip_prefix("prefs.").is_some_and(drive::queues);
+        while let Some(Event::Delivery(Delivery::Command {
+            command: command_name,
+            ..
+        })) = self.held.front()
+        {
+            let joins_queue = command_name
+                .strip_prefix("prefs.")
+                .is_some_and(drive::queues);
             if self.exiting || (drive::pending(&self.ctx) && !joins_queue) {
                 return;
             }
@@ -402,13 +408,22 @@ impl Shell {
 
     fn perform(&mut self, effect: Effect) {
         match effect {
-            Effect::Backdrop { ticket, command: command_name, body } => {
+            Effect::Backdrop {
+                ticket,
+                command: command_name,
+                body,
+            } => {
                 let bus = self.bus.clone();
                 self.spawn(async move {
                     Event::Backdrop(
                         ticket,
-                        bus.raw_within("backdrop", command_name, body.to_string(), Duration::from_secs(60))
-                            .await,
+                        bus.raw_within(
+                            "backdrop",
+                            command_name,
+                            body.to_string(),
+                            Duration::from_secs(60),
+                        )
+                        .await,
                     )
                 });
             }
@@ -420,16 +435,29 @@ impl Shell {
                     Event::Browsed(ticket, result)
                 });
             }
-            Effect::Releases { ticket, command: command_name, body } => {
+            Effect::Releases {
+                ticket,
+                command: command_name,
+                body,
+            } => {
                 let bus = self.bus.clone();
                 self.spawn(async move {
                     let result = bus
-                        .raw_within(RELEASES, command_name, body.to_string(), budget(command_name))
+                        .raw_within(
+                            RELEASES,
+                            command_name,
+                            body.to_string(),
+                            budget(command_name),
+                        )
                         .await;
                     Event::Released(ticket, result)
                 });
             }
-            Effect::Settings { ticket, command: command_name, body } => {
+            Effect::Settings {
+                ticket,
+                command: command_name,
+                body,
+            } => {
                 let bus = self.bus.clone();
                 self.spawn(async move {
                     let result = bus
@@ -470,7 +498,11 @@ impl Shell {
                 });
             }
             Effect::Reply { id, rc, body } => self.bus.reply(id, rc, body),
-            Effect::Drive { id, command: command_name, args } => {
+            Effect::Drive {
+                id,
+                command: command_name,
+                args,
+            } => {
                 if let Some(answer) = drive::request(&self.ctx, id, &command_name, &args) {
                     self.bus.reply(answer.id, answer.rc, answer.body);
                 }
@@ -751,7 +783,10 @@ mod tests {
         let command_names: Vec<_> = effects
             .iter()
             .filter_map(|x| match x {
-                Effect::Releases { command: command_name, .. } => Some(*command_name),
+                Effect::Releases {
+                    command: command_name,
+                    ..
+                } => Some(*command_name),
                 _ => None,
             })
             .collect();

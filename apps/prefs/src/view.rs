@@ -26,8 +26,8 @@ use preferences::{
 use std::collections::HashMap;
 use std::ops::RangeInclusive;
 use std::sync::{Mutex, OnceLock};
-use toolkit::button::PushButton;
 use toolkit::action::Origin;
+use toolkit::button::PushButton;
 use toolkit::dialog::{self, Choice};
 use toolkit::field::ValueField;
 use toolkit::slider::Slider;

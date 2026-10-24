@@ -117,7 +117,10 @@ fn emit_send_expression_and_address_body_accept_keyword_segments() {
             other => panic!("expected Send, got {other:?}"),
         })
         .collect();
-    assert_eq!(command_names, vec!["ced.select", "end.of.line", "print.page"]);
+    assert_eq!(
+        command_names,
+        vec!["ced.select", "end.of.line", "print.page"]
+    );
 }
 
 #[test]

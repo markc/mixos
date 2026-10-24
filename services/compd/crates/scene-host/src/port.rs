@@ -1507,7 +1507,10 @@ mod tests {
             .enumerate()
         {
             let delivery = Arc::clone(&delivery);
-            let request = request(SceneCommand::PanelPageSet, json!({"edge":"right", "id":page}));
+            let request = request(
+                SceneCommand::PanelPageSet,
+                json!({"edge":"right", "id":page}),
+            );
             let worker =
                 std::thread::spawn(move || assert!(delivery.send(Inbound::Request(request))));
             event_loop

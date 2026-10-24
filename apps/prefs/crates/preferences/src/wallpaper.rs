@@ -379,9 +379,19 @@ impl WallpaperEditor {
         self.settle();
     }
 
-    fn start(&mut self, ticket: u64, step: Step, command: &'static str, body: Value) -> Option<Call> {
+    fn start(
+        &mut self,
+        ticket: u64,
+        step: Step,
+        command: &'static str,
+        body: Value,
+    ) -> Option<Call> {
         self.job = Some(Job { ticket, step });
-        Some(Call { ticket, command, body })
+        Some(Call {
+            ticket,
+            command,
+            body,
+        })
     }
 
     /// The one state read a finished job owes. A set always rereads; other

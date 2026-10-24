@@ -77,10 +77,9 @@ pub fn read_extras(path: &Path, edge: &str) -> Result<Vec<Extra>, String> {
             let MixValue::Map(item) = item else {
                 return Err(invalid());
             };
-            if item
-                .keys()
-                .any(|key| !["label", "target", "command", "args", "confirm"].contains(&key.as_str()))
-            {
+            if item.keys().any(|key| {
+                !["label", "target", "command", "args", "confirm"].contains(&key.as_str())
+            }) {
                 return Err(invalid());
             }
             let string = |key: &str| match item.get(key) {
