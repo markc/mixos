@@ -18,6 +18,7 @@ async fn headless_binary_serves_local_tree_and_quits_without_a_display() {
     let broker = test_broker::Broker::start();
     let directory = tempfile::tempdir().unwrap();
     let client = SupervisedClient::connect_options("workshop-agent", &broker.url)
+        .with_verbs(Vec::new())
         .connect()
         .await
         .unwrap();
