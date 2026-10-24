@@ -1140,7 +1140,11 @@ impl Engine {
                     None => None,
                     Some(value) => {
                         let Some(group) = value.as_str().and_then(SoftwareGroup::from_name) else {
-                            return self.error(id, "ARGUMENT", "group must be a software group name");
+                            return self.error(
+                                id,
+                                "ARGUMENT",
+                                "group must be a software group name",
+                            );
                         };
                         if section != Some(Section::Software) {
                             return self.error(id, "ARGUMENT", "group is only valid for software");

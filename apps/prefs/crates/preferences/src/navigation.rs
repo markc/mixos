@@ -234,7 +234,13 @@ mod tests {
             assert_eq!(json, format!("\"{}\"", s.id));
             assert_eq!(serde_json::from_str::<Section>(&json).unwrap(), s.section);
         }
-        for id in ["mixos-desktop", "mixos-server", "creative", "other", "unknown"] {
+        for id in [
+            "mixos-desktop",
+            "mixos-server",
+            "creative",
+            "other",
+            "unknown",
+        ] {
             assert_eq!(Section::from_name(id), None);
         }
     }

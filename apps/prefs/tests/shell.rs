@@ -181,7 +181,10 @@ fn slash_focuses_search_enter_opens_first_match_and_escape_clears_and_unfocuses(
     rig.h.key_press(egui::Key::Slash);
     rig.h.run_steps(3);
     assert_eq!(
-        published(&rig).iter().filter(|body| body["id"] == "view.search").count(),
+        published(&rig)
+            .iter()
+            .filter(|body| body["id"] == "view.search")
+            .count(),
         1,
         "a text field keeps slash while typing"
     );

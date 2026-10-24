@@ -159,9 +159,7 @@ pub fn view(
     egui::CentralPanel::default()
         .frame(bars::dock_frame(ui.ctx()))
         .show(ui, |ui| match engine.section() {
-            Section::Software => {
-                applications(ui, engine, commands, strings, &mut events)
-            }
+            Section::Software => applications(ui, engine, commands, strings, &mut events),
             section => {
                 ScrollArea::vertical()
                     .id_salt(section.name())
@@ -211,9 +209,7 @@ fn editors(ui: &mut Ui, engine: &Engine, commands: &Registry<Engine>, events: &m
         field.surrender_focus();
     }
     let matches = engine.search(&query);
-    if enter
-        && let Some(first) = matches.first()
-    {
+    if enter && let Some(first) = matches.first() {
         events.push(UiEvent::Command(first.command, Origin::Ui));
     }
     if query != engine.ui.search {
