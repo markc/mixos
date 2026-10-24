@@ -1445,6 +1445,36 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn durability_warning_marks_save_complete_and_stays_visible() {
+        let (_temp, roots, entry) = runner_fixture();
+        let mut state = State::new("ced");
+        state.set_test_roots(roots);
+        let mut document = editor::local::Document::open(&entry.path).unwrap();
+        document
+            .command(
+                editor::EditCommand::Insert("-- changed\n".into()),
+                &editor::View::default(),
+            )
+            .unwrap();
+        let saved = document.save_snapshot().unwrap().write().unwrap();
+        state.document = Some(document);
+        state.saved(
+            Ok((
+                saved,
+                None,
+                Some(entry),
+                Some("directory sync failed".into()),
+            )),
+            &egui::Context::default(),
+        );
+        assert!(!state.document.as_ref().unwrap().is_dirty());
+        assert_eq!(state.error.as_deref(), Some("directory sync failed"));
+        state.engine.stop();
+        wait_until(|| state.engine.runner_status() != Status::Running);
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn late_output_does_not_hide_a_live_run() {
         let (_temp, roots, entry) = runner_fixture();
         let mut state = State::new("ced");
