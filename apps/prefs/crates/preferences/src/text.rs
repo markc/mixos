@@ -4,7 +4,7 @@
 //! The Email reader's body is `email.reader`, the composer `email.composer`,
 //! and the Ced editor `ced.editor`. Each control is one fenced
 //! `settings.apply` on the Terminal group's channel. The values shown are
-//! settingsd's, from its last read; Prefs never keeps a copy.
+//! settingsd's, from its last read; Preferences never keeps a copy.
 use crate::engine::Engine;
 use serde_json::{Value, json};
 

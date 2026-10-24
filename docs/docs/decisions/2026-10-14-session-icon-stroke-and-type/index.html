@@ -260,7 +260,7 @@ licence obligations in
 A missing or still-scanning family falls back to the bundled Inter, which
 stays behind any system font as glyph fallback.</li>
 <li><strong>Carried by the existing carrier.</strong> <code>settings.apply</code> takes the new keys,
-<code>prefs.appearance.set</code> is the Prefs front verb, and every app follows the
+<code>prefs.appearance.set</code> is the Preferences front verb, and every app follows the
 summary topic as it does for the scheme. No new verb.</li>
 </ul>
 <h2 id="why">Why</h2>
@@ -282,7 +282,7 @@ back by resetting the keys first, with <code>settings.reset</code> or a null val
 <li><strong>Apps following the session look</strong> (busviewer, ced, dopus, screenshot)
 pick the choices up through <code>session_look</code> and <code>toolkit::install</code>, with no
 edits beyond the overlay.</li>
-<li><strong>Prefs</strong> builds its own theme from its draft; it is updated alongside.</li>
+<li><strong>Preferences</strong> builds its own theme from its draft; it is updated alongside.</li>
 <li><strong>backdrop</strong> draws textures only, with no text or icon widgets, and
 installs once at startup. It is out of scope.</li>
 <li><strong>compd's title bars</strong> use their own theme builder and an embedded-only

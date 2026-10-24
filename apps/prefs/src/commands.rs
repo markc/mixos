@@ -1,14 +1,26 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! Prefs' commands. The menu bar, the panel's buttons, the shortcuts and
+//! Preferences' commands. The menu bar, the panel's buttons, the shortcuts and
 //! the Bus verbs `prefs.commands` / `prefs.execute` all come from this
 //! registry.
 use egui::{Key, KeyboardShortcut, Modifiers};
-use preferences::{Dialog, Engine, Panel, Section};
+use preferences::{Category, Dialog, Engine, SECTIONS, Section};
 use toolkit::{Command, Icon, Registry};
 
 fn undialogued(e: &Engine) -> bool {
     e.ui.dialog.is_none() && !e.picker.open && !e.quitting
+}
+
+/// Icons belong to the renderer; the engine registry stays headless.
+pub fn section_icon(section: Section) -> Icon {
+    match section {
+        Section::Themes => Icon::Palette,
+        Section::Fonts | Section::Text => Icon::Type,
+        Section::Wallpapers => Icon::Image,
+        Section::Email => Icon::Mail,
+        Section::Terminal => Icon::FileTerminal,
+        Section::Software => Icon::Package,
+    }
 }
 
 const fn key(modifiers: Modifiers, key: Key) -> Option<KeyboardShortcut> {
@@ -35,39 +47,6 @@ pub fn registry() -> Registry<Engine> {
         run: Engine::quit,
     })
     .add(Command {
-        id: "view.panel.applications",
-        submenu: None,
-        group: 0,
-        label: "panel-applications",
-        menu: Some("view"),
-        shortcut: key(Modifiers::COMMAND, Key::Num1),
-        icon: Some(Icon::Package),
-        enabled: undialogued,
-        run: |e| e.set_panel(Panel::Applications),
-    })
-    .add(Command {
-        id: "view.panel.appearance",
-        submenu: None,
-        group: 0,
-        label: "panel-appearance",
-        menu: Some("view"),
-        shortcut: key(Modifiers::COMMAND, Key::Num2),
-        icon: Some(Icon::Palette),
-        enabled: undialogued,
-        run: |e| e.set_panel(Panel::Appearance),
-    })
-    .add(Command {
-        id: "view.panel.app-settings",
-        submenu: None,
-        group: 0,
-        label: "panel-app-settings",
-        menu: Some("view"),
-        shortcut: key(Modifiers::COMMAND, Key::Num3),
-        icon: Some(Icon::AppWindow),
-        enabled: undialogued,
-        run: |e| e.set_panel(Panel::AppSettings),
-    })
-    .add(Command {
         id: "view.refresh",
         submenu: None,
         group: 1,
@@ -77,102 +56,51 @@ pub fn registry() -> Registry<Engine> {
         icon: Some(Icon::RefreshCw),
         enabled: Engine::can_refresh,
         run: Engine::refresh,
+    })
+    .add(Command {
+        id: "view.search",
+        submenu: None,
+        group: 1,
+        label: "search",
+        menu: Some("view"),
+        shortcut: key(Modifiers::NONE, Key::Slash),
+        icon: Some(Icon::Search),
+        enabled: Engine::can_navigate,
+        run: Engine::focus_search,
     });
-    for (section, icon, run) in [
-        (
-            Section::Themes,
-            Icon::Palette,
-            (|e: &mut Engine| e.set_section(Section::Themes)) as fn(&mut Engine),
-        ),
-        (
-            Section::Fonts,
-            Icon::Type,
-            (|e: &mut Engine| e.set_section(Section::Fonts)) as fn(&mut Engine),
-        ),
-        (
-            Section::Wallpapers,
-            Icon::Image,
-            (|e: &mut Engine| e.set_section(Section::Wallpapers)) as fn(&mut Engine),
-        ),
-        (
-            Section::Terminal,
-            Icon::FileTerminal,
-            (|e: &mut Engine| e.set_section(Section::Terminal)) as fn(&mut Engine),
-        ),
-        (
-            Section::Text,
-            Icon::Type,
-            (|e: &mut Engine| e.set_section(Section::Text)) as fn(&mut Engine),
-        ),
-        (
-            Section::Desktop,
-            Icon::Monitor,
-            (|e: &mut Engine| e.set_section(Section::Desktop)) as fn(&mut Engine),
-        ),
-        (
-            Section::Server,
-            Icon::Server,
-            (|e: &mut Engine| e.set_section(Section::Server)) as fn(&mut Engine),
-        ),
-        (
-            Section::Creative,
-            Icon::Palette,
-            (|e: &mut Engine| e.set_section(Section::Creative)) as fn(&mut Engine),
-        ),
-        (
-            Section::Other,
-            Icon::Package,
-            (|e: &mut Engine| e.set_section(Section::Other)) as fn(&mut Engine),
-        ),
-        (
-            Section::Email,
-            Icon::Mail,
-            (|e: &mut Engine| e.set_section(Section::Email)) as fn(&mut Engine),
-        ),
-    ] {
+    r.scope("view.search", toolkit::command::Scope::Browsing);
+    for (category, shortcut) in Category::ALL.into_iter().zip([
+        Key::Num1,
+        Key::Num2,
+        Key::Num3,
+        Key::Num4,
+        Key::Num5,
+        Key::Num6,
+        Key::Num7,
+    ]) {
         r.add(Command {
-            id: section.command(),
-            label: section.label(),
+            id: category.command(),
+            label: category.label(),
             menu: Some("view"),
-            submenu: Some(match section.panel() {
-                Panel::Appearance => "panel-appearance",
-                Panel::Applications => "panel-applications",
-                Panel::AppSettings => "panel-app-settings",
-            }),
-            group: 0,
-            shortcut: None,
-            icon: Some(icon),
-            enabled: undialogued,
-            run,
-        });
-    }
-    for (id, label, run) in [
-        (
-            "view.tree.appearance",
-            "tree-appearance",
-            Engine::toggle_appearance as fn(&mut Engine),
-        ),
-        (
-            "view.tree.applications",
-            "tree-applications",
-            Engine::toggle_applications as fn(&mut Engine),
-        ),
-        (
-            "view.tree.app-settings",
-            "tree-app-settings",
-            Engine::toggle_app_settings as fn(&mut Engine),
-        ),
-    ] {
-        r.add(Command {
-            id,
-            label,
-            run,
-            menu: None,
             submenu: None,
             group: 0,
-            shortcut: None,
+            shortcut: key(Modifiers::COMMAND, shortcut),
             icon: None,
-            enabled: undialogued,
+            enabled: category.enabled(),
+            run: category.run(),
+        });
+    }
+    for section in SECTIONS {
+        r.add(Command {
+            id: section.command,
+            label: section.title,
+            menu: Some("view"),
+            submenu: Some(section.category.label()),
+            group: 0,
+            shortcut: None,
+            icon: Some(section_icon(section.section)),
+            enabled: Engine::can_navigate,
+            run: section.run,
         });
     }
     // View › Theme: any scheme, style, mode and framing, in this window only.
@@ -252,7 +180,7 @@ pub fn registry() -> Registry<Engine> {
         submenu: None,
         group: 0,
         label: "check",
-        menu: Some("applications"),
+        menu: Some("software"),
         shortcut: key(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::R),
         icon: Some(Icon::Search),
         enabled: Engine::can_check,
@@ -263,7 +191,7 @@ pub fn registry() -> Registry<Engine> {
         submenu: None,
         group: 0,
         label: "update-all",
-        menu: Some("applications"),
+        menu: Some("software"),
         shortcut: None,
         icon: Some(Icon::Download),
         enabled: Engine::can_update_all,
@@ -274,7 +202,7 @@ pub fn registry() -> Registry<Engine> {
         submenu: None,
         group: 1,
         label: "install",
-        menu: Some("applications"),
+        menu: Some("software"),
         shortcut: key(Modifiers::COMMAND, Key::I),
         icon: Some(Icon::Download),
         enabled: Engine::can_install,
@@ -285,7 +213,7 @@ pub fn registry() -> Registry<Engine> {
         submenu: None,
         group: 1,
         label: "rollback",
-        menu: Some("applications"),
+        menu: Some("software"),
         shortcut: None,
         icon: Some(Icon::Undo2),
         enabled: Engine::can_rollback,
@@ -296,7 +224,7 @@ pub fn registry() -> Registry<Engine> {
         submenu: None,
         group: 2,
         label: "remove",
-        menu: Some("applications"),
+        menu: Some("software"),
         shortcut: None,
         icon: Some(Icon::Trash),
         enabled: Engine::can_remove,
@@ -357,7 +285,7 @@ pub fn registry() -> Registry<Engine> {
         enabled: Engine::can_reset_terminal,
         run: Engine::reset_terminal,
     });
-    // App Settings → Email: each acts on the selected account, as its button.
+    // Apps → Email: each acts on the selected account, as its button.
     for (id, label, group, enabled, run) in [
         (
             "email.account.add",

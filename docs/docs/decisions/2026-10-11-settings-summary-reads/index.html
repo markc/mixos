@@ -275,7 +275,7 @@ default, the complete snapshot as before) or <code>summary</code> (the same
 is refused like any unknown field. A request without <code>view</code> reads exactly
 as it did under 0.1.0, and the field is never sent at its default.</li>
 <li><strong>Plain followers move to the summary.</strong> The <code>Follower</code> subscribes to
-the summary topic and reads the summary view; Prefs does the same. A
+the summary topic and reads the summary view; Preferences does the same. A
 follower still treats a delivery only as a hint: this decision does not
 change how deliveries are trusted.</li>
 <li><strong>Native consumers are unchanged.</strong> The snapshot topic and the full view

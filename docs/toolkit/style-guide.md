@@ -348,7 +348,7 @@ drive verbs and registers them in the verb registry:
 To change the session for every app, a caller writes settingsd:
 `settings.validate` to try, `settings.apply` with
 `"tune.style.field_radius": 4` (fenced on the current revision; `null`
-resets; `"tune": null` resets all), `settings.reset`, or Prefs'
+resets; `"tune": null` resets all), `settings.reset`, or Preferences'
 `prefs.appearance.set`. Per app: `"apps.<id>.tune.<family>.<name>"`.
 Terminal colours, session scope only: `"terminal.colors.ansi.1": "#ff0000"`,
 `"terminal.colors.foreground"`, `.background`, `.cursor`. Style and chrome

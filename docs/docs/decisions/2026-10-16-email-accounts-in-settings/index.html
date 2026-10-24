@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="The email app&#x27;s accounts and mail options are the session profile&#x27;s email group, edited in Prefs; their passwords stay in the app&#x27;s private 0600 file and reach it only through a write-only verb.">
+    <meta name="description" content="The email app&#x27;s accounts and mail options are the session profile&#x27;s email group, edited in Preferences; their passwords stay in the app&#x27;s private 0600 file and reach it only through a write-only verb.">
     <!-- Favicons from share/brand: the SVG follows the visitor's light/dark preference. -->
     <link rel="icon" href="/favicon.ico?v=400d5816f3" sizes="any">
     <link rel="icon" type="image/svg+xml" href="/_web/favicon.svg?v=4eb2d64677">
@@ -282,10 +282,10 @@ settingsd has accepted the account.</li>
 <code>email.accounts</code> and <code>email.info</code> report <code>has_password: bool</code>.</li>
 </ul>
 </li>
-<li><strong>Prefs is the configuration surface.</strong>
+<li><strong>Preferences is the configuration surface.</strong>
 <ul>
 <li>Accounts are added, edited, removed, reordered and made the default
-in Prefs' Email section, which writes <code>email.*</code> through settingsd. It
+in Preferences' Email section, which writes <code>email.*</code> through settingsd. It
 sets passwords through <code>email.account.password.set</code>, starting Email
 first if it is not running.</li>
 <li>The email app has no account form of its own. With no account, or
@@ -321,7 +321,7 @@ and broadcast so that any app can follow it. A password there would be
 readable by every Bus client and would appear in every snapshot and
 backup of the profile.</li>
 <li><strong>One place to configure.</strong> Terminal preferences already live in
-settingsd and are edited in Prefs. Mail accounts are the same kind of
+settingsd and are edited in Preferences. Mail accounts are the same kind of
 thing, and a second account form inside the app would drift from it.</li>
 <li><strong>Automation needs the accounts as data.</strong> An agent can list, add or
 disable an account through <code>settings.apply</code> or the email verbs. It
@@ -332,7 +332,7 @@ never handles a secret, unless it is the one supplying the password.</li>
 <li><strong>A settings read never deletes a password.</strong> Only an explicit action
 through Email does: <code>email.account.remove</code>, or
 <code>email.account.password.set</code> with an empty password. An account removed
-elsewhere (in Prefs, by a reset) drops the app's client and view, and
+elsewhere (in Preferences, by a reset) drops the app's client and view, and
 leaves its entry in the 0600 secrets file, unused. That is accepted:
 losing a password to a misread would be worse.</li>
 <li><strong>An empty account list is not a removal of them all.</strong> settingsd omits

@@ -3,7 +3,7 @@
 //! The Terminal group of the Theme editor: one `terminal.*` field per edit,
 //! sent to settingsd as a fenced `settings.apply` (or `settings.reset` for
 //! the whole group) on the same channel as the Appearance panel. The values
-//! shown are the ones settingsd last read; Prefs never writes a terminal
+//! shown are the ones settingsd last read; Preferences never writes a terminal
 //! config file.
 use crate::engine::Engine;
 use serde_json::{Value, json};

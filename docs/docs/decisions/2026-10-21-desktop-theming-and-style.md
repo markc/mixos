@@ -126,8 +126,8 @@ migration.
 ## Consequences
 
 - Every application changes mechanically once; new knobs never need a
-  schema field, a store migration or a Prefs change again.
-- Prefs builds its Appearance controls from the registry, for the session
+  schema field, a store migration or a Preferences change again.
+- Preferences builds its Appearance controls from the registry, for the session
   and per application, each showing the design default, the inherited
   session value and the application's override, and gains a terminal
   Colours group.

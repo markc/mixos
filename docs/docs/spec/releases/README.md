@@ -49,7 +49,7 @@ links?, skipped?, error?}`; `verified` is `{asset, sha256, proofs, tag}`.
 The optional top-level `categories` map supplies display labels for supported
 groups, for example `{creative: "Graphics"}`. Labels must be non-empty strings
 of at most 64 characters without control characters. Labels are projected onto
-rows so Prefs can use catalogue terminology without knowing external products.
+rows so Preferences can use catalogue terminology without knowing external products.
 
 A strict-data document, by default `$XDG_CONFIG_HOME/mixos/releases.mx`
 (`~/.config/mixos/releases.mx`). A missing file is the default catalogue,
@@ -71,7 +71,7 @@ is re-read on every request.
 | `name` | `^[a-z0-9][a-z0-9-]{0,63}$`, unique; it becomes a directory name |
 | `repo` | `owner/name` on GitHub |
 | `asset` | optional regex choosing the tarball when the default is wrong or ambiguous |
-| `category` | optional `mixos-desktop`, `mixos-server`, `creative` or `other`, used by Prefs to group rows; omitted entries remain in Other, with legacy MixOS bundle identifiers recognised |
+| `category` | optional `mixos-desktop`, `mixos-server`, `creative` or `other`, used by Preferences to group rows; omitted entries remain in Other, with legacy MixOS bundle identifiers recognised |
 | `exec_wrapper` | optional list of 1–32 non-empty strings without control characters, the first an absolute path without `=`; see below |
 
 **`exec_wrapper`.** When `link` writes the app's desktop entries, every

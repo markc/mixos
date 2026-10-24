@@ -209,7 +209,7 @@
                 <div class="panel-content">
                     <nav id="toc-nav">
                         <a href="#running-it">Running it</a>
-                        <a href="#accounts-are-set-up-in-prefs">Accounts are set up in Prefs</a>
+                        <a href="#accounts-are-set-up-in-preferences">Accounts are set up in Preferences</a>
                         <a href="#the-window">The window</a>
                         <a href="#keyboard">Keyboard</a>
                         <a href="#driving-it-over-the-bus">Driving it over the Bus</a>
@@ -252,8 +252,8 @@ action can also be done over the Bus.</p>
 <pre><code>email [--noded-url URL] [--service NAME]
 </code></pre>
 <p>A second launch raises the first window.</p>
-<h2 id="accounts-are-set-up-in-prefs">Accounts are set up in Prefs</h2>
-<p>Accounts are configured in <strong>Prefs → Email</strong>, not in the app
+<h2 id="accounts-are-set-up-in-preferences">Accounts are set up in Preferences</h2>
+<p>Accounts are configured in <strong>Preferences → Apps → Email</strong>, not in the app
 (<a href="/docs/decisions/2026-10-16-email-accounts-in-settings/">decision</a>).
 Each account has the fields below.</p>
 <table><thead><tr><th>Field</th><th>What it is</th></tr></thead><tbody>
@@ -277,7 +277,7 @@ and <strong>confirm before delete</strong>. Every change applies at once:</p>
 </ul>
 <p>A settings read never deletes a password. Only <strong>Email</strong> forgets one: an
 account removed with <code>email.account.remove</code>, or an empty
-<code>email.account.password.set</code>. An account removed elsewhere (in Prefs, or
+<code>email.account.password.set</code>. An account removed elsewhere (in Preferences, or
 by a settings reset) leaves its entry in <code>secrets.conf.mix</code>, unused.</p>
 <p>settingsd omits the <code>email</code> group at its defaults, so a read with no
 accounts cannot be told apart from a settingsd that does not carry the

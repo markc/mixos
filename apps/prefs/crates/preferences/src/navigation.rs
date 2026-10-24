@@ -1,136 +1,210 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! The renderer-independent navigation model: the sections the sidebar
-//! offers, which panel each belongs to (Appearance, Applications or App
-//! Settings), and which Applications rows sit under each section.
+//! The section registry owns navigation, commands and search in tree order.
 use serde::{Deserialize, Serialize};
 
-use crate::model::{AppRow, Panel};
+use crate::{Engine, model::AppRow};
 
-/// A sidebar section, in sidebar order.
+macro_rules! categories {
+    ($($variant:ident => $id:literal),+ $(,)?) => {
+        #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+        pub enum Category {
+            $(#[serde(rename = $id)] $variant),+
+        }
+
+        impl Category {
+            pub const ALL: [Self; 7] = [$(Self::$variant),+];
+
+            pub fn name(self) -> &'static str {
+                match self { $(Self::$variant => $id),+ }
+            }
+
+            pub fn label(self) -> &'static str {
+                match self { $(Self::$variant => concat!("category-", $id)),+ }
+            }
+
+            pub fn command(self) -> &'static str {
+                match self { $(Self::$variant => concat!("view.category.", $id)),+ }
+            }
+
+            pub fn run(self) -> fn(&mut Engine) {
+                match self { $(Self::$variant => |e| e.set_category(Self::$variant)),+ }
+            }
+
+            pub fn enabled(self) -> fn(&Engine) -> bool {
+                match self { $(Self::$variant => |e| e.can_navigate()
+                    && Self::$variant.first_section().is_some()),+ }
+            }
+        }
+    };
+}
+
+categories! {
+    Overview => "overview",
+    Appearance => "appearance",
+    Desktop => "desktop",
+    Input => "input",
+    Output => "output",
+    Apps => "apps",
+    System => "system",
+}
+
+impl Category {
+    pub fn first_section(self) -> Option<Section> {
+        SECTIONS
+            .iter()
+            .find(|s| s.category == self)
+            .map(|s| s.section)
+    }
+}
+
+/// One editor's identity and searchable metadata. Rendering dispatches on
+/// `section`; command handlers and all public listings come from this table.
+#[derive(Clone, Copy, Debug, Serialize)]
+pub struct SectionDescriptor {
+    pub section: Section,
+    pub id: &'static str,
+    pub category: Category,
+    pub title: &'static str,
+    pub aliases: &'static [&'static str],
+    pub prefixes: &'static [&'static str],
+    pub command: &'static str,
+    #[serde(skip)]
+    pub run: fn(&mut Engine),
+}
+
+macro_rules! sections {
+    ($($variant:ident => ($id:literal, $category:ident, $title:literal,
+        $aliases:expr, $prefixes:expr)),+ $(,)?) => {
+        #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+        pub enum Section {
+            $(#[serde(rename = $id)] $variant),+
+        }
+
+        pub static SECTIONS: &[SectionDescriptor] = &[
+            $(SectionDescriptor {
+                section: Section::$variant,
+                id: $id,
+                category: Category::$category,
+                title: $title,
+                aliases: $aliases,
+                prefixes: $prefixes,
+                command: concat!("view.section.", $id),
+                run: |e| e.set_section(Section::$variant),
+            }),+
+        ];
+    };
+}
+
+sections! {
+    Themes => ("themes", Appearance, "section-themes", &["colour", "style"], &["appearance."]),
+    Fonts => ("fonts", Appearance, "section-fonts", &["typeface", "typography"], &["appearance.font"]),
+    Wallpapers => ("wallpapers", Appearance, "section-wallpapers", &["background"], &[]),
+    Email => ("email", Apps, "section-email", &["mail", "accounts"], &["email."]),
+    Terminal => ("terminal", Apps, "nav-terminal", &["shell", "console"], &["terminal."]),
+    Text => ("text", Apps, "section-text", &["reader", "composer", "editor"], &["email.reader", "email.composer", "ced."]),
+    Software => ("software", System, "section-software", &["install", "update", "applications", "packages"], &[]),
+}
+
+impl Section {
+    pub fn descriptor(self) -> &'static SectionDescriptor {
+        SECTIONS
+            .iter()
+            .find(|s| s.section == self)
+            .expect("registered section")
+    }
+
+    pub fn name(self) -> &'static str {
+        self.descriptor().id
+    }
+
+    pub fn from_name(name: &str) -> Option<Self> {
+        SECTIONS.iter().find(|s| s.id == name).map(|s| s.section)
+    }
+
+    pub fn category(self) -> Category {
+        self.descriptor().category
+    }
+
+    pub fn label(self) -> &'static str {
+        self.descriptor().title
+    }
+
+    pub fn command(self) -> &'static str {
+        self.descriptor().command
+    }
+}
+
+/// Match translated titles and category labels alongside aliases and keys.
+/// Filtering the registry preserves category and section order.
+pub fn search(query: &str, label: impl Fn(&str) -> String) -> Vec<&'static SectionDescriptor> {
+    let query = query.to_lowercase();
+    SECTIONS
+        .iter()
+        .filter(|s| {
+            [label(s.title), label(s.category.label())]
+                .iter()
+                .map(String::as_str)
+                .chain([s.id, s.category.name()])
+                .chain(s.aliases.iter().copied())
+                .chain(s.prefixes.iter().copied())
+                .any(|text| text.to_lowercase().contains(&query))
+        })
+        .collect()
+}
+
+/// Software's catalogue groups are independent of sidebar sections.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Section {
-    Themes,
-    Fonts,
-    Wallpapers,
-    Terminal,
-    /// The style of the prose surfaces: the Email reader and composer, and
-    /// the Ced editor ([`crate::text`]).
-    Text,
+pub enum SoftwareGroup {
     #[serde(rename = "mixos-desktop")]
     Desktop,
     #[serde(rename = "mixos-server")]
     Server,
+    #[serde(rename = "creative")]
     Creative,
+    #[serde(rename = "other")]
     Other,
-    /// App Settings → Email: the email app's accounts and mail options.
-    Email,
 }
 
-impl Section {
-    pub const ALL: [Section; 10] = [
-        Section::Themes,
-        Section::Fonts,
-        Section::Wallpapers,
-        Section::Terminal,
-        Section::Text,
-        Section::Desktop,
-        Section::Server,
-        Section::Creative,
-        Section::Other,
-        Section::Email,
-    ];
+impl SoftwareGroup {
+    pub const ALL: [Self; 4] = [Self::Desktop, Self::Server, Self::Creative, Self::Other];
 
     pub fn name(self) -> &'static str {
         match self {
-            Section::Themes => "themes",
-            Section::Fonts => "fonts",
-            Section::Wallpapers => "wallpapers",
-            Section::Terminal => "terminal",
-            Section::Text => "text",
-            Section::Desktop => "mixos-desktop",
-            Section::Server => "mixos-server",
-            Section::Creative => "creative",
-            Section::Other => "other",
-            Section::Email => "email",
+            Self::Desktop => "mixos-desktop",
+            Self::Server => "mixos-server",
+            Self::Creative => "creative",
+            Self::Other => "other",
         }
     }
 
     pub fn from_name(name: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|s| s.name() == name)
-    }
-
-    /// The panel that shows this section.
-    pub fn panel(self) -> Panel {
-        match self {
-            Section::Themes
-            | Section::Fonts
-            | Section::Wallpapers
-            | Section::Terminal
-            | Section::Text => Panel::Appearance,
-            Section::Email => Panel::AppSettings,
-            _ => Panel::Applications,
-        }
+        Self::ALL.into_iter().find(|g| g.name() == name)
     }
 
     pub fn label(self) -> &'static str {
         match self {
-            Section::Themes => "section-themes",
-            Section::Fonts => "section-fonts",
-            Section::Wallpapers => "section-wallpapers",
-            Section::Terminal => "nav-terminal",
-            Section::Text => "section-text",
-            Section::Desktop => "section-desktop",
-            Section::Server => "section-server",
-            Section::Creative => "section-creative",
-            Section::Other => "section-other",
-            Section::Email => "section-email",
+            Self::Desktop => "group-desktop",
+            Self::Server => "group-server",
+            Self::Creative => "group-creative",
+            Self::Other => "group-other",
         }
     }
 
-    pub fn command(self) -> &'static str {
-        match self {
-            Section::Themes => "view.section.themes",
-            Section::Fonts => "view.section.fonts",
-            Section::Wallpapers => "view.section.wallpapers",
-            Section::Terminal => "view.section.terminal",
-            Section::Text => "view.section.text",
-            Section::Desktop => "view.section.desktop",
-            Section::Server => "view.section.server",
-            Section::Creative => "view.section.creative",
-            Section::Other => "view.section.other",
-            Section::Email => "view.section.email",
-        }
-    }
-
-    /// The section a panel opens on.
-    pub fn default_for(panel: Panel) -> Self {
-        match panel {
-            Panel::Appearance => Section::Themes,
-            Panel::Applications => Section::Creative,
-            Panel::AppSettings => Section::Email,
-        }
-    }
-
-    /// Whether an Applications row sits under this section.
-    pub fn matches(&self, row: &AppRow) -> bool {
-        application_section(row) == *self
+    pub fn matches(self, row: &AppRow) -> bool {
+        application_group(row) == self
     }
 }
 
-/// Catalogue metadata owns grouping. Legacy MixOS bundle identifiers retain
-/// their groups; unrecognised rows stay accessible under Other.
-pub fn application_section(row: &AppRow) -> Section {
+/// Catalogue metadata owns grouping. Unrecognised rows remain accessible.
+pub fn application_group(row: &AppRow) -> SoftwareGroup {
     if let Some(category) = row.category.as_deref() {
-        return Section::from_name(category)
-            .filter(|s| s.panel() == Panel::Applications)
-            .unwrap_or(Section::Other);
+        return SoftwareGroup::from_name(category).unwrap_or(SoftwareGroup::Other);
     }
     match row.app.as_str() {
-        "mixos-desktop" => Section::Desktop,
-        "mixos-server" => Section::Server,
-        _ => Section::Other,
+        "mixos-desktop" => SoftwareGroup::Desktop,
+        "mixos-server" => SoftwareGroup::Server,
+        _ => SoftwareGroup::Other,
     }
 }
 
@@ -138,10 +212,10 @@ pub fn application_section(row: &AppRow) -> Section {
 mod tests {
     use super::*;
 
-    fn row(app: &str, repo: &str) -> AppRow {
+    fn row(app: &str) -> AppRow {
         AppRow {
             app: app.into(),
-            repo: repo.into(),
+            repo: "example/app".into(),
             category: None,
             category_label: None,
             installed: None,
@@ -152,55 +226,59 @@ mod tests {
     }
 
     #[test]
-    fn every_section_round_trips_by_name_and_serde() {
-        for section in Section::ALL {
-            assert_eq!(Section::from_name(section.name()), Some(section));
-            let json = serde_json::to_string(&section).unwrap();
-            assert_eq!(json, format!("\"{}\"", section.name()));
-            assert_eq!(serde_json::from_str::<Section>(&json).unwrap(), section);
+    fn registry_ids_are_unique_and_round_trip() {
+        let mut ids = std::collections::HashSet::new();
+        for s in SECTIONS {
+            assert!(ids.insert(s.id));
+            assert_eq!(Section::from_name(s.id), Some(s.section));
+            let json = serde_json::to_string(&s.section).unwrap();
+            assert_eq!(json, format!("\"{}\"", s.id));
+            assert_eq!(serde_json::from_str::<Section>(&json).unwrap(), s.section);
         }
-        assert_eq!(Section::from_name("nope"), None);
+        for id in [
+            "mixos-desktop",
+            "mixos-server",
+            "creative",
+            "other",
+            "unknown",
+        ] {
+            assert_eq!(Section::from_name(id), None);
+        }
     }
 
     #[test]
-    fn sections_map_to_their_panel_and_default() {
-        assert_eq!(Section::Fonts.panel(), Panel::Appearance);
-        assert_eq!(Section::Terminal.panel(), Panel::Appearance);
-        assert_eq!(Section::Server.panel(), Panel::Applications);
-        assert_eq!(Section::default_for(Panel::Appearance), Section::Themes);
-        assert_eq!(Section::default_for(Panel::Applications), Section::Creative);
-        assert_eq!(Section::Email.panel(), Panel::AppSettings);
-        assert_eq!(Section::default_for(Panel::AppSettings), Section::Email);
+    fn search_matches_keys_aliases_and_category_labels_in_tree_order() {
+        let ids = |query| {
+            search(query, str::to_owned)
+                .iter()
+                .map(|s| s.id)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(ids("TERMINAL."), ["terminal"]);
+        assert_eq!(ids("background"), ["wallpapers"]);
+        assert_eq!(ids("wallpapers"), ["wallpapers"]);
+        assert_eq!(ids("system"), ["software"]);
+        assert_eq!(ids("category-apps"), ["email", "terminal", "text"]);
+        assert_eq!(ids("email.reader"), ["text"]);
+        assert!(ids("no such setting").is_empty());
+        assert_eq!(ids("").len(), SECTIONS.len());
     }
 
     #[test]
-    fn legacy_mixos_bundles_and_catalogue_categories_route() {
+    fn catalogue_and_bundle_groups_route_without_becoming_sections() {
         assert_eq!(
-            application_section(&row("mixos-desktop", "mixos/desktop")),
-            Section::Desktop
+            application_group(&row("mixos-desktop")),
+            SoftwareGroup::Desktop
         );
         assert_eq!(
-            application_section(&row("mixos-server", "mixos/server")),
-            Section::Server
+            application_group(&row("mixos-server")),
+            SoftwareGroup::Server
         );
-        let mut custom = row("canvas", "example/canvas");
+        let mut custom = row("canvas");
+        assert_eq!(application_group(&custom), SoftwareGroup::Other);
         custom.category = Some("creative".into());
-        assert_eq!(application_section(&custom), Section::Creative);
-        custom.category = Some("mixos-desktop".into());
-        assert_eq!(application_section(&custom), Section::Desktop);
-    }
-
-    #[test]
-    fn unclassified_and_unknown_categories_stay_accessible() {
-        assert_eq!(
-            application_section(&row("someapp", "vendor/someapp")),
-            Section::Other
-        );
-        assert!(Section::Other.matches(&row("someapp", "vendor/someapp")));
-        let mut custom = row("canvas", "example/canvas");
-        for category in ["themes", "email", "unknown"] {
-            custom.category = Some(category.into());
-            assert_eq!(application_section(&custom), Section::Other);
-        }
+        assert_eq!(application_group(&custom), SoftwareGroup::Creative);
+        custom.category = Some("unknown".into());
+        assert_eq!(application_group(&custom), SoftwareGroup::Other);
     }
 }

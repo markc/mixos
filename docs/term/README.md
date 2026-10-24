@@ -41,7 +41,7 @@ it) and answers:
 ## Configuration
 
 The desktop profile's `terminal.*` settings, held by
-[settingsd](../settingsd/README.md) and edited in [Prefs](../prefs/README.md):
+[settingsd](../settingsd/README.md) and edited in [Preferences](../prefs/README.md):
 font family, size and weight, padding, border width, history lines, scroll
 speed, cursor shape and blink, the focus ring, copy on select, and `TERM`.
 The window follows them as they change; Ctrl+plus and minus write

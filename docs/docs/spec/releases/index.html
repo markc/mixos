@@ -279,7 +279,7 @@ rely on.</p>
 <p>The optional top-level <code>categories</code> map supplies display labels for supported
 groups, for example <code>{creative: "Graphics"}</code>. Labels must be non-empty strings
 of at most 64 characters without control characters. Labels are projected onto
-rows so Prefs can use catalogue terminology without knowing external products.</p>
+rows so Preferences can use catalogue terminology without knowing external products.</p>
 <p>A strict-data document, by default <code>$XDG_CONFIG_HOME/mixos/releases.mx</code>
 (<code>~/.config/mixos/releases.mx</code>). A missing file is the default catalogue,
 MixOS itself: <code>mixos-desktop</code> and <code>mixos-server</code>, both from <code>markc/mixos</code>. It
@@ -296,7 +296,7 @@ is re-read on every request.</p>
 <tr><td><code>name</code></td><td><code>^[a-z0-9][a-z0-9-]{0,63}$</code>, unique; it becomes a directory name</td></tr>
 <tr><td><code>repo</code></td><td><code>owner/name</code> on GitHub</td></tr>
 <tr><td><code>asset</code></td><td>optional regex choosing the tarball when the default is wrong or ambiguous</td></tr>
-<tr><td><code>category</code></td><td>optional <code>mixos-desktop</code>, <code>mixos-server</code>, <code>creative</code> or <code>other</code>, used by Prefs to group rows; omitted entries remain in Other, with legacy MixOS bundle identifiers recognised</td></tr>
+<tr><td><code>category</code></td><td>optional <code>mixos-desktop</code>, <code>mixos-server</code>, <code>creative</code> or <code>other</code>, used by Preferences to group rows; omitted entries remain in Other, with legacy MixOS bundle identifiers recognised</td></tr>
 <tr><td><code>exec_wrapper</code></td><td>optional list of 1–32 non-empty strings without control characters, the first an absolute path without <code>=</code>; see below</td></tr>
 </tbody></table>
 <p><strong><code>exec_wrapper</code>.</strong> When <code>link</code> writes the app's desktop entries, every

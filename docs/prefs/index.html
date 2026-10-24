@@ -4,14 +4,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="MixOS&#x27;s preferences window — a sidebar of editors: Applications follows, installs, updates, rolls back and removes upstream releases; Appearance sets the session&#x27;s colour scheme, style, mode, contrast and window frame; App Settings → Email edits the email app&#x27;s accounts and mail options.">
+    <meta name="description" content="MixOS&#x27;s preferences window — Appearance sets the session&#x27;s look, fonts and wallpaper; Apps holds Email, Terminal and Text settings; System → Software follows, installs, updates, rolls back and removes upstream releases.">
     <!-- Favicons from share/brand: the SVG follows the visitor's light/dark preference. -->
     <link rel="icon" href="/favicon.ico?v=400d5816f3" sizes="any">
     <link rel="icon" type="image/svg+xml" href="/_web/favicon.svg?v=4eb2d64677">
     <link rel="icon" type="image/png" sizes="32x32" href="/_web/brand/favicon-32-light.png?v=adbeaa7141" media="(prefers-color-scheme: light)">
     <link rel="icon" type="image/png" sizes="32x32" href="/_web/brand/favicon-32-dark.png?v=adbeaa7141" media="(prefers-color-scheme: dark)">
     <link rel="apple-touch-icon" sizes="180x180" href="/_web/brand/apple-touch-icon.png?v=edebfa3825">
-    <title>Prefs — MixOS</title>
+    <title>Preferences — MixOS</title>
     <link rel="canonical" href="https://mixos.dev/prefs/">
     <link rel="alternate" type="text/markdown" href="/prefs/README.md" title="Markdown source">
     <meta name="mixos-build" content="0e230d24c4f9">
@@ -208,9 +208,10 @@
                 <div class="panel-title">On this page</div>
                 <div class="panel-content">
                     <nav id="toc-nav">
-                        <a href="#applications">Applications</a>
+                        <a href="#system--software">System → Software</a>
                         <a href="#appearance">Appearance</a>
-                        <a href="#app-settings--email">App Settings → Email</a>
+                        <a href="#apps">Apps</a>
+                        <a href="#email" class="toc-h3">Email</a>
                         <a href="#for-agents">For agents</a>
                         <a href="#wallpaper">Wallpaper</a>
                         <a href="#running-and-testing">Running and testing</a>
@@ -239,14 +240,23 @@
 <main id="content" tabindex="-1">
     <div id="doc-view" class="content-section">
         <article id="content-doc" class="prose" data-pagefind-body>
-<h1 id="prefs">Prefs</h1>
-<p>Prefs holds MixOS's preference editors in one window: an expandable tree
-on the left, the selected section on the right. Appearance contains Themes,
-Fonts, Wallpapers and Terminal; Applications contains MixOS Desktop, MixOS Server and
-Creative; App Settings contains Email. The sidebar can be resized. The name is a nod to the
-Prefs drawer of AmigaOS, where each setting had its own small editor.</p>
-<h2 id="applications">Applications</h2>
-<p>Each Applications section shows its followed apps, from the <a href="/releasesd/">releases
+<h1 id="preferences">Preferences</h1>
+<p>Preferences holds MixOS's preference editors in one window. A resizable tree
+on the left opens sections on the right. Appearance contains Themes, Fonts
+and Wallpapers. Apps contains Email, Terminal and Text. System contains
+Software. Overview, Desktop, Input and Output have no sections yet, so the
+tree hides them. The window takes its cue from the Prefs drawer of AmigaOS,
+where each setting had its own small editor.</p>
+<p>Ctrl+1 through Ctrl+7 open the first section in Overview, Appearance,
+Desktop, Input, Output, Apps and System, in that order. Empty categories
+are disabled. Section commands have no default shortcuts.</p>
+<p>Press <code>/</code> outside a text field, or choose the magnifier in the title bar's icon bar, to
+focus search. It filters sections by title, category, extra words and
+settings keys, ignoring case. Try <code>terminal.</code> or <code>background</code>. Enter opens
+the first match. Escape clears search and releases focus. Ctrl+/ opens
+Keyboard shortcuts.</p>
+<h2 id="system--software">System → Software</h2>
+<p>Software shows its followed apps, from the <a href="/releasesd/">releases
 service</a>: each app's installed version, the latest release,
 when it was published, and its status (up to date, update available, not
 installed, not checked, or check failed).</p>
@@ -263,13 +273,13 @@ installed;</li>
 </li>
 <li><strong>Refresh</strong> (Ctrl+R) reads the list again without asking GitHub.</li>
 </ul>
-<p>MixOS's <code>mixos-desktop</code> and <code>mixos-server</code> catalogue entries have their own
-sections. A catalogue entry's optional <code>category</code> selects <code>mixos-desktop</code>,
+<p>The group selector at the top offers MixOS Desktop, MixOS Server and
+Creative applications. A catalogue entry's optional <code>category</code> selects <code>mixos-desktop</code>,
 <code>mixos-server</code>, <code>creative</code> or <code>other</code>; application names and publishers remain
 catalogue data. The catalogue's top-level <code>categories</code> map can label a group,
 for example <code>categories: {creative: "Graphics"}</code>.
-Unrecognised catalogue entries remain accessible under an additional <strong>Other</strong>
-section. Changing groups clears the previous selection and its release notes;
+Unrecognised catalogue entries remain accessible in <strong>Other</strong>, which appears
+only when it has rows. Changing groups clears the previous selection and its release notes;
 selecting an app through the Bus opens its group automatically.</p>
 <p>One operation runs at a time; the status bar says what is happening and how
 it ended. Installs are per user, verified against the checksums each release
@@ -291,28 +301,29 @@ settings: the apps that follow the session look (Prefs itself, Workshop,
 and the portal's clients) change with it. Only the setting you changed is
 written. Changes made quickly one after another are sent in turn, never
 lost.</p>
-<p>If settingsd refuses a change, Prefs keeps it and says so: <strong>Apply</strong>
+<p>If settingsd refuses a change, Preferences keeps it and says so: <strong>Apply</strong>
 (Ctrl+S) tries again and <strong>Revert</strong> drops it. If the appearance is changed
-elsewhere at the same moment (another window, or an agent), Prefs follows
-it on every setting you did not touch. If it changed one you did, Prefs
+elsewhere at the same moment (another window, or an agent), Preferences follows
+it on every setting you did not touch. If it changed one you did, Preferences
 names it and applies nothing until you choose <strong>Keep my changes</strong> or
 <strong>Revert</strong>. Every change is checked against the revision you were shown, so
 it never lands on a change you have not seen. If its answer is
-lost, Prefs asks settingsd for the change's receipt before anything else is
+lost, Preferences asks settingsd for the change's receipt before anything else is
 applied (<strong>Check again</strong> asks now); if settingsd no longer holds one, the
 session's current state decides what the status line says.</p>
 <p><strong>Appearance → Fonts</strong> shows the interface, heading and monospace faces currently
 installed on the window, with previews. Font family and size selection is not
 available yet; these faces follow the session design.</p>
-<p><strong>Appearance → Terminal</strong> holds the terminal's font, layout, cursor, focus ring,
+<h2 id="apps">Apps</h2>
+<p><strong>Apps → Terminal</strong> holds the terminal's font, layout, cursor, focus ring,
 mouse and environment settings, plus Reset terminal. Each change uses
 settingsd and applies as it is made. Themes contains only the session theme
 controls. See the <a href="/docs/spec/settings/#terminal">terminal settings</a> for
 the defaults and ranges.</p>
-<h2 id="app-settings--email">App Settings → Email</h2>
-<p><strong>App Settings</strong> holds settings that belong to one application, kept in
-the settings service like the session's look. It is separate from
-Applications, which installs apps. Its first section is <strong>Email</strong>, the
+<p><strong>Apps → Text</strong> holds the content styles for Email's reader and composer,
+and the Ced editor. Each change applies through settingsd as it is made.</p>
+<h3 id="email">Email</h3>
+<p><strong>Apps → Email</strong> holds the
 <a href="/email/">email app</a>'s accounts and mail options (<code>email.*</code> in
 settingsd; see the <a href="/docs/spec/settings/">email settings</a>).</p>
 <ul>
@@ -340,29 +351,29 @@ the revision shown, as on the Appearance panel. If settingsd refuses one,
 the status line gives its reason and the panel keeps showing what
 settingsd holds; your typing stays in the form.</p>
 <p><strong>Passwords never go to the settings service</strong>, whose settings every Bus
-client can read, and Prefs neither keeps nor shows them. <strong>Set password</strong>
+client can read, and Preferences neither keeps nor shows them. <strong>Set password</strong>
 hands the typed password to Email itself (<code>email.account.password.set</code>),
 which keeps it in its own private file, and empties the field; the field
 gets the password back only if Email refuses it. If Email is not running,
-Prefs starts it (<code>apps.launch</code>) and waits up to about 16 seconds for it to
-come onto the Bus. Under the field, Prefs says whether Email holds a
+Preferences starts it (<code>apps.launch</code>) and waits up to about 16 seconds for it to
+come onto the Bus. Under the field, Preferences says whether Email holds a
 password for the account, as Email reports it (<code>email.accounts</code>), or that
 this is unknown because Email is not running. <strong>Connect now</strong> asks Email
 to connect the account (<code>email.account.connect</code>). <strong>Forget password…</strong>
 asks first (Cancel is the default), then has Email delete the password it
-keeps; it is the only time Prefs sends an empty password, and it starts
+keeps; it is the only time Preferences sends an empty password, and it starts
 Email if needed, as Set password does. <strong>Remove…</strong> goes through Email
 when it may be running (<code>email.account.remove</code>): Email removes the account
 from settingsd and forgets its password itself, and refuses while the
 account is still being migrated from its old configuration
 (<code>MIGRATION_PENDING</code>, shown as Email gives it). When Email is not running,
-Prefs removes the account from settingsd directly and, once settingsd shows
-it gone, asks a running Email to forget the password; Prefs does not start
+Preferences removes the account from settingsd directly and, once settingsd shows
+it gone, asks a running Email to forget the password; Preferences does not start
 Email for this, and if Email is away or refuses, the status line says the
 password may still be held. An account still being migrated comes back
 when Email next starts, by design.
 An Email too old to know these verbs is reported as such, not retried.</p>
-<pre><code class="language-mix">-- What Prefs shows: accounts (with has_password), default, mail options.
+<pre><code class="language-mix">-- What Preferences shows: accounts (with has_password), default, mail options.
 send prefs prefs.email
 
 -- Add an account; the answer carries its new id.
@@ -385,21 +396,24 @@ send prefs prefs.email.password body='{"id":"acct-0f3a2b1c9d8e","forget":true}'
 or <code>enable</code>, or <code>path</code> and <code>value</code> for a mail option. Over the Bus,
 <code>remove</code> removes at once: the confirmation belongs to the window. A field
 the settings service would refuse is answered with <code>ARGUMENT</code>, naming it.
-For scripts that do not need Prefs open, call <code>settings.apply</code> on the
+For scripts that do not need Preferences open, call <code>settings.apply</code> on the
 <code>email.*</code> paths directly, and <code>email.account.password.set</code> on Email.</p>
 <h2 id="for-agents">For agents</h2>
-<p>Prefs answers on the Bus as <code>prefs</code>. <code>prefs.info</code> reports the whole state;
+<p>Preferences answers on the Bus as <code>prefs</code>. <code>prefs.info</code> reports the whole state;
 <code>prefs.apps</code> the rows, selection and notes; <code>prefs.appearance</code> the session
 look, the expected look while a change settles, any held or conflicting
 edits and the revision read; <code>prefs.appearance.set</code>
 changes it at once (<code>scheme</code>, <code>style</code> with <code>own</code> for the scheme's own, <code>mode</code>,
-<code>contrast</code>, <code>decorations</code>, <code>caption_side</code>); <code>prefs.select {app}</code> and
-<code>prefs.section {name}</code> selects <code>themes</code>, <code>fonts</code>, <code>wallpapers</code>, <code>terminal</code>, <code>mixos-desktop</code>,
-<code>mixos-server</code>, <code>creative</code>, <code>other</code> or <code>email</code> and expands its parent. <code>prefs.panel {name}</code>
-remains compatible, opening the default Themes, Creative or Email section
-(<code>applications</code>, <code>appearance</code>, <code>app-settings</code>). <code>prefs.email</code>,
-<code>prefs.email.set</code> and <code>prefs.email.password</code> are described under App
-Settings → Email above.
+<code>contrast</code>, <code>decorations</code>, <code>caption_side</code>).
+<code>prefs.section {name[, group]}</code> opens a registry section and expands its
+category. <code>app.describe</code> lists the section ids and their searchable metadata.
+For Software, <code>group</code> selects <code>mixos-desktop</code>, <code>mixos-server</code>, <code>creative</code> or
+<code>other</code>. <code>prefs.select {app}</code> opens the app's group and selects its row.
+<code>prefs.info</code> and <code>prefs.appearance</code> include the current section id and category.
+<code>prefs.search {query}</code> returns <code>matches</code>, each with <code>id</code> and <code>category</code>, in
+tree order. It uses the same search as the sidebar and leaves the window alone.
+<code>prefs.email</code>, <code>prefs.email.set</code> and <code>prefs.email.password</code> are described
+under Apps → Email above.
 <code>prefs.execute {id}</code> runs any command a button
 or menu would (<code>apps.check</code>, <code>apps.install</code>, <code>appearance.apply</code>,
 <code>appearance.revert</code>, …), and <code>prefs.commands</code> lists them with their
@@ -407,19 +421,19 @@ enablement. The window is drivable like every MixOS app
 (<code>prefs.ui.*</code>, <code>prefs.window</code>). The verbs are registered in
 <code>docs/docs/spec/bus/verbs.conf.mix</code>.</p>
 <p>For scripted work, call the services directly (<code>releases.*</code>,
-<code>settings.*</code>): Prefs is their window, not a second implementation.</p>
+<code>settings.*</code>): Preferences is their window, not a second implementation.</p>
 <h2 id="wallpaper">Wallpaper</h2>
 <p>In <strong>Appearance → Wallpapers</strong>, choose the default or an output, then Theme,
 Colour or Image. Colour accepts a picker or <code>#RRGGBB</code>. Browse opens the native
 image browser at the installed wallpaper folder, or Pictures in your home
 folder. It lists PNG/JPEG files and folders without blocking the window.
-Changes stay in Prefs until <strong>Apply wallpaper</strong>. <strong>Revert wallpaper</strong> drops
+Changes stay in Preferences until <strong>Apply wallpaper</strong>. <strong>Revert wallpaper</strong> drops
 them; <strong>Refresh wallpaper</strong> reads the current state again.</p>
 <p>An output's <strong>Use default</strong> removes just that override. Editing the default
 preserves every output override. Images currently crop to fill; fit controls
 and slideshows will follow when backdrop supports them.</p>
 <p>Backdrop must be running on the same session Bus. A refusal shows its reason,
-keeps the draft and leaves the last good wallpaper in place. Prefs checks for
+keeps the draft and leaves the last good wallpaper in place. Preferences checks for
 intervening changes before sending the whole document; conflicts require
 Revert and a fresh edit. This check is best effort: backdrop does not yet
 provide an atomic compare-and-set operation. A lost reply is checked by a
@@ -433,9 +447,10 @@ state read, never automatically resent.</p>
 (<code>prefs.show</code>). The Bus connection is <a href="/citizen/">citizen</a>.</p>
 <p>The source is <a href="https://github.com/markc/mixos/tree/main/apps/prefs"><code>apps/prefs</code></a>:</p>
 <table><thead><tr><th>Path</th><th>What</th></tr></thead><tbody>
-<tr><td><code>crates/preferences</code></td><td>the headless engine: panels, rows, notes, one operation at a time, the <code>prefs.*</code> verbs</td></tr>
-<tr><td><code>crates/preferences/src/appearance.rs</code></td><td>the Appearance panel: the look, its draft, fenced applies, receipts for lost replies</td></tr>
-<tr><td><code>crates/preferences/src/email.rs</code></td><td>App Settings → Email: account changes planned and checked, fenced applies, passwords handed to Email</td></tr>
+<tr><td><code>crates/preferences</code></td><td>the headless engine: sections, rows, notes, one operation at a time, the <code>prefs.*</code> verbs</td></tr>
+<tr><td><code>crates/preferences/src/navigation.rs</code></td><td>the section registry, seven categories, software groups and search</td></tr>
+<tr><td><code>crates/preferences/src/appearance.rs</code></td><td>Appearance › Themes: the look, its draft, fenced applies, receipts for lost replies</td></tr>
+<tr><td><code>crates/preferences/src/email.rs</code></td><td>Apps → Email: account changes planned and checked, fenced applies, passwords handed to Email</td></tr>
 <tr><td><code>src/commands.rs</code></td><td>every action as a registered command (menus, buttons, shortcuts, <code>prefs.execute</code>)</td></tr>
 <tr><td><code>src/view.rs</code></td><td>the egui rendering; returns what the person did</td></tr>
 <tr><td><code>src/shell.rs</code></td><td>events in, effects out, in order; drained shutdown</td></tr>

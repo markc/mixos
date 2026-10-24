@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! App Settings → Email: the email app's accounts and mail options
+//! Apps → Email: the email app's accounts and mail options
 //! (`email.*`), edited in settingsd as the Terminal group edits
 //! `terminal.*`. Each change is one fenced `settings.apply` on the
-//! Appearance panel's channel carrying the whole new `email.accounts` list,
+//! session settings channel carrying the whole new `email.accounts` list,
 //! with `email.default_account` in the same batch whenever the change
 //! touches it, so no state between the two is ever stored. The values shown
-//! are the ones settingsd last read; Prefs never writes an email config
+//! are the ones settingsd last read; Preferences never writes an email config
 //! file. A change is checked by the settings crate's own rules before it is
 //! sent, and a refused one leaves what settingsd held.
 //!
-//! **Passwords never enter settingsd, nor Prefs' state.** Set password hands
+//! **Passwords never enter settingsd, nor Preferences' state.** Set password hands
 //! the typed password to the email app's write-only
 //! `email.account.password.set`, launching Email first (`apps.launch`) when
 //! it is not on the Bus and waiting a bounded time for it to register. The
@@ -640,7 +640,7 @@ pub fn plan(
     })
 }
 
-/// The email app on the Bus, as Prefs last saw it.
+/// The email app on the Bus, as Preferences last saw it.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Service {
@@ -2995,7 +2995,7 @@ mod tests {
 
     /// Email may be running: Remove is Email's guarded email.account.remove
     /// (it updates settingsd and forgets the password itself), never a
-    /// settingsd apply of Prefs' own, and no follow-up forget.
+    /// settingsd apply of Preferences' own, and no follow-up forget.
     #[test]
     fn remove_goes_through_email_when_it_runs() {
         let mut e = read();

@@ -92,7 +92,7 @@ architecture and glibc floor. `plan` shows the changes; `apply` records a
 receipt and backups; `rollback --receipt ID` restores the previous files.
 It needs one deliberate privileged invocation and does not restart a desk.
 Shared desks see the host tree through their mount; isolated desks need a
-verified copy followed by their own restart. Prefs does not yet drive this
+verified copy followed by their own restart. Preferences does not yet drive this
 system update path.
 
 ## On the Bus

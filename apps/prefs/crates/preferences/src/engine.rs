@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! Prefs' behaviour, with no UI and no I/O: the panels, the Applications
-//! panel over the `releases` service (list, check, notes, install, update,
+//! Preferences' behaviour, with no UI and no I/O: navigation and Software
+//! over the `releases` service (list, check, notes, install, update,
 //! roll back, remove), one operation at a time, agent commands over the
 //! Bus, and quitting only once accepted work is finished.
 //!
@@ -10,8 +10,8 @@
 //! and a completion whose ticket is not the one in flight is ignored, so a
 //! late reply can never land on a newer operation.
 use crate::appearance::Appearance;
-use crate::model::{self, APP_ID, AppRow, Notes, Panel};
-use crate::navigation::{Section, application_section};
+use crate::model::{self, APP_ID, AppRow, Notes};
+use crate::navigation::{self, Category, Section, SoftwareGroup, application_group};
 use citizen::{CallError, Delivery, Reply};
 use design::{CaptionSide, Mode, RequestedDecorations as Decorations, Scheme, Style};
 use serde::{Deserialize, Serialize};
@@ -192,18 +192,16 @@ pub struct UiState {
     pub wallpaper_image: Option<String>,
     #[serde(default)]
     pub wallpaper_invalid: bool,
-    pub panel: Panel,
     #[serde(default = "default_section")]
     pub section: Section,
-    #[serde(default = "expanded")]
-    pub appearance_expanded: bool,
-    #[serde(default = "expanded")]
-    pub applications_expanded: bool,
-    #[serde(default = "expanded")]
-    pub app_settings_expanded: bool,
-    /// The selected app in the Applications panel.
+    pub expanded: Vec<Category>,
+    pub software_group: SoftwareGroup,
+    pub search: String,
+    /// A focus request consumed by the view after it draws the field.
+    pub search_focus: bool,
+    /// The selected app in Software.
     pub selected: Option<String>,
-    /// The selected account in App Settings → Email, by id.
+    /// The selected account in Apps → Email, by id.
     #[serde(default)]
     pub email_account: Option<String>,
     pub dialog: Option<Dialog>,
@@ -232,11 +230,11 @@ impl Default for UiState {
             wallpaper_colour: None,
             wallpaper_image: None,
             wallpaper_invalid: false,
-            panel: Panel::Applications,
             section: default_section(),
-            appearance_expanded: true,
-            applications_expanded: true,
-            app_settings_expanded: true,
+            expanded: Category::ALL.to_vec(),
+            software_group: SoftwareGroup::Creative,
+            search: String::new(),
+            search_focus: false,
             selected: None,
             email_account: None,
             dialog: None,
@@ -250,10 +248,7 @@ impl Default for UiState {
 }
 
 fn default_section() -> Section {
-    Section::Creative
-}
-fn expanded() -> bool {
-    true
+    Section::Software
 }
 
 /// The theme choice saved by name ("forest", "dark"): the design's
@@ -334,7 +329,7 @@ struct Job {
     quiet: bool,
 }
 
-/// The releases service as Prefs last saw it.
+/// The releases service as Preferences last saw it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Availability {
@@ -344,7 +339,7 @@ pub enum Availability {
     Missing,
 }
 
-/// Prefs' state and rules.
+/// Preferences' state and rules.
 pub struct Engine {
     label: Label,
     pub ui: UiState,
@@ -373,7 +368,7 @@ pub struct Engine {
     pub look: Appearance,
     pub wallpaper: crate::wallpaper::WallpaperEditor,
     pub picker: crate::picker::Picker,
-    /// App Settings → Email: the form, the password typed, Email on the Bus.
+    /// Apps → Email: the form, the password typed, Email on the Bus.
     pub email: crate::email::EmailEditor,
     next_ticket: u64,
     job: Option<Job>,
@@ -460,23 +455,20 @@ impl Engine {
         self.visible_apps().find(|r| r.app == name)
     }
 
-    /// Legacy state can hold just a parent panel. Resolve it to its default leaf.
     pub fn section(&self) -> Section {
-        if self.ui.section.panel() == self.ui.panel {
-            self.ui.section
-        } else {
-            Section::default_for(self.ui.panel)
-        }
+        self.ui.section
     }
 
     pub fn visible_apps(&self) -> impl Iterator<Item = &AppRow> {
-        self.apps.iter().filter(|row| self.section().matches(row))
+        self.apps.iter().filter(|row| {
+            self.section() == Section::Software && self.ui.software_group.matches(row)
+        })
     }
 
-    pub fn category_label(&self, section: Section) -> Option<&str> {
+    pub fn group_label(&self, group: SoftwareGroup) -> Option<&str> {
         self.apps
             .iter()
-            .find(|row| section.matches(row))
+            .find(|row| group.matches(row))
             .and_then(|row| row.category_label.as_deref())
             .filter(|label| !label.trim().is_empty())
     }
@@ -487,9 +479,12 @@ impl Engine {
         if self.picker.open {
             return false;
         }
-        match self.ui.panel {
-            Panel::Applications => self.idle(),
-            Panel::Appearance => {
+        match self.section() {
+            Section::Software => self.idle(),
+            Section::Email => {
+                !self.look.working() && self.connected && self.ui.dialog.is_none() && !self.quitting
+            }
+            _ => {
                 !self.look.working()
                     && !self.wallpaper.working()
                     && self.connected
@@ -497,14 +492,11 @@ impl Engine {
                     && !self.picker.open
                     && !self.quitting
             }
-            Panel::AppSettings => {
-                !self.look.working() && self.connected && self.ui.dialog.is_none() && !self.quitting
-            }
         }
     }
 
     pub fn can_check(&self) -> bool {
-        self.ui.panel == Panel::Applications
+        self.section() == Section::Software
             && self.idle()
             && !self.picker.open
             && self.releases != Availability::Missing
@@ -567,15 +559,15 @@ impl Engine {
 
     /// Read the shown panel's service again.
     pub fn refresh(&mut self) {
-        match self.ui.panel {
-            Panel::Applications => self.start(Op::List),
-            Panel::Appearance => {
-                self.read_look();
-                self.read_wallpaper();
-            }
-            Panel::AppSettings => {
+        match self.section() {
+            Section::Software => self.start(Op::List),
+            Section::Email => {
                 self.read_look();
                 self.query_email_accounts();
+            }
+            _ => {
+                self.read_look();
+                self.read_wallpaper();
             }
         }
     }
@@ -641,20 +633,23 @@ impl Engine {
         self.pump_look();
     }
 
-    pub fn set_panel(&mut self, panel: Panel) {
-        self.set_section(Section::default_for(panel));
+    pub fn can_navigate(&self) -> bool {
+        self.ui.dialog.is_none() && !self.picker.open && !self.quitting
+    }
+
+    pub fn set_category(&mut self, category: Category) {
+        if let Some(section) = category.first_section() {
+            self.set_section(section);
+        }
     }
 
     pub fn set_section(&mut self, section: Section) {
-        if self.ui.dialog.is_some() || self.picker.open || self.quitting {
+        if !self.can_navigate() {
             return;
         }
-        self.ui.panel = section.panel();
         self.ui.section = section;
-        match section.panel() {
-            Panel::Appearance => self.ui.appearance_expanded = true,
-            Panel::Applications => self.ui.applications_expanded = true,
-            Panel::AppSettings => self.ui.app_settings_expanded = true,
+        if !self.ui.expanded.contains(&section.category()) {
+            self.ui.expanded.push(section.category());
         }
         if self.ui.selected.is_some() && self.selected_row().is_none() {
             self.clear_selection();
@@ -672,14 +667,31 @@ impl Engine {
         self.notes_job = None;
     }
 
-    pub fn toggle_appearance(&mut self) {
-        self.ui.appearance_expanded = !self.ui.appearance_expanded;
+    pub fn toggle_category(&mut self, category: Category) {
+        if !self.can_navigate() {
+            return;
+        }
+        if self.ui.expanded.contains(&category) {
+            self.ui.expanded.retain(|c| *c != category);
+        } else {
+            self.ui.expanded.push(category);
+        }
     }
-    pub fn toggle_applications(&mut self) {
-        self.ui.applications_expanded = !self.ui.applications_expanded;
+
+    pub fn set_software_group(&mut self, group: SoftwareGroup) {
+        if !self.can_navigate() || self.ui.software_group == group {
+            return;
+        }
+        self.ui.software_group = group;
+        self.clear_selection();
     }
-    pub fn toggle_app_settings(&mut self) {
-        self.ui.app_settings_expanded = !self.ui.app_settings_expanded;
+
+    pub fn focus_search(&mut self) {
+        self.ui.search_focus = true;
+    }
+
+    pub fn search(&self, query: &str) -> Vec<&'static navigation::SectionDescriptor> {
+        navigation::search(query, |key| self.label(key, &[]))
     }
 
     /// Select `app` and load its release notes. Selection is refused under
@@ -691,9 +703,9 @@ impl Engine {
         if !self.apps.iter().any(|r| r.app == app) {
             return;
         }
-        let section =
-            application_section(self.apps.iter().find(|r| r.app == app).expect("known app"));
-        self.set_section(section);
+        let group = application_group(self.apps.iter().find(|r| r.app == app).expect("known app"));
+        self.set_section(Section::Software);
+        self.set_software_group(group);
         if self.ui.selected.as_deref() == Some(app)
             && (self.notes.is_some() || self.notes_job.is_some())
         {
@@ -968,11 +980,11 @@ impl Engine {
         json!({"schema":"prefs.v1","app_id":APP_ID,"version":env!("CARGO_PKG_VERSION"),"pid":std::process::id(),
             "connected":self.connected,"releases":self.releases,"busy":self.busy(),"working":self.working(),"uncertain":self.uncertain,
             "status":self.status,"failed":self.failed,"apps":self.apps,"notes":self.notes,"notes_error":self.notes_error,
-            "appearance":self.appearance_view(),"wallpaper":self.wallpaper,"picker":self.picker,"email":self.email_view(),"section":self.section(),"ui":self.ui})
+            "appearance":self.appearance_view(),"wallpaper":self.wallpaper,"picker":self.picker,"email":self.email_view(),"section":self.section(),"category":self.section().category(),"ui":self.ui})
     }
 
     fn apps_view(&self) -> Value {
-        json!({"apps":self.apps,"visible":self.visible_apps().collect::<Vec<_>>(),"section":self.section(),"selected":self.ui.selected,"notes":self.notes,"notes_error":self.notes_error,"releases":self.releases})
+        json!({"apps":self.apps,"visible":self.visible_apps().collect::<Vec<_>>(),"section":self.section(),"group":self.ui.software_group,"selected":self.ui.selected,"notes":self.notes,"notes_error":self.notes_error,"releases":self.releases})
     }
 
     fn error(&mut self, id: u64, code: &str, message: &str) {
@@ -1042,7 +1054,7 @@ impl Engine {
         )
     }
 
-    /// A command an agent sent to Prefs over the Bus.
+    /// A command an agent sent to Preferences over the Bus.
     pub fn command(&mut self, id: u64, verb: &str, body: &str) {
         let args = match serde_json::from_str::<Value>(body) {
             Ok(args) if args.is_object() => args,
@@ -1059,7 +1071,7 @@ impl Engine {
             });
         }
         if !model::VERBS.contains(&verb) {
-            return self.error(id, "UNKNOWN_VERB", "unknown Prefs verb");
+            return self.error(id, "UNKNOWN_VERB", "unknown Preferences verb");
         }
         match verb {
             "prefs.ping" => self.ok(
@@ -1108,28 +1120,38 @@ impl Engine {
                 self.ok(id, json!({"quitting":true}));
                 self.quit();
             }
-            "prefs.panel" => {
-                let panel = args
-                    .get("name")
-                    .and_then(Value::as_str)
-                    .and_then(Panel::from_name);
-                match panel {
-                    None => self.error(id, "ARGUMENT", "name must be a panel name"),
-                    Some(_) if self.ui.dialog.is_some() || self.picker.open || self.quitting => {
-                        let message = self.label("busy", &[]);
-                        self.error(id, "BUSY", &message);
-                    }
-                    Some(panel) => {
-                        self.set_panel(panel);
-                        self.ok(id, json!({"panel":self.ui.panel}));
-                    }
+            "prefs.search" => match args.get("query").and_then(Value::as_str) {
+                Some(query) => {
+                    let matches: Vec<_> = self
+                        .search(query)
+                        .iter()
+                        .map(|s| json!({"id":s.id,"category":s.category}))
+                        .collect();
+                    self.ok(id, json!({"matches":matches}));
                 }
-            }
+                None => self.error(id, "ARGUMENT", "query must be a string"),
+            },
             "prefs.section" => {
                 let section = args
                     .get("name")
                     .and_then(Value::as_str)
                     .and_then(Section::from_name);
+                let group = match args.get("group") {
+                    None => None,
+                    Some(value) => {
+                        let Some(group) = value.as_str().and_then(SoftwareGroup::from_name) else {
+                            return self.error(
+                                id,
+                                "ARGUMENT",
+                                "group must be a software group name",
+                            );
+                        };
+                        if section != Some(Section::Software) {
+                            return self.error(id, "ARGUMENT", "group is only valid for software");
+                        }
+                        Some(group)
+                    }
+                };
                 match section {
                     None => self.error(id, "ARGUMENT", "name must be a section name"),
                     Some(_) if self.ui.dialog.is_some() || self.picker.open || self.quitting => {
@@ -1138,7 +1160,10 @@ impl Engine {
                     }
                     Some(section) => {
                         self.set_section(section);
-                        self.ok(id, json!({"section":self.section(),"ui":self.ui}));
+                        if let Some(group) = group {
+                            self.set_software_group(group);
+                        }
+                        self.ok(id, json!({"section":self.section(),"category":self.section().category(),"ui":self.ui}));
                     }
                 }
             }
@@ -1187,7 +1212,7 @@ impl Engine {
                 let message = self.label("busy", &[]);
                 self.error(id, "BUSY", &message);
             }
-            _ => self.error(id, "UNKNOWN_VERB", "unknown Prefs verb"),
+            _ => self.error(id, "UNKNOWN_VERB", "unknown Preferences verb"),
         }
     }
 
@@ -1437,7 +1462,7 @@ mod tests {
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].1, "releases.list");
         e.released(calls[0].0, ok(rows()));
-        e.set_section(Section::Other);
+        e.set_software_group(SoftwareGroup::Other);
         e.take_effects();
         e
     }
@@ -1625,7 +1650,7 @@ mod tests {
         let mut e = listed();
         e.command(1, "prefs.select", r#"{"app":"nope"}"#);
         e.command(2, "prefs.select", r#"{"app":"demo"}"#);
-        e.command(3, "prefs.panel", r#"{"name":"applications"}"#);
+        e.command(3, "prefs.section", r#"{"name":"software"}"#);
         e.command(4, "prefs.dialog", r#"{"open":"about"}"#);
         e.command(5, "prefs.select", r#"{"app":"new"}"#);
         e.command(6, "prefs.ui.click", r#"{"label":"Check"}"#);
@@ -1640,7 +1665,7 @@ mod tests {
         };
         assert_eq!(reply(1).unwrap().1["error_code"], "ARGUMENT");
         assert_eq!(reply(2).unwrap().0, 0);
-        assert_eq!(reply(3).unwrap().1["panel"], "applications");
+        assert_eq!(reply(3).unwrap().1["section"], "software");
         assert_eq!(reply(4).unwrap().1["dialog"], "about");
         assert_eq!(
             reply(5).unwrap().1["error_code"],
@@ -1936,13 +1961,13 @@ mod tests {
             published: None,
             status: "update".into(),
         });
-        e.set_section(Section::Server);
+        e.set_software_group(SoftwareGroup::Server);
         assert!(e.can_update_all());
         e.update_all();
         let calls = releases(&e.take_effects());
         assert_eq!(calls[0].2, json!({"apps":["mixos-server"]}));
         let mut e = listed();
-        e.set_section(Section::Desktop);
+        e.set_software_group(SoftwareGroup::Desktop);
         assert!(!e.can_update_all());
         e.update_all();
         assert!(releases(&e.take_effects()).is_empty());
@@ -1953,7 +1978,7 @@ mod tests {
         let mut e = listed();
         e.select("demo");
         let notes_ticket = releases(&e.take_effects())[0].0;
-        e.set_section(Section::Server);
+        e.set_software_group(SoftwareGroup::Server);
         assert!(e.ui.selected.is_none() && !e.can_install() && !e.can_remove());
         e.released(
             notes_ticket,
@@ -1961,24 +1986,25 @@ mod tests {
         );
         assert!(e.notes.is_none());
         e.command(1, "prefs.select", r#"{"app":"demo"}"#);
-        assert_eq!(e.section(), Section::Other);
+        assert_eq!(e.section(), Section::Software);
+        assert_eq!(e.ui.software_group, SoftwareGroup::Other);
         assert_eq!(e.ui.selected.as_deref(), Some("demo"));
         e.set_section(Section::Fonts);
         assert!(!e.can_check() && !e.can_update_all());
         e.command(2, "prefs.section", r#"{"name":"terminal"}"#);
         assert_eq!(e.section(), Section::Terminal);
-        assert_eq!(e.ui.panel, Panel::Appearance);
+        assert_eq!(e.section().category(), Category::Apps);
         assert!(!e.can_check() && !e.can_update_all());
     }
 
     #[test]
     fn tree_state_round_trips_and_bus_expands_the_selected_parent() {
         let mut e = listed();
-        e.toggle_appearance();
-        assert!(!e.ui.appearance_expanded);
+        e.toggle_category(Category::Appearance);
+        assert!(!e.ui.expanded.contains(&Category::Appearance));
         e.command(1, "prefs.section", r#"{"name":"wallpapers"}"#);
         assert_eq!(e.section(), Section::Wallpapers);
-        assert!(e.ui.appearance_expanded);
+        assert!(e.ui.expanded.contains(&Category::Appearance));
         let saved = serde_json::to_value(&e.ui).unwrap();
         assert_eq!(serde_json::from_value::<UiState>(saved).unwrap(), e.ui);
         e.picker.open = true;
@@ -1989,6 +2015,59 @@ mod tests {
                 |x| matches!(x, Effect::Reply {id:2,rc:10,body} if body["error_code"] == "BUSY")
             )
         );
+    }
+
+    #[test]
+    fn software_section_selects_a_group_and_checks_arguments_before_navigation() {
+        let mut e = listed();
+        e.select("demo");
+        e.command(
+            1,
+            "prefs.section",
+            r#"{"name":"software","group":"mixos-server"}"#,
+        );
+        assert_eq!(e.section(), Section::Software);
+        assert_eq!(e.ui.software_group, SoftwareGroup::Server);
+        assert!(e.ui.selected.is_none() && e.notes.is_none() && e.notes_job.is_none());
+        let ui = e.ui.clone();
+        for (id, args) in [
+            (2, r#"{"name":"themes","group":"creative"}"#),
+            (3, r#"{"name":"software","group":"unknown"}"#),
+            (4, r#"{"name":"software","group":null}"#),
+        ] {
+            e.command(id, "prefs.section", args);
+            assert_eq!(e.ui, ui);
+            assert!(e.take_effects().iter().any(|effect| matches!(effect,
+                Effect::Reply { id: got, rc: 10, body }
+                    if *got == id && body["error_code"] == "ARGUMENT"
+            )));
+        }
+    }
+
+    #[test]
+    fn search_verb_is_read_only_and_works_under_a_dialog() {
+        let mut e = listed();
+        e.open(Dialog::About);
+        e.ui.search = "existing filter".into();
+        let ui = e.ui.clone();
+        for (id, query, section, category) in [
+            (1, "terminal.", "terminal", "apps"),
+            (2, "BACKGROUND", "wallpapers", "appearance"),
+        ] {
+            e.command(id, "prefs.search", &json!({"query":query}).to_string());
+            assert_eq!(e.ui, ui);
+            assert!(e.take_effects().iter().any(|effect| matches!(effect,
+                Effect::Reply { id: got, rc: 0, body }
+                    if *got == id && body["matches"] == json!([{"id":section,"category":category}])
+            )));
+        }
+        e.command(3, "prefs.search", r#"{"query":null}"#);
+        assert!(e.take_effects().iter().any(|effect| matches!(effect,
+            Effect::Reply { id: 3, rc: 10, body } if body["error_code"] == "ARGUMENT"
+        )));
+        assert_eq!(e.info()["category"], "system");
+        assert_eq!(e.appearance_view()["section"], "software");
+        assert_eq!(e.appearance_view()["category"], "system");
     }
 
     #[test]
