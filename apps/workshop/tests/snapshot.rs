@@ -46,6 +46,17 @@ fn fixture() -> Snapshot {
         Err("HELP and app.describe unavailable".into()),
     );
     s.peers = vec!["alpha".into(), "beta".into()];
+    s.nodes.push(inspector::model::Node {
+        name: "local".into(), local: true,
+        services: s.services.keys().cloned().collect(), ..Default::default()
+    });
+    for name in &s.peers {
+        s.nodes.push(inspector::model::Node { name: name.clone(), ..Default::default() });
+    }
+    let mut identity = bus::ServiceInfo::from_name("settingsd");
+    identity.version = Some("0.1.2".into());
+    identity.git_sha = Some("123456789abcdef".into());
+    s.identities.insert("settingsd".into(), identity);
     s
 }
 
@@ -59,7 +70,7 @@ fn engine() -> Engine {
         service: "settingsd".into(),
         verb: "settings.get".into(),
     });
-    e.ui.row_key = Some("verb:settingsd:settings.get".into());
+    e.ui.row_key = Some("verb:local:settingsd:settings.get".into());
     e.toggle("mesh");
     e.set_body("{\"key\": \"appearance.scheme\"}".into());
     e.call_selected();

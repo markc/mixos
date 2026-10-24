@@ -757,7 +757,7 @@ impl Engine {
                 children.push(Row { key: format!("node:{}:error", node.name), kind: RowKind::Error(error.clone()), expanded: false, children: Vec::new() });
             }
             let key = format!("node:{}", node.name);
-            rows.push(Row { expanded: node.local || self.ui.expanded.contains(&key) || !self.ui.filter.is_empty(), key, kind: RowKind::Node(node.name.clone()), children });
+            rows.push(Row { expanded: self.ui.expanded.contains(&key) || !self.ui.filter.is_empty(), key, kind: RowKind::Node(node.name.clone()), children });
         }
         rows
     }
@@ -1071,6 +1071,11 @@ impl Engine {
         if snapshot.error.is_some() {
             self.snapshot.error = snapshot.error;
         } else {
+            if self.snapshot.nodes.is_empty() {
+                for node in &snapshot.nodes {
+                    if node.local { self.ui.expanded.insert(format!("node:{}", node.name)); }
+                }
+            }
             self.snapshot = snapshot;
         }
         let vanished = self.ui.selected.as_ref().is_some_and(|target| {
