@@ -22,6 +22,10 @@ fn workshop_management_preserves_ids_refuses_clashes_and_builtins() {
         .create("dopus", Tier::UserApp, "other", "Other")
         .unwrap();
     assert_eq!(roots.apps().unwrap(), ["ced", "dopus"]);
+    let library = macros::Library::scan(&roots).unwrap();
+    assert!(library.globals.entries.is_empty());
+    assert_eq!(library.apps["ced"].entries[0].id, "tidy");
+    assert_eq!(library.apps["dopus"].entries[0].id, "other");
     let mut entry = Catalogue::scan(&roots, "ced").unwrap().entries.remove(0);
     let before = roots.read(&entry).unwrap();
     let global = roots.move_to(&entry, Tier::UserGlobal, "ced").unwrap();
@@ -129,6 +133,23 @@ fn target_headers_parse_and_refuse_before_acceptance() {
             .unwrap(),
         temp.path().join("user")
     );
+}
+
+#[test]
+fn real_mix_receives_only_an_explicit_allowed_target() {
+    let temp = tempfile::tempdir().unwrap();
+    let roots = roots(temp.path());
+    assert!(roots.mix.is_file(), "native Mix is required for target proof");
+    fs::create_dir_all(&roots.user).unwrap();
+    fs::write(roots.user.join("target.mix"), "-- target: ced, dopus\nprint(env(\"MIXOS_MACRO_TARGET\", \"absent\"))\n").unwrap();
+    let entry = Catalogue::scan_globals(&roots).unwrap().entries.remove(0);
+    let mut runner = Runner::default();
+    runner.start_with(&roots, "workshop", &entry, Some("ced")).unwrap();
+    assert_eq!(wait(&runner), Status::Exited(Some(0)));
+    assert_eq!(runner.output().text.trim(), "ced");
+    runner.start(&roots, "workshop", &entry).unwrap();
+    assert_eq!(wait(&runner), Status::Exited(Some(0)));
+    assert_eq!(runner.output().text.trim(), "absent");
 }
 
 #[test]

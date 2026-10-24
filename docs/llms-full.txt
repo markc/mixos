@@ -9295,7 +9295,7 @@ print("Hello from " .. env("MIXOS_MACRO_APP"))
 The first `-- title:` in the leading comment header supplies the displayed
 title; otherwise the id is shown. Header reads are bounded to 8 KiB.
 
-Workshop scans the global tiers and uses `Roots::apps()` with the same
+`Library::scan` scans the global tiers and uses `Roots::apps()` with the same
 per-app scan to discover every app's macros. Global user macros live directly
 in `~/.config/mixos/macros/`; built-ins live directly in
 `/opt/mixos/share/macros/`. Workshop's Session runs and creates global macros.

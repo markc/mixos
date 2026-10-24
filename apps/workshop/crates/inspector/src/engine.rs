@@ -916,7 +916,11 @@ impl Engine {
             "workshop.refresh" if self.ui.dialog.is_none() => self.refresh(Some(id)),
             "workshop.select" if idle => match self.target(&args) {
                 Ok(target) if self.snapshot.verb(&target).is_some() => {
-                    self.ui.row_key = Some(format!("verb:{}:{}", target.service, target.verb));
+                    self.ui.row_key = Some(if let Some(node) = self.snapshot.nodes.iter().find(|node| node.services.contains(&target.service)) {
+                        let name = self.snapshot.identities.get(&target.service).map(|info| info.name.as_str()).unwrap_or(&target.service);
+                        self.ui.expanded.insert(format!("node:{}", node.name));
+                        format!("verb:{}:{name}:{}", node.name, target.verb)
+                    } else { format!("verb:{}:{}", target.service, target.verb) });
                     self.ui.selected = Some(target);
                     self.effects.push(Effect::Reply {
                         id,

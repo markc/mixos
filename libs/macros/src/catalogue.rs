@@ -334,6 +334,23 @@ pub struct Catalogue {
     pub diagnostics: Vec<Diagnostic>,
 }
 
+/// Workshop's disk library keeps app ids scoped, independently of globals.
+#[derive(Clone, Debug, Default)]
+pub struct Library {
+    pub globals: Catalogue,
+    pub apps: BTreeMap<String, Catalogue>,
+}
+
+impl Library {
+    pub fn scan(roots: &Roots) -> io::Result<Self> {
+        let mut apps = BTreeMap::new();
+        for app in roots.apps()? {
+            apps.insert(app.clone(), Catalogue::scan(roots, &app)?);
+        }
+        Ok(Self { globals: Catalogue::scan_globals(roots)?, apps })
+    }
+}
+
 impl Catalogue {
     pub fn scan(roots: &Roots, app: &str) -> io::Result<Self> {
         Self::scan_tiers(roots, app, &[Tier::BuiltinApp, Tier::UserApp])
@@ -416,6 +433,7 @@ impl Catalogue {
             };
             // Bound reads even for maliciously long headers; never evaluate content.
             let mut title = id.to_owned();
+            let mut titled = false;
             let mut targets = None;
             let mut malformed = false;
             for line in BufReader::new(file.take(8192)).lines() {
@@ -425,9 +443,10 @@ impl Catalogue {
                 };
                 let line = line.trim();
                 if let Some(value) = line.strip_prefix("-- title:") {
-                    if !value.trim().is_empty() {
+                    if !titled && !value.trim().is_empty() {
                         title = value.trim().into();
                     }
+                    titled = true;
                     continue;
                 }
                 if let Some(value) = line.strip_prefix("-- target:") {
@@ -487,6 +506,9 @@ fn valid_app(app: &str) -> bool {
 }
 
 fn checked_file(root: &Path, path: &Path) -> io::Result<fs::File> {
+    if !path.starts_with(root) || path.components().any(|part| part == std::path::Component::ParentDir) {
+        return Err(invalid("macro path escapes its root"));
+    }
     let target = fs::canonicalize(path)?;
     if !target.starts_with(fs::canonicalize(root)?) {
         return Err(invalid("macro symlink escapes its root"));
