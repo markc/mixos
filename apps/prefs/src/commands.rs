@@ -16,7 +16,7 @@ pub fn section_icon(section: Section) -> Icon {
     match section {
         Section::Themes => Icon::Palette,
         Section::Fonts | Section::Text => Icon::Type,
-        Section::Size => Icon::Type,
+        Section::Size => Icon::ZoomIn,
         Section::Motion => Icon::Play,
         Section::Wallpapers => Icon::Image,
         Section::Email => Icon::Mail,

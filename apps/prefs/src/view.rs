@@ -498,7 +498,7 @@ fn scale_control(
             // Hold the value while the pointer is down; apply on release.
             if response.dragged() || response.is_pointer_button_down_on() {
                 ui.data_mut(|d| d.insert_temp(id, value));
-            } else if response.drag_stopped() || response.changed() {
+            } else if response.drag_stopped() || response.changed() || response.clicked() {
                 commit = true;
             }
         });
@@ -1472,6 +1472,17 @@ mod numeric_tests {
                 "modified arrows belong to the person"
             );
         }
+        // A click on the track, with no drag, applies on release.
+        let commits = h.state().commits.len();
+        let rect = h.get_by_role(Role::Slider).rect();
+        let at = egui::pos2(rect.left() + rect.width() * 0.75, rect.center().y);
+        h.drag_at(at);
+        h.run();
+        assert_eq!(h.state().commits.len(), commits);
+        h.drop_at(at);
+        h.run();
+        assert_eq!(h.state().commits.len(), commits + 1);
+        assert!(h.state().value > 1.05);
     }
 
     #[test]
