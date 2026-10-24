@@ -1163,9 +1163,15 @@ fn title_bar_controls_never_overlap_the_caption_buttons() {
         let minimize = h.get_by_label("Minimize").rect();
         let help = h.get_by_label("Help").rect();
         let Some(combo) = h.query_by_role(Role::ComboBox) else {
-            assert_eq!(width, 760.0, "only the narrow fixture drops every tail control");
+            assert_eq!(
+                width, 760.0,
+                "only the narrow fixture drops every tail control"
+            );
             for label in ["Search commands (Ctrl+K)", "Toggle Theme", "Community"] {
-                assert!(h.query_by_label(label).is_none(), "{width}: {label} must fit before it shows");
+                assert!(
+                    h.query_by_label(label).is_none(),
+                    "{width}: {label} must fit before it shows"
+                );
             }
             assert!(help.right() < minimize.left());
             continue;

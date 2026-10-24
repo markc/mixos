@@ -985,7 +985,10 @@ mod tests {
             filled_tokens(family, "custom", original, v2),
             filled_tokens(family, "custom", original, &v3)
         );
-        assert_eq!(compile_family(family, Scheme::Studio).unwrap(), before_font_resize(studio(), 12.5));
+        assert_eq!(
+            compile_family(family, Scheme::Studio).unwrap(),
+            before_font_resize(studio(), 12.5)
+        );
         let DesignCompileResult::Success(compiled) = crate::compile_design(
             &source,
             DesignContext {
@@ -1519,10 +1522,17 @@ mod tests {
                     }
                     assert_eq!(
                         old.candidate.dictionary().style,
-                        new.candidate.dictionary().style.map(|resolved| before_font_resize(
-                            resolved,
-                            if style.is_none() && scheme == Scheme::Pro { 12.0 } else { 12.5 },
-                        )),
+                        new.candidate
+                            .dictionary()
+                            .style
+                            .map(|resolved| before_font_resize(
+                                resolved,
+                                if style.is_none() && scheme == Scheme::Pro {
+                                    12.0
+                                } else {
+                                    12.5
+                                },
+                            )),
                         "{scheme:?}/{mode:?}/{style:?}"
                     );
                 }

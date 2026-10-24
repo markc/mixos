@@ -713,39 +713,39 @@ impl State {
             crate::drive::unregister_viewport(ctx, "macro-editor");
             return;
         }
-        let mut open = true;
+        let chrome = crate::chrome::Chrome::of(ctx);
+        let editor_viewport = egui::ViewportId::from_hash_of(("macro-editor", self.window));
+        let title = self.editor_entry.as_ref().map(|e| e.title.as_str()).unwrap_or_default();
+        let dirty = self.document.as_ref().is_some_and(|doc| doc.is_dirty());
+        let title = format!("{}{} — {}", title, if dirty { " *" } else { "" }, own("macros-editor"));
+        let builder = egui::ViewportBuilder::default()
+            .with_title(title).with_decorations(true).with_resizable(true)
+            .with_inner_size(egui::vec2(chrome.style.dialog_max_width as f32, chrome.metrics.menu_row_height * 18.0));
+        crate::drive::register_viewport(ctx, "macro-editor", editor_viewport);
+        if ctx.embed_viewports() {
+            ctx.show_viewport_immediate(editor_viewport, builder, |ui, _| self.editor_ui(ui, viewport, editor_viewport));
+        } else if let Some(state) = window_state(ctx, &self.app, false) {
+            let weak = Arc::downgrade(&state);
+            ctx.show_viewport_deferred(editor_viewport, builder, move |ui, _| {
+                if let Some(state) = weak.upgrade() {
+                    let mut state = state.lock().unwrap();
+                    if state.editor_open {
+                        state.editor_ui(ui, viewport, editor_viewport);
+                    }
+                }
+            });
+            ctx.request_repaint_of(editor_viewport);
+        }
+    }
+
+    fn editor_ui(&mut self, ctx: &mut egui::Ui, viewport: egui::ViewportId, editor_viewport: egui::ViewportId) {
         let mut save = false;
         let mut run = false;
         let mut ced = false;
-        let chrome = crate::chrome::Chrome::of(ctx);
-        let row_height = chrome.metrics.menu_row_height;
+        let row_height = crate::chrome::Chrome::of(ctx.ctx()).metrics.menu_row_height;
         let output_height = row_height * 4.0;
-        let editor_viewport = egui::ViewportId::from_hash_of(("macro-editor", self.window));
-        let title = self
-            .editor_entry
-            .as_ref()
-            .map(|e| e.title.as_str())
-            .unwrap_or_default();
-        let dirty = self.document.as_ref().is_some_and(|doc| doc.is_dirty());
-        let title = format!(
-            "{}{} — {}",
-            title,
-            if dirty { " *" } else { "" },
-            own("macros-editor")
-        );
-        crate::drive::register_viewport(ctx, "macro-editor", editor_viewport);
-        ctx.show_viewport_immediate(
-            editor_viewport,
-            egui::ViewportBuilder::default()
-                .with_title(title)
-                .with_decorations(true)
-                .with_resizable(true)
-                .with_inner_size(egui::vec2(
-                    chrome.style.dialog_max_width as f32,
-                    row_height * 18.0,
-                )),
-            |ctx, _class| {
-                open = !ctx.input(|i| i.viewport().close_requested());
+        let dirty_before = self.document.as_ref().is_some_and(|doc| doc.is_dirty());
+                let mut open = !ctx.input(|i| i.viewport().close_requested());
                 if ctx.input(|i| i.viewport().focused == Some(true))
                     && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
                 {
@@ -846,8 +846,7 @@ impl State {
                             );
                         });
                 });
-            },
-        );
+        let ctx = &ctx.ctx().clone();
         if !open {
             self.close_editor();
             if self.editor_open {
@@ -883,6 +882,11 @@ impl State {
             self.run_error(&title, own("macros-already-running"), ctx);
         }
         self.save_editor(save, run);
+        if !open || save || run || ced
+            || dirty_before != self.document.as_ref().is_some_and(|doc| doc.is_dirty())
+        {
+            ctx.request_repaint_of(viewport);
+        }
     }
 
     fn save_editor(&mut self, save: bool, mut run: bool) {

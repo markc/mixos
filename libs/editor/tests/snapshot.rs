@@ -65,7 +65,8 @@ fn harness(app: App, theme: &Theme, size: egui::Vec2) -> Harness<'static, App> {
             let output = app.doc.show(ui, &palette, &view);
             for event in output.events {
                 if let editor::Event::Layout(layout) = event {
-                    ui.ctx().data_mut(|d| d.insert_temp(egui::Id::new("test-editor-layout"), layout));
+                    ui.ctx()
+                        .data_mut(|d| d.insert_temp(egui::Id::new("test-editor-layout"), layout));
                 }
             }
         },
@@ -429,9 +430,14 @@ fn a_held_click_hit_tests_the_edited_text() {
 }
 
 fn line_start(h: &Harness<'_, App>, row: usize) -> Pos2 {
-    let layout = h.ctx.data(|d| d.get_temp::<editor::LayoutReport>(egui::Id::new("test-editor-layout"))).unwrap();
-    pos2(layout.editor[0] + layout.gutter_width + layout.cell_width * 0.1,
-        layout.editor[1] + layout.row_height * (row as f32 + 0.5))
+    let layout = h
+        .ctx
+        .data(|d| d.get_temp::<editor::LayoutReport>(egui::Id::new("test-editor-layout")))
+        .unwrap();
+    pos2(
+        layout.editor[0] + layout.gutter_width + layout.cell_width * 0.1,
+        layout.editor[1] + layout.row_height * (row as f32 + 0.5),
+    )
 }
 
 fn pointer(h: &mut Harness<'_, App>, at: Pos2, pressed: Option<bool>) {

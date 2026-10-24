@@ -1481,28 +1481,55 @@ mod tests {
         let path = temp.path().join("editor.png");
         let editor = egui::ViewportId::from_hash_of("captured-editor");
         let mut drive = Drive::default();
-        drive.children.insert(editor, Box::new(Drive {
-            running: Some(Running {
-                id: 7,
-                steps: VecDeque::from([Step::Await { tag: 7, path: path.clone(), deadline: Instant::now() + Duration::from_secs(10) }]),
-                report: Report::Ui, extra: json!({}), answer: None,
-                down: Vec::new(), trace: None, pass_events: Vec::new(),
+        drive.children.insert(
+            editor,
+            Box::new(Drive {
+                running: Some(Running {
+                    id: 7,
+                    steps: VecDeque::from([Step::Await {
+                        tag: 7,
+                        path: path.clone(),
+                        deadline: Instant::now() + Duration::from_secs(10),
+                    }]),
+                    report: Report::Ui,
+                    extra: json!({}),
+                    answer: None,
+                    down: Vec::new(),
+                    trace: None,
+                    pass_events: Vec::new(),
+                }),
+                ..Drive::default()
             }),
-            ..Drive::default()
-        }));
+        );
         let ctx = Context::default();
         let mut parent = RawInput::default();
         parent.events.push(Event::Screenshot {
-            viewport_id: editor, user_data: UserData::new(Shot(7)),
+            viewport_id: editor,
+            user_data: UserData::new(Shot(7)),
             image: std::sync::Arc::new(ColorImage::filled([4, 3], egui::Color32::WHITE)),
         });
         egui::Plugin::input_hook(&mut drive, &ctx, &mut parent);
         assert!(parent.events.is_empty());
-        let mut input = RawInput { viewport_id: editor, ..Default::default() };
+        let mut input = RawInput {
+            viewport_id: editor,
+            ..Default::default()
+        };
         egui::Plugin::input_hook(&mut drive, &ctx, &mut input);
-        let answer = drive.children[&editor].running.as_ref().unwrap().answer.as_ref().unwrap();
+        let answer = drive.children[&editor]
+            .running
+            .as_ref()
+            .unwrap()
+            .answer
+            .as_ref()
+            .unwrap();
         assert_eq!(answer.rc, 0);
-        assert_eq!((answer.body["width"].as_u64(), answer.body["height"].as_u64()), (Some(4), Some(3)));
+        assert_eq!(
+            (
+                answer.body["width"].as_u64(),
+                answer.body["height"].as_u64()
+            ),
+            (Some(4), Some(3))
+        );
         assert!(path.is_file());
     }
 

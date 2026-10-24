@@ -501,7 +501,11 @@ fn a_submenu_closes_when_its_row_scrolls_out_of_view() {
         &fixture::theme(Scheme::Pro, Mode::Light),
     );
     open_file(&mut h);
-    assert!(h.ctx.content_rect().contains_rect(h.get_by_label("Open Recent").rect()));
+    assert!(
+        h.ctx
+            .content_rect()
+            .contains_rect(h.get_by_label("Open Recent").rect())
+    );
     h.hover_at(h.get_by_label("Open Recent").rect().center());
     h.run();
     assert_eq!(
