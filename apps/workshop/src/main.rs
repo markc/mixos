@@ -8,6 +8,8 @@ use workshop::{label, shell::Shell};
 
 #[derive(Debug, Clone)]
 struct Settings {
+    app: Option<String>,
+    id: Option<String>,
     headless: bool,
     service: String,
     comp: String,
@@ -17,6 +19,8 @@ struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
+            app: None,
+            id: None,
             headless: false,
             service: "workshop".into(),
             comp: std::env::var("MIXOS_COMP_SERVICE").unwrap_or_else(|_| "comp".into()),
@@ -38,6 +42,8 @@ fn parse(args: impl Iterator<Item = String>) -> Result<Settings, String> {
             .filter(|v| !v.is_empty())
             .ok_or_else(|| format!("{arg} needs a value"))?;
         match arg.as_str() {
+            "--app" => settings.app = Some(value),
+            "--id" => settings.id = Some(value),
             "--noded-url" => settings.url = value,
             "--service" => settings.service = value,
             "--comp" => settings.comp = value,
@@ -74,6 +80,9 @@ fn run(settings: &Settings) -> Result<(), String> {
             deliveries,
             settings.comp.clone(),
         )?;
+        if let Some(app) = &settings.app {
+            shell.engine_mut().queue_workshop("macros.open", serde_json::json!({"app":app,"id":settings.id}), None);
+        }
         loop {
             wake.begin();
             let mut output = ctx.run_ui(egui::RawInput::default(), |ui| shell.logic(ui.ctx()));
@@ -99,13 +108,15 @@ fn run(settings: &Settings) -> Result<(), String> {
     };
     let comp = settings.comp.clone();
     let shell_bus = handle.clone();
+    let initial = settings.app.as_ref().map(|app| serde_json::json!({"app":app,"id":settings.id}));
     let result = eframe::run_native(
         APP_ID,
         options,
         Box::new(move |cc| {
             toolkit::decorations::initialise(cc);
             toolkit::install(&cc.egui_ctx, &theme);
-            let shell = Shell::new(cc.egui_ctx.clone(), theme, shell_bus, deliveries, comp)?;
+            let mut shell = Shell::new(cc.egui_ctx.clone(), theme, shell_bus, deliveries, comp)?;
+            if let Some(args) = initial { shell.engine_mut().queue_workshop("macros.open", args, None); }
             Ok(Box::new(shell))
         }),
     )
@@ -125,6 +136,9 @@ fn main() {
     let result = parse(std::env::args().skip(1)).and_then(|settings| {
         // One window per session: a second launch raises the first.
         if !settings.headless && bus::probe(&settings.url, &settings.service) {
+            if let Some(app) = &settings.app {
+                bus::open(&settings.url, &settings.service, serde_json::json!({"app":app,"id":settings.id}))?;
+            }
             match bus::forward(&settings.url, &settings.service) {
                 Ok(()) => return Ok(()),
                 Err(error) if bus::probe(&settings.url, &settings.service) => return Err(error),

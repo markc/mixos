@@ -25,6 +25,7 @@ pub type Label = fn(&str) -> String;
 /// Work for the shell. Nothing here has happened yet.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Effect {
+    Workshop { operation: String, args: Value, reply: Option<u64> },
     /// Run discovery and report [`Engine::discovered`] with `ticket`.
     Discover { ticket: u64 },
     /// Send one call and report [`Engine::completed`] with `ticket`.
@@ -63,6 +64,8 @@ pub enum Dialog {
 /// What the tree shows for one row.
 #[derive(Clone, Debug, PartialEq)]
 pub enum RowKind {
+    MacroGroup(String),
+    Macro { app: String, id: String, title: String },
     Node(String),
     Service(String),
     Verb(Selection),
@@ -242,6 +245,7 @@ struct Call {
 
 /// Workshop's state and rules.
 pub struct Engine {
+    pub workshop: crate::workshop::Workshop,
     label: Label,
     pub ui: UiState,
     pub snapshot: Snapshot,
@@ -268,6 +272,7 @@ impl Engine {
     /// A fresh engine; the first refresh is queued.
     pub fn new(label: Label) -> Self {
         let mut engine = Self {
+            workshop: crate::workshop::Workshop { dock_open: true, ..Default::default() },
             label,
             ui: UiState::default(),
             snapshot: Snapshot::default(),
@@ -297,6 +302,9 @@ impl Engine {
     fn label(&self, key: &str) -> String {
         (self.label)(key)
     }
+
+    pub(crate) fn text(&self, key: &str) -> String { self.label(key) }
+    pub(crate) fn push_workshop(&mut self, effect: Effect) { self.effects.push(effect); }
 
     /// Discovery, a call or a window activation is in flight.
     pub fn busy(&self) -> bool {
@@ -637,6 +645,9 @@ impl Engine {
             return;
         }
         self.ui.row_key = Some(row.key.clone());
+        if let RowKind::Macro { app, id, .. } = &row.kind {
+            self.queue_workshop("macros.open", json!({"app":app,"id":id}), None);
+        } else { self.workshop.selected = None; }
         self.ui.selected = match &row.kind {
             RowKind::Verb(target) => Some(target.clone()),
             _ => None,
@@ -649,6 +660,12 @@ impl Engine {
     /// every match; otherwise rows keep the person's expansion, and the
     /// selected verb's service is always open.
     pub fn tree(&self) -> Vec<Row> {
+        let mut rows = self.service_tree();
+        self.macro_tree(&mut rows);
+        rows
+    }
+
+    fn service_tree(&self) -> Vec<Row> {
         if !self.snapshot.nodes.is_empty() {
             return self.node_tree();
         }
@@ -747,7 +764,7 @@ impl Engine {
         for node in &self.snapshot.nodes {
             let engine = self.clone_for_node(node);
             // Reuse the service/verb filtering and selection rules.
-            let mut children = engine.tree();
+            let mut children = engine.service_tree();
             children.retain(|row| row.key != "mesh");
             for row in &mut children {
                 if let RowKind::Service(route) = &row.kind {
@@ -870,6 +887,7 @@ impl Engine {
             Ok(args) if args.is_object() => args,
             _ => return self.error(id, "ARGUMENT", "arguments must be a JSON object"),
         };
+        if self.workshop_command(id, verb, &args) { return; }
         if let Some(window) = verb
             .strip_prefix("workshop.")
             .filter(|v| v.starts_with("ui.") || v.starts_with("window"))
@@ -1083,6 +1101,8 @@ impl Engine {
         fn walk(engine: &Engine, rows: &[Row], depth: usize, out: &mut Vec<Value>) {
             for row in rows {
                 let (kind, label) = match &row.kind {
+                    RowKind::MacroGroup(title) => ("macros", title.clone()),
+                    RowKind::Macro { title, .. } => ("macro", title.clone()),
                     RowKind::Node(name) => ("node", engine.node_label(name)),
                     RowKind::Service(name) => ("service", engine.service_label(name)),
                     RowKind::Verb(target) => ("verb", target.verb.clone()),
@@ -1243,6 +1263,7 @@ impl Engine {
             Err(error) => json!({"service":service,"verb":verb,"request_body":request,
                 "transport_error":error.message,"outcome_unknown":error.outcome_unknown,"retried":false}),
         };
+        self.workshop.retain(json!({"direction":"local","from":"workshop","service":service,"verb":verb,"rc":self.last_reply["rc"],"payload":self.last_reply["body"]}));
         let rendered = if let Some(rc) = self.last_reply["rc"].as_u64() {
             let body = model::pretty(self.last_reply["body"].as_str().unwrap_or_default());
             format!("{service}  {verb}\n{} = {rc}\n\n{body}", self.label("rc"))

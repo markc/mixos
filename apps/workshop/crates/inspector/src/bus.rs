@@ -33,6 +33,11 @@ pub fn forward(url: &str, service: &str) -> Result<(), String> {
     citizen::forward(url, service, APP)
 }
 
+pub fn open(url: &str, service: &str, args: Value) -> Result<(), String> {
+    let reply = citizen::request(url, service, "workshop.macros.open", args)?;
+    if reply.rc == 0 { Ok(()) } else { Err(reply.body) }
+}
+
 /// Restore and focus this process's window through compd (`comp`).
 pub async fn show(handle: Handle, comp: String) -> Result<Value, String> {
     citizen::show(handle, comp, crate::model::APP_ID).await

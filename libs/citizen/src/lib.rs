@@ -57,6 +57,7 @@ pub struct Reply {
     pub error: Option<String>,
 }
 enum Effect {
+    Subscription(String, bool, oneshot::Sender<Result<(), String>>),
     Call(
         String,
         String,
@@ -115,6 +116,7 @@ enum Control {
 }
 #[derive(Clone)]
 pub struct Handle {
+    events: Arc<Mutex<std::collections::VecDeque<Value>>>,
     tx: tokio::sync::mpsc::Sender<Effect>,
     control: tokio::sync::mpsc::UnboundedSender<Control>,
     done: Arc<(Mutex<bool>, Condvar)>,
@@ -149,6 +151,30 @@ pub enum Logged {
 }
 
 impl Handle {
+    /// Drain retained topic bodies. The native lane bounds this inbox to 256
+    /// events; ordinary topic hints still wake consumers after overflow.
+    pub fn take_topic_events(&self) -> Vec<Value> {
+        self.events.lock().unwrap().drain(..).collect()
+    }
+    /// Change topic subscriptions on the existing supervised native connection.
+    /// Subscriptions survive reconnects; failures are returned to the caller.
+    pub async fn subscribe(&self, topic: &str) -> Result<(), String> {
+        self.subscription(topic, true).await
+    }
+
+    pub async fn unsubscribe(&self, topic: &str) -> Result<(), String> {
+        self.subscription(topic, false).await
+    }
+
+    async fn subscription(&self, topic: &str, on: bool) -> Result<(), String> {
+        if topic.is_empty() || topic.len() > 256 {
+            return Err("invalid topic".into());
+        }
+        let (tx, rx) = oneshot::channel();
+        self.tx.send(Effect::Subscription(topic.into(), on, tx)).await
+            .map_err(|_| "Bus stopped".to_owned())?;
+        rx.await.map_err(|_| "subscription abandoned".to_owned())?
+    }
     pub async fn raw(&self, service: &str, verb: &str, body: String) -> Result<Reply, CallError> {
         self.raw_within(service, verb, body, Duration::from_secs(CALL_SECONDS))
             .await
@@ -244,6 +270,7 @@ impl Handle {
             control,
             done: Arc::new((Mutex::new(true), Condvar::new())),
             outbox: Arc::new(outbox::Outbox::default()),
+            events: Arc::default(),
             service: Arc::from("sink"),
             log: Arc::new(Mutex::new(Vec::new())),
         }
@@ -325,6 +352,8 @@ fn start_inner(
     let finished = done.clone();
     let outbox = Arc::new(outbox::Outbox::default());
     let worker_outbox = outbox.clone();
+    let events = Arc::new(Mutex::new(std::collections::VecDeque::new()));
+    let worker_events = events.clone();
     let registered: Arc<str> = Arc::from(service);
     let service = service.to_owned();
     let url = url.to_owned();
@@ -348,6 +377,7 @@ fn start_inner(
                     ready_send,
                     worker_outbox,
                     macro_app,
+                    worker_events,
                 )),
                 Err(error) => {
                     let _ = ready_send.send(Err(format!("Bus runtime: {error}")));
@@ -360,6 +390,7 @@ fn start_inner(
         .map_err(|e| format!("Bus startup: {e}"))??;
     Ok((
         Handle {
+            events,
             tx,
             control,
             done,
@@ -381,7 +412,7 @@ fn closing(app: &str) -> String {
 async fn worker(
     service: String,
     url: String,
-    topics: Vec<String>,
+    mut topics: Vec<String>,
     closing: String,
     mut send: mpsc::Sender<Delivery>,
     mut effects: tokio::sync::mpsc::Receiver<Effect>,
@@ -389,6 +420,7 @@ async fn worker(
     ready: std::sync::mpsc::Sender<Result<(), String>>,
     outbox: Arc<outbox::Outbox>,
     macro_app: Option<String>,
+    events: Arc<Mutex<std::collections::VecDeque<Value>>>,
 ) {
     let connect = SupervisedClient::connect_options(&service, &url)
         .bounded_incoming(64)
@@ -471,6 +503,11 @@ async fn worker(
                     None => break,
                 };
                 if let Some(topic) = command.topic() {
+                    if topics.iter().any(|t| t == topic) {
+                        let mut events = events.lock().unwrap();
+                        if events.len() == 256 { events.pop_front(); }
+                        events.push_back(json!({"topic":topic,"from":command.from,"body":command.body}));
+                    }
                     if topic == "noded.props.changed" && command.headers.get("gap").is_none_or(|value|value != "true")
                         && serde_json::from_str::<Value>(&command.body).ok().is_some_and(|body|body["path"] != "services.registered") {
                         continue;
@@ -505,6 +542,18 @@ async fn worker(
             effect = effects.recv() => {
                 let Some(effect) = effect else { break; };
                 match effect {
+                    Effect::Subscription(topic, on, reply) => {
+                        let result = tokio::time::timeout(Duration::from_secs(2), async {
+                            if on { client.subscribe_topic(&topic).await }
+                            else { client.unsubscribe_topic(&topic).await }
+                        }).await.map_err(|_| "subscription timed out".to_owned())
+                            .and_then(|result| result.map_err(|error| error.to_string()));
+                        if result.is_ok() {
+                            if on && !topics.contains(&topic) { topics.push(topic); }
+                            else if !on { topics.retain(|item| item != &topic); }
+                        }
+                        let _ = reply.send(result);
+                    }
                     Effect::Call(service,verb,body,limit,reply) => {
                         let Ok(permit) = permits.clone().try_acquire_owned() else {
                             let _ = reply.send(Err(CallError::not_sent("Bus call capacity exhausted; no call sent")));

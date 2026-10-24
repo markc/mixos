@@ -116,6 +116,56 @@ impl Session {
         self.0.lock().unwrap().roots.clone()
     }
 
+    /// Management runs on a worker, using the same confined storage as the editor.
+    pub fn manage(&self, operation: &str, body: &Value) -> Result<Value, Refusal> {
+        let catalogue = self.reload()?;
+        let entry = catalogue.entries.iter().find(|entry| Some(entry.id.as_str()) == body["id"].as_str())
+            .ok_or_else(|| Refusal::new("NOT_FOUND", "unknown macro id"))?;
+        let roots = self.roots().ok_or_else(|| Refusal::new("UNAVAILABLE", "macro roots unavailable"))?;
+        let storage_error = |error: std::io::Error| Refusal::new(match error.kind() {
+            std::io::ErrorKind::AlreadyExists => "ALREADY_EXISTS",
+            std::io::ErrorKind::InvalidInput | std::io::ErrorKind::PermissionDenied => "DENIED",
+            std::io::ErrorKind::NotFound => "NOT_FOUND",
+            _ => "INTERNAL",
+        }, error);
+        if operation == "get" {
+            let text = roots.read(entry).map_err(storage_error)?;
+            if text.len() > 256 * 1024 {
+                return Err(Refusal::new("RESOURCE_EXHAUSTED", "macro exceeds 256 KiB"));
+            }
+            return Ok(json!({"id":entry.id,"tier":entry.tier.as_str(),"path":entry.path,"text":text}));
+        }
+        if !entry.tier.is_user() {
+            return Err(Refusal::new("DENIED", "built-in macros are read-only"));
+        }
+        let path = match operation {
+            "put" => {
+                let text = body["text"].as_str().ok_or_else(|| Refusal::new("INVALID_ARGUMENT", "text is required"))?;
+                if text.len() > 256 * 1024 {
+                    return Err(Refusal::new("INVALID_ARGUMENT", "macro exceeds 256 KiB"));
+                }
+                roots.write(entry, text).map_err(storage_error)?;
+                entry.path.clone()
+            }
+            "remove" => {
+                roots.remove(entry).map_err(storage_error)?;
+                entry.path.clone()
+            }
+            "move" => {
+                let tier = match body["tier"].as_str() {
+                    Some("user-global") => Tier::UserGlobal,
+                    Some("user-app") => Tier::UserApp,
+                    _ => return Err(Refusal::new("INVALID_ARGUMENT", "expected user-global or user-app")),
+                };
+                let app = self.0.lock().unwrap().app.clone();
+                roots.move_to(entry, tier, &app).map_err(storage_error)?
+            }
+            _ => return Err(Refusal::new("INVALID_ARGUMENT", "unknown management operation")),
+        };
+        self.reload()?;
+        Ok(json!({"id":entry.id,"path":path,"changed":true}))
+    }
+
     pub fn runner_status(&self) -> Status {
         self.0.lock().unwrap().runner.status()
     }

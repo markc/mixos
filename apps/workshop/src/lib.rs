@@ -10,6 +10,7 @@
 pub mod commands;
 pub mod shell;
 pub mod view;
+pub mod workshop;
 
 use toolkit::Strings;
 

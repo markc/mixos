@@ -22,6 +22,10 @@ use toolkit::{Icon, Registry, Strings, bars, field, icons, panel, tooltip};
 /// One interaction from this frame.
 #[derive(Clone, Debug, PartialEq)]
 pub enum UiEvent {
+    Macro(String, serde_json::Value),
+    Dock(bool),
+    Pause(bool),
+    TrafficFilter(String),
     Command(&'static str, Origin),
     CloseMacros,
     Filter(String),
@@ -86,6 +90,8 @@ pub fn view(
         ui.small(&engine.status);
     });
     let total = ui.available_width();
+    egui::Panel::bottom("traffic").resizable(true).default_size(if engine.workshop.dock_open { 180.0 } else { 28.0 })
+        .frame(bars::dock_frame(ui.ctx())).show(ui, |ui| traffic(ui, engine, &mut events));
     let left = egui::Panel::left("services")
         .resizable(true)
         .default_size(total * engine.ui.split)
@@ -149,6 +155,7 @@ fn services(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
 /// The text a tree row shows.
 fn row_name(engine: &Engine, row: &Row) -> String {
     match &row.kind {
+        RowKind::MacroGroup(title) | RowKind::Macro { title, .. } => title.clone(),
         RowKind::Service(name) => engine.service_label(name),
         RowKind::Peer(name) => name.clone(),
         RowKind::Node(name) => engine.node_label(name),
@@ -190,6 +197,7 @@ fn tree_row(ui: &mut Ui, engine: &Engine, row: &Row, events: &mut Vec<UiEvent>) 
             }
         }
         let text = match &row.kind {
+            RowKind::MacroGroup(title) | RowKind::Macro { title, .. } => RichText::new(title),
             RowKind::Service(name) => RichText::new(engine.service_label(name)),
             RowKind::Peer(name) => RichText::new(name),
             RowKind::Node(name) => RichText::new(engine.node_label(name)),
@@ -298,6 +306,10 @@ fn details(
     strings: &Strings,
     events: &mut Vec<UiEvent>,
 ) {
+    if engine.workshop.selected.is_some() {
+        macro_details(ui, engine, events);
+        return;
+    }
     let title = label("details");
     panel::group(ui, "details", &[title.as_str()], |ui, _| {
         let rows = ui.text_style_height(&egui::TextStyle::Body) * 6.0;
@@ -356,4 +368,96 @@ fn details(
                 );
             });
     });
+}
+
+fn traffic(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
+    ui.horizontal(|ui| {
+        if ui.selectable_label(engine.workshop.dock_open, label("traffic")).clicked() {
+            events.push(UiEvent::Dock(!engine.workshop.dock_open));
+        }
+        let mut paused = engine.workshop.paused;
+        if ui.checkbox(&mut paused, label("traffic-pause")).changed() { events.push(UiEvent::Pause(paused)); }
+        let mut filter = engine.workshop.filter.clone();
+        if ui.add(TextEdit::singleline(&mut filter).hint_text(label("traffic-filter")).desired_width(160.0)).changed() {
+            events.push(UiEvent::TrafficFilter(filter));
+        }
+        ui.small(format!("{} · {} {}", engine.workshop.observe, engine.workshop.dropped, label("traffic-dropped")));
+    });
+    if !engine.workshop.dock_open { return; }
+    ScrollArea::vertical().id_salt("traffic-rows").show(ui, |ui| {
+        ui.monospace(label("traffic-columns"));
+        for (index, row) in engine.workshop.rows(100, &engine.workshop.filter).iter().enumerate() {
+            let text = |key: &str| row[key].as_str().map(str::to_owned).unwrap_or_else(|| if row[key].is_null() { String::new() } else { row[key].to_string() });
+            let title = format!("{}  {}  {}  {}  {}  {}  {}", text("ts"), text("direction"), text("from"), text("service"), text("verb"), text("rc"), text("ms"));
+            egui::CollapsingHeader::new(RichText::new(title).monospace()).id_salt(index).show(ui, |ui| {
+                ui.monospace(serde_json::to_string_pretty(row).unwrap_or_default());
+            });
+        }
+    });
+}
+
+fn macro_details(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
+    let Some((app, id)) = &engine.workshop.selected else { return; };
+    let document = &engine.workshop.document;
+    let entry = engine.workshop.catalogues.get(app).and_then(|c| c["macros"].as_array())
+        .and_then(|entries| entries.iter().find(|entry| entry["id"] == *id));
+    ui.heading(entry.and_then(|entry| entry["title"].as_str()).unwrap_or(id));
+    ui.small(format!("{} · {}", document["tier"].as_str().unwrap_or_default(), document["path"].as_str().unwrap_or_default()));
+    if let Some(entry) = entry { ui.small(format!("{} {}", label("macro-shadows"), entry["shadows"])); }
+    type Document = std::sync::Arc<std::sync::Mutex<editor::local::Document>>;
+    let key = egui::Id::new(("workshop-document", app, id, document["text"].as_str().unwrap_or_default()));
+    let doc: Option<Document> = ui.ctx().data_mut(|data| {
+        if let Some(doc) = data.get_temp::<Document>(key) { return Some(doc); }
+        let doc = editor::local::Document::new(document["text"].as_str().unwrap_or_default(), "mix").ok()?;
+        let doc = std::sync::Arc::new(std::sync::Mutex::new(doc));
+        data.insert_temp(key, doc.clone());
+        Some(doc)
+    });
+    let Some(doc) = doc else { return; };
+    let mut doc = doc.lock().unwrap();
+    let palette = ui.ctx().data(|data| data.get_temp::<editor::Palette>(egui::Id::new("toolkit.editor-palette")))
+        .unwrap_or_else(|| editor::Palette::from_theme(&toolkit::Theme::embedded()));
+    ui.allocate_ui(egui::vec2(ui.available_width(), (ui.available_height() - 150.0).max(100.0)), |ui| {
+        doc.show(ui, &palette, &editor::View::default());
+    });
+    let mut target = ui.ctx().data_mut(|data| data.get_temp::<String>(key.with("target")).unwrap_or_default());
+    ui.horizontal_wrapped(|ui| {
+        if ui.button(label("macro-save")).clicked() {
+            events.push(UiEvent::Macro("macros.put".into(), serde_json::json!({"text":doc.contents()})));
+        }
+        if let Some(targets) = entry.and_then(|entry| entry.get("targets")).filter(|targets| !targets.is_null()) {
+            let apps: Vec<String> = if targets == "any" {
+                engine.workshop.catalogues.iter().filter(|(app, c)| *app != "global" && c["running"] == true).map(|(app, _)| app.clone()).collect()
+            } else { targets.as_array().into_iter().flatten().filter_map(|app| app.as_str().map(str::to_owned)).collect() };
+            egui::ComboBox::from_id_salt("macro-target").selected_text(if target.is_empty() { label("macro-target") } else { target.clone() }).show_ui(ui, |ui| {
+                for app in apps { ui.selectable_value(&mut target, app.clone(), app); }
+            });
+        }
+        if ui.button(label("macro-run")).clicked() {
+            let args = if target.is_empty() { serde_json::json!({}) } else { serde_json::json!({"target":target}) };
+            events.push(UiEvent::Macro("macros.run".into(), args));
+        }
+        if ui.button(label("macro-stop")).clicked() { events.push(UiEvent::Macro("macros.stop".into(), serde_json::json!({}))); }
+        for (operation, label_key, args) in [
+            ("macros.copy", "macro-copy", serde_json::json!({})),
+            ("macros.move", "macro-move", serde_json::json!({"tier":if app == "global" { "user-app" } else { "user-global" }})),
+            ("macros.ced", "macro-ced", serde_json::json!({})),
+            ("macros.dopus", "macro-dopus", serde_json::json!({})),
+        ] {
+            if ui.button(label(label_key)).clicked() { events.push(UiEvent::Macro(operation.into(), args)); }
+        }
+        if ui.button(label("macro-delete")).clicked() { ui.ctx().data_mut(|data| data.insert_temp(key.with("delete"), true)); }
+    });
+    ui.ctx().data_mut(|data| data.insert_temp(key.with("target"), target));
+    if ui.ctx().data(|data| data.get_temp::<bool>(key.with("delete")).unwrap_or(false)) {
+        ui.horizontal(|ui| {
+            ui.label(label("macro-delete-confirm"));
+            if ui.button(label("macro-delete")).clicked() {
+                events.push(UiEvent::Macro("macros.remove".into(), serde_json::json!({})));
+                ui.ctx().data_mut(|data| data.insert_temp(key.with("delete"), false));
+            }
+            if ui.button(label("macro-cancel")).clicked() { ui.ctx().data_mut(|data| data.insert_temp(key.with("delete"), false)); }
+        });
+    }
+    ui.monospace(&engine.workshop.message);
 }

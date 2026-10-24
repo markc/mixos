@@ -407,6 +407,13 @@ impl State {
 
     fn folder(&mut self) {
         self.work(|roots, app| {
+            let workshop = Path::new("/opt/mixos/bin/workshop");
+            if workshop.is_file() {
+                let mut child = Command::new(workshop).args(["--app", app])
+                    .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn()?;
+                std::thread::spawn(move || { let _ = child.wait(); });
+                return Ok((None, None));
+            }
             launch(&roots.ensure_user_folder(app, Tier::UserGlobal)?, true)?;
             Ok((None, None))
         });

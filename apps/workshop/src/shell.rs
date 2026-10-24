@@ -26,6 +26,7 @@ use toolkit::{Registry, Strings, Theme, drive};
 
 /// What finished off the UI thread.
 pub enum Event {
+    Workshop(String, Value, Option<u64>, Result<Value, String>),
     Delivery(Delivery),
     Discovered(u64, Snapshot),
     Completed(u64, Result<Reply, CallError>),
@@ -44,7 +45,7 @@ pub fn apply_event(engine: &mut Engine, event: Event) {
         Event::Completed(ticket, result) => engine.completed(ticket, result),
         Event::Shown(ticket, reply, result) => engine.shown(ticket, reply, result),
         // The session look is the shell's (see `Shell::looked`).
-        Event::Look(..) | Event::LookRetry(_) => {}
+        Event::Look(..) | Event::LookRetry(_) | Event::Workshop(..) => {}
     }
 }
 
@@ -60,6 +61,10 @@ pub fn apply_ui(engine: &mut Engine, commands: &Registry<Engine>, events: Vec<Ui
         .partition(|e| matches!(e, UiEvent::Command(..)));
     for event in edits.into_iter().chain(fired).chain(closed) {
         match event {
+            UiEvent::Macro(operation, args) => engine.macro_action(&operation, args, None),
+            UiEvent::Dock(open) => engine.workshop.dock_open = open,
+            UiEvent::Pause(paused) => engine.workshop.paused = paused,
+            UiEvent::TrafficFilter(filter) => engine.workshop.filter = filter,
             UiEvent::CloseMacros => engine.ui.macros_open = false,
             UiEvent::Command(id, origin) => {
                 let _ = commands.execute(id, engine, origin);
@@ -83,6 +88,11 @@ pub const APP: &str = "workshop";
 pub fn describe() -> Value {
     let mut surface = model::describe();
     if let Some(verbs) = surface["verbs"].as_array_mut() {
+        verbs.extend([
+            json!({"name":"workshop.traffic","args":{"limit":"optional integer 0..1024","filter":"optional string"},"description":"Read the bounded traffic ring","read_only":true}),
+            json!({"name":"workshop.observe","args":{"on":"bool","filter":"optional observe filter","body":"none or redacted (default)"},"description":"Control broker observation; topic rows remain after refusal","read_only":false}),
+            json!({"name":"workshop.macros.open","args":{"app":"app or global","id":"string"},"description":"Select a macro and read its document","read_only":false}),
+        ]);
         verbs.extend(drive::describe(APP));
         verbs.extend(inspector::bus::macros::describe(APP));
     }
@@ -270,6 +280,8 @@ impl Shell {
             look_retry: 0,
         };
         shell.engine.session = session_of(&shell.theme);
+        shell.engine.queue_workshop("catalogues", json!({}), None);
+        shell.engine.queue_workshop("observe", json!({"on":true}), None);
         shell.settle();
         shell.read_look();
         Ok(shell)
@@ -316,6 +328,43 @@ impl Shell {
     /// unanswered; completions are applied at once.
     fn pump(&mut self) {
         while let Ok(event) = self.rx.try_recv() {
+            if let Event::Workshop(operation, args, reply, result) = event {
+                let body = result.unwrap_or_else(|message| json!({"error_code":"UNAVAILABLE","message":message}));
+                let refused = body.get("error_code").is_some();
+                if operation == "catalogues" && !refused {
+                    self.engine.workshop.catalogues = serde_json::from_value(body.clone()).unwrap_or_default();
+                } else if operation == "macros.open" && !refused {
+                    let app = args["app"].as_str().unwrap_or("global").to_owned();
+                    if body.get("branch").is_some() {
+                        self.engine.ui.expanded.insert(format!("macros:{app}"));
+                        self.engine.ui.row_key = Some(format!("macros:{app}"));
+                        self.engine.workshop.selected = None;
+                        if let Some(id) = reply { self.bus.reply(id, 0, body); }
+                        continue;
+                    }
+                    let id = args["id"].as_str().unwrap_or_default().to_owned();
+                    self.engine.ui.row_key = Some(format!("macro:{app}:{id}"));
+                    self.engine.ui.expanded.insert(format!("macros:{app}"));
+                    self.engine.workshop.selected = Some((app, id));
+                    self.engine.workshop.document = body.clone();
+                } else if operation == "observe" {
+                    self.engine.workshop.observe = if refused { body["message"].as_str().unwrap_or_default().into() } else { "redacted".into() };
+                    self.engine.workshop.subscription = body["subscription_id"].as_str().map(str::to_owned);
+                } else {
+                    self.engine.workshop.message = body.to_string();
+                    if !refused && matches!(operation.as_str(), "macros.put"|"macros.move"|"macros.remove"|"macros.new") {
+                        self.engine.queue_workshop("catalogues", json!({}), None);
+                    }
+                }
+                if let Some(id) = reply { self.bus.reply(id, if refused { 10 } else { 0 }, body); }
+                self.settle();
+                continue;
+            }
+            if let Event::Discovered(_, snapshot) = &event {
+                if snapshot.progress.as_ref().is_some_and(|progress| progress.finished) {
+                    self.engine.queue_workshop("catalogues", json!({}), None);
+                }
+            }
             if let Event::Delivery(Delivery::Theme) = event {
                 self.file_theme = Theme::load();
                 self.theme = self.session_theme();
@@ -331,6 +380,10 @@ impl Shell {
                 continue;
             }
             if let Event::Delivery(Delivery::Topic(topic)) = &event {
+                for event in self.bus.take_topic_events() {
+                    let body = event["body"].as_str().and_then(|text| serde_json::from_str::<Value>(text).ok()).unwrap_or(Value::Null);
+                    self.engine.workshop.retain(json!({"direction":"topic","from":event["from"],"verb":event["topic"],"payload":body}));
+                }
                 if *topic == self.follower.topic() {
                     self.read_look();
                 }
@@ -401,6 +454,17 @@ impl Shell {
 
     fn perform(&mut self, effect: Effect) {
         match effect {
+            Effect::Workshop { operation, args, reply } => {
+                let running = self.engine.snapshot.services.iter().filter_map(|(service, verbs)| {
+                    verbs.as_ref().ok()?.iter().any(|verb| verb.name.ends_with(".macros.list"))
+                        .then(|| service.clone()).filter(|name| !name.ends_with(".bus") && name != "workshop" && name != self.bus.service())
+                }).collect();
+                let bus = self.bus.clone();
+                self.spawn(async move {
+                    let result = crate::workshop::perform(bus, &operation, args.clone(), running).await;
+                    Event::Workshop(operation, args, reply, result)
+                });
+            }
             Effect::Discover { ticket } => {
                 let bus = self.bus.clone();
                 let (tx, ctx) = (self.tx.clone(), self.ctx.clone());

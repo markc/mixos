@@ -25,6 +25,8 @@ buildinfo.workspace = true
 design.workspace = true
 eframe.workspace = true
 egui.workspace = true
+editor.workspace = true
+macros.workspace = true
 futures.workspace = true
 inspector = { path = "crates/inspector" }
 serde_json.workspace = true

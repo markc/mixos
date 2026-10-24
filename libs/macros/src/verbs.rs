@@ -4,7 +4,7 @@ use crate::{Catalogue, Session};
 use serde_json::{Value, json};
 use std::sync::mpsc::{self, Receiver};
 
-pub const SUFFIXES: [&str; 7] = ["list", "reload", "run", "status", "output", "stop", "new"];
+pub const SUFFIXES: [&str; 11] = ["list", "reload", "run", "status", "output", "stop", "new", "get", "put", "remove", "move"];
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Refusal {
     pub code: &'static str,
@@ -64,26 +64,33 @@ pub fn describe(app: &str) -> Vec<Value> {
                     "Request termination of the current macro process group",
                     json!({}),
                 ),
+                "get" => ("Read macro text (at most 256 KiB)", json!({"id":"string"})),
+                "put" => ("Save a user macro; request cap 272 KiB, text cap 256 KiB", json!({"id":"string","text":"string"})),
+                "remove" => ("Delete a user macro", json!({"id":"string"})),
+                "move" => ("Move a user macro between user tiers", json!({"id":"string","tier":"user-app or user-global"})),
                 _ => (
                     "Create a user per-app macro without opening an editor",
                     json!({"title":"string"}),
                 ),
             };
             json!({"name":format!("{app}.macros.{suffix}"),"args":args,
-            "description":description,"read_only":matches!(suffix,"list"|"status"|"output")})
+            "description":description,"read_only":matches!(suffix,"list"|"status"|"output"|"get")})
         })
         .collect()
 }
 
 pub fn handle(session: &Session, suffix: &str, body: &Value) -> Reply {
     let valid = body.as_object().is_some_and(|object| {
-        let key = match suffix {
-            "run" => Some("id"),
-            "new" => Some("title"),
-            _ => None,
+        let (required, allowed): (&[&str], &[&str]) = match suffix {
+            "run" => (&["id"], &["id", "target"]),
+            "get" | "remove" => (&["id"], &["id"]),
+            "put" => (&["id", "text"], &["id", "text"]),
+            "move" => (&["id", "tier"], &["id", "tier"]),
+            "new" => (&["title"], &["title"]),
+            _ => (&[], &[]),
         };
-        object.keys().all(|k| Some(k.as_str()) == key)
-            && key.is_none_or(|k| body[k].as_str().is_some_and(|s| !s.is_empty()))
+        object.keys().all(|k| allowed.contains(&k.as_str()) && body[k].is_string())
+            && required.iter().all(|k| body[*k].as_str().is_some_and(|s| *k == "text" || !s.is_empty()))
     });
     if !valid {
         return Reply::Immediate(Err(Refusal::new(
@@ -96,14 +103,20 @@ pub fn handle(session: &Session, suffix: &str, body: &Value) -> Reply {
             Reply::Immediate(Ok(list(session.catalogue().unwrap())))
         }
         "list" | "reload" => defer(session, |s| s.reload().map(list)),
+        "get" | "put" | "remove" | "move" => {
+            let operation = suffix.to_owned();
+            let body = body.clone();
+            defer(session, move |s| s.manage(&operation, &body))
+        }
         "run" if session.catalogue().is_none() => {
             let id = body["id"].as_str().unwrap().to_owned();
+            let target = body["target"].as_str().map(str::to_owned);
             defer(session, move |s| {
                 s.reload()?;
-                s.run(&id, "bus")
+                s.run_with(&id, "bus", target.as_deref())
             })
         }
-        "run" => Reply::Immediate(session.run(body["id"].as_str().unwrap(), "bus")),
+        "run" => Reply::Immediate(session.run_with(body["id"].as_str().unwrap(), "bus", body["target"].as_str())),
         "status" => Reply::Immediate(Ok(session.status())),
         "output" => Reply::Immediate(Ok(session.output())),
         "stop" => Reply::Immediate(Ok(json!({"stopping":session.stop()}))),

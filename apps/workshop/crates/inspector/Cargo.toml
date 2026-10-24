@@ -28,6 +28,7 @@ bus = { workspace = true, features = ["native"] }
 citizen.workspace = true
 design.workspace = true
 futures.workspace = true
+macros.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tokio = { workspace = true, features = ["rt", "sync", "time", "macros"] }
