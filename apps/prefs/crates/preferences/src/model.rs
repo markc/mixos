@@ -1,41 +1,13 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! The renderer-independent model: Prefs' panels, the rows and notes the
-//! `releases` service answers (docs/docs/spec/releases/), and Prefs' own verbs.
+//! The renderer-independent model: the rows and notes the
+//! `releases` service answers (docs/docs/spec/releases/), and Preferences' own verbs.
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 pub const APP_ID: &str = "dev.mixos.prefs";
-/// The Bus service behind the Applications panel.
+/// The Bus service behind Software.
 pub const RELEASES: &str = "releases";
-
-/// The editors Prefs holds, in sidebar order.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Panel {
-    Applications,
-    Appearance,
-    /// Per-application settings held in settingsd (Email first). Not the
-    /// releases-backed Applications panel.
-    #[serde(rename = "app-settings")]
-    AppSettings,
-}
-
-impl Panel {
-    pub const ALL: [Panel; 3] = [Panel::Applications, Panel::Appearance, Panel::AppSettings];
-
-    pub fn name(self) -> &'static str {
-        match self {
-            Panel::Applications => "applications",
-            Panel::Appearance => "appearance",
-            Panel::AppSettings => "app-settings",
-        }
-    }
-
-    pub fn from_name(name: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|p| p.name() == name)
-    }
-}
 
 /// What a row's status says, as the panel draws and enables it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -121,7 +93,7 @@ pub const VERBS: [&str; 19] = [
     "prefs.commands",
     "prefs.execute",
     "prefs.quit",
-    "prefs.panel",
+    "prefs.search",
     "prefs.section",
     "prefs.select",
     "prefs.apps",
@@ -136,26 +108,26 @@ pub const VERBS: [&str; 19] = [
 
 /// The engine's Bus surface (`HELP` / `app.describe` add the drive verbs).
 pub fn describe() -> Value {
-    json!({"schema":"prefs.v1","app_id":APP_ID,"verbs":[
+    json!({"schema":"prefs.v1","app_id":APP_ID,"sections":crate::SECTIONS,"categories":crate::Category::ALL,"verbs":[
         {"name":"HELP","description":"List every verb","read_only":true},
         {"name":"app.describe","description":"Describe the app and every verb with its arguments","read_only":true},
-        {"name":"prefs.ping","description":"Probe Prefs","read_only":true},
-        {"name":"prefs.info","description":"The whole state: panel, rows, selection, notes, operation in progress, status and UI","read_only":true},
+        {"name":"prefs.ping","description":"Probe Preferences","read_only":true},
+        {"name":"prefs.info","description":"The whole state: section, category, rows, selection, notes, operation in progress, status and UI","read_only":true},
         {"name":"prefs.show","description":"Restore and focus the existing window","read_only":false},
         {"name":"prefs.commands","description":"List the app's commands with labels, shortcuts and enablement","read_only":true},
-        {"name":"prefs.execute","args":{"id":"string"},"description":"Run one app command by id, as its menu item, button or shortcut would (file.quit, view.refresh, view.panel.applications, view.panel.appearance, view.panel.app-settings, appearance.apply, appearance.revert, appearance.keep, appearance.recheck, apps.check, apps.update_all, apps.install, apps.rollback, apps.remove, email.account.add, email.account.save, email.account.revert, email.account.remove, email.account.up, email.account.down, email.account.default, email.account.enable, email.password.set, email.password.forget, email.account.connect, email.reset, help.shortcuts, help.about); the email.account.* commands act on the selected account; the operation it starts is visible in prefs.info","read_only":false},
+        {"name":"prefs.execute","args":{"id":"string"},"description":"Run a command from prefs.commands, with the same enablement as its menu item, button or shortcut","read_only":false},
         {"name":"prefs.quit","description":"Close once the operation in progress finishes","read_only":false},
-        {"name":"prefs.panel","args":{"name":"\"applications\", \"appearance\" or \"app-settings\""},"description":"Show a panel","read_only":false},
-        {"name":"prefs.section","args":{"name":"themes, fonts, wallpapers, terminal, mixos-desktop, mixos-server, creative, other or email"},"description":"Select a preference section and expand its parent in the navigation tree","read_only":false},
-        {"name":"prefs.select","args":{"app":"an app name from prefs.apps"},"description":"Select an app in the Applications panel and load its release notes","read_only":false},
-        {"name":"prefs.apps","description":"The Applications panel's rows, selection and notes","read_only":true},
+        {"name":"prefs.search","args":{"query":"string"},"description":"Find sections by title, category, alias or settings key without changing the window; returns matches with id and category in tree order","read_only":true},
+        {"name":"prefs.section","args":{"name":crate::SECTIONS.iter().map(|s| s.id).collect::<Vec<_>>(),"group":crate::SoftwareGroup::ALL.map(crate::SoftwareGroup::name)},"description":"Select a section and expand its category; optional group selects a group within Software","read_only":false},
+        {"name":"prefs.select","args":{"app":"an app name from prefs.apps"},"description":"Open an app's Software group, select it and load its release notes","read_only":false},
+        {"name":"prefs.apps","description":"Software's rows, group, selection and notes","read_only":true},
         {"name":"prefs.appearance","description":"The Appearance panel: the session look settingsd holds (current), the unapplied edits (draft, and the axes edited), axes another writer changed under them (conflicts: nothing applies until appearance.keep or appearance.revert), what the window shows (including effective decorations and decorations_reason), the revision read, and whether an apply is in flight or uncertain","read_only":true},
         {"name":"prefs.appearance.set","args":{"scheme":"optional scheme name (ocean, crimson, stone, forest, sunset, mono, pro, studio, classic, breeze, adwaita)","style":"optional style (plain, pro, studio, classic, breeze, adwaita) or own for the scheme's own","mode":"optional light or dark","contrast":"optional normal or high","decorations":"optional auto, csd or ssd","caption_side":"optional right or left"},"description":"Change the session appearance: a present key sets that axis, an absent one leaves it; every axis is checked first, then the change applies at once (fenced), or as soon as an apply in flight settles; prefs.appearance reports a held refusal or a conflict","read_only":false},
         {"name":"prefs.dialog","args":{"open":"\"about\", \"shortcuts\" or null"},"description":"Open a dialog, or close the open one (a remove or reset confirmation is closed, never confirmed, here)","read_only":false},
         {"name":"prefs.theme","args":{"scheme":"optional scheme name (ocean, crimson, stone, forest, sunset, mono, pro, studio, classic, breeze, adwaita) or null to follow the session","style":"optional style (plain, pro, studio, classic, breeze, adwaita), own for the scheme's own, or null to follow the session","mode":"optional light, dark or null to follow the session","decorations":"optional auto, csd, ssd or null to follow the session","caption_side":"optional right, left or null to follow the session"},"description":"Choose the window's theme: a present key sets that axis, an absent one leaves it; answers the choice and the effective scheme, mode, decorations and decorations_reason","read_only":false},
-        {"name":"prefs.email","description":"App Settings → Email: the email app's accounts (in tree order, each with default and has_password: true, false, or null when Email is not running), default_account and mail options as settingsd last held them, Email's state on the Bus, the selected account and its form, and any password or connect in progress; never a password","read_only":true},
+        {"name":"prefs.email","description":"Apps → Email: the email app's accounts (in tree order, each with default and has_password: true, false, or null when Email is not running), default_account and mail options as settingsd last held them, Email's state on the Bus, the selected account and its form, and any password or connect in progress; never a password","read_only":true},
         {"name":"prefs.email.set","args":{"op":"add, update, remove, move, default or enable","id":"the account (not for add; null for default clears it)","name":"add/update: the label","url":"add/update: https:// JMAP base, no trailing slash","email":"add/update: the login address","ca_path":"add/update: absolute PEM path, or null for the system roots","signature":"add/update: plain text","enabled":"add/update/enable: true or false","direction":"move: up or down","path":"instead of op: email.mail.page_size, email.mail.mark_read_on_open, email.mail.confirm_delete, email.mail.quote_on_reply or email.mail.reply_position (\"above\" or \"below\")","value":"with path: the new value"},"description":"Change the email settings in settingsd at once, as the window would: one fenced settings.apply carrying the whole account list, with default_account in the same batch when the change touches it (removing the default clears it); remove goes through Email (email.account.remove, answered with Email's reply, MIGRATION_PENDING included) when it may be running, else straight to settingsd; every field is checked first and a refusal names it; add answers the new account's id","read_only":false},
-        {"name":"prefs.email.password","args":{"id":"an account id","password":"the password (not empty)","forget":"optional true, instead of password: Email deletes the saved password (any account id, a removed one too)"},"description":"Hand an account's password to the email app (email.account.password.set), or with forget:true have Email delete it (the only empty password sent), launching Email first when it is not on the Bus; answered once Email has. Prefs neither stores nor shows it, and settingsd never sees it","read_only":false}
+        {"name":"prefs.email.password","args":{"id":"an account id","password":"the password (not empty)","forget":"optional true, instead of password: Email deletes the saved password (any account id, a removed one too)"},"description":"Hand an account's password to the email app (email.account.password.set), or with forget:true have Email delete it (the only empty password sent), launching Email first when it is not on the Bus; answered once Email has. Preferences neither stores nor shows it, and settingsd never sees it","read_only":false}
     ]})
 }
 
@@ -205,13 +177,5 @@ mod tests {
         };
         assert_eq!(row.state(), RowState::Current);
         assert!(!row.installable());
-    }
-
-    #[test]
-    fn panels_round_trip_by_name() {
-        for panel in Panel::ALL {
-            assert_eq!(Panel::from_name(panel.name()), Some(panel));
-        }
-        assert_eq!(Panel::from_name("nope"), None);
     }
 }

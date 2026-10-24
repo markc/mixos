@@ -1,19 +1,30 @@
 ---
 title: Preferences
-description: MixOS's preferences window — a sidebar of editors: Applications follows, installs, updates, rolls back and removes upstream releases; Appearance sets the session's colour scheme, style, mode, contrast and window frame; App Settings → Email edits the email app's accounts and mail options.
+description: MixOS's preferences window — Appearance sets the session's look, fonts and wallpaper; Apps holds Email, Terminal and Text settings; System → Software follows, installs, updates, rolls back and removes upstream releases.
 ---
 
 # Preferences
 
-Preferences holds MixOS's preference editors in one window: an expandable tree
-on the left, the selected section on the right. Appearance contains Themes,
-Fonts, Wallpapers and Terminal; Applications contains MixOS Desktop, MixOS Server and
-Creative; App Settings contains Email. The sidebar can be resized. The name is a nod to the
-Prefs drawer of AmigaOS, where each setting had its own small editor.
+Preferences holds MixOS's preference editors in one window. A resizable tree
+on the left opens sections on the right. Appearance contains Themes, Fonts
+and Wallpapers. Apps contains Email, Terminal and Text. System contains
+Software. Overview, Desktop, Input and Output have no sections yet, so the
+tree hides them. The window takes its cue from the Prefs drawer of AmigaOS,
+where each setting had its own small editor.
 
-## Applications
+Ctrl+1 through Ctrl+7 open the first section in Overview, Appearance,
+Desktop, Input, Output, Apps and System, in that order. Empty categories
+are disabled. Section commands have no default shortcuts.
 
-Each Applications section shows its followed apps, from the [releases
+Press `/` outside a text field, or choose the title bar's search icon, to
+focus search. It filters sections by title, category, extra words and
+settings keys, ignoring case. Try `terminal.` or `background`. Enter opens
+the first match. Escape clears search and releases focus. Ctrl+/ opens
+Keyboard shortcuts.
+
+## System → Software
+
+Software shows its followed apps, from the [releases
 service](../releasesd/README.md): each app's installed version, the latest release,
 when it was published, and its status (up to date, update available, not
 installed, not checked, or check failed).
@@ -27,13 +38,13 @@ installed, not checked, or check failed).
   - **Remove…** asks first; Cancel is the default, so Enter never removes.
 - **Refresh** (Ctrl+R) reads the list again without asking GitHub.
 
-MixOS's `mixos-desktop` and `mixos-server` catalogue entries have their own
-sections. A catalogue entry's optional `category` selects `mixos-desktop`,
+The group selector at the top offers MixOS Desktop, MixOS Server and
+Creative applications. A catalogue entry's optional `category` selects `mixos-desktop`,
 `mixos-server`, `creative` or `other`; application names and publishers remain
 catalogue data. The catalogue's top-level `categories` map can label a group,
 for example `categories: {creative: "Graphics"}`.
-Unrecognised catalogue entries remain accessible under an additional **Other**
-section. Changing groups clears the previous selection and its release notes;
+Unrecognised catalogue entries remain accessible in **Other**, which appears
+only when it has rows. Changing groups clears the previous selection and its release notes;
 selecting an app through the Bus opens its group automatically.
 
 One operation runs at a time; the status bar says what is happening and how
@@ -76,17 +87,20 @@ session's current state decides what the status line says.
 installed on the window, with previews. Font family and size selection is not
 available yet; these faces follow the session design.
 
-**Appearance → Terminal** holds the terminal's font, layout, cursor, focus ring,
+## Apps
+
+**Apps → Terminal** holds the terminal's font, layout, cursor, focus ring,
 mouse and environment settings, plus Reset terminal. Each change uses
 settingsd and applies as it is made. Themes contains only the session theme
 controls. See the [terminal settings](../docs/spec/settings/README.md#terminal) for
 the defaults and ranges.
 
-## App Settings → Email
+**Apps → Text** holds the content styles for Email's reader and composer,
+and the Ced editor. Each change applies through settingsd as it is made.
 
-**App Settings** holds settings that belong to one application, kept in
-the settings service like the session's look. It is separate from
-Applications, which installs apps. Its first section is **Email**, the
+### Email
+
+**Apps → Email** holds the
 [email app](../email/README.md)'s accounts and mail options (`email.*` in
 settingsd; see the [email settings](../docs/spec/settings/README.md)).
 
@@ -173,13 +187,16 @@ Preferences answers on the Bus as `prefs`. `prefs.info` reports the whole state;
 look, the expected look while a change settles, any held or conflicting
 edits and the revision read; `prefs.appearance.set`
 changes it at once (`scheme`, `style` with `own` for the scheme's own, `mode`,
-`contrast`, `decorations`, `caption_side`); `prefs.select {app}` and
-`prefs.section {name}` selects `themes`, `fonts`, `wallpapers`, `terminal`, `mixos-desktop`,
-`mixos-server`, `creative`, `other` or `email` and expands its parent. `prefs.panel {name}`
-remains compatible, opening the default Themes, Creative or Email section
-(`applications`, `appearance`, `app-settings`). `prefs.email`,
-`prefs.email.set` and `prefs.email.password` are described under App
-Settings → Email above.
+`contrast`, `decorations`, `caption_side`).
+`prefs.section {name[, group]}` opens a registry section and expands its
+category. `app.describe` lists the section ids and their searchable metadata.
+For Software, `group` selects `mixos-desktop`, `mixos-server`, `creative` or
+`other`. `prefs.select {app}` opens the app's group and selects its row.
+`prefs.info` and `prefs.appearance` include the current section id and category.
+`prefs.search {query}` returns `matches`, each with `id` and `category`, in
+tree order. It uses the same search as the sidebar and leaves the window alone.
+`prefs.email`, `prefs.email.set` and `prefs.email.password` are described
+under Apps → Email above.
 `prefs.execute {id}` runs any command a button
 or menu would (`apps.check`, `apps.install`, `appearance.apply`,
 `appearance.revert`, …), and `prefs.commands` lists them with their
@@ -225,8 +242,9 @@ The source is [`apps/prefs`](https://github.com/markc/mixos/tree/main/apps/prefs
 | Path | What |
 |---|---|
 | `crates/preferences` | the headless engine: panels, rows, notes, one operation at a time, the `prefs.*` verbs |
+| `crates/preferences/src/navigation.rs` | the section registry, seven categories, software groups and search |
 | `crates/preferences/src/appearance.rs` | the Appearance panel: the look, its draft, fenced applies, receipts for lost replies |
-| `crates/preferences/src/email.rs` | App Settings → Email: account changes planned and checked, fenced applies, passwords handed to Email |
+| `crates/preferences/src/email.rs` | Apps → Email: account changes planned and checked, fenced applies, passwords handed to Email |
 | `src/commands.rs` | every action as a registered command (menus, buttons, shortcuts, `prefs.execute`) |
 | `src/view.rs` | the egui rendering; returns what the person did |
 | `src/shell.rs` | events in, effects out, in order; drained shutdown |

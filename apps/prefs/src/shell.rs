@@ -67,6 +67,10 @@ pub fn apply_ui(engine: &mut Engine, commands: &Registry<Engine>, events: Vec<Ui
         .partition(|e| matches!(e, UiEvent::Command(..)));
     for event in edits.into_iter().chain(fired).chain(closed) {
         match event {
+            UiEvent::ToggleCategory(category) => engine.toggle_category(category),
+            UiEvent::SoftwareGroup(group) => engine.set_software_group(group),
+            UiEvent::Search(query) => engine.ui.search = query,
+            UiEvent::SearchFocused => engine.ui.search_focus = false,
             UiEvent::CloseMacros => engine.ui.macros_open = false,
             UiEvent::Command(id, origin) => {
                 let _ = commands.execute(id, engine, origin);
@@ -103,7 +107,7 @@ pub fn apply_ui(engine: &mut Engine, commands: &Registry<Engine>, events: Vec<Ui
     }
 }
 
-/// The app prefix of Prefs' verbs, and of its drive verbs.
+/// The app prefix of Preferences' verbs, and of its drive verbs.
 pub const APP: &str = "prefs";
 
 /// How long a releases call may take: reads are quick, a check asks GitHub
@@ -208,7 +212,7 @@ pub fn base_look(engine: &Engine) -> Option<Look> {
 pub struct Shell {
     engine: Engine,
     commands: Registry<Engine>,
-    /// The profile's bindings for Prefs, as last applied.
+    /// The profile's bindings for Preferences, as last applied.
     keymap: toolkit::keymap::Overrides,
     strings: Strings,
     theme: Theme,
@@ -570,7 +574,7 @@ impl Shell {
         }
     }
 
-    /// Apply the profile's bindings for Prefs when they change.
+    /// Apply the profile's bindings for Preferences when they change.
     fn follow_keymap(&mut self) {
         let mine = self.engine.look.keymaps.get(APP);
         if mine == Some(&self.keymap) || (mine.is_none() && self.keymap.is_empty()) {
@@ -595,7 +599,7 @@ impl Shell {
         apply_ui(&mut self.engine, &self.commands, events);
         self.settle();
         self.release();
-        if self.wanted() != self.installed {
+        if self.wanted() != self.installed || self.engine.ui.search_focus {
             ui.ctx().request_repaint();
         }
     }

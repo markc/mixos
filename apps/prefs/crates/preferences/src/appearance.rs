@@ -303,7 +303,7 @@ pub(crate) enum Call {
     Receipt(Submitted),
     /// One terminal edit (the Terminal group), under its operation id.
     Terminal(String, Edit),
-    /// One email change (App Settings → Email), under its operation id.
+    /// One email change (Apps → Email), under its operation id.
     Email(String, EmailEdit),
     /// One text-style change (the Text section), under its operation id.
     Text(String, crate::text::TextEdit),
@@ -1258,7 +1258,8 @@ impl Engine {
 
     /// The panel as `prefs.appearance` answers it.
     pub fn appearance_view(&self) -> Value {
-        json!({"wallpaper":self.wallpaper,"settings":self.look.settings,"binding":self.look.binding,
+        json!({"section":self.section(),"category":self.section().category(),
+            "wallpaper":self.wallpaper,"settings":self.look.settings,"binding":self.look.binding,
             "revision":self.look.revision().map(|r| r.to_string()),
             "current":self.look.current,"draft":self.look.draft.map(|d| d.look),
             "edits":self.look.draft.map(|d| d.edits()).unwrap_or_default(),
@@ -1643,7 +1644,7 @@ mod tests {
             Mode::Light,
             "the edit is kept"
         );
-        e.ui.panel = crate::Panel::Appearance;
+        e.ui.section = crate::Section::Themes;
         e.refresh();
         answer_next(&mut e, 0, snapshot_body("9", "studio", "dark"));
         let (_, verb, body) = next(&mut e);
@@ -1679,7 +1680,7 @@ mod tests {
         e.open(crate::Dialog::About);
         let (read_after, _, _) = next(&mut e);
         e.settled(read_after, lost());
-        e.ui.panel = crate::Panel::Appearance;
+        e.ui.section = crate::Section::Themes;
         e.close_dialog();
         assert!(settings_calls(&mut e).is_empty(), "still no fresh fence");
     }
@@ -1899,7 +1900,7 @@ mod tests {
             settings_calls(&mut e).is_empty(),
             "no apply on a stale fence"
         );
-        e.ui.panel = crate::Panel::Appearance;
+        e.ui.section = crate::Section::Themes;
         assert!(e.can_refresh());
         e.refresh();
         answer_next(&mut e, 0, snapshot_body("8", "forest", "dark"));
@@ -1934,7 +1935,7 @@ mod tests {
             assert_eq!(calls[0].1, "settings.status");
             e.settled(calls[0].0, lost());
         }
-        // Still unknown: the edit is kept and Prefs stays open once.
+        // Still unknown: the edit is kept and Preferences stays open once.
         assert!(!e.take_effects().contains(&Effect::Exit));
         assert_eq!(e.status, "look-kept-open");
         assert_eq!(e.look.draft.unwrap().look.scheme, Scheme::Forest);
@@ -1967,7 +1968,7 @@ mod tests {
                 assert_eq!(e.look.draft.unwrap().look.scheme, Scheme::Forest);
             }
         }
-        // And a failed deciding read keeps the edit and Prefs open.
+        // And a failed deciding read keeps the edit and Preferences open.
         let mut e = read();
         edit(&mut e, json!({"scheme":"forest"}));
         let (apply, _, _) = next(&mut e);
@@ -1985,7 +1986,7 @@ mod tests {
     }
 
     /// Studio, Forest (its reply lost), then Studio again, queued; the
-    /// close waits out the receipts: Prefs stays open with the reversal.
+    /// close waits out the receipts: Preferences stays open with the reversal.
     fn reversal_kept_open_after_exhausted_receipts() -> Engine {
         let mut e = read();
         edit(&mut e, json!({"scheme":"forest"}));
@@ -2110,7 +2111,7 @@ mod tests {
             0,
             json!({"status":"unknown_operation","receipt":null,"recovering":false}),
         );
-        // The deciding read fails: Prefs stays open with the reversal, and
+        // The deciding read fails: Preferences stays open with the reversal, and
         // reads again rather than trusting the stale look.
         let (ticket, verb, _) = next(&mut e);
         assert_eq!(verb, "settings.get");
@@ -2123,7 +2124,7 @@ mod tests {
         e.settled(again, lost());
         assert!(settings_calls(&mut e).is_empty() && !e.can_apply_look());
         assert_eq!(e.look.shown().unwrap().scheme, Scheme::Studio);
-        e.ui.panel = crate::Panel::Appearance;
+        e.ui.section = crate::Section::Themes;
         e.refresh();
         answer_next(&mut e, 0, snapshot_body("8", "forest", "dark"));
         let draft = e.look.draft.unwrap();

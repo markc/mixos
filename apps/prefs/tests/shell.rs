@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! The real [`Shell`] on a logging Bus handle: what Prefs publishes on
+//! The real [`Shell`] on a logging Bus handle: what Preferences publishes on
 //! `<service>.command.executed` (docs/docs/decisions/2026-10-11-executed-commands.md).
 use citizen::{Delivery, Handle, Logged};
 use egui_kittest::Harness;
@@ -168,4 +168,58 @@ fn executed_commands_are_published_with_their_origin() {
         bodies[1]["seq"].as_u64(),
         bodies[0]["seq"].as_u64().map(|s| s + 1)
     );
+}
+
+#[test]
+fn slash_focuses_search_enter_opens_first_match_and_escape_clears_and_unfocuses() {
+    use egui::accesskit::Role;
+    let mut rig = rig();
+    let search = egui::Id::new("preferences-search");
+    rig.h.key_press(egui::Key::Slash);
+    rig.h.run_steps(3);
+    assert!(rig.h.ctx.memory(|m| m.has_focus(search)));
+    rig.h.key_press(egui::Key::Slash);
+    rig.h.run_steps(3);
+    assert_eq!(
+        published(&rig).iter().filter(|body| body["id"] == "view.search").count(),
+        1,
+        "a text field keeps slash while typing"
+    );
+    rig.h.get_by_role(Role::TextInput).type_text("background");
+    rig.h.run_steps(3);
+    rig.h.key_press(egui::Key::Enter);
+    rig.h.run_steps(3);
+    send(&mut rig, 11, "prefs.info", json!({}));
+    wait(&mut rig, &[11]);
+    assert!(rig.bus.log().iter().any(|entry| matches!(entry,
+        Logged::Reply { id: 11, rc: 0, body }
+            if body["section"] == "wallpapers" && body["category"] == "appearance"
+    )));
+    rig.h.key_press(egui::Key::Escape);
+    rig.h.run_steps(3);
+    assert!(!rig.h.ctx.memory(|m| m.has_focus(search)));
+    send(&mut rig, 12, "prefs.info", json!({}));
+    wait(&mut rig, &[12]);
+    assert!(rig.bus.log().iter().any(|entry| matches!(entry,
+        Logged::Reply { id: 12, rc: 0, body } if body["ui"]["search"] == ""
+    )));
+}
+
+#[test]
+fn search_verb_uses_translated_titles_and_leaves_the_window_alone() {
+    let mut rig = rig();
+    send(&mut rig, 21, "prefs.search", json!({"query":"APPS"}));
+    send(&mut rig, 22, "prefs.info", json!({}));
+    wait(&mut rig, &[21, 22]);
+    assert!(rig.bus.log().iter().any(|entry| matches!(entry,
+        Logged::Reply { id: 21, rc: 0, body } if body["matches"] == json!([
+            {"id":"email","category":"apps"},
+            {"id":"terminal","category":"apps"},
+            {"id":"text","category":"apps"}
+        ])
+    )));
+    assert!(rig.bus.log().iter().any(|entry| matches!(entry,
+        Logged::Reply { id: 22, rc: 0, body }
+            if body["section"] == "software" && body["ui"]["search"] == ""
+    )));
 }

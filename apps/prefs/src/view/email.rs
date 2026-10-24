@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! App Settings → Email: the account list beside the selected account's
+//! Apps → Email: the account list beside the selected account's
 //! form, its password and connection, then the mail options. The values
 //! are settingsd's as last read; the form is the person's typing until
 //! Save. Each list action and option applies at once.

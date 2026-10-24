@@ -17,3 +17,19 @@ fn macros_status_dispatch_and_surface() {
         );
     }
 }
+
+#[test]
+fn navigation_commands_used_by_macros_share_the_section_registry() {
+    let commands = prefs::commands::registry();
+    let mut engine = preferences::Engine::new(prefs::label_with);
+    for section in preferences::SECTIONS {
+        commands
+            .execute(section.command, &mut engine, toolkit::command::Origin::Bus)
+            .unwrap();
+        assert_eq!(engine.section(), section.section);
+    }
+    commands
+        .execute("view.search", &mut engine, toolkit::command::Origin::Bus)
+        .unwrap();
+    assert!(engine.ui.search_focus);
+}

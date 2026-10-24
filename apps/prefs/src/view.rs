@@ -6,11 +6,10 @@
 //!
 //! The window: the toolkit title bar, a sidebar of editors (the AmigaOS
 //! Prefs drawer, one window), the selected editor, and a status bar. The
-//! Applications editor is a panel group with the followed apps as a table,
-//! a second group with the selected app's actions and release notes, and a
-//! confirmation dialog before anything is removed. The Appearance editor
-//! sets the session's look through settingsd, each change at once. App
-//! Settings holds per-application settings, Email first (`view/email.rs`).
+//! registry supplies the category tree and search. Software holds the
+//! followed apps, group selector and release notes. Appearance sets the
+//! session's look through settingsd, each change at once; Apps holds Email,
+//! Terminal and Text settings.
 use crate::{label, label_with};
 use design::{CaptionSide, Contrast, Mode, RequestedDecorations as Decorations, Scheme, Style};
 use egui::{Align, Color32, Layout, RichText, ScrollArea, Ui};
@@ -21,7 +20,9 @@ use preferences::terminal::{
     family_setting, family_text,
 };
 use preferences::text::InterfaceEdit;
-use preferences::{AppRow, Availability, Dialog, Engine, Look, Panel, RowState, Section};
+use preferences::{
+    AppRow, Availability, Category, Dialog, Engine, Look, RowState, Section, SoftwareGroup,
+};
 use std::collections::HashMap;
 use std::ops::RangeInclusive;
 use std::sync::{Mutex, OnceLock};
@@ -41,6 +42,10 @@ mod wallpaper;
 #[derive(Clone, Debug, PartialEq)]
 pub enum UiEvent {
     Command(&'static str, Origin),
+    ToggleCategory(Category),
+    SoftwareGroup(SoftwareGroup),
+    Search(String),
+    SearchFocused,
     CloseMacros,
     /// Select this app in the Applications table.
     Select(String),
@@ -154,7 +159,7 @@ pub fn view(
     egui::CentralPanel::default()
         .frame(bars::dock_frame(ui.ctx()))
         .show(ui, |ui| match engine.section() {
-            Section::Desktop | Section::Server | Section::Creative | Section::Other => {
+            Section::Software => {
                 applications(ui, engine, commands, strings, &mut events)
             }
             section => {
@@ -187,76 +192,74 @@ pub fn view(
 
 /// A tree whose selection and expansion live in the serialisable engine.
 fn editors(ui: &mut Ui, engine: &Engine, commands: &Registry<Engine>, events: &mut Vec<UiEvent>) {
-    let title = label("panels");
-    panel::group(ui, "editors", &[title.as_str()], |ui, _| {
-        ScrollArea::vertical()
-            .id_salt("navigation-tree")
-            .show(ui, |ui| {
-                for (parent, heading, expanded, toggle) in [
-                    (
-                        Panel::Appearance,
-                        "panel-appearance",
-                        engine.ui.appearance_expanded,
-                        "view.tree.appearance",
-                    ),
-                    (
-                        Panel::Applications,
-                        "panel-applications",
-                        engine.ui.applications_expanded,
-                        "view.tree.applications",
-                    ),
-                    (
-                        Panel::AppSettings,
-                        "panel-app-settings",
-                        engine.ui.app_settings_expanded,
-                        "view.tree.app-settings",
-                    ),
-                ] {
-                    let enabled = commands.get(toggle).is_some_and(|c| (c.enabled)(engine));
-                    let shown = ui.add_enabled_ui(enabled, |ui| {
-                        egui::CollapsingHeader::new(label(heading))
-                            .id_salt(heading)
-                            .open(Some(expanded))
-                            .show(ui, |ui| {
-                                for section in
-                                    Section::ALL.into_iter().filter(|s| s.panel() == parent)
-                                {
-                                    if section == Section::Other
-                                        && !engine.apps.iter().any(|r| Section::Other.matches(r))
-                                    {
-                                        continue;
-                                    }
-                                    let command =
-                                        commands.get(section.command()).expect("section command");
-                                    ui.horizontal(|ui| {
-                                        ui.add(icons::image_of(
-                                            ui.ctx(),
-                                            command.icon.expect("section icon"),
-                                            ICON,
-                                            ui.visuals().text_color(),
-                                        ));
-                                        if toolkit::selectable(
-                                            ui,
-                                            engine.section() == section,
-                                            section_title(engine, section),
-                                        )
-                                        .clicked()
-                                        {
-                                            events.push(UiEvent::Command(
-                                                section.command(),
-                                                Origin::Ui,
-                                            ));
-                                        }
-                                    });
-                                }
-                            })
-                    });
-                    if shown.inner.header_response.clicked() {
-                        events.push(UiEvent::Command(toggle, Origin::Ui));
-                    }
+    let mut query = engine.ui.search.clone();
+    let id = egui::Id::new("preferences-search");
+    let focused = ui.memory(|m| m.has_focus(id));
+    let escape =
+        focused && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape));
+    let enter = focused && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Enter));
+    let field = ui.add_enabled(
+        engine.can_navigate(),
+        toolkit::field::text_edit(&mut query, &label("search-hint"), ui.available_width()).id(id),
+    );
+    if engine.ui.search_focus {
+        field.request_focus();
+        events.push(UiEvent::SearchFocused);
+    }
+    if escape {
+        query.clear();
+        field.surrender_focus();
+    }
+    let matches = engine.search(&query);
+    if enter
+        && let Some(first) = matches.first()
+    {
+        events.push(UiEvent::Command(first.command, Origin::Ui));
+    }
+    if query != engine.ui.search {
+        events.push(UiEvent::Search(query.clone()));
+    }
+    ScrollArea::vertical()
+        .id_salt("navigation-tree")
+        .show(ui, |ui| {
+            for category in Category::ALL {
+                if !matches.iter().any(|s| s.category == category) {
+                    continue;
                 }
-            });
-    });
+                let expanded = !query.is_empty() || engine.ui.expanded.contains(&category);
+                let shown = ui.add_enabled_ui(engine.can_navigate(), |ui| {
+                    egui::CollapsingHeader::new(label(category.label()))
+                        .id_salt(category.name())
+                        .open(Some(expanded))
+                        .show(ui, |ui| {
+                            for section in matches.iter().filter(|s| s.category == category) {
+                                let command =
+                                    commands.get(section.command).expect("section command");
+                                ui.horizontal(|ui| {
+                                    ui.add(icons::image_of(
+                                        ui.ctx(),
+                                        command.icon.expect("section icon"),
+                                        ICON,
+                                        ui.visuals().text_color(),
+                                    ));
+                                    if toolkit::selectable(
+                                        ui,
+                                        engine.section() == section.section,
+                                        label(section.title),
+                                    )
+                                    .clicked()
+                                    {
+                                        events.push(UiEvent::Command(section.command, Origin::Ui));
+                                    }
+                                });
+                            }
+                        })
+                });
+                if shown.inner.header_response.clicked() {
+                    events.push(UiEvent::ToggleCategory(category));
+                }
+            }
+        });
 }
 
 /// A button for registry command `id`, enabled as the registry says.
@@ -300,13 +303,6 @@ fn status_text(ui: &Ui, row: &AppRow) -> RichText {
         }
         RowState::Error => RichText::new(label("status-error")).color(visuals.error_fg_color),
     }
-}
-
-fn section_title(engine: &Engine, section: Section) -> String {
-    engine
-        .category_label(section)
-        .map(str::to_owned)
-        .unwrap_or_else(|| label(section.label()))
 }
 
 /// Preview the actual face stacks installed on this rendering context.
@@ -404,8 +400,24 @@ fn applications(
     strings: &Strings,
     events: &mut Vec<UiEvent>,
 ) {
+    let groups: Vec<_> = SoftwareGroup::ALL
+        .into_iter()
+        .filter(|g| *g != SoftwareGroup::Other || engine.apps.iter().any(|r| g.matches(r)))
+        .map(|g| {
+            let title = engine
+                .group_label(g)
+                .map(str::to_owned)
+                .unwrap_or_else(|| label(g.label()));
+            (g, title)
+        })
+        .collect();
+    ui.add_enabled_ui(engine.can_navigate(), |ui| {
+        if let Some(group) = choices(ui, engine.ui.software_group, &groups) {
+            events.push(UiEvent::SoftwareGroup(group));
+        }
+    });
     let height = ui.available_height();
-    let title = section_title(engine, engine.section());
+    let title = label("section-software");
     // The table takes the upper part; the selected app's notes the rest.
     ui.allocate_ui(egui::vec2(ui.available_width(), height * 0.55), |ui| {
         panel::group(ui, "applications", &[title.as_str()], |ui, _| {
@@ -420,9 +432,6 @@ fn applications(
                     false,
                     events,
                 );
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    command_button(ui, engine, commands, strings, "view.refresh", false, events);
-                });
             });
             bars::hairline(ui);
             ui.add(egui::Label::new(RichText::new(label("apps-scope")).weak()).wrap());

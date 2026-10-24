@@ -23,7 +23,7 @@ A second launch raises the first window.
 
 ## Accounts are set up in Preferences
 
-Accounts are configured in **Preferences → Email**, not in the app
+Accounts are configured in **Preferences → Apps → Email**, not in the app
 ([decision](../docs/decisions/2026-10-16-email-accounts-in-settings.md)).
 Each account has the fields below.
 

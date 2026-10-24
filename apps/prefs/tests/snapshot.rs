@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! Offscreen snapshots of Prefs driven through its real engine: the
+//! Offscreen snapshots of Preferences driven through its real engine: the
 //! Applications editor with a listed catalogue (an update, a current app, a
 //! new one and a failed check), a selected app with its release notes, and
 //! the remove confirmation; the Appearance editor as read and with an
-//! unapplied draft the window previews; App Settings → Email with no
+//! unapplied draft the window previews; Apps → Email with no
 //! accounts, two accounts with one selected, and a refused new account.
 //! Regenerate with `UPDATE_SNAPSHOTS=1` and look at
 //! the images before committing them.
@@ -12,12 +12,12 @@ use citizen::Reply;
 use design::{CaptionSide, DesignContext, Mode, Scheme, Style};
 use egui_kittest::Harness;
 use preferences::email::Field;
-use preferences::{Dialog, Effect, Engine, Look, Panel, Section};
+use preferences::{Category, Dialog, Effect, Engine, Look, Section, SoftwareGroup};
 use prefs::{commands, label_with, strings, view::view};
 use serde_json::json;
 use toolkit::Theme;
 
-/// A `settings.get` reply in the summary view Prefs reads.
+/// A `settings.get` reply in the summary view Preferences reads.
 fn summary_reply(revision: &str, appearance: serde_json::Value) -> serde_json::Value {
     json!({"status":"current","summary":{"schema":1,
         "binding":{"instance":"example","profile":"default"},
@@ -116,7 +116,7 @@ fn creative_studio_dark() {
             {"app":"drawing","repo":"example/drawing","category":"creative","installed":null,"latest":"0.9.0","published":"2026-10-10","status":"not installed"}
         ]),
     );
-    e.set_section(Section::Creative);
+    e.set_software_group(SoftwareGroup::Creative);
     draw(
         chrome(Scheme::Studio, Mode::Dark),
         "creative_studio_dark",
@@ -127,8 +127,8 @@ fn creative_studio_dark() {
 #[test]
 fn desktop_studio_light() {
     let mut e = engine();
-    e.set_section(Section::Desktop);
-    e.ui.appearance_expanded = false;
+    e.set_software_group(SoftwareGroup::Desktop);
+    e.ui.expanded.retain(|c| *c != Category::Appearance);
     draw(
         chrome(Scheme::Studio, Mode::Light),
         "desktop_studio_light",
@@ -168,7 +168,7 @@ fn appearance_engine() -> Engine {
             error: None,
         }),
     );
-    e.ui.panel = Panel::Appearance;
+    e.set_section(Section::Themes);
     wallpaper_read(&mut e, json!({"schema":1}));
     e
 }
