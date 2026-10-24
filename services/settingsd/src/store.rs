@@ -126,7 +126,11 @@ impl Accepted {
         let effective = if repin {
             self.embedded_source = settings::EMBEDDED_DEFAULT_SOURCE.into();
             let effective = settings::resolve_with_embedded(&self.desktop, &self.embedded_source)
-                .map_err(|e| anyhow::anyhow!("accepted desktop cannot migrate to current embedded default: {e:?}"))?;
+                .map_err(|e| {
+                anyhow::anyhow!(
+                    "accepted desktop cannot migrate to current embedded default: {e:?}"
+                )
+            })?;
             eprintln!(
                 "settingsd: re-pinning retired embedded default; dropping retired embedded tokens; preserving authored appearance overrides"
             );

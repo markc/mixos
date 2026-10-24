@@ -46,26 +46,36 @@ fn shipped_default_upgrades_both_seals_retains_history_and_is_idempotent() {
     assert_eq!(after.revision, Revision(before.revision.0 + 1));
     assert_eq!(after.design_revision, after.revision);
     assert_eq!(after.incarnation, before.incarnation);
-    assert_eq!(settings::digest(&after.receipts).unwrap(), settings::digest(&before.receipts).unwrap());
+    assert_eq!(
+        settings::digest(&after.receipts).unwrap(),
+        settings::digest(&before.receipts).unwrap()
+    );
     after.effective().unwrap();
     let backup = read(dir.path(), FILES[1]);
     backup.check(&binding()).unwrap();
     backup.effective().unwrap();
     assert_eq!(backup.embedded_source, settings::EMBEDDED_DEFAULT_SOURCE);
     assert_eq!(backup.revision, Revision(previous.revision.0 + 1));
-    assert_eq!(settings::digest(&backup.receipts).unwrap(), settings::digest(&previous.receipts).unwrap());
+    assert_eq!(
+        settings::digest(&backup.receipts).unwrap(),
+        settings::digest(&previous.receipts).unwrap()
+    );
     drop(store);
     let bytes = FILES.map(|name| std::fs::read(dir.path().join(name)).unwrap());
     let (_store, again) = Store::open(dir.path(), &binding()).unwrap();
     assert_eq!(again.content_digest, after.content_digest);
-    assert_eq!(bytes, FILES.map(|name| std::fs::read(dir.path().join(name)).unwrap()));
+    assert_eq!(
+        bytes,
+        FILES.map(|name| std::fs::read(dir.path().join(name)).unwrap())
+    );
 }
 
 #[test]
 fn installed_authored_source_keeps_its_source_settings_and_revisions() {
     let dir = copy_fixture("authored-legacy");
     let before = read(dir.path(), FILES[0]);
-    let effective = settings::resolve_with_embedded(&before.desktop, &before.embedded_source).unwrap();
+    let effective =
+        settings::resolve_with_embedded(&before.desktop, &before.embedded_source).unwrap();
     let (store, after) = Store::open(dir.path(), &binding()).unwrap();
     assert_eq!(after.embedded_source, before.embedded_source);
     assert_eq!(after.desktop, before.desktop);
@@ -86,22 +96,37 @@ fn failing_authored_source_and_unknown_embedded_source_refuse_without_writes() {
         if authored {
             data.desktop.appearance.source = Some(data.embedded_source.clone());
         } else {
-            data.embedded_source.push_str("\n-- not a shipped default\n");
+            data.embedded_source
+                .push_str("\n-- not a shipped default\n");
         }
         data.seal().unwrap();
-        std::fs::write(dir.path().join(FILES[0]), strict::to_string_pretty(&data).unwrap()).unwrap();
+        std::fs::write(
+            dir.path().join(FILES[0]),
+            strict::to_string_pretty(&data).unwrap(),
+        )
+        .unwrap();
         let bytes = FILES.map(|name| std::fs::read(dir.path().join(name)).unwrap());
-        let error = Store::open(dir.path(), &binding()).err().unwrap().to_string();
+        let error = Store::open(dir.path(), &binding())
+            .err()
+            .unwrap()
+            .to_string();
         assert!(error.contains("no longer resolves"), "{error}");
-        assert!(error.contains("panel_") || error.contains("contrast"), "{error}");
-        assert_eq!(bytes, FILES.map(|name| std::fs::read(dir.path().join(name)).unwrap()));
+        assert!(
+            error.contains("panel_") || error.contains("contrast"),
+            "{error}"
+        );
+        assert_eq!(
+            bytes,
+            FILES.map(|name| std::fs::read(dir.path().join(name)).unwrap())
+        );
     }
 }
 
 #[test]
 fn valid_embedded_pin_is_not_replaced_and_new_init_stays_pinned() {
     let dir = tempfile::tempdir().unwrap();
-    let (store, initial) = Store::create(dir.path(), binding(), settings::Desktop::default()).unwrap();
+    let (store, initial) =
+        Store::create(dir.path(), binding(), settings::Desktop::default()).unwrap();
     assert_eq!(initial.embedded_source, settings::EMBEDDED_DEFAULT_SOURCE);
     drop(store);
     let (_store, opened) = Store::open(dir.path(), &binding()).unwrap();
@@ -111,15 +136,21 @@ fn valid_embedded_pin_is_not_replaced_and_new_init_stays_pinned() {
 #[test]
 fn valid_retired_embedded_source_stays_pinned() {
     let dir = tempfile::tempdir().unwrap();
-    let (store, mut data) = Store::create(dir.path(), binding(), settings::Desktop::default()).unwrap();
+    let (store, mut data) =
+        Store::create(dir.path(), binding(), settings::Desktop::default()).unwrap();
     drop(store);
     data.embedded_source = read(&fixture("authored-legacy"), FILES[0]).embedded_source;
     data.effective_digest = settings::digest(
         &settings::resolve_with_embedded(&data.desktop, &data.embedded_source).unwrap(),
-    ).unwrap();
+    )
+    .unwrap();
     data.format = 3;
     data.seal().unwrap();
-    std::fs::write(dir.path().join(FILES[0]), strict::to_string_pretty(&data).unwrap()).unwrap();
+    std::fs::write(
+        dir.path().join(FILES[0]),
+        strict::to_string_pretty(&data).unwrap(),
+    )
+    .unwrap();
     let (_store, opened) = Store::open(dir.path(), &binding()).unwrap();
     assert_eq!(opened.embedded_source, data.embedded_source);
     assert_eq!(opened.revision, data.revision);
@@ -140,11 +171,18 @@ fn migration_also_checks_current_format_and_refuses_a_broken_seal() {
     for name in FILES {
         let mut data = read(dir.path(), name);
         data.content_digest = "0".repeat(64);
-        std::fs::write(dir.path().join(name), strict::to_string_pretty(&data).unwrap()).unwrap();
+        std::fs::write(
+            dir.path().join(name),
+            strict::to_string_pretty(&data).unwrap(),
+        )
+        .unwrap();
     }
     let bytes = FILES.map(|name| std::fs::read(dir.path().join(name)).unwrap());
     assert!(Store::open(dir.path(), &binding()).is_err());
-    assert_eq!(bytes, FILES.map(|name| std::fs::read(dir.path().join(name)).unwrap()));
+    assert_eq!(
+        bytes,
+        FILES.map(|name| std::fs::read(dir.path().join(name)).unwrap())
+    );
 }
 
 /// Run only when importing an anonymised fixture. Uses the production sealing
@@ -158,7 +196,11 @@ fn reseal_anonymised_fixtures() {
             assert_eq!(data.binding, binding());
             data.seal().unwrap();
             data.check(&binding()).unwrap();
-            std::fs::write(fixture(kind).join(name), strict::to_string_pretty(&data).unwrap()).unwrap();
+            std::fs::write(
+                fixture(kind).join(name),
+                strict::to_string_pretty(&data).unwrap(),
+            )
+            .unwrap();
         }
     }
 }
