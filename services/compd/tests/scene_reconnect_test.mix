@@ -48,7 +48,7 @@ fn wait_shown($id)
   for $i = 1 to 100
     if is_file($tmp .. "/shown") and is_file($tmp .. "/model") then
       $model = json_parse(read_file($tmp .. "/model"))
-      if $model.id == $id then return end
+      if $model.id == $id and trim(read_file($tmp .. "/shown")) == to_string($id) then return end
     end
     sleep(0.1)
   end
@@ -63,7 +63,8 @@ print(json_encode({rc: $rc, value: $result}))
   reply(0, json_encode([{path: "flow", enum: ["horizontal"]}, {path: "hidden", type: "bool"}]))
 end
 on shell.toast.show
-  write_file(env("FIXTURE_DIR") .. "/shown", "shown")
+  $model = json_parse(read_file(env("FIXTURE_DIR") .. "/model"))
+  write_file(env("FIXTURE_DIR") .. "/shown", to_string($model.id))
   reply(0, "{}")
 end
 on shell.toast.hide
