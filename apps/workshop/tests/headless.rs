@@ -73,6 +73,21 @@ async fn headless_binary_serves_local_tree_and_quits_without_a_display() {
         .unwrap();
     }
     assert!(started.elapsed() < Duration::from_secs(5));
+    // The public quit verb is intentionally refused while discovery is busy.
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let info = client
+                .call("workshop-test", "workshop.info", json!({}))
+                .await
+                .unwrap();
+            if info["discovering"] == false {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("discovery settles before quit");
     client
         .call("workshop-test", "workshop.quit", json!({}))
         .await
