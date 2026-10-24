@@ -427,6 +427,7 @@ mod tests {
     #[test]
     fn observe_events_never_generate_reply_effects() {
         let mut engine = Engine::new(str::to_owned);
+        engine.take_effects();
         assert!(engine.workshop_command(0, "noded.observe.event", &json!({"verb":"noded.ping"})));
         assert!(engine.take_effects().is_empty());
     }
