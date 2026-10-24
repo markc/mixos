@@ -564,6 +564,12 @@ async fn worker(
                     let _ = tokio::time::timeout(Duration::from_secs(2),client.respond(&command,10,"{\"error_code\":\"ARGUMENT\",\"message\":\"command verb is empty\"}")).await;
                     continue;
                 }
+                // Native events are one-way deliveries, never pending calls.
+                // Replying to observe events would itself produce observations.
+                if command.header("type") == Some("event") {
+                    let _ = send.send(Delivery::Command {id:0,verb:command.command.clone(),body:command.body.clone()}).await;
+                    continue;
+                }
                 if pending.len() >= 32 {
                     let _ = tokio::time::timeout(Duration::from_secs(2),client.respond(&command,10,"{\"error_code\":\"BUSY\",\"message\":\"too many pending commands\"}")).await;
                     continue;

@@ -394,11 +394,6 @@ impl Engine {
         }
         if verb == "noded.observe.event" {
             self.workshop.observe(args.clone());
-            self.push_workshop(Effect::Reply {
-                id,
-                rc: 0,
-                body: json!({}),
-            });
             return true;
         }
         if verb == "workshop.observe"
@@ -429,6 +424,12 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn observe_events_never_generate_reply_effects() {
+        let mut engine = Engine::new(str::to_owned);
+        assert!(engine.workshop_command(0, "noded.observe.event", &json!({"verb":"noded.ping"})));
+        assert!(engine.take_effects().is_empty());
+    }
     #[test]
     fn observations_join_replies_by_caller_and_keep_origin_and_latency() {
         let mut state = Workshop::default();

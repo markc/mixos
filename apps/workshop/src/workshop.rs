@@ -278,12 +278,13 @@ mod tests {
                     if let Some(inspector::bus::Delivery::Command { id, verb, body }) =
                         observed.next().await
                     {
-                        allowed.reply(id, 0, json!({}));
                         if verb == "noded.observe.event" {
                             let row: Value = serde_json::from_str(&body).unwrap();
                             if row["verb"] == "noded.ping" {
                                 break row;
                             }
+                        } else {
+                            allowed.reply(id, 0, json!({}));
                         }
                     }
                 }
