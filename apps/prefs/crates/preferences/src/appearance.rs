@@ -26,7 +26,9 @@ use crate::email::Edit as EmailEdit;
 use crate::engine::{Effect, Engine};
 use crate::terminal::Edit;
 use citizen::{CallError, Reply};
-use design::{CaptionSide, Contrast, RequestedDecorations as Decorations, DesignContext, Mode, Scheme, Style};
+use design::{
+    CaptionSide, Contrast, DesignContext, Mode, RequestedDecorations as Decorations, Scheme, Style,
+};
 use serde::Serialize;
 use serde_json::{Value, json};
 use settings::model::{Appearance as Stored, ApplyRequest, Binding, Revision};
@@ -1348,9 +1350,15 @@ mod tests {
     fn automatic_request_and_effective_summary_are_distinct() {
         use design::decorations::{Resolver, SessionFacts, with_resolver};
         use std::sync::Arc;
-        let resolver = Arc::new(Resolver::new(|| SessionFacts {
-            wayland: true, desktops: "KDE".into(), decoration_global: Some(true),
-        }, || None, |_| {}));
+        let resolver = Arc::new(Resolver::new(
+            || SessionFacts {
+                wayland: true,
+                desktops: "KDE".into(),
+                decoration_global: Some(true),
+            },
+            || None,
+            |_| {},
+        ));
         with_resolver(resolver, || {
             let mut e = read();
             let body = e.set_look(&json!({"decorations":"auto"})).unwrap();

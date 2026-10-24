@@ -1042,7 +1042,10 @@ fn view_theme_style_and_decorations_by_bus_clicks() {
         &mut rig,
         &[view.as_str(), "Theme", "System title bar (SSD)"],
     );
-    assert_eq!(engine(&rig).ui.theme_decorations, Some(design::RequestedDecorations::Server));
+    assert_eq!(
+        engine(&rig).ui.theme_decorations,
+        Some(design::RequestedDecorations::Server)
+    );
     assert_eq!(
         toolkit::chrome::Chrome::of(&rig.h.ctx).decorations,
         Decorations::Server

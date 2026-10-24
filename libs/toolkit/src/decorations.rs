@@ -20,9 +20,9 @@ const BUDGET: Duration = Duration::from_millis(200);
 /// Install once after winit has chosen the backend. Merely having a
 /// WAYLAND_DISPLAY in the environment is not evidence for that choice.
 pub fn initialise(display: &impl HasDisplayHandle) {
-    let wayland = display.display_handle().is_ok_and(|handle| {
-        matches!(handle.as_raw(), RawDisplayHandle::Wayland(_))
-    });
+    let wayland = display
+        .display_handle()
+        .is_ok_and(|handle| matches!(handle.as_raw(), RawDisplayHandle::Wayland(_)));
     design::decorations::install(Arc::new(Resolver::new(
         move || detect(wayland),
         || std::env::var_os("MIXOS_DECORATIONS").map(|value| value.to_string_lossy().into_owned()),
@@ -38,8 +38,8 @@ pub fn detect(wayland: bool) -> SessionFacts {
     }
     let desktops = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default();
     let handed_off = std::env::var_os("WAYLAND_SOCKET").is_some();
-    let display = PathBuf::from(std::env::var_os("WAYLAND_DISPLAY")
-        .unwrap_or_else(|| "wayland-0".into()));
+    let display =
+        PathBuf::from(std::env::var_os("WAYLAND_DISPLAY").unwrap_or_else(|| "wayland-0".into()));
     let path = if display.is_absolute() {
         Some(display)
     } else {
@@ -55,7 +55,11 @@ fn detect_with(
     path: Option<PathBuf>,
     check_global: impl FnOnce(PathBuf) -> Option<bool>,
 ) -> SessionFacts {
-    let mut facts = SessionFacts { wayland, desktops, decoration_global: None };
+    let mut facts = SessionFacts {
+        wayland,
+        desktops,
+        decoration_global: None,
+    };
     if wayland && !handed_off && design::decorations::automatic(&facts).reason != "rule2" {
         facts.decoration_global = path.and_then(check_global);
     }
@@ -67,12 +71,18 @@ fn bounded_probe(path: PathBuf) -> Option<bool> {
     let (send, receive) = mpsc::sync_channel(1);
     // A stalled compositor or library initialisation cannot stall
     // the UI or a Bus reply. Late results are discarded, never cached later.
-    let worker = std::thread::Builder::new().name("decoration-registry".into())
-        .spawn(move || { let _ = send.send(probe(path, deadline)); });
+    let worker = std::thread::Builder::new()
+        .name("decoration-registry".into())
+        .spawn(move || {
+            let _ = send.send(probe(path, deadline));
+        });
     if worker.is_err() {
         return None;
     }
-    receive.recv_timeout(deadline.saturating_duration_since(Instant::now())).ok().flatten()
+    receive
+        .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+        .ok()
+        .flatten()
 }
 
 #[derive(Default)]
@@ -123,7 +133,9 @@ fn probe(path: PathBuf, deadline: Instant) -> Option<bool> {
         if state.done {
             return Some(state.advertised);
         }
-        let Some(guard) = queue.prepare_read() else { continue };
+        let Some(guard) = queue.prepare_read() else {
+            continue;
+        };
         let mut fd = libc::pollfd {
             fd: guard.connection_fd().as_raw_fd(),
             events: libc::POLLIN,
@@ -134,7 +146,9 @@ fn probe(path: PathBuf, deadline: Instant) -> Option<bool> {
         // SAFETY: fd is a live, exclusively owned detector connection. The
         // pointer addresses one pollfd, and the timeout is bounded above.
         let ready = unsafe { libc::poll(&mut fd, 1, timeout) };
-        if ready <= 0 { return None; }
+        if ready <= 0 {
+            return None;
+        }
         guard.read().ok()?;
     }
     None
@@ -152,8 +166,16 @@ fn connect(path: &std::path::Path, deadline: Instant) -> Option<UnixStream> {
         *destination = *source as libc::c_char;
     }
     // SAFETY: socket has no pointer arguments; a successful fd is owned below.
-    let fd = unsafe { libc::socket(libc::AF_UNIX, libc::SOCK_STREAM | libc::SOCK_CLOEXEC | libc::SOCK_NONBLOCK, 0) };
-    if fd < 0 { return None; }
+    let fd = unsafe {
+        libc::socket(
+            libc::AF_UNIX,
+            libc::SOCK_STREAM | libc::SOCK_CLOEXEC | libc::SOCK_NONBLOCK,
+            0,
+        )
+    };
+    if fd < 0 {
+        return None;
+    }
     // SAFETY: fd is a new, uniquely owned Unix stream socket from socket().
     let stream = unsafe { UnixStream::from_raw_fd(fd) };
     let length = std::mem::offset_of!(libc::sockaddr_un, sun_path) + bytes.len() + 1;
@@ -161,19 +183,34 @@ fn connect(path: &std::path::Path, deadline: Instant) -> Option<UnixStream> {
     // SAFETY: address holds a terminated pathname, and length covers just
     // its family and that pathname, within the sockaddr_un allocation.
     let result = unsafe {
-        libc::connect(fd, std::ptr::from_ref(&address).cast::<libc::sockaddr>(), length)
+        libc::connect(
+            fd,
+            std::ptr::from_ref(&address).cast::<libc::sockaddr>(),
+            length,
+        )
     };
     if result != 0 {
         if std::io::Error::last_os_error().raw_os_error() != Some(libc::EINPROGRESS) {
             return None;
         }
-        let timeout = i32::try_from(deadline.saturating_duration_since(Instant::now()).as_millis()).ok()?;
-        let mut pollfd = libc::pollfd { fd, events: libc::POLLOUT, revents: 0 };
+        let timeout = i32::try_from(
+            deadline
+                .saturating_duration_since(Instant::now())
+                .as_millis(),
+        )
+        .ok()?;
+        let mut pollfd = libc::pollfd {
+            fd,
+            events: libc::POLLOUT,
+            revents: 0,
+        };
         // SAFETY: pollfd describes the live owned socket, and one element.
         if unsafe { libc::poll(&mut pollfd, 1, timeout) } <= 0 {
             return None;
         }
-        if stream.take_error().ok()?.is_some() { return None; }
+        if stream.take_error().ok()?.is_some() {
+            return None;
+        }
     }
     Some(stream)
 }
@@ -205,11 +242,17 @@ mod tests {
 
     #[test]
     fn descriptor_handoff_and_house_desktop_skip_the_registry() {
-        for (desktop, handed_off, reason) in [("KDE", true, "rule4"), ("KDE:MixOS", false, "rule2")] {
-            let facts = detect_with(true, desktop.into(), handed_off,
-                Some(PathBuf::from("unused-display")), |_| {
+        for (desktop, handed_off, reason) in [("KDE", true, "rule4"), ("KDE:MixOS", false, "rule2")]
+        {
+            let facts = detect_with(
+                true,
+                desktop.into(),
+                handed_off,
+                Some(PathBuf::from("unused-display")),
+                |_| {
                     panic!("the registry must not be checked");
-                });
+                },
+            );
             assert_eq!(automatic(&facts).reason, reason);
         }
     }
@@ -217,8 +260,13 @@ mod tests {
     #[test]
     fn failed_registry_connection_uses_rule4() {
         let dir = tempfile::tempdir().unwrap();
-        let facts = detect_with(true, "KDE".into(), false,
-            Some(dir.path().join("missing-display")), bounded_probe);
+        let facts = detect_with(
+            true,
+            "KDE".into(),
+            false,
+            Some(dir.path().join("missing-display")),
+            bounded_probe,
+        );
         assert_eq!(automatic(&facts).reason, "rule4");
     }
 }

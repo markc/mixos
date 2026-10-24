@@ -433,14 +433,18 @@ mod tests {
     fn missing_decorations_default_to_auto_and_explicit_csd_survives_roundtrip() {
         let old: Desktop = serde_json::from_str(r#"{"appearance":{}}"#).unwrap();
         assert_eq!(old.appearance.decorations, "auto");
-        let explicit: Desktop = serde_json::from_str(
-            r#"{"appearance":{"decorations":"csd"}}"#).unwrap();
+        let explicit: Desktop =
+            serde_json::from_str(r#"{"appearance":{"decorations":"csd"}}"#).unwrap();
         assert_eq!(explicit.appearance.decorations, "csd");
         let saved = serde_json::to_value(&explicit).unwrap();
         assert_eq!(saved["appearance"]["decorations"], "csd");
         let loaded: Desktop = serde_json::from_value(saved).unwrap();
         assert_eq!(loaded.appearance.decorations, "csd");
-        assert!(serde_json::to_value(&old).unwrap()["appearance"].get("decorations").is_none());
+        assert!(
+            serde_json::to_value(&old).unwrap()["appearance"]
+                .get("decorations")
+                .is_none()
+        );
     }
     #[test]
     fn revisions_keep_full_precision_and_refuse_noncanonical_input() {

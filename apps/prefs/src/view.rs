@@ -12,7 +12,7 @@
 //! sets the session's look through settingsd, each change at once. App
 //! Settings holds per-application settings, Email first (`view/email.rs`).
 use crate::{label, label_with};
-use design::{CaptionSide, Contrast, RequestedDecorations as Decorations, Mode, Scheme, Style};
+use design::{CaptionSide, Contrast, Mode, RequestedDecorations as Decorations, Scheme, Style};
 use egui::{Align, Color32, Layout, RichText, ScrollArea, Ui};
 use preferences::appearance::{Availability as Settings, Axis};
 use preferences::terminal::{
@@ -992,26 +992,35 @@ fn decoration_controls(ui: &mut Ui, look: Look, events: &mut Vec<UiEvent>) {
             .map(|d| (d, label(&format!("look-titlebar-{}", d.name()))))
             .collect();
         if let Some(decorations) = choices(ui, look.decorations, &frames) {
-            events.push(UiEvent::Look(Look { decorations, ..look }));
+            events.push(UiEvent::Look(Look {
+                decorations,
+                ..look
+            }));
         }
         if look.decorations == Decorations::Auto {
             let resolved = look.decoration_resolution();
-            ui.label(label(&format!("look-titlebar-resolved-{}", resolved.mode.name())));
+            ui.label(label(&format!(
+                "look-titlebar-resolved-{}",
+                resolved.mode.name()
+            )));
         }
     });
     ui.end_row();
 
     // The system's title bar places its own buttons.
     panel::section_label(ui, &label("look-captions"));
-    ui.add_enabled_ui(look.decoration_resolution().mode == design::Decorations::Client, |ui| {
-        let sides: Vec<_> = [CaptionSide::Left, CaptionSide::Right]
-            .into_iter()
-            .map(|c| (c, label(&format!("look-captions-{}", c.name()))))
-            .collect();
-        if let Some(captions) = choices(ui, look.captions, &sides) {
-            events.push(UiEvent::Look(Look { captions, ..look }));
-        }
-    });
+    ui.add_enabled_ui(
+        look.decoration_resolution().mode == design::Decorations::Client,
+        |ui| {
+            let sides: Vec<_> = [CaptionSide::Left, CaptionSide::Right]
+                .into_iter()
+                .map(|c| (c, label(&format!("look-captions-{}", c.name()))))
+                .collect();
+            if let Some(captions) = choices(ui, look.captions, &sides) {
+                events.push(UiEvent::Look(Look { captions, ..look }));
+            }
+        },
+    );
     ui.end_row();
 }
 
@@ -1178,29 +1187,51 @@ mod numeric_tests {
             ("KDE", "Currently drawn by the system", false),
             ("MixOS", "Currently drawn by the app", true),
         ] {
-            let resolver = Arc::new(Resolver::new(move || SessionFacts {
-                wayland: true, desktops: desktop.into(), decoration_global: Some(true),
-            }, || None, |_| {}));
+            let resolver = Arc::new(Resolver::new(
+                move || SessionFacts {
+                    wayland: true,
+                    desktops: desktop.into(),
+                    decoration_global: Some(true),
+                },
+                || None,
+                |_| {},
+            ));
             with_resolver(resolver, || {
                 let mut h = Harness::builder()
                     .with_size(egui::vec2(720.0, 240.0))
-                    .build_ui_state(|ui, look: &mut Look| {
-                        let mut events = Vec::new();
-                        egui::Grid::new("test-decorations").num_columns(2).show(ui, |ui| {
-                            decoration_controls(ui, *look, &mut events);
-                        });
-                        for event in events {
-                            if let UiEvent::Look(next) = event { *look = next; }
-                        }
-                    }, Look { decorations: Decorations::Client, ..Look::default() });
+                    .build_ui_state(
+                        |ui, look: &mut Look| {
+                            let mut events = Vec::new();
+                            egui::Grid::new("test-decorations")
+                                .num_columns(2)
+                                .show(ui, |ui| {
+                                    decoration_controls(ui, *look, &mut events);
+                                });
+                            for event in events {
+                                if let UiEvent::Look(next) = event {
+                                    *look = next;
+                                }
+                            }
+                        },
+                        Look {
+                            decorations: Decorations::Client,
+                            ..Look::default()
+                        },
+                    );
                 toolkit::install(&h.ctx, &toolkit::Theme::embedded());
                 h.run();
                 h.get_by_label("Automatic").click();
                 h.run();
                 assert_eq!(h.state().decorations, Decorations::Auto);
                 h.get_by_label(expected);
-                assert_eq!(h.get_by_label("Left").accesskit_node().is_disabled(), !enabled);
-                assert_eq!(h.get_by_label("Right").accesskit_node().is_disabled(), !enabled);
+                assert_eq!(
+                    h.get_by_label("Left").accesskit_node().is_disabled(),
+                    !enabled
+                );
+                assert_eq!(
+                    h.get_by_label("Right").accesskit_node().is_disabled(),
+                    !enabled
+                );
             });
         }
     }

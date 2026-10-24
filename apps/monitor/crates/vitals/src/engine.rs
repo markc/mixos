@@ -10,7 +10,7 @@
 //! a late answer from a node Monitor stopped watching never lands.
 use crate::history::{Rings, SEEDED, WINDOW};
 use crate::model::{self, APP_ID, Column, Processes, Snapshot, Tab};
-use design::{CaptionSide, RequestedDecorations as Decorations, Mode, Scheme, Style};
+use design::{CaptionSide, Mode, RequestedDecorations as Decorations, Scheme, Style};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
@@ -995,14 +995,25 @@ mod tests {
     #[test]
     fn bus_auto_first_detects_once_with_bounded_reply() {
         use design::decorations::{Resolver, SessionFacts, with_resolver};
-        use std::sync::{Arc, atomic::{AtomicUsize, Ordering}};
+        use std::sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        };
         use std::time::{Duration, Instant};
         let calls = Arc::new(AtomicUsize::new(0));
         let counted = calls.clone();
-        let resolver = Arc::new(Resolver::new(move || {
-            counted.fetch_add(1, Ordering::Relaxed);
-            SessionFacts { wayland: true, desktops: "KDE".into(), decoration_global: Some(true) }
-        }, || None, |_| {}));
+        let resolver = Arc::new(Resolver::new(
+            move || {
+                counted.fetch_add(1, Ordering::Relaxed);
+                SessionFacts {
+                    wayland: true,
+                    desktops: "KDE".into(),
+                    decoration_global: Some(true),
+                }
+            },
+            || None,
+            |_| {},
+        ));
         with_resolver(resolver, || {
             let mut e = Engine::new(label);
             e.take_effects();
@@ -1013,13 +1024,24 @@ mod tests {
                 (4, "ssd", "ssd", "choice"),
             ] {
                 let start = Instant::now();
-                e.command(id, "monitor.theme", &json!({"decorations":request}).to_string());
+                e.command(
+                    id,
+                    "monitor.theme",
+                    &json!({"decorations":request}).to_string(),
+                );
                 assert!(start.elapsed() < Duration::from_millis(250));
                 let replies = e.take_effects();
-                let body = replies.iter().find_map(|effect| match effect {
-                    Effect::Reply { id: reply, rc: 0, body } if *reply == id => Some(body),
-                    _ => None,
-                }).expect("successful theme reply");
+                let body = replies
+                    .iter()
+                    .find_map(|effect| match effect {
+                        Effect::Reply {
+                            id: reply,
+                            rc: 0,
+                            body,
+                        } if *reply == id => Some(body),
+                        _ => None,
+                    })
+                    .expect("successful theme reply");
                 assert_eq!(body["decorations"], request);
                 assert_eq!(body["effective"]["decorations"], effective);
                 assert_eq!(body["effective"]["decorations_reason"], reason);
@@ -1038,8 +1060,13 @@ mod tests {
         use design::decorations::{Resolver, SessionFacts, with_resolver};
         use std::sync::Arc;
         let resolver = Arc::new(Resolver::new(
-            || SessionFacts { wayland: false, desktops: String::new(), decoration_global: None },
-            || Some("csd".into()), |_| {},
+            || SessionFacts {
+                wayland: false,
+                desktops: String::new(),
+                decoration_global: None,
+            },
+            || Some("csd".into()),
+            |_| {},
         ));
         with_resolver(resolver, || {
             let mut e = Engine::new(label);
@@ -1049,7 +1076,6 @@ mod tests {
             assert_eq!(body["effective"]["decorations_reason"], "override");
         });
     }
-
 
     fn label(key: &str) -> String {
         key.to_owned()

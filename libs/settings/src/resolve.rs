@@ -886,15 +886,25 @@ mod tests {
 
     #[test]
     fn decorations_schema_accepts_auto_and_refuses_unknown_values() {
-        assert_eq!(describe()["fields"]["appearance.decorations"]["enum"],
-            json!(["auto", "csd", "ssd"]));
+        assert_eq!(
+            describe()["fields"]["appearance.decorations"]["enum"],
+            json!(["auto", "csd", "ssd"])
+        );
         for name in ["auto", "csd", "ssd"] {
-            let next = patch(&Desktop::default(),
-                &BTreeMap::from([("appearance.decorations".into(), json!(name))]), &[]).unwrap();
+            let next = patch(
+                &Desktop::default(),
+                &BTreeMap::from([("appearance.decorations".into(), json!(name))]),
+                &[],
+            )
+            .unwrap();
             assert_eq!(resolve(&next).unwrap()["desktop"].decorations, name);
         }
-        let bad = patch(&Desktop::default(),
-            &BTreeMap::from([("appearance.decorations".into(), json!("bogus"))]), &[]).unwrap();
+        let bad = patch(
+            &Desktop::default(),
+            &BTreeMap::from([("appearance.decorations".into(), json!("bogus"))]),
+            &[],
+        )
+        .unwrap();
         let errors = resolve(&bad).unwrap_err();
         assert_eq!(errors[0].path, "appearance.decorations");
         assert_eq!(errors[0].code, "validation_failed");

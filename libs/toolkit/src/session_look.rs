@@ -10,7 +10,9 @@
 //! the app's session design stands. `theme_or` still applies the independent
 //! framing request, so a newer or custom desktop never breaks an older app.
 use crate::theme::{Overlay, Theme};
-use design::{CaptionSide, Contrast, RequestedDecorations as Decorations, DesignContext, Mode, Scheme, Style};
+use design::{
+    CaptionSide, Contrast, DesignContext, Mode, RequestedDecorations as Decorations, Scheme, Style,
+};
 use settings::model::Appearance;
 
 /// The theme `appearance` describes, or `None` when this build cannot draw

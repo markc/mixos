@@ -21,7 +21,7 @@
 
 use crate::command::{Place, Registry};
 pub use crate::theme::Choice;
-use design::{CaptionSide, RequestedDecorations as Decorations, Mode, Scheme, Style};
+use design::{CaptionSide, Mode, RequestedDecorations as Decorations, Scheme, Style};
 
 /// The submenu's label key.
 pub const SUBMENU: &str = "toolkit-theme";
@@ -420,15 +420,30 @@ mod tests {
     fn automatic_command_keeps_the_request_and_resolves_the_drawn_mode() {
         use design::decorations::{Resolver, SessionFacts, with_resolver};
         use std::sync::Arc;
-        let resolver = Arc::new(Resolver::new(|| SessionFacts {
-            wayland: true, desktops: "KDE".into(), decoration_global: Some(true),
-        }, || None, |_| {}));
+        let resolver = Arc::new(Resolver::new(
+            || SessionFacts {
+                wayland: true,
+                desktops: "KDE".into(),
+                decoration_global: Some(true),
+            },
+            || None,
+            |_| {},
+        ));
         with_resolver(resolver, || {
             let r = registry();
             let mut app = App::default();
-            r.execute("view.decorations.auto", &mut app, crate::command::Origin::Bus).unwrap();
+            r.execute(
+                "view.decorations.auto",
+                &mut app,
+                crate::command::Origin::Bus,
+            )
+            .unwrap();
             assert_eq!(app.choice.decorations, Some(Decorations::Auto));
-            assert!(ticked(&rows(&r, &app)).iter().any(|label| label == "Automatic title bar"));
+            assert!(
+                ticked(&rows(&r, &app))
+                    .iter()
+                    .any(|label| label == "Automatic title bar")
+            );
             let theme = crate::Theme::embedded().with_choice(&app.choice).unwrap();
             assert_eq!(theme.requested_decorations(), Decorations::Auto);
             assert_eq!(theme.decorations(), design::Decorations::Server);

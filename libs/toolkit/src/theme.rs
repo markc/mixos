@@ -20,8 +20,8 @@ use std::path::{Path, PathBuf};
 
 use design::{
     CaptionSide, Contrast, Decorations, DesignCompileResult, DesignContext, DesignDiagnostic,
-    DesignSourceDocument, DesignSourceError, Mode, ResolvedDictionary, ResolvedStyle,
-    ResolvedTypography, RequestedDecorations, Scheme, SourceIdentity, UnstampedResolvedDesign,
+    DesignSourceDocument, DesignSourceError, Mode, RequestedDecorations, ResolvedDictionary,
+    ResolvedStyle, ResolvedTypography, Scheme, SourceIdentity, UnstampedResolvedDesign,
 };
 
 /// The shared theme file, `theme.conf.mix`, in the MixOS etc directory.
@@ -345,7 +345,11 @@ impl Theme {
     }
 
     /// `self` with `decorations` and `captions`.
-    pub fn framed(mut self, decorations: impl Into<RequestedDecorations>, captions: CaptionSide) -> Self {
+    pub fn framed(
+        mut self,
+        decorations: impl Into<RequestedDecorations>,
+        captions: CaptionSide,
+    ) -> Self {
         self.decorations = decorations.into();
         self.captions = captions;
         self
@@ -588,26 +592,52 @@ mod tests {
     #[test]
     fn automatic_selection_survives_theme_merging_and_live_changes() {
         use design::decorations::{Resolver, SessionFacts, with_resolver};
-        use std::sync::{Arc, atomic::{AtomicUsize, Ordering}};
+        use std::sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        };
         let calls = Arc::new(AtomicUsize::new(0));
         let counted = calls.clone();
-        let resolver = Arc::new(Resolver::new(move || {
-            counted.fetch_add(1, Ordering::Relaxed);
-            SessionFacts { wayland: true, desktops: "KDE".into(), decoration_global: Some(true) }
-        }, || None, |_| {}));
+        let resolver = Arc::new(Resolver::new(
+            move || {
+                counted.fetch_add(1, Ordering::Relaxed);
+                SessionFacts {
+                    wayland: true,
+                    desktops: "KDE".into(),
+                    decoration_global: Some(true),
+                }
+            },
+            || None,
+            |_| {},
+        ));
         with_resolver(resolver, || {
             let session = Theme::from_source("test", "decorations: \"auto\"\n").unwrap();
-            let mut choice = Choice { decorations: Some(RequestedDecorations::Client), ..Choice::default() };
-            assert_eq!(session.with_choice(&choice).unwrap().decorations(), Decorations::Client);
+            let mut choice = Choice {
+                decorations: Some(RequestedDecorations::Client),
+                ..Choice::default()
+            };
+            assert_eq!(
+                session.with_choice(&choice).unwrap().decorations(),
+                Decorations::Client
+            );
             assert_eq!(calls.load(Ordering::Relaxed), 0);
             choice.decorations = Some(RequestedDecorations::Auto);
             let automatic = session.with_choice(&choice).unwrap();
-            assert_eq!(automatic.requested_decorations(), RequestedDecorations::Auto);
+            assert_eq!(
+                automatic.requested_decorations(),
+                RequestedDecorations::Auto
+            );
             assert_eq!(automatic.decorations(), Decorations::Server);
             choice.decorations = Some(RequestedDecorations::Client);
-            assert_eq!(session.with_choice(&choice).unwrap().decorations(), Decorations::Client);
+            assert_eq!(
+                session.with_choice(&choice).unwrap().decorations(),
+                Decorations::Client
+            );
             choice.decorations = None;
-            assert_eq!(session.with_choice(&choice).unwrap().decorations(), Decorations::Server);
+            assert_eq!(
+                session.with_choice(&choice).unwrap().decorations(),
+                Decorations::Server
+            );
             assert_eq!(calls.load(Ordering::Relaxed), 1);
         });
     }

@@ -80,7 +80,9 @@ impl Resolver {
         } else {
             let parsed = RequestedDecorations::from_name(&value.to_ascii_lowercase());
             if parsed.is_none() && !self.warned.swap(true, Ordering::Relaxed) {
-                (self.warn)(&format!("Ignoring MIXOS_DECORATIONS={value:?}: expected csd, ssd or auto"));
+                (self.warn)(&format!(
+                    "Ignoring MIXOS_DECORATIONS={value:?}: expected csd, ssd or auto"
+                ));
             }
             parsed
         };
@@ -94,7 +96,11 @@ impl Resolver {
         };
         Resolution {
             mode,
-            reason: if override_mode.is_some() { "override" } else { "choice" },
+            reason: if override_mode.is_some() {
+                "override"
+            } else {
+                "choice"
+            },
         }
     }
 }
@@ -117,7 +123,9 @@ pub fn with_resolver<T>(resolver: Arc<Resolver>, operation: impl FnOnce() -> T) 
     struct Restore(Option<Arc<Resolver>>);
     impl Drop for Restore {
         fn drop(&mut self) {
-            INJECTED.with(|slot| { slot.replace(self.0.take()); });
+            INJECTED.with(|slot| {
+                slot.replace(self.0.take());
+            });
         }
     }
     let _restore = Restore(INJECTED.with(|slot| slot.replace(Some(resolver))));
@@ -132,32 +140,46 @@ pub fn resolve(choice: Option<RequestedDecorations>, session: RequestedDecoratio
     // Headless engines and offscreen UI have no windowing integration. They
     // read neither the environment nor the real session.
     let mode = match choice.unwrap_or(session) {
-        RequestedDecorations::Auto => return automatic(&SessionFacts {
-            wayland: true, desktops: String::new(), decoration_global: None,
-        }),
+        RequestedDecorations::Auto => {
+            return automatic(&SessionFacts {
+                wayland: true,
+                desktops: String::new(),
+                decoration_global: None,
+            });
+        }
         RequestedDecorations::Client => Decorations::Client,
         RequestedDecorations::Server => Decorations::Server,
     };
-    Resolution { mode, reason: "choice" }
+    Resolution {
+        mode,
+        reason: "choice",
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::AtomicUsize;
-    use std::sync::Mutex;
-    use std::time::{Duration, Instant};
     use RequestedDecorations::{Auto, Client, Server};
+    use std::sync::Mutex;
+    use std::sync::atomic::AtomicUsize;
+    use std::time::{Duration, Instant};
 
     fn facts(wayland: bool, desktops: &str, global: Option<bool>) -> SessionFacts {
-        SessionFacts { wayland, desktops: desktops.into(), decoration_global: global }
+        SessionFacts {
+            wayland,
+            desktops: desktops.into(),
+            decoration_global: global,
+        }
     }
 
     #[test]
     fn requested_names_are_closed_and_effective_names_stay_two_valued() {
         assert_eq!(RequestedDecorations::default(), Auto);
         for requested in RequestedDecorations::ALL {
-            assert_eq!(RequestedDecorations::from_name(requested.name()), Some(requested));
+            assert_eq!(
+                RequestedDecorations::from_name(requested.name()),
+                Some(requested)
+            );
         }
         assert_eq!(RequestedDecorations::from_name("bogus"), None);
         assert_eq!(Decorations::from_name("auto"), None);
@@ -168,57 +190,94 @@ mod tests {
     fn automatic_rules_use_the_actual_backend_and_desktop_list() {
         for desktop in ["", "MixOS", "KDE", "ubuntu:GNOME"] {
             for global in [None, Some(false), Some(true)] {
-                assert_eq!(automatic(&facts(false, desktop, global)), Resolution {
-                    mode: Decorations::Server, reason: "rule1",
-                });
+                assert_eq!(
+                    automatic(&facts(false, desktop, global)),
+                    Resolution {
+                        mode: Decorations::Server,
+                        reason: "rule1",
+                    }
+                );
             }
         }
         for desktop in ["MixOS", "foo:mixos", "KDE:MixOS"] {
-            assert_eq!(automatic(&facts(true, desktop, Some(true))), Resolution {
-                mode: Decorations::Client, reason: "rule2",
-            });
+            assert_eq!(
+                automatic(&facts(true, desktop, Some(true))),
+                Resolution {
+                    mode: Decorations::Client,
+                    reason: "rule2",
+                }
+            );
         }
-        assert_eq!(automatic(&facts(true, "KDE", Some(true))), Resolution {
-            mode: Decorations::Server, reason: "rule3",
-        });
+        assert_eq!(
+            automatic(&facts(true, "KDE", Some(true))),
+            Resolution {
+                mode: Decorations::Server,
+                reason: "rule3",
+            }
+        );
         for desktop in ["GNOME", "ubuntu:GNOME"] {
-            assert_eq!(automatic(&facts(true, desktop, Some(false))), Resolution {
-                mode: Decorations::Client, reason: "rule4",
-            });
+            assert_eq!(
+                automatic(&facts(true, desktop, Some(false))),
+                Resolution {
+                    mode: Decorations::Client,
+                    reason: "rule4",
+                }
+            );
         }
     }
 
     #[test]
     fn failed_timed_out_or_skipped_detection_uses_rule4() {
-        assert_eq!(automatic(&facts(true, "KDE", None)), Resolution {
-            mode: Decorations::Client, reason: "rule4",
-        });
+        assert_eq!(
+            automatic(&facts(true, "KDE", None)),
+            Resolution {
+                mode: Decorations::Client,
+                reason: "rule4",
+            }
+        );
     }
 
     #[test]
     fn overrides_accept_case_and_whitespace_including_auto() {
         for value in ["ssd", " SSD ", "\tSsD\n"] {
-            let r = Resolver::new(|| facts(true, "KDE", Some(true)),
-                move || Some(value.into()), |_| {});
-            assert_eq!(r.resolve(None, Client), Resolution {
-                mode: Decorations::Server, reason: "override",
-            });
+            let r = Resolver::new(
+                || facts(true, "KDE", Some(true)),
+                move || Some(value.into()),
+                |_| {},
+            );
+            assert_eq!(
+                r.resolve(None, Client),
+                Resolution {
+                    mode: Decorations::Server,
+                    reason: "override",
+                }
+            );
         }
-        let r = Resolver::new(|| facts(true, "KDE", Some(true)),
-            || Some(" AuTo ".into()), |_| {});
-        assert_eq!(r.resolve(Some(Client), Client), Resolution {
-            mode: Decorations::Server, reason: "rule3",
-        });
+        let r = Resolver::new(
+            || facts(true, "KDE", Some(true)),
+            || Some(" AuTo ".into()),
+            |_| {},
+        );
+        assert_eq!(
+            r.resolve(Some(Client), Client),
+            Resolution {
+                mode: Decorations::Server,
+                reason: "rule3",
+            }
+        );
     }
 
     #[test]
     fn invalid_override_warns_once_and_empty_is_unset() {
         let warnings = Arc::new(Mutex::new(Vec::new()));
         let seen = warnings.clone();
-        let r = Resolver::new(|| facts(true, "KDE", Some(true)),
-            || Some("bogus".into()), move |warning| {
+        let r = Resolver::new(
+            || facts(true, "KDE", Some(true)),
+            || Some("bogus".into()),
+            move |warning| {
                 seen.lock().unwrap().push(warning.to_owned());
-            });
+            },
+        );
         assert_eq!(r.resolve(Some(Server), Client).reason, "choice");
         assert_eq!(r.resolve(None, Client).mode, Decorations::Client);
         let warnings = warnings.lock().unwrap();
@@ -234,10 +293,14 @@ mod tests {
     fn explicit_choices_never_detect_and_runtime_auto_detects_once() {
         let calls = Arc::new(AtomicUsize::new(0));
         let count = calls.clone();
-        let r = Resolver::new(move || {
-            count.fetch_add(1, Ordering::Relaxed);
-            facts(true, "KDE", Some(true))
-        }, || None, |_| {});
+        let r = Resolver::new(
+            move || {
+                count.fetch_add(1, Ordering::Relaxed);
+                facts(true, "KDE", Some(true))
+            },
+            || None,
+            |_| {},
+        );
         for session in [Client, Server] {
             assert_eq!(r.resolve(None, session).reason, "choice");
             assert_eq!(r.resolve(Some(session), Auto).reason, "choice");
@@ -256,17 +319,28 @@ mod tests {
     fn override_keeps_the_choice_and_removal_reveals_it() {
         let variable = Arc::new(Mutex::new(Some("csd".to_owned())));
         let env = variable.clone();
-        let r = Resolver::new(|| facts(true, "KDE", Some(true)),
-            move || env.lock().unwrap().clone(), |_| {});
+        let r = Resolver::new(
+            || facts(true, "KDE", Some(true)),
+            move || env.lock().unwrap().clone(),
+            |_| {},
+        );
         let mut choice = Some(Client);
         assert_eq!(r.resolve(choice, Auto).reason, "override");
         choice = Some(Server);
-        assert_eq!(r.resolve(choice, Auto), Resolution {
-            mode: Decorations::Client, reason: "override",
-        });
+        assert_eq!(
+            r.resolve(choice, Auto),
+            Resolution {
+                mode: Decorations::Client,
+                reason: "override",
+            }
+        );
         *variable.lock().unwrap() = None;
-        assert_eq!(r.resolve(choice, Auto), Resolution {
-            mode: Decorations::Server, reason: "choice",
-        });
+        assert_eq!(
+            r.resolve(choice, Auto),
+            Resolution {
+                mode: Decorations::Server,
+                reason: "choice",
+            }
+        );
     }
 }

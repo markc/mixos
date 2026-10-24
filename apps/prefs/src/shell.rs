@@ -515,7 +515,11 @@ impl Shell {
     /// What the window is drawn in, under its own choice: the Appearance
     /// draft or settingsd's look (embedded design), else the session theme.
     fn wanted(&self) -> Installed {
-        (self.choice(), self.engine.look.shown(), self.engine.look.custom_source)
+        (
+            self.choice(),
+            self.engine.look.shown(),
+            self.engine.look.custom_source,
+        )
     }
 
     /// Install the base theme with the window's choice over it. Neither the
