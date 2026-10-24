@@ -9,12 +9,13 @@ pub const TRAFFIC_BYTES: usize = 8 * 1024 * 1024;
 
 #[derive(Default)]
 pub struct Workshop {
+    pub pending: usize,
     pub catalogues: BTreeMap<String, Value>,
     pub selected: Option<(String, String)>,
     pub document: Value,
     pub message: String,
     pub traffic: VecDeque<Value>,
-    bytes: usize,
+    pub(crate) bytes: usize,
     pub dropped: u64,
     pub observe: String,
     pub subscription: Option<String>,
@@ -88,6 +89,7 @@ impl Engine {
     }
 
     pub fn queue_workshop(&mut self, operation: &str, args: Value, reply: Option<u64>) {
+        self.workshop.pending += 1;
         self.push_workshop(Effect::Workshop { operation: operation.into(), args, reply });
     }
 
@@ -108,6 +110,10 @@ impl Engine {
         }
         if verb == "workshop.observe" || verb == "workshop.macros.open"
             || verb.strip_prefix("workshop.macros.").is_some_and(|suffix| macros::verbs::SUFFIXES.contains(&suffix)) {
+            if self.quitting {
+                self.push_workshop(Effect::Reply { id, rc: 10, body: json!({"error_code":"BUSY","message":"Workshop is closing"}) });
+                return true;
+            }
             self.queue_workshop(verb.strip_prefix("workshop.").unwrap_or(verb), args.clone(), Some(id));
             return true;
         }

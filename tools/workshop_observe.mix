@@ -1,0 +1,16 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Run as a native citizen: mix --serve tools/workshop_observe.mix --name workshop-probe
+-- A capability probe, not a configuration writer. It always closes its stream.
+send noded noded.ping timeout=5
+if $rc != 0 or type($result) != "map" or $result.extensions.observe == nil then
+  raise("UNAVAILABLE", "noded.ping does not advertise extensions.observe")
+end
+print(json_encode({observe: $result.extensions.observe}))
+send noded noded.observe.start body="redacted" filter={verbs:["noded.ping"]} capacity=64 timeout=5
+if $rc != 0 then raise("UNAVAILABLE", "observe probe refused: " .. to_string($result)) end
+$subscription_id = $result.subscription_id
+if type($subscription_id) != "string" then raise("INVALID_REPLY", "observe start omitted subscription_id") end
+send noded noded.observe.stop subscription_id=$subscription_id timeout=5
+if $rc != 0 then raise("UNAVAILABLE", "observe probe stop failed") end
+print(json_encode({probe: "passed", subscription_id: $subscription_id}))
+exit(0)

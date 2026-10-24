@@ -425,22 +425,25 @@ fn macro_details(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
         if ui.button(label("macro-save")).clicked() {
             events.push(UiEvent::Macro("macros.put".into(), serde_json::json!({"text":doc.contents()})));
         }
-        if let Some(targets) = entry.and_then(|entry| entry.get("targets")).filter(|targets| !targets.is_null()) {
+        if app == "global" {
+            let targets = entry.and_then(|entry| entry.get("targets")).unwrap_or(&serde_json::Value::Null);
             let apps: Vec<String> = if targets == "any" {
                 engine.workshop.catalogues.iter().filter(|(app, c)| *app != "global" && c["running"] == true).map(|(app, _)| app.clone()).collect()
-            } else { targets.as_array().into_iter().flatten().filter_map(|app| app.as_str().map(str::to_owned)).collect() };
+            } else if targets.is_null() { engine.workshop.catalogues.keys().filter(|app| *app != "global").cloned().collect() }
+            else { targets.as_array().into_iter().flatten().filter_map(|app| app.as_str().map(str::to_owned)).collect() };
             egui::ComboBox::from_id_salt("macro-target").selected_text(if target.is_empty() { label("macro-target") } else { target.clone() }).show_ui(ui, |ui| {
                 for app in apps { ui.selectable_value(&mut target, app.clone(), app); }
             });
         }
         if ui.button(label("macro-run")).clicked() {
-            let args = if target.is_empty() { serde_json::json!({}) } else { serde_json::json!({"target":target}) };
+            let has_target = entry.is_some_and(|entry| !entry["targets"].is_null());
+            let args = if target.is_empty() || !has_target { serde_json::json!({}) } else { serde_json::json!({"target":target}) };
             events.push(UiEvent::Macro("macros.run".into(), args));
         }
         if ui.button(label("macro-stop")).clicked() { events.push(UiEvent::Macro("macros.stop".into(), serde_json::json!({}))); }
         for (operation, label_key, args) in [
             ("macros.copy", "macro-copy", serde_json::json!({})),
-            ("macros.move", "macro-move", serde_json::json!({"tier":if app == "global" { "user-app" } else { "user-global" }})),
+            ("macros.move", "macro-move", if app == "global" { serde_json::json!({"tier":"user-app","destination":target}) } else { serde_json::json!({"tier":"user-global"}) }),
             ("macros.ced", "macro-ced", serde_json::json!({})),
             ("macros.dopus", "macro-dopus", serde_json::json!({})),
         ] {

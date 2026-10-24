@@ -16,6 +16,38 @@ use crate::verbs::{self, Reply};
 use std::sync::mpsc;
 use std::time::Duration;
 
+#[test]
+fn management_verbs_refresh_tiers_and_refuse_invalid_mutations() {
+    let (_dir, roots, session) = fixture();
+    session.create("Managed").unwrap();
+    let ask = |suffix, body| verbs::handle(&session, suffix, &body).wait();
+    assert_eq!(ask("get", json!({"id":"managed"})).unwrap()["tier"], "user-app");
+    ask("put", json!({"id":"managed","text":"-- title: Renamed\nprint(1)\n"})).unwrap();
+    assert_eq!(ask("list", json!({})).unwrap()["macros"][0]["title"], "Renamed");
+    assert_eq!(ask("get", json!({"id":"missing"})).unwrap_err().code, "NOT_FOUND");
+    assert_eq!(ask("put", json!({"id":"managed","text":"x".repeat(256*1024+1)})).unwrap_err().code, "INVALID_ARGUMENT");
+    for (suffix, body) in [
+        ("get", json!({})), ("get", json!({"id":true})),
+        ("put", json!({"id":"managed"})), ("remove", json!({"id":"managed","extra":0})),
+        ("move", json!({"id":"managed","tier":"builtin-app"})),
+    ] { assert_eq!(ask(suffix, body).unwrap_err().code, "INVALID_ARGUMENT"); }
+    roots.create("fixture", Tier::UserGlobal, "managed", "Clash").unwrap();
+    assert_eq!(ask("move", json!({"id":"managed","tier":"user-global"})).unwrap_err().code, "ALREADY_EXISTS");
+    std::fs::remove_file(roots.user.join("managed.mix")).unwrap();
+    ask("move", json!({"id":"managed","tier":"user-global"})).unwrap();
+    assert!(ask("list", json!({})).unwrap()["macros"].as_array().unwrap().is_empty());
+    let global = Session::with_roots("workshop", Some(roots.clone()));
+    assert_eq!(verbs::handle(&global,"get",&json!({"id":"managed"})).wait().unwrap()["tier"], "user-global");
+    verbs::handle(&global,"remove",&json!({"id":"managed"})).wait().unwrap();
+    assert!(!roots.user.join("managed.mix").exists());
+    std::fs::create_dir_all(roots.builtin.join("fixture")).unwrap();
+    std::fs::write(roots.builtin.join("fixture/builtin.mix"), "-- title: Builtin\n").unwrap();
+    assert!(ask("get", json!({"id":"builtin"})).is_ok());
+    for (suffix, body) in [("put", json!({"id":"builtin","text":"x"})), ("remove",json!({"id":"builtin"})), ("move",json!({"id":"builtin","tier":"user-global"}))] {
+        assert_eq!(ask(suffix, body).unwrap_err().code, "DENIED");
+    }
+}
+
 fn fixture() -> (tempfile::TempDir, Roots, Session) {
     let dir = tempfile::tempdir().unwrap();
     let roots = Roots {

@@ -5,6 +5,16 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 #[test]
+fn put_has_a_separate_larger_envelope_cap() {
+    let oversized = " ".repeat(272 * 1024 + 1);
+    let (_, body) = citizen::macros::answer_body(citizen::macros::request("put-limit-test", "put", &oversized).wait());
+    assert_eq!(body["message"], format!("request exceeds {} bytes", 272 * 1024));
+    let text = serde_json::json!({"id":"missing","text":"x".repeat(9000)}).to_string();
+    let (_, body) = citizen::macros::answer_body(citizen::macros::request("put-limit-test", "put", &text).wait());
+    assert_ne!(body["message"], "request exceeds 8192 bytes");
+}
+
+#[test]
 fn macro_body_limit_is_checked_before_parsing_and_accepts_the_boundary() {
     for body in [
         " ".repeat(8193),

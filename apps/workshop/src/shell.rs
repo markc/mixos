@@ -329,6 +329,7 @@ impl Shell {
     fn pump(&mut self) {
         while let Ok(event) = self.rx.try_recv() {
             if let Event::Workshop(operation, args, reply, result) = event {
+                self.engine.workshop.pending = self.engine.workshop.pending.saturating_sub(1);
                 let body = result.unwrap_or_else(|message| json!({"error_code":"UNAVAILABLE","message":message}));
                 let refused = body.get("error_code").is_some();
                 if operation == "catalogues" && !refused {
@@ -352,11 +353,12 @@ impl Shell {
                     self.engine.workshop.subscription = body["subscription_id"].as_str().map(str::to_owned);
                 } else {
                     self.engine.workshop.message = body.to_string();
-                    if !refused && matches!(operation.as_str(), "macros.put"|"macros.move"|"macros.remove"|"macros.new") {
+                    if !refused && matches!(operation.as_str(), "macros.put"|"macros.move"|"macros.remove"|"macros.new"|"macros.copy") {
                         self.engine.queue_workshop("catalogues", json!({}), None);
                     }
                 }
                 if let Some(id) = reply { self.bus.reply(id, if refused { 10 } else { 0 }, body); }
+                if self.engine.quitting { self.engine.quit(); }
                 self.settle();
                 continue;
             }
@@ -456,8 +458,10 @@ impl Shell {
         match effect {
             Effect::Workshop { operation, args, reply } => {
                 let running = self.engine.snapshot.services.iter().filter_map(|(service, verbs)| {
-                    verbs.as_ref().ok()?.iter().any(|verb| verb.name.ends_with(".macros.list"))
-                        .then(|| service.clone()).filter(|name| !name.ends_with(".bus") && name != "workshop" && name != self.bus.service())
+                    if service.ends_with(".bus") || service == self.bus.service() { return None; }
+                    let app = verbs.as_ref().ok()?.iter().find_map(|verb| verb.name.strip_suffix(".macros.list"))?;
+                    if app == "workshop" { return None; }
+                    Some((app.to_owned(), service.clone()))
                 }).collect();
                 let bus = self.bus.clone();
                 self.spawn(async move {

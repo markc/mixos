@@ -9,6 +9,39 @@ use std::time::Duration;
 const TOPIC: &str = "pubtest.command.executed";
 
 #[test]
+fn runtime_subscription_delivers_bodies_and_unsubscribe_stops_delivery() {
+    use futures::StreamExt;
+    let broker = test_broker::Broker::start();
+    let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+    let (watcher, mut deliveries) = citizen::start("runtime-watch", "runtime-watch", &broker.url).unwrap();
+    let (publisher, _) = citizen::start("runtime-pub", "runtime-pub", &broker.url).unwrap();
+    runtime.block_on(async {
+        assert!(watcher.subscribe("").await.is_err());
+        watcher.subscribe(TOPIC).await.unwrap();
+        publisher.publish(TOPIC, vec![json!({"seq":1})], 0);
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                if matches!(deliveries.next().await, Some(citizen::Delivery::Topic(topic)) if topic == TOPIC) { break; }
+            }
+        }).await.unwrap();
+        let rows = watcher.take_topic_events();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(serde_json::from_str::<Value>(rows[0]["body"].as_str().unwrap()).unwrap()["seq"], 1);
+        watcher.unsubscribe(TOPIC).await.unwrap();
+        publisher.publish(TOPIC, vec![json!({"seq":2})], 0);
+        let next = tokio::time::timeout(Duration::from_millis(200), async {
+            loop {
+                if matches!(deliveries.next().await, Some(citizen::Delivery::Topic(topic)) if topic == TOPIC) { break; }
+            }
+        }).await;
+        assert!(next.is_err());
+        assert!(watcher.take_topic_events().is_empty());
+    });
+    watcher.quit(); publisher.quit();
+    watcher.wait_done().unwrap(); publisher.wait_done().unwrap();
+}
+
+#[test]
 fn published_events_reach_a_subscriber_in_order() {
     let broker = test_broker::Broker::start();
     let runtime = tokio::runtime::Builder::new_current_thread()

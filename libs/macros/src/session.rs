@@ -157,8 +157,12 @@ impl Session {
                     Some("user-app") => Tier::UserApp,
                     _ => return Err(Refusal::new("INVALID_ARGUMENT", "expected user-global or user-app")),
                 };
-                let app = self.0.lock().unwrap().app.clone();
-                roots.move_to(entry, tier, &app).map_err(storage_error)?
+                let owner = self.0.lock().unwrap().app.clone();
+                let app = body["destination"].as_str().unwrap_or(&owner);
+                if tier == Tier::UserApp && app == "workshop" {
+                    return Err(Refusal::new("INVALID_ARGUMENT", "choose a destination app"));
+                }
+                roots.move_to(entry, tier, app).map_err(storage_error)?
             }
             _ => return Err(Refusal::new("INVALID_ARGUMENT", "unknown management operation")),
         };

@@ -85,7 +85,7 @@ pub fn handle(session: &Session, suffix: &str, body: &Value) -> Reply {
             "run" => (&["id"], &["id", "target"]),
             "get" | "remove" => (&["id"], &["id"]),
             "put" => (&["id", "text"], &["id", "text"]),
-            "move" => (&["id", "tier"], &["id", "tier"]),
+            "move" => (&["id", "tier"], &["id", "tier", "destination"]),
             "new" => (&["title"], &["title"]),
             _ => (&[], &[]),
         };

@@ -308,7 +308,7 @@ impl Engine {
 
     /// Discovery, a call or a window activation is in flight.
     pub fn busy(&self) -> bool {
-        self.discovery.is_some() || self.call.is_some() || !self.activations.is_empty()
+        self.workshop.pending > 0 || self.discovery.is_some() || self.call.is_some() || !self.activations.is_empty()
     }
 
     pub fn calling(&self) -> bool {

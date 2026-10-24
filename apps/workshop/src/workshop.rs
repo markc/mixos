@@ -2,9 +2,9 @@
 //! Workshop effects use citizen's existing connection and the shared macro Session.
 use inspector::bus::Handle;
 use serde_json::{Value, json};
-use std::collections::BTreeSet;
+use std::collections::BTreeMap;
 
-pub async fn perform(bus: Handle, operation: &str, mut args: Value, running: BTreeSet<String>) -> Result<Value, String> {
+pub async fn perform(bus: Handle, operation: &str, mut args: Value, running: BTreeMap<String, String>) -> Result<Value, String> {
     if operation == "catalogues" {
         let local = tokio::task::spawn_blocking(|| {
             let roots = macros::Roots::resolve().ok_or("macro roots unavailable")?;
@@ -23,10 +23,10 @@ pub async fn perform(bus: Handle, operation: &str, mut args: Value, running: BTr
             Ok::<_, String>(catalogues)
         }).await.map_err(|error| error.to_string())??;
         let mut catalogues = local;
-        for app in &running {
-            bus.subscribe(&format!("{app}.command.executed")).await?;
-            bus.subscribe(&format!("{app}.macros.finished")).await?;
-            let reply = bus.call(app, &format!("{app}.macros.list"), json!({})).await?;
+        for (app, service) in &running {
+            bus.subscribe(&format!("{service}.command.executed")).await?;
+            bus.subscribe(&format!("{service}.macros.finished")).await?;
+            let reply = bus.call(service, &format!("{app}.macros.list"), json!({})).await?;
             if reply.rc == 0 {
                 let mut list: Value = serde_json::from_str(&reply.body).map_err(|e| e.to_string())?;
                 list["running"] = json!(true);
@@ -56,10 +56,37 @@ pub async fn perform(bus: Handle, operation: &str, mut args: Value, running: BTr
     }
     let suffix = operation.strip_prefix("macros.").unwrap_or(operation).to_owned();
     if suffix == "open" && args["id"].is_null() { return Ok(json!({"branch":app})); }
+    if matches!(suffix.as_str(), "copy"|"ced"|"dopus") {
+        let owner = if app == "global" { "workshop" } else { &app }.to_owned();
+        let id = args["id"].as_str().unwrap_or_default().to_owned();
+        let operation = suffix.clone();
+        let result = tokio::task::spawn_blocking(move || {
+            let session = macros::Session::with_roots(&owner, macros::Roots::resolve());
+            let catalogue = session.reload().map_err(|e| e.to_string())?;
+            let entry = catalogue.entries.iter().find(|entry| entry.id == id).ok_or("unknown macro id")?;
+            let roots = session.roots().ok_or("macro roots unavailable")?;
+            if operation == "copy" {
+                let path = roots.copy_to_user(&owner, entry).map_err(|e| e.to_string())?;
+                return Ok::<_, String>(json!({"path":path,"changed":true}));
+            }
+            let program = if operation == "ced" { "/opt/mixos/bin/ced" } else { "/opt/mixos/bin/dopus" };
+            let path = if operation == "ced" { entry.path.as_path() } else { entry.path.parent().ok_or("macro has no parent")? };
+            let mut child = std::process::Command::new(program).arg(path)
+                .stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null())
+                .spawn().map_err(|e| e.to_string())?;
+            std::thread::spawn(move || { let _ = child.wait(); });
+            Ok(json!({"opened":true}))
+        }).await.map_err(|e| e.to_string())??;
+        if suffix == "copy" {
+            if let Some(service) = running.get(&app) { let _ = bus.call(service, &format!("{app}.macros.reload"), json!({})).await; }
+            else if app == "global" { macros::Session::for_app("workshop").reload().map_err(|e| e.to_string())?; }
+        }
+        return Ok(result);
+    }
     if let Some(object) = args.as_object_mut() { object.remove("app"); }
     let suffix = if suffix == "open" { "get" } else { &suffix };
-    if app != "global" && running.contains(&app) {
-        let reply = bus.call(&app, &format!("{app}.macros.{suffix}"), args).await?;
+    if app != "global" && running.contains_key(&app) {
+        let reply = bus.call(&running[&app], &format!("{app}.macros.{suffix}"), args).await?;
         return serde_json::from_str(&reply.body).map_err(|e| format!("{}: {e}", reply.body));
     }
     if app != "global" && matches!(suffix, "run"|"stop"|"output"|"status") {

@@ -274,7 +274,8 @@ fn _write_owned_config($spec)
   $noded_cfg = {port: $spec.port, admission: "off", unix_socket: $endpoint}
   if $spec.mesh_open != nil then $noded_cfg["mesh_open"] = $spec.mesh_open end
   write_file($spec.conf, json_encode({node: $spec.name, wg_ip: $spec.wg_ip,
-    mesh: $spec.name .. ".invalid", noded: $noded_cfg}))
+    mesh: $spec.name .. ".invalid", noded: $noded_cfg,
+    observe: {allowed_services: ["workshop*"]}}))
   $serve = [$spec.noded, "serve", "--listen", $spec.listen_ip .. ":" .. to_string($spec.port),
     "--node", $spec.name, "--no-monitor", "--no-log"]
   if len($spec.peers) > 0 then
