@@ -10,8 +10,8 @@ use decor::{
     layout::{ChromeStyle, DecoFontFamily, DecoFontWeight},
 };
 use design::{
-    CaptionSide, Contrast, Decorations, DesignContext, Mode, Scheme, Style, TypographyGeneric,
-    TypographyRole,
+    CaptionSide, Contrast, DesignContext, Mode, RequestedDecorations, Scheme, Style,
+    TypographyGeneric, TypographyRole,
 };
 use settings::{Diagnostic, Snapshot};
 use std::sync::Arc;
@@ -45,7 +45,7 @@ fn theme_of(snapshot: &Snapshot) -> Result<Theme, Diagnostic> {
             "Snapshot has no desktop context",
         )
     })?;
-    let decorations = Decorations::from_name(&effective.decorations)
+    let decorations = RequestedDecorations::from_name(&effective.decorations)
         .ok_or_else(|| unsupported("appearance.decorations", "Unknown decorations"))?;
     let captions = CaptionSide::from_name(&effective.caption_side)
         .ok_or_else(|| unsupported("appearance.caption_side", "Unknown caption side"))?;
