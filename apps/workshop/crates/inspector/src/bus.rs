@@ -48,20 +48,24 @@ async fn json_call(probe: &Probe, service: &str, verb: &str) -> Result<Value, St
     // Queue outside the per-call deadline. The permit stays with the native
     // request even if a description phase abandons its answer: cancellation
     // must not let replacement calls overrun citizen's transport capacity.
-    let permit = probe.permits.clone().acquire_owned().await.map_err(|e| e.to_string())?;
+    let permit = probe
+        .permits
+        .clone()
+        .acquire_owned()
+        .await
+        .map_err(|e| e.to_string())?;
     let (handle, target, command) = (probe.handle.clone(), service.to_owned(), verb.to_owned());
     let request = tokio::spawn(async move {
         let _permit = permit;
-        handle.raw_within(&target, &command, String::new(), DISCOVERY_CALL_BUDGET).await
+        handle
+            .raw_within(&target, &command, String::new(), DISCOVERY_CALL_BUDGET)
+            .await
     });
-    let reply = tokio::time::timeout(
-        DISCOVERY_CALL_BUDGET,
-        request,
-    )
-    .await
-    .map_err(|_| format!("{service} {verb}: deadline exceeded (3 s)"))?
-    .map_err(|e| e.to_string())?
-    .map_err(|e| e.to_string())?;
+    let reply = tokio::time::timeout(DISCOVERY_CALL_BUDGET, request)
+        .await
+        .map_err(|_| format!("{service} {verb}: deadline exceeded (3 s)"))?
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())?;
     if reply.rc >= 10 {
         return Err(format!(
             "rc = {}: {} {}",
@@ -93,8 +97,10 @@ pub const DISCOVERY_CONCURRENCY: usize = 8;
 pub const LOCAL_CALL_CONCURRENCY: usize = 2;
 pub const REMOTE_CALL_CONCURRENCY: usize = 6;
 // Shared across refresh generations, including abandoned description reads.
-static LOCAL_PERMITS: LazyLock<Arc<tokio::sync::Semaphore>> = LazyLock::new(|| Arc::new(tokio::sync::Semaphore::new(LOCAL_CALL_CONCURRENCY)));
-static REMOTE_PERMITS: LazyLock<Arc<tokio::sync::Semaphore>> = LazyLock::new(|| Arc::new(tokio::sync::Semaphore::new(REMOTE_CALL_CONCURRENCY)));
+static LOCAL_PERMITS: LazyLock<Arc<tokio::sync::Semaphore>> =
+    LazyLock::new(|| Arc::new(tokio::sync::Semaphore::new(LOCAL_CALL_CONCURRENCY)));
+static REMOTE_PERMITS: LazyLock<Arc<tokio::sync::Semaphore>> =
+    LazyLock::new(|| Arc::new(tokio::sync::Semaphore::new(REMOTE_CALL_CONCURRENCY)));
 
 async fn node_snapshot(handle: &Probe, name: String, local: bool) -> crate::model::Snapshot {
     use crate::model::{Node, Snapshot};
@@ -207,8 +213,14 @@ pub async fn discover_incremental(
     use crate::model::{Progress, Snapshot};
     use futures::{StreamExt, stream};
     let (tx, mut rx) = futures::channel::mpsc::unbounded();
-    let local_probe = Probe { handle: handle.clone(), permits: LOCAL_PERMITS.clone() };
-    let handle = Probe { handle, permits: REMOTE_PERMITS.clone() };
+    let local_probe = Probe {
+        handle: handle.clone(),
+        permits: LOCAL_PERMITS.clone(),
+    };
+    let handle = Probe {
+        handle,
+        permits: REMOTE_PERMITS.clone(),
+    };
     let local = discover_node(local_probe, "local".into(), true, tx.clone());
     let remote_tx = tx.clone();
     let remote = async move {
