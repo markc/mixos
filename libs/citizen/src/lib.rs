@@ -31,7 +31,8 @@ use std::{
 /// What the connection hands the app.
 #[derive(Debug, Clone)]
 pub enum Delivery {
-    /// A command for the app; answer it once with [`Handle::reply`].
+    /// A command for the app; answer it once with [`Handle::reply`]. Native
+    /// one-way events carry id zero and must not be answered.
     Command {
         id: u64,
         verb: String,
