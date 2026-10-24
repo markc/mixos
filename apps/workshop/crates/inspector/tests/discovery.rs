@@ -27,7 +27,7 @@ async fn slow_node_cannot_hide_local_or_healthy_nodes_and_refresh_retries() {
             }
             let body = match request.get("command").unwrap_or_default() {
                 "noded.info" => json!({"name":"this"}),
-                "noded.list" => json!([]),
+                "noded.list" => json!((0..12).map(|i| json!({"name":format!("service-{i}")})).collect::<Vec<_>>()),
                 "noded.peers" => {
                     json!({"peers":[{"name":"slow"},{"name":"alpha"},{"name":"beta"},{"name":"gamma"}]})
                 }
@@ -87,6 +87,7 @@ async fn slow_node_cannot_hide_local_or_healthy_nodes_and_refresh_retries() {
     assert!(started.elapsed() >= discovery::DISCOVERY_CALL_BUDGET);
     assert!(snapshot.progress.unwrap().finished);
     assert_eq!(snapshot.nodes.len(), 5);
+    assert!(snapshot.services.values().all(Result::is_ok), "healthy descriptions must not exhaust native call capacity: {:?}", snapshot.services);
     assert!(
         snapshot
             .nodes

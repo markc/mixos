@@ -7,6 +7,7 @@
 pub use citizen::Logged;
 pub use citizen::{CallError, Delivery, Handle, Reply, macros};
 use serde_json::Value;
+use std::sync::{Arc, LazyLock};
 
 /// The app name: the worker thread, the closing refusal and the
 /// `workshop.ping` / `workshop.show` activation verbs.
@@ -37,13 +38,29 @@ pub async fn show(handle: Handle, comp: String) -> Result<Value, String> {
     citizen::show(handle, comp, crate::model::APP_ID).await
 }
 
-async fn json_call(handle: &Handle, service: &str, verb: &str) -> Result<Value, String> {
+#[derive(Clone)]
+struct Probe {
+    handle: Handle,
+    permits: Arc<tokio::sync::Semaphore>,
+}
+
+async fn json_call(probe: &Probe, service: &str, verb: &str) -> Result<Value, String> {
+    // Queue outside the per-call deadline. The permit stays with the native
+    // request even if a description phase abandons its answer: cancellation
+    // must not let replacement calls overrun citizen's transport capacity.
+    let permit = probe.permits.clone().acquire_owned().await.map_err(|e| e.to_string())?;
+    let (handle, target, command) = (probe.handle.clone(), service.to_owned(), verb.to_owned());
+    let request = tokio::spawn(async move {
+        let _permit = permit;
+        handle.raw_within(&target, &command, String::new(), DISCOVERY_CALL_BUDGET).await
+    });
     let reply = tokio::time::timeout(
         DISCOVERY_CALL_BUDGET,
-        handle.raw_within(service, verb, String::new(), DISCOVERY_CALL_BUDGET),
+        request,
     )
     .await
     .map_err(|_| format!("{service} {verb}: deadline exceeded (3 s)"))?
+    .map_err(|e| e.to_string())?
     .map_err(|e| e.to_string())?;
     if reply.rc >= 10 {
         return Err(format!(
@@ -55,7 +72,7 @@ async fn json_call(handle: &Handle, service: &str, verb: &str) -> Result<Value, 
     }
     serde_json::from_str(&reply.body).map_err(|e| e.to_string())
 }
-async fn describe(handle: &Handle, service: &str) -> Result<Vec<crate::model::Verb>, String> {
+async fn describe(handle: &Probe, service: &str) -> Result<Vec<crate::model::Verb>, String> {
     let help = match json_call(handle, service, "HELP").await {
         Ok(value) => crate::model::parse_verbs(&value),
         Err(error) => Err(error),
@@ -71,8 +88,15 @@ async fn describe(handle: &Handle, service: &str) -> Result<Vec<crate::model::Ve
 /// Discovery never inherits the mutation lane's 30 second deadline.
 pub const DISCOVERY_CALL_BUDGET: std::time::Duration = std::time::Duration::from_secs(3);
 pub const DISCOVERY_CONCURRENCY: usize = 8;
+/// Eight native requests across the entire discovery, not eight per node.
+/// Two are reserved for local reads; six are shared by every remote node.
+pub const LOCAL_CALL_CONCURRENCY: usize = 2;
+pub const REMOTE_CALL_CONCURRENCY: usize = 6;
+// Shared across refresh generations, including abandoned description reads.
+static LOCAL_PERMITS: LazyLock<Arc<tokio::sync::Semaphore>> = LazyLock::new(|| Arc::new(tokio::sync::Semaphore::new(LOCAL_CALL_CONCURRENCY)));
+static REMOTE_PERMITS: LazyLock<Arc<tokio::sync::Semaphore>> = LazyLock::new(|| Arc::new(tokio::sync::Semaphore::new(REMOTE_CALL_CONCURRENCY)));
 
-async fn node_snapshot(handle: &Handle, name: String, local: bool) -> crate::model::Snapshot {
+async fn node_snapshot(handle: &Probe, name: String, local: bool) -> crate::model::Snapshot {
     use crate::model::{Node, Snapshot};
     let broker = if local {
         "noded".to_owned()
@@ -143,7 +167,7 @@ enum Update {
 }
 
 async fn discover_node(
-    handle: Handle,
+    handle: Probe,
     name: String,
     local: bool,
     tx: futures::channel::mpsc::UnboundedSender<Update>,
@@ -183,7 +207,9 @@ pub async fn discover_incremental(
     use crate::model::{Progress, Snapshot};
     use futures::{StreamExt, stream};
     let (tx, mut rx) = futures::channel::mpsc::unbounded();
-    let local = discover_node(handle.clone(), "local".into(), true, tx.clone());
+    let local_probe = Probe { handle: handle.clone(), permits: LOCAL_PERMITS.clone() };
+    let handle = Probe { handle, permits: REMOTE_PERMITS.clone() };
+    let local = discover_node(local_probe, "local".into(), true, tx.clone());
     let remote_tx = tx.clone();
     let remote = async move {
         let tx = remote_tx;

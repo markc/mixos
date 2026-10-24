@@ -60,6 +60,9 @@ Local membership and service identities are published as soon as they arrive,
 without waiting for remote nodes or verb descriptions. Discovery queries up
 to eight remote nodes concurrently, with a separate local slot. Each read has
 a three-second deadline (`DISCOVERY_CALL_BUDGET`); info and list run together.
+Across all nodes and refreshes, at most eight discovery calls run at once:
+two reserved for local reads and six shared by remote reads. A cancelled
+description retains its permit until the native request finishes.
 Discovery asks for `HELP`, falling back to `app.describe`, eight services
 at a time per node, with a three-second budget for the description phase.
 Every node update wakes the view. The status counts completed nodes and
