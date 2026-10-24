@@ -27,7 +27,9 @@ Refusals use `DENIED`, name the command and rule, and precede file effects.
 Running user code retains its existing authority and is not a sandbox.
 
 Workshop’s Bus `execute` for mutating `macro.*` actions and `bus.call`,
-implicit-target `call`, calls forwarding macro mutations or these proxy
-operations, and UI click/pointer/key/type injection require Workshop too.
-These paths can otherwise turn an untrusted caller into the manager.
-Explicit `call` requests for read/run commands and UI inspection remain open.
+implicit-target `call`, and calls forwarding macro mutations or these proxy
+operations require Workshop too. These paths can otherwise turn an untrusted
+caller into the manager. Explicit `call` requests for read/run commands remain
+open. Workshop’s UI commands (`workshop.ui.*`) are open to every caller, so an
+agent can drive its window: a save made there is Workshop’s own write, as if
+a person had pressed Save.

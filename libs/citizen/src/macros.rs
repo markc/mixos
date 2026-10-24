@@ -53,14 +53,12 @@ pub fn dispatch(
     jobs: &mut Jobs,
 ) -> bool {
     // Workshop's generic dispatch must not bypass its macro mutation gate.
+    // UI commands stay open: a save made through Workshop's window is
+    // Workshop's own write, whoever drives it.
     let proxy_write = app == "workshop"
         && serde_json::from_str::<Value>(&command.body)
             .ok()
             .is_some_and(|body| match command.command.as_str() {
-                "workshop.ui.click"
-                | "workshop.ui.pointer"
-                | "workshop.ui.key"
-                | "workshop.ui.type" => true,
                 "workshop.execute" => body["id"].as_str().is_some_and(|id| {
                     id == "bus.call"
                         || id
@@ -71,15 +69,7 @@ pub fn dispatch(
                     command_name
                         .rsplit_once(".macros.")
                         .is_some_and(|(_, suffix)| ::macros::commands::mutates(suffix))
-                        || matches!(
-                            command_name,
-                            "workshop.call"
-                                | "workshop.execute"
-                                | "workshop.ui.click"
-                                | "workshop.ui.pointer"
-                                | "workshop.ui.key"
-                                | "workshop.ui.type"
-                        )
+                        || matches!(command_name, "workshop.call" | "workshop.execute")
                 }),
                 _ => false,
             });

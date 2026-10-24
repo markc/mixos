@@ -62,8 +62,6 @@ fn bus_macro_writes_refuse_other_services_and_workshop_deputy_calls() {
                 r#"{"service":"ced","command":"ced.macros.put"}"#,
             ),
             ("workshop.call", r#"{}"#),
-            ("workshop.ui.key", r#"{"key":"S","modifiers":["ctrl"]}"#),
-            ("workshop.ui.click", r#"{"label":"Save"}"#),
         ] {
             let reply = caller
                 .call_with_headers_raw("workshop-acl-test", command, &BTreeMap::new(), body)
@@ -81,6 +79,56 @@ fn bus_macro_writes_refuse_other_services_and_workshop_deputy_calls() {
     workshop.quit();
     owner.wait_done().unwrap();
     workshop.wait_done().unwrap();
+}
+
+#[test]
+fn workshop_ui_commands_stay_open_to_other_callers() {
+    let broker = test_broker::Broker::start();
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        let client = std::sync::Arc::new(
+            SupervisedClient::connect("workshop-ui-test", &broker.url)
+                .await
+                .unwrap(),
+        );
+        let mut jobs = citizen::macros::Jobs::default();
+        for (command, body) in [
+            ("workshop.ui.click", r#"{"label":"Save"}"#),
+            ("workshop.ui.key", r#"{"key":"S","modifiers":["ctrl"]}"#),
+            ("workshop.ui.pointer", r#"{"x":1,"y":1}"#),
+            ("workshop.ui.type", r#"{"text":"x"}"#),
+            (
+                "workshop.call",
+                r#"{"service":"workshop","command":"workshop.ui.click"}"#,
+            ),
+        ] {
+            let incoming = bus::native_client::IncomingCommand {
+                generation: 0,
+                from: "unrelated-app".into(),
+                command: command.into(),
+                id: Some("1".into()),
+                args: serde_json::Value::Null,
+                body: body.into(),
+                headers: BTreeMap::from([("broker_origin".into(), "local".into())]),
+            };
+            // false: the macro gate leaves it to Workshop's own handler.
+            assert!(
+                !citizen::macros::dispatch(
+                    "workshop",
+                    "workshop-ui-test",
+                    &incoming,
+                    client.clone(),
+                    &mut jobs
+                ),
+                "{command}"
+            );
+        }
+        jobs.finish().await;
+        client.close().await;
+    });
 }
 
 #[test]
