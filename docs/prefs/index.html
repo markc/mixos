@@ -242,8 +242,8 @@
         <article id="content-doc" class="prose" data-pagefind-body>
 <h1 id="preferences">Preferences</h1>
 <p>Preferences holds MixOS's preference editors in one window. A resizable tree
-on the left opens sections on the right. Appearance contains Themes, Fonts
-and Wallpapers. Apps contains Email, Terminal and Text. System contains
+on the left opens sections on the right. Appearance contains Themes, Fonts,
+Size &amp; Density, Motion and Wallpapers. Apps contains Email, Terminal and Text. System contains
 Software. Overview, Desktop, Input and Output have no sections yet, so the
 tree hides them. The window takes its cue from the Prefs drawer of AmigaOS,
 where each setting had its own small editor.</p>
@@ -312,8 +312,26 @@ lost, Preferences asks settingsd for the change's receipt before anything else i
 applied (<strong>Check again</strong> asks now); if settingsd no longer holds one, the
 session's current state decides what the status line says.</p>
 <p><strong>Appearance → Fonts</strong> shows the interface, heading and monospace faces currently
-installed on the window, with previews. Font family and size selection is not
-available yet; these faces follow the session design.</p>
+installed on the window, with previews. Interface and monospace family pickers
+list installed families, sorted without duplicates; the monospace picker lists
+only families with monospaced faces. The font list is read once in the background.
+The first row restores the design default (Inter or JetBrains Mono), stored as
+null. A stored family absent from the list stays visible, marked <strong>missing</strong>.
+Interface weight and size controls sit beside the family choices.</p>
+<p>Family choices use the same fenced drafts and conflict handling as Themes.
+The note names the families settingsd holds. The toolkit currently installs
+bundled Inter and JetBrains Mono regardless of those stored names, including
+after a theme reload or restart. Other families take effect when the toolkit
+supports loading them; this stage adds no font loader. The faces grid and
+previews show the actual egui font stacks, rather than the saved request.</p>
+<p><strong>Appearance → Size &amp; Density</strong> sets text scale (50–300%, in 5% steps) and
+density (0.5–2.0, in 0.05 steps). Each <strong>Reset</strong> restores 1.0. A drag applies
+once when released; keyboard and wheel steps apply individually. Search also
+finds this section with <code>scale</code>, <code>zoom</code>, <code>density</code>, <code>spacing</code> or <code>compact</code>.</p>
+<p><strong>Appearance → Motion</strong> sets <strong>Reduce motion</strong>, which apps and the compositor
+honour. Search also accepts <code>animation</code>, <code>reduce motion</code> and <code>accessibility</code>.
+Both sections use Appearance's fenced applies, queued drafts, receipts and
+conflict recovery controls.</p>
 <h2 id="apps">Apps</h2>
 <p><strong>Apps → Terminal</strong> holds the terminal's font, layout, cursor, focus ring,
 mouse and environment settings, plus Reset terminal. Each change uses
@@ -404,7 +422,12 @@ For scripts that do not need Preferences open, call <code>settings.apply</code> 
 look, the expected look while a change settles, any held or conflicting
 edits and the revision read; <code>prefs.appearance.set</code>
 changes it at once (<code>scheme</code>, <code>style</code> with <code>own</code> for the scheme's own, <code>mode</code>,
-<code>contrast</code>, <code>decorations</code>, <code>caption_side</code>).
+<code>contrast</code>, <code>decorations</code>, <code>caption_side</code>, <code>font_family</code>, <code>mono_family</code>,
+<code>text_scale</code>, <code>density</code>, <code>reduced_motion</code>). Family values are strings or null;
+text scale and density reset with 1.0, and reduced motion takes a boolean.
+The new section ids are <code>size</code> and <code>motion</code>. Search includes their <code>ui.*</code>
+keys and both font-family keys. <code>prefs.appearance</code> and <code>prefs.appearance.set</code>
+are version 0.2.0; <code>prefs.info</code>, which embeds appearance, is 0.3.0.
 <code>prefs.section {name[, group]}</code> opens a registry section and expands its
 category. <code>app.describe</code> lists the section ids and their searchable metadata.
 For Software, <code>group</code> selects <code>mixos-desktop</code>, <code>mixos-server</code>, <code>creative</code> or
@@ -449,7 +472,7 @@ state read, never automatically resent.</p>
 <table><thead><tr><th>Path</th><th>What</th></tr></thead><tbody>
 <tr><td><code>crates/preferences</code></td><td>the headless engine: sections, rows, notes, one operation at a time, the <code>prefs.*</code> verbs</td></tr>
 <tr><td><code>crates/preferences/src/navigation.rs</code></td><td>the section registry, seven categories, software groups and search</td></tr>
-<tr><td><code>crates/preferences/src/appearance.rs</code></td><td>Appearance › Themes: the look, its draft, fenced applies, receipts for lost replies</td></tr>
+<tr><td><code>crates/preferences/src/appearance.rs</code></td><td>Appearance: the look, families, scale, density and motion, with drafts, fenced applies and receipts for lost replies</td></tr>
 <tr><td><code>crates/preferences/src/email.rs</code></td><td>Apps → Email: account changes planned and checked, fenced applies, passwords handed to Email</td></tr>
 <tr><td><code>src/commands.rs</code></td><td>every action as a registered command (menus, buttons, shortcuts, <code>prefs.execute</code>)</td></tr>
 <tr><td><code>src/view.rs</code></td><td>the egui rendering; returns what the person did</td></tr>
