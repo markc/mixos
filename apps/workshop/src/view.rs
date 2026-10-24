@@ -383,8 +383,7 @@ fn details(
 
 fn traffic(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
     ui.horizontal(|ui| {
-        if ui
-            .selectable_label(engine.workshop.dock_open, label("traffic"))
+        if toolkit::selectable(ui, engine.workshop.dock_open, label("traffic"))
             .clicked()
         {
             events.push(UiEvent::Dock(!engine.workshop.dock_open));
@@ -559,7 +558,7 @@ fn macro_details(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
                 })
                 .show_ui(ui, |ui| {
                     for app in apps {
-                        ui.selectable_value(&mut target, app.clone(), app);
+                        if toolkit::selectable(ui, target == app, app.clone()).clicked() { target = app; }
                     }
                 });
         }

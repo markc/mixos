@@ -451,14 +451,14 @@ impl Shell {
                 self.settle();
                 continue;
             }
-            if let Event::Discovered(_, snapshot) = &event {
-                if snapshot
+            if let Event::Discovered(_, snapshot) = &event
+                && !self.engine.quitting
+                && snapshot
                     .progress
                     .as_ref()
                     .is_some_and(|progress| progress.finished)
                 {
                     self.engine.queue_workshop("catalogues", json!({}), None);
-                }
             }
             if let Event::Delivery(Delivery::Theme) = event {
                 self.file_theme = Theme::load();
@@ -565,10 +565,9 @@ impl Shell {
                 mut args,
                 reply,
             } => {
-                if operation == "observe" {
-                    if let Some(subscription) = &self.engine.workshop.subscription {
+                if operation == "observe"
+                    && let Some(subscription) = &self.engine.workshop.subscription {
                         args["subscription_id"] = json!(subscription);
-                    }
                 }
                 if operation == "macros.run" && self.engine.workshop.subscription.is_some() {
                     let app = args["app"]

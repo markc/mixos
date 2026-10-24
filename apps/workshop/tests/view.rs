@@ -104,7 +104,8 @@ fn the_body_buttons_run_their_commands_and_name_their_shortcuts() {
 #[test]
 fn the_search_field_reports_the_filter() {
     let mut h = harness(engine(None));
-    let field = h.get_by_label(&label("search"));
+    let search = label("search");
+    let field = h.get_by_label(&search);
     field.click();
     h.run();
     h.get_by_label(&label("search"))

@@ -214,7 +214,7 @@ mod tests {
             .enable_all()
             .build()
             .unwrap();
-        let (allowed, _) =
+        let (allowed, mut observed) =
             inspector::bus::start("workshop-observe-test", &broker.url, &[]).unwrap();
         let (denied, _) = inspector::bus::start("workshop-denied-test", &broker.url, &[]).unwrap();
         runtime.block_on(async {
@@ -228,6 +228,20 @@ mod tests {
             .unwrap();
             assert_eq!(started["body"], "redacted");
             assert!(started["subscription_id"].is_string());
+            allowed.call("noded", "noded.ping", json!({})).await.unwrap();
+            use futures::StreamExt;
+            let event = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+                loop {
+                    if let Some(inspector::bus::Delivery::Command { id, verb, body }) = observed.next().await {
+                        allowed.reply(id, 0, json!({}));
+                        if verb == "noded.observe.event" {
+                            let row: Value = serde_json::from_str(&body).unwrap();
+                            if row["verb"] == "noded.ping" { break row; }
+                        }
+                    }
+                }
+            }).await.unwrap();
+            assert_eq!(event["verb"], "noded.ping");
             let stopped = perform(
                 allowed.clone(),
                 "observe",
