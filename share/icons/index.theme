@@ -1,6 +1,6 @@
 [Icon Theme]
 Name=MixOS
-Comment=Lucide icons at stroke 1.5, with the MixOS brand mark
+Comment=Lucide icons at stroke 1.5, MixOS caption glyphs and brand mark
 Directories=scalable/apps,scalable/status,scalable/actions,symbolic/apps
 
 [scalable/apps]
