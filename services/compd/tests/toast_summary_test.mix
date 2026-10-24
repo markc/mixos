@@ -15,10 +15,10 @@ check($m.summary_count == 3 and ends_with($m.summary_lines[2], "…"))
 for $l in $m.summary_lines
   check(len($l) <= 38)
 end
-check(height_of($m) == 162)
+check(height_of($m) == 178)
 $m = model_of({id: 1, summary: "Short title", body: "", actions: []}, 0)
 check($m.summary_count == 1 and $m.summary_lines[0] == "Short title")
-check(not $m.summary_shown[1] and height_of($m) == 64)
+check(not $m.summary_shown[1] and height_of($m) == 80)
 $m = model_of({id: 1, summary: "WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW", body: "", actions: []}, 0)
 check($m.summary_count == 3 and len($m.summary_lines[2]) <= 38)
 check(ends_with($m.summary_lines[2], "…"))

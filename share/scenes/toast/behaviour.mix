@@ -120,7 +120,8 @@ end
 
 -- The seat height: each body line and the button row add to the bare toast.
 fn height_of($m)
-  $h = 64
+  -- Padding, the close button's header row, one title line and their gap.
+  $h = 80
   $h = $h + 20 * max(0, $m.summary_count - 1)
   if $m.has_body then $h = $h + 6 + 18 * $m.line_count end
   if $m.shown[0] then $h = $h + 34 end

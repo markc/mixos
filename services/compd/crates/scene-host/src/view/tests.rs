@@ -54,6 +54,24 @@ fn long_toast() -> String {
         .replace("\"labels\":[\"\",\"\",\"\",\"\"]", "\"labels\":[\"Got it\",\"\",\"\",\"\"]")
 }
 
+fn guarded_toast() -> String {
+    include_str!("../../../../../../share/scenes/toast/scene.mix")
+        .replace("\"summary_lines\":[\"\",\"\",\"\"]", &format!("\"summary_lines\":[\"{}\",\"{}\",\"{}…\"]", "W".repeat(38), "W".repeat(38), "W".repeat(37)))
+        .replace("\"summary_shown\":[false,false,false]", "\"summary_shown\":[true,true,true]")
+        .replace("\"app\":\"\"", &format!("\"app\":\"{}\"", "W".repeat(120)))
+        .replace("\"shown\":[false,false,false,false]", "\"shown\":[true,false,false,false]")
+        .replace("\"labels\":[\"\",\"\",\"\",\"\"]", "\"labels\":[\"Got it\",\"\",\"\",\"\"]")
+}
+
+#[test]
+fn guarded_toast_fits_the_behaviour_seat_height() {
+    let rt = runtime(&guarded_toast(), (360, 154));
+    let bounds = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(360.0, 154.0));
+    for placed in &rt.program.layout().placed {
+        assert!(bounds.contains_rect(placed.rect), "{}: {:?}", placed.id, placed.rect);
+    }
+}
+
 #[test]
 fn wrapped_text_bounds_lines_and_grows_nested_parents() {
     for axis in ["row", "column"] {
@@ -159,6 +177,28 @@ fn long_toast_offscreen() {
     harness.run();
     let image = harness.render().unwrap();
     if let Some(path) = std::env::var_os("TOAST_SNAPSHOT") {
+        image.save(path).unwrap();
+    }
+}
+
+#[test]
+fn guarded_toast_offscreen() {
+    use ui::UiProgram;
+    let mut scene = SceneUi::new(content(&guarded_toast(), None, false));
+    let mut setup = false;
+    let mut harness = egui_kittest::Harness::builder()
+        .with_size(egui::vec2(360.0, 154.0))
+        .wgpu()
+        .build_ui(move |ui| {
+            if !setup {
+                scene.setup(ui.ctx());
+                setup = true;
+            }
+            scene.show(ui, &mut Vec::new());
+        });
+    harness.run();
+    let image = harness.render().unwrap();
+    if let Some(path) = std::env::var_os("TOAST_GUARD_SNAPSHOT") {
         image.save(path).unwrap();
     }
 }
