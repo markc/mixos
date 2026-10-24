@@ -87,15 +87,16 @@ pub(super) fn elide_end(ui: &Ui, text: &str, font: &FontId, width: f32) -> Strin
     let mut keep = chars.len();
     while keep > 0 {
         keep -= 1;
-        let candidate: String = chars[..keep]
-            .iter()
-            .chain(std::iter::once(&'…'))
-            .collect();
+        let candidate: String = chars[..keep].iter().chain(std::iter::once(&'…')).collect();
         if fits(&candidate) {
             return candidate;
         }
     }
-    if fits("…") { "…".into() } else { String::new() }
+    if fits("…") {
+        "…".into()
+    } else {
+        String::new()
+    }
 }
 
 /// Paint the whole scene and collect its interactions.
@@ -227,8 +228,17 @@ pub(crate) fn paint(scene: &mut SceneUi, ui: &mut Ui, emit: &mut Vec<SceneMessag
                 let mut text = port_text(&node, "text").to_owned();
                 if flag(&node, "wrap") {
                     let lines = super::flex::wrap_text(
-                        &text, rect.width(), number(&node, "max_lines").unwrap_or(3.0) as usize,
-                        &|s| ui.fonts_mut(|fonts| fonts.layout_no_wrap(s.to_owned(), font.clone(), colour).size().x),
+                        &text,
+                        rect.width(),
+                        number(&node, "max_lines").unwrap_or(3.0) as usize,
+                        &|s| {
+                            ui.fonts_mut(|fonts| {
+                                fonts
+                                    .layout_no_wrap(s.to_owned(), font.clone(), colour)
+                                    .size()
+                                    .x
+                            })
+                        },
                     );
                     let line_height = style.line(size);
                     for (i, line) in lines.iter().enumerate() {
@@ -237,7 +247,13 @@ pub(crate) fn paint(scene: &mut SceneUi, ui: &mut Ui, emit: &mut Vec<SceneMessag
                             "right" => (Align2::RIGHT_CENTER, rect.right()),
                             _ => (Align2::LEFT_CENTER, rect.left()),
                         };
-                        painter.text(pos2(x, rect.top() + (i as f32 + 0.5) * line_height), align, line, font.clone(), colour);
+                        painter.text(
+                            pos2(x, rect.top() + (i as f32 + 0.5) * line_height),
+                            align,
+                            line,
+                            font.clone(),
+                            colour,
+                        );
                     }
                     continue;
                 }

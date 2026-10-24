@@ -736,7 +736,9 @@ fn leaf_size(
                 });
                 return Size {
                     width: known.width.unwrap_or(w.ceil().min(width)),
-                    height: known.height.unwrap_or(line(*mono, *size) * lines.len() as f32),
+                    height: known
+                        .height
+                        .unwrap_or(line(*mono, *size) * lines.len() as f32),
                 };
             }
             Size {
@@ -796,7 +798,11 @@ pub(super) fn wrap_text(
     for paragraph in text.split('\n') {
         let mut current = String::new();
         for word in paragraph.split_whitespace() {
-            let candidate = if current.is_empty() { word.to_owned() } else { format!("{current} {word}") };
+            let candidate = if current.is_empty() {
+                word.to_owned()
+            } else {
+                format!("{current} {word}")
+            };
             if measure(&candidate) <= width {
                 current = candidate;
                 continue;
@@ -820,11 +826,17 @@ pub(super) fn wrap_text(
         while !last.is_empty() && measure(&format!("{}…", last.trim_end())) > width {
             last.pop();
         }
-        *last = if measure("…") <= width { format!("{}…", last.trim_end()) } else { String::new() };
+        *last = if measure("…") <= width {
+            format!("{}…", last.trim_end())
+        } else {
+            String::new()
+        };
     }
     // A box narrower than a glyph cannot paint even that glyph safely.
     for line in &mut lines {
-        if measure(line) > width { line.clear(); }
+        if measure(line) > width {
+            line.clear();
+        }
     }
     lines
 }

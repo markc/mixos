@@ -58,11 +58,17 @@ fn long_toast() -> String {
 fn wrapped_text_bounds_lines_and_grows_nested_parents() {
     for axis in ["row", "column"] {
         for fill in [false, true] {
-            let source = format!("---\nscene: 1\nname: wrap\ncitizen: test\n---\n```mix\nroot: {{widget: \"row\", children: [\"outer\"]}}\nouter: {{widget: \"column\", children: [\"inner\", \"button\"]}}\ninner: {{widget: \"{axis}\", children: [\"title\"]}}\ntitle: {{widget: \"text\", text: \"{}\", size: 14, wrap: true, max_lines: 3, fill: {fill}}}\nbutton: {{widget: \"button\", label: \"Got it\"}}\n```", "Wide title ".repeat(30));
+            let source = format!(
+                "---\nscene: 1\nname: wrap\ncitizen: test\n---\n```mix\nroot: {{widget: \"row\", children: [\"outer\"]}}\nouter: {{widget: \"column\", children: [\"inner\", \"button\"]}}\ninner: {{widget: \"{axis}\", children: [\"title\"]}}\ntitle: {{widget: \"text\", text: \"{}\", size: 14, wrap: true, max_lines: 3, fill: {fill}}}\nbutton: {{widget: \"button\", label: \"Got it\"}}\n```",
+                "Wide title ".repeat(30)
+            );
             let rt = runtime(&source, (180, 300));
             let title = rect_of(&rt, "title");
             assert!(title.width() <= 180.0, "{axis}/{fill}: {title:?}");
-            assert!((title.height() - 50.4).abs() < 1.0, "{axis}/{fill}: {title:?}");
+            assert!(
+                (title.height() - 50.4).abs() < 1.0,
+                "{axis}/{fill}: {title:?}"
+            );
             assert!(rect_of(&rt, "inner").height() >= title.height());
             assert!(rect_of(&rt, "button").top() >= title.bottom());
             assert!(rect_of(&rt, "outer").width() <= 180.0);
@@ -74,16 +80,32 @@ fn wrapped_text_bounds_lines_and_grows_nested_parents() {
     assert!(lines[1].ends_with('…'));
     assert!(lines.iter().all(|line| measure(line) <= 70.0));
     assert_eq!(flex::wrap_text("short", 70.0, 3, &measure), ["short"]);
-    assert!(flex::wrap_text(&"W".repeat(120), 70.0, 3, &measure).iter().all(|line| measure(line) <= 70.0));
+    assert!(
+        flex::wrap_text(&"W".repeat(120), 70.0, 3, &measure)
+            .iter()
+            .all(|line| measure(line) <= 70.0)
+    );
 }
 
 #[test]
 fn long_toast_keeps_controls_visible_and_clickable() {
     for fill in [true, false] {
-        let source = if fill { long_toast() } else { long_toast().replace("\"fill\":true,\"size\":14", "\"size\":14") };
+        let source = if fill {
+            long_toast()
+        } else {
+            long_toast().replace("\"fill\":true,\"size\":14", "\"size\":14")
+        };
         let mut rt = runtime(&source, (360, 132));
         let bounds = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(360.0, 132.0));
-        for id in ["card", "head", "t_sum", "t_app", "t_actions", "t_close", "b0"] {
+        for id in [
+            "card",
+            "head",
+            "t_sum",
+            "t_app",
+            "t_actions",
+            "t_close",
+            "b0",
+        ] {
             let rect = rect_of(&rt, id);
             assert!(bounds.contains_rect(rect), "{id}: {rect:?}");
         }
@@ -99,7 +121,10 @@ fn long_toast_keeps_controls_visible_and_clickable() {
             rt.queue_input(Input::PointerMoved { x: at.x, y: at.y });
             rt.tick();
             for pressed in [true, false] {
-                rt.queue_input(Input::Button { code: 0x110, pressed });
+                rt.queue_input(Input::Button {
+                    code: 0x110,
+                    pressed,
+                });
                 rt.tick();
             }
         }
@@ -120,7 +145,12 @@ fn long_toast_offscreen() {
         .build_ui(move |ui| {
             scene.show(ui, &mut Vec::new());
             for (id, size, bold) in [("t_sum", 14.0, true), ("t_app", 11.0, false)] {
-                let text = paint::elide_end(ui, &"W".repeat(120), &paint::font(size, false, bold), scene.layout.nodes[id].width());
+                let text = paint::elide_end(
+                    ui,
+                    &"W".repeat(120),
+                    &paint::font(size, false, bold),
+                    scene.layout.nodes[id].width(),
+                );
                 assert!(text.ends_with('…'), "{id}: {text}");
             }
         });

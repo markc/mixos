@@ -19,6 +19,16 @@ fn doc(b: &str) -> SceneDocument {
 }
 
 #[test]
+fn text_wrapping_ports_are_validated() {
+    for ports in ["wrap: true, max_lines: 3", "wrap: false, max_lines: 1"] {
+        assert!(resolve(&doc(&format!("root: {{widget: \"text\", text: \"title\", {ports}}}"))).is_ok());
+    }
+    for ports in ["wrap: 1", "max_lines: 0", "max_lines: 1.5", "max_lines: 1025", "max_lines: \"3\""] {
+        assert!(resolve(&doc(&format!("root: {{widget: \"text\", text: \"title\", {ports}}}"))).is_err());
+    }
+}
+
+#[test]
 fn image_src_cell_substitution_allowed_in_template() {
     let source = "root: {widget: \"list\", rows: [{id: \"a\", cells: [\"icon.png\"]}], row: \"t\", row_height: 24}\nt: {widget: \"row\", children: [\"icon\"]}\nicon: {widget: \"image\", src: \"{cells[0]}\"}";
     assert!(lint(&doc(source)).is_empty());
