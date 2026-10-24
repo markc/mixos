@@ -830,7 +830,10 @@ impl State {
                     {
                         ui.label(&last.status).on_hover_text(&last.title);
                     }
-                    if let Some(title) = self.running_title() {
+                    if self.engine.status()["origin"].as_str()
+                        == Some(format!("gui:{}", self.window).as_str())
+                        && let Some(title) = self.running_title()
+                    {
                         ui.label(own_with("macros-running-title", &[("title", &title)]));
                     }
                     egui::ScrollArea::both()
@@ -1210,6 +1213,7 @@ type WindowState = Arc<Mutex<State>>;
 /// notification still owns a Context for repaint delivery. A close request
 /// alone is insufficient: applications can cancel it for unsaved documents.
 pub fn close_app(ctx: &egui::Context, app: &str) {
+    crate::drive::unregister_viewport(ctx, "macro-editor");
     let owners_id = egui::Id::new("macro-viewport-owners");
     ctx.data_mut(|d| {
         let mut owners = d

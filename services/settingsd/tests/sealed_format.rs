@@ -41,6 +41,8 @@ const PRE_MODERN_SOURCE_DIGEST: &str =
     "b69369a6e36b10fd44a418df78cb1f2a99a40649e78027ce057af9993f648630";
 const MODERN_SOURCE_DIGEST: &str =
     "9ab8ab77799f670087a2f37c2ef0652d1795ef1a2ad25164212544d455ef07c7";
+const PRE_FONT_SOURCE_DIGEST: &str =
+    "9ab8ab77799f670087a2f37c2ef0652d1795ef1a2ad25164212544d455ef07c7";
 const PRE_MODERN_EFFECTIVE_DIGEST: &str =
     "7cd941ce5897d03a0ec10d4f2431214bfa7b3287fc1513d7d7c2c9bd09344147";
 const PRE_MODERN_SNAPSHOT_DIGEST: &str =
@@ -76,11 +78,13 @@ fn effective_and_snapshot_bytes_match_the_pinned_format() {
             digest(&snapshot.effective).unwrap(),
             digest(&snapshot).unwrap(),
             serde_json::to_string(&snapshot).unwrap().len(),
+            snapshot.source_digest.clone(),
         ),
         (
             EFFECTIVE_DIGEST_PINNED.to_owned(),
             SNAPSHOT_DIGEST_PINNED.to_owned(),
             SNAPSHOT_JSON_LEN_PINNED,
+            MODERN_SOURCE_DIGEST.to_owned(),
         )
     );
 }
@@ -88,9 +92,9 @@ fn effective_and_snapshot_bytes_match_the_pinned_format() {
 #[test]
 fn modern_embedded_source_changes_identity_but_no_default_resolved_value() {
     let mut snapshot = snapshot_with_source(include_str!("fixtures/2026-10-23-default.theme.conf.mix"));
-    assert_eq!(snapshot.source_digest, MODERN_SOURCE_DIGEST);
+    assert_eq!(snapshot.source_digest, PRE_FONT_SOURCE_DIGEST);
     for effective in snapshot.effective.values_mut() {
-        assert_eq!(effective.design.source, MODERN_SOURCE_DIGEST);
+        assert_eq!(effective.design.source, PRE_FONT_SOURCE_DIGEST);
         effective.design.source = PRE_MODERN_SOURCE_DIGEST.into();
     }
     snapshot.source_digest = PRE_MODERN_SOURCE_DIGEST.into();

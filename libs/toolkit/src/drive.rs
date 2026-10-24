@@ -260,6 +260,13 @@ pub fn finish(ctx: &Context) -> Vec<Answer> {
             drive.answers.push(answer);
         }
         drive.cancel_queue("the app closed before this input was read");
+        for child in drive.children.values_mut() {
+            child.settle(ctx, "the app closed before this input was read");
+            for (id, _, _) in child.requests.drain(..) {
+                child.answers.push(refusal(id, "CANCELLED", "the app closed"));
+            }
+            drive.answers.append(&mut child.answers);
+        }
         std::mem::take(&mut drive.answers)
     })
     .unwrap_or_default()
@@ -1434,6 +1441,7 @@ mod tests {
         register_viewport(&ctx, "macro-editor", editor);
         let mut root_clicks = 0;
         let mut editor_clicks = 0;
+        {
         let mut frame = |viewport| {
             let mut input = RawInput { viewport_id: viewport, ..Default::default() };
             input.viewports.insert(editor, Default::default());
@@ -1452,7 +1460,7 @@ mod tests {
         assert!(!answers[0].body.to_string().contains("Root"));
         assert!(request(&ctx, 2, "ui.click", &json!({"viewport":"macro-editor", "label":"Save"})).is_none());
         for _ in 0..8 { frame(egui::ViewportId::ROOT); frame(editor); }
-        drop(frame);
+        }
         assert_eq!((root_clicks, editor_clicks), (0, 1));
         assert_eq!(logic(&ctx)[0].rc, 0);
         unregister_viewport(&ctx, "macro-editor");
