@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 #[test]
 fn macros_status_dispatch_and_surface() {
-    let body = citizen::macros::request("screenshot", citizen::macros::Caller::Other, "status", "{}")
-        .wait()
-        .unwrap();
+    let body =
+        citizen::macros::request("screenshot", citizen::macros::Caller::Other, "status", "{}")
+            .wait()
+            .unwrap();
     assert_eq!(body["state"], "idle");
     let surface = screenshot::jobs::describe(true);
     for suffix in ["list", "reload", "run", "status", "output", "stop", "new"] {
