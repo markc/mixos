@@ -221,7 +221,9 @@ impl Document {
     /// A transport owner has saved this exact text. Preserve the cursor and
     /// undo history; newer, different edits must remain dirty.
     pub fn acknowledge_saved_text(&mut self, text: &str) -> bool {
-        if self.contents() != text { return false; }
+        if self.contents() != text {
+            return false;
+        }
         self.buffer.mark_saved();
         true
     }

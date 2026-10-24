@@ -108,8 +108,7 @@ fn the_search_field_reports_the_filter() {
     let field = h.get_by_label(&search);
     field.click();
     h.run();
-    h.get_by_label(&label("search"))
-        .type_text("settings");
+    h.get_by_label(&label("search")).type_text("settings");
     h.run();
     assert!(
         h.state().contains(&UiEvent::Filter("settings".into())),

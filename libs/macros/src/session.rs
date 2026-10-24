@@ -144,8 +144,11 @@ impl Session {
         };
         if operation == "get" {
             let text = roots.read_bounded(entry, 256 * 1024).map_err(|error| {
-                if error.kind() == std::io::ErrorKind::InvalidData { Refusal::new("RESOURCE_EXHAUSTED", error) }
-                else { storage_error(error) }
+                if error.kind() == std::io::ErrorKind::InvalidData {
+                    Refusal::new("RESOURCE_EXHAUSTED", error)
+                } else {
+                    storage_error(error)
+                }
             })?;
             if text.len() > 256 * 1024 {
                 return Err(Refusal::new("RESOURCE_EXHAUSTED", "macro exceeds 256 KiB"));
@@ -290,12 +293,17 @@ impl Session {
         .map_err(|e| Refusal::new("INTERNAL", e))?;
         let changed = {
             let mut state = self.0.lock().unwrap();
-            let changed = state.catalogue.as_ref().is_none_or(|old| old.entries != catalogue.entries);
+            let changed = state
+                .catalogue
+                .as_ref()
+                .is_none_or(|old| old.entries != catalogue.entries);
             state.catalogue = Some(catalogue.clone());
             changed
         };
         drop(_scan);
-        if changed { self.changed(); }
+        if changed {
+            self.changed();
+        }
         Ok(catalogue)
     }
 

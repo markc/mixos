@@ -5,7 +5,8 @@ use serde_json::{Value, json};
 use std::sync::mpsc::{self, Receiver};
 
 pub const SUFFIXES: [&str; 12] = [
-    "list", "reload", "run", "status", "output", "stop", "new", "get", "put", "remove", "move", "copy",
+    "list", "reload", "run", "status", "output", "stop", "new", "get", "put", "remove", "move",
+    "copy",
 ];
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Refusal {

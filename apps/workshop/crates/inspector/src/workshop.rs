@@ -39,18 +39,23 @@ impl Workshop {
     /// the bounded ring itself owns incomplete calls.
     pub fn observe(&mut self, mut frame: Value) {
         self.dropped += frame["dropped_count"].as_u64().unwrap_or_default();
-        if self.paused { return; }
+        if self.paused {
+            return;
+        }
         if frame["message_type"] == "response" && frame["correlation_id"].is_string() {
             let matching = self.traffic.iter().rposition(|request| {
-                request["pending"] == true && request["correlation_id"] == frame["correlation_id"]
-                    && request["from"] == frame["to"] && request["to"] == frame["from"]
+                request["pending"] == true
+                    && request["correlation_id"] == frame["correlation_id"]
+                    && request["from"] == frame["to"]
+                    && request["to"] == frame["from"]
             });
             if let Some(index) = matching {
                 let mut request = self.traffic.remove(index).unwrap();
                 self.bytes -= request.to_string().len();
                 request["pending"] = json!(false);
                 request["rc"] = frame["rc"].clone();
-                if let (Some(start), Some(end)) = (clock_ms(&request["ts"]), clock_ms(&frame["ts"])) {
+                if let (Some(start), Some(end)) = (clock_ms(&request["ts"]), clock_ms(&frame["ts"]))
+                {
                     request["ms"] = json!((end + 86_400_000 - start) % 86_400_000);
                 }
                 request["response"] = frame;
@@ -69,7 +74,9 @@ impl Workshop {
             return;
         }
         redact(&mut row);
-        if row.get("service").is_none() { row["service"] = row["to"].clone(); }
+        if row.get("service").is_none() {
+            row["service"] = row["to"].clone();
+        }
         let size = row.to_string().len();
         if size > TRAFFIC_BYTES {
             self.dropped += 1;
@@ -119,7 +126,9 @@ fn clock_ms(value: &Value) -> Option<u64> {
     let mut seconds = parts.next()?.split('.');
     let second: u64 = seconds.next()?.parse().ok()?;
     let millis: u64 = seconds.next()?.parse().ok()?;
-    if hour >= 24 || minute >= 60 || second >= 60 || millis >= 1000 { return None; }
+    if hour >= 24 || minute >= 60 || second >= 60 || millis >= 1000 {
+        return None;
+    }
     Some(((hour * 60 + minute) * 60 + second) * 1000 + millis)
 }
 
@@ -163,9 +172,13 @@ impl Engine {
     pub fn reveal_macro(&mut self) {
         fn ancestors(rows: &[Row], key: &str, path: &mut Vec<String>) -> bool {
             for row in rows {
-                if row.key == key { return true; }
+                if row.key == key {
+                    return true;
+                }
                 path.push(row.key.clone());
-                if ancestors(&row.children, key, path) { return true; }
+                if ancestors(&row.children, key, path) {
+                    return true;
+                }
                 path.pop();
             }
             false
@@ -178,29 +191,69 @@ impl Engine {
     }
     pub fn macro_command(&mut self, operation: &str) {
         let mut args = std::mem::replace(&mut self.workshop.arguments, json!({}));
-        if !args.is_object() { args = json!({}); }
-        if operation == "macros.run" && self.workshop.draft.as_deref().is_some_and(|draft| {
-            draft != self.workshop.saved_text.as_deref().unwrap_or(self.workshop.document["text"].as_str().unwrap_or_default())
-        }) {
+        if !args.is_object() {
+            args = json!({});
+        }
+        if operation == "macros.run"
+            && self.workshop.draft.as_deref().is_some_and(|draft| {
+                draft
+                    != self
+                        .workshop
+                        .saved_text
+                        .as_deref()
+                        .unwrap_or(self.workshop.document["text"].as_str().unwrap_or_default())
+            })
+        {
             self.workshop.message = self.text("macro-save-first");
             return;
         }
         if operation == "macros.remove" {
-            if args["confirmed"] != true { self.workshop.confirm_delete = true; return; }
+            if args["confirmed"] != true {
+                self.workshop.confirm_delete = true;
+                return;
+            }
             self.workshop.confirm_delete = false;
             args.as_object_mut().unwrap().remove("confirmed");
         }
         if operation == "macros.put" && args.get("text").is_none() {
-            args["text"] = json!(self.workshop.draft.as_deref().unwrap_or(self.workshop.document["text"].as_str().unwrap_or_default()));
+            args["text"] = json!(
+                self.workshop
+                    .draft
+                    .as_deref()
+                    .unwrap_or(self.workshop.document["text"].as_str().unwrap_or_default())
+            );
         }
         if operation == "macros.move" && args.get("tier").is_none() {
-            if self.workshop.selected.as_ref().is_some_and(|(app, _)| app == "global") {
+            if self
+                .workshop
+                .selected
+                .as_ref()
+                .is_some_and(|(app, _)| app == "global")
+            {
                 args["tier"] = json!("user-app");
                 args["destination"] = json!(self.workshop.destination);
-            } else { args["tier"] = json!("user-global"); }
+            } else {
+                args["tier"] = json!("user-global");
+            }
         }
-        if operation == "macros.run" && args.get("target").is_none() && !self.workshop.target.is_empty()
-            && self.workshop.selected.as_ref().and_then(|(app, id)| self.workshop.catalogues.get(app)?.get("macros")?.as_array()?.iter().find(|entry| entry["id"] == *id)).is_some_and(|entry| !entry["targets"].is_null()) {
+        if operation == "macros.run"
+            && args.get("target").is_none()
+            && !self.workshop.target.is_empty()
+            && self
+                .workshop
+                .selected
+                .as_ref()
+                .and_then(|(app, id)| {
+                    self.workshop
+                        .catalogues
+                        .get(app)?
+                        .get("macros")?
+                        .as_array()?
+                        .iter()
+                        .find(|entry| entry["id"] == *id)
+                })
+                .is_some_and(|entry| !entry["targets"].is_null())
+        {
             args["target"] = json!(self.workshop.target);
         }
         self.macro_action(operation, args, None);
@@ -245,7 +298,8 @@ impl Engine {
         }
         fn insert(engine: &Engine, rows: &mut [Row], app: &str) -> bool {
             for row in rows {
-                if matches!(&row.kind, RowKind::Service(name) if name == app || engine.snapshot.services.get(name).and_then(|verbs| verbs.as_ref().ok()).is_some_and(|verbs| verbs.iter().any(|verb| verb.name == format!("{app}.macros.list")))) {
+                if matches!(&row.kind, RowKind::Service(name) if name == app || engine.snapshot.services.get(name).and_then(|verbs| verbs.as_ref().ok()).is_some_and(|verbs| verbs.iter().any(|verb| verb.name == format!("{app}.macros.list"))))
+                {
                     row.children.push(branch(engine, app));
                     return true;
                 }
@@ -260,11 +314,20 @@ impl Engine {
                 rows.push(branch(self, app));
             } else if !insert(self, rows, app) {
                 if let Some(node) = self.snapshot.nodes.iter().find(|node| node.local)
-                    && let Some(parent) = rows.iter_mut().find(|row| row.key == format!("node:{}", node.name)) {
+                    && let Some(parent) = rows
+                        .iter_mut()
+                        .find(|row| row.key == format!("node:{}", node.name))
+                {
                     let key = format!("service:{}:{app}", node.name);
-                    parent.children.push(Row { expanded: self.ui.expanded.contains(&key), key,
-                        kind: RowKind::Service(app.clone()), children: vec![branch(self, app)] });
-                } else { rows.push(branch(self, app)); }
+                    parent.children.push(Row {
+                        expanded: self.ui.expanded.contains(&key),
+                        key,
+                        kind: RowKind::Service(app.clone()),
+                        children: vec![branch(self, app)],
+                    });
+                } else {
+                    rows.push(branch(self, app));
+                }
             }
         }
     }
@@ -294,8 +357,12 @@ impl Engine {
         self.workshop.pending += 1;
         self.workshop.next_ticket += 1;
         let ticket = self.workshop.next_ticket;
-        if operation == "macros.open" { self.workshop.latest_open = ticket; }
-        if operation == "catalogues" { self.workshop.latest_catalogues = ticket; }
+        if operation == "macros.open" {
+            self.workshop.latest_open = ticket;
+        }
+        if operation == "catalogues" {
+            self.workshop.latest_catalogues = ticket;
+        }
         self.push_workshop(Effect::Workshop {
             ticket,
             operation: operation.into(),
@@ -375,8 +442,14 @@ mod tests {
         assert_eq!(state.traffic[1]["from"], "a");
         assert_eq!(state.traffic[1]["ms"], 8);
         assert_eq!(state.traffic[1]["rc"], 10);
-        assert_eq!(state.traffic[1]["payload"]["headers"]["macro-origin"], "macro:ced:proof");
-        assert_eq!(state.traffic[1]["response"]["payload"]["body"]["token"], "[redacted]");
+        assert_eq!(
+            state.traffic[1]["payload"]["headers"]["macro-origin"],
+            "macro:ced:proof"
+        );
+        assert_eq!(
+            state.traffic[1]["response"]["payload"]["body"]["token"],
+            "[redacted]"
+        );
     }
     #[test]
     fn newer_macro_navigation_wins_and_pending_work_fences_quit() {
@@ -398,9 +471,16 @@ mod tests {
         let mut engine = Engine::new(str::to_owned);
         engine.take_effects();
         engine.workshop.retain(json!({"verb":"ced.execute"}));
-        for (args, rc) in [(json!({"limit":1,"filter":"ced"}),0), (json!({"limit":1025}),10), (json!({"filter":true}),10), (json!({"extra":0}),10)] {
+        for (args, rc) in [
+            (json!({"limit":1,"filter":"ced"}), 0),
+            (json!({"limit":1025}), 10),
+            (json!({"filter":true}), 10),
+            (json!({"extra":0}), 10),
+        ] {
             engine.command(7, "workshop.traffic", &args.to_string());
-            assert!(matches!(&engine.take_effects()[..], [Effect::Reply { id:7, rc:actual, .. }] if *actual == rc));
+            assert!(
+                matches!(&engine.take_effects()[..], [Effect::Reply { id:7, rc:actual, .. }] if *actual == rc)
+            );
         }
     }
     #[test]

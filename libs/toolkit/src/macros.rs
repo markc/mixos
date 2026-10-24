@@ -412,7 +412,9 @@ impl State {
             if workshop.is_file() {
                 let mut command = Command::new(workshop);
                 command.args(["--app", if app == "workshop" { "global" } else { app }]);
-                if let Some(id) = id { command.args(["--id", &id]); }
+                if let Some(id) = id {
+                    command.args(["--id", &id]);
+                }
                 let mut child = command
                     .stdin(Stdio::null())
                     .stdout(Stdio::null())

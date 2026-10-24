@@ -139,9 +139,15 @@ struct TopicInbox {
 impl TopicInbox {
     fn push(&mut self, row: Value) {
         let size = row.to_string().len();
-        if size > 8 * 1024 * 1024 { self.dropped += 1; return; }
+        if size > 8 * 1024 * 1024 {
+            self.dropped += 1;
+            return;
+        }
         while self.rows.len() >= 256 || self.bytes + size > 8 * 1024 * 1024 {
-            if let Some(old) = self.rows.pop_front() { self.bytes -= old.to_string().len(); self.dropped += 1; }
+            if let Some(old) = self.rows.pop_front() {
+                self.bytes -= old.to_string().len();
+                self.dropped += 1;
+            }
         }
         self.bytes += size;
         self.rows.push_back(row);
@@ -149,7 +155,9 @@ impl TopicInbox {
 
     fn take(&mut self) -> Vec<Value> {
         let mut rows = Vec::new();
-        if self.dropped > 0 { rows.push(json!({"topic":"citizen.topic.gap","dropped":self.dropped})); }
+        if self.dropped > 0 {
+            rows.push(json!({"topic":"citizen.topic.gap","dropped":self.dropped}));
+        }
         rows.extend(self.rows.drain(..));
         self.bytes = 0;
         self.dropped = 0;
@@ -616,7 +624,11 @@ async fn worker(
     }
     macro_jobs.finish().await;
     for command in unanswered(HashMap::new(), || incoming.recv().now_or_never().flatten()) {
-        let _ = tokio::time::timeout(Duration::from_secs(2), client.respond(&command, 10, &closing)).await;
+        let _ = tokio::time::timeout(
+            Duration::from_secs(2),
+            client.respond(&command, 10, &closing),
+        )
+        .await;
     }
     let _ = send.try_send(Delivery::Disconnected);
     let _ = tokio::time::timeout(Duration::from_secs(2), client.close()).await;
@@ -746,7 +758,9 @@ mod tests {
     #[test]
     fn topic_inbox_bounds_memory_and_reports_loss_before_bodies() {
         let mut inbox = TopicInbox::default();
-        for seq in 0..260 { inbox.push(json!({"seq":seq})); }
+        for seq in 0..260 {
+            inbox.push(json!({"seq":seq}));
+        }
         let rows = inbox.take();
         assert_eq!(rows.len(), 257);
         assert_eq!(rows[0]["topic"], "citizen.topic.gap");

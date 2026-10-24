@@ -906,7 +906,13 @@ impl Engine {
     pub fn command(&mut self, id: u64, verb: &str, body: &str) {
         if let Some(suffix) = verb.strip_prefix("workshop.macros.") {
             let limit = if suffix == "put" { 272 * 1024 } else { 8192 };
-            if body.len() > limit { return self.error(id, "INVALID_ARGUMENT", &format!("request exceeds {limit} bytes")); }
+            if body.len() > limit {
+                return self.error(
+                    id,
+                    "INVALID_ARGUMENT",
+                    &format!("request exceeds {limit} bytes"),
+                );
+            }
         }
         let args = match serde_json::from_str::<Value>(body) {
             Ok(args) if args.is_object() => args,
@@ -1277,10 +1283,18 @@ impl Engine {
     }
 
     /// Call `ticket` finished.
-    pub fn completed_at(&mut self, ticket: u64, result: Result<Reply, CallError>, at: String, ms: u64) {
+    pub fn completed_at(
+        &mut self,
+        ticket: u64,
+        result: Result<Reply, CallError>,
+        at: String,
+        ms: u64,
+    ) {
         let current = self.call.as_ref().is_some_and(|call| call.ticket == ticket);
         self.completed(ticket, result);
-        if current && !self.workshop.paused { self.workshop.stamp_last(at, ms); }
+        if current && !self.workshop.paused {
+            self.workshop.stamp_last(at, ms);
+        }
     }
 
     pub fn completed(&mut self, ticket: u64, result: Result<Reply, CallError>) {
@@ -1296,7 +1310,9 @@ impl Engine {
             Err(error) => json!({"service":service,"verb":verb,"request_body":request,
                 "transport_error":error.message,"outcome_unknown":error.outcome_unknown,"retried":false}),
         };
-        let payload = self.last_reply["body"].as_str().and_then(|text| serde_json::from_str::<Value>(text).ok());
+        let payload = self.last_reply["body"]
+            .as_str()
+            .and_then(|text| serde_json::from_str::<Value>(text).ok());
         let request_body = serde_json::from_str::<Value>(request).ok();
         self.workshop.retain(json!({"direction":"local","from":"workshop","service":service,"verb":verb,"rc":self.last_reply["rc"],"payload":payload,"request":request_body}));
         let rendered = if let Some(rc) = self.last_reply["rc"].as_u64() {
@@ -1351,7 +1367,9 @@ impl Engine {
     }
 
     pub fn workshop_settled(&mut self) {
-        if !self.busy() { self.followup(); }
+        if !self.busy() {
+            self.followup();
+        }
     }
 
     fn followup(&mut self) {

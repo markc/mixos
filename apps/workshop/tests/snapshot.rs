@@ -114,6 +114,7 @@ fn window(theme: Theme, name: &str) {
 fn window_with(theme: Theme, name: &str, dialog: Option<Dialog>) {
     let mut engine = engine();
     if name.starts_with("macro_") {
+        engine.ui.selected = None;
         engine.workshop.selected = Some(("global".into(), "mesh-ping".into()));
         engine.ui.row_key = Some("macro:global:mesh-ping".into());
         engine.workshop.document = serde_json::json!({"tier":"user-global","path":"/home/user/.config/mixos/macros/mesh-ping.mix","text":"-- title: Mesh ping\n-- target: any\nsend noded noded.ping\nprint($result)\n"});
@@ -123,7 +124,7 @@ fn window_with(theme: Theme, name: &str, dialog: Option<Dialog>) {
     let registry = commands::registry();
     let strings = strings();
     let mut harness = Harness::builder()
-        .with_size(egui::vec2(980.0, 620.0))
+        .with_size(egui::vec2(1100.0, 760.0))
         .wgpu()
         .build_ui(move |ui| {
             let _ = view(ui, &engine, &registry, &strings);
@@ -134,13 +135,19 @@ fn window_with(theme: Theme, name: &str, dialog: Option<Dialog>) {
 }
 
 #[test]
-fn macro_studio_dark() { window(chrome(Scheme::Studio, Mode::Dark), "macro_studio_dark"); }
+fn macro_studio_dark() {
+    window(chrome(Scheme::Studio, Mode::Dark), "macro_studio_dark");
+}
 
 #[test]
-fn macro_pro_light() { window(chrome(Scheme::Pro, Mode::Light), "macro_pro_light"); }
+fn macro_pro_light() {
+    window(chrome(Scheme::Pro, Mode::Light), "macro_pro_light");
+}
 
 #[test]
-fn macro_breeze_light() { window(chrome(Scheme::Breeze, Mode::Light), "macro_breeze_light"); }
+fn macro_breeze_light() {
+    window(chrome(Scheme::Breeze, Mode::Light), "macro_breeze_light");
+}
 
 /// The hue scheme ocean, light.
 #[test]

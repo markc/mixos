@@ -38,12 +38,22 @@ impl Jobs {
     }
 }
 
-pub fn dispatch(app: &str, command: &IncomingCommand, client: Arc<SupervisedClient>, jobs: &mut Jobs) -> bool {
+pub fn dispatch(
+    app: &str,
+    command: &IncomingCommand,
+    client: Arc<SupervisedClient>,
+    jobs: &mut Jobs,
+) -> bool {
     let Some(suffix) = command.command.strip_prefix(&format!("{app}.macros.")) else {
         return false;
     };
-    let limit = if suffix == "put" { 272 * 1024 } else { REQUEST_BODY_LIMIT };
-    if app == "workshop" && command.body.len() <= limit
+    let limit = if suffix == "put" {
+        272 * 1024
+    } else {
+        REQUEST_BODY_LIMIT
+    };
+    if app == "workshop"
+        && command.body.len() <= limit
         && (suffix == "open"
             || serde_json::from_str::<Value>(&command.body)
                 .ok()
@@ -53,8 +63,13 @@ pub fn dispatch(app: &str, command: &IncomingCommand, client: Arc<SupervisedClie
     }
     while jobs.0.try_join_next().is_some() {}
     let reply = if jobs.0.len() >= 32 {
-        ::macros::verbs::Reply::Immediate(Err(Refusal::new("BUSY", "macro request capacity exhausted")))
-    } else { request(app, suffix, &command.body) };
+        ::macros::verbs::Reply::Immediate(Err(Refusal::new(
+            "BUSY",
+            "macro request capacity exhausted",
+        )))
+    } else {
+        request(app, suffix, &command.body)
+    };
     let command = IncomingCommand {
         generation: command.generation,
         from: command.from.clone(),
