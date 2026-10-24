@@ -139,12 +139,21 @@ fn target_headers_parse_and_refuse_before_acceptance() {
 fn real_mix_receives_only_an_explicit_allowed_target() {
     let temp = tempfile::tempdir().unwrap();
     let roots = roots(temp.path());
-    assert!(roots.mix.is_file(), "native Mix is required for target proof");
+    assert!(
+        roots.mix.is_file(),
+        "native Mix is required for target proof"
+    );
     fs::create_dir_all(&roots.user).unwrap();
-    fs::write(roots.user.join("target.mix"), "-- target: ced, dopus\nprint(env(\"MIXOS_MACRO_TARGET\", \"absent\"))\n").unwrap();
+    fs::write(
+        roots.user.join("target.mix"),
+        "-- target: ced, dopus\nprint(env(\"MIXOS_MACRO_TARGET\", \"absent\"))\n",
+    )
+    .unwrap();
     let entry = Catalogue::scan_globals(&roots).unwrap().entries.remove(0);
     let mut runner = Runner::default();
-    runner.start_with(&roots, "workshop", &entry, Some("ced")).unwrap();
+    runner
+        .start_with(&roots, "workshop", &entry, Some("ced"))
+        .unwrap();
     assert_eq!(wait(&runner), Status::Exited(Some(0)));
     assert_eq!(runner.output().text.trim(), "ced");
     runner.start(&roots, "workshop", &entry).unwrap();

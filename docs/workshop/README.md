@@ -53,10 +53,14 @@ reply can never land on a newer operation.
 | `engine` | `Engine`, `Effect`, `Dialog`, `Row` and `RowKind` (the services tree), `UiState` (what a person arranges), `Session` (the session theme) |
 | `bus` | the connection, through the shared [citizen](../citizen/README.md) library: `start`, `probe`, `forward`, `show`, and `discover` |
 
-Discovery calls `noded.list` and `noded.peers`, then asks every service for
-`HELP`, falling back to `app.describe`. It describes eight services at a
-time. A service that fails to describe itself shows as an error row and
-does not stop the others.
+Discovery reads `noded.info`, `noded.list` and `noded.peers`. The local node
+appears first, followed by sorted peers. Each peer is queried through
+`noded.<node>.bus`, then its services through `<service>.<node>.bus`.
+Discovery asks for `HELP`, falling back to `app.describe`, eight services
+at a time per node. Failed discovery and descriptions appear beneath the
+affected node or service. Each service retains its `ServiceInfo`; labels
+show version and short SHA when advertised, and Details shows the full
+identity including binary and dirty state.
 
 The limits are fixed in `model`:
 
@@ -119,8 +123,10 @@ with owner `workshop`.
 Arguments, answers and refusal codes (`BUSY`, `DISCONNECTED`, `ARGUMENT`,
 `UNKNOWN_VERB`, `UNKNOWN_COMMAND`, `DISABLED`) are tabled in
 [Driving apps over the Bus](../docs/drive.md#workshop-the-worked-example).
-Tree rows are named by key, for example `service:noded` or
-`verb:noded:noded.list`.
+Tree rows use `node:<node>`, `service:<node>:<service>` and
+`verb:<node>:<service>:<verb>`, for example `node:alpha`,
+`service:alpha:noded` and `verb:alpha:noded:noded.list`. A verb selection
+keeps its routed service address so calls reach the selected node.
 
 Calling a verb from Mix through Workshop:
 
@@ -218,4 +224,4 @@ instance). Verbs keep the app’s canonical prefix, such as `workshop.macros.run
 | `workshop.macros.status` | `{}` | Current or last run |
 | `workshop.macros.output` | `{}` | Retained output and dropped flag |
 | `workshop.macros.stop` | `{}` | Whether termination was requested |
-| `workshop.macros.new` | `{title}` | Create a user per-app macro; `{id,title,path,scanned}`, without opening an editor; scan failures add `warning` and preserve the file |
+| `workshop.macros.new` | `{title}` | Create a global user macro; `{id,title,path,scanned}`, without opening an editor; scan failures add `warning` and preserve the file |

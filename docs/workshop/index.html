@@ -282,10 +282,14 @@ reply can never land on a newer operation.</p>
 <tr><td><code>engine</code></td><td><code>Engine</code>, <code>Effect</code>, <code>Dialog</code>, <code>Row</code> and <code>RowKind</code> (the services tree), <code>UiState</code> (what a person arranges), <code>Session</code> (the session theme)</td></tr>
 <tr><td><code>bus</code></td><td>the connection, through the shared <a href="/citizen/">citizen</a> library: <code>start</code>, <code>probe</code>, <code>forward</code>, <code>show</code>, and <code>discover</code></td></tr>
 </tbody></table>
-<p>Discovery calls <code>noded.list</code> and <code>noded.peers</code>, then asks every service for
-<code>HELP</code>, falling back to <code>app.describe</code>. It describes eight services at a
-time. A service that fails to describe itself shows as an error row and
-does not stop the others.</p>
+<p>Discovery reads <code>noded.info</code>, <code>noded.list</code> and <code>noded.peers</code>. The local node
+appears first, followed by sorted peers. Each peer is queried through
+<code>noded.&lt;node&gt;.bus</code>, then its services through <code>&lt;service&gt;.&lt;node&gt;.bus</code>.
+Discovery asks for <code>HELP</code>, falling back to <code>app.describe</code>, eight services
+at a time per node. Failed discovery and descriptions appear beneath the
+affected node or service. Each service retains its <code>ServiceInfo</code>; labels
+show version and short SHA when advertised, and Details shows the full
+identity including binary and dirty state.</p>
 <p>The limits are fixed in <code>model</code>:</p>
 <ul>
 <li>a JSON body is at most 65,536 bytes;</li>
@@ -343,8 +347,10 @@ and <code>workshop.window.state</code>.</li>
 <p>Arguments, answers and refusal codes (<code>BUSY</code>, <code>DISCONNECTED</code>, <code>ARGUMENT</code>,
 <code>UNKNOWN_VERB</code>, <code>UNKNOWN_COMMAND</code>, <code>DISABLED</code>) are tabled in
 <a href="/docs/drive/#workshop-the-worked-example">Driving apps over the Bus</a>.
-Tree rows are named by key, for example <code>service:noded</code> or
-<code>verb:noded:noded.list</code>.</p>
+Tree rows use <code>node:&lt;node&gt;</code>, <code>service:&lt;node&gt;:&lt;service&gt;</code> and
+<code>verb:&lt;node&gt;:&lt;service&gt;:&lt;verb&gt;</code>, for example <code>node:alpha</code>,
+<code>service:alpha:noded</code> and <code>verb:alpha:noded:noded.list</code>. A verb selection
+keeps its routed service address so calls reach the selected node.</p>
 <p>Calling a verb from Mix through Workshop:</p>
 <pre><code class="language-mix">$body = json_encode({service: "noded", verb: "noded.list"})
 send workshop workshop.call body=$body timeout=30
@@ -423,7 +429,7 @@ instance). Verbs keep the app’s canonical prefix, such as <code>workshop.macro
 <tr><td><code>workshop.macros.status</code></td><td><code>{}</code></td><td>Current or last run</td></tr>
 <tr><td><code>workshop.macros.output</code></td><td><code>{}</code></td><td>Retained output and dropped flag</td></tr>
 <tr><td><code>workshop.macros.stop</code></td><td><code>{}</code></td><td>Whether termination was requested</td></tr>
-<tr><td><code>workshop.macros.new</code></td><td><code>{title}</code></td><td>Create a user per-app macro; <code>{id,title,path,scanned}</code>, without opening an editor; scan failures add <code>warning</code> and preserve the file</td></tr>
+<tr><td><code>workshop.macros.new</code></td><td><code>{title}</code></td><td>Create a global user macro; <code>{id,title,path,scanned}</code>, without opening an editor; scan failures add <code>warning</code> and preserve the file</td></tr>
 </tbody></table>
         </article>
         <p class="doc-source"><a href="/workshop/README.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>

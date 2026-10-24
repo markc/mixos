@@ -347,7 +347,10 @@ impl Library {
         for app in roots.apps()? {
             apps.insert(app.clone(), Catalogue::scan(roots, &app)?);
         }
-        Ok(Self { globals: Catalogue::scan_globals(roots)?, apps })
+        Ok(Self {
+            globals: Catalogue::scan_globals(roots)?,
+            apps,
+        })
     }
 }
 
@@ -506,7 +509,11 @@ fn valid_app(app: &str) -> bool {
 }
 
 fn checked_file(root: &Path, path: &Path) -> io::Result<fs::File> {
-    if !path.starts_with(root) || path.components().any(|part| part == std::path::Component::ParentDir) {
+    if !path.starts_with(root)
+        || path
+            .components()
+            .any(|part| part == std::path::Component::ParentDir)
+    {
         return Err(invalid("macro path escapes its root"));
     }
     let target = fs::canonicalize(path)?;

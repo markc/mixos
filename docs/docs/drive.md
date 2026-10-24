@@ -293,7 +293,7 @@ a JSON body. Everything in its window is also a Bus verb.
 
 A row's `kind` is `service`, `verb`, `error`, `peers`, `peer` or
 `no_peers`. Its `key` names it in the verbs below, for example
-`service:noded` or `verb:noded:noded.list`.
+`node:alpha`, `service:alpha:noded` or `verb:alpha:noded:noded.list`.
 
 ### Changing state
 
