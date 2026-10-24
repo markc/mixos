@@ -38,10 +38,15 @@ pub async fn perform(bus: Handle, operation: &str, mut args: Value, running: BTr
         return Ok(Value::Object(catalogues));
     }
     if operation == "observe" {
-        if !args["on"].is_boolean() || args.as_object().is_none_or(|args| args.keys().any(|key| !matches!(key.as_str(), "on"|"filter"|"body"))) {
+        if !args["on"].is_boolean() || args.as_object().is_none_or(|args| args.keys().any(|key| !matches!(key.as_str(), "on"|"filter"|"body"|"subscription_id"))) {
             return Ok(json!({"error_code":"INVALID_ARGUMENT","message":"expected on, optional filter and body"}));
         }
         let on = args["on"] == true;
+        if let Some(subscription) = args["subscription_id"].as_str() {
+            let reply = bus.call("noded", "noded.observe.stop", json!({"subscription_id":subscription})).await?;
+            if reply.rc != 0 { return Ok(json!({"error_code":"UNAVAILABLE","message":reply.body})); }
+        }
+        if !on { return Ok(json!({"stopped":true})); }
         let body = args["body"].as_str().unwrap_or("redacted");
         if !matches!(body, "none"|"redacted") { return Ok(json!({"error_code":"INVALID_ARGUMENT","message":"body must be none or redacted"})); }
         let request = if on { json!({"filter":args.get("filter").cloned().unwrap_or(json!({})),"body":body,"capacity":1024}) }

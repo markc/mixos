@@ -17,6 +17,7 @@ pub type ChangeHook = Arc<dyn Fn() + Send + Sync>;
 pub struct Session(Arc<Mutex<State>>);
 
 struct State {
+    closing: bool,
     app: String,
     roots: Option<Roots>,
     catalogue: Option<Catalogue>,
@@ -45,6 +46,7 @@ impl Session {
 
     pub fn with_roots(app: &str, roots: Option<Roots>) -> Self {
         Self(Arc::new(Mutex::new(State {
+            closing: false,
             app: app.into(),
             roots,
             catalogue: None,
@@ -251,9 +253,8 @@ impl Session {
             Catalogue::scan(&roots, &app)
         }
         .map_err(|e| Refusal::new("INTERNAL", e))?;
-        self.0.lock().unwrap().catalogue = Some(catalogue.clone());
         drop(_scan);
-        self.changed();
+        self.replace_catalogue(catalogue.clone());
         Ok(catalogue)
     }
 
@@ -267,6 +268,7 @@ impl Session {
 
     pub fn run_with(&self, id: &str, origin: &str, target: Option<&str>) -> Result<Value, Refusal> {
         let mut state = self.0.lock().unwrap();
+        if state.closing { return Err(Refusal::new("UNAVAILABLE", "macro session is closing")); }
         if state.active {
             return Err(Refusal::new("BUSY", "a macro is already running"));
         }
@@ -354,6 +356,24 @@ impl Session {
             state.runner.stop();
         }
         stopping
+    }
+
+    /// Call on a worker before closing the Bus. Fence new runs, terminate the
+    /// process group and wait for the runner's completion delivery.
+    pub fn shutdown(&self) -> Result<(), Refusal> {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let hook = self.add_finish_hook(Arc::new(move |_| { let _ = tx.send(()); }));
+        let active = {
+            let mut state = self.0.lock().unwrap();
+            state.closing = true;
+            state.runner.stop();
+            state.active
+        };
+        let result = if active {
+            rx.recv_timeout(std::time::Duration::from_secs(15)).map_err(|e| Refusal::new("UNAVAILABLE", e))
+        } else { Ok(()) };
+        self.remove_finish_hook(hook);
+        result
     }
 
     /// Check ownership and request termination under the same session lock.

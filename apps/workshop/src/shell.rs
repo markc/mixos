@@ -26,6 +26,8 @@ use toolkit::{Registry, Strings, Theme, drive};
 
 /// What finished off the UI thread.
 pub enum Event {
+    Stopped(Result<(), String>),
+    MacroChanged,
     Workshop(String, Value, Option<u64>, Result<Value, String>),
     Delivery(Delivery),
     Discovered(u64, Snapshot),
@@ -45,7 +47,7 @@ pub fn apply_event(engine: &mut Engine, event: Event) {
         Event::Completed(ticket, result) => engine.completed(ticket, result),
         Event::Shown(ticket, reply, result) => engine.shown(ticket, reply, result),
         // The session look is the shell's (see `Shell::looked`).
-        Event::Look(..) | Event::LookRetry(_) | Event::Workshop(..) => {}
+        Event::Look(..) | Event::LookRetry(_) | Event::Workshop(..) | Event::MacroChanged | Event::Stopped(_) => {}
     }
 }
 
@@ -151,6 +153,8 @@ pub fn settle(engine: &mut Engine, commands: &Registry<Engine>, strings: &String
 }
 
 pub struct Shell {
+    macro_stopping: bool,
+    _macro_change: macros::session::ChangeHook,
     engine: Engine,
     commands: Registry<Engine>,
     strings: Strings,
@@ -233,6 +237,13 @@ impl Shell {
             .map_err(|e| e.to_string())?;
         drive::install(&ctx, APP);
         let (tx, rx) = mpsc::channel();
+        let changed_tx = tx.clone();
+        let changed_ctx = ctx.clone();
+        let macro_change: macros::session::ChangeHook = Arc::new(move || {
+            let _ = changed_tx.send(Event::MacroChanged);
+            changed_ctx.request_repaint();
+        });
+        macros::Session::for_app("workshop").observe_changes(&macro_change);
         let forward = tx.clone();
         let wake = ctx.clone();
         let inbox = Arc::new(Mutex::new(deliveries));
@@ -259,6 +270,8 @@ impl Shell {
             wake.request_repaint();
         });
         let mut shell = Self {
+            macro_stopping: false,
+            _macro_change: macro_change,
             engine: Engine::new(label),
             commands: crate::commands::registry(),
             strings: strings(),
@@ -328,6 +341,17 @@ impl Shell {
     /// unanswered; completions are applied at once.
     fn pump(&mut self) {
         while let Ok(event) = self.rx.try_recv() {
+            if let Event::Stopped(result) = event {
+                match result {
+                    Ok(()) => self.perform(Effect::Exit),
+                    Err(error) => self.engine.workshop.message = error,
+                }
+                continue;
+            }
+            if let Event::MacroChanged = event {
+                if !self.engine.quitting { self.engine.queue_workshop("catalogues", json!({}), None); self.settle(); }
+                continue;
+            }
             if let Event::Workshop(operation, args, reply, result) = event {
                 self.engine.workshop.pending = self.engine.workshop.pending.saturating_sub(1);
                 let body = result.unwrap_or_else(|message| json!({"error_code":"UNAVAILABLE","message":message}));
@@ -384,6 +408,9 @@ impl Shell {
             if let Event::Delivery(Delivery::Topic(topic)) = &event {
                 for event in self.bus.take_topic_events() {
                     let body = event["body"].as_str().and_then(|text| serde_json::from_str::<Value>(text).ok()).unwrap_or(Value::Null);
+                    if event["topic"].as_str().is_some_and(|topic| topic.ends_with(".macros.finished")) {
+                        self.engine.workshop.message = body.to_string();
+                    }
                     self.engine.workshop.retain(json!({"direction":"topic","from":event["from"],"verb":event["topic"],"payload":body}));
                 }
                 if *topic == self.follower.topic() {
@@ -456,7 +483,10 @@ impl Shell {
 
     fn perform(&mut self, effect: Effect) {
         match effect {
-            Effect::Workshop { operation, args, reply } => {
+            Effect::Workshop { operation, mut args, reply } => {
+                if operation == "observe" {
+                    if let Some(subscription) = &self.engine.workshop.subscription { args["subscription_id"] = json!(subscription); }
+                }
                 let running = self.engine.snapshot.services.iter().filter_map(|(service, verbs)| {
                     if service.ends_with(".bus") || service == self.bus.service() { return None; }
                     let app = verbs.as_ref().ok()?.iter().find_map(|verb| verb.name.strip_suffix(".macros.list"))?;
@@ -502,6 +532,15 @@ impl Shell {
             }
             Effect::Copy(text) => self.ctx.copy_text(text),
             Effect::Exit => {
+                if !self.macro_stopping {
+                    self.macro_stopping = true;
+                    self.spawn(async {
+                        let result = tokio::task::spawn_blocking(|| macros::Session::for_app("workshop").shutdown())
+                            .await.map_err(|e| e.to_string()).and_then(|result| result.map_err(|e| e.to_string()));
+                        Event::Stopped(result)
+                    });
+                    return;
+                }
                 self.exiting = true;
                 // Every accepted command gets its answer before the Bus stops:
                 // drive work settled or cancelled, held commands refused.

@@ -83,7 +83,7 @@ impl Engine {
     pub fn macro_action(&mut self, operation: &str, mut args: Value, reply: Option<u64>) {
         if let Some((app, id)) = &self.workshop.selected {
             if args.get("app").is_none() { args["app"] = json!(app); }
-            if args.get("id").is_none() { args["id"] = json!(id); }
+            if !matches!(operation, "macros.stop"|"macros.status"|"macros.output"|"macros.reload"|"macros.list"|"macros.new") && args.get("id").is_none() { args["id"] = json!(id); }
         }
         self.queue_workshop(operation, args, reply);
     }
