@@ -94,7 +94,11 @@ async fn slow_node_cannot_hide_local_or_healthy_nodes_and_refresh_retries() {
     assert!(snapshot.progress.unwrap().finished);
     assert_eq!(snapshot.nodes.len(), 5);
     assert!(
-        snapshot.services.iter().filter(|(name, _)| name.as_str() != "service-0" && name.as_str() != "service-1").all(|(_, result)| result.is_ok()),
+        snapshot
+            .services
+            .iter()
+            .filter(|(name, _)| name.as_str() != "service-0" && name.as_str() != "service-1")
+            .all(|(_, result)| result.is_ok()),
         "healthy descriptions must not exhaust native call capacity: {:?}",
         snapshot.services
     );
