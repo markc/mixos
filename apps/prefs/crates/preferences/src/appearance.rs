@@ -26,7 +26,7 @@ use crate::email::Edit as EmailEdit;
 use crate::engine::{Effect, Engine};
 use crate::terminal::Edit;
 use citizen::{CallError, Reply};
-use design::{CaptionSide, Contrast, Decorations, DesignContext, Mode, Scheme, Style};
+use design::{CaptionSide, Contrast, RequestedDecorations as Decorations, DesignContext, Mode, Scheme, Style};
 use serde::Serialize;
 use serde_json::{Value, json};
 use settings::model::{Appearance as Stored, ApplyRequest, Binding, Revision};
@@ -70,6 +70,20 @@ fn named<T>(what: &str, name: &str, from_name: fn(&str) -> Option<T>) -> Result<
 }
 
 impl Look {
+    pub fn decoration_resolution(&self) -> design::decorations::Resolution {
+        design::decorations::resolve(None, self.decorations)
+    }
+
+    /// The appearance summary distinguishes the stored request from what
+    /// this session's window backend can actually draw.
+    pub fn effective(&self) -> Value {
+        let resolved = self.decoration_resolution();
+        json!({"scheme":self.scheme.name(),"style":self.style.map_or("own", Style::name),
+            "mode":self.mode.name(),"contrast":self.contrast.name(),
+            "decorations":resolved.mode.name(),"decorations_reason":resolved.reason,
+            "caption_side":self.captions.name()})
+    }
+
     /// The profile's stored appearance.
     pub fn from_stored(stored: &Stored) -> Result<Self, String> {
         Ok(Self {
@@ -1247,6 +1261,7 @@ impl Engine {
             "current":self.look.current,"draft":self.look.draft.map(|d| d.look),
             "edits":self.look.draft.map(|d| d.edits()).unwrap_or_default(),
             "conflicts":self.look.conflicts,"shown":self.look.shown(),
+            "effective":self.look.shown().map(|look| look.effective()),
             "expected":self.look.expected(),"sent":self.look.sent.as_ref().map(|s| &s.axes),
             "hold":self.look.hold,
             "custom_source":self.look.custom_source,
@@ -1327,6 +1342,23 @@ mod tests {
             revision,
             json!({"scheme":scheme,"mode":mode,"contrast":"normal","source":null}),
         )
+    }
+
+    #[test]
+    fn automatic_request_and_effective_summary_are_distinct() {
+        use design::decorations::{Resolver, SessionFacts, with_resolver};
+        use std::sync::Arc;
+        let resolver = Arc::new(Resolver::new(|| SessionFacts {
+            wayland: true, desktops: "KDE".into(), decoration_global: Some(true),
+        }, || None, |_| {}));
+        with_resolver(resolver, || {
+            let mut e = read();
+            let body = e.set_look(&json!({"decorations":"auto"})).unwrap();
+            assert_eq!(body["shown"]["decorations"], "auto");
+            assert_eq!(body["effective"]["decorations"], "ssd");
+            assert_eq!(body["effective"]["decorations_reason"], "rule3");
+            assert!(e.set_look(&json!({"decorations":"bogus"})).is_err());
+        });
     }
 
     fn changed() -> Value {

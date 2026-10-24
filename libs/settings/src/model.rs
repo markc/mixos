@@ -70,7 +70,7 @@ pub struct Appearance {
     pub style: Option<String>,
     pub mode: String,
     pub contrast: String,
-    /// `csd` (the app's title bar) or `ssd` (the compositor's).
+    /// `auto` (session detection), `csd` (the app) or `ssd` (the compositor).
     #[serde(skip_serializing_if = "is_default_decorations")]
     pub decorations: String,
     /// Where a client-side title bar puts its captions: `right` or `left`.
@@ -109,7 +109,7 @@ impl Default for Appearance {
             style: None,
             mode: "dark".into(),
             contrast: "normal".into(),
-            decorations: "csd".into(),
+            decorations: "auto".into(),
             caption_side: "right".into(),
             icon_stroke: None,
             font_family: None,
@@ -369,6 +369,8 @@ pub struct Effective {
     pub contrast: String,
     // Omitted at their defaults, as in [`Appearance`], so effective digests
     // from before these fields still verify.
+    // This projection carries the framing request. Each app resolves it
+    // against its own window backend before reporting its effective look.
     #[serde(
         default = "default_decorations",
         skip_serializing_if = "is_default_decorations"
@@ -401,7 +403,7 @@ pub(crate) fn default_caption_side() -> String {
     Appearance::default().caption_side
 }
 pub(crate) fn is_default_decorations(value: &str) -> bool {
-    value == "csd"
+    value == "auto"
 }
 pub(crate) fn is_default_caption_side(value: &str) -> bool {
     value == "right"
@@ -427,6 +429,19 @@ impl Snapshot {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn missing_decorations_default_to_auto_and_explicit_csd_survives_roundtrip() {
+        let old: Desktop = serde_json::from_str(r#"{"appearance":{}}"#).unwrap();
+        assert_eq!(old.appearance.decorations, "auto");
+        let explicit: Desktop = serde_json::from_str(
+            r#"{"appearance":{"decorations":"csd"}}"#).unwrap();
+        assert_eq!(explicit.appearance.decorations, "csd");
+        let saved = serde_json::to_value(&explicit).unwrap();
+        assert_eq!(saved["appearance"]["decorations"], "csd");
+        let loaded: Desktop = serde_json::from_value(saved).unwrap();
+        assert_eq!(loaded.appearance.decorations, "csd");
+        assert!(serde_json::to_value(&old).unwrap()["appearance"].get("decorations").is_none());
+    }
     #[test]
     fn revisions_keep_full_precision_and_refuse_noncanonical_input() {
         let value = Revision(u64::MAX);

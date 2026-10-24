@@ -32965,8 +32965,10 @@ empty list. You follow apps by listing them in
 **Appearance → Themes** sets the session's look through the settings service
 (settingsd): the **colour scheme** (each shown with its accent), the
 **style** (the scheme's own, or Plain, Pro, Studio or Classic), **light or
-dark**, **contrast**, and the **window frame**: a title bar drawn by the app
-or by the system, and which side the app's window buttons sit on.
+dark**, **contrast**, and the **window frame**: Automatic (the default), a
+title bar drawn by the app, or one drawn by the system. Automatic shows its
+current result. The window-button side can be changed whenever the effective
+title bar is drawn by the app.
 
 Each change applies to the whole session as you make it, as in GNOME's
 settings: the apps that follow the session look (Prefs itself, BusViewer,
@@ -34373,6 +34375,27 @@ let _ = toolkit::titlebar::show(ui, "Demo", Some(Icon::Server), stroke,
   `view.captions.*`, and each axis can follow the session.
 - `style`: maps a hue scheme's design onto egui's `Style`. The module docs
   give the field-by-field mapping table.
+
+Window decorations default to `auto`. The requested mode is
+`design::RequestedDecorations` (`auto`, `csd`, `ssd`); `Theme::decorations()`
+returns the two-valued `design::Decorations`. Call
+`toolkit::decorations::initialise(cc)` in the eframe creation callback before
+installing the theme, so detection uses winit's actual backend. X11 uses the
+window manager's frame. On Wayland, a colon-separated, case-insensitive
+`MixOS` desktop name keeps the app title bar; otherwise an advertised
+`zxdg_decoration_manager_v1` selects the desktop frame. Failure or absence
+keeps the app title bar. Server framing leaves only the menu-bar row inside.
+
+`MIXOS_DECORATIONS` accepts these three names, ignoring case and surrounding
+whitespace, and overrides the app choice and then the session setting.
+Invalid non-empty values warn once and are ignored. Choices are still saved
+under an override. Detection runs lazily once per process, uses an independent
+Wayland connection, and gives up after a 200 ms wait budget within the 250 ms
+reply limit. A `WAYLAND_SOCKET` hand-off skips the registry check entirely.
+Effective Bus look maps report `decorations` as `csd` or `ssd`, and
+`decorations_reason` as `override`, `choice`, or `rule1` through `rule4`.
+Tests can scope a `design::decorations::Resolver` with `with_resolver`,
+injecting both facts and the variable without reading the real session.
 - `chrome`: the colours and geometry of the title bar and menus. For the
   chrome schemes (`pro`, `studio`, `classic`) it supplies the whole egui
   style, taken from the design's chrome family. Components read

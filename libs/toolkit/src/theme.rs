@@ -21,7 +21,7 @@ use std::path::{Path, PathBuf};
 use design::{
     CaptionSide, Contrast, Decorations, DesignCompileResult, DesignContext, DesignDiagnostic,
     DesignSourceDocument, DesignSourceError, Mode, ResolvedDictionary, ResolvedStyle,
-    ResolvedTypography, Scheme, SourceIdentity, UnstampedResolvedDesign,
+    ResolvedTypography, RequestedDecorations, Scheme, SourceIdentity, UnstampedResolvedDesign,
 };
 
 /// The shared theme file, `theme.conf.mix`, in the MixOS etc directory.
@@ -144,7 +144,7 @@ pub struct Theme {
     context: DesignContext,
     design: UnstampedResolvedDesign,
     style: ResolvedStyle,
-    decorations: Decorations,
+    decorations: RequestedDecorations,
     captions: CaptionSide,
     overlay: Overlay,
     overlay_style: Option<ResolvedStyle>,
@@ -163,7 +163,7 @@ struct Selection {
 
 impl Theme {
     /// The embedded default design in the default selection: studio, dark,
-    /// normal contrast, the scheme's own style; client-side decorations with
+    /// normal contrast, the scheme's own style; automatic decorations with
     /// the captions at the right.
     pub fn embedded() -> Self {
         Self::for_context(DesignContext::default())
@@ -227,7 +227,7 @@ impl Theme {
         theme.decorations = axis(
             selection.decorations.as_deref(),
             "decorations",
-            Decorations::from_name,
+            RequestedDecorations::from_name,
         )?;
         theme.captions = axis(
             selection.caption_side.as_deref(),
@@ -306,7 +306,7 @@ impl Theme {
                     context,
                     design: success.candidate,
                     style,
-                    decorations: Decorations::default(),
+                    decorations: RequestedDecorations::default(),
                     captions: CaptionSide::default(),
                     overlay: Overlay::default(),
                     overlay_style: None,
@@ -345,8 +345,8 @@ impl Theme {
     }
 
     /// `self` with `decorations` and `captions`.
-    pub fn framed(mut self, decorations: Decorations, captions: CaptionSide) -> Self {
-        self.decorations = decorations;
+    pub fn framed(mut self, decorations: impl Into<RequestedDecorations>, captions: CaptionSide) -> Self {
+        self.decorations = decorations.into();
         self.captions = captions;
         self
     }
@@ -399,7 +399,15 @@ impl Theme {
 
     /// Who draws the title bar.
     pub fn decorations(&self) -> Decorations {
+        self.decoration_resolution().mode
+    }
+
+    pub fn requested_decorations(&self) -> RequestedDecorations {
         self.decorations
+    }
+
+    pub fn decoration_resolution(&self) -> design::decorations::Resolution {
+        design::decorations::resolve(None, self.decorations)
     }
 
     /// Where a client-side title bar puts its caption buttons.
@@ -500,7 +508,7 @@ pub struct Choice {
     /// Light or dark; `None` follows the session.
     pub mode: Option<Mode>,
     /// Who draws the title bar; `None` follows the session.
-    pub decorations: Option<Decorations>,
+    pub decorations: Option<RequestedDecorations>,
     /// The caption side; `None` follows the session.
     pub captions: Option<CaptionSide>,
 }
@@ -576,6 +584,33 @@ impl editor::palette::Theme for Theme {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn automatic_selection_survives_theme_merging_and_live_changes() {
+        use design::decorations::{Resolver, SessionFacts, with_resolver};
+        use std::sync::{Arc, atomic::{AtomicUsize, Ordering}};
+        let calls = Arc::new(AtomicUsize::new(0));
+        let counted = calls.clone();
+        let resolver = Arc::new(Resolver::new(move || {
+            counted.fetch_add(1, Ordering::Relaxed);
+            SessionFacts { wayland: true, desktops: "KDE".into(), decoration_global: Some(true) }
+        }, || None, |_| {}));
+        with_resolver(resolver, || {
+            let session = Theme::from_source("test", "decorations: \"auto\"\n").unwrap();
+            let mut choice = Choice { decorations: Some(RequestedDecorations::Client), ..Choice::default() };
+            assert_eq!(session.with_choice(&choice).unwrap().decorations(), Decorations::Client);
+            assert_eq!(calls.load(Ordering::Relaxed), 0);
+            choice.decorations = Some(RequestedDecorations::Auto);
+            let automatic = session.with_choice(&choice).unwrap();
+            assert_eq!(automatic.requested_decorations(), RequestedDecorations::Auto);
+            assert_eq!(automatic.decorations(), Decorations::Server);
+            choice.decorations = Some(RequestedDecorations::Client);
+            assert_eq!(session.with_choice(&choice).unwrap().decorations(), Decorations::Client);
+            choice.decorations = None;
+            assert_eq!(session.with_choice(&choice).unwrap().decorations(), Decorations::Server);
+            assert_eq!(calls.load(Ordering::Relaxed), 1);
+        });
+    }
 
     #[test]
     fn embedded_theme_is_studio_dark() {
@@ -673,7 +708,7 @@ mod tests {
         assert_eq!(own.style(), session.style(), "the scheme's own style again");
         let framed = session
             .with_choice(&Choice {
-                decorations: Some(Decorations::Server),
+                decorations: Some(RequestedDecorations::Server),
                 captions: Some(CaptionSide::Left),
                 ..Choice::default()
             })

@@ -67,6 +67,7 @@ toolkit-style-pro = Pro style
 toolkit-style-studio = Studio style
 toolkit-style-classic = Classic style
 toolkit-style-session = Session style
+toolkit-decorations-auto = Automatic title bar
 toolkit-decorations-csd = App title bar (CSD)
 toolkit-decorations-ssd = System title bar (SSD)
 toolkit-captions-left = Captions left

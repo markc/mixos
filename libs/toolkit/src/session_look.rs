@@ -7,10 +7,10 @@
 //! The appearance names the embedded design's scheme, style, mode and
 //! contrast, and the framing (decorations, caption side). When it names a
 //! design package of its own (`source`), or a name this build does not know,
-//! the app's session theme stands, so a newer or custom desktop never
-//! breaks an older app.
+//! the app's session design stands. `theme_or` still applies the independent
+//! framing request, so a newer or custom desktop never breaks an older app.
 use crate::theme::{Overlay, Theme};
-use design::{CaptionSide, Contrast, Decorations, DesignContext, Mode, Scheme, Style};
+use design::{CaptionSide, Contrast, RequestedDecorations as Decorations, DesignContext, Mode, Scheme, Style};
 use settings::model::Appearance;
 
 /// The theme `appearance` describes, or `None` when this build cannot draw
@@ -41,9 +41,18 @@ pub fn theme(appearance: &Appearance) -> Option<Theme> {
         .ok()
 }
 
-/// [`theme`], or `session` when the appearance cannot be drawn.
+/// [`theme`], or the session's design with the profile's framing when the
+/// appearance cannot be drawn.
 pub fn theme_or(appearance: &Appearance, session: &Theme) -> Theme {
-    theme(appearance).unwrap_or_else(|| session.clone())
+    theme(appearance).unwrap_or_else(|| {
+        // Framing is independent of the design package: an unsupported
+        // source must still follow the session's requested decorations.
+        session.clone().framed(
+            Decorations::from_name(&appearance.decorations)
+                .unwrap_or(session.requested_decorations()),
+            CaptionSide::from_name(&appearance.caption_side).unwrap_or(session.captions()),
+        )
+    })
 }
 
 #[cfg(test)]
@@ -78,8 +87,21 @@ mod tests {
         assert_eq!(theme.style_axis(), Some(Style::Pro));
         assert_eq!(theme.mode(), Mode::Light);
         assert_eq!(theme.contrast(), Contrast::High);
-        assert_eq!(theme.decorations(), Decorations::Server);
+        assert_eq!(theme.decorations(), design::Decorations::Server);
         assert_eq!(theme.captions(), CaptionSide::Left);
+    }
+
+    #[test]
+    fn unsupported_designs_still_follow_the_session_framing() {
+        let appearance = Appearance {
+            source: Some("{}".into()),
+            decorations: "ssd".into(),
+            ..Appearance::default()
+        };
+        let session = Theme::embedded();
+        let framed = theme_or(&appearance, &session);
+        assert_eq!(framed.dictionary(), session.dictionary());
+        assert_eq!(framed.decorations(), design::Decorations::Server);
     }
 
     #[test]

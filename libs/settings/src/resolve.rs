@@ -48,7 +48,7 @@ fn describe_base() -> Value {
             "appearance.scheme": {"type":"string", "enum":["ocean","crimson","stone","forest","sunset","mono","pro","studio","classic","breeze","adwaita"]},
             "appearance.style": {"type":"string|null", "enum":["plain","pro","studio","classic","breeze","adwaita"], "null":"the scheme's own style"},
             "appearance.mode": {"type":"string", "enum":["light","dark"]},
-            "appearance.decorations": {"type":"string", "enum":["csd","ssd"]},
+            "appearance.decorations": {"type":"string", "enum":["auto","csd","ssd"]},
             "appearance.caption_side": {"type":"string", "enum":["right","left"]},
             "appearance.icon_stroke": {"type":"number|null", "minimum":1.0, "maximum":3.0, "step":0.25, "null":"the design's own icon.stroke_width token"},
             "appearance.font_family": {"type":"string|null", "max_bytes":128, "null":"Inter"},
@@ -262,7 +262,7 @@ pub fn resolve_with_embedded_and_accents(
         crate::terminal::validate(&desktop.terminal)?;
         crate::email::validate(&desktop.email)?;
         crate::content::validate_ced(&desktop.ced)?;
-        if design::Decorations::from_name(&desktop.appearance.decorations).is_none() {
+        if design::RequestedDecorations::from_name(&desktop.appearance.decorations).is_none() {
             return Err(error("appearance.decorations", "Unknown decorations"));
         }
         if design::CaptionSide::from_name(&desktop.appearance.caption_side).is_none() {
@@ -824,11 +824,11 @@ mod tests {
                 current.appearance.decorations.as_str(),
                 current.appearance.caption_side.as_str()
             ),
-            ("csd", "right")
+            ("auto", "right")
         );
         let effective = resolve(&current).unwrap();
         assert_eq!(effective["desktop"].style, None);
-        assert_eq!(effective["desktop"].decorations, "csd");
+        assert_eq!(effective["desktop"].decorations, "auto");
         let next = patch(
             &current,
             &BTreeMap::from([
@@ -880,8 +880,25 @@ mod tests {
                 .unwrap();
         assert_eq!(
             (old.appearance.style, old.appearance.decorations.as_str()),
-            (None, "csd")
+            (None, "auto")
         );
+    }
+
+    #[test]
+    fn decorations_schema_accepts_auto_and_refuses_unknown_values() {
+        assert_eq!(describe()["fields"]["appearance.decorations"]["enum"],
+            json!(["auto", "csd", "ssd"]));
+        for name in ["auto", "csd", "ssd"] {
+            let next = patch(&Desktop::default(),
+                &BTreeMap::from([("appearance.decorations".into(), json!(name))]), &[]).unwrap();
+            assert_eq!(resolve(&next).unwrap()["desktop"].decorations, name);
+        }
+        let bad = patch(&Desktop::default(),
+            &BTreeMap::from([("appearance.decorations".into(), json!("bogus"))]), &[]).unwrap();
+        let errors = resolve(&bad).unwrap_err();
+        assert_eq!(errors[0].path, "appearance.decorations");
+        assert_eq!(errors[0].code, "validation_failed");
+        assert_eq!(errors[0].message, "Unknown decorations");
     }
 
     #[test]

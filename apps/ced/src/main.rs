@@ -145,6 +145,7 @@ fn window(args: &Args, config: Config, paths: Vec<String>) -> Result<(), String>
         APP_ID,
         options,
         Box::new(move |cc| {
+            toolkit::decorations::initialise(cc);
             toolkit::install(&cc.egui_ctx, &theme);
             let _ = cell.set(cc.egui_ctx.clone());
             let mut ctl = Controller::new(config.clone(), ced::run_id(), false);

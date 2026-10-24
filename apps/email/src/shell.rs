@@ -1372,7 +1372,7 @@ impl Shell {
     fn session_theme(&self) -> Theme {
         self.look
             .as_ref()
-            .and_then(toolkit::session_look::theme)
+            .map(|look| toolkit::session_look::theme_or(look, &self.file_theme))
             .unwrap_or_else(|| self.file_theme.clone())
     }
 

@@ -48,6 +48,7 @@ pub mod combo;
 pub mod command;
 pub mod content;
 pub mod datatable;
+pub mod decorations;
 pub mod dialog;
 pub mod drive;
 pub mod executed;

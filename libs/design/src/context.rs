@@ -194,6 +194,40 @@ impl Decorations {
     }
 }
 
+/// The requested framing. `Auto` is resolved before reaching the renderer.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum RequestedDecorations {
+    #[default]
+    Auto,
+    Client,
+    Server,
+}
+
+impl RequestedDecorations {
+    pub const ALL: [Self; 3] = [Self::Auto, Self::Client, Self::Server];
+
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Client => "csd",
+            Self::Server => "ssd",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|mode| mode.name() == name)
+    }
+}
+
+impl From<Decorations> for RequestedDecorations {
+    fn from(mode: Decorations) -> Self {
+        match mode {
+            Decorations::Client => Self::Client,
+            Decorations::Server => Self::Server,
+        }
+    }
+}
+
 /// Which end of a client-side title bar carries the caption buttons.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum CaptionSide {
