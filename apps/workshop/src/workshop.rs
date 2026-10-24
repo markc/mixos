@@ -16,7 +16,7 @@ pub async fn perform(
             let library = macros::Library::scan(&roots).map_err(|error| error.to_string())?;
             let mut catalogues = serde_json::Map::new();
             let session = macros::Session::for_app("workshop");
-            let global = macros::verbs::handle(&session, "reload", &json!({}))
+            let global = macros::verbs::handle(&session, macros::verbs::Caller::Workshop, "reload", &json!({}))
                 .wait()
                 .map_err(|e| e.to_string())?;
             catalogues.insert("global".into(), global);
@@ -26,7 +26,7 @@ pub async fn perform(
                 }
                 let session = macros::Session::with_roots(&app, Some(roots.clone()));
                 session.replace_catalogue(catalogue);
-                let mut list = macros::verbs::handle(&session, "list", &json!({}))
+                let mut list = macros::verbs::handle(&session, macros::verbs::Caller::Workshop, "list", &json!({}))
                     .wait()
                     .map_err(|e| e.to_string())?;
                 list["running"] = json!(false);
@@ -259,7 +259,7 @@ async fn request_macro(
         } else {
             macros::Session::with_roots(&app, macros::Roots::resolve())
         };
-        match macros::verbs::handle(&session, &suffix, &args).wait() {
+        match macros::verbs::handle(&session, macros::verbs::Caller::Workshop, &suffix, &args).wait() {
             Ok(answer) => Ok(answer),
             Err(error) => Ok(json!({"error_code":error.code,"message":error.message})),
         }

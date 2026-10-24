@@ -8,7 +8,7 @@ use std::time::Duration;
 fn put_has_a_separate_larger_envelope_cap() {
     let oversized = " ".repeat(macros::verbs::PUT_ENVELOPE_LIMIT + 1);
     let (_, body) = citizen::macros::answer_body(
-        citizen::macros::request("put-limit-test", "put", &oversized).wait(),
+        citizen::macros::request("put-limit-test", ::macros::verbs::Caller::Workshop, "put", &oversized).wait(),
     );
     assert_eq!(
         body["message"],
@@ -19,7 +19,7 @@ fn put_has_a_separate_larger_envelope_cap() {
     );
     let text = serde_json::json!({"id":"missing","text":"x".repeat(9000)}).to_string();
     let (_, body) = citizen::macros::answer_body(
-        citizen::macros::request("put-limit-test", "put", &text).wait(),
+        citizen::macros::request("put-limit-test", ::macros::verbs::Caller::Workshop, "put", &text).wait(),
     );
     assert_ne!(body["message"], "request exceeds 8192 bytes");
 }
@@ -31,7 +31,7 @@ fn macro_body_limit_is_checked_before_parsing_and_accepts_the_boundary() {
         "é".repeat(4097),
         format!("{{}}{}", " ".repeat(8191)),
     ] {
-        let reply = citizen::macros::request("body-limit-test", "status", &body);
+        let reply = citizen::macros::request("body-limit-test", ::macros::verbs::Caller::Workshop, "status", &body);
         assert!(matches!(reply, macros::verbs::Reply::Immediate(_)));
         let (rc, body) = citizen::macros::answer_body(reply.wait());
         assert_eq!(rc, 10);
@@ -40,7 +40,7 @@ fn macro_body_limit_is_checked_before_parsing_and_accepts_the_boundary() {
     }
     let boundary = format!("{{}}{}", " ".repeat(8190));
     let (rc, _) = citizen::macros::answer_body(
-        citizen::macros::request("body-limit-test", "status", &boundary).wait(),
+        citizen::macros::request("body-limit-test", ::macros::verbs::Caller::Workshop, "status", &boundary).wait(),
     );
     assert_eq!(rc, 0);
 }
@@ -48,7 +48,7 @@ fn macro_body_limit_is_checked_before_parsing_and_accepts_the_boundary() {
 #[test]
 fn malformed_macro_json_has_a_typed_refusal() {
     let (rc, body) = citizen::macros::answer_body(
-        citizen::macros::request("body-limit-test", "status", "{").wait(),
+        citizen::macros::request("body-limit-test", ::macros::verbs::Caller::Workshop, "status", "{").wait(),
     );
     assert_eq!(rc, 10);
     assert_eq!(body["error_code"], "INVALID_ARGUMENT");

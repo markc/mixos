@@ -9346,7 +9346,7 @@ the application layering gate.
 
 Email, Workshop, Monitor, Prefs, Screenshot, Ced, Dopus and Term serve the
 same macro surface under their component prefix. `list`, `status` and
-`output` are read-only. `run`, `stop`, `reload` and `new` have the same
+`output` are read-only. `run`, `stop` and `reload` have the same
 authority as executing an app command; running a macro executes user code.
 
 | Suffix after `<app>.macros.` | Body | Reply |
@@ -9413,6 +9413,19 @@ session lock. Window callbacks use weak lifetime guards for in-flight delivery.
 The completion body includes the retained output `text`, captured before a
 subsequent run can reset it. Weak change observers wake every live viewport
 for Bus starts, catalogue changes and completion without idle polling.
+
+Macro-file writes (`put`, `remove`, `move`, `copy`, `new`) require the owning
+process’s registered local service or Workshop (`workshop`, `workshop-*`).
+Global writes and moves into another app’s catalogue require Workshop.
+Workshop’s own mutating macro verbs, including forwarding with `app`, accept
+only Workshop callers, preventing arbitrary callers from using it as a write
+proxy. Refusals use rc 10, `DENIED`, and name the verb and rule before any
+file effects. Read/run/status/output/stop/reload remain open.
+
+The broker stamps service identity and local/mesh origin; mesh writes are
+refused. Local service registration is not executable authentication: a
+client able to register an unused Workshop service name gains its authority.
+This is a Bus access rule, not filesystem or same-user code isolation.
 
 ---
 
@@ -35352,6 +35365,19 @@ Open Workshop in an app's macro menu launches or focuses Workshop; a launch
 with `--app ced --id tidy-imports` selects that macro. The global folder in
 Dopus is the fallback when Workshop is not installed. Headless instances
 use the same management and traffic verbs.
+
+Macro-file writes (`put`, `remove`, `move`, `copy`, `new`) require the owning
+process’s registered local service or Workshop (`workshop`, `workshop-*`).
+Global writes and moves into another app’s catalogue require Workshop.
+Workshop’s own mutating macro verbs, including forwarding with `app`, accept
+only Workshop callers, preventing arbitrary callers from using it as a write
+proxy. Refusals use rc 10, `DENIED`, and name the verb and rule before any
+file effects. Read/run/status/output/stop/reload remain open.
+
+The broker stamps service identity and local/mesh origin; mesh writes are
+refused. Local service registration is not executable authentication: a
+client able to register an unused Workshop service name gains its authority.
+This is a Bus access rule, not filesystem or same-user code isolation.
 
 ---
 

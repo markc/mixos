@@ -8,6 +8,47 @@ pub const TEXT_LIMIT: usize = 256 * 1024;
 /// JSON can encode each decoded byte as six bytes (for example \u0000).
 pub const PUT_ENVELOPE_LIMIT: usize = 6 * TEXT_LIMIT + 8192;
 
+/// Authority established by the transport, never by request arguments.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Caller {
+    Owner,
+    Workshop,
+    Other,
+}
+
+impl Caller {
+    pub fn local(service: &str, owner_service: &str) -> Self {
+        if service == "workshop" || service.starts_with("workshop-") {
+            Self::Workshop
+        } else if !service.is_empty() && service == owner_service {
+            Self::Owner
+        } else {
+            Self::Other
+        }
+    }
+}
+
+pub fn mutates(suffix: &str) -> bool {
+    matches!(suffix, "put" | "remove" | "move" | "copy" | "new")
+}
+
+pub fn authorize(app: &str, caller: Caller, suffix: &str, body: &Value) -> Result<(), Refusal> {
+    if mutates(suffix)
+        && caller != Caller::Workshop
+        && (caller != Caller::Owner
+            || app == "workshop"
+            || (suffix == "move"
+                && (body["tier"] == "user-global"
+                    || body["destination"].as_str().is_some_and(|dest| dest != app))))
+    {
+        return Err(Refusal::new(
+            "DENIED",
+            format!("{app}.macros.{suffix}: macro-file writes require the owning service or Workshop; global and cross-app writes require Workshop"),
+        ));
+    }
+    Ok(())
+}
+
 pub const SUFFIXES: [&str; 12] = [
     "list", "reload", "run", "status", "output", "stop", "new", "get", "put", "remove", "move",
     "copy",
@@ -93,7 +134,10 @@ pub fn describe(app: &str) -> Vec<Value> {
         .collect()
 }
 
-pub fn handle(session: &Session, suffix: &str, body: &Value) -> Reply {
+pub fn handle(session: &Session, caller: Caller, suffix: &str, body: &Value) -> Reply {
+    if let Err(error) = authorize(&session.app(), caller, suffix, body) {
+        return Reply::Immediate(Err(error));
+    }
     let valid = body.as_object().is_some_and(|object| {
         let (required, allowed): (&[&str], &[&str]) = match suffix {
             "run" => (&["id"], &["id", "target"]),

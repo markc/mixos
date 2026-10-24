@@ -47,19 +47,43 @@ impl Jobs {
 
 pub fn dispatch(
     app: &str,
+    service: &str,
     command: &IncomingCommand,
     client: Arc<SupervisedClient>,
     jobs: &mut Jobs,
 ) -> bool {
+    // Workshop's generic dispatch must not bypass its macro mutation gate.
+    let proxy_write = app == "workshop"
+        && serde_json::from_str::<Value>(&command.body).ok().is_some_and(|body| {
+            match command.command.as_str() {
+                "workshop.execute" => body["id"].as_str().is_some_and(|id| {
+                    id == "bus.call" || id.strip_prefix("macro.").is_some_and(::macros::verbs::mutates)
+                }),
+                "workshop.call" => body["verb"].as_str().is_none_or(|verb| {
+                    verb.rsplit_once(".macros.").is_some_and(|(_, suffix)| ::macros::verbs::mutates(suffix))
+                        || matches!(verb, "workshop.call" | "workshop.execute")
+                }),
+                _ => false,
+            }
+        });
+    let suffix = if proxy_write { "put" } else {
     let Some(suffix) = command.command.strip_prefix(&format!("{app}.macros.")) else {
         return false;
+    };
+        suffix
     };
     let limit = if suffix == "put" {
         ::macros::verbs::PUT_ENVELOPE_LIMIT
     } else {
         REQUEST_BODY_LIMIT
     };
+    let caller = caller(command, service);
+    let authority = ::macros::verbs::authorize(app, caller, suffix, &Value::Null);
+    if proxy_write && authority.is_ok() {
+        return false;
+    }
     if app == "workshop"
+        && authority.is_ok()
         && command.body.len() <= limit
         && (suffix == "open"
             || serde_json::from_str::<Value>(&command.body)
@@ -69,13 +93,15 @@ pub fn dispatch(
         return false;
     }
     while jobs.0.try_join_next().is_some() {}
-    let reply = if jobs.0.len() >= 32 {
+    let reply = if let Err(error) = authority {
+        ::macros::verbs::Reply::Immediate(Err(error))
+    } else if jobs.0.len() >= 32 {
         ::macros::verbs::Reply::Immediate(Err(Refusal::new(
             "BUSY",
             "macro request capacity exhausted",
         )))
     } else {
-        request(app, suffix, &command.body)
+        request(app, caller, suffix, &command.body)
     };
     let command = IncomingCommand {
         generation: command.generation,
@@ -103,7 +129,15 @@ pub fn dispatch(
     true
 }
 
-pub fn request(app: &str, suffix: &str, body: &str) -> ::macros::verbs::Reply {
+fn caller(command: &IncomingCommand, service: &str) -> ::macros::verbs::Caller {
+    if command.header("broker_origin") == Some("local") {
+        ::macros::verbs::Caller::local(&command.from, service)
+    } else {
+        ::macros::verbs::Caller::Other
+    }
+}
+
+pub fn request(app: &str, caller: ::macros::verbs::Caller, suffix: &str, body: &str) -> ::macros::verbs::Reply {
     let limit = if suffix == "put" {
         ::macros::verbs::PUT_ENVELOPE_LIMIT
     } else {
@@ -116,7 +150,7 @@ pub fn request(app: &str, suffix: &str, body: &str) -> ::macros::verbs::Reply {
         )));
     }
     match serde_json::from_str::<Value>(if body.trim().is_empty() { "{}" } else { body }) {
-        Ok(body) => ::macros::verbs::handle(&::macros::Session::for_app(app), suffix, &body),
+        Ok(body) => ::macros::verbs::handle(&::macros::Session::for_app(app), caller, suffix, &body),
         Err(error) => {
             ::macros::verbs::Reply::Immediate(Err(Refusal::new("INVALID_ARGUMENT", error)))
         }
@@ -154,7 +188,7 @@ mod tests {
         let body = json!({"id":"missing", "text":text}).to_string();
         assert!(body.len() > 272 * 1024);
         // No existing id is required to prove that the envelope was admitted.
-        let error = request("escape-heavy-test", "put", &body)
+        let error = request("escape-heavy-test", ::macros::verbs::Caller::Workshop, "put", &body)
             .wait()
             .unwrap_err();
         assert_ne!(error.code, "INVALID_ARGUMENT");

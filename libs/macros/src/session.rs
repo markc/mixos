@@ -33,6 +33,10 @@ struct State {
 }
 
 impl Session {
+    pub fn app(&self) -> String {
+        self.0.lock().unwrap().app.clone()
+    }
+
     pub fn for_app(app: &str) -> Self {
         static SESSIONS: OnceLock<Mutex<HashMap<String, Session>>> = OnceLock::new();
         SESSIONS

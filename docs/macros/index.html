@@ -387,7 +387,7 @@ the application layering gate.</p>
 <h2 id="bus-verbs">Bus verbs</h2>
 <p>Email, Workshop, Monitor, Prefs, Screenshot, Ced, Dopus and Term serve the
 same macro surface under their component prefix. <code>list</code>, <code>status</code> and
-<code>output</code> are read-only. <code>run</code>, <code>stop</code>, <code>reload</code> and <code>new</code> have the same
+<code>output</code> are read-only. <code>run</code>, <code>stop</code> and <code>reload</code> have the same
 authority as executing an app command; running a macro executes user code.</p>
 <table><thead><tr><th>Suffix after <code>&lt;app&gt;.macros.</code></th><th>Body</th><th>Reply</th></tr></thead><tbody>
 <tr><td><code>list</code></td><td><code>{}</code></td><td><code>{macros:[{id,title,tier,path,shadows}], diagnostics:[{path,message}], scanned:true}</code></td></tr>
@@ -446,6 +446,17 @@ session lock. Window callbacks use weak lifetime guards for in-flight delivery.
 The completion body includes the retained output <code>text</code>, captured before a
 subsequent run can reset it. Weak change observers wake every live viewport
 for Bus starts, catalogue changes and completion without idle polling.</p>
+<p>Macro-file writes (<code>put</code>, <code>remove</code>, <code>move</code>, <code>copy</code>, <code>new</code>) require the owning
+process’s registered local service or Workshop (<code>workshop</code>, <code>workshop-*</code>).
+Global writes and moves into another app’s catalogue require Workshop.
+Workshop’s own mutating macro verbs, including forwarding with <code>app</code>, accept
+only Workshop callers, preventing arbitrary callers from using it as a write
+proxy. Refusals use rc 10, <code>DENIED</code>, and name the verb and rule before any
+file effects. Read/run/status/output/stop/reload remain open.</p>
+<p>The broker stamps service identity and local/mesh origin; mesh writes are
+refused. Local service registration is not executable authentication: a
+client able to register an unused Workshop service name gains its authority.
+This is a Bus access rule, not filesystem or same-user code isolation.</p>
         </article>
         <p class="doc-source"><a href="/macros/README.md"><i data-lucide="file-text"></i> This page as Markdown</a> · This page describes the current main branch of MixOS.</p>
     </div>

@@ -593,7 +593,7 @@ async fn worker(
                 }
                 next_id += 1;
                 if let Some(app) = &macro_app
-                    && macros::dispatch(app, &command, client.clone(), &mut macro_jobs) {
+                    && macros::dispatch(app, &service, &command, client.clone(), &mut macro_jobs) {
                     continue;
                 }
                 let delivery = Delivery::Command {id:next_id,verb:command.command.clone(),body:if command.body.trim().is_empty(){"{}".into()}else{command.body.clone()}};
