@@ -17,6 +17,13 @@ An app's supervised native Bus connection, shared by the MixOS apps
   (`BUSY: <app> is closing`) before the connection closes; `wait_done`.
 - `probe`/`forward`: single-instance launch through `<app>.ping` and
   `<app>.show`; `noded_url()`: the broker this session uses.
+- `Handle::subscribe(topic)` / `unsubscribe(topic)`: change subscriptions
+  at runtime on the same supervised native connection and await the result.
+  Reconnection retains the client's subscription set. `Delivery::Topic`
+  remains a change hint. `take_topic_events()` drains retained topic bodies
+  for tools such as Workshop: at most 256 rows and 8 MiB. Loss is reported
+  first as a `citizen.topic.gap` record with `dropped`; this is local inbox
+  metadata, not a published topic. Consumers still validate untrusted bodies.
 - `show(handle, comp, app_id)`: restore and focus this process's window
   through [compd](../compd/README.md).
 - With the `testing` feature: `Handle::sink()`, a handle with no connection

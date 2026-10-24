@@ -365,6 +365,10 @@ for an allowed choice. A disallowed choice returns <code>INVALID_ARGUMENT</code>
 before accepting a run. Without a choice the variable is removed from the
 child environment, including any inherited value. A header-free macro runs
 without a target and names its own services in its source.</p>
+<p>Native Mix sends from the runner carry a bounded <code>macro-origin</code> header such
+as <code>macro:ced:tidy-imports</code>, derived from the runner's app/id context. Workshop
+uses it to filter observed requests during a run. It is telemetry and conveys
+no additional authority.</p>
 <p><code>Roots::read</code>, <code>write</code>, <code>remove</code> and <code>move_to</code> share root confinement and
 regular-file checks. Writes replace the directory entry atomically through an
 opened parent descriptor. Moves use an atomic no-replace rename, without an
@@ -388,19 +392,30 @@ authority as executing an app command; running a macro executes user code.</p>
 <table><thead><tr><th>Suffix after <code>&lt;app&gt;.macros.</code></th><th>Body</th><th>Reply</th></tr></thead><tbody>
 <tr><td><code>list</code></td><td><code>{}</code></td><td><code>{macros:[{id,title,tier,path,shadows}], diagnostics:[{path,message}], scanned:true}</code></td></tr>
 <tr><td><code>reload</code></td><td><code>{}</code></td><td>Rescan and return the list shape</td></tr>
-<tr><td><code>run</code></td><td><code>{id}</code></td><td><code>{accepted:true, run, id, title}</code>; <code>NOT_FOUND</code> for unknown ids, <code>BUSY</code> while running</td></tr>
+<tr><td><code>run</code></td><td><code>{id,target?}</code></td><td><code>{accepted:true, run, id, title}</code>; <code>NOT_FOUND</code> for unknown ids, <code>BUSY</code> while running; target must be permitted by the header</td></tr>
 <tr><td><code>status</code></td><td><code>{}</code></td><td><code>{state,run,id,title,origin,started,exit,error}</code></td></tr>
 <tr><td><code>output</code></td><td><code>{}</code></td><td><code>{run,text,dropped}</code>; the retained 64 KiB tail</td></tr>
 <tr><td><code>stop</code></td><td><code>{}</code></td><td><code>{stopping:bool}</code>; termination is asynchronous</td></tr>
 <tr><td><code>new</code></td><td><code>{title}</code></td><td>Creates in the user per-app tier; replies <code>{id, title, path, scanned}</code> without opening an editor; if the rescan fails, <code>scanned:false</code> and <code>warning</code> report it while preserving the created file</td></tr>
+<tr><td><code>get</code></td><td><code>{id}</code></td><td><code>{id,tier,path,text}</code>, bounded to 256 KiB</td></tr>
+<tr><td><code>put</code></td><td><code>{id,text}</code></td><td>Atomically save a user macro and refresh the Session</td></tr>
+<tr><td><code>remove</code></td><td><code>{id}</code></td><td>Remove a user macro and refresh the Session</td></tr>
+<tr><td><code>move</code></td><td><code>{id,tier,destination?}</code></td><td>Move between user tiers without overwriting; destination names the app for <code>user-app</code></td></tr>
+<tr><td><code>copy</code></td><td><code>{id}</code></td><td>Copy a built-in into the corresponding user tier</td></tr>
 </tbody></table>
 <p>Refusals use rc 10 and <code>{error_code,message}</code>. Bodies are limited to 8192
-bytes before JSON parsing.</p>
+bytes before JSON parsing, except <code>put</code>: its envelope is capped at 272 KiB
+and its text at 256 KiB. Workshop creates and runs globals; its <code>new</code> creates
+directly in the global user folder. Management replies follow the owning
+Session's rescan, so an app's menu reflects the mutation immediately.</p>
 <table><thead><tr><th>Error code</th><th>Meaning</th></tr></thead><tbody>
 <tr><td><code>INVALID_ARGUMENT</code></td><td>Bad or oversized body, unknown fields, missing or empty id/title, or an invalid single-line title</td></tr>
 <tr><td><code>NOT_FOUND</code></td><td>Unknown macro id</td></tr>
 <tr><td><code>BUSY</code></td><td>A macro is already running</td></tr>
 <tr><td><code>UNAVAILABLE</code></td><td>No absolute HOME/roots</td></tr>
+<tr><td><code>DENIED</code></td><td>Built-in mutation or an unsafe/non-editable storage path</td></tr>
+<tr><td><code>ALREADY_EXISTS</code></td><td>A move or copy would overwrite a destination</td></tr>
+<tr><td><code>RESOURCE_EXHAUSTED</code></td><td>A get exceeds the bounded text read</td></tr>
 <tr><td><code>INTERNAL</code></td><td>Create/scan I/O error, worker failure or dropped reply channel</td></tr>
 </tbody></table>
 <p>Creation (including its rescan), the first list and every reload run off the caller's thread and defer the

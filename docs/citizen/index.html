@@ -246,6 +246,13 @@ command; <code>quit</code>, which answers every accepted command
 (<code>BUSY: &lt;app&gt; is closing</code>) before the connection closes; <code>wait_done</code>.</li>
 <li><code>probe</code>/<code>forward</code>: single-instance launch through <code>&lt;app&gt;.ping</code> and
 <code>&lt;app&gt;.show</code>; <code>noded_url()</code>: the broker this session uses.</li>
+<li><code>Handle::subscribe(topic)</code> / <code>unsubscribe(topic)</code>: change subscriptions
+at runtime on the same supervised native connection and await the result.
+Reconnection retains the client's subscription set. <code>Delivery::Topic</code>
+remains a change hint. <code>take_topic_events()</code> drains retained topic bodies
+for tools such as Workshop: at most 256 rows and 8 MiB. Loss is reported
+first as a <code>citizen.topic.gap</code> record with <code>dropped</code>; this is local inbox
+metadata, not a published topic. Consumers still validate untrusted bodies.</li>
 <li><code>show(handle, comp, app_id)</code>: restore and focus this process's window
 through <a href="/compd/">compd</a>.</li>
 <li>With the <code>testing</code> feature: <code>Handle::sink()</code>, a handle with no connection

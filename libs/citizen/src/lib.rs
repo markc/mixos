@@ -116,7 +116,7 @@ enum Control {
 }
 #[derive(Clone)]
 pub struct Handle {
-    events: Arc<Mutex<std::collections::VecDeque<Value>>>,
+    events: Arc<Mutex<TopicInbox>>,
     tx: tokio::sync::mpsc::Sender<Effect>,
     control: tokio::sync::mpsc::UnboundedSender<Control>,
     done: Arc<(Mutex<bool>, Condvar)>,
@@ -127,6 +127,34 @@ pub struct Handle {
     /// What this handle was asked to do, in order (tests only).
     #[cfg(any(test, feature = "testing"))]
     log: Arc<Mutex<Vec<Logged>>>,
+}
+
+#[derive(Default)]
+struct TopicInbox {
+    rows: std::collections::VecDeque<Value>,
+    bytes: usize,
+    dropped: u64,
+}
+
+impl TopicInbox {
+    fn push(&mut self, row: Value) {
+        let size = row.to_string().len();
+        if size > 8 * 1024 * 1024 { self.dropped += 1; return; }
+        while self.rows.len() >= 256 || self.bytes + size > 8 * 1024 * 1024 {
+            if let Some(old) = self.rows.pop_front() { self.bytes -= old.to_string().len(); self.dropped += 1; }
+        }
+        self.bytes += size;
+        self.rows.push_back(row);
+    }
+
+    fn take(&mut self) -> Vec<Value> {
+        let mut rows = Vec::new();
+        if self.dropped > 0 { rows.push(json!({"topic":"citizen.topic.gap","dropped":self.dropped})); }
+        rows.extend(self.rows.drain(..));
+        self.bytes = 0;
+        self.dropped = 0;
+        rows
+    }
 }
 
 /// One thing a test handle was asked to do.
@@ -154,7 +182,7 @@ impl Handle {
     /// Drain retained topic bodies. The native lane bounds this inbox to 256
     /// events; ordinary topic hints still wake consumers after overflow.
     pub fn take_topic_events(&self) -> Vec<Value> {
-        self.events.lock().unwrap().drain(..).collect()
+        self.events.lock().unwrap().take()
     }
     /// Change topic subscriptions on the existing supervised native connection.
     /// Subscriptions survive reconnects; failures are returned to the caller.
@@ -354,7 +382,7 @@ fn start_inner(
     let finished = done.clone();
     let outbox = Arc::new(outbox::Outbox::default());
     let worker_outbox = outbox.clone();
-    let events = Arc::new(Mutex::new(std::collections::VecDeque::new()));
+    let events = Arc::new(Mutex::new(TopicInbox::default()));
     let worker_events = events.clone();
     let registered: Arc<str> = Arc::from(service);
     let service = service.to_owned();
@@ -422,7 +450,7 @@ async fn worker(
     ready: std::sync::mpsc::Sender<Result<(), String>>,
     outbox: Arc<outbox::Outbox>,
     macro_app: Option<String>,
-    events: Arc<Mutex<std::collections::VecDeque<Value>>>,
+    events: Arc<Mutex<TopicInbox>>,
 ) {
     let connect = SupervisedClient::connect_options(&service, &url)
         .bounded_incoming(64)
@@ -508,8 +536,7 @@ async fn worker(
                 if let Some(topic) = command.topic() {
                     if topics.iter().any(|t| t == topic) {
                         let mut events = events.lock().unwrap();
-                        if events.len() == 256 { events.pop_front(); }
-                        events.push_back(json!({"topic":topic,"from":command.from,"body":command.body}));
+                        events.push(json!({"topic":topic,"from":command.from,"body":command.body}));
                     }
                     if topic == "noded.props.changed" && command.headers.get("gap").is_none_or(|value|value != "true")
                         && serde_json::from_str::<Value>(&command.body).ok().is_some_and(|body|body["path"] != "services.registered") {
@@ -716,6 +743,19 @@ pub async fn show(handle: Handle, comp: String, app_id: &str) -> Result<Value, S
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn topic_inbox_bounds_memory_and_reports_loss_before_bodies() {
+        let mut inbox = TopicInbox::default();
+        for seq in 0..260 { inbox.push(json!({"seq":seq})); }
+        let rows = inbox.take();
+        assert_eq!(rows.len(), 257);
+        assert_eq!(rows[0]["topic"], "citizen.topic.gap");
+        assert_eq!(rows[0]["dropped"], 4);
+        assert_eq!(rows[1]["seq"], 4);
+        assert!(inbox.take().is_empty());
+        inbox.push(json!({"body":"x".repeat(8 * 1024 * 1024)}));
+        assert_eq!(inbox.take()[0]["dropped"], 1);
+    }
     #[test]
     fn replies_and_quit_survive_full_call_queue_in_order() {
         let (tx, _rx) = tokio::sync::mpsc::channel(64);

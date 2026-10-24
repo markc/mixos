@@ -174,7 +174,17 @@ pub async fn perform(
         }
         return Ok(document);
     }
-    request_macro(&bus, &app, &suffix, args, &running).await
+    let destination = if suffix == "move" {
+        if args["tier"] == "user-global" { Some("global".to_owned()) }
+        else { args["destination"].as_str().map(str::to_owned) }
+    } else { None };
+    let answer = request_macro(&bus, &app, &suffix, args, &running).await?;
+    if answer.get("error_code").is_none()
+        && let Some(destination) = destination {
+        let refreshed = request_macro(&bus, &destination, "reload", json!({}), &running).await?;
+        if refreshed.get("error_code").is_some() { return Ok(refreshed); }
+    }
+    Ok(answer)
 }
 
 async fn request_macro(bus: &Handle, app: &str, suffix: &str, args: Value, running: &BTreeMap<String, String>) -> Result<Value, String> {

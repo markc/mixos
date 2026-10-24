@@ -9,6 +9,7 @@ pub const TRAFFIC_BYTES: usize = 8 * 1024 * 1024;
 
 #[derive(Default, serde::Serialize)]
 pub struct Workshop {
+    pub destination: String,
     pub next_ticket: u64,
     pub latest_open: u64,
     pub latest_catalogues: u64,
@@ -142,6 +143,12 @@ impl Engine {
         }
         if operation == "macros.put" && args.get("text").is_none() {
             args["text"] = json!(self.workshop.draft.as_deref().unwrap_or(self.workshop.document["text"].as_str().unwrap_or_default()));
+        }
+        if operation == "macros.move" && args.get("tier").is_none() {
+            if self.workshop.selected.as_ref().is_some_and(|(app, _)| app == "global") {
+                args["tier"] = json!("user-app");
+                args["destination"] = json!(self.workshop.destination);
+            } else { args["tier"] = json!("user-global"); }
         }
         if operation == "macros.run" && args.get("target").is_none() && !self.workshop.target.is_empty()
             && self.workshop.selected.as_ref().and_then(|(app, id)| self.workshop.catalogues.get(app)?.get("macros")?.as_array()?.iter().find(|entry| entry["id"] == *id)).is_some_and(|entry| !entry["targets"].is_null()) {

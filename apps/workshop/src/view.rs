@@ -22,6 +22,7 @@ use toolkit::{Icon, Registry, Strings, bars, field, icons, panel, tooltip};
 /// One interaction from this frame.
 #[derive(Clone, Debug, PartialEq)]
 pub enum UiEvent {
+    MacroDestination(String),
     MacroTarget(String),
     CancelDelete,
     MacroDraft(String),
@@ -473,7 +474,9 @@ fn macro_details(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
         document["path"].as_str().unwrap_or_default()
     ));
     if let Some(entry) = entry {
-        ui.small(format!("{} {}", label("macro-shadows"), entry["shadows"]));
+        for tier in entry["shadows"].as_array().into_iter().flatten().filter_map(serde_json::Value::as_str) {
+            ui.small(format!("{} {} {}", tier, label("macro-shadowed-by"), document["tier"].as_str().unwrap_or_default()));
+        }
     }
     type Document = std::sync::Arc<std::sync::Mutex<editor::local::Document>>;
     let key = egui::Id::new((
@@ -515,6 +518,7 @@ fn macro_details(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
         data.get_temp::<String>(key.with("target"))
             .unwrap_or_default()
     });
+    let mut destination = ui.ctx().data(|data| data.get_temp::<String>(key.with("destination")).unwrap_or_default());
     ui.horizontal_wrapped(|ui| {
         if ui.button(label("macro-save")).clicked() {
             events.push(UiEvent::Macro(
@@ -522,10 +526,10 @@ fn macro_details(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
                 serde_json::json!({"text":doc.contents()}),
             ));
         }
-        if app == "global" {
-            let targets = entry
+        if app == "global"
+            && let Some(targets) = entry
                 .and_then(|entry| entry.get("targets"))
-                .unwrap_or(&serde_json::Value::Null);
+                .filter(|targets| !targets.is_null()) {
             let apps: Vec<String> = if targets == "any" {
                 engine
                     .workshop
@@ -533,14 +537,6 @@ fn macro_details(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
                     .iter()
                     .filter(|(app, c)| *app != "global" && c["running"] == true)
                     .map(|(app, _)| app.clone())
-                    .collect()
-            } else if targets.is_null() {
-                engine
-                    .workshop
-                    .catalogues
-                    .keys()
-                    .filter(|app| *app != "global")
-                    .cloned()
                     .collect()
             } else {
                 targets
@@ -574,13 +570,21 @@ fn macro_details(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
         if ui.button(label("macro-stop")).clicked() {
             events.push(UiEvent::Macro("macros.stop".into(), serde_json::json!({})));
         }
+        if app == "global" {
+            egui::ComboBox::from_id_salt("macro-destination").selected_text(if destination.is_empty() { label("macro-destination") } else { destination.clone() })
+                .show_ui(ui, |ui| {
+                    for app in engine.workshop.catalogues.keys().filter(|app| *app != "global") {
+                        if toolkit::selectable(ui, destination == *app, app.clone()).clicked() { destination = app.clone(); }
+                    }
+                });
+        }
         for (operation, label_key, args) in [
             ("macros.copy", "macro-copy", serde_json::json!({})),
             (
                 "macros.move",
                 "macro-move",
                 if app == "global" {
-                    serde_json::json!({"tier":"user-app","destination":target})
+                    serde_json::json!({"tier":"user-app","destination":destination})
                 } else {
                     serde_json::json!({"tier":"user-global"})
                 },
@@ -600,6 +604,8 @@ fn macro_details(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
         .data_mut(|data| data.insert_temp(key.with("target"), target));
     let target = ui.ctx().data(|data| data.get_temp::<String>(key.with("target")).unwrap_or_default());
     if target != engine.workshop.target { events.push(UiEvent::MacroTarget(target)); }
+    ui.ctx().data_mut(|data| data.insert_temp(key.with("destination"), destination.clone()));
+    if destination != engine.workshop.destination { events.push(UiEvent::MacroDestination(destination)); }
     if engine.workshop.confirm_delete {
         ui.horizontal(|ui| {
             ui.label(label("macro-delete-confirm"));

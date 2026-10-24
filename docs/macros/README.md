@@ -160,6 +160,11 @@ before accepting a run. Without a choice the variable is removed from the
 child environment, including any inherited value. A header-free macro runs
 without a target and names its own services in its source.
 
+Native Mix sends from the runner carry a bounded `macro-origin` header such
+as `macro:ced:tidy-imports`, derived from the runner's app/id context. Workshop
+uses it to filter observed requests during a run. It is telemetry and conveys
+no additional authority.
+
 `Roots::read`, `write`, `remove` and `move_to` share root confinement and
 regular-file checks. Writes replace the directory entry atomically through an
 opened parent descriptor. Moves use an atomic no-replace rename, without an
@@ -189,14 +194,22 @@ authority as executing an app command; running a macro executes user code.
 |---|---|---|
 | `list` | `{}` | `{macros:[{id,title,tier,path,shadows}], diagnostics:[{path,message}], scanned:true}` |
 | `reload` | `{}` | Rescan and return the list shape |
-| `run` | `{id}` | `{accepted:true, run, id, title}`; `NOT_FOUND` for unknown ids, `BUSY` while running |
+| `run` | `{id,target?}` | `{accepted:true, run, id, title}`; `NOT_FOUND` for unknown ids, `BUSY` while running; target must be permitted by the header |
 | `status` | `{}` | `{state,run,id,title,origin,started,exit,error}` |
 | `output` | `{}` | `{run,text,dropped}`; the retained 64 KiB tail |
 | `stop` | `{}` | `{stopping:bool}`; termination is asynchronous |
 | `new` | `{title}` | Creates in the user per-app tier; replies `{id, title, path, scanned}` without opening an editor; if the rescan fails, `scanned:false` and `warning` report it while preserving the created file |
+| `get` | `{id}` | `{id,tier,path,text}`, bounded to 256 KiB |
+| `put` | `{id,text}` | Atomically save a user macro and refresh the Session |
+| `remove` | `{id}` | Remove a user macro and refresh the Session |
+| `move` | `{id,tier,destination?}` | Move between user tiers without overwriting; destination names the app for `user-app` |
+| `copy` | `{id}` | Copy a built-in into the corresponding user tier |
 
 Refusals use rc 10 and `{error_code,message}`. Bodies are limited to 8192
-bytes before JSON parsing.
+bytes before JSON parsing, except `put`: its envelope is capped at 272 KiB
+and its text at 256 KiB. Workshop creates and runs globals; its `new` creates
+directly in the global user folder. Management replies follow the owning
+Session's rescan, so an app's menu reflects the mutation immediately.
 
 | Error code | Meaning |
 |---|---|
@@ -204,6 +217,9 @@ bytes before JSON parsing.
 | `NOT_FOUND` | Unknown macro id |
 | `BUSY` | A macro is already running |
 | `UNAVAILABLE` | No absolute HOME/roots |
+| `DENIED` | Built-in mutation or an unsafe/non-editable storage path |
+| `ALREADY_EXISTS` | A move or copy would overwrite a destination |
+| `RESOURCE_EXHAUSTED` | A get exceeds the bounded text read |
 | `INTERNAL` | Create/scan I/O error, worker failure or dropped reply channel |
 
 Creation (including its rescan), the first list and every reload run off the caller's thread and defer the

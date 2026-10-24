@@ -69,6 +69,7 @@ pub fn apply_ui(engine: &mut Engine, commands: &Registry<Engine>, events: Vec<Ui
         .partition(|e| matches!(e, UiEvent::Command(..)));
     for event in edits.into_iter().chain(fired).chain(closed) {
         match event {
+            UiEvent::MacroDestination(destination) => engine.workshop.destination = destination,
             UiEvent::MacroTarget(target) => engine.workshop.target = target,
             UiEvent::CancelDelete => engine.workshop.confirm_delete = false,
             UiEvent::Macro(operation, args) => {
@@ -402,6 +403,7 @@ impl Shell {
                         serde_json::from_value(body.clone()).unwrap_or_default();
                 } else if operation == "macros.open" && !refused {
                     let app = args["app"].as_str().unwrap_or("global").to_owned();
+                    self.engine.ui.selected = None;
                     if body.get("branch").is_some() {
                         self.engine.ui.expanded.insert(format!("macros:{app}"));
                         self.engine.ui.row_key = Some(format!("macros:{app}"));
@@ -476,6 +478,11 @@ impl Shell {
             }
             if let Event::Delivery(Delivery::Topic(topic)) = &event {
                 for event in self.bus.take_topic_events() {
+                    if event["topic"] == "citizen.topic.gap" {
+                        self.engine.workshop.dropped += event["dropped"].as_u64().unwrap_or_default();
+                        continue;
+                    }
+                    if !event["topic"].as_str().is_some_and(|topic| topic.ends_with(".command.executed") || topic.ends_with(".macros.finished")) { continue; }
                     let body = event["body"]
                         .as_str()
                         .and_then(|text| serde_json::from_str::<Value>(text).ok())
