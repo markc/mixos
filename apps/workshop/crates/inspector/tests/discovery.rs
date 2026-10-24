@@ -22,7 +22,9 @@ async fn slow_node_cannot_hide_local_or_healthy_nodes_and_refresh_retries() {
                 continue;
             }
             let target = request.get("to").unwrap_or_default();
-            if target.contains("slow") && !recovery.load(std::sync::atomic::Ordering::SeqCst) {
+            if (target.contains("slow") || target == "service-0" || target == "service-1")
+                && !recovery.load(std::sync::atomic::Ordering::SeqCst)
+            {
                 continue;
             }
             let body = match request.get("command").unwrap_or_default() {
@@ -92,10 +94,12 @@ async fn slow_node_cannot_hide_local_or_healthy_nodes_and_refresh_retries() {
     assert!(snapshot.progress.unwrap().finished);
     assert_eq!(snapshot.nodes.len(), 5);
     assert!(
-        snapshot.services.values().all(Result::is_ok),
+        snapshot.services.iter().filter(|(name, _)| name.as_str() != "service-0" && name.as_str() != "service-1").all(|(_, result)| result.is_ok()),
         "healthy descriptions must not exhaust native call capacity: {:?}",
         snapshot.services
     );
+    assert!(snapshot.services["service-0"].is_err());
+    assert!(snapshot.services["service-1"].is_err());
     let slow_error = snapshot
         .nodes
         .iter()

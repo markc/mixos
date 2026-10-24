@@ -92,9 +92,9 @@ async fn describe(handle: &Probe, service: &str) -> Result<Vec<crate::model::Ver
 /// Discovery never inherits the mutation lane's 30 second deadline.
 pub const DISCOVERY_CALL_BUDGET: std::time::Duration = std::time::Duration::from_secs(3);
 pub const DISCOVERY_CONCURRENCY: usize = 8;
-/// Eight native requests across the entire discovery, not eight per node.
-/// Two are reserved for local reads; six are shared by every remote node.
-pub const LOCAL_CALL_CONCURRENCY: usize = 2;
+/// Twelve native requests across discovery leave four of citizen's sixteen
+/// slots for other work. Six are reserved locally, six shared remotely.
+pub const LOCAL_CALL_CONCURRENCY: usize = 6;
 pub const REMOTE_CALL_CONCURRENCY: usize = 6;
 // Shared across refresh generations, including abandoned description reads.
 static LOCAL_PERMITS: LazyLock<Arc<tokio::sync::Semaphore>> =
