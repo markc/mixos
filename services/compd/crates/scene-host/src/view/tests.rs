@@ -43,6 +43,67 @@ fn row_of(rt: &UiRuntime<SceneUi>, list: &str, item: &str) -> egui::Rect {
     rt.program.layout().instances[list][item]
 }
 
+fn long_toast() -> String {
+    include_str!("../../../../../../share/scenes/toast/scene.mix")
+        .replace("\"summary\":\"\"", &format!("\"summary\":\"{}\"", "W".repeat(120)))
+        .replace("\"app\":\"\"", &format!("\"app\":\"{}\"", "W".repeat(120)))
+        .replace("\"shown\":[false,false,false,false]", "\"shown\":[true,false,false,false]")
+        .replace("\"labels\":[\"\",\"\",\"\",\"\"]", "\"labels\":[\"Got it\",\"\",\"\",\"\"]")
+}
+
+#[test]
+fn long_toast_keeps_controls_visible_and_clickable() {
+    for fill in [true, false] {
+        let source = if fill { long_toast() } else { long_toast().replace("\"fill\":true,\"size\":14", "\"size\":14") };
+        let mut rt = runtime(&source, (360, 132));
+        let bounds = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(360.0, 132.0));
+        for id in ["card", "head", "t_sum", "t_app", "t_actions", "t_close", "b0"] {
+            let rect = rect_of(&rt, id);
+            assert!(bounds.contains_rect(rect), "{id}: {rect:?}");
+        }
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let sink = Arc::clone(&seen);
+        rt.set_message_handler(move |message: &SceneMessage| {
+            if let Some((_, handler, _)) = event_of(message) {
+                sink.lock().unwrap().push(handler.to_owned());
+            }
+        });
+        for id in ["t_close", "b0"] {
+            let at = rect_of(&rt, id).center();
+            rt.queue_input(Input::PointerMoved { x: at.x, y: at.y });
+            rt.tick();
+            for pressed in [true, false] {
+                rt.queue_input(Input::Button { code: 0x110, pressed });
+                rt.tick();
+            }
+        }
+        assert_eq!(*seen.lock().unwrap(), ["toast.dismiss", "toast.press0"]);
+    }
+}
+
+#[test]
+fn long_toast_offscreen() {
+    use ui::UiProgram;
+    let mut scene = SceneUi::new(content(&long_toast(), None, false));
+    let ctx = egui::Context::default();
+    scene.setup(&ctx);
+    let mut harness = egui_kittest::Harness::builder()
+        .with_context(ctx)
+        .with_size(egui::vec2(360.0, 132.0))
+        .wgpu()
+        .build_ui(move |ui| {
+            scene.show(ui, &mut Vec::new());
+            for (id, size, bold) in [("t_sum", 14.0, true), ("t_app", 11.0, false)] {
+                let text = paint::elide_end(ui, &"W".repeat(120), &paint::font(size, false, bold), scene.layout.nodes[id].width());
+                assert!(text.ends_with('…'), "{id}: {text}");
+            }
+        });
+    harness.run();
+    if std::env::var_os("UPDATE_SNAPSHOTS").is_some() {
+        harness.snapshot("toast_long");
+    }
+}
+
 /// The placed text node `id` inside list `list`'s row `item`.
 fn text_in_row(rt: &UiRuntime<SceneUi>, list: &str, item: &str, id: &str) -> egui::Rect {
     rt.program

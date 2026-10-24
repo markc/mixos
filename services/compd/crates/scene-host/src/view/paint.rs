@@ -70,8 +70,8 @@ fn route_of(scene: &SceneUi, placed: &Placed, node: &Node) -> Arc<Route> {
     }
 }
 
-/// `text` shortened in the middle with an ellipsis until it fits `width`.
-fn elide_middle(ui: &Ui, text: &str, font: &FontId, width: f32) -> String {
+/// Keep the start of a line and end it with an ellipsis within its layout box.
+pub(super) fn elide_end(ui: &Ui, text: &str, font: &FontId, width: f32) -> String {
     let fits = |s: &str| {
         ui.fonts_mut(|fonts| {
             fonts
@@ -87,18 +87,15 @@ fn elide_middle(ui: &Ui, text: &str, font: &FontId, width: f32) -> String {
     let mut keep = chars.len();
     while keep > 0 {
         keep -= 1;
-        let head = keep.div_ceil(2);
-        let tail = keep / 2;
-        let candidate: String = chars[..head]
+        let candidate: String = chars[..keep]
             .iter()
             .chain(std::iter::once(&'…'))
-            .chain(&chars[chars.len() - tail..])
             .collect();
         if fits(&candidate) {
             return candidate;
         }
     }
-    "…".into()
+    if fits("…") { "…".into() } else { String::new() }
 }
 
 /// Paint the whole scene and collect its interactions.
@@ -229,7 +226,7 @@ pub(crate) fn paint(scene: &mut SceneUi, ui: &mut Ui, emit: &mut Vec<SceneMessag
                 let colour = hex(port_text(&node, "color")).unwrap_or(ink);
                 let mut text = port_text(&node, "text").to_owned();
                 if flag(&node, "elide") {
-                    text = elide_middle(ui, &text, &font, rect.width());
+                    text = elide_end(ui, &text, &font, rect.width());
                 }
                 let (align, x) = match port_text(&node, "align") {
                     "center" => (Align2::CENTER_CENTER, rect.center().x),

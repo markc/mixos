@@ -135,6 +135,7 @@ enum Leaf {
         size: f32,
         mono: bool,
         bold: bool,
+        elide: bool,
     },
     Button {
         label: String,
@@ -252,6 +253,12 @@ impl<'a> Builder<'a> {
     /// The node's own box: size, growth and bounds, against its parent.
     fn sizing(node: &Node, parent: Parent) -> Style {
         let mut style = Style::default();
+        // Auto min-content widths propagate through nested flex containers.
+        // A scene is bounded by its surface, even with start alignment.
+        if matches!(node.family.as_str(), "row" | "column") {
+            style.min_size.width = lpa(0.0);
+            style.max_size.width = Dimension::percent(1.0);
+        }
         let fill =
             flag(node, "fill") || (node.family == "spacer" && number(node, "size").is_none());
         let grow = number(node, "grow").filter(|g| *g > 0.0);
@@ -350,6 +357,7 @@ impl<'a> Builder<'a> {
             "text" if flag(node, "elide") => {
                 // May shrink below its text; the painter elides the middle.
                 style.min_size.width = lpa(0.0);
+                style.max_size.width = Dimension::percent(1.0);
             }
             _ => {}
         }
@@ -495,6 +503,7 @@ impl<'a> Builder<'a> {
                     size,
                     mono,
                     bold: flag(node, "bold"),
+                    elide: flag(node, "elide"),
                 };
                 self.tree
                     .new_leaf_with_context(style, meta(Some(leaf)))
@@ -680,6 +689,7 @@ impl<'a> Builder<'a> {
 fn leaf_size(
     leaf: &Leaf,
     known: Size<Option<f32>>,
+    available: Size<AvailableSpace>,
     styles: TextStyles,
     measure: Measurer<'_>,
 ) -> Size<f32> {
@@ -693,11 +703,19 @@ fn leaf_size(
             size,
             mono,
             bold,
-            ..
+            elide,
         } => {
             let w = measure(text, *size, *mono, *bold).x;
             Size {
-                width: w.ceil(),
+                width: if *elide {
+                    match available.width {
+                        AvailableSpace::Definite(width) => w.ceil().min(width.max(0.0)),
+                        AvailableSpace::MinContent => 0.0,
+                        AvailableSpace::MaxContent => w.ceil(),
+                    }
+                } else {
+                    w.ceil()
+                },
                 height: line(*mono, *size),
             }
         }
@@ -814,8 +832,8 @@ pub(crate) fn layout(
                 inputs,
                 style,
                 |_, _| 0.0,
-                |known, _available| match &leaf {
-                    Some(leaf) => leaf_size(leaf, known, styles, measure),
+                |known, available| match &leaf {
+                    Some(leaf) => leaf_size(leaf, known, available, styles, measure),
                     None => Size::ZERO,
                 },
             )

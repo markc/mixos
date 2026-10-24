@@ -42,6 +42,17 @@ end
 -- ending in "…" when the body is longer. Each line also elides on screen.
 $LINE_CHARS = 48
 $LINES = 6
+-- 44 characters is a conservative fallback for the 332-point card at 14px.
+-- Keep the complete summary ahead of the body while older hosts are in use.
+$SUMMARY_CHARS = 44
+fn short_summary($text)
+  if len($text) <= $SUMMARY_CHARS then return $text end
+  $prefix = slice($text, 0, $SUMMARY_CHARS - 1)
+  $words = split($prefix, " ")
+  if len($words) > 1 then $prefix = join(slice($words, 0, len($words) - 1), " ") end
+  return trim($prefix) .. "…"
+end
+
 fn wrap($text)
   $lines = []
   $cur = ""
@@ -77,6 +88,11 @@ fn model_of($note, $more)
     $i = $i + 1
   end
   $body = $note.body ?? ""
+  $full_summary = $note.summary ?? ""
+  $summary = short_summary($full_summary)
+  if $summary != $full_summary then
+    $body = $full_summary .. if $body != "" then " " .. $body else "" end
+  end
   $wrapped = wrap($body)
   $lines = ["", "", "", "", "", ""]
   $line_shown = [false, false, false, false, false, false]
@@ -86,7 +102,7 @@ fn model_of($note, $more)
     $line_shown[$j] = true
     $j = $j + 1
   end
-  return {id: $note.id, app: $note.app ?? "", summary: $note.summary ?? "", body: $body,
+  return {id: $note.id, app: $note.app ?? "", summary: $summary, body: $body,
     has_body: len($wrapped) > 0, lines: $lines, line_shown: $line_shown, line_count: len($wrapped),
     labels: $labels, shown: $shown,
     more: if $more > 0 then "+" .. to_string($more) .. " more" else "" end}

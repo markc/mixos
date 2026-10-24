@@ -59,5 +59,6 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
+egui_kittest.workspace = true
 tempfile = "=3.27.0"
 
