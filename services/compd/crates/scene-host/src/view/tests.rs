@@ -250,7 +250,10 @@ fn wrapping_packs_long_words_and_bounds_measurement_work() {
         assert!(s.len() <= 32, "unbounded measurement: {} bytes", s.len());
         s.chars().count() as f32
     };
-    assert_eq!(flex::wrap_text("hi abcdefghijk", 6.0, 4, &measure), ["hi abc", "defghi", "jk"]);
+    assert_eq!(
+        flex::wrap_text("hi abcdefghijk", 6.0, 4, &measure),
+        ["hi abc", "defghi", "jk"]
+    );
     let huge = "x".repeat(1024 * 1024);
     calls.set(0);
     let start = std::time::Instant::now();
@@ -284,14 +287,75 @@ fn mono_wrapping_uses_the_same_line_pitch_as_paint() {
     let source = "---\nscene: 1\nname: mono\ncitizen: test\n---\n```mix\nroot: {widget: \"column\", children: [\"title\"]}\ntitle: {widget: \"text\", mono: true, wrap: true, max_lines: 3, text: \"one two three four five six seven eight nine ten\"}\n```";
     let rt = runtime(source, (60, 300));
     let styles = rt.program.text_styles();
-    assert!((rect_of(&rt, "title").height() - 3.0 * styles.line(true, styles.mono.size)).abs() < 1.0);
+    assert!(
+        (rect_of(&rt, "title").height() - 3.0 * styles.line(true, styles.mono.size)).abs() < 1.0
+    );
+}
+
+fn launcher_fixture() -> String {
+    include_str!("../../../../../../share/scenes/launcher/scene.mix").replace(
+        "\"rows\":[]",
+        &format!("\"rows\":[{{\"id\":\"example.desktop\",\"cells\":[\"{}\",\"Text editor\",\"\"]}}]", "Example application ".repeat(12)),
+    )
+}
+
+fn editor_fixture() -> String {
+    include_str!("../../../../../../share/scenes/editor/scene.mix").replace(
+        "\"templates\":[]",
+        &format!("\"templates\":[{{\"id\":\"example\",\"background\":\"#00000000\",\"cells\":[\"{}\",\"A template description\",\"bottom\",\"Installed\"]}}]", "Example template ".repeat(12)),
+    )
+}
+
+#[test]
+fn shipped_launcher_and_editor_keep_long_list_text_inside_their_rows() {
+    for (source, size, list, item, title) in [
+        (launcher_fixture(), (440, 700), "list", "example.desktop", "app_name"),
+        (editor_fixture(), (880, 620), "templates", "example", "tpl_row_title"),
+    ] {
+        let rt = runtime(&source, size);
+        let row = row_of(&rt, list, item);
+        let text = text_in_row(&rt, list, item, title);
+        assert!(row.contains_rect(text), "{title}: {text:?} outside {row:?}");
+        assert!(row.right() <= size.0 as f32, "{list}: {row:?}");
+    }
+}
+
+#[test]
+#[ignore = "offscreen snapshot requires a wgpu adapter; scene layout assertions run headless"]
+fn launcher_and_editor_offscreen() {
+    use ui::UiProgram;
+    for (source, size, variable) in [
+        (launcher_fixture(), egui::vec2(440.0, 700.0), "LAUNCHER_SNAPSHOT"),
+        (editor_fixture(), egui::vec2(880.0, 620.0), "EDITOR_SNAPSHOT"),
+    ] {
+        let mut scene = SceneUi::new(content(&source, None, false));
+        let mut setup = false;
+        let mut harness = egui_kittest::Harness::builder().with_size(size).wgpu().build_ui(move |ui| {
+            if !setup {
+                scene.setup(ui.ctx());
+                setup = true;
+                ui.ctx().request_repaint();
+                return;
+            }
+            scene.show(ui, &mut Vec::new());
+        });
+        harness.run();
+        let image = harness.render().unwrap();
+        if let Some(path) = std::env::var_os(variable) {
+            image.save(path).unwrap();
+        }
+    }
 }
 
 #[test]
 #[ignore = "offscreen snapshot requires a wgpu adapter; crowded panel assertions run headless"]
 fn crowded_panel_offscreen() {
     use ui::UiProgram;
-    let mut scene = SceneUi::new(content(include_str!("../../tests/fixtures/panel-render.scene.mix"), None, false));
+    let mut scene = SceneUi::new(content(
+        include_str!("../../tests/fixtures/panel-render.scene.mix"),
+        None,
+        false,
+    ));
     let mut setup = false;
     let mut harness = egui_kittest::Harness::builder()
         .with_size(egui::vec2(450.0, 52.0))
@@ -307,7 +371,9 @@ fn crowded_panel_offscreen() {
         });
     harness.run();
     let image = harness.render().unwrap();
-    if let Some(path) = std::env::var_os("PANEL_SNAPSHOT") { image.save(path).unwrap(); }
+    if let Some(path) = std::env::var_os("PANEL_SNAPSHOT") {
+        image.save(path).unwrap();
+    }
 }
 
 /// The placed text node `id` inside list `list`'s row `item`.

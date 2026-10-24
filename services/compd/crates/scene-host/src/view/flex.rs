@@ -192,7 +192,9 @@ fn bounded_text(nodes: Nodes<'_>, node: &Node, depth: usize) -> bool {
     }
     (node.family == "text" && (flag(node, "elide") || flag(node, "wrap")))
         || children(node).any(|id| {
-            nodes.get(id).is_some_and(|child| bounded_text(nodes, child, depth + 1))
+            nodes
+                .get(id)
+                .is_some_and(|child| bounded_text(nodes, child, depth + 1))
         })
 }
 
@@ -836,24 +838,31 @@ pub(super) fn wrap_text(
                     current = candidate;
                     continue;
                 }
-                if long && measure(&format!("{current} {}", word.chars().next().unwrap())) <= width {
+                if long && measure(&format!("{current} {}", word.chars().next().unwrap())) <= width
+                {
                     current.push(' ');
                 } else {
                     lines.push(std::mem::take(&mut current));
-                    if lines.len() > max_lines { break 'paragraphs; }
+                    if lines.len() > max_lines {
+                        break 'paragraphs;
+                    }
                 }
             }
             for ch in word.chars() {
                 let candidate = format!("{current}{ch}");
                 if !current.is_empty() && measure(&candidate) > width {
                     lines.push(std::mem::take(&mut current));
-                    if lines.len() > max_lines { break 'paragraphs; }
+                    if lines.len() > max_lines {
+                        break 'paragraphs;
+                    }
                 }
                 current.push(ch);
             }
         }
         lines.push(current);
-        if lines.len() > max_lines { break; }
+        if lines.len() > max_lines {
+            break;
+        }
     }
     if lines.len() > max_lines {
         lines.truncate(max_lines);
