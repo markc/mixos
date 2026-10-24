@@ -96,11 +96,85 @@ struct Dragged {
 
 const ICON: f32 = 16.0;
 const INDENT: f32 = 14.0;
-const SIZE_W: f32 = 64.0;
-const MODIFIED_W: f32 = 96.0;
+#[derive(Clone, Copy)]
+struct ColumnWidths {
+    size: f32,
+    modified: f32,
+}
+
+fn column_widths(ui: &Ui, rows: &[VisibleRow]) -> ColumnWidths {
+    let body = TextStyle::Body.resolve(ui.style());
+    let font = FontId::new(body.size * 0.92, body.family);
+    let measure = |text: String, font: FontId| {
+        ui.painter().layout_no_wrap(text, font, ui.visuals().text_color()).size().x
+    };
+    let header = TextStyle::Small.resolve(ui.style());
+    let mut widths = ColumnWidths {
+        size: measure(format!("{} ▼", label("column-size")), header.clone()),
+        modified: measure(format!("{} ▼", label("column-modified")), header),
+    };
+    for row in rows {
+        let entry = &row.entry;
+        let size = if entry.is_dir {
+            dopus_core::format_child_count(entry.child_count)
+        } else {
+            entry.size.map_or_else(|| "—".to_owned(), dopus_core::format_size)
+        };
+        widths.size = widths.size.max(measure(size, font.clone()));
+        widths.modified = widths.modified.max(measure(
+            entry.modified.map_or_else(|| "—".to_owned(), dopus_core::format_modified_at),
+            font.clone(),
+        ));
+    }
+    // Six pixels on both sides, including the gap before right-aligned text.
+    widths.size = widths.size.ceil() + 12.0;
+    widths.modified = widths.modified.ceil() + 12.0;
+    widths
+}
 /// The Name column's narrowest before Modified, then Size, hide.
 const NAME_MIN: f32 = 140.0;
 const DIVIDER: f32 = 6.0;
+
+#[cfg(test)]
+mod column_tests {
+    use super::*;
+
+    #[test]
+    fn long_name_leaves_measured_size_and_modified_a_gap() {
+        let ctx = egui::Context::default();
+        let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+            ui.style_mut().text_styles.insert(TextStyle::Body, FontId::proportional(14.667));
+            let rows = vec![VisibleRow {
+                entry: dopus_core::FileEntry {
+                    path: PathBuf::from("Blue Murder Motel extended episode name.mkv"),
+                    name: "Blue Murder Motel extended episode name.mkv".into(),
+                    is_dir: false,
+                    size: Some(565 * 1024 * 1024),
+                    child_count: None,
+                    modified: Some(std::time::SystemTime::UNIX_EPOCH),
+                },
+                depth: 0,
+            }];
+            let widths = column_widths(ui, &rows);
+            let font = FontId::proportional(14.667 * 0.92);
+            let measure = |text: &str| ui.painter().layout_no_wrap(text.into(), font.clone(), ui.visuals().text_color()).size().x;
+            for modified in [false, true] {
+                let rect = Rect::from_min_size(pos2(0.0, 0.0), vec2(360.0, 24.0));
+                let (name, size, date) = column_rects(rect, widths, true, modified);
+                let size = size.unwrap();
+                let name_x = 44.0;
+                let text = crate::elide::fit(ui, &rows[0].entry.name, &font, name.right() - name_x - 4.0);
+                let name_right = name_x + measure(&text);
+                let size_left = size.right() - 6.0 - measure("565.0 MiB");
+                assert!(size_left - name_right >= 6.0, "name overlaps size: {name_right} / {size_left}");
+                if let Some(date) = date {
+                    let text = dopus_core::format_modified_at(std::time::SystemTime::UNIX_EPOCH);
+                    assert!(date.right() - 6.0 - measure(&text) >= size.right() + 6.0);
+                }
+            }
+        });
+    }
+}
 
 /// The window title: the active path.
 pub fn title(app: &App) -> String {
@@ -387,12 +461,13 @@ fn pane_view(
     ui.add_space(2.0);
     location_bar(ui, app, pane, active, events);
     let width = ui.available_width();
-    let (show_size, show_modified) = (
-        width >= NAME_MIN + SIZE_W,
-        width >= NAME_MIN + SIZE_W + MODIFIED_W,
-    );
-    header(ui, app, pane, show_size, show_modified, events);
     let rows = app.core.visible_rows(pane);
+    let widths = column_widths(ui, &rows);
+    let (show_size, show_modified) = (
+        width >= NAME_MIN + widths.size,
+        width >= NAME_MIN + widths.size + widths.modified,
+    );
+    header(ui, app, pane, (widths, show_size, show_modified), events);
     let row_h = (ui.text_style_height(&TextStyle::Body) + 6.0).round();
     let footer_h = ui.text_style_height(&TextStyle::Small) + 6.0;
     let list_h = (ui.available_height() - footer_h).max(row_h);
@@ -417,7 +492,7 @@ fn pane_view(
                         strings,
                         pane,
                         &rows[index],
-                        (row_h, show_size, show_modified),
+                        (row_h, widths, show_size, show_modified),
                         events,
                     );
                 }
@@ -515,8 +590,7 @@ fn header(
     ui: &mut Ui,
     app: &App,
     pane: PaneId,
-    show_size: bool,
-    show_modified: bool,
+    (widths, show_size, show_modified): (ColumnWidths, bool, bool),
     events: &mut Vec<UiEvent>,
 ) {
     let model = app.core.pane(pane);
@@ -529,7 +603,7 @@ fn header(
     };
     let height = ui.text_style_height(&TextStyle::Small) + 8.0;
     let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::hover());
-    let columns = column_rects(rect, show_size, show_modified);
+    let columns = column_rects(rect, widths, show_size, show_modified);
     for (column, key, cell, align) in [
         (
             SortColumn::Name,
@@ -583,21 +657,22 @@ fn header(
 /// Name, Size and Modified cells in `rect`; the narrow ones hide first.
 fn column_rects(
     rect: Rect,
+    widths: ColumnWidths,
     show_size: bool,
     show_modified: bool,
 ) -> (Rect, Option<Rect>, Option<Rect>) {
     let mut right = rect.right();
     let modified = show_modified.then(|| {
         let cell = Rect::from_min_max(
-            pos2(right - MODIFIED_W, rect.top()),
+            pos2(right - widths.modified, rect.top()),
             pos2(right, rect.bottom()),
         );
-        right -= MODIFIED_W;
+        right -= widths.modified;
         cell
     });
     let size = show_size.then(|| {
-        let cell = Rect::from_min_max(pos2(right - SIZE_W, rect.top()), pos2(right, rect.bottom()));
-        right -= SIZE_W;
+        let cell = Rect::from_min_max(pos2(right - widths.size, rect.top()), pos2(right, rect.bottom()));
+        right -= widths.size;
         cell
     });
     let name = Rect::from_min_max(rect.min, pos2(right, rect.bottom()));
@@ -612,7 +687,7 @@ fn row(
     strings: &Strings,
     pane: PaneId,
     visible: &VisibleRow,
-    (row_h, show_size, show_modified): (f32, bool, bool),
+    (row_h, widths, show_size, show_modified): (f32, ColumnWidths, bool, bool),
     events: &mut Vec<UiEvent>,
 ) {
     let entry = &visible.entry;
@@ -668,7 +743,7 @@ fn row(
     } else {
         visuals.text_color()
     };
-    let (name_cell, size_cell, modified_cell) = column_rects(rect, show_size, show_modified);
+    let (name_cell, size_cell, modified_cell) = column_rects(rect, widths, show_size, show_modified);
     let mut x = name_cell.left() + 4.0 + visible.depth as f32 * INDENT;
     let mid = rect.center().y;
     // The chevron opens a folder in place.

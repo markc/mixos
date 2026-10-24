@@ -251,11 +251,11 @@ fn processes(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
         .sense(Sense::click())
         .cell_layout(Layout::left_to_right(Align::Center))
         .column(Width::initial(240.0).at_least(120.0).clip(true))
-        .column(Width::initial(70.0).at_least(50.0))
+        .column(Width::initial(70.0).at_least(50.0).clip(true))
         .column(Width::initial(100.0).at_least(60.0).clip(true))
-        .column(Width::initial(70.0).at_least(50.0))
-        .column(Width::initial(90.0).at_least(60.0))
-        .column(Width::initial(90.0).at_least(60.0))
+        .column(Width::initial(70.0).at_least(50.0).clip(true))
+        .column(Width::initial(90.0).at_least(60.0).clip(true))
+        .column(Width::initial(90.0).at_least(60.0).clip(true))
         .column(Width::remainder().at_least(120.0).clip(true))
         .header(row_height, |mut header| {
             for (column, key) in columns {

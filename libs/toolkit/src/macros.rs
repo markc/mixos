@@ -713,7 +713,6 @@ impl State {
             crate::drive::unregister_viewport(ctx, "macro-editor");
             return;
         }
-        let chrome = crate::chrome::Chrome::of(ctx);
         let editor_viewport = egui::ViewportId::from_hash_of(("macro-editor", self.window));
         let title = self
             .editor_entry
@@ -731,10 +730,10 @@ impl State {
             .with_title(title)
             .with_decorations(true)
             .with_resizable(true)
-            .with_inner_size(egui::vec2(
-                chrome.style.dialog_max_width as f32,
-                chrome.metrics.menu_row_height * 18.0,
-            ));
+            .with_inner_size(ctx.input(|i| {
+                let monitor = i.viewport().monitor_size.unwrap_or(egui::vec2(760.0, 560.0));
+                egui::vec2(760.0, 560.0).min(monitor)
+            }));
         crate::drive::register_viewport(ctx, "macro-editor", editor_viewport);
         if ctx.embed_viewports() {
             ctx.show_viewport_immediate(editor_viewport, builder, |ui, _| {
@@ -765,7 +764,8 @@ impl State {
         let mut run = false;
         let mut ced = false;
         let row_height = crate::chrome::Chrome::of(&ctx).metrics.menu_row_height;
-        let output_height = row_height * 4.0;
+        let output = self.displayed_output();
+        let output_height = if output.is_empty() { 0.0 } else { row_height * 6.0 };
         let dirty_before = self.document.as_ref().is_some_and(|doc| doc.is_dirty());
         let mut open = !ctx.input(|i| i.viewport().close_requested());
         if ctx.input(|i| i.viewport().focused == Some(true))
@@ -812,8 +812,9 @@ impl State {
                         d.get_temp::<editor::Palette>(egui::Id::new("toolkit.editor-palette"))
                     })
                     .unwrap_or_else(|| editor::Palette::from_theme(&crate::Theme::embedded()));
-                let height = (ui.available_height() - output_height - row_height * 2.0)
-                    .max(row_height * 6.0);
+                let height = (ui.available_height() - output_height
+                    - if output.is_empty() { 0.0 } else { row_height * 2.0 })
+                    .max(0.0);
                 ui.allocate_ui(egui::vec2(ui.available_width(), height), |ui| {
                     ui.add_enabled_ui(editor_enabled, |ui| {
                         self.editor_focus =
@@ -833,11 +834,11 @@ impl State {
             if let Some(error) = &self.error {
                 ui.label(error);
             }
+            if !output.is_empty() {
             ui.separator();
             if let Some(message) = &self.run_message {
                 ui.label(message);
             }
-            let output = self.displayed_output();
             if self.engine.runner_status() != Status::Running
                 && let Some(last) = &self.retained
             {
@@ -851,12 +852,14 @@ impl State {
             }
             egui::ScrollArea::both()
                 .max_height(output_height)
+                .min_scrolled_height(output_height)
                 .stick_to_bottom(true)
                 .show(ui, |ui| {
                     ui.add(
                         egui::Label::new(egui::RichText::new(output).monospace()).selectable(true),
                     );
                 });
+            }
         });
         if !open {
             self.close_editor();
@@ -1657,6 +1660,35 @@ mod tests {
             menu.entries.last().unwrap().row().unwrap().label,
             "No macros yet"
         );
+    }
+
+    #[test]
+    fn editor_uses_remaining_height_and_only_reserves_its_output() {
+        let mut heights = Vec::new();
+        for output in ["", "Hello\n"] {
+            let mut state = State::new("ced");
+            state.editor_open = true;
+            state.document = Some(editor::local::Document::new("print(1)\n", "text").unwrap());
+            state.retained = Some(Finished {
+                title: "Example".into(),
+                output: output.into(),
+                status: "done".into(),
+            });
+            let mut h = egui_kittest::Harness::builder()
+                .with_size(egui::vec2(760.0, 560.0))
+                .build_ui_state(|ui, state: &mut State| {
+                    state.editor_ui(ui, egui::ViewportId::ROOT, egui::ViewportId::ROOT);
+                }, state);
+            crate::install(&h.ctx, &crate::Theme::embedded());
+            h.run_steps(5);
+            let editor = h.get_by_role(egui::accesskit::Role::TextInput).rect();
+            assert!(editor.height() > 280.0, "{editor:?}");
+            if output.is_empty() {
+                assert!(editor.bottom() > 540.0, "{editor:?}");
+            }
+            heights.push(editor.height());
+        }
+        assert!(heights[0] - heights[1] > 100.0);
     }
 
     #[test]
