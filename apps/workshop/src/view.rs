@@ -162,6 +162,9 @@ fn row_name(engine: &Engine, row: &Row) -> String {
 fn tree_row(ui: &mut Ui, engine: &Engine, row: &Row, events: &mut Vec<UiEvent>) {
     let colour = ui.visuals().text_color();
     ui.horizontal(|ui| {
+        // A diagnostic belongs to the row, not to the panel's minimum width.
+        // Keep the complete reason available when the row is hovered.
+        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
         if row.children.is_empty() {
             ui.add_space(ICON + ui.spacing().item_spacing.x);
         } else {
@@ -206,7 +209,10 @@ fn tree_row(ui: &mut Ui, engine: &Engine, row: &Row, events: &mut Vec<UiEvent>) 
             ));
         }
         let selected = engine.ui.row_key.as_deref() == Some(row.key.as_str());
-        if toolkit::selectable(ui, selected, text).clicked() {
+        if toolkit::selectable(ui, selected, text)
+            .on_hover_text(row_name(engine, row))
+            .clicked()
+        {
             events.push(UiEvent::Select(row.clone()));
         }
     });
