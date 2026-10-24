@@ -982,9 +982,12 @@ impl State {
                 if let Some(doc) = &mut self.document {
                     doc.complete_save(&saved);
                 }
-                self.error = warning;
+                self.error = None;
                 if let Some(entry) = run {
                     self.run(entry, ctx);
+                }
+                if warning.is_some() {
+                    self.error = warning;
                 }
                 if self.close_after_save {
                     if self.document.as_ref().is_some_and(|doc| doc.is_dirty())
