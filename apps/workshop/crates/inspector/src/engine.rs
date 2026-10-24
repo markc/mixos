@@ -25,7 +25,11 @@ pub type Label = fn(&str) -> String;
 /// Work for the shell. Nothing here has happened yet.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Effect {
-    Workshop { operation: String, args: Value, reply: Option<u64> },
+    Workshop {
+        operation: String,
+        args: Value,
+        reply: Option<u64>,
+    },
     /// Run discovery and report [`Engine::discovered`] with `ticket`.
     Discover { ticket: u64 },
     /// Send one call and report [`Engine::completed`] with `ticket`.
@@ -65,7 +69,11 @@ pub enum Dialog {
 #[derive(Clone, Debug, PartialEq)]
 pub enum RowKind {
     MacroGroup(String),
-    Macro { app: String, id: String, title: String },
+    Macro {
+        app: String,
+        id: String,
+        title: String,
+    },
     Node(String),
     Service(String),
     Verb(Selection),
@@ -272,7 +280,10 @@ impl Engine {
     /// A fresh engine; the first refresh is queued.
     pub fn new(label: Label) -> Self {
         let mut engine = Self {
-            workshop: crate::workshop::Workshop { dock_open: true, ..Default::default() },
+            workshop: crate::workshop::Workshop {
+                dock_open: true,
+                ..Default::default()
+            },
             label,
             ui: UiState::default(),
             snapshot: Snapshot::default(),
@@ -303,12 +314,19 @@ impl Engine {
         (self.label)(key)
     }
 
-    pub(crate) fn text(&self, key: &str) -> String { self.label(key) }
-    pub(crate) fn push_workshop(&mut self, effect: Effect) { self.effects.push(effect); }
+    pub(crate) fn text(&self, key: &str) -> String {
+        self.label(key)
+    }
+    pub(crate) fn push_workshop(&mut self, effect: Effect) {
+        self.effects.push(effect);
+    }
 
     /// Discovery, a call or a window activation is in flight.
     pub fn busy(&self) -> bool {
-        self.workshop.pending > 0 || self.discovery.is_some() || self.call.is_some() || !self.activations.is_empty()
+        self.workshop.pending > 0
+            || self.discovery.is_some()
+            || self.call.is_some()
+            || !self.activations.is_empty()
     }
 
     pub fn calling(&self) -> bool {
@@ -647,7 +665,9 @@ impl Engine {
         self.ui.row_key = Some(row.key.clone());
         if let RowKind::Macro { app, id, .. } = &row.kind {
             self.queue_workshop("macros.open", json!({"app":app,"id":id}), None);
-        } else { self.workshop.selected = None; }
+        } else {
+            self.workshop.selected = None;
+        }
         self.ui.selected = match &row.kind {
             RowKind::Verb(target) => Some(target.clone()),
             _ => None,
@@ -887,7 +907,9 @@ impl Engine {
             Ok(args) if args.is_object() => args,
             _ => return self.error(id, "ARGUMENT", "arguments must be a JSON object"),
         };
-        if self.workshop_command(id, verb, &args) { return; }
+        if self.workshop_command(id, verb, &args) {
+            return;
+        }
         if let Some(window) = verb
             .strip_prefix("workshop.")
             .filter(|v| v.starts_with("ui.") || v.starts_with("window"))
@@ -1263,7 +1285,9 @@ impl Engine {
             Err(error) => json!({"service":service,"verb":verb,"request_body":request,
                 "transport_error":error.message,"outcome_unknown":error.outcome_unknown,"retried":false}),
         };
-        self.workshop.retain(json!({"direction":"local","from":"workshop","service":service,"verb":verb,"rc":self.last_reply["rc"],"payload":self.last_reply["body"]}));
+        let payload = self.last_reply["body"].as_str().and_then(|text| serde_json::from_str::<Value>(text).ok());
+        let request_body = serde_json::from_str::<Value>(request).ok();
+        self.workshop.retain(json!({"direction":"local","from":"workshop","service":service,"verb":verb,"rc":self.last_reply["rc"],"payload":payload,"request":request_body}));
         let rendered = if let Some(rc) = self.last_reply["rc"].as_u64() {
             let body = model::pretty(self.last_reply["body"].as_str().unwrap_or_default());
             format!("{service}  {verb}\n{} = {rc}\n\n{body}", self.label("rc"))

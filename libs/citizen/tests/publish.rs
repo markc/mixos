@@ -12,8 +12,12 @@ const TOPIC: &str = "pubtest.command.executed";
 fn runtime_subscription_delivers_bodies_and_unsubscribe_stops_delivery() {
     use futures::StreamExt;
     let broker = test_broker::Broker::start();
-    let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
-    let (watcher, mut deliveries) = citizen::start("runtime-watch", "runtime-watch", &broker.url).unwrap();
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let (watcher, mut deliveries) =
+        citizen::start("runtime-watch", "runtime-watch", &broker.url).unwrap();
     let (publisher, _) = citizen::start("runtime-pub", "runtime-pub", &broker.url).unwrap();
     runtime.block_on(async {
         assert!(watcher.subscribe("").await.is_err());
@@ -37,8 +41,10 @@ fn runtime_subscription_delivers_bodies_and_unsubscribe_stops_delivery() {
         assert!(next.is_err());
         assert!(watcher.take_topic_events().is_empty());
     });
-    watcher.quit(); publisher.quit();
-    watcher.wait_done().unwrap(); publisher.wait_done().unwrap();
+    watcher.quit();
+    publisher.quit();
+    watcher.wait_done().unwrap();
+    publisher.wait_done().unwrap();
 }
 
 #[test]

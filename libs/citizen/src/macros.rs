@@ -32,7 +32,12 @@ pub fn dispatch(app: &str, command: &IncomingCommand, client: Arc<SupervisedClie
     let Some(suffix) = command.command.strip_prefix(&format!("{app}.macros.")) else {
         return false;
     };
-    if app == "workshop" && (suffix == "open" || serde_json::from_str::<Value>(&command.body).ok().is_some_and(|body| body.get("app").is_some())) {
+    if app == "workshop"
+        && (suffix == "open"
+            || serde_json::from_str::<Value>(&command.body)
+                .ok()
+                .is_some_and(|body| body.get("app").is_some()))
+    {
         return false;
     }
     let reply = request(app, suffix, &command.body);
@@ -63,7 +68,11 @@ pub fn dispatch(app: &str, command: &IncomingCommand, client: Arc<SupervisedClie
 }
 
 pub fn request(app: &str, suffix: &str, body: &str) -> ::macros::verbs::Reply {
-    let limit = if suffix == "put" { 272 * 1024 } else { REQUEST_BODY_LIMIT };
+    let limit = if suffix == "put" {
+        272 * 1024
+    } else {
+        REQUEST_BODY_LIMIT
+    };
     if body.len() > limit {
         return ::macros::verbs::Reply::Immediate(Err(Refusal::new(
             "INVALID_ARGUMENT",

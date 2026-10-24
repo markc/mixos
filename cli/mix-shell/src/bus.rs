@@ -86,13 +86,24 @@ pub(crate) enum LaneKind {
 /// Macro provenance is telemetry, never an authorisation credential. The
 /// runner supplies these values; ordinary scripts send no additional header.
 fn macro_headers() -> BTreeMap<String, String> {
-    macro_headers_for(std::env::var("MIXOS_MACRO_APP").ok().as_deref(), std::env::var("MIXOS_MACRO_ID").ok().as_deref())
+    macro_headers_for(
+        std::env::var("MIXOS_MACRO_APP").ok().as_deref(),
+        std::env::var("MIXOS_MACRO_ID").ok().as_deref(),
+    )
 }
 
 fn macro_headers_for(app: Option<&str>, id: Option<&str>) -> BTreeMap<String, String> {
-    let valid = |value: &str| !value.is_empty() && value.len() <= 128 && value.bytes().all(|byte| byte.is_ascii_alphanumeric() || b"-_".contains(&byte));
+    let valid = |value: &str| {
+        !value.is_empty()
+            && value.len() <= 128
+            && value
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || b"-_".contains(&byte))
+    };
     match (app, id) {
-        (Some(app), Some(id)) if valid(app) && valid(id) => BTreeMap::from([("macro-origin".into(), format!("macro:{app}:{id}"))]),
+        (Some(app), Some(id)) if valid(app) && valid(id) => {
+            BTreeMap::from([("macro-origin".into(), format!("macro:{app}:{id}"))])
+        }
         _ => BTreeMap::new(),
     }
 }
@@ -103,7 +114,10 @@ mod macro_provenance_tests {
     fn macro_headers_are_bounded_and_opt_in() {
         assert!(super::macro_headers_for(None, Some("test")).is_empty());
         assert!(super::macro_headers_for(Some("ced"), Some("bad\nheader")).is_empty());
-        assert_eq!(super::macro_headers_for(Some("ced"), Some("tidy"))["macro-origin"], "macro:ced:tidy");
+        assert_eq!(
+            super::macro_headers_for(Some("ced"), Some("tidy"))["macro-origin"],
+            "macro:ced:tidy"
+        );
     }
 }
 

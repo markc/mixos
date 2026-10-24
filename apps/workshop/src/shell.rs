@@ -47,7 +47,11 @@ pub fn apply_event(engine: &mut Engine, event: Event) {
         Event::Completed(ticket, result) => engine.completed(ticket, result),
         Event::Shown(ticket, reply, result) => engine.shown(ticket, reply, result),
         // The session look is the shell's (see `Shell::looked`).
-        Event::Look(..) | Event::LookRetry(_) | Event::Workshop(..) | Event::MacroChanged | Event::Stopped(_) => {}
+        Event::Look(..)
+        | Event::LookRetry(_)
+        | Event::Workshop(..)
+        | Event::MacroChanged
+        | Event::Stopped(_) => {}
     }
 }
 
@@ -153,6 +157,7 @@ pub fn settle(engine: &mut Engine, commands: &Registry<Engine>, strings: &String
 }
 
 pub struct Shell {
+    watched_topics: std::collections::BTreeSet<String>,
     macro_stopping: bool,
     _macro_change: macros::session::ChangeHook,
     engine: Engine,
@@ -270,6 +275,7 @@ impl Shell {
             wake.request_repaint();
         });
         let mut shell = Self {
+            watched_topics: Default::default(),
             macro_stopping: false,
             _macro_change: macro_change,
             engine: Engine::new(label),
@@ -294,7 +300,9 @@ impl Shell {
         };
         shell.engine.session = session_of(&shell.theme);
         shell.engine.queue_workshop("catalogues", json!({}), None);
-        shell.engine.queue_workshop("observe", json!({"on":true}), None);
+        shell
+            .engine
+            .queue_workshop("observe", json!({"on":true}), None);
         shell.settle();
         shell.read_look();
         Ok(shell)
@@ -351,24 +359,35 @@ impl Shell {
             if let Event::MacroChanged = event {
                 let status = macros::Session::for_app("workshop").status();
                 if status["state"] == "running" && self.engine.workshop.subscription.is_some() {
-                    self.engine.workshop.filter = format!("macro:workshop:{}", status["id"].as_str().unwrap_or_default());
+                    self.engine.workshop.filter = format!(
+                        "macro:workshop:{}",
+                        status["id"].as_str().unwrap_or_default()
+                    );
                 }
-                if !self.engine.quitting { self.engine.queue_workshop("catalogues", json!({}), None); self.settle(); }
+                if !self.engine.quitting {
+                    self.engine.queue_workshop("catalogues", json!({}), None);
+                    self.settle();
+                }
                 continue;
             }
             if let Event::Workshop(operation, args, reply, result) = event {
                 self.engine.workshop.pending = self.engine.workshop.pending.saturating_sub(1);
-                let body = result.unwrap_or_else(|message| json!({"error_code":"UNAVAILABLE","message":message}));
+                let body = result.unwrap_or_else(
+                    |message| json!({"error_code":"UNAVAILABLE","message":message}),
+                );
                 let refused = body.get("error_code").is_some();
                 if operation == "catalogues" && !refused {
-                    self.engine.workshop.catalogues = serde_json::from_value(body.clone()).unwrap_or_default();
+                    self.engine.workshop.catalogues =
+                        serde_json::from_value(body.clone()).unwrap_or_default();
                 } else if operation == "macros.open" && !refused {
                     let app = args["app"].as_str().unwrap_or("global").to_owned();
                     if body.get("branch").is_some() {
                         self.engine.ui.expanded.insert(format!("macros:{app}"));
                         self.engine.ui.row_key = Some(format!("macros:{app}"));
                         self.engine.workshop.selected = None;
-                        if let Some(id) = reply { self.bus.reply(id, 0, body); }
+                        if let Some(id) = reply {
+                            self.bus.reply(id, 0, body);
+                        }
                         continue;
                     }
                     let id = args["id"].as_str().unwrap_or_default().to_owned();
@@ -377,21 +396,43 @@ impl Shell {
                     self.engine.workshop.selected = Some((app, id));
                     self.engine.workshop.document = body.clone();
                 } else if operation == "observe" {
-                    self.engine.workshop.observe = if refused { body["message"].as_str().unwrap_or_default().into() } else { "redacted".into() };
-                    self.engine.workshop.subscription = body["subscription_id"].as_str().map(str::to_owned);
+                    self.engine.workshop.observe = if refused {
+                        body["message"].as_str().unwrap_or_default().into()
+                    } else {
+                        "redacted".into()
+                    };
+                    self.engine.workshop.subscription =
+                        body["subscription_id"].as_str().map(str::to_owned);
                 } else {
                     self.engine.workshop.message = body.to_string();
-                    if !refused && matches!(operation.as_str(), "macros.put"|"macros.move"|"macros.remove"|"macros.new"|"macros.copy") {
+                    if !refused
+                        && matches!(
+                            operation.as_str(),
+                            "macros.put"
+                                | "macros.move"
+                                | "macros.remove"
+                                | "macros.new"
+                                | "macros.copy"
+                        )
+                    {
                         self.engine.queue_workshop("catalogues", json!({}), None);
                     }
                 }
-                if let Some(id) = reply { self.bus.reply(id, if refused { 10 } else { 0 }, body); }
-                if self.engine.quitting { self.engine.quit(); }
+                if let Some(id) = reply {
+                    self.bus.reply(id, if refused { 10 } else { 0 }, body);
+                }
+                if self.engine.quitting {
+                    self.engine.quit();
+                }
                 self.settle();
                 continue;
             }
             if let Event::Discovered(_, snapshot) = &event {
-                if snapshot.progress.as_ref().is_some_and(|progress| progress.finished) {
+                if snapshot
+                    .progress
+                    .as_ref()
+                    .is_some_and(|progress| progress.finished)
+                {
                     self.engine.queue_workshop("catalogues", json!({}), None);
                 }
             }
@@ -411,8 +452,14 @@ impl Shell {
             }
             if let Event::Delivery(Delivery::Topic(topic)) = &event {
                 for event in self.bus.take_topic_events() {
-                    let body = event["body"].as_str().and_then(|text| serde_json::from_str::<Value>(text).ok()).unwrap_or(Value::Null);
-                    if event["topic"].as_str().is_some_and(|topic| topic.ends_with(".macros.finished")) {
+                    let body = event["body"]
+                        .as_str()
+                        .and_then(|text| serde_json::from_str::<Value>(text).ok())
+                        .unwrap_or(Value::Null);
+                    if event["topic"]
+                        .as_str()
+                        .is_some_and(|topic| topic.ends_with(".macros.finished"))
+                    {
                         self.engine.workshop.message = body.to_string();
                         self.engine.workshop.filter.clear();
                     }
@@ -488,23 +535,63 @@ impl Shell {
 
     fn perform(&mut self, effect: Effect) {
         match effect {
-            Effect::Workshop { operation, mut args, reply } => {
+            Effect::Workshop {
+                operation,
+                mut args,
+                reply,
+            } => {
                 if operation == "observe" {
-                    if let Some(subscription) = &self.engine.workshop.subscription { args["subscription_id"] = json!(subscription); }
+                    if let Some(subscription) = &self.engine.workshop.subscription {
+                        args["subscription_id"] = json!(subscription);
+                    }
                 }
                 if operation == "macros.run" && self.engine.workshop.subscription.is_some() {
-                    let app = args["app"].as_str().filter(|app| *app != "global").unwrap_or("workshop");
-                    self.engine.workshop.filter = format!("macro:{app}:{}", args["id"].as_str().unwrap_or_default());
+                    let app = args["app"]
+                        .as_str()
+                        .filter(|app| *app != "global")
+                        .unwrap_or("workshop");
+                    self.engine.workshop.filter =
+                        format!("macro:{app}:{}", args["id"].as_str().unwrap_or_default());
                 }
-                let running = self.engine.snapshot.services.iter().filter_map(|(service, verbs)| {
-                    if service.ends_with(".bus") || service == self.bus.service() { return None; }
-                    let app = verbs.as_ref().ok()?.iter().find_map(|verb| verb.name.strip_suffix(".macros.list"))?;
-                    if app == "workshop" { return None; }
-                    Some((app.to_owned(), service.clone()))
-                }).collect();
+                let running: std::collections::BTreeMap<String, String> = self
+                    .engine
+                    .snapshot
+                    .services
+                    .iter()
+                    .filter_map(|(service, verbs)| {
+                        if service.ends_with(".bus") || service == self.bus.service() {
+                            return None;
+                        }
+                        let app = verbs
+                            .as_ref()
+                            .ok()?
+                            .iter()
+                            .find_map(|verb| verb.name.strip_suffix(".macros.list"))?;
+                        if app == "workshop" {
+                            return None;
+                        }
+                        Some((app.to_owned(), service.clone()))
+                    })
+                    .collect();
                 let bus = self.bus.clone();
+                let mut subscriptions = Vec::new();
+                if operation == "catalogues" {
+                    let mut topics = std::collections::BTreeSet::from([format!("{}.macros.finished", self.bus.service())]);
+                    for service in running.values() {
+                        topics.insert(format!("{service}.command.executed"));
+                        topics.insert(format!("{service}.macros.finished"));
+                    }
+                    subscriptions.extend(self.watched_topics.difference(&topics).cloned().map(|topic| (topic, false)));
+                    subscriptions.extend(topics.difference(&self.watched_topics).cloned().map(|topic| (topic, true)));
+                    self.watched_topics = topics;
+                }
                 self.spawn(async move {
-                    let result = crate::workshop::perform(bus, &operation, args.clone(), running).await;
+                    for (topic, on) in subscriptions {
+                        let result = if on { bus.subscribe(&topic).await } else { bus.unsubscribe(&topic).await };
+                        if let Err(error) = result { return Event::Workshop(operation, args, reply, Err(error)); }
+                    }
+                    let result =
+                        crate::workshop::perform(bus, &operation, args.clone(), running).await;
                     Event::Workshop(operation, args, reply, result)
                 });
             }
@@ -544,8 +631,12 @@ impl Shell {
                 if !self.macro_stopping {
                     self.macro_stopping = true;
                     self.spawn(async {
-                        let result = tokio::task::spawn_blocking(|| macros::Session::for_app("workshop").shutdown())
-                            .await.map_err(|e| e.to_string()).and_then(|result| result.map_err(|e| e.to_string()));
+                        let result = tokio::task::spawn_blocking(|| {
+                            macros::Session::for_app("workshop").shutdown()
+                        })
+                        .await
+                        .map_err(|e| e.to_string())
+                        .and_then(|result| result.map_err(|e| e.to_string()));
                         Event::Stopped(result)
                     });
                     return;

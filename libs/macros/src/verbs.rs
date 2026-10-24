@@ -4,7 +4,9 @@ use crate::{Catalogue, Session};
 use serde_json::{Value, json};
 use std::sync::mpsc::{self, Receiver};
 
-pub const SUFFIXES: [&str; 11] = ["list", "reload", "run", "status", "output", "stop", "new", "get", "put", "remove", "move"];
+pub const SUFFIXES: [&str; 11] = [
+    "list", "reload", "run", "status", "output", "stop", "new", "get", "put", "remove", "move",
+];
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Refusal {
     pub code: &'static str,
@@ -65,9 +67,15 @@ pub fn describe(app: &str) -> Vec<Value> {
                     json!({}),
                 ),
                 "get" => ("Read macro text (at most 256 KiB)", json!({"id":"string"})),
-                "put" => ("Save a user macro; request cap 272 KiB, text cap 256 KiB", json!({"id":"string","text":"string"})),
+                "put" => (
+                    "Save a user macro; request cap 272 KiB, text cap 256 KiB",
+                    json!({"id":"string","text":"string"}),
+                ),
                 "remove" => ("Delete a user macro", json!({"id":"string"})),
-                "move" => ("Move a user macro between user tiers", json!({"id":"string","tier":"user-app or user-global"})),
+                "move" => (
+                    "Move a user macro between user tiers",
+                    json!({"id":"string","tier":"user-app or user-global"}),
+                ),
                 _ => (
                     "Create a user per-app macro without opening an editor",
                     json!({"title":"string"}),
@@ -89,8 +97,14 @@ pub fn handle(session: &Session, suffix: &str, body: &Value) -> Reply {
             "new" => (&["title"], &["title"]),
             _ => (&[], &[]),
         };
-        object.keys().all(|k| allowed.contains(&k.as_str()) && body[k].is_string())
-            && required.iter().all(|k| body[*k].as_str().is_some_and(|s| *k == "text" || !s.is_empty()))
+        object
+            .keys()
+            .all(|k| allowed.contains(&k.as_str()) && body[k].is_string())
+            && required.iter().all(|k| {
+                body[*k]
+                    .as_str()
+                    .is_some_and(|s| *k == "text" || !s.is_empty())
+            })
     });
     if !valid {
         return Reply::Immediate(Err(Refusal::new(
@@ -116,7 +130,11 @@ pub fn handle(session: &Session, suffix: &str, body: &Value) -> Reply {
                 s.run_with(&id, "bus", target.as_deref())
             })
         }
-        "run" => Reply::Immediate(session.run_with(body["id"].as_str().unwrap(), "bus", body["target"].as_str())),
+        "run" => Reply::Immediate(session.run_with(
+            body["id"].as_str().unwrap(),
+            "bus",
+            body["target"].as_str(),
+        )),
         "status" => Reply::Immediate(Ok(session.status())),
         "output" => Reply::Immediate(Ok(session.output())),
         "stop" => Reply::Immediate(Ok(json!({"stopping":session.stop()}))),

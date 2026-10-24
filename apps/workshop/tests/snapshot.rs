@@ -138,7 +138,9 @@ fn macro_details_themes() {
         (Scheme::Studio, Mode::Dark, "macro_studio_dark"),
         (Scheme::Pro, Mode::Light, "macro_pro_light"),
         (Scheme::Breeze, Mode::Light, "macro_breeze_light"),
-    ] { window(chrome(scheme, mode), name); }
+    ] {
+        window(chrome(scheme, mode), name);
+    }
 }
 
 /// The hue scheme ocean, light.

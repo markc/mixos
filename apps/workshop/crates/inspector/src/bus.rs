@@ -35,7 +35,11 @@ pub fn forward(url: &str, service: &str) -> Result<(), String> {
 
 pub fn open(url: &str, service: &str, args: Value) -> Result<(), String> {
     let reply = citizen::request(url, service, "workshop.macros.open", args)?;
-    if reply.rc == 0 { Ok(()) } else { Err(reply.body) }
+    if reply.rc == 0 {
+        Ok(())
+    } else {
+        Err(reply.body)
+    }
 }
 
 /// Restore and focus this process's window through compd (`comp`).

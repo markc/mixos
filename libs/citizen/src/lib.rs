@@ -171,7 +171,9 @@ impl Handle {
             return Err("invalid topic".into());
         }
         let (tx, rx) = oneshot::channel();
-        self.tx.send(Effect::Subscription(topic.into(), on, tx)).await
+        self.tx
+            .send(Effect::Subscription(topic.into(), on, tx))
+            .await
             .map_err(|_| "Bus stopped".to_owned())?;
         rx.await.map_err(|_| "subscription abandoned".to_owned())?
     }

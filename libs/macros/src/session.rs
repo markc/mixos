@@ -121,28 +121,44 @@ impl Session {
     /// Management runs on a worker, using the same confined storage as the editor.
     pub fn manage(&self, operation: &str, body: &Value) -> Result<Value, Refusal> {
         let catalogue = self.reload()?;
-        let entry = catalogue.entries.iter().find(|entry| Some(entry.id.as_str()) == body["id"].as_str())
+        let entry = catalogue
+            .entries
+            .iter()
+            .find(|entry| Some(entry.id.as_str()) == body["id"].as_str())
             .ok_or_else(|| Refusal::new("NOT_FOUND", "unknown macro id"))?;
-        let roots = self.roots().ok_or_else(|| Refusal::new("UNAVAILABLE", "macro roots unavailable"))?;
-        let storage_error = |error: std::io::Error| Refusal::new(match error.kind() {
-            std::io::ErrorKind::AlreadyExists => "ALREADY_EXISTS",
-            std::io::ErrorKind::InvalidInput | std::io::ErrorKind::PermissionDenied => "DENIED",
-            std::io::ErrorKind::NotFound => "NOT_FOUND",
-            _ => "INTERNAL",
-        }, error);
+        let roots = self
+            .roots()
+            .ok_or_else(|| Refusal::new("UNAVAILABLE", "macro roots unavailable"))?;
+        let storage_error = |error: std::io::Error| {
+            Refusal::new(
+                match error.kind() {
+                    std::io::ErrorKind::AlreadyExists => "ALREADY_EXISTS",
+                    std::io::ErrorKind::InvalidInput | std::io::ErrorKind::PermissionDenied => {
+                        "DENIED"
+                    }
+                    std::io::ErrorKind::NotFound => "NOT_FOUND",
+                    _ => "INTERNAL",
+                },
+                error,
+            )
+        };
         if operation == "get" {
             let text = roots.read(entry).map_err(storage_error)?;
             if text.len() > 256 * 1024 {
                 return Err(Refusal::new("RESOURCE_EXHAUSTED", "macro exceeds 256 KiB"));
             }
-            return Ok(json!({"id":entry.id,"tier":entry.tier.as_str(),"path":entry.path,"text":text}));
+            return Ok(
+                json!({"id":entry.id,"tier":entry.tier.as_str(),"path":entry.path,"text":text}),
+            );
         }
         if !entry.tier.is_user() {
             return Err(Refusal::new("DENIED", "built-in macros are read-only"));
         }
         let path = match operation {
             "put" => {
-                let text = body["text"].as_str().ok_or_else(|| Refusal::new("INVALID_ARGUMENT", "text is required"))?;
+                let text = body["text"]
+                    .as_str()
+                    .ok_or_else(|| Refusal::new("INVALID_ARGUMENT", "text is required"))?;
                 if text.len() > 256 * 1024 {
                     return Err(Refusal::new("INVALID_ARGUMENT", "macro exceeds 256 KiB"));
                 }
@@ -157,7 +173,12 @@ impl Session {
                 let tier = match body["tier"].as_str() {
                     Some("user-global") => Tier::UserGlobal,
                     Some("user-app") => Tier::UserApp,
-                    _ => return Err(Refusal::new("INVALID_ARGUMENT", "expected user-global or user-app")),
+                    _ => {
+                        return Err(Refusal::new(
+                            "INVALID_ARGUMENT",
+                            "expected user-global or user-app",
+                        ));
+                    }
                 };
                 let owner = self.0.lock().unwrap().app.clone();
                 let app = body["destination"].as_str().unwrap_or(&owner);
@@ -166,7 +187,12 @@ impl Session {
                 }
                 roots.move_to(entry, tier, app).map_err(storage_error)?
             }
-            _ => return Err(Refusal::new("INVALID_ARGUMENT", "unknown management operation")),
+            _ => {
+                return Err(Refusal::new(
+                    "INVALID_ARGUMENT",
+                    "unknown management operation",
+                ));
+            }
         };
         self.reload()?;
         Ok(json!({"id":entry.id,"path":path,"changed":true}))
@@ -268,7 +294,9 @@ impl Session {
 
     pub fn run_with(&self, id: &str, origin: &str, target: Option<&str>) -> Result<Value, Refusal> {
         let mut state = self.0.lock().unwrap();
-        if state.closing { return Err(Refusal::new("UNAVAILABLE", "macro session is closing")); }
+        if state.closing {
+            return Err(Refusal::new("UNAVAILABLE", "macro session is closing"));
+        }
         if state.active {
             return Err(Refusal::new("BUSY", "a macro is already running"));
         }
@@ -362,7 +390,9 @@ impl Session {
     /// process group and wait for the runner's completion delivery.
     pub fn shutdown(&self) -> Result<(), Refusal> {
         let (tx, rx) = std::sync::mpsc::channel();
-        let hook = self.add_finish_hook(Arc::new(move |_| { let _ = tx.send(()); }));
+        let hook = self.add_finish_hook(Arc::new(move |_| {
+            let _ = tx.send(());
+        }));
         let active = {
             let mut state = self.0.lock().unwrap();
             state.closing = true;
@@ -370,8 +400,11 @@ impl Session {
             state.active
         };
         let result = if active {
-            rx.recv_timeout(std::time::Duration::from_secs(15)).map_err(|e| Refusal::new("UNAVAILABLE", e))
-        } else { Ok(()) };
+            rx.recv_timeout(std::time::Duration::from_secs(15))
+                .map_err(|e| Refusal::new("UNAVAILABLE", e))
+        } else {
+            Ok(())
+        };
         self.remove_finish_hook(hook);
         result
     }

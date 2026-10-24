@@ -81,7 +81,11 @@ fn run(settings: &Settings) -> Result<(), String> {
             settings.comp.clone(),
         )?;
         if let Some(app) = &settings.app {
-            shell.engine_mut().queue_workshop("macros.open", serde_json::json!({"app":app,"id":settings.id}), None);
+            shell.engine_mut().queue_workshop(
+                "macros.open",
+                serde_json::json!({"app":app,"id":settings.id}),
+                None,
+            );
         }
         loop {
             wake.begin();
@@ -108,7 +112,10 @@ fn run(settings: &Settings) -> Result<(), String> {
     };
     let comp = settings.comp.clone();
     let shell_bus = handle.clone();
-    let initial = settings.app.as_ref().map(|app| serde_json::json!({"app":app,"id":settings.id}));
+    let initial = settings
+        .app
+        .as_ref()
+        .map(|app| serde_json::json!({"app":app,"id":settings.id}));
     let result = eframe::run_native(
         APP_ID,
         options,
@@ -116,7 +123,9 @@ fn run(settings: &Settings) -> Result<(), String> {
             toolkit::decorations::initialise(cc);
             toolkit::install(&cc.egui_ctx, &theme);
             let mut shell = Shell::new(cc.egui_ctx.clone(), theme, shell_bus, deliveries, comp)?;
-            if let Some(args) = initial { shell.engine_mut().queue_workshop("macros.open", args, None); }
+            if let Some(args) = initial {
+                shell.engine_mut().queue_workshop("macros.open", args, None);
+            }
             Ok(Box::new(shell))
         }),
     )
@@ -137,7 +146,11 @@ fn main() {
         // One window per session: a second launch raises the first.
         if !settings.headless && bus::probe(&settings.url, &settings.service) {
             if let Some(app) = &settings.app {
-                bus::open(&settings.url, &settings.service, serde_json::json!({"app":app,"id":settings.id}))?;
+                bus::open(
+                    &settings.url,
+                    &settings.service,
+                    serde_json::json!({"app":app,"id":settings.id}),
+                )?;
             }
             match bus::forward(&settings.url, &settings.service) {
                 Ok(()) => return Ok(()),
