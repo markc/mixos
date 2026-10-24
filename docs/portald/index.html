@@ -209,6 +209,7 @@
                 <div class="panel-content">
                     <nav id="toc-nav">
                         <a href="#where-the-values-come-from">Where the values come from</a>
+                        <a href="#gtk-caption-settings">GTK caption settings</a>
                         <a href="#what-applications-see">What applications see</a>
                         <a href="#screen-sharing">Screen sharing</a>
                         <a href="#consent" class="toc-h3">Consent</a>
@@ -248,9 +249,9 @@ to share through the XDG ScreenCast portal. <code>portald</code> is the MixOS
 implementation of both. It owns <code>org.freedesktop.portal.Desktop</code> on the session
 bus, answers the <code>org.freedesktop.appearance</code> namespace and, when started with
 <code>--screencast</code>, serves monitor sources from the compositor.</p>
-<p>Values come from the settings authority, <code>settingsd</code>. The portal never writes
-settings. Before authority or cache data is available, it serves the documented
-defaults.</p>
+<p>Values come from the settings authority, <code>settingsd</code>. Portald exports derived
+GTK caption settings into the desk's private config directory. Before authority
+or cache data is available, the portal serves the documented defaults.</p>
 <h2 id="where-the-values-come-from">Where the values come from</h2>
 <pre><code class="language-text">settingsd  --(retained topic: settingsd.desktop.changed.&lt;profile&gt;)--&gt;  portald
 portald    --settings.appearance.get (one bounded read)-------------&gt;  settingsd
@@ -262,9 +263,36 @@ evidence, and the projection must match its binding and identity. Authenticated
 retained deliveries trigger fresh reads, including after settingsd restarts.</p>
 <p>A projection carries the schema version, the binding (instance and profile), an
 incarnation, a revision, the design revision, <code>mode</code>, <code>contrast</code> and an sRGB
-<code>accent</code>. A projection is refused when it is older than the held one within the
+<code>accent</code>. The settingsd wire view remains schema 1 for older strict readers.
+After checking that view against its atomic snapshot, portald derives a schema 2
+projection with <code>caption_side</code> from the snapshot's effective desktop context,
+without another settingsd read. Its cache retains that caption placement;
+older schema 1 caches default to <code>right</code>. A projection is refused when it is
+older than the held one within the
 same incarnation. A new incarnation is adopted. A repeat of the held identity
 changes nothing and emits no signal.</p>
+<h2 id="gtk-caption-settings">GTK caption settings</h2>
+<p>At startup from a validated cache, and on every accepted projection, portald
+merges these keys into <code>[Settings]</code> in <code>$XDG_CONFIG_HOME/gtk-3.0/settings.ini</code>:</p>
+<table><thead><tr><th>Key</th><th>Value</th></tr></thead><tbody>
+<tr><td><code>gtk-decoration-layout</code></td><td><code>menu:minimize,maximize,close</code> for right captions; <code>close,minimize,maximize:menu</code> for left captions</td></tr>
+<tr><td><code>gtk-icon-theme-name</code></td><td><code>mixos</code> (constant; there is no icon-theme setting)</td></tr>
+</tbody></table>
+<p>Craft apps use this file on the <code>MixOS</code> desktop with <code>CRAFT_TITLEBAR=app</code>. They
+resolve <code>window-minimize-symbolic</code>, <code>window-maximize-symbolic</code>,
+<code>window-restore-symbolic</code> and <code>window-close-symbolic</code> through the MixOS icon
+theme in <code>$XDG_DATA_DIRS/icons</code>. The original 16-unit hairline SVGs install from
+<code>share/icons</code> into <code>/opt/mixos/share/icons/mixos/scalable/actions</code>.</p>
+<p>The export runs only when <code>XDG_CONFIG_HOME</code> is set, absolute and different from
+<code>$HOME/.config</code>; otherwise it logs once at info level and skips. Parent segments
+and symlinks in the destination path are also refused. This keeps a nested desk
+from overwriting its host desktop's settings.</p>
+<p>Other lines, comments and sections are preserved byte for byte. Unchanged
+content is left alone. Changed content is written to a sibling temporary file,
+synced and renamed, then the directory is synced. The directory is created if
+needed. Reads are capped at 64 KiB; larger, non-regular or unreadable files are
+logged and left alone. An export failure never stops the portal. Without a
+validated cache, exporting waits for settingsd's first accepted projection.</p>
 <h2 id="what-applications-see">What applications see</h2>
 <p>Interface <code>org.freedesktop.portal.Settings</code>, version 2, at
 <code>/org/freedesktop/portal/desktop</code> on <code>org.freedesktop.portal.Desktop</code>.</p>
@@ -418,7 +446,9 @@ in a unit drop-in; its own PipeWire and compositor refresh must support it.</p>
 <h2 id="status-for-agents">Status for agents</h2>
 <p><code>HELP</code> returns the verb manifest. The bus verb <code>portald.status</code> is read-only. It reports the origin of the held
 values (defaults, cache or settingsd), whether the name is owned, the identity
-of the held projection, the last fault and the counters. Its
+of the held projection, the last fault and the counters. <code>gtk_settings</code> reports
+the last export's path, outcome (<code>written</code>, <code>unchanged</code> or <code>skipped</code>) and reason.
+Its
 <code>settings_generation</code> reports the Consumer's connection generation, or null
 while disconnected. It is registered in
 <code>docs/docs/spec/bus/verbs.conf.mix</code>.</p>
