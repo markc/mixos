@@ -39,7 +39,15 @@ type Work = Box<
     dyn FnOnce(&Roots, &str) -> io::Result<(Option<editor::local::Document>, Option<Entry>)> + Send,
 >;
 type Creation = Result<(Option<Catalogue>, editor::local::Document, Option<String>), String>;
-type SaveCompletion = Result<(editor::local::Saved, Option<Catalogue>, Option<Entry>, Option<String>), String>;
+type SaveCompletion = Result<
+    (
+        editor::local::Saved,
+        Option<Catalogue>,
+        Option<Entry>,
+        Option<String>,
+    ),
+    String,
+>;
 static NEXT_WINDOW: AtomicU64 = AtomicU64::new(1);
 
 pub fn command<S>(enabled: fn(&S) -> bool, run: fn(&mut S)) -> crate::Command<S> {

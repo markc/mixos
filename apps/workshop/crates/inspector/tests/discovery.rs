@@ -103,11 +103,27 @@ async fn mesh_latency_queue_and_failure_diagnostics() {
     );
     assert!(!engine.busy());
     failure.store(3, Ordering::SeqCst);
-    let large = tokio::time::timeout(Duration::from_secs(15), discovery::discover(handle.clone())).await.unwrap();
+    let large = tokio::time::timeout(Duration::from_secs(15), discovery::discover(handle.clone()))
+        .await
+        .unwrap();
     assert!(large.progress.unwrap().finished);
     assert_eq!(large.services.len(), 1001);
-    assert_eq!(large.services.values().filter(|result| result.is_ok()).count(), discovery::MAX_DESCRIBED_SERVICES_PER_NODE);
-    assert_eq!(large.services.values().filter(|result| matches!(result, Err(error) if error == "not described (limit)")).count(), 1001 - discovery::MAX_DESCRIBED_SERVICES_PER_NODE);
+    assert_eq!(
+        large
+            .services
+            .values()
+            .filter(|result| result.is_ok())
+            .count(),
+        discovery::MAX_DESCRIBED_SERVICES_PER_NODE
+    );
+    assert_eq!(
+        large
+            .services
+            .values()
+            .filter(|result| matches!(result, Err(error) if error == "not described (limit)"))
+            .count(),
+        1001 - discovery::MAX_DESCRIBED_SERVICES_PER_NODE
+    );
     handle.quit();
     handle.wait_done().unwrap();
     server.abort();

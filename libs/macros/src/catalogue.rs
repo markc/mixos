@@ -88,7 +88,11 @@ impl Roots {
     }
 
     /// Save succeeded even if the returned warning reports uncertain durability.
-    pub fn write_path_outcome(&self, path: &Path, bytes: &[u8]) -> io::Result<crate::MutationOutcome> {
+    pub fn write_path_outcome(
+        &self,
+        path: &Path,
+        bytes: &[u8],
+    ) -> io::Result<crate::MutationOutcome> {
         crate::storage::Target::open(&self.user, path)?.write(bytes)
     }
 
@@ -111,7 +115,12 @@ impl Roots {
         self.move_to_outcome(entry, tier, app).map(|(path, _)| path)
     }
 
-    pub fn move_to_outcome(&self, entry: &Entry, tier: Tier, app: &str) -> io::Result<(PathBuf, crate::MutationOutcome)> {
+    pub fn move_to_outcome(
+        &self,
+        entry: &Entry,
+        tier: Tier,
+        app: &str,
+    ) -> io::Result<(PathBuf, crate::MutationOutcome)> {
         self.user_target(entry)?;
         if fs::symlink_metadata(&entry.path)?.file_type().is_symlink() {
             return Err(invalid("moving a macro symlink is not supported"));

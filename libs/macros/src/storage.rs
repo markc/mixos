@@ -20,7 +20,9 @@ pub struct MutationOutcome {
 }
 
 fn durability(sync: io::Result<()>) -> MutationOutcome {
-    let warning = sync.err().map(|error| format!("macro changed, but directory sync failed: {error}"));
+    let warning = sync
+        .err()
+        .map(|error| format!("macro changed, but directory sync failed: {error}"));
     if let Some(warning) = &warning {
         eprintln!("{warning}");
     }
@@ -166,7 +168,11 @@ impl Target {
         self.move_with_sync(destination, |directory| directory.sync_all())
     }
 
-    fn move_with_sync(&self, destination: &Self, sync: impl Fn(&File) -> io::Result<()>) -> io::Result<MutationOutcome> {
+    fn move_with_sync(
+        &self,
+        destination: &Self,
+        sync: impl Fn(&File) -> io::Result<()>,
+    ) -> io::Result<MutationOutcome> {
         self.file()?;
         // renameat2 publishes the complete source with no empty reservation and
         // atomically refuses existing destinations, including dangling links.
@@ -199,7 +205,12 @@ impl Target {
         self.write_with_sync(bytes, hook, |directory| directory.sync_all())
     }
 
-    fn write_with_sync(&self, bytes: &[u8], hook: impl FnOnce(), sync: impl FnOnce(&File) -> io::Result<()>) -> io::Result<MutationOutcome> {
+    fn write_with_sync(
+        &self,
+        bytes: &[u8],
+        hook: impl FnOnce(),
+        sync: impl FnOnce(&File) -> io::Result<()>,
+    ) -> io::Result<MutationOutcome> {
         static NEXT: AtomicU64 = AtomicU64::new(0);
         let permissions = self.file()?.metadata()?.permissions();
         if permissions.readonly() {
@@ -256,11 +267,19 @@ mod tests {
         let destination = temp.path().join("destination.mix");
         std::fs::write(&path, b"old").unwrap();
         let source = Target::open(temp.path(), &path).unwrap();
-        let outcome = source.write_with_sync(b"saved", || {}, |_| Err(io::Error::other("injected sync failure"))).unwrap();
+        let outcome = source
+            .write_with_sync(
+                b"saved",
+                || {},
+                |_| Err(io::Error::other("injected sync failure")),
+            )
+            .unwrap();
         assert!(outcome.warning.unwrap().contains("injected sync failure"));
         assert_eq!(std::fs::read(&path).unwrap(), b"saved");
         let target = Target::open(temp.path(), &destination).unwrap();
-        let outcome = source.move_with_sync(&target, |_| Err(io::Error::other("injected sync failure"))).unwrap();
+        let outcome = source
+            .move_with_sync(&target, |_| Err(io::Error::other("injected sync failure")))
+            .unwrap();
         assert!(outcome.warning.unwrap().contains("injected sync failure"));
         assert!(!path.exists());
         assert_eq!(std::fs::read(&destination).unwrap(), b"saved");
