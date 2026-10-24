@@ -325,6 +325,15 @@ mod tests {
             status::report(&status)["portal"]["gtk_settings"]["outcome"],
             "unchanged"
         );
+        std::fs::remove_file(&path).unwrap();
+        std::fs::create_dir(&path).unwrap();
+        let next = projection("inc", 3, "light");
+        assert!(adopt(&mut state, &values, &config, &status, &next, &gtk).is_some());
+        assert_eq!(values.read().unwrap().color_scheme, 2);
+        let report = status::report(&status);
+        assert_eq!(report["portal"]["gtk_settings"]["outcome"], "skipped");
+        assert!(report["portal"]["gtk_settings"]["reason"].is_string());
+        assert_eq!(report["portal"]["origin"], "settingsd");
     }
 
     #[test]

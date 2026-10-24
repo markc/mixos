@@ -288,4 +288,16 @@ mod tests {
         assert_eq!(exporter.export(Some(CaptionSide::Right)).outcome, "skipped");
         assert_eq!(std::fs::read(&host).unwrap(), bytes);
     }
+
+    #[test]
+    fn refuses_a_linked_config_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let host = dir.path().join("host");
+        std::fs::create_dir(&host).unwrap();
+        let config = dir.path().join("config");
+        std::os::unix::fs::symlink(&host, &config).unwrap();
+        let exporter = Exporter::new(Some(&config), None);
+        assert_eq!(exporter.export(Some(CaptionSide::Left)).outcome, "skipped");
+        assert!(!host.join("gtk-3.0").exists());
+    }
 }
