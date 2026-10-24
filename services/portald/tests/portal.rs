@@ -79,6 +79,7 @@ impl Drop for PrivateBus {
 fn projection(incarnation: &str, revision: u64, mode: &str) -> AppearanceProjection {
     AppearanceProjection {
         schema: APPEARANCE_SCHEMA,
+        caption_side: "right".into(),
         binding: Binding {
             instance: "host".into(),
             profile: "default".into(),

@@ -7160,6 +7160,7 @@ dependencies = [
  "buildinfo",
  "bus",
  "clap",
+ "design",
  "futures-util",
  "libc",
  "pipewire",

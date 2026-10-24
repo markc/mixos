@@ -47,6 +47,7 @@ pub struct Status {
     pub reply_reports: u64,
     /// Appearance reads started against settingsd, all causes.
     pub authority_reads: u64,
+    pub gtk_settings: Option<crate::gtk_settings::Report>,
 }
 
 impl Status {
@@ -69,6 +70,7 @@ impl Status {
             replies_dropped: 0,
             reply_reports: 0,
             authority_reads: 0,
+            gtk_settings: None,
         }
     }
 }

@@ -6,6 +6,7 @@
 pub mod appearance;
 pub mod cache;
 pub mod env;
+pub mod gtk_settings;
 pub mod live;
 pub mod portal;
 pub mod screencast;

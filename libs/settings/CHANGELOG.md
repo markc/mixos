@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+The appearance projection carries the effective desktop `caption_side` for
+portald's GTK settings export. Missing values read as `right`, which is omitted
+on the wire to preserve existing projections and caches. A `left` projection
+requires an updated consumer; older strict readers refuse the added field.
+Store format and appearance schema unchanged.
+
 `Summary.ui` carries the session's text scale, density and reduced motion on
 the summary's revision. Store format unchanged; `settings.get` is 0.7.0.
 

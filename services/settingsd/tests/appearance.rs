@@ -71,6 +71,7 @@ fn appearance_projects_the_desktop_context_through_the_verb() {
     assert_eq!(appearance.schema, APPEARANCE_SCHEMA);
     assert_eq!(appearance.mode, "dark");
     assert_eq!(appearance.contrast, "normal");
+    assert_eq!(appearance.caption_side, "right");
     assert_eq!(appearance.revision, authority.accepted.revision);
     assert_eq!(appearance.incarnation, authority.accepted.incarnation);
     let snapshot: Snapshot = serde_json::from_value(reply["snapshot"].clone()).unwrap();
@@ -121,6 +122,31 @@ fn appearance_follows_an_accepted_mode_change_with_a_new_identity() {
         &service::dispatch(&mut authority, "settings.appearance.get", &body("fixture")).unwrap(),
     );
     assert_eq!(after.mode, "light");
+    assert_ne!(after.identity(), before.identity());
+    after.validate().unwrap();
+}
+
+#[test]
+fn appearance_follows_an_accepted_caption_side_change() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut authority = authority(dir.path());
+    let before = projection(
+        &service::dispatch(&mut authority, "settings.appearance.get", &body("fixture")).unwrap(),
+    );
+    let apply = ApplyRequest {
+        binding: binding(),
+        expected_incarnation: authority.accepted.incarnation.clone(),
+        expected_revision: authority.accepted.revision,
+        operation_id: "captions-left".into(),
+        changes: BTreeMap::from([("appearance.caption_side".into(), json!("left"))]),
+        reset: vec![],
+        request_digest: None,
+    };
+    assert_eq!(authority.apply(apply).unwrap()["status"], "changed");
+    let after = projection(
+        &service::dispatch(&mut authority, "settings.appearance.get", &body("fixture")).unwrap(),
+    );
+    assert_eq!(after.caption_side, "left");
     assert_ne!(after.identity(), before.identity());
     after.validate().unwrap();
 }
