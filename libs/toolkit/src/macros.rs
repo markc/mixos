@@ -1587,7 +1587,12 @@ mod tests {
             "done"
         );
         assert_eq!(
-            notification("ced", "Tidy", &Status::FailedToStart("permission denied".into()), "")["body"],
+            notification(
+                "ced",
+                "Tidy",
+                &Status::FailedToStart("permission denied".into()),
+                ""
+            )["body"],
             "permission denied"
         );
         let payload = notification(
