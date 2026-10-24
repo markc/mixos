@@ -129,6 +129,7 @@ fn window(args: &Args, dirs: Option<AppDirs>, paths: Vec<String>) -> Result<(), 
         APP_ID,
         options,
         Box::new(move |cc| {
+            toolkit::decorations::initialise(cc);
             toolkit::install(&cc.egui_ctx, &theme);
             let _ = cell.set(cc.egui_ctx.clone());
             let app = App::new(core);

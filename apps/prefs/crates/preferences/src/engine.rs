@@ -13,7 +13,7 @@ use crate::appearance::Appearance;
 use crate::model::{self, APP_ID, AppRow, Notes, Panel};
 use crate::navigation::{Section, application_section};
 use citizen::{CallError, Delivery, Reply};
-use design::{CaptionSide, Decorations, Mode, Scheme, Style};
+use design::{CaptionSide, Mode, RequestedDecorations as Decorations, Scheme, Style};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
@@ -292,7 +292,7 @@ mod by_name {
     }
     named!(scheme, design::Scheme);
     named!(mode, design::Mode);
-    named!(decorations, design::Decorations);
+    named!(decorations, design::RequestedDecorations);
     named!(captions, design::CaptionSide);
 
     /// The style axis: null follows the session, "own" the scheme's own
@@ -368,6 +368,7 @@ pub struct Engine {
     pub quitting: bool,
     /// The session theme's scheme and mode, as the shell loaded it.
     pub session: (Scheme, Mode),
+    pub session_decorations: Decorations,
     /// The Appearance panel over settingsd.
     pub look: Appearance,
     pub wallpaper: crate::wallpaper::WallpaperEditor,
@@ -399,6 +400,7 @@ impl Engine {
             quit_settled: false,
             quitting: false,
             session: (Scheme::default(), Mode::default()),
+            session_decorations: Decorations::default(),
             look: Appearance::default(),
             wallpaper: crate::wallpaper::WallpaperEditor::default(),
             picker: crate::picker::Picker::default(),
@@ -772,6 +774,14 @@ impl Engine {
         )
     }
 
+    pub fn decoration_resolution(&self) -> design::decorations::Resolution {
+        let session = self
+            .look
+            .shown()
+            .map_or(self.session_decorations, |look| look.decorations);
+        design::decorations::resolve(self.ui.theme_decorations, session)
+    }
+
     /// Choose the window's scheme and mode (`None` follows the session).
     pub fn set_theme(&mut self, scheme: Option<Scheme>, mode: Option<Mode>) {
         self.ui.theme_scheme = scheme;
@@ -1026,7 +1036,9 @@ impl Engine {
             "style":self.ui.theme_style.map(|s| s.map_or("own", Style::name)),
             "decorations":self.ui.theme_decorations.map(Decorations::name),
             "caption_side":self.ui.theme_captions.map(CaptionSide::name),
-            "effective":{"scheme":scheme.name(),"mode":mode.name()}}),
+            "effective":{"scheme":scheme.name(),"mode":mode.name(),
+                "decorations":self.decoration_resolution().mode.name(),
+                "decorations_reason":self.decoration_resolution().reason}}),
         )
     }
 
@@ -1300,6 +1312,90 @@ fn summary(label: Label, value: &Value) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn bus_auto_first_detects_once_with_bounded_reply() {
+        use design::decorations::{Resolver, SessionFacts, with_resolver};
+        use std::sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        };
+        use std::time::{Duration, Instant};
+        let calls = Arc::new(AtomicUsize::new(0));
+        let counted = calls.clone();
+        let resolver = Arc::new(Resolver::new(
+            move || {
+                counted.fetch_add(1, Ordering::Relaxed);
+                SessionFacts {
+                    wayland: true,
+                    desktops: "KDE".into(),
+                    decoration_global: Some(true),
+                }
+            },
+            || None,
+            |_| {},
+        ));
+        with_resolver(resolver, || {
+            let mut e = Engine::new(label);
+            e.take_effects();
+            for (id, request, effective, reason) in [
+                (1, "csd", "csd", "choice"),
+                (2, "auto", "ssd", "rule3"),
+                (3, "auto", "ssd", "rule3"),
+                (4, "ssd", "ssd", "choice"),
+            ] {
+                let start = Instant::now();
+                e.command(
+                    id,
+                    "prefs.theme",
+                    &json!({"decorations":request}).to_string(),
+                );
+                assert!(start.elapsed() < Duration::from_millis(250));
+                let replies = e.take_effects();
+                let body = replies
+                    .iter()
+                    .find_map(|effect| match effect {
+                        Effect::Reply {
+                            id: reply,
+                            rc: 0,
+                            body,
+                        } if *reply == id => Some(body),
+                        _ => None,
+                    })
+                    .expect("successful theme reply");
+                assert_eq!(body["decorations"], request);
+                assert_eq!(body["effective"]["decorations"], effective);
+                assert_eq!(body["effective"]["decorations_reason"], reason);
+                assert_eq!(calls.load(Ordering::Relaxed), usize::from(id > 1));
+            }
+            e.command(5, "prefs.theme", r#"{"decorations":"bogus"}"#);
+            assert!(e.take_effects().iter().any(|effect| matches!(
+                effect, Effect::Reply { id: 5, rc: 10, body } if body["error_code"] == "ARGUMENT"
+            )));
+            assert_eq!(e.ui.theme_decorations, Some(Decorations::Server));
+        });
+    }
+
+    #[test]
+    fn bus_choice_is_stored_under_environment_override() {
+        use design::decorations::{Resolver, SessionFacts, with_resolver};
+        use std::sync::Arc;
+        let resolver = Arc::new(Resolver::new(
+            || SessionFacts {
+                wayland: false,
+                desktops: String::new(),
+                decoration_global: None,
+            },
+            || Some("csd".into()),
+            |_| {},
+        ));
+        with_resolver(resolver, || {
+            let mut e = Engine::new(label);
+            let body = e.theme(&json!({"decorations":"ssd"})).unwrap();
+            assert_eq!(e.ui.theme_decorations, Some(Decorations::Server));
+            assert_eq!(body["effective"]["decorations"], "csd");
+            assert_eq!(body["effective"]["decorations_reason"], "override");
+        });
+    }
 
     fn label(key: &str, args: &[(&str, &str)]) -> String {
         let mut out = key.to_owned();

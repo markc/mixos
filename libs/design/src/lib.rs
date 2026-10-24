@@ -42,6 +42,7 @@ mod colour_model;
 pub mod compat;
 mod compiler;
 mod context;
+pub mod decorations;
 mod design_model;
 mod diagnostic;
 mod equivalence;
@@ -67,7 +68,9 @@ pub use colour_model::{
     ResolvedPair, TEXT_PAIR_NAMES, contrast_ratio,
 };
 pub use compiler::compile_design;
-pub use context::{CaptionSide, Contrast, Decorations, DesignContext, Mode, Scheme, Style};
+pub use context::{
+    CaptionSide, Contrast, Decorations, DesignContext, Mode, RequestedDecorations, Scheme, Style,
+};
 pub use design_model::{
     AuthoredMetric, DesignApplyDecision, DesignApplyTransition, DesignCompileFailure,
     DesignCompileOutcome, DesignCompileResult, DesignCompileStatus, DesignCompileSuccess,

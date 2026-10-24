@@ -14,7 +14,7 @@
 
 use crate::bus::{CallError, Delivery, Reply};
 use crate::model::{self, APP_ID, Selection, Snapshot};
-use design::{CaptionSide, Decorations, Mode, Scheme, Style};
+use design::{CaptionSide, Mode, RequestedDecorations as Decorations, Scheme, Style};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
@@ -171,7 +171,7 @@ mod by_name {
     }
     named!(scheme, design::Scheme);
     named!(mode, design::Mode);
-    named!(decorations, design::Decorations);
+    named!(decorations, design::RequestedDecorations);
     named!(captions, design::CaptionSide);
 
     /// The style axis: null follows the session, "own" the scheme's own
@@ -222,12 +222,12 @@ pub fn style_from_name(name: &str) -> Option<Option<Style>> {
 /// The session theme as the shell loaded it: what an unchosen axis of the
 /// window's theme choice shows.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct Session {
+pub struct Session<D = Decorations> {
     pub scheme: Scheme,
     /// `None` is the scheme's own style.
     pub style: Option<Style>,
     pub mode: Mode,
-    pub decorations: Decorations,
+    pub decorations: D,
     pub captions: CaptionSide,
 }
 
@@ -387,6 +387,7 @@ impl Engine {
                 "style": style_name(shown.style),
                 "mode": shown.mode.name(),
                 "decorations": shown.decorations.name(),
+                "decorations_reason": self.decoration_resolution().reason,
                 "caption_side": shown.captions.name(),
             }
         }))
@@ -556,13 +557,17 @@ impl Engine {
 
     /// Every axis the window shows: the choice, each unchosen axis the
     /// session's.
-    pub fn effective(&self) -> Session {
+    pub fn decoration_resolution(&self) -> design::decorations::Resolution {
+        design::decorations::resolve(self.ui.theme_decorations, self.session.decorations)
+    }
+
+    pub fn effective(&self) -> Session<design::Decorations> {
         let ui = &self.ui;
         Session {
             scheme: ui.theme_scheme.unwrap_or(self.session.scheme),
             style: ui.theme_style.unwrap_or(self.session.style),
             mode: ui.theme_mode.unwrap_or(self.session.mode),
-            decorations: ui.theme_decorations.unwrap_or(self.session.decorations),
+            decorations: self.decoration_resolution().mode,
             captions: ui.theme_captions.unwrap_or(self.session.captions),
         }
     }
@@ -1156,6 +1161,91 @@ fn dialog_name(dialog: Option<Dialog>) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn bus_auto_first_detects_once_with_bounded_reply() {
+        use design::decorations::{Resolver, SessionFacts, with_resolver};
+        use std::sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        };
+        use std::time::{Duration, Instant};
+        let calls = Arc::new(AtomicUsize::new(0));
+        let counted = calls.clone();
+        let resolver = Arc::new(Resolver::new(
+            move || {
+                counted.fetch_add(1, Ordering::Relaxed);
+                SessionFacts {
+                    wayland: true,
+                    desktops: "KDE".into(),
+                    decoration_global: Some(true),
+                }
+            },
+            || None,
+            |_| {},
+        ));
+        with_resolver(resolver, || {
+            let mut e = Engine::new(label);
+            e.take_effects();
+            for (id, request, effective, reason) in [
+                (1, "csd", "csd", "choice"),
+                (2, "auto", "ssd", "rule3"),
+                (3, "auto", "ssd", "rule3"),
+                (4, "ssd", "ssd", "choice"),
+            ] {
+                let start = Instant::now();
+                e.command(
+                    id,
+                    "busviewer.theme",
+                    &json!({"decorations":request}).to_string(),
+                );
+                assert!(start.elapsed() < Duration::from_millis(250));
+                let replies = e.take_effects();
+                let body = replies
+                    .iter()
+                    .find_map(|effect| match effect {
+                        Effect::Reply {
+                            id: reply,
+                            rc: 0,
+                            body,
+                        } if *reply == id => Some(body),
+                        _ => None,
+                    })
+                    .expect("successful theme reply");
+                assert_eq!(body["decorations"], request);
+                assert_eq!(body["effective"]["decorations"], effective);
+                assert_eq!(body["effective"]["decorations_reason"], reason);
+                assert_eq!(calls.load(Ordering::Relaxed), usize::from(id > 1));
+            }
+            e.command(5, "busviewer.theme", r#"{"decorations":"bogus"}"#);
+            assert!(e.take_effects().iter().any(|effect| matches!(
+                effect, Effect::Reply { id: 5, rc: 10, body } if body["error_code"] == "ARGUMENT"
+            )));
+            assert_eq!(e.ui.theme_decorations, Some(Decorations::Server));
+        });
+    }
+
+    #[test]
+    fn bus_choice_is_stored_under_environment_override() {
+        use design::decorations::{Resolver, SessionFacts, with_resolver};
+        use std::sync::Arc;
+        let resolver = Arc::new(Resolver::new(
+            || SessionFacts {
+                wayland: false,
+                desktops: String::new(),
+                decoration_global: None,
+            },
+            || Some("csd".into()),
+            |_| {},
+        ));
+        with_resolver(resolver, || {
+            let mut e = Engine::new(label);
+            let body = e.theme(&json!({"decorations":"ssd"})).unwrap();
+            assert_eq!(e.ui.theme_decorations, Some(Decorations::Server));
+            assert_eq!(body["effective"]["decorations"], "csd");
+            assert_eq!(body["effective"]["decorations_reason"], "override");
+        });
+    }
+
     use crate::model::Verb;
 
     fn label(key: &str) -> String {
@@ -1811,7 +1901,7 @@ mod tests {
         assert_eq!(
             body,
             json!({"scheme":"forest","style":null,"mode":null,"decorations":null,"caption_side":null,
-                "effective":{"scheme":"forest","style":"own","mode":"light","decorations":"csd","caption_side":"right"}})
+                "effective":{"scheme":"forest","style":"own","mode":"light","decorations":"csd","decorations_reason":"rule4","caption_side":"right"}})
         );
         let (_, body) = ask(&mut e, "busviewer.theme", json!({"mode":"dark"}));
         assert_eq!(body["scheme"], "forest", "an absent key leaves its axis");

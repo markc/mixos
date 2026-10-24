@@ -192,6 +192,7 @@ fn run(settings: config::Settings) -> Result<(), String> {
         APP_ID,
         options,
         Box::new(move |cc| {
+            toolkit::decorations::initialise(cc);
             let render_state = cc
                 .wgpu_render_state
                 .as_ref()

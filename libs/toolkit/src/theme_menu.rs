@@ -11,7 +11,7 @@
 //! | | Session theme (the scheme follows the session) | `view.theme.session` |
 //! | modes | Light, Dark, Session mode (follows the session) | `view.mode.light`, `view.mode.dark`, `view.mode.session` |
 //! | styles | Scheme's own style, Plain, Pro, Studio and Classic style, Session style (follows the session) | `view.style.own`, `view.style.<style>`, `view.style.session` |
-//! | framing | App title bar (CSD), System title bar (SSD), Captions left, Captions right | `view.decorations.csd`, `view.decorations.ssd`, `view.captions.left`, `view.captions.right` |
+//! | framing | Automatic title bar, App title bar (CSD), System title bar (SSD), Captions left, Captions right | `view.decorations.auto`, `view.decorations.csd`, `view.decorations.ssd`, `view.captions.left`, `view.captions.right` |
 //!
 //! The app keeps the [`Choice`], `None` on an axis following the session,
 //! and installs [`crate::Theme::with_choice`] when it changes. The framing
@@ -21,7 +21,7 @@
 
 use crate::command::{Place, Registry};
 pub use crate::theme::Choice;
-use design::{CaptionSide, Decorations, Mode, Scheme, Style};
+use design::{CaptionSide, Mode, RequestedDecorations as Decorations, Scheme, Style};
 
 /// The submenu's label key.
 pub const SUBMENU: &str = "toolkit-theme";
@@ -110,6 +110,7 @@ const fn style_label(style: Style) -> &'static str {
 /// The command id of choosing `decorations`.
 pub const fn decorations_id(decorations: Decorations) -> &'static str {
     match decorations {
+        Decorations::Auto => "view.decorations.auto",
         Decorations::Client => "view.decorations.csd",
         Decorations::Server => "view.decorations.ssd",
     }
@@ -117,6 +118,7 @@ pub const fn decorations_id(decorations: Decorations) -> &'static str {
 
 const fn decorations_label(decorations: Decorations) -> &'static str {
     match decorations {
+        Decorations::Auto => "toolkit-decorations-auto",
         Decorations::Client => "toolkit-decorations-csd",
         Decorations::Server => "toolkit-decorations-ssd",
     }
@@ -322,6 +324,7 @@ mod tests {
                 Some("Adwaita style"),
                 Some("Session style"),
                 None,
+                Some("Automatic title bar"),
                 Some("App title bar (CSD)"),
                 Some("System title bar (SSD)"),
                 Some("Captions left"),
@@ -338,7 +341,7 @@ mod tests {
                 "Session theme",
                 "Session mode",
                 "Session style",
-                "App title bar (CSD)",
+                "Automatic title bar",
                 "Captions right"
             ]
         );
@@ -413,6 +416,41 @@ mod tests {
         assert_eq!(app.choice.style, None, "the session's style again");
     }
 
+    #[test]
+    fn automatic_command_keeps_the_request_and_resolves_the_drawn_mode() {
+        use design::decorations::{Resolver, SessionFacts, with_resolver};
+        use std::sync::Arc;
+        let resolver = Arc::new(Resolver::new(
+            || SessionFacts {
+                wayland: true,
+                desktops: "KDE".into(),
+                decoration_global: Some(true),
+            },
+            || None,
+            |_| {},
+        ));
+        with_resolver(resolver, || {
+            let r = registry();
+            let mut app = App::default();
+            r.execute(
+                "view.decorations.auto",
+                &mut app,
+                crate::command::Origin::Bus,
+            )
+            .unwrap();
+            assert_eq!(app.choice.decorations, Some(Decorations::Auto));
+            assert!(
+                ticked(&rows(&r, &app))
+                    .iter()
+                    .any(|label| label == "Automatic title bar")
+            );
+            let theme = crate::Theme::embedded().with_choice(&app.choice).unwrap();
+            assert_eq!(theme.requested_decorations(), Decorations::Auto);
+            assert_eq!(theme.decorations(), design::Decorations::Server);
+            assert_eq!(theme.decoration_resolution().reason, "rule3");
+        });
+    }
+
     /// After any choice, the session rows return the window to the whole
     /// session theme: a custom session design, not the embedded one.
     #[test]
@@ -464,7 +502,7 @@ mod tests {
         );
         assert_eq!(
             (back.decorations(), back.captions()),
-            (Decorations::Client, CaptionSide::Right)
+            (design::Decorations::Client, CaptionSide::Right)
         );
     }
 

@@ -50,8 +50,10 @@ empty list. You follow apps by listing them in
 **Appearance → Themes** sets the session's look through the settings service
 (settingsd): the **colour scheme** (each shown with its accent), the
 **style** (the scheme's own, or Plain, Pro, Studio or Classic), **light or
-dark**, **contrast**, and the **window frame**: a title bar drawn by the app
-or by the system, and which side the app's window buttons sit on.
+dark**, **contrast**, and the **window frame**: Automatic (the default), a
+title bar drawn by the app, or one drawn by the system. Automatic shows its
+current result. The window-button side can be changed whenever the effective
+title bar is drawn by the app.
 
 Each change applies to the whole session as you make it, as in GNOME's
 settings: the apps that follow the session look (Prefs itself, BusViewer,

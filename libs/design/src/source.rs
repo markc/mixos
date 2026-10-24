@@ -740,7 +740,7 @@ pub struct DesignSourceDocument {
 }
 
 /// A theme document's own choice of style and window framing, each a name
-/// its reader validates (`style`: a style or `own`; `decorations`: `csd` or
+/// its reader validates (`style`: a style or `own`; `decorations`: `auto`, `csd` or
 /// `ssd`; `caption_side`: `right` or `left`). None of them changes a token,
 /// so the compiler leaves them to the reader.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]

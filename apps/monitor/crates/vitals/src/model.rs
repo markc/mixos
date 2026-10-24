@@ -320,7 +320,7 @@ pub fn describe() -> Value {
         {"name":"monitor.select","args":{"pid":"a process id, or null"},"description":"Select a process row","read_only":false},
         {"name":"monitor.rows","description":"The process rows the table shows, in order","read_only":true},
         {"name":"monitor.dialog","args":{"open":"\"about\", \"shortcuts\" or null"},"description":"Open a dialog, or close the open one","read_only":false},
-        {"name":"monitor.theme","args":{"scheme":"optional scheme name or null to follow the session","style":"optional style, own, or null","mode":"optional light, dark or null","decorations":"optional csd, ssd or null","caption_side":"optional right, left or null"},"description":"Choose the window's theme: a present key sets that axis, an absent one leaves it","read_only":false}
+        {"name":"monitor.theme","args":{"scheme":"optional scheme name or null to follow the session","style":"optional style, own, or null","mode":"optional light, dark or null","decorations":"optional auto, csd, ssd or null","caption_side":"optional right, left or null"},"description":"Choose the window's theme: a present key sets that axis, an absent one leaves it; answers the choice and every effective axis, including decorations and decorations_reason","read_only":false}
     ]})
 }
 

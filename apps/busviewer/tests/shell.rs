@@ -1042,7 +1042,10 @@ fn view_theme_style_and_decorations_by_bus_clicks() {
         &mut rig,
         &[view.as_str(), "Theme", "System title bar (SSD)"],
     );
-    assert_eq!(engine(&rig).ui.theme_decorations, Some(Decorations::Server));
+    assert_eq!(
+        engine(&rig).ui.theme_decorations,
+        Some(design::RequestedDecorations::Server)
+    );
     assert_eq!(
         toolkit::chrome::Chrome::of(&rig.h.ctx).decorations,
         Decorations::Server
@@ -1091,7 +1094,7 @@ fn the_theme_verb_sets_style_and_framing() {
     assert_eq!(rc, 0, "{body}");
     assert_eq!(
         body["effective"],
-        json!({"scheme":"forest","style":"classic","mode":"light","decorations":"ssd","caption_side":"left"})
+        json!({"scheme":"forest","style":"classic","mode":"light","decorations":"ssd","decorations_reason":"choice","caption_side":"left"})
     );
     rig.h.run_steps(5);
     let chrome = toolkit::chrome::Chrome::of(&rig.h.ctx);

@@ -211,7 +211,7 @@ mod tests {
         assert_eq!(
             (e.ui.theme_decorations, e.ui.theme_captions),
             (
-                Some(design::Decorations::Server),
+                Some(design::RequestedDecorations::Server),
                 Some(design::CaptionSide::Left)
             )
         );

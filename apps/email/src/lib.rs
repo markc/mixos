@@ -130,6 +130,7 @@ pub fn run(args: &Args) -> Result<(), String> {
         APP_ID,
         options,
         Box::new(move |cc| {
+            toolkit::decorations::initialise(cc);
             toolkit::install(&cc.egui_ctx, &theme);
             let shell = shell::Shell::new(cc.egui_ctx.clone(), theme, shell_bus, deliveries)?;
             Ok(Box::new(shell))

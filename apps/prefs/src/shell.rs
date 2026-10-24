@@ -231,7 +231,7 @@ pub struct Shell {
 type Deliveries = futures::channel::mpsc::Receiver<Delivery>;
 
 /// The window's own theme choice and the look under it.
-type Installed = (toolkit::theme_menu::Choice, Option<Look>);
+type Installed = (toolkit::theme_menu::Choice, Option<Look>, bool);
 
 fn locked(inbox: &Mutex<Deliveries>) -> std::sync::MutexGuard<'_, Deliveries> {
     inbox
@@ -296,9 +296,10 @@ impl Shell {
             exiting: false,
             held: VecDeque::new(),
             inbox,
-            installed: (toolkit::theme_menu::Choice::default(), None),
+            installed: (toolkit::theme_menu::Choice::default(), None, false),
         };
         shell.engine.session = (shell.theme.scheme(), shell.theme.mode());
+        shell.engine.session_decorations = shell.theme.requested_decorations();
         shell.engine.start_appearance(&hostname());
         shell.engine.read_wallpaper();
         shell.settle();
@@ -514,18 +515,24 @@ impl Shell {
     /// What the window is drawn in, under its own choice: the Appearance
     /// draft or settingsd's look (embedded design), else the session theme.
     fn wanted(&self) -> Installed {
-        (self.choice(), base_look(&self.engine))
+        (
+            self.choice(),
+            self.engine.look.shown(),
+            self.engine.look.custom_source,
+        )
     }
 
     /// Install the base theme with the window's choice over it. Neither the
     /// session's theme file nor settingsd is written.
     fn install_theme(&mut self) {
-        let (choice, look) = self.wanted();
+        let (choice, look, custom_source) = self.wanted();
         let base = match look {
-            Some(look) => {
-                Theme::for_context(look.context()).framed(look.decorations, look.captions)
-            }
-            None => self.theme.clone(),
+            Some(look) if !custom_source => Theme::for_context(look.context()),
+            _ => self.theme.clone(),
+        };
+        let base = match look {
+            Some(look) => base.framed(look.decorations, look.captions),
+            None => base,
         };
         let theme = match base.with_choice(&choice) {
             Ok(theme) => theme,
@@ -536,7 +543,8 @@ impl Shell {
         };
         toolkit::install(&self.ctx, &theme);
         self.engine.session = (base.scheme(), base.mode());
-        self.installed = (choice, look);
+        self.engine.session_decorations = base.requested_decorations();
+        self.installed = (choice, look, custom_source);
     }
 
     fn follow_theme(&mut self) {

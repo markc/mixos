@@ -1274,7 +1274,7 @@ pub struct ThemeChoice {
     pub scheme: Option<design::Scheme>,
     pub mode: Option<design::Mode>,
     pub style: Option<Option<design::Style>>,
-    pub decorations: Option<design::Decorations>,
+    pub decorations: Option<design::RequestedDecorations>,
     pub captions: Option<design::CaptionSide>,
 }
 

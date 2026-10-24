@@ -39,6 +39,9 @@ serde.workspace = true
 serde_json.workspace = true
 # The settings contract's data types only (no features: no Bus): session_look.
 settings.workspace = true
+# decorations: an independent, bounded registry read, using the client already
+# linked by eframe. raw-window-handle identifies the backend actually in use.
+wayland-client = "=0.31.15"
 # thumbnail: the cache's capped reads and its size limits.
 thumbs.workspace = true
 # layer: egui on wlr-layer-shell surfaces. smithay-client-toolkit 0.19.2, the
@@ -49,7 +52,7 @@ thumbs.workspace = true
 # wgpu's GL backend on the raw wl_surface, and libwayland's display pointer.
 smithay-client-toolkit = { version = "=0.19.2", optional = true }
 wayland-backend = { workspace = true, features = ["client_system"], optional = true }
-raw-window-handle = { version = "0.6", optional = true }
+raw-window-handle = "0.6"
 wgpu = { workspace = true, optional = true }
 egui-wgpu = { workspace = true, optional = true }
 futures = { workspace = true, optional = true }
@@ -57,7 +60,7 @@ futures = { workspace = true, optional = true }
 xkbcommon = { version = "0.7", default-features = false, optional = true }
 
 [features]
-layer = ["dep:smithay-client-toolkit", "dep:wayland-backend", "dep:raw-window-handle", "dep:wgpu", "dep:egui-wgpu", "dep:futures", "dep:xkbcommon"]
+layer = ["dep:smithay-client-toolkit", "dep:wayland-backend", "dep:wgpu", "dep:egui-wgpu", "dep:futures", "dep:xkbcommon"]
 
 [dev-dependencies]
 anyhow.workspace = true

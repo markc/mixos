@@ -339,6 +339,27 @@ styles and framing. Command ids are <code>view.theme.&lt;scheme&gt;</code>,
 <code>view.captions.*</code>, and each axis can follow the session.</li>
 <li><code>style</code>: maps a hue scheme's design onto egui's <code>Style</code>. The module docs
 give the field-by-field mapping table.</li>
+</ul>
+<p>Window decorations default to <code>auto</code>. The requested mode is
+<code>design::RequestedDecorations</code> (<code>auto</code>, <code>csd</code>, <code>ssd</code>); <code>Theme::decorations()</code>
+returns the two-valued <code>design::Decorations</code>. Call
+<code>toolkit::decorations::initialise(cc)</code> in the eframe creation callback before
+installing the theme, so detection uses winit's actual backend. X11 uses the
+window manager's frame. On Wayland, a colon-separated, case-insensitive
+<code>MixOS</code> desktop name keeps the app title bar; otherwise an advertised
+<code>zxdg_decoration_manager_v1</code> selects the desktop frame. Failure or absence
+keeps the app title bar. Server framing leaves only the menu-bar row inside.</p>
+<p><code>MIXOS_DECORATIONS</code> accepts these three names, ignoring case and surrounding
+whitespace, and overrides the app choice and then the session setting.
+Invalid non-empty values warn once and are ignored. Choices are still saved
+under an override. Detection runs lazily once per process, uses an independent
+Wayland connection, and gives up after a 200 ms wait budget within the 250 ms
+reply limit. A <code>WAYLAND_SOCKET</code> hand-off skips the registry check entirely.
+Effective Bus look maps report <code>decorations</code> as <code>csd</code> or <code>ssd</code>, and
+<code>decorations_reason</code> as <code>override</code>, <code>choice</code>, or <code>rule1</code> through <code>rule4</code>.
+Tests can scope a <code>design::decorations::Resolver</code> with <code>with_resolver</code>,
+injecting both facts and the variable without reading the real session.</p>
+<ul>
 <li><code>chrome</code>: the colours and geometry of the title bar and menus. For the
 chrome schemes (<code>pro</code>, <code>studio</code>, <code>classic</code>) it supplies the whole egui
 style, taken from the design's chrome family. Components read

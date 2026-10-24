@@ -10044,6 +10044,7 @@ dependencies = [
  "tokio",
  "uuid",
  "wayland-backend",
+ "wayland-client",
  "wgpu",
  "xkbcommon 0.7.0",
 ]
