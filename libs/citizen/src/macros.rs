@@ -57,7 +57,10 @@ pub fn dispatch(
         && serde_json::from_str::<Value>(&command.body)
             .ok()
             .is_some_and(|body| match command.command.as_str() {
-                "workshop.ui.click" | "workshop.ui.pointer" | "workshop.ui.key" | "workshop.ui.type" => true,
+                "workshop.ui.click"
+                | "workshop.ui.pointer"
+                | "workshop.ui.key"
+                | "workshop.ui.type" => true,
                 "workshop.execute" => body["id"].as_str().is_some_and(|id| {
                     id == "bus.call"
                         || id
@@ -67,7 +70,15 @@ pub fn dispatch(
                 "workshop.call" => body["verb"].as_str().is_none_or(|verb| {
                     verb.rsplit_once(".macros.")
                         .is_some_and(|(_, suffix)| ::macros::verbs::mutates(suffix))
-                        || matches!(verb, "workshop.call" | "workshop.execute" | "workshop.ui.click" | "workshop.ui.pointer" | "workshop.ui.key" | "workshop.ui.type")
+                        || matches!(
+                            verb,
+                            "workshop.call"
+                                | "workshop.execute"
+                                | "workshop.ui.click"
+                                | "workshop.ui.pointer"
+                                | "workshop.ui.key"
+                                | "workshop.ui.type"
+                        )
                 }),
                 _ => false,
             });
