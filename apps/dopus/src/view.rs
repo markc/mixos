@@ -149,7 +149,7 @@ mod column_tests {
     #[test]
     fn long_name_leaves_measured_size_and_modified_a_gap() {
         let ctx = egui::Context::default();
-        let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
             ui.style_mut()
                 .text_styles
                 .insert(TextStyle::Body, FontId::proportional(14.667));
@@ -165,6 +165,7 @@ mod column_tests {
                 depth: 0,
             }];
             let widths = column_widths(ui, &rows);
+            let name_font = TextStyle::Body.resolve(ui.style());
             let font = FontId::proportional(14.667 * 0.92);
             let measure = |text: &str| {
                 ui.painter()
@@ -177,9 +178,18 @@ mod column_tests {
                 let (name, size, date) = column_rects(rect, widths, true, modified);
                 let size = size.unwrap();
                 let name_x = 44.0;
-                let text =
-                    crate::elide::fit(ui, &rows[0].entry.name, &font, name.right() - name_x - 4.0);
-                let name_right = name_x + measure(&text);
+                let text = crate::elide::fit(
+                    ui,
+                    &rows[0].entry.name,
+                    &name_font,
+                    name.right() - name_x - 4.0,
+                );
+                assert!(text.contains('…') && text.ends_with(".mkv"));
+                let name_right = name_x
+                    + ui.painter()
+                        .layout_no_wrap(text, name_font.clone(), ui.visuals().text_color())
+                        .size()
+                        .x;
                 let size_left = size.right() - 6.0 - measure("565.0 MiB");
                 assert!(
                     size_left - name_right >= 6.0,
@@ -191,6 +201,7 @@ mod column_tests {
                 }
             }
         });
+        output.textures_delta.clear();
     }
 }
 
