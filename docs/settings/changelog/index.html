@@ -251,6 +251,12 @@
 <p>Mirrored from <a href="https://github.com/markc/mixos/blob/main/libs/settings/CHANGELOG.md"><code>libs/settings/CHANGELOG.md</code></a>, where releases update it. The component's page is <a href="/settings/">settings</a>. This page describes the current <code>main</code> branch of MixOS.</p>
 </blockquote>
 <h2 id="unreleased">Unreleased</h2>
+<p>Appearance projection schema 2 carries the effective desktop <code>caption_side</code>
+for portald's GTK settings export and session cache. Schema 1 remains readable
+with a default of <code>right</code>. <code>settings.appearance.get</code> keeps its original schema 1
+wire view, so older strict readers still work. Portald enriches that view from
+the caption placement already in the same atomic snapshot, with no extra read.
+Store format unchanged.</p>
 <p><code>Summary.ui</code> carries the session's text scale, density and reduced motion on
 the summary's revision. Store format unchanged; <code>settings.get</code> is 0.7.0.</p>
 <p>Additive, store format unchanged: the mail options <code>email.mail.quote_on_reply</code>

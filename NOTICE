@@ -77,6 +77,12 @@ is Lucide 1.54.0 camera.svg, unmodified, under the same licence.
 Icon bundle (share/icons)
 -------------------------
 
+share/icons/scalable/actions/window-minimize-symbolic.svg,
+share/icons/scalable/actions/window-maximize-symbolic.svg,
+share/icons/scalable/actions/window-restore-symbolic.svg and
+share/icons/scalable/actions/window-close-symbolic.svg are original MixOS
+caption glyphs, copyright 2026 Mark Constable, MIT OR Apache-2.0.
+
 share/icons/lucide holds 30 unmodified SVGs from Lucide 1.54.0
 (https://github.com/lucide-icons/lucide), Lucide Icons and Contributors, ISC; the
 Feather-derived icons among them are also Cole Bemis (Feather), MIT. The licence

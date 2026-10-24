@@ -1,13 +1,19 @@
-# Lucide icon bundle
+# MixOS icon theme
 
-`share/icons` is the self-contained Lucide icon bundle that MixOS scenes and the
-panel use in place of the Material controls. It holds:
+`share/icons` is the self-contained icon theme used by MixOS scenes, the panel
+and third-party caption buttons. It holds:
 
 - `manifest.conf.mix`: the finite catalogue, strict data loaded with `load_data`
   and never executed. Schema 1, family `lucide`, release `1.54.0`, stroke width
   `1.5` on the 24-unit canvas.
 - `lucide/*.svg`: the 30 upstream SVGs, copied byte for byte. Each is pinned by
   its SHA-256 in the manifest.
+- `scalable/actions/window-{minimize,maximize,restore,close}-symbolic.svg`:
+  four original MixOS caption glyphs, under MIT OR Apache-2.0. The manifest's
+  `originals` list pins their paths and SHA-256 hashes. They use a 16×16 viewBox,
+  no fill, a 1 px stroke, butt caps and square corners, matching the toolkit's
+  line, square, overlapping squares and X. The restore front square is inset
+  2 units at the top and right, with the back square's corner visible.
 - `LICENSE-lucide.txt`: the Lucide licence text (ISC; the Feather-derived icons
   are also MIT). Attribution is in `NOTICE` and `REUSE.toml`.
 - `index.theme`: the theme index the installer publishes.
@@ -31,6 +37,8 @@ makes no network access.
   digest is refused); that each source is a plain file; each SVG's 24-unit
   `viewBox`, single root, upstream stroke of 2 and line-icon traits; alias names,
   contexts, uniqueness and the `-symbolic` suffix; and the licence and theme index.
+  It also checks each original caption glyph's name, path, hash, 16-unit canvas
+  and stroke traits. Originals are installed byte for byte.
 - **install** (the default) runs the same checks, then publishes the outputs.
 - **`--verify`** runs the same checks and then compares every installed output
   byte for byte with what the bundle generates. It exits non-zero on any
@@ -44,6 +52,8 @@ the user has no icon preference:
 - `scalable/apps/<alias>.svg`, `scalable/status/<alias>.svg` and
   `scalable/actions/<alias>.svg`: one file per manifest alias. Each is its
   upstream SVG with every `stroke-width` changed from 2 to 1.5, and nothing else.
+- `scalable/actions/window-*-symbolic.svg`: the four original caption glyphs,
+  unchanged. `scalable/actions` is already listed in `index.theme`.
 - `LICENSE-lucide.txt`: the licence, beside the icons it covers.
 - `index.theme`: `Directories` lists `scalable/apps`, `scalable/status`,
   `scalable/actions`, then the legacy `symbolic/apps`. The native directories
@@ -134,6 +144,13 @@ The shared app design token `icon.stroke_width` also defaults to 1.5.
 Changing that token through Preferences affects app rendering; these installed
 scene SVGs retain their generated 1.5 stroke. Dynamic regeneration and cache
 invalidation through Preferences are not implemented by this bundle.
+
+Portald selects `gtk-icon-theme-name=mixos` in the desk's private GTK 3
+settings file and exports caption order from settingsd's `appearance.caption_side`.
+Craft apps on the `MixOS` desktop resolve the four caption names through the
+freedesktop theme index in `$XDG_DATA_DIRS/icons`. They use each SVG as an alpha
+mask, so the app supplies the glyph colour. There is no icon-theme preference
+in MixOS.
 
 ## Not icon-family assets
 

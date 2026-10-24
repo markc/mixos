@@ -6,6 +6,7 @@
 //! `SettingChanged` for the changed keys only.
 use crate::appearance::{NAMESPACE, Values};
 use crate::cache;
+use crate::gtk_settings::Exporter;
 use crate::portal::{self, Portal, PortalSignals};
 use crate::screencast::consent::{self, Consent, Policy};
 use crate::screencast::{self, ScreenCast, session::Sessions};
@@ -26,6 +27,7 @@ pub struct Config {
     /// deciding each Start with this consent policy. `None`: not served.
     pub screencast: Option<Policy>,
     pub screencast_max_framerate: screencast::MaxFramerate,
+    pub gtk_settings: Exporter,
 }
 
 /// The evidence identity of the values held. Ordering within one incarnation
@@ -119,6 +121,9 @@ fn adopt(
     };
     *values.write().unwrap_or_else(PoisonError::into_inner) = state.values().clone();
     let (incarnation, revision, design_revision) = projection.identity();
+    let exported = config
+        .gtk_settings
+        .export(design::CaptionSide::from_name(&projection.caption_side));
     status::update(status, |s| {
         s.origin = state.origin();
         s.incarnation = Some(incarnation.to_owned());
@@ -126,6 +131,7 @@ fn adopt(
         s.design_revision = Some(design_revision);
         s.settings_fault = None;
         s.accepted += 1;
+        s.gtk_settings = Some(exported);
     });
     if state.origin() == Origin::Settingsd
         && let Some(dir) = &config.state_dir
@@ -152,6 +158,12 @@ pub async fn serve(
     let mut state = State::initial(cached.as_ref());
     let values = Arc::new(RwLock::new(state.values().clone()));
     status::update(&status, |s| s.origin = state.origin());
+    let exported = config.gtk_settings.export(
+        cached
+            .as_ref()
+            .and_then(|p| design::CaptionSide::from_name(&p.caption_side)),
+    );
+    status::update(&status, |s| s.gtk_settings = Some(exported));
 
     // Export and acquire the name before touching the authority receiver.
     let mut source_open = true;
@@ -245,6 +257,7 @@ mod tests {
     fn projection(incarnation: &str, revision: u64, mode: &str) -> AppearanceProjection {
         AppearanceProjection {
             schema: settings::appearance::APPEARANCE_SCHEMA,
+            caption_side: "right".into(),
             binding: Binding {
                 instance: "host".into(),
                 profile: "default".into(),
@@ -256,6 +269,72 @@ mod tests {
             contrast: "normal".into(),
             accent: [0.1, 0.2, 0.3],
         }
+    }
+
+    #[test]
+    fn exports_caption_only_changes_but_never_stale_or_rejected_projections() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = Config {
+            address: String::new(),
+            state_dir: Some(dir.path().join("state")),
+            binding: projection("inc", 1, "dark").binding,
+            screencast: None,
+            screencast_max_framerate: screencast::MaxFramerate::default(),
+            gtk_settings: Exporter::new(Some(dir.path()), None),
+        };
+        let mut cached = projection("inc", 1, "dark");
+        cached.caption_side = "left".into();
+        cache::save(config.state_dir.as_deref().unwrap(), &cached).unwrap();
+        let cached = cache::load(config.state_dir.as_deref().unwrap(), &config.binding).unwrap();
+        let mut state = State::initial(Some(&cached));
+        let values = RwLock::new(state.values().clone());
+        let status = status::shared();
+        assert_eq!(
+            config
+                .gtk_settings
+                .export(design::CaptionSide::from_name(&cached.caption_side))
+                .outcome,
+            "written"
+        );
+        let path = dir.path().join("gtk-3.0/settings.ini");
+        assert!(
+            std::fs::read_to_string(&path)
+                .unwrap()
+                .contains("close,minimize,maximize:menu")
+        );
+
+        let current = projection("inc", 2, "dark");
+        assert_eq!(
+            adopt(&mut state, &values, &config, &status, &current),
+            Some(vec![])
+        );
+        assert_eq!(
+            status::report(&status)["portal"]["gtk_settings"]["outcome"],
+            "written"
+        );
+        let right = std::fs::read(&path).unwrap();
+        assert!(adopt(&mut state, &values, &config, &status, &cached).is_none());
+        let mut invalid = projection("inc", 3, "dark");
+        invalid.caption_side = "top".into();
+        assert!(adopt(&mut state, &values, &config, &status, &invalid).is_none());
+        assert_eq!(std::fs::read(&path).unwrap(), right);
+        assert_eq!(
+            adopt(&mut state, &values, &config, &status, &current),
+            Some(vec![])
+        );
+        assert_eq!(
+            status::report(&status)["portal"]["gtk_settings"]["outcome"],
+            "unchanged"
+        );
+        std::fs::remove_file(&path).unwrap();
+        std::fs::create_dir(&path).unwrap();
+        let next = projection("inc", 3, "light");
+        assert!(adopt(&mut state, &values, &config, &status, &next).is_some());
+        assert_eq!(values.read().unwrap().color_scheme, 2);
+        let report = status::report(&status);
+        assert_eq!(report["portal"]["gtk_settings"]["outcome"], "skipped");
+        assert!(report["portal"]["gtk_settings"]["reason"].is_string());
+        assert_eq!(report["portal"]["origin"], "settingsd");
     }
 
     #[test]

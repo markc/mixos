@@ -10,6 +10,13 @@ generated: by docs/_build/gen-site.mix from libs/settings/CHANGELOG.md; do not e
 
 ## Unreleased
 
+Appearance projection schema 2 carries the effective desktop `caption_side`
+for portald's GTK settings export and session cache. Schema 1 remains readable
+with a default of `right`. `settings.appearance.get` keeps its original schema 1
+wire view, so older strict readers still work. Portald enriches that view from
+the caption placement already in the same atomic snapshot, with no extra read.
+Store format unchanged.
+
 `Summary.ui` carries the session's text scale, density and reduced motion on
 the summary's revision. Store format unchanged; `settings.get` is 0.7.0.
 

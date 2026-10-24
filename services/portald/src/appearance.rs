@@ -153,6 +153,7 @@ mod tests {
             design_revision: settings::Revision(1),
             mode: mode.into(),
             contrast: contrast.into(),
+            caption_side: "right".into(),
             accent,
         }
     }
