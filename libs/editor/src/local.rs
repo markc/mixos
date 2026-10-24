@@ -149,7 +149,7 @@ impl Document {
 
     /// Open bytes already read through an application's storage authority.
     pub fn open_bytes(path: &Path, bytes: &[u8]) -> Result<Self, Error> {
-        let (mut buffer, meta) = Buffer::from_bytes(&bytes)?;
+        let (mut buffer, meta) = Buffer::from_bytes(bytes)?;
         buffer.mark_saved();
         let first_line =
             String::from_utf8_lossy(bytes.split(|b| *b == b'\n').next().unwrap_or_default());

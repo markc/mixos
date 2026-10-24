@@ -42,10 +42,33 @@ impl Target {
     pub(crate) fn open(root: &Path, path: &Path) -> io::Result<Self> {
         let relative = path.strip_prefix(root).map_err(io::Error::other)?;
         let mut parts = relative.components().peekable();
+        if !root.is_absolute() {
+            return Err(io::Error::other("macro root must be absolute"));
+        }
         let mut directory = OpenOptions::new()
             .read(true)
             .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW)
-            .open(root)?;
+            .open("/")?;
+        // Anchor the root without following a link in its own ancestry either.
+        for component in root.components() {
+            let Component::Normal(component) = component else {
+                if component == Component::RootDir {
+                    continue;
+                }
+                return Err(io::Error::other("invalid macro root component"));
+            };
+            let component = name(Path::new(component))?;
+            // SAFETY: live directory and NUL-terminated component.
+            let fd = syscall(unsafe {
+                libc::openat(
+                    directory.as_raw_fd(),
+                    component.as_ptr(),
+                    libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+                )
+            })?;
+            // SAFETY: new descriptor returned by openat.
+            directory = unsafe { File::from_raw_fd(fd) };
+        }
         while let Some(part) = parts.next() {
             let Component::Normal(part) = part else {
                 return Err(io::Error::other("invalid macro path component"));
@@ -197,6 +220,26 @@ impl Target {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn swapped_parent_cannot_redirect_reads_or_saves() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("macros");
+        let outside = temp.path().join("outside");
+        std::fs::create_dir_all(root.join("ced")).unwrap();
+        std::fs::create_dir(&outside).unwrap();
+        let path = root.join("ced/safe.mix");
+        std::fs::write(&path, "old").unwrap();
+        std::fs::write(outside.join("safe.mix"), "untouched").unwrap();
+        let target = Target::open(&root, &path).unwrap();
+        std::fs::rename(root.join("ced"), root.join("held")).unwrap();
+        std::os::unix::fs::symlink(&outside, root.join("ced")).unwrap();
+        assert!(Target::open(&root, &path).is_err());
+        assert_eq!(target.read().unwrap(), b"old");
+        target.write(b"saved").unwrap();
+        assert_eq!(std::fs::read(outside.join("safe.mix")).unwrap(), b"untouched");
+        assert_eq!(std::fs::read(root.join("held/safe.mix")).unwrap(), b"saved");
+    }
+
     #[test]
     fn swap_after_check_never_writes_symlink_target() {
         let root = std::env::temp_dir().join(format!("macro-race-{}", std::process::id()));

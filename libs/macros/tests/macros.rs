@@ -417,6 +417,18 @@ fn macro_symlinks_are_refused_even_inside_the_root() {
     assert_eq!(found.diagnostics.len(), 1);
 }
 
+#[cfg(unix)]
+#[test]
+fn app_discovery_skips_vanished_entries_and_keeps_other_apps() {
+    let temp = tempfile::tempdir().unwrap();
+    let roots = roots(temp.path());
+    fs::create_dir_all(roots.user.join("ced")).unwrap();
+    // A directory entry whose target has vanished reproduces canonicalize's
+    // NotFound branch deterministically, without a scheduler-dependent race.
+    std::os::unix::fs::symlink(roots.user.join("gone"), roots.user.join("vanished")).unwrap();
+    assert_eq!(roots.apps().unwrap(), ["ced"]);
+}
+
 fn wait(runner: &Runner) -> Status {
     let deadline = Instant::now() + Duration::from_secs(10);
     while runner.status() == Status::Running {
