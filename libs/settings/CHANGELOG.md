@@ -2,11 +2,12 @@
 
 ## Unreleased
 
-The appearance projection carries the effective desktop `caption_side` for
-portald's GTK settings export. Missing values read as `right`, which is omitted
-on the wire to preserve existing projections and caches. A `left` projection
-requires an updated consumer; older strict readers refuse the added field.
-Store format and appearance schema unchanged.
+Appearance projection schema 2 carries the effective desktop `caption_side`
+for portald's GTK settings export and session cache. Schema 1 remains readable
+with a default of `right`. `settings.appearance.get` keeps its original schema 1
+wire view, so older strict readers still work. Portald enriches that view from
+the caption placement already in the same atomic snapshot, with no extra read.
+Store format unchanged.
 
 `Summary.ui` carries the session's text scale, density and reduced motion on
 the summary's revision. Store format unchanged; `settings.get` is 0.7.0.

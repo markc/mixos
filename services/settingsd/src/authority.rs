@@ -64,7 +64,8 @@ impl Authority {
             })?;
         let projection =
             settings::appearance::AppearanceProjection::from_snapshot(&self.snapshot, accent)
-                .map_err(diagnostic)?;
+                .map_err(diagnostic)?
+                .legacy();
         // One atomic read supplies both the shared Consumer's authority evidence
         // and the portal projection, including the private accent source.
         let snapshot = self.snapshot_in(request.schema)?;

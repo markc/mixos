@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 use serde_json::{Value, json};
-use settings::appearance::{APPEARANCE_SCHEMA, AppearanceProjection};
+use settings::appearance::{AppearanceProjection, LEGACY_APPEARANCE_SCHEMA};
 use settings::*;
 use settingsd::{authority::Authority, service, store::Store};
 use std::collections::BTreeMap;
@@ -68,7 +68,7 @@ fn appearance_projects_the_desktop_context_through_the_verb() {
         .expect("current appearance");
     assert_eq!(reply["status"], "current");
     let appearance = projection(&reply);
-    assert_eq!(appearance.schema, APPEARANCE_SCHEMA);
+    assert_eq!(appearance.schema, LEGACY_APPEARANCE_SCHEMA);
     assert_eq!(appearance.mode, "dark");
     assert_eq!(appearance.contrast, "normal");
     assert_eq!(appearance.caption_side, "right");
@@ -77,7 +77,9 @@ fn appearance_projects_the_desktop_context_through_the_verb() {
     let snapshot: Snapshot = serde_json::from_value(reply["snapshot"].clone()).unwrap();
     assert_eq!(snapshot, authority.snapshot);
     assert_eq!(
-        AppearanceProjection::from_snapshot(&snapshot, appearance.accent).unwrap(),
+        AppearanceProjection::from_snapshot(&snapshot, appearance.accent)
+            .unwrap()
+            .legacy(),
         appearance
     );
     appearance.validate().unwrap();
@@ -127,7 +129,7 @@ fn appearance_follows_an_accepted_mode_change_with_a_new_identity() {
 }
 
 #[test]
-fn appearance_follows_an_accepted_caption_side_change() {
+fn appearance_keeps_caption_side_in_the_atomic_snapshot_for_legacy_readers() {
     let dir = tempfile::tempdir().unwrap();
     let mut authority = authority(dir.path());
     let before = projection(
@@ -143,10 +145,14 @@ fn appearance_follows_an_accepted_caption_side_change() {
         request_digest: None,
     };
     assert_eq!(authority.apply(apply).unwrap()["status"], "changed");
-    let after = projection(
-        &service::dispatch(&mut authority, "settings.appearance.get", &body("fixture")).unwrap(),
-    );
-    assert_eq!(after.caption_side, "left");
+    let reply =
+        service::dispatch(&mut authority, "settings.appearance.get", &body("fixture")).unwrap();
+    let after = projection(&reply);
+    assert!(reply["appearance"].get("caption_side").is_none());
+    assert_eq!(after.schema, LEGACY_APPEARANCE_SCHEMA);
+    let snapshot: Snapshot = serde_json::from_value(reply["snapshot"].clone()).unwrap();
+    let accepted = AppearanceProjection::from_snapshot(&snapshot, after.accent).unwrap();
+    assert_eq!(accepted.caption_side, "left");
     assert_ne!(after.identity(), before.identity());
     after.validate().unwrap();
 }
