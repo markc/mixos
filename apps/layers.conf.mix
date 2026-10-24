@@ -13,7 +13,7 @@ layers: {
   "annotation": 0,
   "term-core": 0,
   "jmap": 0,
-  "command": 0,
+  "action": 0,
   "macros": 0,
   "backdrop": 1,
   "workshop": 1,
@@ -33,5 +33,5 @@ layers: {
 }
 # Compatibility with the component layer-table schema.
 binary: "toolkit"
-core_crates: ["wallpaper", "inspector", "documents", "dopus-core", "vitals", "preferences", "annotation", "term-core", "jmap", "command"]
+core_crates: ["wallpaper", "inspector", "documents", "dopus-core", "vitals", "preferences", "annotation", "term-core", "jmap", "action"]
 effects_crates: []
