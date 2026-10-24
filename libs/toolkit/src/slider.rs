@@ -43,6 +43,7 @@ pub struct Slider<'a> {
     reset: Option<f64>,
     wheel_step: Option<f64>,
     step: Option<f64>,
+    unmodified_arrows: bool,
     label: String,
 }
 
@@ -55,6 +56,7 @@ impl<'a> Slider<'a> {
             reset: None,
             wheel_step: None,
             step: None,
+            unmodified_arrows: false,
             label: String::new(),
         }
     }
@@ -63,6 +65,12 @@ impl<'a> Slider<'a> {
     /// (default a hundredth of the range).
     pub fn step(mut self, step: f64) -> Self {
         self.step = Some(step);
+        self
+    }
+
+    /// Leave modified arrow keys to the person's bindings.
+    pub fn unmodified_arrows(mut self) -> Self {
+        self.unmodified_arrows = true;
         self
     }
 
@@ -218,6 +226,7 @@ impl Widget for Slider<'_> {
             reset,
             wheel_step,
             step,
+            unmodified_arrows,
             label,
         } = self;
         let width = ui
@@ -345,7 +354,7 @@ impl Widget for Slider<'_> {
                     pressed: true,
                     modifiers,
                     ..
-                } if focused => {
+                } if focused && (!unmodified_arrows || modifiers.is_none()) => {
                     let size = if modifiers.shift {
                         crate::chrome::Chrome::of(ui.ctx()).style.slider_big_step
                     } else {

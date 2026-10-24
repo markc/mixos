@@ -76,7 +76,24 @@ fn chrome(scheme: Scheme, mode: Mode) -> Theme {
 fn fonts_studio_dark() {
     let mut e = appearance_engine();
     e.set_section(Section::Fonts);
-    draw(chrome(Scheme::Studio, Mode::Dark), "fonts_studio_dark", e);
+    draw_at_size(
+        chrome(Scheme::Studio, Mode::Dark),
+        "fonts_studio_dark",
+        e,
+        egui::vec2(980.0, 960.0),
+    );
+}
+
+#[test]
+fn size_and_motion_studio_dark() {
+    for (section, name) in [
+        (Section::Size, "size_studio_dark"),
+        (Section::Motion, "motion_studio_dark"),
+    ] {
+        let mut e = appearance_engine();
+        e.set_section(section);
+        draw(chrome(Scheme::Studio, Mode::Dark), name, e);
+    }
 }
 
 #[test]

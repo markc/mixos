@@ -13,7 +13,7 @@
 use crate::{label, label_with};
 use design::{CaptionSide, Contrast, Mode, RequestedDecorations as Decorations, Scheme, Style};
 use egui::{Align, Color32, Layout, RichText, ScrollArea, Ui};
-use preferences::appearance::{Availability as Settings, Axis};
+use preferences::appearance::{AppearanceEdit, Availability as Settings, Axis};
 use preferences::terminal::{
     BORDER_WIDTH_MAX, BORDER_WIDTH_MIN, CursorShape, FONT_SIZE_MAX, FONT_SIZE_MIN, FocusRing,
     PADDINGS, SCROLL_SPEED_MAX, SCROLL_SPEED_MIN, SCROLLBACK_MAX, Setting, Terminal,
@@ -56,6 +56,7 @@ pub enum UiEvent {
     SetMode(design::Mode),
     /// An edit in the Appearance panel: the whole look it leaves.
     Look(Look),
+    Appearance(AppearanceEdit),
     /// An edit in the Terminal group: one `terminal.*` field.
     Terminal(Setting),
     /// An edit in the Text section: one prose surface's style.
@@ -171,7 +172,9 @@ pub fn view(
                         Section::Wallpapers => {
                             wallpaper::controls(ui, engine, commands, strings, &mut events)
                         }
-                        Section::Fonts => fonts(ui, engine, &mut events),
+                        Section::Fonts => fonts(ui, engine, commands, strings, &mut events),
+                        Section::Size => size(ui, engine, commands, strings, &mut events),
+                        Section::Motion => motion(ui, engine, commands, strings, &mut events),
                         Section::Email => {
                             email::section(ui, engine, commands, strings, &mut events)
                         }
@@ -306,9 +309,18 @@ fn status_text(ui: &Ui, row: &AppRow) -> RichText {
 }
 
 /// Preview the actual face stacks installed on this rendering context.
-fn fonts(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
+fn fonts(
+    ui: &mut Ui,
+    engine: &Engine,
+    commands: &Registry<Engine>,
+    strings: &Strings,
+    events: &mut Vec<UiEvent>,
+) {
     let title = label("section-fonts");
     panel::group(ui, "fonts", &[title.as_str()], |ui, _| {
+        let Some(look) = appearance_state(ui, engine, commands, strings, events) else {
+            return;
+        };
         let faces = ui.ctx().fonts(|fonts| {
             let defs = fonts.definitions();
             [
@@ -338,11 +350,185 @@ fn fonts(ui: &mut Ui, engine: &Engine, events: &mut Vec<UiEvent>) {
                 }
             });
         bars::hairline(ui);
+        font_family_controls(ui, engine, &look, events);
         interface_font_controls(ui, engine, events);
         bars::hairline(ui);
         ui.heading(label("fonts-preview"));
         ui.label(label("fonts-sample"));
         ui.monospace(label("fonts-mono-sample"));
+    });
+}
+
+fn font_family_controls(ui: &mut Ui, engine: &Engine, look: &Look, events: &mut Vec<UiEvent>) {
+    let families = crate::font_families::installed(ui.ctx());
+    ui.add_enabled_ui(engine.can_edit_look(), |ui| {
+        for (key, default, current, installed, mono) in [
+            (
+                "fonts-family",
+                "fonts-family-design",
+                look.font_family.as_deref(),
+                families.map(|f| f.all.as_slice()),
+                false,
+            ),
+            (
+                "fonts-mono-family",
+                "fonts-mono-family-design",
+                look.mono_family.as_deref(),
+                families.map(|f| f.mono.as_slice()),
+                true,
+            ),
+        ] {
+            panel::section_label(ui, &label(key));
+            if let Some(family) = family_picker(ui, key, current, installed, label(default)) {
+                let edit = if mono {
+                    AppearanceEdit::MonoFamily(family)
+                } else {
+                    AppearanceEdit::FontFamily(family)
+                };
+                events.push(UiEvent::Appearance(edit));
+            }
+        }
+    });
+    if let Some(stored) = &engine.look.current {
+        let family = stored
+            .font_family
+            .clone()
+            .unwrap_or_else(|| label("fonts-family-design"));
+        let mono = stored
+            .mono_family
+            .clone()
+            .unwrap_or_else(|| label("fonts-mono-family-design"));
+        let note = label_with("fonts-stored", &[("family", &family), ("mono", &mono)]);
+        ui.add(egui::Label::new(RichText::new(note).weak()).wrap());
+    }
+    ui.add(egui::Label::new(RichText::new(label("fonts-family-note")).weak()).wrap());
+}
+
+fn family_picker(
+    ui: &mut Ui,
+    key: &str,
+    current: Option<&str>,
+    installed: Option<&[String]>,
+    default: String,
+) -> Option<Option<String>> {
+    let mut values = vec![None];
+    let mut options = vec![default];
+    if let Some(installed) = installed {
+        for family in installed {
+            values.push(Some(family.clone()));
+            options.push(family.clone());
+        }
+    }
+    let mut selected = values
+        .iter()
+        .position(|family| family.as_deref() == current)
+        .unwrap_or_else(|| {
+            values.push(current.map(str::to_owned));
+            let family = current.unwrap_or_default();
+            options.push(if installed.is_some() {
+                label_with("fonts-family-missing", &[("family", family)])
+            } else {
+                family.to_owned()
+            });
+            values.len() - 1
+        });
+    let width = ui.available_width();
+    toolkit::combo::show(ui, key, &mut selected, &options, Some(width))
+        .changed()
+        .then(|| values[selected].clone())
+}
+
+fn size(
+    ui: &mut Ui,
+    engine: &Engine,
+    commands: &Registry<Engine>,
+    strings: &Strings,
+    events: &mut Vec<UiEvent>,
+) {
+    let title = label("section-size");
+    panel::group(ui, "size", &[title.as_str()], |ui, _| {
+        let Some(look) = appearance_state(ui, engine, commands, strings, events) else {
+            return;
+        };
+        ui.add_enabled_ui(engine.can_edit_look(), |ui| {
+            if let Some(scale) = scale_control(ui, "size-text-scale", look.text_scale, 0.5..=3.0, true) {
+                events.push(UiEvent::Appearance(AppearanceEdit::TextScale(scale)));
+            }
+            if let Some(density) = scale_control(ui, "size-density", look.density, 0.5..=2.0, false) {
+                events.push(UiEvent::Appearance(AppearanceEdit::Density(density)));
+            }
+        });
+    });
+}
+
+fn scale_control(
+    ui: &mut Ui,
+    key: &'static str,
+    current: f64,
+    range: RangeInclusive<f64>,
+    percent: bool,
+) -> Option<f64> {
+    let id = egui::Id::new(key);
+    let mut value = ui.data(|d| d.get_temp::<f64>(id)).unwrap_or(current);
+    let mut commit = false;
+    panel::section_label(ui, &label(key));
+    ui.horizontal(|ui| {
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            if ui.add(PushButton::new(label("size-reset"))).clicked() {
+                value = 1.0;
+                commit = true;
+            }
+            ui.label(if percent {
+                format!("{:.0}%", value * 100.0)
+            } else {
+                format!("{value:.2}")
+            });
+            let response = ui.add(
+                Slider::new(&mut value, range)
+                    .step(0.05)
+                    .wheel(0.05)
+                    .reset_to(1.0)
+                    .unmodified_arrows()
+                    .label(label(key)),
+            );
+            value = (value * 20.0).round() / 20.0;
+            if response.dragged() {
+                ui.data_mut(|d| d.insert_temp(id, value));
+            } else if response.drag_stopped() || response.changed() {
+                commit = true;
+            }
+        });
+    });
+    if commit {
+        ui.data_mut(|d| d.remove::<f64>(id));
+        (value != current).then_some(value)
+    } else {
+        None
+    }
+}
+
+fn motion(
+    ui: &mut Ui,
+    engine: &Engine,
+    commands: &Registry<Engine>,
+    strings: &Strings,
+    events: &mut Vec<UiEvent>,
+) {
+    let title = label("section-motion");
+    panel::group(ui, "motion", &[title.as_str()], |ui, _| {
+        let Some(look) = appearance_state(ui, engine, commands, strings, events) else {
+            return;
+        };
+        ui.add_enabled_ui(engine.can_edit_look(), |ui| {
+            let mut reduced = look.reduced_motion;
+            if ui
+                .add(Toggle::new(&mut reduced, label("motion-reduce")))
+                .changed()
+            {
+                events.push(UiEvent::Appearance(AppearanceEdit::ReducedMotion(reduced)));
+            }
+        });
+        ui.add(egui::Label::new(RichText::new(label("motion-note")).weak()).wrap());
     });
 }
 
@@ -569,74 +755,87 @@ fn appearance(
 ) {
     let title = label("section-themes");
     panel::group(ui, "appearance", &[title.as_str()], |ui, _| {
-        ui.horizontal(|ui| {
-            // Changes apply as they are made; these appear only when an
-            // edit waits for the person: a refused apply (Apply tries
-            // again), a conflict to reconcile, an uncertain apply to check.
-            for (id, primary, shown) in [
-                ("appearance.apply", true, engine.look.hold),
-                ("appearance.keep", true, !engine.look.conflicts.is_empty()),
-                ("appearance.revert", false, engine.look.waiting()),
-                ("appearance.recheck", false, engine.look.uncertain.is_some()),
-            ] {
-                if shown {
-                    command_button(ui, engine, commands, strings, id, primary, events);
-                }
-            }
-            if let Some(revision) = engine.look.revision() {
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    let text = label_with("look-revision", &[("revision", &revision.to_string())]);
-                    ui.label(RichText::new(text).weak());
-                });
-            }
-        });
-        bars::hairline(ui);
-        if engine.look.settings == Settings::Missing {
-            ui.add(egui::Label::new(RichText::new(label("look-missing")).weak()).wrap());
-            return;
-        }
-        let Some(look) = engine.look.shown() else {
-            ui.label(RichText::new(label("look-reading")).weak());
-            return;
-        };
-        ui.vertical(|ui| {
-            ui.set_width(ui.available_width());
+        if let Some(look) = appearance_state(ui, engine, commands, strings, events) {
             look_controls(ui, engine, strings, look, events);
-            bars::hairline(ui);
-            let note = |ui: &mut Ui, key: &str, colour: Option<Color32>| {
-                let mut text = RichText::new(label(key));
-                text = match colour {
-                    Some(colour) => text.color(colour),
-                    None => text.weak(),
-                };
-                ui.add(egui::Label::new(text).wrap());
-            };
-            if !engine.look.conflicts.is_empty() {
-                let axes: Vec<String> = engine
-                    .look
-                    .conflicts
-                    .iter()
-                    .map(|a| label(axis_label(*a)))
-                    .collect();
-                let text = label_with("look-conflicts", &[("axes", &axes.join(", "))]);
-                ui.add(
-                    egui::Label::new(RichText::new(text).color(ui.visuals().warn_fg_color)).wrap(),
-                );
-            }
-            if engine.look.custom_source {
-                note(ui, "look-custom", None);
-            }
-            note(
-                ui,
-                if engine.look.hold {
-                    "look-held"
-                } else {
-                    "look-current"
-                },
-                None,
-            );
-        });
+        }
     });
+}
+
+/// Shared state and recovery controls for the session appearance editors.
+fn appearance_state(
+    ui: &mut Ui,
+    engine: &Engine,
+    commands: &Registry<Engine>,
+    strings: &Strings,
+    events: &mut Vec<UiEvent>,
+) -> Option<Look> {
+    ui.horizontal(|ui| {
+        // Changes apply as they are made; these appear only when an
+        // edit waits for the person: a refused apply (Apply tries
+        // again), a conflict to reconcile, an uncertain apply to check.
+        for (id, primary, shown) in [
+            ("appearance.apply", true, engine.look.hold),
+            ("appearance.keep", true, !engine.look.conflicts.is_empty()),
+            ("appearance.revert", false, engine.look.waiting()),
+            ("appearance.recheck", false, engine.look.uncertain.is_some()),
+        ] {
+            if shown {
+                command_button(ui, engine, commands, strings, id, primary, events);
+            }
+        }
+        if let Some(revision) = engine.look.revision() {
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                let text = label_with("look-revision", &[("revision", &revision.to_string())]);
+                ui.label(RichText::new(text).weak());
+            });
+        }
+    });
+    bars::hairline(ui);
+    if engine.look.settings == Settings::Missing {
+        ui.add(egui::Label::new(RichText::new(label("look-missing")).weak()).wrap());
+        return None;
+    }
+    let Some(look) = engine.look.shown() else {
+        ui.label(RichText::new(label("look-reading")).weak());
+        return None;
+    };
+    ui.vertical(|ui| {
+        ui.set_width(ui.available_width());
+        let note = |ui: &mut Ui, key: &str, colour: Option<Color32>| {
+            let mut text = RichText::new(label(key));
+            text = match colour {
+                Some(colour) => text.color(colour),
+                None => text.weak(),
+            };
+            ui.add(egui::Label::new(text).wrap());
+        };
+        if !engine.look.conflicts.is_empty() {
+            let axes: Vec<String> = engine
+                .look
+                .conflicts
+                .iter()
+                .map(|a| label(axis_label(*a)))
+                .collect();
+            let text = label_with("look-conflicts", &[("axes", &axes.join(", "))]);
+            ui.add(
+                egui::Label::new(RichText::new(text).color(ui.visuals().warn_fg_color)).wrap(),
+            );
+        }
+        if engine.look.custom_source {
+            note(ui, "look-custom", None);
+        }
+        note(
+            ui,
+            if engine.look.hold {
+                "look-held"
+            } else {
+                "look-current"
+            },
+            None,
+        );
+    });
+    bars::hairline(ui);
+    Some(look)
 }
 
 /// The Terminal group: one control per `terminal.*` field, each applied as
@@ -923,7 +1122,7 @@ fn axis_label(axis: Axis) -> &'static str {
     }
 }
 
-/// The six axes, each edit sent as the whole look it leaves.
+/// The six theme axes, each edit sent as the whole look it leaves.
 fn look_controls(
     ui: &mut Ui,
     engine: &Engine,
@@ -1193,6 +1392,98 @@ mod numeric_tests {
     use super::*;
     use egui::accesskit::Role;
     use egui_kittest::{Harness, kittest::NodeT, kittest::Queryable};
+
+    #[test]
+    fn scale_drag_applies_once_steps_are_discrete_and_reset_restores_one() {
+        struct State {
+            value: f64,
+            commits: Vec<f64>,
+        }
+        let mut h = Harness::builder()
+            .with_size(egui::vec2(640.0, 200.0))
+            .build_ui_state(
+                |ui, state: &mut State| {
+                    if let Some(value) =
+                        scale_control(ui, "size-text-scale", state.value, 0.5..=3.0, true)
+                    {
+                        state.value = value;
+                        state.commits.push(value);
+                    }
+                },
+                State {
+                    value: 1.0,
+                    commits: Vec::new(),
+                },
+            );
+        toolkit::install(&h.ctx, &toolkit::Theme::embedded());
+        h.run();
+        let from = h.get_by_role(Role::Slider).rect().center();
+        let to = from + egui::vec2(40.0, 0.0);
+        h.hover_at(from);
+        h.run();
+        h.drag_at(from);
+        h.run();
+        h.hover_at(to);
+        h.run();
+        assert!(h.state().commits.is_empty());
+        h.drop_at(to);
+        h.run();
+        assert_eq!(h.state().commits.len(), 1);
+        assert_eq!(h.state().value * 20.0, (h.state().value * 20.0).round());
+        h.get_by_label("Reset").click();
+        h.run();
+        assert_eq!(h.state().value, 1.0);
+        assert_eq!(h.state().commits.len(), 2);
+        let slider = h.get_by_role(Role::Slider).rect().center();
+        h.hover_at(slider);
+        h.run();
+        h.get_by_role(Role::Slider).focus();
+        h.run();
+        h.key_press(egui::Key::ArrowRight);
+        h.run();
+        assert_eq!(h.state().value, 1.05);
+        for modifiers in [
+            egui::Modifiers::CTRL,
+            egui::Modifiers::ALT,
+            egui::Modifiers::SHIFT,
+        ] {
+            h.key_press_modifiers(modifiers, egui::Key::ArrowRight);
+            h.run();
+            assert_eq!(
+                h.state().value,
+                1.05,
+                "modified arrows belong to the person"
+            );
+        }
+    }
+
+    #[test]
+    fn a_missing_stored_family_stays_visible_and_can_reset_to_null() {
+        let mut h = Harness::builder()
+            .with_size(egui::vec2(640.0, 200.0))
+            .build_ui_state(
+                |ui, family: &mut Option<String>| {
+                    let installed = vec!["Example Sans".to_owned()];
+                    if let Some(next) = family_picker(
+                        ui,
+                        "family-test",
+                        family.as_deref(),
+                        Some(&installed),
+                        label("fonts-family-design"),
+                    ) {
+                        *family = next;
+                    }
+                },
+                Some("Missing Sans".to_owned()),
+            );
+        toolkit::install(&h.ctx, &toolkit::Theme::embedded());
+        h.run();
+        h.get_by_label("Missing Sans (missing)").click();
+        h.run();
+        h.get_by_label("Design default (Inter)").click();
+        h.run();
+        assert!(h.state().is_none());
+    }
 
     #[test]
     fn automatic_titlebar_shows_effective_mode_and_gates_caption_side() {
