@@ -140,7 +140,8 @@ fn window_sized(theme: Theme, name: &str, app: App, size: egui::Vec2) {
         .build_ui(move |ui| {
             if let Some(theme) = theme.take() {
                 toolkit::install(ui.ctx(), &theme);
-                ui.ctx().style_mut(|style| style.visuals.text_cursor.blink = false);
+                ui.ctx()
+                    .global_style_mut(|style| style.visuals.text_cursor.blink = false);
             }
             if preview.is_none()
                 && let Some(image) = &rendered
