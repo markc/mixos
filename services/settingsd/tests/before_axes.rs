@@ -53,7 +53,7 @@ fn the_fixtures_are_format_one() {
         !PRIMARY.contains("\"format\""),
         "format 1 has no format field"
     );
-    assert_eq!(FORMAT, 3);
+    assert_eq!(FORMAT, 4);
 }
 
 #[test]
@@ -222,4 +222,59 @@ fn defaults_serialise_as_before_and_chosen_values_appear() {
         serde_json::to_value(&desktop.appearance).unwrap()["decorations"],
         "ssd"
     );
+}
+
+#[test]
+fn pre_workshop_stores_drop_retired_overrides_and_reseal_both_copies() {
+    for authored in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let (store, mut old) = Store::create(dir.path(), binding(), Desktop::default()).unwrap();
+        drop(store);
+        old.format = 3;
+        if authored {
+            old.desktop.apps.insert("busviewer".into(), AppOverride {
+                mode: Some("light".into()),
+                ..Default::default()
+            });
+        }
+        old.desktop.apps.insert("term".into(), AppOverride {
+            text_scale: Some(1.25),
+            ..Default::default()
+        });
+        let mut effective = resolve_with_embedded(&old.desktop, &old.embedded_source).unwrap();
+        let renamed = effective.remove("app:workshop").unwrap();
+        if !authored {
+            effective.insert("app:busviewer".into(), renamed);
+        }
+        old.effective_digest = digest(&effective).unwrap();
+        old.seal().unwrap();
+        old.check(&binding()).unwrap();
+        let text = strict::to_string_pretty(&old).unwrap();
+        for name in ["desktop.conf.mix", "desktop.previous.conf.mix"] {
+            std::fs::write(dir.path().join(name), &text).unwrap();
+        }
+        let (store, migrated) = Store::open(dir.path(), &binding()).unwrap();
+        assert!(!store.restored);
+        assert_eq!(migrated.format, FORMAT);
+        assert_eq!(migrated.revision, Revision(if authored { 2 } else { 1 }));
+        assert_eq!(migrated.incarnation, old.incarnation);
+        assert_eq!(migrated.design_revision, old.design_revision);
+        assert!(!migrated.desktop.apps.contains_key("busviewer"));
+        assert_eq!(migrated.desktop.apps["term"], old.desktop.apps["term"]);
+        let effective = migrated.effective().unwrap();
+        assert!(!effective.contains_key("app:busviewer"));
+        assert!(effective.contains_key("app:workshop"));
+        drop(store);
+        for name in ["desktop.conf.mix", "desktop.previous.conf.mix"] {
+            let saved: settingsd::store::Accepted = strict::from_str(
+                &std::fs::read_to_string(dir.path().join(name)).unwrap()
+            ).unwrap();
+            saved.check(&binding()).unwrap();
+            saved.effective().unwrap();
+            assert!(!saved.desktop.apps.contains_key("busviewer"));
+        }
+        let bytes = std::fs::read(dir.path().join("desktop.conf.mix")).unwrap();
+        drop(Store::open(dir.path(), &binding()).unwrap());
+        assert_eq!(std::fs::read(dir.path().join("desktop.conf.mix")).unwrap(), bytes);
+    }
 }

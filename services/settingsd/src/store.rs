@@ -24,7 +24,9 @@ use std::path::{Path, PathBuf};
 ///   omitted when unset) and their resolved values in `Effective`. A profile
 ///   that sets any of them will not load in a format-2 build: reset them
 ///   first with `settings.reset` or a null value.
-pub const FORMAT: u32 = 3;
+/// - 4: Workshop replaces the retired app context; drop its old authored
+///   section and re-derive the effective map through the sealed upgrade path.
+pub const FORMAT: u32 = 4;
 
 const MAX_STORE_BYTES: u64 = 2 * 1024 * 1024;
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -101,7 +103,11 @@ impl Accepted {
         // This authored migration runs only after the stored seal verifies.
         // Keep receipt fences honest by advancing the profile revision; the
         // resolved design is unchanged, so its revision stays as it was.
-        let reset = self.desktop.email.reset_legacy_composer_family();
+        let retired_app = self.desktop.apps.remove("busviewer").is_some();
+        if retired_app {
+            tracing::warn!("dropping retired apps.busviewer settings during profile upgrade");
+        }
+        let reset = self.desktop.email.reset_legacy_composer_family() || retired_app;
         if reset {
             self.revision = Revision(
                 self.revision
